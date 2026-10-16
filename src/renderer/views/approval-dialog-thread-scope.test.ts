@@ -5,6 +5,7 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import type { Thread } from '@shared/types'
 import { createStore } from '@shared/store/store.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -290,6 +291,72 @@ describe('approval dialog thread scoping', () => {
       setVisibility('visible')
       assert.equal(spy.showCalls, 1)
       assert.equal(dialog.open, true)
+    })
+  })
+
+  describe('side chats', () => {
+    // A side chat is hidden from the sidebar and never becomes the active thread,
+    // so its requests answer to the parent thread it branched from.
+    function withSideChat(): void {
+      const thread = (
+        id: string,
+        sideChat?: { parentThreadId: string; anchorMessageId: string },
+      ): Thread => ({
+        id,
+        title: id === 'side' ? 'Is it safe?' : id,
+        status: 'running',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: 1,
+        updatedAt: 1,
+        ...(sideChat ? { sideChat } : {}),
+      })
+      store.setState({
+        threads: [
+          thread('focused'),
+          thread('other'),
+          thread('side', { parentThreadId: 'focused', anchorMessageId: 'm1' }),
+        ],
+      })
+    }
+
+    it('surfaces over its parent, names the side chat and opens it beside the thread', () => {
+      withSideChat()
+      const opened: string[] = []
+      store.on('side_chat_open_requested', (id) => opened.push(id))
+
+      emit({ id: 'a', threadId: 'side' })
+
+      assert.equal(dialog.open, true)
+      const origin = qsRequired(dialog, '.approval-origin')
+      assert.equal(origin.hidden, false)
+      assert.equal(origin.textContent, 'From the side chat “Is it safe?”')
+      assert.deepEqual(opened, ['side'])
+      assert.equal(isThreadAwaitingAttention('side'), false)
+    })
+
+    it('flags the parent row, not the hidden side chat, while the parent is not focused', () => {
+      withSideChat()
+      store.setState({ activeThreadId: 'other' })
+
+      emit({ id: 'a', threadId: 'side' })
+
+      assert.equal(dialog.open, false)
+      assert.equal(isThreadAwaitingAttention('focused'), true)
+      assert.equal(isThreadAwaitingAttention('side'), false)
+
+      store.setState({ activeThreadId: 'focused' })
+      store.emit('threads_changed')
+      assert.equal(dialog.open, true)
+      assert.equal(isThreadAwaitingAttention('focused'), false)
+      dialog.querySelector<HTMLButtonElement>('.approval-approve')?.click()
+      assert.deepEqual(responses, [{ id: 'a', approved: true }])
+    })
+
+    it('keeps the origin line hidden for the parent thread’s own requests', () => {
+      withSideChat()
+      emit({ id: 'a', threadId: 'focused' })
+      assert.equal(qsRequired(dialog, '.approval-origin').hidden, true)
     })
   })
 })

@@ -1,5 +1,5 @@
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -7,9 +7,11 @@ import { readWorktreePreparationPlan } from '../../src/main/services/worktree-pr
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
-const root = mkdtempSync(join(tmpdir(), 'cargo-preparation-approval-'))
+const root = join(tmpdir(), 'copse-e2e', 'cargo-preparation-approval')
 describe('automatic Cargo preparation approval', () => {
   before(async () => {
+    rmSync(root, { recursive: true, force: true })
+    mkdirSync(root, { recursive: true })
     mkdirSync(join(root, 'src'))
     writeFileSync(
       join(root, 'Cargo.toml'),

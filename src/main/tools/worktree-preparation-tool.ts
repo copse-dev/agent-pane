@@ -7,6 +7,7 @@ import {
   inspectWorktreePreparation,
   prepareWorktree,
 } from '../services/worktree-preparation.ts'
+import { withWorktreeWriter } from '../services/worktree-writers.ts'
 
 export const preflightWorktreeTool = defineTool({
   name: 'preflight_worktree',
@@ -64,8 +65,10 @@ export const prepareWorktreeTool = defineTool({
     const executionRoot = getAgentExecutionRoot()
     if (!executionRoot) return 'No workspace open.'
     const root = containedPreparationPath(executionRoot, directory)
-    return formatWorktreePreparationReport(
-      await prepareWorktree(root, { offline, signal, planFingerprint }),
+    // Installs and declared setup write into the worktree outside the diff queue.
+    const report = await withWorktreeWriter(root, () =>
+      prepareWorktree(root, { offline, signal, planFingerprint }),
     )
+    return formatWorktreePreparationReport(report)
   },
 })

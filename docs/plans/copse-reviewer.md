@@ -177,7 +177,7 @@ list is the design, the exact encoding is Phase 1's to settle:
   challenged it and lost.
 - **evidence** — an ordered list of `{ kind, command, exitCode, excerpt }` or
   `{ kind: 'reproducer', testPath, failsOnHead, passesOnBase }` or `{ kind: 'citation',
-path, lines }`.
+  path, lines }`.
 - **verdict** — `confirmed` | `refuted` | `unverified`, with the reason.
 - **remedy** — optional minimal patch.
 
@@ -1511,8 +1511,9 @@ Reviewers read it before the diff. Copse Reviewer now does the same, under B4 as
   `write_summary`, with one repair turn if it ends in prose. The prompt tells the model to
   describe, not review. It reuses the review's model route; it adds no new trust boundary.
 - **Grounding.** The model proposes the level; evidence can only raise it. A surfaced high or
-  critical finding makes it High, any surfaced finding makes Low into Medium, and the block
-  says why. Stage 0's regressions are findings, so they count.
+  critical finding makes it High, a medium-severity finding makes Low into Medium, and the block
+  says why. Low-severity findings remain visible without raising the risk. Stage 0's regressions
+  are findings, so they count according to their severity.
 - **Inertness.** Every model-written line goes through the same `inertMarkdown` as review
   comments and is flattened to one quoted line. `<` becomes `&lt;`, so a diff that steers
   the model cannot forge the end marker, hide the author's text or mention anyone.
@@ -1544,3 +1545,77 @@ Reviewers read it before the diff. Copse Reviewer now does the same, under B4 as
   corpus in [`benchmarks/review-risk/`](../../benchmarks/review-risk/README.md). Its first
   results (2026-09-27, posted ratings only) and a proposed rubric are there; the rubric is
   unchanged until a model A/B supports it.
+
+### October 10: comment-requested container follow-ups
+
+The review-only pipeline shipped in #2849 and automatic same-repository reviews restored in
+#3604 did not implement a comment-to-edit loop. `copse-follow-up.yml` adds a separate
+**PR conversation comment** entry point on the default branch:
+
+- `@copse-review fix comments` collects the discussion, submitted reviews and inline review
+  comments, then asks the existing hardened thread container to address actionable feedback.
+- `@copse-review fix <specific instructions>` scopes the edits more narrowly; subsequent lines
+  can supply details.
+- `@copse-review rebase` carries both the exact PR head and current base commit into the guest,
+  where the agent rebases and resolves conflicts. An unfinished Git operation cannot be exported.
+
+Each comment starts a fresh bounded run using the current PR head and discussion. It does not
+resume a model session. Inline review replies, issue comments outside PRs, edited commands,
+quoted mentions, fork PRs and non-owner requests do not trigger supported follow-ups. The existing
+protected profile remains owner-only: repository ID 1274237362, actor/comment author/PR author
+338988, the same owner as rerunning actor, and current repository write permission. `copse-review-skip` prevents edits. An explicit
+command is sufficient on a draft PR. Commands do not change automatic review behavior.
+
+The workflow installs and executes trusted default-branch tooling only. PR code, dependency
+installation and checks run inside the existing hardened container. Provider inference stays on
+the host. GitHub credentials never enter the guest. The default registry/release egress allowlist
+supports public dependencies; dependencies needing authentication remain unavailable there.
+Runs have a 35-minute, 500,000-token and 100-step budget.
+
+Publishing is a separate host step, after container teardown. It requires a completed, contained,
+clean-start run, no pending approvals, successful carry-out and no secret-canary/cleanup failure.
+The host checks the original comment again and refuses changed/deleted commands, closed or
+retargeted PRs, changed head/base SHAs and newly opted-out PRs. Fixes must descend from the
+captured head; rebases must include the captured base. Workflow/action changes are not published.
+All pushes use an explicit expected-head lease; only a rebase may rewrite history. No commits
+means no push. The Actions job summary links a published commit; failures remain visible in the
+Actions run. Posting another command retries against the latest head.
+
+Deployment requires this workflow on the default branch, the existing `copse-review-models`
+environment and provider configuration (`COPSE_REVIEW_API_KEY`, or `SCW_GENERATIVE_API_KEY`
+with `SCW_DEFAULT_PROJECT_ID`; `COPSE_REVIEW_MODEL` and the OpenAI-compatible
+`COPSE_REVIEW_BASE_URL`/`SCW_GENERATIVE_API_URL`). The CLI uses the OpenAI-compatible API;
+a non-compatible reviewer provider needs a compatible endpoint for this workflow. The
+`RELEASE_APP_ID`/`RELEASE_APP_PRIVATE_KEY` installation must additionally grant **Contents:
+read and write** and **Pull requests: read** for this repository. PR conversation comments
+are covered by the pull-request permission. Its token is
+minted only after the guest stops. App-token pushes start normal PR CI; a workflow-token fallback
+would suppress CI and is intentionally absent. Existing environment approval rules still apply.
+
+Validation must cover authorization and reruns, context collection, concurrent head/base changes,
+failed/partial runs, divergent-base carry-in, conflict completion, and lease-protected publication.
+A live paid-model Actions run remains a deployment check; unit coverage does not establish it.
+
+### October 11: resolve verified Copse findings after follow-up edits
+
+A successful `fix` follow-up (including a clean no-op) starts a separate verification job at
+its published head. Rebase-only commands do not close findings. A fresh container receives
+unresolved threads whose root author and parent review author are the Copse release bot and
+whose review is recognized as a current or historical Copse review. Human-authored threads, threads with human participation,
+and truncated comment histories are excluded. Outdated lines are not evidence of a fix.
+
+The verifier must leave product files unchanged and write only its verdict JSON. Addressed
+findings need source quotes that the trusted host checks against the exact published commit,
+plus relevant checks reported as passed by the independent verifier. Uncertain findings,
+unavailable/failed checks, malformed output, incomplete runs, deferrals, and cleanup failures
+cannot authorize resolution. These are model-assisted judgments, not a proof of correctness.
+At most 20 eligible threads are considered per command; others remain open.
+
+The editing job's token is revoked when that job finishes. Only after verifier teardown and
+host validation does the verification job mint a separate App token with Contents read and
+Pull requests write. The host rechecks the unchanged owner command, permissions, PR head/base,
+opt-out and thread snapshot, posts the fixing commit and verification evidence, then rechecks
+before resolving. New human replies or changed threads remain open. GitHub has no atomic
+expected-head condition on `resolveReviewThread`; a very small race remains after the last
+check. No merge or screenshot acceptance is performed. Conversation comments and historical
+review summaries are retained. Verification failure never rolls back an already-pushed fix.

@@ -11,7 +11,8 @@ import {
   npmTarballs,
   copsePnpmPatches,
 } from '@copse/review/ci/action-policy.mts'
-import type { FetchLike } from '@copse/review/forge-review.ts'
+import { ForgePublicationSkippedError, type FetchLike } from '@copse/review/forge-review.ts'
+import { postSummary } from '@copse/review/pr-summary.ts'
 
 const request = {
   repository: 'copse-dev/streaming-markdown',
@@ -138,7 +139,58 @@ describe('portable review publishing', () => {
         'read-token',
         fetchImpl,
       )('https://api.github.com/review', post),
+      (err) => err instanceof Error && !(err instanceof ForgePublicationSkippedError),
     )
+  })
+
+  it('skips obsolete summary writes but still fails unreadable and failed freshness checks', async () => {
+    for (const [pull, status, skipped] of [
+      [{ ...currentPull, state: 'closed' }, 200, true],
+      [{ ...currentPull, head: { sha: 'c'.repeat(40) } }, 200, true],
+      [{ ...currentPull, base: { sha: 'c'.repeat(40) } }, 200, true],
+      [{ ...currentPull, labels: [{ name: 'copse-review-skip' }] }, 200, true],
+      [{ ...currentPull, draft: true }, 200, true],
+      [{ garbage: true }, 200, false],
+      [currentPull, 403, false],
+      [currentPull, 500, false],
+    ] as const) {
+      let reads = 0
+      const calls: string[] = []
+      const fetchImpl: FetchLike = async (_url, init) => {
+        calls.push(init.method)
+        reads++
+        return {
+          status: reads === 1 ? 200 : status,
+          text: async () =>
+            JSON.stringify(reads === 1 ? { body: '', head: { sha: request.head } } : pull),
+        }
+      }
+      const result = postSummary(
+        {
+          forge: 'github',
+          apiBase: 'https://api.github.com',
+          owner: 'copse-dev',
+          repo: 'streaming-markdown',
+          number: request.pr,
+          token: 'write-token',
+          headCommit: request.head,
+        },
+        'New summary',
+        { fetch: actionPublishingFetch(request, 'read-token', fetchImpl) },
+      )
+      if (skipped) {
+        assert.deepEqual(await result, {
+          updated: false,
+          reason: 'Copse did not publish: the PR changed, closed, or opted out during review',
+        })
+      } else {
+        await assert.rejects(
+          result,
+          (err) => err instanceof Error && !(err instanceof ForgePublicationSkippedError),
+        )
+      }
+      assert.deepEqual(calls, ['GET', 'GET'])
+    }
   })
 })
 

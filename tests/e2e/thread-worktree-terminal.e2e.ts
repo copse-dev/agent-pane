@@ -155,6 +155,9 @@ describe('isolated thread terminal cwd', () => {
       timeoutMsg: 'expected the terminal to report the isolated worktree branch',
     })
     await expect(terminalBtn).toHaveElementClass('active')
+    // Leave the canvas cursor unfocused at its steady outline for capture.
+    await $('.titlebar-btn[aria-label="Open terminal"]').execute((button) => button.focus())
+    await expect($('.titlebar-btn[aria-label="Open terminal"]')).toBeFocused()
     await saveAppScreenshot('thread-worktree-terminal-cwd.png')
   })
 
@@ -213,6 +216,16 @@ describe('isolated thread terminal cwd', () => {
     })
     assert.ok(!(await gitChangePaths()).includes('project-only.md'))
     await $('.monaco-diff-editor').waitForDisplayed({ timeout: 30_000 })
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          () =>
+            !document
+              .getElementById('git-changes-host')
+              ?.textContent?.includes('Checking committed changes'),
+        ),
+      { timeout: 30_000, timeoutMsg: 'Popout committed Changes query did not settle' },
+    )
     await saveAppScreenshot('thread-worktree-changes-popout.png')
 
     await browser.closeWindow()
@@ -271,6 +284,9 @@ describe('isolated thread terminal cwd', () => {
     })
 
     await assertNoErrorToasts('interrupted rebase recovery terminal')
+    // Leave the canvas cursor unfocused at its steady outline for capture.
+    await $('.titlebar-btn[aria-label="Open terminal"]').execute((button) => button.focus())
+    await expect($('.titlebar-btn[aria-label="Open terminal"]')).toBeFocused()
     await saveAppScreenshot('thread-worktree-rebase-recovery-terminal.png')
   })
 })

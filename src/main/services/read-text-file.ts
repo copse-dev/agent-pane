@@ -1,6 +1,7 @@
 import { createReadStream } from 'node:fs'
 import * as fs from 'node:fs/promises'
 import { createInterface } from 'node:readline'
+import { toLfView } from '@shared/line-endings.ts'
 
 const SNIFF_BYTES = 8192
 
@@ -135,6 +136,28 @@ function sliceEndInclusive(
   return Math.min(totalLines, plannedEndInclusive(startIdx, endLine, maxLines))
 }
 
+/**
+ * Append `line` to `selected` if the joined page stays within `maxChars`;
+ * returns false once the limit is hit. Only whole lines are kept, so `endLine`
+ * (and the footer's `start_line=endLine+1`) points at the cut line rather than
+ * past it — counting a trimmed prefix as read made the rest of that line
+ * unreachable. The one exception is a first line that alone exceeds the
+ * limit: its prefix is shown (a line-based range cannot split it), otherwise
+ * the page would be empty and paging could never advance.
+ */
+function appendWithinCharLimit(selected: string[], line: string, maxChars: number): boolean {
+  const used = selected.length === 0 ? 0 : selected.join('\n').length + 1
+  if (used + line.length <= maxChars) {
+    selected.push(line)
+    return true
+  }
+  if (selected.length === 0) {
+    const prefix = line.slice(0, Math.max(0, maxChars))
+    if (prefix.length > 0) selected.push(prefix)
+  }
+  return false
+}
+
 export async function readTextLineRange(
   absPath: string,
   opts: ReadTextLineRangeOptions,
@@ -174,15 +197,7 @@ export async function readTextLineRange(
     if (lineNumber > endInclusive) continue
     if (charTruncated) continue
 
-    selected.push(line)
-    const joined = selected.join('\n')
-    if (joined.length > opts.maxChars) {
-      const over = joined.length - opts.maxChars
-      selected.pop() // remove the `line` just pushed above; re-add a trimmed copy below
-      const trimmedLast = line.slice(0, Math.max(0, line.length - over))
-      if (trimmedLast.length > 0) selected.push(trimmedLast)
-      charTruncated = true
-    }
+    charTruncated = !appendWithinCharLimit(selected, line, opts.maxChars)
   }
 
   const totalLines = lineNumber
@@ -224,7 +239,8 @@ export function readTextLineRangeFromUtf8Content(
       : bomSkip > 0
         ? content.slice(bomSkip)
         : content
-  const normalized = body.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  // The LF view str_replace and apply_patch match against (shared/line-endings.ts).
+  const normalized = toLfView(body).text
   const lines = normalized.split('\n')
   if (lines.at(-1) === '') lines.pop()
 
@@ -238,16 +254,7 @@ export function readTextLineRangeFromUtf8Content(
     if (lineNumber <= startIdx) continue
     if (lineNumber > endInclusive) continue
     if (charTruncated) continue
-    const line = lines[lineNumber - 1] ?? ''
-    selected.push(line)
-    const joined = selected.join('\n')
-    if (joined.length > opts.maxChars) {
-      const over = joined.length - opts.maxChars
-      selected.pop()
-      const trimmedLast = line.slice(0, Math.max(0, line.length - over))
-      if (trimmedLast.length > 0) selected.push(trimmedLast)
-      charTruncated = true
-    }
+    charTruncated = !appendWithinCharLimit(selected, lines[lineNumber - 1] ?? '', opts.maxChars)
   }
 
   const totalLines = lines.length

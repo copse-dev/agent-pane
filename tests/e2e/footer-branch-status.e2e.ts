@@ -225,6 +225,9 @@ describe('footer branch status for a detached thread worktree', function () {
     // The repair is real: Git itself reports the checkout back on the branch.
     expect(git(worktreeRoot, ['symbolic-ref', '--short', 'HEAD'])).toBe(detachedBranch)
 
+    // The footer is the subject; wait for the confirmation toast to leave so
+    // an element crop cannot cut its text off at the right edge.
+    await $('.toast').waitForExist({ reverse: true, timeout: 10_000 })
     await saveElementScreenshot('#input-bar', 'footer-branch-reattached-worktree.png')
   })
 
@@ -274,6 +277,11 @@ describe('footer branch status for a detached thread worktree', function () {
     await expect($('.chat-row.selected')).toHaveElementClass('is-running')
     await expect($('.footer-branch-status')).toHaveElementClass('is-detached')
     await expect($('.branch-reattach-button')).not.toBeDisplayed()
+    // Say why there is no button instead of leaving a silent gap beside the branch.
+    await expect($('.footer-branch-status')).toHaveAttribute(
+      'title',
+      expect.stringContaining('Recovery is offered once the agent stops working in it'),
+    )
     await saveElementScreenshot('#input-bar', 'footer-branch-rebase-agent-running.png')
     await scenario.release('paused-rebase')
     await scenario.waitForComplete()

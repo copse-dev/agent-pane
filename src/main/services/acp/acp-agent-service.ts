@@ -47,7 +47,10 @@ import {
 } from './acp-client.ts'
 import { getAcpAgent, resolveAcpPermissionMode, resolveAcpSandbox } from './acp-agent-registry.ts'
 import { probeAcpAgentIsolated } from './acp-probe-host.ts'
-import { acquireAcpSession, disposeAcpSession } from './acp-session-pool.ts'
+import { acquireAcpSession, disposeAcpSession, type PooledAcpSession } from './acp-session-pool.ts'
+import { createAgentInitiatedTurnLease } from './agent-initiated-turn.ts'
+import { requestUserAnswers } from '../ask-user.ts'
+import { runWithActiveRunIdentity } from '../active-run-identity.ts'
 import { acpSessionHandoverNotice } from './acp-session-reattach.ts'
 import { buildInvokedSkillsBlock } from '../skills/skill-prompt.ts'
 import { listForwardableMcpServers } from '../mcp/mcp-registry.ts'
@@ -77,6 +80,7 @@ import {
   listWorktreeChangesSince,
   stageDiff,
 } from '../diff-queue.ts'
+import { beginWorktreeWriter } from '../worktree-writers.ts'
 import { networkDenialMarker, networkDenialsSince } from '../../project-sandbox/network-scope.ts'
 import { perfMark, perfSpan } from '../diagnostics/perf-trace.ts'
 import {
@@ -103,7 +107,12 @@ import {
   toRelativePathWithinRoot,
 } from '../workspace.ts'
 import { getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
-import { getThreadExecutionContext, isThreadCheckoutDeferred } from '../thread-execution-context.ts'
+import {
+  getThreadExecutionContext,
+  isThreadCheckoutDeferred,
+  resolveThreadExecutionContext,
+  runWithThreadExecutionContext,
+} from '../thread-execution-context.ts'
 import { ensureWritableThreadCheckout } from '../deferred-worktree.ts'
 import { acpAgentCanDeferCheckout } from './acp-deferred-checkout.ts'
 import {
@@ -156,6 +165,8 @@ setRemoteAcpInstallApprover(async ({ title, body }, signal) => {
 
 export interface RunAcpAgentOptions {
   threadId: string
+  /** Let the external agent use its own execution and permission defaults. */
+  executionMode?: 'agent'
   agentId: string
   userPrompt: UserContent
   priorMessages: LLMMessage[]
@@ -433,6 +444,63 @@ export async function runWithAcpRetry<T>(
  * session; when it cannot, the continuation opens with the handover note and the
  * agent works from Copse's transcript (docs/plans/acp-session-continuity.md).
  */
+/**
+ * Let the pooled session bind its thread for turns the agent starts itself
+ * (a background task finishing after the prompt ended), so its bridged tool
+ * calls run against the thread's own root rather than being rejected. Idempotent.
+ */
+function installAgentInitiatedTurnLease(
+  entry: PooledAcpSession,
+  threadId: string,
+  projectId: string | undefined,
+  cwd: string,
+): void {
+  const bridge = entry.bridge
+  if (!bridge || !projectId || entry.open.agentInitiated) return
+  entry.open.agentInitiated = createAgentInitiatedTurnLease({
+    projectId,
+    threadId,
+    bridge: {
+      setExecutionContext: (context) => {
+        if (!context) {
+          bridge.setExecutionContext(null)
+          return
+        }
+        // The bridge captures per-thread scopes from the async context at bind time.
+        runWithThreadExecutionContext(context, () => {
+          runWithActiveRunIdentity(threadId, () => {
+            bridge.setExecutionContext(context)
+          })
+        })
+      },
+      setTurnSignal: (signal) => {
+        bridge.setTurnSignal(signal)
+      },
+      setPendingExecutionContext: (pending) => {
+        bridge.setPendingExecutionContext(pending)
+      },
+    },
+    resolveContext: resolveThreadExecutionContext,
+    beginWriter: () => beginWorktreeWriter(cwd),
+    confirmContinue: async () => {
+      const result = await runWithActiveRunIdentity(threadId, () =>
+        requestUserAnswers({
+          questions: [
+            {
+              question:
+                'The coding agent resumed on its own (a background task finished) and wants to ' +
+                "keep working, but this thread's automatic-continuation limit is used up. " +
+                'Let it continue?',
+              options: ['Allow', 'Stop'],
+            },
+          ],
+        }),
+      )
+      return result.cancelled !== true && result.answers[0] === 'Allow'
+    },
+  })
+}
+
 export function runAcpAgentFromSettings(options: RunAcpAgentOptions): Promise<RunAcpAgentResult> {
   return runAcpTurnWithContinuation(options, {
     runTurn: runAcpAgentTurn,
@@ -540,7 +608,7 @@ async function runAcpAgentTurn(
   const agent = getAcpAgent(options.agentId)
   if (!agent) {
     throw new Error(
-      `The coding agent "${options.agentId}" is not configured or is disabled. Add it in Settings → General → Providers.`,
+      `The coding agent "${options.agentId}" is not configured or is disabled. Add it in Settings → General → Coding agents.`,
     )
   }
 
@@ -554,7 +622,8 @@ async function runAcpAgentTurn(
   // spawn, not from when the thread deferred: the setting may have moved since.
   if (
     isThreadCheckoutDeferred() &&
-    !acpAgentCanDeferCheckout(agent.id, { remote: isActiveSshWorkspace() })
+    (options.executionMode === 'agent' ||
+      !acpAgentCanDeferCheckout(agent.id, { remote: isActiveSshWorkspace() }))
   ) {
     await ensureWritableThreadCheckout()
   }
@@ -570,7 +639,7 @@ async function runAcpAgentTurn(
   // itself instead of falling back to the shared checkout (#1439).
   const executionContext = getThreadExecutionContext()
 
-  const sandbox = resolveAcpSandbox(agent)
+  const sandbox = options.executionMode === 'agent' ? undefined : resolveAcpSandbox(agent)
   // Where the agent runs, read from the ACP-over-SSH setting exactly once. The
   // spawn config carries this answer to the session pool and transport, so
   // toggling the setting mid-turn cannot spawn remotely while the permission
@@ -599,7 +668,8 @@ async function runAcpAgentTurn(
   // choice, or `acceptEdits` for a Claude preset that will actually spawn
   // sandboxed. Part of the spawn config so a change respawns the pooled session
   // (the mode is applied once, at `session/new`, not switched live like model).
-  const permissionMode = resolveAcpPermissionMode(agent, sandboxed)
+  const permissionMode =
+    options.executionMode === 'agent' ? undefined : resolveAcpPermissionMode(agent, sandboxed)
   // Resolve the user's configured MCP servers for the pooled-session fingerprint.
   // Their configs are not handed to the external agent: connected MCP tools are
   // exposed through Copse's authenticated native bridge so every call returns
@@ -620,6 +690,7 @@ async function runAcpAgentTurn(
       : undefined
   const spawnConfig: AcpAgentSpawnConfig = {
     command: agent.command,
+    ...(options.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
     cwd,
     sshTarget,
     ...(agent.args ? { args: agent.args } : {}),
@@ -692,6 +763,7 @@ async function runAcpAgentTurn(
           sandboxed,
           contained,
           remote,
+          ...(options.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
           ...(remoteHostId !== undefined ? { remoteHostId } : {}),
         },
         req,
@@ -752,6 +824,10 @@ async function runAcpAgentTurn(
       // replayed into later turns nor counts as progress that blocks a retry.
       options.onChunk({ type: 'text', text: acpSessionHandoverNotice(handover, agent.title) })
     }
+    // A turn the agent started on its own ends here: this prompt binds its own
+    // context below, and must not have it cleared by the earlier lease.
+    entry.open.agentInitiated?.end()
+    installAgentInitiatedTurnLease(entry, options.threadId, executionContext?.projectId, cwd)
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
     entry.bridge?.setExecutionContext(executionContext)
     entry.bridge?.setTurnSignal(options.bridgeTurnSignal ?? options.signal)
@@ -773,9 +849,9 @@ async function runAcpAgentTurn(
       {
         sandboxed,
         readonlyCheckout,
-        includeNotes: fresh,
-        includeImages: entry.open.promptImage,
-        ...(options.operatorInstructions
+        includeNotes: fresh && options.executionMode !== 'agent',
+        includeImages,
+        ...(options.executionMode !== 'agent' && options.operatorInstructions
           ? { operatorInstructions: options.operatorInstructions }
           : {}),
         ...(skillsBlock ? { skills: skillsBlock } : {}),
@@ -801,6 +877,9 @@ async function runAcpAgentTurn(
 
   let stopReason: StopReason
   let usage: Usage | null | undefined
+  // The external agent edits through its own tools while it is prompted, so a
+  // bridged Copse file tool must sweep `git status` live for the whole attempt.
+  const releaseAgentWriter = beginWorktreeWriter(cwd)
   try {
     ;({ stopReason, usage } = await runWithAcpRetry(attempt, {
       signal: options.signal,
@@ -835,6 +914,8 @@ async function runAcpAgentTurn(
         ? { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens }
         : { inputTokens: 0, outputTokens: 0 },
     })
+  } finally {
+    releaseAgentWriter()
   }
 
   flushHeldText()
@@ -1038,6 +1119,7 @@ async function respondToAcpExecutePermission(
 
 /** The agent facts a permission answer depends on: identity plus {@link AcpRunContainment}. */
 interface AcpPermissionAgent {
+  executionMode?: 'agent'
   id: string
   title: string
   sandboxed: boolean
@@ -1075,6 +1157,28 @@ async function respondToPermission(
   signal?: AbortSignal,
 ): Promise<RequestPermissionResponse> {
   if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
+  if (agent.executionMode === 'agent') {
+    // An explicitly armed unattended container has no human permission
+    // responder. Keep its separate deny boundary even for this thread mode.
+    if (agent.contained === true) return permissionResponseFor(req.options, false)
+    const presentation = presentPermissionRequest(agent.title, req)
+    const offersAgentAlways = req.options.some((option) => option.kind === 'allow_always')
+    const { approved, remember } = await requestApproval(
+      {
+        ...presentation,
+        cause: 'acp-permission',
+        allowRemember: offersAgentAlways,
+        ...(offersAgentAlways
+          ? { rememberLabel: `Use ${agent.title}'s own always allow option` }
+          : {}),
+      },
+      signal,
+    )
+    if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
+    // requestApproval returns the user's choice; it stores no Copse grant.
+    // Here "remember" only selects the agent-provided allow_always option.
+    return permissionResponseFor(req.options, approved, { preferAlways: approved && remember })
+  }
   const kind = req.toolCall.kind ?? 'other'
   const grantLocation = acpGrantLocationFor(agent)
   if (grantLocation && isAcpPermissionRemembered(agent.id, kind, grantLocation)) {

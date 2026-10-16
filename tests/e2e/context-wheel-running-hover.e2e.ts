@@ -1,6 +1,6 @@
 import { waitForAgentIdle } from './helpers.ts'
 import { prepareMockTurn } from './helpers/mock-scenario.ts'
-import { $, $$, browser, expect } from '@wdio/globals'
+import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedContextWheelFixture } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -32,7 +32,14 @@ describe('context wheel hover while running', () => {
     // Hold the run open long enough to hover while `status === 'running'`.
     const scenario = await prepareMockTurn(
       'Summarise this repo.',
-      [{ waitFor: 'inspection', text: 'I am reviewing the workspace.' }],
+      [
+        {
+          waitFor: 'inspection',
+          text: 'I am reviewing the workspace.',
+          toolCalls: [{ name: 'git_status', args: {} }],
+        },
+        { waitFor: 'updated', text: 'The workspace review is complete.' },
+      ],
       true,
     )
     await $('.submit-btn').click()
@@ -47,7 +54,7 @@ describe('context wheel hover while running', () => {
     })
 
     await expect(wheel).toBeDisplayed()
-    await browser.pause(500)
+    await scenario.waitForHold('inspection')
     await wheel.moveTo()
 
     const popover = wheel.$('.context-wheel-popover')
@@ -56,8 +63,14 @@ describe('context wheel hover while running', () => {
     // Aggregate only — no per-part rows, because no breakdown exists mid-run.
     await expect(popover.$$('.context-wheel-popover-row')).toBeElementsArrayOfSize(0)
 
-    await saveAppScreenshot('context-wheel-running-hover.png')
+    // A real tool round refreshes the footer and the context snapshot. Leave
+    // the pointer in place: details must remain open without another moveTo.
     await scenario.release('inspection')
+    await scenario.waitForHold('updated')
+    await expect(popover).toBeDisplayed()
+    await expect($('.stop-btn')).toBeDisplayed()
+    await saveAppScreenshot('context-wheel-running-hover.png')
+    await scenario.release('updated')
     await waitForAgentIdle(15_000)
   })
 })

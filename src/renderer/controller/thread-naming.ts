@@ -46,9 +46,22 @@ function namingMessages(thread: Thread): Message[] {
  * A prompt's own words. Inline paste and thread-reference chips are stored as
  * U+FFFC placeholders that only the transcript knows how to draw; left in, one
  * reaches the title as a boxed "OBJ" glyph.
+ *
+ * A thread-reference chip truly carries no words of its own, but a paste chip
+ * does: its exact text travels on the attachment (see
+ * {@link TranscriptAttachment.content}), out of `content` entirely. Without
+ * this fallback, a message that is nothing but a pasted block strips to an
+ * empty string and is permanently wordless, so a thread whose whole
+ * conversation is one paste-and-send never leaves "New Thread".
  */
 function promptWords(message: Message): string {
-  return stripPastePlaceholders(message.content)
+  const stripped = stripPastePlaceholders(message.content)
+  if (stripped) return stripped
+  return (message.attachments ?? [])
+    .filter((a) => a.kind === 'paste' && a.content)
+    .map((a) => a.content)
+    .join('\n\n')
+    .trim()
 }
 
 /**

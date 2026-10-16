@@ -15,7 +15,7 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
 > only `@agentclientprotocol/sdk` (the client/protocol half). The agent half (the
 > thing that wraps Claude/Gemini and speaks ACP) is installed by you, e.g.
 > `npm install -g @agentclientprotocol/claude-agent-acp` for Claude, then
-> authenticated with its own command (e.g. `claude setup-token`). The Settings
+> authenticated with its own command (e.g. `claude auth login`). The Settings
 > panel shows the exact install and sign-in commands per agent.
 
 > Status: client role, second slice (issues #264, #605). Terminals are not
@@ -114,14 +114,15 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
 
 ### Settings panel (recommended)
 
-Open **Settings → ACP agents**. It scans your device when you open the tab and
+Open **Settings → General → Providers** and choose an agent's provider chip.
+The device-agent panel scans your device when selected and
 shows a **chip row** — one chip per agent — that hides each agent's details until
 you pick it, the same pattern as **Settings → Providers**. A dot marks the agents
 you've already added.
 
-- **Known agents** lead the row (Gemini CLI, Claude Agent, Claude Code, Cursor,
-  Codex). Select one to see whether it's installed, the **Install** command to get
-  it, the **Sign in** command to authenticate it (e.g. `claude setup-token`), and
+- **Known agents** include Gemini CLI, Claude, Cursor, Codex and GitHub Copilot CLI.
+  Select one to see whether it's installed, the **Install** command to get
+  it, the **Sign in** command to authenticate it (e.g. `claude auth login`), and
   an **Add to my agents** button.
 - Once added, selecting an agent's chip opens its editor — change its model /
   permission mode, enable/disable it, or **Remove** it.
@@ -131,29 +132,61 @@ you've already added.
 Changes are saved immediately; reopen the model dropdown to see them. **Re-scan
 device** refreshes the installed/running status after you install something.
 
-Opening the tab also runs **auto-setup** for curated npm presets (Claude, Codex):
+Selecting a curated preset (Claude, Codex or Cursor) runs **auto-setup**:
 missing adapters can be installed (with an approval), and an already-installed
 adapter that is behind the npm registry latest can be upgraded the same way.
 Upgrades use the `npm` beside the resolved binary so an nvm/prefix install stays
-in that prefix. Cursor is never auto-installed (its installer is not npm).
+in that prefix. Cursor is never auto-installed (its installer is not npm). Manual
+entries (Gemini and Copilot) and the custom-agent form only scan the device; they
+do not trigger setup or upgrades of unrelated presets.
+
+Auto-setup also runs every time a workspace opens, so a preset whose binary is
+already on `PATH` (no missing package to install) is registered and shows up in
+the model picker without visiting Settings at all — the approval dialog only
+appears when there is a package to install or upgrade.
 
 > Tip: you can **Add** a known agent before installing it — Copse stores the
 > config now, and you run the shown Install/Sign in commands when ready.
+
+GitHub Copilot CLI is a **manual** entry, separate from auto-setup presets. Install
+it with `npm install -g @github/copilot` (Node.js 22+), then run `copilot login`.
+The catalog launches `copilot --acp --stdio`; ACP is in public preview. GitHub-hosted
+models use your Copilot plan and usage limits, while BYOK uses the selected
+provider's billing and requires a custom sandbox endpoint. See the
+[candidate review](acp-catalog-review.md) for evidence, confinement limits and
+verification status, including why OpenCode and Qwen Code remain deferred.
+
+To discover agents beyond that reviewed list, choose **Add provider → An agent
+installed on this machine → Browse agent registry**. Search the public stable
+registry and select **Review configuration** to open a custom-agent draft.
+The browser fetches only when requested and can refresh its results. It checks
+direct executable names on PATH without running them; package-only entries have
+unknown installed status, even when `npx` or `uvx` is installed.
+
+Registry entries are **unverified by Copse**. Review the publisher's installation,
+authentication, billing and platform instructions, then fill in the installed
+command. Adding a registry draft leaves it disabled. Open the saved agent and
+explicitly select **Enabled** to authorize starting that command, including model
+detection. No package runner is filled in as an automatic installer, and no
+registry environment values, permission modes or sandbox allowances are imported.
+Custom agents use the existing custom-agent confinement rules; registry presence
+does not establish a sandbox profile. See [registry discovery](acp-registry-discovery.md).
 
 ### When a sign-in lapses
 
 External agents hold their own credentials, and those expire. When a turn fails
 because the agent could not authenticate, Copse now says so in the agent's own
 terms and offers to fix it: the chat message names the command that signs that
-agent in again (`claude /login`, `cursor-agent login`, `codex login`, …), and a
+agent in again (`claude auth login`, `cursor-agent login`, `codex login`, …), and a
 prompt offers to open a shell in the **Shells** pane already running it. Finish
 the sign-in there, then re-send your message — Copse cannot complete another
 program's login flow for you.
 
-The distinction matters because the commands differ. `claude setup-token` mints a
-long-lived token for an agent that has never been signed in; an OAuth session
-that has lapsed is renewed with `claude /login`. Copse tells the two apart from
-the failure and names the right one.
+Claude uses `claude auth login` for both first-time sign-in and expired-session
+recovery. The normal login flow chooses the account method; `--sso` is optional
+when you need to force corporate SSO. `claude setup-token` is for headless or CI
+use: it prints a long-lived token without saving a login, so it is not the
+desktop sign-in command.
 
 Expiry is worth understanding rather than just re-running: an OAuth login
 refreshes its own access token in the background, so a _sandboxed_ agent that
@@ -412,3 +445,5 @@ Every ACP payload below the header is still written verbatim.
   SSH workspaces (Phase 1: remote spawn over ControlMaster stdio).
 - [Agent Client Protocol](https://agentclientprotocol.com/) — the protocol spec
   and list of supported agents.
+
+The Usage panel’s Claude sign-in action opens a local console because plan usage reads local credentials, even while an SSH workspace is active. Agent reauthentication still opens the sign-in command on the agent’s host.

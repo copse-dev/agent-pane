@@ -21,6 +21,20 @@ describe('context label and subagent usage states', () => {
     )
   })
 
+  it('uses only the custom usage hover when no context figures exist', async () => {
+    await browser.url('/context-usage-fixture.html?mode=usage-only')
+    const wheel = await $('.context-wheel')
+    await wheel.waitForDisplayed()
+    assert.equal(await wheel.getAttribute('title'), null)
+    assert.equal(await wheel.getAttribute('aria-label'), 'Usage · 990 tokens')
+    await wheel.moveTo()
+    const popover = await $('.context-wheel-popover')
+    await expect(popover).toBeDisplayed()
+    await expect(popover.$('.context-wheel-popover-header')).not.toExist()
+    await expect(popover.$('.footer-usage-popover-header')).toHaveText('Usage · 990 tokens')
+    await saveElementScreenshot('#app', 'context-usage-only.png')
+  })
+
   for (const [mode, summary, runCount] of [
     ['running', '1 run · 1 running', 1],
     ['done', '1 run · no usage reported', 1],
@@ -30,7 +44,7 @@ describe('context label and subagent usage states', () => {
       await browser.url(`/context-usage-fixture.html?mode=${mode}`)
       const wheel = await $('.context-wheel')
       await wheel.waitForDisplayed()
-      assert.equal(await wheel.getAttribute('title'), 'Context: 6.8k / 200.0k (3%)')
+      assert.equal(await wheel.getAttribute('title'), null)
       assert.equal(await wheel.getAttribute('aria-label'), 'Context 3% used, 6.8k of 200.0k tokens')
       await wheel.moveTo()
       const popover = await $('.context-wheel-popover')

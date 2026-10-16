@@ -14,7 +14,7 @@ import { uiActions } from '../../ui/index.ts'
 export interface AboutSection {
   root: HTMLElement
   /** Load the version and licence report; cheap after the first call. */
-  refresh: () => Promise<void>
+  refresh: (signal?: AbortSignal) => Promise<void>
 }
 
 const SHIPPED_AS_LABEL: Readonly<Record<ThirdPartyComponent['shippedAs'][number], string>> = {
@@ -237,20 +237,28 @@ export function createAboutSection(api: ApiClient): AboutSection {
   }
 
   let loaded: Promise<void> | null = null
-  const refresh = (): Promise<void> => {
+  const refresh = (signal?: AbortSignal): Promise<void> => {
+    if (signal?.aborted) return Promise.resolve()
     loaded ??= api.about.getInfo().then(
       (info) => {
+        if (signal?.aborted) {
+          loaded = null
+          return
+        }
         versionEl.textContent = info.version
         void showChannel(info.version)
         if (info.report) {
           render(info.report)
         } else {
-          statusEl.textContent =
-            'This build has no licence report. Only a full build (pnpm build) generates one.'
+          statusEl.textContent = 'Licence information is unavailable for this installation.'
           listHost.hidden = false
         }
       },
       (err: unknown) => {
+        if (signal?.aborted) {
+          loaded = null
+          return
+        }
         loaded = null
         statusEl.textContent = errorMessage(err)
         listHost.hidden = false

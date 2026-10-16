@@ -41,7 +41,8 @@ import type {
   DialectDiscoverOpts,
   DialectInterpretation,
 } from './dialect-adapter.ts'
-import { type HookSpawnResult } from './hook-spawn.ts'
+import { hookTimeoutMessage, type HookSpawnResult } from './hook-spawn.ts'
+import { testHookMatcher } from './matcher-regex.ts'
 import { expectRecord, expectStringArray, isRecord } from '@copse/std/unknown-value.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 import { isNonBlankString } from '@copse/std/nullish.ts'
@@ -545,18 +546,19 @@ function cursorMatcherSubject(event: CursorHookEvent, ctx: CursorMatcherContext)
  * fires for every action (Cursor's default). A malformed regex skips the hook
  * (skip-and-warn — Cursor's docs are silent on invalid matchers, and skipping
  * is the safe choice: a broken matcher must never accidentally deny/observe
- * every action). This is the single dispatch-side matcher filter every discovery
- * function shares (decision 8: adapters own matchers).
+ * every action). A matcher that backtracks past its time bound fires the hook
+ * instead, so a gate is never silently dropped. This is the single
+ * dispatch-side matcher filter every discovery function shares (decision 8:
+ * adapters own matchers).
  */
 function cursorMatcherMatches(hook: DiscoveredCursorHook, ctx: CursorMatcherContext): boolean {
   if (!hook.matcher) return true
-  const subject = cursorMatcherSubject(hook.event, ctx)
-  try {
-    return new RegExp(hook.matcher).test(subject)
-  } catch {
+  const result = testHookMatcher(hook.matcher, cursorMatcherSubject(hook.event, ctx))
+  if (result === 'invalid') {
     console.warn(`[cursor-hooks] invalid "${hook.event}" matcher /${hook.matcher}/ — hook skipped`)
     return false
   }
+  return result === 'timeout' ? true : result
 }
 
 /**
@@ -1108,7 +1110,7 @@ export const cursorAdapter: DialectAdapter = {
         ...base,
         failed: true,
         parseOk: false,
-        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+        runtimeError: hookTimeoutMessage(spawn),
       }
     }
 
@@ -1137,6 +1139,19 @@ export const cursorAdapter: DialectAdapter = {
       }
     }
     const { outcome, spineDecision } = outcomeFromResponse(parsed)
+    if (spawn.exitCode !== 0) {
+      // A hook that crashed (or was killed) after printing a response did not
+      // finish cleanly, so its stdout cannot grant anything: resolve it as a
+      // failure per `failClosed`, as `sessionStart` already does. An explicit
+      // deny is still honoured — it is the restrictive answer, and turning it
+      // into a failure would let `failClosed: false` allow what the hook denied.
+      if (outcome?.decision === 'deny') {
+        return { outcome, spineEvent, spineDecision, failed: false, parseOk: true }
+      }
+      const detail =
+        spawn.exitCode === null ? 'was killed' : `exited with code ${String(spawn.exitCode)}`
+      return { ...base, failed: true, parseOk: true, runtimeError: detail }
+    }
     return { outcome, spineEvent, spineDecision, failed: false, parseOk: true }
   },
 
@@ -1164,7 +1179,7 @@ export const cursorAdapter: DialectAdapter = {
         ...base,
         failed: true,
         parseOk: false,
-        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+        runtimeError: hookTimeoutMessage(spawn),
       }
     }
 
@@ -1225,7 +1240,7 @@ export const cursorAdapter: DialectAdapter = {
         ...base,
         failed: true,
         parseOk: false,
-        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+        runtimeError: hookTimeoutMessage(spawn),
       }
     }
     if (spawn.exitCode !== null && spawn.exitCode !== 0) {
@@ -1285,7 +1300,7 @@ export const cursorAdapter: DialectAdapter = {
         ...base,
         failed: true,
         parseOk: false,
-        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+        runtimeError: hookTimeoutMessage(spawn),
       }
     }
     if (spawn.exitCode !== null && spawn.exitCode !== 0) {
@@ -1352,7 +1367,7 @@ export const cursorAdapter: DialectAdapter = {
         ...base,
         failed: true,
         parseOk: false,
-        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+        runtimeError: hookTimeoutMessage(spawn),
       }
     }
 
@@ -1409,7 +1424,7 @@ export const cursorAdapter: DialectAdapter = {
         ...base,
         failed: true,
         parseOk: false,
-        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+        runtimeError: hookTimeoutMessage(spawn),
       }
     }
     if (spawn.exitCode !== null && spawn.exitCode !== 0) {
@@ -1524,7 +1539,7 @@ export const cursorAdapter: DialectAdapter = {
         ...base,
         failed: true,
         parseOk: false,
-        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+        runtimeError: hookTimeoutMessage(spawn),
       }
     }
     if (spawn.exitCode !== null && spawn.exitCode !== 0) {
@@ -1605,7 +1620,7 @@ export const cursorAdapter: DialectAdapter = {
         ...base,
         failed: true,
         parseOk: false,
-        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+        runtimeError: hookTimeoutMessage(spawn),
       }
     }
     if (spawn.exitCode !== null && spawn.exitCode !== 0) {

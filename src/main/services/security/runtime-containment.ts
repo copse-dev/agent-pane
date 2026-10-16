@@ -287,13 +287,56 @@ export function declareContainerRuntime(
   declared = attestation
 }
 
+/**
+ * The synthetic record of a boundary this process cannot attest itself and the
+ * host did not harden (see {@link declareExternalContainerBoundary}).
+ */
+export interface ExternalContainerBoundary {
+  /** Always the literal marker, so a log line or record cannot pass for a host attestation. */
+  kind: 'external-boundary-unattested'
+  /** Who vouches for the boundary, in words (for example the benchmark harness's container). */
+  label: string
+}
+
+let externalBoundary: ExternalContainerBoundary | null = null
+
+/**
+ * BENCHMARK ONLY. Declare the container tier on the word of the operator who
+ * placed this process in a disposable container the product did not create.
+ *
+ * Terminal-Bench's task containers run as root with a writable root filesystem
+ * and a network route, so they cannot meet {@link containerAttestationShortfall}
+ * or {@link guestContainmentShortfall}; the harness's own container is the
+ * boundary instead (`docs/plans/thread-in-container.md`, decision A20). This
+ * declares the tier with a clearly labelled synthetic record and performs
+ * **none** of the host attestation checks.
+ *
+ * It is exported for exactly one caller: `worker-entry-harbor.ts`, which is
+ * built into its own bundle under `dist-test/` and never into the app. The
+ * product worker entry does not import it, no run field, environment variable
+ * or setting reaches it, and `worker-entry-gating.test.ts` fails the build if
+ * that changes. {@link declareContainerRuntime} is unchanged and still refuses
+ * every guest that is not attested.
+ */
+export function declareExternalContainerBoundary(label: string): ExternalContainerBoundary {
+  if (label.trim().length === 0) throw new Error('An external container boundary needs a label')
+  externalBoundary = { kind: 'external-boundary-unattested', label }
+  return externalBoundary
+}
+
+/** The external boundary declared by this process, or null (the product's case). */
+export function declaredExternalContainerBoundary(): ExternalContainerBoundary | null {
+  return externalBoundary
+}
+
 /** The containment tier of the runtime this process executes commands in. */
 export function runtimeContainmentTier(): RuntimeContainmentTier {
-  if (declared !== null) return 'container'
+  if (declared !== null || externalBoundary !== null) return 'container'
   return isProjectSandboxEnabled() ? 'project-sandbox' : 'unsandboxed'
 }
 
 /** Test seam: forget any declaration so one spec cannot contain the next. */
 export function clearRuntimeContainmentForTests(): void {
   declared = null
+  externalBoundary = null
 }

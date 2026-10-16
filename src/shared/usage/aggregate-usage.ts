@@ -40,10 +40,30 @@ export interface ModelUsageBreakdown {
   estimatedTokens?: boolean
 }
 
+/**
+ * Tokens one classifier connection reported for one model. Classifiers bill and
+ * run unlike chat models (no catalog rate, often a local server), so they are
+ * listed apart from the cloud and local model tables and add nothing to cost.
+ */
+export interface ClassifierUsageBreakdown {
+  /** The saved connection's label when the calls were made. */
+  provider: string
+  model: string
+  inputTokens: number
+  outputTokens: number
+  /** Calls that reported tokens. */
+  calls: number
+}
+
 export interface UsagePeriodSummary {
   totalCostUsd: number
   cloudModels: ModelUsageBreakdown[]
   localModels: ModelUsageBreakdown[]
+  /**
+   * Classifier calls in the period. All time is empty: saved threads carry no classifier usage.
+   * Optional so a host that predates it stays compatible with this client.
+   */
+  classifiers?: ClassifierUsageBreakdown[]
   totalInputTokens: number
   totalOutputTokens: number
   /** At least one cloud model in this period has usage but no known rate. */
@@ -78,7 +98,7 @@ export function aggregateEventsByModel(
   const cutoff = now - sinceMs
   let byModel: Record<string, ModelUsage> = {}
   for (const event of events) {
-    if (event.at < cutoff) continue
+    if (event.at < cutoff || event.source === 'classifier') continue
     const usage =
       event.serviceTierUsage !== undefined
         ? event
@@ -89,6 +109,34 @@ export function aggregateEventsByModel(
     byModel = mergeUsageByModel(byModel, event.model, usage)
   }
   return byModel
+}
+
+export function aggregateClassifierUsage(
+  events: UsageEvent[],
+  sinceMs: number,
+  now = Date.now(),
+): ClassifierUsageBreakdown[] {
+  const cutoff = now - sinceMs
+  const rows = new Map<string, ClassifierUsageBreakdown>()
+  for (const event of events) {
+    if (event.at < cutoff || event.source !== 'classifier') continue
+    const provider = event.provider ?? 'Classifier'
+    const key = JSON.stringify([provider, event.model])
+    const row = rows.get(key) ?? {
+      provider,
+      model: event.model,
+      inputTokens: 0,
+      outputTokens: 0,
+      calls: 0,
+    }
+    row.inputTokens += event.inputTokens
+    row.outputTokens += event.outputTokens
+    row.calls += 1
+    rows.set(key, row)
+  }
+  return [...rows.values()].sort(
+    (a, b) => b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens),
+  )
 }
 
 /** Models with at least one estimated (not agent-reported) event in the window. */
@@ -148,6 +196,7 @@ function summarizeByModel(
   byModel: Record<string, ModelUsage>,
   pricing?: ModelPricingMap,
   estimatedModels?: ReadonlySet<string>,
+  classifiers: ClassifierUsageBreakdown[] = [],
 ): UsagePeriodSummary {
   const cloudModels: ModelUsageBreakdown[] = []
   const localModels: ModelUsageBreakdown[] = []
@@ -177,6 +226,7 @@ function summarizeByModel(
     totalCostUsd,
     cloudModels,
     localModels,
+    classifiers,
     totalInputTokens,
     totalOutputTokens,
     hasUnpricedCloudUsage,
@@ -197,16 +247,19 @@ export function buildUsageSummary(
       aggregateEventsByModel(events, DAY_MS, now),
       pricing,
       estimatedModelsSince(events, DAY_MS, now),
+      aggregateClassifierUsage(events, DAY_MS, now),
     ),
     month: summarizeByModel(
       aggregateEventsByModel(events, MONTH_MS, now),
       pricing,
       estimatedModelsSince(events, MONTH_MS, now),
+      aggregateClassifierUsage(events, MONTH_MS, now),
     ),
     period90d: summarizeByModel(
       aggregateEventsByModel(events, PERIOD_90D_MS, now),
       pricing,
       estimatedModelsSince(events, PERIOD_90D_MS, now),
+      aggregateClassifierUsage(events, PERIOD_90D_MS, now),
     ),
     // All-time is derived from saved thread usage, which carries no estimated flag.
     allTime: summarizeByModel(aggregateThreadUsage(threads), pricing),
@@ -268,6 +321,8 @@ function parseServiceTierUsage(
 
 /** Same bound the provider applies to the router's label before it reaches a chunk. */
 const MAX_HOSTING_PROVIDER_LENGTH = 80
+/** A classifier connection's label is capped at this when the connection is saved. */
+const MAX_PROVIDER_LENGTH = 120
 
 /**
  * Parse persisted ledger JSON; drops malformed entries. Legacy ACP events with
@@ -287,12 +342,14 @@ export function parseUsageEvents(raw: unknown): UsageEvent[] {
       rec['source'] !== 'agent' &&
       rec['source'] !== 'small-tasks' &&
       rec['source'] !== 'safety-classifier' &&
-      rec['source'] !== 'advisor'
+      rec['source'] !== 'advisor' &&
+      rec['source'] !== 'classifier'
     ) {
       continue
     }
     const serviceTierUsage = parseServiceTierUsage(rec['serviceTierUsage'])
     const hostingProvider = rec['hostingProvider']
+    const provider = rec['provider']
     const event: UsageEvent = {
       at: rec['at'],
       model: rec['model'],
@@ -321,6 +378,11 @@ export function parseUsageEvents(raw: unknown): UsageEvent[] {
       hostingProvider.length > 0 &&
       hostingProvider.length <= MAX_HOSTING_PROVIDER_LENGTH
         ? { hostingProvider }
+        : {}),
+      ...(typeof provider === 'string' &&
+      provider.length > 0 &&
+      provider.length <= MAX_PROVIDER_LENGTH
+        ? { provider }
         : {}),
     }
     out.push(repairLegacyAcpInputTokens(event.model, event))

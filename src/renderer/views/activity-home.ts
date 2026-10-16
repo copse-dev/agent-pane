@@ -67,6 +67,7 @@ export function mountActivityHome(
   root.append(
     el('h2', { id: 'activity-home-title', class: 'activity-home-sr' }, 'Activity'),
     view.strip,
+    view.notice,
     view.body,
     view.status,
     el('p', { class: 'activity-home-caption' }, 'Start a new thread'),

@@ -33,7 +33,6 @@ describe('context wheel breakdown (component)', () => {
       false,
       { breakdown, breakdownRing: false },
     )
-    assert.equal(wheel.root.title, 'Context: 6.8k / 200.0k (3%)')
     assert.equal(wheel.root.getAttribute('aria-label'), 'Context 3% used, 6.8k of 200.0k tokens')
     assert.equal(
       wheel.root.querySelector('.context-wheel-popover-header')?.textContent,
@@ -164,6 +163,54 @@ describe('context wheel breakdown (component)', () => {
     wheel.root.dispatchEvent(new Event('mouseenter'))
     assert.equal(popover.hidden, false)
     assert.match(popover.textContent, /Context · 54\.0k \/ 180\.0k \(30%\)/)
+  })
+
+  it('keeps hover details open and current across running snapshot updates', () => {
+    const wheel = createContextWheel()
+    document.body.append(wheel.root)
+    const snapshot = {
+      contextWindow: 262_144,
+      conversationBudget: 243_009.5,
+      conversationTokens: 54_379,
+      fillRatio: 54_379 / 243_009.5,
+      updatedAt: Date.now(),
+    }
+    wheel.update(snapshot, true)
+    const popover = wheel.root.querySelector<HTMLElement>('.context-wheel-popover')
+    assert.ok(popover)
+    wheel.root.dispatchEvent(new Event('mouseenter'))
+    wheel.update({ ...snapshot, conversationTokens: 60_000, fillRatio: 60_000 / 243_009.5 }, true)
+    assert.equal(popover.hidden, false)
+    assert.match(popover.textContent, /60\.0k \/ 243\.0k \(25%\)/)
+    wheel.root.dispatchEvent(new Event('mouseleave'))
+    assert.equal(popover.hidden, true)
+    wheel.update(snapshot, true)
+    assert.equal(popover.hidden, true)
+  })
+
+  it('keeps focus details open across updates until both focus and hover leave', () => {
+    const wheel = createContextWheel()
+    document.body.append(wheel.root)
+    const breakdown = composeContextBreakdown({ system: 1800, history: 5000 }, 200_000)
+    wheel.update(null, false, { breakdown, breakdownRing: true })
+    const popover = wheel.root.querySelector<HTMLElement>('.context-wheel-popover')
+    assert.ok(popover)
+    wheel.root.dispatchEvent(new Event('focusin'))
+    wheel.root.dispatchEvent(new Event('mouseenter'))
+    wheel.root.dispatchEvent(new Event('mouseleave'))
+    wheel.update(
+      {
+        contextWindow: 200_000,
+        conversationBudget: 180_000,
+        conversationTokens: 54_000,
+        fillRatio: 0.3,
+        updatedAt: Date.now(),
+      },
+      true,
+    )
+    assert.equal(popover.hidden, false)
+    wheel.root.dispatchEvent(new Event('focusout'))
+    assert.equal(popover.hidden, true)
   })
 
   it('drops the popover again when the snapshot goes away', () => {
@@ -325,6 +372,8 @@ describe('context wheel combined usage hover', () => {
     wheel.update(null, false, { breakdown: null, breakdownRing: false, usage })
 
     assert.equal(wheel.root.hidden, false)
+    assert.equal(wheel.root.hasAttribute('title'), false)
+    assert.equal(wheel.root.getAttribute('aria-label'), usage.header)
     const fill = wheel.root.querySelector('.context-wheel-fill')
     assert.match(fill?.getAttribute('stroke-dasharray') ?? '', /^0 /)
 
@@ -337,9 +386,39 @@ describe('context wheel combined usage hover', () => {
     assert.equal(popover.querySelectorAll('.footer-usage-popover-divider').length, 0)
   })
 
+  it('shows classifier use beneath usage, and drops it when the thread has none', () => {
+    const wheel = createContextWheel()
+    document.body.append(wheel.root)
+    const classifierUse = {
+      calls: 3,
+      rows: [
+        {
+          subject: 'shell-scope' as const,
+          engine: 'Kev 4B',
+          calls: 3,
+          verdicts: [{ label: 'sandbox', count: 3 }],
+          noVerdict: 0,
+          averageLatencyMs: 800,
+          inputTokens: 0,
+          outputTokens: 0,
+        },
+      ],
+    }
+    wheel.update(snapshot, false, { breakdown: null, breakdownRing: false, usage, classifierUse })
+    const popover = wheel.root.querySelector<HTMLElement>('.context-wheel-popover')
+    assert.ok(popover)
+    const text = popover.textContent
+    assert.match(text, /Classifiers · 3 calls/)
+    assert.ok(text.indexOf('Usage ·') < text.indexOf('Classifiers ·'))
+
+    wheel.update(snapshot, false, { breakdown: null, breakdownRing: false, usage })
+    assert.doesNotMatch(popover.textContent, /Classifiers/)
+  })
+
   it('stays open across a re-render while the pointer is on it', () => {
     // The footer re-renders under an open hover — streaming, a usage change, the
-    // async context estimate landing. That must not close it.
+    // async context estimate landing, the classifier re-read the hover itself
+    // starts. That must not close it.
     const wheel = createContextWheel()
     document.body.append(wheel.root)
     wheel.update(snapshot, false, { breakdown: null, breakdownRing: false, usage })

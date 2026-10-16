@@ -199,6 +199,32 @@ describe('restoreWorktreeBackup', () => {
     },
   )
 
+  ownedIt('keeps dirty files and reports failure when the snapshot ref is missing', async () => {
+    await writeFile(join(root, 'tracked.txt'), 'line1\nMINE\n', 'utf-8')
+    await writeFile(join(root, 'untracked.txt'), 'user work\n', 'utf-8')
+
+    // The ref was pruned (or never written): nothing may be deleted.
+    assert.equal(
+      await restoreWorktreeBackup('refs/copse/backups/1', ['tracked.txt', 'untracked.txt']),
+      false,
+    )
+    assert.equal(await readFile(join(root, 'tracked.txt'), 'utf-8'), 'line1\nMINE\n')
+    assert.equal(await readFile(join(root, 'untracked.txt'), 'utf-8'), 'user work\n')
+  })
+
+  ownedIt('keeps a snapshotted file when git restore fails for another reason', async () => {
+    await writeFile(join(root, 'scratch.txt'), 'user scratch\n', 'utf-8')
+    const ref = await createWorktreeBackup('snapshot')
+    assert.ok(ref)
+    await writeFile(join(root, 'scratch.txt'), 'clobbered\n', 'utf-8')
+    // A held index lock makes `git restore` exit 128 even though the snapshot
+    // holds the path.
+    await writeFile(join(root, '.git', 'index.lock'), '', 'utf-8')
+
+    assert.equal(await restoreWorktreeBackup(ref, ['scratch.txt']), false)
+    assert.equal(await readFile(join(root, 'scratch.txt'), 'utf-8'), 'clobbered\n')
+  })
+
   ownedIt('is a no-op with an empty path list and false when git is unavailable', async () => {
     assert.equal(await restoreWorktreeBackup('refs/copse/backups/1', []), true)
     setGitAvailableForTest(false)

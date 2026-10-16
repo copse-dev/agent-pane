@@ -1,5 +1,5 @@
 import { $, browser, expect } from '@wdio/globals'
-import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
+import { saveAppScreenshot, saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
 describe('browser-hosted Apple Development target picker', () => {
   it('shows the compatible simulator choice in the compact target panel', async () => {
@@ -57,5 +57,26 @@ describe('browser-hosted Apple Development target picker', () => {
     for (const key of ['gap', 'paddingTop', 'paddingLeft', 'statusSize'] as const) {
       expect(scaled[key]).toBeCloseTo(base[key] * 1.25, 1)
     }
+  })
+
+  it('keeps a retired checkout from adding a passive error banner to the chat', async () => {
+    await browser.url('/?scenario=apple-development')
+    const panel = $('.apple-development-panel[data-plugin-id="copse.apple-development"]')
+    await panel.waitForDisplayed()
+    // Reproduce the IPC boundary after automation cleanup retires a checkout.
+    await browser.execute(() => {
+      window.api.appleDevelopment.state = async () => {
+        throw new Error(
+          "Error invoking remote method 'apple-development:state': MissingThreadWorktreeError: Thread worktree is missing",
+        )
+      }
+      document
+        .querySelector('.apple-development-host')
+        ?.dispatchEvent(new Event('apple-development-refresh'))
+    })
+    await expect(panel).not.toBeDisplayed()
+    await expect($('.apple-development-error')).not.toExist()
+    await expect($('.prompt-input')).toBeDisplayed()
+    await saveAppScreenshot('apple-development-retired-checkout.png')
   })
 })

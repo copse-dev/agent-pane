@@ -16,7 +16,7 @@ import {
   parseIpcArgs,
 } from '../ipc/ipc-guards.ts'
 import { getActiveRunThread } from './thread-models.ts'
-import { getApprovalToolCallId } from './approval-tool-call-context.ts'
+import { getApprovalToolCallId, getBridgeExecutionId } from './approval-tool-call-context.ts'
 import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
 import { recordDecision } from './security/decision-log-store.ts'
 import type { PromptCause } from '@shared/threads/prompt-cause.ts'
@@ -96,6 +96,8 @@ export function approvalPendingMessage(title: string): string {
 export const ABANDONED_VERDICT_TTL_MS = 10 * 60_000
 
 export interface ApprovalRequest {
+  /** Optional fail-closed deadline for a safety check in an automatic run. */
+  timeoutMs?: number
   title: string
   body: string
   /** Explanatory copy rendered outside the monospaced command block when set. */
@@ -105,6 +107,8 @@ export interface ApprovalRequest {
   type: 'shell' | 'mcp' | 'web' | 'pii' | 'review-spend'
   allowRemember?: boolean
   rememberLabel?: string
+  /** Action label for one request. Batches retain a neutral count label. */
+  approveLabel?: string
   /**
    * Hide the body behind a "Show details" disclosure, so the prompt leads with
    * the decision rather than the command. Honoured only for a single-request
@@ -162,12 +166,22 @@ export interface ApprovalRequest {
    * it secret-free at the call site anyway.
    */
   reasons?: string[]
+  /** Audit-only permission facts captured when the shell prompt opens. */
+  shellContext?: {
+    sandboxAvailable: boolean
+    autoRunEnabled: boolean
+    workspaceTrusted: boolean
+    guardedYolo: boolean
+    networkScopeActive: boolean
+  }
   /**
    * Bridged ACP tool call this prompt gates, when the caller knows it. Kept on
    * the in-flight waiter so turn bookkeeping can leave that tool call open
    * while a prompt that outlived the turn is still answerable. Never rendered.
    */
   toolCallId?: string
+  /** Exact host bridge request identity; audit-only, never an ACP card ID. */
+  bridgeExecutionId?: string
 }
 
 export interface ApprovalResponse {
@@ -179,8 +193,7 @@ export interface ApprovalResponse {
   grantScope?: 'once' | 'turn-tree'
   /**
    * How the prompt settled; omitted by external handlers means a user decision.
-   * There is no wall-clock timeout — `timeout` remains in the union for older
-   * recorded logs / handlers that still emit it.
+   * Ordinary prompts have no deadline; automatic-run safety checks may time out.
    */
   resolution?: 'user' | 'timeout' | 'window-closed' | 'unavailable'
 }
@@ -194,6 +207,7 @@ const DENIED: ApprovalResponse = { approved: false, remember: false }
  */
 export function approvalDedupeKey(req: ApprovalRequest): string {
   return JSON.stringify({
+    timeoutMs: req.timeoutMs ?? null,
     title: req.title,
     body: req.body,
     bodyAdvice: req.bodyAdvice ?? '',
@@ -201,6 +215,7 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
     type: req.type,
     allowRemember: req.allowRemember ?? false,
     rememberLabel: req.rememberLabel ?? '',
+    approveLabel: req.approveLabel ?? '',
     collapseDetails: req.collapseDetails ?? false,
     approveOnceLabel: req.approveOnceLabel ?? '',
     // Part of the key so two prompts that read alike but are *about* different
@@ -245,6 +260,7 @@ export function runWithApprovalHandler<T>(next: ApprovalHandler, fn: () => T): T
 
 /** In-flight coalesced approvals keyed by {@link approvalDedupeKey}. */
 interface InflightApproval {
+  timer?: ReturnType<typeof setTimeout>
   /** Aborts the underlying handler prompt once every waiter has left. */
   controller: AbortController
   request: ApprovalRequest
@@ -252,6 +268,7 @@ interface InflightApproval {
 }
 
 interface InflightWaiter {
+  bridgeExecutionId?: string
   resolve: (response: ApprovalResponse) => void
   signal: AbortSignal | undefined
   onAbort: () => void
@@ -270,6 +287,16 @@ interface InflightWaiter {
    */
   toolCallId?: string
 }
+
+// Audit routing survives abort callbacks invoked outside the originating async context.
+// Keep this internal so it is neither rendered nor accepted as tool configuration.
+const approvalAuditIdentities = new WeakMap<
+  ApprovalRequest,
+  {
+    projectId?: string
+    threadId?: string
+  }
+>()
 
 const inflight = new Map<string, InflightApproval>()
 
@@ -334,12 +361,16 @@ function recordReplayedDecision(req: ApprovalRequest, response: ApprovalResponse
   recordDecision({
     kind: req.type,
     ...(projectId ? { projectId } : {}),
+    ...approvalAuditIdentities.get(req),
     actor: response.device ? 'mobile-device' : 'user',
     verdict: response.approved ? 'approved' : 'denied',
     subject: req.subject ?? req.title,
     ...(req.scope ? { scope: req.scope } : {}),
     ...(req.cause ? { cause: req.cause } : {}),
     ...(req.reasons?.length ? { reasons: req.reasons } : {}),
+    ...(req.toolCallId ? { toolCallId: req.toolCallId } : {}),
+    ...(req.bridgeExecutionId ? { bridgeExecutionId: req.bridgeExecutionId } : {}),
+    ...(req.shellContext ? { detail: { shellContext: req.shellContext } } : {}),
     remembered: response.remember,
     source: response.device
       ? `${mobileDecisionSource(response.device)}; abandoned-call-replay`
@@ -352,14 +383,25 @@ function recordApprovalDecision(
   req: ApprovalRequest,
   response: ApprovalResponse,
   resolutionOverride?: string,
+  toolCallIds: string[] = [],
+  bridgeExecutionIds?: string[],
 ): void {
   const resolution = resolutionOverride ?? response.resolution ?? 'user'
+  // A shared prompt can outlive its original caller. Attribute its answer to
+  // the remaining waiters, not the caller whose request supplied the UI copy.
+  const bridgeExecutionId =
+    bridgeExecutionIds === undefined
+      ? req.bridgeExecutionId
+      : bridgeExecutionIds.length === 1
+        ? bridgeExecutionIds[0]
+        : undefined
   // Phone decisions belong to the run even when another project is selected.
   // Preserve other hosts' existing audit routing, including headless isolation.
   const projectId = response.device ? getThreadExecutionContext()?.projectId : undefined
   recordDecision({
     kind: req.type,
     ...(projectId ? { projectId } : {}),
+    ...approvalAuditIdentities.get(req),
     actor: resolution === 'user' ? (response.device ? 'mobile-device' : 'user') : 'system',
     verdict:
       resolution === 'user'
@@ -375,6 +417,17 @@ function recordApprovalDecision(
     ...(req.scope ? { scope: req.scope } : {}),
     ...(req.cause ? { cause: req.cause } : {}),
     ...(req.reasons?.length ? { reasons: req.reasons } : {}),
+    ...(req.toolCallId ? { toolCallId: req.toolCallId } : {}),
+    ...(bridgeExecutionId ? { bridgeExecutionId } : {}),
+    ...(req.shellContext || toolCallIds.length > 0 || (bridgeExecutionIds?.length ?? 0) > 0
+      ? {
+          detail: {
+            ...(req.shellContext ? { shellContext: req.shellContext } : {}),
+            toolCallIds,
+            bridgeExecutionIds,
+          },
+        }
+      : {}),
     remembered: response.remember,
     ...(resolution === 'user'
       ? response.device
@@ -390,6 +443,7 @@ export function setApprovalHandler(next: ApprovalHandler | null): void {
   // the next handler never inherits a stale shared prompt.
   if (!next) {
     for (const entry of inflight.values()) {
+      if (entry.timer) clearTimeout(entry.timer)
       entry.controller.abort()
       for (const waiter of entry.waiters) {
         waiter.signal?.removeEventListener('abort', waiter.onAbort)
@@ -413,8 +467,21 @@ function settleInflight(
 ): void {
   if (inflight.get(key) !== entry) return
   inflight.delete(key)
+  if (entry.timer) clearTimeout(entry.timer)
   // One shared prompt → one audit event (not one per coalesced waiter).
-  recordApprovalDecision(req, response)
+  const toolCallIds = [
+    ...new Set(
+      [...entry.waiters].flatMap((waiter) => (waiter.toolCallId ? [waiter.toolCallId] : [])),
+    ),
+  ]
+  const bridgeExecutionIds = [
+    ...new Set(
+      [...entry.waiters].flatMap((waiter) =>
+        waiter.bridgeExecutionId ? [waiter.bridgeExecutionId] : [],
+      ),
+    ),
+  ]
+  recordApprovalDecision(req, response, undefined, toolCallIds, bridgeExecutionIds)
   for (const waiter of entry.waiters) {
     waiter.signal?.removeEventListener('abort', waiter.onAbort)
     waiter.resolve(response)
@@ -508,9 +575,8 @@ export function pendingApprovalRequestsForThread(
  * share one underlying prompt — the first call opens it; later duplicates wait on
  * the same answer. The prompt stays open until the user responds, the window
  * closes, or every waiter aborts (e.g. Stop / ACP `$/cancel_request`). There is
- * no wall-clock timeout: auto-denying after a few minutes let the agent continue
- * underneath an still-open dialog and was a common source of "Approve all (N)"
- * growth plus ACP session drops after long waits.
+ * no deadline unless the caller explicitly sets a safety-check timeout. A timed
+ * out prompt is dismissed as it denies; ordinary interactive prompts stay open.
  *
  * While the prompt is open the active run's sliding idle deadline is paused so a
  * long think-before-click cannot abort the turn (and cancel the dialog) underneath
@@ -579,6 +645,20 @@ export function requestApproval(
   req: ApprovalRequest,
   signal?: AbortSignal,
 ): Promise<ApprovalResponse> {
+  const toolCallId = req.toolCallId ?? getApprovalToolCallId()
+  const bridgeExecutionId = req.bridgeExecutionId ?? getBridgeExecutionId()
+  req = {
+    ...req,
+    ...(toolCallId !== undefined ? { toolCallId } : {}),
+    ...(bridgeExecutionId !== undefined ? { bridgeExecutionId } : {}),
+  }
+  const context = getThreadExecutionContext()
+  const projectId = context?.projectId ?? getActiveProjectId()
+  const threadId = getActiveRunThread()
+  approvalAuditIdentities.set(req, {
+    ...(projectId ? { projectId } : {}),
+    ...(threadId ? { threadId } : {}),
+  })
   if (signal?.aborted) return Promise.resolve(DENIED)
   // Unattended runs never open a modal (deferred-approvals.md Decision 6). This
   // is the one choke point every gate already funnels through, so intercepting
@@ -635,7 +715,9 @@ function requestApprovalUnpaused(
   // call passes through — shell escalation, MCP, origin — attributes to it.
   const toolCallId = req.toolCallId ?? getApprovalToolCallId()
 
-  const key = `${dedupePrefix}:${approvalDedupeKey(req)}`
+  // Equal questions from different chats authorize different callers. Keep
+  // independent waiters in one chat without sharing consent across chats.
+  const key = JSON.stringify([dedupePrefix, threadId, approvalDedupeKey(req)])
   // Only a thread-attributed request can be parked and replayed: the ledger is
   // keyed by thread, and a headless/untracked caller has no retry to serve.
   const ledgerKey = threadId === null ? null : abandonedVerdictKey(threadId, key)
@@ -680,6 +762,7 @@ function requestApprovalUnpaused(
       // sibling tool call may still need the user's answer.
       if (active.waiters.size === 0 && inflight.get(key) === active) {
         inflight.delete(key)
+        if (active.timer) clearTimeout(active.timer)
         active.controller.abort()
       }
     }
@@ -688,6 +771,7 @@ function requestApprovalUnpaused(
       resolve,
       signal,
       threadId,
+      ...(req.bridgeExecutionId ? { bridgeExecutionId: req.bridgeExecutionId } : {}),
       ...(toolCallId !== undefined ? { toolCallId } : {}),
       onAbort: () => {
         if (!active.waiters.has(waiter)) return
@@ -699,7 +783,14 @@ function requestApprovalUnpaused(
           // retry, and tell the caller so — this is not a denial.
           if (![...active.waiters].some((other) => other.ledgerKey === ledgerKey)) {
             active.waiters.add(
-              parkedWaiter(ledgerKey, threadId, active, teardownIfIdle, toolCallId),
+              parkedWaiter(
+                ledgerKey,
+                threadId,
+                active,
+                teardownIfIdle,
+                toolCallId,
+                req.bridgeExecutionId,
+              ),
             )
           }
           reject(new ApprovalPendingError(req.title))
@@ -716,6 +807,18 @@ function requestApprovalUnpaused(
     signal?.addEventListener('abort', waiter.onAbort, { once: true })
 
     if (!isLeader) return
+
+    if (req.timeoutMs !== undefined) {
+      active.timer = setTimeout(() => {
+        settleInflight(
+          key,
+          active,
+          { approved: false, remember: false, resolution: 'timeout' },
+          req,
+        )
+        active.controller.abort()
+      }, req.timeoutMs)
+    }
 
     void activeHandler(req, active.controller.signal).then(
       (response) => {
@@ -747,11 +850,13 @@ function parkedWaiter(
   entry: InflightApproval,
   teardownIfIdle: () => void,
   toolCallId?: string,
+  bridgeExecutionId?: string,
 ): InflightWaiter {
   const waiter: InflightWaiter = {
     threadId,
     signal: undefined,
     ledgerKey,
+    ...(bridgeExecutionId ? { bridgeExecutionId } : {}),
     ...(toolCallId !== undefined ? { toolCallId } : {}),
     resolve: (response) => {
       storeAbandonedVerdict(ledgerKey, response)

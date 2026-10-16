@@ -1,8 +1,6 @@
-// Concise thread view (prototype): a model capable enough to be trusted with its
-// own process shows only what it produced — screenshots, visual evidence, canvas
-// previews and its closing summary — while its tool calls, reasoning, narration
-// and the tool errors it recovers from stay out of the transcript. While it
-// works, the activity row (spinner + the one current item) is the whole story.
+// Concise thread view keeps all assistant text and produced output visible.
+// Tool cards, reasoning and terminal references stay hidden; the activity row
+// reports live work. Tool-only bubbles collapse without hiding adjacent prose.
 //
 // The gate is the model's Artificial Analysis Intelligence Index on the
 // canonical scale, resolved per assistant message so a thread that switches
@@ -10,9 +8,11 @@
 // composite scale is a different ruler (see `intellect-lookup.ts`) and never
 // qualifies; an unsourced model keeps the full view.
 //
-// Experimental and off by default: Settings → Experimental → Concise threads
+// On by default: Settings → Appearance → Concise threads
 // (`conciseThreadsEnabled`, held in app state so rendering reads it
-// synchronously). With it off, every transcript renders in full.
+// synchronously). With it off, every transcript renders in full. With it on, a
+// finished turn opens in full from its Show steps footer, and the running turn
+// from the activity row.
 //
 // A turn that *failed* is exempt: the model never saw that error, so it cannot
 // have handled it, and hiding it would leave a stopped spinner and nothing else.
@@ -21,7 +21,11 @@ import { resolveModelIntellect } from '@copse/llm/intellect-lookup.ts'
 import type { Message, Thread, ToolCall } from '@shared/types'
 import { formatTodoProgress } from '@shared/todos/todo-logic.ts'
 import { getToolCallLabel, shellCommandLabel } from '@shared/tools/tool-display.ts'
+import { THREAD_PROPOSAL_TOOL } from '@shared/threads/thread-proposal.ts'
+import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
+import { isCopseToolCall } from '@shared/tools/copse-tool-call.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { interruptionCause, type InterruptionCause } from './turn-interruption.ts'
 
 /** Canonical intellect a model must exceed for its turns to render concisely. */
 export const CONCISE_THREAD_MIN_INTELLECT = 50
@@ -50,9 +54,8 @@ export function isConciseMessage(msg: Pick<Message, 'role' | 'model' | 'requeste
 }
 
 /**
- * Whether a concise message carries tool calls, so its text narrates steps
- * unless it is the turn's last bubble (the stylesheet decides that from the DOM,
- * which stays right as later bubbles arrive). A failed turn keeps its text.
+ * Whether a concise message carries tool steps. This class records activity;
+ * it must not determine whether the message's text is visible.
  */
 export function isConciseStepsMessage(
   msg: Pick<Message, 'role' | 'model' | 'requestedModel' | 'toolCalls' | 'turnOutcome'>,
@@ -61,9 +64,8 @@ export function isConciseStepsMessage(
 }
 
 /**
- * Whether a concise message is process rather than product: a tool is running
- * in it, so its text is narration rather than the summary, and everything but
- * its produced output is hidden. A failed turn keeps its text.
+ * Whether a concise message has an active tool. Assistant text remains visible
+ * throughout tool execution.
  */
 export function isConciseWorkingMessage(
   msg: Pick<Message, 'role' | 'model' | 'requestedModel' | 'toolCalls' | 'turnOutcome'>,
@@ -90,6 +92,111 @@ export function turnStartId(
     if (msg?.role === 'user') return msg.id
   }
   return null
+}
+
+/** Offers to the user stay painted in the concise view, so they are not hidden work. */
+function isOfferCall(toolCall: ToolCall): boolean {
+  return toolCall.name === THREAD_PROPOSAL_TOOL || isReviewerInputCall(toolCall)
+}
+
+/**
+ * Whether the concise view collapses message `index` to nothing: it has no
+ * text, screenshots or other produced output to show. Mirrors the stylesheet's
+ * rule, from data, so chrome that belongs to a bubble (the model label, the
+ * agent marker) can move to the next bubble that is actually painted. Assistant
+ * text is never hidden, whatever tools ran or whatever message follows.
+ */
+export function isConciseCollapsedMessage(
+  messages: readonly Message[],
+  index: number,
+  enabled: boolean,
+): boolean {
+  const msg = messages[index]
+  if (!enabled || !msg || !isConciseMessage(msg)) return false
+  const producesOutput =
+    msg.content.trim() !== '' ||
+    (msg.contentBlocks?.length ?? 0) > 0 ||
+    (msg.visualEvidence?.length ?? 0) > 0 ||
+    (msg.canvasArtefacts?.length ?? 0) > 0 ||
+    msg.toolCalls.some((toolCall) => (toolCall.images?.length ?? 0) > 0 || isOfferCall(toolCall))
+  return !producesOutput
+}
+
+/** What a finished concise turn hides, for its Show steps footer. */
+export interface ConciseTurnSummary {
+  /** The prompt that started the turn; the key its expansion is stored under. */
+  startId: string
+  /** Every message of the turn, prompt first, so the footer can sit after the last one rendered. */
+  messageIds: string[]
+  /** Tool calls the concise view hides, across the whole turn. */
+  toolCallCount: number
+  /** Lines the turn's edits added and removed, or null when none of its tool calls edited a file. */
+  edits: { additions: number; deletions: number } | null
+  /** Whether the view hides anything to open: tool calls or reasoning. */
+  hasHiddenSteps: boolean
+  /** Set when the user cut the turn short; the hidden tool card carried the only note. */
+  interruption: InterruptionCause | null
+}
+
+function hasReasoning(msg: Pick<Message, 'reasoning' | 'reasoningBlocks'>): boolean {
+  return Boolean(msg.reasoning?.trim()) || (msg.reasoningBlocks?.length ?? 0) > 0
+}
+
+/**
+ * The turns of a thread that the concise view abridges, in order. A turn is
+ * listed when one of its assistant bubbles is concise and either hides something
+ * (tool calls, reasoning) or ended by the user's Stop — in a stopped turn the
+ * interruption note lives on a tool card the view hides, so the footer repeats it.
+ * Turns from models below the gate are never listed: they render in full.
+ */
+export function conciseTurnSummaries(messages: readonly Message[]): ConciseTurnSummary[] {
+  const summaries: ConciseTurnSummary[] = []
+  let start = -1
+  const close = (end: number): void => {
+    const first = messages[start]
+    if (!first) return
+    const turn = messages.slice(start, end)
+    const assistants = turn.filter((msg) => msg.role === 'assistant')
+    if (!assistants.some(isConciseMessage)) return
+    // Only concise bubbles hide their tool cards, and offer cards stay visible
+    // even there: what the footer counts is what the view actually hides.
+    const hiddenCalls = assistants
+      .filter(isConciseMessage)
+      .flatMap((msg) => msg.toolCalls)
+      .filter((toolCall) => !isOfferCall(toolCall))
+    const toolCallCount = hiddenCalls.length
+    const last = assistants.at(-1)
+    const outcome = last?.turnOutcome
+    const interruption =
+      outcome?.status === 'cancelled' && outcome.source === 'user'
+        ? interruptionCause(outcome, messages[end])
+        : null
+    const edits = hiddenCalls.reduce<ConciseTurnSummary['edits']>((total, toolCall) => {
+      if (!toolCall.editStats) return total
+      return {
+        additions: (total?.additions ?? 0) + toolCall.editStats.additions,
+        deletions: (total?.deletions ?? 0) + toolCall.editStats.deletions,
+      }
+    }, null)
+    const hasHiddenSteps =
+      toolCallCount > 0 || assistants.filter(isConciseMessage).some(hasReasoning)
+    if (!hasHiddenSteps && interruption === null) return
+    summaries.push({
+      startId: first.id,
+      messageIds: turn.map((msg) => msg.id),
+      toolCallCount,
+      edits,
+      hasHiddenSteps,
+      interruption,
+    })
+  }
+  for (const [index, msg] of messages.entries()) {
+    if (msg.role !== 'user') continue
+    if (start >= 0) close(index)
+    start = index
+  }
+  if (start >= 0) close(messages.length)
+  return summaries
 }
 
 /** The id of the newest user prompt: the turn that is live when a thread is running. */
@@ -139,7 +246,7 @@ function runningToolCall(thread: Pick<Thread, 'messages'>): ToolCall | null {
 }
 
 function shellCommand(tc: ToolCall): string | null {
-  if (tc.name !== 'run_shell' && tc.kind !== 'execute') return null
+  if (!isCopseToolCall(tc, 'run_shell') && tc.kind !== 'execute') return null
   const command = isRecord(tc.args) ? tc.args['command'] : undefined
   return typeof command === 'string' && command.trim() ? shellCommandLabel(command) : null
 }

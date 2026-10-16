@@ -66,7 +66,7 @@ describe('footer model picker', () => {
     const root = document.createElement('div')
     const composer = document.createElement('textarea')
     document.body.append(root, composer)
-    let current = 'claude-sonnet-4-6'
+    let current = 'claude-sonnet-5-5'
     const selected: string[] = []
     mountFooterModelPicker(
       root,
@@ -81,10 +81,10 @@ describe('footer model picker', () => {
           composer.focus()
         },
         getRecentModels: () => [
-          'claude-opus-4-8',
-          'claude-sonnet-4-6',
-          'gpt-5.6-sol',
-          'claude-opus-4-8',
+          'claude-opus-5-5',
+          'claude-sonnet-5-5',
+          'gpt-6.1-sol',
+          'claude-opus-5-5',
         ],
       },
     )
@@ -96,9 +96,9 @@ describe('footer model picker', () => {
     trigger.click()
 
     const recentLabels = [...root.querySelectorAll<HTMLElement>('.model-picker-option')].map(
-      (option) => option.textContent.split(' — ')[0],
+      (option) => option.textContent.split(': ')[0],
     )
-    assert.deepEqual(recentLabels, ['Claude Sonnet 4.6', 'Claude Opus 4.8', 'GPT-5.6 Sol'])
+    assert.deepEqual(recentLabels, ['Claude Sonnet 5.5', 'Claude Opus 5.5', 'GPT-6.1 Sol'])
     assert.equal(root.querySelector('.model-picker-view-title')?.textContent, 'Recent')
     assert.equal(root.querySelector('.model-picker-group-label'), null)
     assert.equal(document.activeElement?.textContent.startsWith(recentLabels[0] ?? ''), true)
@@ -117,7 +117,7 @@ describe('footer model picker', () => {
     filter.value = 'haiku'
     filter.dispatchEvent(new Event('input', { bubbles: true }))
     const filteredLabels = [...root.querySelectorAll<HTMLElement>('.model-picker-option')].map(
-      (option) => option.textContent.split(' — ')[0],
+      (option) => option.textContent.split(': ')[0],
     )
     assert.ok(filteredLabels.length > 0)
     assert.deepEqual([...new Set(filteredLabels)], ['Claude Haiku 4.5'])
@@ -127,11 +127,11 @@ describe('footer model picker', () => {
     assert.equal(root.querySelector('.model-picker-view-title')?.textContent, 'Recent')
 
     const opus = [...root.querySelectorAll<HTMLButtonElement>('.model-picker-option')].find(
-      (option) => option.textContent.startsWith('Claude Opus 4.8'),
+      (option) => option.textContent.startsWith('Claude Opus 5.5'),
     )
     assert.ok(opus)
     opus.click()
-    assert.deepEqual(selected, ['claude-opus-4-8'])
+    assert.deepEqual(selected, ['claude-opus-5-5'])
     assert.equal(trigger.getAttribute('aria-expanded'), 'false')
     assert.equal(document.activeElement, composer)
   })
@@ -183,7 +183,7 @@ describe('footer model picker', () => {
     assert.ok(hint)
     assert.equal(
       root.querySelector('.model-picker-label')?.textContent,
-      `Claude Sonnet 4.6 — ${hint}`,
+      `Claude Sonnet 4.6: ${hint} (superseded by Claude Sonnet 5.5)`,
     )
   })
 

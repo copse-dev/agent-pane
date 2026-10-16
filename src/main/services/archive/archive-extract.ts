@@ -4,7 +4,7 @@ import { readdir, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, sep } from 'node:path'
 import { formatByteSize } from '@shared/file-bytes.ts'
 import { isUnsafeEntryPath, readZipDirectory, readZipEntry } from '../storage/zip-reader.ts'
-import { threadBlobsDir } from '../thread-store.ts'
+import { threadArchivesDir } from '../thread-store.ts'
 import { runSerialized } from '../storage/write-queue.ts'
 
 /**
@@ -22,9 +22,6 @@ import { runSerialized } from '../storage/write-queue.ts'
  * and the ratio between what it claims to be and what it expands to. The caps
  * below are all about that, not about the format.
  */
-
-/** Sub-directory of a thread's blobs where archives are unpacked. */
-const ARCHIVES_DIR = 'archives'
 
 /** Entries one archive may contain. Well past any plausible attachment. */
 export const MAX_ARCHIVE_ENTRIES = 20_000
@@ -126,8 +123,7 @@ export async function extractArchiveForThread(
 ): Promise<ExtractedArchive> {
   const digest = createHash('sha256').update(input.bytes).digest('hex').slice(0, 12)
   const root = join(
-    threadBlobsDir(input.projectId, input.threadId),
-    ARCHIVES_DIR,
+    threadArchivesDir(input.projectId, input.threadId),
     `${sanitizeName(input.name)}-${digest}`,
   )
   return runSerialized(root, () => extractArchiveInto(input, root))

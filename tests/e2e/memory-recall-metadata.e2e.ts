@@ -117,6 +117,7 @@ describe('memory recall metadata', () => {
     await expect(card.$('.tool-result')).toBeDisplayed()
     await expect(card.$$('.tool-result img')).toBeElementsArrayOfSize(0)
     await card.scrollIntoView()
+    await $('.context-wheel.has-breakdown').waitForDisplayed({ timeout: 15_000 })
     await saveAppScreenshot('memory-recall-metadata.png')
   })
 })

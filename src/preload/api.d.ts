@@ -42,12 +42,18 @@ import type {
   PluginUninstallResult,
 } from '@shared/types/plugin-installs.ts'
 import type {
+  AutomationFailureCode,
   AutomationPermissionOption,
   AutomationSchedule,
   AutomationScheduleInput,
+  AutomationCleanupResult,
+  AutomationSchedulerHealth,
   AutomationTriggerEvent,
   BranchCiAutomation,
   BranchCiAutomationInput,
+  EventAutomationTriggerInput,
+  EventDeliverySummary,
+  EventMatchPreview,
 } from '@shared/types/automations.ts'
 import type {
   AppleConfigureInput,
@@ -108,7 +114,7 @@ import type {
   StoredExtraProvider,
 } from '@copse/llm/extra-providers.ts'
 import type { DetectedAcpAgent } from '@shared/acp-known-agents.ts'
-import type { AcpAgentProbe, AcpAutoSetupResult } from '@shared/types/acp.ts'
+import type { AcpAgentProbe, AcpAuthStatus, AcpAutoSetupResult } from '@shared/types/acp.ts'
 import type { ExternalEditorList } from '@shared/types/editors.ts'
 import type {
   PreparedThreadCheckout,
@@ -173,9 +179,33 @@ export interface DetectedEnvKey {
 }
 
 export interface ApiClient {
+  threadPrompts: {
+    revokeAccess: (threadId: string, access: 'read' | 'send') => Promise<void>
+    onPrompt: (
+      handler: (command: import('@shared/thread-prompt.ts').ThreadPromptCommand) => void,
+    ) => () => void
+    reply: (
+      id: string,
+      result: import('@shared/thread-prompt.ts').ThreadPromptResult,
+    ) => Promise<void>
+  }
   chatGptPlan: import('@shared/types/chatgpt-plan.ts').ChatGptPlanClient
   mobile: {
-    manage: () => Promise<void>
+    getState: () => Promise<import('@shared/types/mobile-companion.ts').MobileCompanionState>
+    onStateChanged: (
+      handler: (state: import('@shared/types/mobile-companion.ts').MobileCompanionState) => void,
+    ) => () => void
+    enable: (address: string) => Promise<void>
+    disable: () => Promise<void>
+    setDeviceAccess: (
+      id: string,
+      access: import('@shared/types/mobile-companion.ts').MobileCompanionAccess,
+    ) => Promise<void>
+    revokeDevice: (id: string) => Promise<void>
+    respondPairing: (
+      decision: import('@shared/types/mobile-companion.ts').MobileCompanionAccess | 'deny',
+    ) => Promise<void>
+    revealCertificate: () => Promise<void>
     onChat: (
       handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void,
     ) => () => void
@@ -323,7 +353,7 @@ export interface ApiClient {
       threadId: string,
       payload: string,
     ) => Promise<ContextBreakdown>
-    abort: (threadId: string) => Promise<void>
+    abort: (threadId: string, reason?: 'send_now') => Promise<void>
     runningThreadIds: () => Promise<string[]>
     retryReview: (projectId: string, threadId: string, payload: string) => Promise<void>
     clearHistory: (projectId: string, threadId: string) => Promise<void>
@@ -362,6 +392,7 @@ export interface ApiClient {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        approveLabel?: string
         collapseDetails?: boolean
         approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
@@ -376,7 +407,7 @@ export interface ApiClient {
       handler: (req: {
         id: string
         threadId?: string
-        questions: { question: string; options?: string[] }[]
+        questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
       }) => void,
     ) => () => void
     onAskUserCancelled: (handler: (req: { id: string }) => void) => () => void
@@ -577,7 +608,28 @@ export interface ApiClient {
     get: (key: string) => Promise<unknown>
     set: (key: string, value: unknown) => Promise<void>
   }
+  plans: {
+    get: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@copse/thread-store/plan-schema.ts').StoredThreadPlan | null>
+    revision: (
+      projectId: string,
+      threadId: string,
+      planId: string,
+      revision: number,
+    ) => Promise<string | null>
+    change: (
+      projectId: string,
+      threadId: string,
+      change: import('@copse/thread-store/plan-schema.ts').PlanChange,
+    ) => Promise<import('@copse/thread-store/plan-schema.ts').StoredThreadPlan | null>
+  }
   threads: {
+    storageSize: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<{ bytes: number; truncated: boolean }>
     loadProject: (projectId: string) => Promise<import('@shared/types').Thread[]>
     /** Fill legacy PR links for a bounded set of visible sidebar threads. */
     backfillPrRefs: (projectId: string, threadIds: string[]) => Promise<void>
@@ -621,11 +673,16 @@ export interface ApiClient {
       to: string,
     ) => Promise<import('@shared/types').ModelSelectionEvent>
     delete: (projectId: string, threadId: string) => Promise<void>
-    /** Remove a chat's worktree and archive it; discard requires user confirmation. */
+    /**
+     * Remove a chat's worktree and archive it. Discarding files requires the
+     * fingerprint the user confirmed; stopping a live agent, terminals and
+     * background processes requires `stopProcesses`, set only after the user agreed.
+     */
     archive: (
       projectId: string,
       threadId: string,
       confirmation: string | null,
+      stopProcesses: boolean,
     ) => Promise<import('@shared/threads/archive-thread.ts').ThreadArchiveResult>
     /**
      * Zip the thread's whole on-disk directory (spine, prose, blobs, plans,
@@ -647,6 +704,12 @@ export interface ApiClient {
       targetThreadId: string,
       throughMessageId?: string,
     ) => Promise<import('@shared/types').ForkedHistoryResult>
+    /** Active threads that link to a URL or another thread (recorded links only). */
+    backlinks: (
+      projectId: string,
+      kind: 'url' | 'thread',
+      target: string,
+    ) => Promise<import('@shared/threads/thread-links.ts').ThreadBacklink[]>
     historySnapshot: (
       projectId: string,
       threadId: string,
@@ -807,6 +870,7 @@ export interface ApiClient {
     }>
   }
   remoteAgent: {
+    /** Returns a remote URL, or an empty string when a native Save dialog handled the download. */
     downloadArtifact: (agentId: string, path: string) => Promise<string>
     artifactImageDataUrl: (agentId: string, path: string) => Promise<string>
     /** Live Cursor Cloud Agent models from `GET /v1/models` (empty without a key). */
@@ -830,6 +894,10 @@ export interface ApiClient {
     ) => Promise<import('@shared/types').Message | null>
   }
   acp: {
+    /** Explicit, read-only browsing of the public ACP registry. Never starts agents. */
+    browseRegistry: (
+      refresh?: boolean,
+    ) => Promise<import('@shared/acp-registry.ts').AcpRegistryListing>
     /** Detect known ACP agents installed/running on this device (for the Settings panel). */
     detectAgents: () => Promise<DetectedAcpAgent[]>
     /**
@@ -838,6 +906,11 @@ export interface ApiClient {
      * when the agent exposes none of that kind (issue #607).
      */
     probeAgent: (agentId: string) => Promise<AcpAgentProbe>
+    /**
+     * Whether each named agent's CLI is signed in, without running a turn.
+     * `unknown` when the check cannot tell; agents are matched by catalog id.
+     */
+    authStatus: (ids: string[]) => Promise<AcpAuthStatus[]>
     /**
      * "Just works" setup for the curated presets (Claude, Cursor): detect
      * clients, Socket-Firewall-install missing npm adapters, register + detect
@@ -978,7 +1051,12 @@ export interface ApiClient {
   }
   usage: {
     getSummary: () => Promise<import('@shared/usage/aggregate-usage.ts').UsageSummary>
-    getPlanUsage: () => Promise<import('@copse/plan-usage').PlanUsageSnapshot>
+    /** Classifier calls, verdicts, latency and tokens a thread caused (its decision log). */
+    getThreadClassifierUse: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/usage/classifier-use.ts').ThreadClassifierUse>
+    getPlanUsage: (force?: boolean) => Promise<import('@copse/plan-usage').PlanUsageSnapshot>
     getPlanWorthIt: () => Promise<import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload>
     setClaudePlanMonthlyFee: (
       fee: number | null,
@@ -1222,6 +1300,8 @@ export interface ApiClient {
     upsert: (projectId: string, input: AutomationScheduleInput) => Promise<AutomationSchedule>
     remove: (projectId: string, scheduleId: string) => Promise<void>
     runNow: (projectId: string, scheduleId: string) => Promise<AutomationTriggerEvent>
+    /** Remove every finished run's checkout that is safe to remove; report the runs that must stay. */
+    cleanupRuns: (projectId: string, scheduleId: string) => Promise<AutomationCleanupResult>
     listBranchCi: (projectId: string) => Promise<BranchCiAutomation[]>
     upsertBranchCi: (
       projectId: string,
@@ -1230,8 +1310,16 @@ export interface ApiClient {
     removeBranchCi: (projectId: string, id: string) => Promise<void>
     testBranchCi: (
       projectId: string,
-      branch: string,
-    ) => Promise<{ repository: string; branch: string; latestFailure: string | null }>
+      trigger: string | EventAutomationTriggerInput,
+    ) => Promise<EventMatchPreview>
+    eventHistory: (projectId: string, id: string) => Promise<EventDeliverySummary[]>
+    reportStartFailure: (
+      projectId: string,
+      threadId: string,
+      failure: { code: AutomationFailureCode; message: string },
+    ) => Promise<boolean>
+    schedulerHealth: () => Promise<AutomationSchedulerHealth>
+    onSchedulerHealth: (handler: (health: AutomationSchedulerHealth) => void) => () => void
     canStart: (
       projectId: string,
       threadId: string,
@@ -1304,7 +1392,12 @@ export interface ApiClient {
     create: (
       cols: number,
       rows: number,
-      meta: { label?: string; projectId: string; threadId: string | null },
+      meta: {
+        label?: string
+        projectId: string
+        threadId: string | null
+        executionTarget?: 'local'
+      },
     ) => Promise<{ sessionId: string; checkoutMode: 'shared' | 'worktree' }>
     write: (sessionId: string, data: string) => Promise<void>
     resize: (sessionId: string, cols: number, rows: number) => Promise<void>
@@ -1453,8 +1546,18 @@ export interface ApiClient {
   }
 }
 
+/**
+ * Local, synchronous file helpers from the preload — not IPC, so not part of
+ * `ApiClient`'s channel protocol. Absent outside Electron (browser tier, demo).
+ */
+export type FilePathBridge = {
+  /** The on-disk path of a dropped or picked `File`; '' when it has none. */
+  pathForFile: (file: File) => string
+}
+
 declare global {
   interface Window {
     api: ApiClient
+    copseFiles?: FilePathBridge
   }
 }

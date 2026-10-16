@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { Lexer } from 'marked'
 import type { ContentRef, HashFn } from './spine-schema.ts'
 
 /**
@@ -68,6 +69,7 @@ export type PlanRevisionRecord = z.infer<typeof planRevisionRecordSchema>
 
 /** Durable plan pointer under `plans/<planId>/meta.json`. */
 export const planMetaSchema = z.object({
+  supersedesPlanId: z.uuid().optional(),
   planId: z.string().min(1),
   threadId: z.string().min(1),
   title: z.string().min(1),
@@ -90,6 +92,8 @@ export const planCommentSchema = z.object({
   body: z.string().min(1),
   createdAt: z.number().int(),
   author: z.enum(['user', 'agent']).optional(),
+  /** Exact passage at comment time, retained when later revisions move it. */
+  quote: z.string().optional(),
   /** Optional character offsets into the revision markdown body. */
   anchor: z
     .object({
@@ -166,3 +170,132 @@ export function parsePlanApproval(raw: unknown): PlanApproval | null {
 export function planArtifactRefs(artifact: ContentRef | undefined): string[] {
   return artifact ? [artifact.ref] : []
 }
+
+/** Evidence is reported by the agent; an absent report never implies success. */
+export const planCriterionResultSchema = z.object({
+  criterionId: z.string().min(1),
+  status: z.enum(['met', 'partial', 'unverified']),
+  evidence: z.string().trim().min(1).max(10000),
+})
+export const planCompletionSchema = z.object({
+  planId: z.string().min(1),
+  revision: z.number().int().positive(),
+  contentHash: z.string().min(1),
+  reportedAt: z.number().int(),
+  results: z.array(planCriterionResultSchema),
+})
+export type PlanCompletion = z.infer<typeof planCompletionSchema>
+export const planStateSchema = z.object({
+  meta: planMetaSchema,
+  comments: z.array(planCommentSchema),
+  approval: planApprovalSchema.nullable(),
+  completion: planCompletionSchema.nullable(),
+})
+export type PlanState = z.infer<typeof planStateSchema>
+export interface StoredThreadPlan extends PlanState {
+  body: string
+  /** Hash of the current body, including drafts. */
+  contentHash: string
+}
+export interface PlanDraft {
+  title: string
+  body: string
+}
+export interface PlanCriterion {
+  id: string
+  label: string
+}
+
+export const REQUIRED_PLAN_SECTIONS = ['Goal', 'Constraints', 'Scope', 'Definition of done']
+
+// A structural view of Marked's tokens keeps its extension index signature out
+// of consumers. Only the built-in lexer is used; document bytes stay untouched.
+interface PlanToken {
+  type: string
+  raw: string
+  text?: string
+  depth?: number
+  tokens?: readonly PlanToken[]
+  items?: readonly PlanToken[]
+}
+
+function tokenText(token: PlanToken): string {
+  if (['space', 'html', 'def', 'hr', 'checkbox'].includes(token.type)) return ''
+  if (token.type === 'br') return '\n'
+  if (token.items) return token.items.map(tokenText).join('\n')
+  if (token.tokens)
+    return token.tokens
+      .map(tokenText)
+      .join(token.type === 'list_item' || token.type === 'blockquote' ? '\n' : '')
+  return token.text ?? token.raw
+}
+
+function blockText(tokens: readonly PlanToken[]): string {
+  return tokens
+    .map(tokenText)
+    .join('\n')
+    .replace(/[ \t]*\r?\n[ \t\r\n]*/g, ' ')
+    .trim()
+}
+
+function listCriteria(tokens: readonly PlanToken[]): string[] {
+  return tokens.flatMap((token) => {
+    // Only real list blocks become criteria. Quoted/fenced examples are prose.
+    if (token.type !== 'list') return []
+    return (token.items ?? []).flatMap((item) => {
+      const children = item.tokens ?? []
+      const label = blockText(children.filter((child) => child.type !== 'list'))
+      return [...(label ? [label] : []), ...listCriteria(children)]
+    })
+  })
+}
+
+/** Shared interpretation for validation, agent context and completion evidence. */
+export function parsePlanDocument(body: string): {
+  sections: ReadonlyMap<string, string>
+  criteria: PlanCriterion[]
+} {
+  const tokens: readonly PlanToken[] = Lexer.lex(body, { gfm: true })
+  const sections = new Map<string, PlanToken[]>()
+  let active: { depth: number; tokens: PlanToken[] } | null = null
+  for (const token of tokens) {
+    if (token.type === 'heading' && token.depth !== undefined) {
+      const text = tokenText(token).trim().toLowerCase()
+      const label = REQUIRED_PLAN_SECTIONS.find((name) => name.toLowerCase() === text)
+      if (label) {
+        const content: PlanToken[] = []
+        if (!sections.has(label)) sections.set(label, content)
+        active = { depth: token.depth, tokens: content }
+        continue
+      }
+      if (active && token.depth <= active.depth) active = null
+    }
+    active?.tokens.push(token)
+  }
+  return {
+    sections: new Map([...sections].map(([label, content]) => [label, blockText(content)])),
+    criteria: listCriteria(sections.get('Definition of done') ?? []).map((label, i) => ({
+      id: `criterion-${String(i + 1)}`,
+      label,
+    })),
+  }
+}
+
+/** IDs are stable within the immutable approved revision. */
+export function planCriteria(body: string): PlanCriterion[] {
+  return parsePlanDocument(body).criteria
+}
+
+/** User actions cross the preload boundary; execution profile is host-owned. */
+export type PlanChange =
+  | ({ action: 'create' } & PlanDraft)
+  | ({ action: 'revise'; planId: string; revision: number } & PlanDraft)
+  | {
+      action: 'comment'
+      planId: string
+      revision: number
+      body: string
+      anchor: { start: number; end: number }
+    }
+  | { action: 'approve'; planId: string; revision: number; contentHash: string }
+  | { action: 'abandon'; planId: string; revision: number }

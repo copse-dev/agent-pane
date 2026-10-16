@@ -83,6 +83,23 @@ describe('tool permissions', () => {
     assert.equal(tool.overridden, true)
   })
 
+  it('keeps saved classify_text permissions for ask_classifier', async () => {
+    const registry = new ToolRegistry()
+    registerTool(registry, 'ask_classifier')
+    const legacyId = copseToolPermissionId('classify_text')
+    assert.equal(copseToolPermissionId('ask_classifier'), legacyId)
+    await setSetting(OVERRIDES_KEY, { [legacyId]: 'block' })
+
+    assert.deepEqual(resolveToolPermission('ask_classifier'), {
+      id: legacyId,
+      policy: 'block',
+    })
+    const tool = listToolPermissionCatalog(registry, []).groups[0]?.tools[0]
+    assert.equal(tool?.executionName, 'ask_classifier')
+    assert.equal(tool.id, legacyId)
+    assert.equal(tool.policy, 'block')
+  })
+
   it('migrates only uniquely registered legacy MCP grants without overwriting an override', async () => {
     const target: McpPermissionTarget = {
       serverName: 'mail',
@@ -254,6 +271,28 @@ describe('tool permissions', () => {
     await updateToolPermissions(registry, [], { toolIds: [id], policy: 'allow' })
     assert.deepEqual(overrides(), {})
     assert.equal(await setToolPermissionForExecution('gh_pr_create', 'allow'), false)
+  })
+  it('requires approval for branch pushing and rejects an allow update', async () => {
+    const registry = new ToolRegistry()
+    registerTool(registry, 'gh_push')
+    const id = copseToolPermissionId('gh_push')
+    const initial = listToolPermissionCatalog(registry, []).groups[0]?.tools[0]
+
+    assert.ok(initial)
+    assert.equal(initial.defaultPolicy, 'ask')
+    assert.deepEqual(initial.disabledPolicies, ['allow'])
+    assert.match(initial.disabledReason ?? '', /remote state/u)
+
+    await setSetting(OVERRIDES_KEY, { [id]: 'allow' })
+    const hardened = listToolPermissionCatalog(registry, []).groups[0]?.tools[0]
+    assert.ok(hardened)
+    assert.equal(hardened.policy, 'ask')
+    assert.deepEqual(resolveToolPermission('gh_push'), { id, policy: 'ask' })
+    await setSetting(OVERRIDES_KEY, {})
+
+    await updateToolPermissions(registry, [], { toolIds: [id], policy: 'allow' })
+    assert.deepEqual(overrides(), {})
+    assert.equal(await setToolPermissionForExecution('gh_push', 'allow'), false)
   })
 
   it('requires approval for host GUI launches and rejects an allow update', async () => {

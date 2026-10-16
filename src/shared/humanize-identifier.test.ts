@@ -44,6 +44,21 @@ describe('humanizeIdentifier', () => {
     assert.equal(humanizeIdentifier('render_md_preview'), 'Render md preview')
   })
 
+  it('splits an acronym run from the camel-case word after it', () => {
+    const cases: Array<[string, string]> = [
+      ['getHTTPResponse', 'Get HTTP response'],
+      ['parseJSONBody', 'Parse JSON body'],
+      ['HTTPServer', 'HTTP server'],
+      ['listPRsForRepo', 'List PRs for repo'],
+      ['getIDs', 'Get IDs'],
+      ['openURLsNow', 'Open URLs now'],
+      ['getFileContents', 'Get file contents'],
+    ]
+    for (const [identifier, expected] of cases) {
+      assert.equal(humanizeIdentifier(identifier), expected, identifier)
+    }
+  })
+
   it('returns an identifier with no words unchanged', () => {
     assert.equal(humanizeIdentifier('__'), '__')
     assert.equal(humanizeIdentifier(''), '')

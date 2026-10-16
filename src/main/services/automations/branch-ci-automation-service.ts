@@ -2,16 +2,34 @@ import { createHash, randomUUID } from 'node:crypto'
 import { automationRunBlock } from '@shared/automation-run-state.ts'
 import { z } from 'zod'
 import type {
+  AutomationFailureCode,
+  AutomationProblem,
   BranchCiAutomation,
   BranchCiAutomationInput,
   AutomationTriggerEvent,
+  EventAutomationTrigger,
+  EventAutomationTriggerInput,
+  EventDeliverySummary,
+  EventMatchPreview,
   Thread,
 } from '@shared/types'
+import {
+  LABEL_PATTERN,
+  readIssueHasLabel,
+  readLabelEvents,
+  readOpenPullRequests,
+  readPullRequestHead,
+  type LabelEventObservation,
+  type PullRequestHead,
+  type PullRequestObservation,
+} from './github-event-sources.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import type {
+  AutomationDelivery,
   EventAutomationBinding,
   EventInboxRecord,
 } from '@shared/supervisor/event-inbox-schema.ts'
+import { classifyAutomationFailureMessage } from '@shared/automation-failure.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
@@ -22,6 +40,7 @@ import {
   releaseCompletedAutomationWorktree,
   type AutomationWorktreeRelease,
 } from '../worktree-parking.ts'
+import { getAutomationWorktreeReuse } from '../automation-worktree-reuse.ts'
 import { getTaskSupervisor, type TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import {
   AutomationEventInbox,
@@ -32,9 +51,19 @@ import { FileEventInboxStore, type EventInboxStore } from '../supervisor/event-i
 import { runGh } from '../github/gh-service.ts'
 
 const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.ci-definitions`
-const SOURCE_ID = 'github-actions-branch'
 const CONNECTION_ID = 'github-cli'
-const EVENT_TYPE = 'workflow-run-completed'
+/** The inbox identity of each trigger kind. The CI pair predates the other kinds and must not change. */
+const ROUTES = {
+  'github-ci-failed': { sourceId: 'github-actions-branch', eventType: 'workflow-run-completed' },
+  'github-pr-changed': { sourceId: 'github-pull-requests', eventType: 'pull-request-changed' },
+  'github-issue-labeled': { sourceId: 'github-issues', eventType: 'issue-labeled' },
+} as const
+const WORKFLOW_IDS = {
+  'github-ci-failed': 'investigate-branch-ci',
+  'github-pr-changed': 'review-pull-request',
+  'github-issue-labeled': 'triage-issue',
+} as const
+const MAX_CHECK_FILTERS = 10
 const POLL_MS = 60_000
 const MAX_RUNS_PER_24_HOURS = 3
 const branchSchema = z
@@ -63,11 +92,26 @@ const definitionSchema = z.strictObject({
   id: z.uuid(),
   projectId: z.string().min(1).max(160),
   name: z.string().min(1).max(160),
-  trigger: z.strictObject({
-    kind: z.literal('github-ci-failed'),
-    repository: repositorySchema,
-    branch: branchSchema,
-  }),
+  trigger: z.discriminatedUnion('kind', [
+    z.strictObject({
+      kind: z.literal('github-ci-failed'),
+      repository: repositorySchema,
+      branch: branchSchema,
+      checks: z.array(z.string().trim().min(1).max(200)).max(MAX_CHECK_FILTERS).optional(),
+      pullRequest: z.number().int().positive().optional(),
+    }),
+    z.strictObject({
+      kind: z.literal('github-pr-changed'),
+      repository: repositorySchema,
+      baseBranch: branchSchema,
+      transition: z.enum(['ready-for-review', 'new-commits']),
+    }),
+    z.strictObject({
+      kind: z.literal('github-issue-labeled'),
+      repository: repositorySchema,
+      label: z.string().regex(LABEL_PATTERN),
+    }),
+  ]),
   prompt: z.string().min(1).max(100_000),
   model: z.string().min(1).max(1024),
   enabled: z.boolean(),
@@ -75,9 +119,29 @@ const definitionSchema = z.strictObject({
   revision: z.uuid(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
-  seenDeliveries: z.array(z.string().regex(/^\d+:\d+$/)).max(100),
+  seenDeliveries: z.array(z.string().regex(/^[A-Za-z0-9:_-]{1,128}$/)).max(100),
+  draftPullRequests: z.array(z.number().int().positive()).max(100).optional(),
   lastRunAt: z.number().int().nonnegative().optional(),
   lastCreatedThreadId: z.string().optional(),
+  lastProblem: z
+    .strictObject({
+      at: z.number().int().nonnegative(),
+      kind: z.enum(['failed', 'pending-start']),
+      message: z.string().max(2000),
+      code: z
+        .enum([
+          'approval-stalled',
+          'no-model',
+          'container-missing',
+          'auth-expired',
+          'worktree-failed',
+          'scheduler-stopped',
+          'unknown',
+        ])
+        .optional(),
+      threadId: z.string().max(160).optional(),
+    })
+    .optional(),
 })
 const repoSchema = z.object({ nameWithOwner: ownerRepoSchema, url: z.url() })
 const headSchema = z.object({ commit: z.object({ sha: z.string().regex(/^[a-f0-9]{40}$/i) }) })
@@ -143,12 +207,12 @@ function binding(definition: BranchCiAutomation): EventAutomationBinding {
       definition.maxLiveWorktrees,
     ]),
     projectId: definition.projectId,
-    sourceId: SOURCE_ID,
+    sourceId: ROUTES[definition.trigger.kind].sourceId,
     connectionId: CONNECTION_ID,
-    eventType: EVENT_TYPE,
+    eventType: ROUTES[definition.trigger.kind].eventType,
     eventVersion: 1,
     repositoryId: definition.trigger.repository,
-    workflowId: 'investigate-branch-ci',
+    workflowId: WORKFLOW_IDS[definition.trigger.kind],
     profileId: 'saved-model',
     permissionSnapshot: {
       capturedAt: definition.createdAt,
@@ -194,7 +258,38 @@ async function snapshotFor(definition: BranchCiAutomation): Promise<BranchCiSnap
   if (!root) throw new Error('Project is unavailable')
   const repository = await repositoryForProject(definition.projectId)
   if (repository !== definition.trigger.repository) throw new Error('Project repository changed')
+  if (definition.trigger.kind !== 'github-ci-failed')
+    throw new Error('Only CI triggers read workflow runs')
+  if (definition.trigger.pullRequest !== undefined)
+    return readPullRequestCiSnapshot(root, repository, definition.trigger.pullRequest)
   return readBranchCiSnapshot(root, repository, definition.trigger.branch)
+}
+
+/** Workflow runs on a pull request's current head. The PR must still be open. */
+export async function readPullRequestCiSnapshot(
+  root: string,
+  repository: string,
+  pullRequest: number,
+  gh: typeof runGh = runGh,
+): Promise<BranchCiSnapshot> {
+  const [host, owner, name] = repository.split('/')
+  if (!host || !owner || !name) throw new Error('Invalid repository identity')
+  const pr = await readPullRequestHead(root, repository, pullRequest, gh)
+  if (pr.state !== 'open') throw new Error(`Pull request #${String(pullRequest)} is not open`)
+  const runs = await ghJson(
+    root,
+    [
+      'api',
+      `repos/${owner}/${name}/actions/runs?head_sha=${pr.head.sha}&per_page=100`,
+      '--hostname',
+      host,
+      '--jq',
+      '{workflow_runs: [.workflow_runs[] | {id, run_attempt, head_branch, head_sha, status, conclusion, updated_at, html_url, name}]}',
+    ],
+    runsSchema,
+    gh,
+  )
+  return { headSha: pr.head.sha, runs: runs.workflow_runs }
 }
 
 export async function readBranchCiSnapshot(
@@ -244,10 +339,20 @@ export interface BranchCiAutomationDependencies {
   isPluginEnabled(): boolean
   repositoryForProject(projectId: string): Promise<string>
   snapshot(definition: BranchCiAutomation): Promise<BranchCiSnapshot>
+  /** Open pull requests into the definition's base branch. Required for pull-request triggers. */
+  pullRequests?(definition: BranchCiAutomation): Promise<PullRequestObservation[]>
+  /** Current state of one pull request. Required for pull-request triggers and PR-scoped CI. */
+  pullRequestHead?(definition: BranchCiAutomation, pullRequest: number): Promise<PullRequestHead>
+  /** Recent `labeled` events for the definition's label. Required for issue-label triggers. */
+  labelEvents?(definition: BranchCiAutomation): Promise<LabelEventObservation[]>
+  /** Whether the issue is still open and still carries the definition's label. */
+  issueHasLabel?(definition: BranchCiAutomation, issue: number): Promise<boolean>
   loadProjectThreads(projectId: string): Promise<Thread[]>
   getProjectThread(projectId: string, threadId: string): Promise<Thread | null>
   createProjectThread(projectId: string, thread: Thread): Promise<void>
   releasePreviousRun(projectId: string, threadId: string): Promise<AutomationWorktreeRelease>
+  /** See `AutomationServiceDependencies.canReusePreviousRun`. */
+  canReusePreviousRun?(projectId: string, threadId: string): Promise<boolean>
   supervisor(): TaskSupervisor
   inboxStore?: EventInboxStore
 }
@@ -258,8 +363,19 @@ export interface BranchCiAutomationService {
   remove(projectId: string, id: string): Promise<void>
   testMatch(
     projectId: string,
-    input: { branch: string },
-  ): Promise<{ repository: string; branch: string; latestFailure: string | null }>
+    input: { branch?: string; trigger?: EventAutomationTriggerInput },
+  ): Promise<EventMatchPreview>
+  /** Recent deliveries for one automation, newest first: why each started, waits, or was filtered. */
+  history(projectId: string, id: string, limit?: number): Promise<EventDeliverySummary[]>
+  /**
+   * Record that a prepared run could not start (checkout failed, provider rejected it, ...).
+   * Only the definition's latest run may report, so a stale or forged thread id changes nothing.
+   */
+  reportStartFailure(
+    projectId: string,
+    threadId: string,
+    failure: { code: AutomationFailureCode; message: string },
+  ): Promise<boolean>
   canStart(
     projectId: string,
     threadId: string,
@@ -270,34 +386,145 @@ export interface BranchCiAutomationService {
   stop(): void
 }
 
+interface Candidate {
+  id: string
+  resourceId: string
+  resourceRevision: string
+  occurredAt: number
+  facts: Record<string, string | number | boolean | null>
+  payload: string
+}
+
+interface Scan {
+  candidates: Candidate[]
+  /** Observed identities that can never become work; recorded so they are not re-evaluated. */
+  ignored: string[]
+  /** Pull requests last observed as drafts, when the trigger tracks them. */
+  draftPullRequests?: number[]
+}
+
+const PR_ID_SHA_LENGTH = 12
+
+function pullRequestDeliveryId(
+  pr: Pick<PullRequestObservation, 'number' | 'head'>,
+  transition: 'ready-for-review' | 'new-commits',
+): string {
+  return `pr:${String(pr.number)}:${pr.head.sha.slice(0, PR_ID_SHA_LENGTH)}:${transition === 'ready-for-review' ? 'ready' : 'commits'}`
+}
+
+function clip(value: string, max = 200): string {
+  const flat = value.replace(/\s+/g, ' ').trim()
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`
+}
+
+function factNumber(record: EventInboxRecord, key: string): number | null {
+  const value = record.delivery.facts[key]
+  return typeof value === 'number' ? value : null
+}
+
+function isoToMillis(value: string, fallback: number): number {
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
+}
+
 export function createBranchCiAutomationService(
   deps: BranchCiAutomationDependencies,
 ): BranchCiAutomationService {
   const listeners = new Set<(event: AutomationTriggerEvent) => void>()
   const supervisor = deps.supervisor()
   const inboxStore = deps.inboxStore ?? new FileEventInboxStore()
+  const unsupported = (what: string): never => {
+    throw new Error(`${what} is not available in this build`)
+  }
+  const readPullRequests = (definition: BranchCiAutomation): Promise<PullRequestObservation[]> =>
+    deps.pullRequests ? deps.pullRequests(definition) : unsupported('Pull request polling')
+  const readPullRequest = (
+    definition: BranchCiAutomation,
+    number: number,
+  ): Promise<PullRequestHead> =>
+    deps.pullRequestHead ? deps.pullRequestHead(definition, number) : unsupported('Pull requests')
+  const readLabels = (definition: BranchCiAutomation): Promise<LabelEventObservation[]> =>
+    deps.labelEvents ? deps.labelEvents(definition) : unsupported('Issue label polling')
+  const readIssueLabel = (definition: BranchCiAutomation, issue: number): Promise<boolean> =>
+    deps.issueHasLabel ? deps.issueHasLabel(definition, issue) : unsupported('Issue polling')
+
+  /** Why a delivery is no longer worth running because its resource moved on, or null while fresh. */
+  async function staleReason(
+    definition: BranchCiAutomation,
+    record: EventInboxRecord,
+  ): Promise<string | null> {
+    const trigger = definition.trigger
+    if (trigger.kind === 'github-ci-failed') {
+      const snapshot = await deps.snapshot(definition)
+      return snapshot.headSha === record.delivery.resourceRevision
+        ? null
+        : 'A newer branch head superseded this failed CI run'
+    }
+    if (trigger.kind === 'github-pr-changed') {
+      const number = factNumber(record, 'number')
+      if (number === null) return 'The delivery does not name a pull request'
+      const head = await readPullRequest(definition, number)
+      if (head.state !== 'open') return 'The pull request was closed before the run started'
+      if (head.draft) return 'The pull request went back to draft before the run started'
+      return head.head.sha === record.delivery.resourceRevision
+        ? null
+        : 'The pull request received newer commits, which supersede this delivery'
+    }
+    const number = factNumber(record, 'number')
+    if (number === null) return 'The delivery does not name an issue'
+    return (await readIssueLabel(definition, number))
+      ? null
+      : 'The label was removed or the issue was closed before the run started'
+  }
+
+  function evaluateDelivery(
+    definition: BranchCiAutomation,
+    delivery: AutomationDelivery,
+  ): { kind: 'match' } | { kind: 'filtered'; reason: string } {
+    const trigger = definition.trigger
+    if (trigger.kind === 'github-ci-failed') {
+      if (delivery.facts['branch'] !== trigger.branch || delivery.facts['conclusion'] !== 'failure')
+        return { kind: 'filtered', reason: 'Branch or CI conclusion does not match' }
+      const workflow = delivery.facts['workflow']
+      if (
+        trigger.checks &&
+        trigger.checks.length > 0 &&
+        !trigger.checks.some(
+          (check) => typeof workflow === 'string' && check.toLowerCase() === workflow.toLowerCase(),
+        )
+      )
+        return {
+          kind: 'filtered',
+          reason: `Check “${clip(String(workflow ?? ''), 80)}” is not one of the selected checks`,
+        }
+      return { kind: 'match' }
+    }
+    if (trigger.kind === 'github-pr-changed') {
+      return delivery.facts['transition'] === trigger.transition &&
+        delivery.facts['base'] === trigger.baseBranch
+        ? { kind: 'match' }
+        : { kind: 'filtered', reason: 'Pull request transition or base branch does not match' }
+    }
+    return delivery.facts['label'] === trigger.label
+      ? { kind: 'match' }
+      : { kind: 'filtered', reason: 'Label does not match' }
+  }
+
   const inbox = new AutomationEventInbox({
     supervisor,
     store: inboxStore,
     adapter: {
-      sourceId: SOURCE_ID,
+      sourceId: ROUTES['github-ci-failed'].sourceId,
       connectionId: CONNECTION_ID,
-      eventType: EVENT_TYPE,
+      eventType: ROUTES['github-ci-failed'].eventType,
+      additionalRoutes: [ROUTES['github-pr-changed'], ROUTES['github-issue-labeled']],
       evaluate(eventBinding, delivery): ReturnType<EventInboxAdapter['evaluate']> {
         const definition = definitions().find(
           (candidate) => candidate.id === eventBinding.automationId,
         )
         if (!definition || definition.revision !== eventBinding.definitionRevision)
           return Promise.resolve({ kind: 'filtered', reason: 'Definition changed' })
-        if (
-          delivery.facts['branch'] !== definition.trigger.branch ||
-          delivery.facts['conclusion'] !== 'failure'
-        )
-          return Promise.resolve({
-            kind: 'filtered',
-            reason: 'Branch or CI conclusion does not match',
-          })
-        return Promise.resolve({ kind: 'match' })
+        return Promise.resolve(evaluateDelivery(definition, delivery))
       },
     },
     host: {
@@ -315,9 +542,8 @@ export function createBranchCiAutomationService(
         )
         if (!definition || !definition.enabled)
           return { allowed: false, reason: 'Automation is unavailable' }
-        const snapshot = await deps.snapshot(definition)
-        if (snapshot.headSha !== record.delivery.resourceRevision)
-          return { allowed: false, reason: 'A newer branch head superseded this CI run' }
+        const stale = await staleReason(definition, record)
+        if (stale) return { allowed: false, reason: stale }
         const threads = (await deps.loadProjectThreads(definition.projectId)).filter(
           (thread) => thread.automation?.scheduleId === definition.id,
         )
@@ -327,19 +553,32 @@ export function createBranchCiAutomationService(
         )
           return {
             allowed: false,
-            reason: 'Daily CI automation run limit reached',
+            reason: 'Daily automation run limit reached',
             retryable: true,
           }
         if (threads.some((thread) => automationRunBlock(thread) !== null))
           return { allowed: false, reason: 'A run is already pending or active', retryable: true }
         let retained = 0
+        let handOverClaimed = false
         for (const thread of threads) {
+          if (!thread.worktree || thread.worktree.retiredAt !== undefined) continue
+          const released = await deps
+            .releasePreviousRun(definition.projectId, thread.id)
+            .catch((error: unknown): AutomationWorktreeRelease => {
+              console.warn(`[automations] Could not release the worktree of ${thread.id}:`, error)
+              return { released: false, reason: 'in-use' }
+            })
+          if (released.released) continue
           if (
-            thread.worktree &&
-            thread.worktree.retiredAt === undefined &&
-            !(await deps.releasePreviousRun(definition.projectId, thread.id)).released
-          )
-            retained++
+            !handOverClaimed &&
+            (await deps
+              .canReusePreviousRun?.(definition.projectId, thread.id)
+              .catch(() => false)) === true
+          ) {
+            handOverClaimed = true
+            continue
+          }
+          retained++
         }
         if (retained >= definition.maxLiveWorktrees)
           return { allowed: false, reason: 'Live worktree limit reached', retryable: true }
@@ -367,15 +606,51 @@ export function createBranchCiAutomationService(
               return
             }
             const now = deps.now()
-            const source = {
-              repository: definition.trigger.repository,
-              branch: definition.trigger.branch,
-              headSha: record.delivery.resourceRevision,
-              workflow: record.delivery.facts['workflow'],
-              runId: record.delivery.facts['runId'],
-              attempt: record.delivery.facts['attempt'],
-              url: record.delivery.facts['url'],
-            }
+            const facts = record.delivery.facts
+            const trigger = definition.trigger
+            const { label, source } =
+              trigger.kind === 'github-ci-failed'
+                ? {
+                    label: 'CI run facts',
+                    source: {
+                      repository: trigger.repository,
+                      branch: trigger.branch,
+                      ...(trigger.pullRequest !== undefined
+                        ? { pullRequest: trigger.pullRequest }
+                        : {}),
+                      headSha: record.delivery.resourceRevision,
+                      workflow: facts['workflow'],
+                      runId: facts['runId'],
+                      attempt: facts['attempt'],
+                      url: facts['url'],
+                    },
+                  }
+                : trigger.kind === 'github-pr-changed'
+                  ? {
+                      label: 'Pull request facts',
+                      source: {
+                        repository: trigger.repository,
+                        transition: trigger.transition,
+                        number: facts['number'],
+                        title: facts['title'],
+                        author: facts['author'],
+                        baseBranch: trigger.baseBranch,
+                        headBranch: facts['headRef'],
+                        headSha: record.delivery.resourceRevision,
+                        url: facts['url'],
+                      },
+                    }
+                  : {
+                      label: 'Issue facts',
+                      source: {
+                        repository: trigger.repository,
+                        label: trigger.label,
+                        number: facts['number'],
+                        title: facts['title'],
+                        labeledBy: facts['actor'],
+                        url: facts['url'],
+                      },
+                    }
             const thread: Thread = {
               id: record.runId,
               title: definition.name,
@@ -383,7 +658,7 @@ export function createBranchCiAutomationService(
               messages: [],
               usage: { inputTokens: 0, outputTokens: 0 },
               model: definition.model,
-              draftPrompt: `${definition.prompt}\n\nCI run facts (external source data):\n${JSON.stringify(source, null, 2)}`,
+              draftPrompt: `${definition.prompt}\n\n${label} (external source data):\n${JSON.stringify(source, null, 2)}`,
               automation: {
                 scheduleId: definition.id,
                 scheduleName: definition.name,
@@ -397,7 +672,11 @@ export function createBranchCiAutomationService(
             await updateDefinitions((definitions) => {
               return definitions.map((item) =>
                 item.id === definition.id && item.revision === definition.revision
-                  ? { ...item, lastRunAt: now, lastCreatedThreadId: record.runId }
+                  ? {
+                      ...withoutProblem(item),
+                      lastRunAt: now,
+                      lastCreatedThreadId: record.runId,
+                    }
                   : item,
               )
             })
@@ -418,88 +697,321 @@ export function createBranchCiAutomationService(
   let timer: ReturnType<typeof setInterval> | null = null
   let polling = false
 
+  function withoutProblem(definition: BranchCiAutomation): BranchCiAutomation {
+    const { lastProblem: _dropped, ...rest } = definition
+    return rest
+  }
+
+  async function setProblem(
+    definition: BranchCiAutomation,
+    problem: AutomationProblem | null,
+  ): Promise<void> {
+    try {
+      await updateDefinitions((all) =>
+        all.map((item) => {
+          if (item.id !== definition.id) return item
+          // A poll problem never overwrites the more specific failure of a run.
+          if (problem === null)
+            return item.lastProblem && item.lastProblem.threadId === undefined
+              ? withoutProblem(item)
+              : item
+          if (item.lastProblem?.threadId !== undefined && problem.threadId === undefined)
+            return item
+          return { ...item, lastProblem: problem }
+        }),
+      )
+    } catch (error) {
+      console.error('[automations] Could not record an event automation problem:', error)
+    }
+  }
+
+  /** Observe the trigger's source and return what it would deliver, without admitting anything. */
+  async function scan(definition: BranchCiAutomation): Promise<Scan> {
+    const trigger = definition.trigger
+    const clock = deps.now()
+    if (trigger.kind === 'github-ci-failed') {
+      const snapshot = await deps.snapshot(definition)
+      const scanResult: Scan = { candidates: [], ignored: [] }
+      for (const run of snapshot.runs) {
+        if (run.status !== 'completed') continue
+        if (trigger.pullRequest === undefined && run.head_branch !== trigger.branch) continue
+        const id = deliveryId(run)
+        if (definition.seenDeliveries.includes(id)) continue
+        if (run.head_sha === snapshot.headSha && failed(run)) {
+          scanResult.candidates.push({
+            id,
+            resourceId: trigger.branch,
+            resourceRevision: run.head_sha,
+            occurredAt: isoToMillis(run.updated_at, clock),
+            facts: {
+              branch: trigger.branch,
+              conclusion: 'failure',
+              workflow: run.name.slice(0, 512),
+              runId: run.id,
+              attempt: run.run_attempt,
+              url: run.html_url,
+            },
+            payload: JSON.stringify({
+              runId: run.id,
+              attempt: run.run_attempt,
+              headSha: run.head_sha,
+            }),
+          })
+        } else scanResult.ignored.push(id)
+      }
+      return scanResult
+    }
+    if (trigger.kind === 'github-pr-changed') {
+      const observed = await readPullRequests(definition)
+      const wasDraft = new Set(definition.draftPullRequests ?? [])
+      const result: Scan = { candidates: [], ignored: [], draftPullRequests: [] }
+      for (const pr of observed) {
+        if (pr.draft) {
+          result.draftPullRequests?.push(pr.number)
+          continue
+        }
+        if (trigger.transition === 'ready-for-review' && !wasDraft.has(pr.number)) continue
+        const id = pullRequestDeliveryId(pr, trigger.transition)
+        if (definition.seenDeliveries.includes(id)) continue
+        result.candidates.push({
+          id,
+          resourceId: `pr-${String(pr.number)}`,
+          resourceRevision: pr.head.sha,
+          occurredAt: isoToMillis(pr.updated_at, clock),
+          facts: {
+            number: pr.number,
+            title: clip(pr.title, 512),
+            author: pr.author,
+            base: trigger.baseBranch,
+            headRef: pr.head.ref,
+            transition: trigger.transition,
+            url: pr.html_url,
+          },
+          payload: JSON.stringify({ number: pr.number, headSha: pr.head.sha }),
+        })
+      }
+      return result
+    }
+    const events = await readLabels(definition)
+    const result: Scan = { candidates: [], ignored: [] }
+    for (const event of events) {
+      const id = `evt:${String(event.id)}`
+      if (definition.seenDeliveries.includes(id)) continue
+      if (event.label !== trigger.label || event.issue.state !== 'open') {
+        result.ignored.push(id)
+        continue
+      }
+      result.candidates.push({
+        id,
+        resourceId: `issue-${String(event.issue.number)}`,
+        resourceRevision: String(event.id),
+        occurredAt: isoToMillis(event.created_at, clock),
+        facts: {
+          number: event.issue.number,
+          title: clip(event.issue.title, 512),
+          actor: event.actor,
+          label: event.label,
+          url: event.issue.html_url,
+        },
+        payload: JSON.stringify({ eventId: event.id, issue: event.issue.number }),
+      })
+    }
+    return result
+  }
+
+  async function markSeen(
+    definition: BranchCiAutomation,
+    ids: readonly string[],
+    draftPullRequests: number[] | undefined,
+  ): Promise<void> {
+    await updateDefinitions((all) => {
+      return all.map((item) => {
+        if (item.id !== definition.id || item.revision !== definition.revision) return item
+        const seen = [...new Set([...item.seenDeliveries, ...ids])].slice(-100)
+        return {
+          ...item,
+          seenDeliveries: seen,
+          ...(draftPullRequests !== undefined
+            ? { draftPullRequests: draftPullRequests.slice(-100) }
+            : {}),
+        }
+      })
+    })
+  }
+
+  async function pollDefinition(definition: BranchCiAutomation): Promise<void> {
+    const result = await scan(definition)
+    const settled: string[] = [...result.ignored]
+    // A ready-for-review transition is only recognisable while the PR is still remembered as a
+    // draft, so a delivery held back by a limit keeps its PR in that set until it is admitted.
+    const pendingReady = new Set<number>()
+    for (const candidate of result.candidates) {
+      if (definition.trigger.kind === 'github-ci-failed') {
+        const prior = (await deps.loadProjectThreads(definition.projectId)).filter(
+          (thread) => thread.automation?.scheduleId === definition.id,
+        )
+        if (prior.some((thread) => automationRunBlock(thread) !== null)) continue
+      }
+      await inbox.admit(definition.id, definition.revision, {
+        sourceId: ROUTES[definition.trigger.kind].sourceId,
+        connectionId: CONNECTION_ID,
+        deliveryId: candidate.id,
+        eventType: ROUTES[definition.trigger.kind].eventType,
+        eventVersion: 1,
+        projectId: definition.projectId,
+        repositoryId: definition.trigger.repository,
+        resourceId: candidate.resourceId,
+        resourceRevision: candidate.resourceRevision,
+        occurredAt: candidate.occurredAt,
+        facts: candidate.facts,
+        payload: candidate.payload,
+      })
+      await inbox.reconcile(definition.projectId)
+      // A delivery held back only by a capacity limit stays pending. Marking it
+      // seen would drop a real event the moment the limit clears; leave it
+      // for the next poll, which re-admits it idempotently and checks again.
+      const waiting = (await inboxStore.list(definition.projectId)).some(
+        (record) =>
+          record.binding.automationId === definition.id &&
+          record.delivery.deliveryId === candidate.id &&
+          record.state === 'admitted',
+      )
+      if (waiting) {
+        const number = candidate.facts['number']
+        if (typeof number === 'number') pendingReady.add(number)
+        continue
+      }
+      settled.push(candidate.id)
+    }
+    const drafts =
+      result.draftPullRequests === undefined
+        ? undefined
+        : [...new Set([...result.draftPullRequests, ...pendingReady])]
+    if (settled.length > 0 || drafts !== undefined) await markSeen(definition, settled, drafts)
+  }
+
   async function poll(): Promise<void> {
     if (polling || !deps.isPluginEnabled()) return
     polling = true
     try {
       const active = definitions().filter((definition) => definition.enabled)
-      const sourceReads = new Map<string, Promise<BranchCiSnapshot>>()
       for (const definition of active) {
         try {
-          const sourceKey = `${definition.projectId}\0${definition.trigger.repository}\0${definition.trigger.branch}`
-          let sourceRead = sourceReads.get(sourceKey)
-          if (!sourceRead) {
-            sourceRead = deps.snapshot(definition)
-            sourceReads.set(sourceKey, sourceRead)
-          }
-          const snapshot = await sourceRead
-          for (const run of snapshot.runs) {
-            if (run.status !== 'completed' || run.head_branch !== definition.trigger.branch)
-              continue
-            const id = deliveryId(run)
-            if (definition.seenDeliveries.includes(id)) continue
-            if (run.head_sha === snapshot.headSha && failed(run)) {
-              const prior = (await deps.loadProjectThreads(definition.projectId)).filter(
-                (thread) => thread.automation?.scheduleId === definition.id,
-              )
-              if (prior.some((thread) => automationRunBlock(thread) !== null)) continue
-              const occurredAt = Date.parse(run.updated_at)
-              await inbox.admit(definition.id, definition.revision, {
-                sourceId: SOURCE_ID,
-                connectionId: CONNECTION_ID,
-                deliveryId: id,
-                eventType: EVENT_TYPE,
-                eventVersion: 1,
-                projectId: definition.projectId,
-                repositoryId: definition.trigger.repository,
-                resourceId: definition.trigger.branch,
-                resourceRevision: run.head_sha,
-                occurredAt:
-                  Number.isFinite(occurredAt) && occurredAt >= 0 ? occurredAt : deps.now(),
-                facts: {
-                  branch: definition.trigger.branch,
-                  conclusion: 'failure',
-                  workflow: run.name.slice(0, 512),
-                  runId: run.id,
-                  attempt: run.run_attempt,
-                  url: run.html_url,
-                },
-                payload: JSON.stringify({
-                  runId: run.id,
-                  attempt: run.run_attempt,
-                  headSha: run.head_sha,
-                }),
-              })
-              await inbox.reconcile(definition.projectId)
-              // A delivery held back only by a capacity limit stays pending. Marking it
-              // seen would drop a real CI failure the moment the limit clears; leave it
-              // for the next poll, which re-admits it idempotently and checks again.
-              const waiting = (await inboxStore.list(definition.projectId)).some(
-                (record) =>
-                  record.binding.automationId === definition.id &&
-                  record.delivery.deliveryId === id &&
-                  record.state === 'admitted',
-              )
-              if (waiting) continue
-            }
-            // Persist this observation only after an eligible failure has been admitted.
-            await updateDefinitions((definitions) => {
-              return definitions.map((item) =>
-                item.id === definition.id && item.revision === definition.revision
-                  ? {
-                      ...item,
-                      seenDeliveries: [...new Set([...item.seenDeliveries, id])].slice(-100),
-                    }
-                  : item,
-              )
-            })
-          }
+          await pollDefinition(definition)
+          if (definition.lastProblem && definition.lastProblem.threadId === undefined)
+            await setProblem(definition, null)
         } catch (error) {
-          console.error(`[automations] CI polling failed for “${definition.name}”:`, error)
+          const message = error instanceof Error ? error.message : String(error)
+          console.error(`[automations] Event polling failed for “${definition.name}”:`, error)
+          await setProblem(definition, {
+            at: deps.now(),
+            kind: 'failed',
+            message: clip(`Could not read GitHub: ${message}`, 500),
+            code: classifyAutomationFailureMessage(message),
+          })
         }
       }
     } finally {
       polling = false
+    }
+  }
+
+  async function resolveTrigger(
+    projectId: string,
+    input: BranchCiAutomationInput,
+    existing: BranchCiAutomation | undefined,
+  ): Promise<EventAutomationTrigger> {
+    const requested: EventAutomationTriggerInput = input.trigger ?? {
+      kind: 'github-ci-failed',
+      ...(input.branch !== undefined ? { branch: input.branch } : {}),
+    }
+    const reuse = (repository: string): boolean =>
+      !input.enabled && existing !== undefined && existing.trigger.repository === repository
+    const repositoryFor = async (): Promise<string> =>
+      !input.enabled && existing
+        ? existing.trigger.repository
+        : deps.repositoryForProject(projectId)
+    if (requested.kind === 'github-pr-changed') {
+      return {
+        kind: 'github-pr-changed',
+        repository: await repositoryFor(),
+        baseBranch: branchSchema.parse(requested.baseBranch),
+        transition: requested.transition,
+      }
+    }
+    if (requested.kind === 'github-issue-labeled') {
+      return {
+        kind: 'github-issue-labeled',
+        repository: await repositoryFor(),
+        label: z.string().regex(LABEL_PATTERN, 'Choose a valid label name').parse(requested.label),
+      }
+    }
+    const checks = [
+      ...new Map(
+        (requested.checks ?? [])
+          .map((check) => check.trim())
+          .filter((check) => check.length > 0)
+          .map((check) => [check.toLowerCase(), check] as const),
+      ).values(),
+    ]
+    if (checks.length > MAX_CHECK_FILTERS)
+      throw new Error(`Select at most ${String(MAX_CHECK_FILTERS)} checks`)
+    const common = checks.length > 0 ? { checks } : {}
+    if (requested.pullRequest !== undefined) {
+      const repository = await repositoryFor()
+      const head = await readPullRequest(
+        {
+          ...(existing ?? placeholderDefinition(projectId, input)),
+          trigger: { kind: 'github-ci-failed', repository, branch: 'pending' },
+        },
+        requested.pullRequest,
+      )
+      if (head.state !== 'open')
+        throw new Error(`Pull request #${String(requested.pullRequest)} is not open`)
+      return {
+        kind: 'github-ci-failed',
+        repository,
+        branch: branchSchema.parse(head.head.ref),
+        pullRequest: requested.pullRequest,
+        ...common,
+      }
+    }
+    const branch = branchSchema.parse(requested.branch ?? '')
+    const repository =
+      existing?.trigger.kind === 'github-ci-failed' &&
+      existing.trigger.branch === branch &&
+      reuse(existing.trigger.repository)
+        ? existing.trigger.repository
+        : await deps.repositoryForProject(projectId)
+    return { kind: 'github-ci-failed', repository, branch, ...common }
+  }
+
+  function placeholderDefinition(
+    projectId: string,
+    input: Pick<
+      BranchCiAutomationInput,
+      'name' | 'prompt' | 'model' | 'enabled' | 'maxLiveWorktrees'
+    >,
+  ): BranchCiAutomation {
+    const now = deps.now()
+    return {
+      v: 1,
+      id: randomUUID(),
+      projectId,
+      name: input.name,
+      trigger: {
+        kind: 'github-ci-failed',
+        repository: 'github.com/preview/preview',
+        branch: 'main',
+      },
+      prompt: input.prompt,
+      model: input.model,
+      enabled: input.enabled,
+      maxLiveWorktrees: input.maxLiveWorktrees ?? 1,
+      revision: randomUUID(),
+      createdAt: now,
+      updatedAt: now,
+      seenDeliveries: [],
     }
   }
 
@@ -520,19 +1032,18 @@ export function createBranchCiAutomationService(
       )
         return {
           allowed: false,
-          reason: 'The CI automation was paused or changed before this task started.',
+          reason: 'The automation was paused or changed before this task started.',
         }
       if (record.state !== 'prepared' && record.state !== 'queued')
-        return { allowed: false, reason: 'The CI delivery is no longer eligible.' }
+        return { allowed: false, reason: 'The delivery is no longer eligible.' }
       try {
-        const snapshot = await deps.snapshot(definition)
-        if (snapshot.headSha !== record.delivery.resourceRevision)
-          return { allowed: false, reason: 'A newer branch head superseded this failed CI run.' }
+        const stale = await staleReason(definition, record)
+        if (stale) return { allowed: false, reason: `${stale}.` }
       } catch {
         return {
           allowed: false,
           reason:
-            'Could not verify the current branch head. This task will retry when the project is opened again.',
+            'Could not verify the source is still current. This task will retry when the project is opened again.',
           retryable: true,
         }
       }
@@ -541,47 +1052,113 @@ export function createBranchCiAutomationService(
     list(projectId: string): BranchCiAutomation[] {
       return definitions().filter((item) => item.projectId === projectId)
     },
+    async history(projectId, id, limit = 25): Promise<EventDeliverySummary[]> {
+      const records = (await inboxStore.list(projectId))
+        .filter((record) => record.binding.automationId === id)
+        .sort((a, b) => b.receivedAt - a.receivedAt)
+        .slice(0, Math.max(1, Math.min(limit, 100)))
+      return records.map((record): EventDeliverySummary => {
+        const facts = record.delivery.facts
+        const number = factNumber(record, 'number')
+        const summary =
+          record.binding.eventType === ROUTES['github-ci-failed'].eventType
+            ? `${clip(String(facts['workflow'] ?? 'CI'), 120)} failed on ${clip(String(facts['branch'] ?? ''), 80)}`
+            : `#${String(number ?? '?')} ${clip(String(facts['title'] ?? ''), 160)}`
+        const url = facts['url']
+        const base = {
+          key: record.key,
+          deliveryId: record.delivery.deliveryId,
+          summary,
+          receivedAt: record.receivedAt,
+          ...(typeof url === 'string' ? { url } : {}),
+        }
+        switch (record.state) {
+          case 'prepared':
+          case 'queued':
+          case 'claimed':
+            return {
+              ...base,
+              outcome: 'started',
+              ...(record.runId ? { threadId: record.runId } : {}),
+            }
+          case 'admitted':
+            return {
+              ...base,
+              outcome: 'waiting',
+              reason: 'Waiting for a free run slot or checkout; Copse rechecks every minute.',
+            }
+          case 'filtered':
+            return { ...base, outcome: 'filtered', reason: record.reason ?? 'Filtered out' }
+          case 'fenced':
+            return { ...base, outcome: 'held', reason: record.reason ?? 'Held' }
+        }
+      })
+    },
+    async reportStartFailure(projectId, threadId, failure): Promise<boolean> {
+      const definition = definitions().find(
+        (item) => item.projectId === projectId && item.lastCreatedThreadId === threadId,
+      )
+      if (!definition) return false
+      await setProblem(definition, {
+        at: deps.now(),
+        kind: 'failed',
+        message: clip(failure.message, 500),
+        code: failure.code,
+        threadId,
+      })
+      return true
+    },
     async upsert(projectId: string, input: BranchCiAutomationInput): Promise<BranchCiAutomation> {
-      const branch = branchSchema.parse(input.branch)
       const existing = input.id
         ? definitions().find((item) => item.id === input.id && item.projectId === projectId)
         : undefined
       if (input.id && !existing) throw new Error('CI automation not found in this project')
-      const repository =
-        !input.enabled && existing?.trigger.branch === branch
-          ? existing.trigger.repository
-          : await deps.repositoryForProject(projectId)
+      const trigger = await resolveTrigger(projectId, input, existing)
       const now = deps.now()
       const changedSource =
         !existing ||
-        existing.trigger.repository !== repository ||
-        existing.trigger.branch !== branch ||
+        JSON.stringify(existing.trigger) !== JSON.stringify(trigger) ||
         (!existing.enabled && input.enabled)
-      const snapshot = changedSource
-        ? await deps.snapshot({
-            ...(existing ?? {
-              v: 1 as const,
-              id: randomUUID(),
-              projectId,
-              name: input.name,
-              prompt: input.prompt,
-              model: input.model,
-              enabled: input.enabled,
-              maxLiveWorktrees: input.maxLiveWorktrees ?? 1,
-              revision: randomUUID(),
-              createdAt: now,
-              updatedAt: now,
-              seenDeliveries: [],
-            }),
-            trigger: { kind: 'github-ci-failed' as const, repository, branch },
-          })
-        : null
+      const draft: BranchCiAutomation = {
+        ...(existing ?? placeholderDefinition(projectId, input)),
+        trigger,
+        seenDeliveries: [],
+      }
+      // Baseline: everything that already exists is history, not an event.
+      let baseline: { seen: string[]; drafts?: number[] } | null = null
+      if (changedSource) {
+        if (trigger.kind === 'github-ci-failed') {
+          const snapshot = await deps.snapshot(draft)
+          baseline = {
+            seen: snapshot.runs
+              .filter((run) => run.status === 'completed')
+              .map(deliveryId)
+              .slice(-100),
+          }
+        } else if (trigger.kind === 'github-pr-changed') {
+          const observed = await readPullRequests(draft)
+          baseline = {
+            seen:
+              trigger.transition === 'new-commits'
+                ? observed
+                    .filter((pr) => !pr.draft)
+                    .map((pr) => pullRequestDeliveryId(pr, 'new-commits'))
+                    .slice(-100)
+                : [],
+            drafts: observed.filter((pr) => pr.draft).map((pr) => pr.number),
+          }
+        } else {
+          baseline = {
+            seen: (await readLabels(draft)).map((event) => `evt:${String(event.id)}`).slice(-100),
+          }
+        }
+      }
       const definition: BranchCiAutomation = {
         v: 1,
         id: existing?.id ?? randomUUID(),
         projectId,
         name: input.name.trim(),
-        trigger: { kind: 'github-ci-failed', repository, branch },
+        trigger,
         prompt: input.prompt.trim(),
         model: input.model.trim(),
         enabled: input.enabled,
@@ -589,12 +1166,14 @@ export function createBranchCiAutomationService(
         revision: randomUUID(),
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
-        seenDeliveries: snapshot
-          ? snapshot.runs
-              .filter((run) => run.status === 'completed')
-              .map(deliveryId)
-              .slice(-100)
-          : (existing?.seenDeliveries ?? []),
+        seenDeliveries: baseline ? baseline.seen : (existing?.seenDeliveries ?? []),
+        ...(baseline
+          ? baseline.drafts !== undefined
+            ? { draftPullRequests: baseline.drafts.slice(-100) }
+            : {}
+          : existing?.draftPullRequests !== undefined
+            ? { draftPullRequests: existing.draftPullRequests }
+            : {}),
         ...(existing?.lastRunAt !== undefined ? { lastRunAt: existing.lastRunAt } : {}),
         ...(existing?.lastCreatedThreadId
           ? { lastCreatedThreadId: existing.lastCreatedThreadId }
@@ -623,30 +1202,59 @@ export function createBranchCiAutomationService(
       await inbox.fence(projectId, id, 'Automation deleted')
       await service.sync()
     },
-    async testMatch(
-      projectId: string,
-      input: { branch: string },
-    ): Promise<{ repository: string; branch: string; latestFailure: string | null }> {
-      const branch = branchSchema.parse(input.branch)
-      const repository = await deps.repositoryForProject(projectId)
-      const draft: BranchCiAutomation = {
-        v: 1,
-        id: randomUUID(),
-        projectId,
+    async testMatch(projectId, input): Promise<EventMatchPreview> {
+      const requested: EventAutomationTriggerInput = input.trigger ?? {
+        kind: 'github-ci-failed',
+        branch: input.branch ?? '',
+      }
+      const probe: BranchCiAutomationInput = {
         name: 'Preview',
-        trigger: { kind: 'github-ci-failed', repository, branch },
         prompt: 'Preview',
         model: 'preview',
         enabled: false,
-        maxLiveWorktrees: 1,
-        revision: randomUUID(),
-        createdAt: deps.now(),
-        updatedAt: deps.now(),
-        seenDeliveries: [],
+        trigger: requested,
       }
-      const snapshot = await deps.snapshot(draft)
-      const latest = snapshot.runs.find((run) => run.head_sha === snapshot.headSha && failed(run))
-      return { repository, branch, latestFailure: latest?.html_url ?? null }
+      const trigger = await resolveTrigger(projectId, probe, undefined)
+      const draft: BranchCiAutomation = { ...placeholderDefinition(projectId, probe), trigger }
+      if (trigger.kind === 'github-ci-failed') {
+        const snapshot = await deps.snapshot(draft)
+        const matching = snapshot.runs.filter(
+          (run) =>
+            run.head_sha === snapshot.headSha &&
+            failed(run) &&
+            (!trigger.checks ||
+              trigger.checks.length === 0 ||
+              trigger.checks.some((check) => check.toLowerCase() === run.name.toLowerCase())),
+        )
+        return {
+          repository: trigger.repository,
+          branch: trigger.branch,
+          latestFailure: matching[0]?.html_url ?? null,
+          recent: matching.slice(0, 5).map((run) => clip(`${run.name} · ${run.html_url}`, 200)),
+        }
+      }
+      if (trigger.kind === 'github-pr-changed') {
+        const observed = await readPullRequests(draft)
+        const recent = observed
+          .filter((pr) => (trigger.transition === 'ready-for-review' ? !pr.draft : !pr.draft))
+          .slice(0, 5)
+          .map((pr) => `#${String(pr.number)} ${clip(pr.title, 120)}`)
+        return {
+          repository: trigger.repository,
+          branch: trigger.baseBranch,
+          latestFailure: null,
+          recent,
+        }
+      }
+      const events = await readLabels(draft)
+      return {
+        repository: trigger.repository,
+        branch: '',
+        latestFailure: null,
+        recent: events
+          .slice(0, 5)
+          .map((event) => `#${String(event.issue.number)} ${clip(event.issue.title, 120)}`),
+      }
     },
     async poll(): Promise<void> {
       await poll()
@@ -658,7 +1266,7 @@ export function createBranchCiAutomationService(
           await inbox.reconcile(projectId)
         await service.sync()
       })().catch((error: unknown) => {
-        console.error('[automations] CI recovery failed:', error)
+        console.error('[automations] Event recovery failed:', error)
       })
     },
     async sync(): Promise<void> {
@@ -688,6 +1296,17 @@ export function createBranchCiAutomationService(
   return service
 }
 
+async function projectGithub<T>(
+  definition: BranchCiAutomation,
+  read: (root: string) => Promise<T>,
+): Promise<T> {
+  const root = getProjectRoot(definition.projectId)
+  if (!root) throw new Error('Project is unavailable')
+  const repository = await repositoryForProject(definition.projectId)
+  if (repository !== definition.trigger.repository) throw new Error('Project repository changed')
+  return read(root)
+}
+
 let singleton: BranchCiAutomationService | null = null
 export function getBranchCiAutomationService(): BranchCiAutomationService {
   singleton ??= createBranchCiAutomationService({
@@ -695,10 +1314,34 @@ export function getBranchCiAutomationService(): BranchCiAutomationService {
     isPluginEnabled: () => getPluginService().registry.isEnabled(AUTOMATIONS_PLUGIN_ID),
     repositoryForProject,
     snapshot: snapshotFor,
+    pullRequests: (definition) =>
+      projectGithub(definition, (root) =>
+        definition.trigger.kind === 'github-pr-changed'
+          ? readOpenPullRequests(root, definition.trigger.repository, definition.trigger.baseBranch)
+          : Promise.resolve([]),
+      ),
+    pullRequestHead: (definition, pullRequest) =>
+      projectGithub(definition, (root) =>
+        readPullRequestHead(root, definition.trigger.repository, pullRequest),
+      ),
+    labelEvents: (definition) =>
+      projectGithub(definition, (root) =>
+        definition.trigger.kind === 'github-issue-labeled'
+          ? readLabelEvents(root, definition.trigger.repository, definition.trigger.label)
+          : Promise.resolve([]),
+      ),
+    issueHasLabel: (definition, issue) =>
+      projectGithub(definition, (root) =>
+        definition.trigger.kind === 'github-issue-labeled'
+          ? readIssueHasLabel(root, definition.trigger.repository, issue, definition.trigger.label)
+          : Promise.resolve(false),
+      ),
     loadProjectThreads,
     getProjectThread,
     createProjectThread: createThread,
     releasePreviousRun: releaseCompletedAutomationWorktree,
+    canReusePreviousRun: (projectId, threadId) =>
+      getAutomationWorktreeReuse().canReusePreviousRun(projectId, threadId),
     supervisor: getTaskSupervisor,
   })
   return singleton

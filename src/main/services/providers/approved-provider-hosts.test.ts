@@ -89,6 +89,10 @@ describe('approved-provider-hosts', () => {
     })
     await ensureProviderHostApproved('https://api.acme.example/v1')
     assert.equal(request?.showWhileSettingsOpen, true)
+    assert.equal(request.body, 'https://api.acme.example/v1')
+    assert.match(request.bodyAdvice ?? '', /API key and prompts/)
+    assert.match(request.bodyFooter ?? '', /always allows/)
+    assert.equal(request.approveLabel, 'Always allow host')
     assert.ok(getApprovedProviderHosts().includes('api.acme.example'))
   })
 

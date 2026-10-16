@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
@@ -12,14 +12,15 @@ describe('titlebar workspace name', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-titlebar-'))
+    workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-panel-titlebar-')), 'workspace')
+    mkdirSync(workspaceRoot)
     seedEmptyProject(workspaceRoot, 'e2e-titlebar-project')
     await browser.reloadSession()
   })
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
   })
 
   it('shows the active project folder name after restoring on launch', async () => {
@@ -65,7 +66,8 @@ describe('titlebar workspace name', () => {
     await expect(idle.borderRight).toBe('0px')
     await expect(idle.borderBottom).toBe('0px')
     await expect(idle.borderLeft).toBe('0px')
-    await expect(idle.boxShadow).toMatch(/0px 0px 0px 1px/)
+    await expect(idle.boxShadow).not.toBe('none')
+    await expect(idle.boxShadow).not.toMatch(/0px 0px 0px 1px/)
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'new-thread-activity-home.png'))
 
     await newThreadBtn.click()

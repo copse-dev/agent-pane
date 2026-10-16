@@ -98,7 +98,7 @@ export interface QueuedUserMessage {
    * hook-originated message keeps `kind: 'hook'` even after a human edits it
    * (that flips {@link editedByUser} instead), so authorship is never lost.
    */
-  origin?: QueuedMessageOrigin
+  origin?: MessageOrigin
   /**
    * True once a human edits a hook-originated message (decision 10). The origin
    * stays `kind: 'hook'`; this records that the text no longer matches the hook's
@@ -304,9 +304,29 @@ export interface ThreadReviewReport {
   error?: string
 }
 
+/** Which parent message a side chat branched from. */
+export interface SideChatLink {
+  parentThreadId: string
+  /**
+   * The parent message the side chat branched from. The side chat's agent
+   * history is seeded from the parent transcript up to and including it, once,
+   * at creation; the parent never sees the side chat.
+   */
+  anchorMessageId: string
+}
+
+/** One non-PR reference recorded for the Context panel. */
+export interface ThreadLink {
+  kind: 'url' | 'thread'
+  /** Normalized URL for `url`; thread id for `thread`. */
+  target: string
+}
+
 export interface Thread {
   id: string
   title: string
+  /** Absent means Copse manages the external agent's execution. */
+  executionMode?: 'agent'
   /**
    * How many times auto-naming has written {@link title}. Absent means the title
    * is nobody's but the user's — either the untouched `New Thread` default or a
@@ -333,6 +353,12 @@ export interface Thread {
    */
   messagesLoaded?: boolean
   /**
+   * A committed plan (including an ended plan) makes this a used task even with
+   * no messages or composer draft. Derived from the spine on load and set after
+   * a successful plan save. Session-only; never persisted in meta.json.
+   */
+  hasSavedPlan?: boolean
+  /**
    * GitHub PRs linked from this thread, cached on its metadata.
    *
    * Derived from PR links in message text plus {@link remoteAgentLink} — that
@@ -342,6 +368,18 @@ export interface Thread {
    * (on append, and on hydration).
    */
   prRefs?: GithubPrRef[]
+  /**
+   * Set when this thread is a side chat: a hidden, anchored conversation branched
+   * from a message of another thread. Side chats are ordinary threads on disk
+   * (own model, own usage, archivable); this link is all that marks them.
+   */
+  sideChat?: SideChatLink
+  /**
+   * Non-PR links this thread has mentioned (web pages and other Copse threads),
+   * cached on metadata like {@link prRefs} so the index can answer "which threads
+   * link here" without reading transcripts. Append-only. Absent means unscanned.
+   */
+  links?: ThreadLink[]
   /** Successful native PR-create results; mentions and legacy links cannot populate this. */
   prProductions?: PrProduction[]
   /** Exact successful git_commit object identities, independent of attribution preference. */
@@ -458,6 +496,12 @@ export interface Thread {
      * unsent draft. Such a run no longer blocks the schedule's next trigger.
      */
     startFailedAt?: number
+    /**
+     * Why this run failed to start or ended in error, as the renderer observed it.
+     * `code` is an `AutomationFailureCode`; kept a string here because this package
+     * does not own that vocabulary, and validated by readers.
+     */
+    failure?: { code: string; message: string; at: number }
   }
   /**
    * Videos the user has attached to this thread, in the order they were sent.
@@ -499,6 +543,8 @@ export interface Thread {
    * on an unselected thread is surfaced by {@link unreadAt} instead.
    */
   lastPromptAt?: number
+  /** Last turn completion; metadata-only edits must not advance Activity history. */
+  lastSettledAt?: number
   createdAt: number
   updatedAt: number
 }

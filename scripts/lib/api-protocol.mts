@@ -359,9 +359,12 @@ function tupleSchema(ctx: SchemaContext, type: ts.TypeReference, target: ts.Tupl
       rest = withTitle(typeToSchema(ctx, element), title)
       continue
     }
-    const item = withTitle(stripOptional(typeToSchema(ctx, element)), title)
-    if (flags & ts.ElementFlags.Required) required = prefixItems.length + 1
-    prefixItems.push(item)
+    // `minItems` already says an optional element may be absent. A required one
+    // keeps `x-optional`, so `T` becoming `T | undefined` stays visible.
+    const isRequired = (flags & ts.ElementFlags.Required) !== 0
+    const schema = typeToSchema(ctx, element)
+    if (isRequired) required = prefixItems.length + 1
+    prefixItems.push(withTitle(isRequired ? schema : stripOptional(schema), title))
   }
   return arraySchema(prefixItems, required, rest)
 }
@@ -732,9 +735,11 @@ function signatureParams(ctx: SchemaContext, sig: ts.Signature): JsonSchema {
     const optional =
       (paramDecl !== undefined && ctx.checker.isOptionalParameter(paramDecl)) ||
       (param.flags & ts.SymbolFlags.Optional) !== 0
-    const schema = withTitle(stripOptional(typeToSchema(ctx, type)), param.name)
+    // As in tupleSchema: only an optional parameter's `undefined` is implied by
+    // `minItems`; a required `T | undefined` parameter keeps `x-optional`.
+    const schema = typeToSchema(ctx, type)
     if (!optional) required = prefixItems.length + 1
-    prefixItems.push(schema)
+    prefixItems.push(withTitle(optional ? stripOptional(schema) : schema, param.name))
   }
   return arraySchema(prefixItems, required, rest)
 }
@@ -1056,41 +1061,387 @@ export function parseApiProtocol(text: string): ApiProtocolDocument {
 // ── Compatibility classification ─────────────────────────────────────────────
 
 export interface ApiProtocolDiff {
-  /** Channels or client methods removed, or whose shape changed. */
+  /** Channels or client methods removed, or whose shape changed incompatibly. */
   breaking: string[]
-  /** Channels or client methods that only appeared. */
+  /**
+   * Channels or client methods that appeared, or whose shape only widened in a
+   * way a peer built against either version still reads.
+   */
   additive: string[]
 }
 
 /**
- * Inline every `$ref` so two documents compare by shape, not by def naming, and
- * drop `description`s: a doc comment is not part of the wire contract.
+ * Schema annotations that are not part of the wire contract. A parameter's
+ * `title` stays: the wire is positional, but a renamed parameter cannot be told
+ * apart from two same-typed parameters that swapped places.
  */
-function resolveRefs(doc: ApiProtocolDocument, value: unknown, seen: string[]): unknown {
+const ANNOTATION_KEYWORDS = new Set(['description'])
+
+/** Schema keywords whose value is data rather than a nested schema. */
+const DATA_KEYWORDS = new Set(['const', 'enum'])
+
+/**
+ * Inline every `$ref` so two documents compare by shape, not by def naming, and
+ * drop doc comments, which are not part of the wire contract. They are dropped
+ * only where they are keywords: inside a `properties` map every key is a field
+ * name, so a field called `description` keeps its schema.
+ */
+function resolveRefs(
+  doc: ApiProtocolDocument,
+  value: unknown,
+  seen: string[],
+  isPropertyMap = false,
+): unknown {
   if (Array.isArray(value)) return value.map((entry: unknown) => resolveRefs(doc, entry, seen))
   if (!isRecord(value)) return value
   const ref = value['$ref']
-  if (typeof ref === 'string' && ref.startsWith('#/$defs/')) {
+  if (!isPropertyMap && typeof ref === 'string' && ref.startsWith('#/$defs/')) {
     const name = ref.slice('#/$defs/'.length)
-    if (seen.includes(name)) return { 'x-recursive': name }
-    return resolveRefs(doc, doc.$defs[name] ?? { 'x-missing-def': name }, [...seen, name])
+    // A cycle is marked by how many levels up it returns, not by name: the
+    // name would let a renamed, restructured cycle inline to the same tree.
+    const target = seen.includes(name)
+      ? { 'x-recursive': seen.length - seen.indexOf(name) }
+      : resolveRefs(doc, doc.$defs[name] ?? { 'x-missing-def': name }, [...seen, name])
+    // Keywords beside a `$ref` qualify it: `T | undefined` for a named `T` is
+    // `{ $ref, 'x-optional': true }`, and dropping them would hide that change.
+    const siblings = Object.entries(value).filter(([key]) => key !== '$ref')
+    if (siblings.length === 0) return target
+    const qualifiers = resolveRefs(doc, Object.fromEntries(siblings), seen)
+    return isRecord(target) && isRecord(qualifiers) ? { ...target, ...qualifiers } : target
   }
   return Object.fromEntries(
     Object.entries(value)
-      .filter(([key]) => key !== 'description')
-      .map(([key, entry]) => [key, resolveRefs(doc, entry, seen)]),
+      .filter(([key]) => isPropertyMap || !ANNOTATION_KEYWORDS.has(key))
+      .map(([key, entry]) => [
+        key,
+        !isPropertyMap && DATA_KEYWORDS.has(key)
+          ? entry
+          : resolveRefs(doc, entry, seen, !isPropertyMap && key === 'properties'),
+      ]),
   )
 }
 
-function shapeOf(doc: ApiProtocolDocument, value: unknown): string {
-  return stableStringify(resolveRefs(doc, value, []))
+/**
+ * Which way the data at a schema position travels. A client built against an
+ * old shape ignores a field it does not know, and a client built against a new
+ * shape must already cope with an optional field being absent, so a host may
+ * add an optional field to what it sends. The reverse does not hold: a host was
+ * never written to read a field the client has only now started to send.
+ */
+type Flow = 'to-client' | 'to-host'
+
+/** Unchanged, widened in a way both an old and a new peer read, or not readable. */
+type Compat = 'same' | 'widened' | 'breaking'
+
+/** Where the first incompatibility was found, so the gate can say what to change. */
+interface Trace {
+  at?: string
+  why?: string
+}
+
+/** Record why a comparison broke (the deepest reason wins) and return `breaking`. */
+function broke(trace: Trace, at: string, why: string): 'breaking' {
+  if (trace.why === undefined) {
+    trace.at = at
+    trace.why = why
+  }
+  return 'breaking'
+}
+
+function worse(a: Compat, b: Compat): Compat {
+  if (a === 'breaking' || b === 'breaking') return 'breaking'
+  return a === 'widened' || b === 'widened' ? 'widened' : 'same'
 }
 
 /**
- * Classify the change from `before` to `after`. Anything that would break a
- * client built against `before` — a removed channel or method, or a changed
- * argument/result shape — is breaking and needs a version bump; new channels
- * and methods are additive. Def renames alone are neither (refs are inlined).
+ * Compare two resolved schemas (see {@link resolveRefs}) at a position whose
+ * data travels in `flow`. Every keyword must match, except for the widenings
+ * docs/api-protocol.md lists as additive:
+ *
+ * - an object in data the host sends gains a field that is not required;
+ * - a fixed-length tuple in data the host sends gains trailing items that may be
+ *   absent (a new optional argument to a subscribe handler);
+ * - either of those nested in a field, array item, record value, or union or
+ *   intersection member.
+ *
+ * Everything else that differs is breaking, including a new union member or
+ * enum value, a field becoming required or optional, and a field or argument
+ * added to data the client sends.
+ */
+function compatOf(prev: unknown, next: unknown, flow: Flow, at: string, trace: Trace): Compat {
+  if (stableStringify(prev) === stableStringify(next)) return 'same'
+  if (prev === undefined) return broke(trace, at, 'added')
+  if (next === undefined) return broke(trace, at, 'removed')
+  if (!isRecord(prev) || !isRecord(next)) return broke(trace, at, 'schema changed')
+  let result: Compat = 'same'
+  let tupleChecked = false
+  for (const key of new Set([...Object.keys(prev), ...Object.keys(next)])) {
+    switch (key) {
+      case 'properties':
+        result = worse(result, propertiesCompat(prev, next, flow, at, trace))
+        break
+      case 'required':
+        if (!sameMembers(prev['required'], next['required'])) {
+          return broke(trace, at, 'required fields changed')
+        }
+        break
+      case 'prefixItems':
+      case 'minItems':
+      case 'maxItems':
+        if (!tupleChecked) result = worse(result, tupleCompat(prev, next, flow, at, trace))
+        tupleChecked = true
+        break
+      case 'items':
+        result = worse(result, compatOf(prev[key], next[key], flow, `${at}[]`, trace))
+        break
+      case 'additionalProperties':
+        result = worse(result, compatOf(prev[key], next[key], flow, `${at}{}`, trace))
+        break
+      case 'anyOf':
+        result = worse(result, memberSetCompat(prev['anyOf'], next['anyOf'], flow, at, trace, true))
+        break
+      case 'allOf':
+        result = worse(
+          result,
+          memberSetCompat(prev['allOf'], next['allOf'], flow, at, trace, false),
+        )
+        break
+      default:
+        if (stableStringify(prev[key]) !== stableStringify(next[key])) {
+          return broke(trace, at, `${key} changed`)
+        }
+    }
+    if (result === 'breaking') return result
+  }
+  return result
+}
+
+function propertiesCompat(
+  prev: Record<string, unknown>,
+  next: Record<string, unknown>,
+  flow: Flow,
+  at: string,
+  trace: Trace,
+): Compat {
+  // The generator omits an empty `properties` map.
+  const before = prev['properties'] ?? {}
+  const after = next['properties'] ?? {}
+  if (!isRecord(before) || !isRecord(after)) return broke(trace, at, 'fields changed')
+  let result: Compat = 'same'
+  for (const [name, schema] of Object.entries(before)) {
+    if (!Object.hasOwn(after, name)) return broke(trace, `${at}.${name}`, 'removed')
+    result = worse(result, compatOf(schema, after[name], flow, `${at}.${name}`, trace))
+    if (result === 'breaking') return result
+  }
+  for (const name of Object.keys(after)) {
+    if (Object.hasOwn(before, name)) continue
+    const required = next['required']
+    if (Array.isArray(required) && required.includes(name)) {
+      return broke(trace, `${at}.${name}`, 'added as required')
+    }
+    if (flow === 'to-host') return broke(trace, `${at}.${name}`, 'added to data the client sends')
+    // An old client reads every key of a record as one of its values.
+    if (prev['additionalProperties'] !== undefined) {
+      return broke(trace, `${at}.${name}`, 'added beside a record index')
+    }
+    result = 'widened'
+  }
+  return result
+}
+
+function tupleCompat(
+  prev: Record<string, unknown>,
+  next: Record<string, unknown>,
+  flow: Flow,
+  at: string,
+  trace: Trace,
+): Compat {
+  // The generator omits `prefixItems` for an empty fixed-length tuple.
+  const emptyTuple = (schema: Record<string, unknown>): unknown =>
+    schema['prefixItems'] ?? (typeof schema['maxItems'] === 'number' ? [] : undefined)
+  const before = emptyTuple(prev)
+  const after = emptyTuple(next)
+  const sameBounds = prev['minItems'] === next['minItems'] && prev['maxItems'] === next['maxItems']
+  if (!Array.isArray(before) || !Array.isArray(after)) {
+    return sameBounds && stableStringify(before) === stableStringify(after)
+      ? 'same'
+      : broke(trace, at, 'items changed')
+  }
+  if (after.length < before.length) return broke(trace, at, 'items removed')
+  let result: Compat = 'same'
+  for (const [index, item] of before.entries()) {
+    result = worse(result, compatOf(item, after[index], flow, `${at}[${String(index)}]`, trace))
+    if (result === 'breaking') return result
+  }
+  if (after.length === before.length) {
+    return sameBounds ? result : broke(trace, at, 'required item count changed')
+  }
+  // Grown. A host validates the arguments it receives as a closed tuple
+  // (`parseIpcArgs(z.tuple([...]))` rejects extra items), so only a client
+  // can take more: an old subscribe handler ignores an argument it does not
+  // name. A client always forwards an optional slot, even as undefined.
+  if (flow === 'to-host') return broke(trace, at, 'items added to data the client sends')
+  const min = prev['minItems']
+  const optionalTail = typeof min === 'number' && min <= before.length && min === next['minItems']
+  const fixedLength = prev['maxItems'] === before.length && next['maxItems'] === after.length
+  return optionalTail && fixedLength ? 'widened' : broke(trace, at, 'required item added')
+}
+
+/**
+ * Union (and intersection) members are a set: the generator orders union
+ * members by serialization, so a widened member can move. Identical members pair
+ * first; every other member must then pair with a distinct compatible one.
+ */
+function memberSetCompat(
+  prev: unknown,
+  next: unknown,
+  flow: Flow,
+  at: string,
+  trace: Trace,
+  isUnion: boolean,
+): Compat {
+  if (!Array.isArray(prev) || !Array.isArray(next) || prev.length !== next.length) {
+    return broke(trace, at, `${isUnion ? 'union' : 'intersection'} members added or removed`)
+  }
+  const candidates = next.map((member: unknown) => ({
+    member,
+    key: stableStringify(member),
+    used: false,
+  }))
+  const unpaired: unknown[] = []
+  for (const member of prev) {
+    const key = stableStringify(member)
+    const twin = candidates.find((candidate) => !candidate.used && candidate.key === key)
+    if (twin) twin.used = true
+    else unpaired.push(member)
+  }
+  // First fit could hand a member the only candidate a later one fits and
+  // report a compatible change as breaking, so search for a full pairing,
+  // moving earlier members to other candidates where they also fit.
+  const open = candidates.filter((candidate) => !candidate.used).map(({ member }) => member)
+  const faults = unpaired.map((member) =>
+    open.map((candidate) => pairFault(member, candidate, next, flow, at, isUnion)),
+  )
+  const holder: (number | undefined)[] = open.map(() => undefined)
+  const claim = (index: number, tried: Set<number>): boolean => {
+    for (const slot of open.keys()) {
+      if (faults[index]?.[slot] !== undefined || tried.has(slot)) continue
+      tried.add(slot)
+      const current = holder[slot]
+      if (current === undefined || claim(current, tried)) {
+        holder[slot] = index
+        return true
+      }
+    }
+    return false
+  }
+  for (const [index, row] of faults.entries()) {
+    if (claim(index, new Set())) continue
+    const told = row.find((fault) => fault !== undefined && fault.why !== INCOMPATIBLE_MEMBER)
+    return broke(trace, told?.at ?? at, told?.why ?? INCOMPATIBLE_MEMBER)
+  }
+  let result: Compat = 'same'
+  for (const [slot, index] of holder.entries()) {
+    if (index !== undefined) {
+      result = worse(result, compatOf(unpaired[index], open[slot], flow, at, trace))
+    }
+  }
+  return result
+}
+
+const INCOMPATIBLE_MEMBER = 'a member changed incompatibly'
+
+/** Why one set member may not become a candidate, or undefined when it may. */
+function pairFault(
+  member: unknown,
+  candidate: unknown,
+  members: unknown[],
+  flow: Flow,
+  at: string,
+  isUnion: boolean,
+): Trace | undefined {
+  // Probe quietly: only the pairing that is finally kept may explain a failure.
+  if (compatOf(member, candidate, flow, at, {}) === 'breaking') {
+    return { at, why: INCOMPATIBLE_MEMBER }
+  }
+  if (!isUnion) return undefined
+  // A client may tell union members apart by which fields are present
+  // (`'size' in entry`), so one must not gain a field another is known by.
+  const told = fieldNames(candidate).find(
+    (name) =>
+      !fieldNames(member).includes(name) &&
+      members.some((other) => other !== candidate && fieldNames(other).includes(name)),
+  )
+  return told === undefined
+    ? undefined
+    : { at: `${at}.${told}`, why: 'added to a union member that another member has' }
+}
+
+/** The top-level field names an object schema declares. */
+function fieldNames(schema: unknown): string[] {
+  const properties = isRecord(schema) ? schema['properties'] : undefined
+  return isRecord(properties) ? Object.keys(properties) : []
+}
+
+/**
+ * Whether two `required` lists name the same fields, in any order. The
+ * generator omits an empty list, so an absent one names no fields.
+ */
+function sameMembers(prev: unknown = [], next: unknown = []): boolean {
+  if (!Array.isArray(prev) || !Array.isArray(next)) return false
+  const sorted = (list: unknown[]): string => stableStringify(list.map(stableStringify).sort())
+  return sorted(prev) === sorted(next)
+}
+
+/** The direction each schema-valued field of a channel or method carries. */
+const ARGS_FLOW: Readonly<Record<'invoke' | 'send' | 'event', Flow>> = {
+  invoke: 'to-host',
+  send: 'to-host',
+  event: 'to-client',
+}
+const METHOD_FLOWS = new Map<string, Flow>([
+  ['params', 'to-host'],
+  ['result', 'to-client'],
+  ['handlerParams', 'to-client'],
+  ['handlerResult', 'to-host'],
+])
+
+/**
+ * Compare a channel or client method field by field: schema-valued fields by
+ * {@link compatOf} in their direction, everything else (binding, kind, channel
+ * name) exactly.
+ */
+function entryCompat(
+  before: ApiProtocolDocument,
+  prev: object,
+  after: ApiProtocolDocument,
+  next: object,
+  flows: ReadonlyMap<string, Flow>,
+  trace: Trace,
+): Compat {
+  const prevFields = new Map<string, unknown>(Object.entries(prev))
+  const nextFields = new Map<string, unknown>(Object.entries(next))
+  let result: Compat = 'same'
+  for (const key of new Set([...prevFields.keys(), ...nextFields.keys()])) {
+    if (ANNOTATION_KEYWORDS.has(key)) continue
+    const prevValue = resolveRefs(before, prevFields.get(key), [])
+    const nextValue = resolveRefs(after, nextFields.get(key), [])
+    const flow = flows.get(key)
+    if (flow) result = worse(result, compatOf(prevValue, nextValue, flow, key, trace))
+    else if (stableStringify(prevValue) !== stableStringify(nextValue)) {
+      return broke(trace, key, 'changed')
+    }
+    if (result === 'breaking') return result
+  }
+  return result
+}
+
+/**
+ * Classify the change from `before` to `after`. Anything a peer built against
+ * `before` could not read — a removed channel or method, or a changed argument
+ * or result shape — is breaking and needs a version bump. New channels and
+ * methods are additive, and so is a shape that only widened compatibly (see
+ * {@link compatOf}). Def renames alone are neither (refs are inlined).
  */
 export function compareApiProtocol(
   before: ApiProtocolDocument,
@@ -1098,16 +1449,31 @@ export function compareApiProtocol(
 ): ApiProtocolDiff {
   const breaking: string[] = []
   const additive: string[] = []
+  const classify = (
+    label: string,
+    prev: object,
+    next: object,
+    flows: ReadonlyMap<string, Flow>,
+  ): void => {
+    const trace: Trace = {}
+    const compat = entryCompat(before, prev, after, next, flows, trace)
+    if (compat === 'widened') additive.push(`${label}: widened compatibly`)
+    else if (compat === 'breaking') {
+      breaking.push(`${label}: shape changed (${trace.at ?? '?'}: ${trace.why ?? 'changed'})`)
+    }
+  }
   for (const kind of ['invoke', 'send', 'event'] as const) {
     const prev = before.channels[kind]
     const next = after.channels[kind]
+    const flows = new Map<string, Flow>([
+      ['args', ARGS_FLOW[kind]],
+      ['result', 'to-client'],
+    ])
     for (const [channel, entry] of Object.entries(prev)) {
       const label = `channels.${kind}.${channel}`
       const nextEntry = next[channel]
       if (!nextEntry) breaking.push(`${label}: removed`)
-      else if (shapeOf(before, entry) !== shapeOf(after, nextEntry)) {
-        breaking.push(`${label}: shape changed`)
-      }
+      else classify(label, entry, nextEntry, flows)
     }
     for (const channel of Object.keys(next)) {
       if (!Object.hasOwn(prev, channel)) additive.push(`channels.${kind}.${channel}: added`)
@@ -1118,9 +1484,7 @@ export function compareApiProtocol(
       const label = `client.${ns}.${name}`
       const nextMethod = after.client[ns]?.[name]
       if (!nextMethod) breaking.push(`${label}: removed`)
-      else if (shapeOf(before, method) !== shapeOf(after, nextMethod)) {
-        breaking.push(`${label}: shape changed`)
-      }
+      else classify(label, method, nextMethod, METHOD_FLOWS)
     }
   }
   for (const [ns, methods] of Object.entries(after.client)) {
@@ -1129,4 +1493,51 @@ export function compareApiProtocol(
     }
   }
   return { breaking: breaking.sort(), additive: additive.sort() }
+}
+
+/** What the version gate needs to know about one change. */
+export interface ProtocolVersionCheck {
+  /** Whether the head's surface breaks compatibility with the base's. */
+  breaking: boolean
+  /** `API_PROTOCOL_VERSION` at the base. */
+  base: number
+  /** `API_PROTOCOL_VERSION` at the head. */
+  head: number
+  /**
+   * `API_PROTOCOL_VERSION` of the newest surface that ships without this change
+   * (the latest release, or a pending promotion), when it could be read.
+   */
+  released?: number
+}
+
+/**
+ * Why the head's version breaks the bump rule, or `null` when it does not.
+ *
+ * A version names a released surface: two builds that can meet as separately
+ * built peers come from different releases, and only those must disagree on the
+ * version when their surfaces are incompatible. So a breaking change needs a
+ * version above the latest release, and every breaking change between two
+ * releases shares one bump. Concurrent pull requests then make the same
+ * one-line edit, or none once trunk carries the bump, instead of each claiming
+ * the next number and renumbering whenever another lands. Without the release
+ * version the rule falls back to the stricter bump over the base.
+ */
+export function protocolVersionProblem(check: ProtocolVersionCheck): string | null {
+  const { breaking, base, head, released } = check
+  if (head < base) {
+    return `API_PROTOCOL_VERSION is below the base's (v${String(base)} → v${String(head)}). Merge the base, or keep its version.`
+  }
+  if (!breaking) return null
+  if (released === undefined) {
+    return head > base
+      ? null
+      : 'Breaking change to the API protocol without a version bump. ' +
+          'Bump API_PROTOCOL_VERSION in src/shared/api-protocol.mts or make the change additive.'
+  }
+  if (head > released) return null
+  return (
+    `Breaking change to the API protocol, and v${String(released)} has shipped or is about ` +
+    `to. Set API_PROTOCOL_VERSION in src/shared/api-protocol.mts on main to ` +
+    `${String(released + 1)}, or make the change additive.`
+  )
 }

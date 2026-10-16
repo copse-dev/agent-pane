@@ -157,19 +157,19 @@ const ALLOWED: readonly Allowance[] = [
     reason: REASON.identifier,
   },
   {
-    file: 'src/main/services/container-runtime/worker-entry.ts',
+    file: 'src/main/services/container-runtime/worker-main.ts',
     term: 'ACP',
     count: 1,
     reason: REASON.containerWorker,
   },
   {
-    file: 'src/main/services/container-runtime/worker-entry.ts',
+    file: 'src/main/services/container-runtime/worker-main.ts',
     term: 'harness',
     count: 1,
     reason: REASON.containerWorker,
   },
   {
-    file: 'src/main/services/container-runtime/worker-entry.ts',
+    file: 'src/main/services/container-runtime/worker-main.ts',
     term: 'stdio',
     count: 4,
     reason: REASON.containerWorker,
@@ -263,6 +263,7 @@ const ALLOWED: readonly Allowance[] = [
     count: 2,
     reason: REASON.identifier,
   },
+  { file: 'src/shared/acp-known-agents.ts', term: 'stdio', count: 1, reason: REASON.identifier },
   { file: 'src/renderer/demo/demo-api.ts', term: 'stdio', count: 1, reason: REASON.identifier },
   {
     file: 'src/renderer/perf-autopilot.ts',
@@ -322,7 +323,7 @@ const ALLOWED: readonly Allowance[] = [
     reason: REASON.mcpTransport,
   },
   {
-    file: 'src/renderer/views/settings-dialog.ts',
+    file: 'src/renderer/views/settings/packs-section.ts',
     term: 'stdio',
     count: 2,
     reason: REASON.mcpTransport,
@@ -342,7 +343,7 @@ const ALLOWED: readonly Allowance[] = [
     reason: REASON.pluginAuthor,
   },
   {
-    file: 'src/renderer/views/settings-dialog.ts',
+    file: 'src/renderer/views/settings/packs-section.ts',
     term: 'capability',
     count: 1,
     reason: REASON.advancedSettings,

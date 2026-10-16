@@ -36,6 +36,7 @@ dialog.process-manager-overlay {
 .process-manager-subtitle,
 .process-manager-footer,
 .process-manager-summary,
+.network-activity-summary,
 .process-manager-status {
   color: var(--text-muted);
   font-size: var(--font-size-sm);
@@ -236,7 +237,8 @@ dialog.process-manager-overlay {
   padding-block: var(--spacing-sm);
 }
 
-.process-manager-summary {
+.process-manager-summary,
+.network-activity-summary {
   margin: 0;
   padding: var(--spacing-sm) var(--spacing-lg);
   border-top: 1px solid var(--border);
@@ -244,4 +246,149 @@ dialog.process-manager-overlay {
 }
 .process-manager-summary:empty {
   display: none;
+}
+
+.network-activity-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-bottom: 1px solid var(--border);
+}
+/* Match the flat section tabs in the PR detail view. */
+.process-manager-tabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0;
+  padding: 0 var(--spacing-lg);
+  border-bottom: 1px solid var(--border);
+}
+.process-manager-tab {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--spacing-sm) var(--spacing-xs);
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+.process-manager-tab[aria-pressed='true'] {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+  background: var(--bg-selected);
+  font-weight: 600;
+}
+.process-manager-tab:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+.network-activity-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.process-manager-shell [hidden] {
+  display: none;
+}
+.network-activity-search {
+  flex: 1;
+  min-width: 120px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+}
+.network-activity-toolbar label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-xs);
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.network-activity-table {
+  width: 100%;
+  min-width: 820px;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+.network-activity-table th,
+.network-activity-table td {
+  padding: 7px var(--spacing-md);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.network-activity-table thead {
+  position: sticky;
+  top: 0;
+  background: var(--bg-elevated);
+}
+.network-activity-table th {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.network-activity-table th:nth-child(1) {
+  width: 21%;
+}
+.network-activity-table th:nth-child(2) {
+  width: 23%;
+}
+.network-activity-table th:nth-child(3) {
+  width: 14%;
+}
+.network-activity-table th:nth-child(4) {
+  width: 15%;
+}
+.network-activity-table th:nth-child(n + 5) {
+  width: 9%;
+}
+.network-activity-table td:nth-child(n + 5),
+.network-activity-table th:nth-child(n + 5) {
+  text-align: right;
+}
+.network-activity-table small {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.2;
+}
+.network-activity-label {
+  display: block;
+  line-height: 1.2;
+  font-family: var(--font-mono);
+}
+.network-activity-table tr[data-status='blocked'] .network-activity-state,
+.network-activity-table tr[data-status='failed'] .network-activity-state,
+.network-activity-table tr[data-status='timed-out'] .network-activity-state {
+  color: var(--danger);
+}
+.network-activity-table tr[data-status='active'] .network-activity-state,
+.network-activity-table tr[data-status='running'] .network-activity-state {
+  color: var(--success);
+}
+.network-activity-empty {
+  padding: 24px var(--spacing-lg);
+  color: var(--text-muted);
+}
+.network-activity-coverage {
+  margin: 0;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+dialog.process-manager-overlay[data-view='network'],
+.process-manager-overlay[data-view='network'] .process-manager-shell {
+  max-height: 84vh;
 }

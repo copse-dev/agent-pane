@@ -2,6 +2,7 @@ import type { Message, Thread } from '@shared/types'
 import { githubPrKey, type GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { collectThreadPrRefs } from '@shared/git/thread-pr-status.ts'
 import { isHumanUserPrompt } from '@copse/thread-store/thread-sort.ts'
+import { automationRunBlock } from '@shared/automation-run-state.ts'
 
 /**
  * Everything the projects sidebar reads off a thread to draw one row: its title,
@@ -21,13 +22,27 @@ export interface SidebarThread {
   title: string
   /** For the sidebar's Created sort. A compacted entry keeps it. */
   createdAt?: number
+  /** Last write to the thread, for the Activity panel's recency fallback. A compacted entry keeps it. */
+  updatedAt?: number
+  lastSettledAt?: number
   /** When the user last prompted it, for ordering across projects. A compacted entry keeps it. */
   lastPromptAt?: number
   status: Thread['status']
   unreadAt?: number
   archivedAt?: number
+  /** Marks a side chat: hidden from thread browsers, listed under its parent. */
+  sideChat?: Thread['sideChat']
   automation?: Thread['automation']
+  /** Preserve pending-start classification when the full draft is compacted away. */
+  automationPendingStart?: boolean
+  /** The checkout an automation run left behind; the sidebar flags runs still holding one. */
+  worktree?: Thread['worktree']
   remoteAgentLink?: Thread['remoteAgentLink']
+  /**
+   * Whether the thread was ever run, from metadata alone (see {@link sidebarHasRun}).
+   * Set at compaction; a live thread derives it on demand.
+   */
+  everRan?: boolean
   /** The live transcript. Absent once the entry has been compacted. */
   messages?: Message[]
   /** `false` when `messages` is empty only because it was never read off disk. */
@@ -85,21 +100,55 @@ export function sidebarLastPromptAt(thread: SidebarThread): number | undefined {
   return undefined
 }
 
+/** The metadata a live {@link Thread} carries beyond {@link SidebarThread}, used to tell it ran. */
+export type RunSignals = SidebarThread &
+  Partial<Pick<Thread, 'usage' | 'workingBrief' | 'autoTitleCount' | 'draftPrompt'>>
+
+/**
+ * Whether a thread was ever run, without reading its transcript.
+ *
+ * `lastPromptAt` is the direct signal, but a thread written before it existed has
+ * none until its transcript is first loaded. Those threads still leave marks in
+ * their meta: token usage, the working brief set on the first message, or an
+ * auto-title pass. Any of them says it ran; an untouched draft has none. A thread
+ * that ran without recording any (a zero-usage provider on an old build) is
+ * missed until it is opened.
+ */
+export function sidebarHasRun(thread: RunSignals): boolean {
+  if (thread.lastPromptAt !== undefined) return true
+  if (thread.everRan !== undefined) return thread.everRan
+  if (thread.workingBrief !== undefined || thread.autoTitleCount !== undefined) return true
+  return (thread.usage?.inputTokens ?? 0) + (thread.usage?.outputTokens ?? 0) > 0
+}
+
 /**
  * Snapshot a thread down to its sidebar row, releasing the transcript. Idempotent
  * — compacting an already-compacted entry returns the same fields.
  */
-export function compactSidebarThread(thread: SidebarThread): SidebarThread {
+export function compactSidebarThread(thread: RunSignals): SidebarThread {
   const lastPromptAt = sidebarLastPromptAt(thread)
   return {
     id: thread.id,
     title: thread.title,
     ...(thread.createdAt !== undefined ? { createdAt: thread.createdAt } : {}),
+    ...(thread.updatedAt !== undefined ? { updatedAt: thread.updatedAt } : {}),
+    ...(thread.lastSettledAt !== undefined ? { lastSettledAt: thread.lastSettledAt } : {}),
     ...(lastPromptAt !== undefined ? { lastPromptAt } : {}),
     status: thread.status,
+    // A prompt found in the loaded transcript counts too, matching the `lastPromptAt` kept above.
+    everRan: lastPromptAt !== undefined || sidebarHasRun(thread),
     ...(thread.unreadAt !== undefined ? { unreadAt: thread.unreadAt } : {}),
     ...(thread.archivedAt !== undefined ? { archivedAt: thread.archivedAt } : {}),
+    ...(thread.sideChat ? { sideChat: thread.sideChat } : {}),
     ...(thread.automation ? { automation: thread.automation } : {}),
+    ...(thread.automation
+      ? {
+          automationPendingStart:
+            thread.automationPendingStart === true ||
+            automationRunBlock(thread) === 'pending-start',
+        }
+      : {}),
+    ...(thread.worktree ? { worktree: thread.worktree } : {}),
     ...(thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}),
     prRefs: sidebarPrRefs(thread),
     ...(thread.prProductions ? { prProductions: thread.prProductions } : {}),

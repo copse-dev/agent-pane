@@ -5,6 +5,28 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
+async function expectViewerInset(selector: string): Promise<void> {
+  const inset = await browser.execute((selector) => {
+    const viewer = document.querySelector('.roadmap-viewer')
+    const content = document.querySelector(selector)
+    if (!viewer || !content) throw new Error('expected the roadmap viewer and active content')
+    const outer = viewer.getBoundingClientRect()
+    const inner = content.getBoundingClientRect()
+    const minimum = parseFloat(getComputedStyle(viewer).paddingLeft)
+    return {
+      minimum,
+      left: inner.left - outer.left,
+      right: outer.right - inner.right,
+      top: inner.top - outer.top,
+      bottom: outer.bottom - inner.bottom,
+    }
+  }, selector)
+  expect(inset.minimum).toBeGreaterThan(0)
+  for (const edge of [inset.left, inset.right, inset.top, inset.bottom]) {
+    expect(edge).toBeGreaterThanOrEqual(inset.minimum - 1)
+  }
+}
+
 // Issue #2438: navigating away from a running (or just-finished, unclosed)
 // roadmap review used to drop it silently — `reviewing` was reset to false with
 // no way back, even though the run itself kept going/held results. Both items
@@ -14,12 +36,15 @@ import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('roadmap review reattach', () => {
   let workspaceRoot: string
+  let workspaceParent: string
   let knowledgeDir: string
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-review-reattach-'))
+    workspaceParent = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-review-reattach-'))
+    workspaceRoot = join(workspaceParent, 'roadmap-review')
+    mkdirSync(workspaceRoot)
     knowledgeDir = seedRoadmapNotes('e2e-roadmap-review-reattach', [
       {
         id: 'e2e-roadmap-review-reattach-a',
@@ -43,7 +68,7 @@ describe('roadmap review reattach', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    rmSync(workspaceParent, { recursive: true, force: true })
     rmSync(knowledgeDir, { recursive: true, force: true })
   })
 
@@ -70,6 +95,7 @@ describe('roadmap review reattach', () => {
     const importBtn = $('.roadmap-import-btn')
     await importBtn.click()
     await $('.roadmap-import').waitForDisplayed({ timeout: 10_000 })
+    await expectViewerInset('.roadmap-import')
     await expect($('.roadmap-review')).not.toBeDisplayed()
 
     await expect(reviewBtn).toHaveElementClass('roadmap-review-btn-live')
@@ -90,6 +116,7 @@ describe('roadmap review reattach', () => {
       throw new Error(`expected 2 recovered review rows, got ${String(rows.length)}`)
     }
     await expect($('.roadmap-review-btn')).not.toHaveElementClass('roadmap-review-btn-live')
+    await expectViewerInset('.roadmap-review')
 
     await saveAppScreenshot('roadmap-review-reattach-resumed.png')
   })

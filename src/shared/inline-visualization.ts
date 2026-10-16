@@ -58,8 +58,12 @@ export function createInlineVisualizationStreamFilter(
         // its separator.
         if (!final && pending.length <= FRAME_START.length + MAX_OPERATOR_CHARS) return visible
         if (final) {
-          pending = ''
-          return visible
+          // A stream cut mid-operator (`\u{e200}visu`) is control data; anything else
+          // is prose after a stray PUA character and must reach the transcript.
+          if (VISUALIZE_OPERATOR.startsWith(pending.slice(FRAME_START.length))) {
+            pending = ''
+            return visible
+          }
         }
         visible += FRAME_START
         pending = pending.slice(FRAME_START.length)

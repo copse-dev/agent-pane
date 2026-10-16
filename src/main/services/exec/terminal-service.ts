@@ -2,6 +2,7 @@ import { createThreadResource } from '../thread-resource-fence.ts'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
+import { homedir } from 'node:os'
 import type { IDisposable, IPty } from 'node-pty'
 import { spawnPtyInProjectSandbox } from '../../project-sandbox/index.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
@@ -21,6 +22,7 @@ import {
 } from '@shared/terminal/terminal-history.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
+import { beginWorktreeWriter } from '../worktree-writers.ts'
 
 interface PtyListeners {
   onData: IDisposable
@@ -28,6 +30,8 @@ interface PtyListeners {
 }
 
 export interface TerminalSessionMeta {
+  /** Explicit local console, independent of the active project's SSH placement. */
+  executionTarget?: 'local'
   label?: string
   threadId?: string | null
   /**
@@ -67,6 +71,11 @@ export interface TerminalSession {
   projectId: string | null
   /** Immutable checkout owner; editable UI scope cannot hide a live PTY. */
   executionThreadId: string | null
+  /**
+   * Ends the shell's worktree writer lease. Copse cannot see what the user types,
+   * so a live shell keeps the diff queue sweeping `git status` for its tree.
+   */
+  releaseWorktreeWriter?: () => void
 }
 
 const sessions = new Map<string, TerminalSession>()
@@ -247,6 +256,7 @@ function clearActiveIfNeeded(sessionId: string, ownerId: number): void {
 
 function disposeSession(session: TerminalSession, sessionId: string, notify = true): void {
   disposeSessionListeners(session)
+  session.releaseWorktreeWriter?.()
   clearActiveIfNeeded(sessionId, session.owner.id)
   try {
     session.pty.kill()
@@ -272,6 +282,7 @@ function attachPtyHandlers(
   })
   const onExit = ptyProcess.onExit(({ exitCode }) => {
     disposeSessionListeners(session)
+    session.releaseWorktreeWriter?.()
     clearActiveIfNeeded(sessionId, session.owner.id)
     sessions.delete(sessionId)
     notifyThreadResourceFinished(session.threadId)
@@ -290,10 +301,12 @@ async function spawnShell(
   executionRoot?: string,
 ): Promise<TerminalSession> {
   const shell = defaultShell()
+  const cwd = meta?.executionTarget === 'local' ? homedir() : sessionCwd(executionRoot)
   const ptyProcess = await spawnPtyInProjectSandbox(shell, {
     cols,
     rows,
-    cwd: sessionCwd(executionRoot),
+    cwd,
+    ...(meta?.executionTarget === 'local' ? { executionTarget: { kind: 'local' } } : {}),
     env: { ...envForRendererChildProcess(), ...terminalHistoryEnv(shell, meta?.projectId) },
     // User-initiated Shells tabs run outside the project seatbelt; agent shell
     // confinement stays on run_shell / run_background (#662, #812).
@@ -309,6 +322,7 @@ async function spawnShell(
     threadId: meta?.threadId ?? null,
     projectId: meta?.projectId ?? null,
     executionThreadId: meta?.threadId ?? null,
+    releaseWorktreeWriter: beginWorktreeWriter(cwd),
   }
   sessions.set(session.id, session)
   attachPtyHandlers(owner, session.id, ptyProcess, session)

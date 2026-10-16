@@ -102,6 +102,11 @@ function assertNoStatusFill(css: string, selector: string): void {
  *    alpha channel is read, so no hue is being chosen. The existing ChatGPT
  *    sign-in button also preserves its provider brand: black/white with a
  *    #202020 hover. The selector-level test below pins that exception.
+ *  - mobile-companion.css: the QR card background must stay physically white
+ *    regardless of theme so a camera can scan it; no themeable token applies.
+ *    The Coding agents list's brand logo tiles carry each vendor's own tile colour
+ *    (Claude's #d97757, white for Codex, Cursor and Gemini); that is the mark, not a
+ *    Copse hue.
  */
 const ALLOWED_RAW_HEX: Readonly<Record<string, readonly string[]>> = {
   'markdown.css': [
@@ -115,7 +120,8 @@ const ALLOWED_RAW_HEX: Readonly<Record<string, readonly string[]>> = {
     '#1f1f1f',
   ],
   'video-expand.css': ['#000'],
-  'settings.css': ['#000', '#000', '#000', '#202020', '#fff', '#fff', '#fff'],
+  'mobile-companion.css': ['#ffffff'],
+  'settings.css': ['#000', '#000', '#000', '#202020', '#d97757', '#fff', '#fff', '#fff', '#fff'],
 }
 
 function assertApprovedRawHex(file: string, css: string): void {

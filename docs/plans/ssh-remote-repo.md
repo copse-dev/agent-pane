@@ -12,7 +12,7 @@ document is retained as the original design and audit record.
 1. **Phase 0 — SSH auth for git remotes on a _local_ checkout.** Today any git
    operation that needs interactive SSH auth (key passphrase, unknown host key)
    fails silently-ish: the internal runner forces `GIT_SSH_COMMAND='ssh
--oBatchMode=yes'` + `GIT_TERMINAL_PROMPT=0`, and there is **no askpass,
+   -oBatchMode=yes'` + `GIT_TERMINAL_PROMPT=0`, and there is **no askpass,
    credential-helper, or host-key plumbing anywhere** in the codebase. This is
    small, independently shippable, and a hard prerequisite for the bigger
    feature (the bigger feature _is_ an SSH client).
@@ -183,7 +183,7 @@ The transport everything else rides on.
     enough that an `ssh2` backend can be added for Windows later.
 - **`SshConnectionManager`**: `getConnection(hostId)` → ensures the control
   connection, exposes `exec(argv|shellLine, {cwd, env, stdin, signal,
-maxBytes})`, `execPty(...)`, and `sftp()` handles; watches liveness and
+  maxBytes})`, `execPty(...)`, and `sftp()` handles; watches liveness and
   emits connect/drop events (renderer banner + reconnect).
 - **Host configuration**: a settings-backed list (`sshWorkspaceHosts`:
   `{id, label, host, port?, user?, identityFile?}`) plus a picker that offers

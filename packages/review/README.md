@@ -185,8 +185,9 @@ shell's hand-offs (Phase 4).
   `<!-- copse-review-summary -->` markers at the bottom of the description. Each run
   replaces only a block it wrote (whole-line markers outside code fences, the exact rendered
   shape between them, and a hidden digest showing the text is unedited) and leaves the rest
-  of the description untouched. A surfaced high-severity finding raises the risk to High, and any finding raises Low
-  to Medium; the evidence never lowers it. Model prose is inert markdown, as in reviews, so a
+  of the description untouched. A surfaced high or critical finding raises the risk to High, and a
+  medium-severity finding raises Low to Medium. Low-severity findings leave the risk unchanged;
+  the evidence never lowers it. Model prose is inert markdown, as in reviews, so a
   diff cannot forge the end marker. Posting reads the description and writes it back, and
   leaves a pull request whose head has moved past the summarised commit alone.
 - **`eval.ts`** — the measurement (P6, B8): a case's known defects as anchors, a finding

@@ -42,7 +42,8 @@ export const GIT_BRANCH_SAFETY = `Git branch safety (hard rule — a commit on t
 1. Before every commit, check the current branch (git_status or \`git branch --show-current\`) and treat \`main\`/\`master\` (or the repo's default) as the default branch.
 2. If HEAD is on the default branch: do NOT call git_commit yet. First create and switch with \`run_shell\` to \`git checkout -b copse/<short-kebab-summary>\` (example: \`git checkout -b copse/set-retries-to-5\`). Only then call git_commit on that new branch.
 3. If HEAD is already on a non-default working branch: stay there — commit on it; do not create a fresh copse/ branch unless the user asked to change branches.
-4. Never push to the default branch.`
+4. Never push to the default branch.
+5. Keep HEAD on a branch. Do not run \`git rebase\`, \`git pull --rebase\`, \`git bisect start\` or \`git switch --detach\`: a rebase that stops on a conflict or a signing failure leaves the checkout detached, and only the user can repair that once you stop. Use \`git merge\` (or \`git pull --no-rebase\`) to bring in upstream work. If the checkout is already detached or mid-rebase, do not improvise a repair: run \`git rebase --abort\` (or \`git bisect reset\`) only if you started that operation yourself in this turn, and otherwise stop and tell the user to use the recovery button beside the branch name once you have finished.`
 
 const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - git_diff: Show unstaged or staged changes

@@ -104,8 +104,11 @@ function knowledgeBaseDir(): string {
 /**
  * Absolute directory holding the current project's knowledge notes and index.
  *
- * Scoped per project so notes about one repo never leak into another. With no
- * project open the namespace falls back to `shared`.
+ * Scoped per project so notes about one repo never leak into another. "Current"
+ * is the calling agent turn's project when there is one — a turn that outlives
+ * a project switch keeps using its own project's notes — and otherwise the
+ * active project (see `currentProjectStoreScope`). With no project open the
+ * namespace falls back to `shared`.
  */
 export function knowledgeDir(): string {
   return projectStoreNamespaceDir(knowledgeBaseDir())

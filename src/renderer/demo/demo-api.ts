@@ -1,6 +1,7 @@
 import type { SettingsSnapshot } from '@shared/settings-contract.ts'
 import type { ActiveDiff, StreamChunk, Thread } from '@shared/types'
 import { ThreadPrRelationshipIndex } from '@shared/git/thread-pr-relations.ts'
+import { backlinksFor } from '@shared/threads/thread-links.ts'
 import type { AutomationPermissionOption, AutomationSchedule } from '@shared/types/automations.ts'
 import type { PluginContributionsSummary, PluginSummary } from '@shared/types/plugins.ts'
 import type { AppleProjectState } from '@shared/types/apple-development.ts'
@@ -546,7 +547,36 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   )
 
   const api: ApiClient = {
-    mobile: { manage: async () => {}, onChat: () => () => {}, reply: async () => {} },
+    threadPrompts: {
+      onPrompt: () => () => {},
+      reply: async () => {},
+      revokeAccess: async () => {},
+    },
+    mobile: {
+      getState: () =>
+        resolved({
+          enabled: scenario.mobileCompanion !== undefined,
+          running: scenario.mobileCompanion !== undefined,
+          url: scenario.mobileCompanion?.url ?? null,
+          qrSvg: scenario.mobileCompanion?.qrSvg ?? null,
+          rootCertificatePath: null,
+          addresses: scenario.mobileCompanion
+            ? [{ address: new URL(scenario.mobileCompanion.url).hostname, interfaceName: 'Wi-Fi' }]
+            : [],
+          devices: [],
+          pairing: null,
+          lastError: null,
+        }),
+      onStateChanged: () => () => {},
+      enable: () => resolvedVoid(),
+      disable: () => resolvedVoid(),
+      setDeviceAccess: () => resolvedVoid(),
+      revokeDevice: () => resolvedVoid(),
+      respondPairing: () => resolvedVoid(),
+      revealCertificate: () => resolvedVoid(),
+      onChat: () => () => {},
+      reply: async () => {},
+    },
     windowState: {
       getNavigation: () => resolved(structuredClone(navigation)),
       setNavigation: (next) => {
@@ -937,7 +967,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           sizeBytes: archive.bytes?.byteLength ?? 0,
         }),
     },
+    plans: { get: () => resolved(null), revision: () => resolved(null), change: unsupported },
     threads: {
+      storageSize: () => resolved({ bytes: 24_576, truncated: false }),
       archive: (_projectId, threadId) => {
         const archivedAt = Date.now()
         const thread = threads.find((candidate) => candidate.id === threadId)
@@ -1031,6 +1063,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       // The demo has no provider history sidecar to inherit; the forked thread's
       // transcript copy (which the renderer owns) is the whole demo story.
       fork: () => resolved({ source: 'empty' as const, messageCount: 0 }),
+      backlinks: (_projectId: string, kind: 'url' | 'thread', target: string) =>
+        resolved(backlinksFor(threads, kind, target)),
       historySnapshot: unsupported,
       editHistory: unsupported,
       undoHistoryEdit: unsupported,
@@ -1109,8 +1143,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         }),
     },
     acp: {
+      browseRegistry: () => resolved({ entries: [], fetchedAt: Date.now(), skipped: 0 }),
       detectAgents: emptyArray,
       probeAgent: unsupported,
+      authStatus: emptyArray,
       autoSetup: () =>
         resolved({
           installed: [],
@@ -1155,6 +1191,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       install: unsupported,
       start: unsupported,
       stop: unsupported,
+      uninstall: unsupported,
       connect: unsupported,
     },
     chatGptPlan: {
@@ -1229,6 +1266,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           totalCostUsd: 0,
           cloudModels: [],
           localModels: [],
+          classifiers: [],
           totalInputTokens: 0,
           totalOutputTokens: 0,
           hasUnpricedCloudUsage: false,
@@ -1242,6 +1280,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           ledgerEventCount: 0,
         })
       },
+      getThreadClassifierUse: () => resolved({ calls: 0, rows: [] }),
       getPlanUsage: () => resolved({ providers: [], checkedAt: DEMO_TIME }),
       getPlanWorthIt: () =>
         resolved({
@@ -1437,10 +1476,15 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,
+      cleanupRuns: unsupported,
       listBranchCi: emptyArray,
       upsertBranchCi: unsupported,
       removeBranchCi: unsupported,
       testBranchCi: unsupported,
+      eventHistory: emptyArray,
+      reportStartFailure: () => resolved(false),
+      schedulerHealth: () => resolved({ state: 'ok' as const, since: null, message: null }),
+      onSchedulerHealth: subscribe,
       canStart: () => resolved({ allowed: true }),
       onTriggered: subscribe,
     },

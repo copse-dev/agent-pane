@@ -7,11 +7,16 @@ import { patchPreviewDialog } from '../attachments/preview-dialog.test-support.t
 // happy-dom does not expose `ResizeObserver` as a global on its own (only on
 // its `Window` instance), and `tests/setup-dom.ts` does not copy it over —
 // same stub `chat-layout.test.ts` / `input-bar.test.ts` install for the same
-// reason. The editor observes its own root to re-pin a scrolled-to-bottom
-// draft across a resize (#2489); it never fires in this environment, but the
-// constructor call must not throw.
+// reason. Keep callbacks available for explicit browser event-order regressions.
+const resizeCallbacks = new WeakMap<Element, () => void>()
 class TestResizeObserver {
-  observe(): void {}
+  private readonly callback: () => void
+  constructor(callback: () => void) {
+    this.callback = callback
+  }
+  observe(target: Element): void {
+    resizeCallbacks.set(target, this.callback)
+  }
   disconnect(): void {}
 }
 
@@ -166,6 +171,44 @@ describe('composer editor value serialization', () => {
     } finally {
       Reflect.deleteProperty(editor.el, 'scrollHeight')
     }
+  })
+
+  it('keeps the tail through resize scroll events without overriding a reader who scrolled up', () => {
+    const editor = mountComposerEditor()
+    let height = 300
+    let scrollTop = 0
+    Object.defineProperties(editor.el, {
+      clientWidth: { configurable: true, get: () => 500 },
+      clientHeight: { configurable: true, get: () => height },
+      scrollHeight: { configurable: true, get: () => 1_000 },
+      scrollTop: {
+        configurable: true,
+        get: () => scrollTop,
+        set: (value: number) => {
+          scrollTop = Math.max(0, Math.min(value, 1_000 - height))
+        },
+      },
+    })
+    const resized = resizeCallbacks.get(editor.el)
+    assert.ok(resized)
+    resized()
+    assert.equal(scrollTop, 700)
+
+    height = 200
+    editor.el.dispatchEvent(new Event('scroll'))
+    resized()
+    assert.equal(scrollTop, 800, 'resize must preserve the earlier bottom pin')
+
+    editor.el.scrollTop = 300
+    editor.el.dispatchEvent(new Event('scroll'))
+    height = 100
+    editor.el.dispatchEvent(new Event('scroll'))
+    resized()
+    assert.equal(scrollTop, 300, 'an explicit scroll up must survive resizing')
+
+    editor.value = 'a different draft'
+    resized()
+    assert.equal(scrollTop, 900, 'a new draft establishes a fresh bottom pin')
   })
 })
 

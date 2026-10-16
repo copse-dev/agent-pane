@@ -12,6 +12,9 @@ export function mountRightPanelLayout(store: AppStore): () => void {
   function syncLayout(): void {
     const mode = store.getState().rightPanelMode
     const isExplorer = mode === 'explorer'
+    const isContext = mode === 'context'
+    document.getElementById('pane-files')?.classList.toggle('is-context-panel', isContext)
+    const isSideChat = mode === 'side-chat'
     const isTerminal = mode === 'terminal'
     const isChanges = mode === 'changes'
     const isPrs = mode === 'prs'
@@ -20,7 +23,12 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     const isBrowser = mode === 'browser'
     const isVnc = mode === 'vnc'
 
+    const sidebar = document.getElementById('right-sidebar')
+    if (sidebar) sidebar.hidden = isContext
+
     const treeHost = document.getElementById('file-tree-host')
+    const contextHost = document.getElementById('context-host')
+    const sideChatHost = document.getElementById('side-chat-host')
     const terminalsList = document.getElementById('terminals-list-host')
     const gitChangesHost = document.getElementById('git-changes-host')
     const prListHost = document.getElementById('pr-list-host')
@@ -30,6 +38,8 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     const vncControlsHost = document.getElementById('vnc-controls-host')
     const treeResizer = document.getElementById('resizer-tree')
     const fileViewer = document.getElementById('file-viewer')
+    const contextViewer = document.getElementById('context-viewer-host')
+    const sideChatViewer = document.getElementById('side-chat-viewer-host')
     const terminalsViewer = document.getElementById('terminals-viewer-host')
     const gitDiffViewer = document.getElementById('git-diff-viewer-host')
     const prViewer = document.getElementById('pr-viewer-host')
@@ -39,6 +49,8 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     const vncViewer = document.getElementById('vnc-viewer-host')
 
     if (treeHost) treeHost.hidden = !isExplorer
+    if (contextHost) contextHost.hidden = !isContext
+    if (sideChatHost) sideChatHost.hidden = !isSideChat
     if (terminalsList) terminalsList.hidden = !isTerminal
     if (gitChangesHost) gitChangesHost.hidden = !isChanges
     if (prListHost) prListHost.hidden = !isPrs
@@ -47,6 +59,8 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     if (browserTabsHost) browserTabsHost.hidden = !isBrowser
     if (vncControlsHost) vncControlsHost.hidden = !isVnc
     if (fileViewer) fileViewer.hidden = !isExplorer
+    if (contextViewer) contextViewer.hidden = !isContext
+    if (sideChatViewer) sideChatViewer.hidden = !isSideChat
     if (terminalsViewer) terminalsViewer.hidden = !isTerminal
     if (gitDiffViewer) gitDiffViewer.hidden = !isChanges
     if (prViewer) prViewer.hidden = !isPrs
@@ -54,7 +68,7 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     if (roadmapViewer) roadmapViewer.hidden = !isRoadmap
     if (browserViewer) browserViewer.hidden = !isBrowser
     if (vncViewer) vncViewer.hidden = !isVnc
-    if (treeResizer) treeResizer.hidden = !store.getState().filesPaneOpen
+    if (treeResizer) treeResizer.hidden = isContext || !store.getState().filesPaneOpen
   }
 
   /**

@@ -147,10 +147,21 @@ describe('experimental settings section', () => {
 
     const mobileCompanion = await experimental.$('legend=Mobile Companion').parentElement()
     await expect(mobileCompanion).toBeDisplayed()
-    await expect(mobileCompanion.$('#mobile-companion-manage')).toHaveText('Set up or manage…')
+    // Enabling, network choice, pairing approval, and device management all live
+    // inline here now — no separate native-dialog management surface.
+    await expect(mobileCompanion.$('input[name="mobileCompanionEnabled"]')).toExist()
+    await expect(
+      mobileCompanion.$('select[name="mobileCompanionAddress"] option:checked'),
+    ).toHaveText('Wi-Fi — 192.168.1.42')
+    assert.equal(await mobileCompanion.$('#mobile-companion-manage').isExisting(), false)
     const mobileCompanionHint = await mobileCompanion.$('.field-hint').getText()
     assert.match(mobileCompanionHint, /same local network/i)
     assert.doesNotMatch(mobileCompanionHint, /\bsecure(?:ly)?\b/i)
+    // Mobile Companion is off by default in this profile, so the pairing QR
+    // must stay hidden — it only appears once a server is actually running
+    // (see settings-experimental-copy.demo.ts for the enabled/running
+    // appearance, exercised against the demo fixture).
+    await expect(mobileCompanion.$('#mobile-companion-qr')).not.toBeDisplayed()
 
     // The classifier is described in plain terms: how hard the task is and which
     // model suits it, with no internal tool or scale vocabulary.

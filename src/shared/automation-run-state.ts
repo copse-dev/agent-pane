@@ -12,7 +12,7 @@ import type { Thread } from '@shared/types'
  *   trigger would otherwise be skipped forever.
  */
 export function automationRunBlock(
-  thread: Pick<Thread, 'status' | 'draftPrompt' | 'automation'>,
+  thread: Pick<Thread, 'status' | 'draftPrompt'> & { automation?: Thread['automation'] },
 ): 'running' | 'pending-start' | null {
   if (thread.status === 'running') return 'running'
   if (Boolean(thread.draftPrompt?.trim()) && thread.automation?.startFailedAt === undefined) {

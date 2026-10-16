@@ -170,15 +170,43 @@ export function markNavigationRestored(restored: MainWindowNavigation): void {
   lastNavigation = restored
 }
 
+/**
+ * The project a dispatched switch has already persisted as selected, while that
+ * switch is still applying; `null` when no switch is in flight.
+ *
+ * Until the switch applies, the store still names the *outgoing* project, and
+ * every writer that persists navigation from the store — the autosave flush, a
+ * sidebar reorder, removing some other project — would put that project back.
+ * Main mirrors navigation into the legacy `activeProjectId` key, which
+ * project-scoped reads (`roadmap:list` and the rest of the project store) resolve
+ * their directory from, and the switch repaints without awaiting its final
+ * navigation write. So the outgoing project, written mid-switch, was what those
+ * reads saw on `workspace_changed`: the roadmap listed the previous project's
+ * notes. While held, a write naming any other project is dropped, which keeps
+ * the persisted selection on the target from dispatch onwards.
+ */
+let navigationHeldFor: string | null = null
+
+/**
+ * Called by a project switch as it persists its target (`projectId`), and with
+ * `null` once that switch is applied, superseded or abandoned — before any write
+ * that puts the outgoing project back.
+ */
+export function holdNavigation(projectId: string | null): void {
+  navigationHeldFor = projectId
+}
+
 function serializedNavigation(api: ApiClient, navigation: MainWindowNavigation): Promise<void> {
   if (!ownsNavigation || !navigationRestored) return Promise.resolve()
   if (
-    lastNavigation !== null &&
-    lastNavigation.activeProjectId === navigation.activeProjectId &&
-    lastNavigation.activeThreadId === navigation.activeThreadId
+    (navigationHeldFor !== null && navigation.activeProjectId !== navigationHeldFor) ||
+    (lastNavigation !== null &&
+      lastNavigation.activeProjectId === navigation.activeProjectId &&
+      lastNavigation.activeThreadId === navigation.activeThreadId)
   ) {
-    // The value is recorded before IPC finishes. Callers that await navigation
-    // before reading project-scoped stores must also await that pending write.
+    // Held for another project, or unchanged. An unchanged value is recorded
+    // before IPC finishes, so callers that await navigation before reading
+    // project-scoped stores must also await that pending write.
     return (writeChains.get('mainWindow:navigation') ?? Promise.resolve()).then(() => undefined)
   }
   lastNavigation = navigation
@@ -191,13 +219,18 @@ function serializedNavigation(api: ApiClient, navigation: MainWindowNavigation):
 const threadWriteKey = (projectId: string, threadId: string): string =>
   `thread:${projectId}:${threadId}`
 
-type ThreadMeta = Omit<Thread, 'messages' | 'messagesLoaded'>
+type ThreadMeta = Omit<Thread, 'messages' | 'messagesLoaded' | 'hasSavedPlan'>
 
 function metaOf(thread: Thread): ThreadMeta {
-  // Mirror the main-process `metaOf`: `messagesLoaded` is session-local load
-  // bookkeeping. Leaving it in would also make hydrating a thread look like a
-  // metadata change and fire a pointless `updateMeta` write per thread opened.
-  const { messages: _messages, messagesLoaded: _messagesLoaded, ...meta } = thread
+  // Mirror the main-process `metaOf`: load state and plan presence are derived
+  // for this session. Hydration and plan saves must not write these projections
+  // back as mutable metadata.
+  const {
+    messages: _messages,
+    messagesLoaded: _messagesLoaded,
+    hasSavedPlan: _hasSavedPlan,
+    ...meta
+  } = thread
   return meta
 }
 
@@ -211,16 +244,26 @@ function metaSig(meta: ThreadMeta): string {
  * field the renderer has dropped (a drained `pendingMessages`, a lifted
  * `queuePaused`, a cleared `contextSnapshot`) would otherwise linger in
  * `meta.json` and, on the next restore, resurrect a phantom "queued" message and
- * re-dispatch its run. Carry the full next meta plus an explicit `undefined` for
- * every key that was present in the last-persisted meta but is now gone: the
- * merge then writes `undefined`, which `JSON.stringify` drops, clearing the field
- * on disk. Fields the renderer never carries (main-owned `remoteAgentLink`) never
- * appear in `prev`, so they are never nulled and stay preserved by the merge.
+ * re-dispatch its run. Carry an explicit `undefined` for every key that was
+ * present in the last-persisted meta but is now gone: the merge then writes
+ * `undefined`, which `JSON.stringify` drops, clearing the field on disk.
+ *
+ * Only keys whose value changed since that baseline are sent. Main writes some
+ * metadata directly (`prRefs`, `remoteAgentLink`, `modelSelections`); the
+ * renderer's copy of those can be stale, and re-sending it with every unrelated
+ * change (a draft keystroke) would overwrite the newer value on disk.
  */
 function metaPatch(prev: ThreadMeta, next: ThreadMeta): Partial<ThreadMeta> {
-  const patch: Record<string, unknown> = { ...next }
-  for (const key of Object.keys(prev)) {
-    if (!Object.hasOwn(next, key)) patch[key] = undefined
+  const before: Record<string, unknown> = { ...prev }
+  const after: Record<string, unknown> = { ...next }
+  const patch: Record<string, unknown> = {}
+  for (const key of Object.keys(after)) {
+    if (!Object.hasOwn(before, key) || JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
+      patch[key] = after[key]
+    }
+  }
+  for (const key of Object.keys(before)) {
+    if (!Object.hasOwn(after, key)) patch[key] = undefined
   }
   return patch
 }
@@ -291,6 +334,7 @@ export function __resetPersistenceForTest(): void {
   ownsNavigation = true
   navigationRestored = true
   lastNavigation = null
+  navigationHeldFor = null
 }
 
 export async function loadProjects(api: ApiClient): Promise<{
@@ -369,7 +413,11 @@ export function saveProjectGroups(api: ApiClient, groups: ProjectGroup[]): Promi
 }
 
 export async function loadThreads(api: ApiClient, projectId: string): Promise<Thread[]> {
-  const threads = sortThreadsNewestFirst(await api.threads.loadProject(projectId))
+  const threads = sortThreadsNewestFirst(await api.threads.loadProject(projectId)).map((thread) =>
+    thread.status !== 'running' && thread.lastSettledAt === undefined
+      ? { ...thread, lastSettledAt: thread.updatedAt }
+      : thread,
+  )
   // Seed the persisted-metadata baseline so the autosave doesn't re-create these
   // (they're already on disk) but still detects later deletions and removed keys.
   const metas = new Map<string, ThreadMeta>()

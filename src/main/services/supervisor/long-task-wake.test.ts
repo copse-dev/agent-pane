@@ -7,6 +7,8 @@ import type {
   SupervisedTaskMeta,
 } from '@shared/supervisor/task-schema.ts'
 import type { LongTask } from '../storage/long-task-tracker.ts'
+import type { ProjectStoreScope } from '../storage/project-namespace.ts'
+import { storageSet } from '../storage/storage.ts'
 import {
   installLongTaskWakeConsumer,
   scheduleLongTaskWake,
@@ -165,6 +167,47 @@ describe('long-task supervised wake', () => {
     } finally {
       dispose()
       await supervisor.shutdown()
+    }
+  })
+
+  // A wake can fire while the user has another project open; the checklist it
+  // continues must come from the woken thread's own project store.
+  it("loads the checklist from the woken thread's project, not the active one", async () => {
+    storageSet('projects', [
+      { id: 'project-1', path: '/project', name: 'project' },
+      { id: 'project-2', path: '/other', name: 'other' },
+    ])
+    storageSet('activeProjectId', 'project-2')
+    const store = new MemoryStore()
+    const clock = new FixedClock(100)
+    const supervisor = new TaskSupervisor({
+      store,
+      clock,
+      createId: (): string => 'supervised-scope',
+    })
+    const scopes: ProjectStoreScope[] = []
+    const dispose = installLongTaskWakeConsumer(
+      supervisor,
+      { dispatchMachine: (): Promise<'completed'> => Promise.resolve('completed') },
+      dependencies({
+        loadTasks: (scope) => {
+          scopes.push(scope)
+          return [longTask]
+        },
+      }),
+    )
+
+    try {
+      await scheduleLongTaskWake({ context, turnTreeId, longTaskId: 't1', delayMs: 100 })
+      clock.fire()
+      await supervisor.waitForIdle()
+
+      assert.deepEqual(scopes, [{ projectId: 'project-1', root: '/project' }])
+    } finally {
+      dispose()
+      await supervisor.shutdown()
+      storageSet('projects', [])
+      storageSet('activeProjectId', null)
     }
   })
 

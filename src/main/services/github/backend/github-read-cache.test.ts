@@ -5,6 +5,7 @@ import {
   invalidateGitHubReadCache,
   resetGitHubReadCacheForTest,
 } from './github-read-cache.ts'
+import { branchPrCache, type BranchPrResult } from '../branch-pr-cache.ts'
 import type { GitHubBackend, PrRef } from './backend.ts'
 import type {
   GhCliStatus,
@@ -118,6 +119,48 @@ describe('cachingGitHubBackend', () => {
     await backend.getStatus()
     assert.equal(calls.status, 2, 'the refreshed value is what stays cached')
   })
+
+  for (const ok of [true, false]) {
+    it(`invalidates branch observations only after a successful PR mutation (${String(ok)})`, async () => {
+      const calls = { status: 0, details: 0, approve: 0 }
+      const result: PrActionResult = { ok, backend: 'api', message: 'result' }
+      const backend = cachingGitHubBackend({
+        ...emptyBackend(calls),
+        createPr: async () => result,
+        approvePr: async () => result,
+        markPrReady: async () => result,
+        enableAutoMerge: async () => result,
+        rerunFailedRuns: async () => result,
+      })
+      const actions: Array<() => Promise<PrActionResult>> = [
+        (): Promise<PrActionResult> =>
+          backend.createPr({
+            owner: 'octo',
+            repo: 'demo',
+            title: 'PR',
+            body: 'Body',
+            head: 'feature',
+            base: 'main',
+          }),
+        (): Promise<PrActionResult> => backend.approvePr(REF),
+        (): Promise<PrActionResult> => backend.markPrReady(REF),
+        (): Promise<PrActionResult> => backend.enableAutoMerge(REF),
+        (): Promise<PrActionResult> => backend.rerunFailedRuns(REF),
+      ]
+      for (const action of actions) {
+        let reads = 0
+        const load = async (): Promise<BranchPrResult> => {
+          reads++
+          return { ok: false, pr: null }
+        }
+        await branchPrCache.get('branch', load)
+        await action()
+        await branchPrCache.get('branch', load)
+        assert.equal(reads, ok ? 2 : 1)
+        branchPrCache.invalidate()
+      }
+    })
+  }
 
   it('drops PR details after a write', async () => {
     const calls = { status: 0, details: 0, approve: 0 }

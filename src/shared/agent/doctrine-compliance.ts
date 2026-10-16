@@ -84,8 +84,10 @@ const WEAK_OPENERS =
 
 const ARROW_CHAIN_LINE = /^\s*(?:[-*]\s*)?(?:\w[\w./:-]*\s*)(?:→|->)\s*\w/
 
+// `ERROR:` sits outside the trailing `\b`: a colon followed by a space is not a word
+// boundary, so `Error: msg` would never match inside the group.
 const FAILURE_SIGNAL =
-  /\b(FAIL(?:ED|URE)?|ERROR:|exit\s*=?\s*[1-9]\d*|AssertionError|Traceback|tests?\s+failed)\b/i
+  /\b(?:FAIL(?:ED|URE)?|exit\s*=?\s*[1-9]\d*|AssertionError|Traceback|tests?\s+failed)\b|\bERROR:/i
 
 const FAILURE_ACK =
   /\b(fail(?:ed|ure|ing)?|error|broken|did not pass|doesn't pass|does not pass|red)\b/i

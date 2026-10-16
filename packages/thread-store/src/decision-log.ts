@@ -53,6 +53,7 @@ export type DecisionActor = (typeof DECISION_ACTORS)[number]
  * eventual answer.
  */
 const DECISION_VERDICTS = [
+  'requested',
   'approved',
   'denied',
   'allowed',
@@ -97,6 +98,8 @@ export interface DecisionEvent {
   threadId?: string
   /** Tool call this decision authorized, when known. */
   toolCallId?: string
+  /** Host-owned bridge execution ID; independent of ACP transcript IDs. */
+  bridgeExecutionId?: string
   /** Redacted extra context: hook config path, classifier model id, etc. */
   source?: string
   /**
@@ -107,6 +110,15 @@ export interface DecisionEvent {
    * by a newer build degrades to "uncaused" here instead of failing to load.
    */
   cause?: PromptCause
+  /**
+   * Wall-clock time a classifier took to answer, in milliseconds. Set only on
+   * `classifier-call` events (one per screening attempt), so the footer can
+   * report how much classifier work a thread caused.
+   */
+  latencyMs?: number
+  /** Tokens the classifier's own call consumed; absent when it reported none. */
+  inputTokens?: number
+  outputTokens?: number
 }
 
 /** Longest subject/reason we persist; keeps a runaway command line bounded. */
@@ -193,9 +205,13 @@ export function makeDecisionEvent(input: DecisionInput, id: string, at: number):
   }
   if (input.threadId !== undefined) event.threadId = input.threadId
   if (input.toolCallId !== undefined) event.toolCallId = input.toolCallId
+  if (input.bridgeExecutionId !== undefined) event.bridgeExecutionId = input.bridgeExecutionId
   if (input.source !== undefined) event.source = clampField(redactSecrets(input.source))
   // Not redacted or clamped: a cause is one of a fixed set of slugs, never free text.
   if (input.cause !== undefined) event.cause = input.cause
+  if (input.latencyMs !== undefined) event.latencyMs = input.latencyMs
+  if (input.inputTokens !== undefined) event.inputTokens = input.inputTokens
+  if (input.outputTokens !== undefined) event.outputTokens = input.outputTokens
   return event
 }
 
@@ -205,6 +221,12 @@ export function serializeDecisionLine(event: DecisionEvent): string {
 
 function isOptionalString(value: unknown): boolean {
   return value === undefined || typeof value === 'string'
+}
+
+function isOptionalCount(value: unknown): boolean {
+  return (
+    value === undefined || (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)
+  )
 }
 
 const isDecisionActor = memberOf(DECISION_ACTORS)
@@ -226,6 +248,8 @@ export function parseDecisionLine(raw: string): DecisionEvent | null {
   const event = parsed
   const { v, type, id, at, kind, actor, verdict, subject } = event
   const { scope, remembered, confidence, reasons, threadId, toolCallId, source, cause } = event
+  const { latencyMs, inputTokens, outputTokens } = event
+  const { bridgeExecutionId } = event
   if (
     v !== DECISION_LOG_SCHEMA_VERSION ||
     type !== 'decision' ||
@@ -249,7 +273,11 @@ export function parseDecisionLine(raw: string): DecisionEvent | null {
     (reasons !== undefined && !isStringArray(reasons)) ||
     !isOptionalString(threadId) ||
     !isOptionalString(toolCallId) ||
-    !isOptionalString(source)
+    !isOptionalString(bridgeExecutionId) ||
+    !isOptionalString(source) ||
+    !isOptionalCount(latencyMs) ||
+    !isOptionalCount(inputTokens) ||
+    !isOptionalCount(outputTokens)
   ) {
     return null
   }
@@ -268,10 +296,14 @@ export function parseDecisionLine(raw: string): DecisionEvent | null {
     ...(reasons !== undefined ? { reasons } : {}),
     ...(typeof threadId === 'string' ? { threadId } : {}),
     ...(typeof toolCallId === 'string' ? { toolCallId } : {}),
+    ...(typeof bridgeExecutionId === 'string' ? { bridgeExecutionId } : {}),
     ...(typeof source === 'string' ? { source } : {}),
     // Unknown slugs drop rather than reject the line: a log written by a newer
     // build must stay readable, just without that dimension.
     ...(isPromptCause(cause) ? { cause } : {}),
+    ...(typeof latencyMs === 'number' ? { latencyMs } : {}),
+    ...(typeof inputTokens === 'number' ? { inputTokens } : {}),
+    ...(typeof outputTokens === 'number' ? { outputTokens } : {}),
   }
 }
 

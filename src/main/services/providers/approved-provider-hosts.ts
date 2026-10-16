@@ -6,6 +6,7 @@ import {
   providerHostKey,
 } from '@copse/llm/provider-host-policy.ts'
 import { normalizeHostname } from '@copse/llm/credential-url.ts'
+import { providerApprovalDetails } from '@shared/approval-copy.ts'
 import {
   APPROVED_PROVIDER_HOSTS_SETTING,
   PROVIDER_ALLOW_USER_APPROVAL_SETTING,
@@ -89,15 +90,8 @@ export async function ensureProviderHostApproved(baseUrl: string): Promise<void>
   const { requestApproval } = await import('../approval.ts')
   const { approved: ok } = await requestApproval({
     title: 'Allow model provider host?',
-    body: [
-      'Your API key and prompts will be sent to this host:',
-      '',
-      host,
-      '',
-      `Base URL: ${baseUrl.trim()}`,
-      '',
-      'Approve to always allow this provider host (saved in Settings).',
-    ].join('\n'),
+    ...providerApprovalDetails(host, baseUrl),
+    approveLabel: 'Always allow host',
     type: 'web',
     cause: 'provider-host',
     allowRemember: false,

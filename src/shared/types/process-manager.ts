@@ -1,3 +1,5 @@
+import type { NetworkActivitySnapshot } from './network-activity.ts'
+
 /** A stable Copse-owned handle; never an arbitrary OS process id. */
 export type ManagedProcessHandle =
   | { kind: 'terminal'; id: string }
@@ -21,4 +23,5 @@ export interface ProcessManagerRow {
 export interface ProcessManagerSnapshot {
   sampledAt: number
   processes: ProcessManagerRow[]
+  network?: NetworkActivitySnapshot
 }

@@ -17,9 +17,13 @@ import {
   type ThreadPrRelationship,
 } from './thread-pr-relations.ts'
 import type { GithubPrRef } from './github-pr-url.ts'
+import type { ThreadBacklink } from './thread-links.ts'
+import type { ThreadLink } from './thread-types.ts'
 
 export const THREAD_INDEX_FILE = '.thread-index.sqlite'
-const SCHEMA_VERSION = 1
+// v2 adds the links table. An older index is incompatible, so the store discards
+// and rebuilds it from the authoritative thread files.
+const SCHEMA_VERSION = 2
 const BATCH_SIZE = 128
 const kindsSchema = z.array(z.enum(['produced', 'referenced', 'agent-linked']))
 const threadRelationSchema = z.object({ pr: prRefSchema, kinds: kindsSchema })
@@ -62,6 +66,8 @@ export class SqliteThreadIndex {
   #readCommit
   #readUnscanned
   #readUnscannedThread
+  #putLink
+  #readBacklinks
 
   constructor(path: string) {
     this.#db = new DatabaseSync(path)
@@ -95,6 +101,12 @@ export class SqliteThreadIndex {
           PRIMARY KEY(thread_id, repository, sha)
         );
         CREATE INDEX IF NOT EXISTS commit_lookup ON commit_links(repository, sha, thread_id);
+        CREATE TABLE IF NOT EXISTS links (
+          thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+          kind TEXT NOT NULL, target TEXT NOT NULL,
+          PRIMARY KEY(thread_id, kind, target)
+        );
+        CREATE INDEX IF NOT EXISTS link_lookup ON links(kind, target, thread_id);
         CREATE TABLE IF NOT EXISTS pending (thread_id TEXT PRIMARY KEY);
         PRAGMA user_version=${String(SCHEMA_VERSION)};
       `)
@@ -127,6 +139,10 @@ export class SqliteThreadIndex {
       this.#readCommit = this.#db.prepare(
         'SELECT payload FROM commit_links WHERE repository=? AND sha=? ORDER BY thread_id',
       )
+      this.#putLink = this.#db.prepare('INSERT INTO links VALUES(?,?,?)')
+      this.#readBacklinks = this.#db.prepare(`SELECT l.thread_id AS id, t.meta AS meta FROM links l
+        JOIN threads t ON t.id=l.thread_id WHERE l.kind=? AND l.target=? AND t.archived=0
+        ORDER BY l.thread_id`)
       const unscanned = "archived=0 AND json_type(meta,'$.prRefs') IS NULL"
       this.#readUnscanned = this.#db.prepare(`SELECT id FROM threads WHERE ${unscanned}`)
       this.#readUnscannedThread = this.#db.prepare(
@@ -181,7 +197,9 @@ export class SqliteThreadIndex {
     )
     this.#db.prepare('DELETE FROM pr_links WHERE thread_id=?').run(thread.id)
     this.#db.prepare('DELETE FROM commit_links WHERE thread_id=?').run(thread.id)
+    this.#db.prepare('DELETE FROM links WHERE thread_id=?').run(thread.id)
     if (thread.archivedAt != null) return
+    for (const link of thread.links ?? []) this.#putLink.run(thread.id, link.kind, link.target)
     for (const [ordinal, relation] of threadPrRelationships(thread).entries()) {
       const key = prRelationKey(relation.pr)
       const prPayload: PrThreadRelationship = {
@@ -262,6 +280,14 @@ export class SqliteThreadIndex {
       await setImmediate()
     }
     return sortThreadsNewestFirst(threads)
+  }
+
+  /** Active threads that mention `target`. */
+  backlinks(kind: ThreadLink['kind'], target: string): ThreadBacklink[] {
+    return this.#readBacklinks.all(kind, target).map((row) => {
+      const meta = decode(row['meta'], parseThreadMetaValue)
+      return { threadId: meta.id, title: meta.title }
+    })
   }
 
   forPr(pr: GithubPrRef): PrThreadRelationship[] {

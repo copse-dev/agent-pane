@@ -31,6 +31,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { optionalRecord } from '@shared/unknown-value.ts'
 import { startProposedThread } from './thread-proposals.ts'
+import { markThreadHasSavedPlan, switchThread } from '@shared/store/thread-helpers.ts'
 
 // attachAutosave registers a pagehide listener; provide a minimal window stub
 // (node test env has no DOM).
@@ -423,6 +424,57 @@ test('a metadata change on a known thread emits updateMeta, not create', async (
     calls.metas.map((m) => [m.threadId, expectRecord(m.patch)['draftPrompt']]),
     [['t1', 'typing']],
   )
+  autosave.detach()
+})
+
+test('a meta patch carries only changed keys, never stale copies of main-written fields', async () => {
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi()
+  const prRef = {
+    owner: 'acme',
+    repo: 'widgets',
+    number: 1,
+    url: 'https://github.com/acme/widgets/pull/1',
+  }
+  const loaded = thread('t1', {
+    prRefs: [prRef],
+    remoteAgentLink: { provider: 'cursor', agentId: 'agent', createdAt: 1 },
+    modelSelections: [{ id: 's1', recordedAt: 1, by: 'user', to: 'model-a' }],
+  })
+  const store = createStore({ activeProjectId: 'p1', threads: [loaded], projects: [] })
+  const autosave = attachAutosave(store, api)
+  store.emit('threads_changed')
+  await waitDebounce()
+
+  // Main has since appended a model selection / PR ref on disk; the renderer's
+  // copies are stale. A draft keystroke must not send them back.
+  store.setState({ threads: [{ ...loaded, draftPrompt: 'typing' }] })
+  store.emit('thread_draft_changed', 't1')
+  await waitDebounce()
+
+  const patch = expectRecord(calls.metas.at(-1)?.patch)
+  assert.deepEqual(Object.keys(patch), ['draftPrompt'])
+  assert.equal(patch['draftPrompt'], 'typing')
+  autosave.detach()
+})
+
+test('saving a plan prevents autosave deletion without persisting its derived retention flag', async () => {
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi()
+  const store = createStore({
+    activeProjectId: 'p1',
+    activeThreadId: 'plan',
+    threads: [thread('plan'), thread('other', { messages: [userMsg('u1')] })],
+  })
+  const autosave = attachAutosave(store, api)
+  store.emit('threads_changed')
+  await awaitPendingThreadPersistence()
+  markThreadHasSavedPlan(store, 'plan')
+  switchThread(store, 'other')
+  await waitDebounce()
+  assert.deepEqual(calls.deletes, [])
+  assert.deepEqual(calls.metas, [], 'derived plan presence is not mutable thread metadata')
+  assert.ok(store.getState().threads.some((item) => item.id === 'plan'))
   autosave.detach()
 })
 

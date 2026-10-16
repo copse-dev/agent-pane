@@ -37,22 +37,24 @@ Example settings fragment:
 
 ## What Copse supports
 
-| Capability                         | Status        | Notes                                                                                |
-| ---------------------------------- | ------------- | ------------------------------------------------------------------------------------ |
-| **`PreToolUse` commands**          | Supported     | Matcher + `type: "command"` handlers; same trust model as Cursor                     |
-| **Exit code 2 deny**               | Supported     | stderr (else stdout) becomes the agent-facing deny reason                            |
-| **JSON `permissionDecision`**      | Supported     | `allow` / `deny` / `ask`; `defer` mapped to `ask`                                    |
-| **`SessionStart`**                 | Supported     | Fire-and-forget on a new conversation (source `startup`)                             |
-| **`PostToolUse`**                  | Supported     | Detached observation; matcher on the Claude tool name — see below                    |
-| **`UserPromptSubmit`**             | Supported     | Blocking: a `block` decision (or exit 2) halts the submit                            |
-| **`Stop` / `SubagentStop`**        | Supported     | Detached observation — see below                                                     |
-| **User / project / local**         | Supported     | Project + local require workspace trust (#100)                                       |
-| **Sources UI**                     | Supported     | Listed alongside Cursor hooks in Settings → Customise                                |
-| **Prompt / HTTP / agent handlers** | Not supported | Only `type: "command"` (or omitted type)                                             |
-| **`if` permission-rule filters**   | Not supported | Matcher-only for v1                                                                  |
-| **`PreCompact`**                   | Not supported | The canonical `compaction` event is typed but has no fire site                       |
-| **`SessionEnd` / `Notification`**  | Not supported | No canonical event to hang them on                                                   |
-| **Long-tail events**               | Not supported | `PermissionRequest`, `TeammateIdle`, … — reported in Sources, never silently dropped |
+| Capability                         | Status        | Notes                                                                                                                |
+| ---------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------- |
+| **`PreToolUse` commands**          | Supported     | Matcher + `type: "command"` handlers; same trust model as Cursor                                                     |
+| **Exit code 2 deny**               | Supported     | stderr (else stdout) becomes the agent-facing deny reason                                                            |
+| **JSON `permissionDecision`**      | Supported     | `allow` / `deny` / `ask`; `defer` mapped to `ask`                                                                    |
+| **Deprecated `decision: "block"`** | Supported     | PreToolUse top-level block denies when no `permissionDecision` is given; `approve` is ignored                        |
+| **Tool names**                     | Supported     | `Bash`, `Read`, `Write` (`write_file`), `Edit` (`str_replace`), `mcp__…`; others have no Claude name and never match |
+| **`SessionStart`**                 | Supported     | Fire-and-forget on a new conversation (source `startup`)                                                             |
+| **`PostToolUse`**                  | Supported     | Detached observation; matcher on the Claude tool name — see below                                                    |
+| **`UserPromptSubmit`**             | Supported     | Blocking: a `block` decision (or exit 2) halts the submit                                                            |
+| **`Stop` / `SubagentStop`**        | Supported     | Detached observation — see below                                                                                     |
+| **User / project / local**         | Supported     | Project + local require workspace trust (#100)                                                                       |
+| **Sources UI**                     | Supported     | Listed alongside Cursor hooks in Settings → Customise                                                                |
+| **Prompt / HTTP / agent handlers** | Not supported | Only `type: "command"` (or omitted type)                                                                             |
+| **`if` permission-rule filters**   | Not supported | Matcher-only for v1                                                                                                  |
+| **`PreCompact`**                   | Not supported | The canonical `compaction` event is typed but has no fire site                                                       |
+| **`SessionEnd` / `Notification`**  | Not supported | No canonical event to hang them on                                                                                   |
+| **Long-tail events**               | Not supported | `PermissionRequest`, `TeammateIdle`, … — reported in Sources, never silently dropped                                 |
 
 ### What "block" means for the detached events
 
@@ -71,7 +73,10 @@ stops the prompt from being submitted, exactly as in Claude Code.
 
 Claude has no `failClosed` flag. Copse therefore fails **closed** when a command crashes,
 times out, cannot spawn, or returns invalid output. Exit 2 remains an explicit deny under
-Claude's contract. If an imported hook is incompatible with this host policy, turn
+Claude's contract. A per-hook `timeout` beyond Node's timer range is clamped rather than
+overflowing to an instant kill, a timeout kills the hook's whole process group, and a
+regex `matcher` runs under a 50 ms budget (a pattern that backtracks past it is treated as
+matching, so the hook still runs). If an imported hook is incompatible with this host policy, turn
 external hooks off in Settings → Sources.
 
 ### Enablement

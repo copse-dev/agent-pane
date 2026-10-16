@@ -9,7 +9,11 @@ import { workspaceRelativePath } from '@shared/fs/workspace-path.ts'
 
 export const WORKSPACE_PATH_MIME = 'application/x-copse-panel-path'
 
-type ElectronFile = File & { path?: string }
+/** A dropped or picked file's on-disk path, or null for one with none (a pasted blob). */
+function diskPathOf(file: File): string | null {
+  const path = window.copseFiles?.pathForFile(file) ?? ''
+  return path === '' ? null : path
+}
 
 /** Keep workspace-path drop tests on the two reads this adapter can perform. */
 export type FileDropApi = {
@@ -78,7 +82,7 @@ async function attachWorkspacePath(
 }
 
 async function attachDroppedFile(
-  file: ElectronFile,
+  file: File,
   handlers: PromptAttachmentHandlers,
   api: FileDropApi,
   workspaceRoot: string | null,
@@ -115,7 +119,7 @@ async function attachDroppedFile(
     return
   }
 
-  const absPath = file.path
+  const absPath = diskPathOf(file)
   if (absPath && workspaceRoot) {
     await attachWorkspacePath(absPath, handlers, api, workspaceRoot, owner)
     return
@@ -130,7 +134,7 @@ async function attachDroppedFile(
 }
 
 export async function attachFiles(
-  files: ElectronFile[],
+  files: File[],
   handlers: PromptAttachmentHandlers,
   api: FileDropApi,
   workspaceRoot: string | null,
@@ -157,7 +161,7 @@ export async function handleFileDrop(
     return
   }
 
-  const files = Array.from(e.dataTransfer?.files ?? []) as ElectronFile[]
+  const files = Array.from(e.dataTransfer?.files ?? [])
   await attachFiles(files, handlers, api, workspaceRoot, owner)
 }
 

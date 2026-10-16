@@ -6,6 +6,7 @@ import {
   existsSync,
   copyFileSync,
   readFileSync,
+  appendFileSync,
 } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { execFileSync, spawnSync } from 'node:child_process'
@@ -13,6 +14,7 @@ import { e2eGitBranch } from './e2e-env.ts'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Message } from '../../../src/shared/types/index.ts'
+import { PRODUCT_ANNOUNCEMENTS } from '../../../src/renderer/product-announcements.ts'
 import { USAGE_EVENTS_DIR, type UsageEvent } from '../../../src/shared/usage/usage-event.ts'
 import {
   supervisedTaskMetaSchema,
@@ -35,6 +37,7 @@ const USER_DATA = copseUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
 const PENDING_CONFIG_PATH = join(USER_DATA, '.e2e-pending-config.json')
 const SETTINGS_PATH = join(USER_DATA, 'settings.json')
+const PENDING_SETTINGS_PATH = join(USER_DATA, '.e2e-pending-settings.json')
 // A developer may have LM Studio listening on the product's default port. E2E
 // must not discover or query that real service unless a fixture explicitly
 // supplies its own localServerUrl through the supported settings surface.
@@ -251,6 +254,7 @@ export function writeSeedConfig(
 
 export function resetUserData(): void {
   rmSync(PENDING_CONFIG_PATH, { force: true })
+  rmSync(PENDING_SETTINGS_PATH, { force: true })
   rmSync(CONFIG_PATH, { force: true })
   rmSync(SETTINGS_PATH, { force: true })
   rmSync(USAGE_EVENTS_PATH, { force: true, recursive: true })
@@ -321,22 +325,39 @@ export function readSeededSettings(): Record<string, unknown> {
   return JSON.parse(readFileSync(SETTINGS_PATH, 'utf8')) as Record<string, unknown>
 }
 
+/**
+ * Settings every seeded profile starts from, for specs that write
+ * `settings.json` themselves instead of calling {@link writeSettings}.
+ * Concise threads is on by default, but most specs assert on the tool cards and
+ * reasoning it hides for models above its gate, so seed the user's opt-out with
+ * its migration marker set (launch would otherwise clear it); a spec that wants
+ * the concise view passes `conciseThreadsEnabled: true`. Every seeded profile is
+ * an existing user, so the shipped announcements' modal is acknowledged to keep
+ * it off screens that are about something else.
+ */
+export const E2E_SETTINGS_BASELINE = {
+  conciseThreadsEnabled: false,
+  conciseThreadsDefaultMigrated: true,
+  acknowledgedProductAnnouncements: PRODUCT_ANNOUNCEMENTS.map((entry) => entry.id),
+} as const
+
 export function writeSettings(settings: Record<string, unknown>): void {
   mkdirSync(USER_DATA, { recursive: true })
   // Pin appearance so reference screenshots are deterministic. Most fixtures
   // keep tint off so existing shots do not inherit first-run appearance changes;
   // individual specs can override via `settings`.
-  writeFileSync(
-    SETTINGS_PATH,
-    JSON.stringify({
-      onboardingCompleted: true,
-      theme: 'dark',
-      uiTintStrength: 'off',
-      localServerUrl: E2E_UNREACHABLE_LM_STUDIO_URL,
-      ...settings,
-    }),
-    'utf8',
-  )
+  const serialized = JSON.stringify({
+    onboardingCompleted: true,
+    theme: 'dark',
+    uiTintStrength: 'off',
+    localServerUrl: E2E_UNREACHABLE_LM_STUDIO_URL,
+    ...E2E_SETTINGS_BASELINE,
+    ...settings,
+  })
+  writeFileSync(SETTINGS_PATH, serialized, 'utf8')
+  // The outgoing app can persist its old settings during reloadSession().
+  // Restore the fixture once in the test launcher after shutdown completes.
+  writeFileSync(PENDING_SETTINGS_PATH, serialized, 'utf8')
 }
 
 /** Pin Electron window size for deterministic e2e reference screenshots. Call before reloadSession(). */
@@ -875,7 +896,7 @@ export function seedMemoryNotes(
   const memoryDir = join(knowledgeDir, 'memory')
   rmSync(knowledgeDir, { recursive: true, force: true })
   mkdirSync(memoryDir, { recursive: true })
-  const iso = new Date().toISOString()
+  const iso = '2026-10-01T12:00:00.000Z'
   for (const note of notes) {
     const contents = [
       '---',
@@ -894,6 +915,110 @@ export function seedMemoryNotes(
     writeFileSync(join(memoryDir, `${note.id}.md`), contents, 'utf8')
   }
   return knowledgeDir
+}
+
+/** Where the app keeps project-keyed knowledge (OKF memories) under this run's profile. */
+export function e2eKnowledgeDir(): string {
+  return join(copseDataRoot(), 'knowledge')
+}
+
+/**
+ * Two persisted projects with an idle thread in the first and the OKF memory
+ * tools enabled — for checking that a turn writes to its own project's stores
+ * after the window switches to the other project.
+ */
+export function seedTwoProjectStoresFixture(input: {
+  readonly a: { readonly id: string; readonly path: string; readonly name: string }
+  readonly b: { readonly id: string; readonly path: string; readonly name: string }
+  readonly threadId: string
+}): void {
+  const createdAt = Date.UTC(2026, 9, 1, 12)
+  writeSeedConfig({
+    projects: [input.a, input.b],
+    activeProjectId: input.a.id,
+    expandedProjectId: input.a.id,
+    activeThreadId: input.threadId,
+    pluginDisabled: pluginDisabledSeed(['copse.okf-memories']),
+    [`threads:${input.a.id}`]: [
+      {
+        id: input.threadId,
+        title: 'Record a project convention',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt,
+        updatedAt: createdAt,
+      },
+    ],
+  })
+}
+
+/**
+ * A completed unfiltered memory recall whose result is a size-capped page: a
+ * memory clipped to the character cap and the cursor for the next page. Unit
+ * coverage exercises the real cap; this persisted transcript keeps the visual
+ * proof small and focused on the copy a user sees in the ordinary tool card.
+ */
+export function seedMemoryRecallTruncationFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-memory-recall-truncation-project'
+  const threadId = 'e2e-memory-recall-truncation-thread'
+  const createdAt = Date.UTC(2026, 8, 29, 12)
+  // A size-capped unfiltered page: its one long memory is clipped to the
+  // character cap, and the cursor resumes at the memory the cap left out.
+  const body = Array.from(
+    { length: 40 },
+    (_, i) => `- Step ${String(i + 1)}: run the release checklist item and record the result.`,
+  ).join('\n')
+  const result = [
+    'Found 3 memories (showing 1–1):',
+    `## Release checklist [release] — 2026-09-01T09:00:00.000Z\n_id: release-checklist, revision: 1 · sources: unknown_\n\n${body}`,
+    '(Memory truncated at 20,000 characters; call recall with a query naming it to read it in full.)',
+    'More memories available. Next cursor: m:1',
+  ].join('\n\n')
+
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    pluginDisabled: pluginDisabledSeed(['copse.okf-memories']),
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Recall project memories',
+        status: 'idle',
+        messages: [
+          {
+            id: 'memory-recall-user',
+            role: 'user',
+            content: 'What project memories do we have?',
+            toolCalls: [],
+            createdAt,
+          },
+          {
+            id: 'memory-recall-assistant',
+            role: 'assistant',
+            content:
+              'There are more memories than fit in an unfiltered result. Use a query to find a specific one.',
+            toolCalls: [
+              {
+                id: 'memory-recall-truncated',
+                name: 'recall',
+                args: {},
+                status: 'done',
+                result,
+              },
+            ],
+            createdAt: createdAt + 1,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt,
+        updatedAt: createdAt + 1,
+      },
+    ],
+  })
+  seedE2eViewport({ width: 1280, height: 800 }, { theme: 'dark' })
 }
 
 /** Two projects on the same workspace root for project-switch e2e (#502). */
@@ -1599,6 +1724,44 @@ export function seedUserPromptMarkdownFixture(workspaceRoot: string): void {
             role: 'user',
             content:
               'line one\nline two\n\n**bold item**\n\nI typed <placeholder command> and kept it.',
+            toolCalls: [],
+            createdAt: now,
+          },
+        ],
+        todos: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  })
+}
+
+/**
+ * A markdown anchor for creating a side chat through the real message action.
+ */
+export function seedSideChatMarkdownFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-side-chat-markdown-project'
+  const parentId = 'e2e-side-chat-markdown-parent'
+  const anchorId = 'msg-side-chat-anchor'
+  const now = 1767225600000
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: parentId,
+    [`threads:${projectId}`]: [
+      {
+        id: parentId,
+        title: 'Side chat markdown parent',
+        status: 'idle',
+        messages: [
+          {
+            id: anchorId,
+            role: 'assistant',
+            content:
+              '[PR #3595](https://github.com/copse-dev/agent-pane/pull/3595) uses foo_bar_baz at commit `abc`',
             toolCalls: [],
             createdAt: now,
           },
@@ -2447,6 +2610,62 @@ export function seedContextWheelFixture(workspaceRoot: string, conversationToken
   })
 }
 
+/** One group of identical classifier calls to append to a seeded thread. */
+export interface SeededClassifierCalls {
+  subject: 'shell-scope' | 'shell-tier' | 'terminal-read'
+  /** The classifier or model that answered. */
+  engine: string
+  /** The verdict label it gave; null for a call that produced none. */
+  label: string | null
+  latencyMs: number
+  count: number
+  inputTokens?: number
+  outputTokens?: number
+}
+
+/**
+ * Append `classifier-call` decision lines to an already-seeded thread's spine,
+ * the way the permission gate and screening paths write them, so the footer's
+ * classifier section has real on-disk data to read. Call after the thread has
+ * been seeded (`writeSeedConfig`), which rewrites its `events.jsonl`.
+ */
+export function seedClassifierCalls(
+  projectId: string,
+  threadId: string,
+  groups: SeededClassifierCalls[],
+): void {
+  const now = Date.now()
+  const lines: string[] = []
+  let n = 0
+  for (const group of groups) {
+    for (let i = 0; i < group.count; i += 1) {
+      n += 1
+      lines.push(
+        JSON.stringify({
+          v: 1,
+          type: 'decision',
+          id: `seed-classifier-call-${String(n)}`,
+          at: now + n,
+          kind: 'classifier-call',
+          actor: 'classifier',
+          verdict: group.label === null ? 'ask' : 'classified',
+          subject: group.subject,
+          source: group.engine,
+          latencyMs: group.latencyMs,
+          threadId,
+          ...(group.label === null ? {} : { scope: group.label }),
+          ...(group.inputTokens === undefined ? {} : { inputTokens: group.inputTokens }),
+          ...(group.outputTokens === undefined ? {} : { outputTokens: group.outputTokens }),
+        }),
+      )
+    }
+  }
+  appendFileSync(
+    join(e2eWorkspaceDir(), projectId, threadId, 'events.jsonl'),
+    `${lines.join('\n')}\n`,
+  )
+}
+
 /**
  * Flip Developer mode for a spec that seeds its own project/thread and so has
  * no use for {@link seedDeveloperModeFixture}'s conversation. Writes the same
@@ -2690,10 +2909,10 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
     '',
     '**To continue**',
     '',
-    '1. Run `claude /login` in a terminal.',
+    '1. Run `claude auth login` in a terminal.',
     '2. Finish signing in, then re-send your message.',
     '',
-    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself, or set `ANTHROPIC_API_KEY` for Claude in Settings → General → Providers.',
+    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself, or set `ANTHROPIC_API_KEY` for Claude in Settings → General → Coding agents.',
     '',
     '**Technical details**',
     '',
@@ -2713,7 +2932,7 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
     '1. Run `cursor-agent login` in a terminal.',
     '2. Finish signing in, then re-send your message.',
     '',
-    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself, or set `CURSOR_SESSION_TOKEN` for Cursor in Settings → General → Providers.',
+    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself, or set `CURSOR_SESSION_TOKEN` for Cursor in Settings → General → Coding agents.',
     '',
     '**Technical details**',
     '',
@@ -2732,7 +2951,7 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
     '1. Run `codex login` in a terminal.',
     '2. Finish signing in, then re-send your message.',
     '',
-    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself, or set `CODEX_API_KEY` or `OPENAI_API_KEY` for Codex in Settings → General → Providers.',
+    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself, or set `CODEX_API_KEY` or `OPENAI_API_KEY` for Codex in Settings → General → Coding agents.',
     '',
     '**Technical details**',
     '',
@@ -3669,7 +3888,8 @@ const GIT_IMAGE_FIXTURES = join(process.cwd(), 'tests/e2e/fixtures')
  * image preview e2e. Returns the repo path for cleanup.
  */
 export function seedGitImageChangesFixture(): string {
-  const repoRoot = mkdtempSync(join(tmpdir(), 'copse-panel-git-img-'))
+  const repoRoot = join(mkdtempSync(join(tmpdir(), 'copse-panel-git-img-')), 'git-image-workspace')
+  mkdirSync(repoRoot)
   const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
 
   git('init', '-q')
@@ -5846,4 +6066,34 @@ export function seedAppleDevelopmentFixture(workspaceRoot: string): void {
     ],
   })
   seedE2eViewport({ width: 1280, height: 800 }, { theme: 'dark' })
+}
+
+/** A real visible transcript for tests that exercise intermediate markdown DOM. */
+export function seedStreamingMarkdownFixture(workspaceRoot: string): void {
+  seedEmptyProject(workspaceRoot, 'e2e-streaming-markdown', { subagentsEnabled: false })
+  const now = Date.now()
+  writeSeedConfig({
+    projects: [{ id: 'e2e-streaming-markdown', path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: 'e2e-streaming-markdown',
+    expandedProjectId: 'e2e-streaming-markdown',
+    activeThreadId: 'streaming-markdown-thread',
+    'threads:e2e-streaming-markdown': [
+      {
+        id: 'streaming-markdown-thread',
+        title: 'Streaming markdown',
+        status: 'idle',
+        messages: [
+          {
+            id: 'streaming-markdown-message',
+            role: 'assistant',
+            content: 'Intro paragraph.',
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  })
 }
