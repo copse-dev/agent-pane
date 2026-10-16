@@ -1568,6 +1568,18 @@ jobs:
             echo "::error title=e2e checkout is dirty before tests::Remove generated files from the checkout or ignore them before starting e2e."
             exit 1
           fi
+      # SHADOW MODE (docs/plans/screenshot-evidence-reuse.md): hydrate the R2
+      # baselines the run step would hydrate anyway, then stamp a marker. The
+      # record step below reads it to tell a PNG this shard's specs rendered
+      # from a baseline that was merely restored. Observe-only: `continue-on-
+      # error` keeps it from ever failing a shard, the launcher's own hydration
+      # skips files that already exist, and nothing downstream reads the marker.
+      - name: Prepare rendering-input identity marker (shadow mode)
+        if: >-
+          needs.precheck.outputs.mode == 'full' ||
+          needs.precheck.outputs.mode == 'subset'
+        continue-on-error: true
+        run: node scripts/screenshot-identity.mts prepare
       # The Electron/Chromedriver e2e session occasionally fails to start on the
       # runner ("DevToolsActivePort file doesn't exist" / "POST /session" timeout).
       # The hang wedges the whole wdio run, so in-process retries don't recover —
@@ -1990,6 +2002,46 @@ jobs:
           # default 90-day retention made this the largest draw on the org's
           # Actions storage quota. Expire fast, keeping a small debug window.
           retention-days: 3
+      # SHADOW MODE (docs/plans/screenshot-evidence-reuse.md): record, for every
+      # reference PNG this shard's specs own, the hash of each rendering input
+      # the oracle maps to the spec (spec + imports, fixtures, renderer source,
+      # assets, lockfile, capture helpers), the runtime (Electron, Chromium,
+      # runner image, system fonts) and the resulting PNG sha256. Its own
+      # artifact, on every event that runs e2e, so identical identities can be
+      # compared across runs and runner classes. It is not a candidate, not a
+      # gate input and not an approval: no status, label, publisher or
+      # acceptance path reads it, and `continue-on-error` keeps a recording
+      # failure from touching the shard result. The shard resolves its specs
+      # exactly as the run step did, from the same plan and weights.
+      - name: Record rendering-input identity (shadow mode)
+        if: success()
+        continue-on-error: true
+        env:
+          PLAN_MODE: ${{ needs.precheck.outputs.mode }}
+          PLAN_SPECS: ${{ needs.precheck.outputs.specs }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          args=(record --shard "${{ matrix.shard }}/$SHARD_TOTAL"
+            --out "screenshot-identity/shard-${{ matrix.shard }}.json")
+          if [ -n "$PR_HEAD_SHA" ]; then args+=(--pr-head "$PR_HEAD_SHA"); fi
+          if [ -n "$BASE_SHA" ]; then args+=(--base "$BASE_SHA"); fi
+          if [ "$PLAN_MODE" = "subset" ]; then
+            # shellcheck disable=SC2086 # PLAN_SPECS is a space-separated list
+            args+=(--specs $PLAN_SPECS)
+          fi
+          node scripts/screenshot-identity.mts "${args[@]}"
+      - uses: actions/upload-artifact@v7
+        if: success()
+        continue-on-error: true
+        with:
+          name: screenshot-identity-shard-${{ matrix.shard }}
+          path: screenshot-identity/
+          if-no-files-found: ignore
+          # Measurement data, not evidence anyone acts on; long enough to
+          # compare a fortnight of runs, short enough to stay off the quota.
+          retention-days: 14
       # Keep successful responsiveness measurements too; timing is report-only
       # while fixed-worker base/head variance is being calibrated.
       - uses: actions/upload-artifact@v7
