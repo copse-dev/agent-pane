@@ -133,7 +133,7 @@ Monday. Publishing is the only routine manual step:
    `Release (macOS)`. A promotion whose version is already tagged is a no-op, so
    ordinary promotions cut nothing.
 4. `Release (macOS)` re-checks the tag, the version match, reachability from
-   `release`, and the tagged commit's exact `CI Passed` check — it will not
+   `release`, and the tagged commit's exact `Full release validation` check — it will not
    accept a branch-tip, merge-ref, or unrelated successful run. It then builds,
    signs, notarizes, staples, verifies, and smoke-tests the package, then uploads
    two immutable architecture-specific Actions artifacts plus a small metadata
@@ -157,7 +157,7 @@ Monday. Publishing is the only routine manual step:
 
 From bump to signed artifacts takes about a day: the bump merges on Monday,
 that day's promotion runs the full tier, and the signed build waits for the
-tagged commit's `CI Passed` before its roughly hour-long packaging run.
+tagged commit's `Full release validation` before its roughly hour-long packaging run.
 
 ### Cutting a release by hand
 
@@ -267,3 +267,33 @@ active only in packaged macOS builds.
 - The bundled `gortex` helper is `asarUnpack`ed and signed with the app. Verify
   semantic search in the notarized rehearsal; Copse can fall back to a system
   `gortex`/`vera` or plain search if the helper is unavailable.
+
+### Exact-commit full validation
+
+Pushes to `release` and `v*` tags force full unit and eligible CI e2e suites,
+regardless of the oracle's diff classification. `Full release validation` succeeds
+only when precheck, baseline hydration, unit checks, benchmarks, build, all eight
+e2e shards, and `CI Passed` succeed. A skipped job or subset plan cannot satisfy it.
+“Full” means the existing CI inventory; it does not enable excluded/manual specs
+or turn advisory evaluations into required gates.
+
+Packaging resolves evidence through the CI workflow's push runs for the tag SHA,
+checks repository/workflow/event provenance, and pins the successful run attempt.
+It waits for pending evidence and fails on failed or unavailable completed evidence.
+Publishing revalidates the same run and attempt before writing to the public release
+repository. A later rerun changes the record and requires packaging again; publication
+cannot silently substitute the new run. If Actions evidence expires before publication,
+publication fails closed. Rerun full CI and packaging while their artifacts remain
+available, or use the documented forward-fix release process.
+
+`RELEASE_VALIDATION.json` travels with the packaging metadata, is covered by
+`SHA256SUMS`, and is published beside the binaries. It retains the source SHA, CI
+run/attempt/URL, full plans, shard count, and validating job ID/completion time beyond
+Actions retention. This is a durable provenance record, not a cryptographic CI
+attestation or per-spec report. Existing artifact attestation availability is unchanged.
+Old builds without this evidence cannot be published through the updated workflow.
+
+This gate is independent of the main-gate shadow selector. Before reducing main's
+checks, observe a real release candidate passing this path; fixture tests and PR CI
+alone do not demonstrate a successful signed release. Tag protection and per-spec
+result digests remain separate items in `docs/plans/main-gate-shaping.md`.
