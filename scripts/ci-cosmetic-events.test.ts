@@ -74,6 +74,7 @@ function evaluate(expression: string, github: EventContext): unknown {
     github,
     always: () => true,
     success: () => true,
+    startsWith: (value: string, prefix: string) => value.startsWith(prefix),
     format: (pattern: string, ...values: unknown[]) =>
       pattern.replace(/\{\{|\}\}|\{(\d+)\}/g, (token: string, index?: string) =>
         index === undefined ? token.charAt(0) : String(values[Number(index)]),
@@ -138,6 +139,22 @@ describe('cosmetic CI event routing', () => {
     for (const [name, job] of Object.entries(workflow.jobs)) {
       if (name === 'precheck' || name === 'autoformat' || name === 'ci-passed') continue
       assert.ok(rooted(name), `${name} must inherit the precheck admission boundary`)
+      if (name === 'full-release-validation') {
+        assert.ok(job.if)
+        for (const github of cosmetics) assert.equal(evaluate(job.if, github), false)
+        for (const [ref, expected] of [
+          ['refs/heads/release', true],
+          ['refs/tags/v1.2.3', true],
+          ['refs/heads/main', false],
+          ['refs/heads/feature', false],
+        ] as const) {
+          const github = context('push')
+          github.event_name = 'push'
+          github.ref = ref
+          assert.equal(evaluate(job.if, github), expected)
+        }
+        continue
+      }
       if (name === 'screenshot-baselines') {
         assert.ok(job.if?.includes("needs.precheck.result == 'success'"))
         continue
