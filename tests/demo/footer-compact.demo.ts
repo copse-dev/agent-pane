@@ -82,9 +82,16 @@ describe('browser-hosted footer geometry', () => {
 
     const wheel = await $('.context-wheel')
     await expect(wheel).toBeDisplayed()
-    const title = await wheel.getAttribute('title')
-    expect(title).toContain(FOOTER_COMPACT_EXPECTATIONS.tokenLabel)
-    expect(title).toContain('%')
+    expect(await wheel.getAttribute('title')).toBeNull()
+    const label = await wheel.getAttribute('aria-label')
+    expect(label).toContain('Context')
+    expect(label).toContain('% used')
+    expect(label).toContain('tokens')
+    await wheel.moveTo()
+    await expect($('.context-wheel-popover')).toBeDisplayed()
+    await expect($('.context-wheel-popover-header')).toHaveText(expect.stringContaining('Context'))
+    await $('.prompt-input').moveTo()
+    await expect($('.context-wheel-popover')).not.toBeDisplayed()
 
     await saveElementScreenshot('.input-footer', 'footer-compact-narrow.png')
 

@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { CLASSIFIER_PRESETS } from '@copse/llm/classifiers/presets.ts'
 import { join } from 'node:path'
-import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import {
   readSeededSettings,
   resetUserData,
@@ -17,9 +17,8 @@ const RESULT = JSON.stringify({
   classifier: 'kev',
   model: 'kev-4b',
   elapsedMs: 41,
-  type: 'choice',
-  choice: 'bug',
-  probabilities: { bug: 0.7, question: 0.3 },
+  type: 'boolean',
+  probabilityTrue: 0.7,
 })
 
 /**
@@ -57,13 +56,12 @@ describe('context wheel counts the classifier tool', function () {
               toolCalls: [
                 {
                   id: 'tc-classify',
-                  name: 'classify_text',
+                  name: 'ask_classifier',
                   args: {
                     classifier: 'kev',
-                    text: 'app crashes on save',
-                    type: 'choice',
-                    question: 'What kind of note is this?',
-                    options: ['bug', 'question'],
+                    state: { report: 'app crashes on save' },
+                    type: 'boolean',
+                    question: 'Is this a bug report?',
                   },
                   status: 'done',
                   result: RESULT,
@@ -132,10 +130,24 @@ describe('context wheel counts the classifier tool', function () {
     const toolsWith = tokens(withClassifier['Tools'])
     assert.ok(
       toolsWith >= toolsWithout + 200,
-      `Tools should grow by the classify_text schema: ${String(toolsWithout)} -> ${String(toolsWith)}`,
+      `Tools should grow by the classifier tool schemas: ${String(toolsWithout)} -> ${String(toolsWith)}`,
     )
     await expect($('.context-wheel-popover')).toBeDisplayed()
     await saveWheel('context-wheel-classifier-configured.png')
+
+    const rollup = $('.tool-card-rollup')
+    if (await rollup.isExisting()) {
+      if (!(await rollup.getProperty('open'))) await rollup.$('summary.tool-card-header').click()
+    }
+    const card = $('.tool-card[data-tool-id="tc-classify"]')
+    await card.waitForDisplayed()
+    assert.match(await card.$('.tool-name').getText(), /classif/i)
+    if (!(await card.getProperty('open'))) await card.$('summary.tool-card-header').click()
+    await expect(card).toHaveText('probabilityTrue', { containing: true })
+    await saveElementScreenshot(
+      '.tool-card[data-tool-id="tc-classify"]',
+      'classify-structured-card.png',
+    )
   })
 
   async function saveWheel(name: string): Promise<void> {

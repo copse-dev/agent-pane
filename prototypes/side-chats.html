@@ -1,0 +1,1344 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Copse side chats – layout avenues</title>
+    <style>
+      :root {
+        --bg: #f6f5f1;
+        --surface: #fff;
+        --surface2: #f0eee8;
+        --line: #e2dfd6;
+        --text: #26231d;
+        --muted: #7a7568;
+        --accent: #2f7d5b;
+        --accent-soft: #e2f1ea;
+        --side: #8a5cd6;
+        --side-soft: #efe8fb;
+        --code: #f3f1ea;
+        --shadow: 0 12px 32px rgba(40, 35, 20, 0.18);
+        --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+        --sans: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+      }
+      :root[data-theme='dark'] {
+        --bg: #17171a;
+        --surface: #1f1f23;
+        --surface2: #26262b;
+        --line: #33333a;
+        --text: #e8e6e0;
+        --muted: #8d8b84;
+        --accent: #5cc592;
+        --accent-soft: #1d3329;
+        --side: #b18cf0;
+        --side-soft: #2b2340;
+        --code: #18181b;
+        --shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #17171a;
+          --surface: #1f1f23;
+          --surface2: #26262b;
+          --line: #33333a;
+          --text: #e8e6e0;
+          --muted: #8d8b84;
+          --accent: #5cc592;
+          --accent-soft: #1d3329;
+          --side: #b18cf0;
+          --side-soft: #2b2340;
+          --code: #18181b;
+          --shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        font: 13px/1.45 var(--sans);
+        background: var(--bg);
+        color: var(--text);
+        display: flex;
+        flex-direction: column;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        background: none;
+        border: 0;
+        cursor: pointer;
+        padding: 0;
+      }
+      svg {
+        width: 14px;
+        height: 14px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.6;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        flex: none;
+      }
+
+      /* ---------- avenue switcher ---------- */
+      .top {
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--line);
+        background: var(--surface);
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .top h1 {
+        font-size: 13px;
+        margin: 0;
+        font-weight: 600;
+        margin-right: 4px;
+      }
+      .seg {
+        display: flex;
+        gap: 2px;
+        background: var(--surface2);
+        padding: 2px;
+        border-radius: 8px;
+        flex-wrap: wrap;
+      }
+      .seg button {
+        padding: 4px 10px;
+        border-radius: 6px;
+        color: var(--muted);
+      }
+      .seg button.on {
+        background: var(--surface);
+        color: var(--text);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+      }
+      .seg b {
+        color: var(--side);
+        margin-right: 4px;
+      }
+      .theme {
+        margin-left: auto;
+        color: var(--muted);
+        padding: 4px 8px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+      }
+      .note {
+        padding: 8px 14px;
+        display: grid;
+        grid-template-columns: 1.4fr 1fr 1fr;
+        gap: 16px;
+        border-bottom: 1px solid var(--line);
+        background: var(--bg);
+        font-size: 12px;
+      }
+      .note h4 {
+        margin: 0 0 2px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--muted);
+      }
+      .note p {
+        margin: 0;
+      }
+      .pro h4 {
+        color: var(--accent);
+      }
+      .con h4 {
+        color: #c0603a;
+      }
+      @media (max-width: 900px) {
+        .note {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* ---------- app shell ---------- */
+      .stage {
+        flex: 1;
+        min-height: 0;
+        padding: 12px;
+      }
+      .app {
+        height: 100%;
+        display: flex;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        overflow: hidden;
+        min-width: 0;
+      }
+      .sidebar {
+        width: 176px;
+        flex: none;
+        background: var(--bg);
+        border-right: 1px solid var(--line);
+        padding: 10px 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .sidebar .logo {
+        font-weight: 700;
+        padding: 2px 8px 8px;
+        letter-spacing: 0.02em;
+      }
+      .sidebar .item {
+        padding: 5px 8px;
+        border-radius: 6px;
+        color: var(--muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .sidebar .item.on {
+        background: var(--surface2);
+        color: var(--text);
+      }
+      .sidebar .sub {
+        padding: 3px 8px 3px 22px;
+        color: var(--muted);
+        font-size: 12px;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .sidebar .sub svg {
+        color: var(--side);
+        width: 12px;
+        height: 12px;
+      }
+      .sidebar .lbl {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        padding: 10px 8px 3px;
+      }
+      @media (max-width: 760px) {
+        .sidebar {
+          display: none;
+        }
+      }
+
+      .main {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+      }
+      .mhead {
+        padding: 8px 16px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .mhead .t {
+        font-weight: 600;
+      }
+      .mhead .sp {
+        flex: 1;
+      }
+      .pill {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 99px;
+        background: var(--surface2);
+        color: var(--muted);
+      }
+      .btn {
+        display: inline-flex;
+        gap: 5px;
+        align-items: center;
+        padding: 4px 9px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--text);
+      }
+      .btn:hover {
+        background: var(--surface2);
+      }
+      .btn.side {
+        color: var(--side);
+        border-color: color-mix(in srgb, var(--side) 40%, var(--line));
+      }
+      .btn.ghost {
+        border-color: transparent;
+        background: none;
+        color: var(--muted);
+      }
+      .chatwrap {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+      }
+      .chat {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 16px 20px;
+      }
+      .chat.margin {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 300px;
+        column-gap: 16px;
+        align-content: start;
+        padding-right: 12px;
+      }
+      .row {
+        display: contents;
+      }
+      .msgcol {
+        min-width: 0;
+        max-width: 640px;
+        width: 100%;
+        margin: 0 auto;
+      }
+      .chat.margin .msgcol {
+        margin: 0;
+      }
+      .msg {
+        position: relative;
+        margin-bottom: 14px;
+      }
+      .msg .who {
+        font-size: 11px;
+        color: var(--muted);
+        margin-bottom: 2px;
+      }
+      .msg.user .body {
+        background: var(--surface2);
+        padding: 7px 11px;
+        border-radius: 10px;
+        display: inline-block;
+      }
+      .msg .body p {
+        margin: 0 0 6px;
+      }
+      .msg .acts {
+        position: absolute;
+        top: -4px;
+        right: 0;
+        opacity: 0;
+        transition: 0.1s;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        display: flex;
+      }
+      .msg:hover .acts,
+      .msg.anch .acts {
+        opacity: 1;
+      }
+      .msg .acts button {
+        padding: 3px 7px;
+        display: flex;
+        gap: 4px;
+        align-items: center;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .msg .acts button:hover {
+        color: var(--side);
+      }
+      .msg.anch {
+        box-shadow: -3px 0 0 var(--side);
+        padding-left: 10px;
+        margin-left: -13px;
+      }
+      .anchor-chip {
+        display: inline-flex;
+        gap: 4px;
+        align-items: center;
+        margin-top: 4px;
+        font-size: 11px;
+        color: var(--side);
+        background: var(--side-soft);
+        border-radius: 99px;
+        padding: 1px 8px;
+      }
+      .tool {
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 5px 9px;
+        margin: 4px 0;
+        font-family: var(--mono);
+        font-size: 11.5px;
+        color: var(--muted);
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        background: var(--code);
+      }
+      .tool b {
+        color: var(--text);
+        font-weight: 500;
+      }
+      .diff {
+        font-family: var(--mono);
+        font-size: 11.5px;
+        background: var(--code);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 6px 0;
+        margin: 6px 0;
+      }
+      .diff div {
+        padding: 0 10px;
+        white-space: pre;
+        overflow: hidden;
+      }
+      .diff .a {
+        background: color-mix(in srgb, var(--accent) 16%, transparent);
+      }
+      .diff .d {
+        background: color-mix(in srgb, #d4584a 16%, transparent);
+      }
+      code {
+        font-family: var(--mono);
+        font-size: 12px;
+        background: var(--code);
+        padding: 0 4px;
+        border-radius: 4px;
+      }
+      .composer {
+        border-top: 1px solid var(--line);
+        padding: 10px 16px;
+      }
+      .composer .box {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 8px 10px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        background: var(--surface);
+      }
+      .composer .box span {
+        flex: 1;
+        color: var(--muted);
+      }
+      .composer .hint {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+      kbd {
+        font: 11px var(--mono);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 0 4px;
+        background: var(--surface2);
+      }
+
+      /* ---------- right panel ---------- */
+      .right {
+        width: 380px;
+        flex: none;
+        border-left: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        background: var(--surface);
+      }
+      .tabs {
+        display: flex;
+        gap: 1px;
+        padding: 6px 6px 0;
+        border-bottom: 1px solid var(--line);
+        background: var(--bg);
+        overflow: hidden;
+      }
+      .tab {
+        padding: 6px 10px;
+        border-radius: 7px 7px 0 0;
+        color: var(--muted);
+        display: flex;
+        gap: 5px;
+        align-items: center;
+        white-space: nowrap;
+      }
+      .tab.on {
+        background: var(--surface);
+        color: var(--text);
+        box-shadow: inset 0 -2px 0 var(--accent);
+      }
+      .tab.s {
+        color: var(--side);
+      }
+      .tab.s.on {
+        box-shadow: inset 0 -2px 0 var(--side);
+      }
+      .tabs .sp {
+        flex: 1;
+      }
+      .tabs .tool-btn {
+        padding: 4px 8px;
+        color: var(--muted);
+        align-self: center;
+      }
+      .badge {
+        background: var(--side);
+        color: #fff;
+        border-radius: 99px;
+        font-size: 10px;
+        padding: 0 5px;
+        line-height: 15px;
+      }
+      .slot {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .slot + .slot {
+        border-top: 1px solid var(--line);
+      }
+      .slot-h {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-bottom: 1px solid var(--line);
+        background: var(--bg);
+        font-weight: 600;
+        font-size: 12px;
+      }
+      .slot-h .sp {
+        flex: 1;
+      }
+      .slot-h button {
+        color: var(--muted);
+        padding: 2px 5px;
+        border-radius: 5px;
+      }
+      .slot-h button:hover {
+        background: var(--surface2);
+      }
+      .pane {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 10px;
+      }
+      .url {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+      .url span {
+        flex: 1;
+        background: var(--surface2);
+        border-radius: 6px;
+        padding: 3px 9px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 11.5px;
+      }
+      .mermaid {
+        border: 1px dashed var(--line);
+        border-radius: 8px;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+      }
+      .node {
+        border: 1.5px solid var(--accent);
+        background: var(--accent-soft);
+        border-radius: 6px;
+        padding: 4px 12px;
+        font-size: 12px;
+      }
+      .arr {
+        color: var(--muted);
+        line-height: 1;
+      }
+      .term {
+        font-family: var(--mono);
+        font-size: 11.5px;
+        white-space: pre-wrap;
+        color: var(--muted);
+      }
+      .term b {
+        color: var(--accent);
+        font-weight: 500;
+      }
+      .term i {
+        color: #d4584a;
+        font-style: normal;
+      }
+      .tree {
+        font-family: var(--mono);
+        font-size: 12px;
+        line-height: 1.7;
+      }
+      .tree .on {
+        color: var(--accent);
+      }
+
+      /* ---------- side chat component ---------- */
+      .sc {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        height: 100%;
+        background: var(--surface);
+      }
+      .sc-h {
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        background: linear-gradient(var(--side-soft), transparent 140%);
+      }
+      .sc-h .r1 {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .sc-h .ttl {
+        font-weight: 600;
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .sc-h .ico {
+        color: var(--side);
+      }
+      .sc-h button.i {
+        padding: 3px 5px;
+        border-radius: 5px;
+        color: var(--muted);
+      }
+      .sc-h button.i:hover {
+        background: var(--surface2);
+        color: var(--text);
+      }
+      .chips {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+      }
+      .chip {
+        font-size: 11px;
+        padding: 1px 8px;
+        border-radius: 99px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        max-width: 140px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .chip.on {
+        background: var(--side);
+        border-color: var(--side);
+        color: #fff;
+      }
+      .ctx {
+        font-size: 11px;
+        color: var(--muted);
+        display: flex;
+        gap: 5px;
+        align-items: center;
+      }
+      .sc-b {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .sc-b .m {
+        max-width: 92%;
+        padding: 6px 10px;
+        border-radius: 10px;
+      }
+      .sc-b .m.u {
+        align-self: flex-end;
+        background: var(--side-soft);
+      }
+      .sc-b .m.a {
+        align-self: flex-start;
+        background: var(--surface2);
+      }
+      .sc-b .empty {
+        margin: auto;
+        text-align: center;
+        color: var(--muted);
+        max-width: 220px;
+      }
+      .sc-b .sug {
+        display: block;
+        width: 100%;
+        margin-top: 6px;
+        text-align: left;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 4px 8px;
+        color: var(--text);
+      }
+      .sc-b .sug:hover {
+        border-color: var(--side);
+      }
+      .typing {
+        align-self: flex-start;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .sc-f {
+        padding: 8px;
+        border-top: 1px solid var(--line);
+      }
+      .sc-f form {
+        display: flex;
+        gap: 6px;
+      }
+      .sc-f input {
+        flex: 1;
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 6px 9px;
+        background: var(--surface);
+        color: var(--text);
+        font: inherit;
+      }
+      .sc-f input:focus {
+        outline: 2px solid color-mix(in srgb, var(--side) 50%, transparent);
+        border-color: var(--side);
+      }
+      .sc-f .go {
+        background: var(--side);
+        color: #fff;
+        border-radius: 8px;
+        padding: 0 10px;
+      }
+      .sc-f .foot {
+        display: flex;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      .sc-f .foot .btn {
+        font-size: 11.5px;
+        padding: 2px 8px;
+      }
+
+      /* A: overlay drawer */
+      .drawer {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 360px;
+        max-width: 92%;
+        border-left: 1px solid var(--line);
+        box-shadow: var(--shadow);
+        animation: slide 0.18s ease-out;
+        z-index: 5;
+      }
+      @keyframes slide {
+        from {
+          transform: translateX(30px);
+          opacity: 0;
+        }
+        to {
+          transform: none;
+          opacity: 1;
+        }
+      }
+
+      /* C: margin threads */
+      .mcard {
+        border: 1px solid color-mix(in srgb, var(--side) 45%, var(--line));
+        border-radius: 10px;
+        overflow: hidden;
+        margin-bottom: 14px;
+        background: var(--surface);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+        align-self: start;
+      }
+      .mcard .sc {
+        height: auto;
+        max-height: 340px;
+      }
+      .mcard .sc-b {
+        max-height: 200px;
+      }
+      .mdot {
+        border: 1px dashed color-mix(in srgb, var(--side) 50%, var(--line));
+        border-radius: 99px;
+        color: var(--side);
+        padding: 2px 10px;
+        margin-bottom: 14px;
+        align-self: start;
+        justify-self: start;
+        display: flex;
+        gap: 5px;
+        align-items: center;
+        font-size: 12px;
+      }
+      .mgutter {
+        padding-top: 0;
+      }
+
+      /* D: tray */
+      .tray {
+        border-top: 1px solid color-mix(in srgb, var(--side) 45%, var(--line));
+        display: flex;
+        flex-direction: column;
+        background: var(--surface);
+        height: 260px;
+        box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.06);
+        animation: up 0.16s ease-out;
+      }
+      .tray.min {
+        height: auto;
+      }
+      @keyframes up {
+        from {
+          transform: translateY(16px);
+          opacity: 0;
+        }
+        to {
+          transform: none;
+          opacity: 1;
+        }
+      }
+      .tray-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 10px;
+        background: var(--side-soft);
+        color: var(--side);
+        font-weight: 600;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .tray-bar .sp {
+        flex: 1;
+      }
+      .tray-bar .chip {
+        background: var(--surface);
+        cursor: pointer;
+      }
+      .tray-bar .chip.on {
+        background: var(--side);
+      }
+      .tray-bar button {
+        color: var(--side);
+        padding: 2px 5px;
+      }
+
+      /* E: rail */
+      .rail {
+        width: 46px;
+        flex: none;
+        border-left: 1px solid var(--line);
+        background: var(--bg);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        padding: 8px 0;
+      }
+      .rail button {
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        color: var(--muted);
+        position: relative;
+      }
+      .rail button:hover {
+        background: var(--surface2);
+      }
+      .rail button.on {
+        background: var(--surface);
+        color: var(--text);
+        box-shadow: 0 0 0 1px var(--line);
+      }
+      .rail button.s {
+        color: var(--side);
+      }
+      .rail button .badge {
+        position: absolute;
+        top: 1px;
+        right: 1px;
+      }
+      .rail .gap {
+        flex: 1;
+      }
+      .rail .hint {
+        font-size: 9px;
+        color: var(--muted);
+        text-align: center;
+        line-height: 1.2;
+        padding: 0 2px;
+      }
+      .panel-multi {
+        width: 380px;
+        flex: none;
+        border-left: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .legend {
+        position: absolute;
+        left: 12px;
+        bottom: 8px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="top">
+      <h1>Side chats · layout avenues</h1>
+      <div class="seg" id="seg"></div>
+      <button class="theme" id="theme">◐ theme</button>
+    </div>
+    <div class="note" id="note"></div>
+    <div class="stage"><div class="app" id="app"></div></div>
+
+    <script>
+      const IC = {
+        chat: '<svg viewBox="0 0 16 16"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/></svg>',
+        globe:
+          '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5c2 2 2 9 0 11M8 2.5c-2 2-2 9 0 11"/></svg>',
+        diff: '<svg viewBox="0 0 16 16"><path d="M5 2.5v7M2 6h6M10 13.5h5M10 4h5"/></svg>',
+        term: '<svg viewBox="0 0 16 16"><path d="M2.5 4l4 4-4 4M8 12.5h5.5"/></svg>',
+        files: '<svg viewBox="0 0 16 16"><path d="M2.5 3.5h4l1.5 1.5h5.5v7.5h-11z"/></svg>',
+        x: '<svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
+        up: '<svg viewBox="0 0 16 16"><path d="M4 10l4-4 4 4"/></svg>',
+        down: '<svg viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg>',
+        out: '<svg viewBox="0 0 16 16"><path d="M9 3h4v4M13 3L7.5 8.5M12 9.5v3h-9v-9h3"/></svg>',
+        split:
+          '<svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M2.5 8h11"/></svg>',
+        plus: '<svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg>',
+        merge:
+          '<svg viewBox="0 0 16 16"><circle cx="4" cy="4" r="1.5"/><circle cx="4" cy="12" r="1.5"/><circle cx="12" cy="8" r="1.5"/><path d="M4 5.5v5M5.5 4C9 4 12 5 12 6.5M5.5 12C9 12 12 11 12 9.5"/></svg>',
+        lock: '<svg viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/></svg>',
+      }
+
+      const MAIN = [
+        {
+          r: 'user',
+          t: '<p>The mermaid e2e spec fails about one run in five on CI. Any idea why?</p>',
+        },
+        {
+          r: 'ai',
+          t: `<p>The spec asserts on the rendered <code>svg</code> right after navigation, but Mermaid renders asynchronously after the markdown stream settles. On slower runners the assertion wins the race.</p>
+   <div class="tool">${IC.files}<b>read</b> tests/e2e/mermaid.spec.ts</div>
+   <div class="tool">${IC.files}<b>search</b> "waitForExist" · 14 matches</div>
+   <p>Two other specs use <code>waitForExist</code> on the same selector, so it’s a shared pattern worth fixing together.</p>`,
+        },
+        { r: 'user', t: '<p>Fix it by waiting for the svg to be displayed.</p>' },
+        {
+          r: 'ai',
+          t: `<p>Done — the spec now waits for the diagram to be visible before measuring it.</p>
+   <div class="diff"><div class="d">- await $('.mermaid svg').waitForExist()</div><div class="a">+ await $('.mermaid svg').waitForDisplayed({ timeout: 10_000 })</div><div class="a">+ await expect($('.mermaid svg')).toBeDisplayedInViewport()</div></div>
+   <p>Running the spec 20× locally: 20/20 pass.</p>`,
+        },
+      ]
+
+      const REPLIES = [
+        'Short version: <code>waitForExist</code> only checks the node is in the DOM; <code>waitForDisplayed</code> also requires non-zero size and no <code>display:none</code>. Mermaid inserts an empty svg first, so the first one passes too early.',
+        'Good question — I only read the main thread up to the message you branched from, so I can’t see later edits. Want me to re-sync this chat with the latest?',
+        'That wouldn’t change the main thread. When you’re done, “Send summary back” posts a one-paragraph note there — nothing else leaks across.',
+      ]
+      const SUGG = [
+        'Explain this in simpler terms',
+        'What alternatives did you consider?',
+        'Is this safe to merge?',
+      ]
+
+      const S = {
+        v: 'A',
+        tab: 'browser',
+        active: 't1',
+        scOpen: true,
+        split: false,
+        tray: 'open',
+        rail: ['browser'],
+        n: 1,
+        threads: {
+          t1: {
+            anchor: 1,
+            title: 'waitForExist vs waitForDisplayed',
+            msgs: [
+              {
+                r: 'u',
+                t: 'What’s the difference between waitForExist and waitForDisplayed here?',
+              },
+              { r: 'a', t: REPLIES[0] },
+            ],
+          },
+        },
+        pending: null,
+      }
+
+      const AVENUES = {
+        A: {
+          n: 'Drawer over chat',
+          d: 'Side chat slides over the conversation column. The right panel is untouched, so browser/diff/terminal keep their modality.',
+          pro: 'Zero right-panel pressure. Reads like a conversation, anchored to the message you branched from.',
+          con: 'Covers the tail of the main thread; can’t look at both at once on narrow windows.',
+        },
+        B: {
+          n: 'Right-panel tab + split',
+          d: 'Side chat is another right-panel modality. “Split” stacks it under the current tab so you can chat beside a diff or browser.',
+          pro: 'Matches existing mental model; split gives true side-by-side with a modality.',
+          con: 'Makes the overloaded panel more overloaded — the tab bar is already near overflow.',
+        },
+        C: {
+          n: 'Margin threads',
+          d: 'Threads live in a gutter beside the message they branch from, like review comments. Several can coexist.',
+          pro: 'Context is spatial: you see which message each question is about. Multiple threads for free.',
+          con: 'Needs width (~300px gutter) and anchors scroll away with the message.',
+        },
+        D: {
+          n: 'Bottom tray',
+          d: 'A tray docks above the composer with chips for open side chats. It collapses to a one-line bar.',
+          pro: 'Doesn’t touch the right panel or hide the sidebar; natural next to the composer you’d type in.',
+          con: 'Steals vertical space; transcript and tray scroll independently.',
+        },
+        E: {
+          n: 'Rail + stackable slots',
+          d: 'Right panel becomes an icon rail. Each icon opens a slot; open up to two at once and they stack. Side chat is just another icon.',
+          pro: 'Fixes the modality crowding itself: no tab bar, any two modalities side by side, side chat included.',
+          con: 'Biggest change: tabs go away and the rail needs discoverable labels.',
+        },
+      }
+
+      const $ = (s) => document.querySelector(s)
+      const tabsDef = [
+        ['browser', 'Browser', 'globe'],
+        ['diff', 'Diff', 'diff'],
+        ['terminal', 'Terminal', 'term'],
+        ['files', 'Files', 'files'],
+      ]
+
+      function panelContent(id) {
+        if (id === 'browser')
+          return `<div class="pane"><div class="url"><span>localhost:5173/preview/flow.md</span></div>
+    <div class="mermaid"><div class="node">Prompt</div><div class="arr">↓</div><div class="node">Stream</div><div class="arr">↓</div><div class="node">Render svg</div></div></div>`
+        if (id === 'diff')
+          return `<div class="pane"><div class="diff"><div>tests/e2e/mermaid.spec.ts</div><div class="d">- await $('.mermaid svg').waitForExist()</div><div class="a">+ await $('.mermaid svg').waitForDisplayed()</div></div></div>`
+        if (id === 'terminal')
+          return `<div class="pane"><div class="term"><b>$</b> npx wdio run wdio.conf.ts --spec mermaid.spec.ts\n[chrome] mermaid renders flowchart <b>✓</b>\n[chrome] mermaid renders sequence <b>✓</b>\n20 passing (41s)</div></div>`
+        if (id === 'files')
+          return `<div class="pane"><div class="tree">▾ tests/e2e<br>&nbsp;&nbsp;<span class="on">mermaid.spec.ts</span><br>&nbsp;&nbsp;markdown.spec.ts<br>▸ src/renderer</div></div>`
+        return ''
+      }
+      const label = (id) => (id === 'side' ? 'Side chat' : tabsDef.find((t) => t[0] === id)[1])
+      const icon = (id) => (id === 'side' ? IC.chat : IC[tabsDef.find((t) => t[0] === id)[2]])
+
+      /* ---- side chat body ---- */
+      function scHTML(id, o = {}) {
+        const t = S.threads[id]
+        if (!t) return ''
+        const anchorTxt =
+          ['Your question', 'Why mermaid fails', 'Fix request', 'Applied fix'][t.anchor] || ''
+        const ids = Object.keys(S.threads)
+        const chips =
+          o.chips && ids.length > 0
+            ? `<div class="chips">${ids.map((k) => `<button class="chip ${k === id ? 'on' : ''}" data-act="pick" data-id="${k}">${S.threads[k].title}</button>`).join('')}<button class="chip" data-act="new" title="New side chat">+ new</button></div>`
+            : ''
+        const msgs = t.msgs.length
+          ? t.msgs.map((m) => `<div class="m ${m.r}">${m.t}</div>`).join('')
+          : `<div class="empty">Ask anything about this message without touching the main thread.${SUGG.map((s) => `<button class="sug" data-act="sug" data-id="${id}">${s}</button>`).join('')}</div>`
+        const typing = S.pending === id ? '<div class="typing">Copse is thinking…</div>' : ''
+        return `<div class="sc" data-sc="${id}">
+    <div class="sc-h"><div class="r1"><span class="ico">${IC.chat}</span><span class="ttl">${t.title}</span>
+      ${(o.actions || []).join('')}</div>
+      ${chips}
+      <div class="ctx">${IC.lock} Reads main thread up to “${anchorTxt}” · read-only</div></div>
+    <div class="sc-b" id="b-${id}">${msgs}${typing}</div>
+    <div class="sc-f"><form data-id="${id}"><input placeholder="Ask a side question…" autocomplete="off"><button class="go">Send</button></form>
+      <div class="foot"><button class="btn" data-act="merge" data-id="${id}">${IC.merge} Send summary to main</button><button class="btn ghost" data-act="promote" data-id="${id}">${IC.out} Promote to thread</button></div></div>
+  </div>`
+      }
+      const closeBtn = (a) => `<button class="i" data-act="${a}" title="Close">${IC.x}</button>`
+
+      /* ---- chat transcript ---- */
+      function chatHTML(margin) {
+        const anchors = Object.entries(S.threads)
+        let out = ''
+        MAIN.forEach((m, i) => {
+          const th = anchors.filter(([, t]) => t.anchor === i)
+          const isAnch =
+            th.length && S.v !== 'C' && th.some(([k]) => k === S.active) && S.scOpenEffective
+          const btn = `<div class="acts"><button data-act="fork" data-i="${i}" title="Start a side chat from here">${IC.chat} Side chat</button></div>`
+          const chip =
+            th.length && S.v !== 'C'
+              ? `<div><button class="anchor-chip" data-act="pick" data-id="${th[0][0]}">${IC.chat} ${th.length} side chat${th.length > 1 ? 's' : ''}</button></div>`
+              : ''
+          const msg = `<div class="msg ${m.r} ${isAnch ? 'anch' : ''}">${m.r === 'user' ? '<div class="who">You</div>' : '<div class="who">Copse</div>'}<div class="body">${m.t}</div>${chip}${btn}</div>`
+          if (margin) {
+            const cards = th
+              .map(([k]) => `<div class="mcard">${scHTML(k, { actions: [] })}</div>`)
+              .join('')
+            const gutter = cards || `<div class="mdot" style="visibility:hidden"></div>`
+            out += `<div class="row"><div class="msgcol">${msg}</div><div class="mgutter">${cards}</div></div>`
+          } else out += msg
+        })
+        return out
+      }
+
+      function composerHTML() {
+        return `<div class="composer"><div class="box"><span>Message Copse…</span><kbd>⌘↵</kbd></div>
+  <div class="hint">Hover any message → <b style="color:var(--side)">Side chat</b> · or <kbd>⌘/</kbd> to branch from the last reply</div></div>`
+      }
+
+      function rightTabs(withSide) {
+        return `<div class="tabs">${tabsDef.map(([id, l, ic]) => `<button class="tab ${S.tab === id ? 'on' : ''}" data-act="tab" data-id="${id}">${IC[ic]} ${l}</button>`).join('')}
+    ${withSide ? `<button class="tab s ${S.tab === 'side' ? 'on' : ''}" data-act="tab" data-id="side">${IC.chat} Side chat <span class="badge">${Object.keys(S.threads).length}</span></button>` : ''}
+    <span class="sp"></span>${withSide ? `<button class="tool-btn" data-act="split" title="Stack side chat under this tab">${IC.split} ${S.split ? 'Unsplit' : 'Split'}</button>` : ''}</div>`
+      }
+
+      /* ---- variants ---- */
+      function build() {
+        const v = S.v
+        S.scOpenEffective =
+          (v === 'A' && S.scOpen) ||
+          (v === 'B' && (S.split || S.tab === 'side')) ||
+          (v === 'D' && S.tray !== 'closed') ||
+          (v === 'E' && S.rail.includes('side'))
+        const side = `<div class="sidebar"><div class="logo">🌲 Copse</div><div class="lbl">Threads</div>
+    <div class="item">Refactor settings store</div>
+    <div class="item on">Fix flaky mermaid e2e</div>
+    ${Object.values(S.threads)
+      .map((t) => `<div class="sub">${IC.chat} ${t.title}</div>`)
+      .join('')}
+    <div class="item">Release notes draft</div></div>`
+        const head = `<div class="mhead"><span class="t">Fix flaky mermaid e2e</span><span class="pill">claude-sonnet-5-5</span><span class="sp"></span>
+    <button class="btn side" data-act="${v === 'A' ? 'toggleA' : v === 'D' ? 'toggleD' : v === 'B' ? 'openB' : v === 'E' ? 'toggleE' : 'forkLast'}">${IC.chat} Side chats${Object.keys(S.threads).length ? ` · ${Object.keys(S.threads).length}` : ''}</button></div>`
+        let main,
+          right = ''
+        const firstId = S.active in S.threads ? S.active : Object.keys(S.threads)[0]
+        if (v === 'A') {
+          main = `<div class="main">${head}<div class="chatwrap"><div class="chat">${chatHTML(false)}</div>${composerHTML()}
+      ${S.scOpen && firstId ? `<div class="drawer">${scHTML(firstId, { chips: true, actions: [closeBtn('closeA')] })}</div>` : ''}</div></div>`
+          right = `<div class="right">${rightTabs(false)}<div class="slot">${panelContent(S.tab === 'side' ? 'browser' : S.tab)}</div></div>`
+        }
+        if (v === 'B') {
+          main = `<div class="main">${head}<div class="chatwrap"><div class="chat">${chatHTML(false)}</div>${composerHTML()}</div></div>`
+          const top = S.tab === 'side' && S.split ? 'browser' : S.tab
+          if (S.split) {
+            right = `<div class="right">${rightTabs(true)}<div class="slot">${panelContent(top)}</div><div class="slot">${firstId ? scHTML(firstId, { chips: true, actions: [] }) : ''}</div></div>`
+          } else {
+            right = `<div class="right">${rightTabs(true)}<div class="slot">${S.tab === 'side' ? (firstId ? scHTML(firstId, { chips: true }) : '') : panelContent(S.tab)}</div></div>`
+          }
+        }
+        if (v === 'C') {
+          main = `<div class="main">${head}<div class="chatwrap"><div class="chat margin">${chatHTML(true)}</div>${composerHTML()}</div></div>`
+          right = `<div class="right">${rightTabs(false)}<div class="slot">${panelContent(S.tab === 'side' ? 'browser' : S.tab)}</div></div>`
+        }
+        if (v === 'D') {
+          const ids = Object.keys(S.threads)
+          const tray =
+            S.tray === 'closed'
+              ? ''
+              : `<div class="tray ${S.tray === 'min' ? 'min' : ''}">
+      <div class="tray-bar" data-act="trayToggle">${IC.chat} Side chats
+        ${ids.map((k) => `<button class="chip ${k === firstId ? 'on' : ''}" data-act="pick" data-id="${k}">${S.threads[k].title}</button>`).join('')}
+        <button class="chip" data-act="new">+ new</button><span class="sp"></span>
+        <button data-act="trayMin" title="Collapse">${S.tray === 'min' ? IC.up : IC.down}</button><button data-act="trayClose" title="Close">${IC.x}</button></div>
+      ${S.tray === 'min' ? '' : `<div style="flex:1;min-height:0">${firstId ? scHTML(firstId, { actions: [] }) : ''}</div>`}</div>`
+          main = `<div class="main">${head}<div class="chatwrap"><div class="chat">${chatHTML(false)}</div>${tray}${composerHTML()}</div></div>`
+          right = `<div class="right">${rightTabs(false)}<div class="slot">${panelContent(S.tab === 'side' ? 'browser' : S.tab)}</div></div>`
+        }
+        if (v === 'E') {
+          main = `<div class="main">${head}<div class="chatwrap"><div class="chat">${chatHTML(false)}</div>${composerHTML()}</div></div>`
+          const slots = S.rail
+            .map(
+              (
+                id,
+              ) => `<div class="slot"><div class="slot-h"><span>${icon(id)}</span>${label(id)}<span class="sp"></span>
+      <button data-act="rail" data-id="${id}" title="Close">${IC.x}</button></div>${id === 'side' ? (firstId ? scHTML(firstId, { chips: true }) : '') : panelContent(id)}</div>`,
+            )
+            .join('')
+          right =
+            (S.rail.length ? `<div class="panel-multi">${slots}</div>` : '') +
+            `<div class="rail">${tabsDef.map(([id, l, ic]) => `<button class="${S.rail.includes(id) ? 'on' : ''}" title="${l}" data-act="rail" data-id="${id}">${IC[ic]}</button>`).join('')}
+      <button class="s ${S.rail.includes('side') ? 'on' : ''}" title="Side chat" data-act="rail" data-id="side">${IC.chat}<span class="badge">${Object.keys(S.threads).length}</span></button>
+      <span class="gap"></span><div class="hint">max 2 open</div></div>`
+        }
+        $('#app').innerHTML = side + main + right
+        document.querySelectorAll('.sc-b').forEach((b) => (b.scrollTop = b.scrollHeight))
+        const a = AVENUES[v]
+        $('#note').innerHTML =
+          `<div><h4>${v} · ${a.n}</h4><p>${a.d}</p></div><div class="pro"><h4>Good</h4><p>${a.pro}</p></div><div class="con"><h4>Trade-off</h4><p>${a.con}</p></div>`
+        $('#seg').innerHTML = Object.entries(AVENUES)
+          .map(
+            ([k, x]) =>
+              `<button class="${k === v ? 'on' : ''}" data-act="variant" data-id="${k}"><b>${k}</b>${x.n}</button>`,
+          )
+          .join('')
+      }
+
+      /* ---- actions ---- */
+      function newThread(anchor) {
+        S.n++
+        const id = 't' + S.n
+        S.threads[id] = { anchor, title: 'New side chat', msgs: [] }
+        S.active = id
+        return id
+      }
+      function focusInput() {
+        const i = document.querySelector('.sc-f input')
+        if (i) i.focus()
+      }
+      function reply(id) {
+        S.pending = id
+        build()
+        setTimeout(() => {
+          const t = S.threads[id]
+          if (!t) return
+          t.msgs.push({ r: 'a', t: REPLIES[(t.msgs.length >> 1) % REPLIES.length] })
+          S.pending = null
+          build()
+          focusInput()
+        }, 900)
+      }
+      function send(id, text) {
+        const t = S.threads[id]
+        if (!text.trim() || !t) return
+        if (t.title === 'New side chat') t.title = text.length > 34 ? text.slice(0, 32) + '…' : text
+        t.msgs.push({ r: 'u', t: text.replace(/</g, '&lt;') })
+        reply(id)
+      }
+      function openSide() {
+        if (S.v === 'A') S.scOpen = true
+        if (S.v === 'B') {
+          S.tab = 'side'
+        }
+        if (S.v === 'D') S.tray = 'open'
+        if (S.v === 'E' && !S.rail.includes('side')) S.rail = [...S.rail, 'side'].slice(-2)
+      }
+      document.addEventListener('click', (e) => {
+        const el = e.target.closest('[data-act]')
+        if (!el) return
+        const a = el.dataset.act,
+          id = el.dataset.id
+        if (a === 'variant') {
+          S.v = id
+          S.pending = null
+        } else if (a === 'tab') S.tab = id
+        else if (a === 'split') {
+          S.split = !S.split
+          if (S.split && S.tab === 'side') S.tab = 'browser'
+        } else if (a === 'toggleA') S.scOpen = !S.scOpen
+        else if (a === 'closeA') S.scOpen = false
+        else if (a === 'openB') {
+          S.tab = 'side'
+        } else if (a === 'toggleD') S.tray = S.tray === 'closed' ? 'open' : 'closed'
+        else if (
+          a === 'trayToggle' &&
+          !e.target.closest('.chip,button[data-act]:not([data-act=trayToggle])')
+        )
+          S.tray = S.tray === 'min' ? 'open' : 'min'
+        else if (a === 'trayMin') S.tray = S.tray === 'min' ? 'open' : 'min'
+        else if (a === 'trayClose') S.tray = 'closed'
+        else if (a === 'toggleE') {
+          S.rail = S.rail.includes('side')
+            ? S.rail.filter((x) => x !== 'side')
+            : [...S.rail, 'side'].slice(-2)
+        } else if (a === 'rail') {
+          S.rail = S.rail.includes(id) ? S.rail.filter((x) => x !== id) : [...S.rail, id].slice(-2)
+        } else if (a === 'pick') {
+          S.active = id
+          openSide()
+        } else if (a === 'new') {
+          newThread(MAIN.length - 1)
+          openSide()
+        } else if (a === 'forkLast') {
+          const k = newThread(MAIN.length - 1)
+        } else if (a === 'fork') {
+          const i = +el.dataset.i
+          const ex = Object.entries(S.threads).find(([, t]) => t.anchor === i)
+          if (ex) S.active = ex[0]
+          else newThread(i)
+          openSide()
+        } else if (a === 'sug') {
+          build()
+          send(id, el.textContent)
+          return
+        } else if (a === 'merge') {
+          const t = S.threads[id]
+          const toast = document.createElement('div')
+          toast.style.cssText =
+            'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:8px 14px;border-radius:8px;z-index:99'
+          toast.textContent =
+            'Posted a 1-paragraph summary of “' + t.title + '” to the main thread (prototype).'
+          document.body.appendChild(toast)
+          setTimeout(() => toast.remove(), 2400)
+          return
+        } else if (a === 'promote') {
+          const t = S.threads[id]
+          delete S.threads[id]
+          S.active = Object.keys(S.threads)[0]
+          const toast = document.createElement('div')
+          toast.style.cssText =
+            'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:8px 14px;border-radius:8px;z-index:99'
+          toast.textContent =
+            '“' + t.title + '” promoted to its own thread in the sidebar (prototype).'
+          document.body.appendChild(toast)
+          setTimeout(() => toast.remove(), 2400)
+        }
+        build()
+        if (['fork', 'new', 'forkLast', 'pick'].includes(a)) focusInput()
+      })
+      document.addEventListener('submit', (e) => {
+        e.preventDefault()
+        const f = e.target
+        const i = f.querySelector('input')
+        const v = i.value
+        i.value = ''
+        send(f.dataset.id, v)
+      })
+      document.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+          e.preventDefault()
+          const k = newThread(MAIN.length - 1)
+          openSide()
+          build()
+          focusInput()
+        }
+      })
+      $('#theme').onclick = () => {
+        const r = document.documentElement
+        const dark = r.dataset.theme
+          ? r.dataset.theme === 'dark'
+          : matchMedia('(prefers-color-scheme:dark)').matches
+        r.dataset.theme = dark ? 'light' : 'dark'
+      }
+      build()
+    </script>
+  </body>
+</html>

@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedStreamingMarkdownFixture } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -10,7 +10,7 @@ describe('markdown streaming heading pending', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-streaming-heading-project', { subagentsEnabled: false })
+    seedStreamingMarkdownFixture(process.cwd())
     await browser.reloadSession()
   })
 
@@ -19,24 +19,22 @@ describe('markdown streaming heading pending', () => {
   })
 
   it('renders pending ### headings without raw hash markers', async () => {
-    await $('.messages-list').waitForExist({ timeout: 30_000 })
+    await $('[data-message-id="streaming-markdown-message"] .message-text').waitForDisplayed({
+      timeout: 30_000,
+    })
 
     const result = await browser.execute(() => {
-      const list = document.querySelector('.messages-list')
-      if (!list) return { error: 'no messages list' }
-
-      const msg = document.createElement('div')
-      msg.className = 'msg msg-assistant'
-      const text = document.createElement('div')
-      text.className = 'message-text streaming-markdown is-streaming'
+      const text = document.querySelector(
+        '[data-message-id="streaming-markdown-message"] .message-text',
+      )
+      if (!text) return { error: 'no visible assistant message' }
+      text.classList.add('streaming-markdown', 'is-streaming')
       text.innerHTML = [
         '<div class="stream-complete">',
         '<h2>Summary</h2>',
         '<div class="stream-pending stream-pending-heading stream-pending-h3 stream-pending-block" data-heading-level="3">Architecture Highlights</div>',
         '</div>',
       ].join('')
-      msg.append(text)
-      list.append(msg)
 
       const heading = text.querySelector('.stream-pending-heading')
       return {
@@ -52,6 +50,22 @@ describe('markdown streaming heading pending', () => {
     expect(result.headingLevel).toBe('3')
     expect(result.hasRawHashes).toBe(false)
 
+    await expect($('.stream-pending')).toBeDisplayed()
+    const visible = await browser.execute(() => {
+      const element = document.querySelector('.stream-pending')
+      if (!element) return false
+      const rect = element.getBoundingClientRect()
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        rect.top >= 0 &&
+        rect.bottom <= innerHeight &&
+        element.contains(
+          document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2),
+        )
+      )
+    })
+    expect(visible).toBe(true)
     await saveAppScreenshot('markdown-streaming-heading-pending.png')
   })
 })

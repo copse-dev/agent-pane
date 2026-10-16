@@ -1,3 +1,4 @@
+import * as manifestReview from './lib/screenshot-review-manifest.mts'
 import { createHash } from 'node:crypto'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -36,8 +37,45 @@ const steps = workflow.jobs.decide.steps
 async function execute(name: string, bindings: Record<string, unknown>): Promise<void> {
   const script = z.string().parse(steps.find((step) => step.name === name)?.with?.['script'])
   assert.doesNotMatch(script, /\$\{\{/)
-  const execution: unknown = runInNewContext(`(async () => {\n${script}\n})()`, bindings)
+  const execution: unknown = runInNewContext(`(async () => {\n${script}\n})()`, {
+    ...bindings,
+    require: (name: string) =>
+      name.endsWith('screenshot-review-manifest.mts') ? manifestReview : { createHash },
+  })
   await execution
+}
+
+const shotHash = (key: string): string => createHash('sha256').update(key).digest('hex')
+function manifestBlob(file_sha: string): {
+  data: { content: string; encoding: string; size: number }
+} {
+  const entries: [string, string][] =
+    file_sha === 'manifest-before'
+      ? [
+          ['a.png', 'a1'],
+          ['b.png', 'b1'],
+        ]
+      : [
+          ['a.png', 'a2'],
+          ['b.png', 'b1'],
+          ['c.png', 'c1'],
+        ]
+  const text = JSON.stringify({
+    version: 1,
+    screenshots: Object.fromEntries(
+      entries.map(([name, key]): [string, { sha256: string; bytes: number }] => [
+        name,
+        { sha256: shotHash(key), bytes: 1 },
+      ]),
+    ),
+  })
+  return {
+    data: {
+      content: Buffer.from(text).toString('base64'),
+      encoding: 'base64',
+      size: Buffer.byteLength(text),
+    },
+  }
 }
 
 const HEAD = 'abc123abc123abc123abc123abc123abc123abc1'
@@ -62,7 +100,7 @@ function trees(
     ['head-root', [blob('package.json', 'p1'), tree('src', 's1'), tree('tests', 'head-tests')]],
     ['head-tests', [tree('e2e', 'head-e2e'), tree('unit', 'u1')]],
     ['head-e2e', [blob('pane.e2e.ts', 'e1'), tree('screenshots', 'head-shots')]],
-    ['head-shots', [blob('a.png', 'a1'), blob('b.png', 'b1')]],
+    ['head-shots', [blob('manifest.json', 'manifest-before')]],
     [
       'compare-root',
       changes.root ?? [
@@ -76,10 +114,7 @@ function trees(
       'compare-e2e',
       changes.e2e ?? [blob('pane.e2e.ts', 'e1'), tree('screenshots', 'compare-shots')],
     ],
-    [
-      'compare-shots',
-      changes.shots ?? [blob('a.png', 'a2'), blob('b.png', 'b1'), blob('c.png', 'c1')],
-    ],
+    ['compare-shots', changes.shots ?? [blob('manifest.json', 'manifest-after')]],
   ])
 }
 
@@ -145,6 +180,7 @@ async function validate(scenario: Scenario = {}): Promise<Map<string, string>> {
               },
             }
           },
+          getBlob: async ({ file_sha }: { file_sha: string }) => manifestBlob(file_sha),
           getTree: async ({ tree_sha }: { tree_sha: string }) => {
             const entries = layout.get(tree_sha)
             assert.ok(entries, tree_sha)
@@ -210,23 +246,17 @@ describe('screenshot review label validation', () => {
         trees({ e2e: [blob('pane.e2e.ts', 'e2'), tree('screenshots', 'compare-shots')] }),
         /`tests\/e2e\/pane\.e2e\.ts`/,
       ],
-      [trees({ shots: [blob('a.png', 'a1')] }), /`tests\/e2e\/screenshots\/b\.png`/],
-      [trees({ shots: [blob('a.png', 'a1'), blob('b.png', 'b1'), blob('x.txt', 'x1')] }), /x\.txt/],
+      [trees({ shots: [] }), /Invalid screenshot manifest tree/],
+      [trees({ shots: [blob('manifest.json', 'manifest-after'), blob('x.txt', 'x1')] }), /x\.txt/],
       [
-        trees({ shots: [blob('a.png', 'a1'), blob('b.png', 'b1'), tree('nested.png', 'n1')] }),
+        trees({ shots: [blob('manifest.json', 'manifest-after'), tree('nested.png', 'n1')] }),
         /nested\.png/,
       ],
       [
-        trees({
-          shots: [
-            blob('a.png', 'a1'),
-            blob('b.png', 'b1'),
-            { ...blob('run.png', 'r1'), mode: '100755' },
-          ],
-        }),
-        /run\.png/,
+        trees({ shots: [{ ...blob('manifest.json', 'manifest-after'), mode: '100755' }] }),
+        /Invalid screenshot manifest tree/,
       ],
-      [trees({ shots: [blob('a.png', 'a1'), blob('b.png', 'b1')] }), /changes no screenshot/],
+      [trees({ shots: [blob('manifest.json', 'manifest-before')] }), /changes no screenshot/],
     ] as const) {
       const outputs = await validate({ trees: layout })
       assert.equal(outputs.get('outcome'), 'refuse')
@@ -488,9 +518,12 @@ describe('recording a screenshot review decision', () => {
 })
 
 describe('screenshot-review-labels.yml invariants', () => {
-  it('runs only for the two review labels on same-repository PRs, without checking anything out', () => {
+  it('runs only for the two review labels on same-repository PRs, executing only trusted base policy', () => {
     assert.deepEqual(workflow.on.pull_request.types, ['labeled'])
-    assert.doesNotMatch(source, /^ +pull_request_target:|uses: actions\/checkout/m)
+    assert.doesNotMatch(source, /^ +pull_request_target:/m)
+    const checkout = steps.find((step) => step.uses?.startsWith('actions/checkout@'))
+    assert.equal(checkout?.with?.['ref'], '${{ github.event.pull_request.base.sha }}')
+    assert.equal(checkout.with['persist-credentials'], false)
     assert.match(workflow.jobs.decide.if, /github\.event\.label\.name == 'accept-screenshots'/)
     assert.match(workflow.jobs.decide.if, /github\.event\.label\.name == 'decline-screenshots'/)
     assert.match(
@@ -536,7 +569,13 @@ describe('screenshot-review-labels.yml invariants', () => {
     assert.match(script, /force: false/)
     assert.deepEqual(
       steps.map((step) => step.id ?? step.name),
-      ['validate', 'app-token', 'fast-forward', 'Record the decision'],
+      [
+        'Load trusted screenshot storage policy',
+        'validate',
+        'app-token',
+        'fast-forward',
+        'Record the decision',
+      ],
     )
   })
 })

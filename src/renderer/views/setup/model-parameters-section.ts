@@ -1,3 +1,4 @@
+import type { SettingsSnapshot, SettingsUpdate } from '@shared/settings-contract.ts'
 import type { ApiClient } from '../../../preload/api.d.ts'
 import { el } from '../../dom/helpers.ts'
 import { uiField } from '../../ui/index.ts'
@@ -21,7 +22,7 @@ import {
 export interface ModelParametersSection {
   root: HTMLElement
   /** Load the saved map from settings and start on the chat model, when it is tunable. */
-  refresh: (chatModel: string) => Promise<void>
+  refresh: (chatModel: string, snapshot?: SettingsSnapshot, signal?: AbortSignal) => Promise<void>
   /**
    * Follow a newly picked chat model. A rule or agent selection has no
    * parameters of its own, so it leaves whatever model is being tuned in place.
@@ -29,11 +30,15 @@ export interface ModelParametersSection {
   setModel: (chatModel: string) => void
   /** Persist the map when the user changed something; a no-op otherwise. */
   save: () => Promise<void>
+  readUpdate: () => SettingsUpdate
+  reset: () => void
+  refreshOptions: (signal?: AbortSignal) => Promise<void>
+  load: (chatModel: string, snapshot: SettingsSnapshot) => void
 }
 
 /** The searchable picker Settings mounts over the section's native select. */
 interface ModelPickerHandle {
-  refresh: (current?: string) => Promise<void>
+  refresh: (current?: string, signal?: AbortSignal) => Promise<void>
 }
 
 export interface ModelParametersSectionOptions {
@@ -42,7 +47,7 @@ export interface ModelParametersSectionOptions {
 }
 
 const REASONING_LABELS: Record<ReasoningLevel, string> = {
-  off: 'Off — answer without reasoning first',
+  off: 'Off, answer without reasoning first',
   minimal: 'Minimal',
   low: 'Low',
   medium: 'Medium',
@@ -52,9 +57,9 @@ const REASONING_LABELS: Record<ReasoningLevel, string> = {
 }
 
 const VERBOSITY_LABELS: Record<VerbosityLevel, string> = {
-  low: 'Low — terse answers',
+  low: 'Low, terse answers',
   medium: 'Medium',
-  high: 'High — thorough answers',
+  high: 'High, thorough answers',
 }
 
 const DEFAULT_OPTION_LABEL = "Model default (don't send)"
@@ -65,7 +70,7 @@ const DEFAULT_OPTION_LABEL = "Model default (don't send)"
  * Hints say what the knob *does* rather than restating its range, which the
  * input's own bounds already carry. The two cutoffs and the two penalties are
  * unfamiliar enough that a user meeting them in a vendor recipe needs to know
- * which way is "off" — every hint names its neutral value.
+ * which way is "off", every hint names its neutral value.
  */
 const SAMPLING_CONTROLS: Readonly<
   Record<SamplingField, { label: string; name: string; testid: string; hint: string }>
@@ -104,7 +109,7 @@ const SAMPLING_CONTROLS: Readonly<
     label: 'Repetition penalty',
     name: 'modelRepetitionPenalty',
     testid: 'model-parameter-repetition-penalty',
-    hint: 'Divides the likelihood of tokens already seen. 1 is off — below 1 encourages repetition.',
+    hint: 'Divides the likelihood of tokens already seen. 1 is off, below 1 encourages repetition.',
   },
 }
 
@@ -138,7 +143,7 @@ function blankHint(recipeValue: number | undefined, fallback: string): string {
  * knobs apply wherever that model runs, exactly as an ACP agent's model and
  * permission mode are configured once on the agent. So the section has its own
  * model picker and edits one entry of a selection-keyed map. It starts on the
- * chat model, but tuning a model never changes the default — the default is
+ * chat model, but tuning a model never changes the default, the default is
  * often a rule (`auto:balanced`) that has no parameters to tune at all.
  *
  * A model with a curated recipe runs on it unless told otherwise, so the
@@ -381,7 +386,7 @@ export function createModelParametersSection(
         ? 'This provider passes them upstream, so which values take effect is up to the model behind it.'
         : '',
       support.reasoning.length > 0 && support.sampling.length === 0
-        ? 'This model does not accept sampling parameters — it reasons instead of sampling.'
+        ? 'This model does not accept sampling parameters, it reasons instead of sampling.'
         : '',
       support.reasoning.length === 0 ? 'This model exposes no reasoning control.' : '',
       ceilingHint(false),
@@ -508,7 +513,7 @@ export function createModelParametersSection(
     render()
   }
 
-  function setModel(chatModel: string): void {
+  function selectChatModel(chatModel: string): void {
     const model = chatModel.trim()
     // A rule or an agent has nothing to tune; keep the model the user is on.
     if (!model || modelParameterSupport(model).unavailableReason) {
@@ -516,18 +521,36 @@ export function createModelParametersSection(
       return
     }
     selectModel(model)
+  }
+
+  function setModel(chatModel: string): void {
+    selectChatModel(chatModel)
     void picker?.refresh(current)
   }
 
-  async function refresh(chatModel: string): Promise<void> {
+  function load(chatModel: string, snapshot: SettingsSnapshot): void {
+    stored = decodeModelParametersMap(snapshot.modelParameters)
+    dirty = false
+    selectChatModel(chatModel)
+  }
+
+  async function refresh(
+    chatModel: string,
+    snapshot?: SettingsSnapshot,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (signal?.aborted) return
     try {
-      stored = decodeModelParametersMap(await api.get('modelParameters'))
+      stored = decodeModelParametersMap(
+        snapshot ? snapshot.modelParameters : await api.get('modelParameters'),
+      )
     } catch {
       stored = {}
     }
+    if (signal?.aborted) return
     dirty = false
-    setModel(chatModel)
-    await picker?.refresh(current)
+    selectChatModel(chatModel)
+    await picker?.refresh(current, signal)
   }
 
   async function save(): Promise<void> {
@@ -536,5 +559,19 @@ export function createModelParametersSection(
     dirty = false
   }
 
-  return { root, refresh, setModel, save }
+  return {
+    root,
+    refresh,
+    refreshOptions: async (signal?: AbortSignal): Promise<void> => {
+      await picker?.refresh(current, signal)
+    },
+    load,
+    reset: (): void => {
+      dirty = false
+      stored = {}
+    },
+    setModel,
+    save,
+    readUpdate: () => (dirty ? { modelParameters: structuredClone(stored) } : {}),
+  }
 }

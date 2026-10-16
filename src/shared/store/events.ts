@@ -75,6 +75,8 @@ export interface StoreEvents {
   git_change_navigate: [path: string]
   // Request the Roadmap pane to select a specific item (quick-open palette hit).
   roadmap_reveal: [itemId: string]
+  thread_plan_open: []
+  thread_plan_changed: [threadId: string]
   browser_url_requested: [url: string]
   // Cmd/Ctrl+L: focus the Browser pane's address bar and select its contents.
   // Raised from the app menu because the key never reaches the renderer while a
@@ -120,7 +122,7 @@ export interface StoreEvents {
   // Open a Shells tab (switching the right panel to terminal mode) and run a
   // command in it. Used by the Usage panel's "Sign in to Claude" button to
   // launch `claude /login` in a real interactive terminal.
-  request_terminal_command: [command: string]
+  request_terminal_command: [command: string, options?: { executionTarget: 'local' }]
   // A runnable assistant code block was explicitly started by the user. The
   // Shells pane owns execution; completion returns a scrollback snapshot that
   // the composer stages as an @shell attachment on the originating thread.

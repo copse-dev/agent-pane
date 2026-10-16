@@ -104,16 +104,23 @@ export function getActiveThread(store: AppStore): Thread | undefined {
   return getThreadById(store, store.getState().activeThreadId)
 }
 
-/** Empty idle thread with no messages yet (unused "New Thread"). */
+/** Empty idle thread with no messages or saved plans (unused "New Thread"). */
 export function isBlankThread(thread: Thread): boolean {
   // A thread whose transcript has not been loaded yet is not blank — it is
   // unknown. Getting this wrong is destructive: `pruneBlankThreads` drops blanks
   // from the store and the autosave reconciler then deletes them from disk.
-  if (thread.messagesLoaded === false) return false
+  if (thread.messagesLoaded === false || thread.hasSavedPlan) return false
   // A side chat starts empty on purpose: it is anchored work, not an unused
   // "New Thread", and pruning it would delete it from disk.
   if (thread.sideChat !== undefined) return false
   return thread.messages.length === 0 && thread.status === 'idle'
+}
+
+/** Protect a successfully saved plan from automatic empty-task cleanup. */
+export function markThreadHasSavedPlan(store: AppStore, threadId: string): void {
+  if (getThreadById(store, threadId)?.hasSavedPlan) return
+  if (!patchThreadAnywhere(store, threadId, (thread) => ({ ...thread, hasSavedPlan: true }))) return
+  store.emit('threads_changed')
 }
 
 export function hasUnsubmittedPrompt(thread: Thread): boolean {
@@ -980,6 +987,7 @@ export function setMessageTurnOutcome(
     messages: thread.messages.map((message) =>
       message.id === messageId ? { ...message, turnOutcome } : message,
     ),
+    lastSettledAt: turnOutcome.endedAt,
     updatedAt: Date.now(),
   }))
   store.emit('threads_changed')
@@ -1103,7 +1111,11 @@ export function setThreadStatus(
   threadId: string,
   status: 'idle' | 'running' | 'error',
 ): void {
-  patchThreadAnywhere(store, threadId, (t) => ({ ...t, status }))
+  patchThreadAnywhere(store, threadId, (t) => ({
+    ...t,
+    status,
+    ...(t.status === 'running' && status !== 'running' ? { lastSettledAt: Date.now() } : {}),
+  }))
   store.emit('thread_status_changed', threadId, status)
 }
 
@@ -1136,7 +1148,12 @@ export function setThreadWorkingBrief(
 }
 
 export function setThreadGitBranch(store: AppStore, threadId: string, branch: string): void {
-  patchThreadAnywhere(store, threadId, (t) => ({ ...t, gitBranch: branch, updatedAt: Date.now() }))
+  patchThreadAnywhere(store, threadId, (t) => ({
+    ...t,
+    gitBranch: branch,
+    ...(t.status !== 'running' ? { lastSettledAt: t.lastSettledAt ?? t.updatedAt } : {}),
+    updatedAt: Date.now(),
+  }))
   store.emit('threads_changed')
 }
 

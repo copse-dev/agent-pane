@@ -606,7 +606,16 @@ export function mountBrowserPane(
     tab.forwardBtn.disabled = !webview.canGoForward()
   }
 
+  function syncGuestSurface(tab: BrowserTab): void {
+    const url = webviewUrl(tab) || (tab.pendingUrl ?? 'about:blank')
+    tab.webviewHost.classList.toggle(
+      'is-canvas',
+      Boolean(tab.artefactTitle) && (url === 'about:blank' || url.startsWith('data:text/html')),
+    )
+  }
+
   function syncTabLabel(tab: BrowserTab): void {
+    syncGuestSurface(tab)
     if (tab.artefactTitle) {
       tab.label = tab.artefactTitle
       tab.tabLabelEl.textContent = tab.label
@@ -749,6 +758,7 @@ export function mountBrowserPane(
   }
 
   function ensureWebview(tab: BrowserTab): BrowserWebviewElement {
+    syncGuestSurface(tab)
     if (tab.webview) return tab.webview
 
     const webview = createWebview(tab.partition, resolveWorkspacePreview)
@@ -756,6 +766,7 @@ export function mountBrowserPane(
     tab.webview = webview
 
     const onNavigate = (): void => {
+      syncGuestSurface(tab)
       if (activeTabId === tab.id) syncAddressBar(tab)
       // A link followed inside the page changes what this tab would restore to,
       // and nothing else in the pane hears about it.

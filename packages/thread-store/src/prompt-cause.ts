@@ -101,6 +101,8 @@ export const PROMPT_CAUSES = [
    * counted so the log stays complete, and labelled so a reader discounts it.
    */
   'mode-arming',
+  'thread-read-access',
+  'thread-send-access',
 ] as const
 
 export type PromptCause = (typeof PROMPT_CAUSES)[number]
@@ -173,6 +175,8 @@ const CONTAINMENT: Readonly<Record<PromptCause, PromptCauseContainment>> = {
   // server is outside any guest, so a container never removes this ask.
   'gui-app-launch': 'kept',
   'mode-arming': 'kept',
+  'thread-read-access': 'kept',
+  'thread-send-access': 'kept',
 }
 
 export function promptCauseContainment(cause: PromptCause): PromptCauseContainment {
@@ -210,6 +214,8 @@ const LABELS: Readonly<Record<PromptCause, string>> = {
   'acp-remote-env': 'Forwarding coding agent environment to a remote host',
   'gui-app-launch': 'Launch a host GUI app',
   'mode-arming': 'Arming a mode (user-initiated, not an interruption)',
+  'thread-read-access': 'Reading other threads',
+  'thread-send-access': 'Sending prompts to other threads',
 }
 
 export function promptCauseLabel(cause: PromptCause): string {

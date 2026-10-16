@@ -2,6 +2,24 @@
 export const UNSANDBOXED_ACCESS_WARNING =
   'This runs with your user account’s access to files and the network, beyond the project sandbox.'
 
+export function threadAccessApproval(access: 'read' | 'send'): ApprovalDetails & {
+  title: string
+  approveLabel: string
+  allowRemember: boolean
+} {
+  return {
+    title: access === 'read' ? 'Read your other threads?' : 'Send prompts to your other threads?',
+    body: '',
+    bodyAdvice:
+      access === 'read'
+        ? 'Allow this thread to read all your other conversations.'
+        : 'Allow this thread to send prompts that run in your other conversations.',
+    bodyFooter: 'Applies only to this thread. Revoke it in the thread menu → Conversation access.',
+    approveLabel: access === 'read' ? 'Allow reading' : 'Allow sending',
+    allowRemember: false,
+  }
+}
+
 export interface ApprovalDetails {
   body: string
   bodyAdvice: string

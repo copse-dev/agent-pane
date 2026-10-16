@@ -29,6 +29,7 @@ describe('Local PR relationships without GitHub details', () => {
       await expect($('.pr-thread-link[data-thread-id="producer"]')).toHaveText('Implement widget')
       await expect($$('.pr-thread-link[data-relationship="related"]')).toBeElementsArrayOfSize(1)
       await expect($('.pr-viewer-title')).toHaveText('#42 acme/widgets')
+      await expect($('.pr-list-checks-label')).toHaveText('CI unavailable')
       await expect($('.panel-empty')).toHaveText(
         mode === 'unavailable'
           ? 'Install GitHub CLI to load pull request details.'

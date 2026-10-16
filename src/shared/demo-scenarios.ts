@@ -11,11 +11,13 @@ import type { ToolPermissionCatalog } from './types/tool-permissions.ts'
 import type { GhPrDetails } from './types/git.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
 import { SITE_TOUR_SCENARIOS } from './demo-site-tour.ts'
+import { CONCISE_SCREENSHOT, CONCISE_STATE_SCENARIOS } from './demo-concise-states.ts'
 import { BRIDGED_TOOL_SCENARIOS } from './demo-bridged-tools.ts'
 import {
   browserApprovalDetails,
   providerApprovalDetails,
   webApprovalDetails,
+  threadAccessApproval,
 } from './approval-copy.ts'
 
 const FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0)
@@ -406,23 +408,6 @@ const PROPOSED_DIFF_TRACE: DemoTrace = {
   ],
 }
 
-// A stand-in browser capture for the concise-thread scenarios: the screenshot a
-// tool returned is the "work output" that view keeps on screen.
-const CONCISE_SCREENSHOT = `data:image/svg+xml;base64,${btoa(
-  [
-    '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270" viewBox="0 0 480 270">',
-    '<rect width="480" height="270" fill="#f4f1ea"/>',
-    '<rect width="480" height="36" fill="#2f3a2f"/>',
-    '<text x="16" y="23" font-family="sans-serif" font-size="14" fill="#fff">Settings</text>',
-    '<rect x="16" y="56" width="200" height="14" rx="3" fill="#c9c2b3"/>',
-    '<rect x="16" y="84" width="448" height="44" rx="6" fill="#fff" stroke="#d8d2c4"/>',
-    '<rect x="16" y="140" width="448" height="44" rx="6" fill="#fff" stroke="#d8d2c4"/>',
-    '<rect x="384" y="210" width="80" height="32" rx="6" fill="#4f7a4f"/>',
-    '<text x="405" y="231" font-family="sans-serif" font-size="13" fill="#fff">Save</text>',
-    '</svg>',
-  ].join(''),
-)}`
-
 /**
  * One finished turn — narration, reads, a failed then retried command, a
  * screenshot and a closing summary — attributed to `model`, so the same
@@ -640,7 +625,7 @@ function conciseMultiTurnMessages(model: string): Thread['messages'] {
   ]
 }
 
-/** `enabled` is the experimental Concise threads setting; on unless a scenario opts out. */
+/** `enabled` is the Concise threads setting; on unless a scenario opts out. */
 function conciseThreadScenario(
   id: string,
   label: string,
@@ -661,6 +646,9 @@ function conciseThreadScenario(
       uiTintStrength: 'off',
       model,
       conciseThreadsEnabled: enabled,
+      // An opt-out stored on a profile that has already seen the default flip;
+      // without the marker, startup would clear it as a pre-default `false`.
+      ...(enabled ? {} : { conciseThreadsDefaultMigrated: true }),
     },
     threads: [
       {
@@ -1632,6 +1620,24 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     label: 'Product announcements — fresh',
     project: project('demo-announcements-project'),
     settings: { onboardingCompleted: false, theme: 'dark', acknowledgedProductAnnouncements: [] },
+    threads: [
+      {
+        id: 'demo-announcements-thread',
+        title: 'Polish the release',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    // The real shipped catalog (not sample copy) for an existing profile.
+    id: 'product-announcements-shipped',
+    label: 'Product announcements — shipped catalog',
+    project: project('demo-announcements-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', acknowledgedProductAnnouncements: [] },
     threads: [
       {
         id: 'demo-announcements-thread',
@@ -2901,6 +2907,51 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'activity-home-read-history',
+    label: 'Activity home listing threads that finished before launch',
+    project: project('demo-activity-history-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // The first thread is the empty active one. Everything else is idle, read, and
+    // finished before this launch, so only the persisted write time puts it in
+    // Recently finished. Times follow the real clock because the recency window
+    // does; the last thread is older than the window and must stay out.
+    threads: [
+      {
+        id: 'demo-activity-history-new',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      ...(
+        [
+          ['refactor', 'Refactor auth', 'idle', 3_600_000 * 2],
+          ['flaky', 'Fix the flaky sandbox test', 'error', 3_600_000 * 30],
+          ['copy', 'Update onboarding copy', 'idle', 3_600_000 * 24 * 4],
+          // Legacy-shaped: written before lastPromptAt existed, so it only has usage.
+          ['legacy', 'Port the settings page', 'idle', 3_600_000 * 24 * 2],
+          ['ancient', 'Rename the config keys', 'idle', 3_600_000 * 24 * 30],
+        ] as const
+      ).map(([slug, title, status, ago], index) => ({
+        id: `demo-activity-history-${slug}`,
+        title,
+        status,
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 1200, outputTokens: 300 },
+        createdAt: Date.now() - ago - 60_000,
+        updatedAt: Date.now() - ago,
+        ...(slug === 'legacy' ? {} : { lastPromptAt: Date.now() - ago - 30_000 - index }),
+      })),
+    ],
+  },
+  {
     id: 'activity-home-empty',
     label: 'Activity home with nothing to list',
     project: project('demo-activity-home-empty-project'),
@@ -3043,6 +3094,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   },
   {
     id: 'thread-context',
+    changeStats: { additions: 42, deletions: 7 },
     label: 'The thread Context panel',
     project: project('demo-thread-context', 'Widgets', '/demo/widgets'),
     settings: {
@@ -3059,6 +3111,33 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     },
     threads: SIDE_CHATS_THREADS,
+  },
+  {
+    id: 'thread-context-worktree',
+    label: 'Context identifies a dedicated worktree and its branch',
+    project: project('demo-context-worktree', 'Widgets', '/demo/widgets'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      filesPaneOpen: true,
+      rightPanelMode: 'context',
+    },
+    threads: SIDE_CHATS_THREADS.map((thread) =>
+      thread.id === SIDE_CHATS_MAIN_ID
+        ? {
+            ...thread,
+            worktree: {
+              path: '/demo/widgets/.copse/worktrees/mermaid-wait',
+              branch: 'fix/mermaid-wait',
+              baseBranch: 'main',
+              baseCommit: '0000000000000000000000000000000000000000',
+              createdAt: FIXED_TIME,
+              seededFromDirtyProject: false,
+            },
+          }
+        : thread,
+    ),
   },
   {
     id: 'side-chat-approval',
@@ -3251,7 +3330,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   ),
   conciseThreadScenario(
     'concise-thread-disabled',
-    'Full thread view for a capable model while the experiment is off',
+    'Full thread view for a capable model while Concise threads is off',
     'claude-opus-5-5',
     { enabled: false },
   ),
@@ -3317,6 +3396,15 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   },
   // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
   ...SITE_TOUR_SCENARIOS,
+  // Concise thread view in each state a thread can be in (see demo-concise-states.ts).
+  ...CONCISE_STATE_SCENARIOS,
+  ...(['read', 'send'] as const).map((access) =>
+    approvalRiskScenario(`approval-thread-${access}`, {
+      id: `thread-${access}`,
+      type: 'mcp',
+      ...threadAccessApproval(access),
+    }),
+  ),
   approvalRiskScenario('approval-web-url', {
     id: 'web-url',
     title: 'Allow web origin?',

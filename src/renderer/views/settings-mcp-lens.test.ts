@@ -17,7 +17,7 @@ import { createStore } from '@shared/store/store.ts'
 import type { DeclaredMcpServer, McpServerStatus } from '@shared/types/mcp.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
-import { mountSettingsDialog } from './settings-dialog.ts'
+import { mountSettingsDialog, openSettingsDialog } from './settings-dialog.ts'
 
 function status(
   overrides: Partial<McpServerStatus> & Pick<McpServerStatus, 'name'>,
@@ -58,6 +58,7 @@ async function openMcp(
 ): Promise<void> {
   document.body.innerHTML = ''
   mountSettingsDialog(createStore({ activeProjectId: 'project-1' }), stubApi(servers, declared))
+  openSettingsDialog('mcp')
   const btn = document.querySelector<HTMLButtonElement>('.settings-nav-btn[data-section="mcp"]')
   assert.ok(btn)
   btn.click()
