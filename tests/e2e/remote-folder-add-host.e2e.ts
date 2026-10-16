@@ -21,20 +21,20 @@ describe('Open remote folder — add host inline', () => {
   it('shows an inline add-host form when no SSH hosts are configured', async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
 
-    const addProjectButton = await $('.projects-add-btn')
+    const addProjectButton = await $('.projects-add-btn').getElement()
     await expect(addProjectButton).toHaveAttribute(
       'data-tooltip',
       'New project, open a folder, or connect remotely',
     )
     await addProjectButton.click()
-    const remoteMenuItem = await $('.context-menu-item*=Open remote project')
+    const remoteMenuItem = await $('.context-menu-item*=Open remote project').getElement()
     await expect(remoteMenuItem).toBeDisplayed()
     await remoteMenuItem.click()
 
-    const dialog = await $('#remote-folder-dialog')
+    const dialog = await $('#remote-folder-dialog').getElement()
     await expect(dialog).toBeDisplayed()
 
-    const addForm = await dialog.$('.remote-folder-add-host-form')
+    const addForm = await dialog.$('.remote-folder-add-host-form').getElement()
     await expect(addForm).toBeDisplayed()
     await expect(dialog.$('.remote-folder-add-host-btn')).not.toBeDisplayed()
     await expect(dialog.$('.remote-folder-import-config')).toBeDisplayed()

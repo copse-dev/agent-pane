@@ -162,15 +162,10 @@ describe('automation attention grouping', function () {
     // awaited it only to discard it.
     const runNowResult = await browser.execute(
       async ([projectId, scheduleId]) => {
-        const host = window as unknown as {
-          api?: {
-            automations?: { runNow?: (project: string, schedule: string) => Promise<unknown> }
-          }
-        }
-        if (!host.api?.automations?.runNow) throw new Error('automations.runNow unavailable')
+        const host = window
         return await host.api.automations.runNow(projectId, scheduleId)
       },
-      [PROJECT_ID, SCHEDULE_ID],
+      [PROJECT_ID, SCHEDULE_ID] as const,
     )
 
     const automationToggle = $('.automation-threads-toggle')
@@ -200,10 +195,7 @@ describe('automation attention grouping', function () {
         { timeout: 75_000 },
       )
     } catch {
-      const startedThreadId =
-        typeof runNowResult === 'object' && runNowResult !== null && 'threadId' in runNowResult
-          ? String((runNowResult as { threadId?: unknown }).threadId)
-          : ''
+      const startedThreadId = runNowResult.threadId
       const [toggleExists, expanded, groupCount, rowCount, bellCount, titles, sidebarState] =
         await Promise.all([
           automationToggle.isExisting(),
@@ -213,7 +205,7 @@ describe('automation attention grouping', function () {
           $$('.chat-attention-bell').length,
           browser.execute(() =>
             Array.from(document.querySelectorAll('.chats-list .chat-title'))
-              .map((node) => node.textContent ?? '')
+              .map((node) => node.textContent)
               .join(' | '),
           ),
           // Readable while collapsed. `.automation-threads-count` is
@@ -268,11 +260,11 @@ describe('automation attention grouping', function () {
             .map(
               (node) =>
                 `${(node.getAttribute('data-thread-id') ?? '').slice(0, 8)}[${node.className}]` +
-                `"${(node.textContent ?? '').slice(0, 40)}"`,
+                `"${node.textContent.slice(0, 40)}"`,
             )
             .join(' | '),
           scheduleCounts: Array.from(document.querySelectorAll('.automation-schedule-count'))
-            .map((node) => node.textContent ?? '')
+            .map((node) => node.textContent)
             .join(' | '),
         }
       }, startedThreadId)
@@ -315,31 +307,23 @@ describe('automation attention grouping', function () {
       // already advanced.
       const threadRecord = await browser.execute(
         async ([projectId, threadId]) => {
-          const host = window as unknown as {
-            api?: { threads?: { loadProject?: (project: string) => Promise<unknown> } }
-          }
-          if (!host.api?.threads?.loadProject) return 'threads.loadProject unavailable'
+          const host = window
           if (threadId === '') return 'runNow returned no thread id'
-          const loaded = (await host.api.threads.loadProject(projectId)) as {
-            id?: string
-            status?: string
-            draftPrompt?: string
-            automation?: unknown
-          }[]
+          const loaded = await host.api.threads.loadProject(projectId)
           const thread = loaded.find((candidate) => candidate.id === threadId)
           if (!thread)
             return `started thread absent from loadProject (${String(loaded.length)} thread(s))`
           return JSON.stringify({
             activeProjectSelected:
               document.querySelector('.chat-row.selected[data-thread-id="regular-chat"]') !== null,
-            status: thread.status ?? '<unset>',
+            status: thread.status,
             // The three `isPendingAutomation` terms, so a silent early return
             // names the term that rejected it.
             hasAutomation: thread.automation !== undefined,
             draftPromptKept: Boolean(thread.draftPrompt?.trim()),
           })
         },
-        [PROJECT_ID, startedThreadId],
+        [PROJECT_ID, startedThreadId] as const,
       )
       // Walk from the fixture to the filesystem root, recording which ancestors
       // hold `.git` and which hold `.gitmodules`. `repositoryHasSubmodules`
@@ -368,17 +352,18 @@ describe('automation attention grouping', function () {
           `${String(bellCount)} attention bell(s), titles: ${titles || '<none>'}, ` +
           `sidebar: ${JSON.stringify(sidebarState)}, ` +
           `after forcing the group open (revealed=${String(revealed)}): ${JSON.stringify(forced)}, ` +
-          `started thread record: ${String(threadRecord)}, ` +
+          `started thread record: ${threadRecord}, ` +
           `fixture ancestry: ${ancestry.join(' <- ') || '<none>'}`,
       )
     }
-    assert.equal((await automationToggle.$$('.chat-attention-bell')).length, 0)
+    assert.equal((await automationToggle.$$('.chat-attention-bell').getElements()).length, 0)
 
     const scheduleGroup = $(`.automation-schedule-group[data-schedule-id="${SCHEDULE_ID}"]`)
     await scheduleGroup.waitForExist({ timeout: 5_000 })
     await expect(scheduleGroup.$('.automation-schedule-count')).toHaveText('4 runs')
     assert.equal(
-      (await scheduleGroup.$$('.automation-schedule-toggle .chat-attention-bell')).length,
+      (await scheduleGroup.$$('.automation-schedule-toggle .chat-attention-bell').getElements())
+        .length,
       0,
     )
     assert.equal(
@@ -387,11 +372,11 @@ describe('automation attention grouping', function () {
     )
 
     const visibleRuns = scheduleGroup.$$('.automation-schedule-runs .chat-row')
-    await browser.waitUntil(async () => (await visibleRuns).length === 1, {
+    await browser.waitUntil(async () => (await visibleRuns.getElements()).length === 1, {
       timeout: 5_000,
       timeoutMsg: 'attention reveal should hide older automation runs',
     })
-    const waitingRun = (await visibleRuns)[0]
+    const waitingRun = (await visibleRuns.getElements())[0]
     assert.ok(waitingRun)
     await expect(waitingRun.$('.chat-attention-bell')).toBeDisplayed()
     // The waiting run was started by `runNow` moments ago, so its trigger time
@@ -414,7 +399,10 @@ describe('automation attention grouping', function () {
       'aria-expanded',
       'true',
     )
-    assert.equal((await scheduleGroup.$$('.automation-schedule-runs .chat-row')).length, 4)
+    assert.equal(
+      (await scheduleGroup.$$('.automation-schedule-runs .chat-row').getElements()).length,
+      4,
+    )
     await scheduleGroup.$(`.chat-row[data-thread-id="${waitingThreadId}"]`).click()
     const askDialog = $('#ask-user-dialog')
     await askDialog.waitForDisplayed({ timeout: 10_000 })

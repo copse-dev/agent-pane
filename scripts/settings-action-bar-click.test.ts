@@ -160,8 +160,8 @@ describe('installSettingsActionBarClickSafety', () => {
         order.push('execute')
         return scrolled
       },
-      overwriteCommand: (name, fn, attachToElement) => {
-        registered.push({ name, ...(attachToElement === undefined ? {} : { attachToElement }) })
+      overwriteCommand: (name, fn, options) => {
+        registered.push({ name, ...options })
         patched = fn
       },
     }

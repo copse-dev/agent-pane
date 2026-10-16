@@ -9,7 +9,7 @@ import { saveElementScreenshot } from './helpers/screenshot.ts'
 describe('settings styling', function () {
   this.timeout(120_000)
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-settings-styling')
     seedE2eViewport({ width: 1280, height: 800 }, { theme: 'dark', uiScale: 1 })
@@ -202,7 +202,7 @@ describe('settings styling', function () {
     )
 
     // Clicking one scrolls that group into the scrollport.
-    const subheadingEls = await $$('.settings-nav-subheading')
+    const subheadingEls = await $$('.settings-nav-subheading').getElements()
     const lastSubheading = subheadingEls.at(-1)
     assert.ok(lastSubheading, 'expected a last group to jump to')
     await lastSubheading.click()
@@ -360,13 +360,20 @@ describe('settings styling', function () {
         // A first-party plugin wears the Copse mark itself; a user-installed one
         // must not, so it falls back to an unbranded initial tile.
         markSrc: mark?.getAttribute('src') ?? null,
-        markRendered: (mark?.getBoundingClientRect().width ?? 0) > 0 && mark.naturalWidth > 0,
+        markRendered:
+          (mark?.getBoundingClientRect().width ?? 0) > 0 && (mark?.naturalWidth ?? 0) > 0,
         brandedRows: list.querySelectorAll('.plugin-icon-copse').length,
         firstPartyRows: list.querySelectorAll('.plugin-badge-first-party').length,
         // The experimental marker takes the interaction accent, in the shared
         // badge recipe: sentence case and a --radius corner (docs/ui-taste.md →
         // "Badges are labels").
-        experimental: (() => {
+        experimental: ((): {
+          color: string
+          accentRgb: string
+          transform: string
+          firstLetterTransform: string
+          radius: number
+        } | null => {
           const badge = list.querySelector<HTMLElement>('.plugin-badge-experimental')
           if (!badge) return null
           const style = getComputedStyle(badge)
@@ -441,7 +448,7 @@ describe('settings styling', function () {
   })
 
   it('folds each plugin’s settings away until asked for', async () => {
-    const fold = await $('.plugin-row .plugin-settings-fold')
+    const fold = await $('.plugin-row .plugin-settings-fold').getElement()
     await fold.waitForExist({ timeout: 10_000 })
 
     const closed = await browser.execute(() => {

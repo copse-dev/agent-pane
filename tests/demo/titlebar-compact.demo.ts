@@ -34,14 +34,18 @@ describe('browser-hosted compact titlebar geometry', () => {
     })
 
     await browser.waitUntil(
-      async () => (await $('#titlebar').getAttribute('class')).includes('is-titlebar-compact'),
+      async () =>
+        (await $('#titlebar').getAttribute('class'))?.includes('is-titlebar-compact') === true,
       { timeout: 5_000, timeoutMsg: 'expected the narrow titlebar to compact' },
     )
 
     const layout = await browser.execute(() => {
-      const titlebar = document.getElementById('titlebar')!
-      const dragRegion = document.querySelector<HTMLElement>('.titlebar-drag')!
-      const controls = document.querySelector<HTMLElement>('.titlebar-panel-controls')!
+      const titlebar = document.getElementById('titlebar')
+      if (titlebar == null) throw new Error('Missing titlebar in test fixture')
+      const dragRegion = document.querySelector<HTMLElement>('.titlebar-drag')
+      if (dragRegion == null) throw new Error('Missing dragRegion in test fixture')
+      const controls = document.querySelector<HTMLElement>('.titlebar-panel-controls')
+      if (controls == null) throw new Error('Missing controls in test fixture')
       const titlebarRect = titlebar.getBoundingClientRect()
       const dragRect = dragRegion.getBoundingClientRect()
       const controlsRect = controls.getBoundingClientRect()

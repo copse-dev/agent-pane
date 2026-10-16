@@ -190,12 +190,10 @@ describe('archive chat and remove its worktree', function () {
     const visibleMeta = safeJsonParse(
       readFileSync(join(e2eWorkspaceDir(), PROJECT_ID, DIRTY_ID, 'meta.json'), 'utf8'),
       decodeWithSchema(
-        z
-          .object({
-            archivedAt: z.number().optional(),
-            worktree: z.object({ retiredAt: z.number().optional() }).passthrough().optional(),
-          })
-          .passthrough(),
+        z.looseObject({
+          archivedAt: z.number().optional(),
+          worktree: z.looseObject({ retiredAt: z.number().optional() }).optional(),
+        }),
       ),
     )
     assert.ok(visibleMeta)
@@ -229,8 +227,8 @@ describe('archive chat and remove its worktree', function () {
       (projectId: string, threadId: string) => {
         void window.api.terminal
           .create(80, 24, { projectId, threadId, label: 'Dev server' })
-          .then((id: string) => {
-            document.body.dataset['e2eBusyTerminal'] = id
+          .then(({ sessionId }) => {
+            document.body.dataset['e2eBusyTerminal'] = sessionId
           })
       },
       PROJECT_ID,

@@ -18,12 +18,12 @@ describe('markdown conformance quick wins', () => {
 
     const dom = await browser.execute(() => {
       const root = document.querySelector('.message-text')
-      if (!root) return { error: 'no message-text' }
+      if (!root) throw new Error('no message-text')
       return {
         hrCount: root.querySelectorAll('hr').length,
         emCount: root.querySelectorAll('em').length,
         liCount: root.querySelectorAll('li').length,
-        codeTexts: [...root.querySelectorAll('code')].map((c) => c.textContent ?? ''),
+        codeTexts: [...root.querySelectorAll('code')].map((c) => c.textContent),
       }
     })
 

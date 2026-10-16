@@ -1,4 +1,3 @@
-import type { Options } from '@wdio/types'
 import { config as baseConfig } from './wdio.conf.ts'
 
 /**
@@ -27,7 +26,7 @@ const ciExclude = [
   // crashes the runner on its first launch even in a 4-spec shard.
 ]
 
-export const config: Options.Testrunner = {
+export const config: WebdriverIO.Config = {
   ...baseConfig,
   exclude: [...(baseConfig.exclude ?? []), ...ciExclude],
   // A dead Electron session cannot recover inside the same wdio process, and
@@ -65,7 +64,14 @@ export const config: Options.Testrunner = {
     timeout: 90_000,
   },
   async beforeSession(config, capabilities, specs, cid) {
-    process.env.COPSE_E2E_CI = '1'
-    await baseConfig.beforeSession?.(config, capabilities, specs, cid)
+    process.env['COPSE_E2E_CI'] = '1'
+    const beforeSession = baseConfig.beforeSession
+    for (const hook of Array.isArray(beforeSession)
+      ? beforeSession
+      : beforeSession
+        ? [beforeSession]
+        : []) {
+      await hook(config, capabilities, specs, cid)
+    }
   },
 }

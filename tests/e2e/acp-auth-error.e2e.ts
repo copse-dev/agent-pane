@@ -10,9 +10,13 @@ async function saveAuthMessage(selector: string, filename: string): Promise<void
   await $(selector).scrollIntoView({ block: 'center' })
   const bounds = await browser.execute((sel) => {
     for (const block of document.querySelectorAll<HTMLElement>(`${sel} pre`)) block.scrollLeft = 0
-    const message = document.querySelector(sel)!.getBoundingClientRect()
-    const composer = document.querySelector('#input-bar')!.getBoundingClientRect()
-    const transcript = document.querySelector('.conversation-scroll')!.getBoundingClientRect()
+    const messageNode = document.querySelector(sel)
+    const composerNode = document.querySelector('#input-bar')
+    const transcriptNode = document.querySelector('.conversation-scroll')
+    if (!messageNode || !composerNode || !transcriptNode) throw new Error('Missing capture layout')
+    const message = messageNode.getBoundingClientRect()
+    const composer = composerNode.getBoundingClientRect()
+    const transcript = transcriptNode.getBoundingClientRect()
     return {
       top: message.top,
       bottom: message.bottom,
@@ -30,10 +34,12 @@ async function saveAuthMessage(selector: string, filename: string): Promise<void
  * markdown package folds a trailing unindented paragraph into the last ordered
  * item) or in the credentials note that follows them.
  */
-async function hintPlacement(messageId: string) {
+async function hintPlacement(
+  messageId: string,
+): Promise<{ inSteps: (string | null)[]; inNote: (string | null)[] }> {
   return browser.execute((id) => {
     const root = document.querySelector(`[data-message-id="${id}"] .message-text`)
-    const codeText = (selector: string) =>
+    const codeText = (selector: string): (string | null)[] =>
       [...(root?.querySelectorAll(selector) ?? [])].map((code) => code.textContent)
     return {
       inSteps: codeText('ol code'),
@@ -48,9 +54,9 @@ describe('ACP authentication error presentation', () => {
   // Screenshot preparation changes the frame and overflow. Each recovery path
   // needs a fresh viewport so one capture cannot clip the next message's prose.
   beforeEach(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     // This fixture exercises sign-in guidance, not installed host CLIs. A host
     // Codex binary can otherwise trigger a late adapter-install approval over
@@ -111,8 +117,8 @@ describe('ACP authentication error presentation', () => {
   })
 
   it('leads with recovery and keeps opaque ACP diagnostics subordinate', async () => {
-    const message = await $('[data-message-id="msg-assistant-acp-auth"] .message-text')
-    const warning = await message.$('.markdown-alert-warning')
+    const message = await $('[data-message-id="msg-assistant-acp-auth"] .message-text').getElement()
+    const warning = await message.$('.markdown-alert-warning').getElement()
     await expect(warning.$('strong')).toHaveText('Claude sign-in expired')
     await expect(message.$('ol code')).toHaveText('claude auth login')
     await expect(message.$('pre code')).toHaveText(
@@ -126,11 +132,11 @@ describe('ACP authentication error presentation', () => {
       const warningEl = root?.querySelector('.markdown-alert-warning')
       const steps = root?.querySelector('ol')
       const diagnostic = root?.querySelector('pre')
-      if (!root || !warningEl || !steps || !diagnostic) return { error: 'missing auth error block' }
+      if (!root || !warningEl || !steps || !diagnostic) throw new Error('missing auth error block')
       const rootRect = root.getBoundingClientRect()
       const diagnosticRect = diagnostic.getBoundingClientRect()
       const diagnosticStyle = getComputedStyle(diagnostic)
-      const diagnosticLines = (diagnostic.textContent ?? '').trimEnd().split('\n').length
+      const diagnosticLines = diagnostic.textContent.trimEnd().split('\n').length
       const diagnosticContentHeight =
         diagnostic.clientHeight -
         parseFloat(diagnosticStyle.paddingTop) -
@@ -164,8 +170,10 @@ describe('ACP authentication error presentation', () => {
   })
 
   it("shows Cursor's rejected session as an expired sign-in with its own recovery path", async () => {
-    const message = await $('[data-message-id="msg-assistant-cursor-auth"] .message-text')
-    const warning = await message.$('.markdown-alert-warning')
+    const message = await $(
+      '[data-message-id="msg-assistant-cursor-auth"] .message-text',
+    ).getElement()
+    const warning = await message.$('.markdown-alert-warning').getElement()
     await expect(warning.$('strong')).toHaveText('Cursor sign-in expired')
     await expect(message.$('ol code')).toHaveText('cursor-agent login')
     // Check the complete prose token set for the recovery hint.
@@ -185,8 +193,10 @@ describe('ACP authentication error presentation', () => {
   })
 
   it('shows workspace-routing 401 recovery as an expired Codex sign-in', async () => {
-    const message = await $('[data-message-id="msg-assistant-codex-auth"] .message-text')
-    const warning = await message.$('.markdown-alert-warning')
+    const message = await $(
+      '[data-message-id="msg-assistant-codex-auth"] .message-text',
+    ).getElement()
+    const warning = await message.$('.markdown-alert-warning').getElement()
     await expect(warning.$('strong')).toHaveText('Codex sign-in expired')
     await expect(message.$('ol code')).toHaveText('codex login')
     const paragraphCodeText = await message.$$('p code').map((code) => code.getText())

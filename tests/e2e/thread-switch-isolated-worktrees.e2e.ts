@@ -160,7 +160,8 @@ describe('switching between isolated running threads', () => {
     ])
     await $('.submit-btn').click()
     await browser.waitUntil(
-      async () => aRow.getAttribute('class').then((value) => value.includes('is-running')),
+      async () =>
+        aRow.getAttribute('class').then((value) => value?.includes('is-running') === true),
       {
         timeout: 15_000,
         timeoutMsg: 'thread A did not enter a running state',
@@ -180,7 +181,7 @@ describe('switching between isolated running threads', () => {
     await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', THREAD_B)
 
     // Switching the active thread must leave A in the main-process run registry.
-    await expect(await runningThreadIds()).toContain(THREAD_A)
+    expect(await runningThreadIds()).toContain(THREAD_A)
 
     const scenarioB = await prepareMockTurn('Inspect checkout B.', [
       {
@@ -200,7 +201,7 @@ describe('switching between isolated running threads', () => {
       timeoutMsg: 'thread B did not receive its isolated checkout',
     })
     writeFileSync(join(threadBWorktree, 'thread-b-marker.txt'), 'B checkout marker\n', 'utf8')
-    await expect(await runningThreadIds()).toEqual(expect.arrayContaining([THREAD_A, THREAD_B]))
+    expect(await runningThreadIds()).toEqual(expect.arrayContaining([THREAD_A, THREAD_B]))
 
     await scenarioA.release('checkout-ready')
     await scenarioB.release('checkout-ready')
@@ -236,11 +237,11 @@ describe('switching between isolated running threads', () => {
     const savedA = history.find((thread) => thread.id === THREAD_A)
     const savedB = history.find((thread) => thread.id === THREAD_B)
     if (!savedA || !savedB) throw new Error('expected both isolated thread histories to load')
-    await expect(savedA.worktreePath).toBe(threadAWorktree)
-    await expect(savedB.worktreePath).toBe(threadBWorktree)
-    await expect(realpathSync(threadAWorktree)).not.toBe(realpathSync(threadBWorktree))
-    await expect(savedA.messages.some((message) => message.role === 'assistant')).toBe(true)
-    await expect(savedB.messages.some((message) => message.role === 'assistant')).toBe(true)
+    expect(savedA.worktreePath).toBe(threadAWorktree)
+    expect(savedB.worktreePath).toBe(threadBWorktree)
+    expect(realpathSync(threadAWorktree)).not.toBe(realpathSync(threadBWorktree))
+    expect(savedA.messages.some((message) => message.role === 'assistant')).toBe(true)
+    expect(savedB.messages.some((message) => message.role === 'assistant')).toBe(true)
     const aListResults = savedA.messages.flatMap((message) =>
       message.toolResults
         .filter((tool) => tool.name === 'list_dir')
@@ -251,14 +252,14 @@ describe('switching between isolated running threads', () => {
         .filter((tool) => tool.name === 'list_dir')
         .map((tool) => tool.result ?? ''),
     )
-    await expect(aListResults.some((result) => result.includes('thread-a-marker.txt'))).toBe(true)
-    await expect(aListResults.some((result) => result.includes('thread-b-marker.txt'))).toBe(false)
-    await expect(bListResults.some((result) => result.includes('thread-b-marker.txt'))).toBe(true)
-    await expect(bListResults.some((result) => result.includes('thread-a-marker.txt'))).toBe(false)
-    await expect(savedA.messages.map((message) => message.content).join('\n')).toContain(
+    expect(aListResults.some((result) => result.includes('thread-a-marker.txt'))).toBe(true)
+    expect(aListResults.some((result) => result.includes('thread-b-marker.txt'))).toBe(false)
+    expect(bListResults.some((result) => result.includes('thread-b-marker.txt'))).toBe(true)
+    expect(bListResults.some((result) => result.includes('thread-a-marker.txt'))).toBe(false)
+    expect(savedA.messages.map((message) => message.content).join('\n')).toContain(
       'The checkout files are listed above.',
     )
-    await expect(savedB.messages.map((message) => message.content).join('\n')).toContain(
+    expect(savedB.messages.map((message) => message.content).join('\n')).toContain(
       'The checkout files are listed above.',
     )
 

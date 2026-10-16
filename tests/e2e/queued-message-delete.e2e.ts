@@ -56,8 +56,8 @@ describe('queued message delete', function () {
     await scenario.waitForHold('parser-refactor')
 
     await browser.execute((value: string) => {
-      const input = document.querySelector('.prompt-input') as HTMLElement | null
-      const btn = document.querySelector('.submit-btn') as HTMLButtonElement | null
+      const input = document.querySelector('.prompt-input')
+      const btn = document.querySelector<HTMLButtonElement>('.submit-btn')
       if (input) input.textContent = value
       btn?.click()
     }, QUEUED_TEXT)
@@ -134,10 +134,15 @@ describe('queued message delete', function () {
           const c = v / 255
           return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
         })
+        if (r === undefined || g === undefined || b === undefined)
+          throw new Error('Expected three RGB channels')
         return 0.2126 * r + 0.7152 * g + 0.0722 * b
       }
       const contrast = (a: number[], b: number[]): number => {
-        const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+        const lightA = luminance(a)
+        const lightB = luminance(b)
+        const hi = Math.max(lightA, lightB)
+        const lo = Math.min(lightA, lightB)
         return (hi + 0.05) / (lo + 0.05)
       }
       // Walk up to the nearest painted ancestor: that is the surface the chip
@@ -167,9 +172,9 @@ describe('queued message delete', function () {
     }, ROW_SELECTOR)
     if (!row) throw new Error('queued action row, or the surface behind it, not found')
     // Every chip in the row is the same box — the fix is that they now all draw it.
-    await expect(new Set(row.heights).size).toBe(1)
+    expect(new Set(row.heights).size).toBe(1)
     for (const chip of row.outlined) {
-      await expect(chip.edge).toBeGreaterThan(1.6)
+      expect(chip.edge).toBeGreaterThan(1.6)
     }
     await saveElementScreenshot(ROW_SELECTOR, 'queued-actions-row.png')
 
@@ -189,8 +194,8 @@ describe('queued message delete', function () {
         await browser.pause(200)
         const hovered = await fillContrast(sendNow)
         if (!rest || !hovered) throw new Error('Send now chip not found')
-        await expect(rest.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
-        await expect(hovered.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
+        expect(rest.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
+        expect(hovered.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
         await saveElementScreenshot(ROW_SELECTOR, `queued-actions-row-hover-${theme}.png`)
       }
     } finally {
@@ -207,10 +212,10 @@ describe('queued message delete', function () {
       { timeout: 5_000 },
     )
     await expect($('.message-queued-badge')).not.toExist()
-    await expect($('.footer-queue')).toHaveProperty('hidden', true)
+    expect($('.footer-queue')).toHaveProperty('hidden', true)
 
-    const userMessages = await $$('.messages-list .msg-user .message-text')
-    await expect(userMessages).toHaveLength(1)
+    const userMessages = await $$('.messages-list .msg-user .message-text').getElements()
+    expect(userMessages).toHaveLength(1)
     await expect(userMessages[0]).toHaveText(FIRST_PROMPT)
 
     await saveAppScreenshot('queued-message-delete-after.png')

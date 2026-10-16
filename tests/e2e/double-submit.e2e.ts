@@ -62,8 +62,8 @@ describe('double submit guard', function () {
     // Fire two synchronous clicks back-to-back, exactly as a frozen renderer
     // would replay buffered input events once the main thread unblocks.
     await browser.execute(() => {
-      const input = document.querySelector('.prompt-input') as HTMLElement | null
-      const btn = document.querySelector('.submit-btn') as HTMLButtonElement | null
+      const input = document.querySelector<HTMLElement>('.prompt-input')
+      const btn = document.querySelector<HTMLButtonElement>('.submit-btn')
       if (input) input.textContent = 'Which unit tests should cover that refactor?'
       btn?.click()
       btn?.click()
@@ -71,8 +71,8 @@ describe('double submit guard', function () {
 
     // The guard must collapse the double click into a single queued message.
     await expect($('.footer-queue')).toHaveText('1 queued', { wait: 5_000 })
-    const queuedBadges = await $$('.message-queued-badge')
-    await expect(queuedBadges).toHaveLength(1)
+    const queuedBadges = await $$('.message-queued-badge').getElements()
+    expect(queuedBadges).toHaveLength(1)
 
     await saveAppScreenshot('double-submit-single-queued.png')
 
@@ -82,11 +82,11 @@ describe('double submit guard', function () {
 
     // After draining, the thread holds exactly the two distinct user messages —
     // not three (which is what a duplicate send would have produced).
-    const userMessages = await $$('.msg-user .message-text')
-    await expect(userMessages).toHaveLength(2)
+    const userMessages = await $$('.msg-user .message-text').getElements()
+    expect(userMessages).toHaveLength(2)
     await expect(userMessages[0]).toHaveText(firstPrompt)
     await expect(userMessages[1]).toHaveText(queuedPrompt)
-    const assistantMessages = await $$('.msg-assistant .message-text')
+    const assistantMessages = await $$('.msg-assistant .message-text').getElements()
     const finalReply = assistantMessages.at(-1)
     if (!finalReply) throw new Error('expected a final assistant reply')
     await expect(finalReply).toHaveText(

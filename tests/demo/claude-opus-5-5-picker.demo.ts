@@ -11,7 +11,7 @@ import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 describe('Claude Opus 5.5 in the model picker (browser-hosted)', () => {
   it('lists Opus 5.5 with its intellect and an effort ladder without "No thinking"', async () => {
     await browser.url('/?scenario=concise-thread')
-    const picker = await $('.footer-model-host .model-picker')
+    const picker = await $('.footer-model-host .model-picker').getElement()
     await picker.waitForExist()
 
     await picker.$('.model-picker-trigger').click()
@@ -35,7 +35,7 @@ describe('Claude Opus 5.5 in the model picker (browser-hosted)', () => {
     const labels = await browser.execute(() =>
       [
         ...document.querySelectorAll('.footer-model-host .model-picker-menu .model-picker-option'),
-      ].map((option) => (option.textContent ?? '').trim()),
+      ].map((option) => option.textContent.trim()),
     )
     expect(labels).toEqual(['Default', 'Low', 'Medium', 'High', 'Extra high', 'Max'])
     await saveElementScreenshot(

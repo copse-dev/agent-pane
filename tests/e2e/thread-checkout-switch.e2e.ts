@@ -154,7 +154,10 @@ describe('switching threads during first-message checkout', () => {
         new Promise<string>((done) => {
           const checkout = document.querySelector<HTMLElement>('.footer-checkout-btn')
           const send = document.querySelector<HTMLButtonElement>('.submit-btn')
-          if (!checkout || !send) return done('Missing composer controls')
+          if (!checkout || !send) {
+            done('Missing composer controls')
+            return
+          }
           const timer = window.setTimeout(() => {
             observer.disconnect()
             done('Checkout never entered its preparing state')
@@ -165,9 +168,15 @@ describe('switching threads during first-message checkout', () => {
             document.querySelector<HTMLElement>(`.chat-row[data-thread-id="${other}"]`)?.click()
             const otherSend = document.querySelector<HTMLButtonElement>('.submit-btn')
             window.clearTimeout(timer)
-            if (!otherSend || otherSend.disabled) return done('Other thread Send is blocked')
+            if (!otherSend || otherSend.disabled) {
+              done('Other thread Send is blocked')
+              return
+            }
             const composer = document.querySelector<HTMLElement>('.prompt-input')
-            if (!composer) return done('Other composer is missing')
+            if (!composer) {
+              done('Other composer is missing')
+              return
+            }
             composer.textContent = otherPrompt
             composer.dispatchEvent(new Event('input', { bubbles: true }))
             otherSend.click()
@@ -186,7 +195,7 @@ describe('switching threads during first-message checkout', () => {
         browser.execute(
           (prompt) =>
             [...document.querySelectorAll<HTMLElement>('.msg-user')].some((message) =>
-              message.textContent?.includes(prompt),
+              message.textContent.includes(prompt),
             ),
           OTHER_PROMPT,
         ),

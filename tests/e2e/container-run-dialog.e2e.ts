@@ -1,3 +1,4 @@
+import { findAsync } from './helpers/find-async.ts'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -40,14 +41,14 @@ describe('unattended container run dialog', function () {
   it('opens from the footer quoting the draft, with the model selectable', async () => {
     await setComposerValue('Clear the lint backlog and open a PR.')
     await $('.footer-overflow-trigger').click()
-    const items = await $$('.footer-overflow-item')
-    const item = await items.find(async (candidate) =>
+    const items = await $$('.footer-overflow-item').getElements()
+    const item = await findAsync(items, async (candidate) =>
       (await candidate.getText()).includes('Run unattended in a container'),
     )
     if (!item) throw new Error('Container run footer action was not available')
     await item.click()
 
-    const dialog = await $('#container-run-dialog')
+    const dialog = await $('#container-run-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 10_000 })
     // The task is the composer draft, quoted rather than asked for again.
     const task = dialog.$('.container-run-prompt')

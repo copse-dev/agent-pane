@@ -43,7 +43,7 @@ describe('roadmap search box in a narrow pane', () => {
   it('keeps the placeholder readable instead of squeezing the input', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('.titlebar-text-btn[aria-label="Open roadmap"]').click()
-    await browser.waitUntil(async () => (await $$('.roadmap-row')).length === 1, {
+    await browser.waitUntil(async () => (await $$('.roadmap-row').getElements()).length === 1, {
       timeout: 20_000,
     })
 

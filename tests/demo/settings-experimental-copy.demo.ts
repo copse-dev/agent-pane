@@ -1,3 +1,4 @@
+import type { MobileCompanionState } from '@shared/types/mobile-companion.ts'
 import assert from 'node:assert/strict'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
@@ -139,6 +140,7 @@ describe('browser-hosted Experimental settings copy', () => {
     await $('#plugins-list .plugin-row[data-plugin-id="copse.todos"]').waitForExist()
     await browser.waitUntil(async () => (await $('#plugins-reload-status').getText()) === '')
     for (const id of expectedIds) {
+      assert.ok(id, 'Expected a registered plugin id')
       await expect($(`#plugins-list .plugin-row[data-plugin-id="${id}"]`)).toExist()
     }
     assert.equal(await $$('#advisorModel').length, 1)
@@ -148,7 +150,7 @@ describe('browser-hosted Experimental settings copy', () => {
     await $('.prompt-input').waitForExist()
     await browser.execute(() => {
       const getState = window.api.mobile.getState
-      window.api.mobile.getState = async () => ({
+      window.api.mobile.getState = async (): Promise<MobileCompanionState> => ({
         ...(await getState()),
         pairing: { label: 'My phone', code: '123456' },
       })

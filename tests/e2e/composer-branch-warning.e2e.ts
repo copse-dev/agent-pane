@@ -29,7 +29,7 @@ describe('composer branch warning', () => {
     await setComposerValue('Continue on this thread')
     await $('.submit-btn').click()
 
-    const warning = await $('.composer-branch-warning')
+    const warning = await $('.composer-branch-warning').getElement()
     await expect(warning).toBeDisplayed()
     await expect(warning.$('.composer-branch-warning-text')).toHaveText(
       `This thread is for branch "${seed.mismatchBranch}". Check it out, or continue on the current branch.`,
@@ -41,9 +41,9 @@ describe('composer branch warning', () => {
     // neutral until hovered.
     const metrics = await composerBannerMetrics('.composer-branch-warning')
     if (!metrics) throw new Error('branch warning not found')
-    await expect(metrics.padding).toBe('8px 12px')
-    await expect(metrics.fontSize).toBe('12px')
-    await expect(metrics.actions).toEqual([
+    expect(metrics.padding).toBe('8px 12px')
+    expect(metrics.fontSize).toBe('12px')
+    expect(metrics.actions).toEqual([
       {
         label: 'Check out',
         padding: '4px 8px',

@@ -21,7 +21,7 @@ describe('Developer mode surfaces', function () {
     await overflow.$('.footer-overflow-trigger').click()
     const labels = await browser.execute(() =>
       Array.from(document.querySelectorAll('.footer-overflow-item'), (item) =>
-        item.textContent?.trim(),
+        item.textContent.trim(),
       ),
     )
     // Debug trace and Share trace are the two "this went wrong" exits, so they
@@ -51,7 +51,7 @@ describe('Developer mode surfaces', function () {
     await overflow.$('.footer-overflow-trigger').click()
     const labels = await browser.execute(() =>
       Array.from(document.querySelectorAll('.footer-overflow-item'), (item) =>
-        item.textContent?.trim(),
+        item.textContent.trim(),
       ),
     )
     assert.deepEqual(labels, [

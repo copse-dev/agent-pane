@@ -1,12 +1,19 @@
+import {
+  cloneRequestedChromeCapabilities,
+  readChromeOptions,
+  updateChromeOptions,
+} from './helpers/chrome-options.ts'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import electronBinary from 'electron'
+import { resolveElectronExecutable } from './helpers/electron-executable.ts'
 import { $, browser, expect } from '@wdio/globals'
 import type { Thread } from '@shared/types'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+
+const electronBinary = resolveElectronExecutable()
 
 const PROJECT = 'deep-link-project'
 const COLD = '11111111-1111-4111-8111-111111111111'
@@ -32,7 +39,6 @@ describe('native thread deep links', () => {
     // own native launcher evidence rather than pretending this shell runs there.
     if (process.platform === 'win32') {
       this.skip()
-      return
     }
     launcherDir = mkdtempSync(join(tmpdir(), 'copse-link-launcher-'))
     resetUserData()
@@ -46,9 +52,11 @@ describe('native thread deep links', () => {
         thread(WARM, 'Running app destination'),
       ],
     })
-    const capabilities = browser.options.capabilities
-    const chrome = capabilities['goog:chromeOptions']
-    if (!chrome?.args) throw new Error('Expected Electron launch capabilities')
+    // Negotiated response capabilities contain ChromeDriver-only fields that
+    // are invalid in a new-session request. Keep the original launch contract.
+    const capabilities = cloneRequestedChromeCapabilities(browser.requestedCapabilities)
+    const chrome = readChromeOptions(browser.requestedCapabilities)
+    if (!chrome.args) throw new Error('Expected Electron launch capabilities')
     // ChromeDriver prefixes non-switch args with '--'. Inject the ordinary OS
     // launch argument at the process boundary instead of adding a product flag.
     const launcher = join(launcherDir, 'electron-link-launcher')
@@ -58,10 +66,8 @@ describe('native thread deep links', () => {
       `#!/bin/sh\nexec ${quote(electronBinary)} ${quote(join(process.cwd(), 'tests/e2e/electron-shell'))} "$@" ${quote(`copse://thread/${COLD}`)}\n`,
       { mode: 0o755 },
     )
-    await browser.reloadSession({
-      ...capabilities,
-      'goog:chromeOptions': { ...chrome, binary: launcher },
-    })
+    updateChromeOptions(capabilities, (options) => ({ ...options, binary: launcher }))
+    await browser.reloadSession(capabilities)
   })
 
   after(() => {

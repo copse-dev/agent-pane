@@ -3,7 +3,25 @@ import { parkPointer, saveAppScreenshot, saveElementScreenshot } from '../e2e/he
 
 const PROSE = '.messages-list > .msg-assistant > .message-body > .message-text'
 
-async function readProseMetrics(selector: string) {
+async function readProseMetrics(selector: string): Promise<{
+  width: number
+  fontSize: number
+  lineHeight: number
+  fontFamily: string
+  letterSpacing: string
+  wordSpacing: string
+  color: string
+  strongWeight: number
+  strongColor: string
+  linkColor: string
+  linkedStrongColor: string
+  paragraphGap: number
+  overflow: number
+  codeScrolls: boolean
+  codeFontSize: number
+  codeLineHeight: number
+  nestedIndent: number
+}> {
   return browser.execute((target) => {
     const prose = [...document.querySelectorAll<HTMLElement>(target)].at(-1)
     if (!prose) throw new Error('Missing assistant prose')
@@ -60,11 +78,11 @@ describe('assistant Reading layout in the real renderer', () => {
 
   it('reveals the run action on a shell code block', async () => {
     const shellSelector = `${PROSE} .code-block-shell`
-    const shell = await $(shellSelector)
+    const shell = await $(shellSelector).getElement()
     await shell.scrollIntoView({ block: 'center', inline: 'nearest' })
     await shell.moveTo()
 
-    const run = await shell.$('.code-block-run')
+    const run = await shell.$('.code-block-run').getElement()
     await expect(run).toHaveAttribute('aria-label', 'Run command')
     await expect(run.$('svg[data-icon="play"]')).toExist()
     const opacity = await run.getCSSProperty('opacity')
@@ -110,7 +128,9 @@ describe('assistant Reading layout in the real renderer', () => {
   })
 
   it('marks the user prompt with its tinted fill alone, without a hairline border', async () => {
-    const readBubble = () =>
+    const readBubble = (): Promise<
+      Record<'borderWidth' | 'borderStyle' | 'background' | 'listBackground', string>
+    > =>
       browser.execute(() => {
         const bubble = document.querySelector('.messages-list > .msg-user')
         const list = document.querySelector('.messages-list')
@@ -125,7 +145,7 @@ describe('assistant Reading layout in the real renderer', () => {
       })
     for (const theme of ['dark', 'light']) {
       await browser.execute((next) => {
-        document.documentElement.dataset.theme = next
+        document.documentElement.dataset['theme'] = next
       }, theme)
       const bubble = await readBubble()
       expect(bubble.borderStyle).toBe('none')
@@ -135,7 +155,7 @@ describe('assistant Reading layout in the real renderer', () => {
       await saveElementScreenshot('.messages-list > .msg-user', `user-prompt-fill-${theme}.png`)
     }
     await browser.execute(() => {
-      document.documentElement.dataset.theme = 'dark'
+      document.documentElement.dataset['theme'] = 'dark'
     })
   })
 
@@ -147,7 +167,7 @@ describe('assistant Reading layout in the real renderer', () => {
     }
     await browser.execute(() => {
       // Geometry fixtures at existing theme/layout boundaries; no product flags.
-      document.documentElement.dataset.theme = 'light'
+      document.documentElement.dataset['theme'] = 'light'
       document.getElementById('body')?.style.setProperty('--files-width', '600px')
     })
     await scrollToStart()
@@ -170,7 +190,7 @@ describe('assistant Reading layout in the real renderer', () => {
     await saveAppScreenshot('chat-reading-layout-light-narrow.png')
     await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
     await browser.execute(() => {
-      document.documentElement.dataset.theme = 'dark'
+      document.documentElement.dataset['theme'] = 'dark'
     })
   })
 
@@ -228,7 +248,7 @@ describe('assistant Reading layout in the real renderer', () => {
       timeout: 30_000,
       timeoutMsg: 'Response should finish streaming',
     })
-    const answers = await $$(PROSE)
+    const answers = await $$(PROSE).getElements()
     const final = answers[answers.length - 1]
     if (!final) throw new Error('Missing completed answer')
     await expect(final).toHaveText(expect.stringContaining('deterministic layout fixture'))

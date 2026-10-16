@@ -1,3 +1,4 @@
+import type { Thread } from '@shared/types'
 import { $, browser, expect } from '@wdio/globals'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
@@ -19,7 +20,7 @@ const PROMPT = 'Choose the migration order.'
 const REPLY = 'The migration will add columns first.'
 const SEEDED_AT = 1_786_000_000_000
 
-function seededThread(id: string, title: string) {
+function seededThread(id: string, title: string): Thread {
   return {
     id,
     title,
@@ -56,7 +57,9 @@ describe('answering a background question from Activity', function () {
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('fills a rendered quick answer and sends it through the pending question queue', async () => {
     const scenario = await installMockScenario({
