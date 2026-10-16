@@ -1767,6 +1767,24 @@ describe('AutomationService', () => {
 
     const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 20))
 
+    // The headless turn is fire-and-forget from `trigger()`, so a fixed sleep
+    // races it on a loaded machine (and lets `afterEach` delete the store under
+    // a turn that is still writing). Poll until it has actually finished.
+    async function waitForHeadlessTurn(
+      dispatchCalls: AgentDispatchRequest[],
+      projectId: string,
+      threadId: string,
+    ): Promise<void> {
+      const deadline = Date.now() + 5_000
+      while (
+        dispatchCalls.length === 0 ||
+        (await getThreadMeta(projectId, threadId))?.status === 'running'
+      ) {
+        if (Date.now() > deadline) throw new Error('Timed out waiting for the headless turn')
+        await settle()
+      }
+    }
+
     function harness(activeProjectId: string | null): {
       service: ReturnType<typeof createAutomationService>
       dispatchCalls: AgentDispatchRequest[]
@@ -1805,7 +1823,7 @@ describe('AutomationService', () => {
       })
 
       const event = await service.runNow('project-a', schedule.id)
-      await settle()
+      await waitForHeadlessTurn(dispatchCalls, 'project-a', event.threadId)
 
       assert.equal(dispatchCalls.length, 1)
       assert.equal(dispatchCalls[0]?.projectId, 'project-a')
