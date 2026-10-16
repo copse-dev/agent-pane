@@ -44,6 +44,10 @@ describe('composer pills in light theme', () => {
     await $('.follow-up-bubble').waitForDisplayed({ timeout: 30_000 })
     await expect($('html')).toHaveAttribute('data-theme', 'light')
     await expect($('.follow-up-bubble-changes')).toBeDisplayed()
+    // Mock suggestions render first; the real checkout stats then reconcile
+    // the one newly created file. Do not capture their temporary -1 count.
+    await expect($('.follow-up-stat-add')).toHaveText('+1')
+    await expect($('.follow-up-stat-del')).toHaveText('-0')
     await expect($('.follow-up-bubble[data-id="review-changes"]')).toHaveText('Review changes')
     await expect($('.prompt-input')).toHaveAttribute('data-placeholder', 'Send follow-up')
 
