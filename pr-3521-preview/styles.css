@@ -643,13 +643,7 @@ footer a:hover {
   margin: 0;
   color: var(--cream);
   background: var(--forest);
-  font-family:
-    'Pliant',
-    ui-sans-serif,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
+  font-family: 'Pliant', ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 16px;
   line-height: 1.55;
   overflow-x: hidden;
