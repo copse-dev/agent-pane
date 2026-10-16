@@ -22,6 +22,10 @@ failures under remaining work. Link remaining work instead of closing an issue b
 related implementation. The PR template asks for the same evidence; do not paste an entire task
 transcript into it.
 
+To choose the next PR or hand one off, run `pnpm run backlog:snapshot` and share its rendering
+rather than having every agent poll every PR. It is a read-only snapshot, not a source of truth;
+see [backlog snapshot](backlog-snapshot.md) for the groups it reports and how it detects them.
+
 Keep a small active queue with an accountable owner for each commitment. Historical plans remain
 design references. The [Shipping quality roadmap](plans/sdlc-improvement-roadmap.md) is tracked in
 [#1373](https://github.com/copse-dev/agent-pane/issues/1373); task-evidence adoption remains open in
