@@ -64,6 +64,10 @@
     "label": "Product announcements — fresh"
   },
   {
+    "id": "product-announcements-shipped",
+    "label": "Product announcements — shipped catalog"
+  },
+  {
     "id": "product-announcements-existing",
     "label": "Product announcements — existing"
   },
@@ -140,12 +144,24 @@
     "label": "Sidebar thread sort"
   },
   {
+    "id": "sidebar-cleanup-ssh",
+    "label": "Cleanup for SSH pull requests"
+  },
+  {
+    "id": "sidebar-cleanup-after-pr",
+    "label": "Cleanup after merged or closed PRs"
+  },
+  {
     "id": "sidebar-thread-changes",
     "label": "Sidebar changes glyph"
   },
   {
     "id": "activity-home",
     "label": "Activity home on a new thread"
+  },
+  {
+    "id": "activity-home-many-projects",
+    "label": "Activity home listing twelve projects"
   },
   {
     "id": "activity-home-project-filter",
@@ -160,12 +176,32 @@
     "label": "Activity home with a question waiting"
   },
   {
+    "id": "activity-home-read-history",
+    "label": "Activity home listing threads that finished before launch"
+  },
+  {
     "id": "activity-home-empty",
     "label": "Activity home with nothing to list"
   },
   {
     "id": "pr-relations",
     "label": "PR producing and related threads"
+  },
+  {
+    "id": "side-chats",
+    "label": "Side chats beside the main thread"
+  },
+  {
+    "id": "thread-context",
+    "label": "The thread Context panel"
+  },
+  {
+    "id": "thread-context-worktree",
+    "label": "Context identifies a dedicated worktree and its branch"
+  },
+  {
+    "id": "side-chat-approval",
+    "label": "A side chat asks for approval over its parent thread"
   },
   {
     "id": "chat-layout-styling",
@@ -188,12 +224,32 @@
     "label": "Full thread view for a model below the concise gate"
   },
   {
+    "id": "openai-host-pr",
+    "label": "OpenAI host PR creation result"
+  },
+  {
+    "id": "openai-cancellation-recovery",
+    "label": "OpenAI confirmed cancellation with interrupted recovery"
+  },
+  {
+    "id": "bridged-thread-proposals",
+    "label": "Two proposed follow-up threads"
+  },
+  {
+    "id": "bridged-tools",
+    "label": "Patch file links and command output"
+  },
+  {
+    "id": "bridged-tools-concise",
+    "label": "Running command in concise view"
+  },
+  {
     "id": "concise-thread-working",
     "label": "Concise thread view while a capable model works"
   },
   {
     "id": "concise-thread-disabled",
-    "label": "Full thread view for a capable model while the experiment is off"
+    "label": "Full thread view for a capable model while Concise threads is off"
   },
   {
     "id": "roadmap-chat-min-width",
@@ -226,5 +282,81 @@
   {
     "id": "site-mcp-permissions",
     "label": "Copse.dev tour: per-tool MCP permissions"
+  },
+  {
+    "id": "concise-state-stopped",
+    "label": "A turn the user stopped partway"
+  },
+  {
+    "id": "concise-state-interrupted-by-message",
+    "label": "A turn cut off by a new message, then answered"
+  },
+  {
+    "id": "concise-state-default-on",
+    "label": "A capable model’s turn on a profile with no stored setting"
+  },
+  {
+    "id": "concise-state-recovery-layout",
+    "label": "Interrupted turn with a long fallback model name"
+  },
+  {
+    "id": "concise-state-failed",
+    "label": "A turn that failed partway"
+  },
+  {
+    "id": "concise-state-approval",
+    "label": "A running turn waiting for permission"
+  },
+  {
+    "id": "concise-state-question",
+    "label": "A running turn waiting for an answer"
+  },
+  {
+    "id": "concise-state-subagent",
+    "label": "A finished turn that used subagents"
+  },
+  {
+    "id": "concise-state-subagent-running",
+    "label": "A running turn with a subagent at work"
+  },
+  {
+    "id": "concise-state-long-output",
+    "label": "A finished turn with long output, an edit and a patch"
+  },
+  {
+    "id": "concise-state-terminal",
+    "label": "A finished turn from an agent that ran a terminal"
+  },
+  {
+    "id": "concise-state-attachments",
+    "label": "A prompt with attachments, answered concisely"
+  },
+  {
+    "id": "concise-state-resumed",
+    "label": "An old thread resumed with a capable model"
+  },
+  {
+    "id": "concise-state-model-switch",
+    "label": "A thread that switches models between turns"
+  },
+  {
+    "id": "approval-thread-read",
+    "label": "Read your other threads?"
+  },
+  {
+    "id": "approval-thread-send",
+    "label": "Send prompts to your other threads?"
+  },
+  {
+    "id": "approval-web-url",
+    "label": "Allow web origin?"
+  },
+  {
+    "id": "approval-browser-url",
+    "label": "Allow browser navigation?"
+  },
+  {
+    "id": "approval-provider-url",
+    "label": "Allow model provider host?"
   }
 ]
