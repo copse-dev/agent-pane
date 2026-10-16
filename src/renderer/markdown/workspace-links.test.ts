@@ -30,6 +30,38 @@ function apiWithFileReferences(
 }
 
 describe('markdown workspace links', () => {
+  it('saves legacy OpenAI artifacts without looking them up in the workspace index', async () => {
+    const artifact = `${'a'.repeat(64)}/${'b'.repeat(64)}.patch`
+    const root = document.createElement('div')
+    root.innerHTML = renderMarkdown(
+      `[Download](/Users/test/.copse/workspace/project/thread/blobs/openai-artifacts/${artifact})`,
+    )
+    const base = createFakeApi()
+    const calls: string[] = []
+    const api: ApiClient = {
+      ...base,
+      index: {
+        ...base.index,
+        resolveFileReferences: async () => {
+          throw new Error('Must not use index')
+        },
+      },
+      remoteAgent: {
+        ...base.remoteAgent,
+        downloadArtifact: async (id, path) => {
+          calls.push(id, path)
+          return ''
+        },
+      },
+    }
+    const unbind = bindWorkspaceLinkClicks(root, createStore(), api)
+    root
+      .querySelector('a')
+      ?.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    unbind()
+    assert.deepEqual(calls, ['openai:thread', artifact])
+  })
   it('does not show a stale lookup error after leaving its task', async () => {
     const root = document.createElement('div')
     root.innerHTML = renderMarkdown('[Private chart](/private-chart.png)')

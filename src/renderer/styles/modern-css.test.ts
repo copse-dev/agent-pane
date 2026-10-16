@@ -347,23 +347,18 @@ describe('modern CSS adoptions', () => {
 
   it('docks the composer on the new-thread screen instead of floating it', () => {
     const css = read('layout.css')
-    // The empty thread used to float a centred composer with a shadow-drawn
-    // hairline. The Activity home takes the pane above a docked composer, so the
-    // docked card's own border is the only ring and no centred variant remains.
     assert.ok(
       !css.includes('composer-centered'),
       'layout.css must not keep a centred-composer variant',
     )
-    // With nothing to list the home steps aside and the composer is centred; that
-    // variant draws its ring with a shadow, so it must clear the docked border.
     assert.ok(
       declares(css, '.pane-chat.is-activity-idle #input-bar', /border:\s*none/) &&
         declares(
           css,
           '.pane-chat.is-activity-idle #input-bar',
-          /0\s+0\s+0\s+1px\s+var\(--border\)/,
+          /box-shadow:\s*var\(--composer-shadow\)/,
         ),
-      'the idle composer must keep a single hairline ring',
+      'the idle composer must share the borderless card and shadow',
     )
     assert.ok(
       declares(css, '.pane-chat.is-activity-home .conversation', /display:\s*none/),
@@ -371,24 +366,24 @@ describe('modern CSS adoptions', () => {
     )
   })
 
-  it('frosts the docked composer instead of an opaque black slab', () => {
+  it('gives the composer a contrasting surface without an outer stroke', () => {
     const titlebar = read('titlebar.css')
     const inputBar = read('input-bar.css')
     assert.ok(
-      declares(titlebar, '#input-bar', /background:\s*transparent/),
-      '#input-bar must clear its solid fill so it does not read as a black bounding box',
+      declares(titlebar, '#input-bar', /background:\s*var\(--bg-muted\)/) &&
+        declares(titlebar, '#input-bar', /border:\s*0/) &&
+        declares(titlebar, '#input-bar', /box-shadow:\s*var\(--composer-shadow\)/) &&
+        declares(
+          titlebar,
+          "[data-theme='light'] #input-bar",
+          /--composer-shadow:\s*0 8px 28px rgba\(0, 0, 0, 0\.12\)/,
+        ),
+      'the composer surface must be filled and lifted by shadow',
     )
     assert.ok(
-      declares(titlebar, '#input-bar::before', /backdrop-filter:\s*blur\(/),
-      '#input-bar must frost transcript behind it via backdrop-filter on ::before',
-    )
-    assert.ok(
-      declares(inputBar, '.prompt-input', /background:\s*transparent/),
-      '.prompt-input must stay transparent over the frosted shell',
-    )
-    assert.ok(
-      declares(inputBar, '.input-footer', /background:\s*transparent/),
-      '.input-footer must stay transparent over the frosted shell',
+      declares(inputBar, '.prompt-input', /background:\s*transparent/) &&
+        declares(inputBar, '.input-footer', /background:\s*transparent/),
+      'the input and footer must share the card surface',
     )
   })
 

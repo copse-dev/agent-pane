@@ -36,7 +36,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     fontSize: 14,
     uiScale: 1,
     animateAgentAvatars: true,
-    conciseThreadsEnabled: false,
+    conciseThreadsEnabled: true,
     autoPortraitRightPanel: true,
     rightPanelPosition: 'auto',
     sidebarThreadSort: 'activity',
@@ -76,9 +76,13 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     projects_pane_changed: new Set(),
     git_change_navigate: new Set(),
     roadmap_reveal: new Set(),
+    thread_plan_open: new Set(),
+    thread_plan_changed: new Set(),
     browser_url_requested: new Set(),
     browser_url_bar_focus_requested: new Set(),
     pr_open_requested: new Set(),
+    thread_archive_requested: new Set(),
+    side_chat_open_requested: new Set(),
     canvas_artefact_requested: new Set(),
     canvas_artefact_show_requested: new Set(),
     settings_changed: new Set(),
@@ -101,6 +105,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     code_block_run_finished: new Set(),
     attention_changed: new Set(),
     sidebar_threads_loaded: new Set(),
+    automation_schedules_loaded: new Set(),
   }
 
   function on<K extends keyof StoreEvents>(event: K, handler: EventHandler<K>): Unsubscribe {

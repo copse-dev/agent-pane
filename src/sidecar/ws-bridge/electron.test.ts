@@ -44,4 +44,9 @@ describe('ws-bridge electron shim', () => {
     mod.startBridge()
     assert.equal(typeof (win as unknown as { api?: { settings: unknown } }).api?.settings, 'object')
   })
+
+  it('answers webUtils.getPathForFile with no path, as Electron does for a pathless file', async () => {
+    const mod = await import('./electron.ts')
+    assert.equal(mod.webUtils.getPathForFile(new File(['x'], 'notes.md')), '')
+  })
 })

@@ -3,7 +3,7 @@ import { defineTool } from '@shared/types'
 import {
   createLongTask,
   isOwnedByThread,
-  loadLongTasksForRoot,
+  loadLongTasksForScope,
   setStepDone,
   taskProgress,
   type LongTask,
@@ -13,6 +13,7 @@ import {
   requireThreadExecutionOwner,
   resolveThreadExecutionContext,
 } from '../services/thread-execution-context.ts'
+import { threadProjectStoreScope } from '../services/storage/project-namespace.ts'
 import { getActiveRunTurnTreeId } from '../services/thread-models.ts'
 import { scheduleLongTaskWake } from '../services/supervisor/long-task-wake.ts'
 
@@ -89,18 +90,21 @@ export const trackLongTaskTool = defineTool({
     const context =
       getThreadExecutionContext() ??
       (await resolveThreadExecutionContext(owner.projectId, owner.threadId))
+    // The thread's own project, not whichever one is active now: a run keeps
+    // going after the user switches projects.
+    const store = threadProjectStoreScope(context)
     if (action === 'create') {
       if (!title?.trim()) return 'track_long_task create requires a title.'
       if (!steps || steps.length === 0) return 'track_long_task create requires at least one step.'
       const task = createLongTask(
         { title, goal: goal ?? '', steps, threadId: owner.threadId },
-        context.projectRoot,
+        store,
       )
       return `Created long task ${task.id}.\n${formatTask(task)}`
     }
     if (action === 'check') {
       if (!taskId || !stepId) return 'track_long_task check requires taskId and stepId.'
-      const updated = setStepDone(taskId, stepId, done ?? true, context.projectRoot)
+      const updated = setStepDone(taskId, stepId, done ?? true, store)
       if (!updated) return `No task/step matching ${taskId}/${stepId}.`
       const p = taskProgress(updated)
       const tail = p.complete ? ' — all steps complete ✓' : ` — next: ${p.nextStep ?? '(none)'}`
@@ -108,14 +112,12 @@ export const trackLongTaskTool = defineTool({
     }
     if (action === 'status') {
       if (!taskId) return 'track_long_task status requires a taskId.'
-      const task = loadLongTasksForRoot(context.projectRoot).find((t) => t.id === taskId)
+      const task = loadLongTasksForScope(store).find((t) => t.id === taskId)
       return task ? formatTask(task) : `No task with id "${taskId}".`
     }
     if (action === 'continue') {
       if (!taskId) return 'track_long_task continue requires a taskId.'
-      const task = loadLongTasksForRoot(context.projectRoot).find(
-        (candidate) => candidate.id === taskId,
-      )
+      const task = loadLongTasksForScope(store).find((candidate) => candidate.id === taskId)
       if (!task) return `No task with id "${taskId}".`
       if (taskProgress(task).complete) return `Long task ${taskId} is already complete.`
       const turnTreeId = getActiveRunTurnTreeId()
@@ -128,7 +130,7 @@ export const trackLongTaskTool = defineTool({
       })
       return `Scheduled one supervised continuation for long task ${taskId} at ${new Date(scheduled.wakeAt).toISOString()} (task ${scheduled.taskId}).`
     }
-    const all = loadLongTasksForRoot(context.projectRoot)
+    const all = loadLongTasksForScope(store)
     if (scope === 'workspace') {
       if (all.length === 0) {
         return 'No long tasks tracked in this workspace. Use track_long_task create to start one.'

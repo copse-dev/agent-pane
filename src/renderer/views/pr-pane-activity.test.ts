@@ -90,6 +90,25 @@ describe('PR activity views', () => {
     )
     assert.ok(host.querySelector('details[open]'))
   })
+  it('offers a fix action only for failed checks and passes the selected check and head', () => {
+    const host = document.createElement('div')
+    const selected: string[] = []
+    renderPrActivity(
+      host,
+      'checks',
+      activity,
+      () => {},
+      (check, headSha) => {
+        selected.push(check.name, headSha)
+      },
+    )
+    const buttons = host.querySelectorAll<HTMLButtonElement>('.pr-check-fix-btn')
+    assert.equal(buttons.length, 1)
+    assert.equal(buttons[0]?.getAttribute('aria-label'), 'Fix Test <img>')
+    buttons[0].click()
+    assert.deepEqual(selected, ['Test <img>', activity.headSha])
+    assert.equal(host.querySelector('img'), null)
+  })
   it('renders markdown and review outcomes with literal author text and no per-comment action', () => {
     const host = document.createElement('div')
     renderPrActivity(host, 'comments', activity, () => {})

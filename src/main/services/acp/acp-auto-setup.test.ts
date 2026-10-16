@@ -1,6 +1,6 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { KnownAcpAgent } from '@shared/acp-known-agents.ts'
+import { KNOWN_ACP_AGENTS, type KnownAcpAgent } from '@shared/acp-known-agents.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import {
   ACP_MODELS_TTL_MS,
@@ -9,6 +9,7 @@ import {
   installAcpPackageChanges,
   planAcpAutoSetup,
   requestAcpPackageInstallApproval,
+  runAcpAutoSetup,
   updateCurrentAcpAgentModels,
   type AcpAutoSetupInput,
   type AcpPackageChange,
@@ -16,10 +17,47 @@ import {
 import { setApprovalHandler } from '../approval.ts'
 import { listAcpAgents } from './acp-agent-registry.ts'
 import { setSetting } from '../storage/settings.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
+import { storageSet } from '../storage/storage.ts'
 
 afterEach(async () => {
   setApprovalHandler(null)
   await setSetting('registeredAcpAgents', [])
+})
+
+describe('runAcpAutoSetup on an SSH workspace', () => {
+  afterEach(async () => {
+    setWorkspaceRootForTest(null)
+    storageSet('activeProjectId', null)
+    storageSet('projects', [])
+    await setSetting('sshWorkspaceEnabled', false)
+    await setSetting('sshWorkspaceHosts', [])
+  })
+
+  it('is a no-op: never detects, installs, or registers anything', async () => {
+    await setSetting('sshWorkspaceEnabled', true)
+    await setSetting('sshWorkspaceHosts', [
+      { id: 'dev', label: 'Dev', host: 'dev.example.com', user: 'alice' },
+    ])
+    storageSet('activeProjectId', 'p1')
+    storageSet('projects', [{ id: 'p1', path: '/remote/project', sshHost: 'dev' }])
+    setWorkspaceRootForTest('/remote/project')
+
+    setApprovalHandler(async () => {
+      assert.fail('an SSH workspace must never prompt for an ACP package install')
+    })
+
+    const result = await runAcpAutoSetup(new AbortController().signal)
+
+    assert.deepEqual(result, {
+      installed: [],
+      upgraded: [],
+      registered: [],
+      modelsDetected: [],
+      failed: [],
+    })
+    assert.deepEqual(listAcpAgents(), [])
+  })
 })
 
 const claude: KnownAcpAgent = {
@@ -66,6 +104,26 @@ const input = (known: KnownAcpAgent, over: Partial<AcpAutoSetupInput> = {}): Acp
 })
 
 describe('planAcpAutoSetup', () => {
+  it('never installs, registers, upgrades or probes the manual Copilot entry', () => {
+    const copilot = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'github-copilot-cli')
+    assert.ok(copilot)
+    for (const agentInstalled of [false, true]) {
+      for (const configured of [false, true]) {
+        assert.deepEqual(
+          planAcpAutoSetup([
+            input(copilot, {
+              agentInstalled,
+              configured,
+              clientInstalled: true,
+              outdated: { installedVersion: '1.0.0', latestVersion: '2.0.0' },
+            }),
+          ]),
+          { install: [], upgrade: [], register: [], refreshModels: [] },
+        )
+      }
+    }
+  })
+
   it('installs + registers a preset whose client is present but adapter is missing', () => {
     const plan = planAcpAutoSetup([input(claude, { clientInstalled: true, agentInstalled: false })])
     assert.deepEqual(

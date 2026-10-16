@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
 import { collectErrorToasts } from './helpers/assert-no-error-toasts.ts'
@@ -25,7 +25,8 @@ describe('Opening a code file does not surface worker error toasts', () => {
 
   before(async function () {
     this.timeout(120_000)
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-file-open-worker-'))
+    workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-file-open-worker-')), 'workspace')
+    mkdirSync(workspaceRoot)
     writeFileSync(
       join(workspaceRoot, SAMPLE_FILE),
       [
@@ -53,7 +54,7 @@ describe('Opening a code file does not surface worker error toasts', () => {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
+    if (workspaceRoot) rmSync(dirname(workspaceRoot), { recursive: true, force: true })
   })
 
   it('shows the file in Monaco with its language worker and no error toast', async () => {

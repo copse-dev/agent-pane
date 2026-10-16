@@ -1,3 +1,5 @@
+import { observeProcessShutdown } from '../diagnostics/process-memory.ts'
+import { noteAcpSessionActivity } from './acp-session-activity.ts'
 import {
   client,
   methods,
@@ -41,6 +43,7 @@ import { acpConfigCategory, acpConfigCategoryLabel } from '@shared/acp.ts'
 import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
+import type { AgentInitiatedTurnLease } from './agent-initiated-turn.ts'
 import { tapAcpWireStream, type AcpWireSink } from './acp-wire-tap.ts'
 import { cancelApprovalsForAcpToolCall } from './acp-permission-registry.ts'
 import {
@@ -75,7 +78,7 @@ import {
 import { isProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
 import { withSandboxTmpEnv } from '../../project-sandbox/tmp-env.ts'
-import { terminateProcessTree } from '../exec/subprocess-kill.ts'
+import { terminateProcessTree, SUBPROCESS_KILL_GRACE_MS } from '../exec/subprocess-kill.ts'
 import { perfSpan } from '../diagnostics/perf-trace.ts'
 import { spawnSandboxedAcpSessionHost } from './acp-session-host.ts'
 
@@ -107,6 +110,8 @@ export interface AcpClientHandlers {
 
 export interface AcpAgentSpawnConfig {
   command: string
+  /** Thread execution boundary; a change starts a new process and agent session. */
+  executionMode?: 'agent'
   args?: string[]
   env?: Record<string, string>
   /** Absolute workspace root passed as the ACP session `cwd`. */
@@ -272,6 +277,38 @@ export function modeSelectorFrom(response: {
     ...(mode.description ? { description: mode.description } : {}),
   }))
   return { currentValue: modes.currentModeId, choices }
+}
+
+function automaticModeValue(choices: readonly AcpConfigChoice[]): string | undefined {
+  const named = (name: string): string | undefined =>
+    choices.find(
+      (choice) => choice.value.toLowerCase() === name || choice.label.toLowerCase() === name,
+    )?.value
+  return named('auto') ?? named('default')
+}
+
+/** Agent managed uses the agent's automatic mode, without changing saved settings. */
+export function agentManagedSessionOptions(
+  response: { modes?: SessionModeState | null; configOptions?: readonly unknown[] | null },
+  saved: Record<string, string> | undefined,
+): { permissionMode: string | undefined; configOptions: Record<string, string> | undefined } {
+  const modeOptions = configOptionsFrom(response).filter((option) => option.category === 'mode')
+  const modeIds = new Set(modeOptions.map((option) => option.configId))
+  const configOptions = Object.fromEntries(
+    Object.entries(saved ?? {}).filter(([configId]) => !modeIds.has(configId)),
+  )
+  for (const option of modeOptions) {
+    const automatic = automaticModeValue(option.choices)
+    if (automatic) configOptions[option.configId] = automatic
+  }
+  const permissionMode =
+    modeOptions.length === 0
+      ? automaticModeValue(modeSelectorFrom(response)?.choices ?? [])
+      : undefined
+  return {
+    permissionMode,
+    configOptions: Object.keys(configOptions).length > 0 ? configOptions : undefined,
+  }
 }
 
 /**
@@ -610,6 +647,7 @@ export function shutdownAcpChild(
 ): Promise<void> {
   const existing = acpChildShutdowns.get(child)
   if (existing) return existing
+  observeProcessShutdown(child.pid, graceMs + SUBPROCESS_KILL_GRACE_MS + 1_000)
   const done = new Promise<void>((resolve) => {
     let finished = false
     let drainPoll: ReturnType<typeof setInterval> | undefined
@@ -750,6 +788,8 @@ function closedConnectionError(reason: unknown): Error {
  * owner (the session pool) calls `dispose` on eviction.
  */
 export interface OpenAcpSession {
+  /** Live local transport root; absent for in-process transports. */
+  processId?: () => number | undefined
   session: ManagedAcpSession
   connection: ClientConnection
   updates: AcpUpdateQueue
@@ -809,6 +849,11 @@ export interface OpenAcpSession {
     resolve: (response: AcpTurnStop) => void
     reject: (err: unknown) => void
   } | null
+  /**
+   * Set by the session's owner to bind the thread for turns the agent starts on
+   * its own (see agent-initiated-turn.ts). The update pump drives it.
+   */
+  agentInitiated?: AgentInitiatedTurnLease
   /** True once the connection closed or the agent process died. */
   isClosed: () => boolean
   /**
@@ -864,6 +909,8 @@ export function refreshAcpSessionState(
 
 /** A live connection to an agent, however it was reached (local, sandboxed, SSH). */
 export interface AcpTransport {
+  /** Local child PID (the SSH client for remote agents), only while alive. */
+  processId?: () => number | undefined
   stream: Stream
   dispose: () => void | Promise<void>
   /** Descriptor exhaustion seen on the agent's stderr; absent when none is captured. */
@@ -1002,6 +1049,7 @@ async function spawnTransport(
     stream: ndJsonStream(writable, readable),
     dispose: () => shutdownAcpChild(child),
     resourceFault: stderr.resourceFault,
+    processId: () => (child.exitCode === null && child.signalCode === null ? child.pid : undefined),
   }
 }
 
@@ -1020,6 +1068,32 @@ async function spawnTransport(
  * - A rejected queue means the connection closed (pump exits). Prompt responses
  *   settle turns directly, after their request resolves.
  */
+/**
+ * Output that means the agent is working, as opposed to state replacements
+ * (session info, commands, mode, usage) it pushes whenever it likes.
+ */
+export function isAgentWorkUpdate(update: SessionUpdate): boolean {
+  return (
+    update.sessionUpdate === 'agent_message_chunk' ||
+    update.sessionUpdate === 'agent_thought_chunk' ||
+    update.sessionUpdate === 'tool_call' ||
+    update.sessionUpdate === 'tool_call_update' ||
+    update.sessionUpdate === 'plan'
+  )
+}
+
+/**
+ * Claude's adapter stamps the final `usage_update` of every turn with where the
+ * turn came from (`human` for a prompt, `task-notification` for a background
+ * task re-entering the model). It is the only end-of-turn signal a self-started
+ * turn gets, since no prompt response closes it.
+ */
+export function endsSelfStartedTurn(update: SessionUpdate): boolean {
+  if (update.sessionUpdate !== 'usage_update') return false
+  const origin = isRecord(update._meta) ? update._meta['_claude/origin'] : undefined
+  return isRecord(origin) && typeof origin['kind'] === 'string' && origin['kind'] !== 'human'
+}
+
 function startAcpUpdatePump(open: OpenAcpSession): void {
   void (async (): Promise<void> => {
     for (;;) {
@@ -1031,8 +1105,14 @@ function startAcpUpdatePump(open: OpenAcpSession): void {
         open.turnStop?.reject(err)
         continue
       }
+      noteAcpSessionActivity(open, update)
       refreshAcpSessionState(open, update)
       if (open.suppressChunks) continue
+      if (open.turnStop === null && open.agentInitiated) {
+        // No prompt is outstanding, so this is the agent working on its own.
+        if (isAgentWorkUpdate(update)) open.agentInitiated.begin()
+        else if (endsSelfStartedTurn(update)) open.agentInitiated.end()
+      }
       try {
         // Dismiss a permission modal as soon as the agent marks that tool call
         // terminal (completed/failed) without waiting for our answer.
@@ -1051,6 +1131,18 @@ function startAcpUpdatePump(open: OpenAcpSession): void {
       }
     }
   })()
+}
+
+/**
+ * How long an agent gets to answer `initialize` and open (or reattach) its
+ * session. Generous, since a first launch may still be installing the adapter,
+ * but bounded: the pool serializes each thread's acquires, so an agent that
+ * never answers would otherwise block every later turn on the thread.
+ */
+export const ACP_SESSION_STARTUP_TIMEOUT_MS = 3 * 60 * 1000
+
+function abortReason(signal: AbortSignal | undefined): Error {
+  return signal?.reason instanceof Error ? signal.reason : new DOMException('Aborted', 'AbortError')
 }
 
 /**
@@ -1157,7 +1249,34 @@ export async function openAcpSession(
     return disposal
   }
 
+  // Startup waits on the agent at every step below. Stop (the run's signal) or
+  // the startup deadline disposes the connection, which rejects whichever
+  // request is in flight; the catch then reports why instead of that rejection.
+  // Without this a hung agent holds the thread's pool slot forever.
+  let startupFailure: Error | null = null
+  // Read through a call: the failure is set from callbacks, which a plain read
+  // of the variable would not see past its narrowing.
+  const failedStartup = (): Error | null => startupFailure
+  const failStartup = (reason: Error): void => {
+    startupFailure ??= reason
+    void dispose()
+  }
+  const onStartupAbort = (): void => {
+    failStartup(abortReason(signal))
+  }
+  const startupDeadline = setTimeout(() => {
+    failStartup(
+      new Error(
+        `The coding agent did not finish starting within ${String(ACP_SESSION_STARTUP_TIMEOUT_MS / 1000)}s`,
+      ),
+    )
+  }, ACP_SESSION_STARTUP_TIMEOUT_MS)
+  if (signal?.aborted) onStartupAbort()
+  else signal?.addEventListener('abort', onStartupAbort, { once: true })
+
   try {
+    const abortedBeforeStart = failedStartup()
+    if (abortedBeforeStart) throw abortedBeforeStart
     const initResponse = await perfSpan('ttft:acp-initialize', () =>
       connection.agent.request(methods.agent.initialize, {
         protocolVersion: PROTOCOL_VERSION,
@@ -1272,15 +1391,23 @@ export async function openAcpSession(
     // (issue #607) — e.g. a sandboxed Claude preset runs in `acceptEdits` since
     // the seatbelt already contains writes. Applied here, before the first
     // prompt, so the session's first tool call already honors the mode.
+    const agentOptions =
+      config.executionMode === 'agent'
+        ? agentManagedSessionOptions(session.response, config.configOptions)
+        : null
     await perfSpan('ttft:acp-session-mode', () =>
-      applySessionMode(connection, session, config.permissionMode),
+      applySessionMode(connection, session, agentOptions?.permissionMode ?? config.permissionMode),
     )
     // Everything else the agent lets us configure (reasoning level, and any
     // other selector it advertises) is applied the same way, before the first
     // prompt. Unlike the mode this is not baked into the session fingerprint —
     // a later change re-applies live at the start of the next turn.
     const appliedConfigOptions = await perfSpan('ttft:acp-session-config', () =>
-      applyConfigOptions(connection, session, config.configOptions),
+      applyConfigOptions(
+        connection,
+        session,
+        agentOptions ? agentOptions.configOptions : config.configOptions,
+      ),
     )
 
     const open: OpenAcpSession = {
@@ -1299,12 +1426,13 @@ export async function openAcpSession(
       carryOverFailure,
       hasHistory: restoredBy !== null && carryOver?.hasHistory === true,
       appliedModel: undefined,
-      desiredConfigOptions: config.configOptions,
+      desiredConfigOptions: agentOptions ? agentOptions.configOptions : config.configOptions,
       appliedConfigOptions,
       suppressChunks: false,
       turnStop: null,
       isClosed: () => disposed || connection.signal.aborted,
       resourceFault: () => transport.resourceFault?.() ?? null,
+      processId: () => transport.processId?.(),
       dispose,
     }
     connection.signal.addEventListener(
@@ -1316,11 +1444,18 @@ export async function openAcpSession(
       },
       { once: true },
     )
+    // Disposal can race the last response; only a session that is still open
+    // may be handed out.
+    const failedLate = failedStartup()
+    if (failedLate) throw failedLate
     startAcpUpdatePump(open)
     return open
   } catch (err) {
     await dispose()
-    throw err
+    throw failedStartup() ?? err
+  } finally {
+    clearTimeout(startupDeadline)
+    signal?.removeEventListener('abort', onStartupAbort)
   }
 }
 
@@ -1382,8 +1517,12 @@ export async function runAcpSessionPrompt(
     onGraceExpired = resolve
   })
   let graceTimer: ReturnType<typeof setTimeout> | undefined
+  let promptSent = false
   const cancel = (): void => {
     open.suppressChunks = true
+    // Before the prompt goes out there is nothing to cancel: the check ahead of
+    // the send ends the turn instead.
+    if (!promptSent) return
     void connection.agent.notify('session/cancel', { sessionId: session.sessionId })
     graceTimer ??= setTimeout(() => {
       onGraceExpired('grace-expired')
@@ -1444,7 +1583,11 @@ export async function runAcpSessionPrompt(
       )
     }
 
+    // Stopped before (or while the model/config switch was in flight): never
+    // start a turn the agent would only run until the cancel grace kills it.
+    if (signal?.aborted) return { stopReason: 'cancelled' }
     open.hasHistory = true
+    promptSent = true
     void connection.agent
       .request(methods.agent.session.prompt, {
         sessionId: session.sessionId,

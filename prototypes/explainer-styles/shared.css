@@ -1,0 +1,84 @@
+@font-face {
+  font-family: 'Pliant';
+  src: url('../../assets/fonts/Pliant-Variable.ttf');
+  font-weight: 100 900;
+}
+@font-face {
+  font-family: 'Averia Serif Libre';
+  src: url('../../assets/fonts/AveriaSerifLibre-Regular.ttf');
+}
+:root {
+  --forest: #002e2b;
+  --neon: #20fd85;
+  --pink: #ff9fc5;
+  --cream: #fffdf7;
+  --cap-bg: var(--cream);
+  --cap-fg: var(--forest);
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #031a18;
+  font-family: 'Pliant', system-ui, sans-serif;
+}
+.stage {
+  position: relative;
+  width: min(100vw, 177.78vh);
+  aspect-ratio: 16 / 9;
+  margin: 0 auto;
+  top: 50%;
+  transform: translateY(-50%);
+  container-type: size;
+  overflow: hidden;
+}
+.stage svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.caption {
+  position: absolute;
+  left: 3cqw;
+  right: 3cqw;
+  bottom: 3cqh;
+  display: flex;
+  align-items: center;
+  gap: 2cqw;
+  padding: 1.6cqw 2cqw;
+  border-radius: 1.6cqw;
+  background: var(--cap-bg);
+  color: var(--cap-fg);
+  box-shadow: 0 0.5cqw 2cqw rgba(0, 0, 0, 0.35);
+}
+.beats {
+  display: flex;
+  gap: 0.6cqw;
+  flex: none;
+}
+.beat {
+  padding: 0.5cqw 1.1cqw;
+  border-radius: 99px;
+  font-size: 1.35cqw;
+  font-weight: 600;
+  background: rgba(0, 46, 43, 0.1);
+  color: rgba(0, 46, 43, 0.55);
+  transition: none;
+}
+.beat.on {
+  background: var(--forest);
+  color: var(--cream);
+}
+.text {
+  font-size: 2cqw;
+  line-height: 1.25;
+  font-weight: 500;
+}
+.bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 0.5cqh;
+  background: var(--pink);
+}

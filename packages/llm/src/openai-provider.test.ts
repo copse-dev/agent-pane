@@ -37,7 +37,8 @@ interface ChatCompletionChunk {
       reasoning?: string
       reasoning_content?: string
       tool_calls?: Array<{
-        index: number
+        // Optional: some OpenAI-compatible servers omit it.
+        index?: number
         id?: string
         function?: { name?: string; arguments?: string }
       }>
@@ -896,6 +897,56 @@ describe('OpenAIProvider stream parsing', () => {
     // The synthesized id must not disturb the rest of the call.
     assert.deepEqual(at(toolCalls, 0).toolCall.args, { path: 'a.ts' })
     assert.deepEqual(at(toolCalls, 1).toolCall.args, { path: 'b.ts' })
+  })
+
+  it('keeps parallel tool calls apart when the server omits the delta index', async () => {
+    const provider = new OpenAIProvider('local-model', {
+      baseURL: 'http://localhost:1234/v1',
+      apiKey: 'local-key',
+    })
+    withFakeStream(provider, [
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { id: 'call_a', function: { name: 'read_file', arguments: '{"path":' } },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      },
+      {
+        choices: [
+          { delta: { tool_calls: [{ function: { arguments: '"a.ts"}' } }] }, finish_reason: null },
+        ],
+      },
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { id: 'call_b', function: { name: 'read_file', arguments: '{"path":"b.ts"}' } },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      },
+      { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+    ])
+
+    const toolCalls = (await collect(provider)).filter(
+      (c): c is Extract<ProviderStreamChunk, { type: 'tool_call' }> => c.type === 'tool_call',
+    )
+    assert.deepEqual(
+      toolCalls.map((c) => [c.toolCall.id, c.toolCall.args]),
+      [
+        ['call_a', { path: 'a.ts' }],
+        ['call_b', { path: 'b.ts' }],
+      ],
+    )
   })
 
   it('keeps a provider-supplied tool-call id instead of synthesizing one', async () => {

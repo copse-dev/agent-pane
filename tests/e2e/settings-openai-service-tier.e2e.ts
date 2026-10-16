@@ -4,24 +4,6 @@ import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 
-async function rejectFreshAcpBootstrap(): Promise<void> {
-  // Selecting OpenAI also offers its device-agent capability. This spec tests
-  // first-party API settings, so decline any real adapter/bootstrap request
-  // through its consent UI rather than letting ambient CLIs change the run.
-  const dialog = $('#approval-dialog')
-  await dialog.waitForDisplayed({ timeout: 10_000 })
-  await expect(dialog.$('.approval-heading')).toHaveText(
-    'Install software to connect your coding agents?',
-  )
-  await expect(dialog.$('.approval-body')).toHaveText('@agentclientprotocol/codex-acp', {
-    containing: true,
-  })
-  await expect(dialog.$('.approval-body')).toHaveText('Socket Firewall', { containing: true })
-  await dialog.$('.approval-reject').click()
-  await expect(dialog).not.toBeDisplayed()
-  await expect($('#settings-dialog')).toBeDisplayed()
-}
-
 describe('global OpenAI service tier', () => {
   const originalPath = process.env['PATH']
   const originalPreservePath = process.env['COPSE_PRESERVE_PATH']
@@ -54,7 +36,6 @@ describe('global OpenAI service tier', () => {
     const providers = $('#settings-providers-host fieldset')
     await expect(providers).toBeDisplayed()
     await providers.$('.provider-chip[data-provider="openai"]').click()
-    await rejectFreshAcpBootstrap()
 
     await providers.$('[data-testid="openai-api-details"] summary').click()
     const picker = providers.$('select[name="openAiServiceTier"]')
@@ -82,12 +63,11 @@ describe('global OpenAI service tier', () => {
 
     await $('.settings-buttons button[type="submit"]').click()
     await $('#settings-dialog').waitForDisplayed({ reverse: true, timeout: 30_000 })
-    // A fresh renderer also verifies persistence and repeats the real consent path.
+    // A fresh renderer also verifies persistence.
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
     await $('#settings-providers-host .provider-chip[data-provider="openai"]').click()
-    await rejectFreshAcpBootstrap()
     await expect($('#settings-providers-host select[name="openAiServiceTier"]')).toHaveValue('fast')
   })
 })

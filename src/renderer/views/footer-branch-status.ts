@@ -336,10 +336,13 @@ export function mountFooterBranchStatus(
   /** Offer Git recovery beside the branch once the agent has stopped working. */
   function renderReattach(): void {
     const current = activeDetached()
-    const shown =
-      current !== null && !isPickerMode() && !wrap.hidden && getActiveThread()?.status !== 'running'
+    const visible = current !== null && !isPickerMode() && !wrap.hidden
+    const shown = visible && !agentCanTouchCheckout(current)
     reattachButton.hidden = !shown
-    trigger.classList.toggle('is-detached', current !== null && !isPickerMode() && !wrap.hidden)
+    trigger.classList.toggle('is-detached', visible)
+    if (visible && !shown) {
+      trigger.title = `This checkout is detached from ${current.branch}. Recovery is offered once the agent stops working in it.`
+    }
     if (!shown) return
     const title = detachedTitle(current)
     trigger.title = title
@@ -374,6 +377,15 @@ export function mountFooterBranchStatus(
     reattachButton.textContent = reattaching ? 'Reattaching…' : 'Reattach'
   }
 
+  /**
+   * Recovery commands race the agent's own, so none is offered while a turn is
+   * running (including one waiting on an approval) or main reports background
+   * work still attached to the checkout.
+   */
+  function agentCanTouchCheckout(current: DetachedAttachment | null): boolean {
+    return getActiveThread()?.status === 'running' || current?.agentBusy === true
+  }
+
   /** The detached state, only while it still describes the active thread. */
   function activeDetached(): DetachedAttachment | null {
     return detached?.threadId === store.getState().activeThreadId ? detached : null
@@ -406,7 +418,7 @@ export function mountFooterBranchStatus(
     if (
       !owner ||
       !current ||
-      getActiveThread()?.status === 'running' ||
+      agentCanTouchCheckout(current) ||
       reattaching ||
       activeRecoveryRunId() !== null
     )

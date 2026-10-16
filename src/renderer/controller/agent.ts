@@ -1,3 +1,5 @@
+import { classifyAutomationFailureMessage } from '@shared/automation-failure.ts'
+import { acceptThreadPrompt } from './thread-prompts.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { MATCH_PROMPT_MODEL_SELECTOR } from '@copse/llm/dynamic-model.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -17,6 +19,7 @@ import {
   setMessageToolSummary,
   setMessageRunSummary,
   setThreadStatus,
+  markAutomationRunFailed,
   addUsageDelta,
   recordContextTrim,
   updateContextSnapshot,
@@ -668,6 +671,17 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           ? { ...chunk.outcome, userAbort: takeSendNowAbort(threadId) ? 'send_now' : 'stop' }
           : chunk.outcome
         setMessageTurnOutcome(store, threadId, st.msgId, outcome)
+        if (outcome.status === 'failed' && outcome.error) {
+          // A no-op for ordinary threads; for an automation run it is what Activity and
+          // the manager read to say why an unattended run died.
+          const detail = outcome.error
+          markAutomationRunFailed(store, threadId, {
+            code: classifyAutomationFailureMessage(
+              `${detail.message} ${detail.code === undefined ? '' : String(detail.code)}`,
+            ),
+            message: detail.message.slice(0, 500),
+          })
+        }
         break
       }
       case 'done': {
@@ -712,9 +726,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           // run's final metadata (idle status, usage, todos) would otherwise
           // stay `running` on disk until the project is revisited — or forever,
           // if the app quits first (#1841). Write it directly. The queue is
-          // deliberately not drained here: draining resolves checkout and
-          // workspace state from the active project, so a carried thread's
-          // queue waits for `resumePendingQueues` when its project reactivates.
+          // persisted before the owner-aware queue dispatches its next prompt.
           const finished = getThreadById(store, threadId)
           if (finished) {
             void api.threads
@@ -723,15 +735,19 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
                 usage: finished.usage,
                 updatedAt: finished.updatedAt,
                 title: finished.title,
+                pendingMessages: finished.pendingMessages ?? [],
+                continuationUsed: finished.continuationUsed ?? 0,
+                ...(finished.currentEpoch !== undefined
+                  ? { currentEpoch: finished.currentEpoch }
+                  : {}),
                 ...(finished.todos !== undefined ? { todos: finished.todos } : {}),
               })
               .catch((err: unknown) => {
                 console.error('[threads] could not persist a background run finish', err)
               })
           }
-        } else {
-          drainMessageQueue(store, api, threadId)
         }
+        if (!backgroundProjectWasRemoved) drainMessageQueue(store, api, threadId)
         // A queued user or machine continuation immediately flips the thread
         // back to running. Only alert when the queue drain leaves it genuinely
         // finished, rather than chiming between consecutive turns — and never
@@ -771,9 +787,18 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     })
   })
 
+  const unsubThreadPrompts = api.threadPrompts.onPrompt((command) => {
+    void acceptThreadPrompt(store, api, command)
+      .then((result) => api.threadPrompts.reply(command.id, result))
+      .catch((error: unknown) => {
+        console.error('[threads] failed to acknowledge prompt:', error)
+      })
+  })
+
   return () => {
     unsub()
     unsubHookQueue()
+    unsubThreadPrompts()
     detachDiffState()
   }
 }

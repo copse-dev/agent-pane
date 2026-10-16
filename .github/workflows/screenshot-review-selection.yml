@@ -50,6 +50,22 @@ jobs:
       pull-requests: write
       statuses: write
     steps:
+      - name: Load trusted screenshot storage policy
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: .screenshot-policy
+          persist-credentials: false
+          sparse-checkout: |
+            .nvmrc
+            scripts/lib
+            scripts/screenshot-candidates.mts
+            scripts/screenshot-storage.mts
+            packages/std/package.json
+            packages/std/src/unknown-value.ts
+            packages/std/src/nullish.ts
+          sparse-checkout-cone-mode: false
+
       # Read-only: every write happens in the last step, so a refusal and a
       # decision take the same path.
       - name: Validate the selection against the live head
@@ -145,6 +161,20 @@ jobs:
               return;
             }
 
+            if (pr.body?.includes('<!-- copse-screenshot-stack:') && pr.body.includes(`tip=#${number} -->`)) {
+              const declarations = [...pr.body.matchAll(/<!-- copse-screenshot-stack: [^\n]+ -->/g)];
+              const { createHash } = require('node:crypto');
+              const digest = declarations.length === 1
+                ? createHash('sha256').update(declarations[0][0]).digest('hex') : '';
+              const coverage = statuses.find((status) => status.context === 'Screenshot stack coverage');
+              if (coverage?.state !== 'success' || coverage.creator?.id !== 41898282 || !digest ||
+                  coverage.description !== `Stack coverage ${digest}`) {
+                refuse('the stack tip has not published combined screenshot coverage yet.');
+                return;
+              }
+              core.setOutput('stack-digest', digest);
+            }
+
             const branch = `screenshot-compare/pr-${number}/${sha12}`;
             let compareCommit;
             try {
@@ -165,41 +195,14 @@ jobs:
               return;
             }
 
-            // Descend to tests/e2e/screenshots on both sides. Only the ticked
-            // blobs are copied, so nothing else in the compare commit matters.
+            const { validateManifestCompare, selectManifestEntries } = require(`${process.env.GITHUB_WORKSPACE}/.screenshot-policy/scripts/lib/screenshot-review-manifest.mts`);
             const { data: headCommit } = await github.rest.git.getCommit({ owner, repo, commit_sha: head });
-            const readTree = async (treeSha) => {
-              const { data } = await github.rest.git.getTree({ owner, repo, tree_sha: treeSha });
-              if (data.truncated) throw new Error(`Tree ${treeSha} is truncated.`);
-              return new Map(data.tree.map((entry) => [entry.path, entry]));
-            };
-            const descend = async (rootSha) => {
-              let sha = rootSha;
-              for (const name of ['tests', 'e2e', 'screenshots']) {
-                const entry = (await readTree(sha)).get(name);
-                if (entry?.type !== 'tree') return undefined;
-                sha = entry.sha;
-              }
-              return readTree(sha);
-            };
-            const [before, after] = await Promise.all([descend(headCommit.tree.sha), descend(commit.tree.sha)]);
-            if (!before || !after) {
-              refuse('the compare commit has no tests/e2e/screenshots/ tree to take screenshots from.');
-              return;
-            }
-
-            const selected = [];
-            for (const name of names) {
-              const entry = after.get(name);
-              if (entry?.type !== 'blob' || entry.mode !== '100644' || before.get(name)?.sha === entry.sha) {
-                refuse(`\`${name}\` is not a changed candidate in the compare commit.`);
-                return;
-              }
-              selected.push({ name, sha: entry.sha });
-            }
-            const candidates = [...after.entries()].filter(
-              ([name, entry]) => entry.type === 'blob' && before.get(name)?.sha !== entry.sha,
-            ).length;
+            let selected, candidates;
+            try {
+              const result = await validateManifestCompare(github, owner, repo, headCommit.tree.sha, commit.tree.sha);
+              selected = selectManifestEntries(result.before, result.after, names);
+              candidates = result.changed.length;
+            } catch (error) { refuse(error.message); return; }
             core.setOutput('outcome', 'accept');
             core.setOutput('compare-commit', compareCommit);
             core.setOutput('head-ref', pr.head.ref);
@@ -240,21 +243,20 @@ jobs:
             if (
               !Array.isArray(selected) ||
               selected.length === 0 ||
-              !selected.every((item) => namePattern.test(item.name) && /^[0-9a-f]{40}$/.test(item.sha))
+              !selected.every((item) => namePattern.test(item.name) && /^[0-9a-f]{64}$/.test(item.sha256) && Number.isSafeInteger(item.bytes) && item.bytes > 0)
             ) {
               core.setFailed('Refusing an unexpected selection.');
               return;
             }
+            const { readReviewManifest, selectedManifestContent, selectedReadmeContent } = require(`${process.env.GITHUB_WORKSPACE}/.screenshot-policy/scripts/lib/screenshot-review-manifest.mts`);
+            const before = await readReviewManifest(github, owner, repo, process.env.HEAD_TREE);
+            const content = selectedManifestContent(before, selected);
+            const after = JSON.parse(content);
+            const readme = await selectedReadmeContent(github, owner, repo, process.env.HEAD_TREE, before, after);
             const { data: tree } = await github.rest.git.createTree({
-              owner,
-              repo,
-              base_tree: process.env.HEAD_TREE,
-              tree: selected.map((item) => ({
-                path: `tests/e2e/screenshots/${item.name}`,
-                mode: '100644',
-                type: 'blob',
-                sha: item.sha,
-              })),
+              owner, repo, base_tree: process.env.HEAD_TREE,
+              tree: [{ path: 'tests/e2e/screenshots/manifest.json', mode: '100644', type: 'blob', content },
+                ...(readme === null ? [] : [{ path: 'README.md', mode: '100644', type: 'blob', content: readme }])],
             });
             const noun = selected.length === 1 ? 'screenshot' : 'screenshots';
             const { data: commit } = await github.rest.git.createCommit({
@@ -289,6 +291,7 @@ jobs:
           HEAD_SHA: ${{ steps.validate.outputs.head-sha }}
           SELECTED: ${{ steps.validate.outputs.selected }}
           CANDIDATES: ${{ steps.validate.outputs.candidates }}
+          STACK_DIGEST: ${{ steps.validate.outputs.stack-digest }}
           TOKEN_MINTED: ${{ steps.app-token.outputs.token != '' }}
           PUSHED: ${{ steps.commit.outputs.pushed }}
           COMMIT: ${{ steps.commit.outputs.commit }}
@@ -329,10 +332,27 @@ jobs:
                 description: `Accepted by @${actor}; committed ${count} of ${total} screenshots as ${commit12}`,
                 target_url: `https://github.com/${owner}/${repo}/pull/${number}`,
               });
+              const bindDecision = async (head) => {
+                if (/^[0-9a-f]{64}$/.test(process.env.STACK_DIGEST || '')) await github.rest.repos.createCommitStatus({
+                  owner, repo, sha: head, state: 'success', context: 'Screenshot stack decision',
+                  description: `Stack decision ${process.env.STACK_DIGEST}`,
+                  target_url: `https://github.com/${owner}/${repo}/pull/${number}`,
+                });
+              };
+              await bindDecision(sha);
               // Do not clear the reminder if another push already superseded
               // the screenshot commit this selection made.
               const { data: parent } = await github.rest.pulls.get({ owner, repo, pull_number: number });
               if (parent.state === 'open' && parent.head.sha === process.env.COMMIT && parent.head.repo?.full_name === `${owner}/${repo}`) {
+                if (parent.body?.includes('<!-- copse-screenshot-stack:') &&
+                    parent.body.includes(`tip=#${number} -->`)) {
+                  await github.rest.repos.createCommitStatus({
+                    owner, repo, sha: process.env.COMMIT, state: 'success', context: 'Screenshot review',
+                    description: `Accepted by @${actor}; screenshot-only follow-up of ${sha12}`,
+                    target_url: `https://github.com/${owner}/${repo}/pull/${number}`,
+                  });
+                  await bindDecision(process.env.COMMIT);
+                }
                 try {
                   await github.rest.issues.removeLabel({ owner, repo, issue_number: number, name: 'screenshots-need-review' });
                 } catch (error) {
@@ -343,7 +363,7 @@ jobs:
                 `**Reviewed:** accepted by @${actor}. The PR branch was advanced from \`${sha12}\` to ` +
                 `\`${commit12}\`, committing ${count} of ${total} changed screenshot${total === 1 ? '' : 's'}: ` +
                 `${selected.map((item) => `\`${item.name}\``).join(', ')}. ` +
-                'The others were not committed; CI re-runs on the new head without e2e.';
+                'The others were not committed; CI re-runs; declared stack tips repeat combined e2e, other PNG-only heads skip it.';
               const start = current.indexOf(stateStart);
               const end = current.indexOf(stateEnd, start);
               const block = `${stateStart}\n${decision}\n${stateEnd}`;
@@ -360,7 +380,7 @@ jobs:
                 process.env.TOKEN_MINTED === 'true'
                   ? 'the PR branch could not be advanced. It may have moved since the evidence was published.'
                   : 'the release App token is unavailable, and a push with the job token would start no CI. ' +
-                    'Use the `git checkout` command in the comment to take those files yourself.';
+                    'Use the `screenshots:accept` command in the comment to take those files yourself.';
             } else {
               refusal = process.env.REASON || 'the selection could not be evaluated.';
             }

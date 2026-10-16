@@ -170,6 +170,13 @@ ghost lightbox showing the cleared image’s alt (“Expanded attachment”) and
 (same idea as `[hidden]` in `base.css`). Put flex layout on an inner shell when you
 can; when the dialog itself must flex, use `.foo-dialog[open] { display: flex; }`.
 
+## Section tabs
+
+Use flat, square-edged section tabs with a straight active underline, matching
+`.pr-detail-section` and `.process-manager-tab`. Do not use rounded or pill-shaped
+buttons for this navigation, or draw an inset underline around rounded corners.
+Keep `.ui-btn` off section tabs so its button radius cannot curve the indicator.
+
 ## UI kit primitives (buttons, fields, action rows)
 
 Background task rows use a native disclosure for failure reasons and execution details.
@@ -322,7 +329,7 @@ rendered colour, case, and corner.
 Approval is a workbench decision surface, not a debug dump:
 
 - Titles are **questions in plain language** (`Mark pull request ready for review?`, `Run package
-install?`) — never snake_case tool ids (`gh_pr_mark_ready`) or `GitHub action: …` prefixes.
+  install?`) — never snake_case tool ids (`gh_pr_mark_ready`) or `GitHub action: …` prefixes.
 - Bodies lead with the **thing at stake** (PR target, command, origin). Pretty-printed JSON args
   are a last-resort fallback when the gate cannot summarize, not the default.
 - Buttons use `.ui-btn*` via `uiActions` (Approve = primary, Reject = secondary). Do not paint
@@ -833,6 +840,36 @@ every 30s and follows working-tree events for the active thread only. Specs:
 [`projects-pane-thread-changes.test.ts`](../src/renderer/views/projects-pane-thread-changes.test.ts),
 [`tests/demo/sidebar-thread-changes.demo.ts`](../tests/demo/sidebar-thread-changes.demo.ts).
 
+## Align trailing row icons
+
+When a list repeats the same row shape, a trailing status icon (PR status, changes glyph,
+attention bell) must land in the same column on every row — not trail the preceding label at a
+distance that drifts with the label's or title's length. `justify-content: space-between` alone
+does not guarantee this once a row has more than two flex items: it splits the row's slack across
+_every_ gap between them, so the icon's distance from its neighbour — and from the row's trailing
+edge — changes with however much spare width that particular row happens to have.
+
+- Give the item that should absorb the row's slack an actual `flex-grow`, not just a size that
+  happens to fit (the cross-project owner label `· workspace` in `.chats-list`, `flex: 1 0 auto`
+  capped with `max-width` rather than frozen at `flex: 0 0 auto`). Growth is invisible when the
+  label's own text is shorter than its box — it just leaves blank space before the next
+  item — so this alone pushes a single trailing icon flush to the row's edge on every row.
+  Weighted `flex-shrink` cannot do this job; see "Decide which label gives way first" above for
+  the matching truncation-order problem.
+- A hard cap on that grower (`max-width`) can still leave slack stranded past it once a row is
+  wide enough or the label short enough. Give the first trailing icon after the label
+  `margin-left: auto` as the fallback claimant, scoped to only the icon closest to the label
+  (`.chat-row:not(:has(.chat-attention-bell)) .chat-pr-status`) — a second icon on the same row
+  (a bell _and_ a PR glyph) must not also grab a share of the slack, or it pulls itself apart
+  from the one ahead of it instead of sitting flush beside it.
+- When more than one icon type can appear in the same slot, order them (in markup and in which one
+  is allowed to claim the slack) so the one that appears most often anchors the trailing edge and
+  the rarer ones sit inward — that is what keeps the column still when an optional icon comes and
+  goes, not just when a title does.
+
+Spec: [`sidebar-thread-sort.demo.ts`](../tests/demo/sidebar-thread-sort.demo.ts)
+(`expectChangesGlyphsAligned`).
+
 ## SSH chrome — plain text, no decorative emoji
 
 The titlebar SSH target is plain `user@host` (`.workspace-ssh-target`), not `⚡ user@host`.
@@ -969,6 +1006,36 @@ elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
 
 Specs: `src/shared/tools/tool-display.test.ts`, `src/renderer/views/tool-display.test.ts`,
 `tests/e2e/tool-display-rollup.e2e.ts`, `tests/e2e/browser-tools.e2e.ts`.
+
+## Concise threads: hide the process, never the way back
+
+For a model above the intellect gate (`views/concise-thread.ts`) the transcript shows what the
+turn _said and produced_ — every assistant message, screenshots, evidence and canvas previews (see
+[Concise thread content](#concise-thread-content)) — and hides tool cards, reasoning and recovered
+tool errors. On by default; Settings → Appearance → Concise threads
+turns it off. Hiding is only acceptable while these hold:
+
+- **Every abridged turn has an exit.** A finished turn carries a quiet footer under it (`Show steps ›
+  3 tool calls +5 −3`) that opens that one turn in full and closes it again; the running turn opens
+  from its activity row. Opening is UI-only state, never persisted, and a turn the user opened stays
+  open after it finishes — nothing collapses under their pointer.
+- **What the hidden cards said that nothing else says moves to the footer.** A Stop's "Interrupted by
+  you." lived on a tool card, so the footer repeats it; the edit total is the one fact about hidden
+  work a reader needs unasked. Failed turns keep their text and recovery card (the model never saw
+  that error, so it cannot have handled it).
+- **A bubble with no user-facing content takes no room**, including the turn's last one when it has
+  no text; prose is never hidden because a tool ran or a later message arrived. Chrome
+  that belongs to a bubble (the model label, the agent marker) is placed on the next bubble that is
+  _painted_, or a mid-thread model switch would be invisible.
+- **Toggling holds the reader's place.** Opening keeps the turn's prompt where it is so the steps
+  unfold beneath it; closing keeps the footer under the pointer; flipping the setting holds the first
+  visible item. A pointer press in the transcript dismisses a text selection by design
+  (`selection-quote.ts`), so the keyboard path is the one that keeps it.
+- **Permission and question dialogs are unaffected**; they sit above the transcript, and the activity
+  row names the specific item (`Running pnpm install…`) rather than the tool's generic verb.
+
+Visual evals: `tests/demo/concise-thread*.demo.ts` (states from
+`src/shared/demo-concise-states.ts`).
 
 ## Hook cards are a distinct card family — right-aligned, blue, not a user message
 
@@ -1453,6 +1520,19 @@ than the card. Differences from the overlay are listed under each point below.
 
 - **Grouped by claim on attention, not recency.** Needs you → Working → Recently finished.
   An empty Needs you still says so ("Nothing needs you right now.") above the other groups.
+- **Recently finished includes what ended before launch.** A settled thread is listed when
+  this session watched it end, it finished unread while another thread was open, or its
+  persisted completion (`lastSettledAt`) is within the last 7 days (`RECENT_WINDOW_MS`; a time more than a day ahead of the clock is
+  treated as bad data, not recent), read or
+  not; the cap of ten still applies. A thread that never ran (a draft, the empty active
+  thread) never lists; "ran" is read from metadata alone (`lastPromptAt`, else recorded token
+  usage, a working brief or an auto-title pass), so threads written before `lastPromptAt`
+  existed list without being opened. A stored `error` status survives restarts, so it shows as Failed only
+  when seen this session or inside that same window — an older one is simply left out, never
+  shown as a fresh failure. Otherwise a user whose threads are all complete would see an empty
+  Activity home.
+  Legacy threads use their last write as an initial proxy, captured before metadata edits;
+  subsequent turn completions replace it. Model or branch edits do not restart the completion age.
 - **A schedule's settled runs fold.** In Recently finished, two or more settled runs of one
   automation schedule become one row (clock glyph, the schedule name, "Done" or "Failed" and
   the run count) that opens out into the runs; clean finishes and failures fold apart, so a
@@ -1488,9 +1568,20 @@ than the card. Differences from the overlay are listed under each point below.
   `aria-expanded`. Working starts folded and names how many it holds; Needs you unfolds when a
   request new to the view arrives, and stays folded if the user folded one they had seen. Folded
   rows are not selectable, so selection moves to the nearest visible row. State is session-only.
-- **Project strip (new-thread screen).** All projects, then the projects that need you, most
-  waiting first, plus the chosen one; a tile filters the list. Requests tied to no thread belong
-  to no project and show only under All projects.
+- **Beside and above panels (new-thread screen).** A list resting at the top stays at the top
+  when a request arrives above its first row; the scroll anchor holds the reader's place only
+  once they have scrolled. Under the portrait chrome the home reserves the mode strip as the
+  conversation does, so the caption and the card are never under the composer. When every group
+  is folded the detail is hidden and the list takes the whole card. Spec:
+  `tests/demo/activity-home-panels.demo.ts`.
+- **Project strip (new-thread screen).** All projects, then every project in the sidebar (minus
+  ones whose folder is missing), by attention: most waiting first, then those with runs working,
+  then the rest by name. Each tile says "N need you" or "All clear" and, when there are any, "N
+  working"; a tile filters the list, and a filtered project that is removed falls back to All
+  projects. A lone project adds no tile, since it would repeat All projects. The strip scrolls
+  sideways with an edge fade and scrolls the chosen tile into view. Projects not opened this
+  session have no thread data yet and read "All clear". Requests tied to no thread belong to no
+  project and show only under All projects.
 - **Nothing moves under a click.** The panel has a fixed height, re-renders are throttled,
   selection and focus are restored to the same row, and Approve pauses whenever a request it
   has not shown yet takes the detail pane or the waiting list changes. Unchanged rows are the
@@ -1548,3 +1639,12 @@ is approved for browsing. Data URL prototypes have no network access. Ordinary p
 including user-opened local development servers, retain their server's CSP. Bundle
 prototype assets locally; see [browser network policy](browser-network-policy.md) for
 the boundary and tests.
+
+### Concise thread content
+
+Concise view hides tool cards, reasoning and terminal references for eligible models, while
+keeping every assistant message visible, including progress text and answers that carry audit
+calls. Starting a tool, completing a turn or adding a later user/assistant message must not remove
+previously visible prose. Only bubbles with no user-facing content collapse. Produced images,
+visual evidence, canvas previews and user-input cards remain visible. Expanding a turn restores
+its ordinary tool and reasoning disclosures; full view is unchanged.

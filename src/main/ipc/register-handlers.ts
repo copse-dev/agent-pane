@@ -1,7 +1,11 @@
+import { confirmMobileControl } from '../services/mobile/mobile-control-confirmation.ts'
+import { networkActivity } from '../services/diagnostics/network-activity.ts'
 import { inspectStorageMaintenance, saveStorageRetention } from '../services/storage-maintenance.ts'
+import { readOpenAiArtifact } from '../services/remote/openai-agents-client.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
 import { storageCleanup } from '../services/storage-cleanup.ts'
 import { storageAreaSchema, storageRetentionSchema } from '../../shared/types/storage-cleanup.ts'
+import { registerPlanHandlers } from './plan-handlers.ts'
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
 import { getSettingsSnapshot, updateSettings } from '../services/storage/settings-transaction.ts'
 import { modelInvalidationService } from '../services/providers/model-invalidation.ts'
@@ -17,12 +21,13 @@ import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebConten
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 import { skillRootsSchema } from '../services/skills/skill-roots-schema.ts'
 import { z } from 'zod'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
 import {
   backgroundClassifierId,
+  getClassifierProfile,
   listClassifierProfiles,
   saveClassifierProfile,
   removeClassifierProfile,
@@ -31,17 +36,26 @@ import {
   setScreeningClassifier,
   testClassifierProfile,
 } from '../services/classifiers/classifier-service.ts'
+import { recordClassifierResultUsage } from '../services/classifiers/classifier-usage.ts'
 import { localClassifiers } from '../services/classifiers/local-classifiers.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { scaffoldProject } from '../services/project-scaffold.ts'
 import { createProcessManagerSampler } from '../services/process-manager.ts'
 import { readOwnedProcessRows } from '../services/process-manager-owned.ts'
 import { stopSupervisedBackgroundProcess } from '../services/exec/supervised-background-process.ts'
+import { hasBackgroundProcessesForThread } from '../services/exec/background-process.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
-import { showMobileCompanion } from '../windows/mobile-desktop.ts'
+import {
+  disableMobileCompanion,
+  enableMobileCompanion,
+  getMobileCompanionState,
+  respondToMobilePairing,
+  revokeMobileDevice,
+  setMobileDeviceAccess,
+} from '../services/mobile/mobile-companion-service.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 import { browserPartitionForContents } from '../windows/browser-web-contents.ts'
 import { isVisibleBrowserSessionPartition } from '@shared/browser-session.ts'
@@ -72,6 +86,7 @@ import {
   type WorkspaceProjectRef,
 } from '../services/workspace.ts'
 import { exportDecisionLog, readDecisionLog } from '../services/security/decision-log-store.ts'
+import { getThreadClassifierUse } from '../services/security/classifier-use-report.ts'
 import { loadCanvasArtefactSummaries, readStoredCanvasArtefact } from '../services/canvas-store.ts'
 import { CANVAS_ARTEFACT_CHANNEL } from '../services/canvas-dispatch.ts'
 import {
@@ -84,6 +99,7 @@ import {
   modelCardIdsSchema,
   setKeyOptionsSchema,
   parseIpcArgs,
+  parseAcpAuthStatusArgs,
   parsePortKillArgs,
   zMcpServerName,
   zModelId,
@@ -97,6 +113,8 @@ import {
   zPrComposerCreateRequest,
   mainWindowNavigationSchema,
 } from './ipc-guards.ts'
+import { resolveHookTestTarget } from './hook-test-target.ts'
+import type { HooksListResult } from '@shared/types/hooks.ts'
 import {
   inspectThreadCheckoutAttachment,
   inspectThreadCheckoutRoot,
@@ -169,7 +187,9 @@ import {
 } from '../windows/create-main-window.ts'
 import { browserPaneSessionSchema, decodeBrowserPaneSession } from '../windows/main-window-state.ts'
 import {
+  measureThreadStorage,
   backfillThreadPrRefs,
+  getLatestThreadPlan,
   loadProjectThreadMetas,
   loadThreadMessages,
   createThread,
@@ -184,7 +204,7 @@ import {
   type ThreadDeletionRuntime,
 } from '../services/thread-deletion.ts'
 import { buildThreadArchive } from '../services/thread-archive.ts'
-import { archiveStoredThread } from '../services/thread-archiving.ts'
+import { archiveStoredThread, type ThreadArchivingRuntime } from '../services/thread-archiving.ts'
 import {
   getElectronAppVersion,
   getElectronBuildCommit,
@@ -208,6 +228,8 @@ import {
   type ThreadHistoryEditRuntime,
 } from '../services/thread-history-edit.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
+import { browseAcpRegistry } from '../services/acp/acp-registry-discovery.ts'
+import { detectAcpAuthStatus } from '../services/acp/acp-auth-status.ts'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import {
   listExternalEditors,
@@ -300,6 +322,7 @@ import {
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
+import { AUTOMATION_FAILURE_CODES } from '@shared/types/automations.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import { getAutomationService } from '../services/automations/automation-service.ts'
 import { getBranchCiAutomationService } from '../services/automations/branch-ci-automation-service.ts'
@@ -470,6 +493,7 @@ import { prRefSchema } from '@shared/git/thread-pr-relations.ts'
 import {
   lookupPrThreadRelationships,
   lookupThreadPrRelationships,
+  lookupThreadBacklinks,
 } from '../services/thread-store.ts'
 
 import {
@@ -507,10 +531,34 @@ const zAutomationScheduleInput = z.object({
   permissions: z.array(zAutomationPermission).max(256).optional(),
 })
 
+const zEventTriggerInput = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('github-ci-failed'),
+    branch: z.string().trim().min(1).max(200).optional(),
+    checks: z.array(z.string().trim().min(1).max(200)).max(10).optional(),
+    pullRequest: z.number().int().positive().optional(),
+  }),
+  z.strictObject({
+    kind: z.literal('github-pr-changed'),
+    baseBranch: z.string().trim().min(1).max(200),
+    transition: z.enum(['ready-for-review', 'new-commits']),
+  }),
+  z.strictObject({
+    kind: z.literal('github-issue-labeled'),
+    label: z.string().trim().min(1).max(50),
+  }),
+])
+
+const zAutomationFailureReport = z.strictObject({
+  code: z.enum(AUTOMATION_FAILURE_CODES),
+  message: z.string().trim().min(1).max(2000),
+})
+
 const zBranchCiAutomationInput = z.strictObject({
   id: z.uuid().optional(),
   name: z.string().trim().min(1).max(160),
-  branch: z.string().trim().min(1).max(200),
+  branch: z.string().trim().min(1).max(200).optional(),
+  trigger: zEventTriggerInput.optional(),
   prompt: z.string().trim().min(1).max(100_000),
   model: z.string().trim().min(1).max(1024),
   enabled: z.boolean(),
@@ -568,21 +616,75 @@ export function registerAllHandlers(
   isDispatcherThreadActive: (projectId: string, threadId: string) => boolean,
   threadDeletionRuntime: ThreadDeletionRuntime,
   threadHistoryEditRuntime: ThreadHistoryEditRuntime,
+  threadArchivingRuntime: ThreadArchivingRuntime,
 ): void {
-  ipcMain.handle('mobile:manage', async (event) => {
+  const mobileAddressSchema = z.string().regex(/^(?:\d{1,3}\.){3}\d{1,3}$/)
+  const mobileDeviceAccessPairSchema = z.tuple([z.uuid(), z.enum(['read', 'control'])])
+  const mobileDeviceIdSchema = z.uuid()
+  const mobilePairingDecisionSchema = z.enum(['read', 'control', 'deny'])
+
+  ipcMain.handle('mobile:get-state', (event) => {
     assertMainFrameSender(event, win)
-    await showMobileCompanion(win)
+    return getMobileCompanionState()
+  })
+  ipcMain.handle('mobile:enable', async (event, rawAddress: unknown) => {
+    assertMainFrameSender(event, win)
+    const address = parseIpcArgs(mobileAddressSchema, [rawAddress])
+    await enableMobileCompanion(address)
+  })
+  ipcMain.handle('mobile:disable', async (event) => {
+    assertMainFrameSender(event, win)
+    await disableMobileCompanion()
+  })
+  ipcMain.handle('mobile:set-device-access', async (event, ...args) => {
+    assertMainFrameSender(event, win)
+    const [id, access] = parseIpcArgs(mobileDeviceAccessPairSchema, args)
+    await setMobileDeviceAccess(id, access, (label) =>
+      confirmMobileControl((options) => dialog.showMessageBox(win, options), label),
+    )
+  })
+  ipcMain.handle('mobile:revoke-device', (event, rawId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(mobileDeviceIdSchema, [rawId])
+    revokeMobileDevice(id)
+  })
+  ipcMain.handle('mobile:respond-pairing', async (event, rawDecision: unknown) => {
+    assertMainFrameSender(event, win)
+    const decision = parseIpcArgs(mobilePairingDecisionSchema, [rawDecision])
+    await respondToMobilePairing(decision, (label, code) =>
+      confirmMobileControl((options) => dialog.showMessageBox(win, options), label, code),
+    )
+  })
+  ipcMain.handle('mobile:reveal-certificate', (event) => {
+    assertMainFrameSender(event, win)
+    const path = getMobileCompanionState().rootCertificatePath
+    if (path) shell.showItemInFolder(path)
   })
 
+  // Read once: Electron throws on `win.webContents` after the boot window is
+  // closed, and a second main window can outlive it.
+  const primaryWebContentsId = win.webContents.id
+
+  // Reserve container starts before asynchronous preflight, so plan writes and
+  // container launches cannot pass each other's idle check.
+  const startingContainerThreads = new Set<string>()
+  registerPlanHandlers(
+    win,
+    (projectId, threadId) =>
+      isDispatcherThreadActive(projectId, threadId) ||
+      listRunningThreadIds().includes(threadId) ||
+      startingContainerThreads.has(threadId) ||
+      getContainerRunService().isActive(threadId),
+  )
   const processManagerSnapshot = createProcessManagerSampler(
     () => app.getAppMetrics(),
     processManagerLabels,
-    (appPids) => readOwnedProcessRows(win.webContents.id, appPids),
+    (appPids) => readOwnedProcessRows(primaryWebContentsId, appPids),
   )
   const reloadMcpForWorkspace = (): void => {
     void reloadMcpServers(registry)
       .then((statuses) => {
-        if (!win.isDestroyed()) win.webContents.send('mcp:status-changed', statuses)
+        broadcastToAppWindows('mcp:status-changed', statuses)
       })
       .catch((err: unknown) => {
         console.error('[mcp] workspace reload failed:', err)
@@ -636,15 +738,16 @@ export function registerAllHandlers(
     }
   })
 
-  ipcMain.handle('process-manager:snapshot', (event) => {
+  ipcMain.handle('process-manager:snapshot', async (event) => {
     assertMainFrameSender(event, win)
-    return processManagerSnapshot()
+    const snapshot = await processManagerSnapshot()
+    return { ...snapshot, network: networkActivity.snapshot() }
   })
 
   ipcMain.handle('process-manager:stop-background', (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
-    if (event.sender !== win.webContents) {
-      throw new IpcValidationError('Only the main window can stop a background task')
+    if (!getMainWindowForWebContents(event.sender)) {
+      throw new IpcValidationError('Only a main window can stop a background task')
     }
     const [id, projectId, threadId] = parseIpcArgs(
       z.tuple([z.string().min(1).max(128), zProjectId, zThreadId]),
@@ -765,7 +868,9 @@ export function registerAllHandlers(
     if (
       !contents ||
       contents.isDestroyed() ||
-      contents.hostWebContents !== win.webContents ||
+      // The guest must belong to the window asking: the main window, a second
+      // main window, or the pane pop-out — never another window's tab.
+      contents.hostWebContents !== event.sender ||
       !partition ||
       !isVisibleBrowserSessionPartition(partition)
     ) {
@@ -776,12 +881,12 @@ export function registerAllHandlers(
 
   ipcMain.handle('browser:share-page-text', async (event, rawId: unknown) => {
     const share = await captureBrowserPageText(interactiveBrowserContents(event, rawId))
-    if (!win.isDestroyed()) win.webContents.send('browser:share-text', share)
+    if (!event.sender.isDestroyed()) event.sender.send('browser:share-text', share)
   })
 
   ipcMain.handle('browser:share-screenshot', async (event, rawId: unknown) => {
     const share = await captureBrowserScreenshot(interactiveBrowserContents(event, rawId))
-    if (!win.isDestroyed()) win.webContents.send('browser:share-image', share)
+    if (!event.sender.isDestroyed()) event.sender.send('browser:share-image', share)
   })
 
   ipcMain.handle('browser:capture-screenshot', async (event, rawId: unknown) => {
@@ -903,6 +1008,19 @@ export function registerAllHandlers(
     // models (e.g. a new Opus release) appear on its next open without blocking
     // boot or requiring a manual "Detect models".
     revalidateStaleAcpModels()
+    // Register any already-installed ACP presets so a detected agent (e.g.
+    // `claude`, `codex` on PATH) lands in the model picker without the user
+    // having to open Settings → ACP agents first. Fire-and-forget for the same
+    // reason as above; registering a preset with no package to install never
+    // shows an approval dialog, so this stays silent in the common case. Skipped
+    // under the e2e harness: specs seed `registeredAcpAgents` explicitly, and
+    // this would otherwise pick up whatever ACP CLIs happen to be on the
+    // developer's own PATH.
+    if (process.env['COPSE_E2E'] !== '1') {
+      void runAcpAutoSetup(new AbortController().signal).catch((err: unknown) => {
+        console.warn('[acp] auto-setup on workspace open failed:', err)
+      })
+    }
     return canonical
   })
 
@@ -1356,9 +1474,13 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     return removeClassifierProfile(parseIpcArgs(keyProviderSchema.max(53), [raw]))
   })
-  ipcMain.handle('classifiers:test', (event, raw: unknown) => {
+  ipcMain.handle('classifiers:test', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)
-    return testClassifierProfile(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+    const id = parseIpcArgs(keyProviderSchema.max(53), [raw])
+    const result = await testClassifierProfile(id)
+    // The sample is a real call: tokens a provider reports for it count like any other.
+    recordClassifierResultUsage(getClassifierProfile(id).label, result)
+    return result
   })
   ipcMain.handle('classifiers:screening', (event) => {
     assertMainFrameSender(event, win)
@@ -1392,6 +1514,10 @@ export function registerAllHandlers(
   ipcMain.handle('local-classifiers:stop', (event, raw: unknown) => {
     assertMainFrameSender(event, win)
     return localClassifiers().stop(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+  ipcMain.handle('local-classifiers:uninstall', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return localClassifiers().uninstall(parseIpcArgs(keyProviderSchema.max(53), [raw]))
   })
   ipcMain.handle('local-classifiers:connect', (event, raw: unknown) => {
     assertMainFrameSender(event, win)
@@ -1739,7 +1865,17 @@ export function registerAllHandlers(
     setAutomationAppIconMode(enabled, mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
   })
   ipcMain.handle('usage:get-summary', () => getUsageSummary())
-  ipcMain.handle('usage:get-plan-usage', async () => loadPlanUsageSnapshotAndSample())
+  // What the classifiers (shell guard, tier screen, terminal-read screen) did for one
+  // thread: calls, verdicts, latency and tokens, from the thread's decision log.
+  ipcMain.handle('usage:get-thread-classifier-use', (event, ...rawArgs: unknown[]) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), rawArgs)
+    return getThreadClassifierUse(projectId, threadId)
+  })
+  ipcMain.handle('usage:get-plan-usage', async (_event, force: unknown) => {
+    const refresh = parseIpcArgs(z.boolean().optional(), [force])
+    return loadPlanUsageSnapshotAndSample({ force: refresh === true })
+  })
   ipcMain.handle('usage:get-plan-worth-it', () => getPlanWorthItPayload())
   ipcMain.handle('usage:set-claude-plan-monthly-fee', async (event, fee: unknown) => {
     assertMainFrameSender(event, win)
@@ -1839,22 +1975,41 @@ export function registerAllHandlers(
   // Unattended container runs (docs/plans/thread-in-container.md). The
   // renderer sends the prompt, the model and the budgets; the main process
   // resolves the checkout, the provider and its key, and owns the run.
-  ipcMain.handle('container:run-thread', (event, request: unknown) => {
+  ipcMain.handle('container:run-thread', async (event, request: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(containerRunRequestSchema, [request])
-    return getContainerRunService().start({
-      projectId: parsed.projectId,
-      threadId: parsed.threadId,
-      prompt: parsed.prompt,
-      model: parsed.model,
-      budgets: parsed.budgets,
-      ...(parsed.useAgentLogin !== undefined ? { useAgentLogin: parsed.useAgentLogin } : {}),
-      ...(parsed.installDependencies !== undefined
-        ? { installDependencies: parsed.installDependencies }
-        : {}),
-      ...(parsed.continueFrom !== undefined ? { continueFrom: parsed.continueFrom } : {}),
-      ...(parsed.continueContext !== undefined ? { continueContext: parsed.continueContext } : {}),
-    })
+    const [projectId, threadId] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [
+      parsed.projectId,
+      parsed.threadId,
+    ])
+    if (startingContainerThreads.has(threadId))
+      throw new Error('A container run is already starting')
+    startingContainerThreads.add(threadId)
+    try {
+      const activePlan = await getLatestThreadPlan(projectId, threadId)
+      if (activePlan && activePlan.meta.status !== 'abandoned') {
+        throw new Error(
+          'Container runs cannot enforce the plan workflow. End the plan before starting a container run.',
+        )
+      }
+      return await getContainerRunService().start({
+        projectId,
+        threadId,
+        prompt: parsed.prompt,
+        model: parsed.model,
+        budgets: parsed.budgets,
+        ...(parsed.useAgentLogin !== undefined ? { useAgentLogin: parsed.useAgentLogin } : {}),
+        ...(parsed.installDependencies !== undefined
+          ? { installDependencies: parsed.installDependencies }
+          : {}),
+        ...(parsed.continueFrom !== undefined ? { continueFrom: parsed.continueFrom } : {}),
+        ...(parsed.continueContext !== undefined
+          ? { continueContext: parsed.continueContext }
+          : {}),
+      })
+    } finally {
+      startingContainerThreads.delete(threadId)
+    }
   })
   // Why each model could not run in a container, or null when it could — the
   // resolver's own answer, so the dialog's greyed rows never disagree with a
@@ -1889,6 +2044,11 @@ export function registerAllHandlers(
       return getContainerRunService().adopt(pid, tid, rid)
     },
   )
+  ipcMain.handle('threads:storage-size', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return measureThreadStorage(pid, tid)
+  })
   ipcMain.handle('threads:load-project', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zProjectId, [projectId])
@@ -2008,9 +2168,9 @@ export function registerAllHandlers(
   )
   ipcMain.handle(
     'threads:archive',
-    (event, projectId: unknown, threadId: unknown, discard: unknown) => {
+    (event, projectId: unknown, threadId: unknown, discard: unknown, stop: unknown) => {
       assertMainFrameSender(event, win)
-      const [pid, tid, discardChanges] = parseIpcArgs(
+      const [pid, tid, discardChanges, stopProcesses] = parseIpcArgs(
         z.tuple([
           zProjectId,
           zThreadId,
@@ -2018,10 +2178,11 @@ export function registerAllHandlers(
             .string()
             .regex(/^[a-f0-9]{64}$/)
             .nullable(),
+          z.boolean(),
         ]),
-        [projectId, threadId, discard],
+        [projectId, threadId, discard, stop],
       )
-      return archiveStoredThread(pid, tid, discardChanges, threadHistoryEditRuntime)
+      return archiveStoredThread(pid, tid, discardChanges, stopProcesses, threadArchivingRuntime)
     },
   )
   ipcMain.handle('threads:delete', (event, projectId: unknown, threadId: unknown) => {
@@ -2029,6 +2190,19 @@ export function registerAllHandlers(
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
     return deleteThreadResourcesAndStore(pid, tid, threadDeletionRuntime)
   })
+  // Active threads that link to a URL or another thread: an indexed read of
+  // recorded thread metadata that never touches a transcript.
+  ipcMain.handle(
+    'threads:backlinks',
+    (event, projectId: unknown, kind: unknown, target: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, linkKind, linkTarget] = parseIpcArgs(
+        z.tuple([zProjectId, z.enum(['url', 'thread']), z.string().min(1).max(2048)]),
+        [projectId, kind, target],
+      )
+      return lookupThreadBacklinks(pid, linkKind, linkTarget)
+    },
+  )
   // Seed a freshly created fork's provider-format history from the thread it was
   // branched off. The renderer owns the visible transcript copy; this is the
   // half it cannot do, since `agent-history.json` never leaves the main process.
@@ -2300,7 +2474,7 @@ export function registerAllHandlers(
   })
   ipcMain.handle('cursor-plugins:list', () => listCursorPlugins())
   ipcMain.handle('bundled-skill-plugins:list', () => listBundledSkillPlugins())
-  ipcMain.handle('hooks:list', async () => {
+  async function listDiscoveredHooks(): Promise<HooksListResult> {
     const root = getWorkspaceRoot()
     const opts = { workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) }
     const [cursor, claude, copse] = await Promise.all([
@@ -2312,25 +2486,21 @@ export function registerAllHandlers(
       hooks: [...cursor.hooks, ...claude.hooks, ...copse.hooks],
       warnings: [...cursor.warnings, ...claude.warnings, ...copse.warnings],
     }
-  })
+  }
+  ipcMain.handle('hooks:list', () => listDiscoveredHooks())
   ipcMain.handle('hooks:test', async (event, rawReq: unknown) => {
     assertMainFrameSender(event, win)
     // G2 dry-run tester: run one discovered hook once against a synthetic
     // payload and report stdin/stdout/stderr/exit/duration. `dryRunHook` is a
     // side-effect-free probe — it never records the spine, propagates session
-    // env, or applies the outcome (see dry-run.ts). Validate the request shape
-    // so a compromised renderer cannot pass an arbitrary command through here.
+    // env, or applies the outcome (see dry-run.ts). The renderer only names
+    // the hook: what is spawned (command, cwd, sandbox escape) comes from
+    // re-running discovery here, so a compromised renderer cannot run an
+    // arbitrary command or turn the sandbox off.
     const parsed = parseIpcArgs(zHookTestRequest, [rawReq])
-    // Rebuild explicitly so an omitted `sandbox` stays omitted (not `undefined`)
-    // under exactOptionalPropertyTypes.
-    return dryRunHook({
-      family: parsed.family,
-      event: parsed.event,
-      command: parsed.command,
-      source: parsed.source,
-      scope: parsed.scope,
-      ...(parsed.sandbox !== undefined ? { sandbox: parsed.sandbox } : {}),
-    })
+    const target = resolveHookTestTarget(parsed, (await listDiscoveredHooks()).hooks)
+    if (!target) throw new IpcValidationError('Hook test rejected: not a discovered hook')
+    return dryRunHook(target)
   })
   // Read one recorded hook execution back out of a thread's spine so the
   // hook-card inspector can show what the hook was handed and what it returned.
@@ -2387,7 +2557,7 @@ export function registerAllHandlers(
     await initSkillsRegistry()
     registerSkillTools(registry)
     const statuses = await reloadMcpServers(registry)
-    win.webContents.send('mcp:status-changed', statuses)
+    broadcastToAppWindows('mcp:status-changed', statuses)
     return result
   })
   ipcMain.handle(
@@ -2403,7 +2573,7 @@ export function registerAllHandlers(
       await initSkillsRegistry()
       registerSkillTools(registry)
       const statuses = await reloadMcpServers(registry)
-      win.webContents.send('mcp:status-changed', statuses)
+      broadcastToAppWindows('mcp:status-changed', statuses)
       return result
     },
   )
@@ -2421,7 +2591,7 @@ export function registerAllHandlers(
     await initSkillsRegistry()
     registerSkillTools(registry)
     const statuses = await reloadMcpServers(registry)
-    win.webContents.send('mcp:status-changed', statuses)
+    broadcastToAppWindows('mcp:status-changed', statuses)
     return result
   })
   ipcMain.handle('supervisor:list', async (event, rawProjectId: unknown) => {
@@ -2499,7 +2669,7 @@ export function registerAllHandlers(
       await initSkillsRegistry()
       registerSkillTools(registry)
       const statuses = await reloadMcpServers(registry)
-      win.webContents.send('mcp:status-changed', statuses)
+      broadcastToAppWindows('mcp:status-changed', statuses)
     }
     // Toggling the review plugin adds/removes its `review_changes` tool on the
     // live registry so the atomic plugin-disable also drops the tool from the
@@ -2563,7 +2733,7 @@ export function registerAllHandlers(
     // `render_html_artefact` tool must connect or disconnect with the toggle —
     // the same live reload the Apple Development toggle does below.
     const bundledMcpStatuses = await reloadMcpServersForPluginToggle(registry, id)
-    if (bundledMcpStatuses) win.webContents.send('mcp:status-changed', bundledMcpStatuses)
+    if (bundledMcpStatuses) broadcastToAppWindows('mcp:status-changed', bundledMcpStatuses)
     if (id === AUTOMATIONS_PLUGIN_ID) {
       getTaskSupervisor().syncCronTasks()
       await getAutomationService().sync()
@@ -2572,7 +2742,7 @@ export function registerAllHandlers(
     if (id === APPLE_DEVELOPMENT_PLUGIN_ID) {
       syncAppleDevelopmentTools(registry)
       const statuses = await reloadMcpServers(registry)
-      win.webContents.send('mcp:status-changed', statuses)
+      broadcastToAppWindows('mcp:status-changed', statuses)
       if (!enabled) {
         const activeProjectId = getActiveProjectId()
         if (activeProjectId) await getAppleDevelopmentService().cancelProject(activeProjectId)
@@ -2596,7 +2766,7 @@ export function registerAllHandlers(
       await getPluginService().setSetting(id, key, value)
       if (id === MCP_UI_CANVAS_PLUGIN_ID && key === ANIMATED_EXPLAINERS_SETTING_ID) {
         const statuses = await reloadMcpServersForPluginToggle(registry, id)
-        if (statuses) win.webContents.send('mcp:status-changed', statuses)
+        if (statuses) broadcastToAppWindows('mcp:status-changed', statuses)
       }
       return { plugins: getPluginService().list() }
     },
@@ -2653,6 +2823,18 @@ export function registerAllHandlers(
     },
   )
 
+  ipcMain.handle(
+    'automations:cleanup-runs',
+    async (event, rawProjectId: unknown, rawScheduleId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, scheduleId] = parseIpcArgs(
+        z.tuple([zProjectId, zNonEmptyString.max(256)]),
+        [rawProjectId, rawScheduleId],
+      )
+      return getAutomationService().cleanupRuns(projectId, scheduleId)
+    },
+  )
+
   ipcMain.handle('automations:list-branch-ci', (event, rawProjectId: unknown) => {
     assertMainFrameSender(event, win)
     const projectId = parseIpcArgs(zProjectId, [rawProjectId])
@@ -2667,7 +2849,8 @@ export function registerAllHandlers(
       return getBranchCiAutomationService().upsert(projectId, {
         ...(input.id ? { id: input.id } : {}),
         name: input.name,
-        branch: input.branch,
+        ...(input.branch !== undefined ? { branch: input.branch } : {}),
+        ...(input.trigger !== undefined ? { trigger: input.trigger } : {}),
         prompt: input.prompt,
         model: input.model,
         enabled: input.enabled,
@@ -2685,15 +2868,46 @@ export function registerAllHandlers(
   )
   ipcMain.handle(
     'automations:test-branch-ci',
-    async (event, rawProjectId: unknown, rawBranch: unknown) => {
+    async (event, rawProjectId: unknown, rawTrigger: unknown) => {
       assertMainFrameSender(event, win)
-      const [projectId, branch] = parseIpcArgs(
-        z.tuple([zProjectId, z.string().trim().min(1).max(200)]),
-        [rawProjectId, rawBranch],
+      const [projectId, trigger] = parseIpcArgs(
+        z.tuple([zProjectId, z.union([z.string().trim().min(1).max(200), zEventTriggerInput])]),
+        [rawProjectId, rawTrigger],
       )
-      return getBranchCiAutomationService().testMatch(projectId, { branch })
+      return getBranchCiAutomationService().testMatch(
+        projectId,
+        typeof trigger === 'string' ? { branch: trigger } : { trigger },
+      )
     },
   )
+  ipcMain.handle(
+    'automations:event-history',
+    async (event, rawProjectId: unknown, rawId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, id] = parseIpcArgs(z.tuple([zProjectId, z.uuid()]), [rawProjectId, rawId])
+      return getBranchCiAutomationService().history(projectId, id)
+    },
+  )
+  // The renderer reports what it saw while starting a run; main accepts it only for the
+  // latest run of a saved automation, so a stale or forged thread id changes nothing.
+  ipcMain.handle(
+    'automations:report-start-failure',
+    async (event, rawProjectId: unknown, rawThreadId: unknown, rawFailure: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, failure] = parseIpcArgs(
+        z.tuple([zProjectId, zNonEmptyString.max(256), zAutomationFailureReport]),
+        [rawProjectId, rawThreadId, rawFailure],
+      )
+      return (
+        (await getAutomationService().reportStartFailure(projectId, threadId, failure)) ||
+        (await getBranchCiAutomationService().reportStartFailure(projectId, threadId, failure))
+      )
+    },
+  )
+  ipcMain.handle('automations:scheduler-health', (event) => {
+    assertMainFrameSender(event, win)
+    return getAutomationService().health()
+  })
 
   ipcMain.handle(
     'automations:can-start',
@@ -2766,7 +2980,7 @@ export function registerAllHandlers(
         enrolled,
       )
       const statuses = await reloadMcpServers(registry)
-      win.webContents.send('mcp:status-changed', statuses)
+      broadcastToAppWindows('mcp:status-changed', statuses)
       return state
     },
   )
@@ -3030,15 +3244,19 @@ export function registerAllHandlers(
     const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitBranchStatus(projectId, branch, root)
   })
+  const threadCheckoutBusy = (projectId: string, threadId: string): boolean =>
+    isDispatcherThreadActive(projectId, threadId) ||
+    listRunningThreadIds().includes(threadId) ||
+    hasBackgroundProcessesForThread({ projectId, threadId })
   ipcMain.handle('git:worktree-attachment', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return inspectThreadCheckoutAttachment(projectId, threadId)
+    return inspectThreadCheckoutAttachment(projectId, threadId, threadCheckoutBusy)
   })
   ipcMain.handle('git:reattach-worktree', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return reattachThreadCheckout(projectId, threadId)
+    return reattachThreadCheckout(projectId, threadId, threadCheckoutBusy)
   })
   ipcMain.handle('git:prompt-state', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -3210,6 +3428,15 @@ export function registerAllHandlers(
       assertMainFrameSender(event, win)
       const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
       const parsedPath = parseIpcArgs(z.string().min(1).max(4096), [path])
+      if (parsedAgentId.startsWith('openai:')) {
+        const data = await readOpenAiArtifact(parsedAgentId.slice('openai:'.length), parsedPath)
+        const result = await dialog.showSaveDialog(win, {
+          title: 'Save agent artifact',
+          defaultPath: `agent-artifact${extname(parsedPath)}`,
+        })
+        if (!result.canceled && result.filePath) await writeFile(result.filePath, data)
+        return ''
+      }
       return resolveRemoteArtifactDownloadUrl({ agentId: parsedAgentId, path: parsedPath })
     },
   )
@@ -3256,10 +3483,20 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     return detectAcpAgents()
   })
+  ipcMain.handle('acp:browse-registry', (event, refresh: unknown) => {
+    assertMainFrameSender(event, win)
+    const force = parseIpcArgs(z.boolean().optional(), [refresh])
+    return browseAcpRegistry(force)
+  })
   ipcMain.handle('acp:probe-agent', (event, agentId: unknown) => {
     assertMainFrameSender(event, win)
     if (typeof agentId !== 'string') throw new Error('acp:probe-agent requires an agent id')
     return probeAcpAgentForSettings(agentId)
+  })
+  ipcMain.handle('acp:auth-status', (event, ids: unknown) => {
+    assertMainFrameSender(event, win)
+    const agentIds = parseAcpAuthStatusArgs([ids])
+    return detectAcpAuthStatus(agentIds)
   })
   ipcMain.handle('acp:auto-setup', (event) => {
     assertMainFrameSender(event, win)
@@ -3331,7 +3568,18 @@ export function registerAllHandlers(
   ipcMain.handle('panes:popout', (event, mode: unknown, seed: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
+      z.enum([
+        'explorer',
+        'context',
+        'side-chat',
+        'terminal',
+        'changes',
+        'prs',
+        'memories',
+        'roadmap',
+        'browser',
+        'vnc',
+      ]),
       [mode],
     )
     createPanePopoutWindow(parsed, seed)
@@ -3340,7 +3588,18 @@ export function registerAllHandlers(
   ipcMain.handle('panes:take-popout-seed', (event, mode: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
+      z.enum([
+        'explorer',
+        'context',
+        'side-chat',
+        'terminal',
+        'changes',
+        'prs',
+        'memories',
+        'roadmap',
+        'browser',
+        'vnc',
+      ]),
       [mode],
     )
     return takePopoutSeed(parsed)
@@ -3377,7 +3636,7 @@ export function registerAllHandlers(
   ipcMain.handle('mcp:reload', async (event) => {
     assertMainFrameSender(event, win)
     const statuses = await reloadMcpServers(registry)
-    win.webContents.send('mcp:status-changed', statuses)
+    broadcastToAppWindows('mcp:status-changed', statuses)
     return statuses
   })
   ipcMain.handle('mcp:set-enabled', async (event, name: unknown, enabled: unknown) => {
@@ -3388,13 +3647,13 @@ export function registerAllHandlers(
     ])
     await setMcpServerUserEnabled(parsedName, parsedEnabled)
     const statuses = await reloadMcpServers(registry)
-    win.webContents.send('mcp:status-changed', statuses)
+    broadcastToAppWindows('mcp:status-changed', statuses)
     return statuses
   })
   // Status changes the registry makes on its own (a sign-in refused while a
   // server was connected) reach Settings the same way a reload's do.
   onMcpStatusesChanged((statuses) => {
-    if (!win.isDestroyed()) win.webContents.send('mcp:status-changed', statuses)
+    broadcastToAppWindows('mcp:status-changed', statuses)
   })
   // One browser sign-in per server at a time; starting another cancels the first.
   const mcpSignIns = new Map<string, AbortController>()
@@ -3421,7 +3680,7 @@ export function registerAllHandlers(
       if (mcpSignIns.get(parsedName) === controller) mcpSignIns.delete(parsedName)
     }
     const statuses = await reloadMcpServers(registry)
-    win.webContents.send('mcp:status-changed', statuses)
+    broadcastToAppWindows('mcp:status-changed', statuses)
     return statuses
   })
   ipcMain.handle('mcp:cancel-sign-in', (event, name: unknown) => {
@@ -3434,7 +3693,7 @@ export function registerAllHandlers(
     const parsedName = parseIpcArgs(zMcpServerName, [name])
     await signOutMcpServer(mcpSignInTargetUrl(parsedName))
     const statuses = await reloadMcpServers(registry)
-    win.webContents.send('mcp:status-changed', statuses)
+    broadcastToAppWindows('mcp:status-changed', statuses)
     return statuses
   })
   ipcMain.handle('mcp:list-curated', (event) => {
@@ -3453,7 +3712,7 @@ export function registerAllHandlers(
     ])
     await setCuratedServerEnabled(parsedName, parsedEnabled)
     const statuses = await reloadMcpServers(registry)
-    win.webContents.send('mcp:status-changed', statuses)
+    broadcastToAppWindows('mcp:status-changed', statuses)
     return getCuratedServerStatuses(statuses)
   })
   ipcMain.handle('workspace:is-trusted', () => isWorkspaceTrusted(getWorkspaceRoot()))
@@ -3465,7 +3724,7 @@ export function registerAllHandlers(
     // Spawning project MCP servers is the code-execution sink, so trusting a workspace
     // is a privileged action — only the main frame may request it (issue #100).
     const statuses = await setWorkspaceTrustAndReload(registry, root, trusted)
-    win.webContents.send('mcp:status-changed', statuses)
+    broadcastToAppWindows('mcp:status-changed', statuses)
     return statuses
   })
 
@@ -3500,6 +3759,7 @@ export function registerAllHandlers(
       type: z.string().min(1).max(128),
       collapseDetails: z.boolean().optional(),
       approveOnceLabel: z.string().max(500).optional(),
+      approveLabel: z.string().max(500).optional(),
     })
 
     ipcMain.handle('test:setMockScenario', (event, id: unknown, raw: unknown, scope: unknown) => {

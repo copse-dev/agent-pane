@@ -1,4 +1,6 @@
+import { planToolBlockReason } from '../thread-plan-context.ts'
 import { z } from 'zod'
+import { browserApprovalDetails, webApprovalDetails } from '@shared/approval-copy.ts'
 import { assertPreparationPlan } from '../worktree-preparation.ts'
 import {
   containedPreparationPath,
@@ -13,6 +15,8 @@ import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { getWorkspaceRoot } from '../workspace.ts'
+import { getChatStoreRoot } from '../workspace.ts'
+import { ensureThreadAccess, needsOtherThreadRead } from './thread-access.ts'
 import { getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
 import {
   getActiveExecutionTarget,
@@ -43,9 +47,12 @@ import {
 } from '../../project-sandbox/network-scope.ts'
 import { acpBridgeNetworkScopeAlreadyApplies } from '../acp/acp-bridge-permission-context.ts'
 import { classifyShellScope } from './safety-classifier.ts'
+import { classifierSendsOffMachine } from '../classifiers/classifier-service.ts'
 import { currentRunIsUnattendedContainer } from './unattended-run.ts'
 import { decideContainedShellEffect } from '@copse/shell-guard/container-effects.ts'
-import { requestApproval } from '../approval.ts'
+import { detectCheckoutDetachingCommand } from '@copse/shell-guard/checkout-detach.ts'
+import { isInsideManagedThreadWorktree } from '../worktree-manager.ts'
+import { requestApproval, type ApprovalRequest } from '../approval.ts'
 import { recordDecision } from './decision-log-store.ts'
 import { getSetting, updateSetting } from '../storage/settings.ts'
 import {
@@ -57,7 +64,6 @@ import {
   decideWebSearchPermission,
   describeMcpAnnotations,
   fetchUrlFromArgs,
-  formatWebPromptBody,
   shellCommandFromArgs,
   formatShellPromptParts,
   formatPortBindingPromptParts,
@@ -89,10 +95,8 @@ import {
   READ_ONLY_BROWSER_TOOLS,
   BROWSER_ALLOW_USER_APPROVAL_SETTING,
   decideBrowserNavigation,
-  formatBrowserPromptBody,
 } from '../browser/browser-origin-policy.ts'
 import {
-  DEFAULT_WEB_ALLOWED_ORIGINS,
   WEB_ALLOWED_ORIGINS_SETTING,
   WEB_ALLOW_USER_APPROVAL_SETTING,
   grantWebOriginForNextFetch,
@@ -265,9 +269,22 @@ function autoApproveShell(
   return true
 }
 
+/** Observation only: no commands, credential values or grant contents are copied. */
+function shellApprovalAuditContext(): NonNullable<ApprovalRequest['shellContext']> {
+  const threadId = getActiveRunThread()
+  return {
+    sandboxAvailable: commandRunsSandboxed(getAgentExecutionRoot()),
+    autoRunEnabled: getSetting<boolean>('autoRunSandboxCommands', true),
+    workspaceTrusted: isWorkspaceTrusted(getWorkspaceRoot()),
+    guardedYolo: currentRunUsesGuardedYolo(threadId),
+    networkScopeActive: isSandboxNetworkScopeActive(),
+  }
+}
+
 async function requestEscalationApproval(
   title: string,
   parts: ShellPromptParts,
+  reasons: string[],
   cause: PromptCause,
   signal?: AbortSignal,
   leaseIdentity?: ShellReplayLeaseIdentity,
@@ -277,11 +294,14 @@ async function requestEscalationApproval(
   const { approved, remember, grantScope } = await requestApproval(
     {
       title,
+      approveLabel: 'Run command',
       type: 'shell',
       ...shellPromptToApprovalFields(parts),
       subject: SHELL_DECISION_SUBJECT,
       scope: 'external',
       cause,
+      reasons,
+      shellContext: shellApprovalAuditContext(),
       allowRemember: trustable !== null,
       ...(trustable ? { rememberLabel: `Always allow \`${trustable}\` in trusted projects` } : {}),
       ...(leaseIdentity
@@ -318,8 +338,8 @@ function readsOnlyUserTemp(paths: readonly string[]): boolean {
  * Returns null when the command is not that shape, so the caller falls through
  * to its normal prompt. Otherwise the thread's standing grant answers it, or the
  * user is asked with the narrower read-access wording — where the primary button
- * grants the shape for the rest of the thread and the secondary one approves
- * just this command.
+ * grants the named paths (and descendants of any directories) for the rest
+ * of the thread; the secondary button approves just this command.
  *
  * Every outcome lands in the durable decision log, naming the paths that were at
  * stake. The grant itself is held in memory (`read-outside-grant.ts`) and dies
@@ -365,7 +385,7 @@ async function resolveReadOutsideProject(
   }
 
   const threadId = getActiveRunThread()
-  if (hasReadOutsideProjectGrant(threadId)) {
+  if (hasReadOutsideProjectGrant(threadId, analysis.resolvedTargets)) {
     recordDecision({
       kind: 'shell',
       actor: 'user',
@@ -393,13 +413,16 @@ async function resolveReadOutsideProject(
       // the scope one; the third button that approves only this command appears
       // with the details it refers to.
       collapseDetails: true,
+      approveLabel: 'Allow reads for this chat',
       approveOnceLabel: 'Approve this command',
     },
     signal,
   )
   // A handler with no thread (headless/ACP) can hold no grant, so its approval
   // covers this command only.
-  if (approved && remember && threadId) grantReadOutsideProject(threadId)
+  if (approved && remember && threadId) {
+    grantReadOutsideProject(threadId, analysis.resolvedTargets)
+  }
   return approved
 }
 
@@ -423,19 +446,27 @@ async function promptShell(
     return requestEscalationApproval(
       'Run outside sandbox?',
       formatExternalSandboxPromptParts(command, reasons),
+      reasons,
       'shell-sandbox-escalation',
       signal,
       leaseIdentity,
     )
   }
+  const sandboxed =
+    containedCause !== 'shell-no-containment' &&
+    (containedCause !== 'shell-network-scope-overlap' ||
+      commandRunsSandboxed(getAgentExecutionRoot()))
   const { approved, grantScope } = await requestApproval(
     {
-      title: 'Run shell command?',
+      title: sandboxed ? 'Run shell command?' : 'Run without sandbox?',
+      approveLabel: 'Run command',
       type: 'shell',
-      ...shellPromptToApprovalFields(formatShellPromptParts(command, reasons)),
+      ...shellPromptToApprovalFields(formatShellPromptParts(command, reasons, sandboxed)),
       subject: SHELL_DECISION_SUBJECT,
-      scope: 'sandbox',
+      scope: sandboxed ? 'sandbox' : 'external',
       cause: containedCause,
+      reasons,
+      shellContext: shellApprovalAuditContext(),
       // A sandboxed approval includes a bounded replay lease by default. The
       // prompt names the 10-retry/15-minute bound; outside-sandbox grants remain
       // explicit because they weaken containment.
@@ -456,14 +487,25 @@ async function promptShell(
   return approved
 }
 
+export const AUTOMATIC_SHELL_SAFETY_TIMEOUT_MS = 120_000
+
+function checkSafetyPromptTimeout(response: { resolution?: string }): void {
+  if (response.resolution === 'timeout') {
+    throw new Error(
+      'Command denied: safety confirmation timed out after two minutes. Rewrite the command to avoid recursive or broad deletion, use explicit scoped paths, and continue with safer work. Do not retry the same command unattended.',
+    )
+  }
+}
+
 async function promptGuardedYoloHarm(
   command: string,
   reasons: string[],
   sandboxed: boolean,
   signal?: AbortSignal,
 ): Promise<boolean> {
-  const { approved } = await requestApproval(
+  const response = await requestApproval(
     {
+      timeoutMs: AUTOMATIC_SHELL_SAFETY_TIMEOUT_MS,
       title: 'Guarded YOLO safety check',
       body: command,
       bodyAdvice: formatGuardedYoloHarmPromptAdvice(reasons),
@@ -473,11 +515,15 @@ async function promptGuardedYoloHarm(
       type: 'shell',
       scope: sandboxed ? 'sandbox' : 'external',
       cause: 'shell-guarded-yolo-harm',
+      subject: SHELL_DECISION_SUBJECT,
+      reasons,
+      shellContext: shellApprovalAuditContext(),
       allowRemember: false,
     },
     signal,
   )
-  return approved
+  checkSafetyPromptTimeout(response)
+  return response.approved
 }
 
 /**
@@ -509,6 +555,7 @@ export async function promptUnsandboxedShell(
   return requestEscalationApproval(
     'Run outside sandbox?',
     formatUnsandboxedPromptParts(command, reasons),
+    reasons,
     'shell-sandbox-retry',
     signal,
   )
@@ -523,19 +570,23 @@ export async function promptExpectedSandboxBlock(
   command: string,
   reasons: string[],
   signal?: AbortSignal,
-  opts: { requireInteractiveApproval?: boolean } = {},
+  opts: { source?: 'agent' | 'prior-denial' } = {},
 ): Promise<boolean> {
-  const forceAsk =
-    opts.requireInteractiveApproval === true || resolveToolPermission('run_shell')?.policy === 'ask'
-  if (!forceAsk && autoApproveShell(command, 'external')) return true
+  // An explicit escape request must reach the user even when deterministic tiers
+  // would approve the command. The caller handles already-authorized run modes.
   const { approved } = await requestApproval(
     {
-      title: 'Run outside sandbox?',
+      title:
+        opts.source === 'prior-denial' ? 'Run outside sandbox?' : 'Agent requests sandbox escape',
       type: 'shell',
-      ...shellPromptToApprovalFields(formatExpectedSandboxBlockPromptParts(command, reasons)),
+      ...shellPromptToApprovalFields(
+        formatExpectedSandboxBlockPromptParts(command, reasons, opts.source),
+      ),
       subject: SHELL_DECISION_SUBJECT,
       scope: 'external',
       cause: 'shell-expected-sandbox-block',
+      reasons,
+      shellContext: shellApprovalAuditContext(),
     },
     signal,
   )
@@ -697,13 +748,22 @@ async function checkMcpPermission(
   if (decision.action === 'allow') return true
 
   const hints = describeMcpAnnotations(meta?.annotations)
-  const bodyLines = [JSON.stringify(args, null, 2)]
-  if (hints.length) bodyLines.push('', `Hints: ${hints.join(', ')}`)
 
   const { approved, remember } = await requestApproval(
     {
       title: `MCP tool: ${mcpToolLabel(toolName)}`,
-      body: bodyLines.join('\n'),
+      body: JSON.stringify(args, null, 2),
+      bodyAdvice:
+        'These arguments are sent to the MCP server. The tool may change files or external services using the server’s access.' +
+        (hints.length
+          ? `\n\nServer-reported hints (not verified by Copse): ${hints.join(', ')}`
+          : ''),
+      bodyFooter:
+        explicitPolicy === 'ask'
+          ? 'Approval runs this call once.'
+          : automation
+            ? 'Approval runs this call once. Remembering allows this tool with other arguments in future runs of the named schedule.'
+            : 'Approval runs this call once. “Always allow” permits this exact tool with other arguments in future chats.',
       type: 'mcp',
       subject: toolName,
       scope: 'external',
@@ -711,7 +771,7 @@ async function checkMcpPermission(
       allowRemember: explicitPolicy !== 'ask',
       ...(automation
         ? { rememberLabel: automationRememberLabel('tool', automation.scheduleName) }
-        : {}),
+        : { rememberLabel: `Always allow ${mcpToolLabel(toolName)}` }),
     },
     signal,
   )
@@ -738,20 +798,22 @@ async function rememberWebOrigin(origin: string): Promise<void> {
 
 async function promptWebOrigin(
   origin: string,
-  detail: string,
+  url: string,
   signal?: AbortSignal,
   allowRemember = true,
+  context?: string,
 ): Promise<boolean> {
   const { approved, remember } = await requestApproval(
     {
       title: 'Allow web origin?',
-      body: formatWebPromptBody(origin, detail),
+      ...webApprovalDetails(origin, url, allowRemember, context),
+      approveLabel: 'Allow request',
       type: 'web',
       cause: 'web-origin',
       subject: origin,
       scope: 'external',
       allowRemember,
-      ...(allowRemember ? { rememberLabel: 'Always allow this web origin' } : {}),
+      ...(allowRemember ? { rememberLabel: `Always allow ${origin}` } : {}),
     },
     signal,
   )
@@ -808,10 +870,32 @@ async function checkWebSearchPermission(
   }
   return promptWebOrigin(
     decision.origin,
-    `DuckDuckGo search is allowed by default through: ${DEFAULT_WEB_ALLOWED_ORIGINS.join(', ')}`,
+    decision.origin,
     signal,
     explicitPolicy !== 'ask',
+    'Search queries will be sent to DuckDuckGo.',
   )
+}
+
+/**
+ * `ask_classifier` sends model-supplied input to a saved classifier connection.
+ * Host approval is the classifier service's own gate, applied again at call
+ * time (`assertApprovedProviderHost`), so a host the user never approved fails
+ * there whatever this returns. This gate decides whether the call needs a
+ * prompt: a connection that leaves the machine asks, a local server or SemIf
+ * scorer does not, and an explicit "allow" or "ask" override wins either way.
+ */
+async function checkAskClassifierPermission(
+  args: unknown,
+  signal?: AbortSignal,
+  explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
+): Promise<boolean> {
+  if (explicitPolicy === 'allow') return true
+  const id = isRecord(args) && typeof args['classifier'] === 'string' ? args['classifier'] : ''
+  if (explicitPolicy === 'ask' || classifierSendsOffMachine(id)) {
+    return promptExplicitToolAsk('ask_classifier', args, signal)
+  }
+  return true
 }
 
 async function checkParallelSearchPermission(
@@ -841,9 +925,10 @@ async function checkParallelSearchPermission(
   }
   return promptWebOrigin(
     decision.origin,
-    'The objective and search queries will be sent to Parallel. Requests may consume paid API credits; Zero Data Retention depends on your Parallel account agreement.',
+    PARALLEL_SEARCH_API_URL,
     signal,
     explicitPolicy !== 'ask',
+    'The objective and search queries will be sent to Parallel. Requests may consume paid API credits; Zero Data Retention depends on your Parallel account agreement.',
   )
 }
 
@@ -868,9 +953,16 @@ async function checkCustomToolPermission(
     {
       title: `Custom tool: ${customToolLabel(toolName)}`,
       body: JSON.stringify(args, null, 2),
+      bodyAdvice:
+        'This runs user-authored code with your user account’s access to files and the network. Review the arguments before allowing it.',
+      bodyFooter:
+        explicitPolicy === 'ask' || alwaysPrompt
+          ? 'Approval covers this call once.'
+          : 'Approval covers this call once. “Always allow” permits this exact tool with other arguments in future chats.',
       type: 'mcp',
       cause: 'custom-tool',
       allowRemember: explicitPolicy !== 'ask' && !alwaysPrompt,
+      rememberLabel: `Always allow ${customToolLabel(toolName)}`,
     },
     signal,
   )
@@ -927,8 +1019,13 @@ async function checkGithubWriteToolPermission(
   const prompt = formatGithubWritePrompt(toolName, args)
   const { approved, remember } = await requestApproval(
     {
-      title: prompt.title,
-      body: prompt.body,
+      ...prompt,
+      ...(automation
+        ? {
+            bodyFooter:
+              'Approval covers this action once. Remembering permits this GitHub action for other pull requests in this project in future runs of the named schedule.',
+          }
+        : {}),
       type: 'mcp',
       cause: 'github-write',
       allowRemember: automation !== null,
@@ -1164,14 +1261,74 @@ async function ensureContainedShellCommandPermitted(
   return approved
 }
 
+/**
+ * A thread's isolated worktree is bound to its branch. A rebase that stops, a
+ * bisect or a detached switch leaves it on no branch or mid-operation, and only
+ * a person at a terminal can finish that, so the command is refused outright
+ * (no prompt: approving it would just strand the thread) with what to do
+ * instead. Exits from an operation already under way are not refused.
+ */
+function refuseCheckoutDetachingCommand(
+  command: string,
+  opts: ShellCommandPermissionOptions,
+): void {
+  const found = detectCheckoutDetachingCommand(command)
+  if (!found) return
+  const root = opts.executionRoot ?? getAgentExecutionRoot()
+  if (!root || !isInsideManagedThreadWorktree(root)) return
+  const reason = `${found.operation} would leave this thread's isolated checkout without its branch`
+  recordDecision({
+    kind: 'shell',
+    actor: 'system',
+    verdict: 'blocked',
+    subject: SHELL_DECISION_SUBJECT,
+    scope: 'worktree',
+    reasons: [reason],
+    source: 'thread-worktree-guard',
+  })
+  throw new Error(`Command blocked: ${reason}. ${found.advice}`)
+}
+
 /** Gate a raw shell command string through the same approval flow as run_shell. */
 export async function ensureShellCommandPermitted(
   command: string,
   opts: ShellCommandPermissionOptions = {},
 ): Promise<boolean> {
   if (opts.signal?.aborted) return false
+  refuseCheckoutDetachingCommand(command, opts)
   const forceAsk = opts.toolPolicy === 'ask'
   const runThread = getActiveRunThread()
+  // Plain reads of the chat store ask for the narrow conversation permission
+  // before any outside-project grant or auto-run route can cover them.
+  const readAnalysis = analyzeReadOutsideProject(
+    command,
+    opts.executionRoot ?? getAgentExecutionRoot(),
+  )
+  if (
+    readAnalysis.eligible &&
+    runThread &&
+    !spawnRunsOnSshTarget(opts.executionRoot ?? getAgentExecutionRoot())
+  ) {
+    const chatRoot = await getChatStoreRoot()
+    if (
+      chatRoot &&
+      readAnalysis.resolvedTargets.some((path) => {
+        if (needsOtherThreadRead(path, chatRoot)) return true
+        // Outside-path consent cannot substitute for conversation consent.
+        // The sandbox read overlay also resolves symlinks, so inspect the same
+        // destination before a named-path grant can authorize this read.
+        try {
+          return needsOtherThreadRead(realpathSync.native(path), chatRoot)
+        } catch {
+          // Missing/unreadable targets cannot expose a transcript. Lexical
+          // chat-store paths were already checked above, including missing ones.
+          return false
+        }
+      })
+    ) {
+      if (!(await ensureThreadAccess('read', opts.signal))) return false
+    }
+  }
   // An unattended run inside an attested container answers by blast radius
   // (`docs/plans/thread-in-container.md`): contained effects run, outward
   // effects queue for review, host escapes are refused. Nothing below applies —
@@ -1454,8 +1611,14 @@ export async function ensureShellCommandPermitted(
   // generic external-command reason list. Only when the install is the *sole*
   // flagged signal (one reason) — compound or registry-redirected commands keep
   // the full reason list so extra risks (curl, custom registry, …) stay visible.
+  // In the sandbox a runner alone is allowed, so a lone destructive reason
+  // (`rm -f x && npx wdio`) is the real cause and must not be relabelled.
   const install = detectPackageInstall(command)
-  if (install.isInstall && effectiveReasons.length === 1) {
+  if (
+    install.isInstall &&
+    effectiveReasons.length === 1 &&
+    dangerousInSandboxReasons(command).length === 0
+  ) {
     const safeInstall = getSetting<boolean>('safeInstallEnabled', true)
     const { approved } = await requestApproval(
       install.isEphemeralRunner
@@ -1463,10 +1626,13 @@ export async function ensureShellCommandPermitted(
             title: 'Run package command?',
             type: 'shell',
             ...shellPromptToApprovalFields(
-              formatEphemeralRunnerPromptParts(command, { outsideSandbox, safeInstall }),
+              formatEphemeralRunnerPromptParts(command, {
+                outsideSandbox: outsideSandbox || !sandboxEnabled,
+                safeInstall,
+              }),
             ),
             subject: SHELL_DECISION_SUBJECT,
-            scope: outsideSandbox ? 'external' : 'sandbox',
+            scope: outsideSandbox || !sandboxEnabled ? 'external' : 'sandbox',
             cause: 'shell-package-install',
           }
         : {
@@ -1474,13 +1640,13 @@ export async function ensureShellCommandPermitted(
             type: 'shell',
             ...shellPromptToApprovalFields(
               formatInstallPromptParts(command, {
-                outsideSandbox,
+                outsideSandbox: outsideSandbox || !sandboxEnabled,
                 safeInstall,
                 jsManager: install.jsManager,
               }),
             ),
             subject: SHELL_DECISION_SUBJECT,
-            scope: outsideSandbox ? 'external' : 'sandbox',
+            scope: outsideSandbox || !sandboxEnabled ? 'external' : 'sandbox',
             cause: 'shell-package-install',
           },
       opts.signal,
@@ -1491,6 +1657,32 @@ export async function ensureShellCommandPermitted(
   // Distinguish "contained, but policy still wants a human" from "nothing is
   // containing this at all" — the second is the prompt a container would remove,
   // and collapsing them would make the U0 measurement unreadable.
+  if (autoRun && !forceAsk && dangerousInSandboxReasons(command).length > 0) {
+    const response = await requestApproval(
+      {
+        timeoutMs: AUTOMATIC_SHELL_SAFETY_TIMEOUT_MS,
+        title: 'Run shell command?',
+        type: 'shell',
+        ...shellPromptToApprovalFields(
+          outsideSandbox || !sandboxEnabled
+            ? formatExternalSandboxPromptParts(command, effectiveReasons)
+            : formatShellPromptParts(command, effectiveReasons),
+        ),
+        subject: SHELL_DECISION_SUBJECT,
+        scope: outsideSandbox || !sandboxEnabled ? 'external' : 'sandbox',
+        cause: !sandboxEnabled
+          ? 'shell-no-containment'
+          : outsideSandbox
+            ? 'shell-sandbox-escalation'
+            : 'shell-in-sandbox',
+        allowRemember: false,
+      },
+      opts.signal,
+    )
+    checkSafetyPromptTimeout(response)
+    return response.approved
+  }
+
   return promptShell(
     command,
     effectiveReasons,
@@ -1572,12 +1764,14 @@ async function checkBrowserNavigatePermission(
   const { approved, remember } = await requestApproval(
     {
       title: 'Allow browser navigation?',
-      body: formatBrowserPromptBody(decision.origin, url),
+      ...browserApprovalDetails(decision.origin, url, explicitPolicy !== 'ask'),
+      approveLabel: 'Allow navigation',
       type: 'mcp',
       cause: 'browser-navigation',
       subject: url,
       scope: 'external',
       allowRemember: explicitPolicy !== 'ask',
+      rememberLabel: `Always allow ${decision.origin}`,
     },
     signal,
   )
@@ -1630,7 +1824,7 @@ async function checkBackgroundProcessPermission(
     )
   }
 
-  const root = getAgentExecutionRoot()
+  const root = getAgentProjectRoot()
   if (!root) throw new Error('No workspace open.')
 
   const allowed = getSetting<string[]>(PORT_BINDING_ALLOWED_ROOTS_SETTING, [])
@@ -1904,6 +2098,7 @@ export async function ensureToolPermitted(
   signal?: AbortSignal,
   afterHooks?: (effectiveArgs: unknown) => Promise<void>,
 ): Promise<boolean> {
+  if (planToolBlockReason(check.toolName)) return false
   const initialOverride = resolveToolPermission(check.toolName)
   if (initialOverride) recordExplicitToolPolicy(check.toolName, initialOverride)
   if (initialOverride?.policy === 'block') return false
@@ -1957,6 +2152,8 @@ export async function ensureToolPermitted(
     permitted = await checkWebSearchPermission(signal, explicitPolicy)
   } else if (toolName === 'parallel_search') {
     permitted = await checkParallelSearchPermission(signal, explicitPolicy)
+  } else if (toolName === 'ask_classifier') {
+    permitted = await checkAskClassifierPermission(args, signal, explicitPolicy)
   } else if (toolName === 'image_gen') {
     // The configured OpenAI credential is the network authority, as it is for
     // ordinary model requests. Keep the tool in the explicit network branch so

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   getThreadExecutionContext,
   inspectThreadCheckoutRoot,
+  reattachThreadCheckout,
   prepareThreadExecutionContext,
   requireThreadExecutionContext,
   resolveThreadExecutionContext,
@@ -578,6 +579,15 @@ describe('inspectThreadCheckoutRoot', () => {
         getThreadMeta: async () => ({ id: 'thread-1' }),
       }),
       null,
+    )
+  })
+})
+
+describe('reattachThreadCheckout', () => {
+  it('refuses while the agent or a background task can still touch the checkout', async () => {
+    await assert.rejects(
+      reattachThreadCheckout('project-1', 'thread-1', () => true),
+      /agent is still working in this checkout/,
     )
   })
 })

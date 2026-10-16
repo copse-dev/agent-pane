@@ -1,6 +1,8 @@
 import { mountProductAnnouncements } from '../views/product-announcement-dialog.ts'
 import { openSettingsDialog } from '../views/settings-dialog.ts'
 import { DEMO_PRODUCT_ANNOUNCEMENTS } from './announcement-fixtures.ts'
+import { PRODUCT_ANNOUNCEMENTS } from '../product-announcements.ts'
+import { useAnnouncementCatalog } from '../announcement-catalog.ts'
 import './demo.css'
 import { createDemoApi } from './demo-api.ts'
 import { selectDemoScenario } from './scenarios.ts'
@@ -31,6 +33,10 @@ const autoplay = flag(params, 'autoplay', scenario.trace !== undefined)
 // makes Chromium scroll the containing marketing page back to the hero.
 const embedded = flag(params, 'embedded', false)
 
+// Every fixture profile is an existing user with no history; none should be
+// greeted by the shipped catalog. Scenarios that are about announcements mount
+// theirs below.
+useAnnouncementCatalog([])
 window.api = createDemoApi(scenario, { trace: { instant: reducedMotion } })
 document.documentElement.dataset['demoScenario'] = scenario.id
 if (scenario.staticSite) document.documentElement.dataset['demoStaticSite'] = scenario.staticSite
@@ -42,7 +48,10 @@ void import('../main.ts').then(async (main) => {
   if (scenario.id.startsWith('product-announcements')) {
     await mountProductAnnouncements(
       window.api.settings,
-      DEMO_PRODUCT_ANNOUNCEMENTS,
+      // `shipped` mounts the real catalog; every other scenario injects sample copy.
+      scenario.id === 'product-announcements-shipped'
+        ? PRODUCT_ANNOUNCEMENTS
+        : DEMO_PRODUCT_ANNOUNCEMENTS,
       openSettingsDialog,
       scenario.settings['onboardingCompleted'] !== true,
     )

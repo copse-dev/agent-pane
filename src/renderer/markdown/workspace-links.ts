@@ -43,6 +43,21 @@ export function bindWorkspaceLinkClicks(
 
     const href = workspaceHrefFromLink(link)
     if (!href) return
+    // Older OpenAI messages linked directly into chat storage, outside the index.
+    const artifact =
+      /\/([^/]+)\/blobs\/openai-artifacts\/([a-f0-9]{64}\/[a-f0-9]{64}\.[a-zA-Z0-9]{1,10})$/.exec(
+        href,
+      )
+    if (artifact?.[1] && artifact[2]) {
+      event.preventDefault()
+      event.stopPropagation()
+      void api.remoteAgent
+        .downloadArtifact(`openai:${artifact[1]}`, artifact[2])
+        .catch((error: unknown) => {
+          showErrorToast('Failed to save agent artifact', error)
+        })
+      return
+    }
     const parsed = workspaceLinkTargetFromHref(href)
     if (!parsed) return
     const owner = getActiveThreadOwner(store)

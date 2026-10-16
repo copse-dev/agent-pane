@@ -89,11 +89,21 @@ const CMD_POS = String.raw`(?:^|[\n|;&(])\s*`
 
 // Direct execution of a workspace-relative file (`./build`, `../tool`, `bin/x`).
 // The agent can author and `chmod +x` such a file, so its contents are opaque to
-// this classifier (and to the file-blind safety classifier) — a hard escape even
-// under the sandbox, exactly like `node ./x.js`. Shared verbatim between the regex
+// this classifier. Opaque code starts inside an active OS sandbox; uncertainty
+// does not establish a need to escape it. Shared verbatim between the regex
 // entry and the token layer so the two dedupe against each other. (#581)
 const REASON_LOCAL_EXECUTABLE: ScopeReason =
   'executes an in-workspace file directly (contents opaque to analysis)'
+
+// Handing a file or URL to the OS opener launches a host app outside the sandbox.
+// Shared between the regex entries and the token layer, which also sees the
+// opener behind a wrapper (`nohup open …`) the command-position regex misses.
+const REASON_OPEN: ScopeReason = 'launches a host app/file outside the sandbox (open)'
+const REASON_XDG_OPEN: ScopeReason = 'launches a host app/file outside the sandbox (xdg-open)'
+const HOST_OPENERS: ReadonlyMap<string, ScopeReason> = new Map([
+  ['open', REASON_OPEN],
+  ['xdg-open', REASON_XDG_OPEN],
+])
 
 // Commands that clearly reach outside the workspace or network.
 //
@@ -117,9 +127,10 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: bo
     reason: 'package install/update (may fetch + run code from network)',
   },
   {
-    // `exec` runs a project command. npm may fetch a missing binary and pnpm may
-    // install stale dependencies when verifyDepsBeforeRun=install, so let the OS
-    // sandbox contain it and offer escalation only after a verified block.
+    // `exec` runs a project command, but npm may fetch a missing binary, so let
+    // the OS sandbox contain it and offer escalation only after a verified block.
+    // A local `pnpm exec` in command position is rewritten to `pnpm run` before
+    // these patterns run (see collectExternalReasons), so it is contained outright.
     re: /\b(?:npm|yarn|pnpm|bun)\s+exec\b/i,
     reason: 'package command runner (exec may install missing dependencies)',
     ambiguous: true,
@@ -218,15 +229,16 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: bo
   // it is hard-external (always prompt), not ambiguous. (#581)
   {
     re: new RegExp(`${CMD_POS}open\\b`, 'i'),
-    reason: 'launches a host app/file outside the sandbox (open)',
+    reason: REASON_OPEN,
   },
-  { re: /\bxdg-open\b/i, reason: 'launches a host app/file outside the sandbox (xdg-open)' },
+  { re: /\bxdg-open\b/i, reason: REASON_XDG_OPEN },
   {
     // Direct execution of a workspace-relative file starting with `./` or `../`.
     // Relative paths with a slash but no leading dot (`bin/tool`) are caught by the
     // token layer, which keys off argv[0]. (#581)
     re: new RegExp(`${CMD_POS}\\.\\.?/\\S+`),
     reason: REASON_LOCAL_EXECUTABLE,
+    ambiguous: true,
   },
   {
     re: new RegExp(`${CMD_POS}nc\\b|\\bnetcat\\b|\\btelnet\\b`, 'i'),
@@ -241,8 +253,8 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: bo
   },
   {
     // An interpreter executing a local script file (`node ./x.js`, `bash deploy.sh`).
-    // The agent can write the script first, so its contents are invisible here — and
-    // to the file-blind safety classifier — which is exactly why it must not auto-run.
+    // The agent can write the script first, so its contents are invisible here.
+    // Try it contained; only explicit approval can authorize an outside attempt.
     // The suffix list comes from shell-argv so this and the token pass below cannot
     // drift apart (they were previously two hand-maintained copies).
     re: new RegExp(
@@ -250,6 +262,7 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: bo
       'i',
     ),
     reason: 'runs a local script via an interpreter (contents opaque to analysis)',
+    ambiguous: true,
   },
   {
     // Heredoc fed to a real interpreter (`python3 <<EOF … EOF`) — inline code with
@@ -507,10 +520,14 @@ function tokenBasedExternalReasons(command: string): {
     // can't. (#581)
     if (!exe0.startsWith('/') && exe0.includes('/')) {
       addReason(REASON_LOCAL_EXECUTABLE)
-      hasHard = true
     }
     const exe = commandName(exe0)
     const args = argv.slice(1)
+    const opener = HOST_OPENERS.get(exe)
+    if (opener) {
+      addReason(opener)
+      hasHard = true
+    }
     if (isHostDependentBuildDriver(exe, args)) {
       addReason(REASON_BUILD_DRIVER)
     }
@@ -521,7 +538,6 @@ function tokenBasedExternalReasons(command: string): {
       }
       if (args.some((a) => SCRIPT_EXTENSIONS.test(a))) {
         addReason(REASON_INTERPRETER_FILE)
-        hasHard = true
       }
     }
   }
@@ -537,7 +553,13 @@ function collectExternalReasons(command: string): { reasons: ScopeReason[]; hasH
   const reasons: ScopeReason[] = []
   let hasHard = false
   const shellCommand = maskInterpreterHeredocBodies(command)
-  const variants = [shellCommand, normalizeShellCommandForAnalysis(shellCommand)]
+  // `pnpm exec` runs an installed command, like `pnpm run`; it neither installs
+  // packages nor invokes the shell's `exec` builtin. Mask only this command head,
+  // leaving the entire child command visible to every existing scope check.
+  const localPnpmExec = new RegExp(`(${CMD_POS})pnpm[ \\t]+exec(?=[ \\t]|$)`, 'g')
+  const variants = [shellCommand, normalizeShellCommandForAnalysis(shellCommand)].map((text) =>
+    text.replace(localPnpmExec, '$1pnpm run'),
+  )
   for (const text of variants) {
     for (const { re, reason, ambiguous } of EXTERNAL_PATTERNS) {
       if (re.test(text) && !reasons.includes(reason)) {
@@ -1051,13 +1073,13 @@ const REPLAYABLE_OPAQUE_LOCAL_REASONS: ReadonlySet<string> = new Set([
 ])
 
 /**
- * True only when a command prompts because it executes opaque local code—not
+ * True only when a command executes opaque local code—not
  * because it requests network or outside-workspace access. Callers may offer an
  * explicit bounded replay grant for this shape.
  */
 export function isReplayableOpaqueLocalExecution(analysis: ShellScopeAnalysis): boolean {
   return (
-    analysis.verdict === 'external' &&
+    analysis.verdict === 'ambiguous' &&
     analysis.reasons.length > 0 &&
     analysis.reasons.every((reason) => REPLAYABLE_OPAQUE_LOCAL_REASONS.has(reason))
   )

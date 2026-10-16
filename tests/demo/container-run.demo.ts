@@ -1,5 +1,10 @@
 import { $, $$, browser, expect } from '@wdio/globals'
-import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
+import {
+  parkPointer,
+  prepareE2eScreenshot,
+  saveElementScreenshot,
+  waitForSettledLayout,
+} from '../e2e/helpers/screenshot.ts'
 
 /**
  * The unattended-container-run surface over the mocked backend: the footer
@@ -51,8 +56,8 @@ describe('unattended container run (browser-hosted)', () => {
     await expect(dialog.$('.model-picker-filter')).toBeDisplayed()
     await browser.keys('Escape')
     const hint = await dialog.$('.container-run-model-hint').getText()
-    expect(hint).toContain('endpoint')
-    expect(hint).toContain('scoped to the run')
+    expect(hint).toContain('desktop calls')
+    expect(hint).toContain('keys and sign-in tokens stay on the desktop')
     await task.setValue('Fix the failing lint rule')
     await expect(dialog.$('.container-run-start')).toBeEnabled()
     await expect(dialog.$('.container-run-start')).toHaveText('Start unattended run')
@@ -97,6 +102,8 @@ describe('unattended container run (browser-hosted)', () => {
     // Dismiss is the kit's close icon, not a literal "×" glyph.
     await expect(banner.$('.container-run-dismiss svg[data-icon="close"]')).toBeExisting()
     expect((await banner.$('.container-run-dismiss').getText()).trim()).toBe('')
+    await parkPointer()
+    await expect($('.context-wheel-popover')).not.toBeDisplayed()
     await saveElementScreenshot('#input-bar', 'container-run-banner-finished.png')
 
     await banner.$('.container-run-details').click()
@@ -106,7 +113,7 @@ describe('unattended container run (browser-hosted)', () => {
     await expect(status).toHaveAttribute('data-phase', 'finished')
     const summary = await dialog.$('.container-run-summary').getText()
     expect(summary).toContain('Finished')
-    expect(summary).toContain('api.anthropic.com:443')
+    expect(summary).toContain('inference.copse.internal:443')
     expect(summary).toContain('brokered egress')
     expect(summary).toContain('refs/copse/runs/run-demo-1')
     expect(summary).toContain('absent')
@@ -119,7 +126,9 @@ describe('unattended container run (browser-hosted)', () => {
     expect(summary).toMatch(/Agent\s*Copse/)
     // What the guest held to authenticate: a scoped key here, never a login
     // unless the user opted into carrying one in.
-    expect(summary).toMatch(/Credential\s*one API key, scoped to the run/)
+    expect(summary).toMatch(
+      /Credential\s*Provider authentication held on the desktop; no keys or tokens in the container/,
+    )
     expect(summary).toMatch(/Effects refused\s*0/)
     // Section headings render uppercase through CSS; compare the source text.
     await expect(dialog.$('.container-run-deferrals h4')).toHaveText(
@@ -170,10 +179,41 @@ describe('unattended container run (browser-hosted)', () => {
     expect(cardText).toContain('Reading the lint report')
     expect(cardText).toContain('git push publishes commits to a remote')
     await expect(card.$('.subagent-container-apply')).toBeDisplayed()
-    await saveElementScreenshot(
-      '.tool-card-subagent[data-tool-id^="container-run:"]',
-      'container-run-card.png',
-    )
+    // Keep the whole expanded record clear of the sticky prompt and composer.
+    // Cropping a tall card in the normal viewport also captures those overlays.
+    const windowSize = await browser.getWindowSize()
+    try {
+      await browser.setWindowSize(1280, 1300)
+      await prepareE2eScreenshot({ width: 1280, height: 1200 })
+      await parkPointer()
+      await browser.execute(() => {
+        const transcript = document.querySelector('.messages-list')
+        if (transcript) transcript.scrollTop = transcript.scrollHeight
+      })
+      await waitForSettledLayout('.tool-card-subagent[data-tool-id^="container-run:"]')
+      const visible = await browser.execute(() => {
+        const card = document.querySelector('.tool-card-subagent[data-tool-id^="container-run:"]')
+        if (!card) throw new Error('Missing container record')
+        const rect = card.getBoundingClientRect()
+        return {
+          inViewport: rect.top >= 0 && rect.bottom <= innerHeight,
+          unobscured: [rect.top + 16, rect.bottom - 16].every((y) =>
+            [rect.left + 16, (rect.left + rect.right) / 2, rect.right - 16].every((x) =>
+              card.contains(document.elementFromPoint(x, y)),
+            ),
+          ),
+        }
+      })
+      expect(visible).toEqual({ inViewport: true, unobscured: true })
+      await saveElementScreenshot(
+        '.tool-card-subagent[data-tool-id^="container-run:"]',
+        'container-run-card.png',
+        { frame: 'document' },
+      )
+    } finally {
+      await browser.setWindowSize(windowSize.width, windowSize.height)
+      await prepareE2eScreenshot()
+    }
     // The follow-up: the demo backend applies the three commits; the card says so.
     await card.$('.subagent-container-apply').click()
     await expect(card).toHaveAttribute('open')

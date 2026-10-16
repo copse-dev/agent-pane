@@ -137,7 +137,7 @@ describe('projects pane thread rename + archive (component)', () => {
     const menu = document.querySelector<HTMLElement>('.context-menu')
     assert.ok(menu)
     const labels = Array.from(menu.querySelectorAll('.context-menu-item')).map((i) => i.textContent)
-    assert.deepEqual(labels, ['Rename', 'Fork', 'Archive', 'Delete'])
+    assert.deepEqual(labels, ['Conversation access…', 'Rename', 'Fork', 'Archive', 'Delete'])
 
     const archiveItem = Array.from(
       menu.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
@@ -154,6 +154,40 @@ describe('projects pane thread rename + archive (component)', () => {
     const archived = store.getState().threads.find((t) => t.id === 't2')
     assert.ok(archived)
     assert.equal(isThreadArchived(archived), true)
+  })
+
+  it('refuses to archive a chat while one of its side chats is running', async () => {
+    const side: Thread = {
+      ...thread('s2', 'Side question'),
+      status: 'running',
+      sideChat: { parentThreadId: 't2', anchorMessageId: 'm1' },
+    }
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('t1', 'Keep me'), thread('t2', 'Has a side chat'), side],
+      activeThreadId: 't1',
+    })
+    mount(store, makeApi())
+
+    rowFor('Has a side chat').dispatchEvent(
+      new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
+    )
+    const archiveItem = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.context-menu .context-menu-item'),
+    ).find((i) => i.textContent === 'Archive')
+    assert.ok(archiveItem)
+    archiveItem.click()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+
+    for (const id of ['t2', 's2']) {
+      const kept = store.getState().threads.find((t) => t.id === id)
+      assert.ok(kept)
+      assert.equal(isThreadArchived(kept), false, `${id} stays unarchived`)
+    }
+    assert.ok(rowFor('Has a side chat'))
   })
 
   it('keeps a dirty chat visible on Cancel and only discards after confirmation', async () => {
@@ -199,7 +233,7 @@ describe('projects pane thread rename + archive (component)', () => {
           }
         : {
             status: 'blocked-dirty',
-            paths: ['README.md', 'notes/draft.txt', 'local.log'],
+            paths: ['README.md', 'notes/draft.txt'],
             fingerprint: 'a'.repeat(64),
           }
     }
@@ -214,7 +248,8 @@ describe('projects pane thread rename + archive (component)', () => {
       item.click()
       await new Promise<void>((resolve) => setTimeout(resolve, 0))
     }
-    await openArchive()
+    store.emit('thread_archive_requested', 'a', 't2')
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
     const dialog = document.querySelector('#confirm-dialog')
     assert.ok(dialog)
     assert.match(dialog.textContent, /README.md/)
@@ -261,8 +296,12 @@ describe('projects pane thread rename + archive (component)', () => {
       activeThreadId: 't1',
     })
     const api = makeApi()
-    api.threads.archive = async (): Promise<ThreadArchiveResult> => ({ status: 'blocked-running' })
+    api.threads.archive = async (): Promise<ThreadArchiveResult> => ({
+      status: 'blocked-running',
+      running: { agent: true, terminals: false, backgroundProcesses: false },
+    })
     mount(store, api)
+    mountConfirmDialog()
     const archive = async (): Promise<void> => {
       rowFor('Busy chat').querySelector<HTMLButtonElement>('.chat-menu-btn')?.click()
       Array.from(document.querySelectorAll<HTMLButtonElement>('.context-menu-item'))
@@ -271,6 +310,8 @@ describe('projects pane thread rename + archive (component)', () => {
       await new Promise<void>((resolve) => setTimeout(resolve, 0))
     }
     await archive()
+    clickActiveConfirmDialogCancel()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
     assert.ok(rowFor('Busy chat'))
     api.threads.archive = async (): Promise<never> => {
       throw new Error('Cannot remove checkout')
@@ -281,6 +322,50 @@ describe('projects pane thread rename + archive (component)', () => {
       store.getState().threads.find((candidate) => candidate.id === 't2')?.archivedAt,
       undefined,
     )
+  })
+
+  it('asks before stopping running work, then archives with the stop flag set', async () => {
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('t1', 'Keep me'), thread('t2', 'Busy chat')],
+      activeThreadId: 't1',
+    })
+    const api = makeApi()
+    const calls: boolean[] = []
+    api.threads.archive = async (
+      _projectId,
+      _threadId,
+      _discard,
+      stopProcesses,
+    ): Promise<ThreadArchiveResult> => {
+      calls.push(stopProcesses)
+      return stopProcesses
+        ? { status: 'archived', archivedAt: 7 }
+        : {
+            status: 'blocked-running',
+            running: { agent: true, terminals: true, backgroundProcesses: true },
+          }
+    }
+    mount(store, api)
+    mountConfirmDialog()
+    rowFor('Busy chat').querySelector<HTMLButtonElement>('.chat-menu-btn')?.click()
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.context-menu-item'))
+      .find((candidate) => candidate.textContent === 'Archive')
+      ?.click()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    const dialog = document.querySelector('#confirm-dialog')
+    assert.ok(dialog)
+    assert.match(dialog.textContent, /running agent/)
+    assert.match(dialog.textContent, /open terminals/)
+    assert.match(dialog.textContent, /background processes/)
+    assert.deepEqual(calls, [false])
+    clickActiveConfirmDialogConfirm()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(calls, [false, true])
+    assert.equal(store.getState().threads.find((t) => t.id === 't2')?.archivedAt, 7)
   })
 
   it('hides the archived row in its project cache when the user switches projects during removal', async () => {
@@ -350,7 +435,7 @@ describe('projects pane thread rename + archive (component)', () => {
     const labels = (): (string | null)[] =>
       Array.from(document.querySelectorAll('.context-menu-item')).map((item) => item.textContent)
     const buttonLabels = labels()
-    assert.deepEqual(buttonLabels, ['Rename', 'Fork', 'Archive', 'Delete'])
+    assert.deepEqual(buttonLabels, ['Conversation access…', 'Rename', 'Fork', 'Archive', 'Delete'])
     assert.equal(store.getState().activeThreadId, 't1')
     assert.equal(store.getState().threads.length, 2)
     assert.deepEqual(cleared, [])

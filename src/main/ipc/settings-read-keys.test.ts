@@ -48,12 +48,17 @@ function settingConstants(): Map<string, string> {
 
 /** The names driving the generic `loadSimpleFields` loop, which reads `field.name`. */
 function simpleFieldNames(constants: ReadonlyMap<string, string>): string[] {
-  const dialog = sources.get(resolve(process.cwd(), 'src/renderer/views/settings-dialog.ts'))
-  assert.ok(dialog, 'settings-dialog.ts moved — update this test')
-  const start = dialog.indexOf('const SIMPLE_FIELDS')
-  const end = dialog.indexOf('async function loadSimpleFields')
-  assert.ok(start !== -1 && end > start, 'SIMPLE_FIELDS block moved — update this test')
-  const block = dialog.slice(start, end)
+  const blocks = [...sources.entries()]
+    .filter(([path]) => path.includes('/views/settings/') && path.endsWith('-markup.ts'))
+    .map(([, text]) => {
+      const start = text.indexOf('Fields: readonly SettingField[] = [')
+      return start === -1 ? '' : text.slice(start)
+    })
+  assert.ok(
+    blocks.filter(Boolean).length >= 8,
+    'section field declarations moved — update this test',
+  )
+  const block = blocks.join('\n')
   return [
     ...[...block.matchAll(/name:\s*'([A-Za-z0-9_]+)'/g)].map((m) => m[1] ?? ''),
     ...[...block.matchAll(/name:\s*([A-Z0-9_]+),/g)].map((m) => constants.get(m[1] ?? '') ?? ''),
@@ -88,7 +93,7 @@ describe('settings:get registration gate', () => {
 
   it('registers every field the generic Settings load loop reads', () => {
     const names = simpleFieldNames(constants)
-    assert.ok(names.length > 10, `expected SIMPLE_FIELDS entries, found ${String(names.length)}`)
+    assert.ok(names.length > 10, `expected section field entries, found ${String(names.length)}`)
     assert.deepEqual(names.filter((n) => !isRegisteredSettingKey(n)).sort(), [])
   })
 })

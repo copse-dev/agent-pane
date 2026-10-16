@@ -49,11 +49,13 @@ function isAbortTimeoutMessage(message: string): boolean {
 
 /**
  * True when a Claude "unavailable" reason is a sign-in / credential problem a
- * fresh `claude /login` would fix — not an inherent limitation like a Console
+ * fresh `claude auth login` would fix — not an inherent limitation like a Console
  * API key that simply can't report plan windows. Exported for unit tests.
  */
 export function claudeReasonNeedsLogin(reason: string): boolean {
-  return /claude \/login|user:profile|rejected|access token has expired/i.test(reason)
+  return /claude (?:auth login|\/login)|user:profile|rejected|access token has expired/i.test(
+    reason,
+  )
 }
 
 /**
@@ -70,7 +72,11 @@ export function createPlanSignInHandler(
   if (!store) return null
   return (): void => {
     onRequestClose?.()
-    store.emit('request_terminal_command', provider === 'claude' ? 'claude /login' : 'codex login')
+    store.emit(
+      'request_terminal_command',
+      provider === 'claude' ? 'claude auth login' : 'codex login',
+      { executionTarget: 'local' },
+    )
   }
 }
 
@@ -173,7 +179,7 @@ export function renderPlanProvider(
       signIn.type = 'button'
       signIn.className = 'ui-btn ui-btn-primary usage-plan-signin-btn'
       signIn.textContent = signInProvider === 'claude' ? 'Sign in to Claude' : 'Sign in to Codex'
-      signIn.title = `Open a terminal and run ${signInProvider === 'claude' ? 'claude /login' : 'codex login'}`
+      signIn.title = `Open a terminal and run ${signInProvider === 'claude' ? 'claude auth login' : 'codex login'}`
       signIn.addEventListener('click', () => {
         onProviderSignIn()
       })
@@ -361,7 +367,7 @@ export function renderPlanWorthItSection(
 
   const reason = document.createElement('p')
   reason.className = 'usage-worth-reason field-hint'
-  reason.textContent = worthIt.reason
+  reason.textContent = worthIt.reason.replaceAll('—', '·')
   card.append(reason)
 
   const feeRow = document.createElement('div')
@@ -530,6 +536,79 @@ export function renderModelTable(
   host.append(section)
 }
 
+/**
+ * Classifier calls for a period: one row per connection and model, with the
+ * calls that reported tokens. Classifiers have no catalog rate, so there is no
+ * cost column and nothing here counts toward the cloud or local totals. Labels
+ * are the user's own text; they are set with `textContent`, never as HTML.
+ * Exported for unit tests.
+ */
+export function renderClassifierTable(
+  host: HTMLElement,
+  rows: UsagePeriodSummary['classifiers'],
+  allTime: boolean,
+): void {
+  const section = document.createElement('div')
+  section.className = 'usage-model-group usage-classifier-group'
+  const heading = document.createElement('h4')
+  heading.textContent = 'Classifiers'
+  section.append(heading)
+  if (allTime || !rows || rows.length === 0) {
+    const empty = document.createElement('p')
+    empty.className = 'usage-empty'
+    empty.textContent = allTime
+      ? 'Classifier calls are listed for the day, month and 90-day windows only.'
+      : 'No classifier usage in this period.'
+    section.append(empty)
+    host.append(section)
+    return
+  }
+  const table = document.createElement('table')
+  table.className = 'usage-table usage-classifier-table'
+  const columns = document.createElement('colgroup')
+  for (const className of [
+    'usage-col-model',
+    'usage-col-model',
+    'usage-col-num',
+    'usage-col-num',
+    'usage-col-num',
+  ]) {
+    const col = document.createElement('col')
+    col.className = className
+    columns.append(col)
+  }
+  const head = document.createElement('thead')
+  const headRow = document.createElement('tr')
+  for (const label of ['Classifier', 'Model', 'Calls', 'Input', 'Output']) {
+    const th = document.createElement('th')
+    th.scope = 'col'
+    th.textContent = label
+    headRow.append(th)
+  }
+  head.append(headRow)
+  const body = document.createElement('tbody')
+  for (const row of rows) {
+    const tr = document.createElement('tr')
+    tr.dataset['provider'] = row.provider
+    const provider = document.createElement('td')
+    provider.textContent = row.provider
+    const model = document.createElement('td')
+    const code = document.createElement('code')
+    code.textContent = row.model
+    model.append(code)
+    const cells = [row.calls, row.inputTokens, row.outputTokens].map((value) => {
+      const td = document.createElement('td')
+      td.textContent = formatTokenCount(value)
+      return td
+    })
+    tr.append(provider, model, ...cells)
+    body.append(tr)
+  }
+  table.append(columns, head, body)
+  section.append(table)
+  host.append(section)
+}
+
 function renderPeriodSummary(
   host: HTMLElement,
   summary: UsagePeriodSummary,
@@ -587,6 +666,7 @@ function renderPeriodSummary(
     summary.localModels,
     'No local model usage in this period.',
   )
+  renderClassifierTable(host, summary.classifiers, period === 'allTime')
 }
 
 export function createUsageSection(
@@ -595,12 +675,21 @@ export function createUsageSection(
   onRequestClose?: () => void,
 ): {
   root: HTMLElement
-  refresh: () => Promise<void>
+  refresh: (signal?: AbortSignal) => Promise<void>
   detach: () => void
 } {
+  let pendingSignInProvider: 'claude' | 'codex' | null = null
+  const onSignIn = (provider: 'claude' | 'codex'): (() => void) | undefined => {
+    const handler = createPlanSignInHandler(store, provider, onRequestClose)
+    if (!handler) return undefined
+    return (): void => {
+      pendingSignInProvider = provider
+      handler()
+    }
+  }
   const handleSignIn = {
-    claude: createPlanSignInHandler(store, 'claude', onRequestClose) ?? undefined,
-    codex: createPlanSignInHandler(store, 'codex', onRequestClose) ?? undefined,
+    claude: onSignIn('claude'),
+    codex: onSignIn('codex'),
   }
   const root = document.createElement('div')
   root.className = 'usage-section-root'
@@ -749,31 +838,45 @@ export function createUsageSection(
     })
   })
 
-  async function refreshPlan(): Promise<void> {
+  let currentSignal: AbortSignal | undefined
+  async function refreshPlan(signal: AbortSignal | undefined = currentSignal): Promise<void> {
     if (!cachedPlanSnapshot) {
       renderPlanSection(planEl, null, null, handleSignIn)
     }
     try {
-      const snapshot = await api.usage.getPlanUsage()
+      const snapshot = await api.usage.getPlanUsage(pendingSignInProvider !== null)
+      if (signal?.aborted) return
       cachedPlanSnapshot = snapshot
       renderPlanSection(planEl, snapshot, null, handleSignIn)
+      if (
+        pendingSignInProvider &&
+        snapshot.providers.some(
+          (provider) => provider.provider === pendingSignInProvider && provider.status === 'ok',
+        )
+      ) {
+        pendingSignInProvider = null
+      }
     } catch (err) {
+      if (signal?.aborted) return
       // Plan usage is best-effort — never block the ledger on IPC failure.
       const message = err instanceof Error ? err.message : 'Failed to load subscription plan usage.'
       renderPlanSection(planEl, null, message, handleSignIn)
     }
   }
 
-  async function refreshWorthIt(): Promise<void> {
+  async function refreshWorthIt(signal: AbortSignal | undefined = currentSignal): Promise<void> {
     renderPlanWorthItSection(worthEl, null, null, {
       onFeeChange: () => undefined,
       onShowInference: () => undefined,
     })
     try {
       const payload = await api.usage.getPlanWorthIt()
+      if (signal?.aborted) return
       applyWorthItPayload(payload)
     } catch (err) {
+      if (signal?.aborted) return
       const message = err instanceof Error ? err.message : 'Failed to load plan worth-it.'
+      frontierPanel.setWindowExhaustion(new Map())
       renderPlanWorthItSection(worthEl, null, message, {
         onFeeChange: () => undefined,
         onShowInference: () => undefined,
@@ -781,11 +884,14 @@ export function createUsageSection(
     }
   }
 
-  async function refreshLedger(): Promise<void> {
+  async function refreshLedger(signal: AbortSignal | undefined = currentSignal): Promise<void> {
     try {
-      cachedSummary = await api.usage.getSummary()
+      const summary = await api.usage.getSummary()
+      if (signal?.aborted) return
+      cachedSummary = summary
       showPeriod(activePeriod)
     } catch (err) {
+      if (signal?.aborted) return
       bodyEl.textContent =
         err instanceof Error ? `Failed to load usage: ${err.message}` : 'Failed to load usage.'
     }
@@ -799,22 +905,33 @@ export function createUsageSection(
     }, LEDGER_REFRESH_DEBOUNCE_MS)
   }
 
-  async function refresh(): Promise<void> {
+  async function refresh(signal?: AbortSignal): Promise<void> {
+    currentSignal = signal
+    if (signal?.aborted) return
     try {
-      cachedAccounts = (await api.chatGptPlan.status()).accounts
+      const accounts = (await api.chatGptPlan.status()).accounts
+      if (signal?.aborted) return
+      cachedAccounts = accounts
     } catch {
+      if (signal?.aborted) return
       cachedAccounts = []
     }
     if (!cachedSummary) {
       bodyEl.textContent = 'Loading usage…'
     }
     // Plan fetch samples window history; worth-it must run after that sample lands.
-    const planThenWorth = refreshPlan().then(() => refreshWorthIt())
-    const frontierPromise = frontierPanel.refresh()
+    const planThenWorth = refreshPlan(signal).then(() => {
+      if (!signal?.aborted) return refreshWorthIt(signal)
+      return undefined
+    })
+    const frontierPromise = frontierPanel.refresh(signal)
     try {
-      cachedSummary = await api.usage.getSummary()
+      const summary = await api.usage.getSummary()
+      if (signal?.aborted) return
+      cachedSummary = summary
       showPeriod(activePeriod)
     } catch (err) {
+      if (signal?.aborted) return
       bodyEl.textContent =
         err instanceof Error ? `Failed to load usage: ${err.message}` : 'Failed to load usage.'
     }
@@ -823,7 +940,11 @@ export function createUsageSection(
   }
 
   const unsubUsage = store?.on('usage_updated', () => {
-    if (root.closest('.settings-section')?.classList.contains('active')) {
+    if (
+      !currentSignal?.aborted &&
+      root.closest('dialog')?.open !== false &&
+      root.closest('.settings-section')?.classList.contains('active')
+    ) {
       // Agent turns emit many usage deltas — only roll up the local ledger; plan
       // windows and the frontier chart stay on the main-process TTL cache.
       scheduleLedgerRefresh()

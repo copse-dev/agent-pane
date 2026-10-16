@@ -8,6 +8,7 @@ import { normalizeToolExecuteResult } from '@shared/types'
 import { strReplaceTool } from './str-replace-tool.ts'
 import { clearStagedDiffsForTest, getStagedDiffEntry } from '../services/diff-queue.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
+import { runWithAgentRunExploreMode } from '../services/agent-run-explore-mode.ts'
 
 async function runStrReplace(args: {
   path: string
@@ -56,7 +57,29 @@ describe('strReplaceTool', () => {
       replace_all: false,
     })
     assert.match(out, /not found/)
+    // Outside explore mode the parent holds read_file, so name it (#1433).
+    assert.match(out, /Call read_file on f\.ts/)
   })
+
+  ownedIt(
+    'names explore, not the withheld read_file, when old_string is missing in explore mode',
+    async () => {
+      // In explore mode read_file is delegated to the subagent and withheld from
+      // the parent, so the remedy must be one the model can actually call.
+      await writeFile(join(tempRoot, 'f.ts'), 'a', 'utf-8')
+      const out = await runWithAgentRunExploreMode(true, () =>
+        runStrReplace({
+          path: 'f.ts',
+          old_string: 'missing',
+          new_string: 'b',
+          replace_all: false,
+        }),
+      )
+      assert.match(out, /not found/)
+      assert.match(out, /call explore again on f\.ts/)
+      assert.doesNotMatch(out, /read_file/)
+    },
+  )
 
   ownedIt('names read_file as the remedy, not another explore call (#1433)', async () => {
     // explore returns a prose summary with approximate line numbers, so a
@@ -111,6 +134,32 @@ describe('strReplaceTool', () => {
         `new_string ${JSON.stringify(newString)} must land verbatim`,
       )
     }
+  })
+
+  ownedIt('matches a multi-line old_string copied from read_file in a CRLF file', async () => {
+    // read_file shows CRLF files with LF endings; the edit must still match and
+    // the file must keep its CRLF endings.
+    await writeFile(join(tempRoot, 'f.ts'), 'a\r\nb\r\nc\r\n', 'utf-8')
+    const out = await runStrReplace({
+      path: 'f.ts',
+      old_string: 'a\nb',
+      new_string: 'A\nB\nB2',
+      replace_all: false,
+    })
+    assert.match(out, /Diff staged/)
+    assert.equal(getStagedDiffEntry('f.ts')?.after, 'A\r\nB\r\nB2\r\nc\r\n')
+  })
+
+  ownedIt('writes new lines as CRLF in an all-CRLF file on a single-line match', async () => {
+    await writeFile(join(tempRoot, 'f.ts'), 'a\r\nb\r\n', 'utf-8')
+    await runStrReplace({ path: 'f.ts', old_string: 'a', new_string: 'x\ny', replace_all: false })
+    assert.equal(getStagedDiffEntry('f.ts')?.after, 'x\r\ny\r\nb\r\n')
+  })
+
+  ownedIt('keeps each untouched line break in a mixed-EOL file', async () => {
+    await writeFile(join(tempRoot, 'f.ts'), 'a\r\nb\nc\r\nd\n', 'utf-8')
+    await runStrReplace({ path: 'f.ts', old_string: 'b\nc', new_string: 'B', replace_all: false })
+    assert.equal(getStagedDiffEntry('f.ts')?.after, 'a\r\nB\r\nd\n')
   })
 
   ownedIt('agrees with replace_all on a single occurrence', async () => {

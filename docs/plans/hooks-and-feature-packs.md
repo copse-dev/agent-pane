@@ -71,15 +71,20 @@ revisiting this document, not silently diverging in an implementation PR.
    the complete turn uses blocking mode.
 4. **The pending-message queue is the only async output channel.** An async hook's
    results land as queued messages (consumed at idle drain, or immediately if the hook
-   sets send-now — byte-for-byte the user's send-now semantics). No mid-turn injection
+   sets send-now — byte-for-byte the user's send-now semantics). Send-now interrupts
+   the model turn but transfers an already-running native shell command to the owned
+   background-task supervisor, preserving its process, containment, logs and original
+   deadline. Explicit Stop still cancels foreground work. No mid-turn injection
    path exists for async hooks; late results are therefore safe by construction.
 5. **One auto-continuation budget.** A single counter per **turn tree** (everything
    descending from one human-originated submission). The ledger counts
    **machine-initiated new model turns** only: hook send-now, `stop`/`subagentStop`
    follow-ups, bounded background-task completion wakes, durable CI status-change wakes,
    long-horizon task wakes (`long-task-wake.ts`, dispatched through `dispatchMachine` on the
-   originating turn tree), ACP unfinished-turn recovery, post-turn remediation cycles,
-   pre-review todo attempts, and todo-closeout turns. **In-loop nudges do not count**
+   originating turn tree), ACP agent self-resumes (below), ACP unfinished-turn recovery, post-turn remediation cycles,
+   pre-review todo attempts, and todo-closeout turns. Agent-managed external-agent
+   turns leave unfinished-turn recovery to the agent, so they spend no recovery
+   continuation. **In-loop nudges do not count**
    (truncation-continue, finalize, loop, and
    reasoning-runaway nudges are mid-turn message pushes inside one `runAgentLoop`
    invocation, already bounded by `maxSteps` / `DEFAULT_MAX_LLM_CALLS` and the run
@@ -100,6 +105,17 @@ revisiting this document, not silently diverging in an implementation PR.
    entirely; only an explicit human action (send-now / release) submits it, and that
    human action starts a fresh turn tree with a reset budget. Plus a visible thread
    note. `COPSE_HOOK_DEPTH` env guard prevents hook→Copse recursion.
+   An ACP agent can resume itself after its prompt returned (a background-task notification
+   re-enters the model; the adapter tags the turn `_claude/origin: task-notification`), so Copse
+   never dispatched that turn. The update pump (`startAcpUpdatePump`) treats agent work arriving
+   with no prompt outstanding as such a turn, and `agent-initiated-turn.ts` charges it to this
+   budget through `AgentDispatcher.claimAgentInitiatedTurn` before binding the thread's
+   persisted execution context to the bridge. Bridged calls wait on that decision; they are
+   never run unbound. When the budget is exhausted the turn is **held** and the user is asked
+   whether to let it continue: Allow still counts against the budget, Stop leaves every
+   bridged call rejected. Unlike `dispatchMachine` it does not take the thread's dispatch slot
+   (Copse is not running the turn), and the binding ends on the adapter's end-of-turn marker,
+   on the next Copse prompt, on session dispose, or after 15 idle minutes.
    A host-native background completion wake has no editable hook message to queue:
    the main-process dispatcher waits for the owning foreground run to release the
    thread, then grants at dispatch time against the latest epoch and spent count it
@@ -155,7 +171,9 @@ revisiting this document, not silently diverging in an implementation PR.
    foreign defaults for public-release safety: a crash, timeout, spawn failure, or invalid
    response denies a gated action. Cursor's `failClosed: true` remains honoured;
    `failClosed: false` is the explicit per-hook compatibility opt-out, while an omitted or
-   invalid value resolves closed. Claude has no equivalent field, so its command failures
+   invalid value resolves closed. A Cursor gate hook that exits non-zero is a failure even
+   if it printed a response (only an explicit `deny` in that output is honoured), matching
+   the `sessionStart` reading. Claude has no equivalent field, so its command failures
    resolve closed and users disable an incompatible hook set with the global, off-by-default
    Settings → Sources toggle. Claude exit-code-2 remains an explicit deny under its vendor
    contract. The Copse dialect defaults `onFailure` to `closed` and allows an explicit
@@ -189,6 +207,8 @@ revisiting this document, not silently diverging in an implementation PR.
     fixed 5s would kill real hooks. Blocking host waits pause the idle deadline and the
     absolute hard deadline. Ordinary model streaming and tool execution still spend the
     hard deadline, so only time explicitly registered as waiting on the host is excluded.
+    A per-hook timeout is clamped to `setTimeout`'s range (2^31−1 ms) at the spawn, and a
+    timeout kills the hook's whole process group (bug-hunt #14/#37).
     Async over-cap dispatches
     (concurrency cap ~8/thread) go
     into a pending-dispatch FIFO (deferred spawn, still detached, no ordering promises;
@@ -277,8 +297,10 @@ revisiting this document, not silently diverging in an implementation PR.
     decision 17: disabling removes contributions from new work while stored data and
     historical rendering remain available.
 20. **`turnStart` assembly is executor-neutral.** The canonical event fires once
-    for the built-in loop and once for an external ACP turn, before either executor
-    receives its prompt. ACP receives the merged trusted outcome in a separately
+    for the built-in loop and once for a Copse-managed external ACP turn, before
+    either executor receives its prompt. Agent-managed external-agent turns omit
+    Copse's prompt assembly so the agent receives its native prompting behavior.
+    Copse-managed ACP receives the merged trusted outcome in a separately
     delimited `Copse guidance` block; the raw user message stays byte-for-byte intact,
     and an explicitly invoked skill remains the last instruction block because it is
     a direct user action. `TurnStartPayload.executor` lets hooks abstain from
@@ -433,6 +455,16 @@ revisiting this document, not silently diverging in an implementation PR.
     reviewer, specialists, and explorers read the same awaited post-turn
     workspace snapshot; moving review into the background or granting execution
     tools requires one immutable per-review snapshot shared by every participant.
+
+30. **Draft planning denies command execution at the host runner.** The optional
+    thread-plan capability context is fixed for a turn. Its tool allowlist is
+    enforced before permission hooks; command hooks themselves receive a recorded
+    policy denial without spawning, including when their runtime failure policy is
+    open. This is an intentional permission outcome, not a command failure or a
+    dialect exception. A runner captured for a detached draft hook retains that
+    restriction. Approved implementation starts a new human turn through the normal
+    dispatcher and restores the ordinary hook and tool permission contracts. No
+    ad hoc continuation, pending-message channel or hook event is introduced.
 
 ## Target architecture
 
@@ -894,7 +926,8 @@ Collected from design review — each of these was _almost_ a bug in the plan it
 
 - **`drainMessageQueue` auto-submits plain queued messages at idle.** Any "queued for
   the human" semantics must use the held state; a plain enqueue is an auto-submit.
-- **`sendQueuedMessageNow` aborts the active local run.** Check epoch staleness _before_
+- **`sendQueuedMessageNow` interrupts the active model turn while preserving a running
+  native shell command as a background task.** Check epoch staleness _before_
   reaching that path, or a late hook kills an unrelated turn.
 - **`writeThread` regenerates `events.jsonl` from `thread.messages` alone.** Appending a
   spine line without full-save round-tripping means it vanishes on the next save.
@@ -1032,6 +1065,15 @@ fixed add/commit operation. The ordinary tool-gate hooks remain in the registry 
 Its separate signing capability never inherits a shell basename bypass: approvals
 bind to a project, system signer, public key and agent socket, and do not change the
 Git hook process's sandbox. See `docs/shell-permissions.md#native-commits-and-signing`.
+
+### Cross-thread prompts
+
+`send_thread_prompt` is a machine submission surface, authorized by a separate durable
+send grant on the source thread. It enters the destination's pending-message queue with
+`kind: 'machine'` provenance. These queued items consume the same continuation budget as
+hook-originated items (decision 5), never start a human turn tree, never interrupt an
+active run, and respect held/paused queues. The renderer remains the transcript writer.
+Sending does not transfer the source's read or send grants to the destination.
 
 ### Mobile human submissions (26 September 2026)
 

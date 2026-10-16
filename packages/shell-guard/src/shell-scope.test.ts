@@ -31,21 +31,36 @@ describe('analyzeShellCommand', () => {
   })
 
   it('runs package exec inside an active sandbox unless another hard signal is present', () => {
-    const formatter =
-      'pnpm exec oxfmt --check src/main/services/thread-execution-context.ts src/renderer/views/footer-branch-status.ts tests/e2e/footer-branch-status.e2e.ts'
-    for (const command of [formatter, 'npm exec tsc --noEmit', 'yarn exec eslint .']) {
+    for (const command of ['npm exec tsc --noEmit', 'yarn exec eslint .', 'bun exec tsc']) {
       const result = analyzeShellCommand(command, root)
       assert.equal(result.verdict, 'ambiguous', command)
       assert.deepEqual(result.reasons, [
         'package command runner (exec may install missing dependencies)',
       ])
     }
+    // Local `pnpm exec` is treated like `pnpm run` (see the next test), so it is
+    // contained without the package-runner ambiguity.
+    const formatter =
+      'pnpm exec oxfmt --check src/main/services/thread-execution-context.ts src/renderer/views/footer-branch-status.ts tests/e2e/footer-branch-status.e2e.ts'
+    assert.equal(analyzeShellCommand(formatter, root).verdict, 'sandbox')
     for (const command of [
       'pnpm exec oxfmt --check . && pnpm install',
       'pnpm exec oxfmt --check /Users/me/other/file.ts',
-      'pnpm exec node ./script.js',
+      'npm exec tsc && npm install',
+      'npm exec tsc -- /Users/me/other/file.ts',
     ]) {
       assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
+    }
+    // An opaque local script keeps the interpreter's own ambiguity under either runner.
+    for (const command of ['pnpm exec node ./script.js', 'npm exec node ./script.js']) {
+      const result = analyzeShellCommand(command, root)
+      assert.equal(result.verdict, 'ambiguous', command)
+      assert.ok(
+        result.reasons.includes(
+          'runs a local script via an interpreter (contents opaque to analysis)',
+        ),
+        command,
+      )
     }
   })
 
@@ -60,6 +75,32 @@ describe('analyzeShellCommand', () => {
       assert.equal(result.verdict, 'external', command)
       assert.ok(result.reasons.includes('dynamic execution / encoding'), command)
     }
+  })
+
+  it('keeps local pnpm exec commands contained without hiding their payload', () => {
+    for (const command of [
+      'pnpm exec tsc --noEmit',
+      'pnpm exec -- eslint src',
+      'pnpm exec vitest run',
+    ]) {
+      assert.equal(analyzeShellCommand(command, root).verdict, 'sandbox', command)
+    }
+    for (const command of [
+      'pnpm install',
+      'corepack pnpm exec tsc',
+      'pnpm exec curl https://example.com',
+      'pnpm exec node -e "process.exit()"',
+      'pnpm exec cat /etc/passwd',
+      'pnpm exec tsc; exec curl https://example.com',
+      'pnpm exec tsc; npm install',
+      'pnpm exec tsc $(curl https://example.com)',
+    ]) {
+      assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
+    }
+    // Other package managers' `exec` is not masked as a local run: it stays a
+    // package runner tried inside the sandbox rather than a contained command.
+    assert.equal(analyzeShellCommand('npm exec tsc', root).verdict, 'ambiguous')
+    assert.equal(analyzeShellCommand('pnpm dlx tsc', root).verdict, 'ambiguous')
   })
 
   it('flags git push', () => {
@@ -347,17 +388,17 @@ describe('analyzeShellCommand', () => {
     assert.equal(analyzeShellCommand(`perl -e 'print 1'`, root).verdict, 'external')
   })
 
-  it('flags an interpreter running a local script file', () => {
+  it('tries an interpreter running a local script file inside the sandbox', () => {
     for (const cmd of ['node ./evil.js', 'bash deploy.sh', 'python script.py', 'ruby task.rb']) {
-      assert.equal(analyzeShellCommand(cmd, root).verdict, 'external', `expected external: ${cmd}`)
+      assert.equal(analyzeShellCommand(cmd, root).verdict, 'ambiguous', cmd)
     }
   })
 
-  it('routes the direct local Electron e2e runner through host approval', () => {
+  it('lets the local Electron e2e runner request host access if needed', () => {
     const command = 'node scripts/run-e2e.mts wdio.conf.ts --spec tests/e2e/example.e2e.ts'
     const result = analyzeShellCommand(command, root)
 
-    assert.equal(result.verdict, 'external')
+    assert.equal(result.verdict, 'ambiguous')
     assert.ok(
       result.reasons.includes(
         'runs a local script via an interpreter (contents opaque to analysis)',
@@ -389,7 +430,11 @@ describe('analyzeShellCommand', () => {
       'cat /etc/passwd',
       'printf "%s" "line one\nline two"; node ./build.js',
     ]) {
-      assert.equal(analyzeShellCommand(`${heredoc}\n${command}`, root).verdict, 'external', command)
+      assert.equal(
+        analyzeShellCommand(`${heredoc}\n${command}`, root).verdict,
+        command.includes('./build.js') ? 'ambiguous' : 'external',
+        command,
+      )
     }
   })
 
@@ -580,6 +625,25 @@ PY`,
     assert.ok(xdg.reasons.some((x) => /xdg-open/.test(x)))
   })
 
+  it('sees an opener behind a pass-through wrapper', () => {
+    // The command-position regex stops at the wrapper, so `nohup open …` read as
+    // a contained command and auto-ran while bare `open` prompted.
+    for (const cmd of [
+      'nohup open https://attacker.example',
+      'nice open -a Calculator',
+      'env FOO=1 open ./report.html',
+      'timeout 5 open ./report.html',
+      'nohup xdg-open https://attacker.example',
+    ]) {
+      const r = analyzeShellCommand(cmd, root)
+      assert.equal(r.verdict, 'external', `expected external: ${cmd}`)
+      assert.ok(
+        r.reasons.some((x) => /outside the sandbox \((?:xdg-)?open\)/.test(x)),
+        cmd,
+      )
+    }
+  })
+
   it('does not treat `open` inside another command word as a launch', () => {
     // `npm run open` invokes a script named open, not the `open` binary.
     const r = analyzeShellCommand('npm run open', root)
@@ -587,22 +651,21 @@ PY`,
     assert.ok(!r.reasons.some((x) => /\(open\)/.test(x)))
   })
 
-  it('flags direct execution of an in-workspace file (./x, ../x, bin/tool)', () => {
-    // The agent can write and `chmod +x` these; their contents are opaque here, so
-    // they must not auto-run — hard-external, like `node ./x.js`.
-    for (const cmd of [
-      './deploy',
-      '../tool run',
-      'bin/gen-thing',
-      'MODE=release ./deploy',
-      'cat x | ./x',
-    ]) {
+  it('tries direct local executables contained while preserving outside-path signals', () => {
+    for (const cmd of ['./deploy', 'bin/gen-thing', 'MODE=release ./deploy', 'cat x | ./x']) {
       const r = analyzeShellCommand(cmd, root)
-      assert.equal(r.verdict, 'external', `expected external: ${cmd}`)
+      assert.equal(r.verdict, 'ambiguous', cmd)
       assert.ok(
         r.reasons.some((x) => /executes an in-workspace file directly/.test(x)),
         `missing local-executable reason: ${cmd}`,
       )
+    }
+    for (const cmd of [
+      '../tool run',
+      './deploy && curl https://example.com',
+      './deploy /etc/passwd',
+    ]) {
+      assert.equal(analyzeShellCommand(cmd, root).verdict, 'external', cmd)
     }
   })
 
@@ -669,13 +732,13 @@ PY`,
     // `(?:-\S+\s+)*` skip so the trailing `build.js` was never reached — the token
     // layer keys off argv[0]=node instead and still sees the .js operand.
     const nodeCase = analyzeShellCommand('node -r ./preload build.js', root)
-    assert.equal(nodeCase.verdict, 'external')
+    assert.equal(nodeCase.verdict, 'ambiguous')
     assert.ok(nodeCase.reasons.some((x) => /runs a local script via an interpreter/.test(x)))
 
     // A subcommand between the interpreter and the file (`deno run server.ts`) also
     // slipped past the regex; tokenization scans the whole argv.
     const denoCase = analyzeShellCommand('deno run server.ts', root)
-    assert.equal(denoCase.verdict, 'external')
+    assert.equal(denoCase.verdict, 'ambiguous')
     assert.ok(denoCase.reasons.some((x) => /runs a local script via an interpreter/.test(x)))
   })
 
@@ -701,7 +764,7 @@ PY`,
       ['curl https://example.com', 'external'],
       ['npm install lodash', 'external'],
       ['git push origin main', 'external'],
-      ['node ./evil.js', 'external'],
+      ['node ./evil.js', 'ambiguous'],
       ['python3 -c "import os"', 'external'],
     ]
     for (const [cmd, verdict] of expectations) {
@@ -1004,8 +1067,8 @@ describe('analyzeShellCommand — system executable heads and quoted separators'
   })
 
   it('still sees a command after a real separator following a quoted one', () => {
-    assert.equal(verdict("sed -i '' 's/a;b/c/' f.html; ./run.sh"), 'external')
-    assert.equal(verdict("echo 'a;b' && bin/tool"), 'external')
+    assert.equal(verdict("sed -i '' 's/a;b/c/' f.html; ./run.sh"), 'ambiguous')
+    assert.equal(verdict("echo 'a;b' && bin/tool"), 'ambiguous')
     assert.equal(verdict('echo "$(echo \'x\'; ./evil)"'), 'external')
   })
 })

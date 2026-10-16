@@ -10,10 +10,12 @@ import {
   rmSync,
   statSync,
   symlinkSync,
+  writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { API_PROTOCOL_VERSION } from '../../src/shared/api-protocol.mts'
+import { isRecord } from '../../src/shared/unknown-value.mts'
 import {
   API_PROTOCOL_MANIFEST_PATH,
   analyzePreloadSource,
@@ -23,8 +25,10 @@ import {
   manifestOf,
   parseApiProtocol,
   parseApiProtocolManifest,
+  protocolVersionProblem,
   serializeApiProtocol,
   serializeApiProtocolManifest,
+  type ApiProtocolDiff,
   type ApiProtocolDocument,
   type JsonSchema,
 } from './api-protocol.mts'
@@ -369,9 +373,10 @@ describe('compareApiProtocol', () => {
     $defs: defs,
   })
   const str: JsonSchema = { type: 'string' }
+  // As the generator writes a fixed-length tuple: no `prefixItems` when empty.
   const tuple = (...items: JsonSchema[]): JsonSchema => ({
     type: 'array',
-    prefixItems: items,
+    ...(items.length > 0 ? { prefixItems: items } : {}),
     minItems: items.length,
     maxItems: items.length,
   })
@@ -388,9 +393,9 @@ describe('compareApiProtocol', () => {
     assert.deepEqual(compareApiProtocol(before, after), {
       breaking: [
         'channels.invoke.a:del: removed',
-        'channels.invoke.a:get: shape changed',
+        'channels.invoke.a:get: shape changed (args: items added to data the client sends)',
         'client.ns.del: removed',
-        'client.ns.get: shape changed',
+        'client.ns.get: shape changed (params: items added to data the client sends)',
       ],
       additive: ['channels.invoke.a:new: added', 'client.ns.new: added'],
     })
@@ -408,8 +413,8 @@ describe('compareApiProtocol', () => {
       { New: { type: 'number' } },
     )
     assert.deepEqual(compareApiProtocol(before, retyped).breaking, [
-      'channels.invoke.a:get: shape changed',
-      'client.ns.get: shape changed',
+      'channels.invoke.a:get: shape changed (result: type changed)',
+      'client.ns.get: shape changed (result: type changed)',
     ])
   })
 
@@ -422,9 +427,427 @@ describe('compareApiProtocol', () => {
     assert.deepEqual(compareApiProtocol(before, before), { breaking: [], additive: [] })
   })
 
+  it('tells recursive shapes apart by where the cycle returns, not by def name', () => {
+    const field = (name: string, def: string): JsonSchema => ({
+      type: 'object',
+      properties: { [name]: { $ref: `#/$defs/${def}` } },
+    })
+    const result = (def: string, defs: Record<string, JsonSchema>): ApiProtocolDocument =>
+      doc({ 'a:get': { args: tuple(), result: { $ref: `#/$defs/${def}` } } }, defs)
+    // b, c, b, c, … against b, c, c, c, …: both inlined to b.c.<cycle> by name.
+    const alternating = result('X', { X: field('b', 'Y'), Y: field('c', 'X') })
+    const settling = result('P', { P: field('b', 'X'), X: field('c', 'X') })
+    assert.equal(compareApiProtocol(alternating, settling).breaking.length, 2)
+    const renamed = result('Q', { Q: field('b', 'R'), R: field('c', 'Q') })
+    assert.deepEqual(compareApiProtocol(alternating, renamed), { breaking: [], additive: [] })
+  })
+
+  describe('compatible widening', () => {
+    const obj = (properties: Record<string, JsonSchema>, required: string[]): JsonSchema => ({
+      type: 'object',
+      properties,
+      required,
+    })
+    const widened = (channel: string, method: string): ApiProtocolDiff => ({
+      breaking: [],
+      additive: [
+        `channels.invoke.${channel}: widened compatibly`,
+        `client.ns.${method}: widened compatibly`,
+      ],
+    })
+    /** A break found at `at` (named from the channel's side: `args`, `result`). */
+    const broken = (channel: string, method: string, at: string, why: string): ApiProtocolDiff => ({
+      breaking: [
+        `channels.invoke.${channel}: shape changed (${at}: ${why})`,
+        `client.ns.${method}: shape changed (${at.replace(/^args/, 'params')}: ${why})`,
+      ],
+      additive: [],
+    })
+
+    it('treats an optional field the host adds to a result as additive, at any depth', () => {
+      const row = (extra: Record<string, JsonSchema>): JsonSchema =>
+        obj({ a: str, ...extra }, ['a'])
+      const result = (
+        extra: Record<string, JsonSchema>,
+        nested: Record<string, JsonSchema>,
+      ): JsonSchema =>
+        obj(
+          {
+            id: str,
+            rows: { type: 'array', items: row(nested) },
+            byId: { type: 'object', additionalProperties: row(nested) },
+            ...extra,
+          },
+          ['id', 'rows', 'byId'],
+        )
+      const before = doc({ 'a:get': { args: tuple(), result: result({}, {}) } })
+      const after = doc({ 'a:get': { args: tuple(), result: result({ note: str }, { b: str }) } })
+      assert.deepEqual(compareApiProtocol(before, after), widened('a:get', 'get'))
+    })
+
+    it('keeps required, newly required, and client-sent fields breaking', () => {
+      const before = doc({
+        'a:set': { args: tuple(obj({ a: str }, ['a'])), result: obj({ a: str }, []) },
+      })
+      const requiredField = doc({
+        'a:set': { args: tuple(obj({ a: str }, ['a'])), result: obj({ a: str, b: str }, ['b']) },
+      })
+      const nowRequired = doc({
+        'a:set': { args: tuple(obj({ a: str }, ['a'])), result: obj({ a: str }, ['a']) },
+      })
+      const clientSent = doc({
+        'a:set': { args: tuple(obj({ a: str, b: str }, ['a'])), result: obj({ a: str }, []) },
+      })
+      assert.deepEqual(
+        compareApiProtocol(before, requiredField),
+        broken('a:set', 'set', 'result.b', 'added as required'),
+      )
+      assert.deepEqual(
+        compareApiProtocol(before, nowRequired),
+        broken('a:set', 'set', 'result', 'required fields changed'),
+      )
+      assert.deepEqual(
+        compareApiProtocol(before, clientSent),
+        broken('a:set', 'set', 'args[0].b', 'added to data the client sends'),
+      )
+    })
+
+    it('treats a new union member or enum value as breaking, and matches members as a set', () => {
+      const member = (kind: string, extra: Record<string, JsonSchema> = {}): JsonSchema =>
+        obj({ kind: { const: kind }, ...extra }, ['kind'])
+      const union = (...members: JsonSchema[]): JsonSchema => ({ anyOf: members })
+      const before = doc({ 'a:get': { args: tuple(), result: union(member('a'), member('b')) } })
+      // The widened member now serializes first, as the generator would order it.
+      const reordered = doc({
+        'a:get': { args: tuple(), result: union(member('b', { aa: str }), member('a')) },
+      })
+      assert.deepEqual(compareApiProtocol(before, reordered), widened('a:get', 'get'))
+      const newMember = doc({
+        'a:get': { args: tuple(), result: union(member('a'), member('b'), member('c')) },
+      })
+      assert.deepEqual(
+        compareApiProtocol(before, newMember),
+        broken('a:get', 'get', 'result', 'union members added or removed'),
+      )
+      const enumOf = (...values: string[]): JsonSchema => ({ type: 'string', enum: values })
+      assert.deepEqual(
+        compareApiProtocol(
+          doc({ 'a:get': { args: tuple(), result: enumOf('x', 'y') } }),
+          doc({ 'a:get': { args: tuple(), result: enumOf('x', 'y', 'z') } }),
+        ),
+        broken('a:get', 'get', 'result', 'enum changed'),
+      )
+    })
+
+    it('keeps a member from gaining a field another union member is told apart by', () => {
+      // A client narrows `Dir | File` with `'size' in entry`, so an old client
+      // would take a Dir that gained `size` for a File.
+      const dir = (extra: Record<string, JsonSchema> = {}): JsonSchema =>
+        obj({ name: str, ...extra }, ['name'])
+      const file = obj({ name: str, size: { type: 'number' } }, ['name', 'size'])
+      const listing = (...members: JsonSchema[]): JsonSchema => ({
+        type: 'array',
+        items: { anyOf: members },
+      })
+      const before = doc({ 'a:list': { args: tuple(), result: listing(dir(), file) } })
+      assert.deepEqual(
+        compareApiProtocol(
+          before,
+          doc({ 'a:list': { args: tuple(), result: listing(dir({ size: str }), file) } }),
+        ),
+        broken(
+          'a:list',
+          'list',
+          'result[].size',
+          'added to a union member that another member has',
+        ),
+      )
+      assert.deepEqual(
+        compareApiProtocol(
+          before,
+          doc({ 'a:list': { args: tuple(), result: listing(dir({ note: str }), file) } }),
+        ),
+        widened('a:list', 'list'),
+      )
+    })
+
+    it('treats any argument added to a call as breaking, since hosts check arity', () => {
+      const before = doc({ 'a:get': { args: tuple(str), result: str } })
+      const optionalTail = doc({
+        'a:get': {
+          args: { type: 'array', prefixItems: [str, str], minItems: 1, maxItems: 2 },
+          result: str,
+        },
+      })
+      assert.deepEqual(
+        compareApiProtocol(before, optionalTail),
+        broken('a:get', 'get', 'args', 'items added to data the client sends'),
+      )
+      const requiredTail = doc({ 'a:get': { args: tuple(str, str), result: str } })
+      assert.deepEqual(
+        compareApiProtocol(before, requiredTail),
+        broken('a:get', 'get', 'args', 'items added to data the client sends'),
+      )
+    })
+
+    it('keeps the qualifiers beside a $ref, so T becoming T | undefined is breaking', () => {
+      const defs = { Thread: obj({ id: str }, ['id']) }
+      const before = doc({ 'a:get': { args: tuple(), result: { $ref: '#/$defs/Thread' } } }, defs)
+      const after = doc(
+        { 'a:get': { args: tuple(), result: { $ref: '#/$defs/Thread', 'x-optional': true } } },
+        defs,
+      )
+      assert.deepEqual(
+        compareApiProtocol(before, after),
+        broken('a:get', 'get', 'result', 'x-optional changed'),
+      )
+    })
+
+    it('compares parameter names and fields named description or title', () => {
+      // A rename cannot be told apart from two same-typed parameters swapping.
+      const named = (title: string): JsonSchema => ({
+        type: 'array',
+        prefixItems: [{ title, ...str }],
+        minItems: 1,
+        maxItems: 1,
+      })
+      assert.deepEqual(
+        compareApiProtocol(
+          doc({ 'a:get': { args: named('id'), result: str } }),
+          doc({ 'a:get': { args: named('threadId'), result: str } }),
+        ),
+        broken('a:get', 'get', 'args[0]', 'title changed'),
+      )
+      for (const field of ['description', 'title']) {
+        assert.deepEqual(
+          compareApiProtocol(
+            doc({ 'a:get': { args: tuple(), result: obj({ [field]: str }, [field]) } }),
+            doc({
+              'a:get': { args: tuple(), result: obj({ [field]: { type: 'number' } }, [field]) },
+            }),
+          ),
+          broken('a:get', 'get', `result.${field}`, 'type changed'),
+        )
+      }
+    })
+
+    it('widens an empty result object and an intersection member, but not a record', () => {
+      const empty: JsonSchema = { type: 'object' }
+      assert.deepEqual(
+        compareApiProtocol(
+          doc({ 'a:get': { args: tuple(), result: empty } }),
+          doc({ 'a:get': { args: tuple(), result: obj({ note: str }, []) } }),
+        ),
+        widened('a:get', 'get'),
+      )
+      const both = (extra: Record<string, JsonSchema>): JsonSchema => ({
+        allOf: [obj({ id: str }, ['id']), obj({ name: str, ...extra }, ['name'])],
+      })
+      assert.deepEqual(
+        compareApiProtocol(
+          doc({ 'a:get': { args: tuple(), result: both({}) } }),
+          doc({ 'a:get': { args: tuple(), result: both({ note: str }) } }),
+        ),
+        widened('a:get', 'get'),
+      )
+      const record = (properties: Record<string, JsonSchema>): JsonSchema => ({
+        type: 'object',
+        ...(Object.keys(properties).length > 0 ? { properties } : {}),
+        additionalProperties: { type: 'number' },
+      })
+      assert.deepEqual(
+        compareApiProtocol(
+          doc({ 'a:get': { args: tuple(), result: record({}) } }),
+          doc({ 'a:get': { args: tuple(), result: record({ note: str }) } }),
+        ),
+        broken('a:get', 'get', 'result.note', 'added beside a record index'),
+      )
+    })
+
+    it('pairs set members so each fits, whichever order the new ones come in', () => {
+      // {a} may become either new member, {b} only {a, b}. First fit would give
+      // {a} the {a, b} member when it comes first and leave {b} without one.
+      const fields = (...names: string[]): JsonSchema =>
+        obj(Object.fromEntries(names.map((name) => [name, str])), [])
+      const result = (key: 'allOf' | 'anyOf', ...members: JsonSchema[]): ApiProtocolDocument =>
+        doc({ 'a:get': { args: tuple(), result: { [key]: members } } })
+      const before = (key: 'allOf' | 'anyOf'): ApiProtocolDocument =>
+        result(key, fields('a'), fields('b'))
+      for (const after of [
+        [fields('a', 'b'), fields('a', 'c')],
+        [fields('a', 'c'), fields('a', 'b')],
+      ]) {
+        assert.deepEqual(
+          compareApiProtocol(before('allOf'), result('allOf', ...after)),
+          widened('a:get', 'get'),
+        )
+        // In a union, {b} gaining `a` would let an old client mistake it for {a}.
+        assert.deepEqual(
+          compareApiProtocol(before('anyOf'), result('anyOf', ...after)),
+          broken('a:get', 'get', 'result.a', 'added to a union member that another member has'),
+        )
+      }
+    })
+
+    it('treats an optional field or trailing argument added to an event as additive', () => {
+      const withEvent = (args: JsonSchema): ApiProtocolDocument => {
+        const base = doc({})
+        return {
+          ...base,
+          channels: { ...base.channels, event: { 'a:changed': { 'x-api': 'ns.onChanged', args } } },
+          client: {
+            ns: { onChanged: { kind: 'subscribe', channel: 'a:changed', handlerParams: args } },
+          },
+        }
+      }
+      const widenedEvent = {
+        breaking: [],
+        additive: [
+          'channels.event.a:changed: widened compatibly',
+          'client.ns.onChanged: widened compatibly',
+        ],
+      }
+      const payload = obj({ id: str }, ['id'])
+      assert.deepEqual(
+        compareApiProtocol(
+          withEvent(tuple(payload)),
+          withEvent(tuple(obj({ id: str, note: str }, ['id']))),
+        ),
+        widenedEvent,
+      )
+      assert.deepEqual(
+        compareApiProtocol(
+          withEvent(tuple(payload)),
+          withEvent({ type: 'array', prefixItems: [payload, str], minItems: 1, maxItems: 2 }),
+        ),
+        widenedEvent,
+      )
+      // A handler that took nothing (`onSettings(() => …)`) gains an optional argument.
+      assert.deepEqual(
+        compareApiProtocol(
+          withEvent(tuple()),
+          withEvent({ type: 'array', prefixItems: [str], minItems: 0, maxItems: 1 }),
+        ),
+        widenedEvent,
+      )
+    })
+  })
+
   it('parses only documents that carry the fields the tooling reads', () => {
     assert.throws(() => parseApiProtocol('{"version":1}'), /not an API protocol document/)
     assert.equal(parseApiProtocol(serializeApiProtocol(doc({}))).version, 1)
+  })
+})
+
+describe('generateApiProtocol parameter optionality', () => {
+  it('keeps `| undefined` on a required parameter, which an optional one leaves to minItems', () => {
+    const root = mkdtempSync(join(tmpdir(), 'copse-protocol-params-'))
+    try {
+      mkdirSync(join(root, 'src/preload'), { recursive: true })
+      writeFileSync(
+        join(root, 'tsconfig.node.json'),
+        JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', lib: ['ES2022'] } }),
+      )
+      writeFileSync(
+        join(root, 'src/preload/api.d.ts'),
+        [
+          'export interface ApiClient {',
+          '  a: {',
+          '    set(id: string | undefined): Promise<void>',
+          '    pick(id?: string): Promise<void>',
+          '    onPair(handler: (pair: [string, number | undefined, string?]) => void): () => void',
+          '  }',
+          '}',
+          '',
+        ].join('\n'),
+      )
+      writeFileSync(
+        join(root, 'src/preload/index.ts'),
+        [
+          'const api: ApiClient = {',
+          '  a: {',
+          "    set: (id: string | undefined) => ipcRenderer.invoke('a:set', id),",
+          "    pick: (id?: string) => ipcRenderer.invoke('a:pick', id),",
+          '    onPair: (handler: (pair: [string, number | undefined, string?]) => void) => {',
+          '      const listener = (_e: unknown, pair: [string, number | undefined, string?]): void => {',
+          '        handler(pair)',
+          '      }',
+          "      ipcRenderer.on('a:pair', listener)",
+          "      return (): void => { ipcRenderer.off('a:pair', listener) }",
+          '    },',
+          '  },',
+          '}',
+          "contextBridge.exposeInMainWorld('api', api)",
+          '',
+        ].join('\n'),
+      )
+      const generated = generateApiProtocol({ root, version: 1 })
+      const items = (schema: JsonSchema | undefined): unknown[] => {
+        const prefix = schema?.['prefixItems']
+        return Array.isArray(prefix) ? prefix : []
+      }
+      assert.deepEqual(items(generated.channels.invoke['a:set']?.args)[0], {
+        title: 'id',
+        type: 'string',
+        'x-optional': true,
+      })
+      assert.deepEqual(items(generated.channels.invoke['a:pick']?.args)[0], {
+        title: 'id',
+        type: 'string',
+      })
+      const pair = items(generated.channels.event['a:pair']?.args)[0]
+      assert.deepEqual(items(isRecord(pair) ? pair : undefined), [
+        { type: 'string' },
+        { type: 'number', 'x-optional': true },
+        { type: 'string' },
+      ])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('protocolVersionProblem', () => {
+  it('lets every breaking change before the next release share one unreleased bump', () => {
+    // main is at v53 and the latest release shipped v42: trunk already carries
+    // an unreleased bump, so a breaking pull request leaves the version alone,
+    // and two pull requests that both bumped to v54 make the same edit.
+    assert.equal(protocolVersionProblem({ breaking: true, base: 53, head: 53, released: 42 }), null)
+    assert.equal(protocolVersionProblem({ breaking: true, base: 53, head: 54, released: 42 }), null)
+  })
+
+  it('asks for one more than the release when trunk has no unreleased bump', () => {
+    assert.match(
+      protocolVersionProblem({ breaking: true, base: 42, head: 42, released: 42 }) ?? '',
+      /v42 has shipped or is about to\. Set API_PROTOCOL_VERSION .* on main to 43/,
+    )
+    assert.equal(protocolVersionProblem({ breaking: true, base: 42, head: 43, released: 42 }), null)
+    // A base that predates the release still has to clear the release.
+    assert.match(
+      protocolVersionProblem({ breaking: true, base: 41, head: 42, released: 42 }) ?? '',
+      /to 43/,
+    )
+  })
+
+  it('falls back to requiring a bump over the base when the release is unknown', () => {
+    assert.match(
+      protocolVersionProblem({ breaking: true, base: 53, head: 53 }) ?? '',
+      /without a version bump/,
+    )
+    assert.equal(protocolVersionProblem({ breaking: true, base: 53, head: 54 }), null)
+  })
+
+  it('never lets the version go below the base, breaking or not', () => {
+    for (const breaking of [true, false]) {
+      assert.match(
+        protocolVersionProblem({ breaking, base: 53, head: 52, released: 42 }) ?? '',
+        /below the base's \(v53 → v52\)/,
+      )
+    }
+    assert.equal(
+      protocolVersionProblem({ breaking: false, base: 53, head: 53, released: 53 }),
+      null,
+    )
   })
 })
 
@@ -479,10 +902,14 @@ describe('linkRefNodeModules', () => {
 })
 
 describe('gen-api-protocol --compare-ref', () => {
-  const run = (ref: string, gitDir?: string): { status: number | null; out: string } => {
+  const run = (
+    ref: string,
+    gitDir?: string,
+    extra: string[] = [],
+  ): { status: number | null; out: string } => {
     const result = spawnSync(
       process.execPath,
-      [resolve(ROOT, 'scripts/gen-api-protocol.mts'), '--compare-ref', ref],
+      [resolve(ROOT, 'scripts/gen-api-protocol.mts'), '--compare-ref', ref, ...extra],
       {
         cwd: ROOT,
         encoding: 'utf8',
@@ -547,5 +974,34 @@ describe('gen-api-protocol --compare-ref', () => {
       assert.equal(status, 1, `${ref} should fail closed, got:\n${out}`)
       assert.match(out, /cannot resolve/)
     }
+  })
+
+  it('fails closed when the release cannot be read', () => {
+    // Reading the release can only relax the rule, so an unreadable one must
+    // not pass silently either.
+    const { status, out } = run('HEAD', undefined, ['--released-ref', 'origin/no-such-release'])
+    assert.equal(status, 1, out)
+    assert.match(out, /cannot resolve origin\/no-such-release/)
+    const missing = run('HEAD', undefined, ['--released-ref'])
+    assert.equal(missing.status, 2, missing.out)
+    assert.match(missing.out, /--released-ref needs a git ref/)
+  })
+
+  it('refuses a release on the commit under test and a release without a comparison', () => {
+    // A push to release is tagged while CI runs: that tag is this commit being
+    // released, so judging against it would demand a bump the release cannot have.
+    const self = run('HEAD~1', undefined, ['--released-ref', 'HEAD'])
+    assert.equal(self.status, 2, self.out)
+    assert.match(self.out, /is the commit under test/)
+    const swallowed = run('--released-ref', undefined, ['HEAD'])
+    assert.equal(swallowed.status, 2, swallowed.out)
+    assert.match(swallowed.out, /--compare-ref needs a git ref/)
+    const alone = spawnSync(
+      process.execPath,
+      [resolve(ROOT, 'scripts/gen-api-protocol.mts'), '--released-ref', 'HEAD'],
+      { cwd: ROOT, encoding: 'utf8' },
+    )
+    assert.equal(alone.status, 2, `${alone.stdout}${alone.stderr}`)
+    assert.match(alone.stderr, /only applies with --compare-ref/)
   })
 })

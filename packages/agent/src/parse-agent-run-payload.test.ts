@@ -47,6 +47,13 @@ describe('parseAgentRunPayload', () => {
     assert.equal(r.model, 'claude-opus-4-8')
   })
 
+  it('accepts only the agent-managed execution choice', () => {
+    const enabled = parseAgentRunPayload(JSON.stringify({ content: 'go', executionMode: 'agent' }))
+    assert.equal(enabled.executionMode, 'agent')
+    const invalid = parseAgentRunPayload(JSON.stringify({ content: 'go', executionMode: 'unsafe' }))
+    assert.equal(Object.hasOwn(invalid, 'executionMode'), false)
+  })
+
   it('omits model when absent or empty so main falls back to the global default', () => {
     assert.equal('model' in parseAgentRunPayload(JSON.stringify({ content: 'hi' })), false)
     assert.equal(

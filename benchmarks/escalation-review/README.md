@@ -59,7 +59,7 @@ node benchmarks/escalation-review/scripts/prepare.mjs bench-results/escalation-r
    subagents as a second labeller.
 5. Run each model over the fixtures, for example
    `pnpm run eval:classifier --config benchmarks/classifiers/kev.json --input
-<run>/model-fixtures.jsonl --output <run>/models/kev.jsonl`.
+   <run>/model-fixtures.jsonl --output <run>/models/kev.jsonl`.
 6. Score:
 
    ```bash

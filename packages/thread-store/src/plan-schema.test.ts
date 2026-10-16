@@ -15,6 +15,8 @@ import {
   planMetaPath,
   planRevisionPath,
   planArtifactRefs,
+  parsePlanDocument,
+  planCriteria,
 } from './plan-schema.ts'
 import {
   SPINE_SCHEMA_VERSION,
@@ -29,6 +31,56 @@ import {
 
 const fix = join(process.cwd(), 'tests/fixtures/plan-mode')
 const hash = (s: string): string => createHash('sha256').update(s, 'utf8').digest('hex')
+
+describe('plan Markdown structure', () => {
+  it('recognizes formatted and setext headings without rewriting the document', () => {
+    const parsed = parsePlanDocument(
+      '# **Goal**\nFix login\n\n## _Constraints_\nNone\n\nScope\n=====\nLogin form\n\n# **Definition of _done_**\n- Sessions recover',
+    )
+    assert.deepEqual(
+      [...parsed.sections],
+      [
+        ['Goal', 'Fix login'],
+        ['Constraints', 'None'],
+        ['Scope', 'Login form'],
+        ['Definition of done', 'Sessions recover'],
+      ],
+    )
+    assert.deepEqual(parsed.criteria, [{ id: 'criterion-1', label: 'Sessions recover' }])
+  })
+
+  it('keeps complete list items, nested criteria and subheadings in document order', () => {
+    const criteria = planCriteria(
+      '# Definition of done\n- Sessions **recover**\n  without deleting existing sessions.\n\n  Confirm with `recovery.test.ts`.\n  - [ ] Existing sessions stay valid\n    after reauthentication.\n\n## Regression tests\n1. Cover expiry\\\n   and refresh.\n\n# Notes\n- This is not a criterion',
+    )
+    assert.deepEqual(criteria, [
+      {
+        id: 'criterion-1',
+        label:
+          'Sessions recover without deleting existing sessions. Confirm with recovery.test.ts.',
+      },
+      { id: 'criterion-2', label: 'Existing sessions stay valid after reauthentication.' },
+      { id: 'criterion-3', label: 'Cover expiry and refresh.' },
+    ])
+  })
+
+  it('ignores headings and bullets inside fenced or quoted examples', () => {
+    const parsed = parsePlanDocument(
+      '```md\n# Goal\nNot the goal\n# Definition of done\n- Not a criterion\n```\n\n# Definition of done\n- Real criterion\n\n```md\n# Another heading\n- Example bullet\n```\n\n> - Quoted example\n\n- Another real criterion',
+    )
+    assert.equal(parsed.sections.has('Goal'), false)
+    assert.deepEqual(parsed.criteria, [
+      { id: 'criterion-1', label: 'Real criterion' },
+      { id: 'criterion-2', label: 'Another real criterion' },
+    ])
+  })
+
+  it('preserves significant spaces in inline code within a criterion', () => {
+    assert.deepEqual(planCriteria('# Definition of done\n- Preserve `a  b` exactly'), [
+      { id: 'criterion-1', label: 'Preserve a  b exactly' },
+    ])
+  })
+})
 
 function readJson(name: string): unknown {
   return JSON.parse(readFileSync(join(fix, name), 'utf8'))

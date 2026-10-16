@@ -1,7 +1,7 @@
 import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
-import type { ApiClient } from './api.d.ts'
+import type { ApiClient, FilePathBridge } from './api.d.ts'
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
 import type { PrComposerCreateRequest } from '@shared/types/git.ts'
 import type { AppleSuggestionAnswer } from '@shared/types/apple-development.ts'
@@ -16,8 +16,50 @@ exposePerfBridge()
 // missing, extra, or mistyped member fails typecheck here, and the API protocol
 // schema (`pnpm run gen:api-protocol`) is generated from this binding.
 const api: ApiClient = {
+  threadPrompts: {
+    revokeAccess: (threadId, access) =>
+      ipcRenderer.invoke('thread-prompts:revoke-access', threadId, access),
+    onPrompt: (handler) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        command: import('@shared/thread-prompt.ts').ThreadPromptCommand,
+      ): void => {
+        handler(command)
+      }
+      ipcRenderer.on('thread-prompts:prompt', listener)
+      return () => {
+        ipcRenderer.off('thread-prompts:prompt', listener)
+      }
+    },
+    reply: (id, result) => ipcRenderer.invoke('thread-prompts:reply', id, result),
+  },
   mobile: {
-    manage: () => ipcRenderer.invoke('mobile:manage'),
+    getState: () => ipcRenderer.invoke('mobile:get-state'),
+    onStateChanged: (
+      handler: (state: import('@shared/types/mobile-companion.ts').MobileCompanionState) => void,
+    ) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        state: import('@shared/types/mobile-companion.ts').MobileCompanionState,
+      ): void => {
+        handler(state)
+      }
+      ipcRenderer.on('mobile:state-changed', listener)
+      return (): void => {
+        ipcRenderer.off('mobile:state-changed', listener)
+      }
+    },
+    enable: (address: string) => ipcRenderer.invoke('mobile:enable', address),
+    disable: () => ipcRenderer.invoke('mobile:disable'),
+    setDeviceAccess: (
+      id: string,
+      access: import('@shared/types/mobile-companion.ts').MobileCompanionAccess,
+    ) => ipcRenderer.invoke('mobile:set-device-access', id, access),
+    revokeDevice: (id: string) => ipcRenderer.invoke('mobile:revoke-device', id),
+    respondPairing: (
+      decision: import('@shared/types/mobile-companion.ts').MobileCompanionAccess | 'deny',
+    ) => ipcRenderer.invoke('mobile:respond-pairing', decision),
+    revealCertificate: () => ipcRenderer.invoke('mobile:reveal-certificate'),
     onChat: (handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
@@ -294,7 +336,8 @@ const api: ApiClient = {
     resetDefaultBranchCache: () => ipcRenderer.invoke('agent:reset-default-branch-cache'),
     estimateContext: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:estimate-context', projectId, threadId, payload),
-    abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),
+    abort: (threadId: string, reason?: 'send_now') =>
+      ipcRenderer.invoke('agent:abort', threadId, reason),
     runningThreadIds: () => ipcRenderer.invoke('agent:running-thread-ids'),
     retryReview: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:retry-review', projectId, threadId, payload),
@@ -338,6 +381,7 @@ const api: ApiClient = {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        approveLabel?: string
         collapseDetails?: boolean
         approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
@@ -358,6 +402,7 @@ const api: ApiClient = {
           type: string
           allowRemember?: boolean
           rememberLabel?: string
+          approveLabel?: string
           collapseDetails?: boolean
           approveOnceLabel?: string
           allowTurnTreeLease?: boolean
@@ -386,7 +431,7 @@ const api: ApiClient = {
       handler: (req: {
         id: string
         threadId?: string
-        questions: { question: string; options?: string[] }[]
+        questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
       }) => void,
     ) => {
       const listener = (
@@ -394,7 +439,7 @@ const api: ApiClient = {
         req: {
           id: string
           threadId?: string
-          questions: { question: string; options?: string[] }[]
+          questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
         },
       ): void => {
         handler(req)
@@ -763,9 +808,26 @@ const api: ApiClient = {
     get: (key: string) => ipcRenderer.invoke('storage:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('storage:set', key, value),
   },
+  plans: {
+    get: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('plans:get', projectId, threadId),
+    revision: (projectId: string, threadId: string, planId: string, revision: number) =>
+      ipcRenderer.invoke('plans:revision', projectId, threadId, planId, revision),
+    change: (
+      projectId: string,
+      threadId: string,
+      change: import('@copse/thread-store/plan-schema.ts').PlanChange,
+    ) => ipcRenderer.invoke('plans:change', projectId, threadId, change),
+  },
   threads: {
-    archive: (projectId: string, threadId: string, confirmation: string | null) =>
-      ipcRenderer.invoke('threads:archive', projectId, threadId, confirmation),
+    storageSize: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('threads:storage-size', projectId, threadId),
+    archive: (
+      projectId: string,
+      threadId: string,
+      confirmation: string | null,
+      stopProcesses: boolean,
+    ) => ipcRenderer.invoke('threads:archive', projectId, threadId, confirmation, stopProcesses),
     loadProject: (projectId: string) => ipcRenderer.invoke('threads:load-project', projectId),
     backfillPrRefs: (projectId: string, threadIds: string[]) =>
       ipcRenderer.invoke('threads:backfill-pr-refs', projectId, threadIds),
@@ -851,6 +913,8 @@ const api: ApiClient = {
         targetThreadId,
         throughMessageId,
       ),
+    backlinks: (projectId: string, kind: 'url' | 'thread', target: string) =>
+      ipcRenderer.invoke('threads:backlinks', projectId, kind, target),
     historySnapshot: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:history-snapshot', projectId, threadId),
     editHistory: (
@@ -1052,8 +1116,10 @@ const api: ApiClient = {
       ipcRenderer.invoke('remote-agent:refresh-imported-thread', projectId, threadId),
   },
   acp: {
+    browseRegistry: (refresh?: boolean) => ipcRenderer.invoke('acp:browse-registry', refresh),
     detectAgents: () => ipcRenderer.invoke('acp:detect-agents'),
     probeAgent: (agentId: string) => ipcRenderer.invoke('acp:probe-agent', agentId),
+    authStatus: (ids: string[]) => ipcRenderer.invoke('acp:auth-status', ids),
     autoSetup: () => ipcRenderer.invoke('acp:auto-setup'),
   },
   classifiers: {
@@ -1071,6 +1137,7 @@ const api: ApiClient = {
     install: (id: string) => ipcRenderer.invoke('local-classifiers:install', id),
     start: (id: string) => ipcRenderer.invoke('local-classifiers:start', id),
     stop: (id: string) => ipcRenderer.invoke('local-classifiers:stop', id),
+    uninstall: (id: string) => ipcRenderer.invoke('local-classifiers:uninstall', id),
     connect: (id: string) => ipcRenderer.invoke('local-classifiers:connect', id),
   },
   settings: {
@@ -1140,7 +1207,9 @@ const api: ApiClient = {
   },
   usage: {
     getSummary: () => ipcRenderer.invoke('usage:get-summary'),
-    getPlanUsage: () => ipcRenderer.invoke('usage:get-plan-usage'),
+    getThreadClassifierUse: (projectId, threadId) =>
+      ipcRenderer.invoke('usage:get-thread-classifier-use', projectId, threadId),
+    getPlanUsage: (force?: boolean) => ipcRenderer.invoke('usage:get-plan-usage', force),
     getPlanWorthIt: () => ipcRenderer.invoke('usage:get-plan-worth-it'),
     setClaudePlanMonthlyFee: (fee: number | null) =>
       ipcRenderer.invoke('usage:set-claude-plan-monthly-fee', fee),
@@ -1433,14 +1502,35 @@ const api: ApiClient = {
       ipcRenderer.invoke('automations:remove', projectId, scheduleId),
     runNow: (projectId: string, scheduleId: string) =>
       ipcRenderer.invoke('automations:run-now', projectId, scheduleId),
+    cleanupRuns: (projectId: string, scheduleId: string) =>
+      ipcRenderer.invoke('automations:cleanup-runs', projectId, scheduleId),
     listBranchCi: (projectId: string) =>
       ipcRenderer.invoke('automations:list-branch-ci', projectId),
     upsertBranchCi: (projectId: string, input: unknown) =>
       ipcRenderer.invoke('automations:upsert-branch-ci', projectId, input),
     removeBranchCi: (projectId: string, id: string) =>
       ipcRenderer.invoke('automations:remove-branch-ci', projectId, id),
-    testBranchCi: (projectId: string, branch: string) =>
-      ipcRenderer.invoke('automations:test-branch-ci', projectId, branch),
+    testBranchCi: (projectId: string, trigger) =>
+      ipcRenderer.invoke('automations:test-branch-ci', projectId, trigger),
+    eventHistory: (projectId: string, id: string) =>
+      ipcRenderer.invoke('automations:event-history', projectId, id),
+    reportStartFailure: (projectId: string, threadId: string, failure) =>
+      ipcRenderer.invoke('automations:report-start-failure', projectId, threadId, failure),
+    schedulerHealth: () => ipcRenderer.invoke('automations:scheduler-health'),
+    onSchedulerHealth: (
+      handler: (health: import('@shared/types').AutomationSchedulerHealth) => void,
+    ) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: import('@shared/types').AutomationSchedulerHealth,
+      ): void => {
+        handler(payload)
+      }
+      ipcRenderer.on('automations:scheduler-health', listener)
+      return (): void => {
+        ipcRenderer.off('automations:scheduler-health', listener)
+      }
+    },
     canStart: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('automations:can-start', projectId, threadId),
     onTriggered: (handler: (event: import('@shared/types').AutomationTriggerEvent) => void) => {
@@ -1511,7 +1601,12 @@ const api: ApiClient = {
     create: (
       cols: number,
       rows: number,
-      meta: { label?: string; projectId: string; threadId: string | null },
+      meta: {
+        label?: string
+        projectId: string
+        threadId: string | null
+        executionTarget?: 'local'
+      },
     ) => ipcRenderer.invoke('terminal:create', cols, rows, meta),
     write: (sessionId: string, data: string) =>
       ipcRenderer.invoke('terminal:write', sessionId, data),
@@ -1669,6 +1764,12 @@ const api: ApiClient = {
   },
 }
 contextBridge.exposeInMainWorld('api', api)
+
+// `File.path` was removed in Electron 32; the renderer asks the preload instead.
+const filePathBridge: FilePathBridge = {
+  pathForFile: (file: File) => webUtils.getPathForFile(file),
+}
+contextBridge.exposeInMainWorld('copseFiles', filePathBridge)
 
 if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
   const errorToasts: string[] = []

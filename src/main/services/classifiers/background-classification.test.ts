@@ -242,12 +242,14 @@ describe('askClassifierChoice', () => {
     // The provider's own `choice` disagrees; the distribution decides.
     const sent = classifierAnswers({ small: 0.7, large: 0.3 }, 'large')
     const usage: Array<[string, ModelUsage]> = []
+    const providers: Array<string | undefined> = []
     const answer = await askClassifierChoice(
       QUESTION,
       'Rename a flag',
       undefined,
-      (model, spent) => {
+      (model, spent, provider) => {
         usage.push([model, spent])
+        providers.push(provider)
       },
     )
     assert.deepEqual(answer, {
@@ -257,6 +259,7 @@ describe('askClassifierChoice', () => {
       model: 'kev-fixture',
     })
     assert.deepEqual(usage, [['kev-fixture', { inputTokens: 12, outputTokens: 1 }]])
+    assert.deepEqual(providers, ['Kev (local)'], 'attributed to the connection that answered')
     assert.equal(sent.length, 1)
     assert.match(JSON.stringify(sent[0]), /Rename a flag/)
     assert.match(JSON.stringify(sent[0]), /Rate the size of the change below/)

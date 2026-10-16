@@ -1,3 +1,5 @@
+import { runWithThreadPlan } from './thread-plan-context.ts'
+import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import { canContinue } from '@copse/agent/hooks/continuation-budget.ts'
 import type {
@@ -17,6 +19,7 @@ import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import type { TurnOutcome } from '@shared/types/turn-outcome.ts'
 import { AgentTurnBusyError } from '@shared/agent-turn-busy.ts'
+import type { AgentInitiatedTurnClaim } from './acp/agent-initiated-turn.ts'
 import { runAgent, type RunAgentOptions } from './agent-service.ts'
 import { contextLossNotice, contextWasLost } from './context-loss-notice.ts'
 import { recoverAgentHistory } from './history-recovery.ts'
@@ -30,6 +33,7 @@ import { onDeferredWorktreeAllocated } from './deferred-worktree.ts'
 import { runWithActiveRunIdentity } from './thread-models.ts'
 import {
   appendMachineContinuation,
+  getLatestThreadPlan,
   getProjectThread,
   loadAgentHistory,
   loadAgentTurnEpoch,
@@ -42,6 +46,7 @@ import { perfMark } from './diagnostics/perf-trace.ts'
 
 export interface AgentDispatchPayload {
   userContent: UserContent
+  executionMode?: 'agent'
   invokedSkills: string[]
   /** Subagent the user invoked with `/name` this turn. */
   invokedAgent?: string
@@ -68,7 +73,13 @@ export interface MachineAgentDispatchRequest extends AgentDispatchRequest {
   display?: MachineTurnDisplay
 }
 
+type MachineOperationRef = Pick<
+  MachineAgentDispatchRequest,
+  'projectId' | 'threadId' | 'operationId' | 'turnTreeId'
+>
+
 export interface AgentDispatcherDependencies {
+  loadPlan: (projectId: string, threadId: string) => Promise<StoredThreadPlan | null>
   loadHistory: (projectId: string, threadId: string) => Promise<LLMMessage[]>
   saveHistory: (projectId: string, threadId: string, messages: LLMMessage[]) => Promise<void>
   /**
@@ -127,6 +138,7 @@ async function recoverHistoryFromTranscript(
 }
 
 const defaultDependencies: AgentDispatcherDependencies = {
+  loadPlan: getLatestThreadPlan,
   loadHistory: loadAgentHistory,
   saveHistory: saveAgentHistory,
   recoverHistory: recoverHistoryFromTranscript,
@@ -268,6 +280,46 @@ export class AgentDispatcher {
       if (oldest !== undefined && oldest !== operationKey) this.machineOperations.delete(oldest)
     }
     return running
+  }
+
+  /**
+   * Charge a turn the coding agent started on its own (a background-task
+   * notification re-entering the model) to the same continuation budget as any
+   * other machine-initiated turn. Copse never dispatched it, so unlike
+   * {@link dispatchMachine} this does not take the thread's dispatch slot and
+   * does not run anything: it only decides whether the turn may use bridged
+   * tools. `override` is a human's explicit go-ahead and skips the cap, but the
+   * turn still counts, so later self-resumes are held again.
+   */
+  async claimAgentInitiatedTurn(
+    projectId: string,
+    threadId: string,
+    options: { override: boolean },
+  ): Promise<AgentInitiatedTurnClaim> {
+    const key = dispatchKey(projectId, threadId)
+    await this.epochWrites.get(key)
+    let epoch = this.epochs.get(key)
+    epoch ??= (await this.dependencies.loadEpoch(projectId, threadId)) ?? undefined
+    // A thread that predates persisted epochs keyed its turn tree by thread id.
+    epoch ??= { turnTreeId: threadId, continuationUsed: 0 }
+    const request: MachineOperationRef = {
+      projectId,
+      threadId,
+      operationId: `agent-initiated:${this.dependencies.createId()}`,
+      turnTreeId: epoch.turnTreeId,
+    }
+    if (!options.override && !canContinue(epoch.continuationUsed)) {
+      await this.recordMachineFinish(request, 'budget-exhausted', epoch.continuationUsed)
+      return { status: 'budget-exhausted' }
+    }
+    const next = { ...epoch, continuationUsed: epoch.continuationUsed + 1 }
+    await this.dependencies.saveEpoch(projectId, threadId, next)
+    this.epochs.set(key, next)
+    await this.recordMachineStart(request, next.continuationUsed)
+    return {
+      status: 'granted',
+      release: () => this.recordMachineFinish(request, 'completed', next.continuationUsed),
+    }
   }
 
   isActive(projectId: string, threadId: string): boolean {
@@ -472,10 +524,7 @@ export class AgentDispatcher {
     return 'completed'
   }
 
-  private recordMachineStart(
-    request: MachineAgentDispatchRequest,
-    budgetUsed: number,
-  ): Promise<void> {
+  private recordMachineStart(request: MachineOperationRef, budgetUsed: number): Promise<void> {
     return this.dependencies.appendMachineContinuation(request.projectId, request.threadId, {
       v: SPINE_SCHEMA_VERSION,
       type: 'machine_continuation',
@@ -489,7 +538,7 @@ export class AgentDispatcher {
   }
 
   private recordMachineFinish(
-    request: MachineAgentDispatchRequest,
+    request: MachineOperationRef,
     result: MachineContinuationResult,
     budgetUsed?: number,
     turnOutcome?: TurnOutcome,
@@ -616,6 +665,7 @@ export class AgentDispatcher {
       host,
     )
     if (!executionContext) return undefined
+    const plan = await this.dependencies.loadPlan(projectId, threadId)
     perfMark('ttft:dispatch-preflight-complete')
 
     // Reports on the pre-turn state, so it runs before the checkpoint writer
@@ -632,8 +682,11 @@ export class AgentDispatcher {
     })
 
     const options: RunAgentOptions = {
+      ...(payload.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
       invokedSkills: payload.invokedSkills,
-      priorTodos: payload.priorTodos,
+      // Existing execution todos must not trigger finalize/continuation nudges
+      // during a draft turn. The stored checklist is retained for implementation.
+      priorTodos: plan?.meta.status === 'draft' ? [] : payload.priorTodos,
       ...(payload.invokedAgent !== undefined ? { invokedAgent: payload.invokedAgent } : {}),
       onHistoryCheckpoint: checkpoints.submit,
       ...(payload.workingBrief !== undefined ? { workingBrief: payload.workingBrief } : {}),
@@ -655,14 +708,16 @@ export class AgentDispatcher {
       : null
     try {
       result = await runWithThreadExecutionContext(executionContext, () =>
-        runWithActiveRunIdentity(threadId, () =>
-          this.dependencies.run(
-            threadId,
-            payload.userContent,
-            priorMessages,
-            host,
-            this.registry,
-            options,
+        runWithThreadPlan(plan, () =>
+          runWithActiveRunIdentity(threadId, () =>
+            this.dependencies.run(
+              threadId,
+              payload.userContent,
+              priorMessages,
+              host,
+              this.registry,
+              options,
+            ),
           ),
         ),
       )

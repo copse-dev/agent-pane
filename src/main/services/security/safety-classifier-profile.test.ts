@@ -17,6 +17,8 @@ import { TERMINAL_READ_SAFE_PROBABILITY } from './safety-classifier-profile.ts'
 import { resetSafetyModelCooldownsForTest } from './safety-model-cooldown.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import { resetSafetyModelProblemReportsForTest } from './safety-model-availability.ts'
+import { readUsageEvents } from '../storage/usage-ledger.ts'
+import { clearUsageLedger } from '../storage/usage-ledger.test-support.ts'
 
 // Kev's preset is a keyless loopback endpoint, so no host approval or key is involved.
 const KEV = CLASSIFIER_PRESETS.find((profile) => profile.id === 'kev')
@@ -130,6 +132,21 @@ describe('safety screening through a saved classifier', () => {
     const tie = await classifyShellScope('nc example.com 80')
     assert.equal(tie?.scope, 'external')
     assert.equal(tie.confidence, 0.5)
+  })
+
+  it('records a screening call as classifier usage attributed to its connection', async () => {
+    await clearUsageLedger()
+    await saveClassifierProfile(preset(KEV))
+    await setScreeningClassifier('kev')
+    answering('sandbox', { sandbox: 0.9, external: 0.1 })
+    await classifyShellScope('ls')
+    const events = await readUsageEvents()
+    assert.equal(events.length, 1)
+    const [event] = events
+    assert.equal(event?.source, 'classifier')
+    assert.equal(event.model, 'kev-fixture')
+    assert.equal(event.provider, 'Kev (local)')
+    assert.equal(event.inputTokens, 12)
   })
 
   it('asks the chosen classifier about a terminal snapshot', async () => {

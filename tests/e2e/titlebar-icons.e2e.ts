@@ -6,19 +6,24 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
 describe('titlebar panel icons', () => {
+  let workspaceParent: string
   let workspaceRoot: string
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-titlebar-icons-'))
+    workspaceParent = mkdtempSync(join(tmpdir(), 'copse-panel-titlebar-icons-'))
+    // The titlebar uses the directory basename. A random suffix changes the
+    // width left for the action strip, even when all icons are identical.
+    workspaceRoot = join(workspaceParent, 'workspace')
+    mkdirSync(workspaceRoot)
     seedEmptyProject(workspaceRoot, 'e2e-titlebar-icons-project')
     await browser.reloadSession()
   })
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    rmSync(workspaceParent, { recursive: true, force: true })
   })
 
   it('shows consistent outline icons on the panel controls', async () => {
@@ -27,6 +32,7 @@ describe('titlebar panel icons', () => {
 
     const buttons = [
       { label: 'Toggle right panel', icon: 'panel', text: 'Panel' },
+      { label: 'Open thread context', icon: 'context', text: 'Context' },
       { label: 'Open terminal', icon: 'terminal', text: 'Terminal' },
       { label: 'Open changes', icon: 'changes', text: 'Changes' },
       { label: 'Open pull requests', icon: 'prs', text: 'PRs' },
@@ -66,7 +72,8 @@ describe('titlebar panel icons', () => {
       await expect(styles.strokeLinecap).toBe('round')
       await expect(styles.strokeLinejoin).toBe('round')
     }
-    // Nine outline-icon buttons: the five checked above, the experimental
+    // Eleven outline-icon buttons: the six checked above, Side chat (hidden until
+    // the open thread has a side chat), the experimental
     // Memories and Roadmap buttons (rendered up front but hidden until their
     // flags are on), Desktop (hidden until vncEnabled), and the "Open in
     // editor" primary button (hidden until an editor is detected). All are
@@ -75,7 +82,7 @@ describe('titlebar panel icons', () => {
     // this set. Portrait-bar duplicates are excluded by the #titlebar scope.
     await expect(
       await $$('#titlebar .titlebar-text-btn svg.titlebar-btn-icon'),
-    ).toBeElementsArrayOfSize(9)
+    ).toBeElementsArrayOfSize(11)
     await browser.execute(() => {
       const dragRegion = document.querySelector<HTMLElement>('.titlebar-drag')
       if (!dragRegion) throw new Error('Missing titlebar drag region')

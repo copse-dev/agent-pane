@@ -901,6 +901,27 @@ describe('adoptCarryOut', () => {
     }
   })
 
+  it('rechecks a hosted snapshot inside serialized adoption when two results race', async () => {
+    const repo = initRepo()
+    try {
+      const base = git(repo, ['rev-parse', 'HEAD'])
+      const tree = git(repo, ['rev-parse', 'HEAD^{tree}'])
+      runOnRef(repo, base, 'refs/copse/runs/hosted-a', ['one.txt'])
+      runOnRef(repo, base, 'refs/copse/runs/hosted-b', ['two.txt'])
+      const results = await Promise.allSettled([
+        adoptCarryOut(repo, 'refs/copse/runs/hosted-a', base, tree),
+        adoptCarryOut(repo, 'refs/copse/runs/hosted-b', base, tree),
+      ])
+      assert.equal(results[0].status, 'fulfilled')
+      assert.equal(results[1].status, 'rejected')
+      assert.equal(git(repo, ['show', 'HEAD:one.txt']), 'one.txt')
+      assert.equal(git(repo, ['ls-tree', '--name-only', 'HEAD', 'two.txt']), '')
+      assert.equal(git(repo, ['status', '--porcelain']), '')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   it('refuses a dirty checkout and leaves a conflicting pick aborted', async () => {
     const repo = initRepo()
     try {
@@ -1517,6 +1538,48 @@ describe('runThreadInContainer and the host-local alias (A16)', () => {
       if (canary === undefined) delete process.env['COPSE_SECRET_CANARY']
       else process.env['COPSE_SECRET_CANARY'] = canary
       rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('rebase carry-in', () => {
+  it('carries a divergent base into the guest without changing the host checkout', async () => {
+    const repo = initRepo()
+    const guest = mkdtempSync(join(tmpdir(), 'copse-rebase-guest-'))
+    const bundle = join(guest, 'carry-in.bundle')
+    try {
+      git(repo, ['checkout', '-qb', 'feature'])
+      writeFileSync(join(repo, 'feature.txt'), 'feature')
+      git(repo, ['add', '-A'])
+      git(repo, ['commit', '-qm', 'feature'])
+      const head = git(repo, ['rev-parse', 'HEAD'])
+      git(repo, ['checkout', '-q', 'main'])
+      writeFileSync(join(repo, 'base.txt'), 'new base')
+      git(repo, ['add', '-A'])
+      git(repo, ['commit', '-qm', 'base advanced'])
+      const base = git(repo, ['rev-parse', 'HEAD'])
+      git(repo, ['checkout', '-q', 'feature'])
+      const carried = await writeCarryInBundle(repo, 'rebase-test', bundle, undefined, base)
+      assert.equal(carried.sha, head)
+      assert.equal(carried.dirty, false)
+      assert.equal(git(repo, ['rev-parse', 'HEAD']), head)
+      assert.equal(git(repo, ['for-each-ref', '--format=%(refname)', 'refs/copse']), '')
+      git(guest, ['init', '-q'])
+      git(guest, [
+        'fetch',
+        bundle,
+        `${carried.ref}:refs/heads/work`,
+        `${carried.ref}-base:refs/copse/rebase-base`,
+      ])
+      assert.equal(git(guest, ['rev-parse', 'refs/copse/rebase-base']), base)
+      assert.equal(git(guest, ['show', 'refs/copse/rebase-base:base.txt']), 'new base')
+      await assert.rejects(
+        writeCarryInBundle(repo, 'bad-base', bundle, undefined, '--all'),
+        /exact commit SHA/,
+      )
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(guest, { recursive: true, force: true })
     }
   })
 })

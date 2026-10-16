@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Selection reply prototype</title>
+    <style>
+      :root {
+        color-scheme: dark light;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+        background: #1f1e20;
+        color: #e6e2e5;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+      }
+      .shell {
+        max-width: 1050px;
+        margin: auto;
+        padding: 28px 26px 100px;
+      }
+      .top {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+        color: #a9a3aa;
+        font-size: 13px;
+        margin-bottom: 27px;
+      }
+      .top strong {
+        color: #eee9ed;
+      }
+      .badge {
+        border: 1px solid #514850;
+        border-radius: 99px;
+        padding: 5px 10px;
+      }
+      .thread {
+        border: 1px solid #3b373b;
+        border-radius: 15px;
+        background: #262326;
+        min-height: 490px;
+        overflow: visible;
+      }
+      .thread-head {
+        padding: 15px 22px;
+        border-bottom: 1px solid #39353a;
+        color: #c8c0c7;
+        font-size: 13px;
+      }
+      .content {
+        padding: 26px 24px 90px;
+      }
+      .content h1 {
+        font-size: 23px;
+        font-weight: 600;
+        margin: 0 0 18px;
+      }
+      .content > p {
+        max-width: 760px;
+        color: #d2cbd0;
+        line-height: 1.65;
+        margin: 12px 0 22px;
+      }
+      .code {
+        display: inline-block;
+        border: 1px solid #3e393e;
+        border-radius: 8px;
+        padding: 11px 14px;
+        background: #1b1a1c;
+        color: #d6cfd5;
+        font:
+          13px ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+      }
+      .caution {
+        margin-top: 28px;
+        max-width: 860px;
+        background: #3a292d;
+        border-radius: 11px;
+        padding: 19px 23px;
+      }
+      .caution strong {
+        font-size: 19px;
+        color: #ff626d;
+      }
+      .caution p {
+        font-size: 21px;
+        line-height: 1.6;
+        margin: 12px 0 0;
+      }
+      .selectable {
+        cursor: text;
+      }
+      .highlight {
+        background: #3969c5;
+        color: white;
+        border-radius: 2px;
+      }
+      .popup {
+        position: fixed;
+        z-index: 10;
+        width: min(360px, calc(100vw - 24px));
+        display: none;
+        align-items: center;
+        background: #252426;
+        border: 1px solid #ee94c4;
+        border-radius: 15px;
+        box-shadow: 0 14px 34px #0009;
+        padding: 6px 7px 6px 13px;
+        gap: 8px;
+        min-height: 44px;
+      }
+      .popup.show {
+        display: flex;
+      }
+      .popup textarea {
+        display: block;
+        flex: 1;
+        min-width: 0;
+        width: 100%;
+        height: 27px;
+        max-height: 170px;
+        overflow-y: auto;
+        resize: none;
+        background: transparent;
+        border: 0;
+        outline: 0;
+        color: #f1edf0;
+        font: 15px/25px inherit;
+        font-family: inherit;
+        font-size: 15px;
+        line-height: 25px;
+        padding: 1px 0;
+      }
+      .popup textarea::placeholder {
+        color: #938b92;
+      }
+      .popup button {
+        align-self: flex-end;
+        border: 0;
+        border-radius: 8px;
+        background: #bd81a5;
+        color: #211821;
+        font: 600 12px inherit;
+        font-family: inherit;
+        font-size: 12px;
+        font-weight: 650;
+        padding: 7px 9px;
+        cursor: pointer;
+      }
+      .popup button:disabled {
+        background: #3c373c;
+        color: #8b828a;
+        cursor: default;
+      }
+      .helper {
+        margin: 30px 0 0;
+        color: #aaa2a9;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .helper button {
+        border: 1px solid #65535f;
+        background: #302930;
+        color: #e8dce4;
+        border-radius: 8px;
+        padding: 7px 10px;
+        cursor: pointer;
+        margin-right: 10px;
+      }
+      .posted {
+        margin-top: 18px;
+        color: #ddd5dc;
+        font-size: 14px;
+        display: none;
+      }
+      .posted.show {
+        display: block;
+      }
+      @media (max-width: 650px) {
+        .shell {
+          padding: 15px 12px 80px;
+        }
+        .top {
+          margin-bottom: 16px;
+        }
+        .content {
+          padding: 20px 15px 90px;
+        }
+        .content h1 {
+          font-size: 19px;
+        }
+        .caution {
+          padding: 15px;
+        }
+        .caution p {
+          font-size: 16px;
+        }
+        .popup {
+          width: min(360px, calc(100vw - 20px));
+        }
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          background: #f5f2f4;
+          color: #29252a;
+        }
+        .top strong {
+          color: #29252a;
+        }
+        .thread {
+          background: #fff;
+          border-color: #ddd6dc;
+        }
+        .thread-head {
+          border-color: #e7e0e5;
+          color: #736b72;
+        }
+        .content > p {
+          color: #544b53;
+        }
+        .code {
+          background: #f8f6f7;
+          border-color: #e2dce0;
+          color: #39343a;
+        }
+        .caution {
+          background: #fff0f1;
+        }
+        .caution p {
+          color: #44353b;
+        }
+        .popup {
+          background: white;
+          box-shadow: 0 14px 34px #33212f35;
+        }
+        .popup textarea {
+          color: #29252a;
+        }
+        .popup button:disabled {
+          background: #eee8ec;
+          color: #a99fa6;
+        }
+        .helper button {
+          background: white;
+          color: #50454d;
+        }
+        .posted {
+          color: #514850;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <div class="top">
+        <div><strong>Copse</strong> / conversation</div>
+        <div class="badge">Selection reply prototype</div>
+      </div>
+      <section class="thread" id="thread">
+        <div class="thread-head">Reviewing the interrupted run</div>
+        <div class="content">
+          <h1>How is this even possible?</h1>
+          <p>
+            Select any words in the caution below to reply to that passage. The quoted text stays
+            highlighted while you type.
+          </p>
+          <div class="code">resolveDynamicModelId() before building a provider.</div>
+          <div class="caution">
+            <strong>◆ &nbsp;Caution</strong>
+            <p class="selectable" id="passage">
+              <span id="phrase">auto:match-prompt</span> is an unexpanded model rule. Resolve it
+              with resolveDynamicModelId() before building a provider.
+            </p>
+          </div>
+          <div id="posted" class="posted" role="status"></div>
+        </div>
+      </section>
+      <div class="helper">
+        <button id="demo" type="button">Select example text</button
+        ><button id="long" type="button">Type a longer reply</button>Drag across the caution text,
+        or use the example button. Enter sends; Shift+Enter adds a line.
+      </div>
+    </main>
+    <div class="popup" id="popup" role="group" aria-label="Selection reply">
+      <textarea
+        id="reply"
+        rows="1"
+        aria-label="Reply to selected text"
+        placeholder="Reply…"
+      ></textarea
+      ><button id="send" disabled>Send</button>
+    </div>
+    <script>
+      const passage = document.getElementById('passage'),
+        phrase = document.getElementById('phrase'),
+        popup = document.getElementById('popup'),
+        reply = document.getElementById('reply'),
+        send = document.getElementById('send'),
+        posted = document.getElementById('posted')
+      let selected = ''
+      function size() {
+        reply.style.height = '27px'
+        reply.style.height = Math.min(reply.scrollHeight, 170) + 'px'
+        send.disabled = !reply.value.trim()
+        place()
+      }
+      function place(rect) {
+        const anchor = rect || phrase.getBoundingClientRect()
+        const w = Math.min(360, innerWidth - 24)
+        const x = Math.max(12, Math.min(anchor.left, innerWidth - w - 12))
+        let y = anchor.top - 12 - popup.offsetHeight
+        if (y < 8) y = anchor.bottom + 12
+        popup.style.left = x + 'px'
+        popup.style.top = y + 'px'
+      }
+      function open(text, rect) {
+        selected = text
+        phrase.classList.add('highlight')
+        popup.classList.add('show')
+        reply.value = ''
+        size()
+        place(rect)
+        reply.focus()
+      }
+      function choose() {
+        const s = getSelection()
+        if (!s || !s.toString().trim()) return
+        const node = s.anchorNode
+        const other = s.focusNode
+        if (!passage.contains(node) || !passage.contains(other)) return
+        open(s.toString().trim(), s.getRangeAt(0).getBoundingClientRect())
+      }
+      passage.addEventListener('mouseup', () => setTimeout(choose, 0))
+      passage.addEventListener('touchend', () => setTimeout(choose, 100))
+      document.getElementById('demo').onclick = () =>
+        open(phrase.textContent, phrase.getBoundingClientRect())
+      document.getElementById('long').onclick = () => {
+        if (!selected) open(phrase.textContent, phrase.getBoundingClientRect())
+        reply.value =
+          'I think this rule is reaching provider creation before it gets resolved. Can we trace where auto:match-prompt is selected and call resolveDynamicModelId() before building the provider?\n\nThe error seems to point directly at that ordering.'
+        size()
+        reply.focus()
+      }
+      reply.addEventListener('input', size)
+      reply.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          popup.classList.remove('show')
+          phrase.classList.remove('highlight')
+        }
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault()
+          send.click()
+        }
+      })
+      send.onclick = () => {
+        if (!reply.value.trim()) return
+        posted.textContent = 'Reply to “' + selected + '”: ' + reply.value.trim()
+        posted.classList.add('show')
+        popup.classList.remove('show')
+        phrase.classList.remove('highlight')
+        reply.value = ''
+        size()
+      }
+      addEventListener('resize', () => popup.classList.contains('show') && place())
+      addEventListener('scroll', () => popup.classList.contains('show') && place(), true)
+    </script>
+  </body>
+</html>

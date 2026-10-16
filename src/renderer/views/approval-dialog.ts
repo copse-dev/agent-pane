@@ -3,6 +3,8 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { isSettingsDialogOpen, onSettingsDialogClose } from './settings-dialog.ts'
 import { setAttentionThreads } from '../controller/attention.ts'
+import { attentionThreadId } from '../controller/projects.ts'
+import { sideChatPromptOrigin } from '../controller/side-chat.ts'
 import { uiActions } from '../ui/actions.ts'
 
 function githubMarkIcon(): SVGSVGElement {
@@ -90,48 +92,46 @@ export function approvalRequestDetails(req: {
 }): HTMLElement[] {
   const parts: HTMLElement[] = []
   if (req.bodyAdvice) parts.push(approvalCopyElement('approval-advice', req.bodyAdvice))
-  parts.push(
-    el(
-      'div',
-      { class: req.type === 'shell' ? 'approval-body approval-body-code' : 'approval-body' },
-      req.body,
-    ),
-  )
+  if (req.body.trim())
+    parts.push(
+      el(
+        'div',
+        { class: req.type === 'shell' ? 'approval-body approval-body-code' : 'approval-body' },
+        req.body,
+      ),
+    )
   if (req.bodyFooter) parts.push(approvalCopyElement('approval-footer', req.bodyFooter))
   return parts
 }
 
-/**
- * Combine the distinct explanations for one grouped decision. Permission copy
- * commonly shares a lead line followed by request-specific bullets; keep that
- * lead once and preserve every unique detail below it. Unstructured advice stays
- * intact as separate paragraphs.
- */
+/** Combine shared reason lists and prose once for a grouped decision. */
 function mergeApprovalAdvice(values: readonly (string | undefined)[]): string | undefined {
-  const unique: string[] = []
-  const seen = new Set<string>()
+  const sections: string[] = []
+  const sectionIndexes = new Map<string, number>()
   for (const value of values) {
-    if (!value || seen.has(value)) continue
-    seen.add(value)
-    unique.push(value)
+    if (!value) continue
+    for (const section of value.split('\n\n')) {
+      const lines = section.split('\n')
+      const lead = lines[0]
+      const reasons = lines.slice(1)
+      if (lead && reasons.length > 0 && reasons.every((line) => line.startsWith(REASON_BULLET))) {
+        const index = sectionIndexes.get(lead)
+        if (index !== undefined) {
+          const existing = sections[index]
+          if (existing === undefined) continue
+          const mergedReasons = new Set(existing.split('\n').slice(1))
+          for (const reason of reasons) mergedReasons.add(reason)
+          sections[index] = [lead, ...mergedReasons].join('\n')
+          continue
+        }
+        sectionIndexes.set(lead, sections.length)
+        sections.push(section)
+      } else if (!sections.includes(section)) {
+        sections.push(section)
+      }
+    }
   }
-  if (unique.length <= 1) return unique[0]
-
-  const lines = unique.map((value) => value.split('\n'))
-  const sharedLead = lines[0]?.[0]
-  if (sharedLead === undefined || !lines.every((parts) => parts[0] === sharedLead)) {
-    return unique.join('\n\n')
-  }
-
-  const merged = [sharedLead]
-  const seenDetails = new Set<string>()
-  for (const parts of lines) {
-    const details = parts.slice(1).join('\n')
-    if (!details || seenDetails.has(details)) continue
-    seenDetails.add(details)
-    merged.push(details)
-  }
-  return merged.join('\n')
+  return sections.length > 0 ? sections.join('\n\n') : undefined
 }
 
 /**
@@ -218,6 +218,9 @@ export function mountApprovalDialog(
     el('span', {}, 'GitHub'),
   )
   const heading = el('h3', { class: 'approval-heading' })
+  // Names the side chat asking, when a request comes from one (it is shown over
+  // the parent thread, which never asked it).
+  const origin = el('p', { class: 'approval-origin', hidden: '' })
   const items = el('div', { class: 'approval-items' })
   const chatScrim = el('div', { class: 'approval-chat-scrim', 'aria-hidden': 'true', hidden: '' })
   // Kit classes carry the look; legacy approval-* hooks stay for existing selectors/tests.
@@ -240,6 +243,7 @@ export function mountApprovalDialog(
   dialog.append(
     githubBrand,
     heading,
+    origin,
     items,
     rememberLabel,
     turnTreeLeaseLabel,
@@ -278,6 +282,7 @@ export function mountApprovalDialog(
     type: string
     allowRemember: boolean | undefined
     rememberLabel: string | undefined
+    approveLabel: string | undefined
     collapseDetails: boolean | undefined
     approveOnceLabel: string | undefined
     showWhileSettingsOpen: boolean | undefined
@@ -329,7 +334,10 @@ export function mountApprovalDialog(
   function isShowable(req: PendingApproval): boolean {
     if (isWindowHidden()) return false
     if (isSettingsDialogOpen() && !req.showWhileSettingsOpen) return false
-    return !req.threadId || req.threadId === store.getState().activeThreadId
+    // A side chat is never the active thread: its requests surface over its parent.
+    return (
+      !req.threadId || attentionThreadId(store, req.threadId) === store.getState().activeThreadId
+    )
   }
 
   // Reflect every queued request that can't currently pop a modal into the shared
@@ -339,8 +347,9 @@ export function mountApprovalDialog(
   function syncAttention(): void {
     const activeThreadId = store.getState().activeThreadId
     const hidden = isWindowHidden()
+    // A side chat's request flags its parent: the side chat has no sidebar row.
     const waiting = queue
-      .map((req) => req.threadId)
+      .map((req) => (req.threadId ? attentionThreadId(store, req.threadId) : undefined))
       .filter((id): id is string => !!id && (hidden || id !== activeThreadId))
     setAttentionThreads(store, 'approval', waiting)
     // Every queue/batch mutation ends here, so this is the one place the
@@ -447,6 +456,12 @@ export function mountApprovalDialog(
 
     heading.textContent =
       count <= 1 ? (batch[0]?.title ?? '') : (sharedTitle ?? `${String(count)} requests`)
+    const asker = sideChatPromptOrigin(
+      store,
+      batch.map((req) => req.threadId),
+    )
+    origin.hidden = asker === null
+    origin.textContent = asker?.label ?? ''
     const isGithubApproval = batch.some((request) => request.title.includes('GitHub'))
     githubBrand.hidden = !isGithubApproval
     dialog.classList.toggle('approval-dialog-github', isGithubApproval)
@@ -456,7 +471,7 @@ export function mountApprovalDialog(
       // interface font so they don't read as a raw JSON dump in a <pre>.
       const bodyClass = req.type === 'shell' ? 'approval-body approval-body-code' : 'approval-body'
       const body = el('div', { class: bodyClass }, req.body)
-      if (collapseDetails && !detailsExpanded) body.hidden = true
+      if (!req.body.trim() || (collapseDetails && !detailsExpanded)) body.hidden = true
       return body
     }
 
@@ -497,7 +512,8 @@ export function mountApprovalDialog(
       }),
     )
 
-    approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : 'Approve'
+    approveButton.textContent =
+      count > 1 ? `Approve all (${String(count)})` : (soloRequest()?.approveLabel ?? 'Approve')
     rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : 'Reject'
 
     // The narrower answer is offered alongside the details it refers to: with the
@@ -595,6 +611,12 @@ export function mountApprovalDialog(
     // Each prompt starts collapsed; expanding is a per-prompt decision.
     detailsExpanded = false
     renderBatch()
+    // Show the asking side chat beside its parent so the request has its context.
+    const asker = sideChatPromptOrigin(
+      store,
+      batch.map((req) => req.threadId),
+    )
+    if (asker) store.emit('side_chat_open_requested', asker.firstSideChatId)
     // A Settings-owned provider-host prompt is the one deliberate modal
     // exception: Settings already makes the document inert, so an inline prompt
     // could not be answered. Pop-out windows also have no visible chat pane.
@@ -731,6 +753,7 @@ export function mountApprovalDialog(
       type,
       allowRemember,
       rememberLabel,
+      approveLabel,
       collapseDetails,
       approveOnceLabel,
       showWhileSettingsOpen,
@@ -749,6 +772,7 @@ export function mountApprovalDialog(
         type,
         allowRemember,
         rememberLabel,
+        approveLabel,
         collapseDetails,
         approveOnceLabel,
         showWhileSettingsOpen,

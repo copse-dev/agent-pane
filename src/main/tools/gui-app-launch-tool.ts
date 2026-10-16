@@ -12,9 +12,9 @@ import { GUI_APP_LAUNCH_TOOL_NAME, launchGuiApp } from '../services/exec/gui-app
  * Copse uses for Xcode / Android Studio setup — so the approval is real and
  * the launch actually works.
  *
- * Prefer an isolated profile (`env.COPSE_PANEL_USER_DATA`,
- * `env.COPSE_WORKSPACE_DIR`) when launching another Copse instance so it does
- * not contend with the live session over SingletonLock.
+ * Launch another Copse instance with an isolated `env.COPSE_DIR` so it does not
+ * share stores with, or lose the SingletonLock to, the live session. See
+ * docs/agent-development.md#launching-copse-from-a-copse-agent-session.
  */
 export const launchGuiAppTool = defineTool({
   name: GUI_APP_LAUNCH_TOOL_NAME,
@@ -22,7 +22,8 @@ export const launchGuiAppTool = defineTool({
     'Launch a macOS GUI application through Launch Services (`/usr/bin/open`) from the host process. ' +
     'Use this instead of `run_shell` / `make run` / `open` when the agent needs a real desktop app to appear — ' +
     'Electron, Xcode, browsers, or a branch build of Copse itself. Always requires user approval. ' +
-    'Supports isolated profiles via `env` (e.g. COPSE_PANEL_USER_DATA, COPSE_WORKSPACE_DIR) and app argv via `args`. ' +
+    'The app starts in `/`, so paths in `args` must be absolute. ' +
+    'For a Copse branch build, run `make build` first and always set `env.COPSE_DIR` to a fresh directory. ' +
     'macOS only; not available on remote (SSH) workspaces.',
   parameters: z.object({
     target: z
@@ -31,21 +32,21 @@ export const launchGuiAppTool = defineTool({
       .describe(
         'Absolute path to a .app bundle (preferred), a path relative to the workspace, ' +
           'or an Application name for `open -a` (e.g. "Safari"). For a branch Copse build, ' +
-          'pass the path to node_modules/.pnpm/electron@…/node_modules/electron/dist/Copse.app.',
+          'pass the output of `realpath node_modules/electron/dist/Copse.app`.',
       ),
     args: z
       .array(z.string())
       .optional()
       .describe(
         'Arguments forwarded to the app after `--args` (not to `open` itself). ' +
-          'For Electron, typically the path to dist/main/index.js.',
+          'Use absolute paths. For Electron, typically the absolute path to dist/main/index.js.',
       ),
     env: z
       .record(z.string(), z.string())
       .optional()
       .describe(
         'Environment variables Launch Services injects into the app. ' +
-          'Use COPSE_PANEL_USER_DATA and COPSE_WORKSPACE_DIR for an isolated Copse profile.',
+          'For a Copse instance, set COPSE_DIR to a fresh directory so every store is isolated.',
       ),
     new_instance: z
       .boolean()

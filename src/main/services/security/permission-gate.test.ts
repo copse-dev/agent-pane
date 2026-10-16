@@ -116,6 +116,143 @@ function underAutomation<T>(fn: () => T): T {
   )
 }
 
+describe('shell prompt audit evidence', () => {
+  for (const { cause, prompt } of [
+    { cause: 'shell-expected-sandbox-block', prompt: promptExpectedSandboxBlock },
+    { cause: 'shell-sandbox-retry', prompt: promptUnsandboxedShell },
+  ]) {
+    it(`preserves structured reasons for ${cause}`, async () => {
+      setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+      const reasons = ['OS denied the requested network access']
+      setApprovalHandler(async (request) => {
+        assert.equal(request.cause, cause)
+        assert.deepEqual(request.reasons, reasons)
+        assert.equal(typeof request.shellContext?.sandboxAvailable, 'boolean')
+        assert.equal(typeof request.shellContext?.workspaceTrusted, 'boolean')
+        return { approved: false, remember: false }
+      })
+      try {
+        assert.equal(
+          await prompt('curl https://example.com', reasons, undefined, {
+            requireInteractiveApproval: true,
+          }),
+          false,
+        )
+      } finally {
+        setApprovalHandler(null)
+      }
+    })
+  }
+})
+
+describe('package command approval scope', () => {
+  it('runs the direct typecheck contained and explicitly names an agent escape request', async () => {
+    setPermissionGateForTests(null)
+    const root = mkdtempSync(join(tmpdir(), 'local-typecheck-'))
+    const restore = setWorkspaceRootForTest(root)
+    const command =
+      './node_modules/.bin/tsc --noEmit -p tsconfig.node.json 2>&1 | tail -60; echo "NODE_EXIT=$?"'
+    const requests: Array<{ title: string; cause?: string; scope?: string }> = []
+    setSetting('safetyClassifierEnabled', false)
+    setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+    setApprovalHandler(async ({ title, cause, scope }) => {
+      requests.push({ title, ...(cause ? { cause } : {}), ...(scope ? { scope } : {}) })
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureShellCommandPermitted(command, {
+          sandboxEnabled: true,
+          autoRun: true,
+          executionRoot: root,
+        }),
+        true,
+      )
+      assert.deepEqual(requests, [])
+      assert.equal(await promptExpectedSandboxBlock(command, ['opaque local executable']), false)
+      assert.deepEqual(requests, [
+        {
+          title: 'Agent requests sandbox escape',
+          cause: 'shell-expected-sandbox-block',
+          scope: 'external',
+        },
+      ])
+    } finally {
+      restore()
+      setApprovalHandler(null)
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  for (const command of ['npm install example-package', 'npx example-package']) {
+    it(`records unsandboxed ${command} as external`, async () => {
+      setPermissionGateForTests(null)
+      const root = mkdtempSync(join(tmpdir(), 'package-scope-'))
+      const restore = setWorkspaceRootForTest(root)
+      setSetting('safetyClassifierEnabled', false)
+      setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+      let prompts = 0
+      setApprovalHandler(async (request) => {
+        prompts += 1
+        assert.equal(request.cause, 'shell-package-install')
+        assert.equal(request.scope, 'external')
+        return { approved: false, remember: false }
+      })
+      try {
+        assert.equal(
+          await ensureShellCommandPermitted(command, {
+            sandboxEnabled: false,
+            autoRun: false,
+            executionRoot: root,
+          }),
+          false,
+        )
+        assert.equal(prompts, 1)
+      } finally {
+        setApprovalHandler(null)
+        restore()
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+  }
+
+  it('names a delete beside a sandboxed npx instead of the package prompt', async () => {
+    setPermissionGateForTests(null)
+    const root = mkdtempSync(join(tmpdir(), 'package-scope-'))
+    const restore = setWorkspaceRootForTest(root)
+    setSetting('safetyClassifierEnabled', false)
+    setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+    const requests: { title: string; cause: string | undefined }[] = []
+    setApprovalHandler(async ({ title, cause }) => {
+      requests.push({ title, cause })
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureShellCommandPermitted('npx wdio run wdio.conf.ts', {
+          sandboxEnabled: true,
+          autoRun: true,
+          executionRoot: root,
+        }),
+        true,
+      )
+      assert.equal(requests.length, 0)
+      await ensureShellCommandPermitted('rm -f probe.e2e.ts && npx wdio run wdio.conf.ts', {
+        sandboxEnabled: true,
+        autoRun: true,
+        executionRoot: root,
+      })
+      assert.equal(requests.length, 1)
+      assert.notEqual(requests[0]?.cause, 'shell-package-install')
+      assert.notEqual(requests[0]?.title, 'Run package command?')
+    } finally {
+      setApprovalHandler(null)
+      restore()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('prepare_worktree permission', () => {
   it('asks once for the bounded preparation capability', async () => {
     const root = mkdtempSync(join(tmpdir(), 'prepare-permission-'))
@@ -370,6 +507,7 @@ describe('ensureToolPermitted', () => {
     setPermissionGateForTests(null)
     const writeTools = [
       'gh_pr_approve',
+      'gh_push',
       'gh_pr_create',
       'gh_pr_enable_auto_merge',
       'gh_pr_mark_ready',
@@ -737,9 +875,11 @@ describe('ensureToolPermitted', () => {
     await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
     await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
     let approvalBody = ''
+    let approvalAdvice = ''
     let approvalCause: string | undefined
     setApprovalHandler(async (request) => {
       approvalBody = request.body
+      approvalAdvice = request.bodyAdvice ?? ''
       approvalCause = request.cause
       return { approved: false, remember: false }
     })
@@ -750,8 +890,8 @@ describe('ensureToolPermitted', () => {
       )
       assert.match(approvalBody, /api\.parallel\.ai/)
       assert.equal(approvalCause, 'web-origin')
-      assert.match(approvalBody, /paid API credits/i)
-      assert.match(approvalBody, /Zero Data Retention/i)
+      assert.match(approvalAdvice, /paid API credits/i)
+      assert.match(approvalAdvice, /Zero Data Retention/i)
     } finally {
       setApprovalHandler(null)
       setDefaultPluginRegistry(null)
@@ -767,12 +907,12 @@ describe('ensureToolPermitted', () => {
     })
     let approvalBody = ''
     let approvalSubject = ''
-    let approvalFooter = ''
+    let approvalAdvice = ''
     let approvalCause: string | undefined
     setApprovalHandler(async (request) => {
       approvalBody = request.body
       approvalSubject = request.subject ?? ''
-      approvalFooter = request.bodyFooter ?? ''
+      approvalAdvice = request.bodyAdvice ?? ''
       approvalCause = request.cause
       return { approved: false, remember: false }
     })
@@ -782,9 +922,9 @@ describe('ensureToolPermitted', () => {
         false,
       )
       assert.equal(approvalBody, 'printf hello')
-      assert.match(approvalFooter, /network allowlist is temporarily widened/i)
-      assert.match(approvalFooter, /this command could inherit that access/i)
-      assert.match(approvalFooter, /before running them at the same time/i)
+      assert.match(approvalAdvice, /network allowlist is temporarily widened/i)
+      assert.match(approvalAdvice, /this command could inherit that access/i)
+      assert.match(approvalAdvice, /before running them at the same time/i)
       assert.equal(approvalSubject, SHELL_DECISION_SUBJECT)
       // The cause is what makes this prompt countable in the D0/U0 report: an
       // artifact of ASRT's process-global allowlist, which a per-runtime
@@ -803,15 +943,15 @@ describe('ensureToolPermitted', () => {
       allowLocalBinding: false,
       label: 'agent: codex',
     })
-    let approvalFooter = ''
+    let approvalAdvice = ''
     setApprovalHandler(async (request) => {
-      approvalFooter = request.bodyFooter ?? ''
+      approvalAdvice = request.bodyAdvice ?? ''
       return { approved: false, remember: false }
     })
     try {
       await ensureToolPermitted({ toolName: 'run_shell', args: { command: 'printf hello' } })
-      assert.match(approvalFooter, /widened for agent: codex/)
-      assert.match(approvalFooter, /on macOS, this command could inherit that access/)
+      assert.match(approvalAdvice, /widened for agent: codex/)
+      assert.match(approvalAdvice, /on macOS, this command could inherit that access/)
     } finally {
       setApprovalHandler(null)
       release()
@@ -1229,7 +1369,7 @@ describe('ensureShellCommandPermitted — SSH workspace execution target', () =>
     const READ = 'cat /home/alice/.bash_history'
     const thread = 'thread-ssh-read-grant'
     clearReadOutsideProjectGrants()
-    grantReadOutsideProject(thread)
+    grantReadOutsideProject(thread, ['/home/alice/.bash_history'])
     try {
       const local = await runWithActiveRunIdentity(thread, () => runGate(READ, 'local'))
       assert.deepEqual(local, { permitted: true, prompts: [] }, 'the grant covers a local read')
@@ -1274,6 +1414,15 @@ describe('ensureShellCommandPermitted — SSH workspace execution target', () =>
     const remote = await runGate(PLAIN_READ, 'ssh')
     assert.equal(remote.permitted, false)
     assert.deepEqual(remote.prompts, ['shell-no-containment'])
+  })
+
+  it('runs local pnpm exec contained but prompts on the SSH host', async () => {
+    const command = 'pnpm exec tsc --noEmit'
+    assert.deepEqual(await runGate(command, 'local'), { permitted: true, prompts: [] })
+    assert.deepEqual(await runGate(command, 'ssh'), {
+      permitted: false,
+      prompts: ['shell-no-containment'],
+    })
   })
 
   it('fails closed when the active project is remote but cannot route over SSH', async () => {
@@ -1433,7 +1582,7 @@ describe('run_background permission', () => {
     }
   })
 
-  it('prompts a port-binding start, then remembers the grant per workspace', async () => {
+  it('remembers port binding across sibling worktrees but not other projects', async () => {
     setPermissionGateForTests(null)
     const restore = setWorkspaceRootForTest('/tmp/port-binding-project')
     await setSetting('safetyClassifierEnabled', false)
@@ -1446,14 +1595,28 @@ describe('run_background permission', () => {
     })
     try {
       const args = { action: 'start', command: 'npm run dev', allow_port_binding: true }
+      const start = (projectRoot: string, threadId: string): Promise<boolean> =>
+        runWithThreadExecutionContext(
+          {
+            projectId: projectRoot,
+            projectRoot,
+            threadId,
+            root: `${projectRoot}/worktrees/${threadId}`,
+            checkoutMode: 'worktree',
+            branch: `copse/${threadId}`,
+          },
+          () => ensureToolPermitted({ toolName: 'run_background', args }),
+        )
+      assert.equal(await start('/tmp/port-binding-project', 'first'), true)
+      assert.equal(await start('/tmp/port-binding-project', 'second'), true)
+      assert.equal(portPrompts, 1, 'another worktree of the same project must not re-prompt')
+      assert.equal(await start('/tmp/port-binding-other-project', 'third'), true)
+      assert.equal(portPrompts, 2, 'another project must obtain its own consent')
+      // A shared checkout uses the same project grant as its worktrees.
       assert.equal(await ensureToolPermitted({ toolName: 'run_background', args }), true)
-      assert.equal(await ensureToolPermitted({ toolName: 'run_background', args }), true)
-      assert.equal(
-        portPrompts,
-        1,
-        'second port-binding start in the same workspace must not re-prompt',
-      )
+      assert.equal(portPrompts, 2)
     } finally {
+      await setSetting('portBindingAllowedRoots', [])
       setApprovalHandler(null)
       restore()
       await setSetting('safetyClassifierEnabled', false)
@@ -1859,7 +2022,7 @@ describe('turn-tree shell replay leases', () => {
     }
   })
 
-  it('offers bounded external replay only for opaque local execution', async () => {
+  it('keeps opaque local execution replay inside the sandbox', async () => {
     shellReplayLeaseStore.clear()
     const requests: Array<{ lease: boolean; defaultLease: boolean; scope?: string }> = []
     setApprovalHandler(async (request) => {
@@ -1888,7 +2051,7 @@ describe('turn-tree shell replay leases', () => {
       )
 
       assert.deepEqual(requests, [
-        { lease: true, defaultLease: false, scope: 'external' },
+        { lease: true, defaultLease: true, scope: 'sandbox' },
         { lease: false, defaultLease: false, scope: 'sandbox' },
         { lease: false, defaultLease: false, scope: 'external' },
       ])
@@ -2170,47 +2333,88 @@ describe('decideShellPermission', () => {
   })
 })
 
-describe('formatGithubWritePrompt', () => {
-  it('uses a question title and PR target body', () => {
-    assert.deepEqual(formatGithubWritePrompt('gh_pr_mark_ready', { number: 1478 }), {
-      title: 'Mark pull request ready for review on GitHub?',
-      body: 'PR #1478',
+describe('shell prompt execution boundary', () => {
+  it('names missing containment when auto-run is off, without authorizing execution', async () => {
+    setPermissionGateForTests(null)
+    const restore = setWorkspaceRootForTest('/tmp/approval-copy-project')
+    let prompted = false
+    setApprovalHandler(async (request) => {
+      prompted = true
+      assert.equal(request.title, 'Run without sandbox?')
+      assert.equal(request.body, 'node --version')
+      assert.match(request.bodyAdvice ?? '', /sandbox is unavailable/)
+      assert.match(request.bodyAdvice ?? '', /user account’s access to files and the network/)
+      assert.equal(request.scope, 'external')
+      assert.equal(request.cause, 'shell-no-containment')
+      return { approved: false, remember: false }
     })
-    assert.deepEqual(
-      formatGithubWritePrompt('gh_pr_approve', { number: 42, owner: 'acme', repo: 'widgets' }),
-      {
-        title: 'Approve pull request on GitHub?',
-        body: 'acme/widgets#42',
-      },
+    try {
+      assert.equal(
+        await ensureShellCommandPermitted('node --version', {
+          sandboxEnabled: false,
+          autoRun: false,
+          toolPolicy: 'ask',
+        }),
+        false,
+      )
+      assert.equal(prompted, true)
+    } finally {
+      setApprovalHandler(null)
+      restore()
+    }
+  })
+})
+
+describe('formatGithubWritePrompt', () => {
+  it('names concrete effects while keeping the PR target visible', () => {
+    const ready = formatGithubWritePrompt('gh_pr_mark_ready', { number: 1478 })
+    assert.equal(ready.title, 'Mark pull request ready for review on GitHub?')
+    assert.equal(ready.body, 'PR #1478')
+    assert.match(ready.bodyAdvice, /notify reviewers or trigger workflows/)
+    const approve = formatGithubWritePrompt('gh_pr_approve', {
+      number: 42,
+      owner: 'acme',
+      repo: 'widgets',
+    })
+    assert.equal(approve.body, 'acme/widgets#42')
+    assert.match(approve.bodyAdvice, /required approval for merging/)
+    assert.match(
+      formatGithubWritePrompt('gh_pr_enable_auto_merge', { number: 42 }).bodyAdvice,
+      /merge the pull request when its requirements are met/,
+    )
+    assert.match(
+      formatGithubWritePrompt('gh_pr_rerun_failed_ci', { number: 42 }).bodyAdvice,
+      /CI resources or secrets/,
     )
   })
-
-  it('falls back to JSON when args are not a PR target', () => {
+  it('falls back to JSON without hiding unknown inputs', () => {
     const prompt = formatGithubWritePrompt('gh_pr_rerun_failed_ci', { weird: true })
-    assert.equal(prompt.title, 'Re-run failed CI on GitHub?')
     assert.equal(prompt.body, JSON.stringify({ weird: true }, null, 2))
   })
-
-  it('shows the PR title and the implicit branch push for gh_pr_create', () => {
-    assert.deepEqual(formatGithubWritePrompt('gh_pr_create', { title: 'Fix the parser' }), {
-      title: 'Open pull request on GitHub?',
-      body: 'Push the current branch, then open “Fix the parser”.',
+  it('exposes publication contents and branch targets for PR creation', () => {
+    const prompt = formatGithubWritePrompt('gh_pr_create', {
+      title: 'Fix the parser',
+      body: 'Review all changes',
+      head: 'fix/parser',
+      base: 'develop',
+      draft: true,
+      owner: 'acme',
+      repo: 'widgets',
     })
-    assert.equal(
-      formatGithubWritePrompt('gh_pr_create', {
-        title: 'Fix the parser',
-        head: 'feature/already-pushed',
-      }).body,
-      'Open “Fix the parser” from feature/already-pushed.',
-    )
-    assert.equal(
-      formatGithubWritePrompt('gh_pr_create', {
-        title: 'Fix the parser',
-        owner: 'acme',
-        repo: 'widgets',
-      }).body,
-      'acme/widgets: “Fix the parser”',
-    )
+    for (const value of [
+      'acme/widgets',
+      'Fix the parser',
+      'Review all changes',
+      'fix/parser',
+      'develop',
+      'Draft: yes',
+    ])
+      assert.ok(prompt.body.includes(value))
+    assert.match(prompt.bodyAdvice, /people with access/)
+    assert.match(prompt.bodyFooter, /once/)
+    const implicit = formatGithubWritePrompt('gh_pr_create', { title: 'Fix' })
+    assert.match(implicit.body, /current branch \(will be pushed\)/)
+    assert.match(implicit.body, /repository default branch/)
   })
 })
 
@@ -2563,8 +2767,16 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     }
   }
 
-  async function withRoot<T>(fn: (root: string) => Promise<T>): Promise<T> {
+  async function withRoot<T>(fn: (root: string, readDir: string) => Promise<T>): Promise<T> {
     const root = mkdtempSync(join(tmpdir(), 'copse-read-outside-'))
+    // On macOS the per-user temp tree is already exempt from read prompts.
+    // Exercise explicit grants outside that tree, while keeping all fixtures disposable.
+    const readTargetRoot = process.platform === 'darwin' ? '/private/tmp' : tmpdir()
+    const readDir = mkdtempSync(join(readTargetRoot, 'copse-read-target-'))
+    writeFileSync(join(readDir, 'note.txt'), 'ordinary note')
+    writeFileSync(join(readDir, 'other.txt'), 'another note')
+    mkdirSync(join(readDir, 'nested'))
+    writeFileSync(join(readDir, 'nested', 'deep.txt'), 'nested note')
     const restore = setWorkspaceRootForTest(root)
     // Every gate decision here appends to the durable log; point the store at a
     // throwaway dir so the suite never writes into the developer's own.
@@ -2576,7 +2788,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     // classifier only adds a per-command connection timeout here.
     await setSetting('safetyClassifierEnabled', false)
     try {
-      return await fn(root)
+      return await fn(root, readDir)
     } finally {
       // Decision recording is deliberately fire-and-forget. Drain it while the
       // throwaway store is still selected so an async physical append cannot
@@ -2589,6 +2801,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       else process.env['COPSE_WORKSPACE_DIR'] = previousStore
       rmSync(store, { recursive: true, force: true })
       rmSync(root, { recursive: true, force: true })
+      rmSync(readDir, { recursive: true, force: true })
     }
   }
 
@@ -2606,9 +2819,11 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       )
       assert.equal(permitted, false)
       assert.ok(prompt)
-      assert.equal(prompt.title, 'Read outside the project?')
+      assert.equal(prompt.title, 'Allow read access outside of the project?')
       assert.equal(prompt.body, 'ls -la ~/.copse/workspace')
-      assert.equal(prompt.bodyAdvice, 'The agent wants to read ~/.copse/workspace.')
+      assert.match(prompt.bodyAdvice, /A listed directory can contain sensitive files/)
+      assert.match(prompt.bodyAdvice, /• ~\/\.copse/)
+      assert.match(prompt.bodyFooter, /Other paths ask again/)
       assert.equal(prompt.collapseDetails, true)
       assert.equal(prompt.approveOnceLabel, 'Approve this command')
     })
@@ -2642,23 +2857,95 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
           root,
         )
         assert.equal(other.permitted, false)
-        assert.equal(other.prompt?.title, 'Read outside the project?')
+        assert.equal(other.prompt?.title, 'Allow read access outside of the project?')
       })
     },
   )
 
-  it('grants the thread read access when the primary button is used', async () => {
-    await withRoot(async (root) => {
+  it('grants later reads under the approved directory, but asks for unrelated paths', async () => {
+    await withRoot(async (root, readDir) => {
       const granted = await runWithActiveRunIdentity('thread-read-grant', () =>
-        runGate('ls -la ~/.copse/workspace', { approved: true, remember: true }, root),
+        runGate(`ls -la ${readDir}`, { approved: true, remember: true }, root),
       )
       assert.equal(granted.permitted, true)
 
-      const later = await runWithActiveRunIdentity('thread-read-grant', () =>
+      const nested = await runWithActiveRunIdentity('thread-read-grant', () =>
+        runGate(
+          `cat ${join(readDir, 'nested', 'deep.txt')}`,
+          { approved: false, remember: false },
+          root,
+        ),
+      )
+      assert.equal(nested.permitted, true)
+      assert.equal(nested.prompt, null, 'a read below the granted directory should not ask again')
+
+      const unrelated = await runWithActiveRunIdentity('thread-read-grant', () =>
         runGate('cat ~/.gitconfig', { approved: false, remember: false }, root),
       )
-      assert.equal(later.permitted, true)
-      assert.equal(later.prompt, null, 'a granted thread must not be asked again')
+      assert.equal(unrelated.permitted, false)
+      assert.equal(unrelated.prompt?.title, 'Allow read access outside of the project?')
+
+      const prefixSibling = mkdtempSync(`${readDir}-sibling-`)
+      try {
+        const siblingFile = join(prefixSibling, 'note.txt')
+        writeFileSync(siblingFile, 'outside the granted directory')
+        const sibling = await runWithActiveRunIdentity('thread-read-grant', () =>
+          runGate(`cat ${siblingFile}`, { approved: false, remember: false }, root),
+        )
+        assert.equal(sibling.permitted, false)
+        assert.ok(sibling.prompt, 'a path with the same string prefix must still ask')
+      } finally {
+        rmSync(prefixSibling, { recursive: true, force: true })
+      }
+    })
+  })
+
+  it('asks again when shell expansion could step out of the approved directory', async () => {
+    await withRoot(async (root, readDir) => {
+      await runWithActiveRunIdentity('thread-read-expand', () =>
+        runGate(`ls -la ${readDir}`, { approved: true, remember: true }, root),
+      )
+      // bash expands `{..,nested}` to `${readDir}/../private.txt`, a sibling of
+      // the granted directory, although the literal token sits beneath it.
+      for (const command of [
+        `cat ${readDir}/{..,nested}/private.txt`,
+        `cat ${readDir}/.*/private.txt`,
+        `cat ${readDir}/[.][.]/private.txt`,
+      ]) {
+        const expanded = await runWithActiveRunIdentity('thread-read-expand', () =>
+          runGate(command, { approved: false, remember: false }, root),
+        )
+        assert.equal(expanded.permitted, false, command)
+        assert.equal(expanded.prompt?.title, 'Allow read access outside of the project?', command)
+      }
+    })
+  })
+
+  it('limits a file grant to that file and requires every target in a command to be covered', async () => {
+    await withRoot(async (root, readDir) => {
+      const note = join(readDir, 'note.txt')
+      const other = join(readDir, 'other.txt')
+      await runWithActiveRunIdentity('thread-file-grant', () =>
+        runGate(`cat ${note}`, { approved: true, remember: true }, root),
+      )
+
+      const sameFile = await runWithActiveRunIdentity('thread-file-grant', () =>
+        runGate(`cat ${note}`, { approved: false, remember: false }, root),
+      )
+      assert.equal(sameFile.permitted, true)
+      assert.equal(sameFile.prompt, null)
+
+      const sibling = await runWithActiveRunIdentity('thread-file-grant', () =>
+        runGate(`cat ${other}`, { approved: false, remember: false }, root),
+      )
+      assert.equal(sibling.permitted, false)
+      assert.ok(sibling.prompt)
+
+      const mixed = await runWithActiveRunIdentity('thread-file-grant', () =>
+        runGate(`cat ${note} ${other}`, { approved: false, remember: false }, root),
+      )
+      assert.equal(mixed.permitted, false)
+      assert.ok(mixed.prompt)
     })
   })
 
@@ -2672,7 +2959,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       )
       assert.equal(other.permitted, false)
       assert.ok(other.prompt)
-      assert.equal(other.prompt.title, 'Read outside the project?')
+      assert.equal(other.prompt.title, 'Allow read access outside of the project?')
     })
   })
 
@@ -2688,7 +2975,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       )
       assert.equal(later.permitted, false)
       assert.ok(later.prompt)
-      assert.equal(later.prompt.title, 'Read outside the project?')
+      assert.equal(later.prompt.title, 'Allow read access outside of the project?')
     })
   })
 
@@ -2702,19 +2989,19 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       )
       assert.equal(secret.permitted, false)
       assert.ok(secret.prompt, 'a credential read must still be asked about')
-      assert.notEqual(secret.prompt.title, 'Read outside the project?')
+      assert.notEqual(secret.prompt.title, 'Allow read access outside of the project?')
     })
   })
 
   it('records the grant, and everything it later covers, in the decision log', async () => {
-    await withRoot(async (root) => {
+    await withRoot(async (root, readDir) => {
       const granted = await runWithActiveRunIdentity('thread-audit', () =>
-        runGate('ls -la ~/.copse/workspace', { approved: true, remember: true }, root),
+        runGate(`ls -la ${readDir}`, { approved: true, remember: true }, root),
       )
-      assert.deepEqual(granted.prompt?.reasons, ['reads outside the project: ~/.copse/workspace'])
+      assert.deepEqual(granted.prompt?.reasons, [`reads outside the project: ${readDir}`])
 
       await runWithActiveRunIdentity('thread-audit', () =>
-        runGate('cat ~/.gitconfig', { approved: false, remember: false }, root),
+        runGate(`cat ${join(readDir, 'note.txt')}`, { approved: false, remember: false }, root),
       )
 
       const events = await recordedDecisions()
@@ -2734,7 +3021,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
             actor: 'user',
             verdict: 'approved',
             remembered: true,
-            reasons: ['reads outside the project: ~/.copse/workspace'],
+            reasons: [`reads outside the project: ${readDir}`],
             threadId: 'thread-audit',
             source: undefined,
           },
@@ -2743,7 +3030,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
             actor: 'user',
             verdict: 'allowed',
             remembered: undefined,
-            reasons: ['reads outside the project: ~/.gitconfig'],
+            reasons: [`reads outside the project: ${join(readDir, 'note.txt')}`],
             threadId: 'thread-audit',
             source: 'read-outside-grant',
           },
@@ -2803,16 +3090,17 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   }
 
   it('spends the read grant on containment, not also on a full sandbox escape', async () => {
-    await withRoot(async (root) => {
+    await withRoot(async (root, readDir) => {
+      const note = join(readDir, 'note.txt')
       await runWithActiveRunIdentity('thread-spent', () =>
-        runGate('ls -la ~/.copse/workspace', { approved: true, remember: true }, root),
+        runGate(`ls -la ${readDir}`, { approved: true, remember: true }, root),
       )
 
       // A command the grant covers that has NOT yet been given the relaxation is
       // still answered by the grant — that is how the read question stays a
       // once-per-thread question.
       const covered = await runWithActiveRunIdentity('thread-spent', () =>
-        captureEscalation('cat ~/.gitconfig', false),
+        captureEscalation(`cat ${note}`, false),
       )
       assert.equal(covered.approved, true)
       assert.equal(covered.title, null, 'the standing grant answers it without asking')
@@ -2821,7 +3109,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       // grant named and the command STILL hit the sandbox, the grant is spent: it
       // must not silently approve the full escape it never covered.
       const spent = await runWithActiveRunIdentity('thread-spent', () =>
-        captureEscalation('cat ~/.gitconfig', true),
+        captureEscalation(`cat ${note}`, true),
       )
       assert.equal(spent.approved, false)
       assert.equal(spent.title, 'Run outside sandbox?')
@@ -2847,7 +3135,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
           'git fetch origin main',
           ['cached signature match'],
           undefined,
-          { requireInteractiveApproval: true },
+          { source: 'prior-denial' },
         ),
         false,
       )
@@ -2865,7 +3153,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
         root,
       )
       assert.ok(prompt)
-      assert.notEqual(prompt.title, 'Read outside the project?')
+      assert.notEqual(prompt.title, 'Allow read access outside of the project?')
       assert.equal(prompt.approveOnceLabel, '')
     })
   })
@@ -2918,7 +3206,11 @@ describe('browser network approvals', () => {
       await import('../browser/browser-network-grants.ts')
     await setSetting('webAllowedOrigins', [])
     let prompts = 0
-    setApprovalHandler(async () => {
+    setApprovalHandler(async (request) => {
+      assert.equal(request.body, 'https://example.com')
+      assert.match(request.bodyAdvice ?? '', /site can see the request/)
+      assert.match(request.bodyFooter ?? '', /chat’s browser session/)
+      assert.equal(request.rememberLabel, 'Always allow https://example.com:443')
       prompts += 1
       return { approved: true, remember: false }
     })
@@ -2955,5 +3247,112 @@ describe('browser network approvals', () => {
     } finally {
       setApprovalHandler(null)
     }
+  })
+})
+
+describe('ensureShellCommandPermitted — operations that detach a thread worktree', () => {
+  const REFUSED = /would leave this thread's isolated checkout/
+
+  async function withWorktreeRoot<T>(
+    run: (managed: string, shared: string) => Promise<T>,
+  ): Promise<T> {
+    setPermissionGateForTests(null)
+    const temp = mkdtempSync(join(tmpdir(), 'copse-gate-detach-'))
+    const previous = process.env['COPSE_WORKTREES_DIR']
+    process.env['COPSE_WORKTREES_DIR'] = join(temp, 'worktrees')
+    const managed = join(temp, 'worktrees', 'project-1', 'thread-1')
+    const shared = join(temp, 'project')
+    mkdirSync(managed, { recursive: true })
+    mkdirSync(shared, { recursive: true })
+    const restore = setWorkspaceRootForTest(managed)
+    setWorkspaceTrusted(managed, true)
+    setWorkspaceTrusted(shared, true)
+    await setSetting('safetyClassifierEnabled', false)
+    try {
+      return await run(managed, shared)
+    } finally {
+      setApprovalHandler(null)
+      setWorkspaceTrusted(managed, false)
+      setWorkspaceTrusted(shared, false)
+      restore()
+      if (previous === undefined) delete process.env['COPSE_WORKTREES_DIR']
+      else process.env['COPSE_WORKTREES_DIR'] = previous
+      rmSync(temp, { recursive: true, force: true })
+    }
+  }
+
+  const CAUSES = [
+    'git rebase origin/main',
+    'git rebase -i HEAD~3',
+    'git pull --rebase',
+    'git -c pull.rebase=true pull',
+    'git -c pull.rebase=yes pull',
+    'git pull --rebase=on',
+    'git fetch && git rebase origin/main',
+    'sh -c "git rebase origin/main"',
+    'git bisect start HEAD HEAD~8',
+    'git switch --detach HEAD~1',
+  ]
+
+  for (const command of CAUSES) {
+    it(`refuses "${command}" in a managed worktree before any prompt`, async () => {
+      await withWorktreeRoot(async (managed) => {
+        let prompted = false
+        setApprovalHandler(() => {
+          prompted = true
+          return Promise.resolve({ approved: true, remember: false })
+        })
+        await assert.rejects(
+          ensureShellCommandPermitted(command, {
+            sandboxEnabled: true,
+            autoRun: true,
+            executionRoot: managed,
+          }),
+          REFUSED,
+        )
+        assert.equal(prompted, false)
+      })
+    })
+  }
+
+  it('leaves the same commands to ordinary policy in a shared checkout', async () => {
+    await withWorktreeRoot(async (_managed, shared) => {
+      setApprovalHandler(() => Promise.resolve({ approved: true, remember: false }))
+      await assert.doesNotReject(
+        ensureShellCommandPermitted('git rebase origin/main', {
+          sandboxEnabled: true,
+          autoRun: true,
+          executionRoot: shared,
+        }),
+      )
+    })
+  })
+
+  it('still lets an agent leave an interrupted operation in a managed worktree', async () => {
+    await withWorktreeRoot(async (managed) => {
+      setApprovalHandler(() => Promise.resolve({ approved: true, remember: false }))
+      for (const command of ['git rebase --abort', 'git bisect reset', 'git rebase --continue']) {
+        await assert.doesNotReject(
+          ensureShellCommandPermitted(command, {
+            sandboxEnabled: true,
+            autoRun: true,
+            executionRoot: managed,
+          }),
+        )
+      }
+    })
+  })
+
+  it('names what to do instead in the refusal', async () => {
+    await withWorktreeRoot(async (managed) => {
+      await assert.rejects(
+        ensureShellCommandPermitted('git pull --rebase', {
+          sandboxEnabled: true,
+          autoRun: true,
+          executionRoot: managed,
+        }),
+        /git pull --no-rebase.*ask the user to run it in a terminal/s,
+      )
+    })
   })
 })

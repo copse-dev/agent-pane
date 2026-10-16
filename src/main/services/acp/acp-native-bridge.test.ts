@@ -2,7 +2,17 @@ import { queueInlineCanvasReference, runWithInlineCanvas } from '../inline-canva
 import type { StreamChunk } from '@shared/types'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { readDecisionLog } from '../security/decision-log-store.ts'
+import { storageGet, storageSet } from '../storage/storage.ts'
 import { z } from 'zod'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import { LoggingMessageNotificationSchema } from '@modelcontextprotocol/sdk/types.js'
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { ToolRegistry, setPermissionGateForTests } from '../tool-registry.ts'
 import {
   clearAbandonedVerdictsForTest,
@@ -124,6 +134,44 @@ function worktreeContext(threadId: string, root: string): ThreadExecutionContext
   }
 }
 
+// SDK HTTP transports declare sessionId as string | undefined, which conflicts
+// with Transport's optional string under exactOptionalPropertyTypes. Forward
+// the stateless connection without that property, retaining live callbacks.
+function testHttpTransport(bridge: AcpNativeBridge): Transport {
+  const http = new StreamableHTTPClientTransport(new URL(bridge.url), {
+    requestInit: { headers: { authorization: `Bearer ${bridge.token}` } },
+  })
+  const transport: Transport = {
+    start: () => http.start(),
+    send: (message, options) => http.send(message, options),
+    close: () => http.close(),
+    setProtocolVersion: (version) => {
+      http.setProtocolVersion(version)
+    },
+  }
+  Object.defineProperties(transport, {
+    onclose: {
+      get: () => http.onclose,
+      set: (callback: () => void) => {
+        http.onclose = callback
+      },
+    },
+    onerror: {
+      get: () => http.onerror,
+      set: (callback: (error: Error) => void) => {
+        http.onerror = callback
+      },
+    },
+    onmessage: {
+      get: () => http.onmessage,
+      set: (callback: NonNullable<Transport['onmessage']>) => {
+        http.onmessage = callback
+      },
+    },
+  })
+  return transport
+}
+
 async function rpc(
   bridge: AcpNativeBridge,
   body: unknown,
@@ -242,6 +290,76 @@ describe('startAcpNativeBridge', () => {
     params: { name: 'run_shell', arguments: { command: 'git worktree list --porcelain' } },
   }
 
+  it('links identical bridge requests and their approvals by distinct execution IDs', async () => {
+    const previousRoot = process.env['COPSE_WORKSPACE_DIR']
+    const previousProjectId = storageGet('activeProjectId')
+    const auditRoot = mkdtempSync(join(tmpdir(), 'copse-bridge-attribution-'))
+    process.env['COPSE_WORKSPACE_DIR'] = auditRoot
+    storageSet('activeProjectId', 'another-selected-project')
+    try {
+      const executed: string[] = []
+      setPermissionGateForTests(
+        async (_check, signal) =>
+          (
+            await requestApproval(
+              { title: 'Run command?', body: 'git worktree list --porcelain', type: 'shell' },
+              signal,
+            )
+          ).approved,
+      )
+      setApprovalHandler(async () => ({ approved: true, remember: false }))
+      bridge = await startAcpNativeBridge(testRegistry(executed), new AbortController().signal, {
+        threadId: 'bridge-attribution',
+        projectId: 'project-1',
+      })
+      assert.ok(bridge)
+      bridge.setExecutionContext(worktreeContext('bridge-attribution', '/worktrees/attribution'))
+      await rpc(bridge, SHELL_CALL)
+      // A later session/turn can reuse both the transport ID and arguments.
+      bridge.setExecutionContext(null)
+      bridge.setExecutionContext(worktreeContext('bridge-attribution', '/worktrees/attribution'))
+      await rpc(bridge, SHELL_CALL)
+      const events = await readDecisionLog('project-1')
+      const requests = events.filter((event) => event.kind === 'bridge-request')
+      const approvals = events.filter((event) => event.verdict === 'approved')
+      assert.equal(requests.length, 2)
+      assert.equal(approvals.length, 2)
+      assert.equal(new Set(requests.map((event) => event.bridgeExecutionId)).size, 2)
+      for (const request of requests) {
+        assert.ok(request.bridgeExecutionId)
+        assert.equal(request.verdict, 'requested')
+        const approval = approvals.find(
+          (event) => event.bridgeExecutionId === request.bridgeExecutionId,
+        )
+        assert.ok(approval)
+        assert.equal(approval.toolCallId, undefined)
+        assert.equal(request.toolCallId, undefined)
+        const detail = readFileSync(
+          join(
+            auditRoot,
+            'project-1',
+            'bridge-attribution',
+            'blobs',
+            `decision-${request.id}.detail.json`,
+          ),
+          'utf8',
+        )
+        assert.equal(
+          detail,
+          JSON.stringify({
+            mcpRequestId: String(SHELL_CALL.id),
+            arguments: SHELL_CALL.params.arguments,
+          }),
+        )
+      }
+    } finally {
+      storageSet('activeProjectId', previousProjectId)
+      if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+      rmSync(auditRoot, { recursive: true, force: true })
+    }
+  })
+
   it('offers request_write_access only to a bridge started for a deferred thread', async () => {
     const executed: string[] = []
     const listed = async (offerWriteAccess: boolean): Promise<string[]> => {
@@ -302,6 +420,204 @@ describe('startAcpNativeBridge', () => {
     assert.match(granted ?? '', /End your turn now/)
     const ordinary = contentText(await call('run_shell', { command: 'pwd' }, 4))
     assert.doesNotMatch(ordinary ?? '', /End your turn now/)
+  })
+
+  for (const useProgress of [true, false]) {
+    it(`keeps a silent call alive with ${useProgress ? 'progress' : 'logging'} notifications and stops after completion`, async (t) => {
+      setPermissionGateForTests(() => Promise.resolve(true))
+      let started = (): void => {}
+      const ready = new Promise<void>((resolve) => {
+        started = resolve
+      })
+      let finish = (_result: string): void => {}
+      const result = new Promise<string>((resolve) => {
+        finish = resolve
+      })
+      const registry = testRegistry([])
+      registry.register({
+        name: 'run_shell',
+        description: 'A silent command',
+        parameters: z.object({ command: z.string() }),
+        execute: () => {
+          started()
+          return result
+        },
+      })
+      bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+        threadId: 'bridge-keepalive',
+      })
+      assert.ok(bridge)
+      bridge.setExecutionContext(worktreeContext('bridge-keepalive', '/worktrees/bridge-keepalive'))
+      const client = new Client({ name: 'keepalive-test', version: '0' })
+      await client.connect(testHttpTransport(bridge))
+      const notifications: unknown[] = []
+      let received = (): void => {}
+      const onNotification = (notification: unknown): void => {
+        notifications.push(notification)
+        received()
+      }
+      client.setNotificationHandler(LoggingMessageNotificationSchema, (notification) => {
+        onNotification(notification.params)
+      })
+      t.mock.timers.enable({ apis: ['setInterval'] })
+      const intervals = t.mock.method(globalThis, 'setInterval')
+      const cleared = t.mock.method(globalThis, 'clearInterval')
+      try {
+        const call = client.callTool(
+          { name: 'run_shell', arguments: { command: 'silent-command' } },
+          undefined,
+          useProgress ? { onprogress: onNotification } : {},
+        )
+        await ready
+        assert.deepEqual(notifications, [], 'short calls must not generate keepalive noise')
+        for (let index = 1; index <= 2; index++) {
+          const next = new Promise<void>((resolve) => {
+            received = resolve
+          })
+          t.mock.timers.tick(30_000)
+          await next
+          assert.deepEqual(
+            notifications[index - 1],
+            useProgress
+              ? { progress: index, message: 'Tool call "run_shell" is still pending.' }
+              : {
+                  level: 'info',
+                  logger: BRIDGE_MCP_SERVER_NAME,
+                  data: 'Tool call "run_shell" is still pending.',
+                },
+          )
+        }
+        finish('command completed')
+        assert.deepEqual(await call, { content: [{ type: 'text', text: 'command completed' }] })
+        const timer = intervals.mock.calls.find((entry) => entry.arguments[1] === 30_000)?.result
+        assert.ok(timer)
+        assert.ok(cleared.mock.calls.some((entry) => entry.arguments[0] === timer))
+        t.mock.timers.tick(300_000)
+        assert.equal(notifications.length, 2)
+      } finally {
+        finish('cleanup')
+        t.mock.timers.reset()
+        await client.close()
+      }
+    })
+  }
+
+  it('stops after a notification send fails without changing the tool result', async (t) => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    let started = (): void => {}
+    const ready = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    let finish = (_result: string): void => {}
+    const result = new Promise<string>((resolve) => {
+      finish = resolve
+    })
+    const registry = testRegistry([])
+    registry.register({
+      name: 'run_shell',
+      description: 'A silent command',
+      parameters: z.object({ command: z.string() }),
+      execute: () => {
+        started()
+        return result
+      },
+    })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-failed-keepalive',
+    })
+    assert.ok(bridge)
+    bridge.setExecutionContext(worktreeContext('bridge-failed-keepalive', '/worktrees/t'))
+    const client = new Client({ name: 'failed-keepalive-test', version: '0' })
+    await client.connect(testHttpTransport(bridge))
+    let attempts = 0
+    const send = t.mock.method(
+      StreamableHTTPServerTransport.prototype,
+      'send',
+      function (
+        this: StreamableHTTPServerTransport,
+        message: Parameters<StreamableHTTPServerTransport['send']>[0],
+        options?: Parameters<StreamableHTTPServerTransport['send']>[1],
+      ): ReturnType<StreamableHTTPServerTransport['send']> {
+        if ('method' in message && message.method === 'notifications/message') {
+          attempts++
+          return Promise.reject(new Error('notification transport failed'))
+        }
+        // Forward the final result through the real transport after the failed notification.
+        send.mock.restore()
+        return this.send(message, options)
+      },
+    )
+    t.mock.timers.enable({ apis: ['setInterval'] })
+    const intervals = t.mock.method(globalThis, 'setInterval')
+    const cleared = t.mock.method(globalThis, 'clearInterval')
+    try {
+      const call = client.callTool({ name: 'run_shell', arguments: { command: 'silent' } })
+      await ready
+      t.mock.timers.tick(30_000)
+      // Let the rejected transport send reach the keepalive's rejection handler.
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      assert.equal(attempts, 1)
+      const timer = intervals.mock.calls.find((entry) => entry.arguments[1] === 30_000)?.result
+      assert.ok(timer)
+      assert.ok(cleared.mock.calls.some((entry) => entry.arguments[0] === timer))
+      t.mock.timers.tick(300_000)
+      assert.equal(attempts, 1, 'failed notification transport must not be retried forever')
+      finish('command completed')
+      assert.deepEqual(await call, { content: [{ type: 'text', text: 'command completed' }] })
+    } finally {
+      finish('cleanup')
+      t.mock.timers.reset()
+      await client.close()
+    }
+  })
+
+  it('stops keepalives immediately when the owning turn is cancelled', async (t) => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    let started = (): void => {}
+    const ready = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    let finish = (): void => {}
+    const result = new Promise<string>((resolve) => {
+      finish = (): void => {
+        resolve('finished')
+      }
+    })
+    const registry = testRegistry([])
+    registry.register({
+      name: 'run_shell',
+      description: 'A tool slow to settle after cancellation',
+      parameters: z.object({ command: z.string() }),
+      execute: () => {
+        started()
+        return result
+      },
+    })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-cancel-keepalive',
+    })
+    assert.ok(bridge)
+    bridge.setExecutionContext(worktreeContext('bridge-cancel-keepalive', '/worktrees/cancel'))
+    const turn = new AbortController()
+    bridge.setTurnSignal(turn.signal)
+    for (const init of initialized()) await rpc(bridge, init)
+    t.mock.timers.enable({ apis: ['setInterval'] })
+    const intervals = t.mock.method(globalThis, 'setInterval')
+    const cleared = t.mock.method(globalThis, 'clearInterval')
+    try {
+      const call = rpc(bridge, SHELL_CALL)
+      await ready
+      turn.abort()
+      const timer = intervals.mock.calls.find((entry) => entry.arguments[1] === 30_000)?.result
+      assert.ok(timer)
+      assert.ok(cleared.mock.calls.some((entry) => entry.arguments[0] === timer))
+      t.mock.timers.tick(300_000)
+      finish()
+      assert.equal(contentText(await call), 'finished')
+    } finally {
+      finish()
+      t.mock.timers.reset()
+    }
   })
 
   it('parks the approval when the client drops the HTTP call, and replays it to the retry', async () => {
@@ -675,6 +991,60 @@ describe('startAcpNativeBridge', () => {
     assert.ok(recordArrayOrEmpty(rpcResult(list)['tools']).length > 0)
   })
 
+  it('holds a call while an agent-started turn settles its binding, then runs it', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const executed: string[] = []
+    bridge = await startAcpNativeBridge(testRegistry(executed), new AbortController().signal, {
+      threadId: 'bridge-thread',
+    })
+    assert.ok(bridge)
+    for (const init of initialized()) await rpc(bridge, init)
+
+    let settle!: (context: ThreadExecutionContext | null) => void
+    bridge.setPendingExecutionContext(
+      new Promise((resolve) => {
+        settle = resolve
+      }),
+    )
+    const held = rpc(bridge, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'run_shell', arguments: { command: 'echo held' } },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    assert.deepEqual(executed, [], 'the call must wait for the binding, not run or be rejected')
+
+    const context = worktreeContext('bridge-thread', '/worktrees/example')
+    bridge.setExecutionContext(context)
+    settle(context)
+    const result = await held
+    assert.notEqual(rpcResult(result)['isError'], true)
+    assert.deepEqual(executed, ['run_shell:echo held'])
+    bridge.setExecutionContext(null)
+  })
+
+  it('rejects a held call when the agent-started turn is not approved', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const executed: string[] = []
+    bridge = await startAcpNativeBridge(testRegistry(executed), new AbortController().signal, {
+      threadId: 'bridge-thread',
+    })
+    assert.ok(bridge)
+    for (const init of initialized()) await rpc(bridge, init)
+
+    bridge.setPendingExecutionContext(Promise.resolve(null))
+    const declined = await rpc(bridge, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'run_shell', arguments: { command: 'echo declined' } },
+    })
+    assert.equal(rpcResult(declined)['isError'], true)
+    assert.match(contentText(declined) ?? '', /was not approved to continue/)
+    assert.deepEqual(executed, [])
+  })
+
   it('keeps concurrent thread bridges resolving their own worktree roots', async () => {
     // Mirrors the advisor-context isolation test: two threads' bridges serving
     // overlapping calls must each see their own turn's root, never the other's.
@@ -719,6 +1089,53 @@ describe('startAcpNativeBridge', () => {
     } finally {
       await Promise.all([bridgeA.close(), bridgeB.close()])
     }
+  })
+
+  it('offers ask_classifier to ACP and executes it through the registry gate', async () => {
+    const permissionChecks: string[] = []
+    setPermissionGateForTests((check) => {
+      permissionChecks.push(check.toolName)
+      return Promise.resolve(true)
+    })
+    const registry = testRegistry([])
+    registry.register({
+      name: 'ask_classifier',
+      description: 'Ask a saved classifier a typed question',
+      parameters: z.object({
+        classifier: z.string(),
+        text: z.string(),
+        type: z.literal('boolean'),
+        question: z.string(),
+      }),
+      execute: () => Promise.resolve('{"probabilityTrue":0.8}'),
+    })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
+    assert.ok(bridge)
+    bridge.setExecutionContext(worktreeContext('bridge-test', '/worktrees/bridge-test'))
+
+    for (const init of initialized()) await rpc(bridge, init)
+    const listed = await rpc(bridge, LIST_TOOLS)
+    const names = recordArrayOrEmpty(rpcResult(listed)['tools']).map((tool) => tool['name'])
+    assert.ok(names.includes('ask_classifier'))
+
+    const call = await rpc(bridge, {
+      jsonrpc: '2.0',
+      id: 5,
+      method: 'tools/call',
+      params: {
+        name: 'ask_classifier',
+        arguments: {
+          classifier: 'kev',
+          text: 'app crashes',
+          type: 'boolean',
+          question: 'Is this a bug report?',
+        },
+      },
+    })
+    assert.equal(contentText(call), '{"probabilityTrue":0.8}')
+    assert.deepEqual(permissionChecks, ['ask_classifier'])
   })
 
   it('offers the advisor tool when registered, so an ACP executor can consult it', async () => {

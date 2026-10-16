@@ -4,6 +4,7 @@ import { createWriteStream } from 'node:fs'
 import { mkdir, rename, rm } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { Transform } from 'node:stream'
+import { StringDecoder } from 'node:string_decoder'
 import { pipeline } from 'node:stream/promises'
 import type { SshWorkspaceHost, SshExecResult } from '@shared/types/ssh-workspace.ts'
 import { getSetting } from '../storage/settings.ts'
@@ -156,19 +157,27 @@ async function runLocalSsh(
           }, timeoutMs)
         : undefined
 
+    // ssh can exit before reading stdin (auth failure, remote command gone);
+    // the exit code reports that, so the resulting EPIPE must not go uncaught.
+    proc.stdin?.on('error', () => undefined)
     if (options.stdin) proc.stdin?.write(options.stdin)
     proc.stdin?.end()
 
+    // Decode across chunk boundaries so a split multibyte character survives.
+    const stdoutDecoder = new StringDecoder('utf8')
+    const stderrDecoder = new StringDecoder('utf8')
     proc.stdout?.on('data', (chunk: Buffer) => {
-      stdout = appendFlatCapped(stdout, chunk.toString(), maxBytes)
+      stdout = appendFlatCapped(stdout, stdoutDecoder.write(chunk), maxBytes)
     })
     proc.stderr?.on('data', (chunk: Buffer) => {
-      stderr = appendFlatCapped(stderr, chunk.toString(), maxBytes)
+      stderr = appendFlatCapped(stderr, stderrDecoder.write(chunk), maxBytes)
     })
 
     proc.on('close', (code) => {
       if (settled) return
       settled = true
+      stdout = appendFlatCapped(stdout, stdoutDecoder.end(), maxBytes)
+      stderr = appendFlatCapped(stderr, stderrDecoder.end(), maxBytes)
       finish(() => {
         resolve({ stdout, stderr, code: code ?? 0 })
       })
@@ -183,6 +192,49 @@ async function runLocalSsh(
     })
 
     options.signal?.addEventListener('abort', onAbort)
+  })
+}
+
+interface SshControlResult {
+  status: number | null
+  stdout: string
+  stderr: string
+}
+
+/**
+ * Run a short-lived ssh control command without blocking the event loop.
+ * Authentication can prompt through the askpass bridge, whose socket server
+ * runs on this same loop — `spawnSync` would deadlock it.
+ */
+function runSshControl(args: string[], env: NodeJS.ProcessEnv): Promise<SshControlResult> {
+  return new Promise((resolve) => {
+    const stdout: Buffer[] = []
+    const stderr: Buffer[] = []
+    let settled = false
+    const settle = (result: SshControlResult): void => {
+      if (settled) return
+      settled = true
+      resolve(result)
+    }
+    let proc: ChildProcess
+    try {
+      proc = spawn('ssh', args, { env, stdio: ['ignore', 'pipe', 'pipe'] })
+    } catch (error) {
+      settle({ status: null, stdout: '', stderr: sshTransferError(error).message })
+      return
+    }
+    proc.stdout?.on('data', (chunk: Buffer) => stdout.push(chunk))
+    proc.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk))
+    proc.on('error', (error) => {
+      settle({ status: null, stdout: '', stderr: error.message })
+    })
+    proc.on('close', (code) => {
+      settle({
+        status: code,
+        stdout: Buffer.concat(stdout).toString('utf8'),
+        stderr: Buffer.concat(stderr).toString('utf8'),
+      })
+    })
   })
 }
 
@@ -336,10 +388,10 @@ export class OpenSshTransport implements SshTransport {
     const askpass = leaseSshAskpassEnv(process.env, this.host.id)
     try {
       if (supportsControlMaster()) {
-        const check = spawnSync('ssh', ['-O', 'check', '-S', this.controlPath, target], {
-          env: askpass.env,
-          encoding: 'utf8',
-        })
+        const check = await runSshControl(
+          ['-O', 'check', '-S', this.controlPath, target],
+          askpass.env,
+        )
         if (check.status === 0) {
           this.connected = true
           return
@@ -361,7 +413,7 @@ export class OpenSshTransport implements SshTransport {
         if (this.host.forwardAgent) masterArgs.push('-o', 'ForwardAgent=yes')
         masterArgs.push(target)
 
-        const master = spawnSync('ssh', masterArgs, { env: askpass.env, encoding: 'utf8' })
+        const master = await runSshControl(masterArgs, askpass.env)
         if (master.status !== 0) {
           throw new Error(
             master.stderr.trim() || master.stdout.trim() || 'SSH control connection failed',
@@ -379,7 +431,6 @@ export class OpenSshTransport implements SshTransport {
     } finally {
       askpass.release()
     }
-    await Promise.resolve()
   }
 
   async disconnect(): Promise<void> {

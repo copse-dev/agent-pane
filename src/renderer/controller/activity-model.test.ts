@@ -1,7 +1,9 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { setThreadStatus } from '@shared/store/thread-helpers.ts'
+import { setThreadStatus, setThreadGitBranch } from '@shared/store/thread-helpers.ts'
+import { commitThreadModelSelection } from './model-selection.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 import type { Thread } from '@shared/types'
 import {
   collectActivityThreads,
@@ -9,6 +11,8 @@ import {
   formatAge,
   formatAgeLong,
   RECENT_ROW_LIMIT,
+  FUTURE_SKEW_MS,
+  RECENT_WINDOW_MS,
   trackRunTimings,
   truncateText,
   UNTITLED_THREAD,
@@ -123,14 +127,14 @@ describe('deriveActivity', () => {
       group(groups, 'working').rows.map((row) => row.threadId),
       ['old-run'],
     )
-    // Failures outrank clean finishes; an idle thread with no end is not "recent".
+    // Failures outrank clean finishes; an idle thread with no end evidence is not "recent".
     assert.deepEqual(
       group(groups, 'recent').rows.map((row) => [row.threadId, row.state]),
       [['broken', 'failed']],
     )
   })
 
-  it('shows a clean finish only when this session saw it end or it completed unseen', () => {
+  it('shows a clean finish when this session saw it end, it completed unseen, or it persisted recently', () => {
     const groups = deriveActivity(
       input({
         threads: [info('watched'), info('unseen', { unreadAt: 700 }), info('stale')],
@@ -147,25 +151,92 @@ describe('deriveActivity', () => {
     )
   })
 
-  it('shows a failure only when this session saw it end or it failed unseen', () => {
-    // The stored status outlives a restart; an old error alone is not recent.
+  it('falls back to the persisted last write for threads that settled before launch', () => {
+    const now = 10 * RECENT_WINDOW_MS
     const groups = deriveActivity(
       input({
+        now,
         threads: [
-          info('watched', { status: 'error' }),
-          info('unseen', { status: 'error', unreadAt: 700 }),
-          info('stale', { status: 'error' }),
+          info('read-yesterday', { settledAt: now - 24 * 3_600_000 }),
+          info('read-edge', { settledAt: now - RECENT_WINDOW_MS }),
+          info('too-old', { settledAt: now - RECENT_WINDOW_MS - 1 }),
+          // No settledAt: a draft or the empty active thread, never prompted.
+          info('draft'),
+          // A session-seen end wins over the persisted time.
+          info('watched', { settledAt: now - 3_600_000 }),
         ],
-        runs: new Map([['watched', { startedAt: 1, endedAt: 900 }]]),
+        runs: new Map([['watched', { startedAt: 1, endedAt: now - 1000 }]]),
       }),
     )
     assert.deepEqual(
       group(groups, 'recent').rows.map((row) => [row.threadId, row.state, row.since]),
       [
-        ['watched', 'failed', 900],
+        ['watched', 'finished', now - 1000],
+        ['read-yesterday', 'finished', now - 24 * 3_600_000],
+        ['read-edge', 'finished', now - RECENT_WINDOW_MS],
+      ],
+    )
+  })
+
+  it('ignores a persisted time far in the future but tolerates small clock skew', () => {
+    const now = 10 * RECENT_WINDOW_MS
+    const groups = deriveActivity(
+      input({
+        now,
+        threads: [
+          info('skewed', { settledAt: now + FUTURE_SKEW_MS }),
+          info('bogus', { settledAt: now + FUTURE_SKEW_MS + 1 }),
+          info('way-ahead', { settledAt: now + RECENT_WINDOW_MS + 1 }),
+        ],
+      }),
+    )
+    assert.deepEqual(
+      group(groups, 'recent').rows.map((row) => row.threadId),
+      ['skewed'],
+    )
+  })
+
+  it('shows a stored failure only when seen this session or inside the window', () => {
+    // The stored status outlives a restart; an old error alone is not a fresh failure.
+    const now = 10 * RECENT_WINDOW_MS
+    const groups = deriveActivity(
+      input({
+        now,
+        threads: [
+          info('watched', { status: 'error' }),
+          info('unseen', { status: 'error', unreadAt: 700 }),
+          info('recent-stored', { status: 'error', settledAt: now - 3_600_000 }),
+          info('stale', { status: 'error', settledAt: now - RECENT_WINDOW_MS - 1 }),
+          info('no-evidence', { status: 'error' }),
+        ],
+        runs: new Map([['watched', { startedAt: 1, endedAt: now - 900 }]]),
+      }),
+    )
+    assert.deepEqual(
+      group(groups, 'recent').rows.map((row) => [row.threadId, row.state, row.since]),
+      [
+        ['watched', 'failed', now - 900],
+        ['recent-stored', 'failed', now - 3_600_000],
         ['unseen', 'failed', 700],
       ],
     )
+  })
+
+  it('folds persisted schedule runs like watched ones', () => {
+    const now = 1_000_000
+    const schedule = { id: 's', name: 'Nightly' }
+    const groups = deriveActivity(
+      input({
+        now,
+        threads: [
+          info('a', { settledAt: now - 10, schedule }),
+          info('b', { settledAt: now - 20, schedule }),
+        ],
+      }),
+    )
+    const recent = group(groups, 'recent')
+    assert.equal(recent.rows.length, 1)
+    assert.equal(recent.rows[0]?.fold?.runs.length, 2)
   })
 
   it('orders working runs newest first and puts unknown starts last', () => {
@@ -268,6 +339,89 @@ describe('deriveActivity', () => {
 })
 
 describe('collectActivityThreads', () => {
+  it('does not turn model and branch edits into a new completion', () => {
+    const store = createStore({
+      projects: [{ id: 'p1', path: '/one', name: 'one' }],
+      activeProjectId: 'p1',
+      threads: [
+        {
+          id: 'old',
+          title: 'Old',
+          status: 'idle',
+          messages: [],
+          usage: { inputTokens: 1, outputTokens: 0 },
+          createdAt: 0,
+          lastPromptAt: 1,
+          updatedAt: 2,
+        },
+      ],
+    })
+    commitThreadModelSelection(store, createFakeApi(), 'old', 'user', undefined, 'mock:test')
+    setThreadGitBranch(store, 'old', 'feature')
+    const threads = collectActivityThreads(store)
+    assert.equal(threads[0]?.settledAt, 2)
+    assert.equal(
+      deriveActivity(input({ threads, now: Date.now() })).some((g) =>
+        g.rows.some((row) => row.threadId === 'old'),
+      ),
+      false,
+    )
+  })
+
+  it('records a new completion when a running thread settles', (t) => {
+    t.mock.timers.enable({ apis: ['Date'], now: 1000 })
+    const store = createStore({
+      projects: [{ id: 'p1', path: '/one', name: 'one' }],
+      activeProjectId: 'p1',
+      threads: [
+        {
+          id: 'run',
+          title: 'Run',
+          status: 'running',
+          messages: [],
+          usage: { inputTokens: 1, outputTokens: 0 },
+          createdAt: 0,
+          updatedAt: 2,
+          lastPromptAt: 1,
+          lastSettledAt: 2,
+        },
+      ],
+    })
+    setThreadStatus(store, 'run', 'idle')
+    setThreadGitBranch(store, 'run', 'feature')
+    assert.equal(collectActivityThreads(store)[0]?.settledAt, 1000)
+  })
+
+  it('carries the persisted write time only for threads that ran', () => {
+    setThreadCacheForTest('p2', [
+      metadataOnly('cached-run', { updatedAt: 40, lastPromptAt: 30 }),
+      metadataOnly('cached-draft', { updatedAt: 50 }),
+      // Written before lastPromptAt existed: no prompt time, history on disk. It ran
+      // (usage), so it lists without its transcript being loaded.
+      metadataOnly('cached-legacy', {
+        updatedAt: 45,
+        usage: { inputTokens: 900, outputTokens: 50 },
+      }),
+    ])
+    const store = createStore({
+      projects: [
+        { id: 'p1', path: '/one', name: 'one' },
+        { id: 'p2', path: '/two', name: 'two' },
+      ],
+      activeProjectId: 'p1',
+      threads: [metadataOnly('active', { updatedAt: 60, lastPromptAt: 55 })],
+    })
+    assert.deepEqual(
+      collectActivityThreads(store).map((t) => [t.id, t.settledAt]),
+      [
+        ['active', 60],
+        ['cached-run', 40],
+        ['cached-draft', undefined],
+        ['cached-legacy', 45],
+      ],
+    )
+  })
+
   it('reads metadata from every loaded project without touching a transcript', () => {
     setThreadCacheForTest('p2', [metadataOnly('cached', { title: 'Cached run', unreadAt: 5 })])
     const store = createStore({
@@ -472,5 +626,121 @@ describe('automation runs in Recently finished', () => {
     assert.equal(recent.rows[0]?.fold?.kind, 'finished')
     assert.equal(recent.rows.length, RECENT_ROW_LIMIT + 1)
     assert.equal(recent.total, RECENT_ROW_LIMIT + 3 + 1)
+  })
+})
+
+describe('unattended run issues', () => {
+  const NOW = 10_000_000
+  const STALL = 15 * 60_000
+  const schedule = { id: 's1', name: 'Nightly review' }
+
+  it('flags an automation approval that has waited past the stall threshold', () => {
+    const groups = deriveActivity(
+      input({
+        threads: [info('t1', { schedule })],
+        approvals: [approval('a1', 't1', NOW - STALL)],
+        now: NOW,
+      }),
+    )
+    const row = groups.find((group) => group.id === 'needs-you')?.rows[0]
+    assert.equal(row?.issue?.code, 'approval-stalled')
+    assert.match(row.issue.remedy, /approve or deny/i)
+  })
+
+  it('leaves a fresh automation approval and any ordinary thread alone', () => {
+    const fresh = deriveActivity(
+      input({
+        threads: [info('t1', { schedule })],
+        approvals: [approval('a1', 't1', NOW - STALL + 1)],
+        now: NOW,
+      }),
+    )
+    assert.equal(fresh[0]?.rows[0]?.issue, undefined)
+    const ordinary = deriveActivity(
+      input({
+        threads: [info('t2')],
+        approvals: [approval('a2', 't2', NOW - 10 * STALL)],
+        now: NOW,
+      }),
+    )
+    assert.equal(ordinary[0]?.rows[0]?.issue, undefined)
+  })
+
+  it('names the cause of a failed automation run and falls back to a generic failure', () => {
+    const runs = new Map<string, RunTiming>([
+      ['t1', { endedAt: NOW - 1000 }],
+      ['t2', { endedAt: NOW - 2000 }],
+      ['t3', { endedAt: NOW - 3000 }],
+    ])
+    const groups = deriveActivity(
+      input({
+        threads: [
+          info('t1', {
+            status: 'error',
+            schedule,
+            failure: { code: 'auth-expired', message: '401', at: NOW - 1000, startFailed: false },
+          }),
+          info('t2', { status: 'error', schedule: { id: 's2', name: 'Other' } }),
+          info('t3', { status: 'error' }),
+        ],
+        runs,
+        now: NOW,
+      }),
+    )
+    const recent = groups.find((group) => group.id === 'recent')?.rows ?? []
+    const byThread = new Map(recent.map((row) => [row.threadId, row]))
+    assert.equal(byThread.get('t1')?.issue?.code, 'auth-expired')
+    assert.equal(byThread.get('t1')?.want, 'Sign-in expired')
+    assert.equal(byThread.get('t2')?.issue?.code, 'unknown')
+    assert.equal(byThread.get('t3')?.issue, undefined)
+    assert.equal(byThread.get('t3')?.want, 'Ended with an error')
+  })
+
+  it('shows a run that never started for a day, then lets it go', () => {
+    const failure = (at: number): NonNullable<ActivityThread['failure']> => ({
+      code: 'worktree-failed',
+      message: 'no checkout',
+      at,
+      startFailed: true,
+    })
+    const recent = (at: number): ActivityGroup | undefined =>
+      deriveActivity(
+        input({ threads: [info('t1', { schedule, failure: failure(at) })], now: NOW }),
+      ).find((group) => group.id === 'recent')
+    const shown = recent(NOW - 60_000)?.rows[0]
+    assert.equal(shown?.state, 'failed')
+    assert.equal(shown.issue?.code, 'worktree-failed')
+    assert.equal(recent(NOW - 25 * 60 * 60_000)?.rows.length, 0)
+  })
+
+  it('carries an automation thread failure into the activity metadata', () => {
+    const store = createStore({
+      activeProjectId: 'p1',
+      projects: [{ id: 'p1', path: '/a', name: 'a' }],
+    })
+    const thread: Thread = {
+      id: 'auto',
+      title: 'Nightly',
+      status: 'error',
+      messages: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      model: 'm',
+      automation: {
+        scheduleId: 's1',
+        scheduleName: 'Nightly',
+        triggeredAt: 1,
+        failure: { code: 'no-model', message: 'gone', at: 5 },
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    store.setState({ threads: [thread] })
+    const collected = collectActivityThreads(store).find((item) => item.id === 'auto')
+    assert.deepEqual(collected?.failure, {
+      code: 'no-model',
+      message: 'gone',
+      at: 5,
+      startFailed: false,
+    })
   })
 })

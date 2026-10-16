@@ -1,7 +1,7 @@
 import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
 import { captureInlineCanvasScope } from '../inline-canvas-context.ts'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { Server as McpBridgeServer } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
@@ -13,7 +13,8 @@ import {
 import { errorMessage } from '@shared/errors.ts'
 import { getSetting } from '../storage/settings.ts'
 import { AbandonedCallAbort } from '../approval.ts'
-import { runWithApprovalToolCallId } from '../approval-tool-call-context.ts'
+import { runWithBridgeExecutionId } from '../approval-tool-call-context.ts'
+import { recordDecision } from '../security/decision-log-store.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import type { ToolResultImage } from '@shared/types'
 import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
@@ -33,6 +34,8 @@ import { unwrapInlineCode } from './session-update-adapter.ts'
 
 import { BRIDGE_MCP_SERVER_NAME, matchesBridgedToolName } from './acp-bridge-name.ts'
 import { isAppleDevelopmentToolOffered } from '../apple-development/apple-development-tool-scope.ts'
+import { configuredClassifierProfiles } from '../classifiers/classifier-service.ts'
+import { ASK_CLASSIFIER_TOOL_NAME, describeClassifyTool } from '../../tools/classifier-tool.ts'
 
 export { BRIDGE_MCP_SERVER_NAME }
 
@@ -92,6 +95,8 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // prompts and, when approved, runs outside the ACP process's seatbelt.
   'run_shell',
   'run_background',
+  // Saved decision classifiers run through Copse's permission and provider gates.
+  'ask_classifier',
   // Host GUI launch via Launch Services. run_shell/open cannot reach the
   // window server from the seatbelt; this tool asks once, then launches
   // unsandboxed from the host process (gui-app-launch-tool.ts).
@@ -126,6 +131,8 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // Model-proposed threads. The ACP agent can offer the work, but the
   // renderer card remains the approval boundary that actually starts it.
   'propose_thread',
+  'list_threads',
+  'send_thread_prompt',
   // Visibility into pending diff-queue approvals.
   'staged_diffs',
   'read_staged_diff',
@@ -264,6 +271,13 @@ export interface AcpNativeBridge {
    */
   setExecutionContext: (context: ThreadExecutionContext | null) => void
   /**
+   * A binding that is still being settled for a turn the agent started on its
+   * own (see agent-initiated-turn.ts). Calls that arrive before it resolves wait
+   * for it instead of being rejected; a null result keeps the fail-closed
+   * rejection. Null when no such turn is pending.
+   */
+  setPendingExecutionContext: (pending: Promise<ThreadExecutionContext | null> | null) => void
+  /**
    * Bind the current turn's abort signal so in-flight bridged tools (and their
    * approval prompts) cancel when the turn ends — including the case where the
    * external agent abandons an MCP call and finishes the prompt on its own.
@@ -284,7 +298,14 @@ function bridgedTools(
   // toMcpTools, not toLLMTools: the agent forwards these schemas to the
   // Anthropic API, which validates them as JSON Schema draft 2020-12 and
   // 400s the whole request on the openapi-3.0 flavor.
-  return registry.toMcpTools().filter((tool) => offered.has(tool.name))
+  return registry
+    .toMcpTools()
+    .filter((tool) => offered.has(tool.name))
+    .map((tool) =>
+      tool.name === ASK_CLASSIFIER_TOOL_NAME
+        ? { ...tool, description: describeClassifyTool(configuredClassifierProfiles()) }
+        : tool,
+    )
 }
 
 interface BridgeExecuteContext {
@@ -314,11 +335,37 @@ interface BridgeExecuteContext {
    * than falling back to the shared checkout.
    */
   getExecutionContext: () => ThreadExecutionContext | null
+  /** See {@link AcpNativeBridge.setPendingExecutionContext}. */
+  getPendingExecutionContext: () => Promise<ThreadExecutionContext | null> | null
   getInlineCanvasScope: () => ReturnType<typeof captureInlineCanvasScope>
   networkScopeAlreadyApplies: boolean
   /** The bridge was started for a deferred-worktree thread: offer `request_write_access`. */
   offerWriteAccess: boolean
   recordWorkspaceWrite: (path: string) => void
+}
+
+/** Wait for a pending binding, giving up with the call itself if the agent abandons it. */
+function awaitPendingExecutionContext(
+  pending: Promise<ThreadExecutionContext | null> | null,
+  signal: AbortSignal,
+): Promise<ThreadExecutionContext | null> {
+  if (!pending || signal.aborted) return Promise.resolve(null)
+  return new Promise((resolve) => {
+    const onAbort = (): void => {
+      resolve(null)
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    void pending.then(
+      (context) => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(context)
+      },
+      () => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(null)
+      },
+    )
+  })
 }
 
 /** Paths a successful bridged native edit owns in the post-turn workspace audit. */
@@ -394,7 +441,7 @@ function buildMcpServer(
   // eslint-disable-next-line @typescript-eslint/no-deprecated -- see the note on the signature
   const server = new McpBridgeServer(
     { name: BRIDGE_MCP_SERVER_NAME, version: '1.0.0' },
-    { capabilities: { tools: {} } },
+    { capabilities: { tools: {}, logging: {} } },
   )
   server.setRequestHandler(ListToolsRequestSchema, () => ({
     tools: bridgedTools(registry, ctx.projectId, ctx.offerWriteAccess),
@@ -430,22 +477,32 @@ function buildMcpServer(
     // in getAgentExecutionRoot() — the exact wrong-tree write the bound context
     // exists to prevent — so reject every bridged call outright instead.
     // tools/list stays unguarded: agents list at session setup, between turns.
-    const executionContext = ctx.getExecutionContext()
+    const pendingBinding = ctx.getExecutionContext() ? null : ctx.getPendingExecutionContext()
+    const executionContext =
+      ctx.getExecutionContext() ??
+      (await awaitPendingExecutionContext(pendingBinding, extra.signal)) ??
+      ctx.getExecutionContext()
     if (!executionContext) {
       return {
         content: [
           {
             type: 'text',
-            text:
-              `Tool call "${name}" arrived after its agent turn ended; ` +
-              'no thread execution context is bound, so the bridge refuses to run it ' +
-              'against a fallback workspace root.',
+            text: pendingBinding
+              ? `Tool call "${name}" was not run: this turn started without a prompt from ` +
+                'the user and was not approved to continue, so no thread execution context ' +
+                'is bound. Stop, or ask the user to continue.'
+              : `Tool call "${name}" arrived after its agent turn ended; ` +
+                'no thread execution context is bound, so the bridge refuses to run it ' +
+                'against a fallback workspace root.',
           },
         ],
         isError: true,
       }
     }
     const requestKey = String(extra.requestId)
+    // MCP request numbers can repeat across sessions/retries and are not ACP
+    // transcript IDs. Own the identity of this execution at the host boundary.
+    const bridgeExecutionId = randomUUID()
     ctx.inflightCalls.set(requestKey, ctx.abandonCall)
     // Same-server cancellation (a batched cancel, or a future stateful mode)
     // is an abandonment too, not a turn-level cancel.
@@ -453,14 +510,61 @@ function buildMcpServer(
       ctx.abandonCall('the MCP client cancelled the tool call')
     }
     extra.signal.addEventListener('abort', onExtraAbort, { once: true })
+    let stopKeepalive = (): void => {}
     try {
       const executeSignal = mergeBridgeExecuteSignal(
         ctx.sessionSignal,
         ctx.getTurnSignal(),
         ctx.getCallSignal(),
       )
-      const execute = (): ReturnType<ToolRegistry['executeNormalized']> =>
-        registry.executeNormalized(name, request.params.arguments, executeSignal)
+      // The client's idle timeout can be shorter than run_shell's foreground
+      // deadline, and a quiet command (or a pending approval) produces no MCP
+      // traffic until it finishes. Keep this request's SSE stream active. Use
+      // the client's progress token when supplied; otherwise send a logging
+      // notification rather than inventing an unsolicited progress token.
+      let progress = 0
+      const progressToken = request.params._meta?.progressToken
+      const keepalive = setInterval(() => {
+        const message = `Tool call "${name}" is still pending.`
+        const notification =
+          progressToken !== undefined
+            ? extra.sendNotification({
+                method: 'notifications/progress',
+                params: { progressToken, progress: ++progress, message },
+              })
+            : extra.sendNotification({
+                method: 'notifications/message',
+                params: { level: 'info', logger: BRIDGE_MCP_SERVER_NAME, data: message },
+              })
+        // A closed transport must not leave an interval or an unhandled
+        // rejection behind, nor turn a successful tool result into an error.
+        void notification.catch(() => {
+          stopKeepalive()
+        })
+      }, 30_000)
+      keepalive.unref()
+      stopKeepalive = (): void => {
+        clearInterval(keepalive)
+        executeSignal.removeEventListener('abort', stopKeepalive)
+      }
+      executeSignal.addEventListener('abort', stopKeepalive, { once: true })
+      if (executeSignal.aborted) stopKeepalive()
+      const execute = (): ReturnType<ToolRegistry['executeNormalized']> => {
+        recordDecision({
+          kind: 'bridge-request',
+          actor: 'system',
+          verdict: 'requested',
+          subject: name,
+          source: 'acp-native-bridge',
+          bridgeExecutionId,
+          projectId: executionContext.projectId,
+          threadId: ctx.threadId,
+          // Arguments belong in the private thread blob, like transcript tool
+          // arguments, never the redacted decision summary shown in the UI.
+          detail: { mcpRequestId: requestKey, arguments: request.params.arguments ?? {} },
+        })
+        return registry.executeNormalized(name, request.params.arguments, executeSignal)
+      }
       const withPermissionContext = (): ReturnType<ToolRegistry['executeNormalized']> =>
         ctx.networkScopeAlreadyApplies
           ? runWithAcpBridgePermissionContext({ networkScopeAlreadyApplies: true }, execute)
@@ -480,7 +584,7 @@ function buildMcpServer(
         inlineCanvasScope(() =>
           runWithActiveRunIdentity(ctx.threadId, () =>
             runWithThreadExecutionContext(executionContext, () =>
-              runWithApprovalToolCallId(requestKey, withPermissionContext),
+              runWithBridgeExecutionId(bridgeExecutionId, withPermissionContext),
             ),
           ),
         )
@@ -503,6 +607,7 @@ function buildMcpServer(
     } catch (err) {
       return { content: [{ type: 'text', text: errorMessage(err) }], isError: true }
     } finally {
+      stopKeepalive()
       extra.signal.removeEventListener('abort', onExtraAbort)
       if (ctx.inflightCalls.get(requestKey) === ctx.abandonCall) {
         ctx.inflightCalls.delete(requestKey)
@@ -603,6 +708,7 @@ export async function startAcpNativeBridge(
   const advisorContext: { current: AdvisorRunnerContext | null } = { current: null }
   let turnSignal: AbortSignal | null = null
   let executionContext: ThreadExecutionContext | null = null
+  let pendingExecutionContext: Promise<ThreadExecutionContext | null> | null = null
   let inlineCanvasScope = captureInlineCanvasScope()
   let workspaceWriteObserver: ((path: string) => void) | null = null
   const inflightCalls = new Map<string, (detail: string) => void>()
@@ -642,6 +748,7 @@ export async function startAcpNativeBridge(
         threadId: opts.threadId,
         ...(opts.projectId ? { projectId: opts.projectId } : {}),
         getExecutionContext: () => executionContext,
+        getPendingExecutionContext: () => pendingExecutionContext,
         getInlineCanvasScope: () => inlineCanvasScope,
         networkScopeAlreadyApplies,
         offerWriteAccess,
@@ -690,6 +797,9 @@ export async function startAcpNativeBridge(
     setExecutionContext: (context): void => {
       executionContext = context
       inlineCanvasScope = captureInlineCanvasScope()
+    },
+    setPendingExecutionContext: (pending): void => {
+      pendingExecutionContext = pending
     },
     setTurnSignal: (next): void => {
       turnSignal = next

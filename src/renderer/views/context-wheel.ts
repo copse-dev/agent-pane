@@ -1,6 +1,7 @@
 import type { ContextBreakdown, ContextSegmentKey, ContextSnapshot } from '@shared/types'
 import type { FooterUsageTooltipModel } from '@shared/usage/footer-usage-tooltip.ts'
-import { appendUsageSections } from './footer-usage-popover.ts'
+import type { ThreadClassifierUse } from '@shared/usage/classifier-use.ts'
+import { appendClassifierSection, appendUsageSections } from './footer-usage-popover.ts'
 
 const RADIUS = 6
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS
@@ -42,6 +43,8 @@ export interface ContextWheelOptions {
    * stays visible as an empty ring so usage still has an anchor.
    */
   usage?: FooterUsageTooltipModel | null
+  /** What the classifiers did for this thread; shown beneath usage when any was asked. */
+  classifierUse?: ThreadClassifierUse | null
   /**
    * When true the multi-arc breakdown ring replaces the live snapshot fill
    * (pre-send / fresh threads). When false the measured snapshot ring stays,
@@ -100,29 +103,41 @@ export function createContextWheel(): {
 
   let popoverActive = false
   let currentUsage: FooterUsageTooltipModel | null = null
-
-  // Whether the pointer or focus is on the wheel. A re-render hides the popover
-  // while it rebuilds, so this is what puts it back: without it, anything that
-  // updates the footer while the hover is open — including the re-read the hover
-  // itself triggers — would close it under the user.
-  let engaged = false
+  let currentClassifierUse: ThreadClassifierUse | null = null
+  let hovered = false
+  let focused = false
 
   function showPopover(): void {
-    engaged = true
     if (popoverActive) popover.hidden = false
   }
   function hidePopover(): void {
-    engaged = false
     popover.hidden = true
   }
   /** Reopen after a re-render, if the pointer never left and there is still something to show. */
   function restoreEngagedPopover(): void {
-    if (engaged && popoverActive && !root.hidden) popover.hidden = false
+    if ((hovered || focused) && popoverActive && !root.hidden) popover.hidden = false
   }
-  root.addEventListener('mouseenter', showPopover)
-  root.addEventListener('mouseleave', hidePopover)
-  root.addEventListener('focusin', showPopover)
-  root.addEventListener('focusout', hidePopover)
+  // Pointer clicks must not pin a hover by taking focus. Keyboard focus still
+  // opens the details; interactions inside the popover keep their defaults.
+  root.addEventListener('mousedown', (event) => {
+    if (event.target instanceof Node && !popover.contains(event.target)) event.preventDefault()
+  })
+  root.addEventListener('mouseenter', () => {
+    hovered = true
+    showPopover()
+  })
+  root.addEventListener('mouseleave', () => {
+    hovered = false
+    if (!focused) hidePopover()
+  })
+  root.addEventListener('focusin', () => {
+    focused = true
+    showPopover()
+  })
+  root.addEventListener('focusout', () => {
+    focused = false
+    if (!hovered) hidePopover()
+  })
 
   function clearSegments(): void {
     while (segGroup.firstChild) segGroup.firstChild.remove()
@@ -168,6 +183,7 @@ export function createContextWheel(): {
       popover.append(divider)
     }
     appendUsageSections(popover, currentUsage)
+    if (currentClassifierUse) appendClassifierSection(popover, currentClassifierUse)
   }
 
   function renderBreakdown(breakdown: ContextBreakdown): void {
@@ -204,14 +220,6 @@ export function createContextWheel(): {
       renderPopover(breakdown)
     })
 
-    const lines = segments.map(
-      (s) =>
-        `${s.label}: ${formatTokenCount(s.tokens)} (${String(pctOf(s.tokens, contextWindow))}%)`,
-    )
-    root.title = [
-      `Context: ${formatTokenCount(totalTokens)} / ${formatTokenCount(contextWindow)} (${String(pct)}%)`,
-      ...lines,
-    ].join('\n')
     root.setAttribute(
       'aria-label',
       `Estimated context ${String(pct)}% of window, ${formatTokenCount(
@@ -270,19 +278,17 @@ export function createContextWheel(): {
       `${String(ratio * CIRCUMFERENCE)} ${String(CIRCUMFERENCE)}`,
     )
     setFillState(ratio)
-    // The title and aria-label quote the same figures as the hover beside the
+    // The aria-label quotes the same figures as the hover popover beside the
     // ring: when a part-by-part breakdown is shown it counts the whole window,
-    // while the snapshot counts the conversation budget, and quoting one in
-    // the label and the other in the hover made one control disagree with itself.
+    // while the snapshot counts the conversation budget, and quoting the wrong
+    // one would make the control disagree with itself.
     const shownBreakdown = options?.breakdown
     const labelled =
       shownBreakdown && shownBreakdown.totalTokens > 0 && shownBreakdown.contextWindow > 0
         ? { tokens: shownBreakdown.totalTokens, budget: shownBreakdown.contextWindow }
         : { tokens: snapshot.conversationTokens, budget: snapshot.conversationBudget }
     const pct = pctOf(labelled.tokens, labelled.budget)
-    const contextLine = `Context: ${formatTokenCount(labelled.tokens)} / ${formatTokenCount(labelled.budget)} (${String(pct)}%)`
     const usageLine = options?.usageLine?.trim()
-    root.title = usageLine ? `${contextLine}\n${usageLine}` : contextLine
     const ariaUsage = usageLine ? `; ${usageLine}` : ''
     root.setAttribute(
       'aria-label',
@@ -319,7 +325,6 @@ export function createContextWheel(): {
     popoverActive = true
     root.tabIndex = 0
     const usageLine = options?.usageLine?.trim() ?? usage.header
-    root.title = usageLine
     root.setAttribute('aria-label', usageLine)
     composePopover(null)
   }
@@ -330,6 +335,7 @@ export function createContextWheel(): {
     options?: ContextWheelOptions,
   ): void {
     currentUsage = options?.usage ?? null
+    currentClassifierUse = options?.classifierUse ?? null
     const breakdown = options?.breakdown
     if (
       !running &&

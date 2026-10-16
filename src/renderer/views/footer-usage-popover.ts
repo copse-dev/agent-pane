@@ -3,6 +3,12 @@ import type {
   FooterUsageTooltipRow,
   FooterUsageTooltipRun,
 } from '@shared/usage/footer-usage-tooltip.ts'
+import {
+  CLASSIFIER_SUBJECT_LABELS,
+  type ClassifierUseRow,
+  type ThreadClassifierUse,
+} from '@shared/usage/classifier-use.ts'
+import { formatTokenCount } from '@shared/usage/format-usage-summary.ts'
 import { el } from '../dom/helpers.ts'
 
 function row(entry: FooterUsageTooltipRow, className: string): HTMLElement {
@@ -80,4 +86,68 @@ export function appendUsageSections(parent: HTMLElement, model: FooterUsageToolt
   if (model.freeNote) {
     parent.append(el('div', { class: 'footer-usage-popover-note' }, model.freeNote))
   }
+}
+
+/** Verdicts that mean the classifier found nothing to worry about. */
+const REASSURING_VERDICTS: ReadonlySet<string> = new Set(['sandbox', 'safe', 'read', 'local-write'])
+
+function formatLatency(ms: number): string {
+  return ms < 1000 ? `${String(Math.round(ms))}ms` : `${(ms / 1000).toFixed(1)}s`
+}
+
+function classifierRow(row: ClassifierUseRow): HTMLElement {
+  const details = [row.engine]
+  if (row.averageLatencyMs !== null) details.push(`${formatLatency(row.averageLatencyMs)} avg`)
+  if (row.inputTokens > 0 || row.outputTokens > 0) {
+    details.push(
+      `${formatTokenCount(row.inputTokens)} in / ${formatTokenCount(row.outputTokens)} out`,
+    )
+  }
+  const pills = el('span', { class: 'footer-usage-popover-pills' })
+  for (const verdict of row.verdicts) {
+    pills.append(
+      el(
+        'span',
+        {
+          class: `footer-usage-popover-pill ${REASSURING_VERDICTS.has(verdict.label) ? 'is-ok' : 'is-warn'}`,
+        },
+        `${String(verdict.count)} ${verdict.label}`,
+      ),
+    )
+  }
+  if (row.noVerdict > 0) {
+    pills.append(
+      el('span', { class: 'footer-usage-popover-pill' }, `${String(row.noVerdict)} no verdict`),
+    )
+  }
+  return el(
+    'div',
+    { class: 'footer-usage-popover-row is-classifier' },
+    el(
+      'span',
+      { class: 'footer-usage-popover-run' },
+      el('span', { class: 'footer-usage-popover-name' }, CLASSIFIER_SUBJECT_LABELS[row.subject]),
+      el('span', { class: 'footer-usage-popover-meta' }, details.join(' · ')),
+      pills,
+    ),
+    el(
+      'span',
+      { class: 'footer-usage-popover-value' },
+      `${String(row.calls)} ${row.calls === 1 ? 'call' : 'calls'}`,
+    ),
+  )
+}
+
+/** Append what the classifiers did for this thread; nothing when none was asked. */
+export function appendClassifierSection(parent: HTMLElement, use: ThreadClassifierUse): void {
+  if (use.calls === 0) return
+  parent.append(el('div', { class: 'footer-usage-popover-divider' }))
+  parent.append(
+    el(
+      'div',
+      { class: 'footer-usage-popover-section' },
+      `Classifiers · ${String(use.calls)} ${use.calls === 1 ? 'call' : 'calls'}`,
+    ),
+  )
+  for (const row of use.rows) parent.append(classifierRow(row))
 }

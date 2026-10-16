@@ -1,10 +1,12 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { ToolCall } from '@shared/types'
+import { isRecord } from '@shared/unknown-value.ts'
 import {
   parseThreadProposal,
   threadProposalStatus,
   findThreadProposalDecision,
+  isThreadProposalCall,
   THREAD_PROPOSAL_TOOL,
   type ThreadProposal,
 } from '@shared/threads/thread-proposal.ts'
@@ -30,9 +32,7 @@ import { createThreadProposalCard, type ThreadProposalCardState } from './thread
  * second copy of the offer being persisted anywhere.
  */
 
-export function isThreadProposalCall(tc: ToolCall): boolean {
-  return tc.name === THREAD_PROPOSAL_TOOL
-}
+export { isThreadProposalCall }
 
 function cardState(
   store: AppStore,
@@ -106,7 +106,14 @@ export function createThreadProposalToolCard(
   api: ApiClient,
   sourceThreadId: string,
 ): HTMLDetailsElement | null {
-  const proposal = parseThreadProposal(tc.id, tc.args)
+  // Codex ACP records MCP input as { server, tool, arguments }, including in
+  // saved transcripts. Unwrap only this tool's Copse envelope for display.
+  const args = tc.args
+  const proposalArgs =
+    isRecord(args) && args['server'] === 'copse' && args['tool'] === THREAD_PROPOSAL_TOOL
+      ? args['arguments']
+      : args
+  const proposal = parseThreadProposal(tc.id, proposalArgs)
   // A call still streaming its arguments (or one the model malformed) has no
   // card to draw yet; the ordinary tool card covers it until the args land.
   if (!proposal) return null

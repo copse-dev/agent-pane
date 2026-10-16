@@ -2,8 +2,10 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
+import { switchThread } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitStatusResult } from '@shared/types/git.ts'
+import type { Thread } from '@shared/types'
 import type { ActiveDiff, StagedDiffEntry } from '@shared/types/state.ts'
 import { mountGitChangesPane } from './git-changes-pane.ts'
 import { applyPopoutSeed, capturePopoutSeed } from '../popout/pane-popout-seed.ts'
@@ -281,6 +283,214 @@ describe('#1704 Changes in a pop-out window', () => {
       'the seeded proposed selection survives the hand-off',
     )
     assert.match(selected.textContent, /x\.ts/)
+  })
+})
+
+// A pop-out seeds its `activeThreadId` once, at open time (`applyPopoutSeed`),
+// and is never re-seeded when the parent window later switches threads — see
+// `pane-popout-seed.ts`. Left open, it can go on showing a different thread's
+// committed changes indefinitely with nothing to distinguish it from the
+// thread actually in view. The header must always say which thread it is
+// bound to so that can never be mistaken for current.
+describe('Pop-out header labels the thread it is showing', () => {
+  afterEach(() => {
+    document.documentElement.removeAttribute('data-popout-mode')
+  })
+
+  function threadWithBranch(id: string, title: string, gitBranch: string): Thread {
+    return {
+      id,
+      title,
+      status: 'idle',
+      messages: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: 1,
+      updatedAt: 1,
+      gitBranch,
+    }
+  }
+
+  it('stays hidden in the docked (non-pop-out) window', async () => {
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'changes',
+      threads: [threadWithBranch('thread-1', 'Debug the Changes panel', 'copse/debug-d2c33d')],
+    })
+    const { api } = makeApi({})
+    const { listRoot, viewerRoot } = mountHosts()
+    mountGitChangesPane(
+      listRoot,
+      viewerRoot,
+      store,
+      api,
+      makeMonacoStub({ createModel: 0, setModel: 0 }),
+    )
+    await settle()
+
+    const owner = listRoot.querySelector<HTMLElement>('.git-changes-header-owner')
+    assert.equal(owner?.hidden, true, 'the docked pane never needs the owner label')
+  })
+
+  it('names the thread and branch a pop-out is actually showing', async () => {
+    document.documentElement.setAttribute('data-popout-mode', 'changes')
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'changes',
+      threads: [threadWithBranch('thread-1', 'Debug the Changes panel', 'copse/debug-d2c33d')],
+    })
+    const { api } = makeApi({})
+    const { listRoot, viewerRoot } = mountHosts()
+    mountGitChangesPane(
+      listRoot,
+      viewerRoot,
+      store,
+      api,
+      makeMonacoStub({ createModel: 0, setModel: 0 }),
+    )
+    await settle()
+
+    const owner = listRoot.querySelector<HTMLElement>('.git-changes-header-owner')
+    assert.equal(owner?.hidden, false, 'a pop-out always identifies the thread it is bound to')
+    assert.equal(owner.textContent, 'Debug the Changes panel · copse/debug-d2c33d')
+  })
+
+  it('updates the title after a rename without changing the checkout', async () => {
+    document.documentElement.setAttribute('data-popout-mode', 'changes')
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'changes',
+      threads: [threadWithBranch('thread-1', 'Old title', 'feature/changes')],
+    })
+    const { api } = makeApi({})
+    const { listRoot, viewerRoot } = mountHosts()
+    mountGitChangesPane(
+      listRoot,
+      viewerRoot,
+      store,
+      api,
+      makeMonacoStub({ createModel: 0, setModel: 0 }),
+    )
+    await settle()
+    store.setState({ threads: [threadWithBranch('thread-1', 'Renamed thread', 'feature/changes')] })
+    store.emit('threads_changed')
+    await settle()
+    const owner = listRoot.querySelector<HTMLElement>('.git-changes-header-owner')
+    assert.equal(owner?.textContent, 'Renamed thread · feature/changes')
+  })
+
+  it('refreshes a saved title on focus without changing the selected thread or its snapshot', async () => {
+    document.documentElement.setAttribute('data-popout-mode', 'changes')
+    const thread = threadWithBranch('thread-1', 'Old title', 'feature/changes')
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: thread.id,
+      filesPaneOpen: true,
+      rightPanelMode: 'changes',
+      threads: [thread],
+    })
+    const base = makeApi({}).api
+    const api: ApiClient = {
+      ...base,
+      threads: {
+        ...base.threads,
+        loadProject: async () => [{ ...thread, title: 'Renamed elsewhere' }],
+      },
+    }
+    const { listRoot, viewerRoot } = mountHosts()
+    const dispose = mountGitChangesPane(
+      listRoot,
+      viewerRoot,
+      store,
+      api,
+      makeMonacoStub({ createModel: 0, setModel: 0 }),
+    )
+    window.dispatchEvent(new Event('focus'))
+    await settle()
+    assert.equal(
+      listRoot.querySelector('.git-changes-header-owner')?.textContent,
+      'Renamed elsewhere · feature/changes',
+    )
+    assert.equal(store.getState().activeThreadId, thread.id)
+    assert.equal(store.getState().threads[0]?.title, 'Old title')
+    dispose()
+  })
+
+  it('ignores a saved title that arrives after switching away from its owner', async () => {
+    document.documentElement.setAttribute('data-popout-mode', 'changes')
+    const first = threadWithBranch('thread-1', 'First', 'feature/first')
+    const second = threadWithBranch('thread-2', 'Second', 'feature/second')
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: first.id,
+      filesPaneOpen: true,
+      rightPanelMode: 'changes',
+      threads: [first, second],
+    })
+    let resolveSaved: (threads: Thread[]) => void = () => {}
+    const base = makeApi({}).api
+    const api: ApiClient = {
+      ...base,
+      threads: {
+        ...base.threads,
+        loadProject: () =>
+          new Promise<Thread[]>((resolve) => {
+            resolveSaved = resolve
+          }),
+      },
+    }
+    const { listRoot, viewerRoot } = mountHosts()
+    const dispose = mountGitChangesPane(
+      listRoot,
+      viewerRoot,
+      store,
+      api,
+      makeMonacoStub({ createModel: 0, setModel: 0 }),
+    )
+    window.dispatchEvent(new Event('focus'))
+    switchThread(store, second.id)
+    resolveSaved([{ ...first, title: 'Renamed elsewhere' }])
+    await settle()
+    assert.equal(
+      listRoot.querySelector('.git-changes-header-owner')?.textContent,
+      'Second · feature/second',
+    )
+    dispose()
+  })
+
+  it('relabels on an owner change, e.g. a thread switch inside the pop-out itself', async () => {
+    document.documentElement.setAttribute('data-popout-mode', 'changes')
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'changes',
+      threads: [
+        threadWithBranch('thread-1', 'Debug the Changes panel', 'copse/debug-d2c33d'),
+        threadWithBranch('thread-2', 'Retention history mark', 'copse/retention-history-mark'),
+      ],
+    })
+    const { api } = makeApi({})
+    const { listRoot, viewerRoot } = mountHosts()
+    mountGitChangesPane(
+      listRoot,
+      viewerRoot,
+      store,
+      api,
+      makeMonacoStub({ createModel: 0, setModel: 0 }),
+    )
+    await settle()
+
+    switchThread(store, 'thread-2')
+    await settle()
+
+    const owner = listRoot.querySelector<HTMLElement>('.git-changes-header-owner')
+    assert.equal(owner?.textContent, 'Retention history mark · copse/retention-history-mark')
   })
 })
 

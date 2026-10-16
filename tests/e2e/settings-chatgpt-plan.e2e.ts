@@ -1,25 +1,12 @@
 import { $, browser, expect } from '@wdio/globals'
 import { delimiter, join } from 'node:path'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
-import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  pinTextForCapture,
+  saveAppScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
-
-async function rejectFreshAcpBootstrap(): Promise<void> {
-  // This settings/usage spec does not authorize a real adapter installation.
-  // Exercise and reject its genuine fresh-install consent before continuing.
-  const dialog = $('#approval-dialog')
-  await dialog.waitForDisplayed({ timeout: 10_000 })
-  await expect(dialog.$('.approval-heading')).toHaveText(
-    'Install software to connect your coding agents?',
-  )
-  await expect(dialog.$('.approval-body')).toHaveText('@agentclientprotocol/codex-acp', {
-    containing: true,
-  })
-  await expect(dialog.$('.approval-body')).toHaveText('Socket Firewall', { containing: true })
-  await dialog.$('.approval-reject').click()
-  await expect(dialog).not.toBeDisplayed()
-  await expect($('#settings-dialog')).toBeDisplayed()
-}
 
 describe('native ChatGPT plan connection settings', () => {
   const originalPath = process.env['PATH']
@@ -72,12 +59,12 @@ describe('native ChatGPT plan connection settings', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
     await $('#settings-providers-host .provider-chip[data-provider="openai"]').click()
-    await rejectFreshAcpBootstrap()
     await expect($('.openai-connection-card[data-connection="chatgpt"] h4')).toHaveText(
       'ChatGPT plan',
     )
     await expect($('.openai-connection-card[data-connection="api"] h4')).toHaveText('OpenAI API')
-    await expect($('.openai-connection-card[data-connection="codex"] h4')).toHaveText('Codex agent')
+    // Codex lives in the Coding agents list now, not in the provider form.
+    await expect($('.openai-connection-card[data-connection="codex"]')).not.toExist()
     const section = $('[data-testid="chatgpt-plan-section"]')
     await $('#settings-providers-host').scrollIntoView()
     await expect(section).toBeDisplayed()
@@ -94,22 +81,18 @@ describe('native ChatGPT plan connection settings', () => {
     await expect(section.$('select')).not.toExist()
     await expect(section).toHaveText('Manage usage', { containing: true })
     const apiDetails = $('[data-testid="openai-api-details"]')
-    const codexDetails = $('[data-testid="openai-codex-details"]')
     await expect(apiDetails).not.toHaveAttribute('open')
-    await expect(codexDetails).not.toHaveAttribute('open')
     await expect(apiDetails.$('input')).not.toBeDisplayed()
     await saveAppScreenshot('settings-chatgpt-plan.png')
     await apiDetails.$('summary').click()
     await expect(apiDetails.$('input')).toBeDisplayed()
     await expect(apiDetails.$('[data-testid="openai-service-tier-block"]')).toBeDisplayed()
     await apiDetails.$('summary').click()
-    await codexDetails.$('summary').click()
-    await expect(codexDetails.$('.acp-known-status')).toHaveText('not installed')
-    await expect(codexDetails).toHaveText('Re-scan device', { containing: true })
-    await saveAppScreenshot('settings-openai-codex-expanded.png')
   })
   it('shows a readable plan model label in Usage without its client ID', async () => {
     await $('.settings-nav-btn[data-section="usage"]').click()
+    // Ledger events expire after 90 days; All time reads saved threads instead.
+    await $('.usage-period-btn[data-period="month"]').click()
     const row = $('.usage-model-group tbody tr')
     await row.waitForExist()
     await expect(row.$('td')).toHaveText(/GPT-5\.6[- ]Luna · ChatGPT plan/)
@@ -120,6 +103,18 @@ describe('native ChatGPT plan connection settings', () => {
     await browser.execute(() => {
       document.querySelector('.usage-model-group')?.scrollIntoView({ block: 'center' })
     })
-    await saveElementScreenshot('#usage-period-body', 'settings-chatgpt-plan-usage.png')
+    // The retention window requires a live event date. Assert the real ledger
+    // note, then pin only its wall-clock text for this capture.
+    await expect($('#usage-period-body')).toHaveText(/Ledger: 2 event\(s\) tracked \(since /)
+    const restoreDate = await pinTextForCapture(
+      '#usage-period-body',
+      /tracked \(since [^)]+\)/,
+      'tracked (since 1/15/2026, 12:00:00 PM)',
+    )
+    try {
+      await saveElementScreenshot('#usage-period-body', 'settings-chatgpt-plan-usage.png')
+    } finally {
+      await restoreDate()
+    }
   })
 })

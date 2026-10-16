@@ -6,12 +6,15 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
 import { toggleRightPanelWithWorkspace } from '../controller/panels.ts'
+import { sideChatsOf } from '@shared/threads/side-chat.ts'
 import { countPortraitPanelOverflow } from './portrait-panel-bar-overflow.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
 import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
 
 export type PanelControlId =
   | 'explorer'
+  | 'context'
+  | 'side-chat'
   | 'terminal'
   | 'changes'
   | 'prs'
@@ -41,6 +44,22 @@ function panelIcon(): SVGSVGElement {
   return outlineIcon(
     'panel',
     ['M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z', 'M9 4v16'],
+    'titlebar-btn-icon',
+  )
+}
+
+function contextIcon(): SVGSVGElement {
+  return outlineIcon(
+    'context',
+    ['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z', 'M12 16v-4', 'M12 8h.01'],
+    'titlebar-btn-icon',
+  )
+}
+
+function sideChatIcon(): SVGSVGElement {
+  return outlineIcon(
+    'side-chat',
+    ['M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z'],
     'titlebar-btn-icon',
   )
 }
@@ -119,6 +138,20 @@ const PANEL_CONTROL_DEFS: readonly PanelControlDef[] = [
     icon: panelIcon,
   },
   {
+    id: 'context',
+    mode: 'context',
+    ariaLabel: 'Open thread context',
+    label: 'Context',
+    icon: contextIcon,
+  },
+  {
+    id: 'side-chat',
+    mode: 'side-chat',
+    ariaLabel: 'Open side chat',
+    label: 'Side chat',
+    icon: sideChatIcon,
+  },
+  {
     id: 'terminal',
     mode: 'terminal',
     ariaLabel: 'Open terminal',
@@ -187,10 +220,12 @@ export interface MountPanelModeControlsOptions {
    */
   alwaysShowLabels?: ReadonlySet<PanelControlId> | 'all'
   /**
-   * When true (portrait bar), trailing buttons that don't fit collapse into a
+   * When true, trailing buttons that don't fit collapse into a
    * `…` overflow menu instead of wrapping or scrolling.
    */
   enableOverflow?: boolean
+  /** Main titlebar menus open below and retain titlebar button selectors. */
+  overflowPlacement?: 'above' | 'below'
 }
 
 /**
@@ -207,6 +242,7 @@ export function mountPanelModeControls(
   const controls = el('div', { class: opts.className ?? 'titlebar-panel-controls' })
   const buttons = new Map<PanelControlId, HTMLButtonElement>()
   let changesBadge: HTMLSpanElement | null = null
+  let sideChatBadge: HTMLSpanElement | null = null
   const cleanups: Array<() => void> = []
   let syncOverflow: (() => void) | null = null
 
@@ -222,13 +258,19 @@ export function mountPanelModeControls(
       changesBadge = el('span', { class: 'titlebar-btn-badge', hidden: true })
       children.push(changesBadge)
     }
+    if (def.id === 'side-chat') {
+      sideChatBadge = el('span', { class: 'titlebar-btn-badge', hidden: true })
+      children.push(sideChatBadge)
+    }
     const btn = el(
       'button',
       {
         // Portrait bar omits `.titlebar-btn` so existing e2e / click helpers that
         // target `.titlebar-btn[aria-label=…]` stay uniquely on the titlebar.
         class: [
-          opts.enableOverflow ? 'portrait-panel-btn' : 'titlebar-btn',
+          opts.enableOverflow && opts.overflowPlacement !== 'below'
+            ? 'portrait-panel-btn'
+            : 'titlebar-btn',
           'titlebar-text-btn',
           keepLabel ? '' : 'titlebar-compact-icon',
         ]
@@ -268,7 +310,7 @@ export function mountPanelModeControls(
         'data-tooltip': 'More panel modes',
         // The overflow trigger lives in the bottom portrait bar, so its tooltip
         // needs the space above it.
-        'data-tooltip-placement': 'top',
+        'data-tooltip-placement': opts.overflowPlacement === 'below' ? 'bottom' : 'top',
       },
       moreHorizontalIcon('ui-icon ui-icon-sm'),
       overflowBadge,
@@ -353,7 +395,19 @@ export function mountPanelModeControls(
         const gap = Number.parseFloat(styles.columnGap || styles.gap || '0') || 0
         const padL = Number.parseFloat(styles.paddingLeft) || 0
         const padR = Number.parseFloat(styles.paddingRight) || 0
-        const containerWidth = Math.max(0, controls.clientWidth - padL - padR)
+        // The main titlebar also hosts Run app and Open in editor. Reserve
+        // their width before deciding which panel actions fit.
+        const siblings = [...controls.children].filter(
+          (child) =>
+            child !== overflowWrap &&
+            !child.hasAttribute('data-panel-control') &&
+            child.getBoundingClientRect().width > 0,
+        )
+        const reservedWidth = siblings.reduce(
+          (sum, child) => sum + child.getBoundingClientRect().width + gap,
+          0,
+        )
+        const containerWidth = Math.max(0, controls.clientWidth - padL - padR - reservedWidth)
         const widths = eligible.map((btn) => btn.getBoundingClientRect().width)
 
         // Measure the trigger while briefly shown so getBoundingClientRect is real.
@@ -361,7 +415,13 @@ export function mountPanelModeControls(
         const overflowWidth = overflowTrigger.getBoundingClientRect().width
         overflowWrap.hidden = true
 
-        const hideCount = countPortraitPanelOverflow(widths, gap, containerWidth, overflowWidth, 1)
+        const hideCount = countPortraitPanelOverflow(
+          widths,
+          gap,
+          containerWidth,
+          overflowWidth,
+          opts.overflowPlacement === 'below' ? 0 : 1,
+        )
         if (hideCount === 0) {
           syncOverflowBadge([])
           return
@@ -396,9 +456,21 @@ export function mountPanelModeControls(
       syncOverflow?.()
     })
     observer.observe(controls)
+    // The titlebar adds editor/run controls after mounting. Their visibility
+    // and compact labels can change without resizing the allocated row.
+    const observeChildren = (): void => {
+      for (const child of controls.children) observer.observe(child)
+    }
+    observeChildren()
+    const childrenObserver = new MutationObserver(() => {
+      observeChildren()
+      syncOverflow?.()
+    })
+    childrenObserver.observe(controls, { childList: true })
     cleanups.push(() => {
       cancelAnimationFrame(overflowFrame)
       observer.disconnect()
+      childrenObserver.disconnect()
     })
   }
 
@@ -480,14 +552,48 @@ export function mountPanelModeControls(
     syncOverflow?.()
   }
 
+  /**
+   * Count of the open thread's live side chats; highlighted while one is unread.
+   * The control shows only while the thread has a side chat or its panel is open:
+   * side chats start from a message, so an empty control would only crowd the row.
+   */
+  function syncSideChatBadge(): void {
+    if (!sideChatBadge) return
+    const { threads, activeThreadId, filesPaneOpen, rightPanelMode } = store.getState()
+    const active = threads.find((thread) => thread.id === activeThreadId)
+    const mainId = active?.sideChat?.parentThreadId ?? active?.id
+    const rows = mainId === undefined ? [] : sideChatsOf(threads, mainId)
+    const unread = rows.filter((row) => row.unread).length
+    const btn = buttons.get('side-chat')
+    sideChatBadge.hidden = rows.length === 0
+    sideChatBadge.textContent = String(rows.length)
+    btn?.classList.toggle('has-pending', unread > 0)
+    if (btn) {
+      applyGate(btn, rows.length > 0 || (filesPaneOpen && rightPanelMode === 'side-chat'))
+      setTooltip(
+        btn,
+        rows.length === 0
+          ? 'Open side chat'
+          : `Open side chat — ${String(rows.length)} ${rows.length === 1 ? 'chat' : 'chats'}${
+              unread > 0 ? `, ${String(unread)} unread` : ''
+            }`,
+      )
+    }
+    syncOverflow?.()
+  }
+
   syncPanelBtns()
   syncChangesBadge()
+  syncSideChatBadge()
   syncExperimentalBtns()
 
   const unsubs = [
     store.on('files_pane_changed', syncPanelBtns),
+    store.on('files_pane_changed', syncSideChatBadge),
     store.on('right_panel_mode_changed', syncPanelBtns),
+    store.on('right_panel_mode_changed', syncSideChatBadge),
     store.on('staged_diffs_changed', syncChangesBadge),
+    store.on('threads_changed', syncSideChatBadge),
     store.on('settings_changed', syncExperimentalBtns),
   ]
 

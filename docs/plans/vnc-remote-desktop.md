@@ -147,9 +147,9 @@ beside them. Candidate listeners are reported only after a loopback connection
    hostnames resolving outside private/link-local ranges are rejected.
 
    That makes **#771 a hard dependency, and a cheap one**: `ssh -O forward -L
-127.0.0.1:<local>:127.0.0.1:<remote>` runs against the ControlMaster socket
+   127.0.0.1:<local>:127.0.0.1:<remote>` runs against the ControlMaster socket
    `baseSshArgs` already maintains (`openssh-transport.ts:66-87`), with `-O
-cancel` to tear it down. No second handshake, no new auth surface, no askpass
+   cancel` to tear it down. No second handshake, no new auth surface, no askpass
    lease beyond the one `leaseSshAskpassEnv` already brokers.
 
    **Rejected: silently treating LAN as secure.** A private address authorises a
@@ -239,7 +239,7 @@ cancel forwards on disconnect, VNC close, and awaited app shutdown. Reconnect
 reconciliation and a generic browser-pane consumer remain.
 
 1. `ssh-workspace/ssh-forward.ts`: establish/cancel a local forward via `-O
-forward` / `-O cancel` on the existing control socket; allocate the local port
+   forward` / `-O cancel` on the existing control socket; allocate the local port
    with a `listen(0)` probe rather than guessing.
 2. Lifecycle: cancel on host disconnect, on app quit, and on the owning
    connection closing. Reconcile on reconnect — a master that died took its

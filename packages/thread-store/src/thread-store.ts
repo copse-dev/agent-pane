@@ -21,6 +21,7 @@ import type {
   Thread,
   ThreadCatalogEntry,
   ThreadCatalogHit,
+  ThreadLink,
 } from './thread-types.ts'
 import { sortThreadsNewestFirst } from './thread-sort.ts'
 import { stripToolResultImages } from '@copse/llm/tool-result-images.ts'
@@ -49,6 +50,8 @@ import {
   type SpineDecisionLine,
   type SpinePermissionDecisionLine,
   type ThreadMeta,
+  SPINE_SCHEMA_VERSION,
+  type SpinePlanLine,
 } from './spine-schema.ts'
 import {
   remoteAgentPrIndexKey,
@@ -66,6 +69,12 @@ import {
   githubRepoKey,
 } from './github-pr-url.ts'
 import { collectThreadPrRefs } from './thread-pr-status.ts'
+import {
+  backlinksFor,
+  extractThreadLinks,
+  mergeThreadLinks,
+  type ThreadBacklink,
+} from './thread-links.ts'
 import { isRecord, parseJsonUnknown } from '@copse/std/unknown-value.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { z } from 'zod'
@@ -86,6 +95,23 @@ import {
 import { runSerialized } from './write-queue.ts'
 import { isNonNull } from '@copse/std/nullish.ts'
 import { SqliteThreadIndex, THREAD_INDEX_FILE } from './sqlite-thread-index.ts'
+import {
+  planStateSchema,
+  planCriteria,
+  parsePlanDocument,
+  REQUIRED_PLAN_SECTIONS,
+  planApprovalPath,
+  planCommentsPath,
+  planMetaPath,
+  planRevisionPath,
+  type PlanApproval,
+  type PlanComment,
+  type PlanMeta,
+  type PlanState,
+  type PlanDraft,
+  type PlanCompletion,
+  type StoredThreadPlan,
+} from './plan-schema.ts'
 
 /**
  * Filesystem-native thread store (issue #644). Each thread is a self-contained
@@ -123,6 +149,12 @@ const AGENT_PR_INDEX_FILE = 'agent-pr-index-v2.jsonl'
 const STREAM_STATS_FILE = 'stream-stats.jsonl'
 const REASONING_CHECKPOINTS_FILE = 'reasoning-checkpoints.jsonl'
 const CONTENT_DIRS = ['messages', 'blobs', 'subagents']
+/**
+ * Subdirectories of `blobs/` written outside the spine: user-attached media
+ * ({@link threadMediaDir}) and extracted archives ({@link threadArchivesDir}).
+ * Their files are never spine refs, so {@link pruneStaleFiles} leaves them alone.
+ */
+const UNREFERENCED_BLOB_PREFIXES = ['blobs/media/', 'blobs/archives/']
 /** Directories a spine ref may point into (plan artifacts are refs but never pruned). */
 const REF_DIRS = [...CONTENT_DIRS, 'plans']
 
@@ -174,9 +206,14 @@ function reasoningCheckpointsPath(projectId: string): string {
 }
 
 function metaOf(thread: Thread): ThreadMeta {
-  // `messagesLoaded` is in-memory bookkeeping about *this session's* load state.
-  // Persisting it would write a field that is meaningless on the next launch.
-  const { messages: _messages, messagesLoaded: _messagesLoaded, ...meta } = thread
+  // Load state and plan presence are derived for this session, not mutable
+  // metadata. Recompute them from the committed spine on the next launch.
+  const {
+    messages: _messages,
+    messagesLoaded: _messagesLoaded,
+    hasSavedPlan: _hasSavedPlan,
+    ...meta
+  } = thread
   return meta
 }
 
@@ -235,13 +272,13 @@ async function writeStoreFileAsync(path: string, data: string, mode?: number): P
 function writeFileEnsuringDir(fullPath: string, contents: string): void {
   assertStorePath(fullPath)
   mkdirSync(dirname(fullPath), { recursive: true })
-  writeStoreFileSync(fullPath, contents)
+  atomicWriteFile(fullPath, contents)
 }
 
 async function writeFileEnsuringDirAsync(fullPath: string, contents: string): Promise<void> {
   assertStorePath(fullPath)
   await fsPromises.mkdir(dirname(fullPath), { recursive: true })
-  await writeStoreFileAsync(fullPath, contents)
+  await atomicWriteFileAsync(fullPath, contents)
 }
 
 /**
@@ -276,10 +313,15 @@ async function appendJsonlLine(path: string, line: string): Promise<void> {
 function atomicWriteFile(path: string, data: string, mode?: number): void {
   assertStorePath(path)
   const tmp = `${path}.copse-${String(process.pid)}.tmp`
-  if (mode === undefined) writeStoreFileSync(tmp, data)
-  else writeStoreFileSync(tmp, data, mode)
-  markIndexSourceWrite(path)
-  renameSync(tmp, path)
+  try {
+    if (mode === undefined) writeStoreFileSync(tmp, data)
+    else writeStoreFileSync(tmp, data, mode)
+    markIndexSourceWrite(path)
+    renameSync(tmp, path)
+  } catch (error) {
+    rmSync(tmp, { force: true })
+    throw error
+  }
 }
 
 /** Async atomic replace with an operation-unique temp path, safe across yielded writes. */
@@ -419,7 +461,7 @@ async function knownMessageIdsFor(dir: string): Promise<Set<string>> {
   if (raw !== '' && !raw.endsWith('\n')) {
     // Normalize a legacy file with no trailing newline before switching to
     // true appends below, which assume one is already there.
-    await writeStoreFileAsync(eventsPath, `${raw}\n`)
+    await atomicWriteFileAsync(eventsPath, `${raw}\n`)
   }
   const ids = new Set<string>()
   for (const entry of parseSpineEntries(raw)) {
@@ -458,9 +500,9 @@ function writeThread(projectId: string, thread: Thread): void {
   for (const target of targets) writeFileEnsuringDir(target.path, target.contents)
   const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
   const { body, preservedRefs } = rebuildSpinePreservingNonMessageLines(existingRaw, spine)
-  writeStoreFileSync(join(dir, EVENTS_FILE), body)
+  atomicWriteFile(join(dir, EVENTS_FILE), body)
   const previous = readMeta(dir)
-  writeStoreFileSync(
+  atomicWriteFile(
     join(dir, META_FILE),
     `${JSON.stringify({
       ...metaOf(thread),
@@ -479,7 +521,7 @@ function pruneStaleFiles(dir: string, files: FileToWrite[], preservedRefs: strin
     const root = join(dir, contentDir)
     if (!existsSync(root)) continue
     for (const rel of listFilesRecursive(root, dir)) {
-      if (!keep.has(rel)) {
+      if (!keep.has(rel) && !UNREFERENCED_BLOB_PREFIXES.some((prefix) => rel.startsWith(prefix))) {
         try {
           unlinkSync(join(dir, rel))
         } catch {
@@ -669,7 +711,11 @@ async function readThread(
     // Surface the always-on `hook_run` records (decision 6) as display-only hook
     // cards on the messages they fired within (decisions 10 & 17). Derived from
     // the spine — never from live hook registration — so history stays honest.
-    return { ...thread, messages: attachHookCards(thread.messages, entries) }
+    return {
+      ...thread,
+      messages: attachHookCards(thread.messages, entries),
+      ...(entries.some((entry) => entry.line?.type === 'plan') ? { hasSavedPlan: true } : {}),
+    }
   } catch (err) {
     console.warn(`[thread-store] Skipping unreadable thread ${threadId}:`, err)
     return null
@@ -705,7 +751,11 @@ function listThreadIds(projectId: string): string[] {
  * — `isBlankThread` and the autosave reconciler between them delete threads that
  * look blank, so "no messages" and "messages not loaded" must not be conflated.
  *
- * Cost per thread is one small read and one stat, against the old path's two
+ * Plan presence is also retained before message-only hydration: plan tasks
+ * must not turn into prunable blanks when their empty transcript finishes
+ * loading. Only tasks with a plans directory need their spine read here.
+ *
+ * Cost per ordinary thread is one small read and two stats, against the old path's two
  * reads plus a file read per referenced message and blob, a full fold, and a
  * SHA-256 per ref.
  */
@@ -728,7 +778,18 @@ async function readThreadMetaOnly(
   }
   // An empty spine means the transcript really is empty, and saying so lets
   // blank-thread pruning keep working exactly as before for new threads.
-  return { ...meta, messages: [], messagesLoaded: spineBytes === 0 }
+  const plansDirectory = await fsPromises.stat(join(dir, 'plans')).catch(() => null)
+  const hasSavedPlan =
+    plansDirectory?.isDirectory() &&
+    parseSpineEntries((await readOrNull(join(dir, EVENTS_FILE))) ?? '').some(
+      (entry) => entry.line?.type === 'plan',
+    )
+  return {
+    ...meta,
+    messages: [],
+    messagesLoaded: spineBytes === 0,
+    ...(hasSavedPlan ? { hasSavedPlan: true } : {}),
+  }
 }
 
 /**
@@ -766,15 +827,25 @@ async function mergePrRefsIntoMetaUnqueued(
   projectId: string,
   threadId: string,
   found: readonly GithubPrRef[],
+  foundLinks: readonly ThreadLink[] = [],
 ): Promise<GithubPrRef[] | null> {
-  if (found.length === 0) return null
+  if (found.length === 0 && foundLinks.length === 0) return null
   const path = join(threadDir(projectId, threadId), META_FILE)
   const meta = parseMeta(await readOrNull(path))
   if (meta === null) return null
   const { refs, added } = mergeGithubPrRefs(meta.prRefs ?? [], found)
-  if (!added) return null
-  await atomicWriteFileAsync(path, JSON.stringify({ ...meta, prRefs: refs }, null, 2))
-  return refs
+  // Links ride the same read-merge-write: one meta write per message, not two.
+  const { links, added: linksAdded } = mergeThreadLinks(meta.links ?? [], foundLinks)
+  if (!added && !linksAdded) return null
+  await atomicWriteFileAsync(
+    path,
+    JSON.stringify(
+      { ...meta, ...(added ? { prRefs: refs } : {}), ...(linksAdded ? { links } : {}) },
+      null,
+      2,
+    ),
+  )
+  return added ? refs : null
 }
 
 /**
@@ -798,13 +869,30 @@ export function recordThreadPrRefs(
   return runStoreWrite(projectId, () => mergePrRefsIntoMetaUnqueued(projectId, threadId, found))
 }
 
+/**
+ * Recorded links are append-only. A renderer patch carries the renderer's copy,
+ * which can lag a link the main process just recorded, so union rather than replace.
+ */
+function mergedLinksField(
+  current: ThreadMeta,
+  patch: Partial<ThreadMeta>,
+): { links?: ThreadLink[] } {
+  if (current.links === undefined && patch.links === undefined) return {}
+  return { links: mergeThreadLinks(current.links ?? [], patch.links ?? []).links }
+}
+
 async function mergePrRefsIntoMeta(
   projectId: string,
   threadId: string,
   message: Message,
 ): Promise<void> {
   try {
-    await mergePrRefsIntoMetaUnqueued(projectId, threadId, extractGithubPrUrls(message.content))
+    await mergePrRefsIntoMetaUnqueued(
+      projectId,
+      threadId,
+      extractGithubPrUrls(message.content),
+      extractThreadLinks(message.content),
+    )
   } catch {
     // Diagnostic metadata; never worth failing the write it rides along with.
   }
@@ -1085,7 +1173,7 @@ function readCatalog(projectId: string): Map<string, CatalogEntry> {
 function writeCatalog(projectId: string, entries: Map<string, CatalogEntry>): void {
   const sorted = [...entries.values()].sort((a, b) => b.updatedAt - a.updatedAt)
   mkdirSync(projectDir(projectId), { recursive: true })
-  writeStoreFileSync(catalogPath(projectId), sorted.map((e) => JSON.stringify(e)).join('\n') + '\n')
+  atomicWriteFile(catalogPath(projectId), sorted.map((e) => JSON.stringify(e)).join('\n') + '\n')
 }
 
 function upsertCatalogEntry(projectId: string, thread: Thread): void {
@@ -1237,7 +1325,7 @@ function readAgentPrIndex(projectId: string): Map<string, RemoteAgentPrIndexEntr
 function writeAgentPrIndex(projectId: string, entries: Map<string, RemoteAgentPrIndexEntry>): void {
   mkdirSync(projectDir(projectId), { recursive: true })
   const body = [...entries.values()].map((e) => JSON.stringify(e)).join('\n')
-  writeStoreFileSync(agentPrIndexPath(projectId), body ? `${body}\n` : '')
+  atomicWriteFile(agentPrIndexPath(projectId), body ? `${body}\n` : '')
 }
 
 /** Fold a link into an in-memory index map. No-op when the link has no PR yet. */
@@ -1528,6 +1616,24 @@ export function lookupThreadPrRelationships(
   )
 }
 
+/**
+ * Active threads that mention a URL or another thread. Complete only for threads
+ * whose links were recorded (on append); legacy transcripts are not scanned.
+ */
+export function lookupThreadBacklinks(
+  projectId: string,
+  kind: ThreadLink['kind'],
+  target: string,
+): Promise<ThreadBacklink[]> {
+  return runSerialized(queueKey(projectId), () =>
+    withThreadIndex(
+      projectId,
+      (index) => index.backlinks(kind, target),
+      async () => backlinksFor(await readProjectThreadMetas(projectId), kind, target),
+    ),
+  )
+}
+
 /** Direct source reader for diagnostics/rebuilds; deliberately bypasses the projection. */
 export function loadProjectThreadMetasFromFiles(
   projectId: string,
@@ -1682,6 +1788,33 @@ async function readProjectThreadMetasCached(
   return threads
 }
 
+/** Logical bytes retained in this thread's store; never follow links outside it. */
+export async function measureThreadStorage(
+  projectId: string,
+  threadId: string,
+): Promise<{ bytes: number; truncated: boolean }> {
+  const root = threadDir(projectId, threadId)
+  const pending = [root]
+  let bytes = 0
+  let visited = 0
+  while (pending.length > 0) {
+    const path = pending.pop()
+    if (path === undefined) break
+    if (++visited > 100_000) return { bytes, truncated: true }
+    try {
+      const stat = await fsPromises.lstat(path)
+      if (stat.isSymbolicLink()) continue
+      if (stat.isFile()) bytes += stat.size
+      else if (stat.isDirectory()) {
+        for (const name of await fsPromises.readdir(path)) pending.push(join(path, name))
+      }
+    } catch (error) {
+      if (!(isRecord(error) && error['code'] === 'ENOENT')) throw error
+    }
+  }
+  return { bytes, truncated: false }
+}
+
 /** A thread's on-disk metadata (`meta.json`), or null if missing/malformed. */
 export function getThreadMeta(projectId: string, threadId: string): Promise<ThreadMeta | null> {
   return runSerialized(queueKey(projectId), () => readMeta(threadDir(projectId, threadId)))
@@ -1710,7 +1843,7 @@ export function recordThreadAgentLink(
     // Only patch an existing thread; the renderer writes the initial meta.json.
     if (current === null) return
     const nextMeta: ThreadMeta = { ...current, remoteAgentLink: { ...link }, id: threadId }
-    writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
+    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
     const index = loadOrRebuildAgentPrIndex(projectId)
     let changed = removeThreadFromIndex(index, threadId)
     if (link.prUrl) {
@@ -1792,7 +1925,7 @@ export function appendImportedRemoteAgentRunResult(
         updatedAt: Math.max(latestMeta.updatedAt, updatedAt),
         id: threadId,
       }
-      writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
+      atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
       upsertCatalogEntry(projectId, { ...current, ...nextMeta, messages: current.messages })
       return existing
     }
@@ -1832,7 +1965,7 @@ export function appendImportedRemoteAgentRunResult(
       updatedAt: Math.max(latestMeta.updatedAt, input.message.createdAt),
       id: threadId,
     }
-    writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
+    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
     upsertCatalogEntry(projectId, {
       ...current,
       ...nextMeta,
@@ -1863,7 +1996,7 @@ export function attachThreadPrUrl(
     if (!prUrl) return
     const merged: RemoteAgentLink = { ...link, prUrl }
     const nextMeta: ThreadMeta = { ...current, remoteAgentLink: merged, id: threadId }
-    writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
+    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(nextMeta)}\n`)
     const index = loadOrRebuildAgentPrIndex(projectId)
     indexAgentLink(index, threadId, merged)
     writeAgentPrIndex(projectId, index)
@@ -2033,7 +2166,7 @@ async function appendMessageUnqueued(
     )
     if (existingIndex >= 0) entries[existingIndex] = { raw, line }
     else entries.push({ raw, line })
-    await writeStoreFileAsync(join(dir, EVENTS_FILE), serializeSpineEntries(entries))
+    await atomicWriteFileAsync(join(dir, EVENTS_FILE), serializeSpineEntries(entries))
   }
   // The sidebar's PR chip is derived from links in message text, which a
   // metadata-only load never reads. Derive it only after the spine commit, so
@@ -2203,7 +2336,7 @@ export function recordModelSelection(
     }
     const modelSelections = [...(current.modelSelections ?? []), selection]
     const next: ThreadMeta = { ...current, model: line.to, modelSelections, id: threadId }
-    writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify(next)}\n`)
+    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(next)}\n`)
     refreshCatalogLine(projectId, threadId)
   })
 }
@@ -2222,6 +2355,18 @@ export function appendReasoningCheckpoint(projectId: string, line: unknown): Pro
   )
 }
 
+/** Preserve the legacy completion proxy before a metadata write changes updatedAt. */
+function completionTimeForPatch(
+  current: ThreadMeta,
+  patch: Partial<ThreadMeta>,
+): number | undefined {
+  if (patch.lastSettledAt !== undefined) return patch.lastSettledAt
+  if (current.status === 'running' && patch.status !== undefined && patch.status !== 'running') {
+    return patch.updatedAt ?? Date.now()
+  }
+  return current.lastSettledAt ?? (current.status !== 'running' ? current.updatedAt : undefined)
+}
+
 /** Patch a thread's mutable metadata in place and refresh its catalog line. */
 export function updateMeta(
   projectId: string,
@@ -2234,14 +2379,17 @@ export function updateMeta(
     // updateMeta only patches an existing thread; `createThread` writes the
     // initial meta.json, so a missing base means there is nothing to patch.
     if (current === null) return
+    const lastSettledAt = completionTimeForPatch(current, patch)
     const merged: ThreadMeta = {
       ...current,
       ...patch,
+      ...(lastSettledAt !== undefined ? { lastSettledAt } : {}),
       id: threadId,
       ...(current.prProductions ? { prProductions: current.prProductions } : {}),
       ...(current.commitProductions ? { commitProductions: current.commitProductions } : {}),
+      ...mergedLinksField(current, patch),
     }
-    writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify(merged)}\n`)
+    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(merged)}\n`)
     refreshCatalogLine(projectId, threadId)
   })
 }
@@ -2256,14 +2404,17 @@ export function updateMetaOrThrow(
     const dir = threadDir(projectId, threadId)
     const current = readMeta(dir)
     if (current === null) throw new Error('Thread is not persisted yet; retry sending the message')
+    const lastSettledAt = completionTimeForPatch(current, patch)
     const merged: ThreadMeta = {
       ...current,
       ...patch,
+      ...(lastSettledAt !== undefined ? { lastSettledAt } : {}),
       id: threadId,
       ...(current.prProductions ? { prProductions: current.prProductions } : {}),
       ...(current.commitProductions ? { commitProductions: current.commitProductions } : {}),
+      ...mergedLinksField(current, patch),
     }
-    writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify(merged)}\n`)
+    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(merged)}\n`)
     refreshCatalogLine(projectId, threadId)
   })
 }
@@ -2284,7 +2435,7 @@ export function clearThreadWorktree(projectId: string, threadId: string): Promis
     const current = readMeta(dir)
     if (current === null || current.worktree === undefined) return false
     const { worktree: _removed, ...rest } = current
-    writeStoreFileSync(join(dir, META_FILE), `${JSON.stringify({ ...rest, id: threadId })}\n`)
+    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify({ ...rest, id: threadId })}\n`)
     refreshCatalogLine(projectId, threadId)
     return true
   })
@@ -2526,6 +2677,23 @@ export function threadBlobsDir(projectId: string, threadId: string): string {
 }
 
 /**
+ * Where the attachment stores keep media a user drops into a thread
+ * (`blobs/media/`). Files here are not spine refs; a whole-thread save keeps
+ * them, and they go away only with the thread directory.
+ */
+export function threadMediaDir(projectId: string, threadId: string): string {
+  return join(threadBlobsDir(projectId, threadId), 'media')
+}
+
+/**
+ * Where `read_archive` unpacks an attached archive (`blobs/archives/`). Like
+ * {@link threadMediaDir}, a whole-thread save keeps it.
+ */
+export function threadArchivesDir(projectId: string, threadId: string): string {
+  return join(threadBlobsDir(projectId, threadId), 'archives')
+}
+
+/**
  * A thread's own directory in the chat store.
  *
  * Exposed for sidecar writers that are not part of the thread model and must
@@ -2538,6 +2706,415 @@ export function threadBlobsDir(projectId: string, threadId: string): string {
  */
 export function threadDirectoryPath(projectId: string, threadId: string): string {
   return threadDir(projectId, threadId)
+}
+
+/** UI mutations recheck idleness at the commit point, after asynchronous writes. */
+export interface PlanWriteOptions {
+  assertIdle?: () => void
+}
+export type { StoredThreadPlan, PlanDraft } from './plan-schema.ts'
+
+function planLines(dir: string): SpinePlanLine[] {
+  return parseSpineEntries(safeRead(join(dir, EVENTS_FILE)) ?? '').flatMap(({ line }) =>
+    line?.type === 'plan' ? [line] : [],
+  )
+}
+
+function validatePlanId(planId: string): void {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(planId)) {
+    throw new Error('Invalid plan id')
+  }
+}
+
+function readPlanBody(
+  dir: string,
+  planId: string,
+  revision: number,
+  artifact: ContentRef | undefined,
+): string {
+  if (!artifact || artifact.ref !== planRevisionPath(planId, revision))
+    throw new Error('Invalid plan revision reference')
+  const body = safeRead(join(dir, artifact.ref))
+  if (body === null || sha256(body) !== artifact.sha256)
+    throw new Error('Plan revision integrity check failed')
+  return body
+}
+
+function readStoredPlan(dir: string, threadId: string, planId: string): StoredThreadPlan | null {
+  validatePlanId(planId)
+  const line = planLines(dir)
+    .reverse()
+    .find((entry) => entry.planId === planId)
+  if (!line) return null
+  validatePlanId(line.id)
+  // Legacy P1 lines were schema fixtures only. Never infer approval from mutable mirrors.
+  if (!line.state || line.state.ref !== `plans/${planId}/states/${line.id}.json`) {
+    throw new Error('Plan has no committed state snapshot')
+  }
+  const raw = safeRead(join(dir, line.state.ref))
+  const state = raw === null ? null : safeJsonParse(raw, decodeWithSchema(planStateSchema))
+  if (
+    !state ||
+    sha256(raw ?? '') !== line.state.sha256 ||
+    state.meta.planId !== planId ||
+    state.meta.threadId !== threadId ||
+    state.meta.currentRevision !== line.revision
+  ) {
+    throw new Error('Plan state integrity check failed')
+  }
+  const body = readPlanBody(dir, planId, state.meta.currentRevision, line.artifact)
+  const contentHash = sha256(body)
+  const { meta, approval, completion } = state
+  if (meta.status === 'draft' && approval) throw new Error('Draft plan has an approval record')
+  if (
+    meta.status === 'approved' &&
+    (!approval ||
+      approval.planId !== planId ||
+      approval.approvedRevision !== meta.currentRevision ||
+      meta.approvedRevision !== meta.currentRevision ||
+      approval.contentHash !== contentHash ||
+      meta.contentHash !== contentHash ||
+      approval.executionProfileId !== meta.executionProfileId)
+  ) {
+    throw new Error('Approved plan content does not match its approval')
+  }
+  if (
+    completion &&
+    (!approval ||
+      completion.planId !== planId ||
+      completion.revision !== approval.approvedRevision ||
+      completion.contentHash !== approval.contentHash)
+  )
+    throw new Error('Completion does not match approval')
+  return { ...state, body, contentHash }
+}
+
+function latestStoredPlan(dir: string, threadId: string): StoredThreadPlan | null {
+  const latest = planLines(dir)
+    .reverse()
+    .find((line) => line.action === 'create')
+  return latest ? readStoredPlan(dir, threadId, latest.planId) : null
+}
+
+export function getLatestThreadPlan(
+  projectId: string,
+  threadId: string,
+): Promise<StoredThreadPlan | null> {
+  return runSerialized(queueKey(projectId), () =>
+    latestStoredPlan(threadDir(projectId, threadId), threadId),
+  )
+}
+
+export function getThreadPlan(
+  projectId: string,
+  threadId: string,
+  planId: string,
+): Promise<StoredThreadPlan | null> {
+  return runSerialized(queueKey(projectId), () =>
+    readStoredPlan(threadDir(projectId, threadId), threadId, planId),
+  )
+}
+
+/** Earlier revisions must have a committed spine record and matching bytes. */
+export function getThreadPlanRevision(
+  projectId: string,
+  threadId: string,
+  planId: string,
+  revision: number,
+): Promise<string | null> {
+  return runSerialized(queueKey(projectId), () => {
+    validatePlanId(planId)
+    const dir = threadDir(projectId, threadId)
+    const line = planLines(dir)
+      .reverse()
+      .find((entry) => entry.planId === planId && entry.revision === revision)
+    return line ? readPlanBody(dir, planId, revision, line.artifact) : null
+  })
+}
+
+function requirePlanDraft(input: PlanDraft): void {
+  if (!input.title.trim() || !input.body.trim()) throw new Error('Plan title and body are required')
+  const document = parsePlanDocument(input.body)
+  for (const label of REQUIRED_PLAN_SECTIONS) {
+    if (!document.sections.get(label)) throw new Error(`Plan needs a nonempty ${label} section`)
+  }
+  if (document.criteria.length === 0)
+    throw new Error('Definition of done needs at least one bullet criterion')
+}
+
+async function commitPlan(
+  dir: string,
+  plan: StoredThreadPlan,
+  action: SpinePlanLine['action'],
+  options: PlanWriteOptions = {},
+  commentId?: string,
+): Promise<StoredThreadPlan> {
+  options.assertIdle?.()
+  const { meta, comments, approval, completion, body } = plan
+  const id = randomUUID()
+  const artifact = {
+    ref: planRevisionPath(meta.planId, meta.currentRevision),
+    sha256: sha256(body),
+  }
+  // A failed pre-commit write can leave an orphan revision. Only committed refs are readable.
+  if (action === 'create' || action === 'revise')
+    await writeFileEnsuringDirAsync(join(dir, artifact.ref), body)
+  const state: PlanState = { meta, comments, approval, completion }
+  const raw = `${JSON.stringify(state)}\n`
+  const stateRef = { ref: `plans/${meta.planId}/states/${id}.json`, sha256: sha256(raw) }
+  await writeFileEnsuringDirAsync(join(dir, stateRef.ref), raw)
+  options.assertIdle?.()
+  await appendJsonlLine(
+    join(dir, EVENTS_FILE),
+    serializeSpineLine({
+      v: SPINE_SCHEMA_VERSION,
+      type: 'plan',
+      action,
+      id,
+      planId: meta.planId,
+      revision: meta.currentRevision,
+      createdAt: meta.updatedAt,
+      artifact,
+      state: stateRef,
+      ...(commentId ? { commentId } : {}),
+      ...(approval
+        ? { executionProfileId: approval.executionProfileId, contentHash: approval.contentHash }
+        : {}),
+    }),
+  )
+  // Convenience projections only. Recovery always reads the committed snapshot above.
+  const projections: Array<readonly [string, unknown]> = [
+    [planMetaPath(meta.planId), meta],
+    [planCommentsPath(meta.planId), { comments }],
+  ]
+  if (approval) projections.push([planApprovalPath(meta.planId), approval])
+  for (const [path, value] of projections) {
+    await atomicWriteFileAsync(join(dir, path), `${JSON.stringify(value)}\n`).catch(() => {})
+  }
+  return plan
+}
+
+export function createThreadPlan(
+  projectId: string,
+  threadId: string,
+  input: PlanDraft,
+  options: PlanWriteOptions = {},
+): Promise<StoredThreadPlan> {
+  return runStoreWrite(projectId, async () => {
+    requirePlanDraft(input)
+    const dir = threadDir(projectId, threadId)
+    if (readMeta(dir) === null) throw new Error('Thread does not exist')
+    const previous = latestStoredPlan(dir, threadId)
+    if (previous && previous.meta.status !== 'abandoned')
+      throw new Error('End the current plan before starting another')
+    const now = Date.now()
+    const meta: PlanMeta = {
+      ...(previous ? { supersedesPlanId: previous.meta.planId } : {}),
+      planId: randomUUID(),
+      threadId,
+      title: input.title.trim(),
+      status: 'draft',
+      currentRevision: 1,
+      createdAt: now,
+      updatedAt: now,
+    }
+    return commitPlan(
+      dir,
+      {
+        meta,
+        body: input.body,
+        contentHash: sha256(input.body),
+        comments: [],
+        approval: null,
+        completion: null,
+      },
+      'create',
+      options,
+    )
+  })
+}
+
+function requireCurrentPlan(
+  dir: string,
+  threadId: string,
+  planId: string,
+  revision: number,
+): StoredThreadPlan {
+  const current = readStoredPlan(dir, threadId, planId)
+  if (!current || current.meta.currentRevision !== revision)
+    throw new Error('Plan revision changed')
+  return current
+}
+
+export function reviseThreadPlan(
+  projectId: string,
+  threadId: string,
+  planId: string,
+  expectedRevision: number,
+  input: PlanDraft,
+  options: PlanWriteOptions = {},
+): Promise<StoredThreadPlan> {
+  return runStoreWrite(projectId, async () => {
+    const dir = threadDir(projectId, threadId)
+    const current = requireCurrentPlan(dir, threadId, planId, expectedRevision)
+    if (current.meta.status !== 'draft') throw new Error('No editable draft plan')
+    requirePlanDraft(input)
+    return commitPlan(
+      dir,
+      {
+        ...current,
+        body: input.body,
+        contentHash: sha256(input.body),
+        meta: {
+          ...current.meta,
+          title: input.title.trim(),
+          currentRevision: expectedRevision + 1,
+          updatedAt: Date.now(),
+        },
+      },
+      'revise',
+      options,
+    )
+  })
+}
+
+export function commentOnThreadPlan(
+  projectId: string,
+  threadId: string,
+  planId: string,
+  revision: number,
+  body: string,
+  anchor: { start: number; end: number },
+  options: PlanWriteOptions = {},
+): Promise<PlanComment> {
+  return runStoreWrite(projectId, async () => {
+    const dir = threadDir(projectId, threadId)
+    const current = requireCurrentPlan(dir, threadId, planId, revision)
+    if (current.meta.status !== 'draft') throw new Error('No editable draft plan')
+    if (
+      !body.trim() ||
+      !Number.isInteger(anchor.start) ||
+      !Number.isInteger(anchor.end) ||
+      anchor.start < 0 ||
+      anchor.end <= anchor.start ||
+      anchor.end > current.body.length
+    )
+      throw new Error('Select a passage and enter feedback')
+    const comment: PlanComment = {
+      id: randomUUID(),
+      revision,
+      body: body.trim(),
+      createdAt: Date.now(),
+      author: 'user',
+      quote: current.body.slice(anchor.start, anchor.end),
+      anchor,
+    }
+    await commitPlan(
+      dir,
+      {
+        ...current,
+        comments: [...current.comments, comment],
+        meta: { ...current.meta, updatedAt: comment.createdAt },
+      },
+      'comment',
+      options,
+      comment.id,
+    )
+    return comment
+  })
+}
+
+export function approveThreadPlan(
+  projectId: string,
+  threadId: string,
+  planId: string,
+  expectedRevision: number,
+  expectedContentHash: string,
+  executionProfileId: string,
+  options: PlanWriteOptions = {},
+): Promise<StoredThreadPlan> {
+  return runStoreWrite(projectId, async () => {
+    const dir = threadDir(projectId, threadId)
+    const current = requireCurrentPlan(dir, threadId, planId, expectedRevision)
+    if (current.meta.status !== 'draft') throw new Error('No approvable draft plan')
+    if (current.contentHash !== expectedContentHash) throw new Error('Plan revision changed')
+    if (executionProfileId !== 'implementation') throw new Error('Unknown execution profile')
+    const now = Date.now()
+    const approval: PlanApproval = {
+      planId,
+      approvedRevision: expectedRevision,
+      approvedAt: now,
+      executionProfileId,
+      contentHash: expectedContentHash,
+    }
+    return commitPlan(
+      dir,
+      {
+        ...current,
+        approval,
+        meta: {
+          ...current.meta,
+          status: 'approved',
+          updatedAt: now,
+          approvedAt: now,
+          approvedRevision: expectedRevision,
+          executionProfileId,
+          contentHash: expectedContentHash,
+        },
+      },
+      'approve',
+      options,
+    )
+  })
+}
+
+export function abandonThreadPlan(
+  projectId: string,
+  threadId: string,
+  planId: string,
+  revision: number,
+  options: PlanWriteOptions = {},
+): Promise<StoredThreadPlan> {
+  return runStoreWrite(projectId, async () => {
+    const dir = threadDir(projectId, threadId)
+    const current = requireCurrentPlan(dir, threadId, planId, revision)
+    return commitPlan(
+      dir,
+      { ...current, meta: { ...current.meta, status: 'abandoned', updatedAt: Date.now() } },
+      'abandon',
+      options,
+    )
+  })
+}
+
+export function reportThreadPlanCompletion(
+  projectId: string,
+  threadId: string,
+  input: Omit<PlanCompletion, 'reportedAt'>,
+): Promise<StoredThreadPlan> {
+  return runStoreWrite(projectId, async () => {
+    const dir = threadDir(projectId, threadId)
+    const current = requireCurrentPlan(dir, threadId, input.planId, input.revision)
+    if (current.meta.status !== 'approved' || current.approval?.contentHash !== input.contentHash)
+      throw new Error('Completion requires the exact approved plan')
+    const ids = planCriteria(current.body).map((criterion) => criterion.id)
+    if (
+      input.results.length !== ids.length ||
+      new Set(input.results.map((result) => result.criterionId)).size !== ids.length ||
+      input.results.some((result) => !ids.includes(result.criterionId) || !result.evidence.trim())
+    )
+      throw new Error('Report every criterion exactly once with evidence or a verification gap')
+    const now = Date.now()
+    return commitPlan(
+      dir,
+      {
+        ...current,
+        completion: { ...input, reportedAt: now },
+        meta: { ...current.meta, updatedAt: now },
+      },
+      'report',
+    )
+  })
 }
 
 /** Ceiling on a thread-directory snapshot, so an export cannot exhaust memory. */

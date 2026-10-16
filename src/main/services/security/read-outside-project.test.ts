@@ -2,7 +2,6 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   analyzeReadOutsideProject,
-  describeReadOutsideTargets,
   formatReadOutsideProjectPromptParts,
   readOutsideProjectGrantTargets,
   sensitiveTargetReason,
@@ -93,6 +92,19 @@ describe('analyzeReadOutsideProject — ineligible commands', () => {
     ineligible('sudo cat /etc/shadow', /changes how the command runs|credential file/)
     ineligible('env PATH=/evil cat ~/.gitconfig', /changes how the command runs/)
     ineligible('xargs cat < ~/list', /changes how the command runs|writes to/)
+    // Behind a transparent wrapper the environment change is still there.
+    ineligible('nohup env HOME=/root cat /opt/notes.txt', /runs through `env`/)
+    ineligible('nice xargs cat < ~/list', /runs through `xargs`/)
+    ineligible('nohup sudo cat /opt/notes.txt', /runs through `sudo`/)
+  })
+
+  it("refuses another user's home rather than reading it as a project path", () => {
+    // `~dev/…` is not `./~dev/…`: resolved against the project it read as a file
+    // inside it, and the credential checks never saw the real path.
+    ineligible('cat ~dev/.ssh/id_rsa', /home directory that cannot be resolved/)
+    ineligible('cat ~alice/notes.txt', /home directory that cannot be resolved/)
+    ineligible('cat < ~alice/notes.txt', /home directory that cannot be resolved/)
+    ineligible('ls ~+/x', /home directory that cannot be resolved/)
   })
 
   it('rejects a printf -v assignment that can replace the later reader', () => {
@@ -215,19 +227,19 @@ describe('readOutsideProjectGrantTargets', () => {
 })
 
 describe('read-outside prompt copy', () => {
-  it('names the path in one sentence and says what the grant leaves off limits', () => {
-    const analysis = analyze('ls -la ~/.copse/workspace')
-    const parts = formatReadOutsideProjectPromptParts('ls -la ~/.copse/workspace', analysis)
-    assert.equal(parts.command, 'ls -la ~/.copse/workspace')
-    assert.match(parts.bodyAdvice ?? '', /~\/\.copse/)
-    assert.equal(parts.bodyAdvice, 'The agent wants to read ~/.copse/workspace.')
-    assert.match(parts.bodyFooter ?? '', /rest of the thread/)
+  it('names every requested path and warns that directories include nested files', () => {
+    const command = 'cat /etc/hosts ~/.gitconfig ~/notes/a ~/notes/b'
+    const parts = formatReadOutsideProjectPromptParts(command, analyze(command))
+    assert.equal(parts.command, command)
+    for (const path of ['/etc/hosts', '~/.gitconfig', '~/notes/a', '~/notes/b']) {
+      assert.ok(parts.bodyAdvice?.includes(`• ${path}`))
+    }
+    assert.match(parts.bodyAdvice ?? '', /sensitive files/)
+    assert.match(parts.bodyAdvice ?? '', /nested inside/)
+    assert.match(parts.bodyFooter ?? '', /rest of this thread/)
+    assert.match(parts.bodyFooter ?? '', /Other paths ask again/)
+    assert.match(parts.bodyFooter ?? '', /Writes, installs, and network access/)
     assert.match(parts.bodyFooter ?? '', /credential/)
-  })
-
-  it('summarises a long target list rather than listing all of it', () => {
-    assert.equal(describeReadOutsideTargets(['a', 'b']), 'a, b')
-    assert.equal(describeReadOutsideTargets(['a', 'b', 'c', 'd', 'e']), 'a, b, c and 2 more')
   })
 })
 
@@ -276,6 +288,14 @@ describe('analyzeReadOutsideProject — cd and sed', () => {
     for (const command of ['cd /work/other && cat .env', 'cd ~/.ssh && cat id_rsa', 'cd ~ && ls']) {
       assert.equal(analyze(command).eligible, false, command)
     }
+  })
+
+  it('resolves each operand against the directory in effect when it runs', () => {
+    // The lexer-fallback repeat of `cat notes.txt` was resolved after the `cd`,
+    // adding /opt/data/notes.txt — a file the command never opens.
+    const analysis = analyze('cat notes.txt && cd /opt/data && cat x.txt')
+    assert.equal(analysis.eligible, true, analysis.blockers.join('; '))
+    assert.deepEqual(analysis.resolvedTargets, ['/opt/data/x.txt'])
   })
 
   it('refuses a cd it cannot follow', () => {

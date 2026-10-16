@@ -10,6 +10,7 @@ import {
   formatRemoteGitSummary,
   MAX_REMOTE_PROMPT_IMAGES,
   parseSseBlock,
+  parseSseStream,
   promptPayloadFromUserContent,
   RemoteAgentStreamError,
   remoteStreamEventToChunks,
@@ -22,6 +23,7 @@ import {
   fetchRemoteArtifactImageDataUrl,
   formatRemoteArtifactsSummary,
   refreshImportedCursorAgentThread,
+  REMOTE_STREAM_IDLE_TIMEOUT_MS,
   remoteAgentBusyRetryDelayMs,
   resolveRemoteAgentRepository,
   runRemoteAgentFromSettings,
@@ -561,7 +563,185 @@ describe('runRemoteAgentFromSettings (cursor)', () => {
   })
 })
 
+describe('remote agent stream recovery', () => {
+  afterEach(() => {
+    mock.timers.reset()
+  })
+
+  it('reconnects when an open stream goes silent', async () => {
+    setRemoteStreamReconnectDelayForTest(() => 0)
+    mock.timers.enable({ apis: ['setTimeout'] })
+    const prevKey = process.env['CURSOR_API_KEY']
+    process.env['CURSOR_API_KEY'] = 'test-key'
+    storageSet('remote-agent-session:thread-cursor-reconnect', {
+      v: 1,
+      provider: 'cursor',
+      baseUrl: 'https://api.cursor.com',
+      agentId: 'bc-idle',
+    })
+    const encoder = new TextEncoder()
+    let streamAttempts = 0
+    let firstStreamCancelled = false
+    const json = (body: unknown): Response =>
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const href = typeof input === 'string' || input instanceof URL ? String(input) : input.url
+      const url = new URL(href)
+      const method = init?.method ?? 'GET'
+      if (method === 'POST' && url.pathname === '/v1/agents/bc-idle/runs') {
+        return json({ run: { id: 'run-1', agentId: 'bc-idle' } })
+      }
+      if (url.pathname === '/v1/agents/bc-idle/runs/run-1/stream') {
+        streamAttempts += 1
+        if (streamAttempts === 1) {
+          // A half-open socket: one event, then neither data nor an error.
+          const body = new ReadableStream<Uint8Array>({
+            start(controller): void {
+              controller.enqueue(
+                encoder.encode('id: 1-0\nevent: assistant\ndata: {"text":"Working."}\n\n'),
+              )
+            },
+            cancel(): void {
+              firstStreamCancelled = true
+            },
+          })
+          return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
+        }
+        return new Response(
+          'id: 2-0\nevent: result\ndata: {"status":"FINISHED","text":"Working."}\n\nevent: done\ndata: {}\n\n',
+          { headers: { 'content-type': 'text/event-stream' } },
+        )
+      }
+      if (url.pathname === '/v1/agents/bc-idle/runs/run-1') {
+        return json({ id: 'run-1', status: 'RUNNING', result: null })
+      }
+      if (url.pathname.endsWith('/usage')) return json({ runs: [] })
+      if (url.pathname.endsWith('/artifacts')) return json({ items: [] })
+      throw new Error(`Unexpected request: ${method} ${url.pathname}`)
+    }
+
+    try {
+      const progress = { settled: false }
+      const running = runRemoteAgentFromSettings({
+        threadId: 'thread-cursor-reconnect',
+        provider: 'cursor',
+        userPrompt: 'keep going',
+        signal: new AbortController().signal,
+        onChunk: () => {},
+        fetchImpl,
+      }).finally(() => {
+        progress.settled = true
+      })
+      for (let i = 0; i < 50 && !progress.settled; i++) {
+        await new Promise((resolve) => setImmediate(resolve))
+        mock.timers.tick(REMOTE_STREAM_IDLE_TIMEOUT_MS)
+      }
+      const result = await running
+
+      assert.equal(streamAttempts, 2)
+      assert.equal(firstStreamCancelled, true, 'the silent connection is released')
+      assert.equal(result.assistantText, 'Working.')
+    } finally {
+      if (prevKey === undefined) delete process.env['CURSOR_API_KEY']
+      else process.env['CURSOR_API_KEY'] = prevKey
+    }
+  })
+
+  it('keeps polling a still-running run through a failed Get A Run', async () => {
+    setRemoteStreamReconnectDelayForTest(() => 0)
+    mock.timers.enable({ apis: ['setTimeout'] })
+    const prevKey = process.env['CURSOR_API_KEY']
+    process.env['CURSOR_API_KEY'] = 'test-key'
+    storageSet('remote-agent-session:thread-cursor-reconnect', {
+      v: 1,
+      provider: 'cursor',
+      baseUrl: 'https://api.cursor.com',
+      agentId: 'bc-poll',
+    })
+    let streamAttempts = 0
+    let pollsAfterReconnects = 0
+    const json = (body: unknown, status = 200): Response =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      })
+
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const href = typeof input === 'string' || input instanceof URL ? String(input) : input.url
+      const url = new URL(href)
+      const method = init?.method ?? 'GET'
+      if (method === 'POST' && url.pathname === '/v1/agents/bc-poll/runs') {
+        return json({ run: { id: 'run-1', agentId: 'bc-poll' } })
+      }
+      if (url.pathname === '/v1/agents/bc-poll/runs/run-1/stream') {
+        streamAttempts += 1
+        return new Response('bad gateway', { status: 502 })
+      }
+      if (url.pathname === '/v1/agents/bc-poll/runs/run-1') {
+        // Every stream attempt is followed by one Get A Run; once the reconnect
+        // budget is spent the client polls, and its first poll hits a 502.
+        if (streamAttempts <= 6) return json({ id: 'run-1', status: 'RUNNING', result: null })
+        pollsAfterReconnects += 1
+        if (pollsAfterReconnects === 1) {
+          return json({ id: 'run-1', status: 'RUNNING', result: null })
+        }
+        if (pollsAfterReconnects === 2) return new Response('bad gateway', { status: 502 })
+        return json({ id: 'run-1', status: 'FINISHED', result: 'Done remotely.' })
+      }
+      if (url.pathname.endsWith('/usage')) return json({ runs: [] })
+      if (url.pathname.endsWith('/artifacts')) return json({ items: [] })
+      throw new Error(`Unexpected request: ${method} ${url.pathname}`)
+    }
+
+    try {
+      const progress = { settled: false }
+      const running = runRemoteAgentFromSettings({
+        threadId: 'thread-cursor-reconnect',
+        provider: 'cursor',
+        userPrompt: 'keep going',
+        signal: new AbortController().signal,
+        onChunk: () => {},
+        fetchImpl,
+      }).finally(() => {
+        progress.settled = true
+      })
+      // Advance each 15 s poll interval without waiting wall-clock time.
+      for (let i = 0; i < 500 && !progress.settled; i++) {
+        await new Promise((resolve) => setImmediate(resolve))
+        mock.timers.tick(15_000)
+      }
+      const result = await running
+
+      assert.equal(streamAttempts, 7)
+      assert.equal(pollsAfterReconnects, 3)
+      assert.equal(result.assistantText, 'Done remotely.')
+    } finally {
+      if (prevKey === undefined) delete process.env['CURSOR_API_KEY']
+      else process.env['CURSOR_API_KEY'] = prevKey
+    }
+  })
+})
+
 describe('remote agent SSE parsing', () => {
+  it('keeps a CRLF split across reads as one line end', async () => {
+    const encoder = new TextEncoder()
+    const reads = ['event: tool_call\r\ndata: {"callId":"c1"}\r', '\nid: 7\r\n\r\n']
+    const body = new ReadableStream<Uint8Array>({
+      start(controller): void {
+        for (const read of reads) controller.enqueue(encoder.encode(read))
+        controller.close()
+      },
+    })
+    const events = []
+    for await (const event of parseSseStream(body)) events.push(event)
+
+    assert.deepEqual(events, [{ event: 'tool_call', data: '{"callId":"c1"}', id: '7' }])
+  })
+
   it('parses event, id, and multiline data fields', () => {
     const event = parseSseBlock(
       'id: 1-0\nevent: assistant\ndata: {"text":"hello"}\ndata: {"extra":true}',
@@ -986,6 +1166,25 @@ describe('applyRemoteAgentHandoffContext', () => {
       { mimeType: 'image/png', data: 'prior5' },
       { mimeType: 'image/png', data: 'prior6' },
     ])
+  })
+
+  it('sends no prior images when the current turn fills the budget', () => {
+    const priorMessages = [
+      {
+        role: 'user' as const,
+        content: [{ type: 'image' as const, dataUrl: 'data:image/png;base64,prior' }],
+      },
+    ]
+    const currentImages = Array.from({ length: MAX_REMOTE_PROMPT_IMAGES }, (_, i) => ({
+      mimeType: 'image/png',
+      data: `c${String(i)}`,
+    }))
+    const handedOff = applyRemoteAgentHandoffContext(
+      { text: 'latest', images: currentImages },
+      { priorMessages },
+    )
+
+    assert.deepEqual(handedOff.images, currentImages)
   })
 })
 

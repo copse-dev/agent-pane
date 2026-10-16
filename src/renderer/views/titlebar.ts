@@ -63,6 +63,8 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   // stays labeled so the primary affordance remains readable.
   const panelControls = mountPanelModeControls(store, api, {
     alwaysShowLabels: new Set(['explorer']),
+    enableOverflow: true,
+    overflowPlacement: 'below',
   })
 
   // "Open in editor" leads the right-hand cluster, sitting just before the Panel
@@ -132,10 +134,8 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     }
   }
 
-  // The current checked-out branch of the active workspace. branchStatus() reads
-  // the single active workspace root, so this tracks whatever is checked out now,
-  // independent of which thread's branch is bound. A request token guards against
-  // a slow response landing after the workspace has already changed.
+  // Refresh local checkout metadata independently of remote PR observations.
+  // A token prevents a slow response from repainting a different thread.
   let branchToken = 0
   let syncedThreadId = store.getState().activeThreadId
   function syncBranch(): void {
@@ -148,10 +148,9 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
       workspaceBranch.textContent = ''
       return
     }
-    void api.git.branchStatus(owner.projectId, owner.threadId).then(
-      (s) => {
+    void api.git.currentBranch(owner.projectId, owner.threadId).then(
+      (branch) => {
         if (token !== branchToken) return
-        const branch = s.currentBranch
         workspaceBranch.hidden = !branch
         workspaceBranch.textContent = branch ?? ''
         setTooltip(workspaceBranch, branch ? `On branch ${branch}` : null)

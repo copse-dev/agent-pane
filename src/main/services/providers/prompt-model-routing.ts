@@ -14,6 +14,7 @@ import { recordUsageEvent } from '../storage/usage-ledger.ts'
 import { routableFrontierPoints, toRoutableModelId } from './best-value-model.ts'
 import { assertModelMakerAllowed } from './model-maker-policy.ts'
 import { classifyModelForTask } from './model-classifier.ts'
+import { resolveContextWindow } from './resolve-context-window.ts'
 
 const DEMAND_LEVELS = ['low', 'mid', 'top'] as const
 type Demand = (typeof DEMAND_LEVELS)[number]
@@ -142,10 +143,32 @@ export function pickPromptModel(
   return picked ? toRoutableModelId(picked) : fallback
 }
 
+/** Try the task-ranked routes in order, before starting a provider with too little context. */
+export async function pickPromptModelWithinContext(
+  demand: Demand,
+  pool: readonly FrontierPoint[],
+  fallback: string,
+  requiredTokens: number,
+  contextWindowForModel: (model: string) => Promise<number> = resolveContextWindow,
+): Promise<string> {
+  let remaining = [...pool]
+  while (remaining.length > 0) {
+    const model = pickPromptModel(demand, remaining, fallback)
+    if ((await contextWindowForModel(model)) >= requiredTokens) return model
+    remaining = remaining.filter((point) => toRoutableModelId(point) !== model)
+  }
+  if ((await contextWindowForModel(fallback)) >= requiredTokens) return fallback
+  const size = Math.round(requiredTokens).toLocaleString()
+  throw new Error(
+    `Match task could not find a model with enough context for this request (roughly ${size} tokens). Load an LM Studio model with a larger Context Length or choose a larger-context model.`,
+  )
+}
+
 export async function resolvePromptModel(
   context: string,
   fallback: string,
   signal: AbortSignal,
+  requiredTokens: number,
 ): Promise<string> {
   // The scenario provider owns all conversation replies in mock runs.
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return fallback
@@ -153,7 +176,8 @@ export async function resolvePromptModel(
   signal.throwIfAborted()
   const pool = await routableFrontierPoints().catch(() => [])
   signal.throwIfAborted()
-  const model = pickPromptModel(demand, pool, fallback)
+  const model = await pickPromptModelWithinContext(demand, pool, fallback, requiredTokens)
+  signal.throwIfAborted()
   assertModelMakerAllowed(model)
   console.info('[prompt-model-routing] Selected primary model', { demand, model })
   return model

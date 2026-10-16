@@ -2,9 +2,12 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { at } from '@shared/array-utils.ts'
-import { getActiveProjectRoot } from '../workspace.ts'
 import { copseDataRoot } from './copse-paths.ts'
-import { projectStoreNamespaceDir } from './project-namespace.ts'
+import {
+  currentProjectStoreScope,
+  projectStoreNamespaceDir,
+  type ProjectStoreScope,
+} from './project-namespace.ts'
 
 /**
  * Experimental, opt-in "long-horizon tasks" feature (tracked in
@@ -76,21 +79,23 @@ function longTaskBaseDir(): string {
   return rootOverride ?? join(copseDataRoot(), 'long-tasks')
 }
 
-function longTaskFile(root?: string | null): string {
-  const scope = root === undefined ? getActiveProjectRoot() : root
+function longTaskFile(scope: ProjectStoreScope): string {
   return join(projectStoreNamespaceDir(longTaskBaseDir(), scope), 'tasks.json')
 }
 
-/** Load this project's long tasks, oldest first. Missing/corrupt file → []. */
+/**
+ * Load the current project's long tasks, oldest first (the calling turn's
+ * project, else the active one). Missing/corrupt file → [].
+ */
 export function loadLongTasks(): LongTask[] {
-  return loadLongTasksForRoot(getActiveProjectRoot())
+  return loadLongTasksForScope(currentProjectStoreScope())
 }
 
-/** Load long tasks for an explicitly trusted project root. */
-export function loadLongTasksForRoot(root: string | null): LongTask[] {
+/** Load long tasks for an explicitly named project. */
+export function loadLongTasksForScope(scope: ProjectStoreScope): LongTask[] {
   let raw: string
   try {
-    raw = readFileSync(longTaskFile(root), 'utf8')
+    raw = readFileSync(longTaskFile(scope), 'utf8')
   } catch {
     return []
   }
@@ -101,8 +106,8 @@ export function loadLongTasksForRoot(root: string | null): LongTask[] {
   }
 }
 
-function writeLongTasks(tasks: LongTask[], root?: string | null): void {
-  const file = longTaskFile(root)
+function writeLongTasks(tasks: LongTask[], scope: ProjectStoreScope): void {
+  const file = longTaskFile(scope)
   mkdirSync(join(file, '..'), { recursive: true })
   writeFileSync(file, `${JSON.stringify({ tasks }, null, 2)}\n`)
 }
@@ -138,9 +143,9 @@ export function isOwnedByThread(task: LongTask, threadId: string): boolean {
 /** Create a long task with a checklist of step labels. */
 export function createLongTask(
   input: CreateLongTaskInput,
-  root: string | null = getActiveProjectRoot(),
+  scope: ProjectStoreScope = currentProjectStoreScope(),
 ): LongTask {
-  const tasks = loadLongTasksForRoot(root)
+  const tasks = loadLongTasksForScope(scope)
   const now = new Date().toISOString()
   const task: LongTask = {
     id: nextId(tasks),
@@ -155,7 +160,7 @@ export function createLongTask(
     updatedAt: now,
     ...(input.threadId !== undefined ? { threadId: input.threadId } : {}),
   }
-  writeLongTasks([...tasks, task], root)
+  writeLongTasks([...tasks, task], scope)
   return task
 }
 
@@ -164,9 +169,9 @@ export function setStepDone(
   taskId: string,
   stepId: string,
   done: boolean,
-  root: string | null = getActiveProjectRoot(),
+  scope: ProjectStoreScope = currentProjectStoreScope(),
 ): LongTask | null {
-  const tasks = loadLongTasksForRoot(root)
+  const tasks = loadLongTasksForScope(scope)
   const taskIndex = tasks.findIndex((task) => task.id === taskId)
   if (taskIndex === -1) return null
   const task = at(tasks, taskIndex)
@@ -175,7 +180,7 @@ export function setStepDone(
   const steps = task.steps.map((step) => (step.id === stepId ? { ...step, done } : step))
   const updated: LongTask = { ...task, steps, updatedAt: new Date().toISOString() }
   tasks[taskIndex] = updated
-  writeLongTasks(tasks, root)
+  writeLongTasks(tasks, scope)
   return updated
 }
 

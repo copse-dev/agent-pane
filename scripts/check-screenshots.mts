@@ -6,7 +6,7 @@
  * one of two ways: the diff refreshes them itself, or the CI `e2e` job re-renders
  * them into an immutable candidate artifact. Reference shots are pixel-rendered
  * on the CI runner, so the sanctioned path is to download, review, and explicitly
- * commit the artifact's intended PNGs.
+ * accept the artifact's intended hashes.
  *
  * Two modes (both pure static analysis over the diff — no build, no Electron, no
  * extra rerun of the e2e tier):
@@ -123,13 +123,13 @@ function main(): void {
   console.error(
     `\n✗ screenshot gate: ${String(gate.missing.length)} reference screenshot(s) look stale.\n\n` +
       '  This change is mapped (by the test oracle) to screenshot-producing e2e\n' +
-      '  spec(s), but these committed reference PNGs were not refreshed in the diff:\n',
+      '  spec(s), but these committed reference hashes were not refreshed in the diff:\n',
   )
   for (const p of gate.missing) console.error(`      tests/e2e/screenshots/${p}`)
   console.error(
     '\n  On CI the e2e gate re-renders these shots into an immutable candidate\n' +
       '  artifact; same-repository PRs also get a view-only compare link. Review\n' +
-      '  them, then commit the intended PNGs (the PR comment gives a cherry-pick\n' +
+      '  them, then accept the intended hashes (the PR comment gives an acceptance\n' +
       '  command). Add the `update-screenshots` label when you need the complete\n' +
       '  reference set rendered.\n',
   )

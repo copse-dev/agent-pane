@@ -4,6 +4,11 @@
 schedule editor, local ticker, **Run now**, fresh grouped tasks, bounded worktree use,
 and renderer submission are implemented. The durable/headless behavior below remains planned.
 
+> **Status update (2026-10-07).** Event triggers, delivery history, worktree hand-over between
+> runs, and named failure states are now implemented on top of this prototype; see
+> [Event-driven automations](event-driven-automations.md#status-update-2026-10-07) for what
+> shipped and what is still open. The cron lifecycle below is unchanged except where noted inline.
+
 This plan defines the first local prototype of Copse automations. It is a thin,
 explicitly limited slice of the durable background supervisor proposed in
 GitHub issue #1081 and the local/cloud split proposed in #875.
@@ -27,7 +32,9 @@ The local workflow has three invariants aimed at unattended reliability:
    selecting one reveals both disclosures.
 2. **A small live-worktree budget per schedule.** Every run explicitly requests
    an isolated worktree even when ordinary project threads default to the shared
-   checkout. Before creating the next task, Copse retires clean, fully merged
+   checkout. **Hand-over:** a finished run's checkout is _taken over_ by the next run of the
+   same automation instead of being retained or recreated, when that is provably safe (see
+   [Worktree hand-over](#worktree-hand-over)). Before creating the next task, Copse retires clean, fully merged
    checkouts and accepts already parked PR checkouts. The safe default allows one
    live worktree; a schedule author may explicitly raise the cap to two or three
    when independent runs should continue while older changes await review. Once
@@ -94,6 +101,59 @@ This is deliberately an **app-open automation**, not yet a background agent unde
 definitions in [`background-agents-capability-map.md`](background-agents-capability-map.md):
 the desktop and relevant renderer still own execution. Device-independent scheduled
 work requires the shared headless-turn contract, supervisor lease, and detached runtime.
+
+## Worktree hand-over
+
+Before this change a finished run's checkout was removed only when it was entirely clean —
+_including ignored files_. A checkout holding only `node_modules` or build output therefore
+counted as retained forever, and at the default cap of one the schedule skipped every later
+run behind it ("live worktree limit"). The next run now takes over that checkout when **all**
+of these hold (`adoptThreadWorktree`, re-proved under the repository lock):
+
+- it is the schedule's most recent run that still holds a checkout, that run is settled (not
+  running, no unsent draft), and no terminal, background process or ACP session is live in it;
+- the checkout is registered, on its branch, with no merge/rebase in flight, and has no modified,
+  staged or untracked (non-ignored) file;
+- its branch holds no commit beyond the base it was cut from, so nothing can be lost;
+- it has no PR (those follow the parking lifecycle) and the requested base branch is unchanged;
+- the project checkout is clean, so a fresh allocation would not have seeded anything this one
+  lacks.
+
+The result is meant to be indistinguishable from a fresh allocation: every ignored file is
+deleted (confined to the checkout's real path), the branch and tree move to the current base
+tip with `git switch -C`, the checkout is `git worktree move`d to the new thread's path (paths
+are derived from the thread id), and ignored project files are re-cloned exactly as for a new
+checkout. Nothing a previous run wrote — including a `.env` it created — survives. The branch keeps
+its name; the old thread's checkout is recorded as retired. Hand-over never relaxes the cap: at
+most one checkout is handed over per run, and one that cannot be inspected counts as retained.
+
+Failure behaviour: an ineligible checkout is left untouched and the run allocates a fresh one.
+After the move, errors are surfaced rather than masked; the checkout then sits at the new
+thread's path, where `recoverUnpersistedWorktree` reclaims it on retry, so it is never an orphan.
+Known limit: if the hand-over is refused _after_ the cap check admitted the run (the checkout
+changed in between), the run allocates a fresh checkout and the schedule briefly holds one more
+than its cap; the next trigger then sees both and skips until one is resolved.
+
+## Failure states
+
+Each way an unattended run can stop is a named code (`AutomationFailureCode`) with a plain
+message and one remedy, shown in the Automations manager and in Activity:
+
+| Code                | When it is recorded                                                           | Shown                                               |
+| ------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------- |
+| `approval-stalled`  | An approval/question of an automation run unanswered for 15 minutes (derived) | Activity row + detail                               |
+| `worktree-failed`   | Checkout preparation threw before the run started; the prompt stays a draft   | Run thread, Activity, manager row (via main)        |
+| `no-model`          | Start/turn error naming a missing or unavailable model                        | Run thread, Activity, manager row                   |
+| `auth-expired`      | Turn failed with a 401/credential error                                       | Run thread, Activity, manager row                   |
+| `container-missing` | Error text names an unavailable container engine (see below)                  | Same as above                                       |
+| `scheduler-stopped` | The supervisor task that fires schedules and polls events failed or blocked   | Manager banner and an Activity notice, all projects |
+| `unknown`           | Anything else that ends a run in error                                        | Activity ("Run failed — open the run")              |
+
+Honest limits: runtime failures (`no-model`, `auth-expired`, `unknown`) are classified from the
+error text and recorded on the thread, so the manager sees them only while that project's threads
+are loaded; start failures are also reported to main and survive with the project closed. A cron or
+event _trigger_ cannot dispatch into a container today, so `container-missing` can only appear if
+an error message names the engine; container runs have their own error surface.
 
 ## Beyond cron: trigger adapters
 
