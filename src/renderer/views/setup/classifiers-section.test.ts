@@ -429,6 +429,7 @@ describe('classifier connections settings', () => {
       )
     assert.deepEqual(choices('Protocol'), [
       ['systemone', 'SystemOne'],
+      ['decisions', 'Decisions API'],
       ['featherless', 'Featherless classifier'],
     ])
     assert.deepEqual(choices('Auth'), [

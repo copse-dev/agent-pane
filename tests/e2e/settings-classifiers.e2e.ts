@@ -33,6 +33,9 @@ describe('classifier connections settings', () => {
     writeE2eEnv({
       COPSE_ALLOW_PLAINTEXT_SECRETS: '1',
       LIQUID_API_KEY: '',
+      FASTINO_API_KEY: '',
+      CELERIS_API_KEY: '',
+      OPENROUTER_API_KEY: '',
       TYPESAFE_API_KEY: '',
       FEATHERLESS_API_KEY: '',
     })
@@ -78,6 +81,9 @@ describe('classifier connections settings', () => {
     writeE2eEnv({
       COPSE_ALLOW_PLAINTEXT_SECRETS: undefined,
       LIQUID_API_KEY: undefined,
+      FASTINO_API_KEY: undefined,
+      CELERIS_API_KEY: undefined,
+      OPENROUTER_API_KEY: undefined,
       TYPESAFE_API_KEY: undefined,
       FEATHERLESS_API_KEY: undefined,
     })
@@ -151,6 +157,34 @@ describe('classifier connections settings', () => {
   it('offers Liquid’s native decision preset and tests an edited connection only explicitly', async () => {
     await openClassifiers()
     const host = $('#settings-classifiers-host')
+    const indexedPresets = await browser.execute(() =>
+      Array.from(
+        document.querySelectorAll<HTMLOptionElement>(
+          '#settings-classifiers-host [name="classifierPreset"] option',
+        ),
+        (option) => ({ id: option.value, label: option.text }),
+      ),
+    )
+    for (const id of [
+      'typesafe',
+      'liquid',
+      'fastino-glide',
+      'celeris',
+      'microsoft-decision',
+      'perplexity-decider',
+      'mercury-decide',
+    ]) {
+      assert.ok(
+        indexedPresets.some((option) => option.id === id),
+        `missing ${id} preset`,
+      )
+    }
+    await host.$('[name="classifierPreset"]').selectByAttribute('value', 'fastino-glide')
+    await host.$('.classifier-create').click()
+    await expect(host.$('[name="classifierModel"]')).toHaveValue('fastino/glide')
+    await expect(host.$('[name="classifierUrl"]')).toHaveValue('https://api.fastino.ai/v1')
+    await saveClassifierScreenshot('#settings-dialog', 'settings-classifiers-glide.png')
+    await host.$('.classifier-add').click()
     await host.$('[name="classifierPreset"]').selectByAttribute('value', 'liquid')
     await assertKitButtonChrome('#settings-classifiers-host .classifier-create', 'secondary')
     await host.$('.classifier-create').click()
@@ -193,7 +227,7 @@ describe('classifier connections settings', () => {
       }
     })
     assert.deepEqual(options, {
-      protocol: ['SystemOne', 'Featherless classifier'],
+      protocol: ['SystemOne', 'Decisions API', 'Featherless classifier'],
       auth: ['None', 'Bearer token (API key)'],
       summaryListStyle: 'none',
       chevron: true,
