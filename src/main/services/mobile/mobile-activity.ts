@@ -6,7 +6,7 @@ import { pendingApprovalCountForThread, pendingApprovalRequestsForThread } from 
 import { pendingAskUserCountForThread, pendingAskUserQuestionsForThread } from '../ask-user.ts'
 import { storageGet } from '../storage/storage.ts'
 import { loadProjectThreadMetas, loadThreadMessages } from '../thread-store.ts'
-import { resolveThreadExecutionContext } from '../thread-execution-context.ts'
+import { inspectThreadCheckoutRoot } from '../thread-execution-context.ts'
 import { threadHasUncommittedChanges } from '../thread-dirty-status.ts'
 
 const projectSchema = z.array(
@@ -36,9 +36,9 @@ export function mobileProjects(): Array<{ id: string; name: string }> {
 
 /**
  * Whether a settled thread's checkout has uncommitted work worth a trip back
- * to the desktop. Best-effort: a thread whose checkout can no longer be
- * resolved (retired, detached) just reads as clean rather than failing the
- * whole activity feed over a cosmetic signal.
+ * to the desktop. Inspect-only: a poll must never restore a retired worktree,
+ * so a retired, PR'd or unresolvable checkout just reads as clean rather than
+ * failing the whole activity feed over a cosmetic signal.
  */
 async function settledThreadHasChanges(
   projectId: string,
@@ -46,8 +46,8 @@ async function settledThreadHasChanges(
   updatedAt: number,
 ): Promise<boolean> {
   try {
-    const context = await resolveThreadExecutionContext(projectId, threadId)
-    return await threadHasUncommittedChanges(threadId, context.root, updatedAt)
+    const root = await inspectThreadCheckoutRoot(projectId, threadId)
+    return root !== null && (await threadHasUncommittedChanges(threadId, root, updatedAt))
   } catch {
     return false
   }
