@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-monaco-fstring-project'
 const SAMPLE_FILE = 'fstring-sample.py'
@@ -114,6 +114,20 @@ describe('Monaco python multi-line f-string highlighting', () => {
       },
     )
 
-    await saveAppScreenshot(SCREENSHOT)
+    await saveAppScreenshot(SCREENSHOT, undefined, async () => {
+      await parkPointer()
+      await browser.waitUntil(
+        () =>
+          browser.execute(() => {
+            const bars = [
+              ...document.querySelectorAll(
+                '#file-viewer .monaco-scrollable-element > .scrollbar.horizontal',
+              ),
+            ]
+            return bars.length > 0 && bars.every((bar) => getComputedStyle(bar).opacity === '0')
+          }),
+        { timeout: 5_000, timeoutMsg: 'Python editor scrollbars did not finish fading' },
+      )
+    })
   })
 })
