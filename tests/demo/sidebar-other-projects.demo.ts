@@ -34,7 +34,49 @@ describe('sidebar listing projects not opened yet', () => {
     const owners = await $$('.chat-thread-owner')
     const names = await owners.map((owner) => owner.getText())
     expect(names).toEqual(expect.arrayContaining(['· docs-site', '· api-server']))
+    await $(
+      '.chat-row[data-thread-id="demo-other-projects-active-chat"] .chat-changes-status',
+    ).waitForExist()
+    await $(
+      '.chat-row[data-thread-id="demo-other-projects-docs-0"] .chat-changes-status',
+    ).waitForExist()
+    await $('.chat-row[data-thread-id="demo-other-projects-api-0"] .chat-pr-status').waitForExist()
     await saveAppScreenshot('sidebar-other-projects.png')
+  })
+
+  async function expectStatusIconsAligned(): Promise<void> {
+    const positions = await browser.execute(() =>
+      Array.from(document.querySelectorAll<HTMLElement>('.chats-list .chat-row'))
+        .map((row) => {
+          const icon = row.querySelector<HTMLElement>('.chat-changes-status, .chat-pr-status')
+          if (!icon) return null
+          const rect = icon.getBoundingClientRect()
+          const rowRect = row.getBoundingClientRect()
+          return {
+            title: row.querySelector('.chat-title')?.textContent,
+            right: rect.right,
+            centerY: rect.top + rect.height / 2 - (rowRect.top + rowRect.height / 2),
+          }
+        })
+        .filter((position) => position !== null),
+    )
+    expect(positions.map((position) => position.title)).toEqual(
+      expect.arrayContaining([
+        'Open project thread',
+        'Rewrite the install guide',
+        'Add pagination to the list endpoint',
+      ]),
+    )
+    expect(positions).toHaveLength(3)
+    const first = positions[0]
+    for (const position of positions) {
+      expect(Math.abs(position.right - first.right)).toBeLessThan(1)
+      expect(Math.abs(position.centerY)).toBeLessThan(1)
+    }
+  }
+
+  it('places branch and PR status icons on one line across projects', async () => {
+    await expectStatusIconsAligned()
   })
 
   it('counts the unopened projects in the Show menu', async () => {
@@ -50,6 +92,7 @@ describe('sidebar listing projects not opened yet', () => {
       await browser.setWindowSize(width, 900)
       expect(await titles()).toHaveLength(4)
       await expect($('.projects-filter-btn')).toBeDisplayed()
+      await expectStatusIconsAligned()
       await saveAppScreenshot(`sidebar-other-projects-${width}.png`)
     })
   }
