@@ -87,6 +87,13 @@ describe('Simulator desktop preview', function () {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     const onboardingClose = $('#onboarding-close')
     if (await onboardingClose.isDisplayed()) await onboardingClose.click()
+    // This live-session fixture does not seed the usual announcement acknowledgements.
+    const announcement = $('#product-announcement-dialog')
+    if (await announcement.isExisting()) {
+      await announcement.waitForDisplayed({ timeout: 10_000 })
+      await announcement.$('button.ui-btn-primary').click()
+      await announcement.waitForExist({ reverse: true, timeout: 10_000 })
+    }
   })
 
   it('shows and controls a booted Simulator in the Desktop pane', async () => {
@@ -99,7 +106,7 @@ describe('Simulator desktop preview', function () {
     await expect($(`.vnc-device.is-selected .vnc-device-meta`)).toHaveText('iOS 26.5 · Booted')
     await expect($('.vnc-device.is-selected .vnc-device-details')).toHaveText('Connect')
     await expect($('.vnc-empty')).toHaveText('Connect to view iPhone 17 Pro.')
-    await expect($('.vnc-view-only-note')).not.toBeDisplayed()
+    await expect($('.vnc-view-only-note')).not.toExist()
     await saveAppScreenshot('simulator-desktop-choice.png')
 
     await browser.execute(async (udid) => {

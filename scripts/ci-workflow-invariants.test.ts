@@ -1,18 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
-import {
-  existsSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { runInNewContext } from 'node:vm'
+import { parseScreenshotManifest } from './lib/screenshot-manifest.mts'
 import { readShardWeights } from './test-oracle.mts'
 
 /**
@@ -88,8 +81,10 @@ describe('ci.yml workflow invariants', () => {
     // This bound replaces #3355's rule that the explainer specs never share a
     // worker, which stood in for it.
     const weights = readShardWeights()
+    const recorded = [...weights.values()].sort((a, b) => a - b)
+    const unrecorded = recorded[Math.floor(recorded.length / 2)] ?? 0
     const loads = buckets.map((bucket) =>
-      bucket.reduce((sum, spec) => sum + (weights.get(spec) ?? 0), 0),
+      bucket.reduce((sum, spec) => sum + (weights.get(spec) ?? unrecorded), 0),
     )
     assert.ok(
       Math.max(...loads) - Math.min(...loads) < 30,
@@ -521,7 +516,7 @@ describe('ci.yml workflow invariants', () => {
     const aggregate = jobBlock('ci-passed')
     assert.match(
       aggregate,
-      /needs: \[precheck, check, review-cell, bench, build, e2e, screenshot-artifacts\]/,
+      /needs:\s+\[precheck, screenshot-baselines, check, review-cell, bench, build, e2e, screenshot-artifacts\]/,
       'the aggregate must wait until immutable screenshot evidence is published',
     )
   })
@@ -545,7 +540,7 @@ describe('ci.yml workflow invariants', () => {
     assert.match(cell, /npm test -- packages\/review\/src\/hostile-fixture\.test\.ts/)
 
     const aggregate = jobBlock('ci-passed')
-    assert.match(aggregate, /needs: \[[^\]]*review-cell[^\]]*\]/)
+    assert.match(aggregate, /needs:\s+\[[^\]]*review-cell[^\]]*\]/)
   })
 
   it('never pushes a format commit to a promotion into release', () => {
@@ -805,11 +800,11 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
     // so a budget below the reference set fails every labelled refresh.
     const count = Number(/"\$count" -gt (\d+)/.exec(workflow)?.[1])
     const total = Number(/"\$total" -gt (\d+)/.exec(workflow)?.[1])
-    const references = readdirSync('tests/e2e/screenshots').filter((name) => name.endsWith('.png'))
-    const bytes = references.reduce(
-      (sum, name) => sum + statSync(resolve('tests/e2e/screenshots', name)).size,
-      0,
+    const references = Object.values(
+      parseScreenshotManifest(readFileSync('tests/e2e/screenshots/manifest.json', 'utf8'))
+        .screenshots,
     )
+    const bytes = references.reduce((sum, entry) => sum + entry.bytes, 0)
     assert.ok(
       count >= 2 * references.length,
       `count budget ${String(count)} < 2 × ${String(references.length)}`,
@@ -822,7 +817,16 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
     // token's pushes and PRs start workflows, and a child PR is review noise,
     // so the publisher must not regain either.
     assert.doesNotMatch(workflow, /create-pull-request|create-github-app-token|app-token/)
-    assert.doesNotMatch(workflow, /secrets\./)
+    const upload = workflow.slice(
+      workflow.indexOf('      - name: Upload verified candidates to R2'),
+      workflow.indexOf(
+        '      - name:',
+        workflow.indexOf('      - name: Upload verified candidates to R2') + 10,
+      ),
+    )
+    assert.match(upload, /secrets\.SCREENSHOT_R2_ACCESS_KEY_ID/)
+    assert.match(upload, /\.screenshot-policy\/scripts\/screenshot-storage\.mts/)
+    assert.doesNotMatch(workflow.replace(upload, ''), /secrets\.SCREENSHOT_R2/)
     assert.doesNotMatch(workflow, /rest\.pulls\.create\b/)
     assert.doesNotMatch(workflow, /review-branch|create-review/)
     assert.match(workflow, /<!-- copse-e2e-screenshot-review -->/)
@@ -836,7 +840,10 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
       /^ {4}permissions:\n {6}actions: read\n {6}contents: write\n {6}pull-requests: write\n {6}statuses: write$/m,
     )
     assert.match(workflow, /const statusContext = 'Screenshot review';/)
-    assert.match(workflow, /- name: Fail the screenshot review closed\n {8}if: failure\(\)/)
+    assert.match(
+      workflow,
+      /- name: Fail the screenshot review closed\n {8}if: steps\.stack-request\.outputs\.current != 'false' && failure\(\)/,
+    )
     assert.ok(existsSync(resolve('.github/workflows/screenshot-review-labels.yml')))
   })
 

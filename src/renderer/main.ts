@@ -66,7 +66,7 @@ import { mountDeepLinkNavigation } from './controller/deep-link-navigation.ts'
 import { mountSshPromptDialog } from './views/ssh-prompt-dialog.ts'
 import { mountUpdatePromptDialog } from './views/update-prompt-dialog.ts'
 import { mountProductAnnouncements } from './views/product-announcement-dialog.ts'
-import { PRODUCT_ANNOUNCEMENTS } from './product-announcements.ts'
+import { announcementCatalog } from './announcement-catalog.ts'
 import { registerUiKit } from './ui/index.ts'
 import { installTooltips } from './dom/tooltip.ts'
 import { mountConfirmDialog, showConfirmDialog } from './views/confirm-dialog.ts'
@@ -352,7 +352,7 @@ async function boot(): Promise<void> {
     fontSize,
     uiScale,
     animateAgentAvatars: startupSettings.animateAgentAvatars !== false,
-    conciseThreadsEnabled: startupSettings.conciseThreadsEnabled === true,
+    conciseThreadsEnabled: startupSettings.conciseThreadsEnabled !== false,
     autoPortraitRightPanel:
       typeof savedAutoPortraitRightPanel === 'boolean' ? savedAutoPortraitRightPanel : true,
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition)
@@ -599,7 +599,7 @@ async function boot(): Promise<void> {
     try {
       await mountProductAnnouncements(
         api.settings,
-        PRODUCT_ANNOUNCEMENTS,
+        announcementCatalog(),
         openSettingsDialog,
         isNewUser,
       )

@@ -1,5 +1,5 @@
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -7,9 +7,11 @@ import { readWorktreePreparationPlan } from '../../src/main/services/worktree-pr
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
-const root = mkdtempSync(join(tmpdir(), 'project-preparation-approval-'))
+const root = join(tmpdir(), 'copse-e2e', 'project-preparation-approval')
 describe('project preparation approval', () => {
   before(async () => {
+    rmSync(root, { recursive: true, force: true })
+    mkdirSync(root, { recursive: true })
     mkdirSync(join(root, '.copse'))
     writeFileSync(join(root, 'package.json'), '{"packageManager":"npm@11.19.0"}')
     writeFileSync(join(root, 'package-lock.json'), '{}')

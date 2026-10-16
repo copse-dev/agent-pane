@@ -40,12 +40,13 @@ describe('settings usage panel plan errors', () => {
       /HTTP 401|authentication_error|request_id|req_011Cd5RChA2NLVzY1EV634KW/,
     )
     // The recovery command renders as inline code, never as raw backticks.
-    await expect(claude.$('.usage-plan-status code')).toHaveText('claude /login')
+    await expect(claude.$('.usage-plan-status code')).toHaveText('claude auth login')
     assert.doesNotMatch(claudeText, /`/)
     // A rejected Claude credential offers an inline recovery affordance.
     const signIn = claude.$('.usage-plan-signin-btn')
     await expect(signIn).toBeDisplayed()
     assert.match(await signIn.getText(), /Sign in to Claude/i)
+    await expect(signIn).toHaveAttribute('title', 'Open a terminal and run claude auth login')
     // It is the kit primary (#3065), not a bespoke filled button: kit classes,
     // kit radius, and the readable --accent-fill tier behind its label.
     const signInStyle = await browser.execute(() => {

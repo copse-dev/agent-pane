@@ -1,6 +1,10 @@
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedVisualEvidenceFixture } from './helpers/seed-config.ts'
-import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { resetUserData, seedE2eViewport, seedVisualEvidenceFixture } from './helpers/seed-config.ts'
+import {
+  prepareE2eScreenshot,
+  saveElementScreenshot,
+  waitForSettledLayout,
+} from './helpers/screenshot.ts'
 
 // Focused visual proof for durable assistant-owned evidence. Unit tests cover
 // event ownership and blob folding; this reaches the persisted thread through
@@ -10,6 +14,7 @@ describe('assistant visual evidence', () => {
   before(async () => {
     resetUserData()
     seedVisualEvidenceFixture(process.cwd())
+    seedE2eViewport({ width: 1280, height: 1000 })
     await browser.reloadSession()
   })
 
@@ -81,6 +86,32 @@ describe('assistant visual evidence', () => {
     expect(state.loaded).toBe(true)
     expect(state.expandable).toBe(true)
 
-    await saveElementScreenshot('.visual-evidence-card', 'visual-evidence-expanded.png')
+    // The expanded card is taller than the transcript's standard 800px frame.
+    // Give the real window room for the card, sticky prompt and composer; an
+    // element screenshot otherwise includes those overlays instead of evidence.
+    await prepareE2eScreenshot({ width: 1280, height: 1000 })
+    await browser.execute(() => {
+      const transcript = document.querySelector('.messages-list')
+      if (transcript) transcript.scrollTop = transcript.scrollHeight
+    })
+    await waitForSettledLayout('.visual-evidence-card')
+    const unobscured = await browser.execute(() => {
+      const evidence = document.querySelector('.visual-evidence-card')
+      if (!evidence) throw new Error('Missing visual evidence card')
+      const rect = evidence.getBoundingClientRect()
+      const occluded = [rect.top + 16, rect.bottom - 16].flatMap((y) =>
+        [rect.left + 16, (rect.left + rect.right) / 2, rect.right - 16].flatMap((x) => {
+          const hit = document.elementFromPoint(x, y)
+          return evidence.contains(hit) ? [] : [{ x, y, hit: hit?.className ?? null }]
+        }),
+      )
+      return { top: rect.top, bottom: rect.bottom, viewportHeight: window.innerHeight, occluded }
+    })
+    expect(unobscured.top).toBeGreaterThanOrEqual(0)
+    expect(unobscured.bottom).toBeLessThanOrEqual(unobscured.viewportHeight)
+    expect(unobscured.occluded).toEqual([])
+    await saveElementScreenshot('.visual-evidence-card', 'visual-evidence-expanded.png', {
+      frame: 'document',
+    })
   })
 })

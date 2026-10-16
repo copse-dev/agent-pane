@@ -71,6 +71,7 @@ describe('ACP MCP tool name', () => {
     await expect(card.$('.tool-name')).toHaveText('Read archive')
     await expect($('.messages-list')).not.toHaveText(expect.stringContaining('MCP: tool'))
 
+    await $('.context-wheel.has-breakdown').waitForExist({ timeout: 15_000 })
     await saveAppScreenshot('acp-mcp-tool-name.png')
   })
 })

@@ -1,3 +1,4 @@
+import { deferred } from '../../../tests/deferred.ts'
 // Verifies the settings dialog is a native <dialog> driven by showModal()/close()
 // — the migration away from a hand-rolled div + `hidden` toggle.
 //
@@ -63,19 +64,10 @@ function shimModal(dialog: HTMLDialogElement): { showModalCalls: number } {
 describe('settings dialog (native <dialog>)', () => {
   let dialog: HTMLDialogElement
   let spy: { showModalCalls: number }
-  let mobileManageCalls: number
 
   beforeEach(() => {
     document.body.innerHTML = ''
-    mobileManageCalls = 0
-    mountSettingsDialog(
-      createStore(),
-      createPendingApi({
-        'mobile.manage': async () => {
-          mobileManageCalls += 1
-        },
-      }),
-    )
+    mountSettingsDialog(createStore(), createPendingApi())
     dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
     spy = shimModal(dialog)
     // openSettingsDialog dispatches 'settings-open' to kick off an async data
@@ -107,8 +99,20 @@ describe('settings dialog (native <dialog>)', () => {
     assert.equal(isSettingsDialogOpen(), true)
   })
 
-  it('reveals and focuses model recovery when Settings is already open on another section', () => {
+  function prepareRecoveryDialog(): void {
+    document.body.innerHTML = ''
+    mountSettingsDialog(createStore(), createFakeApi())
+    dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
+    spy = shimModal(dialog)
+  }
+  async function settleRecovery(): Promise<void> {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  }
+
+  it('reveals and focuses model recovery when Settings is already open on another section', async () => {
+    prepareRecoveryDialog()
     openSettingsDialog()
+    await settleRecovery()
     qsRequired(dialog, '.settings-nav-btn[data-section="appearance"]').click()
     const models = qsRequired(dialog, '[data-model-setting-target="model"]')
     let scrolled = false
@@ -118,21 +122,45 @@ describe('settings dialog (native <dialog>)', () => {
       },
     })
     openModelSettings()
+    await settleRecovery()
     assert.equal(spy.showModalCalls, 1)
     assert.ok(dialog.querySelector('.settings-section.active[data-section="general"]'))
-    assert.equal(document.activeElement, models)
+    assert.equal(document.activeElement === models, true)
     assert.ok(scrolled)
   })
 
-  it('opens folded exact role/security fields instead of only the Models heading', () => {
+  it('clears search before revealing a model recovery target', async () => {
+    prepareRecoveryDialog()
     openSettingsDialog()
+    await settleRecovery()
+    const search = qsRequired<HTMLInputElement>(dialog, '#settings-search-input')
+    search.value = 'nothing-matches-this-setting'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    assert.ok(qsRequired(dialog, '.settings-content').classList.contains('settings-searching'))
+    openModelSettings('model')
+    await settleRecovery()
+    assert.equal(search.value, '')
+    assert.equal(
+      qsRequired(dialog, '.settings-content').classList.contains('settings-searching'),
+      false,
+    )
+    assert.equal(document.activeElement?.getAttribute('data-model-setting-target'), 'model')
+  })
+
+  it('opens folded exact role/security fields instead of only the Models heading', async () => {
+    prepareRecoveryDialog()
+    openSettingsDialog()
+    await settleRecovery()
     openModelSettings('safetyModel')
+    await settleRecovery()
     assert.equal(document.activeElement?.getAttribute('data-model-setting-target'), 'safetyModel')
     assert.equal(dialog.querySelector<HTMLDetailsElement>('.routing-advanced')?.open, true)
     openModelSettings('role:docs')
+    await settleRecovery()
     assert.equal(document.activeElement.getAttribute('data-model-setting-target'), 'role:docs')
     assert.equal(dialog.querySelector<HTMLDetailsElement>('.routing-additional-roles')?.open, true)
     openModelSettings('orchestrationWorkerModel')
+    await settleRecovery()
     assert.ok(dialog.querySelector('.settings-section.active[data-section="experimental"]'))
     assert.equal(
       document.activeElement.getAttribute('data-model-setting-target'),
@@ -140,14 +168,12 @@ describe('settings dialog (native <dialog>)', () => {
     )
   })
 
-  it('moves Mobile Companion management into Experimental settings', async () => {
+  it('mounts Mobile Companion management inside Experimental settings, not a modal', () => {
     openSettingsDialog('experimental')
-    const button = qsRequired<HTMLButtonElement>(dialog, '#mobile-companion-manage')
-    assert.match(button.textContent, /Set up or manage/)
-    button.click()
-    await Promise.resolve()
-    assert.equal(mobileManageCalls, 1)
-    assert.equal(isSettingsDialogOpen(), false)
+    const toggle = qsRequired<HTMLInputElement>(dialog, 'input[name="mobileCompanionEnabled"]')
+    assert.ok(toggle)
+    assert.equal(dialog.querySelector('#mobile-companion-manage'), null)
+    assert.equal(isSettingsDialogOpen(), true)
   })
 
   it('tells the user auto-approval only applies while the project sandbox is running', () => {
@@ -156,40 +182,6 @@ describe('settings dialog (native <dialog>)', () => {
     assert.match(text, /only while the project sandbox is running/i)
     assert.match(text, /Without a sandbox/i)
     assert.doesNotMatch(text, /write shapes still ask/)
-  })
-})
-
-describe('Mobile Companion QR refresh', () => {
-  it('refreshes on reopen after enabling and clears the QR after stopping', async () => {
-    document.body.replaceChildren()
-    let status: Awaited<ReturnType<ApiClient['mobile']['status']>> = {
-      enabled: false,
-      url: null,
-      qrSvg: null,
-    }
-    const api = createPendingApi({ 'mobile.status': async () => status })
-    mountSettingsDialog(createStore(), api)
-    const dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
-    shimModal(dialog)
-    openSettingsDialog('experimental')
-    await Promise.resolve()
-    await Promise.resolve()
-    assert.equal(qsRequired(dialog, '#mobile-companion-qr').hidden, true)
-    closeSettingsDialog()
-    status = { enabled: true, url: 'https://example.test:42773', qrSvg: '<svg></svg>' }
-    openSettingsDialog('experimental')
-    await Promise.resolve()
-    await Promise.resolve()
-    assert.equal(qsRequired(dialog, '#mobile-companion-qr').hidden, false)
-    assert.equal(qsRequired(dialog, '#mobile-companion-qr-url').textContent, status.url)
-    closeSettingsDialog()
-    status = { enabled: false, url: null, qrSvg: null }
-    openSettingsDialog('experimental')
-    await Promise.resolve()
-    await Promise.resolve()
-    assert.equal(qsRequired(dialog, '#mobile-companion-qr').hidden, true)
-    assert.equal(qsRequired(dialog, '#mobile-companion-qr-image').innerHTML, '')
-    closeSettingsDialog()
   })
 })
 
@@ -281,15 +273,15 @@ describe('appearance live preview', () => {
 
   it('persists only the changed theme and skips unrelated slow save work', async () => {
     const base = createFakeApi()
-    const settingWrites: [string, unknown][] = []
+    const settingWrites: SettingsUpdate[] = []
     let securityWrites = 0
     let iconApplies = 0
     const api: ApiClient = {
       ...base,
       settings: {
         ...base.settings,
-        set: async (name, value) => {
-          settingWrites.push([name, value])
+        update: async (changes) => {
+          settingWrites.push(changes)
         },
         setSecurity: async () => {
           securityWrites += 1
@@ -303,33 +295,43 @@ describe('appearance live preview', () => {
       },
     }
     mountSettingsDialog(createStore(), api)
+    const dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
+    shimModal(dialog)
+    openSettingsDialog('appearance')
+    await new Promise((resolve) => setTimeout(resolve, 0))
     const form = qsRequired<HTMLFormElement>(document, '.settings-content')
     const theme = qsRequired<HTMLSelectElement>(form, 'select[name="theme"]')
     theme.value = 'light'
     theme.dispatchEvent(new Event('change', { bubbles: true }))
+    assert.equal(qsRequired<HTMLButtonElement>(form, 'button[type="submit"]').disabled, false)
+
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    assert.deepEqual(settingWrites, [['theme', 'light']])
+    assert.deepEqual(settingWrites, [{ theme: 'light' }])
     assert.equal(securityWrites, 0)
     assert.equal(iconApplies, 0)
   })
 
   it('keeps the current font size when the field is emptied instead of sending NaN', async () => {
     const base = createFakeApi()
-    const settingWrites: [string, unknown][] = []
+    const settingWrites: unknown[] = []
     const api: ApiClient = {
       ...base,
       settings: {
         ...base.settings,
-        set: async (name, value) => {
-          settingWrites.push([name, value])
+        update: async (changes) => {
+          settingWrites.push(changes)
         },
       },
     }
     const store = createStore()
     store.setState({ fontSize: 16 })
     mountSettingsDialog(store, api)
+    const dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
+    shimModal(dialog)
+    openSettingsDialog('appearance')
+    await new Promise((resolve) => setTimeout(resolve, 0))
     const form = qsRequired<HTMLFormElement>(document, '.settings-content')
     const fontSize = qsRequired<HTMLInputElement>(form, 'input[name="fontSize"]')
     fontSize.value = ''
@@ -337,7 +339,7 @@ describe('appearance live preview', () => {
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    assert.deepEqual(settingWrites, [['fontSize', 16]])
+    assert.deepEqual(settingWrites, [{ fontSize: 16 }])
     assert.equal(store.getState().fontSize, 16)
   })
 })
@@ -351,6 +353,7 @@ describe('Cursor rules block visibility', () => {
     mountSettingsDialog(
       createStore(),
       createPendingApi({
+        'settings.getSnapshot': () => Promise.resolve({}),
         'instructions.list': () => Promise.resolve([]),
         'cursorRules.list': () => Promise.resolve(rules),
         'skills.sources': () =>
@@ -495,22 +498,27 @@ describe('settings search (cross-section block filter)', () => {
 })
 
 describe('model-role cancellation before async Settings refresh', () => {
-  it('does not persist a cancelled role draft when reopening Appearance and saving before reads settle', async () => {
+  it('does not persist a cancelled role draft when reopening Appearance and saving before catalogue reads settle', async () => {
     document.body.innerHTML = ''
     const updates: SettingsUpdate[] = []
-    const written: string[] = []
-    const api = createPendingApi({
-      'settings.update': async (changes: SettingsUpdate): Promise<void> => {
-        updates.push(changes)
+    const base = createFakeApi()
+    const catalogue = deferred<Awaited<ReturnType<ApiClient['lmStudio']['modelInfo']>>>()
+    const api: ApiClient = {
+      ...base,
+      lmStudio: { ...base.lmStudio, modelInfo: async () => catalogue.promise },
+      settings: {
+        ...base.settings,
+        getSnapshot: async () => ({}),
+        update: async (changes) => {
+          updates.push(changes)
+        },
       },
-      'settings.set': async (key: string): Promise<void> => {
-        written.push(key)
-      },
-    })
+    }
     mountSettingsDialog(createStore(), api)
     const dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
     shimModal(dialog)
     openSettingsDialog()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
     const docs = qsRequired<HTMLSelectElement>(dialog, 'select[name="role:docs"]')
     const option = document.createElement('option')
     option.value = 'missing-provider:docs'
@@ -518,15 +526,362 @@ describe('model-role cancellation before async Settings refresh', () => {
     docs.value = option.value
     docs.dispatchEvent(new Event('change', { bubbles: true }))
     closeSettingsDialog()
+    dialog.dispatchEvent(new Event('close'))
     openSettingsDialog('appearance')
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
     const theme = qsRequired<HTMLSelectElement>(dialog, 'select[name="theme"]')
     theme.value = 'light'
     theme.dispatchEvent(new Event('change', { bubbles: true }))
     qsRequired(dialog, 'form').dispatchEvent(
       new Event('submit', { bubbles: true, cancelable: true }),
     )
-    await new Promise<void>((resolve) => setTimeout(resolve, 20))
-    assert.ok(written.includes('theme'), 'the fresh Appearance edit must reach Save')
-    assert.deepEqual(updates, [], 'the cancelled role must not enter the atomic role patch')
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(updates, [{ theme: 'light' }], 'only the fresh Appearance edit reaches Save')
+    catalogue.resolve([])
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  })
+})
+
+describe('Settings snapshot and submitted draft lifecycle', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+  const tick = async (): Promise<void> => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  }
+  function mounted(api: ApiClient): HTMLDialogElement {
+    mountSettingsDialog(createStore(), api)
+    const dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
+    shimModal(dialog)
+    return dialog
+  }
+  function change(
+    input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
+    value: string,
+  ): void {
+    input.value = value
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  }
+  function submit(dialog: HTMLDialogElement): void {
+    qsRequired<HTMLFormElement>(dialog, 'form').dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    )
+  }
+
+  it('loads one snapshot and defers Sources until its section is visible', async () => {
+    const base = createFakeApi()
+    let snapshots = 0
+    let individualReads = 0
+    let sourceLoads = 0
+    const dialog = mounted({
+      ...base,
+      settings: {
+        ...base.settings,
+        getSnapshot: async () => {
+          snapshots += 1
+          return { theme: 'dark' }
+        },
+        get: async (key) => {
+          individualReads += 1
+          return base.settings.get(key)
+        },
+      },
+      skills: {
+        ...base.skills,
+        sources: async () => {
+          sourceLoads += 1
+          return base.skills.sources()
+        },
+      },
+    })
+    openSettingsDialog('appearance')
+    await tick()
+    assert.equal(snapshots, 1)
+    assert.equal(individualReads, 0)
+    assert.equal(sourceLoads, 0)
+    qsRequired<HTMLButtonElement>(dialog, 'button[data-section="customise"]').click()
+    await tick()
+    assert.equal(sourceLoads, 1)
+    assert.equal(snapshots, 1)
+  })
+
+  it('retries a rejected snapshot without closing the dialog or enabling an empty save', async () => {
+    const base = createFakeApi()
+    const retry = deferred<{ theme: 'dark' }>()
+    let calls = 0
+    const dialog = mounted({
+      ...base,
+      settings: {
+        ...base.settings,
+        getSnapshot: async () => {
+          if (++calls === 1)
+            throw new Error(
+              "Error invoking remote method 'settings:get-snapshot': Error: Temporary failure",
+            )
+          return retry.promise
+        },
+      },
+    })
+    openSettingsDialog('appearance')
+    await tick()
+    assert.equal(
+      qsRequired(dialog, '#settings-save-status').textContent,
+      'Could not load settings: Temporary failure',
+    )
+    assert.equal(qsRequired<HTMLButtonElement>(dialog, 'button[type="submit"]').disabled, true)
+    const button = qsRequired<HTMLButtonElement>(dialog, '#settings-load-retry')
+    assert.equal(button.hidden, false)
+    button.click()
+    assert.equal(button.hidden, true)
+    assert.equal(qsRequired<HTMLButtonElement>(dialog, 'button[type="submit"]').disabled, true)
+    retry.resolve({ theme: 'dark' })
+    await tick()
+    assert.equal(calls, 2)
+    assert.equal(dialog.open, true)
+    assert.equal(qsRequired(dialog, '#settings-save-status').hidden, true)
+    assert.equal(qsRequired<HTMLSelectElement>(dialog, '[name="theme"]').value, 'dark')
+    assert.equal(qsRequired(dialog, '[data-section="appearance"].settings-section').inert, false)
+    assert.equal(qsRequired<HTMLButtonElement>(dialog, 'button[type="submit"]').disabled, false)
+  })
+
+  it('ignores a previous open snapshot after close and reopen', async () => {
+    const base = createFakeApi()
+    const first = deferred<{ theme: 'light' }>()
+    let calls = 0
+    const dialog = mounted({
+      ...base,
+      settings: {
+        ...base.settings,
+        getSnapshot: async () => (++calls === 1 ? first.promise : { theme: 'dark' }),
+      },
+    })
+    openSettingsDialog('appearance')
+    assert.equal(qsRequired(dialog, '[data-section="appearance"].settings-section').inert, true)
+    closeSettingsDialog()
+    dialog.dispatchEvent(new Event('close'))
+    openSettingsDialog('appearance')
+    await tick()
+    first.resolve({ theme: 'light' })
+    await tick()
+    assert.equal(qsRequired<HTMLSelectElement>(dialog, '[name="theme"]').value, 'dark')
+    assert.equal(qsRequired(dialog, '[data-section="appearance"].settings-section').inert, false)
+  })
+
+  it('keeps model drafts while retrying an aborted initial catalogue load', async () => {
+    const base = createFakeApi()
+    const initialCatalogue = deferred<Awaited<ReturnType<ApiClient['lmStudio']['modelInfo']>>>()
+    let catalogueReads = 0
+    const writes: SettingsUpdate[] = []
+    const dialog = mounted({
+      ...base,
+      lmStudio: {
+        ...base.lmStudio,
+        modelInfo: async () => {
+          catalogueReads += 1
+          return catalogueReads === 1 ? initialCatalogue.promise : []
+        },
+      },
+      settings: {
+        ...base.settings,
+        getSnapshot: async () => ({ model: 'gpt-4o', roleModels: { docs: 'gpt-4o' } }),
+        update: async (values) => {
+          writes.push(values)
+        },
+      },
+    })
+    openSettingsDialog('general')
+    await tick()
+    await tick()
+    assert.ok(catalogueReads > 0)
+    const role = qsRequired<HTMLSelectElement>(dialog, '[name="role:docs"]')
+    assert.ok(role.querySelector('option[value="gpt-4o"]'))
+    change(role, '')
+    change(qsRequired<HTMLInputElement>(dialog, '[name="modelTemperature"]'), '0.8')
+    qsRequired<HTMLButtonElement>(dialog, 'button[data-section="appearance"]').click()
+    qsRequired<HTMLButtonElement>(dialog, 'button[data-section="general"]').click()
+    await tick()
+    assert.equal(qsRequired<HTMLInputElement>(dialog, '[name="modelTemperature"]').value, '0.8')
+    assert.ok(catalogueReads > 1, 'returning retries the aborted catalogue probe')
+    initialCatalogue.resolve([])
+    await tick()
+    submit(dialog)
+    await tick()
+    assert.equal(qsRequired(dialog, '#settings-save-status').textContent, '')
+    assert.deepEqual(writes, [
+      { modelParameters: { 'gpt-4o': { temperature: 0.8 } }, roleAssignments: { docs: '' } },
+    ])
+  })
+
+  it('discards cancelled model parameters and roles when reopening another section', async () => {
+    const base = createFakeApi()
+    const writes: SettingsUpdate[] = []
+    const dialog = mounted({
+      ...base,
+      settings: {
+        ...base.settings,
+        getSnapshot: async () => ({ model: 'gpt-4o', roleModels: { docs: 'gpt-4o' } }),
+        update: async (values) => {
+          writes.push(values)
+        },
+      },
+    })
+    openSettingsDialog('general')
+    await tick()
+    await tick()
+    change(qsRequired<HTMLSelectElement>(dialog, '[name="role:docs"]'), '')
+    change(qsRequired<HTMLInputElement>(dialog, '[name="modelTemperature"]'), '0.7')
+    closeSettingsDialog()
+    dialog.dispatchEvent(new Event('close'))
+    openSettingsDialog('appearance')
+    await tick()
+    change(qsRequired<HTMLSelectElement>(dialog, '[name="theme"]'), 'light')
+    submit(dialog)
+    await tick()
+    assert.deepEqual(writes, [{ theme: 'light' }])
+  })
+
+  it('keeps one submitted draft until ordinary and dedicated saves settle', async () => {
+    const base = createFakeApi()
+    const commit = deferred<undefined>()
+    let securityWrites = 0
+    const dialog = mounted({
+      ...base,
+      settings: {
+        ...base.settings,
+        update: async () => commit.promise,
+        setSecurity: async (values) => {
+          securityWrites += 1
+          assert.equal(values.autoRunSandboxCommands, true)
+        },
+      },
+    })
+    openSettingsDialog('appearance')
+    await tick()
+    const safety = qsRequired<HTMLInputElement>(dialog, '[name="autoRunSandboxCommands"]')
+    safety.checked = true
+    safety.dispatchEvent(new Event('change', { bubbles: true }))
+    submit(dialog)
+    closeSettingsDialog()
+    assert.equal(dialog.open, true)
+    assert.equal(qsRequired<HTMLButtonElement>(dialog, '#settings-close').disabled, true)
+    assert.equal(qsRequired(dialog, '.settings-body').inert, true)
+    const escape = new Event('cancel', { cancelable: true })
+    dialog.dispatchEvent(escape)
+    assert.equal(escape.defaultPrevented, true)
+    commit.resolve(undefined)
+    await tick()
+    assert.equal(securityWrites, 1)
+    assert.equal(dialog.open, false)
+  })
+
+  it('cancels new appearance previews back to the saved value after a dedicated save fails', async () => {
+    const base = createFakeApi()
+    const dialog = mounted({
+      ...base,
+      settings: {
+        ...base.settings,
+        getSnapshot: async () => ({ theme: 'dark' }),
+        update: async () => {},
+        setSecurity: async () => {
+          throw new Error(
+            "Error invoking remote method 'settings:set-security': Error: Security save failed",
+          )
+        },
+      },
+    })
+    openSettingsDialog('appearance')
+    await tick()
+    const theme = qsRequired<HTMLSelectElement>(dialog, '[name="theme"]')
+    change(theme, 'light')
+    const safety = qsRequired<HTMLInputElement>(dialog, '[name="autoRunSandboxCommands"]')
+    safety.checked = true
+    safety.dispatchEvent(new Event('change', { bubbles: true }))
+    submit(dialog)
+    await tick()
+    assert.equal(dialog.open, true)
+    assert.equal(qsRequired(dialog, '#settings-save-status').textContent, 'Security save failed')
+    change(theme, 'dark')
+    closeSettingsDialog()
+    dialog.dispatchEvent(new Event('close'))
+    assert.equal(document.documentElement.dataset['theme'], 'light')
+  })
+
+  it('keeps failed ordinary saves open and never starts dedicated writes', async () => {
+    const base = createFakeApi()
+    let securityWrites = 0
+    const dialog = mounted({
+      ...base,
+      settings: {
+        ...base.settings,
+        update: async () => {
+          throw new Error("Error invoking remote method 'settings:update': Error: Storage is full")
+        },
+        setSecurity: async () => {
+          securityWrites += 1
+        },
+      },
+    })
+    openSettingsDialog('appearance')
+    await tick()
+    const safety = qsRequired<HTMLInputElement>(dialog, '[name="autoRunSandboxCommands"]')
+    safety.checked = true
+    safety.dispatchEvent(new Event('change', { bubbles: true }))
+    change(qsRequired<HTMLSelectElement>(dialog, '[name="theme"]'), 'light')
+    submit(dialog)
+    await tick()
+    assert.equal(securityWrites, 0)
+    assert.equal(dialog.open, true)
+    assert.equal(qsRequired(dialog, '#settings-save-status').textContent, 'Storage is full')
+    assert.equal(qsRequired(dialog, '.settings-body').inert, false)
+  })
+})
+
+describe('MCP declared-server navigation', () => {
+  it('tracks asynchronous declarations and keeps search free of sidebar headings', async () => {
+    document.body.innerHTML = ''
+    const base = createFakeApi()
+    let declared = deferred<Awaited<ReturnType<ApiClient['mcp']['listDeclared']>>>()
+    mountSettingsDialog(createStore(), {
+      ...base,
+      mcp: { ...base.mcp, listDeclared: async () => declared.promise },
+    })
+    const dialog = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
+    shimModal(dialog)
+    openSettingsDialog()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    qsRequired(dialog, '.settings-nav-btn[data-section="mcp"]').click()
+    declared.resolve([
+      {
+        name: 'example',
+        pluginId: 'example.plugin',
+        pluginEnabled: false,
+        transport: 'stdio',
+        reason: 'Disabled',
+      },
+    ])
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.equal(qsRequired(dialog, '#mcp-declared-fieldset').hidden, false)
+    assert.match(
+      qsRequired(dialog, '.settings-nav-subheadings').textContent,
+      /Declared by plugins, not running/,
+    )
+    declared = deferred<Awaited<ReturnType<ApiClient['mcp']['listDeclared']>>>()
+    qsRequired(dialog, '#mcp-reload-btn').click()
+    declared.resolve([])
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.equal(qsRequired(dialog, '#mcp-declared-fieldset').hidden, true)
+    assert.doesNotMatch(
+      qsRequired(dialog, '.settings-nav-subheadings').textContent,
+      /Declared by plugins/,
+    )
+    declared = deferred<Awaited<ReturnType<ApiClient['mcp']['listDeclared']>>>()
+    qsRequired(dialog, '#mcp-reload-btn').click()
+    const search = qsRequired<HTMLInputElement>(dialog, '#settings-search-input')
+    search.value = 'servers'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    declared.resolve([])
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.equal(dialog.querySelector('.settings-nav-subheadings'), null)
+    closeSettingsDialog()
   })
 })

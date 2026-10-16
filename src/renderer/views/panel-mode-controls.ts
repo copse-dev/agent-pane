@@ -220,10 +220,12 @@ export interface MountPanelModeControlsOptions {
    */
   alwaysShowLabels?: ReadonlySet<PanelControlId> | 'all'
   /**
-   * When true (portrait bar), trailing buttons that don't fit collapse into a
+   * When true, trailing buttons that don't fit collapse into a
    * `…` overflow menu instead of wrapping or scrolling.
    */
   enableOverflow?: boolean
+  /** Main titlebar menus open below and retain titlebar button selectors. */
+  overflowPlacement?: 'above' | 'below'
 }
 
 /**
@@ -266,7 +268,9 @@ export function mountPanelModeControls(
         // Portrait bar omits `.titlebar-btn` so existing e2e / click helpers that
         // target `.titlebar-btn[aria-label=…]` stay uniquely on the titlebar.
         class: [
-          opts.enableOverflow ? 'portrait-panel-btn' : 'titlebar-btn',
+          opts.enableOverflow && opts.overflowPlacement !== 'below'
+            ? 'portrait-panel-btn'
+            : 'titlebar-btn',
           'titlebar-text-btn',
           keepLabel ? '' : 'titlebar-compact-icon',
         ]
@@ -306,7 +310,7 @@ export function mountPanelModeControls(
         'data-tooltip': 'More panel modes',
         // The overflow trigger lives in the bottom portrait bar, so its tooltip
         // needs the space above it.
-        'data-tooltip-placement': 'top',
+        'data-tooltip-placement': opts.overflowPlacement === 'below' ? 'bottom' : 'top',
       },
       moreHorizontalIcon('ui-icon ui-icon-sm'),
       overflowBadge,
@@ -391,7 +395,19 @@ export function mountPanelModeControls(
         const gap = Number.parseFloat(styles.columnGap || styles.gap || '0') || 0
         const padL = Number.parseFloat(styles.paddingLeft) || 0
         const padR = Number.parseFloat(styles.paddingRight) || 0
-        const containerWidth = Math.max(0, controls.clientWidth - padL - padR)
+        // The main titlebar also hosts Run app and Open in editor. Reserve
+        // their width before deciding which panel actions fit.
+        const siblings = [...controls.children].filter(
+          (child) =>
+            child !== overflowWrap &&
+            !child.hasAttribute('data-panel-control') &&
+            child.getBoundingClientRect().width > 0,
+        )
+        const reservedWidth = siblings.reduce(
+          (sum, child) => sum + child.getBoundingClientRect().width + gap,
+          0,
+        )
+        const containerWidth = Math.max(0, controls.clientWidth - padL - padR - reservedWidth)
         const widths = eligible.map((btn) => btn.getBoundingClientRect().width)
 
         // Measure the trigger while briefly shown so getBoundingClientRect is real.
@@ -399,7 +415,13 @@ export function mountPanelModeControls(
         const overflowWidth = overflowTrigger.getBoundingClientRect().width
         overflowWrap.hidden = true
 
-        const hideCount = countPortraitPanelOverflow(widths, gap, containerWidth, overflowWidth, 1)
+        const hideCount = countPortraitPanelOverflow(
+          widths,
+          gap,
+          containerWidth,
+          overflowWidth,
+          opts.overflowPlacement === 'below' ? 0 : 1,
+        )
         if (hideCount === 0) {
           syncOverflowBadge([])
           return
@@ -434,9 +456,21 @@ export function mountPanelModeControls(
       syncOverflow?.()
     })
     observer.observe(controls)
+    // The titlebar adds editor/run controls after mounting. Their visibility
+    // and compact labels can change without resizing the allocated row.
+    const observeChildren = (): void => {
+      for (const child of controls.children) observer.observe(child)
+    }
+    observeChildren()
+    const childrenObserver = new MutationObserver(() => {
+      observeChildren()
+      syncOverflow?.()
+    })
+    childrenObserver.observe(controls, { childList: true })
     cleanups.push(() => {
       cancelAnimationFrame(overflowFrame)
       observer.disconnect()
+      childrenObserver.disconnect()
     })
   }
 

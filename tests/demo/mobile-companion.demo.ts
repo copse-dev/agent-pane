@@ -1,13 +1,65 @@
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { join } from 'node:path'
+import { writeFile } from 'node:fs/promises'
+import { PNG } from 'pngjs'
 import { E2E_SCREENSHOT_DIR } from '../e2e/helpers/screenshot.ts'
+import { withFrozenAnimations } from '../e2e/helpers/frozen-animations.ts'
 
 async function screenshot(name: string): Promise<void> {
   expect(
     await browser.execute(() => document.documentElement.scrollWidth > window.innerWidth),
   ).toBe(false)
-  await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, name))
+  await withFrozenAnimations(async () => {
+    // Mobile emulation paints a transient native scrollbar after taps and
+    // focus-driven scrolling. It is not a DOM animation. Wait for its real
+    // idle paint in the shell's empty right margin, rather than hiding it or
+    // accepting whichever fade opacity a worker happened to capture.
+    const viewport = await browser.execute(() => {
+      const context = new OffscreenCanvas(1, 1).getContext('2d')
+      if (!context) throw new Error('Missing canvas context for mobile background')
+      context.fillStyle = getComputedStyle(document.body).backgroundColor
+      context.fillRect(0, 0, 1, 1)
+      const background = Array.from(context.getImageData(0, 0, 1, 1).data)
+      if (background[3] !== 255) throw new Error('Expected an opaque mobile background')
+      return {
+        width: window.innerWidth,
+        top: Math.ceil(document.querySelector('.topbar')?.getBoundingClientRect().bottom ?? 0) + 1,
+        background,
+      }
+    })
+    const [red, green, blue] = viewport.background
+    let idleCapture: Buffer | undefined
+    await browser.waitUntil(
+      async () => {
+        const capture = Buffer.from(await browser.takeScreenshot(), 'base64')
+        const image = PNG.sync.read(capture)
+        const scale = image.width / viewport.width
+        for (let y = Math.ceil(viewport.top * scale); y < image.height; y++) {
+          for (let x = Math.floor((viewport.width - 4) * scale); x < image.width; x++) {
+            const offset = (y * image.width + x) * 4
+            if (
+              image.data[offset] !== red ||
+              image.data[offset + 1] !== green ||
+              image.data[offset + 2] !== blue
+            )
+              return false
+          }
+        }
+        idleCapture = capture
+        return true
+      },
+      {
+        timeout: 6_000,
+        interval: 100,
+        timeoutMsg: 'Mobile overlay scrollbar did not reach idle paint',
+      },
+    )
+    // Save the frame whose native paint passed the check. A second capture can
+    // repaint the overlay between the readiness probe and the saved evidence.
+    assert.ok(idleCapture, 'Expected a verified idle mobile screenshot')
+    await writeFile(join(E2E_SCREENSHOT_DIR, name), idleCapture)
+  })
 }
 
 async function expectComposerVisible(id: 'message' | 'new-message'): Promise<void> {
@@ -33,6 +85,116 @@ async function expectComposerVisible(id: 'message' | 'new-message'): Promise<voi
 }
 
 describe('Mobile Companion at phone width', () => {
+  it('keeps desktop-only prompts readable inline with a route to the full thread', async () => {
+    await browser.setWindowSize(390, 844)
+    await browser.sendCommand('Emulation.setDeviceMetricsOverride', {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+    })
+    await browser.sendCommand('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-color-scheme', value: 'light' }],
+    })
+    await browser.url('/mobile/')
+    await browser.execute(async () => {
+      await fetch('/mobile-fixture/reset')
+      localStorage.setItem('copse-mobile-token', 'visual-test-token')
+      history.replaceState({ mobileView: 'activity' }, '')
+    })
+    await browser.refresh()
+    await expect($('.state.needs-approval')).toBeDisplayed()
+    // External agents can expose attention without a mobile decision transport.
+    // Model that API response at the browser boundary, using the real app bundle.
+    await browser.execute(() => {
+      const originalFetch = window.fetch.bind(window)
+      window.fetch = async (...args) => {
+        const response = await originalFetch(...args)
+        if (args[0] !== '/api/thread/proj-1/thread-1') return response
+        const data: unknown = await response.json()
+        if (!data || typeof data !== 'object') throw new Error('Missing thread fixture')
+        return new Response(
+          JSON.stringify({
+            ...data,
+            decisions: [],
+            attention: [
+              {
+                title: 'Confirm on the desktop',
+                body: 'This coding agent needs a desktop confirmation before continuing.',
+              },
+            ],
+          }),
+          { status: response.status, headers: response.headers },
+        )
+      }
+    })
+    try {
+      await $('.group .row').click()
+      await expect($('#inline-decision .attention-title')).toHaveText('Confirm on the desktop')
+      await expect($('#inline-decision .hint')).toHaveText('Answer this prompt on the desktop.')
+      await expect($('#inline-decision .decision-actions')).not.toExist()
+      await expect($('#inline-decision .open-thread-link')).toBeDisplayed()
+      await browser.execute(async () => {
+        await document.fonts.ready
+      })
+      await screenshot('mobile-companion-desktop-prompt.png')
+      await $('#inline-decision .open-thread-link').click()
+      await expect($('#thread')).toBeDisplayed()
+      await expect($('#attention .attention-title')).toHaveText('Confirm on the desktop')
+    } finally {
+      await browser.refresh()
+    }
+  })
+
+  it('refreshes a settled inline decision row without waiting for polling', async () => {
+    await browser.url('/mobile/')
+    await browser.execute(async () => {
+      await fetch('/mobile-fixture/reset')
+      localStorage.setItem('copse-mobile-token', 'visual-test-token')
+      history.replaceState({ mobileView: 'activity' }, '')
+    })
+    // Freeze recurring timers at the browser boundary: settlement must update
+    // Activity through its own refresh, rather than the periodic poll.
+    const { identifier } = await browser.sendCommandAndGetResult(
+      'Page.addScriptToEvaluateOnNewDocument',
+      {
+        source: 'window.setInterval = () => 0',
+      },
+    )
+    try {
+      await browser.setWindowSize(390, 844)
+      await browser.sendCommand('Emulation.setDeviceMetricsOverride', {
+        width: 390,
+        height: 844,
+        deviceScaleFactor: 1,
+        mobile: true,
+      })
+      await browser.sendCommand('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-color-scheme', value: 'light' }],
+      })
+      await browser.refresh()
+      await expect($('.state.needs-approval')).toBeDisplayed()
+      await $('.group .row').click()
+      await $('#inline-decision .decision-actions .ui-btn-primary').click()
+      await expect($('#inline-decision label')).toHaveText('Which tests should I run?')
+      await $('#inline-decision .answer').setValue('Focused tests')
+      await $('#inline-decision .attention > .ui-btn-primary').click()
+      await expect($('#inline-decision')).not.toBeDisplayed()
+      await expect($('.state.needs-approval')).not.toExist()
+      await expect($('.state.needs-answer')).not.toExist()
+      await expect($('#activity')).toBeDisplayed()
+      const releaseRow = await $('.row-title=Review the release').parentElement()
+      await expect(releaseRow.$('.state')).toHaveText('working')
+      await browser.execute(async () => {
+        await document.fonts.ready
+      })
+      await screenshot('mobile-companion-activity-settled.png')
+    } finally {
+      await browser.sendCommand('Page.removeScriptToEvaluateOnNewDocument', { identifier })
+      await browser.refresh()
+    }
+  })
+
   it('uses desktop foundations for readable pairing, activity, and output in both themes', async () => {
     await browser.setWindowSize(390, 844)
     await browser.sendCommand('Emulation.setDeviceMetricsOverride', {
@@ -127,7 +289,19 @@ describe('Mobile Companion at phone width', () => {
       await expect($('.state.finished')).toHaveText('finished')
       await screenshot(`mobile-companion-activity-${theme}.png`)
 
+      // A needs-you row answers in place: tapping it selects the row and
+      // renders the decision inline, without navigating to the thread.
       await $('.group .row').click()
+      await expect($('.group .row.selected')).toBeDisplayed()
+      await expect($('#inline-decision .attention-body')).toHaveText('pnpm run check')
+      await expect($('#activity')).toBeDisplayed()
+      await screenshot(`mobile-companion-activity-decision-${theme}.png`)
+      await $('#inline-decision .decision-actions .ui-btn-primary').click()
+      await expect($('#inline-decision label')).toHaveText('Which tests should I run?')
+      await expect($('#activity')).toBeDisplayed()
+
+      // The full thread stays one tap away for anyone who wants more context.
+      await $('#inline-decision .open-thread-link').click()
       await expect($('#thread-title')).toHaveText('Review the release')
       await expect($('#messages')).toHaveText(
         expect.stringContaining('</p><img src=x onerror=alert(1)>'),
@@ -157,8 +331,6 @@ describe('Mobile Companion at phone width', () => {
       await screenshot(`mobile-companion-thread-${theme}.png`)
       await expect($('#composer')).toBeDisplayed()
       await expect($('#stop')).toBeDisplayed()
-      await expect($('.attention-body')).toHaveText('pnpm run check')
-      await $('.decision-actions .ui-btn-primary').click()
       await expect($('.attention label')).toHaveText('Which tests should I run?')
       await $('.answer').setValue('Keep this draft during polling')
       await browser.waitUntil(async () => {

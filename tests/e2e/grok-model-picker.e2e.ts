@@ -82,7 +82,7 @@ describe('Grok model labels and scores across providers', function () {
     await $('.model-picker-filter').setValue('grok')
     const score = getIntellectScore('grok-build-0-1-06-16')
     assert.ok(score)
-    const expected = `Grok Build 0.1 — intellect ${score.estimated ? '~' : ''}${String(score.value)}`
+    const expected = `Grok Build 0.1: intellect ${score.estimated ? '~' : ''}${String(score.value)}`
     for (const route of [BUILD_ROUTE, AGENT_ROUTE]) {
       await expect(
         $(`.model-picker-option[data-value="${route}"] .model-picker-option-label`),

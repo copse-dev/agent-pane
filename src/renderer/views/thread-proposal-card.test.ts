@@ -164,6 +164,56 @@ describe('model-proposed thread card', () => {
     unmount()
   })
 
+  it('renders the card for an ACP-bridged call reported as the raw MCP name', () => {
+    // ACP agents report `mcp__copse__propose_thread`, not the bare tool name;
+    // the card lookup has to see through the prefix the same way the label
+    // already does, or this falls back to a plain tool-call disclosure.
+    const { root, unmount } = mount([proposalCall({ name: 'mcp__copse__propose_thread' })])
+    const proposal = card(root)
+    assert.equal(proposal.dataset['proposalStatus'], 'pending')
+    unmount()
+  })
+
+  it('renders saved Codex MCP envelopes and starts with the nested prompt', async () => {
+    const { root, store, unmount } = mount([
+      { id: 'r1', name: 'read_file', args: { path: 'a.ts' }, status: 'done', result: 'ok' },
+      { id: 'r2', name: 'read_file', args: { path: 'b.ts' }, status: 'done', result: 'ok' },
+      proposalCall({
+        name: 'mcp.copse.propose_thread',
+        kind: 'execute',
+        args: { server: 'copse', tool: 'propose_thread', arguments: PROPOSAL_ARGS },
+      }),
+    ])
+    const proposal = card(root)
+    assert.equal(proposal.querySelector('.thread-proposal-title')?.textContent, PROPOSAL_ARGS.title)
+    assert.equal(proposal.closest('.tool-card-rollup'), null)
+    assert.ok(root.querySelector('.tool-card-rollup'))
+    const start = proposal.querySelector<HTMLButtonElement>('.thread-proposal-start')
+    assert.ok(start)
+    start.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(runs.length, 1)
+    const started = store.getState().threads.find((thread) => thread.id === runs[0]?.threadId)
+    assert.equal(
+      started?.messages.find((message) => message.role === 'user')?.content,
+      PROPOSAL_ARGS.prompt,
+    )
+    unmount()
+  })
+
+  for (const args of [
+    { server: 'other', tool: 'propose_thread', arguments: PROPOSAL_ARGS },
+    { server: 'copse', tool: 'other', arguments: PROPOSAL_ARGS },
+    { server: 'copse', tool: 'propose_thread', arguments: { title: 'Still streaming' } },
+    { server: 'copse', tool: 'propose_thread', arguments: null },
+  ]) {
+    it(`does not render an invalid proposal envelope: ${JSON.stringify(args)}`, () => {
+      const { root, unmount } = mount([proposalCall({ name: 'mcp.copse.propose_thread', args })])
+      assert.equal(root.querySelector('.thread-proposal'), null)
+      unmount()
+    })
+  }
+
   it('leads with the human-readable description and folds the prompt away', () => {
     const { root, unmount } = mount()
     const proposal = card(root)

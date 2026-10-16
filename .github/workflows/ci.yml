@@ -176,6 +176,7 @@ jobs:
               ['repos', 'getCommit'],
               ['repos', 'compareCommitsWithBasehead'],
               ['repos', 'listCommitStatusesForRef'],
+              ['repos', 'getCombinedStatusForRef'],
               ['repos', 'createCommitStatus'],
             ]) {
               if (typeof github.rest[namespace]?.[method] !== 'function') {
@@ -484,7 +485,7 @@ jobs:
           # does not turn the reviewed follow-up into another expensive full run.
           if [ -n "$HEAD_SHA" ]; then
             changed="$(git diff --name-only "${HEAD_SHA}^" "${HEAD_SHA}" 2>/dev/null || true)"
-            if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qv '^tests/e2e/screenshots/'; then
+            if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qEv '^(tests/e2e/screenshots/manifest\.json|README\.md)$'; then
               echo "HEAD commit only refreshes reference screenshots -> skip e2e"
               { echo "mode=skip"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
               exit 0
@@ -633,6 +634,32 @@ jobs:
   # (promote-develop.yml), must hold only commits already on `main`, and a
   # format commit pushed there would reach `release` without ever landing on
   # trunk. Those commits were formatted on their own PRs.
+  # Prove that the committed hashes can restore a clean checkout without keys.
+  # This gate also warms the immutable object cache used by visual test workers.
+  screenshot-baselines:
+    needs: precheck
+    if: ${{ !cancelled() && needs.precheck.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/cache@v4
+        with:
+          path: .cache/screenshots/sha256
+          key: screenshot-r2-v1-${{ hashFiles('tests/e2e/screenshots/manifest.json') }}
+          restore-keys: screenshot-r2-v1-
+      - name: Restore and verify R2 baselines
+        run: |
+          node scripts/screenshot-storage.mts hydrate
+          node scripts/screenshot-storage.mts check
+
   autoformat:
     if: >-
       github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.base_ref != 'release' && !(github.event_name == 'pull_request' &&
@@ -1268,6 +1295,12 @@ jobs:
         with:
           persist-credentials: ${{ github.event_name != 'merge_group' }}
       - uses: ./.github/actions/setup
+      - name: Cache verified R2 baseline objects
+        uses: actions/cache@v4
+        with:
+          path: .cache/screenshots/sha256
+          key: screenshot-r2-v1-${{ hashFiles('tests/e2e/screenshots/manifest.json') }}
+          restore-keys: screenshot-r2-v1-
       - run: npm run build
       # Plain-Chrome geometry coverage replaces Electron specs that do not need
       # main/preload IPC. Skip screenshot-only heads: their parent already ran
@@ -1288,12 +1321,7 @@ jobs:
         run: |
           mkdir -p changed/tests/e2e/screenshots
           touch changed/.demo
-          mapfile -t files < <(
-            {
-              git diff --name-only -- tests/e2e/screenshots/
-              git ls-files --others --exclude-standard -- tests/e2e/screenshots/
-            } | sort -u
-          )
+          mapfile -t files < <(node scripts/screenshot-storage.mts changed)
           for f in "${files[@]}"; do
             [ -n "$f" ] || continue
             cp "$f" "changed/tests/e2e/screenshots/"
@@ -1450,6 +1478,12 @@ jobs:
         with:
           persist-credentials: ${{ github.event_name != 'merge_group' }}
       - uses: ./.github/actions/setup
+      - name: Cache verified R2 baseline objects
+        uses: actions/cache@v4
+        with:
+          path: .cache/screenshots/sha256
+          key: screenshot-r2-v1-${{ hashFiles('tests/e2e/screenshots/manifest.json') }}
+          restore-keys: screenshot-r2-v1-
       # No disk-cleanup step. One used to delete ~30 GB of preloaded toolchains
       # and prune Docker images because shards hit "No space left on device" on
       # the private-repo hosted runner (14 GB SSD). The public-repo runner's root
@@ -1938,12 +1972,7 @@ jobs:
           touch "changed/.shard-${{ matrix.shard }}"
           # Untracked PNGs are first-time reference shots from a new spec and
           # must be included alongside modifications.
-          mapfile -t files < <(
-            {
-              git diff --name-only -- tests/e2e/screenshots/
-              git ls-files --others --exclude-standard -- tests/e2e/screenshots/
-            } | sort -u
-          )
+          mapfile -t files < <(node scripts/screenshot-storage.mts changed)
           for f in "${files[@]}"; do
             [ -n "$f" ] || continue
             cp "$f" "changed/tests/e2e/screenshots/"
@@ -2024,6 +2053,12 @@ jobs:
           git fetch --no-tags --quiet --unshallow origin "$(git rev-parse HEAD)" \
             '+refs/heads/main:refs/remotes/origin/main'
       - uses: ./.github/actions/setup
+      - name: Cache verified R2 baseline objects
+        uses: actions/cache@v4
+        with:
+          path: .cache/screenshots/sha256
+          key: screenshot-r2-v1-${{ hashFiles('tests/e2e/screenshots/manifest.json') }}
+          restore-keys: screenshot-r2-v1-
       - name: Download rendered screenshot candidates
         uses: actions/download-artifact@v8
         with:
@@ -2068,11 +2103,10 @@ jobs:
           # Whatever the filter restored no longer differs from the baseline, so
           # drop it from the artifact. Iterating the artifact (not the worktree)
           # keeps the per-shard `.shard-N` provenance markers untouched.
+          node scripts/screenshot-storage.mts changed > "$RUNNER_TEMP/changed-screenshots"
           for png in "$shots"/*.png; do
             rel="tests/e2e/screenshots/$(basename "$png")"
-            if git diff --quiet -- "$rel" 2>/dev/null &&
-              ! git ls-files --others --exclude-standard --error-unmatch "$rel" > /dev/null 2>&1
-            then
+            if ! grep -qxF -- "$rel" "$RUNNER_TEMP/changed-screenshots"; then
               rm -f "$png"
             fi
           done
@@ -2162,7 +2196,8 @@ jobs:
     # Metadata runs earn this result through the same candidate jobs as source
     # runs; there is no success path that bypasses dependency validation.
     if: ${{ always() }}
-    needs: [precheck, check, review-cell, bench, build, e2e, screenshot-artifacts]
+    needs:
+      [precheck, screenshot-baselines, check, review-cell, bench, build, e2e, screenshot-artifacts]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -2181,6 +2216,7 @@ jobs:
           ANY_CANCELLED: ${{ contains(needs.*.result, 'cancelled') }}
           PRECHECK_RESULT: ${{ needs.precheck.result }}
           CHECK_RESULT: ${{ needs.check.result }}
+          BASELINES_RESULT: ${{ needs.screenshot-baselines.result }}
           MERGE_GROUP: ${{ github.event_name == 'merge_group' }}
           QUEUE_BASE_REF: ${{ github.event.merge_group.base_ref }}
           BENCH_RESULT: ${{ needs.bench.result }}
@@ -2204,6 +2240,10 @@ jobs:
           if [ "$ANY_FAILURE" = "true" ] || [ "$PRECHECK_RESULT" != "success" ]; then
             echo "CI has failed jobs or no successful precheck."
             printf '%s\n' "$NEEDS_JSON"
+            exit 1
+          fi
+          if [ "$BASELINES_RESULT" != "success" ]; then
+            echo "Required R2 baseline hydration did not complete successfully."
             exit 1
           fi
           if [ "$FORK_PR" = "true" ]; then

@@ -39,7 +39,7 @@ in the app.
 
    `--turn N` picks a later user turn (default: the first). The emitted module
    is type-checked against `DemoTrace`, so a shape mismatch fails `npm run
-typecheck` rather than the published page.
+   typecheck` rather than the published page.
 
 4. **Read the emitted module before committing it.** Traces ship on a public
    marketing page. The converter runs tool results through `redactSecrets` and

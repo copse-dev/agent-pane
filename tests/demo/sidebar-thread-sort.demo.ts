@@ -45,6 +45,22 @@ async function expectOwnerLabelsFit(): Promise<void> {
   }
 }
 
+// A row's trailing changes glyph sits in the same column on every row regardless
+// of how far the title and "· copse-demo" owner label reach — see docs/ui-taste.md
+// -> "Align trailing row icons".
+async function expectChangesGlyphsAligned(): Promise<void> {
+  const rights = await browser.execute(() =>
+    Array.from(document.querySelectorAll<HTMLElement>('.chats-list .chat-changes-status')).map(
+      (glyph) => glyph.getBoundingClientRect().right,
+    ),
+  )
+  expect(rights.length).toBe(2)
+  const [first, ...rest] = rights
+  for (const right of rest) {
+    expect(Math.abs(right - (first ?? 0))).toBeLessThan(1)
+  }
+}
+
 describe('sidebar thread sort', () => {
   before(async () => {
     await browser.url('about:blank')
@@ -126,6 +142,7 @@ describe('sidebar thread sort', () => {
     await expect($('.project-row')).not.toExist()
     await expect($('.chat-thread-owner')).toExist()
     await expectOwnerLabelsFit()
+    await expectChangesGlyphsAligned()
     await saveAppScreenshot('sidebar-thread-group-status.png')
 
     await openMenu()
@@ -133,6 +150,7 @@ describe('sidebar thread sort', () => {
     await browser.waitUntil(async () => (await $$('.thread-section-heading')).length === 0)
     expect((await titles()).length).toBe(5)
     await expectOwnerLabelsFit()
+    await expectChangesGlyphsAligned()
     await saveAppScreenshot('sidebar-thread-group-none.png')
 
     await openMenu()
@@ -162,6 +180,7 @@ describe('sidebar thread sort', () => {
       await openMenu()
       await choose(group)
       await expectOwnerLabelsFit()
+      await expectChangesGlyphsAligned()
       await saveAppScreenshot(`sidebar-thread-group-${group.toLowerCase()}-wide.png`)
     }
   })

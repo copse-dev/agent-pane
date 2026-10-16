@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
@@ -18,7 +18,8 @@ describe('roadmap list rows (quiet single-line layout)', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-list-'))
+    workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-list-')), 'workspace')
+    mkdirSync(workspaceRoot, { recursive: true })
     knowledgeDir = seedRoadmapNotes('e2e-roadmap-list-rows', [
       {
         id: 'e2e-roadmap-ready',
@@ -48,7 +49,7 @@ describe('roadmap list rows (quiet single-line layout)', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
     rmSync(knowledgeDir, { recursive: true, force: true })
   })
 

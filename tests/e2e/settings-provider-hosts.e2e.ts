@@ -1,11 +1,8 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import {
-  E2E_SCREENSHOT_DIR,
-  saveAppScreenshot,
-  saveElementScreenshot,
-} from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { saveSettingsSection } from './helpers/settings-scroll-capture.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
 describe('provider host allowlist settings', () => {
@@ -36,7 +33,7 @@ describe('provider host allowlist settings', () => {
     assert.match(await dialog.getText(), /Allowed provider addresses/)
     assert.match(await dialog.getText(), /Ask before allowing a new provider address/)
 
-    await saveElementScreenshot(
+    await saveSettingsSection(
       'fieldset:has(textarea[name="approvedProviderHosts"])',
       'settings-provider-hosts.png',
     )

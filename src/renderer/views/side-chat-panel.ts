@@ -10,7 +10,7 @@ import {
   markThreadRead,
   restoreThread,
 } from '@shared/store/thread-helpers.ts'
-import { sideChatsOf, type SideChatRow } from '@shared/threads/side-chat.ts'
+import { excerptText, sideChatsOf, type SideChatRow } from '@shared/threads/side-chat.ts'
 import { openRightPanel } from '../controller/panels.ts'
 import { promoteSideChat, sendSideChatMessage, startSideChat } from '../controller/side-chat.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
@@ -63,11 +63,6 @@ export function resolveSideChatSelection(
   // An active side chat (opened as the thread) is always the one shown.
   const own = active?.sideChat ? rows.find((row) => row.id === active.id) : undefined
   return { mainId, rows, selectedId: (own ?? selected ?? rows[0])?.id ?? null }
-}
-
-function excerpt(text: string): string {
-  const line = text.trim().split('\n', 1)[0] ?? ''
-  return line.length <= 80 ? line : `${line.slice(0, 79)}…`
 }
 
 function messageEl(message: Thread['messages'][number]): HTMLElement {
@@ -127,7 +122,7 @@ export function renderSideChat(input: {
       'p',
       { class: 'side-chat-context', 'data-side-chat-context': '' },
       anchor
-        ? `Reads the main thread up to “${excerpt(anchor.content)}”. Read-only.`
+        ? `Reads the main thread up to “${excerptText(anchor.content)}”. Read-only.`
         : 'Reads the main thread up to where it branched. Read-only.',
     ),
   )

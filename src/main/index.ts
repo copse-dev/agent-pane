@@ -1,6 +1,8 @@
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
+import { initThreadPrompts } from './services/thread-prompts.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
+import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
 import {
   armPerfTrace,
   flushPerfTrace,
@@ -23,6 +25,7 @@ installIpcPerfTracing()
 import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import { ThreadDeepLinks } from './services/thread-deep-links.ts'
 import { findThreadOwners } from './services/thread-store.ts'
+import { z } from 'zod'
 import { setExplainerPreviewCapture } from './services/explainer-preview.ts'
 import { captureExplainerFrames } from './windows/explainer-preview.ts'
 import { attachWebContentsLockdown } from './windows/web-contents-lockdown.ts'
@@ -55,7 +58,10 @@ import { setSecretCipher } from './services/storage/secret-cipher.ts'
 import { createKeyringCipher, createMigratingCipher } from './services/storage/keyring-cipher.ts'
 import { createOsKeyringStore } from './services/storage/os-keyring.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
-import { resumeMobileCompanion, stopMobileCompanion } from './windows/mobile-desktop.ts'
+import {
+  resumeMobileCompanion,
+  stopMobileCompanion,
+} from './services/mobile/mobile-companion-service.ts'
 import { initAutoUpdate } from './services/auto-update.ts'
 import { initUpdatePrompt } from './services/update-prompt.ts'
 import {
@@ -152,6 +158,7 @@ import { getContainerRunService } from './services/container-runtime/container-r
 import { recordContainerRunTurn } from './services/container-runtime/container-run-history.ts'
 import { recordUserReview } from './services/review/review-history.ts'
 import { AgentDispatcher } from './services/agent-dispatcher.ts'
+import { setAgentInitiatedTurnAuthority } from './services/acp/agent-initiated-turn.ts'
 import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
 import { clearRemoteAgentSession } from './services/remote/remote-agent-client.ts'
@@ -579,6 +586,7 @@ app
     // Packaged macOS build only: background update check + prompts (no-op elsewhere).
     initAutoUpdate(win)
     startStorageMaintenance()
+    startDefaultBranchRefresh()
     // P5: boot the plugin service before `createRegistry()` so persisted
     // `pluginDisabled` state is applied to the shared registry before
     // `syncReviewTools` reads it — otherwise the fallback fresh
@@ -622,6 +630,7 @@ app
     initApproval(win, ipcMain, alertUser)
     initAskUser(win, ipcMain, alertUser)
     initMobileChat(win, ipcMain)
+    initThreadPrompts(win, ipcMain)
     // Lets main-process code hand the user a running command in the Shells pane
     // (the ACP re-authentication offer). The renderer owns the PTY's xterm tab,
     // so the request is forwarded rather than spawned here.
@@ -641,6 +650,7 @@ app
     recordStartupPhase('register-handlers')
     perfMark('main:register-handlers')
     const agentDispatcher = new AgentDispatcher(agentHost, registry)
+    setAgentInitiatedTurnAuthority(agentDispatcher)
     registerAllHandlers(
       win,
       registry,
@@ -958,11 +968,12 @@ app
       invalidateCursorCloudModelsCache()
     })
 
-    ipcMain.handle('agent:abort', (event, threadIdArg: unknown) => {
+    ipcMain.handle('agent:abort', (event, threadIdArg: unknown, reasonArg: unknown) => {
       assertMainFrameSender(event, win)
       assertPrimaryMainWindow(event.sender)
       const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-      abortAgent(threadId)
+      const reason = z.literal('send_now').optional().parse(reasonArg)
+      abortAgent(threadId, reason)
     })
 
     // Thread ids with a live in-process run, so a renderer that's just loaded a

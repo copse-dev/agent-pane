@@ -1,6 +1,15 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { buildSync } from 'esbuild'
 import { PNG } from 'pngjs'
+import {
+  screenshotHash,
+  serializeScreenshotManifest,
+  type ScreenshotManifest,
+} from './lib/screenshot-manifest.mts'
 import {
   classifyScreenshotChange,
   type ClassifyOptions,
@@ -49,7 +58,162 @@ const RED: [number, number, number] = [255, 0, 0]
 const BLUE: [number, number, number] = [0, 0, 255]
 const GREEN: [number, number, number] = [0, 255, 0]
 
+it('walks each contested range once for a batch while preserving manual, main and bot ownership', () => {
+  mkdirSync(resolve('.tmp'), { recursive: true })
+  const cwd = mkdtempSync(resolve('.tmp/filter-batch-'))
+  const git = (...args: string[]): string =>
+    execFileSync(
+      'git',
+      ['-c', 'user.name=Reviewer', '-c', 'user.email=reviewer@example.com', ...args],
+      {
+        cwd,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    ).trim()
+  try {
+    const directory = join(cwd, 'tests/e2e/screenshots')
+    const cache = join(cwd, '.cache/screenshots/sha256')
+    mkdirSync(directory, { recursive: true })
+    mkdirSync(cache, { recursive: true })
+    mkdirSync(join(cwd, 'scripts'))
+    const white = solid(30, 30, WHITE)
+    const red = solid(30, 30, RED)
+    const blue = solid(30, 30, BLUE)
+    const green = solid(30, 30, GREEN)
+    const entry = (bytes: Buffer): ScreenshotManifest['screenshots'][string] => ({
+      sha256: screenshotHash(bytes),
+      bytes: bytes.length,
+    })
+    for (const bytes of [white, red, blue, green])
+      writeFileSync(join(cache, `${screenshotHash(bytes)}.png`), bytes)
+    const names = [
+      ...Array.from({ length: 12 }, (_, i) => `manual-${String(i)}.png`),
+      'main.png',
+      'bot.png',
+    ]
+    const manifest: ScreenshotManifest = {
+      version: 1,
+      screenshots: Object.fromEntries(names.map((name) => [name, entry(white)])),
+    }
+    const save = (author?: string): void => {
+      writeFileSync(join(directory, 'manifest.json'), serializeScreenshotManifest(manifest))
+      git('add', 'tests/e2e/screenshots/manifest.json')
+      git('commit', '-qm', 'Accept references', ...(author ? ['--author', author] : []))
+    }
+    git('init', '-q')
+    git('checkout', '-qb', 'batch')
+    save()
+    git('branch', 'main')
+    for (const name of names.filter((name) => name.startsWith('manual-')))
+      manifest.screenshots[name] = entry(red)
+    save()
+    manifest.screenshots['bot.png'] = entry(red)
+    save('github-actions[bot] <bot@example.com>')
+    git('checkout', '-q', 'main')
+    for (const name of names) manifest.screenshots[name] = entry(white)
+    manifest.screenshots['main.png'] = entry(green)
+    save()
+    git('checkout', '-q', 'batch')
+    for (const name of names) writeFileSync(join(directory, name), blue)
+    writeFileSync(join(directory, 'bot.png'), white)
+    writeFileSync(join(directory, 'new.png'), green)
+    const script = join(cwd, 'scripts/filter-screenshots.mjs')
+    buildSync({
+      entryPoints: [resolve('scripts/filter-screenshots.mts')],
+      outfile: script,
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      packages: 'external',
+      alias: { '@shared': resolve('src/shared') },
+      logLevel: 'silent',
+    })
+    const trace = join(cwd, 'git.trace')
+    const output = execFileSync(process.execPath, [script, '--dry-run'], {
+      cwd,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_TRACE: trace,
+        SCREENSHOT_MAIN_REF: 'main',
+        SCREENSHOT_SCOPE: 'off',
+        SCREENSHOT_FLAP_LOOKBACK: '4',
+        UPDATE_SCREENSHOTS_LABEL: 'false',
+        GITHUB_OUTPUT: '',
+      },
+    })
+    assert.match(
+      output,
+      /15 changed, 1 kept \(real\), 0 ignored \(noise\), 1 held \(flapping\), 13 held \(contested\)/,
+    )
+    assert.match(output, /flap\s+tests\/e2e\/screenshots\/bot\.png/)
+    assert.match(output, /keep\s+tests\/e2e\/screenshots\/new\.png/)
+    const walks = readFileSync(trace, 'utf8')
+      .split('\n')
+      .filter((line) => line.includes('--format=%H %an'))
+    assert.equal(walks.length, 2, 'range traversal must be independent of the screenshot count')
+    const histories = readFileSync(trace, 'utf8')
+      .split('\n')
+      .filter(
+        (line) => line.includes('log ') && line.includes('--format=%H') && !line.includes('%an'),
+      )
+    assert.equal(
+      histories.length,
+      2,
+      'only the bot-owned real change needs hydration and flap history',
+    )
+    for (const line of histories) assert.match(line, /screenshots\/bot\.png/)
+    for (const name of names)
+      assert.deepEqual(readFileSync(join(directory, name)), name === 'bot.png' ? white : blue)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
 describe('classifyScreenshotChange', () => {
+  it('loads history only for comparable real changes and preserves eager verdicts', () => {
+    const white = solid(100, 100, WHITE)
+    const red = solid(100, 100, RED)
+    const priors = [prior(red)]
+    const cases: {
+      old: Buffer | null
+      next: Buffer
+      contested?: { branchTouched: boolean; mainTouched: boolean }
+      inScope?: boolean
+      loads: number
+    }[] = [
+      { old: null, next: red, loads: 0 },
+      { old: white, next: white, loads: 0 },
+      { old: white, next: withFlippedPixels(100, 100, WHITE, 5), loads: 0 },
+      { old: white, next: red, contested: { branchTouched: true, mainTouched: false }, loads: 0 },
+      { old: white, next: red, contested: { branchTouched: false, mainTouched: true }, loads: 0 },
+      { old: white, next: red, inScope: false, loads: 0 },
+      { old: white, next: solid(120, 100, RED), loads: 0 },
+      { old: white, next: Buffer.from('invalid PNG'), loads: 0 },
+      { old: white, next: red, loads: 1 },
+      { old: white, next: solid(100, 100, BLUE), loads: 1 },
+    ]
+    for (const item of cases) {
+      let loads = 0
+      const actual = classifyScreenshotChange(
+        item.old,
+        item.next,
+        () => {
+          loads++
+          return priors
+        },
+        OPTS,
+        item.contested,
+        item.inScope,
+      )
+      assert.deepEqual(
+        actual,
+        classifyScreenshotChange(item.old, item.next, priors, OPTS, item.contested, item.inScope),
+      )
+      assert.equal(loads, item.loads, actual.reason)
+    }
+  })
   it('keeps a brand-new screenshot with no baseline', () => {
     const v = classifyScreenshotChange(null, solid(100, 100, RED), [], OPTS)
     assert.equal(v.decision, 'keep')

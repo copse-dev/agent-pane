@@ -345,39 +345,6 @@ dialog.settings-overlay::backdrop {
 .settings-action-row:last-child {
   margin-bottom: 0;
 }
-/* The QR always needs a white card behind it — its black/white contrast is
-   what a camera scans, so it must not inherit the dark-theme surface color. */
-.mobile-companion-qr {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-lg);
-  margin-bottom: calc(var(--spacing-xl) + var(--spacing-md));
-}
-.mobile-companion-qr-image {
-  flex-shrink: 0;
-  width: 96px;
-  height: 96px;
-  padding: var(--spacing-sm);
-  background: var(--qr-background);
-  border-radius: var(--radius-sm);
-}
-.mobile-companion-qr-image svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-.mobile-companion-qr-text {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs);
-  min-width: 0;
-}
-.mobile-companion-qr-url {
-  font-family: var(--font-mono);
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  overflow-wrap: break-word;
-}
 .settings-buttons {
   display: flex;
   gap: var(--spacing-md);
@@ -428,9 +395,10 @@ dialog.settings-overlay::backdrop {
   -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 45%);
   mask-image: linear-gradient(to bottom, transparent 0%, #000 45%);
 }
-.settings-buttons button {
+.settings-buttons button,
+#settings-save-status {
   -webkit-app-region: no-drag;
-  /* Lift the buttons over the frosted ::before. Without this the absolutely
+  /* Lift the actions and save status over the frosted ::before. Without this the absolutely
      positioned pseudo paints above them — in-flow content sits below the
      positioned layer — and Save comes out blurred along with the backdrop. */
   position: relative;
@@ -1391,7 +1359,9 @@ dialog.settings-overlay::backdrop {
    */
   pointer-events: auto;
   width: max-content;
-  max-width: 360px;
+  max-width: min(360px, 100%);
+  max-height: 70vh;
+  overflow: auto;
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1402,6 +1372,23 @@ dialog.settings-overlay::backdrop {
 }
 .frontier-tooltip[hidden] {
   display: none;
+}
+.frontier-tooltip[data-pinned='true'] {
+  padding-right: 32px;
+}
+.frontier-tooltip-close {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  padding: 2px 4px;
+}
+.frontier-tooltip-close:hover {
+  color: var(--text-primary);
 }
 .frontier-tooltip .tt-title {
   font-size: var(--font-size-sm);
@@ -1482,6 +1469,10 @@ dialog.settings-overlay::backdrop {
 }
 .frontier-cost-axis .frontier-btn:last-child {
   border-radius: 0 var(--radius) var(--radius) 0;
+}
+.frontier-cost-axis .frontier-btn:has(+ .frontier-btn[hidden]) {
+  border-top-right-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
 }
 .frontier-expand-dialog {
   /* position:relative makes the dialog the containing block for the hover
@@ -1612,6 +1603,47 @@ dialog.settings-overlay::backdrop {
 }
 
 /* ACP agents panel: detect results + a card per configured agent. */
+.acp-registry-browser {
+  margin-bottom: var(--spacing-md);
+}
+.acp-registry-content,
+.acp-registry-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  min-width: 0;
+}
+.acp-registry-content[hidden] {
+  display: none;
+}
+.acp-registry-controls,
+.acp-registry-entry-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+.acp-registry-controls input {
+  flex: 1;
+  min-width: 160px;
+}
+.acp-registry-results {
+  max-height: 360px;
+  overflow-y: auto;
+}
+.acp-registry-entry {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.acp-registry-entry p {
+  margin: var(--spacing-sm) 0;
+}
+.acp-registry-package code {
+  white-space: pre-wrap;
+}
 .acp-detect-results {
   display: flex;
   flex-direction: column;
@@ -1725,15 +1757,20 @@ dialog.settings-overlay::backdrop {
   min-width: 0;
   word-break: break-word;
 }
-/* When a hover origin is showing, keep the title to content width so the path
-   can claim the primary gutter without wrapping the row taller. */
-.sources-row:hover:has(.sources-row-hover-detail) .sources-row-title,
-.sources-row:focus-within:has(.sources-row-hover-detail) .sources-row-title {
-  flex: 0 1 auto;
+/* Origin-bearing rows stay on one title line even at rest. Changing a wrapped
+   title to nowrap only on hover can shrink the row out from under the pointer,
+   toggling hover repeatedly. The full title remains in the DOM. */
+.sources-row:has(.sources-row-hover-detail) .sources-row-title {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   word-break: normal;
+}
+/* Reveal the path in the primary gutter without changing the title's height. */
+.sources-row:hover:has(.sources-row-hover-detail) .sources-row-title,
+.sources-row:focus-within:has(.sources-row-hover-detail) .sources-row-title {
+  flex: 0 1 auto;
+  max-width: 50%;
 }
 /* `.sources-badge` takes its shape from `.ui-badge`. Scope (`user`, `project`,
    `bundled`), rule kind, agent container, and a worktree's owner are labels, so
@@ -1856,15 +1893,6 @@ dialog.settings-overlay::backdrop {
    only this list has — a measured size that arrives after the row, and a
    destructive per-row action. The size keeps its own colour so it reads as a
    value rather than more of the sentence around it. */
-.sources-row[data-worktree-path] .sources-row-title {
-  /* Worktree headers also hold status chips and three actions. Keep a long
-     branch/path on one ellipsized line at rest so revealing the hover path
-     cannot collapse a previously wrapped row and visibly change its shape. */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  word-break: normal;
-}
 .sources-worktree-size {
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
@@ -3300,4 +3328,144 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 #sources-skills-status {
   margin-left: var(--spacing-sm);
+}
+/* Keep a failed save readable beside the sticky actions. */
+#settings-save-status {
+  margin-right: auto;
+  min-width: 0;
+  color: var(--error);
+  font-size: var(--font-size-sm);
+}
+
+/* Coding agents list: logo, name + status chip on one row, action on the right. */
+.acp-list {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.acp-list-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+}
+.acp-scan-status:empty {
+  display: none;
+}
+.acp-row {
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--border);
+}
+.acp-row:last-child {
+  border-bottom: 0;
+}
+.acp-row-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+.acp-row-head > button,
+.acp-row-head > .acp-logo {
+  flex: none;
+}
+.acp-row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.acp-row-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs) var(--spacing-sm);
+}
+.acp-row-desc {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+}
+.acp-row-extra,
+.acp-row-options {
+  margin-top: var(--spacing-md);
+}
+.acp-row-chip {
+  padding: 1px var(--spacing-sm);
+  border-radius: var(--badge-radius);
+  font-size: 0.8em;
+  white-space: nowrap;
+}
+.acp-row-chip.ok {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+}
+.acp-row-chip.warn {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+}
+.acp-logo {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg-muted);
+  font-weight: 700;
+}
+.acp-logo svg {
+  width: 20px;
+  height: 20px;
+}
+.acp-logo[data-brand='claude'] {
+  background: #d97757;
+}
+.acp-logo[data-brand='codex'],
+.acp-logo[data-brand='cursor'],
+.acp-logo[data-brand='gemini'] {
+  background: #fff;
+}
+.acp-logo[data-brand='codex'] {
+  border: 0;
+}
+.acp-logo[data-brand='codex'] svg {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+}
+.acp-link {
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  padding: 2px 4px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.acp-link:hover {
+  color: var(--text-primary);
+}
+.acp-empty {
+  padding: var(--spacing-lg);
+  color: var(--text-muted);
+  text-align: center;
+}
+.acp-add {
+  margin-top: var(--spacing-md);
+}
+.acp-add-menu {
+  margin-top: var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.acp-add-menu[hidden] {
+  display: none;
+}
+/* The list has its own Re-scan, and the custom-agent form needs breathing room. */
+.acp-add-menu .provider-panel-embedded {
+  padding: var(--spacing-md);
+}
+.acp-add-menu .provider-panel-embedded > .provider-actions:first-child {
+  display: none;
 }

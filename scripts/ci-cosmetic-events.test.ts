@@ -138,6 +138,10 @@ describe('cosmetic CI event routing', () => {
     for (const [name, job] of Object.entries(workflow.jobs)) {
       if (name === 'precheck' || name === 'autoformat' || name === 'ci-passed') continue
       assert.ok(rooted(name), `${name} must inherit the precheck admission boundary`)
+      if (name === 'screenshot-baselines') {
+        assert.ok(job.if?.includes("needs.precheck.result == 'success'"))
+        continue
+      }
       if (/always\(|cancelled\(/.test(job.if ?? '')) {
         assert.equal(
           name,
