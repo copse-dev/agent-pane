@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import type { ContainerRuntimeAttestation } from '@shared/types/unattended-run.ts'
 import { runHeadlessAgent } from '../headless-agent-host.ts'
 import { disposeAllAcpSessions } from '../acp/acp-session-pool.ts'
-import { readDecisionLog } from '../security/decision-log-store.ts'
+import { readDecisionLog, persistRecordedDecision } from '../security/decision-log-store.ts'
 import { readPendingDeferrals } from '../security/deferred-approval-store.ts'
 import { clearDeferralModesForTests } from '../security/deferral-mode.ts'
 import {
@@ -146,6 +146,7 @@ describe('a thread under an ACP agent, contained', () => {
             threadId: THREAD,
             projectId: PROJECT,
           },
+          { recordDecision: persistRecordedDecision },
         )
 
         // The agent's own account of the run, written from inside its process.

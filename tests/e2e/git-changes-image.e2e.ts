@@ -15,7 +15,12 @@ import {
   seedGitImageChangesFixture,
 } from './helpers/seed-config.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
-import { parkPointer, saveElementScreenshot, waitForImagesSettled } from './helpers/screenshot.ts'
+import {
+  parkPointer,
+  saveElementScreenshot,
+  waitForImagesSettled,
+  withCaptureFrame,
+} from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -249,7 +254,9 @@ describe('git changes image preview', function () {
     await expect(preview.$('.attachment-preview-title')).toHaveText('staged.png (before)')
     await expect(preview.$('.image-expand-image')).toHaveAttribute('src', beforeSrc ?? '')
     await parkPointer()
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-expanded.png'))
+    await withCaptureFrame(async () => {
+      await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-expanded.png'))
+    })
 
     await browser.keys('Escape')
     await preview.waitForDisplayed({ reverse: true, timeout: 5_000 })

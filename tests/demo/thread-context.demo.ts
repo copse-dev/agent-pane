@@ -1,7 +1,44 @@
 import { $, $$, browser, expect } from '@wdio/globals'
-import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
+import { saveElementScreenshot, waitForSettledLayout } from '../e2e/helpers/screenshot.ts'
 
 const MAIN = 'Fix flaky mermaid e2e'
+
+async function showSideChatsForCapture(actions: readonly [string, string][]): Promise<void> {
+  await $('[data-context-section="side-chats"]').scrollIntoView({
+    block: 'start',
+    inline: 'nearest',
+  })
+  await waitForSettledLayout('#pane-files')
+  for (const [id, action] of actions) {
+    await expect($(`[data-action="${action}"][data-side-chat-id="${id}"]`)).toBeEnabled()
+  }
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() => {
+        const host = document.querySelector('#context-viewer-host')
+        const section = document.querySelector('[data-context-section="side-chats"]')
+        if (!host || !section) return false
+        const port = host.getBoundingClientRect()
+        // The wrappers include each row's sibling Archive/Restore action.
+        const nodes = [section, ...section.querySelectorAll('.thread-context-row-wrap')]
+        return (
+          nodes.length === 3 &&
+          nodes.every((node) => {
+            const box = node.getBoundingClientRect()
+            return (
+              box.width > 0 &&
+              box.height > 0 &&
+              box.top >= port.top &&
+              box.bottom <= port.bottom &&
+              box.left >= port.left &&
+              box.right <= port.right
+            )
+          })
+        )
+      }),
+    { timeout: 10_000, timeoutMsg: 'Both side chats and their actions must fit the Context pane' },
+  )
+}
 
 /** The panel control toggles, so only click it when the Context pane is not already showing. */
 async function openContext(): Promise<void> {
@@ -104,6 +141,10 @@ describe('The thread Context panel', () => {
       return first?.getBoundingClientRect().height ?? 0
     })
     expect(paneHeight).toBeLessThan(110)
+    await showSideChatsForCapture([
+      ['sc-side-1', 'archive-side-chat'],
+      ['sc-side-2', 'restore-side-chat'],
+    ])
     await saveElementScreenshot('#pane-files', 'side-chats-context-panel.png')
   })
 
@@ -127,6 +168,10 @@ describe('The thread Context panel', () => {
       'data-archived',
       'true',
     )
+    await showSideChatsForCapture([
+      ['sc-side-1', 'restore-side-chat'],
+      ['sc-side-2', 'archive-side-chat'],
+    ])
     await saveElementScreenshot('#pane-files', 'side-chats-archive-restore.png')
   })
 
