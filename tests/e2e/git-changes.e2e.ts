@@ -8,7 +8,7 @@ import {
   resetUserData,
   seedGitChangesFixture,
 } from './helpers/seed-config.ts'
-import { parkPointer, saveElementScreenshot } from './helpers/screenshot.ts'
+import { parkPointer, saveElementScreenshot, withCaptureFrame } from './helpers/screenshot.ts'
 import { waitForGitChangesSettled } from './helpers/git-changes-settled.ts'
 import { switchTheme, tokenColour } from './helpers/theme.ts'
 
@@ -260,7 +260,11 @@ describe('git changes viewer', function () {
       },
     )
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-diff.png'))
+    await withCaptureFrame(async () => {
+      await waitForDiffHoverChrome()
+      await waitForGitChangesSettled()
+      await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-diff.png'))
+    })
 
     // Large staged.ts diffs collapse unchanged lines with context + expandable regions.
     await browser.waitUntil(async () => (await $$('.diff-hidden-lines-widget').length) >= 1, {

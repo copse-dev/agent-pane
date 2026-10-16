@@ -41,8 +41,9 @@ import { askUserTool } from '../tools/ask-user-tool.ts'
 import { reviewerInputTool } from '../tools/reviewer-input-tool.ts'
 import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import { proposeThreadTool } from '../tools/propose-thread-tool.ts'
+import { listThreadsTool, sendThreadPromptTool } from '../tools/thread-tools.ts'
 import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
-import { classifyTextTool } from '../tools/classifier-tool.ts'
+import { askClassifierTool } from '../tools/classifier-tool.ts'
 import { registerBrowserTools } from '../tools/browser-tools.ts'
 import { rememberTool, recallTool } from '../tools/memory-tools.ts'
 import { revealPiiTool } from '../tools/reveal-pii-tool.ts'
@@ -215,7 +216,7 @@ export function createRegistry(): ToolRegistry {
   // Always registered, offered per turn: `parentTools` withholds it until a
   // classifier connection is saved, as `video_frames` waits for a video. Saving
   // a connection from Settings or the one-click installer needs no registry sync.
-  registry.register(classifyTextTool)
+  registry.register(askClassifierTool)
   registry.register(updateTodosTool)
   registry.register(askUserTool)
   syncReviewerInputTools(registry)
@@ -225,6 +226,8 @@ export function createRegistry(): ToolRegistry {
   // splitting out in any project, and the card it draws is inert until clicked
   // (see `propose-thread-tool.ts`), so there is nothing to gate.
   registry.register(proposeThreadTool)
+  registry.register(listThreadsTool)
+  registry.register(sendThreadPromptTool)
   // Always-on setup health check ("doctor"). Read-only — gathers diagnostics and
   // returns a report; the agent proposes any fixes for the user to approve.
   registry.register(runCheckupTool)

@@ -33,6 +33,7 @@ import {
 import {
   dispatchAgentRun,
   enqueueUserMessage,
+  sendQueuedMessageNow,
   startHumanTurnTree,
 } from '../controller/message-queue.ts'
 import { sendCodeBlockRunResult } from '../controller/code-block-runs.ts'
@@ -107,6 +108,7 @@ import { createComposerDraftAutosave } from './composer-draft-autosave.ts'
 import { mountPanelModeControls } from './panel-mode-controls.ts'
 import type { ThreadWorktreeChoice } from '@shared/types/worktree.ts'
 import { mountGuardedYoloControl } from './guarded-yolo-control.ts'
+import { mountAgentExecutionModeControl } from './agent-execution-mode-control.ts'
 import { mountContainerRunControl } from './container-run-control.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
@@ -414,6 +416,11 @@ export function mountInputBar(
   })
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
+  const executionMode = mountAgentExecutionModeControl(
+    store,
+    () => isAcpModel(footerChatModel()),
+    () => footerOverflow?.update(),
+  )
   const checkoutHost = el('div', { class: 'footer-checkout-host' })
   const checkoutBtn = el('button', {
     type: 'button',
@@ -441,8 +448,13 @@ export function mountInputBar(
   // Appends its chip first, so it sits left of the wheel/queue/usage widgets.
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
   usageGroup.append(contextWheel.root, queueIndicator)
-  footer.append(modelHost, checkoutHost, branchHost, planControl.button)
+  footer.append(modelHost, executionMode.element, checkoutHost, branchHost, planControl.button)
   footerOverflow = mountFooterOverflow(footer, [
+    {
+      label: executionMode.menuLabel,
+      hidden: (): boolean => !getActiveThreadId() || !isAcpModel(footerChatModel()),
+      onClick: executionMode.open,
+    },
     {
       label: guardedYolo.menuLabel,
       hidden: (): boolean => !getActiveThreadId(),
@@ -595,6 +607,7 @@ export function mountInputBar(
   const modelPicker = mountFooterModelPicker(modelHost, api, footerChatModel, selectChatModel, {
     formatCurrentLabel: footerModelDisplayLabel,
     getCurrentRoute: footerResolvedModel,
+    isAgentManaged: () => getActiveThread(store)?.executionMode === 'agent',
     isSshWorkspace: (): boolean => {
       const { activeProjectId, projects } = store.getState()
       if (!activeProjectId) return false
@@ -680,6 +693,11 @@ export function mountInputBar(
       name,
       bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
     })
+    // Focusing an unfocused contenteditable with a newly replaced draft can
+    // create a selection at its start and scroll the symptom line out of view.
+    // Establish the intended insertion point before Chromium focuses it.
+    const end = composer.value.length
+    composer.setSelectionRange(end, end)
     composer.focus()
   }
 
@@ -1889,8 +1907,24 @@ export function mountInputBar(
     true,
   )
 
+  let sendNowChordAt = 0
   composer.el.addEventListener('keydown', (e) => {
     if (e.isComposing) return
+    const control = e.ctrlKey || e.metaKey
+    const chord =
+      control &&
+      !e.altKey &&
+      !e.shiftKey &&
+      e.key.toLowerCase() === 's' &&
+      sendNowChordAt > 0 &&
+      Date.now() - sendNowChordAt < 1_500
+    sendNowChordAt =
+      control && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'x' ? Date.now() : 0
+    if (chord || (control && e.key === 'Enter' && !e.altKey && !e.shiftKey)) {
+      e.preventDefault()
+      void submit(true)
+      return
+    }
     // Tab accepts the offered next step into an empty composer. Plain Tab only
     // — modified Tabs keep their meanings (Ctrl+Tab switches threads) — and a
     // visible mention/skill picker keeps its own Tab-to-accept.
@@ -1914,12 +1948,12 @@ export function mountInputBar(
     void submit()
   })
 
-  async function submit(): Promise<void> {
+  async function submit(sendNow = false): Promise<void> {
     const id = getActiveThreadId()
     if (!id || imageDescriptionInProgress || !beginThreadSubmission(store, id)) return
     updateState()
     try {
-      await performSubmit(id)
+      await performSubmit(id, sendNow)
     } catch (error) {
       console.error('Could not send prompt', { threadId: id, error })
       checkoutErrors.set(id, error instanceof Error ? error.message : 'Could not send message')
@@ -1930,7 +1964,7 @@ export function mountInputBar(
     }
   }
 
-  async function performSubmit(id: string): Promise<void> {
+  async function performSubmit(id: string, sendNow: boolean): Promise<void> {
     perfMark('ttft:composer-submit')
     followUps.clearSuggestions()
     nextStepHint.clear()
@@ -1972,8 +2006,15 @@ export function mountInputBar(
       attachedArchives.length === 0 &&
       attachedThreads.length === 0 &&
       attachedShells.length === 0
-    )
+    ) {
+      if (sendNow) {
+        const target = getThreadById(store, id)?.pendingMessages?.find(
+          (item) => item.autoDispatch !== false,
+        )
+        if (target) sendQueuedMessageNow(store, api, id, target.messageId)
+      }
       return
+    }
     const projectId = store.getState().activeProjectId
     const thread = getThreadById(store, id)
     if (!projectId || !thread) return
@@ -2309,6 +2350,7 @@ export function mountInputBar(
     }
     if (getThreadById(store, id)?.status === 'running') {
       enqueueUserMessage(store, id, queued)
+      if (sendNow) sendQueuedMessageNow(store, api, id, messageId)
     } else {
       // A typed prompt at idle starts a fresh turn tree (decision 16): late async
       // hooks from an earlier turn now carry a stale epoch and are held, not
@@ -2810,6 +2852,8 @@ export function mountInputBar(
     }),
     store.on('threads_changed', () => {
       syncComposerThread()
+      executionMode.refresh()
+      footerOverflow.update()
       guardedYolo.refresh()
       containerRun.refresh()
       hideBranchMismatch()
@@ -2918,6 +2962,7 @@ export function mountInputBar(
       modelPicker.destroy()
       footerOverflow.destroy()
       guardedYolo.destroy()
+      executionMode.destroy()
       containerRun.destroy()
       planControl.destroy()
       footerCompact.destroy()

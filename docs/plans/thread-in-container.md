@@ -64,6 +64,12 @@ git fetch carry-out → refs/copse/runs/<id>               + declareContainerRun
                                                          + armUnattendedRun(thread, budgets)
 ```
 
+- **Audit ownership is explicit.** Headless runs return their control-plane decisions
+  and detail payloads in `HeadlessAgentResult.decisions` without creating desktop
+  thread files. The container worker supplies `persistRecordedDecision` as its audit
+  destination, retaining the guest's durable decision log and refusal export under
+  its own state root. Scoped recorders isolate concurrent and nested hosts.
+
 - **The guest runs the loop.** `src/main/services/container-runtime/worker-entry.ts` is
   bundled as a standalone main bundle (`dist/main/thread-container-worker.cjs`) and started
   by the image entrypoint as an unprivileged user. It carries the workspace in,
