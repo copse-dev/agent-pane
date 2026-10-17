@@ -342,7 +342,21 @@ to `full`, never a reason to drop specs. The rule changes what a LOW-confidence 
    record the CI run id, the e2e plan (`full` versus oracle-thinned on the push run), the shard
    outcomes or the promotion head SHA that was tested.
 
-### Proposed attestation (design only)
+### First implementation: exact-commit release gate
+
+The release-validation change implements the immediate enforcement slice:
+release-branch and `v*` tag pushes force full unit/e2e plans, and a separate
+`Full release validation` aggregate requires all eight shards and full-tier
+prerequisites. Packaging verifies CI workflow provenance for the exact commit;
+publication revalidates the pinned run attempt. `RELEASE_VALIDATION.json` is
+checksummed and published with the binaries, retaining the evidence beyond
+Actions retention. See [the release contract](../releasing-macos.md#exact-commit-full-validation).
+
+This does **not** complete the attestation exit criterion below. A real release
+must exercise the path; per-spec result digests, promotion-parent linkage, and
+immutable tag rules remain outstanding. The shadow selector still changes no gates.
+
+### Remaining attestation design
 
 - At promotion merge, write a small record: promotion PR number, `promote/main` head SHA,
   `release` base SHA at PR run time, the PR run id and its merge-ref SHA, the push run id, both
@@ -354,11 +368,11 @@ to `full`, never a reason to drop specs. The rule changes what a LOW-confidence 
   push run's plan was not `full`, or when the `release` base recorded at PR run time is not the
   parent of the merge commit (the proviso in point 1). The tag then names a candidate whose full
   tier evidence is on file.
-- Force `mode=full` for a push to `release` in `precheck` (one condition beside 499-503), so the
-  commit that ships always has its own full run rather than inheriting one by construction.
+- Implemented: force full unit/e2e plans for release-branch and release-tag pushes, so the
+  commit that ships has its own complete run rather than inheriting one by construction.
 - Add a tag ruleset for `v*` that forbids update and deletion, and create annotated tags whose
   message carries the record key.
-- These are future PRs; this plan does not make them.
+- Beyond the enforcement slice above, these are future PRs.
 
 ## 5. Shadow-run design
 
@@ -441,9 +455,8 @@ events, including labels, drafts, forks and stack tips, before anyone trusts it.
   settings and audit-log access.
 - Whether the merge-queue documentation should be corrected to "no queue" or the queue enabled;
   either way the gate design must not depend on the answer.
-- Whether a push to `release` should be forced to `full` now, independently of this plan. It is
-  a one-line workflow change with no measurable cost (every observed push already ran full) and
-  removes the proviso in section 4; it still needs its own PR.
+- Release pushes now force `full`; observe a real promotion and release through the new
+  exact-commit gate before treating the release assurance prerequisite as proven.
 
 ## First implementation slice
 

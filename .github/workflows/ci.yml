@@ -450,6 +450,7 @@ jobs:
         env:
           STACK_TIP: ${{ steps.screenshot-stack.outputs.tip }}
           EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
           BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
           # PR/queue base on pull_request; previous-tip on push. Empty for schedule.
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
@@ -469,6 +470,13 @@ jobs:
           BASE_REF="${BASE_REF#refs/heads/}"
           if [ "$EVENT" = "schedule" ]; then
             echo "Nightly schedule -> full e2e suite"
+            { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The tagged release commit must run its own complete suite. Neither
+          # the promotion merge ref nor an oracle-thinned push proves this.
+          if [ "$EVENT" = "push" ] && { [ "$REF" = "refs/heads/release" ] || [[ "$REF" = refs/tags/v* ]]; }; then
+            echo "Release commit -> full e2e and unit suites"
             { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -2469,3 +2477,32 @@ jobs:
             exit 1
           fi
           echo "All CI jobs passed (or were intentionally skipped)."
+
+  # A separate contract from the merge gate: no skipped jobs or selected suite
+  # can authorize release packaging. Always evaluate failures/cancellation.
+  full-release-validation:
+    name: Full release validation
+    if: >-
+      always() && github.event_name == 'push' &&
+      (github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v'))
+    needs: [precheck, screenshot-baselines, check, bench, build, e2e, ci-passed]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Reject cancelled release validation
+        if: ${{ cancelled() }}
+        run: exit 1
+      - name: Require complete release coverage
+        if: ${{ !cancelled() }}
+        env:
+          MODE: ${{ needs.precheck.outputs.mode }}
+          UNIT_MODE: ${{ needs.precheck.outputs.unit_mode }}
+          SHARDS: ${{ needs.precheck.outputs.e2e_shard_total }}
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          test "$MODE" = full
+          test "$UNIT_MODE" = full
+          test "$SHARDS" = 8
+          jq -e 'length == 7 and all(.[]; .result == "success")' <<< "$RESULTS"
