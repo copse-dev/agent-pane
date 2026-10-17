@@ -119,6 +119,16 @@ jobs:
           pattern: copse-macos-${{ steps.release.outputs.release_sha }}-*
           merge-multiple: true
           path: release
+      - name: Revalidate the exact CI evidence used for packaging
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.release.outputs.release_sha }}
+        run: |
+          set -euo pipefail
+          run_id="$(jq -er '.ci_run_id' release/RELEASE_VALIDATION.json)"
+          bash scripts/verify-release-validation.sh "$RELEASE_SHA" "$run_id" > "$RUNNER_TEMP/release-validation.json"
+          # A rerun, different SHA, missing run, or altered record fails closed.
+          diff -u <(jq -S . release/RELEASE_VALIDATION.json) <(jq -S . "$RUNNER_TEMP/release-validation.json")
       - name: Verify checksums and artifact completeness
         run: |
           set -euo pipefail
@@ -218,6 +228,6 @@ jobs:
             echo
             cat release/RELEASE_NOTES.md
           } > "$notes"
-          gh release create "$TAG" release/*.dmg release/*.zip release/*.blockmap release/*-mac.yml release/SHA256SUMS \
+          gh release create "$TAG" release/*.dmg release/*.zip release/*.blockmap release/*-mac.yml release/SHA256SUMS release/RELEASE_VALIDATION.json \
             --repo "$RELEASE_REPOSITORY" --target "$RELEASE_COMMIT" --title "$TAG" --notes-file "$notes" \
             "${release_flags[@]}"

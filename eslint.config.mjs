@@ -514,6 +514,10 @@ export default ts.config(
       'prototypes/**/*.js',
       'src/shared/demo-sites/**/*.js',
       'benchmarks/benchmark-explorer/**/*.js',
+      // The mobile companion's client: served to the paired phone as-is
+      // (src/mobile/index.html loads it with a plain <script> tag), same as
+      // the static sites above.
+      'src/mobile/*.js',
     ],
     extends: [ts.configs.disableTypeChecked],
     languageOptions: {
@@ -534,6 +538,10 @@ export default ts.config(
         Image: 'readonly',
         location: 'readonly',
         XMLSerializer: 'readonly',
+        localStorage: 'readonly',
+        crypto: 'readonly',
+        setTimeout: 'readonly',
+        setInterval: 'readonly',
       },
     },
     rules: {

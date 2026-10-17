@@ -1,6 +1,6 @@
 {
   "name": "copse-panel",
-  "version": "0.1.0-beta.14",
+  "version": "0.1.0-beta.15",
   "private": true,
   "license": "AGPL-3.0-only",
   "author": "Jonathan Kingston",
@@ -121,6 +121,7 @@
     "release:dry": "set -a; [ -f .env ] && . ./.env; set +a; pnpm run prepare:gortex:mac && pnpm run prepare:node && pnpm run build:release && pnpm run generate:icon && electron-builder --mac -c.mac.notarize=true -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
     "check:local": "pnpm run check:e2e-syntax && pnpm run typecheck && pnpm run type-coverage && pnpm run lint && pnpm run format:check && pnpm run demo:site:check && pnpm run check:dead-code && pnpm run check:oracle && pnpm run check:e2e-exclusions",
     "check": "pnpm run check:local && pnpm test",
+    "backlog:snapshot": "node scripts/backlog-snapshot.mts",
     "screenshots:review": "node scripts/screenshot-review.mts",
     "screenshots:manifest": "node scripts/screenshot-storage.mts manifest",
     "screenshots:check": "node scripts/screenshot-storage.mts check",
@@ -130,6 +131,8 @@
     "screenshots:hydrate": "node scripts/screenshot-storage.mts hydrate",
     "screenshots:changed": "node scripts/screenshot-storage.mts changed",
     "screenshots:accept": "node scripts/screenshot-storage.mts accept",
+    "screenshots:metrics-baseline": "node scripts/screenshot-metrics-baseline.mts",
+    "screenshots:identity": "node scripts/screenshot-identity.mts",
     "prepare:node": "node scripts/prepare-node-runtime.mts"
   },
   "build": {
