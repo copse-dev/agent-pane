@@ -5,6 +5,7 @@ import type {
   GhPrDetails,
   GhPrFileDiff,
   GhPrSummary,
+  GhRepoStacks,
   GitHubBackendPreference,
   PrActionResult,
   PrCreateResult,
@@ -76,6 +77,12 @@ export interface GitHubBackend {
   getIssue: (ref: PrRef) => Promise<GhIssueSummary | null>
   /** Search issues in the workspace repo (any state) — backs roadmap review. */
   searchWorkspaceIssues: (query: string, limit: number) => Promise<GhIssueSummary[]>
+  /**
+   * Every GitHub stack in a repository. `unavailable` when GitHub answers 404
+   * (stacks not enabled, or a host without them) or the backend cannot ask;
+   * other failures throw, so they never read as "no stacks".
+   */
+  listStacks: (owner: string, repo: string) => Promise<GhRepoStacks>
 
   // Writes — Wave 1 PR lifecycle actions.
   /** Open a PR and report its coordinates, so the caller can link it to a thread. */

@@ -20,6 +20,7 @@ import type {
   GhPrDetails,
   GhPrFileDiff,
   GhPrSummary,
+  GhRepoStacks,
   PrActionResult,
   PrCreateResult,
 } from '@shared/types/git.ts'
@@ -33,6 +34,12 @@ import {
 } from '../pr-file-content.ts'
 import { isNonNull } from '@shared/nullish.ts'
 import { PR_ACTIVITY_QUERY, parsePrActivity, unavailablePrActivity } from './pr-activity.ts'
+import {
+  loadRepoStacks,
+  loadStackForPr,
+  stacksResponseFromGh,
+  type StacksResponse,
+} from './github-stacks.ts'
 
 interface GhPrViewJson {
   state?: string | undefined
@@ -278,6 +285,19 @@ async function fetchRepoFileAtRef(
   return decodeGitHubFileContent(path, payload.content)
 }
 
+/**
+ * Keep only the stack fields the decoder reads, so a full page of 100 stacks
+ * stays well inside runCommand's stdout cap.
+ */
+const STACKS_JQ =
+  '[.[] | {number, open, base: {ref: .base.ref}, pull_requests: [.pull_requests[] | {number, state, draft, merged_at, head: {ref: .head.ref}}]}]'
+
+/** Adapts `gh api` to the shared stack loaders in `github-stacks.ts`. */
+async function fetchStacksPath(path: string): Promise<StacksResponse> {
+  const { stdout, stderr, code } = await runGh(['api', '--cache', '20s', path, '--jq', STACKS_JQ])
+  return stacksResponseFromGh({ stdout, stderr, code, errorMessage: formatGhError(stderr, code) })
+}
+
 /** Read the repo's allowed merge methods so auto-merge picks a permitted one. */
 async function repoMergeConfig(ref: PrRef): Promise<RepoMergeConfig> {
   const { stdout, code } = await runGh([
@@ -476,6 +496,11 @@ export const ghCliBackend: GitHubBackend = {
     return summary
   },
 
+  async listStacks(owner: string, repo: string): Promise<GhRepoStacks> {
+    if (!isGhAvailable()) return { status: 'unavailable' }
+    return loadRepoStacks(fetchStacksPath, owner, repo)
+  },
+
   async searchWorkspaceIssues(query: string, limit: number): Promise<GhIssueSummary[]> {
     const slug = await getGithubRepoSlug()
     if (!slug || !isGhAvailable()) return []
@@ -531,8 +556,13 @@ export const ghCliBackend: GitHubBackend = {
     if (code !== 0) throw new Error(formatGhError(stderr, code))
     const pr = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrViewSchema))
     if (!pr || typeof pr.number !== 'number' || !pr.url) return null
-    const files = await listPrFiles(ref, pr)
+    // Stack membership is best-effort and independent of the file list.
+    const [files, stack] = await Promise.all([
+      listPrFiles(ref, pr),
+      loadStackForPr(fetchStacksPath, ref),
+    ])
     const details = toGhPrDetails(ref, { ...pr, number: pr.number, url: pr.url }, files)
+    if (stack) details.stack = stack
     try {
       const activity = await runGh([
         'api',

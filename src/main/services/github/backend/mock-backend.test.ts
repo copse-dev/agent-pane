@@ -85,4 +85,22 @@ describe('mockGitHubBackend', () => {
     assert.equal(result.noop, undefined)
     assert.equal((await mockGitHubBackend.getPrDetails(REF))?.isDraft, false)
   })
+
+  it('lists the stack fixture for the mock repository only', async () => {
+    const stacks = await mockGitHubBackend.listStacks('copse-dev', 'copse-panel')
+    assert.equal(stacks.status, 'enabled')
+    assert.deepEqual(
+      stacks.stacks.map((stack) => stack.entries.length),
+      [3],
+    )
+    assert.deepEqual(await mockGitHubBackend.listStacks('octo', 'demo'), {
+      status: 'unavailable',
+    })
+  })
+
+  it('leaves the existing PR fixtures unstacked', async () => {
+    const details = await mockGitHubBackend.getPrDetails(WORKSPACE_REF)
+    assert.ok(details)
+    assert.equal(details.stack, undefined)
+  })
 })
