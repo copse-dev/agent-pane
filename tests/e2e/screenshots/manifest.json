@@ -1778,8 +1778,8 @@
       "bytes": 157865
     },
     "git-changes-popout-proposed-forced.png": {
-      "sha256": "b5992b79b18605aff9469202b93a2a998e3d6f5ead5f213beb297734efacc5d2",
-      "bytes": 392366
+      "sha256": "cba8c5a28adc0ebc4ce30a326039090ae92655e5ab8271bf9e8ea54074911685",
+      "bytes": 393307
     },
     "git-changes-popout-proposed.png": {
       "sha256": "822a99822b586eca20479195c1e2df1e6980db7a3ec48554e8d6f958b51ea3fb",
@@ -3630,8 +3630,8 @@
       "bytes": 226143
     },
     "settings-gui-app-permission.png": {
-      "sha256": "1b3ec79abfb612901be3fe9987b7a6b0073f3d5806cec19e5661bf761c6dc1f2",
-      "bytes": 349356
+      "sha256": "466be08728cc924d99c07cfc85f25ab155f9858cd6becf1ea82572f78dc83604",
+      "bytes": 359205
     },
     "settings-load-failed.png": {
       "sha256": "cea5d5c94293d40fb101d6cc19edbc3afc07755cc40df2c47feba4aa4f88b010",
@@ -4732,6 +4732,14 @@
     "thread-sidebar-selection.png": {
       "sha256": "a9a9ac6f5612a578ef27479cf5c8b1716028fe92e006b5ab31b006c06b9d95e9",
       "bytes": 44407
+    },
+    "thread-submodule-worktree-composer.png": {
+      "sha256": "a0d8006f53f4622a33edcec8e41ec50a7fa68ad68b357be2e9c3d74e67d591e4",
+      "bytes": 285085
+    },
+    "thread-submodule-worktree-sent.png": {
+      "sha256": "a3578da2c48e9db6064585995bfdb0a7314f6f609953941bfd57c4d24b20f990",
+      "bytes": 266549
     },
     "thread-switch-isolated-worktrees.png": {
       "sha256": "a31a00554cd6b2e35f0563d0de68a004412b0b244683fff1638d9f4305c9e0df",
