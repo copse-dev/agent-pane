@@ -20,14 +20,17 @@ comparison lists them as incomplete. Worker success means the spec process exite
 it does not establish that every test inside it ran (platform-skipped suites can exit green).
 No error messages, transcripts or screenshots enter this small artifact.
 
-Artifacts use run-attempt-specific names, upload with `always()`, and retain 90 days in Actions.
+Artifacts use run-attempt-specific names and upload with `always()`. They request 90 days of
+Actions retention, but repository policy currently caps observed retention at five days.
 The independent `Publish gate evidence` workflow receives completed CI runs, including failures
 and cancellations. It checks out its trusted workflow revision, validates downloaded JSON as
 data, binds outcomes to the plan's candidate/run/attempt, rejects duplicate attempts, and writes
 a combined record under `ci-evidence/v1/<run>/<attempt>/<sha256>.json` in the existing screenshot
 R2 bucket. Conditional creation and a downloaded digest check protect each object's contents.
-Reruns of failed jobs can reuse earlier plan/shard artifacts from the same candidate; comparisons
-use each spec's newest workflow attempt without mixing its two outer attempts across reruns.
+Reruns retain earlier plan/shard artifacts from the same candidate for audit. Only outcomes from
+the latest workflow attempt establish coverage: without trusted job-attempt metadata, an older
+pass cannot distinguish an untouched successful shard from a rerun that never reached that spec.
+Failed-jobs-only reruns can therefore remain incomplete; a complete rerun establishes coverage.
 The public object link is posted in a neutral `Small gate (shadow)` check and workflow summary.
 PR execution receives no R2 credentials and no job consumes the shadow outputs.
 
@@ -112,3 +115,18 @@ The four-week live window, 300-run historical replay with run-time trees/base/la
 smoke pass rates, weekly/promotion comparisons and promotion attestation remain prerequisites
 for any later gate reduction. No aggregate savings or zero-miss claim should be inferred before
 those exist. Current median weights establish cost estimates only, not smoke reliability.
+
+## Review follow-up (17 October 2026)
+
+Release-branch and `v*` tag pushes now force the advisory full plan even for an
+empty diff. Rerun comparisons use the source workflow attempt, including offline
+replay, and report older-only observations as incomplete rather than silently
+reusing a pass. This is conservative for failed-jobs-only reruns and does not
+change required CI decisions.
+
+Validation: 152 focused selector, publisher/replay, launcher and CI-gate tests
+passed. All `check:local` stages passed. The separately completed full unit run
+was non-green: 11,669 passed, 278 failed, 9 cancelled and 10 skipped. Failures
+include unavailable native/runtime dependencies and process-lifecycle cases;
+not every failure has been independently reproduced on the base. Hosted CI on
+the updated head remains required. No live credentialed publication was tested.

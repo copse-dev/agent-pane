@@ -65,6 +65,9 @@ const forced =
   env['CI_FULL_LABEL'] === 'true' ||
   env['UPDATE_SCREENSHOTS_LABEL'] === 'true' ||
   env['EVENT'] === 'schedule' ||
+  (env['EVENT'] === 'push' &&
+    (env['GITHUB_REF'] === 'refs/heads/release' ||
+      (env['GITHUB_REF'] ?? '').startsWith('refs/tags/v'))) ||
   (env['BASE_REF'] ?? '').replace('refs/heads/', '') === 'release'
 const proposed = computeSmallGate(selection, suite, inventory, forced)
 const actualMode = env['ACTUAL_MODE'] ?? 'full'

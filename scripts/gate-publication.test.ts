@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
 const publisher = resolve('scripts/publish-gate-evidence.mts')
+const replay = resolve('scripts/replay-gate-evidence.mts')
 it('publishes failed-run evidence immutably, verifies bytes, rejects tampering', () => {
   const root = mkdtempSync(join(tmpdir(), 'gate-publication-'))
   try {
@@ -89,6 +90,30 @@ else fs.copyFileSync(process.env.FAKE_AWS_OBJECT,args.at(-1));
     assert.notEqual(invalid.status, 0)
     assert.match(invalid.stderr, /provenance mismatch/)
     assert.equal(readFileSync(join(root, 'calls.jsonl'), 'utf8').trim().split('\n').length, 2)
+    // Attempt 2 failed before creating worker results: attempt 1's pass is stale.
+    writeFileSync(
+      join(root, 'incoming/outcome.json'),
+      JSON.stringify({
+        ...row,
+        runAttempt: '1',
+        outcome: 'passed',
+        exitCode: 0,
+        failureClass: null,
+      }),
+    )
+    execFileSync(process.execPath, [publisher, 'incoming'], { cwd: root, env, stdio: 'pipe' })
+    const replayed = JSON.parse(
+      execFileSync(process.execPath, [replay, env.FAKE_AWS_OBJECT], {
+        cwd: root,
+        env,
+        encoding: 'utf8',
+      }),
+    ) as unknown
+    const comparison = z
+      .object({ incomplete: z.array(z.string()), classificationComplete: z.boolean() })
+      .parse(replayed)
+    assert.deepEqual(comparison.incomplete, [spec])
+    assert.equal(comparison.classificationComplete, false)
     // Even a failed shadow calculation must preserve the effective CI plan.
     writeFileSync(join(root, 'incoming/outcome.json'), JSON.stringify(row))
     const selected = JSON.parse(readFileSync(join(root, 'incoming/plan.json'), 'utf8')) as unknown

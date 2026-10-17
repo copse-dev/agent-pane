@@ -31,8 +31,8 @@ function walk(dir: string): void {
   }
 }
 walk(directory)
-// A rerun of failed jobs reuses the earlier successful precheck and shards.
-// Read all artifact attempts, preferring the latest observation of each spec.
+// Preserve earlier artifacts for audit, but only the current workflow attempt
+// can establish complete coverage; reused jobs cannot prove rerun execution.
 const plans = files.filter(
   (path) => path.endsWith('/plan.json') || path.endsWith('/selected-plan.json'),
 )
@@ -62,7 +62,7 @@ for (const row of outcomes) {
   if (seen.has(key)) throw new Error('Duplicate outcome')
   seen.add(key)
 }
-const comparison = compareOutcomes(plan, outcomes)
+const comparison = compareOutcomes(plan, outcomes, [], Number(attempt))
 const record =
   JSON.stringify({
     version: 1,

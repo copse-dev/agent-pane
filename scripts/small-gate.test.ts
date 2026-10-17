@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { it } from 'node:test'
+import { execFileSync } from 'node:child_process'
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -239,7 +240,7 @@ it('inventory areas cite current oracle reasons and explicitly cover top-level d
     }
 })
 
-it('reruns reuse earlier shards but never combine outer failures across workflow attempts', () => {
+it('reruns never combine outer failures across workflow attempts', () => {
   const path = suite[1] ?? ''
   const classified = [
     {
@@ -256,4 +257,56 @@ it('reruns reuse earlier shards but never combine outer failures across workflow
     compareOutcomes(plan, [earlier, outcome(path, 2), passed], classified).unclassified,
     [],
   )
+})
+
+it('partial workflow reruns cannot reuse older passes as complete current coverage', () => {
+  const first = suite[0] ?? '',
+    second = suite[1] ?? ''
+  const runPlan = { ...plan, actual: { ...plan.actual, specs: [first, second] } }
+  const rows = [
+    outcome(first, 1, 'passed'),
+    outcome(second, 1),
+    outcome(second, 2),
+    { ...outcome(second, 1, 'passed'), runAttempt: '2' },
+  ]
+  const partial = compareOutcomes(runPlan, rows, [], 2)
+  assert.deepEqual(partial.incomplete, [first])
+  assert.equal(partial.classificationComplete, false)
+  // A new attempt failing before any worker starts must invalidate all old passes.
+  const oldPasses = [outcome(first, 1, 'passed'), outcome(second, 1, 'passed')]
+  assert.deepEqual(compareOutcomes(runPlan, oldPasses, [], 2).incomplete, [first, second])
+  const complete = compareOutcomes(
+    runPlan,
+    [...rows, { ...outcome(first, 1, 'passed'), runAttempt: '2' }],
+    [],
+    2,
+  )
+  assert.equal(complete.classificationComplete, true)
+})
+
+it('release and version-tag pushes keep full shadow coverage even with an empty diff', () => {
+  for (const ref of ['refs/heads/release', 'refs/tags/v0.1.0-beta.15', 'refs/heads/main']) {
+    execFileSync(process.execPath, ['scripts/small-gate-shadow.mts'], {
+      env: {
+        ...process.env,
+        BASE_SHA: 'HEAD',
+        EVENT: 'push',
+        GITHUB_REF: ref,
+        BASE_REF: '',
+        ACTUAL_MODE: 'full',
+        STACK_TIP: 'false',
+        CI_FULL_LABEL: 'false',
+        UPDATE_SCREENSHOTS_LABEL: 'false',
+        GITHUB_RUN_ID: '1',
+        GITHUB_RUN_ATTEMPT: '1',
+        HEAD_SHA: '',
+        GITHUB_OUTPUT: '',
+        GITHUB_STEP_SUMMARY: '',
+      },
+      stdio: 'pipe',
+    })
+    const result = parseGatePlan(read('e2e-evidence/plan.json'))
+    assert.equal(result.proposed.mode, ref === 'refs/heads/main' ? 'skip' : 'full')
+    if (ref !== 'refs/heads/main') assert.deepEqual(result.proposed.specs, listCiSpecs())
+  }
 })

@@ -63,6 +63,7 @@ export function compareOutcomes(
   plan: z.infer<typeof planSchema>,
   outcomes: z.infer<typeof outcomeSchema>[],
   classifications: z.infer<typeof classificationSchema> = [],
+  sourceAttempt: number = Number(plan.runAttempt),
 ): {
   missedReal: string[]
   unclassified: string[]
@@ -80,9 +81,11 @@ export function compareOutcomes(
     unclassified: string[] = [],
     retriedPass: string[] = [],
     incomplete: string[] = []
+  // Without trusted job-attempt metadata, an older pass cannot distinguish an
+  // untouched successful shard from a rerun that never reached this spec.
+  const latest = Math.max(sourceAttempt, ...outcomes.map((row) => Number(row.runAttempt)))
   for (const path of plan.actual.specs) {
     const observations = outcomes.filter((row) => row.spec === path)
-    const latest = Math.max(0, ...observations.map((row) => Number(row.runAttempt)))
     const rows = observations.filter((row) => Number(row.runAttempt) === latest)
     if (!rows.length || rows.some((row) => row.outcome === 'running')) incomplete.push(path)
     if (!rows.some((row) => row.outcome === 'failed')) continue

@@ -8,7 +8,11 @@ import {
   classificationSchema,
   compareOutcomes,
 } from './lib/gate-evidence.mts'
-const recordSchema = z.object({ plan: planSchema, outcomes: z.array(outcomeSchema) })
+const recordSchema = z.object({
+  plan: planSchema,
+  outcomes: z.array(outcomeSchema),
+  sourceAttempt: z.string().regex(/^\d+$/).optional(),
+})
 const path = process.argv[2]
 if (!path)
   throw new Error(
@@ -32,10 +36,15 @@ console.log(
   JSON.stringify(
     {
       runId: record.plan.runId,
-      runAttempt: record.plan.runAttempt,
+      runAttempt: record.sourceAttempt ?? record.plan.runAttempt,
       selectedSpecs: record.plan.proposed.specs,
       estimate: record.plan.estimate,
-      ...compareOutcomes(record.plan, record.outcomes, classifications),
+      ...compareOutcomes(
+        record.plan,
+        record.outcomes,
+        classifications,
+        Number(record.sourceAttempt ?? record.plan.runAttempt),
+      ),
     },
     null,
     2,
