@@ -31,7 +31,7 @@ import {
 import { takeSendNowAbort } from './send-now-aborts.ts'
 import { backgroundProjectOf, dropBackgroundThread } from './background-threads.ts'
 import { applyRuntimeOwnedChunk, isRuntimeOwnedMessage } from './runtime-transcript.ts'
-import type { TranscriptAnnotation } from '@shared/types'
+import type { Message, TranscriptAnnotation } from '@shared/types'
 import { mark as perfMark } from '../perf.ts'
 
 export function startAgentController(store: AppStore, api: ApiClient): () => void {
@@ -235,7 +235,6 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
       thread.messages.map((message) => message.id),
       () => {
         patchThreadAnywhere(store, thread.id, (current) => {
-          const known = new Set(thread.messages.map((message) => message.id))
           return {
             ...current,
             ...transcriptMeta(thread),
@@ -247,10 +246,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             checkpoint.pendingTurn === null
               ? { status: current.status }
               : {}),
-            messages: [
-              ...thread.messages,
-              ...current.messages.filter((message) => !known.has(message.id)),
-            ],
+            messages: mergeRuntimeMessages(current.messages, thread.messages),
           }
         })
         reducer.restore(thread.id, checkpoint)
@@ -491,4 +487,25 @@ function maybeSummarizeToolRun(
       applySummary(store, api, threadId, run.anchorId, { runSummary: summary.trim() })
     }
   })()
+}
+
+/** A seed read must not undo the window's queue placement or pending labels. */
+function mergeRuntimeMessages(current: Message[], incoming: Message[]): Message[] {
+  const messages = [...current]
+  let previous = -1
+  for (const message of incoming) {
+    const index = messages.findIndex((candidate) => candidate.id === message.id)
+    if (index < 0) {
+      previous += 1
+      messages.splice(previous, 0, message)
+      continue
+    }
+    const local = messages[index]
+    messages[index] = {
+      ...local,
+      ...message,
+    }
+    previous = index
+  }
+  return messages
 }

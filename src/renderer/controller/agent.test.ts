@@ -1285,3 +1285,43 @@ test('a stamped chunk draws with the message ids main wrote', () => {
   assert.equal(isRuntimeOwnedMessage('main-a1'), true)
   assert.equal(isRuntimeOwnedMessage('main-a2'), true)
 })
+
+test('a turn seed preserves drained queue placement and window summaries', () => {
+  const { send, messages, snapshot, store, unsub } = setup()
+  send({ type: 'text', text: 'first answer' })
+  send({ type: 'done' })
+  const unlabeled = at(messages(), 0)
+  const answer = { ...unlabeled, runSummary: 'Used 2 tools' }
+  const prompt: Message = { ...answer, id: 'follow-up', role: 'user', content: 'next question' }
+  store.setState({ threads: [thread('t1', [answer, prompt])] })
+  snapshot({
+    projectId: 'project-1',
+    thread: thread('t1', [prompt, unlabeled]),
+    checkpoint: { stream: null, pendingTurn: null },
+  })
+  assert.deepEqual(
+    messages().map((message) => message.id),
+    [answer.id, prompt.id],
+  )
+  assert.equal(at(messages(), 0).runSummary, 'Used 2 tools')
+  unsub()
+})
+
+test('a runtime prefix inserts missed messages before a local follow-up', () => {
+  const { send, messages, snapshot, store, unsub } = setup()
+  send({ type: 'text', text: 'prefix' })
+  send({ type: 'done' })
+  const answer = at(messages(), 0)
+  const prompt: Message = { ...answer, id: 'follow-up', role: 'user', content: 'next question' }
+  store.setState({ threads: [thread('t1', [prompt])] })
+  snapshot({
+    projectId: 'project-1',
+    thread: thread('t1', [answer]),
+    checkpoint: { stream: null, pendingTurn: null },
+  })
+  assert.deepEqual(
+    messages().map((message) => message.id),
+    [answer.id, prompt.id],
+  )
+  unsub()
+})
