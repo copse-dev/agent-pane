@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from './lib/safe-json.mts'
-import { gateManifestSchema } from './lib/gate-report.mts'
+import { gateManifestSchema, gateEvidenceLinks } from './lib/gate-report.mts'
 const directory = process.argv[2]
 const limit = Number(process.argv[3] ?? '300')
 if (!directory || !Number.isInteger(limit) || limit < 1 || limit > 1000)
@@ -20,7 +20,13 @@ const runSchema = z.object({
 })
 const runsSchema = z.object({ workflow_runs: z.array(runSchema) })
 const checksSchema = z.object({
-  check_runs: z.array(z.object({ name: z.string(), details_url: z.string().nullable() })),
+  check_runs: z.array(
+    z.object({
+      name: z.string(),
+      details_url: z.string().nullable(),
+      output: z.object({ summary: z.string().nullable() }).optional(),
+    }),
+  ),
 })
 const api = (path: string): string =>
   execFileSync('gh', ['api', path], { encoding: 'utf8', maxBuffer: 20_000_000, timeout: 60_000 })
@@ -60,8 +66,8 @@ for (let page = 1; manifest.length < limit; page++) {
           )
           if (!result) throw new Error('Invalid check runs')
           for (const check of result.check_runs)
-            if (check.name === 'Small gate (shadow)' && check.details_url)
-              urls.push(check.details_url)
+            if (check.name === 'Small gate (shadow)')
+              urls.push(...gateEvidenceLinks(check.details_url, check.output?.summary ?? null))
           if (result.check_runs.length < 100) break
         }
         checks.set(run.head_sha, urls)

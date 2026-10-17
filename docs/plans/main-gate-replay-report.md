@@ -74,7 +74,7 @@ savings or the shaping plan's exit criteria.
 
 ## Implementation validation
 
-- 20 focused report, collector, selector and publisher tests passed, including
+- 21 focused report, collector, selector and publisher tests passed, including
   pagination/check caching, digest and candidate rejection, deduplication,
   partial reruns, unknown classifications and known misses in incomplete runs.
 - All `check:local` stages passed, including both TypeScript projects, type
@@ -86,3 +86,24 @@ savings or the shaping plan's exit criteria.
 - The bootstrap manifest reproduces 300 missing records and zero qualifying
   full replays. Live `gh api` collection is blocked by this cloud environment's
   Forbidden response; the collector's API boundary was exercised with fixtures.
+
+## First live publisher
+
+Main CI [39036159766](https://github.com/copse-dev/agent-pane/actions/runs/39036159766)
+passed after #3806 landed. Publisher
+[39037398932](https://github.com/copse-dev/agent-pane/actions/runs/39037398932)
+succeeded, including conditional R2 creation, authenticated read-back and SHA-256
+verification. Its neutral check links record
+`ci-evidence/v1/39036159766/1/dd1eafb1a2c1175a7d34423eda70faffca70b20583740ba198125b1a80e238b4.json`.
+It reports 403 incomplete specs, correctly preserving the absence of E2E worker
+outcomes on this main push. This proves the publication path, not full PR replay
+coverage. Independent public download is blocked by this cloud's proxy (CONNECT HTTP 403),
+so public reachability remains unverified; the authenticated read-back passed in the publisher.
+Independent reconstruction from the digest-verified CI plan artifact reproduces
+that exact published SHA-256. Offline replay of those reconstructed bytes returns
+`classificationComplete: false` and all 403 specs incomplete, bound to the merged
+source commit and source run. This reconstruction is not a public download.
+
+The live check exposes the durable URL in its summary while GitHub returns a
+GitHub check page as `details_url`. Collection accepts candidates from either
+location, then applies the same strict origin/path/digest validation.

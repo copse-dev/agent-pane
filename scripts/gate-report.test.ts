@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { z } from 'zod'
 import { planSchema, outcomeSchema } from './lib/gate-evidence.mts'
 import { gateManifestSchema } from './lib/gate-report.mts'
-import { buildGateReport } from './lib/gate-report.mts'
+import { buildGateReport, gateEvidenceLinks } from './lib/gate-report.mts'
 const sha = 'a'.repeat(40),
   spec = 'tests/e2e/smoke.e2e.ts'
 type FixtureRecord = {
@@ -176,4 +176,17 @@ console.log(JSON.stringify(route.includes('/check-runs') ? {check_runs: []} : {w
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+it('finds the durable link when GitHub substitutes a check page for details_url', () => {
+  const durable =
+    'https://pub-7ec931b58a7b480ba1cd3e535dc12f3c.r2.dev/ci-evidence/v1/1/1/' +
+    'a'.repeat(64) +
+    '.json'
+  const check = 'https://github.com/copse-dev/agent-pane/runs/123'
+  assert.deepEqual(gateEvidenceLinks(check, 'Incomplete specs: 403. Evidence: ' + durable), [
+    check,
+    durable,
+  ])
+  assert.deepEqual(gateEvidenceLinks(null, null), [])
 })

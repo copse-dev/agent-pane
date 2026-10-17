@@ -250,3 +250,8 @@ export function buildGateReport(
     runs,
   }
 }
+
+/** GitHub can replace details_url with its own check page; retain summary evidence links. */
+export function gateEvidenceLinks(detailsUrl: string | null, summary: string | null): string[] {
+  return [...(detailsUrl ? [detailsUrl] : []), ...(summary?.match(/https:\/\/[^\s<>]+/g) ?? [])]
+}
