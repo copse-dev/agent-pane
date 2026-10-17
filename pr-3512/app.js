@@ -32742,6 +32742,46 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-07-18"
         }
       ],
+      "claude-haiku-5-5": [
+        {
+          value: 43.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
+      "claude-haiku-5-5-high": [
+        {
+          value: 37.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-high', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
+      "claude-haiku-5-5-low": [
+        {
+          value: 29.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-low', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
+      "claude-haiku-5-5-medium": [
+        {
+          value: 34.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-medium', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
+      "claude-haiku-5-5-xhigh": [
+        {
+          value: 41.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-xhigh', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
       "claude-instant": [
         {
           value: 1.7,
@@ -36486,10 +36526,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-01"
         },
         {
-          value: 14.8,
+          value: 12.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'granite-4-2-30b', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'granite-4-2-30b', fetched 2026-10-13",
+          asOf: "2026-10-13"
         }
       ],
       "granite-4-2-3b": [
@@ -38848,8 +38888,8 @@ var init_model_intellect_generated = __esm({
         {
           value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-06",
-          asOf: "2026-10-06"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-13",
+          asOf: "2026-10-13"
         }
       ],
       "mixtral-8x7b-instruct": [
@@ -39040,6 +39080,22 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-3-xhigh', fetched 2026-09-22",
           asOf: "2026-09-22"
+        }
+      ],
+      "muse-wonder": [
+        {
+          value: 52.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'muse-wonder', fetched 2026-10-13",
+          asOf: "2026-10-13"
+        }
+      ],
+      "muse-wonder-full": [
+        {
+          value: 55.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'muse-wonder-full', fetched 2026-10-13",
+          asOf: "2026-10-13"
         }
       ],
       "nanbeige4-1-3b": [
@@ -43200,6 +43256,9 @@ function findAcpCatalogEntry(id) {
   const canonical2 = canonicalAcpAgentId(id);
   return KNOWN_ACP_AGENTS.find((agent2) => agent2.id === canonical2) ?? RETIRED_ACP_AGENTS.find((agent2) => agent2.id === canonical2);
 }
+function acpReauthCommand(known) {
+  return known?.reauth ?? known?.setup ?? null;
+}
 var LEGACY_ACP_AGENT_IDS, RETIRED_ACP_AGENTS, KNOWN_ACP_AGENTS;
 var init_acp_known_agents = __esm({
   "src/shared/acp-known-agents.ts"() {
@@ -46468,6 +46527,57 @@ var init_model_maker_block = __esm({
   }
 });
 
+// packages/llm/src/model-version-suppression.ts
+function parseModelLineage(id) {
+  const claude = CLAUDE_ID.exec(id);
+  if (claude) {
+    const family = claude[1];
+    const version2 = claude[2];
+    if (family === void 0 || version2 === void 0) return null;
+    return { lineage: `claude-${family}`, version: version2.split("-").map(Number) };
+  }
+  const gpt = GPT_ID.exec(id);
+  if (gpt) {
+    const version2 = gpt[1];
+    if (version2 === void 0) return null;
+    const tier = gpt[2];
+    return {
+      lineage: tier === void 0 ? "gpt" : `gpt-${tier}`,
+      version: version2.split(".").map(Number)
+    };
+  }
+  return null;
+}
+function compareVersions(a3, b5) {
+  for (let i3 = 0; i3 < Math.max(a3.length, b5.length); i3++) {
+    const difference = (a3[i3] ?? 0) - (b5[i3] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+function supersedingModel(model, offered) {
+  const own2 = parseModelLineage(model);
+  if (own2 === null) return null;
+  let best = null;
+  for (const candidate of offered) {
+    if (candidate === model) continue;
+    const parsed2 = parseModelLineage(candidate);
+    if (parsed2 === null || parsed2.lineage !== own2.lineage) continue;
+    if (compareVersions(parsed2.version, own2.version) <= 0) continue;
+    if (best === null || compareVersions(parsed2.version, best.version) > 0) {
+      best = { id: candidate, version: parsed2.version };
+    }
+  }
+  return best?.id ?? null;
+}
+var CLAUDE_ID, GPT_ID;
+var init_model_version_suppression = __esm({
+  "packages/llm/src/model-version-suppression.ts"() {
+    CLAUDE_ID = /^claude-(opus|sonnet|haiku|fable)-(\d{1,2}(?:-\d{1,2})?)$/;
+    GPT_ID = /^gpt-(\d{1,2}(?:\.\d{1,2})?)(?:-([a-z][a-z0-9]*))?$/;
+  }
+});
+
 // src/renderer/views/model-coverage.ts
 function modelCoverage(value, context) {
   if (!value || value.startsWith("auto:")) return void 0;
@@ -46912,11 +47022,24 @@ async function fetchModelOptions(api2, current, opts = {}) {
     blockedMakers = parseBlockedModelMakers(await api2.settings.get("blockedModelMakers"));
   } catch {
   }
-  const visibleOptions = options.flatMap((option) => {
+  const unblockedOptions = options.flatMap((option) => {
     const maker = blockedModelMaker(option.value, blockedMakers);
     if (!maker) return [option];
     if (option.value !== current) return [];
     return [{ ...option, label: `${option.label} (blocked in Settings)`, disabled: true }];
+  });
+  const offered = unblockedOptions.map((option) => option.value);
+  const visibleOptions = unblockedOptions.flatMap((option) => {
+    const successor = supersedingModel(option.value, offered);
+    if (successor === null) return [option];
+    if (option.value !== current) return [];
+    return [
+      {
+        ...option,
+        label: `${option.label} (superseded by ${cloudModelDisplayLabel(successor)})`,
+        disabled: true
+      }
+    ];
   });
   const concreteCount = visibleOptions.filter(
     (o3) => !isBestValueChatModel(o3.value) && o3.value !== "" && !o3.value.startsWith(AUTO_MODEL_PREFIX)
@@ -47015,6 +47138,7 @@ var init_model_options = __esm({
     init_model_display();
     init_nullish2();
     init_model_maker_block();
+    init_model_version_suppression();
     init_model_coverage();
     ACP_GROUP = "Agents on this device";
     OPENROUTER_GROUP = "OpenRouter";
@@ -52846,6 +52970,208 @@ var init_chatgpt_plan_section = __esm({
   }
 });
 
+// src/renderer/views/setup/paste-key-form.ts
+function detectProviderFromKey(key) {
+  const trimmed2 = key.trim();
+  if (trimmed2.length < MIN_KEY_LENGTH) return null;
+  const match = KEY_PREFIXES.find((entry) => trimmed2.startsWith(entry.prefix));
+  return match ? { provider: match.provider, certain: match.certain } : null;
+}
+function createPasteKeyForm(api2, opts) {
+  const input2 = el("input", {
+    type: "password",
+    autocomplete: "off",
+    spellcheck: "false",
+    placeholder: "Paste an API key",
+    "data-testid": "paste-key-input"
+  });
+  const save = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-primary provider-save",
+      "data-testid": "paste-key-save"
+    },
+    "Save key"
+  );
+  save.disabled = true;
+  const hint = el("span", { class: "field-hint", "data-testid": "paste-key-hint" });
+  const picker = el("select", { "data-testid": "paste-key-provider" });
+  const ask = el("div", { class: "provider-actions", "data-testid": "paste-key-ask" }, picker);
+  ask.hidden = true;
+  const otherHost = el("div", { class: "provider-add-host", "data-testid": "paste-key-other" });
+  otherHost.hidden = true;
+  const defaultHint = "Paste a key and Copse suggests its provider. Save checks the key with that provider, then stores it using your secure storage settings.";
+  let guess = null;
+  let chosen = "";
+  let generation = 0;
+  let saving = false;
+  function label(id) {
+    return opts.providers().find((choice) => choice.id === id)?.label ?? id;
+  }
+  function refreshChoices() {
+    clear(picker);
+    picker.append(el("option", { value: "" }, "Choose a provider\u2026"));
+    for (const choice of opts.providers()) {
+      picker.append(el("option", { value: choice.id }, choice.label));
+    }
+    picker.append(el("option", { value: OTHER }, "Other (OpenAI-compatible)\u2026"));
+    picker.value = chosen;
+  }
+  function setHint(text2, kind = "idle") {
+    if (kind === "idle") hint.textContent = text2;
+    else setInlineStatus(hint, kind, text2);
+    hint.className = kind === "error" ? "field-hint key-status err" : "field-hint";
+  }
+  function askWhich(message2) {
+    ask.hidden = false;
+    setHint(message2);
+  }
+  function onInput() {
+    const value = input2.value.trim();
+    save.disabled = value.length < MIN_KEY_LENGTH;
+    guess = detectProviderFromKey(value);
+    chosen = "";
+    picker.value = "";
+    otherHost.hidden = true;
+    clear(otherHost);
+    if (value.length < MIN_KEY_LENGTH) {
+      ask.hidden = true;
+      setHint(defaultHint);
+    } else if (guess && !guess.certain) {
+      askWhich(
+        "This prefix is shared by several providers. Choose its provider before checking the key."
+      );
+    } else if (guess) {
+      ask.hidden = true;
+      const name = label(guess.provider);
+      setHint(`Looks like ${/^[aeiou]/i.test(name) ? "an" : "a"} ${name} key.`);
+    } else {
+      askWhich("Copse doesn\u2019t recognise this key. Which provider is it for?");
+    }
+  }
+  input2.addEventListener("input", onInput);
+  picker.addEventListener("change", () => {
+    chosen = picker.value;
+    if (chosen === OTHER) {
+      clear(otherHost);
+      otherHost.append(opts.renderOther());
+      otherHost.hidden = false;
+    } else {
+      otherHost.hidden = true;
+    }
+  });
+  async function store2(provider, key, mine) {
+    let result = await api2.settings.setKey(provider, key);
+    if (!result.ok && result.reason === "plaintext-consent-required") {
+      const approved = await showConfirmDialog({
+        message: `No OS keyring is available to encrypt your ${label(provider)} key at rest. Install and unlock a system keyring to store it encrypted.`,
+        detail: "Store it unencrypted on this machine anyway?",
+        confirmLabel: "Store anyway"
+      });
+      if (mine !== generation) return false;
+      if (approved) result = await api2.settings.setKey(provider, key, { allowPlaintext: true });
+    }
+    if (result.ok) return true;
+    setHint(
+      result.reason === "plaintext-storage-disabled" ? `Not saved: ${PLAINTEXT_STORAGE_DISABLED_REASON}` : "Not saved: unencrypted storage declined",
+      "error"
+    );
+    return false;
+  }
+  save.addEventListener("click", () => {
+    void (async () => {
+      if (saving) return;
+      const mine = generation;
+      const key = input2.value.trim();
+      if (key.length < MIN_KEY_LENGTH) return;
+      const provider = chosen === OTHER ? "" : chosen || (guess?.certain ? guess.provider : "");
+      if (!provider) {
+        askWhich(
+          chosen === OTHER ? "Fill in the details below." : "Choose which provider this key is for."
+        );
+        return;
+      }
+      saving = true;
+      save.disabled = true;
+      input2.disabled = true;
+      picker.disabled = true;
+      try {
+        setHint(`Checking with ${label(provider)}\u2026`, "pending");
+        const checked = await api2.settings.validateKey(provider, key).catch(() => null);
+        if (mine !== generation) return;
+        if (!checked?.ok) {
+          save.disabled = false;
+          if (guess && !guess.certain && !chosen) {
+            askWhich(`${label(provider)} didn\u2019t accept this key. Which provider is it for?`);
+            return;
+          }
+          setHint(checked?.error ?? `${label(provider)} didn\u2019t accept this key.`, "error");
+          return;
+        }
+        if (!await store2(provider, key, mine)) {
+          save.disabled = false;
+          return;
+        }
+        if (mine !== generation) return;
+        input2.value = "";
+        guess = null;
+        chosen = "";
+        ask.hidden = true;
+        save.disabled = true;
+        setHint(`${label(provider)} key saved.`, "ok");
+        opts.onSaved();
+      } catch {
+        if (mine === generation) setHint("Could not save the key. Please try again.", "error");
+      } finally {
+        saving = false;
+        input2.disabled = false;
+        picker.disabled = false;
+        save.disabled = input2.value.trim().length < MIN_KEY_LENGTH;
+      }
+    })();
+  });
+  refreshChoices();
+  setHint(defaultHint);
+  const root = el(
+    "div",
+    { class: "paste-key-form", "data-testid": "paste-key-form" },
+    el("div", { class: "provider-actions" }, input2, save),
+    hint,
+    ask,
+    otherHost
+  );
+  function reset2() {
+    generation += 1;
+    input2.value = "";
+    onInput();
+  }
+  return { root, refreshChoices, reset: reset2 };
+}
+var KEY_PREFIXES, MIN_KEY_LENGTH, OTHER;
+var init_paste_key_form = __esm({
+  "src/renderer/views/setup/paste-key-form.ts"() {
+    init_helpers();
+    init_inline_status();
+    init_confirm_dialog();
+    init_api_keys_section();
+    KEY_PREFIXES = [
+      { prefix: "sk-ant-", provider: "anthropic", certain: true },
+      { prefix: "sk-or-", provider: "openrouter", certain: true },
+      { prefix: "gsk_", provider: "groq", certain: true },
+      { prefix: "AIza", provider: "gemini", certain: true },
+      { prefix: "hf_", provider: "huggingface", certain: true },
+      { prefix: "fw_", provider: "fireworks", certain: true },
+      { prefix: "pplx-", provider: "perplexity", certain: true },
+      { prefix: "cur_", provider: "cursor", certain: true },
+      // OpenAI-style keys, but DeepSeek and others also start `sk-`, so the user chooses.
+      { prefix: "sk-", provider: "openai", certain: false }
+    ];
+    MIN_KEY_LENGTH = 8;
+    OTHER = "__other";
+  }
+});
+
 // src/renderer/views/setup/providers-section.ts
 function createProvidersPanel(api2, opts = {}) {
   const cloudAgents = opts.cloudAgents ?? [];
@@ -52874,6 +53200,16 @@ function createProvidersPanel(api2, opts = {}) {
     ...opts.nativeLocalProviders ? { nativeProviders: opts.nativeLocalProviders } : {}
   });
   const agentsPanel = createAcpAgentsSection(api2, { embedded: true, onChanged: rebuild });
+  const pasteKey = createPasteKeyForm(api2, {
+    providers: () => apiPanel.providerIds().map((id) => ({ id, label: apiPanel.labelFor(id) ?? id })),
+    onSaved: () => {
+      void refresh();
+    },
+    renderOther: () => {
+      apiPanel.select(ADD_KEY);
+      return apiPanel.root;
+    }
+  });
   const chipRow = el("div", { class: "provider-chips", role: "tablist" });
   const formHost = el("div", { class: "provider-form-host" });
   const cloudAgentOptions = opts.cloudAgentOptions;
@@ -52881,11 +53217,11 @@ function createProvidersPanel(api2, opts = {}) {
   const fieldset = el(
     "fieldset",
     {},
-    el("legend", {}, "Providers"),
+    el("legend", {}, "API keys"),
     el(
       "p",
       { class: "settings-fieldset-desc" },
-      "Everything Copse can send a turn to. Pick a provider to set up its API key, its cloud agent, the copy of it installed on this machine, or a model server you run yourself. Whatever you set up here shows up in the model picker."
+      "Add a key and its models show up in the model picker. Pick a provider to add its key, set up its cloud agent, or connect a model server you run yourself."
     ),
     chipRow,
     formHost,
@@ -52902,6 +53238,7 @@ function createProvidersPanel(api2, opts = {}) {
   let pendingOpenAiTierChoice = "auto";
   let openAiTierDirty = false;
   const deviceAutoSetup = opts.deviceAutoSetup ?? true;
+  const deviceAgents = opts.deviceAgents ?? true;
   const offeredOpenAiTier = new Set(SERVICE_TIER_CHOICES.map((choice) => choice.value));
   function openAiTierChoiceForStored(value) {
     if (value === "") return "auto";
@@ -52990,7 +53327,7 @@ function createProvidersPanel(api2, opts = {}) {
     return {
       api: (vendor.api ?? []).filter((id) => apiPanel.labelFor(id) !== null),
       local: (vendor.local ?? []).filter((id) => localPanel.labelFor(id) !== null),
-      agents: (vendor.agents ?? []).filter((id) => agentsPanel.labelFor(id) !== null),
+      agents: deviceAgents ? (vendor.agents ?? []).filter((id) => agentsPanel.labelFor(id) !== null) : [],
       cloud: cloudAgentByVendor.get(vendor.id)
     };
   }
@@ -53012,7 +53349,7 @@ function createProvidersPanel(api2, opts = {}) {
       if (claimed.has(id)) continue;
       list.push({ id, label: apiPanel.labelFor(id) ?? id, api: [id] });
     }
-    for (const id of agentsPanel.agentIds()) {
+    for (const id of deviceAgents ? agentsPanel.agentIds() : []) {
       if (claimed.has(id)) continue;
       list.push({ id, label: agentsPanel.labelFor(id) ?? id, agents: [id] });
     }
@@ -53084,7 +53421,7 @@ function createProvidersPanel(api2, opts = {}) {
   }
   function addForm() {
     const picker = el("select", {});
-    for (const entry of ADD_KINDS) {
+    for (const entry of ADD_KINDS.filter((e3) => deviceAgents || e3.kind !== "agent")) {
       picker.append(el("option", { value: entry.kind }, entry.label));
     }
     picker.value = selectedAddKind;
@@ -53095,8 +53432,7 @@ function createProvidersPanel(api2, opts = {}) {
     });
     const host = el("div", { class: "provider-add-host" });
     if (selectedAddKind === "api") {
-      apiPanel.select(ADD_KEY);
-      host.append(apiPanel.root);
+      host.append(pasteKey.root);
     } else if (selectedAddKind === "local") {
       localPanel.select(ADD_KEY);
       host.append(localPanel.root);
@@ -53246,6 +53582,7 @@ function createProvidersPanel(api2, opts = {}) {
     if (selected !== ADD_KEY && !vendors().some((vendor) => vendor.id === selected)) {
       selected = "";
     }
+    pasteKey.refreshChoices();
     rebuild();
   }
   async function saveKeys() {
@@ -53264,6 +53601,7 @@ function createProvidersPanel(api2, opts = {}) {
     saveKeys,
     reset: () => {
       refreshGeneration += 1;
+      pasteKey.reset();
       apiPanel.reset();
       localPanel.reset();
       openAiTierDirty = false;
@@ -53287,6 +53625,7 @@ var init_providers_section = __esm({
     init_service_tier();
     init_ui();
     init_chatgpt_plan_section();
+    init_paste_key_form();
     MERGED_VENDORS = [
       {
         id: "anthropic",
@@ -53307,169 +53646,398 @@ var init_providers_section = __esm({
   }
 });
 
-// src/renderer/views/setup/detected-item-row.ts
-function providerLabel(slug2) {
-  return PROVIDER_LABELS2[slug2] ?? slug2;
-}
-function createDetectedItemRow(opts) {
-  let checkbox = null;
-  if (opts.checkbox) {
-    checkbox = el("input", {
-      type: "checkbox",
-      class: "detected-item-check",
-      "aria-label": `Use ${opts.label}`
-    });
-    checkbox.checked = opts.checkbox.checked;
-    checkbox.disabled = opts.checkbox.disabled ?? false;
-  }
-  const root = el(
-    "div",
-    { class: "env-key-row detected-item-row" },
-    ...checkbox ? [checkbox] : [],
-    el("span", { class: "env-key-provider" }, opts.label),
-    el("span", { class: "env-key-source" }, opts.detail),
-    ...opts.masked ? [el("span", { class: "env-key-masked" }, opts.masked)] : [],
-    ...opts.status ? [el("span", { class: opts.status.ok ? "key-status ok" : "key-status" }, opts.status.text)] : []
-  );
-  root.dataset["kind"] = opts.kind;
-  root.dataset["id"] = opts.id;
-  return { root, checkbox };
-}
-var PROVIDER_LABELS2;
-var init_detected_item_row = __esm({
-  "src/renderer/views/setup/detected-item-row.ts"() {
-    init_helpers();
-    PROVIDER_LABELS2 = {
-      anthropic: "Anthropic",
-      openai: "OpenAI",
-      cursor: "Cursor",
-      openrouter: "OpenRouter",
-      mistral: "Mistral",
-      gemini: "Google Gemini",
-      deepseek: "DeepSeek",
-      huggingface: "Hugging Face",
-      lmstudio: "LM Studio"
+// src/renderer/views/setup/agent-logos.ts
+var AGENT_LOGO_SVG;
+var init_agent_logos = __esm({
+  "src/renderer/views/setup/agent-logos.ts"() {
+    AGENT_LOGO_SVG = {
+      claude: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#fff" d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg>',
+      codex: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M9.064 3.344a4.578 4.578 0 012.285-.312c1 .115 1.891.54 2.673 1.275.01.01.024.017.037.021a.09.09 0 00.043 0 4.55 4.55 0 013.046.275l.047.022.116.057a4.581 4.581 0 012.188 2.399c.209.51.313 1.041.315 1.595a4.24 4.24 0 01-.134 1.223.123.123 0 00.03.115c.594.607.988 1.33 1.183 2.17.289 1.425-.007 2.71-.887 3.854l-.136.166a4.548 4.548 0 01-2.201 1.388.123.123 0 00-.081.076c-.191.551-.383 1.023-.74 1.494-.9 1.187-2.222 1.846-3.711 1.838-1.187-.006-2.239-.44-3.157-1.302a.107.107 0 00-.105-.024c-.388.125-.78.143-1.204.138a4.441 4.441 0 01-1.945-.466 4.544 4.544 0 01-1.61-1.335c-.152-.202-.303-.392-.414-.617a5.81 5.81 0 01-.37-.961 4.582 4.582 0 01-.014-2.298.124.124 0 00.006-.056.085.085 0 00-.027-.048 4.467 4.467 0 01-1.034-1.651 3.896 3.896 0 01-.251-1.192 5.189 5.189 0 01.141-1.6c.337-1.112.982-1.985 1.933-2.618.212-.141.413-.251.601-.33.215-.089.43-.164.646-.227a.098.098 0 00.065-.066 4.51 4.51 0 01.829-1.615 4.535 4.535 0 011.837-1.388zm3.482 10.565a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="url(#cdx)"></path><defs><linearGradient gradientUnits="userSpaceOnUse" id="cdx" x1="12" x2="12" y1="3" y2="21"><stop stop-color="#B1A7FF"></stop><stop offset=".5" stop-color="#7A9DFF"></stop><stop offset="1" stop-color="#3941FF"></stop></linearGradient></defs></svg>',
+      gemini: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="gg" x1="3" y1="21" x2="21" y2="3" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#4285f4"/><stop offset=".55" stop-color="#9b72cb"/><stop offset="1" stop-color="#d96570"/></linearGradient></defs><path fill="url(#gg)" d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></svg>',
+      cursor: '<svg width="22" height="22" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 466.73 533.32"> <path fill="#72716d" d="M233.37,266.66l231.16,133.46c-1.42,2.46-3.48,4.56-6.03,6.03l-216.06,124.74c-5.61,3.24-12.53,3.24-18.14,0L8.24,406.15c-2.55-1.47-4.61-3.57-6.03-6.03l231.16-133.46h0Z"/> <path fill="#55544f" d="M233.37,0v266.66L2.21,400.12c-1.42-2.46-2.21-5.3-2.21-8.24v-250.44c0-5.89,3.14-11.32,8.24-14.27L224.29,2.43c2.81-1.62,5.94-2.43,9.07-2.43h.01Z"/> <path fill="#43413c" d="M464.52,133.2c-1.42-2.46-3.48-4.56-6.03-6.03L242.43,2.43c-2.8-1.62-5.93-2.43-9.06-2.43v266.66l231.16,133.46c1.42-2.46,2.21-5.3,2.21-8.24v-250.44c0-2.95-.78-5.77-2.21-8.24h-.01Z"/> <path fill="#d6d5d2" d="M448.35,142.54c1.31,2.26,1.49,5.16,0,7.74l-209.83,363.42c-1.41,2.46-5.16,1.45-5.16-1.38v-239.48c0-1.91-.51-3.75-1.44-5.36l216.42-124.95h.01Z"/> <path fill="#fff" d="M448.35,142.54l-216.42,124.95c-.92-1.6-2.26-2.96-3.92-3.92L20.62,143.83c-2.46-1.41-1.45-5.16,1.38-5.16h419.65c2.98,0,5.4,1.61,6.7,3.87Z"/> </svg>'
     };
   }
 });
 
-// src/renderer/views/setup/env-key-detect-section.ts
-function createEnvKeyDetectSection(api2, opts = {}) {
-  const legend = opts.legend ?? "Detect existing API keys";
-  const scanBtn = el(
+// src/renderer/views/setup/acp-agents-list.ts
+function agentChip(auth) {
+  if (auth === "signed-in") return "ready";
+  if (auth === "signed-out") return "needs-sign-in";
+  return null;
+}
+function listedAgents(known, detected, configured, auth) {
+  const configuredIds = new Set(configured.map((a3) => a3.id));
+  const rows = [];
+  for (const k3 of known) {
+    if (!configuredIds.has(k3.id) && !detected.get(k3.id)?.installed) continue;
+    const chip2 = agentChip(auth.get(k3.id));
+    rows.push({
+      id: k3.id,
+      title: k3.title,
+      chip: chip2,
+      signInCommand: chip2 === "needs-sign-in" ? acpReauthCommand(k3) : null
+    });
+  }
+  const knownIds = new Set(known.map((k3) => k3.id));
+  for (const a3 of configured) {
+    if (knownIds.has(a3.id)) continue;
+    rows.push({ id: a3.id, title: a3.title, chip: null, signInCommand: null });
+  }
+  return rows;
+}
+function addableAgents(known, detected, configured) {
+  const configuredIds = new Set(configured.map((a3) => a3.id));
+  return known.filter((k3) => !configuredIds.has(k3.id) && !detected.get(k3.id)?.installed);
+}
+function logoTile(id, title) {
+  const key = LOGO_KEY[id];
+  const svg2 = key ? AGENT_LOGO_SVG[key] : void 0;
+  const tile = el("span", { class: "acp-logo", "aria-hidden": "true" });
+  if (key) tile.dataset["brand"] = key;
+  if (!svg2) {
+    tile.textContent = title.slice(0, 1).toUpperCase();
+    return tile;
+  }
+  const doc3 = new DOMParser().parseFromString(svg2, "image/svg+xml");
+  tile.append(document.importNode(doc3.documentElement, true));
+  return tile;
+}
+function createAcpAgentsList(api2, opts = {}) {
+  let configured = [];
+  let detected = /* @__PURE__ */ new Map();
+  let auth = /* @__PURE__ */ new Map();
+  let openId = "";
+  let menuOpen = false;
+  let setupId = "";
+  let loaded = false;
+  let activeSignal;
+  let generation = 0;
+  let autoSetupRun = false;
+  const panel = createAcpAgentsSection(api2, {
+    embedded: true,
+    onChanged: () => {
+      void api2.settings.get("registeredAcpAgents").then((value) => {
+        const previousIds = new Set(configured.map((agent2) => agent2.id));
+        configured = parseAcpAgentConfigs(value);
+        const added = configured.find((agent2) => !previousIds.has(agent2.id));
+        if (added && menuOpen) {
+          openId = added.id;
+          menuOpen = false;
+          setupId = "";
+        }
+        if (loaded && !activeSignal?.aborted) render2();
+      }).catch(() => {
+      });
+    }
+  });
+  const list = el("div", { class: "acp-list", "data-testid": "acp-agents-list" });
+  const addToggle = el(
     "button",
-    { type: "button", class: "ui-btn ui-btn-secondary" },
-    "Scan environment"
+    { type: "button", class: "ui-btn ui-btn-secondary", "data-testid": "acp-add-toggle" },
+    "+ Add an agent"
   );
-  const importBtn = el(
-    "button",
-    {
-      type: "button",
-      class: "onboarding-primary",
-      hidden: true
-    },
-    "Import keys"
-  );
-  const status = el("span", { class: "key-status" });
-  const results = el("div", { class: "env-key-results" });
-  const actions = el("div", { class: "env-key-actions" }, scanBtn, importBtn, status);
-  const fieldset = el(
+  const menu = el("div", { class: "acp-add-menu", "data-testid": "acp-add-menu" });
+  addToggle.addEventListener("click", () => {
+    menuOpen = !menuOpen;
+    setupId = "";
+    if (menuOpen) openId = "";
+    render2();
+  });
+  const rescan = el("button", { type: "button", class: "acp-link" }, "Re-scan");
+  const scanStatus = el("span", {
+    class: "field-hint acp-scan-status",
+    "data-testid": "acp-scan-status"
+  });
+  rescan.addEventListener("click", () => void rescanAll());
+  async function rescanAll() {
+    rescan.disabled = true;
+    scanStatus.textContent = "Scanning\u2026";
+    try {
+      const pending = refresh(activeSignal);
+      const mine = generation;
+      await pending;
+      if (mine !== generation || activeSignal?.aborted || !loaded) return;
+      await api2.settings.set("envKeyAutoDetectEnabled", true);
+      if (mine !== generation || activeSignal?.aborted) return;
+      const found2 = await api2.settings.scanEnvKeys();
+      if (mine !== generation || activeSignal?.aborted) return;
+      const fresh = found2.filter((key) => !key.alreadyConfigured);
+      if (fresh.length === 0) {
+        scanStatus.textContent = "Up to date. Nothing new found.";
+        return;
+      }
+      const { imported, skipped } = await api2.settings.importEnvKeys(
+        fresh.map((key) => key.provider)
+      );
+      scanStatus.textContent = imported.length === 0 ? "Nothing new to import." : `Added ${String(imported.length)} key${imported.length === 1 ? "" : "s"} found on this machine. Remove any you don\u2019t want.`;
+      if (skipped.length > 0)
+        scanStatus.textContent += ` ${String(skipped.length)} keys could not be imported. Review secure storage settings.`;
+      if (imported.length > 0) opts.onKeysImported?.();
+    } catch (err2) {
+      scanStatus.textContent = ipcErrorMessage(err2, "Scan failed. Please try again.");
+    } finally {
+      rescan.disabled = false;
+    }
+  }
+  const root = el(
     "fieldset",
-    {},
-    el("legend", {}, legend),
+    { "data-testid": "acp-agents-fieldset" },
+    el("legend", {}, "Coding agents"),
     el(
       "p",
       { class: "settings-fieldset-desc" },
-      "Scans your exported environment and shell start-up files (e.g. ",
-      el("code", {}, "~/.zshrc"),
-      ", ",
-      el("code", {}, "~/.bashrc"),
-      ") for keys like ",
-      el("code", {}, "ANTHROPIC_API_KEY"),
-      " or ",
-      el("code", {}, "OPENAI_API_KEY"),
-      ". Nothing is read until you click Scan, and existing keys are never overwritten."
+      "Agents on this machine show up here on their own. Re-scan also reads API keys from your environment and shell startup files and imports new keys. Existing keys are never overwritten."
     ),
-    actions,
-    results
+    el("div", { class: "acp-list-bar" }, scanStatus, rescan),
+    list,
+    el("div", { class: "acp-add" }, addToggle, menu)
   );
-  function setStatus(text2, kind = "") {
-    status.textContent = text2;
-    status.className = kind ? `key-status ${kind}` : "key-status";
+  function chipEl(chip2) {
+    if (!chip2) return [];
+    return [
+      el(
+        "span",
+        { class: `acp-row-chip ${chip2 === "ready" ? "ok" : "warn"}` },
+        chip2 === "ready" ? "Ready" : "Needs sign-in"
+      )
+    ];
   }
-  function reset2() {
-    importBtn.hidden = true;
-    clear(results);
-    setStatus("");
+  function row2(model) {
+    const open2 = openId === model.id;
+    const options = el(
+      "button",
+      { type: "button", class: "acp-link", "aria-expanded": String(open2) },
+      open2 ? "Hide options" : "Options"
+    );
+    options.addEventListener("click", () => {
+      openId = open2 ? "" : model.id;
+      menuOpen = false;
+      render2();
+      if (openId && !autoSetupRun && KNOWN_ACP_AGENTS.some((agent2) => agent2.id === openId)) {
+        autoSetupRun = true;
+        void panel.refresh().then(() => refresh());
+      }
+    });
+    const action = model.signInCommand ? copyButton("Copy sign-in command", model.signInCommand, "ui-btn ui-btn-primary") : options;
+    const head = el(
+      "div",
+      { class: "acp-row-head" },
+      logoTile(model.id, model.title),
+      el(
+        "div",
+        { class: "acp-row-text" },
+        el("div", { class: "acp-row-name" }, el("strong", {}, model.title), ...chipEl(model.chip)),
+        el("div", { class: "acp-row-desc" }, describe4(model))
+      ),
+      action
+    );
+    const r2 = el("div", { class: "acp-row", "data-agent": model.id }, head);
+    if (model.signInCommand) r2.append(el("div", { class: "acp-row-extra" }, options));
+    if (open2) {
+      panel.select(model.id);
+      r2.append(el("div", { class: "acp-row-options" }, panel.root));
+    }
+    return r2;
   }
-  function renderDetections(detected) {
-    clear(results);
-    const importable = detected.filter((d3) => !d3.alreadyConfigured);
-    if (detected.length === 0) {
-      setStatus("No provider keys found in your environment.", "");
-      importBtn.hidden = true;
-      return;
-    }
-    for (const d3 of detected) {
-      const row2 = createDetectedItemRow({
-        kind: "env-key",
-        id: d3.provider,
-        label: providerLabel(d3.provider),
-        detail: `${d3.envVar} \xB7 ${d3.source}`,
-        masked: d3.masked,
-        status: d3.alreadyConfigured ? { text: "already set" } : { text: "will import", ok: true }
-      });
-      results.append(row2.root);
-    }
-    importBtn.hidden = importable.length === 0;
-    importBtn.textContent = importable.length === 1 ? "Import 1 key" : `Import ${String(importable.length)} keys`;
-    setStatus(
-      importable.length > 0 ? `Found ${String(importable.length)} new key${importable.length === 1 ? "" : "s"}.` : "All detected keys are already configured."
+  function describe4(model) {
+    const known = KNOWN_ACP_AGENTS.find((k3) => k3.id === model.id);
+    const path = detected.get(model.id)?.path;
+    if (path) return path;
+    return known ? `${known.title} on this machine.` : "Custom agent.";
+  }
+  function copyButton(label, command2, cls) {
+    const b5 = el("button", { type: "button", class: cls, title: command2 }, label);
+    b5.addEventListener("click", () => {
+      void navigator.clipboard.writeText(command2);
+      b5.textContent = "Copied";
+      watchForChanges();
+    });
+    return b5;
+  }
+  function addRow2(known) {
+    const install = known.install;
+    const action = install ? copyButton("Copy install command", install, "ui-btn ui-btn-secondary") : el("span", { class: "acp-row-desc" }, "Not available");
+    const setup = el("button", { type: "button", class: "acp-link" }, "Set up");
+    setup.addEventListener("click", () => {
+      setupId = known.id;
+      render2();
+    });
+    return el(
+      "div",
+      { class: "acp-row acp-add-row", "data-agent": known.id },
+      el(
+        "div",
+        { class: "acp-row-head" },
+        logoTile(known.id, known.title),
+        el(
+          "div",
+          { class: "acp-row-text" },
+          el("div", { class: "acp-row-name" }, el("strong", {}, known.title)),
+          el(
+            "div",
+            { class: "acp-row-desc" },
+            "Run the install command in a terminal, then Re-scan."
+          )
+        ),
+        action,
+        setup
+      )
     );
   }
-  scanBtn.addEventListener("click", () => {
-    void (async () => {
-      scanBtn.disabled = true;
-      setStatus("Scanning\u2026");
-      try {
-        await api2.settings.set("envKeyAutoDetectEnabled", true);
-        renderDetections(await api2.settings.scanEnvKeys());
-      } catch (err2) {
-        setStatus(err2 instanceof Error ? err2.message : "Scan failed", "err");
-      } finally {
-        scanBtn.disabled = false;
-      }
-    })();
-  });
-  importBtn.addEventListener("click", () => {
-    void (async () => {
-      importBtn.disabled = true;
-      setStatus("Importing\u2026");
-      try {
-        const { imported } = await api2.settings.importEnvKeys();
-        setStatus(
-          imported.length === 0 ? "Nothing new to import." : `Imported ${String(imported.length)} key${imported.length === 1 ? "" : "s"}.`,
-          "ok"
-        );
-        renderDetections(await api2.settings.scanEnvKeys());
-        opts.onImported?.();
-      } catch (err2) {
-        setStatus(err2 instanceof Error ? err2.message : "Import failed", "err");
-      } finally {
-        importBtn.disabled = false;
-      }
-    })();
-  });
-  function refresh(signal) {
-    if (!signal?.aborted) reset2();
-    return Promise.resolve();
+  function render2() {
+    clear(list);
+    const rows = listedAgents(KNOWN_ACP_AGENTS, detected, configured, auth);
+    for (const model of rows) list.append(row2(model));
+    if (!rows.length) {
+      list.append(
+        el(
+          "div",
+          { class: "acp-empty" },
+          loaded ? "No agents on this machine yet. Add one below." : "Looking for agents\u2026"
+        )
+      );
+    }
+    clear(menu);
+    menu.hidden = !menuOpen;
+    addToggle.setAttribute("aria-expanded", String(menuOpen));
+    if (!menuOpen) return;
+    if (setupId) {
+      panel.select(setupId);
+      menu.append(panel.root);
+      return;
+    }
+    for (const known of addableAgents(KNOWN_ACP_AGENTS, detected, configured)) {
+      menu.append(addRow2(known));
+    }
+    const custom2 = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Set up");
+    custom2.addEventListener("click", () => {
+      setupId = "other";
+      render2();
+    });
+    menu.append(
+      el(
+        "div",
+        { class: "acp-row acp-add-row", "data-agent": "other" },
+        el(
+          "div",
+          { class: "acp-row-head" },
+          logoTile("other", "+"),
+          el(
+            "div",
+            { class: "acp-row-text" },
+            el("div", { class: "acp-row-name" }, el("strong", {}, "Something else")),
+            el("div", { class: "acp-row-desc" }, "Any agent program on this machine.")
+          ),
+          custom2
+        )
+      )
+    );
   }
-  return { root: fieldset, refresh };
+  async function scanDevice() {
+    try {
+      const found2 = await api2.acp.detectAgents();
+      detected = new Map(found2.map((d3) => [d3.id, d3]));
+    } catch {
+      detected = /* @__PURE__ */ new Map();
+    }
+    const ids = KNOWN_ACP_AGENTS.filter((k3) => detected.get(k3.id)?.installed).map((k3) => k3.id);
+    try {
+      const statuses2 = ids.length ? await api2.acp.authStatus(ids) : [];
+      auth = new Map(statuses2.map((s16) => [s16.id, s16.state]));
+    } catch {
+      auth = /* @__PURE__ */ new Map();
+    }
+  }
+  function signature() {
+    return JSON.stringify([
+      [...detected.values()].map((d3) => [d3.id, d3.installed]),
+      [...auth.entries()]
+    ]);
+  }
+  async function refresh(signal) {
+    activeSignal = signal;
+    const mine = ++generation;
+    if (signal?.aborted) return;
+    try {
+      configured = parseAcpAgentConfigs(await api2.settings.get("registeredAcpAgents"));
+    } catch {
+      configured = [];
+    }
+    await scanDevice();
+    if (signal?.aborted || mine !== generation) return;
+    loaded = true;
+    await panel.reload(signal);
+    if (!signal?.aborted && mine === generation) render2();
+  }
+  let quietScanRunning = false;
+  async function quietRescan() {
+    if (activeSignal?.aborted || !loaded || quietScanRunning) return;
+    quietScanRunning = true;
+    try {
+      const mine = generation;
+      const before = signature();
+      await scanDevice();
+      if (!activeSignal?.aborted && mine === generation && signature() !== before && !openId && !menuOpen)
+        render2();
+    } finally {
+      quietScanRunning = false;
+    }
+  }
+  let watchTimer;
+  function watchForChanges() {
+    if (watchTimer) clearInterval(watchTimer);
+    let ticks2 = 0;
+    watchTimer = setInterval(() => {
+      ticks2 += 1;
+      if (!root.isConnected || ticks2 > WATCH_MAX_TICKS) {
+        clearInterval(watchTimer);
+        watchTimer = void 0;
+        return;
+      }
+      void quietRescan();
+    }, WATCH_INTERVAL_MS);
+  }
+  const onFocus = () => {
+    if (!root.isConnected) {
+      window.removeEventListener("focus", onFocus);
+      return;
+    }
+    if (loaded) void quietRescan();
+  };
+  window.addEventListener("focus", onFocus);
+  function reset2() {
+    generation += 1;
+    loaded = false;
+    openId = "";
+    menuOpen = false;
+    setupId = "";
+    autoSetupRun = false;
+    if (watchTimer) clearInterval(watchTimer);
+    watchTimer = void 0;
+    panel.select("");
+    scanStatus.textContent = "";
+    render2();
+  }
+  return { root, refresh, reset: reset2 };
 }
-var init_env_key_detect_section = __esm({
-  "src/renderer/views/setup/env-key-detect-section.ts"() {
+var LOGO_KEY, WATCH_INTERVAL_MS, WATCH_MAX_TICKS;
+var init_acp_agents_list = __esm({
+  "src/renderer/views/setup/acp-agents-list.ts"() {
+    init_acp();
+    init_acp_known_agents();
     init_helpers();
-    init_detected_item_row();
+    init_acp_agents_section();
+    init_agent_logos();
+    init_ipc_error_message();
+    LOGO_KEY = {
+      "claude-acp": "claude",
+      "claude-code-acp": "claude",
+      "codex-acp": "codex",
+      gemini: "gemini",
+      cursor: "cursor"
+    };
+    WATCH_INTERVAL_MS = 3e3;
+    WATCH_MAX_TICKS = 40;
   }
 });
 
@@ -54005,14 +54573,13 @@ var init_gh_cli_section = __esm({
 // src/renderer/views/settings/providers-section.ts
 function createProvidersSection(overlay, api2) {
   let activeSignal;
-  const envKeyDetectSection = createEnvKeyDetectSection(api2, {
-    legend: "Detected settings",
-    onImported: () => {
+  const agentsList = createAcpAgentsList(api2, {
+    onKeysImported: () => {
       void cursorKeySection.refreshKeyStatus(activeSignal);
       void providersPanel.refresh(void 0, activeSignal);
     }
   });
-  qsRequired(overlay, "#settings-env-detect-host").append(envKeyDetectSection.root);
+  qsRequired(overlay, "#settings-agents-host").append(agentsList.root);
   const cursorKeySection = createApiKeysSection(api2, {
     legend: "Cursor authentication",
     providers: ["cursor"]
@@ -54044,6 +54611,7 @@ function createProvidersSection(overlay, api2) {
       }
     ],
     showOpenAiServiceTier: true,
+    deviceAgents: false,
     deferOrdinaryWrites: true,
     cloudAgents: [
       {
@@ -54071,7 +54639,7 @@ function createProvidersSection(overlay, api2) {
         ...[cursorKeySection, claudeAgentKeySection].map(
           (section2) => section2.refreshKeyStatus(signal)
         ),
-        envKeyDetectSection.refresh(signal),
+        agentsList.refresh(signal),
         providersPanel.refresh(snapshot, signal)
       ]);
     },
@@ -54104,6 +54672,7 @@ function createProvidersSection(overlay, api2) {
       dirty.clear();
       for (const section2 of keySections) section2.reset();
       providersPanel.reset();
+      agentsList.reset();
       for (const input2 of lmStudioSection.root.querySelectorAll(
         'input[type="password"]'
       ))
@@ -54117,7 +54686,7 @@ var init_providers_section2 = __esm({
     init_helpers();
     init_api_keys_section();
     init_providers_section();
-    init_env_key_detect_section();
+    init_acp_agents_list();
     init_lm_studio_section();
     init_gh_cli_section();
   }
@@ -59205,7 +59774,7 @@ var init_tool_display = __esm({
       browser_snapshot: { running: "Taking page snapshot", done: "Took page snapshot" },
       browser_screenshot: { running: "Taking screenshot", done: "Took screenshot" },
       image_gen: { running: "Generating image", done: "Generated image" },
-      classify_text: { running: "Classifying text", done: "Classified text" },
+      ask_classifier: { running: "Asking classifier", done: "Asked classifier" },
       browser_click: { running: "Clicking element", done: "Clicked element" },
       browser_type: { running: "Typing text", done: "Typed text" },
       browser_tabs: { running: "Listing browser tabs", done: "Listed browser tabs" },
@@ -59753,7 +60322,7 @@ function isHeldMessage(item) {
   return item.autoDispatch === false;
 }
 function isMachineContinuation(item) {
-  return item.origin?.kind === "hook";
+  return item.origin !== void 0;
 }
 function continuationBudgetHeldNote() {
   return `Auto-continuation budget reached \u2014 ${String(DEFAULT_CONTINUATION_BUDGET)} machine-initiated follow-ups have run in this turn. The next hook follow-up is held; release it to continue (that starts a fresh turn with a reset budget).`;
@@ -59795,12 +60364,13 @@ function setMessageHookOrigin(store2, messageId, origin) {
   }));
   store2.setState({ threads });
 }
-function refreshAgentRunPayload(store2, threadId, { reviewContext: _stale, ...payload }, queuedModel) {
+function refreshAgentRunPayload(store2, threadId, { reviewContext: _stale, executionMode: _previousMode, ...payload }, queuedModel) {
   const thread = getThreadById(store2, threadId);
   const reviewContext = thread ? reviewReportModelContext(reviewReportsAwaitingModel(thread)) : void 0;
   const selectedModel = queuedModel ?? thread?.model;
   return {
     ...payload,
+    ...thread?.executionMode === "agent" ? { executionMode: "agent" } : {},
     ...reviewContext !== void 0 ? { reviewContext } : {},
     priorTodos: thread?.todos ?? payload.priorTodos ?? [],
     ...thread?.workingBrief !== void 0 ? { workingBrief: thread.workingBrief } : {},
@@ -59904,7 +60474,7 @@ function updateQueuedMessageModel(store2, threadId, messageId, model) {
 }
 function drainMessageQueue(store2, api2, threadId) {
   if (hasPendingDispatch(store2, threadId)) return;
-  const thread = store2.getState().threads.find((t2) => t2.id === threadId);
+  const thread = getThreadById(store2, threadId);
   if (!thread || thread.status !== "idle" || thread.queuePaused) return;
   const pending = thread.pendingMessages ?? [];
   if (pending.length === 0) return;
@@ -59928,8 +60498,7 @@ function drainMessageQueue(store2, api2, threadId) {
   if (!next && heldByBudget.length === 0) return;
   const rest = pending.filter((item) => item !== next);
   const budgetHeld = new Set(heldByBudget);
-  const threads = store2.getState().threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
+  patchThreadAnywhere(store2, threadId, (t2) => {
     const { pendingMessages: _removed, ...restThread } = t2;
     const messages = movePendingUserMessagesToEnd(t2.messages, pending);
     const nextPending = rest.map(
@@ -59938,7 +60507,6 @@ function drainMessageQueue(store2, api2, threadId) {
     const base2 = nextPending.length > 0 ? { ...restThread, messages, pendingMessages: nextPending, updatedAt: Date.now() } : { ...restThread, messages, updatedAt: Date.now() };
     return next && isMachineContinuation(next) ? { ...base2, continuationUsed: used } : base2;
   });
-  store2.setState({ threads });
   if (heldByBudget.length > 0) addMessage(store2, threadId, "error", continuationBudgetHeldNote());
   store2.emit("threads_changed");
   if (next) dispatchAgentRun(store2, api2, threadId, next.payload, next);
@@ -60076,7 +60644,7 @@ function sendQueuedMessageNow(store2, api2, threadId, messageId) {
   store2.emit("threads_changed");
   if (thread.status === "running") {
     markSendNowAbort(threadId);
-    void api2.agent.abort(threadId);
+    void api2.agent.abort(threadId, "send_now");
   } else {
     drainMessageQueue(store2, api2, threadId);
   }
@@ -73228,7 +73796,7 @@ function createAppleDevelopmentPanel(store2, api2, options) {
       if (current === generation) render2(owner, state);
     } catch (error62) {
       if (current !== generation) return;
-      if (!options.allowEnrollment && isUnavailableThreadCheckoutError(error62)) {
+      if (!options.allowEnrollment && (isUnavailableThreadCheckoutError(error62) || ipcErrorMessage(error62, "").startsWith("MissingThreadWorktreeError:"))) {
         stopPolling();
         host.replaceChildren();
         host.hidden = true;
@@ -74506,7 +75074,7 @@ var init_general_markup = __esm({
           <section class="settings-section active" data-section="general">
             <h3>General</h3>
             <p class="settings-section-desc">
-              What Copse detected on this machine, the providers it can send work to, and the
+              The coding agents on this machine, the API keys Copse can use, and the
               models it picks by default.
             </p>
 
@@ -74514,7 +75082,7 @@ var init_general_markup = __esm({
                  top-level panel MUST carry class="settings-mount" so its injected
                  fieldset gets the same inter-panel spacing as inline ones: see the
                  .settings-section > .settings-mount > fieldset rule in settings.css. -->
-            <div id="settings-env-detect-host" class="settings-mount"></div>
+            <div id="settings-agents-host" class="settings-mount"></div>
 
             <div id="settings-providers-host" class="settings-mount"></div>
 
@@ -74533,7 +75101,7 @@ var init_general_markup = __esm({
                   the model that gives the most for what it costs on your plan, and sends the turn
                   to that provider. You can pin a specific model here instead, or from the picker
                   beside the chat box. Picking a cloud agent sends each turn to that provider's
-                  machines rather than running it here; set one up under Providers.
+                  machines rather than running it here; set one up under API keys.
                 </span>
               </label>
               <label>
@@ -76840,6 +77408,7 @@ function parseAgentRunPayload(rawPrompt) {
       })) : [];
       return {
         userContent: content2.data,
+        ...parsed2["executionMode"] === "agent" ? { executionMode: "agent" } : {},
         invokedSkills: invokedSkills.success ? invokedSkills.data : [],
         priorTodos: normalizedTodos,
         ...typeof parsed2["invokedAgent"] === "string" && parsed2["invokedAgent"] ? { invokedAgent: parsed2["invokedAgent"] } : {},
@@ -80307,6 +80876,17 @@ var init_demo_concise_states = __esm({
           settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off", model: CAPABLE }
         }
       ),
+      scenario("recovery-layout", "Interrupted turn with a long fallback model name", [
+        user("recovery-earlier-user", "Check the settings form."),
+        assistant("recovery-earlier", "The form needs a layout fix.", [], {
+          model: "claude-haiku-4-5-20251001",
+          turnOutcome: outcome("completed", { model: "claude-haiku-4-5-20251001" })
+        }),
+        user("recovery-user", "Fix the settings form."),
+        assistant("recovery-failed", "I found the footer, then the provider stopped responding.", [], {
+          turnOutcome: outcome("failed", { error: { message: "Provider disconnected." } })
+        })
+      ]),
       scenario("failed", "A turn that failed partway", [
         user("failed-user", "Fix the settings form so Save stays aligned on narrow windows."),
         assistant(
@@ -80554,6 +81134,76 @@ var init_demo_bridged_tools = __esm({
     ].join("\n");
     BRIDGED_TOOL_SCENARIOS = [
       {
+        id: "bridged-thread-proposals",
+        label: "Two proposed follow-up threads",
+        project: { id: "demo-proposals-project", name: "Follow-up work", path: "/demo/proposals" },
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off", model: MODEL },
+        threads: [
+          {
+            id: "demo-proposals-thread",
+            title: "Settings follow-up",
+            status: "idle",
+            model: MODEL,
+            messages: [
+              {
+                id: "proposals-user",
+                role: "user",
+                content: "Propose separate threads for these two settings fixes.",
+                toolCalls: [],
+                createdAt: CREATED_AT
+              },
+              {
+                id: "proposals-assistant",
+                role: "assistant",
+                content: "Here are the two proposed threads.",
+                createdAt: CREATED_AT,
+                toolCalls: [
+                  {
+                    id: "proposal-read-1",
+                    name: "read_file",
+                    args: { path: "settings.ts" },
+                    status: "done",
+                    result: "Read settings."
+                  },
+                  {
+                    id: "proposal-read-2",
+                    name: "read_file",
+                    args: { path: "agents.ts" },
+                    status: "done",
+                    result: "Read agents."
+                  },
+                  ...[
+                    {
+                      title: "Fix Codex readiness detection",
+                      summary: "Show the correct sign-in status and verify refresh behavior."
+                    },
+                    {
+                      title: "Finish the combined Models & agents list",
+                      summary: "Bring coding agents, API keys and model servers into one settings list."
+                    }
+                  ].map((proposal, index) => ({
+                    id: `wrapped-proposal-${String(index)}`,
+                    name: "mcp.copse.propose_thread",
+                    title: "mcp.copse.propose_thread",
+                    kind: "execute",
+                    args: {
+                      server: "copse",
+                      tool: "propose_thread",
+                      arguments: { ...proposal, prompt: `${proposal.title}. Add focused tests.` }
+                    },
+                    status: "done",
+                    result: "Offered to the user."
+                  }))
+                ]
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: CREATED_AT,
+            updatedAt: CREATED_AT
+          }
+        ]
+      },
+      {
         id: "bridged-tools",
         label: "Patch file links and command output",
         project: { id: "demo-bridge-project", name: "Bridge tools", path: "/demo/bridge" },
@@ -80675,6 +81325,16 @@ var init_demo_bridged_tools = __esm({
 });
 
 // src/shared/approval-copy.ts
+function threadAccessApproval(access) {
+  return {
+    title: access === "read" ? "Read your other threads?" : "Send prompts to your other threads?",
+    body: "",
+    bodyAdvice: access === "read" ? "Allow this thread to read all your other conversations." : "Allow this thread to send prompts that run in your other conversations.",
+    bodyFooter: "Applies only to this thread. Revoke it in the thread menu \u2192 Conversation access.",
+    approveLabel: access === "read" ? "Allow reading" : "Allow sending",
+    allowRemember: false
+  };
+}
 function webApprovalDetails(origin, url2, allowRemember, context) {
   return {
     body: url2,
@@ -83509,6 +84169,7 @@ var init_demo_scenarios = __esm({
       },
       {
         id: "thread-context",
+        changeStats: { additions: 42, deletions: 7 },
         label: "The thread Context panel",
         project: project("demo-thread-context", "Widgets", "/demo/widgets"),
         settings: {
@@ -83525,6 +84186,31 @@ var init_demo_scenarios = __esm({
           }
         },
         threads: SIDE_CHATS_THREADS
+      },
+      {
+        id: "thread-context-worktree",
+        label: "Context identifies a dedicated worktree and its branch",
+        project: project("demo-context-worktree", "Widgets", "/demo/widgets"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          filesPaneOpen: true,
+          rightPanelMode: "context"
+        },
+        threads: SIDE_CHATS_THREADS.map(
+          (thread) => thread.id === SIDE_CHATS_MAIN_ID ? {
+            ...thread,
+            worktree: {
+              path: "/demo/widgets/.copse/worktrees/mermaid-wait",
+              branch: "fix/mermaid-wait",
+              baseBranch: "main",
+              baseCommit: "0000000000000000000000000000000000000000",
+              createdAt: FIXED_TIME,
+              seededFromDirtyProject: false
+            }
+          } : thread
+        )
       },
       {
         id: "side-chat-approval",
@@ -83782,6 +84468,13 @@ var init_demo_scenarios = __esm({
       ...SITE_TOUR_SCENARIOS,
       // Concise thread view in each state a thread can be in (see demo-concise-states.ts).
       ...CONCISE_STATE_SCENARIOS,
+      ...["read", "send"].map(
+        (access) => approvalRiskScenario(`approval-thread-${access}`, {
+          id: `thread-${access}`,
+          type: "mcp",
+          ...threadAccessApproval(access)
+        })
+      ),
       approvalRiskScenario("approval-web-url", {
         id: "web-url",
         title: "Allow web origin?",
@@ -83968,6 +84661,14 @@ function createDemoApi(scenario2, options = {}) {
     typeof scenarioModel === "string" ? scenarioModel : void 0
   );
   const api2 = {
+    threadPrompts: {
+      onPrompt: () => () => {
+      },
+      reply: async () => {
+      },
+      revokeAccess: async () => {
+      }
+    },
     mobile: {
       getState: () => resolved2({
         enabled: scenario2.mobileCompanion !== void 0,
@@ -84511,6 +85212,7 @@ function createDemoApi(scenario2, options = {}) {
       browseRegistry: () => resolved2({ entries: [], fetchedAt: Date.now(), skipped: 0 }),
       detectAgents: emptyArray,
       probeAgent: unsupported,
+      authStatus: emptyArray,
       autoSetup: () => resolved2({
         installed: [],
         upgraded: [],
@@ -86927,7 +87629,7 @@ function mountPanelModeControls(store2, api2, opts = {}) {
         // Portrait bar omits `.titlebar-btn` so existing e2e / click helpers that
         // target `.titlebar-btn[aria-label=…]` stay uniquely on the titlebar.
         class: [
-          opts.enableOverflow ? "portrait-panel-btn" : "titlebar-btn",
+          opts.enableOverflow && opts.overflowPlacement !== "below" ? "portrait-panel-btn" : "titlebar-btn",
           "titlebar-text-btn",
           keepLabel ? "" : "titlebar-compact-icon"
         ].filter(Boolean).join(" "),
@@ -87003,7 +87705,7 @@ function mountPanelModeControls(store2, api2, opts = {}) {
         "data-tooltip": "More panel modes",
         // The overflow trigger lives in the bottom portrait bar, so its tooltip
         // needs the space above it.
-        "data-tooltip-placement": "top"
+        "data-tooltip-placement": opts.overflowPlacement === "below" ? "bottom" : "top"
       },
       moreHorizontalIcon("ui-icon ui-icon-sm"),
       overflowBadge
@@ -87036,12 +87738,25 @@ function mountPanelModeControls(store2, api2, opts = {}) {
         const gap = Number.parseFloat(styles.columnGap || styles.gap || "0") || 0;
         const padL = Number.parseFloat(styles.paddingLeft) || 0;
         const padR = Number.parseFloat(styles.paddingRight) || 0;
-        const containerWidth = Math.max(0, controls.clientWidth - padL - padR);
+        const siblings = [...controls.children].filter(
+          (child) => child !== overflowWrap && !child.hasAttribute("data-panel-control") && child.getBoundingClientRect().width > 0
+        );
+        const reservedWidth = siblings.reduce(
+          (sum, child) => sum + child.getBoundingClientRect().width + gap,
+          0
+        );
+        const containerWidth = Math.max(0, controls.clientWidth - padL - padR - reservedWidth);
         const widths = eligible.map((btn) => btn.getBoundingClientRect().width);
         overflowWrap.hidden = false;
         const overflowWidth = overflowTrigger.getBoundingClientRect().width;
         overflowWrap.hidden = true;
-        const hideCount = countPortraitPanelOverflow(widths, gap, containerWidth, overflowWidth, 1);
+        const hideCount = countPortraitPanelOverflow(
+          widths,
+          gap,
+          containerWidth,
+          overflowWidth,
+          opts.overflowPlacement === "below" ? 0 : 1
+        );
         if (hideCount === 0) {
           syncOverflowBadge([]);
           return;
@@ -87073,9 +87788,19 @@ function mountPanelModeControls(store2, api2, opts = {}) {
       syncOverflow?.();
     });
     observer.observe(controls);
+    const observeChildren = () => {
+      for (const child of controls.children) observer.observe(child);
+    };
+    observeChildren();
+    const childrenObserver = new MutationObserver(() => {
+      observeChildren();
+      syncOverflow?.();
+    });
+    childrenObserver.observe(controls, { childList: true });
     cleanups.push(() => {
       cancelAnimationFrame(overflowFrame);
       observer.disconnect();
+      childrenObserver.disconnect();
     });
   }
   function syncPanelBtns() {
@@ -87278,9 +88003,20 @@ var init_panel_mode_controls = __esm({
 // src/renderer/views/titlebar-compact.ts
 function titlebarNeedsCompact(titlebar) {
   const wasCompact = titlebar.classList.contains(TITLEBAR_COMPACT_CLASS);
+  const overflowed = [...titlebar.querySelectorAll("[data-portrait-overflow]")];
+  const controls = titlebar.querySelector(".titlebar-panel-controls");
+  const alignment = controls?.style.justifyContent ?? "";
+  if (controls) controls.style.justifyContent = "flex-start";
+  overflowed.forEach((button) => {
+    button.removeAttribute("data-portrait-overflow");
+  });
   titlebar.classList.remove(TITLEBAR_COMPACT_CLASS);
   const needsCompact = titlebar.scrollWidth > titlebar.clientWidth;
   titlebar.classList.toggle(TITLEBAR_COMPACT_CLASS, wasCompact);
+  overflowed.forEach((button) => {
+    button.setAttribute("data-portrait-overflow", "");
+  });
+  if (controls) controls.style.justifyContent = alignment;
   return needsCompact;
 }
 function bindTitlebarCompactLayout(titlebar, observedContents) {
@@ -87467,7 +88203,9 @@ function mountTitlebar(root, store2, api2) {
   leftCluster.append(sidebarBtn, workspaceName, sshTarget, workspaceBranch);
   const dragRegion = el("div", { class: "titlebar-drag" });
   const panelControls = mountPanelModeControls(store2, api2, {
-    alwaysShowLabels: /* @__PURE__ */ new Set(["explorer"])
+    alwaysShowLabels: /* @__PURE__ */ new Set(["explorer"]),
+    enableOverflow: true,
+    overflowPlacement: "below"
   });
   const openInEditor = mountOpenInEditor(panelControls.element, store2, api2);
   const firstBtn = panelControls.element.firstElementChild;
@@ -88707,13 +89445,14 @@ function approvalCopyElement(className, text2) {
 function approvalRequestDetails(req) {
   const parts = [];
   if (req.bodyAdvice) parts.push(approvalCopyElement("approval-advice", req.bodyAdvice));
-  parts.push(
-    el(
-      "div",
-      { class: req.type === "shell" ? "approval-body approval-body-code" : "approval-body" },
-      req.body
-    )
-  );
+  if (req.body.trim())
+    parts.push(
+      el(
+        "div",
+        { class: req.type === "shell" ? "approval-body approval-body-code" : "approval-body" },
+        req.body
+      )
+    );
   if (req.bodyFooter) parts.push(approvalCopyElement("approval-footer", req.bodyFooter));
   return parts;
 }
@@ -88912,7 +89651,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
     const requestBody = (req) => {
       const bodyClass = req.type === "shell" ? "approval-body approval-body-code" : "approval-body";
       const body = el("div", { class: bodyClass }, req.body);
-      if (collapseDetails && !detailsExpanded) body.hidden = true;
+      if (!req.body.trim() || collapseDetails && !detailsExpanded) body.hidden = true;
       return body;
     };
     items.replaceChildren(
@@ -92344,6 +93083,25 @@ function mountProjectsPane(root, store2, api2) {
       });
       const openThreadMenu = (x3, y3) => {
         showContextMenu(x3, y3, [
+          {
+            label: "Conversation access\u2026",
+            onSelect: () => {
+              showContextMenu(x3, y3, [
+                {
+                  label: "Revoke reading other threads",
+                  onSelect: () => {
+                    void api2.threadPrompts.revokeAccess(thread.id, "read");
+                  }
+                },
+                {
+                  label: "Revoke sending to other threads",
+                  onSelect: () => {
+                    void api2.threadPrompts.revokeAccess(thread.id, "send");
+                  }
+                }
+              ]);
+            }
+          },
           ...canMutate ? [
             ...allowRename ? [
               {
@@ -98349,10 +99107,15 @@ function mountComposerEditor() {
   root.setAttribute("aria-label", "Message");
   const SCROLL_PIN_THRESHOLD_PX2 = 4;
   let pinnedToBottom = true;
+  let observedWidth = root.clientWidth;
+  let observedHeight = root.clientHeight;
   root.addEventListener("scroll", () => {
+    if (root.clientWidth !== observedWidth || root.clientHeight !== observedHeight) return;
     pinnedToBottom = root.scrollHeight - root.scrollTop - root.clientHeight <= SCROLL_PIN_THRESHOLD_PX2;
   });
   new ResizeObserver(() => {
+    observedWidth = root.clientWidth;
+    observedHeight = root.clientHeight;
     if (pinnedToBottom) root.scrollTop = root.scrollHeight;
   }).observe(root);
   const blocks = /* @__PURE__ */ new Map();
@@ -98541,6 +99304,7 @@ function mountComposerEditor() {
           if (chip2) frag.append(chip2);
         }
       });
+      pinnedToBottom = true;
       root.replaceChildren(frag);
       pruneChips();
       if (editor.isFocused()) caretToEnd2();
@@ -100860,7 +101624,9 @@ function threadProposalCardSignature(tc2, store2, sourceThreadId) {
   return `${state.status}:${state.threadId ?? ""}:${state.checkoutMode ?? ""}`;
 }
 function createThreadProposalToolCard(tc2, store2, api2, sourceThreadId) {
-  const proposal = parseThreadProposal(tc2.id, tc2.args);
+  const args = tc2.args;
+  const proposalArgs = isRecord(args) && args["server"] === "copse" && args["tool"] === THREAD_PROPOSAL_TOOL ? args["arguments"] : args;
+  const proposal = parseThreadProposal(tc2.id, proposalArgs);
   if (!proposal) return null;
   return createThreadProposalCard(proposal, cardState(store2, sourceThreadId, tc2.id), {
     onStart: async (accepted) => {
@@ -100894,6 +101660,7 @@ function createThreadProposalToolCard(tc2, store2, api2, sourceThreadId) {
 }
 var init_thread_proposal_tool_card = __esm({
   "src/renderer/views/thread-proposal-tool-card.ts"() {
+    init_unknown_value3();
     init_thread_proposal2();
     init_thread_helpers();
     init_thread_proposals();
@@ -103312,7 +104079,7 @@ function createHookCard(card, load) {
 }
 function buildMessageOriginMarker(origin, editedByUser) {
   const fromHook = origin.kind === "hook";
-  const label = fromHook ? `Hook \xB7 ${origin.hookId} (${hookEventLabel(origin.event)})` : "Machine \xB7 automatic continuation";
+  const label = fromHook ? `Hook \xB7 ${origin.hookId} (${hookEventLabel(origin.event)})` : origin.operationId.startsWith("thread:") ? "Thread \xB7 prompt from another conversation" : "Machine \xB7 automatic continuation";
   const marker = el(
     "div",
     {
@@ -104052,10 +104819,11 @@ function mountConversation(root, store2, api2) {
     if (editing) classes.push("msg-editing");
     if (held) classes.push("msg-held");
     if (fromHook) classes.push("msg-hook-origin");
+    if (queued.origin?.kind === "machine") classes.push("msg-machine-origin");
     const item = el("div", {
       class: classes.join(" "),
       "data-message-id": msg.id,
-      ...fromHook ? { "data-hook-id": queued.origin?.hookId ?? "" } : {}
+      ...queued.origin?.kind === "hook" ? { "data-hook-id": queued.origin.hookId } : {}
     });
     const body = el("div", { class: "message-body" });
     const badgeText = editing ? "Editing" : held ? "Held" : "Queued";
@@ -145570,10 +146338,11 @@ var init_build_skill_user_content = __esm({
 });
 
 // src/renderer/views/acp-config-options.ts
-function acpOptionGroupsFor(agent2) {
+function acpOptionGroupsFor(agent2, agentManaged = false) {
   const groups = [];
   for (const option of agent2.availableConfigOptions ?? []) {
-    if (option.category === "model" || option.choices.length < 2) continue;
+    if (option.category === "model" || agentManaged && option.category === "mode" || option.choices.length < 2)
+      continue;
     groups.push({
       id: option.configId,
       kind: "config",
@@ -145586,7 +146355,7 @@ function acpOptionGroupsFor(agent2) {
     (option) => option.category === "mode"
   );
   const modes = agent2.availablePermissionModes ?? [];
-  if (!hasConfigMode && modes.length > 1) {
+  if (!agentManaged && !hasConfigMode && modes.length > 1) {
     groups.push({
       id: ACP_MODE_GROUP_ID,
       kind: "mode",
@@ -145604,13 +146373,13 @@ function acpOptionGroupsFor(agent2) {
 async function readAgents(api2) {
   return parseAcpAgentConfigs(await api2.settings.get("registeredAcpAgents"));
 }
-async function loadAcpOptionGroups(api2, model) {
+async function loadAcpOptionGroups(api2, model, agentManaged = false) {
   const selection2 = parseAcpModelSelection(model);
   if (!selection2) return null;
   const selectedId = canonicalAcpAgentId(selection2.id);
   const agent2 = (await readAgents(api2)).find((candidate) => candidate.id === selectedId);
   if (!agent2?.enabled) return null;
-  const groups = acpOptionGroupsFor(agent2);
+  const groups = acpOptionGroupsFor(agent2, agentManaged);
   return groups.length > 0 ? { agentId: agent2.id, groups } : null;
 }
 async function saveAcpOptionSelection(api2, agentId, group, value) {
@@ -145720,7 +146489,11 @@ function mountFooterModelPicker(root, api2, getCurrent, onSelect, pickerOpts = {
       // effort). Both hang off whichever value is selected, so they reload with
       // the model list.
       loadValueGroups: async (current) => {
-        const loaded = await loadAcpOptionGroups(api2, current);
+        const loaded = await loadAcpOptionGroups(
+          api2,
+          current,
+          pickerOpts.isAgentManaged?.() === true
+        );
         optionAgentId = loaded?.agentId ?? null;
         optionGroups = loaded?.groups ?? [];
         const reasoning = pickerOpts.getReasoning ? reasoningValueGroup(current, pickerOpts.getReasoning()) : null;
@@ -148145,6 +148918,109 @@ var init_guarded_yolo_control = __esm({
   }
 });
 
+// src/renderer/views/agent-execution-mode-control.ts
+function mountAgentExecutionModeControl(store2, isAgentSelected, onChange) {
+  const badge = el(
+    "span",
+    { class: "agent-execution-mode-badge", role: "status", hidden: "" },
+    "Agent managed"
+  );
+  const shell4 = createOverlayDialog({
+    id: "agent-execution-mode-dialog",
+    className: "agent-execution-mode-dialog"
+  });
+  const title = el("h2", { id: "agent-execution-mode-title" }, "Execution mode");
+  const description = el("p", {}, "Choose how the selected agent acts in this thread.");
+  const copse = el(
+    "button",
+    { type: "button", class: "agent-execution-mode-option", "data-mode": "copse" },
+    el("strong", {}, "Copse managed"),
+    el("span", {}, "Use Copse action approvals and its sandbox where available.")
+  );
+  const agent2 = el(
+    "button",
+    { type: "button", class: "agent-execution-mode-option", "data-mode": "agent" },
+    el("strong", {}, "Agent managed"),
+    el("span", {}, "Use the agent\u2019s own tools, safety checks, and approval decisions.")
+  );
+  const note = el(
+    "p",
+    { class: "agent-execution-mode-note" },
+    "Agent managed runs the selected agent without Copse\u2019s process sandbox. Copse shows the activity the agent reports. Copse tools still use their own permissions. The change applies to the next turn."
+  );
+  const cancel = el("button", { type: "button" }, "Cancel");
+  const apply4 = el(
+    "button",
+    { type: "button", class: "agent-execution-mode-apply" },
+    "Apply to thread"
+  );
+  shell4.dialog.setAttribute("aria-labelledby", title.id);
+  shell4.dialog.append(
+    title,
+    description,
+    el("div", { class: "agent-execution-mode-options" }, copse, agent2),
+    note,
+    el("div", { class: "agent-execution-mode-actions" }, cancel, apply4)
+  );
+  let selected = "copse";
+  function activeThread() {
+    return getActiveThread(store2);
+  }
+  function refresh() {
+    const thread = activeThread();
+    badge.hidden = !thread || thread.executionMode !== "agent" || !isAgentSelected();
+  }
+  function renderSelection() {
+    copse.setAttribute("aria-pressed", String(selected === "copse"));
+    agent2.setAttribute("aria-pressed", String(selected === "agent"));
+    apply4.disabled = selected === (activeThread()?.executionMode === "agent" ? "agent" : "copse");
+  }
+  function open2() {
+    if (!activeThread() || !isAgentSelected()) return;
+    selected = activeThread()?.executionMode === "agent" ? "agent" : "copse";
+    renderSelection();
+    shell4.open();
+  }
+  copse.addEventListener("click", () => {
+    selected = "copse";
+    renderSelection();
+  });
+  agent2.addEventListener("click", () => {
+    selected = "agent";
+    renderSelection();
+  });
+  cancel.addEventListener("click", shell4.close);
+  apply4.addEventListener("click", () => {
+    const thread = activeThread();
+    if (!thread) return;
+    patchThreadAnywhere(store2, thread.id, (current) => {
+      const { executionMode: _previous, ...rest } = current;
+      return selected === "agent" ? { ...rest, executionMode: "agent", updatedAt: Date.now() } : { ...rest, updatedAt: Date.now() };
+    });
+    store2.emit("threads_changed");
+    shell4.close();
+    refresh();
+    onChange();
+  });
+  refresh();
+  return {
+    element: badge,
+    menuLabel: () => "Execution mode\u2026",
+    open: open2,
+    refresh,
+    destroy: () => {
+      shell4.dialog.remove();
+    }
+  };
+}
+var init_agent_execution_mode_control = __esm({
+  "src/renderer/views/agent-execution-mode-control.ts"() {
+    init_thread_helpers();
+    init_helpers();
+    init_dialog_shell();
+  }
+});
+
 // src/shared/container-acp-agents.ts
 function containerAcpAgentTitles() {
   return CONTAINER_ACP_AGENTS.map((agent2) => findAcpCatalogEntry(agent2.id)?.title ?? agent2.id);
@@ -149336,6 +150212,11 @@ ${context}` : text2;
   });
   const footer = el("div", { class: "input-footer" });
   const modelHost = el("div", { class: "footer-model-host" });
+  const executionMode = mountAgentExecutionModeControl(
+    store2,
+    () => isAcpModel(footerChatModel()),
+    () => footerOverflow?.update()
+  );
   const checkoutHost = el("div", { class: "footer-checkout-host" });
   const checkoutBtn = el("button", {
     type: "button",
@@ -149362,8 +150243,13 @@ ${context}` : text2;
   const contextWheel = createContextWheel();
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api2);
   usageGroup.append(contextWheel.root, queueIndicator);
-  footer.append(modelHost, checkoutHost, branchHost, planControl.button);
+  footer.append(modelHost, executionMode.element, checkoutHost, branchHost, planControl.button);
   footerOverflow = mountFooterOverflow(footer, [
+    {
+      label: executionMode.menuLabel,
+      hidden: () => !getActiveThreadId() || !isAcpModel(footerChatModel()),
+      onClick: executionMode.open
+    },
     {
       label: guardedYolo.menuLabel,
       hidden: () => !getActiveThreadId(),
@@ -149475,6 +150361,7 @@ ${context}` : text2;
   const modelPicker = mountFooterModelPicker(modelHost, api2, footerChatModel, selectChatModel, {
     formatCurrentLabel: footerModelDisplayLabel,
     getCurrentRoute: footerResolvedModel,
+    isAgentManaged: () => getActiveThread(store2)?.executionMode === "agent",
     isSshWorkspace: () => {
       const { activeProjectId, projects } = store2.getState();
       if (!activeProjectId) return false;
@@ -149532,6 +150419,8 @@ ${context}` : text2;
       name,
       bytes: bytes2.buffer.slice(bytes2.byteOffset, bytes2.byteOffset + bytes2.byteLength)
     });
+    const end = composer.value.length;
+    composer.setSelectionRange(end, end);
     composer.focus();
   }
   function debugTrace() {
@@ -150434,8 +151323,17 @@ ${description}
     },
     true
   );
+  let sendNowChordAt = 0;
   composer.el.addEventListener("keydown", (e3) => {
     if (e3.isComposing) return;
+    const control = e3.ctrlKey || e3.metaKey;
+    const chord = control && !e3.altKey && !e3.shiftKey && e3.key.toLowerCase() === "s" && sendNowChordAt > 0 && Date.now() - sendNowChordAt < 1500;
+    sendNowChordAt = control && !e3.altKey && !e3.shiftKey && e3.key.toLowerCase() === "x" ? Date.now() : 0;
+    if (chord || control && e3.key === "Enter" && !e3.altKey && !e3.shiftKey) {
+      e3.preventDefault();
+      void submit(true);
+      return;
+    }
     if (e3.key === "Tab" && !e3.shiftKey && !e3.ctrlKey && !e3.metaKey && !e3.altKey) {
       const hint = nextStepHint.current();
       if (hint !== null && !composer.value.trim() && !isAutocompletePickerOpen()) {
@@ -150453,12 +151351,12 @@ ${description}
     e3.preventDefault();
     void submit();
   });
-  async function submit() {
+  async function submit(sendNow = false) {
     const id = getActiveThreadId();
     if (!id || imageDescriptionInProgress || !beginThreadSubmission(store2, id)) return;
     updateState();
     try {
-      await performSubmit(id);
+      await performSubmit(id, sendNow);
     } catch (error62) {
       console.error("Could not send prompt", { threadId: id, error: error62 });
       checkoutErrors.set(id, error62 instanceof Error ? error62.message : "Could not send message");
@@ -150468,7 +151366,7 @@ ${description}
       updateCheckoutControl();
     }
   }
-  async function performSubmit(id) {
+  async function performSubmit(id, sendNow) {
     mark("ttft:composer-submit");
     followUps.clearSuggestions();
     nextStepHint.clear();
@@ -150495,8 +151393,15 @@ ${description}
       videoRefs: currentVideoRefs(),
       archiveRefs: currentArchiveRefs()
     };
-    if (!rawText && attachedFiles2.length === 0 && attachedImages2.length === 0 && attachedVideos2.length === 0 && attachedArchives2.length === 0 && attachedThreads2.length === 0 && attachedShells2.length === 0)
+    if (!rawText && attachedFiles2.length === 0 && attachedImages2.length === 0 && attachedVideos2.length === 0 && attachedArchives2.length === 0 && attachedThreads2.length === 0 && attachedShells2.length === 0) {
+      if (sendNow) {
+        const target = getThreadById(store2, id)?.pendingMessages?.find(
+          (item) => item.autoDispatch !== false
+        );
+        if (target) sendQueuedMessageNow(store2, api2, id, target.messageId);
+      }
       return;
+    }
     const projectId = store2.getState().activeProjectId;
     const thread = getThreadById(store2, id);
     if (!projectId || !thread) return;
@@ -150719,6 +151624,7 @@ ${description}
     };
     if (getThreadById(store2, id)?.status === "running") {
       enqueueUserMessage(store2, id, queued);
+      if (sendNow) sendQueuedMessageNow(store2, api2, id, messageId);
     } else {
       startHumanTurnTree(store2, id);
       dispatchAgentRun(store2, api2, id, payload, queued);
@@ -151154,6 +152060,8 @@ ${reply}`);
     }),
     store2.on("threads_changed", () => {
       syncComposerThread();
+      executionMode.refresh();
+      footerOverflow.update();
       guardedYolo.refresh();
       containerRun.refresh();
       hideBranchMismatch();
@@ -151241,6 +152149,7 @@ ${reply}`);
       modelPicker.destroy();
       footerOverflow.destroy();
       guardedYolo.destroy();
+      executionMode.destroy();
       containerRun.destroy();
       planControl.destroy();
       footerCompact.destroy();
@@ -151302,6 +152211,7 @@ var init_input_bar = __esm({
     init_composer_draft_autosave();
     init_panel_mode_controls();
     init_guarded_yolo_control();
+    init_agent_execution_mode_control();
     init_container_run_control();
     init_active_thread_owner();
     init_unknown_value3();
@@ -152152,6 +153062,7 @@ function mountRightPanelLayout(store2) {
     const mode = store2.getState().rightPanelMode;
     const isExplorer = mode === "explorer";
     const isContext = mode === "context";
+    document.getElementById("pane-files")?.classList.toggle("is-context-panel", isContext);
     const isSideChat = mode === "side-chat";
     const isTerminal = mode === "terminal";
     const isChanges = mode === "changes";
@@ -152160,6 +153071,8 @@ function mountRightPanelLayout(store2) {
     const isRoadmap = mode === "roadmap";
     const isBrowser = mode === "browser";
     const isVnc = mode === "vnc";
+    const sidebar = document.getElementById("right-sidebar");
+    if (sidebar) sidebar.hidden = isContext;
     const treeHost = document.getElementById("file-tree-host");
     const contextHost = document.getElementById("context-host");
     const sideChatHost = document.getElementById("side-chat-host");
@@ -152201,7 +153114,7 @@ function mountRightPanelLayout(store2) {
     if (roadmapViewer) roadmapViewer.hidden = !isRoadmap;
     if (browserViewer) browserViewer.hidden = !isBrowser;
     if (vncViewer) vncViewer.hidden = !isVnc;
-    if (treeResizer) treeResizer.hidden = !store2.getState().filesPaneOpen;
+    if (treeResizer) treeResizer.hidden = isContext || !store2.getState().filesPaneOpen;
   }
   function syncMaximized() {
     const maximized = isRightPanelMaximized(store2);
@@ -162940,6 +163853,9 @@ function settleRead(read2) {
 function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   const listHeader = el("div", { class: "pane-header git-changes-header" });
   const headerTitle = el("span", { class: "pane-header-title" }, "Changes");
+  const isPopoutWindow = document.documentElement.hasAttribute("data-popout-mode");
+  const headerOwner = el("span", { class: "pane-header-owner git-changes-header-owner" });
+  headerOwner.hidden = true;
   const bulkActions = el("div", { class: "git-changes-bulk-actions" });
   const acceptAllBtn = el("button", { type: "button", class: "git-changes-bulk-btn" }, "Accept all");
   const rejectAllBtn = el("button", { type: "button", class: "git-changes-bulk-btn" }, "Reject all");
@@ -162967,12 +163883,59 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   reviewBtn.hidden = true;
   listHeader.append(
     headerTitle,
+    headerOwner,
     bulkActions,
     reviewBtn,
     panePopoutButton(store2, api2, "changes", "changes"),
     paneMaximizeButton(store2, "changes"),
     refreshBtn
   );
+  let ownerTitle = null;
+  let ownerTitleToken = 0;
+  function syncOwnerLabel() {
+    if (!isPopoutWindow) return;
+    const { threads, activeThreadId, activeProjectId } = store2.getState();
+    const thread = threads.find((candidate) => candidate.id === activeThreadId);
+    if (!thread) {
+      headerOwner.hidden = true;
+      return;
+    }
+    const branch = thread.worktree?.branch ?? thread.gitBranch;
+    const title = ownerTitle?.projectId === activeProjectId && ownerTitle.threadId === thread.id && ownerTitle.sourceTitle === thread.title ? ownerTitle.title : thread.title;
+    const label = branch ? `${title || "Untitled thread"} \xB7 ${branch}` : title || "Untitled thread";
+    headerOwner.textContent = label;
+    headerOwner.title = label;
+    headerOwner.hidden = false;
+  }
+  async function refreshOwnerTitle() {
+    if (!isPopoutWindow) return;
+    const { activeProjectId, activeThreadId, threads } = store2.getState();
+    const thread = threads.find((candidate) => candidate.id === activeThreadId);
+    if (!activeProjectId || !thread) return;
+    const mine = ++ownerTitleToken;
+    const sourceTitle2 = thread.title;
+    try {
+      const saved = (await api2.threads.loadProject(activeProjectId)).find(
+        (candidate) => candidate.id === thread.id
+      );
+      const state = store2.getState();
+      if (mine !== ownerTitleToken || !saved || state.activeProjectId !== activeProjectId || state.activeThreadId !== thread.id || state.threads.find((candidate) => candidate.id === thread.id)?.title !== sourceTitle2)
+        return;
+      ownerTitle = {
+        projectId: activeProjectId,
+        threadId: thread.id,
+        sourceTitle: sourceTitle2,
+        title: saved.title
+      };
+      syncOwnerLabel();
+    } catch (error62) {
+      console.warn("[changes] could not refresh pop-out owner title", error62);
+    }
+  }
+  const onOwnerFocus = () => {
+    void refreshOwnerTitle();
+  };
+  if (isPopoutWindow) window.addEventListener("focus", onOwnerFocus);
   function syncReviewButton() {
     const thread = store2.getState().threads.find((t2) => t2.id === store2.getState().activeThreadId);
     reviewBtn.disabled = thread === void 0 || thread.status === "running";
@@ -162992,6 +163955,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   });
   syncReviewGate();
   syncReviewButton();
+  syncOwnerLabel();
   const restoreBanner = el("div", { class: "git-changes-restore" });
   const restoreLabel = el("span", { class: "git-changes-restore-label" });
   const restoreBtn = el(
@@ -163113,6 +164077,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     renderRestoreBanner();
     clearViewer();
     renderList();
+    syncOwnerLabel();
     if (loaded && changesModeActive(store2)) void syncSelection();
     return true;
   }
@@ -163800,6 +164765,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       if (changesModeActive(store2)) void refresh();
     }),
     store2.on("threads_changed", () => {
+      syncOwnerLabel();
       if (!adoptActiveOwner() && !ownerNeedsRefresh) return;
       if (changesModeActive(store2)) void refresh();
     }),
@@ -163841,6 +164807,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     }
   });
   return () => {
+    ownerTitleToken++;
+    window.removeEventListener("focus", onOwnerFocus);
     unregisterPopoutSeed();
     if (refreshTimer) clearTimeout(refreshTimer);
     stopObservingLayout();
@@ -165997,7 +166965,7 @@ function deriveThreadContext(input2) {
     const branch = thread.worktree?.branch ?? thread.gitBranch;
     repos.push({
       name: project2.name,
-      path: project2.path,
+      path: thread.worktree?.path ?? project2.path,
       ...branch !== void 0 ? { branch } : {},
       checkout
     });
@@ -166065,6 +167033,7 @@ function deriveThreadContext(input2) {
   }
   return {
     threadId: thread.id,
+    title: thread.title,
     ...sideOf ? { sideOf } : {},
     repos,
     links,
@@ -166082,18 +167051,6 @@ var init_thread_context_model = __esm({
 });
 
 // src/renderer/views/thread-context-panel.ts
-function sectionCount(model, section2) {
-  switch (section2) {
-    case "repos":
-      return model.repos.length;
-    case "side-chats":
-      return model.sideChats.filter((row2) => !row2.archived).length;
-    case "links":
-      return model.links.length + model.mentionedIn.length;
-    case "subagents":
-      return model.subagents.length;
-  }
-}
 function section(kind, ...children) {
   return el(
     "section",
@@ -166112,22 +167069,26 @@ function reposSection(model) {
   if (model.repos.length === 0) return section("repos", emptyNote("No repository for this thread."));
   return section(
     "repos",
+    el("div", { class: "thread-context-label" }, "Folders"),
     ...model.repos.map(
       (repo) => el(
         "div",
-        { class: "thread-context-row thread-context-repo", "data-repo-path": repo.path },
+        {
+          class: "thread-context-row thread-context-repo",
+          "data-repo-path": repo.path,
+          title: [repo.path, repo.branch].filter(Boolean).join(" \xB7 ")
+        },
         gitBranchIcon("ui-icon ui-icon-sm"),
         el(
           "span",
           { class: "thread-context-main" },
-          el("span", { class: "thread-context-title" }, repo.name),
-          el("span", { class: "thread-context-sub" }, repo.path)
+          el("span", { class: "thread-context-title" }, repo.name)
         ),
-        repo.branch !== void 0 ? el(
+        el(
           "span",
-          { class: "thread-context-chip", "data-checkout": repo.checkout },
-          repo.branch
-        ) : ""
+          { class: "thread-context-meta" },
+          [repo.checkout === "worktree" ? "Worktree" : "Primary", repo.branch].filter(Boolean).join(" \xB7 ")
+        )
       )
     )
   );
@@ -166199,20 +167160,15 @@ function sideChatsSection(model, handlers4) {
   );
 }
 function linksSection(model, handlers4) {
-  const groups = [
-    { label: "Pull requests", kind: "pr" },
-    { label: "Threads", kind: "thread" },
-    { label: "Web", kind: "url" }
-  ];
+  const groups = ["pr", "thread"];
   const children = [];
   for (const group of groups) {
-    const rows = model.links.filter((link) => link.kind === group.kind);
+    const rows = model.links.filter((link) => link.kind === group);
     if (rows.length === 0) continue;
     children.push(
       el(
         "div",
-        { class: "thread-context-group", "data-link-group": group.kind },
-        el("h6", {}, group.label),
+        { class: "thread-context-group", "data-link-group": group },
         ...rows.map((link) => {
           const button = rowButton(
             {
@@ -166220,7 +167176,8 @@ function linksSection(model, handlers4) {
               "data-unresolved": link.unresolved ? "true" : void 0
             },
             link.kind === "pr" ? gitPullRequestIcon("ui-icon ui-icon-sm") : link.kind === "url" ? externalLinkIcon("ui-icon ui-icon-sm") : "",
-            el("span", { class: "thread-context-title" }, link.label)
+            el("span", { class: "thread-context-title", title: link.label }, link.label),
+            el("span", { class: "thread-context-chip" }, link.kind === "pr" ? "PR" : "Thread")
           );
           button.addEventListener("click", () => {
             if (link.kind === "pr" && link.pr) handlers4.openPr(link.pr);
@@ -166259,29 +167216,54 @@ function linksSection(model, handlers4) {
 }
 function subagentsSection(model) {
   if (model.subagents.length === 0) return section("subagents", emptyNote("No subagents."));
-  return section(
+  const result = section(
     "subagents",
     ...model.subagents.map(
       (agent2) => el(
         "div",
         { class: "thread-context-row", "data-subagent-id": agent2.id, "data-status": agent2.status },
+        el("span", { class: "thread-context-status-dot", "aria-hidden": "true" }),
         el(
           "span",
           { class: "thread-context-main" },
-          el("span", { class: "thread-context-title" }, agent2.prompt || agent2.kind),
-          el(
-            "span",
-            { class: "thread-context-sub" },
-            [agent2.kind, agent2.model].filter(Boolean).join(" \xB7 ")
-          )
+          el("span", { class: "thread-context-title" }, agent2.kind),
+          el("span", { class: "thread-context-sub" }, agent2.prompt)
         ),
-        el("span", { class: "thread-context-chip", "data-status": agent2.status }, agent2.status)
+        el(
+          "span",
+          { class: "thread-context-meta", title: agent2.model ?? agent2.status },
+          [agent2.status, agent2.model].filter(Boolean).join(" \xB7 ")
+        )
       )
     )
+  );
+  const summary = ["running", "done", "error"].flatMap((status) => {
+    const count = model.subagents.filter((agent2) => agent2.status === status).length;
+    return count ? [`${String(count)} ${status}`] : [];
+  }).join(" \xB7 ");
+  result.querySelector("h5")?.append(el("span", { class: "thread-context-count" }, summary));
+  return result;
+}
+function sourcesSection(model, handlers4) {
+  const sources3 = model.links.filter((link) => link.kind === "url");
+  return section(
+    "sources",
+    ...sources3.length ? sources3.map((link) => {
+      const row2 = rowButton(
+        { "data-link-key": link.key, title: link.target },
+        externalLinkIcon("ui-icon ui-icon-sm"),
+        el("span", { class: "thread-context-title" }, link.label)
+      );
+      row2.addEventListener("click", () => {
+        handlers4.openUrl(link.target);
+      });
+      return row2;
+    }) : [emptyNote("No sources yet.")]
   );
 }
 function renderThreadContext(model, handlers4) {
   const host = el("div", { class: "thread-context", "aria-label": "Thread context" });
+  if (model.title) host.append(el("div", { class: "thread-context-thread-title" }, model.title));
   if (model.sideOf) {
     const back = el(
       "button",
@@ -166307,10 +167289,11 @@ function renderThreadContext(model, handlers4) {
     );
   }
   host.append(
+    subagentsSection(model),
     reposSection(model),
-    sideChatsSection(model, handlers4),
     linksSection(model, handlers4),
-    subagentsSection(model)
+    sourcesSection(model, handlers4),
+    sideChatsSection(model, handlers4)
   );
   return host;
 }
@@ -166319,23 +167302,34 @@ function contextModeActive(store2) {
   return filesPaneOpen && rightPanelMode === "context";
 }
 function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
+  const close2 = el(
+    "button",
+    { type: "button", class: "thread-context-close", "aria-label": "Close context" },
+    closeIcon("ui-icon ui-icon-sm")
+  );
+  close2.addEventListener("click", () => {
+    toggleFilesPane(store2);
+  });
   listRoot.append(
     el(
       "div",
       { class: "pane-header" },
       el("span", { class: "pane-header-title" }, "Context"),
       panePopoutButton(store2, api2, "context", "context"),
-      paneMaximizeButton(store2, "context")
+      paneMaximizeButton(store2, "context"),
+      close2
     )
   );
-  const index = el("div", { class: "git-changes-list thread-context-index" });
-  listRoot.append(index);
   let mentionedIn = [];
   let mentionedFor = null;
   let token = 0;
   let storageToken = 0;
   let storageKey = "";
   let storageText = "Calculating\u2026";
+  let changesToken = 0;
+  let changesKey = "";
+  let changesText = "Calculating\u2026";
+  let changeStats = null;
   let disposed = false;
   function activeStorageKey() {
     const state = store2.getState();
@@ -166347,7 +167341,42 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
       thread?.worktree?.retiredAt
     ]);
   }
+  function changesContent() {
+    if (changesKey !== activeStorageKey()) return ["Calculating\u2026"];
+    if (!changeStats) return [changesText];
+    return [
+      el("span", { class: "git-change-status-added" }, `+${String(changeStats.additions)}`),
+      " ",
+      el("span", { class: "git-change-status-deleted" }, `\u2212${String(changeStats.deletions)}`)
+    ];
+  }
+  async function refreshChanges() {
+    const thread = getActiveThread(store2);
+    const projectId = store2.getState().activeProjectId;
+    if (!thread || !projectId) return;
+    const mine = ++changesToken;
+    const key = activeStorageKey();
+    changesKey = key;
+    changesText = "Calculating\u2026";
+    changeStats = null;
+    const update = () => {
+      const slot = viewerRoot.querySelector("[data-context-change-stats]");
+      if (slot) slot.replaceChildren(...changesContent());
+    };
+    update();
+    try {
+      const stats = await api2.git.changeStats(projectId, thread.id);
+      if (disposed || mine !== changesToken || key !== activeStorageKey()) return;
+      changeStats = stats ?? { additions: 0, deletions: 0 };
+    } catch (error62) {
+      if (disposed || mine !== changesToken || key !== activeStorageKey()) return;
+      console.error("[context] change totals lookup failed:", error62);
+      changesText = "Unavailable";
+    }
+    update();
+  }
   async function refreshStorage() {
+    void refreshChanges();
     const thread = getActiveThread(store2);
     const projectId = store2.getState().activeProjectId;
     if (!thread || !projectId) return;
@@ -166402,7 +167431,6 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     const state = store2.getState();
     const thread = getActiveThread(store2);
     clear(viewerRoot);
-    clear(index);
     if (!thread) {
       viewerRoot.append(emptyNote("Open a thread to see its context."));
       return;
@@ -166428,7 +167456,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     archive.addEventListener("click", () => {
       if (project2) store2.emit("thread_archive_requested", project2.id, thread.id);
     });
-    content.prepend(
+    content.querySelector('[data-context-section="repos"]')?.after(
       el(
         "section",
         { class: "thread-context-section", "data-context-section": "storage" },
@@ -166444,6 +167472,19 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
           )
         ),
         el(
+          "div",
+          { class: "thread-context-row" },
+          el("span", { class: "thread-context-main" }, "Changes"),
+          el(
+            "span",
+            {
+              "data-context-change-stats": "",
+              title: "Lines added and removed in this checkout"
+            },
+            ...changesContent()
+          )
+        ),
+        el(
           "p",
           { class: "thread-context-empty" },
           "Saved thread files and its dedicated worktree. Shared project files are excluded."
@@ -166452,18 +167493,6 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
       )
     );
     viewerRoot.append(content);
-    for (const kind of CONTEXT_SECTIONS) {
-      const jump = el(
-        "button",
-        { type: "button", class: "git-change-row thread-context-index-row", "data-index": kind },
-        el("span", { class: "thread-context-title" }, SECTION_TITLES[kind]),
-        el("span", { class: "thread-context-count" }, String(sectionCount(model, kind)))
-      );
-      jump.addEventListener("click", () => {
-        viewerRoot.querySelector(`[data-context-section="${kind}"]`)?.scrollIntoView({ block: "start" });
-      });
-      index.append(jump);
-    }
   }
   async function refreshMentions() {
     void refreshStorage();
@@ -166508,6 +167537,8 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     store2.on("workspace_changed", () => {
       mentionedFor = null;
       storageKey = "";
+      changesKey = "";
+      changesToken++;
       token++;
       storageToken++;
       if (contextModeActive(store2)) {
@@ -166524,10 +167555,11 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     disposed = true;
     token++;
     storageToken++;
+    changesToken++;
     for (const off of offs) off();
   };
 }
-var CONTEXT_SECTIONS, SECTION_TITLES;
+var SECTION_TITLES;
 var init_thread_context_panel = __esm({
   "src/renderer/views/thread-context-panel.ts"() {
     init_file_bytes();
@@ -166539,12 +167571,12 @@ var init_thread_context_panel = __esm({
     init_pane_maximize_button();
     init_pane_popout_button();
     init_thread_context_model();
-    CONTEXT_SECTIONS = ["repos", "side-chats", "links", "subagents"];
     SECTION_TITLES = {
-      repos: "Repos",
+      repos: "Access",
       "side-chats": "Side chats",
-      links: "Links and references",
-      subagents: "Subagents"
+      links: "Links & references",
+      subagents: "Subagents",
+      sources: "Sources"
     };
   }
 });
@@ -185942,6 +186974,155 @@ var init_desktop_viewer = __esm({
   }
 });
 
+// src/renderer/views/vnc-ssh-host-form.ts
+function createVncSshHostForm(api2, onSaved, onClose) {
+  const id = el("input", { type: "text", "aria-label": "SSH host id", placeholder: "my-server" });
+  const label = el("input", {
+    type: "text",
+    "aria-label": "SSH host label",
+    placeholder: "Production"
+  });
+  const host = el("input", {
+    type: "text",
+    "aria-label": "SSH hostname",
+    placeholder: "example.com or ~/.ssh/config alias"
+  });
+  const user2 = el("input", { type: "text", "aria-label": "SSH user", placeholder: "ubuntu" });
+  const port = el("input", {
+    type: "text",
+    inputmode: "numeric",
+    "aria-label": "SSH port",
+    placeholder: "22"
+  });
+  const identityFile = el("input", {
+    type: "text",
+    "aria-label": "SSH identity file",
+    placeholder: "~/.ssh/id_ed25519"
+  });
+  const status = el("p", { class: "vnc-ssh-host-status", role: "status" });
+  const save = el("button", { type: "submit", class: "ui-btn ui-btn-primary" }, "Save SSH machine");
+  const cancel = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Cancel");
+  const importButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-ghost" },
+    "Import SSH config"
+  );
+  const root = el(
+    "form",
+    { class: "vnc-ssh-host-form", hidden: true, "aria-label": "Add SSH machine" },
+    el("p", { class: "vnc-ssh-host-hint" }, "Use an SSH key to secure the desktop connection."),
+    el("label", { class: "vnc-field-label" }, "Id", id),
+    el("label", { class: "vnc-field-label" }, "Label", label),
+    el("label", { class: "vnc-field-label" }, "Host", host),
+    el("label", { class: "vnc-field-label" }, "User", user2),
+    el("label", { class: "vnc-field-label" }, "Port", port),
+    el("label", { class: "vnc-field-label" }, "Identity file", identityFile),
+    status,
+    el("div", { class: "vnc-ssh-host-actions" }, importButton, cancel, save)
+  );
+  let idTouched = false;
+  label.addEventListener("input", () => {
+    if (!idTouched) id.value = slugifyHostId(label.value);
+  });
+  id.addEventListener("input", () => {
+    idTouched = true;
+  });
+  function close2() {
+    root.hidden = true;
+    status.textContent = "";
+    onClose();
+  }
+  function open2() {
+    root.reset();
+    idTouched = false;
+    status.textContent = "";
+    root.hidden = false;
+    label.focus();
+  }
+  function busy(value) {
+    save.disabled = value;
+    importButton.disabled = value;
+    cancel.disabled = value;
+  }
+  async function requireSshEnabled() {
+    if (await api2.settings.get("sshWorkspaceEnabled") === true) return true;
+    setInlineStatus(
+      status,
+      "error",
+      "Enable SSH workspaces in Settings before adding or importing an SSH machine."
+    );
+    return false;
+  }
+  cancel.addEventListener("click", close2);
+  root.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const parsed2 = parseSshHostDraft({
+      id: id.value,
+      label: label.value,
+      host: host.value,
+      user: user2.value,
+      port: port.value,
+      identityFile: identityFile.value,
+      forwardAgent: false
+    });
+    if (!parsed2.ok) {
+      setInlineStatus(status, "error", parsed2.error);
+      return;
+    }
+    void (async () => {
+      busy(true);
+      try {
+        if (!await requireSshEnabled()) return;
+        const existing = parseSshWorkspaceHosts(await api2.settings.get("sshWorkspaceHosts"));
+        if (existing.some((item) => item.id === parsed2.host.id)) {
+          setInlineStatus(status, "error", "A machine with this id already exists.");
+          return;
+        }
+        await api2.settings.set("sshWorkspaceHosts", upsertHost(existing, parsed2.host));
+        close2();
+        await onSaved(parsed2.host.id);
+      } catch (error62) {
+        setInlineStatus(status, "error", ipcErrorMessage(error62, "Could not save the SSH machine."));
+      } finally {
+        busy(false);
+      }
+    })();
+  });
+  importButton.addEventListener("click", () => {
+    void (async () => {
+      busy(true);
+      try {
+        if (!await requireSshEnabled()) return;
+        const aliases = await api2.sshWorkspace.listConfigAliases();
+        if (aliases.length === 0) {
+          setInlineStatus(status, "error", "No Host entries found in ~/.ssh/config.");
+          return;
+        }
+        const existing = parseSshWorkspaceHosts(await api2.settings.get("sshWorkspaceHosts"));
+        const imported = importSshConfigHosts(existing, aliases);
+        await api2.settings.set("sshWorkspaceHosts", imported.hosts);
+        if (imported.firstAliasHostId) {
+          close2();
+          await onSaved(imported.firstAliasHostId);
+        }
+      } catch (error62) {
+        setInlineStatus(status, "error", ipcErrorMessage(error62, "Could not import SSH config."));
+      } finally {
+        busy(false);
+      }
+    })();
+  });
+  return { root, open: open2, close: close2 };
+}
+var init_vnc_ssh_host_form = __esm({
+  "src/renderer/views/vnc-ssh-host-form.ts"() {
+    init_helpers();
+    init_inline_status();
+    init_ipc_error_message();
+    init_ssh_host_helpers();
+  }
+});
+
 // src/renderer/views/vnc-pane.ts
 function vncModeActive(store2) {
   const { filesPaneOpen, rightPanelMode } = store2.getState();
@@ -185999,6 +187180,22 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     role: "list",
     "aria-label": "Desktop devices"
   });
+  const addSshButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary vnc-add-ssh-btn" },
+    "Add SSH machine"
+  );
+  const sshHostForm = createVncSshHostForm(
+    api2,
+    async (hostId) => {
+      await refreshSshHosts(sshMachineValue(hostId));
+      await discoverSelectedMachine();
+    },
+    () => {
+      addSshButton.hidden = false;
+      deviceList.hidden = false;
+    }
+  );
   const nearbyButton = el(
     "button",
     {
@@ -186072,6 +187269,17 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     },
     "Control desktop"
   );
+  const shareButton = el(
+    "button",
+    { type: "button", class: "ui-btn vnc-share-btn", hidden: true },
+    "Share screenshot"
+  );
+  const annotateButton = el(
+    "button",
+    { type: "button", class: "ui-btn vnc-annotate-btn", "aria-pressed": "false", hidden: true },
+    "Annotate"
+  );
+  const captureActions = el("div", { class: "vnc-capture-actions" }, shareButton, annotateButton);
   const homeButton = el(
     "button",
     { type: "button", class: "ui-btn vnc-home-btn", hidden: true },
@@ -186279,15 +187487,12 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     { class: "vnc-setup-fields" },
     devicesHeading,
     nearbyFeedback,
+    addSshButton,
+    sshHostForm.root,
     deviceList,
     machineSelect
   );
   const form = el("div", { class: "vnc-connect-form" }, setupFields, authPanel);
-  const note = el(
-    "p",
-    { class: "vnc-view-only-note" },
-    "Desktop connections start in view-only mode. Turn on control after connecting."
-  );
   const controlsBody = el(
     "div",
     { class: "vnc-controls-body" },
@@ -186295,15 +187500,16 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     status,
     forgetLoginButton,
     controlButton,
+    captureActions,
     deviceNavigation,
-    disconnectButton,
-    note
+    disconnectButton
   );
   controlsRoot.append(controlsBody);
   const screen = el("div", { class: "vnc-screen", "aria-label": "Remote desktop" });
   const empty2 = el("div", { class: "panel-empty vnc-empty" }, CHOOSE_MACHINE_TEXT);
   viewerRoot.append(screen, empty2);
   let rfb = null;
+  let annotation = null;
   let channel = null;
   let connectGeneration = 0;
   let discoveryGeneration = 0;
@@ -186374,6 +187580,9 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     setupCredentials.hidden = selectedHasSavedPassword;
     connectButton.textContent = selectedHasSavedPassword ? "Connect" : "Sign in & connect";
     setupCredentialHint.textContent = secureCredentialStorage ? "Your login is stored securely after a successful connection." : "Your login is used for this connection only.";
+    if (machineSelect.value.startsWith(SSH_MACHINE_PREFIX)) {
+      setupCredentialHint.textContent = "SSH secures the connection. Enter a desktop login only if screen sharing requires one.";
+    }
     if (!selectedHasSavedPassword) return;
     savedLoginCopy.replaceChildren(
       selectedSavedUsername ? el("span", {}, "Signed in as ", el("strong", {}, selectedSavedUsername)) : el("span", {}, "Saved login")
@@ -186431,11 +187640,12 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     connectButton.hidden = active3;
     disconnectButton.hidden = !active3;
     controlButton.hidden = !connected;
+    shareButton.hidden = !connected;
+    annotateButton.hidden = !connected;
     homeButton.hidden = !connected || simulatorSessionId === null;
     const android2 = selectedSimulator()?.platform === "android";
     backButton.hidden = !connected || !android2;
     overviewButton.hidden = !connected || !android2;
-    note.hidden = active3 || isSimulatorMachine(machineSelect.value);
     disconnectButton.textContent = connected ? "Disconnect" : "Cancel";
     portInput.disabled = active3;
     addressInput.disabled = active3;
@@ -186495,6 +187705,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   }
   function setControlEnabled(enabled) {
     if (!rfb && !simulatorView || !connectedAtLeastOnce) return;
+    if (enabled) annotation?.deactivate();
     controlEnabled = enabled;
     if (rfb) rfb.viewOnly = !enabled;
     simulatorView?.setControlEnabled(enabled);
@@ -186522,6 +187733,9 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     targetInput.value = "";
   }
   function clearViewer(title, kind = "idle", detail = "") {
+    annotation?.dispose();
+    annotation = null;
+    annotateButton.setAttribute("aria-pressed", "false");
     rfb = null;
     channel = null;
     activeTarget = null;
@@ -186767,10 +187981,8 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       discoveryGeneration++;
       renderDiscoveredPorts([]);
       empty2.textContent = `Connect to view ${selectedSimulator()?.name ?? "this Simulator"}.`;
-      note.hidden = true;
     } else if (!channel) {
       empty2.textContent = CHOOSE_MACHINE_TEXT;
-      note.hidden = false;
     }
     const nearby = selectedNearbyServer();
     if (nearby) {
@@ -187291,6 +188503,39 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       showToast("Could not capture the desktop screenshot.", { variant: "error" });
     }
   }
+  function captureScreenForAnnotation() {
+    const canvas = screen.querySelector("canvas");
+    if (!connectedAtLeastOnce || !canvas || canvas.width === 0 || canvas.height === 0) return null;
+    const host = screen.getBoundingClientRect();
+    const frame = canvas.getBoundingClientRect();
+    const capture = document.createElement("canvas");
+    capture.width = Math.max(1, Math.round(host.width));
+    capture.height = Math.max(1, Math.round(host.height));
+    const context = capture.getContext("2d");
+    if (!context) return null;
+    context.drawImage(
+      canvas,
+      frame.left - host.left,
+      frame.top - host.top,
+      frame.width,
+      frame.height
+    );
+    return capture.toDataURL("image/png");
+  }
+  shareButton.addEventListener("click", shareCurrentScreen);
+  annotateButton.addEventListener("click", () => {
+    if (!connectedAtLeastOnce) return;
+    if (controlEnabled) setControlEnabled(false);
+    annotation ??= mountAnnotationLayer(screen, {
+      label: connectedMachineName ?? "desktop",
+      captureBase: () => Promise.resolve(captureScreenForAnnotation()),
+      onSend: (payload) => attachAnnotation(payload, connectedMachineName ?? "desktop"),
+      onDeactivate: () => {
+        annotateButton.setAttribute("aria-pressed", "false");
+      }
+    });
+    annotateButton.setAttribute("aria-pressed", String(annotation.toggle()));
+  });
   const onScreenContextMenu = (event) => {
     const canvas = screen.querySelector("canvas");
     if (!connectedAtLeastOnce || !canvas) return;
@@ -187333,6 +188578,11 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     void loadMachines().finally(() => {
       refreshDevicesButton.disabled = false;
     });
+  });
+  addSshButton.addEventListener("click", () => {
+    sshHostForm.open();
+    addSshButton.hidden = true;
+    deviceList.hidden = true;
   });
   authenticateButton.addEventListener("click", submitCredentials);
   const forgetLogin = () => {
@@ -187456,6 +188706,8 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       void showSimulatorFromAgent(udid, presentation);
     },
     cleanup: () => {
+      annotation?.dispose();
+      annotation = null;
       connectGeneration++;
       discoveryGeneration++;
       nearbyGeneration++;
@@ -187676,6 +188928,8 @@ var init_vnc_pane = __esm({
   async "src/renderer/views/vnc-pane.ts"() {
     await init_rfb();
     init_prompt_attachments();
+    init_attach_annotation();
+    init_annotation_layer();
     init_context_menu();
     init_helpers();
     init_icons();
@@ -187688,12 +188942,59 @@ var init_vnc_pane = __esm({
     init_simulator_desktop_view();
     init_panels();
     init_desktop_viewer();
+    init_vnc_ssh_host_form();
     CHOOSE_MACHINE_TEXT = "Choose a device, enter an address, or select a saved SSH machine.";
     MANUAL_MACHINE = "network:manual";
     NEARBY_MACHINE_PREFIX = "network:nearby:";
     SSH_MACHINE_PREFIX = "ssh:";
     SIMULATOR_MACHINE_PREFIX = "simulator:";
     isVncCredentialType = (type) => type === "username" || type === "password" || type === "target";
+  }
+});
+
+// src/renderer/views/setup/detected-item-row.ts
+function providerLabel(slug2) {
+  return PROVIDER_LABELS2[slug2] ?? slug2;
+}
+function createDetectedItemRow(opts) {
+  let checkbox = null;
+  if (opts.checkbox) {
+    checkbox = el("input", {
+      type: "checkbox",
+      class: "detected-item-check",
+      "aria-label": `Use ${opts.label}`
+    });
+    checkbox.checked = opts.checkbox.checked;
+    checkbox.disabled = opts.checkbox.disabled ?? false;
+  }
+  const root = el(
+    "div",
+    { class: "env-key-row detected-item-row" },
+    ...checkbox ? [checkbox] : [],
+    el("span", { class: "env-key-provider" }, opts.label),
+    el("span", { class: "env-key-source" }, opts.detail),
+    ...opts.masked ? [el("span", { class: "env-key-masked" }, opts.masked)] : [],
+    ...opts.status ? [el("span", { class: opts.status.ok ? "key-status ok" : "key-status" }, opts.status.text)] : []
+  );
+  root.dataset["kind"] = opts.kind;
+  root.dataset["id"] = opts.id;
+  return { root, checkbox };
+}
+var PROVIDER_LABELS2;
+var init_detected_item_row = __esm({
+  "src/renderer/views/setup/detected-item-row.ts"() {
+    init_helpers();
+    PROVIDER_LABELS2 = {
+      anthropic: "Anthropic",
+      openai: "OpenAI",
+      cursor: "Cursor",
+      openrouter: "OpenRouter",
+      mistral: "Mistral",
+      gemini: "Google Gemini",
+      deepseek: "DeepSeek",
+      huggingface: "Hugging Face",
+      lmstudio: "LM Studio"
+    };
   }
 });
 
@@ -189970,6 +191271,114 @@ var init_activity_home = __esm({
   }
 });
 
+// src/renderer/controller/thread-prompts.ts
+async function acceptThreadPrompt(store2, api2, command2) {
+  const threadId = command2.thread.id;
+  if (Date.now() >= command2.expiresAt || command2.sourceThreadId === threadId)
+    return { ok: false, error: "This prompt expired or targets its own thread." };
+  if (!beginThreadSubmission(store2, threadId))
+    return {
+      ok: false,
+      error: "Another prompt is being submitted to this thread. Try again shortly."
+    };
+  try {
+    const state = store2.getState();
+    const resident = getThreadById(store2, threadId);
+    if (resident && (backgroundProjectOf(store2, threadId) ?? state.activeProjectId) !== command2.projectId)
+      return { ok: false, error: "The destination project changed." };
+    if (!resident) {
+      if (state.activeProjectId === command2.projectId)
+        store2.setState({ threads: [...state.threads, command2.thread] });
+      else
+        store2.setState({
+          backgroundThreads: [
+            ...state.backgroundThreads,
+            { projectId: command2.projectId, thread: command2.thread }
+          ]
+        });
+    } else if (resident.messagesLoaded === false) {
+      const diskIds = new Set(command2.thread.messages.map((message2) => message2.id));
+      patchThreadAnywhere(store2, threadId, (thread) => ({
+        ...thread,
+        messages: [
+          ...command2.thread.messages,
+          ...thread.messages.filter((message2) => !diskIds.has(message2.id))
+        ],
+        messagesLoaded: command2.thread.messagesLoaded !== false
+      }));
+    }
+    let current = getThreadById(store2, threadId);
+    if (!current || current.archivedAt !== void 0 || current.messagesLoaded === false || Date.now() >= command2.expiresAt)
+      return { ok: false, error: "The destination conversation is unavailable." };
+    if (!current.worktreeChoice && current.messages.length === 0) {
+      const prepared = await api2.agent.prepareCheckout(
+        command2.projectId,
+        threadId,
+        command2.text,
+        "automatic",
+        current.model
+      );
+      if (Date.now() >= command2.expiresAt)
+        return { ok: false, error: "This prompt expired while preparing the checkout." };
+      applyPreparedThreadCheckout(store2, threadId, prepared);
+      current = getThreadById(store2, threadId);
+      if (!current || current.archivedAt !== void 0)
+        return { ok: false, error: "The destination conversation is unavailable." };
+    }
+    const origin = {
+      kind: "machine",
+      operationId: `thread:${command2.sourceThreadId}`
+    };
+    if (current.status === "error")
+      patchThreadAnywhere(store2, threadId, (thread) => ({ ...thread, status: "idle" }));
+    const messageId = addMessage(store2, threadId, "user", command2.text, void 0, void 0, {
+      origin
+    });
+    enqueueUserMessage(store2, threadId, {
+      messageId,
+      payload: { content: command2.text },
+      createdAt: Date.now(),
+      origin
+    });
+    const queued = current.status === "running" || current.queuePaused === true;
+    drainMessageQueue(store2, api2, threadId);
+    const accepted = getThreadById(store2, threadId);
+    if (accepted) {
+      try {
+        await api2.threads.updateMeta(command2.projectId, threadId, {
+          pendingMessages: accepted.pendingMessages ?? [],
+          continuationUsed: accepted.continuationUsed ?? 0,
+          ...accepted.currentEpoch !== void 0 ? { currentEpoch: accepted.currentEpoch } : {},
+          updatedAt: accepted.updatedAt
+        });
+      } catch (error62) {
+        console.error("[threads] could not persist accepted prompt metadata", error62);
+      }
+    }
+    return {
+      ok: true,
+      queued: queued || (getThreadById(store2, threadId)?.pendingMessages?.some(
+        (item) => item.messageId === messageId
+      ) ?? false)
+    };
+  } catch (error62) {
+    return {
+      ok: false,
+      error: error62 instanceof Error ? error62.message : "Could not submit the prompt."
+    };
+  } finally {
+    endThreadSubmission(store2, threadId);
+  }
+}
+var init_thread_prompts = __esm({
+  "src/renderer/controller/thread-prompts.ts"() {
+    init_thread_helpers();
+    init_pending_submissions();
+    init_message_queue();
+    init_background_threads();
+  }
+});
+
 // src/renderer/controller/sync-thread-branch-after-shell.ts
 async function syncThreadGitBranchAfterShell(store2, api2, threadId) {
   const projectId = store2.getState().activeProjectId;
@@ -190832,14 +192241,16 @@ function startAgentController(store2, api2) {
               usage: finished.usage,
               updatedAt: finished.updatedAt,
               title: finished.title,
+              pendingMessages: finished.pendingMessages ?? [],
+              continuationUsed: finished.continuationUsed ?? 0,
+              ...finished.currentEpoch !== void 0 ? { currentEpoch: finished.currentEpoch } : {},
               ...finished.todos !== void 0 ? { todos: finished.todos } : {}
             }).catch((err2) => {
               console.error("[threads] could not persist a background run finish", err2);
             });
           }
-        } else {
-          drainMessageQueue(store2, api2, threadId);
         }
+        if (!backgroundProjectWasRemoved) drainMessageQueue(store2, api2, threadId);
         const finishedThread = getThreadById(store2, threadId);
         const quiet = takeQuietRun(threadId);
         if (finishedThread?.status === "idle") {
@@ -190863,9 +192274,15 @@ function startAgentController(store2, api2) {
       sendNow: payload.sendNow
     });
   });
+  const unsubThreadPrompts = api2.threadPrompts.onPrompt((command2) => {
+    void acceptThreadPrompt(store2, api2, command2).then((result) => api2.threadPrompts.reply(command2.id, result)).catch((error62) => {
+      console.error("[threads] failed to acknowledge prompt:", error62);
+    });
+  });
   return () => {
     unsub();
     unsubHookQueue();
+    unsubThreadPrompts();
     detachDiffState();
   };
 }
@@ -190939,6 +192356,7 @@ var pendingTurn;
 var init_agent = __esm({
   "src/renderer/controller/agent.ts"() {
     init_automation_failure();
+    init_thread_prompts();
     init_dynamic_model();
     init_thread_helpers();
     init_sync_thread_branch_after_shell();
