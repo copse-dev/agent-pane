@@ -1,9 +1,11 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { Worker } from 'node:worker_threads'
+import { buildSync } from 'esbuild'
+import ts from 'typescript'
 import { removeE2eTree } from '../tests/e2e/helpers/remove-tree.ts'
 
 const tempPaths: string[] = []
@@ -49,6 +51,47 @@ async function startThreadWriter(dir: string): Promise<Worker> {
 }
 
 describe('removeE2eTree', () => {
+  for (const [spec, fixtureName] of [
+    ['acp-catalog-entry.e2e.ts', 'ACP_FIXTURE'],
+    ['acp-registry-discovery.e2e.ts', 'AGENT'],
+  ]) {
+    it(`keeps the ${String(spec)} cleanup import outside the generated agent`, () => {
+      assert.ok(spec && fixtureName)
+      const source = readFileSync(resolve('tests/e2e', spec), 'utf8')
+      const parsed = ts.createSourceFile(spec, source, ts.ScriptTarget.Latest, true)
+      const imports = parsed.statements.filter(ts.isImportDeclaration)
+      assert.ok(
+        imports.some((statement) => {
+          const bindings = statement.importClause?.namedBindings
+          return (
+            ts.isStringLiteral(statement.moduleSpecifier) &&
+            statement.moduleSpecifier.text === './helpers/remove-tree.ts' &&
+            bindings &&
+            ts.isNamedImports(bindings) &&
+            bindings.elements.some((binding) => binding.name.text === 'removeE2eTree')
+          )
+        }),
+        'the outer cleanup hook needs a module-scope helper binding',
+      )
+      const declaration = parsed.statements
+        .filter(ts.isVariableStatement)
+        .flatMap((statement) => statement.declarationList.declarations)
+        .find((entry) => ts.isIdentifier(entry.name) && entry.name.text === fixtureName)
+      const fixture = declaration?.initializer
+      assert.ok(fixture && ts.isNoSubstitutionTemplateLiteral(fixture))
+      assert.doesNotThrow(() =>
+        buildSync({
+          stdin: { contents: fixture.text, resolveDir: resolve('.'), loader: 'js' },
+          platform: 'node',
+          bundle: true,
+          packages: 'external',
+          write: false,
+          logLevel: 'silent',
+        }),
+      )
+    })
+  }
+
   it('removes a whole profile tree', () => {
     const { profile } = makeProfile()
 

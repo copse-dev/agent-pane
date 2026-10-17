@@ -1,3 +1,4 @@
+import { removeE2eTree } from './helpers/remove-tree.ts'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -19,7 +20,6 @@ const AGENT = `
 import { writeFileSync } from 'node:fs'
 import { Readable, Writable } from 'node:stream'
 import { agent, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
-import { removeE2eTree } from './helpers/remove-tree.ts'
 writeFileSync(new URL('./launched', import.meta.url), 'yes')
 agent({ name: 'registry-entry-fixture' })
   .onRequest('initialize', () => ({ protocolVersion: PROTOCOL_VERSION, agentCapabilities: {} }))
