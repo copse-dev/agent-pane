@@ -1,3 +1,4 @@
+import { createProfileVaultSection } from './settings-profile-vault.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { SettingsSnapshot, SettingsUpdate } from '@shared/settings-contract.ts'
@@ -201,6 +202,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       nav.refreshHeadings()
     },
   )
+  qsRequired(overlay, '#settings-profile-vault-host').append(
+    createProfileVaultSection(api.profileVault),
+  )
+
   const storage = createStorageSection(overlay, api, store, closeSettingsDialog)
   const lifecycle = new SettingsLifecycle(
     {
