@@ -121,7 +121,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   })
   qsRequired(overlay, '#settings-ssh-workspace-host').append(sshWorkspaceSection.root)
 
-  const providersSection = createProvidersSection(overlay, api)
+  const providersSection = createProvidersSection(overlay, api, {
+    // Agent installs and sign-ins are interactive programs: close Settings so
+    // the new shell is visible, as the Usage page's plan sign-in does.
+    runInTerminal: (command): void => {
+      closeSettingsDialog()
+      store.emit('request_terminal_command', command, { executionTarget: 'local' })
+    },
+  })
   const toolPermissionsPanel = createToolPermissionsPanel(api.toolPermissions)
   qsRequired(overlay, '#tool-permissions-host').append(toolPermissionsPanel.root)
 
