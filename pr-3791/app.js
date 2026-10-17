@@ -45139,7 +45139,7 @@ function buildSeverelyDominatedList(points) {
       el(
         "summary",
         {},
-        `${String(points.length)} models cost at least 4\xD7 more than an equally capable priced model`
+        `${String(points.length)} ${points.length === 1 ? "model costs" : "models cost"} at least 4\xD7 more than an equally capable priced model`
       ),
       renderBandedModelList(
         points.map((p2) => ({
@@ -45159,7 +45159,11 @@ function buildAuxLists(unpricedList, unscoredList) {
       el(
         "details",
         { class: "field-hint frontier-unpriced-list" },
-        el("summary", {}, `${String(unpricedList.length)} scored models with no price data yet`),
+        el(
+          "summary",
+          {},
+          `${String(unpricedList.length)} scored model${unpricedList.length === 1 ? "" : "s"} with no price data yet`
+        ),
         renderBandedModelList(
           unpricedList.map((u4) => ({
             id: u4.id,
@@ -45939,7 +45943,7 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
           el(
             "summary",
             {},
-            `${String(dominatedLive.length)} discoverable models are dominated (not worth setting up \xB7 better value already on your frontier)`
+            `${String(dominatedLive.length)} discoverable ${dominatedLive.length === 1 ? "model is" : "models are"} dominated (not worth setting up \xB7 better value already on your frontier)`
           ),
           renderBandedModelList(
             dominatedLive.map((p2) => ({
