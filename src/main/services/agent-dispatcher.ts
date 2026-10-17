@@ -662,6 +662,7 @@ export class AgentDispatcher {
     projectId: string,
     threadId: string,
     historyLength: number,
+    host: AgentHost<StreamChunk>,
   ): Promise<void> {
     if (historyLength > 0) return
     let transcriptMessages: number
@@ -671,7 +672,7 @@ export class AgentDispatcher {
       return
     }
     if (!contextWasLost(historyLength, transcriptMessages)) return
-    this.host.emit(threadId, { type: 'text', text: contextLossNotice(transcriptMessages) })
+    host.emit(threadId, { type: 'text', text: contextLossNotice(transcriptMessages) })
   }
 
   private async execute(
@@ -680,6 +681,10 @@ export class AgentDispatcher {
     host: AgentHost<StreamChunk>,
   ): Promise<TurnOutcome | undefined> {
     const { projectId, threadId, payload } = request
+    // Context estimates can cache an empty history before the outgoing prompt
+    // is saved. Rebuild against the now-persisted transcript at dispatch, rather
+    // than treating that earlier empty projection as authoritative forever.
+    if (this.histories.get(key)?.length === 0) this.histories.delete(key)
     const priorMessages = await this.history(projectId, threadId)
     const executionContext = await this.dependencies.prepareExecutionContext(
       projectId,
@@ -692,7 +697,7 @@ export class AgentDispatcher {
 
     // Reports on the pre-turn state, so it runs before the checkpoint writer
     // starts moving that state on.
-    await this.warnIfContextWasLost(projectId, threadId, priorMessages.length)
+    await this.warnIfContextWasLost(projectId, threadId, priorMessages.length, host)
 
     // Keep the in-memory history in step with each persisted checkpoint. A run
     // that throws outright never reaches the commit below, and leaving the cache

@@ -219,6 +219,16 @@ export class TurnTranscriptWriter {
         if (thread) {
           store.setState({ threads: [{ ...thread, status: 'running' }], activeThreadId: threadId })
           session.initialMeta = structuredClone(transcriptMeta(thread))
+          // Attachment tells the renderer this status is runtime-owned. Write
+          // it on the store queue before output so a held turn is recoverable.
+          this.track(
+            session,
+            this.deps
+              .updateMeta(projectId, threadId, { status: 'running' })
+              .catch((error: unknown) => {
+                this.deps.onError?.(error)
+              }),
+          )
         } else session.passthrough = true
       })
       .catch((error: unknown) => {

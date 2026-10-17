@@ -1227,6 +1227,19 @@ test('a user-cancelled turn records whether a send-now or a Stop aborted it', ()
   assert.equal(takeSendNowAbort('t1'), false)
 })
 
+test('a disk attachment cannot resurrect a run already marked interrupted by recovery', () => {
+  const recovered = { ...thread('t1'), status: 'idle' as const, interruptedTurnAt: 20 }
+  const { store, snapshot, unsub } = setup([recovered])
+  snapshot({
+    projectId: 'project-1',
+    thread: thread('t1'),
+    checkpoint: { stream: null, pendingTurn: null },
+  })
+  assert.equal(requireThread(store, 't1').status, 'idle')
+  assert.equal(requireThread(store, 't1').interruptedTurnAt, 20)
+  unsub()
+})
+
 test('a fresh controller ignores missed-prefix chunks until a runtime checkpoint arrives', () => {
   const runtime = createStore({ threads: [thread('t1')] })
   const reducer = createTranscriptReducer(runtime, { createMessageId: () => 'runtime-answer' })

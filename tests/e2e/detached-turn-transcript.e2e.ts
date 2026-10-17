@@ -31,7 +31,7 @@ import {
  * `window.close()` is the only close WebDriver reaches and it skips the
  * preventable `close` event the product handles.
  */
-const PROJECT_ID = 'e2e-detached-transcript'
+let projectId = ''
 const PROMPT = 'Read the plan and summarise it.'
 const STEP = 'Reading the plan first.'
 const ANSWER =
@@ -54,9 +54,11 @@ const fixtureAnswer = z.object({
 })
 
 let fixtureDir = ''
+const fixtureDirs: string[] = []
+const originalWorkspaceDir = process.env['COPSE_WORKSPACE_DIR']
 
 function threadDir(threadId: string): string {
-  return join(e2eWorkspaceDir(), PROJECT_ID, threadId)
+  return join(e2eWorkspaceDir(), projectId, threadId)
 }
 
 /** The message lines of a thread's spine, in order (a rewrite replaces in place). */
@@ -141,15 +143,22 @@ describe('a turn outlives its window', function () {
     // Detaching on close follows the macOS app model; elsewhere closing the
     // last window still quits.
     if (process.platform !== 'darwin') this.skip()
+    // resetUserData clears config, not the native thread store. Each case
+    // needs its own project so a completed prior case cannot be restored.
+    projectId = `e2e-detached-transcript-${randomUUID()}`
     fixtureDir = mkdtempSync(join(tmpdir(), 'copse-e2e-window-close-'))
-    writeE2eEnv({ COPSE_E2E_NATIVE_ALERTS: fixtureDir })
+    fixtureDirs.push(fixtureDir)
+    writeE2eEnv({
+      COPSE_E2E_NATIVE_ALERTS: fixtureDir,
+      COPSE_WORKSPACE_DIR: join(fixtureDir, 'workspace'),
+    })
     resetUserData()
     const workspace = seedStableWorkspace({
       files: {
         'PLAN.md': '# Plan\n\n1. build the bundle\n2. run the focused tests\n3. ship the notes\n',
       },
     })
-    seedEmptyProject(workspace, PROJECT_ID, {
+    seedEmptyProject(workspace, projectId, {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
       autoRunSandboxCommands: false,
@@ -164,9 +173,18 @@ describe('a turn outlives its window', function () {
     if ((await windowUrl().catch(() => '')) === 'about:blank') {
       await launchCopseAgain().catch(() => undefined)
     }
-    writeE2eEnv({ COPSE_E2E_NATIVE_ALERTS: undefined })
+    writeE2eEnv({
+      COPSE_E2E_NATIVE_ALERTS: undefined,
+      COPSE_WORKSPACE_DIR: originalWorkspaceDir,
+    })
     resetUserData()
-    rmSync(fixtureDir, { recursive: true, force: true })
+  })
+
+  after(async () => {
+    if (process.platform !== 'darwin') return
+    // Close the last app's SQLite handles before removing its native store.
+    await browser.reloadSession()
+    for (const dir of fixtureDirs) rmSync(dir, { recursive: true, force: true })
   })
 
   it('writes the turn while the window is closed and shows it once on reopen', async function () {
@@ -274,6 +292,7 @@ describe('a turn outlives its window', function () {
   it('reattaches during an answer with its prefix and runtime identity intact', async function () {
     this.timeout(120_000)
     const scenario = await installMockScenario({
+      title: 'Reattach to a streaming answer',
       turns: [{ user: PROMPT, responses: [{ text: ANSWER, chunkDelayMs: 500 }] }],
     })
     await setComposerValue(PROMPT)
@@ -322,6 +341,7 @@ describe('a turn outlives its window', function () {
                 args: { questions: [{ question: 'Which colour should we use?' }] },
               }
         const scenario = await installMockScenario({
+          title: `Restore ${kind} ${raisedWhileDetached ? 'raised while detached' : 'on reconnect'}`,
           turns: [
             {
               user: prompt,

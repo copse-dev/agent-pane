@@ -239,6 +239,14 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           return {
             ...current,
             ...transcriptMeta(thread),
+            // Queue recovery may already have proven the persisted run died.
+            // An idle attachment's disk snapshot must not resurrect that stale
+            // running flag after recovery has offered an explicit retry.
+            ...(current.interruptedTurnAt !== undefined &&
+            checkpoint.stream === null &&
+            checkpoint.pendingTurn === null
+              ? { status: current.status }
+              : {}),
             messages: [
               ...thread.messages,
               ...current.messages.filter((message) => !known.has(message.id)),

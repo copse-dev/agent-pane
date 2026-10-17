@@ -139,6 +139,20 @@ describe('TurnTranscriptWriter', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
+  it('persists running status before any output or window is attached', async () => {
+    await updateMeta(PROJECT, THREAD, { status: 'idle' })
+    const { writer } = harness(() => [])
+    const transcript = writer.begin(PROJECT, THREAD)
+    try {
+      await writer.attach(PROJECT, [THREAD])
+      assert.equal((await stored()).status, 'running')
+    } finally {
+      transcript.end()
+      await writer.settled(THREAD)
+    }
+    assert.equal((await stored()).status, 'idle')
+  })
+
   it('writes the whole turn with no window to deliver it to', async () => {
     // The window closed before the turn started streaming: nothing is received.
     const turn = harness(recordedTurn)
