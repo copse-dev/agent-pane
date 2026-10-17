@@ -82,6 +82,9 @@ export function needsHydration(thread: Pick<Thread, 'messagesLoaded'>): boolean 
  */
 function isPinned(thread: Thread, activeThreadId: string | null): boolean {
   if (thread.id === activeThreadId) return true
+  // A side chat is read beside its parent and is never active itself; evicting it
+  // would blank the open panel on the next render.
+  if (activeThreadId !== null && thread.sideChat?.parentThreadId === activeThreadId) return true
   if (thread.status === 'running') return true
   return (thread.pendingMessages?.length ?? 0) > 0
 }

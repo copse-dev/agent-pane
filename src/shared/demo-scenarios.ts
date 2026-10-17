@@ -93,6 +93,12 @@ export interface DemoScenario {
    */
   failThreadHydration?: boolean
   /**
+   * Hand side chats back from `threads:load-project` as metadata only, the way an
+   * app restart does, so their transcripts must be read from "disk" (the scenario's
+   * threads) before the Side chat panel can show them.
+   */
+  deferSideChatTranscripts?: boolean
+  /**
    * Answer `vnc:discover` with these ports instead of scanning a host the browser
    * demo does not have. The discovered-port list only renders when a machine
    * exposes more than one port, and the first is selected on arrival — which is
@@ -3049,6 +3055,24 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         fileTreeWidth: 180,
       },
     },
+    threads: SIDE_CHATS_THREADS,
+  },
+  {
+    id: 'side-chats-restored',
+    label: 'Side chats after an app restart',
+    project: project('demo-side-chats-restored', 'Widgets', '/demo/widgets'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      layout: {
+        projectsPaneWidth: 240,
+        filesPaneWidth: 680,
+        filesPaneHeight: 360,
+        fileTreeWidth: 180,
+      },
+    },
+    deferSideChatTranscripts: true,
     threads: SIDE_CHATS_THREADS,
   },
   {

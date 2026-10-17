@@ -7,6 +7,7 @@ import { addMessage, createThread, setThreadStatus } from '@shared/store/thread-
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { startSideChat } from '../controller/side-chat.ts'
+import { attachThreadHydration } from '../controller/thread-hydration.ts'
 import {
   mountSideChatPane,
   renderSideChat,
@@ -256,6 +257,76 @@ test('the mounted pane shows a requested side chat beside the main thread, sends
     )
   } finally {
     dispose()
+    document.body.replaceChildren()
+  }
+})
+
+test('a side chat whose transcript is not read yet shows loading, not the empty-chat suggestions', () => {
+  const side = thread('s', { sideChat: link, messagesLoaded: false })
+  const loading = renderSideChat({
+    side,
+    parent: thread('main'),
+    onSuggestion: () => undefined,
+    onArchive: () => undefined,
+  })
+  assert.match(loading.body.textContent, /Loading conversation/)
+  assert.equal(loading.body.querySelectorAll('[data-suggestion]').length, 0)
+
+  const failed = renderSideChat({
+    side,
+    parent: thread('main'),
+    loadFailed: true,
+    onSuggestion: () => undefined,
+    onArchive: () => undefined,
+  })
+  assert.match(failed.body.textContent, /Couldn’t load this side chat/)
+})
+
+test('after a restart the mounted pane reads the selected side chat transcript from disk', async () => {
+  const store = createStore()
+  const link = { parentThreadId: 'main', anchorMessageId: 'm1' }
+  store.setState({
+    activeProjectId: 'project-1',
+    activeThreadId: 'main',
+    filesPaneOpen: true,
+    rightPanelMode: 'side-chat',
+    threads: [
+      thread('main', { messages: [message('m1', 'user', 'Why?')] }),
+      thread('s', { sideChat: link, messagesLoaded: false }),
+    ],
+  })
+  const base = createFakeApi()
+  const reads: string[] = []
+  const api: ApiClient = {
+    ...base,
+    threads: {
+      ...base.threads,
+      loadMessages: (_projectId: string, threadId: string): Promise<Message[]> => {
+        reads.push(threadId)
+        return Promise.resolve(
+          threadId === 's'
+            ? [message('q', 'user', 'Is it safe?'), message('a', 'assistant', 'Yes.')]
+            : [],
+        )
+      },
+    },
+  }
+  const list = document.createElement('div')
+  const viewer = document.createElement('div')
+  document.body.append(list, viewer)
+  const detachHydration = attachThreadHydration(store, api)
+  const dispose = mountSideChatPane(list, viewer, store, api)
+  const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 30))
+  try {
+    await settle()
+    assert.ok(reads.includes('s'), 'the selected side chat was read')
+    assert.equal(reads.filter((id) => id === 's').length, 1, 'read once, not per render')
+    assert.equal(viewer.querySelector('.is-user')?.textContent, 'Is it safe?')
+    assert.equal(viewer.querySelectorAll('[data-suggestion]').length, 0)
+    assert.equal(viewer.querySelector<HTMLInputElement>('.side-chat-input')?.disabled, false)
+  } finally {
+    dispose()
+    detachHydration()
     document.body.replaceChildren()
   }
 })
