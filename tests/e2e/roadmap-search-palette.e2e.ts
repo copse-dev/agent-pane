@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // The Cmd/Ctrl+P quick-open palette doubles as a light "search everywhere":
 // with roadmap plans enabled, a typed query also matches the project's roadmap
@@ -44,8 +45,8 @@ describe('roadmap items in the quick-open palette (Cmd/Ctrl+P)', () => {
 
   after(() => {
     resetUserData()
-    rmSync(tempParent, { recursive: true, force: true })
-    rmSync(knowledgeDir, { recursive: true, force: true })
+    removeE2eTree(tempParent)
+    removeE2eTree(knowledgeDir)
   })
 
   it('lists a matching roadmap item and opens it in the Roadmap pane', async () => {

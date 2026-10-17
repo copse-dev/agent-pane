@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { $, browser, expect } from '@wdio/globals'
@@ -11,6 +11,7 @@ import {
 } from './helpers/badge-style.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-settings-sources-cursor-rules'
 
@@ -25,7 +26,7 @@ describe('settings sources cursor rules (#636)', function () {
     // A fixed path, not mkdtemp: the Sources list prints it, and a random
     // suffix made every capture differ.
     workspaceRoot = join(tmpdir(), 'copse-e2e', 'cursor-rules')
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    removeE2eTree(workspaceRoot)
     mkdirSync(workspaceRoot, { recursive: true })
     writeFileSync(
       join(workspaceRoot, 'AGENTS.md'),
@@ -60,7 +61,7 @@ describe('settings sources cursor rules (#636)', function () {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    removeE2eTree(workspaceRoot)
   })
 
   it('lists Always / Auto / Agent / Manual Cursor rules in Settings → Sources', async () => {

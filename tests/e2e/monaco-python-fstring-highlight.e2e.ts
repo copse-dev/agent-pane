@@ -1,9 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
 import { parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-monaco-fstring-project'
 const SAMPLE_FILE = 'fstring-sample.py'
@@ -59,7 +60,7 @@ describe('Monaco python multi-line f-string highlighting', () => {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(dirname(workspaceRoot), { recursive: true, force: true })
+    if (workspaceRoot) removeE2eTree(dirname(workspaceRoot))
   })
 
   it('keeps code after the f-string tokenized as code, not string', async () => {

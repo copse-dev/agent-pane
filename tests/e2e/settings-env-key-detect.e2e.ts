@@ -1,10 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // Settings → General: the single "Re-scan" link re-checks agents and reads the
 // environment for API keys. The e2e harness blanks every provider env var (see
@@ -27,7 +28,7 @@ describe('Re-scan finds nothing new in a clean environment (Settings → General
   after(() => {
     writeE2eEnv({ HOME: originalHome })
     resetUserData()
-    rmSync(cleanHome, { recursive: true, force: true })
+    removeE2eTree(cleanHome)
   })
 
   it('scans on click and reports the empty result next to the link', async () => {

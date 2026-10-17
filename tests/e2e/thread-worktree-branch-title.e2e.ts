@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -19,6 +19,7 @@ import {
   savePreparedAppScreenshot,
   waitForSettledLayout,
 } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-worktree-branch-title-project'
 const THREAD_ID = 'e2e-worktree-branch-title-abc123'
@@ -46,7 +47,7 @@ describe('automatic worktree branch naming', () => {
     projectRoot = join(fixtureRoot, 'branch-title')
     mkdirSync(projectRoot)
     worktreeRoot = join(worktreesRoot, PROJECT_ID, THREAD_ID)
-    rmSync(worktreeRoot, { recursive: true, force: true })
+    removeE2eTree(worktreeRoot)
     git(projectRoot, ['init', '-q', '-b', 'main'])
     git(projectRoot, ['config', 'user.email', 'e2e@example.invalid'])
     git(projectRoot, ['config', 'user.name', 'Copse E2E'])
@@ -81,8 +82,8 @@ describe('automatic worktree branch naming', () => {
 
   after(async () => {
     resetUserData()
-    if (worktreeRoot) rmSync(worktreeRoot, { recursive: true, force: true })
-    if (projectRoot) rmSync(fixtureRoot, { recursive: true, force: true })
+    if (worktreeRoot) removeE2eTree(worktreeRoot)
+    if (projectRoot) removeE2eTree(fixtureRoot)
     await server.close()
   })
 

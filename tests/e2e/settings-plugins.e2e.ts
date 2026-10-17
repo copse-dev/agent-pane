@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -11,6 +11,7 @@ import {
 } from './helpers/badge-style.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // Settings → Plugins list — P3 of docs/plans/hooks-and-feature-packs.md.
 //
@@ -39,7 +40,7 @@ describe('settings plugins (about:addons)', function () {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     localPluginRoot = join(tmpdir(), 'copse-e2e', 'selected-plugin')
-    rmSync(localPluginRoot, { recursive: true, force: true })
+    removeE2eTree(localPluginRoot)
     mkdirSync(join(localPluginRoot, 'dist'), { recursive: true })
     writeFileSync(join(localPluginRoot, 'dist', 'index.mjs'), 'export default {}\n')
     writeFileSync(
@@ -75,7 +76,7 @@ describe('settings plugins (about:addons)', function () {
 
   after(() => {
     resetUserData()
-    if (localPluginRoot) rmSync(localPluginRoot, { recursive: true, force: true })
+    if (localPluginRoot) removeE2eTree(localPluginRoot)
   })
 
   it('lists installed plugins with an enable toggle + contribution enumeration', async () => {

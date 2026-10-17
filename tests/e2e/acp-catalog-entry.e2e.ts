@@ -1,5 +1,6 @@
+import { removeE2eTree } from './helpers/remove-tree.ts'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { buildSync } from 'esbuild'
@@ -80,7 +81,7 @@ describe('manual ACP catalog entry', function () {
 
   after(() => {
     resetUserData()
-    if (scratch) rmSync(scratch, { recursive: true, force: true })
+    if (scratch) removeE2eTree(scratch)
   })
 
   it('adds from Settings, selects in the picker and completes a fixture turn', async function () {

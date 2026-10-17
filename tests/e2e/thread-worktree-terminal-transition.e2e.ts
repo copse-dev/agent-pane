@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
@@ -10,6 +10,7 @@ import {
   approveUnsandboxedTerminalIfPrompted,
 } from './helpers/terminal-approval.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-worktree-terminal-transition-project'
 const THREAD_ID = 'e2e-worktree-terminal-transition-thread'
@@ -52,7 +53,7 @@ describe('terminal checkout transition', () => {
     // CI retries reuse COPSE_WORKTREES_DIR. Start from a genuinely new repo so
     // a prior attempt's worktree registration or fixture files cannot change
     // the checkout policy inspected by this attempt.
-    rmSync(worktreeRoot, { recursive: true, force: true })
+    removeE2eTree(worktreeRoot)
     git(projectRoot, ['init', '-q', '-b', 'main'])
     git(projectRoot, ['config', 'user.email', 'e2e@example.invalid'])
     git(projectRoot, ['config', 'user.name', 'Copse E2E'])
@@ -90,8 +91,8 @@ describe('terminal checkout transition', () => {
 
   after(() => {
     resetUserData()
-    if (worktreeRoot) rmSync(worktreeRoot, { recursive: true, force: true })
-    if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
+    if (worktreeRoot) removeE2eTree(worktreeRoot)
+    if (projectRoot) removeE2eTree(projectRoot)
     delete process.env['COPSE_PANEL_MOCK_LLM']
     delete process.env['ANTHROPIC_API_KEY']
     delete process.env['OPENAI_API_KEY']

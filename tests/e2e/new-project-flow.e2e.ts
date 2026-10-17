@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
@@ -6,6 +6,7 @@ import { resetUserData, writeSeedConfig, seedEmptyProject } from './helpers/seed
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { isDisplayFace, readHeadingStyle } from './helpers/heading-style.ts'
 import { composerText } from './helpers/composer.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // Creating a project runs `git init` + writes AGENT.md/README.md, so it needs a
 // writable parent outside the repo working tree. A throwaway temp dir keeps the
@@ -14,14 +15,14 @@ const PARENT_DIR = mkdtempSync(join(tmpdir(), 'copse-new-project-'))
 
 function makeParent(name: string): string {
   const dir = join(PARENT_DIR, name)
-  rmSync(dir, { recursive: true, force: true })
+  removeE2eTree(dir)
   return dir
 }
 
 describe('new project flow', () => {
   after(() => {
     resetUserData()
-    rmSync(PARENT_DIR, { recursive: true, force: true })
+    removeE2eTree(PARENT_DIR)
   })
 
   it('welcome screen shows a New Project button that opens the dialog', async () => {

@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // #2497 — the roadmap pane's last native `confirm()` (bulk-apply after a
 // backlog review) now routes through the in-app dialog (confirm-dialog.ts).
@@ -44,8 +45,8 @@ describe('roadmap bulk-review confirm dialog', () => {
 
   after(() => {
     resetUserData()
-    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
-    rmSync(knowledgeDir, { recursive: true, force: true })
+    removeE2eTree(dirname(workspaceRoot))
+    removeE2eTree(knowledgeDir)
   })
 
   it('opens an in-app dialog for bulk archive; cancel leaves items untouched, confirm archives them', async function () {

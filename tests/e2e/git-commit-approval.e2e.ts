@@ -7,7 +7,6 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
-  rmSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -23,6 +22,7 @@ import {
 } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { submitComposer } from './helpers/composer.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-git-commit-approval'
 
@@ -97,7 +97,7 @@ describe('git commit approval', () => {
 
   after(() => {
     resetUserData()
-    if (root) rmSync(root, { recursive: true, force: true })
+    if (root) removeE2eTree(root)
   })
 
   it('shows the attributed command and declines before staging or invoking hooks', async () => {
@@ -177,7 +177,7 @@ describe('git commit approval', () => {
       )
       assert.equal(git('rev-list', '--count', 'HEAD').trim(), '1')
     } finally {
-      rmSync(keyDir, { recursive: true, force: true })
+      removeE2eTree(keyDir)
     }
   })
 })

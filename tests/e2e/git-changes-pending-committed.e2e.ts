@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -10,6 +10,7 @@ import {
   seedGitChangesFixture,
 } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('Changes while the committed lookup is pending', function () {
   this.timeout(120_000)
@@ -32,7 +33,7 @@ describe('Changes while the committed lookup is pending', function () {
     writeE2eEnv({ COPSE_E2E_GIT_COMMITTED_BARRIER: undefined })
     resetUserData()
     if (repoRoot) cleanupGitChangesFixture(repoRoot)
-    if (barrier) rmSync(barrier, { recursive: true, force: true })
+    if (barrier) removeE2eTree(barrier)
   })
 
   it('shows working-tree rows and their diff before committed work answers', async () => {
