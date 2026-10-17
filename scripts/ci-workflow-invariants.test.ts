@@ -479,7 +479,7 @@ describe('ci.yml workflow invariants', () => {
     )
     assert.match(
       planStep,
-      /grep -E '\^\(mode\|specs\|unit_mode\|unit_specs\)=' plan\.txt/,
+      /grep -E '\^\(mode\|specs\|unit_mode\|unit_specs\)=' "\$plan_file"/,
       'the oracle path must forward the unit plan to $GITHUB_OUTPUT',
     )
   })
@@ -668,6 +668,7 @@ describe('ci.yml workflow invariants', () => {
               CI_FULL_LABEL: 'false',
               GITHUB_OUTPUT: output,
               GITHUB_STEP_SUMMARY: join(root, 'summary'),
+              RUNNER_TEMP: root,
               TRACE: trace,
             },
           },
