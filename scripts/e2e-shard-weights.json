@@ -1,5 +1,5 @@
 {
-  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-08; six recovery specs measured from successful CI run 38434453035, 2026-10-13; send-now-preserves-shell measured from two PASSED attempts in CI38619810736/job116049833854, 2026-10-14; agent-execution-mode measured from CI38619822117/job116050261558, 2026-10-14",
+  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-08; six recovery specs measured from successful CI run 38434453035, 2026-10-13; send-now-preserves-shell measured from two PASSED attempts in CI38619810736/job116049833854, 2026-10-14; agent-execution-mode measured from CI38619822117/job116050261558, 2026-10-14; thread-submodule-worktree provisional at the median (8s) until its first CI run is measured, 2026-10-17",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 14.9,
     "tests/e2e/acp-auth-error.e2e.ts": 20.2,
@@ -347,6 +347,7 @@
     "tests/e2e/thread-running-status.e2e.ts": 10,
     "tests/e2e/thread-sidebar-live-sort.e2e.ts": 8,
     "tests/e2e/thread-sidebar-selection.e2e.ts": 6.5,
+    "tests/e2e/thread-submodule-worktree.e2e.ts": 8,
     "tests/e2e/thread-switch-isolated-worktrees.e2e.ts": 13.8,
     "tests/e2e/thread-switch-running-scroll.e2e.ts": 13.7,
     "tests/e2e/thread-terminal-rename-archive.e2e.ts": 19.2,
