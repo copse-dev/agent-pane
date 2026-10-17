@@ -9,6 +9,7 @@ import type {
   ClassifierResult,
 } from '@copse/llm/classifiers/types.ts'
 import type { LocalClassifierOverview, LocalClassifierStatus } from '@shared/local-classifiers.ts'
+import type { ToolPermissionCatalog, ToolPermissionPolicy } from '@shared/types/tool-permissions.ts'
 import { createFakeApi } from '../../fake-api.test-support.ts'
 import { createClassifiersSection } from './classifiers-section.ts'
 import { qsRequired } from '../../dom/helpers.ts'
@@ -70,6 +71,7 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
     backgrounds: Array<string | null>
     local: LocalClassifierOverview
     localCalls: string[]
+    toolPolicy: ToolPermissionPolicy
   }
 } {
   const state = {
@@ -92,7 +94,28 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
     removals: new Array<string>(),
     local: { servers: [], hosted: [] } as LocalClassifierOverview,
     localCalls: new Array<string>(),
+    toolPolicy: 'allow' as ToolPermissionPolicy,
   }
+  const permissionCatalog = (): ToolPermissionCatalog => ({
+    groups: [
+      {
+        id: 'copse',
+        name: 'Copse tools',
+        kind: 'copse',
+        tools: [
+          {
+            id: 'copse:classify_text',
+            executionName: 'ask_classifier',
+            name: 'Ask classifier',
+            description: '',
+            policy: state.toolPolicy,
+            defaultPolicy: 'allow',
+            overridden: state.toolPolicy !== 'allow',
+          },
+        ],
+      },
+    ],
+  })
   const api: Parameters<typeof createClassifiersSection>[0] = {
     classifiers: {
       list: async () => structuredClone(state.profiles),
@@ -174,6 +197,17 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
         return { ok: true }
       },
     },
+    toolPermissions: {
+      list: async () => permissionCatalog(),
+      set: async (update) => {
+        state.toolPolicy = update.policy
+        return permissionCatalog()
+      },
+      reset: async () => {
+        state.toolPolicy = 'allow'
+        return permissionCatalog()
+      },
+    },
   }
   const section = createClassifiersSection(api)
   document.body.append(section.root)
@@ -198,6 +232,21 @@ beforeEach(() => {
 })
 
 describe('classifier connections settings', () => {
+  it('starts without prompts and lets the person opt in and back out', async () => {
+    const { section, state } = setup()
+    await section.refresh()
+    const prompt = field(section.root, 'ToolPrompt')
+    assert.equal(prompt.checked, false)
+    prompt.click()
+    await setImmediate()
+    assert.equal(state.toolPolicy, 'ask')
+    assert.equal(prompt.checked, true)
+    prompt.click()
+    await setImmediate()
+    assert.equal(state.toolPolicy, 'allow')
+    assert.equal(prompt.checked, false)
+  })
+
   it('routes safety screening to a saved connection and back without an inference call', async () => {
     const { section, state } = setup([
       HTTP_PROFILE,
