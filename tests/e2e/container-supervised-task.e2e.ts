@@ -44,6 +44,10 @@ describe('container run in the supervisor rail', function () {
       'aria-label',
       'Cancel container run',
     )
+    // Review the task action, leaving the terminal's canvas cursor unfocused
+    // (a steady outline) instead of capturing an arbitrary blink phase.
+    await row.$('.supervised-task-cancel').execute((button) => button.focus())
+    await expect(row.$('.supervised-task-cancel')).toBeFocused()
     await saveAppScreenshot('container-supervised-task.png')
     await row.$('.supervised-task-cancel').click()
     await row.waitForExist({ reverse: true, timeout: 15_000 })

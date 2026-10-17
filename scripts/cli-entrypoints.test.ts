@@ -12,6 +12,7 @@ import { buildSync } from 'esbuild'
 const EXECUTABLE_LIBRARIES = [
   'acp-v2-watch',
   'assemble-macos-release',
+  'backlog-snapshot',
   'base-freshness',
   'check-macos-native-toolchain',
   'check-macos-release-size',

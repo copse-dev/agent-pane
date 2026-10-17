@@ -141,6 +141,16 @@ async function startDemoServer(): Promise<void> {
                   detail: 'Latest completed output',
                   lastSavedAt: Date.now() - 480_000,
                 },
+                {
+                  projectId: 'proj-1',
+                  projectName: 'Copse',
+                  threadId: 'thread-4',
+                  title: 'Polish the onboarding copy',
+                  group: 'has-changes',
+                  state: 'finished',
+                  detail: 'Latest completed output',
+                  lastSavedAt: Date.now() - 300_000,
+                },
               ],
             }
           : {

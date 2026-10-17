@@ -568,7 +568,7 @@
 }
 
 /* The list stays compact; the selected brief has a quiet writing surface. */
-.roadmap-viewer {
+.roadmap-viewer:has(> .roadmap-form:not([hidden])) {
   padding: 0;
   overflow: hidden;
 }

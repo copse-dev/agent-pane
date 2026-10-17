@@ -40,10 +40,15 @@ export const ACP_MODE_GROUP_ID = '__acp_session_mode__'
  * category — models are already the picker's own list, and offering them twice
  * would let the two disagree.
  */
-export function acpOptionGroupsFor(agent: AcpAgentConfig): AcpOptionGroup[] {
+export function acpOptionGroupsFor(agent: AcpAgentConfig, agentManaged = false): AcpOptionGroup[] {
   const groups: AcpOptionGroup[] = []
   for (const option of agent.availableConfigOptions ?? []) {
-    if (option.category === 'model' || option.choices.length < 2) continue
+    if (
+      option.category === 'model' ||
+      (agentManaged && option.category === 'mode') ||
+      option.choices.length < 2
+    )
+      continue
     groups.push({
       id: option.configId,
       kind: 'config',
@@ -59,7 +64,7 @@ export function acpOptionGroupsFor(agent: AcpAgentConfig): AcpOptionGroup[] {
     (option) => option.category === 'mode',
   )
   const modes = agent.availablePermissionModes ?? []
-  if (!hasConfigMode && modes.length > 1) {
+  if (!agentManaged && !hasConfigMode && modes.length > 1) {
     groups.push({
       id: ACP_MODE_GROUP_ID,
       kind: 'mode',
@@ -92,13 +97,14 @@ async function readAgents(api: AcpSettingsApi): Promise<AcpAgentConfig[]> {
 export async function loadAcpOptionGroups(
   api: AcpSettingsApi,
   model: string,
+  agentManaged = false,
 ): Promise<{ agentId: string; groups: AcpOptionGroup[] } | null> {
   const selection = parseAcpModelSelection(model)
   if (!selection) return null
   const selectedId = canonicalAcpAgentId(selection.id)
   const agent = (await readAgents(api)).find((candidate) => candidate.id === selectedId)
   if (!agent?.enabled) return null
-  const groups = acpOptionGroupsFor(agent)
+  const groups = acpOptionGroupsFor(agent, agentManaged)
   return groups.length > 0 ? { agentId: agent.id, groups } : null
 }
 

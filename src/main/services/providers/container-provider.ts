@@ -268,7 +268,7 @@ function resolveAcpHarness(
   const agent = getAcpAgent(agentId)
   if (!agent) {
     throw new ContainerModelUnavailable(
-      `The coding agent "${agentId}" is not configured or is disabled. Add it in Settings → General → Providers.`,
+      `The coding agent "${agentId}" is not configured or is disabled. Add it in Settings → General → Coding agents.`,
       'not configured in Settings',
     )
   }

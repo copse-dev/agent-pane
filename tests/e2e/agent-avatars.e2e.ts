@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { setComposerValue } from './helpers/composer.ts'
+import { withFrozenAnimations } from './helpers/frozen-animations.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
@@ -274,7 +275,67 @@ describe('riso avatars in agent chat', () => {
       true,
     )
     expect(await active.getSize()).toEqual({ width: 28, height: 28 })
-    await saveAppScreenshot('agent-avatars-active.png')
+    // The live spinner must stay visible but use a reproducible phase in captures.
+    const spinner = await $('.agent-activity:not([hidden]) .reasoning-activity-icon')
+    await spinner.waitForDisplayed()
+    await withFrozenAnimations(async () => {
+      expect(
+        await browser.execute(() => {
+          const path = document.querySelector(
+            '.agent-activity:not([hidden]) .reasoning-activity-path',
+          )
+          return path ? getComputedStyle(path).opacity : null
+        }),
+      ).toBe('1')
+      const frozen = await spinner.saveScreenshot(join(framesDir, 'spinner-frozen.png'))
+      await browser.pause(150)
+      expect(
+        (await spinner.saveScreenshot(join(framesDir, 'spinner-frozen-next.png'))).equals(frozen),
+      ).toBe(true)
+    })
+    expect(
+      await browser.execute(() =>
+        document
+          .querySelector('.agent-activity:not([hidden]) .reasoning-activity-icon')
+          ?.getAnimations({ subtree: true })
+          .some((animation) => animation.playState === 'running'),
+      ),
+    ).toBe(true)
+    // The checks above prove movement. Pin the embedded SVG's ink animation
+    // for the reference image; document.getAnimations cannot reach an img's
+    // separate SVG document. Restore the original source before testing motion
+    // and visibility again below.
+    const activeSelector = `[data-message-id="${activeId}"] .agent-avatar`
+    const animatedSource = await browser.execute(async (selector) => {
+      const img = document.querySelector<HTMLImageElement>(selector)
+      const prefix = 'data:image/svg+xml,'
+      if (!img?.src.startsWith(prefix)) throw new Error('Expected a generated SVG avatar')
+      const source = img.src
+      const svg = decodeURIComponent(source.slice(prefix.length))
+      img.src =
+        prefix +
+        encodeURIComponent(
+          svg.replace(
+            '</svg>',
+            '<style>path { animation-play-state: paused !important; animation-delay: -8s !important; }</style></svg>',
+          ),
+        )
+      await img.decode()
+      return source
+    }, activeSelector)
+    try {
+      await saveAppScreenshot('agent-avatars-active.png')
+    } finally {
+      await browser.execute(
+        async ({ selector, source }) => {
+          const img = document.querySelector<HTMLImageElement>(selector)
+          if (!img) throw new Error('Active avatar disappeared during capture')
+          img.src = source
+          await img.decode()
+        },
+        { selector: activeSelector, source: animatedSource },
+      )
+    }
 
     await browser.execute(() => {
       const img = document.querySelector<HTMLElement>('[data-avatar-active]')

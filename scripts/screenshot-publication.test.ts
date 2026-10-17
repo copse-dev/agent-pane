@@ -1138,6 +1138,61 @@ describe('parent screenshot evidence comment', () => {
     assert.doesNotMatch((await publish()).bodies[0] ?? '', /Commit the ticked/)
   })
 
+  it('names the candidates the checklist cannot tick when the listing is capped', async () => {
+    // screenshot-candidates.mts lists at most 50 names; CANDIDATE_COUNT is the
+    // whole change. The note is presentation only: the compare commit still
+    // carries every candidate, and the labels still accept or decline all.
+    const entries = Array.from({ length: 50 }, (_, index) => ({
+      name: `shot-${String(index).padStart(2, '0')}.png`,
+      new: false,
+      focus: index < 3,
+    }))
+    const capped =
+      (
+        await publish({
+          REVIEW_PENDING: 'true',
+          CANDIDATE_NAMES: candidateNames(entries),
+          CANDIDATE_COUNT: '63',
+        })
+      ).bodies[0] ?? ''
+    const boxes = capped.split('\n').filter((line) => /^- \[ \] `/.test(line))
+    assert.equal(boxes.length, 50)
+    const note = capped.indexOf('…and 13 more that this list cannot tick')
+    assert.ok(note > 0, capped)
+    assert.ok(note > capped.indexOf(boxes[49] ?? ''), 'the note follows the last checkbox')
+    assert.ok(note < capped.indexOf('- [ ] **Commit the ticked screenshots**'))
+    assert.ok(capped.slice(note).includes(`[the compare view](${COMPARE_URL})`), capped)
+    assert.match(capped.slice(note), /pnpm screenshots:accept/)
+    const complete =
+      (
+        await publish({
+          REVIEW_PENDING: 'true',
+          CANDIDATE_NAMES: candidateNames(entries),
+          CANDIDATE_COUNT: '50',
+        })
+      ).bodies[0] ?? ''
+    assert.doesNotMatch(complete, /cannot tick/)
+    assert.equal(complete.split('\n').filter((line) => /^- \[ \] `/.test(line)).length, 50)
+  })
+
+  it('keeps a capped checklist with the longest allowed names below the comment limit', async () => {
+    const entries = Array.from({ length: 50 }, (_, index) => ({
+      name: `${String(index).padStart(2, '0')}${'x'.repeat(240)}.png`,
+      new: false,
+    }))
+    const body =
+      (
+        await publish({
+          REVIEW_PENDING: 'true',
+          CANDIDATE_NAMES: candidateNames(entries),
+          CANDIDATE_COUNT: '4096',
+        })
+      ).bodies[0] ?? ''
+    assert.equal(body.split('\n').filter((line) => /^- \[ \] `/.test(line)).length, 50)
+    assert.ok(body.includes('…and 4046 more that this list cannot tick'), body)
+    assert.ok(body.length < 65_536, String(body.length))
+  })
+
   it('puts each checkbox beside its before/after images instead of a separate table', async () => {
     const body = (await publish({ REVIEW_PENDING: 'true' })).bodies[0] ?? ''
     const lines = body.split('\n')

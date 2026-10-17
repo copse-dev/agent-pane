@@ -12,6 +12,7 @@ import {
   lmStudioTestSchema,
   machineAgentRunSchema,
   parsePortKillArgs,
+  parseAcpAuthStatusArgs,
   vncDiscoveryHostSchema,
   vncTargetSchema,
   zHttpUrl,
@@ -286,5 +287,26 @@ describe('ipc-guards gh:create-pr-for-thread request', () => {
       zPrComposerCreateRequest.safeParse({ title: 't', body: 'x'.repeat(20_001) }).success,
       false,
     )
+  })
+})
+
+describe('ACP auth-status IPC payload', () => {
+  it('accepts a single bounded array and rejects malformed or oversized input', () => {
+    assert.deepEqual(parseAcpAuthStatusArgs([['codex-acp', 'claude-acp']]), [
+      'codex-acp',
+      'claude-acp',
+    ])
+    assert.deepEqual(parseAcpAuthStatusArgs([[]]), [])
+    for (const args of [
+      ['codex-acp'],
+      [[['codex-acp']]],
+      [[null]],
+      [[42]],
+      [['']],
+      [['x'.repeat(129)]],
+      [Array(33).fill('codex-acp')],
+    ]) {
+      assert.throws(() => parseAcpAuthStatusArgs(args), IpcValidationError)
+    }
   })
 })

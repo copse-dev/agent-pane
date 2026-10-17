@@ -63,6 +63,8 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   // stays labeled so the primary affordance remains readable.
   const panelControls = mountPanelModeControls(store, api, {
     alwaysShowLabels: new Set(['explorer']),
+    enableOverflow: true,
+    overflowPlacement: 'below',
   })
 
   // "Open in editor" leads the right-hand cluster, sitting just before the Panel

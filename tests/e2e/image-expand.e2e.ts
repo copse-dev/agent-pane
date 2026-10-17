@@ -207,7 +207,7 @@ describe('Screenshot click-to-expand', () => {
     await waitForImagesSettled('.messages-list', { minImages: 6 })
     await prepareE2eScreenshot()
     await browser.execute(() => {
-      const scroller = document.querySelector<HTMLElement>('.conversation-scroll')
+      const scroller = document.querySelector<HTMLElement>('.messages-list')
       if (!scroller) throw new Error('Conversation scroll host is missing')
       scroller.scrollTop = scroller.scrollHeight
     })
@@ -225,6 +225,54 @@ describe('Screenshot click-to-expand', () => {
     assert.equal(await thumb.getAttribute('role'), 'button')
     assert.equal(await thumb.getAttribute('aria-label'), 'Expand Attached image')
 
+    // Exercise the real sticky-preview transition. A native right-click can
+    // calculate its centre while the thumbnail is tall, then press after it
+    // shrinks, hitting message text and opening Copy message instead.
+    await browser.execute(() => {
+      const list = document.querySelector('.messages-list')
+      if (!list) throw new Error('Conversation scroll host is missing')
+      list.scrollTop = 0
+    })
+    await $('.msg-user.is-preview-compact').waitForExist({ reverse: true })
+    await browser.execute(async () => {
+      const prompt = document.querySelector('.msg-user')
+      const list = document.querySelector('.messages-list')
+      if (!prompt || !list) throw new Error('Conversation preview is missing')
+      await Promise.all(
+        prompt
+          .getAnimations({ subtree: true })
+          .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+          .map((animation) => animation.finished.catch(() => {})),
+      )
+      list.scrollTop = list.scrollHeight
+    })
+    await $('.msg-user.is-preview-compact').waitForDisplayed()
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const image = document.querySelector('.msg-user.is-preview-compact .message-image')
+          const prompt = image?.closest('.msg-user')
+          if (!image || !prompt) return false
+          if (
+            prompt
+              .getAnimations({ subtree: true })
+              .some(
+                (animation) =>
+                  animation.effect?.getTiming().iterations !== Infinity &&
+                  (animation.playState === 'running' || animation.pending),
+              )
+          )
+            return false
+          const rect = image.getBoundingClientRect()
+          return (
+            rect.width > 0 &&
+            rect.height > 0 &&
+            document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2) ===
+              image
+          )
+        }),
+      { timeout: 5_000, timeoutMsg: 'Sticky thumbnail must settle over its native click target' },
+    )
     await thumb.click({ button: 'right' })
     const threadCopyMenu = $('.context-menu')
     await threadCopyMenu.waitForDisplayed({ timeout: 5_000 })
@@ -470,6 +518,14 @@ describe('Screenshot click-to-expand', () => {
     await newThreadBtn.waitForClickable({ timeout: 15_000 })
     await newThreadBtn.click()
     await $('.pane-chat.is-activity-home').waitForExist({ timeout: 10_000 })
+    // The home class precedes Activity's populated render. Pin the seeded
+    // recent thread so captures cannot alternate between the 720px idle
+    // composer and the 800px composer below Activity.
+    await $('#activity-home[data-idle="false"]').waitForDisplayed({ timeout: 10_000 })
+    await $(
+      '#activity-home .activity-row[data-thread-id="e2e-image-expand-thread"]',
+    ).waitForDisplayed({ timeout: 10_000 })
+    await expect($('.pane-chat')).not.toHaveElementClass('is-activity-idle')
     await $('.prompt-input').waitForExist({ timeout: 10_000 })
 
     await browser.execute((base64: string) => {

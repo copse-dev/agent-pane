@@ -20,6 +20,7 @@ on:
 permissions:
   contents: read
   checks: read
+  actions: read
   issues: read
   pull-requests: read
   attestations: write
@@ -120,27 +121,25 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "update_channel=$update_channel" >> "$GITHUB_OUTPUT"
 
-          # A tag push starts CI and this workflow together. Wait for CI's
-          # aggregate status on precisely the commit we resolved above; do not
-          # accept a run for the branch tip, a PR merge ref, or any other SHA.
+          # Only the CI workflow's explicit full-release gate is sufficient.
+          # Missing/in-progress evidence may finish; failed evidence stops now.
           for attempt in $(seq 1 180); do
-            result="$(gh api "/repos/$GITHUB_REPOSITORY/commits/$release_sha/check-runs?check_name=CI%20Passed&per_page=100" \
-              --jq '[.check_runs[] | select(.name == "CI Passed")] | sort_by(.started_at) | last | {status, conclusion}' 2>/dev/null || true)"
-            status="$(printf '%s' "$result" | jq -r '.status // "missing"' 2>/dev/null || true)"
-            conclusion="$(printf '%s' "$result" | jq -r '.conclusion // ""' 2>/dev/null || true)"
-            if [ "$status" = "completed" ]; then
-              if [ "$conclusion" = "success" ]; then
-                echo "CI Passed succeeded for $release_sha"
-                exit 0
-              fi
-              echo "CI Passed concluded $conclusion for $release_sha"
-              exit 1
-            fi
-            echo "Waiting for CI Passed on $release_sha (attempt $attempt/180; status ${status:-missing})"
+            result=0
+            bash scripts/verify-release-validation.sh "$release_sha" > release-validation.json || result=$?
+            if [ "$result" = 0 ]; then exit 0; fi
+            if [ "$result" != 75 ]; then exit "$result"; fi
+            echo "Waiting for full release validation ($attempt/180)"
             sleep 30
           done
-          echo "Timed out waiting for CI Passed on $release_sha"
+          echo "Timed out waiting for full release validation on $release_sha"
           exit 1
+      - name: Preserve the validation used for packaging
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-validation-${{ steps.release.outputs.release_sha }}
+          path: release-validation.json
+          if-no-files-found: error
+          retention-days: 30
 
   # Keep a deliberately uncached install in the release path. The shared setup
   # action restores a complete node_modules tree when possible, which is useful
@@ -380,12 +379,19 @@ jobs:
         with:
           pattern: copse-macos-${{ needs.preflight.outputs.release_sha }}-*
           path: staged-release
+      - name: Download packaging validation evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: release-validation-${{ needs.preflight.outputs.release_sha }}
+          path: validation
       - name: Assemble update feeds and portable checksums
         run: |
           set -euo pipefail
           version="$(node -p "require('./package.json').version")"
           node scripts/assemble-macos-release.mts "$version" staged-release release
           node scripts/release-notes.mts > release/RELEASE_NOTES.md
+          cp validation/release-validation.json release/RELEASE_VALIDATION.json
+          (cd release && sha256sum RELEASE_VALIDATION.json >> SHA256SUMS)
           (
             cd release
             shasum -a 256 --check SHA256SUMS
@@ -416,6 +422,7 @@ jobs:
             release/*-mac.yml
             release/SHA256SUMS
             release/RELEASE_NOTES.md
+            release/RELEASE_VALIDATION.json
           if-no-files-found: error
           retention-days: 30
 

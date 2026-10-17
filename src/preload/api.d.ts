@@ -114,7 +114,7 @@ import type {
   StoredExtraProvider,
 } from '@copse/llm/extra-providers.ts'
 import type { DetectedAcpAgent } from '@shared/acp-known-agents.ts'
-import type { AcpAgentProbe, AcpAutoSetupResult } from '@shared/types/acp.ts'
+import type { AcpAgentProbe, AcpAuthStatus, AcpAutoSetupResult } from '@shared/types/acp.ts'
 import type { ExternalEditorList } from '@shared/types/editors.ts'
 import type {
   PreparedThreadCheckout,
@@ -179,6 +179,16 @@ export interface DetectedEnvKey {
 }
 
 export interface ApiClient {
+  threadPrompts: {
+    revokeAccess: (threadId: string, access: 'read' | 'send') => Promise<void>
+    onPrompt: (
+      handler: (command: import('@shared/thread-prompt.ts').ThreadPromptCommand) => void,
+    ) => () => void
+    reply: (
+      id: string,
+      result: import('@shared/thread-prompt.ts').ThreadPromptResult,
+    ) => Promise<void>
+  }
   chatGptPlan: import('@shared/types/chatgpt-plan.ts').ChatGptPlanClient
   mobile: {
     getState: () => Promise<import('@shared/types/mobile-companion.ts').MobileCompanionState>
@@ -343,7 +353,7 @@ export interface ApiClient {
       threadId: string,
       payload: string,
     ) => Promise<ContextBreakdown>
-    abort: (threadId: string) => Promise<void>
+    abort: (threadId: string, reason?: 'send_now') => Promise<void>
     runningThreadIds: () => Promise<string[]>
     retryReview: (projectId: string, threadId: string, payload: string) => Promise<void>
     clearHistory: (projectId: string, threadId: string) => Promise<void>
@@ -896,6 +906,11 @@ export interface ApiClient {
      * when the agent exposes none of that kind (issue #607).
      */
     probeAgent: (agentId: string) => Promise<AcpAgentProbe>
+    /**
+     * Whether each named agent's CLI is signed in, without running a turn.
+     * `unknown` when the check cannot tell; agents are matched by catalog id.
+     */
+    authStatus: (ids: string[]) => Promise<AcpAuthStatus[]>
     /**
      * "Just works" setup for the curated presets (Claude, Cursor): detect
      * clients, Socket-Firewall-install missing npm adapters, register + detect
