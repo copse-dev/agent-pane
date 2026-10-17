@@ -691,6 +691,94 @@ describe('ci.yml workflow invariants', () => {
     }
   })
 
+  it('compares PR protocols with the tested merge parent, not a stale event base', () => {
+    const root = mkdtempSync(join(tmpdir(), 'copse-ci-protocol-base-'))
+    const git = (...args: string[]): string => {
+      const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' })
+      assert.equal(result.status, 0, result.stderr)
+      return result.stdout.trim()
+    }
+    try {
+      git('init', '-b', 'main')
+      git('config', 'user.name', 'CI fixture')
+      git('config', 'user.email', 'ci@example.invalid')
+      git('config', 'commit.gpgsign', 'false')
+      git('commit', '--allow-empty', '-m', 'event base')
+      const staleBase = git('rev-parse', 'HEAD')
+      git('switch', '-c', 'feature')
+      writeFileSync(join(root, 'feature'), 'PR change')
+      git('add', 'feature')
+      git('commit', '-m', 'feature')
+      const head = git('rev-parse', 'HEAD')
+      git('switch', 'main')
+      writeFileSync(join(root, 'base'), 'new base surface')
+      git('add', 'base')
+      git('commit', '-m', 'base advanced')
+      const testedBase = git('rev-parse', 'HEAD')
+      git('merge', '--no-ff', 'feature', '-m', 'tested PR merge')
+
+      const step = jobBlock('precheck').split('- name: API protocol compatibility')[1]
+      const runBlock = step?.match(/run: \|\n([\s\S]*?)(?=\n {6}#|\n {6}-)/)?.[1]
+      assert.ok(runBlock)
+      // Exercise the real base-selection shell with real Git topology, without
+      // depending on network release discovery or the host's Bash array rules.
+      const selection = runBlock.split('          # No usable base')[0]
+      assert.ok(selection)
+      const script = `${selection}\nnode scripts/gen-api-protocol.mts --compare-ref "$BASE_SHA"`
+      const run = (
+        expectedHead: string,
+        event = 'pull_request',
+        failComparison = false,
+      ): SpawnSyncReturns<string> =>
+        spawnSync(
+          'bash',
+          [
+            '-eu',
+            '-c',
+            `node() { printf 'PROTOCOL:%s:%s:%s\\n' "$1" "$2" "$3"; return ${failComparison ? '1' : '0'}; }\n${script}`,
+          ],
+          {
+            cwd: root,
+            encoding: 'utf8',
+            env: {
+              ...process.env,
+              BASE_SHA: staleBase,
+              PR_HEAD_SHA: expectedHead,
+              TARGET_REF: 'main',
+              GITHUB_EVENT_NAME: event,
+            },
+          },
+        )
+
+      const fresh = run(head)
+      assert.equal(fresh.status, 0, fresh.stderr)
+      assert.ok(fresh.stdout.includes(`--compare-ref:${testedBase}`), fresh.stdout)
+      assert.ok(!fresh.stdout.includes(`--compare-ref:${staleBase}`))
+
+      const wrongHead = run(staleBase)
+      assert.equal(wrongHead.status, 1)
+      assert.match(wrongHead.stdout, /Expected a two-parent PR merge/)
+      assert.doesNotMatch(wrongHead.stdout, /PROTOCOL:/)
+      assert.equal(
+        run(head, 'pull_request', true).status,
+        1,
+        'compatibility failures stay blocking',
+      )
+
+      const push = run(head, 'push')
+      assert.equal(push.status, 0, push.stderr)
+      assert.ok(push.stdout.includes(`--compare-ref:${staleBase}`))
+
+      git('checkout', '--detach', head)
+      const notMerge = run(head)
+      assert.equal(notMerge.status, 1)
+      assert.match(notMerge.stdout, /Expected a two-parent PR merge/)
+      assert.doesNotMatch(notMerge.stdout, /PROTOCOL:/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('compares the synthetic checked-out protocol against the supplied queue base', () => {
     const precheck = jobBlock('precheck')
     const step = precheck.slice(precheck.indexOf('- name: API protocol compatibility'))
