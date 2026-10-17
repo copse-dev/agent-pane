@@ -141,7 +141,9 @@ describe('coverage in the real composer model picker', () => {
     await $(FILTER).setValue('ChatGPT plan')
     await expect($$(MENU + ' .model-picker-option')).toBeElementsArrayOfSize(1)
     await expect($(MENU + ' .model-picker-coverage-label')).toHaveText('Plan')
-    await expect($(MENU + ' .model-picker-option')).toHaveText(expect.stringContaining('GPT-6.1 Sol'))
+    await expect($(MENU + ' .model-picker-option')).toHaveText(
+      expect.stringContaining('GPT-6.1 Sol'),
+    )
     await saveElementScreenshot(MENU, 'model-picker-coverage-chatgpt-plan.png')
     await chooseCoverage('paid')
     await expect($(MENU + ' .model-picker-empty')).toHaveText('No matching models')
