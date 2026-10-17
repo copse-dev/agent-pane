@@ -532,9 +532,11 @@ jobs:
           # HEAD. Unshallowed, an ancestor transfers nothing and a replaced tip
           # only its own commits. The oracle plans `full` if this still fails.
           git fetch --no-tags origin "$BASE_SHA" 2>/dev/null || true
-          node scripts/test-oracle.mts --plan --base "$BASE_SHA" | tee plan.txt
-          grep -E '^(mode|specs|unit_mode|unit_specs)=' plan.txt >> "$GITHUB_OUTPUT"
-          { echo '### e2e oracle plan'; echo '```'; cat plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          # The oracle includes untracked files: keep its output outside the checkout.
+          plan_file=$(mktemp "$RUNNER_TEMP/oracle-plan.XXXXXX")
+          node scripts/test-oracle.mts --plan --base "$BASE_SHA" | tee "$plan_file"
+          grep -E '^(mode|specs|unit_mode|unit_specs)=' "$plan_file" >> "$GITHUB_OUTPUT"
+          { echo '### e2e oracle plan'; echo '```'; cat "$plan_file"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       # Advisory only: capture the effective plan after every early-return path.
       - name: Record plan and small gate shadow
         id: small-gate
