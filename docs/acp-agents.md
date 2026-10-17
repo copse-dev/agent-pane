@@ -38,8 +38,9 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
   are handed to the agent via `session/new`, so it can mount them itself. The
   same trust and enable gating applies as for Copse's own connections.
 - A curated slice of **Copse's own tools** (workspace read/search/edit, Git,
-  shell/background commands, GitHub/CI, staged-diff visibility, archive
-  extraction, video stills, and web/browser) is offered as a per-session
+  shell/background commands, read-only worktree preflight, model-tier advice,
+  GitHub/CI, staged-diff visibility, archive extraction, video stills, and
+  web/browser) is offered as a per-session
   localhost MCP server (the **native-tool bridge**, issue #602) when the agent
   supports http MCP servers. Calls execute through the same `ToolRegistry` as
   built-in model runs, so the normal path validation, diff queue, permission
@@ -52,7 +53,10 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
   manifest describing pictures the agent never received. Tools that need the
   native loop's transcript or orchestration state (ask_user, explore subagents,
   todos, memories) stay private; `advisor` is the exception, scoped to the whole
-  ACP turn by agent-service.
+  ACP turn by agent-service. Core and first-party plugin tools remain opt-in
+  because a registered tool may depend on native turn state or have effects the
+  bridge cannot represent. An inventory test fails when a new tool has no ACP
+  exposure decision, so additions cannot be silently forgotten.
 - **How a tool call gets its name differs per agent**, and no agent fills in
   every field. Wire traces of three (captured with the `COPSE_DEBUG_ACP_UPDATES`
   flag from #1659):
