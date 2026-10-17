@@ -1,0 +1,2102 @@
+[
+  {
+    "runId": "39034010882",
+    "attempt": "1",
+    "head": "fc362e9f92db4aa9b20c8cf832e7fdb87c214278",
+    "createdAt": "2026-10-17T12:48:46Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "39017677503",
+    "attempt": "1",
+    "head": "846f462219f8bcfa3e382b610a51be58083429e3",
+    "createdAt": "2026-10-17T08:31:21Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "39014082477",
+    "attempt": "1",
+    "head": "e9d9bb66f7931f23623941cdfdaa11bff2d53982",
+    "createdAt": "2026-10-17T07:33:34Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "39012685613",
+    "attempt": "1",
+    "head": "a277f6a9c36774f578f1f61ef6eb5334fe6f6d26",
+    "createdAt": "2026-10-17T07:11:07Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "39012204138",
+    "attempt": "1",
+    "head": "782a2d59fd630c15dfc40cd0c6b552f91f91198c",
+    "createdAt": "2026-10-17T07:03:24Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "39012159929",
+    "attempt": "1",
+    "head": "e9d9bb66f7931f23623941cdfdaa11bff2d53982",
+    "createdAt": "2026-10-17T07:02:39Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "39012068789",
+    "attempt": "1",
+    "head": "0ff61c2522225e142d857bc64d19fa6be013dd2c",
+    "createdAt": "2026-10-17T07:01:11Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "39011670753",
+    "attempt": "1",
+    "head": "9a33f7e424ebdf4e15c317e2ada98a081ed4c7bc",
+    "createdAt": "2026-10-17T06:54:59Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "39010109251",
+    "attempt": "1",
+    "head": "a277f6a9c36774f578f1f61ef6eb5334fe6f6d26",
+    "createdAt": "2026-10-17T06:29:43Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "39010088468",
+    "attempt": "1",
+    "head": "0ff61c2522225e142d857bc64d19fa6be013dd2c",
+    "createdAt": "2026-10-17T06:29:21Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "39010085125",
+    "attempt": "1",
+    "head": "1769a5bca22a32acc7a2227aaa3b448c29f4a75a",
+    "createdAt": "2026-10-17T06:29:18Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "39009907055",
+    "attempt": "1",
+    "head": "f3a05243c5408508330d7f22c8751ac10e64675d",
+    "createdAt": "2026-10-17T06:26:20Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "39009905395",
+    "attempt": "1",
+    "head": "782a2d59fd630c15dfc40cd0c6b552f91f91198c",
+    "createdAt": "2026-10-17T06:26:18Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "39009358898",
+    "attempt": "1",
+    "head": "9a33f7e424ebdf4e15c317e2ada98a081ed4c7bc",
+    "createdAt": "2026-10-17T06:17:27Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38983968195",
+    "attempt": "1",
+    "head": "d618627ab25201ba931a46aad6c55c93bef843bb",
+    "createdAt": "2026-10-16T23:56:08Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38983436285",
+    "attempt": "1",
+    "head": "9a33f7e424ebdf4e15c317e2ada98a081ed4c7bc",
+    "createdAt": "2026-10-16T23:49:41Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38979965776",
+    "attempt": "1",
+    "head": "9a33f7e424ebdf4e15c317e2ada98a081ed4c7bc",
+    "createdAt": "2026-10-16T23:10:19Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38979314711",
+    "attempt": "1",
+    "head": "961b3e4e7162e3dfa21da3e8851755f1239a075d",
+    "createdAt": "2026-10-16T23:03:20Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38976101844",
+    "attempt": "1",
+    "head": "926887f90b57c29213502b506a29e4dde5fa09ff",
+    "createdAt": "2026-10-16T22:29:58Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38975177277",
+    "attempt": "1",
+    "head": "82cfeab8ec08cb9d8547dddbbe1bdc3f4a1340d2",
+    "createdAt": "2026-10-16T22:20:44Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38972376656",
+    "attempt": "1",
+    "head": "df5dd2d18a9fe8b90e028da370e123a7c09688eb",
+    "createdAt": "2026-10-16T21:53:42Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38950417235",
+    "attempt": "2",
+    "head": "b0edb5eda1332e7be9fa288db8df1a8adf767e17",
+    "createdAt": "2026-10-16T18:50:31Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38942445201",
+    "attempt": "1",
+    "head": "713096b7637e9989256c8e0d1bf6378043b80aae",
+    "createdAt": "2026-10-16T17:47:58Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38942338814",
+    "attempt": "1",
+    "head": "713096b7637e9989256c8e0d1bf6378043b80aae",
+    "createdAt": "2026-10-16T17:47:09Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38941517812",
+    "attempt": "1",
+    "head": "6cde69c60ab48c0c671c23f9cd1856c5b2c42d0e",
+    "createdAt": "2026-10-16T17:40:40Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38911917469",
+    "attempt": "1",
+    "head": "8c4e69fb00d6e6d36d236f5ab4fa6f52f14d9780",
+    "createdAt": "2026-10-16T13:57:38Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38911801213",
+    "attempt": "1",
+    "head": "8c4e69fb00d6e6d36d236f5ab4fa6f52f14d9780",
+    "createdAt": "2026-10-16T13:56:44Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38905706139",
+    "attempt": "1",
+    "head": "8c4e69fb00d6e6d36d236f5ab4fa6f52f14d9780",
+    "createdAt": "2026-10-16T13:09:30Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38892418424",
+    "attempt": "1",
+    "head": "f4d68025208e78815db2dadc4753beee43f762af",
+    "createdAt": "2026-10-16T11:14:03Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38889368519",
+    "attempt": "1",
+    "head": "f4d68025208e78815db2dadc4753beee43f762af",
+    "createdAt": "2026-10-16T10:45:52Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38889158765",
+    "attempt": "1",
+    "head": "ad8df54cd6ff9347b2700bdb8b856f045f2b7c8f",
+    "createdAt": "2026-10-16T10:43:58Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38888015606",
+    "attempt": "1",
+    "head": "82dff6625e9914ad8cbe8ba9156d897ecea83fe8",
+    "createdAt": "2026-10-16T10:33:29Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38886107353",
+    "attempt": "1",
+    "head": "ad8df54cd6ff9347b2700bdb8b856f045f2b7c8f",
+    "createdAt": "2026-10-16T10:16:13Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38886037942",
+    "attempt": "1",
+    "head": "ad8df54cd6ff9347b2700bdb8b856f045f2b7c8f",
+    "createdAt": "2026-10-16T10:15:36Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38885909668",
+    "attempt": "1",
+    "head": "aa8eb8adbbc4d7673d8f133366b2f17e5cd0fddf",
+    "createdAt": "2026-10-16T10:14:29Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38885038507",
+    "attempt": "1",
+    "head": "b58600703186f9e0782b5f867ae6db7ac70bf65d",
+    "createdAt": "2026-10-16T10:06:43Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38884692594",
+    "attempt": "1",
+    "head": "aa8eb8adbbc4d7673d8f133366b2f17e5cd0fddf",
+    "createdAt": "2026-10-16T10:03:43Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38884692355",
+    "attempt": "1",
+    "head": "aa8eb8adbbc4d7673d8f133366b2f17e5cd0fddf",
+    "createdAt": "2026-10-16T10:03:43Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38884646717",
+    "attempt": "1",
+    "head": "720903d7fd78a9866b537c78dc699f6f0adca721",
+    "createdAt": "2026-10-16T10:03:18Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38884556904",
+    "attempt": "1",
+    "head": "f9d14c2f5df3b36dd9f6abf0285fa09681c641c0",
+    "createdAt": "2026-10-16T10:02:30Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38881621366",
+    "attempt": "1",
+    "head": "0439c90ea07bca8845984567d421b521b44fefef",
+    "createdAt": "2026-10-16T09:36:32Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38879933545",
+    "attempt": "1",
+    "head": "506abd3d5662a4a33de168d02d8659d7b0a55edb",
+    "createdAt": "2026-10-16T09:21:49Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38879352577",
+    "attempt": "1",
+    "head": "0439c90ea07bca8845984567d421b521b44fefef",
+    "createdAt": "2026-10-16T09:16:41Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38877991534",
+    "attempt": "1",
+    "head": "0439c90ea07bca8845984567d421b521b44fefef",
+    "createdAt": "2026-10-16T09:04:51Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38874737760",
+    "attempt": "1",
+    "head": "0a212c0ecbe3198e0203d3b00015cea06273e339",
+    "createdAt": "2026-10-16T08:35:44Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38852823982",
+    "attempt": "1",
+    "head": "f9d14c2f5df3b36dd9f6abf0285fa09681c641c0",
+    "createdAt": "2026-10-16T04:52:13Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38850515589",
+    "attempt": "1",
+    "head": "f9d14c2f5df3b36dd9f6abf0285fa09681c641c0",
+    "createdAt": "2026-10-16T04:25:08Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38850471659",
+    "attempt": "1",
+    "head": "f9d14c2f5df3b36dd9f6abf0285fa09681c641c0",
+    "createdAt": "2026-10-16T04:24:37Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38848679403",
+    "attempt": "1",
+    "head": "8c2c5bb533591117854e43445d6fec088408b6af",
+    "createdAt": "2026-10-16T04:04:08Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38847859501",
+    "attempt": "2",
+    "head": "634bb46c4e1c6df44ea71a148f63d81d1507e2f2",
+    "createdAt": "2026-10-16T03:54:29Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38847775396",
+    "attempt": "1",
+    "head": "cbe18a14ac43559b8553ef4ed54631f1cb360836",
+    "createdAt": "2026-10-16T03:53:30Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38847529319",
+    "attempt": "1",
+    "head": "4aa9edd6ad47cd7d798f518b320ed5e1ac6343ff",
+    "createdAt": "2026-10-16T03:50:36Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38847485413",
+    "attempt": "1",
+    "head": "0608a9d65a060d080491bb7da3d3d3172a714190",
+    "createdAt": "2026-10-16T03:50:07Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38847441549",
+    "attempt": "1",
+    "head": "ae14df71e2c06f926f70ab00d1c8785ee95033d9",
+    "createdAt": "2026-10-16T03:49:37Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38847375484",
+    "attempt": "1",
+    "head": "0608a9d65a060d080491bb7da3d3d3172a714190",
+    "createdAt": "2026-10-16T03:48:47Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38847191319",
+    "attempt": "1",
+    "head": "35b17ad7526dfb258c0f300d06c4ea15e9bd4eb4",
+    "createdAt": "2026-10-16T03:46:31Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38846917843",
+    "attempt": "1",
+    "head": "cbe18a14ac43559b8553ef4ed54631f1cb360836",
+    "createdAt": "2026-10-16T03:43:15Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38846855419",
+    "attempt": "1",
+    "head": "b8b32672a98f75bf888bbd2ee915171bca1fa803",
+    "createdAt": "2026-10-16T03:42:31Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38846692024",
+    "attempt": "1",
+    "head": "439f870541ef774ca390c0ef075e72b06b4e26d2",
+    "createdAt": "2026-10-16T03:40:29Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38845426615",
+    "attempt": "1",
+    "head": "3449e850ee6370e257c8cc39a2c213e45cc1e0ab",
+    "createdAt": "2026-10-16T03:25:17Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38845390699",
+    "attempt": "1",
+    "head": "3449e850ee6370e257c8cc39a2c213e45cc1e0ab",
+    "createdAt": "2026-10-16T03:24:53Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38845336792",
+    "attempt": "1",
+    "head": "3449e850ee6370e257c8cc39a2c213e45cc1e0ab",
+    "createdAt": "2026-10-16T03:24:13Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38845236523",
+    "attempt": "1",
+    "head": "8c2c5bb533591117854e43445d6fec088408b6af",
+    "createdAt": "2026-10-16T03:23:03Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38845211313",
+    "attempt": "1",
+    "head": "ae14df71e2c06f926f70ab00d1c8785ee95033d9",
+    "createdAt": "2026-10-16T03:22:46Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38844999435",
+    "attempt": "1",
+    "head": "480bc4e037ee43366e29e44c5d6606dc1e23c72a",
+    "createdAt": "2026-10-16T03:20:14Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38844375974",
+    "attempt": "1",
+    "head": "433615eaf30b4ab6602a699b5a2f202bb9b03066",
+    "createdAt": "2026-10-16T03:12:47Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38844120813",
+    "attempt": "1",
+    "head": "b8b32672a98f75bf888bbd2ee915171bca1fa803",
+    "createdAt": "2026-10-16T03:09:44Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38844051528",
+    "attempt": "1",
+    "head": "cbe18a14ac43559b8553ef4ed54631f1cb360836",
+    "createdAt": "2026-10-16T03:08:53Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38844048343",
+    "attempt": "1",
+    "head": "634bb46c4e1c6df44ea71a148f63d81d1507e2f2",
+    "createdAt": "2026-10-16T03:08:51Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38844045537",
+    "attempt": "2",
+    "head": "47de4488fa3629e172d321daad06d471ba62eea5",
+    "createdAt": "2026-10-16T03:08:49Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38843978714",
+    "attempt": "1",
+    "head": "c2000e46fd0b5acf59801822c98a69b2d5ebe21a",
+    "createdAt": "2026-10-16T03:08:01Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38843976266",
+    "attempt": "1",
+    "head": "77a63dfa56d8e2742f090fabdc877177a5aa8198",
+    "createdAt": "2026-10-16T03:07:59Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38843604084",
+    "attempt": "1",
+    "head": "439f870541ef774ca390c0ef075e72b06b4e26d2",
+    "createdAt": "2026-10-16T03:03:42Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38842880550",
+    "attempt": "1",
+    "head": "3449e850ee6370e257c8cc39a2c213e45cc1e0ab",
+    "createdAt": "2026-10-16T02:55:09Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38842201574",
+    "attempt": "1",
+    "head": "b5331a92a1818e1555daf157ea173593f0090ad5",
+    "createdAt": "2026-10-16T02:47:09Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38841954056",
+    "attempt": "1",
+    "head": "433615eaf30b4ab6602a699b5a2f202bb9b03066",
+    "createdAt": "2026-10-16T02:44:16Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38841886256",
+    "attempt": "1",
+    "head": "433615eaf30b4ab6602a699b5a2f202bb9b03066",
+    "createdAt": "2026-10-16T02:43:28Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38841882681",
+    "attempt": "1",
+    "head": "433615eaf30b4ab6602a699b5a2f202bb9b03066",
+    "createdAt": "2026-10-16T02:43:25Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38840454793",
+    "attempt": "1",
+    "head": "139bd054febdadf68761a024842805398dac2c74",
+    "createdAt": "2026-10-16T02:26:44Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38840070628",
+    "attempt": "1",
+    "head": "5bf49a2de92a83e67763e8fed9fd75c35773b690",
+    "createdAt": "2026-10-16T02:22:14Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38838946245",
+    "attempt": "1",
+    "head": "5bf49a2de92a83e67763e8fed9fd75c35773b690",
+    "createdAt": "2026-10-16T02:09:12Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38838920484",
+    "attempt": "1",
+    "head": "5bf49a2de92a83e67763e8fed9fd75c35773b690",
+    "createdAt": "2026-10-16T02:08:54Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38838862588",
+    "attempt": "1",
+    "head": "3b3e3e654184d428b42995c3291383be26e8486e",
+    "createdAt": "2026-10-16T02:08:14Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38838301649",
+    "attempt": "1",
+    "head": "c9f55fe02bd49f2fbbb08477ffb0e818c490bb50",
+    "createdAt": "2026-10-16T02:01:58Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38836771467",
+    "attempt": "1",
+    "head": "5bf49a2de92a83e67763e8fed9fd75c35773b690",
+    "createdAt": "2026-10-16T01:44:51Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38836216399",
+    "attempt": "1",
+    "head": "d3cf008c2984d0d243576b376e0a18b010c7fc67",
+    "createdAt": "2026-10-16T01:38:35Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38834869808",
+    "attempt": "1",
+    "head": "c9f55fe02bd49f2fbbb08477ffb0e818c490bb50",
+    "createdAt": "2026-10-16T01:23:37Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38834002540",
+    "attempt": "1",
+    "head": "8e3135c66e614cd8ffba2ebb2e8cbd758c71b093",
+    "createdAt": "2026-10-16T01:14:05Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38832871132",
+    "attempt": "1",
+    "head": "d3cf008c2984d0d243576b376e0a18b010c7fc67",
+    "createdAt": "2026-10-16T01:01:58Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38832802850",
+    "attempt": "1",
+    "head": "d3cf008c2984d0d243576b376e0a18b010c7fc67",
+    "createdAt": "2026-10-16T01:01:15Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38832739236",
+    "attempt": "1",
+    "head": "999e52fabc2c4cc2587f2d9f245b29d58007ca19",
+    "createdAt": "2026-10-16T01:00:37Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38832643665",
+    "attempt": "1",
+    "head": "999e52fabc2c4cc2587f2d9f245b29d58007ca19",
+    "createdAt": "2026-10-16T00:59:42Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38830493489",
+    "attempt": "1",
+    "head": "8e3135c66e614cd8ffba2ebb2e8cbd758c71b093",
+    "createdAt": "2026-10-16T00:37:09Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38829636096",
+    "attempt": "1",
+    "head": "2c52e41d54c80b250ab68416eba30f5520b20bc3",
+    "createdAt": "2026-10-16T00:28:06Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38829581463",
+    "attempt": "1",
+    "head": "cb1db2891917ed0c3e2a9e2757e91e26b21315b7",
+    "createdAt": "2026-10-16T00:27:29Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38829533098",
+    "attempt": "1",
+    "head": "8e3135c66e614cd8ffba2ebb2e8cbd758c71b093",
+    "createdAt": "2026-10-16T00:26:57Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38828985531",
+    "attempt": "1",
+    "head": "cb1db2891917ed0c3e2a9e2757e91e26b21315b7",
+    "createdAt": "2026-10-16T00:21:04Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38826508632",
+    "attempt": "1",
+    "head": "cb1db2891917ed0c3e2a9e2757e91e26b21315b7",
+    "createdAt": "2026-10-15T23:55:58Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38826468919",
+    "attempt": "1",
+    "head": "cb1db2891917ed0c3e2a9e2757e91e26b21315b7",
+    "createdAt": "2026-10-15T23:55:32Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38826004264",
+    "attempt": "1",
+    "head": "999e52fabc2c4cc2587f2d9f245b29d58007ca19",
+    "createdAt": "2026-10-15T23:50:52Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38823989625",
+    "attempt": "1",
+    "head": "862d9c5dd7dc639dc12d9ae5e0d77854c979a0ec",
+    "createdAt": "2026-10-15T23:30:31Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38822173830",
+    "attempt": "1",
+    "head": "999e52fabc2c4cc2587f2d9f245b29d58007ca19",
+    "createdAt": "2026-10-15T23:12:36Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38822162151",
+    "attempt": "1",
+    "head": "999e52fabc2c4cc2587f2d9f245b29d58007ca19",
+    "createdAt": "2026-10-15T23:12:29Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38822104570",
+    "attempt": "1",
+    "head": "999e52fabc2c4cc2587f2d9f245b29d58007ca19",
+    "createdAt": "2026-10-15T23:11:57Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38820414075",
+    "attempt": "1",
+    "head": "e45d6b89601b7604e5b29abd84cff0f5435c0f0c",
+    "createdAt": "2026-10-15T22:56:11Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38820351343",
+    "attempt": "1",
+    "head": "20cf7713f9c5395ea9b6f7475a5813d2b3f314db",
+    "createdAt": "2026-10-15T22:55:35Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38816332578",
+    "attempt": "1",
+    "head": "e45d6b89601b7604e5b29abd84cff0f5435c0f0c",
+    "createdAt": "2026-10-15T22:19:41Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38816187533",
+    "attempt": "1",
+    "head": "3d1996d5215feb17c8ce685a1189d40e4281dfb1",
+    "createdAt": "2026-10-15T22:18:23Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38816179683",
+    "attempt": "1",
+    "head": "3d1996d5215feb17c8ce685a1189d40e4281dfb1",
+    "createdAt": "2026-10-15T22:18:18Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38816176753",
+    "attempt": "1",
+    "head": "3d1996d5215feb17c8ce685a1189d40e4281dfb1",
+    "createdAt": "2026-10-15T22:18:17Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38816173793",
+    "attempt": "1",
+    "head": "654785016759318aa6e9c9228d6d9136b96082cf",
+    "createdAt": "2026-10-15T22:18:15Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38812625504",
+    "attempt": "1",
+    "head": "8ad6e9ad96cbd8978e29de422fa023984e4c3cf6",
+    "createdAt": "2026-10-15T21:48:23Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38809174942",
+    "attempt": "1",
+    "head": "df8bb932a1caa5d50bfbdfe91b3e31adfaf8d0ba",
+    "createdAt": "2026-10-15T21:20:56Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38809160545",
+    "attempt": "1",
+    "head": "df8bb932a1caa5d50bfbdfe91b3e31adfaf8d0ba",
+    "createdAt": "2026-10-15T21:20:49Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38807942620",
+    "attempt": "1",
+    "head": "8ad6e9ad96cbd8978e29de422fa023984e4c3cf6",
+    "createdAt": "2026-10-15T21:11:26Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38807879246",
+    "attempt": "1",
+    "head": "8ad6e9ad96cbd8978e29de422fa023984e4c3cf6",
+    "createdAt": "2026-10-15T21:10:55Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38807861496",
+    "attempt": "1",
+    "head": "746c9fec570bb99fd66d7ba0b58d811a22214568",
+    "createdAt": "2026-10-15T21:10:47Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38807854097",
+    "attempt": "1",
+    "head": "ab49eccc8ebee8da4457f00eceb090b01f0f13fb",
+    "createdAt": "2026-10-15T21:10:44Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38807407075",
+    "attempt": "1",
+    "head": "2c52e41d54c80b250ab68416eba30f5520b20bc3",
+    "createdAt": "2026-10-15T21:07:16Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38805203304",
+    "attempt": "1",
+    "head": "df8bb932a1caa5d50bfbdfe91b3e31adfaf8d0ba",
+    "createdAt": "2026-10-15T20:50:38Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38802561505",
+    "attempt": "1",
+    "head": "1fcb7f09c506b267ad8bcb7744321b8fba9ee5b3",
+    "createdAt": "2026-10-15T20:30:53Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38802518608",
+    "attempt": "1",
+    "head": "7b7f0973f9da95f07754b4eff93d22450623c947",
+    "createdAt": "2026-10-15T20:30:35Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38798831240",
+    "attempt": "1",
+    "head": "df8bb932a1caa5d50bfbdfe91b3e31adfaf8d0ba",
+    "createdAt": "2026-10-15T20:03:13Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38798621088",
+    "attempt": "1",
+    "head": "aab19ca2988afa1d3aa992d468d7d2d178a2ae15",
+    "createdAt": "2026-10-15T20:01:41Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38796669716",
+    "attempt": "1",
+    "head": "7b7f0973f9da95f07754b4eff93d22450623c947",
+    "createdAt": "2026-10-15T19:46:57Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38791661100",
+    "attempt": "1",
+    "head": "7b7f0973f9da95f07754b4eff93d22450623c947",
+    "createdAt": "2026-10-15T19:10:07Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38791649863",
+    "attempt": "1",
+    "head": "654785016759318aa6e9c9228d6d9136b96082cf",
+    "createdAt": "2026-10-15T19:10:02Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38790351206",
+    "attempt": "1",
+    "head": "cd507afd276e2e00a7f7d32c8864197cff087eb3",
+    "createdAt": "2026-10-15T19:00:40Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38787140120",
+    "attempt": "1",
+    "head": "609ff718c53c9dcc831780fc499ace89c5d56f98",
+    "createdAt": "2026-10-15T18:37:20Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38786121333",
+    "attempt": "1",
+    "head": "17ce6b187f0a8c08ed9f1df379c4c45d22b8ea01",
+    "createdAt": "2026-10-15T18:30:00Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38786122131",
+    "attempt": "1",
+    "head": "3dc783c1fa1f8de689a926557361b4e76f95e115",
+    "createdAt": "2026-10-15T18:30:00Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38785547706",
+    "attempt": "1",
+    "head": "cd507afd276e2e00a7f7d32c8864197cff087eb3",
+    "createdAt": "2026-10-15T18:25:50Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38782088748",
+    "attempt": "1",
+    "head": "609ff718c53c9dcc831780fc499ace89c5d56f98",
+    "createdAt": "2026-10-15T18:00:53Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38782058862",
+    "attempt": "1",
+    "head": "e73cf949648e802bf7b22c220f06b99691ee56ed",
+    "createdAt": "2026-10-15T18:00:41Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38779940392",
+    "attempt": "1",
+    "head": "6c24f0924f8f6e7403f4c5bc9189f9e78894eb6b",
+    "createdAt": "2026-10-15T17:45:12Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38779411904",
+    "attempt": "1",
+    "head": "eb8c0e0c9725666372bc63cb7f71165842575cce",
+    "createdAt": "2026-10-15T17:41:22Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38775682966",
+    "attempt": "1",
+    "head": "53340741e045b0b9d7b1d99e96a2f09fe27bf536",
+    "createdAt": "2026-10-15T17:14:34Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38774511642",
+    "attempt": "1",
+    "head": "dd06d897a973ffe921c141e0c564ec3881c7ea06",
+    "createdAt": "2026-10-15T17:06:10Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38774175308",
+    "attempt": "1",
+    "head": "dd06d897a973ffe921c141e0c564ec3881c7ea06",
+    "createdAt": "2026-10-15T17:03:45Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38773932405",
+    "attempt": "1",
+    "head": "eb8c0e0c9725666372bc63cb7f71165842575cce",
+    "createdAt": "2026-10-15T17:02:02Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38773810845",
+    "attempt": "1",
+    "head": "eb8c0e0c9725666372bc63cb7f71165842575cce",
+    "createdAt": "2026-10-15T17:01:08Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38773785319",
+    "attempt": "1",
+    "head": "eb8c0e0c9725666372bc63cb7f71165842575cce",
+    "createdAt": "2026-10-15T17:00:58Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38771232887",
+    "attempt": "1",
+    "head": "392d66574036fc6f17072c41958da1fe94e11e90",
+    "createdAt": "2026-10-15T16:42:23Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38771117969",
+    "attempt": "1",
+    "head": "dd06d897a973ffe921c141e0c564ec3881c7ea06",
+    "createdAt": "2026-10-15T16:41:33Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38770550454",
+    "attempt": "1",
+    "head": "6660f3d9707743a2ff4c9bffdd4f6d745ca953c3",
+    "createdAt": "2026-10-15T16:37:25Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38770330647",
+    "attempt": "1",
+    "head": "dd06d897a973ffe921c141e0c564ec3881c7ea06",
+    "createdAt": "2026-10-15T16:35:50Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38769891237",
+    "attempt": "1",
+    "head": "ebcd53a57ee0fb9c83df900d7dbfb8e0f3dd8bdd",
+    "createdAt": "2026-10-15T16:32:41Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38769084020",
+    "attempt": "1",
+    "head": "ebcd53a57ee0fb9c83df900d7dbfb8e0f3dd8bdd",
+    "createdAt": "2026-10-15T16:27:00Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38768748286",
+    "attempt": "1",
+    "head": "d90264b18c229249f87f3c7e3ca2b4b4810aa44d",
+    "createdAt": "2026-10-15T16:24:36Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38768478347",
+    "attempt": "1",
+    "head": "704701a657797a342d2e45c6856bc7e525194a3c",
+    "createdAt": "2026-10-15T16:22:41Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38768322510",
+    "attempt": "1",
+    "head": "704701a657797a342d2e45c6856bc7e525194a3c",
+    "createdAt": "2026-10-15T16:21:35Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38765355396",
+    "attempt": "1",
+    "head": "392d66574036fc6f17072c41958da1fe94e11e90",
+    "createdAt": "2026-10-15T16:00:50Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38759618078",
+    "attempt": "1",
+    "head": "2ec781e8195985dd6b11ca4bee1bd05b6fb28600",
+    "createdAt": "2026-10-15T15:21:37Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38755617450",
+    "attempt": "1",
+    "head": "c9e1b705dcf90989613ec6f39cad473b6f45904c",
+    "createdAt": "2026-10-15T14:54:38Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38755566919",
+    "attempt": "1",
+    "head": "c9e1b705dcf90989613ec6f39cad473b6f45904c",
+    "createdAt": "2026-10-15T14:54:18Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38752625606",
+    "attempt": "1",
+    "head": "0c4da164660839d0b6173e5a12610456759afb55",
+    "createdAt": "2026-10-15T14:34:34Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38737486875",
+    "attempt": "1",
+    "head": "98ef1e068f061eea355505c17d9081d28a984668",
+    "createdAt": "2026-10-15T12:48:34Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38732198782",
+    "attempt": "1",
+    "head": "98ef1e068f061eea355505c17d9081d28a984668",
+    "createdAt": "2026-10-15T12:06:47Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38730224099",
+    "attempt": "1",
+    "head": "4f471527515e7d3eb29cfd1b112277b274e52a62",
+    "createdAt": "2026-10-15T11:50:38Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38729151062",
+    "attempt": "1",
+    "head": "be0a521e5865f8da0f6702519e1770adac7f0a4f",
+    "createdAt": "2026-10-15T11:41:42Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38729030596",
+    "attempt": "1",
+    "head": "a4e9548ac8da3320485fa76dddf0a1b4fdec2185",
+    "createdAt": "2026-10-15T11:40:40Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38728917328",
+    "attempt": "1",
+    "head": "04b4b55c17f5854d30917e14c1406bd08c549503",
+    "createdAt": "2026-10-15T11:39:45Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38728773955",
+    "attempt": "1",
+    "head": "be0a521e5865f8da0f6702519e1770adac7f0a4f",
+    "createdAt": "2026-10-15T11:38:31Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38724043552",
+    "attempt": "1",
+    "head": "04b4b55c17f5854d30917e14c1406bd08c549503",
+    "createdAt": "2026-10-15T10:58:36Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38723856456",
+    "attempt": "1",
+    "head": "4f471527515e7d3eb29cfd1b112277b274e52a62",
+    "createdAt": "2026-10-15T10:56:58Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38723733837",
+    "attempt": "1",
+    "head": "4f471527515e7d3eb29cfd1b112277b274e52a62",
+    "createdAt": "2026-10-15T10:55:53Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38722386113",
+    "attempt": "1",
+    "head": "b83067f9ddc38755a7b6822edc038e5a1e1112f6",
+    "createdAt": "2026-10-15T10:44:20Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38722320951",
+    "attempt": "1",
+    "head": "b83067f9ddc38755a7b6822edc038e5a1e1112f6",
+    "createdAt": "2026-10-15T10:43:47Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38720438709",
+    "attempt": "1",
+    "head": "67496250b559d571a670883f31f3a7043558dbcb",
+    "createdAt": "2026-10-15T10:27:51Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38720421653",
+    "attempt": "1",
+    "head": "f4cefc061623a8f97e9f6bd7ac7dc859886816f9",
+    "createdAt": "2026-10-15T10:27:43Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38719379240",
+    "attempt": "1",
+    "head": "421d59b3470d3416c1d760904fa5d2ed2892766c",
+    "createdAt": "2026-10-15T10:18:58Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38719283233",
+    "attempt": "1",
+    "head": "421d59b3470d3416c1d760904fa5d2ed2892766c",
+    "createdAt": "2026-10-15T10:18:09Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38716853637",
+    "attempt": "1",
+    "head": "67496250b559d571a670883f31f3a7043558dbcb",
+    "createdAt": "2026-10-15T09:58:12Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38716352135",
+    "attempt": "1",
+    "head": "b83067f9ddc38755a7b6822edc038e5a1e1112f6",
+    "createdAt": "2026-10-15T09:54:05Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38716345324",
+    "attempt": "1",
+    "head": "e35adb7db300544ff6697c685d948492aab053aa",
+    "createdAt": "2026-10-15T09:54:02Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38715989750",
+    "attempt": "2",
+    "head": "aab19ca2988afa1d3aa992d468d7d2d178a2ae15",
+    "createdAt": "2026-10-15T09:51:10Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38715790575",
+    "attempt": "1",
+    "head": "f4cefc061623a8f97e9f6bd7ac7dc859886816f9",
+    "createdAt": "2026-10-15T09:49:35Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38715202259",
+    "attempt": "1",
+    "head": "3ada12cd27ecbd591e05e372a1bc54f7e0dcf779",
+    "createdAt": "2026-10-15T09:44:47Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38715191962",
+    "attempt": "1",
+    "head": "774bef19504eb237d17e0f440144d3e7bfe89264",
+    "createdAt": "2026-10-15T09:44:42Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38715179438",
+    "attempt": "1",
+    "head": "088a681ea481101b48d60b24b915a27478992032",
+    "createdAt": "2026-10-15T09:44:36Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38715024234",
+    "attempt": "1",
+    "head": "b18fa2ae3ad0045859b59c4a44a48c429f059165",
+    "createdAt": "2026-10-15T09:43:21Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38715011485",
+    "attempt": "1",
+    "head": "7a558ae1a4fa291f2822e5527ba11223ea00069f",
+    "createdAt": "2026-10-15T09:43:14Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38714956516",
+    "attempt": "1",
+    "head": "1cbc11d1748f3d2623dd1140018186ac0047fc7c",
+    "createdAt": "2026-10-15T09:42:47Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38714809063",
+    "attempt": "1",
+    "head": "9652c61e7042f2dbcca585142687546a9f4c79e3",
+    "createdAt": "2026-10-15T09:41:36Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38714758175",
+    "attempt": "1",
+    "head": "b14f2497383e74fc035bca652c439217f3a2dabe",
+    "createdAt": "2026-10-15T09:41:10Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38714693444",
+    "attempt": "1",
+    "head": "9652c61e7042f2dbcca585142687546a9f4c79e3",
+    "createdAt": "2026-10-15T09:40:38Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38714529411",
+    "attempt": "1",
+    "head": "ad7e63156073f38cac267628a6f3004c1f660dbf",
+    "createdAt": "2026-10-15T09:39:18Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38714175874",
+    "attempt": "1",
+    "head": "e19a0701d3d29e24126f01223d1502613680545c",
+    "createdAt": "2026-10-15T09:36:24Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38710429482",
+    "attempt": "1",
+    "head": "1cbc11d1748f3d2623dd1140018186ac0047fc7c",
+    "createdAt": "2026-10-15T09:05:56Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38710416534",
+    "attempt": "1",
+    "head": "1cbc11d1748f3d2623dd1140018186ac0047fc7c",
+    "createdAt": "2026-10-15T09:05:50Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38710376252",
+    "attempt": "1",
+    "head": "3eb7c475df7093224a5e0dcf4174e019a5eeb0b5",
+    "createdAt": "2026-10-15T09:05:31Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38710359583",
+    "attempt": "1",
+    "head": "e19a0701d3d29e24126f01223d1502613680545c",
+    "createdAt": "2026-10-15T09:05:22Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38710342201",
+    "attempt": "1",
+    "head": "ad7e63156073f38cac267628a6f3004c1f660dbf",
+    "createdAt": "2026-10-15T09:05:14Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38710212613",
+    "attempt": "1",
+    "head": "3eb7c475df7093224a5e0dcf4174e019a5eeb0b5",
+    "createdAt": "2026-10-15T09:04:11Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38710201152",
+    "attempt": "1",
+    "head": "b14f2497383e74fc035bca652c439217f3a2dabe",
+    "createdAt": "2026-10-15T09:04:06Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38710187419",
+    "attempt": "1",
+    "head": "04b4b55c17f5854d30917e14c1406bd08c549503",
+    "createdAt": "2026-10-15T09:03:59Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38710187134",
+    "attempt": "1",
+    "head": "04b4b55c17f5854d30917e14c1406bd08c549503",
+    "createdAt": "2026-10-15T09:03:59Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38710186954",
+    "attempt": "1",
+    "head": "04b4b55c17f5854d30917e14c1406bd08c549503",
+    "createdAt": "2026-10-15T09:03:59Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38710061014",
+    "attempt": "1",
+    "head": "e19a0701d3d29e24126f01223d1502613680545c",
+    "createdAt": "2026-10-15T09:02:55Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38710040504",
+    "attempt": "1",
+    "head": "ad7e63156073f38cac267628a6f3004c1f660dbf",
+    "createdAt": "2026-10-15T09:02:45Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38707717031",
+    "attempt": "1",
+    "head": "77c285db588be2ae3992a06cb964fe960b067943",
+    "createdAt": "2026-10-15T08:43:34Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38706950606",
+    "attempt": "1",
+    "head": "d0f76d74017d3d7eabc2f3c8debda47b92446c59",
+    "createdAt": "2026-10-15T08:37:07Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38706609866",
+    "attempt": "1",
+    "head": "770e719ea2191d3533990b9ecb02bb3e353a102d",
+    "createdAt": "2026-10-15T08:34:15Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38702978055",
+    "attempt": "1",
+    "head": "77c285db588be2ae3992a06cb964fe960b067943",
+    "createdAt": "2026-10-15T08:03:36Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38701487119",
+    "attempt": "1",
+    "head": "770e719ea2191d3533990b9ecb02bb3e353a102d",
+    "createdAt": "2026-10-15T07:50:35Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38701452898",
+    "attempt": "1",
+    "head": "770e719ea2191d3533990b9ecb02bb3e353a102d",
+    "createdAt": "2026-10-15T07:50:19Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38701422980",
+    "attempt": "1",
+    "head": "770e719ea2191d3533990b9ecb02bb3e353a102d",
+    "createdAt": "2026-10-15T07:50:04Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38701400946",
+    "attempt": "1",
+    "head": "088a681ea481101b48d60b24b915a27478992032",
+    "createdAt": "2026-10-15T07:49:52Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38701292575",
+    "attempt": "1",
+    "head": "fa3e265750b472f7a2f68e21be5acc3d7095ac44",
+    "createdAt": "2026-10-15T07:48:55Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38678675901",
+    "attempt": "1",
+    "head": "d0eeaf322da7728d17a3363ece0d23c516c23e2c",
+    "createdAt": "2026-10-15T03:54:22Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38675339971",
+    "attempt": "1",
+    "head": "d0eeaf322da7728d17a3363ece0d23c516c23e2c",
+    "createdAt": "2026-10-15T03:15:45Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38674030760",
+    "attempt": "1",
+    "head": "aab19ca2988afa1d3aa992d468d7d2d178a2ae15",
+    "createdAt": "2026-10-15T03:00:59Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38673386344",
+    "attempt": "1",
+    "head": "d0eeaf322da7728d17a3363ece0d23c516c23e2c",
+    "createdAt": "2026-10-15T02:53:35Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38671539645",
+    "attempt": "1",
+    "head": "35c436cb5b71c6d42a3407c97cf31f963c3a7081",
+    "createdAt": "2026-10-15T02:32:35Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38670179502",
+    "attempt": "1",
+    "head": "774bef19504eb237d17e0f440144d3e7bfe89264",
+    "createdAt": "2026-10-15T02:17:13Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38670154456",
+    "attempt": "1",
+    "head": "7a558ae1a4fa291f2822e5527ba11223ea00069f",
+    "createdAt": "2026-10-15T02:16:57Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38669361197",
+    "attempt": "1",
+    "head": "b18fa2ae3ad0045859b59c4a44a48c429f059165",
+    "createdAt": "2026-10-15T02:07:51Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38669203734",
+    "attempt": "1",
+    "head": "b18fa2ae3ad0045859b59c4a44a48c429f059165",
+    "createdAt": "2026-10-15T02:06:02Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38668588499",
+    "attempt": "1",
+    "head": "5af16728de372dddd302c0bea71a4044c98a7b1e",
+    "createdAt": "2026-10-15T01:59:22Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38668355656",
+    "attempt": "1",
+    "head": "774bef19504eb237d17e0f440144d3e7bfe89264",
+    "createdAt": "2026-10-15T01:56:39Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38668287364",
+    "attempt": "1",
+    "head": "35c436cb5b71c6d42a3407c97cf31f963c3a7081",
+    "createdAt": "2026-10-15T01:55:50Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38668277813",
+    "attempt": "1",
+    "head": "35c436cb5b71c6d42a3407c97cf31f963c3a7081",
+    "createdAt": "2026-10-15T01:55:44Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38667992324",
+    "attempt": "1",
+    "head": "14bc879dec6c0717a17c2f81bac7d082f7d15b87",
+    "createdAt": "2026-10-15T01:52:32Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38667364394",
+    "attempt": "1",
+    "head": "3ada12cd27ecbd591e05e372a1bc54f7e0dcf779",
+    "createdAt": "2026-10-15T01:45:26Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38667325746",
+    "attempt": "1",
+    "head": "3ada12cd27ecbd591e05e372a1bc54f7e0dcf779",
+    "createdAt": "2026-10-15T01:45:02Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38667191947",
+    "attempt": "1",
+    "head": "650e9e2df0ca1b55b314dde0f864894a85155651",
+    "createdAt": "2026-10-15T01:43:32Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38666537846",
+    "attempt": "1",
+    "head": "e6180300386d030ab1fdb1bcebddcb8b20774e81",
+    "createdAt": "2026-10-15T01:36:09Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38665679888",
+    "attempt": "1",
+    "head": "41735f1cea8918815e1c2b9d5df5579aee326551",
+    "createdAt": "2026-10-15T01:26:43Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38665665188",
+    "attempt": "1",
+    "head": "da0715dc690ac5d84c6417e235e48a29bba0ef0c",
+    "createdAt": "2026-10-15T01:26:33Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38665652325",
+    "attempt": "1",
+    "head": "6894d9b31c432fba44de768d511580b43cb624e1",
+    "createdAt": "2026-10-15T01:26:25Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38665546397",
+    "attempt": "1",
+    "head": "f7ae0f24938eaed95fce3589d31030f46d1b9944",
+    "createdAt": "2026-10-15T01:25:15Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38665530292",
+    "attempt": "1",
+    "head": "2f74de9b18e0ba52a4c12196ca97bb7651b5dc1b",
+    "createdAt": "2026-10-15T01:25:05Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38665483138",
+    "attempt": "1",
+    "head": "3b980e573167ea984c0d422a8bf6d584b0740763",
+    "createdAt": "2026-10-15T01:24:34Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38665471734",
+    "attempt": "1",
+    "head": "e0511a453a636623cd9a4f8dc820101d86184742",
+    "createdAt": "2026-10-15T01:24:26Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38665459826",
+    "attempt": "1",
+    "head": "fa1e53e84fba016307a0b954e075701cedc473ca",
+    "createdAt": "2026-10-15T01:24:18Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38665215440",
+    "attempt": "1",
+    "head": "da8dc7d2f5dc61e901a629ff898dfb0dc333bdc9",
+    "createdAt": "2026-10-15T01:21:37Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38664923542",
+    "attempt": "1",
+    "head": "fa3e265750b472f7a2f68e21be5acc3d7095ac44",
+    "createdAt": "2026-10-15T01:18:25Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38663350695",
+    "attempt": "1",
+    "head": "942e7ca54b468bf217127c759b1f327772e2d887",
+    "createdAt": "2026-10-15T01:01:39Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38662928143",
+    "attempt": "1",
+    "head": "e6180300386d030ab1fdb1bcebddcb8b20774e81",
+    "createdAt": "2026-10-15T00:57:11Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38662892557",
+    "attempt": "1",
+    "head": "6a964bfe85c3d5120722edf8e4a6781afff9d3eb",
+    "createdAt": "2026-10-15T00:56:47Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38660572433",
+    "attempt": "1",
+    "head": "942e7ca54b468bf217127c759b1f327772e2d887",
+    "createdAt": "2026-10-15T00:32:07Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38660565866",
+    "attempt": "1",
+    "head": "99028e63d7bc7e049850a36ee659c62b09ca3783",
+    "createdAt": "2026-10-15T00:32:03Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38657091299",
+    "attempt": "1",
+    "head": "99028e63d7bc7e049850a36ee659c62b09ca3783",
+    "createdAt": "2026-10-14T23:56:24Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38657041532",
+    "attempt": "1",
+    "head": "99028e63d7bc7e049850a36ee659c62b09ca3783",
+    "createdAt": "2026-10-14T23:55:54Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38655286093",
+    "attempt": "1",
+    "head": "6bbf52201119fd1b68f41753b6cd78b731f0e298",
+    "createdAt": "2026-10-14T23:38:07Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38655250203",
+    "attempt": "1",
+    "head": "6bbf52201119fd1b68f41753b6cd78b731f0e298",
+    "createdAt": "2026-10-14T23:37:46Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38654039531",
+    "attempt": "1",
+    "head": "1445547acf09b0d2a5e477d9fc713720d7b08ea6",
+    "createdAt": "2026-10-14T23:26:01Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38653128018",
+    "attempt": "1",
+    "head": "f2e6cebc857fe3a43a648e0cb6fe156d57f084a2",
+    "createdAt": "2026-10-14T23:17:12Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38652917343",
+    "attempt": "1",
+    "head": "85fd7e10584dfedb3a940b7e66edc1f17607b41f",
+    "createdAt": "2026-10-14T23:15:11Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38651970401",
+    "attempt": "1",
+    "head": "6bbf52201119fd1b68f41753b6cd78b731f0e298",
+    "createdAt": "2026-10-14T23:05:59Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38650857991",
+    "attempt": "1",
+    "head": "6a964bfe85c3d5120722edf8e4a6781afff9d3eb",
+    "createdAt": "2026-10-14T22:55:28Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38650762801",
+    "attempt": "1",
+    "head": "1445547acf09b0d2a5e477d9fc713720d7b08ea6",
+    "createdAt": "2026-10-14T22:54:34Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38649753374",
+    "attempt": "1",
+    "head": "f2daf9662c687fc2fd2ead078711f09ce3ef3f55",
+    "createdAt": "2026-10-14T22:45:08Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38649698789",
+    "attempt": "1",
+    "head": "f2daf9662c687fc2fd2ead078711f09ce3ef3f55",
+    "createdAt": "2026-10-14T22:44:37Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38645889349",
+    "attempt": "1",
+    "head": "20bca01b0641bfba0887fa02be6496531f191a9f",
+    "createdAt": "2026-10-14T22:11:31Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38643231638",
+    "attempt": "1",
+    "head": "9c62676dcda6437f86df94784bd277dda016f1b7",
+    "createdAt": "2026-10-14T21:49:50Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38643021112",
+    "attempt": "1",
+    "head": "06133e1039380e7cde5fa44cc97eabc1c9df7191",
+    "createdAt": "2026-10-14T21:48:06Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38642953726",
+    "attempt": "1",
+    "head": "06133e1039380e7cde5fa44cc97eabc1c9df7191",
+    "createdAt": "2026-10-14T21:47:34Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38641071304",
+    "attempt": "1",
+    "head": "20bca01b0641bfba0887fa02be6496531f191a9f",
+    "createdAt": "2026-10-14T21:32:38Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38638134268",
+    "attempt": "1",
+    "head": "06133e1039380e7cde5fa44cc97eabc1c9df7191",
+    "createdAt": "2026-10-14T21:10:14Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38637165997",
+    "attempt": "1",
+    "head": "9c62676dcda6437f86df94784bd277dda016f1b7",
+    "createdAt": "2026-10-14T21:02:59Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38633101785",
+    "attempt": "1",
+    "head": "432661556874f2324512889800059504ff9dd838",
+    "createdAt": "2026-10-14T20:33:39Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38632385992",
+    "attempt": "1",
+    "head": "e32b7f8e7cf7d1aaf3657907751db9881bdbc1b9",
+    "createdAt": "2026-10-14T20:28:37Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38631510723",
+    "attempt": "1",
+    "head": "f7ae0f24938eaed95fce3589d31030f46d1b9944",
+    "createdAt": "2026-10-14T20:22:28Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38631334638",
+    "attempt": "1",
+    "head": "3b980e573167ea984c0d422a8bf6d584b0740763",
+    "createdAt": "2026-10-14T20:21:14Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38631279830",
+    "attempt": "1",
+    "head": "76f6bb08c1866ce6a33fc7d0ea3a9aefb6002a75",
+    "createdAt": "2026-10-14T20:20:51Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38626152313",
+    "attempt": "1",
+    "head": "76f6bb08c1866ce6a33fc7d0ea3a9aefb6002a75",
+    "createdAt": "2026-10-14T19:44:06Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38626137225",
+    "attempt": "1",
+    "head": "432661556874f2324512889800059504ff9dd838",
+    "createdAt": "2026-10-14T19:44:00Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38626124329",
+    "attempt": "1",
+    "head": "3b980e573167ea984c0d422a8bf6d584b0740763",
+    "createdAt": "2026-10-14T19:43:54Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38626108781",
+    "attempt": "1",
+    "head": "f7ae0f24938eaed95fce3589d31030f46d1b9944",
+    "createdAt": "2026-10-14T19:43:47Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38626081059",
+    "attempt": "1",
+    "head": "2132f998747431bd630d8782e3d61ac85decfccc",
+    "createdAt": "2026-10-14T19:43:35Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38626036610",
+    "attempt": "1",
+    "head": "3b980e573167ea984c0d422a8bf6d584b0740763",
+    "createdAt": "2026-10-14T19:43:15Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38626016624",
+    "attempt": "1",
+    "head": "76f6bb08c1866ce6a33fc7d0ea3a9aefb6002a75",
+    "createdAt": "2026-10-14T19:43:07Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38626014906",
+    "attempt": "1",
+    "head": "f7ae0f24938eaed95fce3589d31030f46d1b9944",
+    "createdAt": "2026-10-14T19:43:06Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38626015436",
+    "attempt": "1",
+    "head": "432661556874f2324512889800059504ff9dd838",
+    "createdAt": "2026-10-14T19:43:06Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38625834899",
+    "attempt": "1",
+    "head": "d4661eeb2bdc0a0c01d493c55e03ca44e56aa0c5",
+    "createdAt": "2026-10-14T19:41:47Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38625735057",
+    "attempt": "1",
+    "head": "e0511a453a636623cd9a4f8dc820101d86184742",
+    "createdAt": "2026-10-14T19:41:04Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38624962096",
+    "attempt": "1",
+    "head": "fa1e53e84fba016307a0b954e075701cedc473ca",
+    "createdAt": "2026-10-14T19:35:28Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38624889011",
+    "attempt": "1",
+    "head": "917bf25c23b12c1302bf41a58660755f7996369b",
+    "createdAt": "2026-10-14T19:34:58Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38624098931",
+    "attempt": "1",
+    "head": "1bb4bf46de14bdc45453cfddb4d0a96a98ef6af6",
+    "createdAt": "2026-10-14T19:29:26Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38619961579",
+    "attempt": "1",
+    "head": "1bb4bf46de14bdc45453cfddb4d0a96a98ef6af6",
+    "createdAt": "2026-10-14T19:00:13Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38619947799",
+    "attempt": "1",
+    "head": "917bf25c23b12c1302bf41a58660755f7996369b",
+    "createdAt": "2026-10-14T19:00:07Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38619841201",
+    "attempt": "1",
+    "head": "1bb4bf46de14bdc45453cfddb4d0a96a98ef6af6",
+    "createdAt": "2026-10-14T18:59:22Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38619837838",
+    "attempt": "1",
+    "head": "2f74de9b18e0ba52a4c12196ca97bb7651b5dc1b",
+    "createdAt": "2026-10-14T18:59:21Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38619828153",
+    "attempt": "1",
+    "head": "2132f998747431bd630d8782e3d61ac85decfccc",
+    "createdAt": "2026-10-14T18:59:16Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38619822117",
+    "attempt": "1",
+    "head": "d4661eeb2bdc0a0c01d493c55e03ca44e56aa0c5",
+    "createdAt": "2026-10-14T18:59:13Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38619815040",
+    "attempt": "1",
+    "head": "6c9371683185906fb9939d69c6405d3b99724df0",
+    "createdAt": "2026-10-14T18:59:10Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38619810736",
+    "attempt": "1",
+    "head": "e514139f9bebdbc869b0ddfcce83d7112beac15f",
+    "createdAt": "2026-10-14T18:59:09Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38619808283",
+    "attempt": "1",
+    "head": "e32b7f8e7cf7d1aaf3657907751db9881bdbc1b9",
+    "createdAt": "2026-10-14T18:59:07Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38619798313",
+    "attempt": "1",
+    "head": "e0511a453a636623cd9a4f8dc820101d86184742",
+    "createdAt": "2026-10-14T18:59:03Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38619789928",
+    "attempt": "1",
+    "head": "fa1e53e84fba016307a0b954e075701cedc473ca",
+    "createdAt": "2026-10-14T18:59:00Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38619783460",
+    "attempt": "1",
+    "head": "917bf25c23b12c1302bf41a58660755f7996369b",
+    "createdAt": "2026-10-14T18:58:57Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38612625391",
+    "attempt": "1",
+    "head": "c78af0243f18939b13685549f92e4b523ce336d0",
+    "createdAt": "2026-10-14T18:08:33Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38612474781",
+    "attempt": "1",
+    "head": "c78af0243f18939b13685549f92e4b523ce336d0",
+    "createdAt": "2026-10-14T18:07:29Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38610170278",
+    "attempt": "1",
+    "head": "2372d7b6b2c2f420b453c7b42c6762a5088d279e",
+    "createdAt": "2026-10-14T17:51:09Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38605554479",
+    "attempt": "1",
+    "head": "38010a0b4da8ade808fec91631ba13699d556044",
+    "createdAt": "2026-10-14T17:18:34Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38605164889",
+    "attempt": "1",
+    "head": "01a4a70ede9470f3f6985f2a0baee3199ed0e1fe",
+    "createdAt": "2026-10-14T17:15:50Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38603845985",
+    "attempt": "1",
+    "head": "2372d7b6b2c2f420b453c7b42c6762a5088d279e",
+    "createdAt": "2026-10-14T17:06:44Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38601195351",
+    "attempt": "1",
+    "head": "38010a0b4da8ade808fec91631ba13699d556044",
+    "createdAt": "2026-10-14T16:48:23Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  },
+  {
+    "runId": "38601080428",
+    "attempt": "1",
+    "head": "38010a0b4da8ade808fec91631ba13699d556044",
+    "createdAt": "2026-10-14T16:47:36Z",
+    "missingReason": "Predates main publisher activation; historical per-spec record not reconstructed"
+  }
+]

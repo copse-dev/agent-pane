@@ -109,6 +109,8 @@ const report = {
   head: optionalSha(env['HEAD_SHA']),
   base,
   event: env['EVENT'] ?? 'local',
+  baseRef: (env['BASE_REF'] ?? '').replace('refs/heads/', ''),
+  ref: env['GITHUB_REF'] ?? '',
   draft: env['PR_DRAFT'] === 'true',
   labels: {
     ciFull: env['CI_FULL_LABEL'] === 'true',
