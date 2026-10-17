@@ -10,7 +10,7 @@ export type JsonValue =
 
 export interface HttpClassifierConnection {
   type: 'http'
-  protocol: 'systemone' | 'featherless'
+  protocol: 'systemone' | 'featherless' | 'decisions'
   baseUrl: string
   auth: 'none' | 'bearer'
   apiKeyEnv?: string
