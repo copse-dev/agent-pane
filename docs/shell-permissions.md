@@ -223,6 +223,12 @@ an active sandbox: the TypeScript file belongs to `wc`, not to the interpreter.
 A following script execution, download, or outside-project read still contributes
 its own escalation reason. Quoted newlines and backslash line continuations remain
 part of their original command's arguments.
+Other package-manager `exec` commands (`npm exec`, `yarn exec`, `bun exec`) are ambiguous: they
+run a project command, but npm may fetch a missing executable. They start inside an active sandbox
+and ask before an outside retry only if that sandbox blocks them. Local `pnpm exec` follows the
+contained `pnpm run` treatment described above. Explicit package installs remain hard-external. The
+shell `exec` builtin in command position, `find -exec`, and container `exec` remain hard-external as
+dynamic execution.
 
 A native `run_shell`, `run_background` or todo-verification command in an SSH workspace
 (`docs/plans/ssh-remote-repo.md`) is spawned on the remote host, where Copse applies no sandbox. The
