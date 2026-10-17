@@ -13,6 +13,7 @@ import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { approveShellCommandIfPrompted } from './helpers/shell-approval.ts'
 import { startConversationServer, type ConversationServer } from './helpers/conversation-server.ts'
+import { waitForAgentIdle } from './helpers.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
 async function submitToolPrompt(): Promise<void> {
@@ -180,7 +181,7 @@ describe('tool activity icon', function () {
 
     // The follow-up model turn is still writing this project's thread store.
     // Let the run finish so the next suite's cleanup does not race its writes.
-    await $('.stop-btn').waitForDisplayed({ reverse: true, timeout: 30_000 })
+    await waitForAgentIdle(30_000)
   })
 })
 
