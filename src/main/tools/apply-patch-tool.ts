@@ -21,6 +21,7 @@ export const APPLY_PATCH_DESCRIPTION = `Edit one or more files with a single pat
 
 The \`input\` is a patch envelope:
 
+\`\`\`text
 *** Begin Patch
 *** Update File: src/app.ts
 @@ function start()
@@ -32,6 +33,7 @@ The \`input\` is a patch envelope:
 +every line of a new file starts with +
 *** Delete File: src/old.ts
 *** End Patch
+\`\`\`
 
 Rules:
 - Paths are relative to the workspace root. Never use absolute paths.
