@@ -1,4 +1,4 @@
-import { confirmMobileControl } from '../services/mobile/mobile-control-confirmation.ts'
+import { mobileDeviceAccessArgsSchema, mobilePairingArgsSchema } from './mobile-companion-args.ts'
 import { networkActivity } from '../services/diagnostics/network-activity.ts'
 import { inspectStorageMaintenance, saveStorageRetention } from '../services/storage-maintenance.ts'
 import { readOpenAiArtifact } from '../services/remote/openai-agents-client.ts'
@@ -619,9 +619,7 @@ export function registerAllHandlers(
   threadArchivingRuntime: ThreadArchivingRuntime,
 ): void {
   const mobileAddressSchema = z.string().regex(/^(?:\d{1,3}\.){3}\d{1,3}$/)
-  const mobileDeviceAccessPairSchema = z.tuple([z.uuid(), z.enum(['read', 'control'])])
   const mobileDeviceIdSchema = z.uuid()
-  const mobilePairingDecisionSchema = z.enum(['read', 'control', 'deny'])
 
   ipcMain.handle('mobile:get-state', (event) => {
     assertMainFrameSender(event, win)
@@ -636,24 +634,20 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     await disableMobileCompanion()
   })
-  ipcMain.handle('mobile:set-device-access', async (event, ...args) => {
+  ipcMain.handle('mobile:set-device-access', (event, ...args) => {
     assertMainFrameSender(event, win)
-    const [id, access] = parseIpcArgs(mobileDeviceAccessPairSchema, args)
-    await setMobileDeviceAccess(id, access, (label) =>
-      confirmMobileControl((options) => dialog.showMessageBox(win, options), label),
-    )
+    const [id, access] = parseIpcArgs(mobileDeviceAccessArgsSchema, args)
+    setMobileDeviceAccess(id, access)
   })
   ipcMain.handle('mobile:revoke-device', (event, rawId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(mobileDeviceIdSchema, [rawId])
     revokeMobileDevice(id)
   })
-  ipcMain.handle('mobile:respond-pairing', async (event, rawDecision: unknown) => {
+  ipcMain.handle('mobile:respond-pairing', (event, ...args) => {
     assertMainFrameSender(event, win)
-    const decision = parseIpcArgs(mobilePairingDecisionSchema, [rawDecision])
-    await respondToMobilePairing(decision, (label, code) =>
-      confirmMobileControl((options) => dialog.showMessageBox(win, options), label, code),
-    )
+    const [decision, code] = parseIpcArgs(mobilePairingArgsSchema, args)
+    respondToMobilePairing(decision, code)
   })
   ipcMain.handle('mobile:reveal-certificate', (event) => {
     assertMainFrameSender(event, win)

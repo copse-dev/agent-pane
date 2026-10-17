@@ -230,10 +230,13 @@ expensive is an axis this version simply does not have.
 11. **Control requires an explicit desktop grant after local-root installation.**
     Existing device records default to read-only. Pairing or Manage paired phones
     can grant control only after a desktop checkbox confirms that this phone has
-    installed and trusted the local root. Control grants also require a main-process native
-    confirmation with its own unchecked trust checkbox; the renderer cannot supply that
-    acknowledgement. Pending pairings and device revocation are rechecked after the
-    native confirmation returns. The grant is persisted per device and
+    installed and trusted the local root. Settings owns this acknowledgement and passes it
+    through main-frame-only, schema-validated IPC; control requests without an explicit
+    acknowledgement are rejected. There is no second native confirmation. This trusts the
+    desktop renderer for the human gesture, as with other Settings changes; it does not
+    claim protection against a compromised desktop renderer. Pairing responses include the
+    displayed code so a stale response cannot approve a replacement request. Device existence
+    and shutdown state are checked synchronously when granting access. The grant is persisted per device and
     checked on every POST, including again after asynchronous store reads. Browsers
     cannot attest their trust settings to this server: this is a human-confirmed
     setup prerequisite, not cryptographic proof of installation. Do not interpret
@@ -737,8 +740,8 @@ by hand, on a device the app cannot reach.
   token streaming, attachment composition, or model selection from the phone.
 - Settings > Experimental manages Mobile Companion inline — enabling, network choice,
   pairing approval, and per-device access all live there, with no native-dialog
-  management surface. An OS-native confirmation still owns the local-root trust
-  acknowledgement before a phone receives control access. It also shows a QR encoding the running server's URL,
+  management surface. The inline local-root trust checkbox and Allow control button are
+  the single acknowledgement before a phone receives control access. It also shows a QR encoding the running server's URL,
   generated server-side (`qrcode`) from the same string already shown as text. This
   is the convenience case the Alternatives section's governing theorem leaves open,
   not the rejected one: it carries no claim the page or bundle is unmodified, so it
