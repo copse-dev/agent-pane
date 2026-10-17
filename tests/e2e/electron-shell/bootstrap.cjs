@@ -21,6 +21,24 @@ function applyEnvFile(filePath) {
 applyEnvFile(path.join(__dirname, '.eval-env.json'))
 applyEnvFile(path.join(__dirname, '.e2e-env.json'))
 
+// Inject a deterministic LAN interface only for the Mobile Companion settings capture.
+// This lives at the OS dependency boundary in the test launcher, never in product config.
+if (process.env.COPSE_E2E === '1' && process.env.COPSE_E2E_MOBILE_NETWORK === '1') {
+  require('node:os').networkInterfaces = () => ({
+    'Wi-Fi': [
+      {
+        address: '192.168.1.42',
+        netmask: '255.255.255.0',
+        family: 'IPv4',
+        mac: '02:00:00:00:00:42',
+        internal: false,
+        cidr: '192.168.1.42/24',
+      },
+    ],
+  })
+  require('node:module').syncBuiltinESMExports()
+}
+
 if (process.env.COPSE_E2E_ABOUT_OPTIONS) {
   require('./about-options-fixture.cjs').install(process.env.COPSE_E2E_ABOUT_OPTIONS)
 }
@@ -93,6 +111,10 @@ if (process.env.COPSE_E2E_SECRET_STORAGE === 'unavailable') {
   }
 }
 
+if (process.env.COPSE_E2E_SETTINGS_SNAPSHOT_FAILURE === '1') {
+  require('./settings-snapshot-failure-fixture.cjs').install()
+}
+
 // Notifications, the Dock badge and window hiding are OS chrome; see the fixture.
 if (process.env.COPSE_E2E_NATIVE_ALERTS) {
   require('./native-alerts-fixture.cjs').install(process.env.COPSE_E2E_NATIVE_ALERTS)
@@ -103,6 +125,10 @@ if (process.env.COPSE_E2E === '1' && process.env.COPSE_E2E_GIT_COMMITTED_BARRIER
   require('./git-committed-barrier-fixture.cjs').install(
     process.env.COPSE_E2E_GIT_COMMITTED_BARRIER,
   )
+}
+
+if (process.env.COPSE_E2E_ACP_REGISTRY_FIXTURE) {
+  require('./acp-registry-fixture.cjs').install(process.env.COPSE_E2E_ACP_REGISTRY_FIXTURE)
 }
 
 require('../../../dist/main/index.js')

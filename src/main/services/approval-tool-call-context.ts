@@ -14,7 +14,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
  * guarded-yolo → project-sandbox → node-pty, and importers that must stay
  * bundleable for the out-of-process probe worker cannot load that graph.
  */
-const toolCallIdStorage = new AsyncLocalStorage<string>()
+const toolCallIdStorage = new AsyncLocalStorage<string | undefined>()
 
 export function runWithApprovalToolCallId<T>(toolCallId: string, fn: () => T): T {
   return toolCallIdStorage.run(toolCallId, fn)
@@ -22,4 +22,15 @@ export function runWithApprovalToolCallId<T>(toolCallId: string, fn: () => T): T
 
 export function getApprovalToolCallId(): string | undefined {
   return toolCallIdStorage.getStore()
+}
+
+const bridgeExecutionIdStorage = new AsyncLocalStorage<string>()
+
+/** A bridge execution has its own identity, not a guessed ACP transcript ID. */
+export function runWithBridgeExecutionId<T>(id: string, fn: () => T): T {
+  return bridgeExecutionIdStorage.run(id, () => toolCallIdStorage.run(undefined, fn))
+}
+
+export function getBridgeExecutionId(): string | undefined {
+  return bridgeExecutionIdStorage.getStore()
 }

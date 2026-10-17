@@ -6,6 +6,7 @@ const activity = document.getElementById('activity')
 const thread = document.getElementById('thread')
 const error = document.getElementById('error')
 const groups = document.getElementById('groups')
+const inlineDecision = document.getElementById('inline-decision')
 const messages = document.getElementById('messages')
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
 
@@ -25,8 +26,13 @@ let sessionId = null
 let access = 'read'
 let runId = null
 let refreshing = false
+let refreshPending = false
 let sending = false
 let decisionSignature = ''
+let inlineDecisionSignature = ''
+let selectedDecisionRow = null
+let inlineDecisionRequest = 0
+let lastActivityRows = []
 let messageSignature = ''
 let projectSignature = ''
 const drafts = new Map()
@@ -99,12 +105,19 @@ function renderGroup(label, key, rows) {
           ? 'No decisions waiting for you.'
           : key === 'working'
             ? 'No threads running right now.'
-            : 'Completed threads will appear here.',
+            : key === 'has-changes'
+              ? 'Nothing waiting to be committed or discarded.'
+              : 'Completed threads will appear here.',
       ),
     )
   for (const row of rows) {
     const button = element('button', 'row')
     button.type = 'button'
+    const isSelected =
+      key === 'needs-you' &&
+      selectedDecisionRow?.projectId === row.projectId &&
+      selectedDecisionRow?.threadId === row.threadId
+    if (isSelected) button.classList.add('selected')
     const top = element('span', 'row-top')
     const state = element('span', `state ${row.state}`, row.state.replaceAll('-', ' '))
     top.append(state, element('span', 'time', age(row.lastSavedAt)))
@@ -113,14 +126,48 @@ function renderGroup(label, key, rows) {
       element('span', 'row-title', row.title),
       element('span', 'row-detail', `${row.detail} · ${row.projectName}`),
     )
-    button.addEventListener('click', () => openThread(row))
+    // A decision answers in place; anything else still opens the full thread.
+    button.addEventListener('click', () =>
+      key === 'needs-you' ? void selectDecision(row) : openThread(row),
+    )
     section.append(button)
+    // Expand the card directly under the tapped row, not after the whole list.
+    if (isSelected) section.append(inlineDecision)
   }
   return section
 }
 
+function renderGroups(rows) {
+  groups.replaceChildren(
+    renderGroup(
+      'NEEDS YOU',
+      'needs-you',
+      rows.filter((row) => row.group === 'needs-you'),
+    ),
+    renderGroup(
+      'WORKING',
+      'working',
+      rows.filter((row) => row.group === 'working'),
+    ),
+    renderGroup(
+      'HAS CHANGES',
+      'has-changes',
+      rows.filter((row) => row.group === 'has-changes'),
+    ),
+    renderGroup(
+      'RECENT',
+      'recent',
+      rows.filter((row) => row.group === 'recent'),
+    ),
+  )
+}
+
 async function refresh() {
-  if (!token || selected || refreshing) return
+  if (!token || selected) return
+  if (refreshing) {
+    refreshPending = true
+    return
+  }
   refreshing = true
   try {
     const data = await api('/api/activity')
@@ -144,23 +191,8 @@ async function refresh() {
       if (data.projects.some((project) => project.id === priorProject))
         projectSelect.value = priorProject
     }
-    groups.replaceChildren(
-      renderGroup(
-        'NEEDS YOU',
-        'needs-you',
-        data.rows.filter((row) => row.group === 'needs-you'),
-      ),
-      renderGroup(
-        'WORKING',
-        'working',
-        data.rows.filter((row) => row.group === 'working'),
-      ),
-      renderGroup(
-        'RECENT',
-        'recent',
-        data.rows.filter((row) => row.group === 'recent'),
-      ),
-    )
+    lastActivityRows = data.rows
+    renderGroups(data.rows)
     document.getElementById('freshness').textContent =
       `Updated ${age(data.refreshedAt)} · ${access === 'control' ? 'Chat and run control' : 'Read only · enable control on your Mac'}`
     show(activity)
@@ -168,6 +200,10 @@ async function refresh() {
     fail(cause.message)
   } finally {
     refreshing = false
+    if (refreshPending) {
+      refreshPending = false
+      void refresh()
+    }
   }
 }
 
@@ -202,14 +238,11 @@ function decisionButton(label, primary, callback) {
   return button
 }
 
-function renderDecisions(data, row) {
-  const signature = JSON.stringify([data.decisions, data.attention, data.access])
-  if (signature === decisionSignature) return
-  decisionSignature = signature
+function buildDecisionCards(data, row, container, afterSubmit) {
   const answerDrafts = new Map(
-    [...document.querySelectorAll('#attention textarea')].map((input) => [input.id, input.value]),
+    [...container.querySelectorAll('textarea')].map((input) => [input.id, input.value]),
   )
-  const cards = data.decisions.map((decision) => {
+  return data.decisions.map((decision) => {
     const card = element('section', 'attention')
     card.dataset.decisionId = decision.id
     const submit = async (answer) => {
@@ -226,10 +259,10 @@ function renderDecisions(data, row) {
           decisionId: decision.id,
         })
         actionStatus.textContent = 'Response sent.'
-        await refreshThread()
+        await afterSubmit()
       } catch (cause) {
         fail(cause.message)
-        await refreshThread()
+        await afterSubmit()
       } finally {
         buttons.forEach((button) => {
           button.disabled = false
@@ -245,9 +278,10 @@ function renderDecisions(data, row) {
         const actions = element('div', 'decision-actions')
         actions.append(
           decisionButton('Deny', false, () => submit({ action: 'approval', approved: false })),
-          decisionButton('Approve once', true, () =>
-            submit({ action: 'approval', approved: true }),
-          ),
+          // "Approve", not "Approve once": matches the desktop Activity panel's
+          // button wording (docs/ui-taste.md). Still answers once underneath —
+          // no remembered grant, no task lease.
+          decisionButton('Approve', true, () => submit({ action: 'approval', approved: true })),
         )
         card.append(actions)
       }
@@ -284,21 +318,138 @@ function renderDecisions(data, row) {
     }
     return card
   })
-  // Some external-agent prompts still have a desktop-only transport.
-  if (!data.decisions.length)
-    for (const item of data.attention) {
-      const card = element('section', 'attention')
-      card.append(
-        element('div', 'attention-title', item.title),
-        element('pre', 'attention-body', item.body),
-        element('p', 'hint', 'Answer this prompt on the desktop.'),
-      )
-      cards.push(card)
-    }
-  const attention = document.getElementById('attention')
-  const hadCards = attention.childElementCount > 0
-  attention.replaceChildren(...cards)
+}
+
+// Some external-agent prompts still have a desktop-only transport.
+function buildDesktopAttentionCards(data) {
+  if (data.decisions.length) return []
+  return data.attention.map((item) => {
+    const card = element('section', 'attention')
+    card.append(
+      element('div', 'attention-title', item.title),
+      element('pre', 'attention-body', item.body),
+      element('p', 'hint', 'Answer this prompt on the desktop.'),
+    )
+    return card
+  })
+}
+
+function renderDecisions(data, row) {
+  const signature = JSON.stringify([data.decisions, data.attention, data.access])
+  if (signature === decisionSignature) return
+  decisionSignature = signature
+  const attentionEl = document.getElementById('attention')
+  const cards = buildDecisionCards(data, row, attentionEl, refreshThread)
+  cards.push(...buildDesktopAttentionCards(data))
+  const hadCards = attentionEl.childElementCount > 0
+  attentionEl.replaceChildren(...cards)
   return cards.length > 0 && !hadCards
+}
+
+// Needs-you rows answer in place on the Activity screen: tapping the row
+// again, or the decision settling, closes the card without a navigation.
+async function selectDecision(row) {
+  inlineDecisionRequest += 1
+  if (
+    selectedDecisionRow?.projectId === row.projectId &&
+    selectedDecisionRow?.threadId === row.threadId
+  ) {
+    selectedDecisionRow = null
+    inlineDecisionSignature = ''
+    inlineDecision.hidden = true
+    inlineDecision.replaceChildren()
+    renderGroups(lastActivityRows)
+    return
+  }
+  selectedDecisionRow = row
+  inlineDecisionSignature = ''
+  inlineDecision.hidden = false
+  inlineDecision.replaceChildren(element('p', 'empty', 'Loading…'))
+  renderGroups(lastActivityRows)
+  await refreshInlineDecision()
+}
+
+function renderInlineDecision(data, row) {
+  const signature = JSON.stringify([data.decisions, data.attention, data.access])
+  if (signature === inlineDecisionSignature) return
+  inlineDecisionSignature = signature
+  const cards = buildDecisionCards(data, row, inlineDecision, refreshInlineDecision)
+  cards.push(...buildDesktopAttentionCards(data))
+  const openLink = element('button', 'open-thread-link', 'Open full thread ↗')
+  openLink.type = 'button'
+  openLink.addEventListener('click', () => openThread(row))
+  inlineDecision.replaceChildren(...cards, openLink)
+}
+
+async function refreshInlineDecision() {
+  const row = selectedDecisionRow
+  if (!token || !row) return
+  const request = ++inlineDecisionRequest
+  try {
+    const data = await api(
+      `/api/thread/${encodeURIComponent(row.projectId)}/${encodeURIComponent(row.threadId)}`,
+    )
+    if (selectedDecisionRow !== row || request !== inlineDecisionRequest) return
+    // Settled elsewhere (e.g. answered on the desktop): drop the card rather
+    // than show stale actions for a decision that no longer exists.
+    if (!data.decisions.length && !data.attention.length) {
+      selectedDecisionRow = null
+      inlineDecisionSignature = ''
+      inlineDecision.hidden = true
+      inlineDecision.replaceChildren()
+      renderGroups(lastActivityRows)
+      await refresh()
+      return
+    }
+    renderInlineDecision(data, row)
+  } catch (cause) {
+    if (selectedDecisionRow === row && request === inlineDecisionRequest) fail(cause.message)
+  }
+}
+
+function renderMessages(list) {
+  if (!list.length) {
+    messages.replaceChildren(
+      element('p', 'empty', 'A running response appears after it is saved on the desktop.'),
+    )
+    return
+  }
+  // Patch existing cards by index instead of rebuilding the whole list: a full
+  // replaceChildren on every poll tears down the nodes the browser anchors
+  // scroll position to, which is what made scrolling jitter and stall while a
+  // reply streamed in.
+  if (![...messages.children].every((child) => child.classList.contains('message')))
+    messages.replaceChildren()
+  list.forEach((message, index) => {
+    let card = messages.children[index]
+    if (!card) {
+      card = element('article', 'message')
+      messages.append(card)
+    }
+    let role = card.querySelector('.message-role')
+    if (!role) {
+      role = element('div', 'message-role')
+      card.prepend(role)
+    }
+    role.textContent = message.role
+    let summary = card.querySelector('.message-summary')
+    if (message.summary) {
+      if (!summary) {
+        summary = element('div', 'message-summary')
+        role.after(summary)
+      }
+      summary.textContent = message.summary
+    } else if (summary) {
+      summary.remove()
+    }
+    let content = card.querySelector('.message-content')
+    if (!content) {
+      content = element('div', 'message-content')
+      card.append(content)
+    }
+    renderMessageContent(content, message, index)
+  })
+  while (messages.children.length > list.length) messages.lastChild.remove()
 }
 
 async function refreshThread() {
@@ -334,21 +485,7 @@ async function refreshThread() {
     const signature = JSON.stringify(data.messages)
     if (signature === messageSignature) return revealPrompt()
     messageSignature = signature
-    messages.replaceChildren(
-      ...data.messages.map((message, index) => {
-        const card = element('article', 'message')
-        card.append(element('div', 'message-role', message.role))
-        if (message.summary) card.append(element('div', 'message-summary', message.summary))
-        const content = element('div', 'message-content')
-        renderMessageContent(content, message, index)
-        card.append(content)
-        return card
-      }),
-    )
-    if (!data.messages.length)
-      messages.append(
-        element('p', 'empty', 'A running response appears after it is saved on the desktop.'),
-      )
+    renderMessages(data.messages)
     if (document.activeElement === messageInput) revealComposer()
     revealPrompt()
   } catch (cause) {
@@ -357,9 +494,15 @@ async function refreshThread() {
 }
 
 async function openThread(row, addHistory = true) {
+  inlineDecisionRequest += 1
   if (addHistory && (selected?.projectId !== row.projectId || selected?.threadId !== row.threadId))
     history.pushState({ mobileView: 'thread', row }, '')
   if (selected) drafts.set(selected.threadId, messageInput.value)
+  // The full thread has its own decision card; leave none stale behind it.
+  selectedDecisionRow = null
+  inlineDecisionSignature = ''
+  inlineDecision.hidden = true
+  inlineDecision.replaceChildren()
   selected = row
   runId = null
   decisionSignature = ''
@@ -532,5 +675,8 @@ else if (token) void refresh()
 setInterval(() => {
   if (!token || document.hidden) return
   if (selected) void refreshThread()
-  else void refresh()
+  else {
+    void refresh()
+    if (selectedDecisionRow) void refreshInlineDecision()
+  }
 }, 2500)

@@ -1,3 +1,4 @@
+import { saveSettingsSection } from './helpers/settings-scroll-capture.ts'
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
@@ -149,7 +150,7 @@ describe('settings sources hooks', () => {
     assert.equal(testVsBadge.textTransform, 'none', 'Test is sentence text, not badge caps')
     assert.equal(testVsBadge.sameLook, false, 'Test must not share the badge treatment')
 
-    await saveElementScreenshot('fieldset:has(#sources-hooks-list)', 'settings-sources-hooks.png')
+    await saveSettingsSection('fieldset:has(#sources-hooks-list)', 'settings-sources-hooks.png')
     await browser.execute(() => {
       document
         .querySelector('#sources-hooks-list .sources-row:last-child')

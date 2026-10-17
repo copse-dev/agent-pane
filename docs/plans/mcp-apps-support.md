@@ -166,7 +166,7 @@ Specific constraints from the audited tree:
 - `ToolRegistry.execute` applies the permission gate before the registered
   execution wrapper, and the gate runs the canonical `toolGate` hooks (the
   `PreToolUse` mapping). A denial returns the text `User rejected the … tool
-call.` Calling a raw MCP client from an app session would bypass this path;
+  call.` Calling a raw MCP client from an app session would bypass this path;
   the permission catalogue alone does not authorize execution.
 - `activeBridgeToolNames` builds the ACP agent's tool list from
   `registry.names()` filtered to the `mcp__` prefix, and `bridgedTools` serves

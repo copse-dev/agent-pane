@@ -8,6 +8,28 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
+async function assertPickerFits(): Promise<void> {
+  const layout = await browser.execute(() => {
+    const host = document.querySelector<HTMLElement>('#roadmap-viewer-host')
+    const picker = document.querySelector<HTMLElement>('.roadmap-import')
+    const status = document.querySelector<HTMLElement>('.roadmap-import-status')
+    const actions = picker?.querySelector<HTMLElement>('.memories-actions')
+    if (!host || !picker || !status || !actions) return null
+    const bounds = host.getBoundingClientRect()
+    return {
+      inset: picker.getBoundingClientRect().left - bounds.left,
+      overflow: status.scrollWidth - status.clientWidth,
+      right: actions.getBoundingClientRect().right - bounds.right,
+      bottom: bounds.bottom - actions.getBoundingClientRect().bottom,
+    }
+  })
+  assert.ok(layout, 'import picker geometry must exist')
+  assert.ok(layout.inset >= 8, 'picker retains readable padding inside its host')
+  assert.ok(layout.overflow <= 1, 'import instructions wrap within the pane')
+  assert.ok(layout.right <= 1, 'all import actions fit within the pane')
+  assert.ok(layout.bottom >= 0 && layout.bottom <= 20, 'actions stay at the pane footer')
+}
+
 // Import picker rows: checkbox inline beside the title (not stacked/centered by
 // the global label { flex-direction: column } rule). The expanded mock fixture
 // also proves pagination does not impose a repository-wide issue ceiling.
@@ -89,6 +111,7 @@ describe('roadmap import picker', () => {
       'mock issue #52 is listed',
     )
 
+    await assertPickerFits()
     await saveAppScreenshot('roadmap-import-picker.png')
   })
 
@@ -119,6 +142,7 @@ describe('roadmap import picker', () => {
     await loadMore.waitForDisplayed({ timeout: 10_000 })
     assert.equal(await loadMore.getText(), 'Load more')
     await loadMore.scrollIntoView()
+    await assertPickerFits()
     await saveAppScreenshot('roadmap-import-picker-paginated.png')
 
     await loadMore.click()

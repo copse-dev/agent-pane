@@ -1,6 +1,11 @@
+import {
+  screenshotHash,
+  serializeScreenshotManifest,
+  SCREENSHOT_PUBLIC_URL,
+} from './lib/screenshot-manifest.mts'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, it } from 'node:test'
@@ -46,10 +51,18 @@ const SHA = 'abc123abc123abc123abc123abc123abc123abc1'
 const COMPARE_BRANCH = 'screenshot-compare/pr-123/abc123abc123'
 const COMPARE_URL = `https://github.com/copse-dev/agent-pane/compare/${SHA}...${COMPARE_BRANCH}`
 const COMPARE_COMMIT = 'def456def456def456def456def456def456def4'
-const RAW = 'https://github.com/copse-dev/agent-pane/raw'
+const RAW = `${SCREENSHOT_PUBLIC_URL}/screenshots/sha256`
+const previewHash = (name: string, old = false): string =>
+  screenshotHash(Buffer.from(`${old ? 'before:' : 'after:'}${name}`))
 
-function candidateNames(entries: { name: string; new: boolean }[]): string {
-  return JSON.stringify(entries)
+function candidateNames(entries: { name: string; new: boolean; focus?: boolean }[]): string {
+  return JSON.stringify(
+    entries.map((entry) => ({
+      ...entry,
+      sha256: previewHash(entry.name),
+      ...(entry.new ? {} : { beforeSha256: previewHash(entry.name, true) }),
+    })),
+  )
 }
 
 interface Parent {
@@ -252,7 +265,7 @@ describe('screenshot publication', () => {
   it('never opens a PR or mints an App token', () => {
     assert.doesNotMatch(
       JSON.stringify(steps),
-      /create-pull-request|create-github-app-token|app-token|secrets\.|pulls\.create\b/,
+      /create-pull-request|create-github-app-token|app-token|pulls\.create\b/,
     )
   })
 
@@ -263,12 +276,16 @@ describe('screenshot publication', () => {
         (['actions/checkout@v7.0.1', 'actions/download-artifact@v8'].includes(step.uses ?? '') &&
           ![
             'Load trusted screenshot stack policy',
+            'Load trusted screenshot storage policy',
             'Download screenshot stack coverage request',
           ].includes(step.name ?? '')),
     )
     assert.equal(artifactSteps.length, 4)
     for (const step of artifactSteps)
-      assert.equal(step.if, "steps.discover.outputs.has-artifact == 'true'")
+      assert.equal(
+        step.if,
+        "steps.stack-request.outputs.current != 'false' && steps.discover.outputs.has-artifact == 'true'",
+      )
     for (const name of [
       'Close legacy screenshot review PRs',
       'Delete superseded screenshot compare branches',
@@ -276,7 +293,10 @@ describe('screenshot publication', () => {
     ]) {
       const step = steps.find((candidate) => candidate.name === name)
       assert.ok(step)
-      assert.equal(step.if, "steps.discover.outputs.eligible == 'true'")
+      assert.equal(
+        step.if,
+        "steps.stack-request.outputs.current != 'false' && steps.discover.outputs.eligible == 'true'",
+      )
       assert.equal(step.with?.['github-token'], undefined)
     }
   })
@@ -534,7 +554,10 @@ describe('blocking screenshot review gate', () => {
     const index = (name: string): number => steps.findIndex((step) => step.name === name)
     const gateStep = steps.find((step) => step.name === 'Gate the parent on screenshot review')
     assert.equal(gateStep?.id, 'gate')
-    assert.equal(gateStep.if, "steps.discover.outputs.gate-sha != ''")
+    assert.equal(
+      gateStep.if,
+      "steps.stack-request.outputs.current != 'false' && steps.discover.outputs.gate-sha != ''",
+    )
     assert.ok(
       index('Validate and apply candidate PNGs') < index('Gate the parent on screenshot review'),
     )
@@ -543,7 +566,10 @@ describe('blocking screenshot review gate', () => {
     )
     const failClosed = steps.at(-1)
     assert.equal(failClosed?.name, 'Fail the screenshot review closed')
-    assert.equal(failClosed.if, "failure() && steps.discover.outputs.gate-sha != ''")
+    assert.equal(
+      failClosed.if,
+      "steps.stack-request.outputs.current != 'false' && failure() && steps.discover.outputs.gate-sha != ''",
+    )
     assert.match(z.string().parse(failClosed.with?.['script']), /state: 'error'/)
   })
 })
@@ -727,8 +753,32 @@ function applyCandidates(env: { FOCUS_SCREENSHOTS: string; FOCUS_SPECS: string }
     const checkout = join(root, 'checkout')
     const candidates = join(root, 'candidates')
     const runnerTemp = join(root, 'runner')
+    writeFile(checkout, 'package.json', JSON.stringify({ type: 'commonjs' }))
     mkdirSync(runnerTemp)
     writeFile(checkout, 'tests/e2e/screenshots/existing.png', PNG)
+    writeFile(
+      checkout,
+      'tests/e2e/screenshots/manifest.json',
+      serializeScreenshotManifest({
+        version: 1,
+        screenshots: { 'existing.png': { sha256: screenshotHash(PNG), bytes: PNG.length } },
+      }),
+    )
+    for (const file of [
+      'scripts/screenshot-candidates.mts',
+      'scripts/lib/screenshot-manifest.mts',
+      'scripts/lib/screenshot-review-manifest.mts',
+      'scripts/lib/safe-json.mts',
+      'scripts/lib/direct-execution.mts',
+      'packages/std/package.json',
+      'packages/std/src/unknown-value.ts',
+      'packages/std/src/nullish.ts',
+    ]) {
+      const target = join(checkout, '.screenshot-policy', file)
+      mkdirSync(dirname(target), { recursive: true })
+      cpSync(file, target)
+    }
+
     writeFile(
       checkout,
       'tests/e2e/pane.e2e.ts',
@@ -774,10 +824,31 @@ describe('screenshot candidate validation', () => {
     assert.match(output, /^count=4$/m)
     const names = /^names=(.*)$/m.exec(output)?.[1] ?? ''
     assert.deepEqual(JSON.parse(names), [
-      { name: 'spec-named.png', new: true, focus: true },
-      { name: 'z-touched.png', new: true, focus: true },
-      { name: 'a-drift.png', new: true, focus: false },
-      { name: 'existing.png', new: false, focus: false },
+      {
+        name: 'spec-named.png',
+        new: true,
+        focus: true,
+        sha256: screenshotHash(Buffer.concat([PNG, Buffer.from('spec-named.png')])),
+      },
+      {
+        name: 'z-touched.png',
+        new: true,
+        focus: true,
+        sha256: screenshotHash(Buffer.concat([PNG, Buffer.from('z-touched.png')])),
+      },
+      {
+        name: 'a-drift.png',
+        new: true,
+        focus: false,
+        sha256: screenshotHash(Buffer.concat([PNG, Buffer.from('a-drift.png')])),
+      },
+      {
+        name: 'existing.png',
+        new: false,
+        focus: false,
+        sha256: screenshotHash(Buffer.concat([PNG, Buffer.from('existing.png')])),
+        beforeSha256: screenshotHash(PNG),
+      },
     ])
   })
 
@@ -861,7 +932,7 @@ describe('parent screenshot evidence comment', () => {
       ),
       body,
     )
-    assert.ok(body.includes(`git checkout ${COMPARE_COMMIT} -- tests/e2e/screenshots/<name>.png`))
+    assert.ok(body.includes(`pnpm screenshots:accept --from ${COMPARE_COMMIT} <name>.png`))
     assert.match(body, /actions\/runs\/99\/artifacts\/42/)
     assert.match(body, /abc123abc123/)
     assert.match(body, /expires at `2026-09-27 03:11:41 UTC`/)
@@ -891,10 +962,10 @@ describe('parent screenshot evidence comment', () => {
     assert.deepEqual(rows, [
       '| Screenshot | Before | After |',
       '| --- | --- | --- |',
-      `| \`a-changed.png\` | <img src="${RAW}/${SHA}/tests/e2e/screenshots/a-changed.png" width="360"> | ` +
-        `<img src="${RAW}/${COMPARE_COMMIT}/tests/e2e/screenshots/a-changed.png" width="360"> |`,
+      `| \`a-changed.png\` | <img src="${RAW}/${previewHash('a-changed.png', true)}.png" width="360"> | ` +
+        `<img src="${RAW}/${previewHash('a-changed.png')}.png" width="360"> |`,
       `| \`b-new.png\` | *new* | ` +
-        `<img src="${RAW}/${COMPARE_COMMIT}/tests/e2e/screenshots/b-new.png" width="360"> |`,
+        `<img src="${RAW}/${previewHash('b-new.png')}.png" width="360"> |`,
     ])
     assert.doesNotMatch(
       body,
@@ -937,7 +1008,7 @@ describe('parent screenshot evidence comment', () => {
     const body =
       (
         await publish({
-          CANDIDATE_NAMES: JSON.stringify([...drift, ...touched]),
+          CANDIDATE_NAMES: candidateNames([...drift, ...touched]),
           CANDIDATE_COUNT: '32',
         })
       ).bodies[0] ?? ''
@@ -962,7 +1033,7 @@ describe('parent screenshot evidence comment', () => {
     const body =
       (
         await publish({
-          CANDIDATE_NAMES: JSON.stringify([{ name: 'touched.png', new: false, focus: true }]),
+          CANDIDATE_NAMES: candidateNames([{ name: 'touched.png', new: false, focus: true }]),
           CANDIDATE_COUNT: '1',
         })
       ).bodies[0] ?? ''
@@ -1018,7 +1089,10 @@ describe('parent screenshot evidence comment', () => {
     for (const env of [{ COMPARE_COMMIT: COMPARE_BRANCH }, { COMPARE_COMMIT: '' }]) {
       const body = (await publish(env)).bodies[0] ?? ''
       assert.doesNotMatch(body, /\| Screenshot \||<img|cherry-pick|compare\//, JSON.stringify(env))
-      assert.match(body, /download the artifact and commit the intended PNGs/)
+      assert.match(
+        body,
+        /download the artifact, upload intended PNGs, and commit their manifest hashes/,
+      )
     }
   })
 
@@ -1064,6 +1138,61 @@ describe('parent screenshot evidence comment', () => {
     assert.doesNotMatch((await publish()).bodies[0] ?? '', /Commit the ticked/)
   })
 
+  it('names the candidates the checklist cannot tick when the listing is capped', async () => {
+    // screenshot-candidates.mts lists at most 50 names; CANDIDATE_COUNT is the
+    // whole change. The note is presentation only: the compare commit still
+    // carries every candidate, and the labels still accept or decline all.
+    const entries = Array.from({ length: 50 }, (_, index) => ({
+      name: `shot-${String(index).padStart(2, '0')}.png`,
+      new: false,
+      focus: index < 3,
+    }))
+    const capped =
+      (
+        await publish({
+          REVIEW_PENDING: 'true',
+          CANDIDATE_NAMES: candidateNames(entries),
+          CANDIDATE_COUNT: '63',
+        })
+      ).bodies[0] ?? ''
+    const boxes = capped.split('\n').filter((line) => /^- \[ \] `/.test(line))
+    assert.equal(boxes.length, 50)
+    const note = capped.indexOf('…and 13 more that this list cannot tick')
+    assert.ok(note > 0, capped)
+    assert.ok(note > capped.indexOf(boxes[49] ?? ''), 'the note follows the last checkbox')
+    assert.ok(note < capped.indexOf('- [ ] **Commit the ticked screenshots**'))
+    assert.ok(capped.slice(note).includes(`[the compare view](${COMPARE_URL})`), capped)
+    assert.match(capped.slice(note), /pnpm screenshots:accept/)
+    const complete =
+      (
+        await publish({
+          REVIEW_PENDING: 'true',
+          CANDIDATE_NAMES: candidateNames(entries),
+          CANDIDATE_COUNT: '50',
+        })
+      ).bodies[0] ?? ''
+    assert.doesNotMatch(complete, /cannot tick/)
+    assert.equal(complete.split('\n').filter((line) => /^- \[ \] `/.test(line)).length, 50)
+  })
+
+  it('keeps a capped checklist with the longest allowed names below the comment limit', async () => {
+    const entries = Array.from({ length: 50 }, (_, index) => ({
+      name: `${String(index).padStart(2, '0')}${'x'.repeat(240)}.png`,
+      new: false,
+    }))
+    const body =
+      (
+        await publish({
+          REVIEW_PENDING: 'true',
+          CANDIDATE_NAMES: candidateNames(entries),
+          CANDIDATE_COUNT: '4096',
+        })
+      ).bodies[0] ?? ''
+    assert.equal(body.split('\n').filter((line) => /^- \[ \] `/.test(line)).length, 50)
+    assert.ok(body.includes('…and 4046 more that this list cannot tick'), body)
+    assert.ok(body.length < 65_536, String(body.length))
+  })
+
   it('puts each checkbox beside its before/after images instead of a separate table', async () => {
     const body = (await publish({ REVIEW_PENDING: 'true' })).bodies[0] ?? ''
     const lines = body.split('\n')
@@ -1071,14 +1200,11 @@ describe('parent screenshot evidence comment', () => {
     assert.ok(at >= 0, body)
     assert.equal(
       lines[at + 1],
-      `  <img src="${RAW}/${SHA}/tests/e2e/screenshots/a-changed.png" width="360"> ` +
-        `<img src="${RAW}/${COMPARE_COMMIT}/tests/e2e/screenshots/a-changed.png" width="360">`,
+      `  <img src="${RAW}/${previewHash('a-changed.png', true)}.png" width="360"> ` +
+        `<img src="${RAW}/${previewHash('a-changed.png')}.png" width="360">`,
     )
     assert.equal(lines[at + 2], '- [ ] `b-new.png` *(new)*')
-    assert.equal(
-      lines[at + 3],
-      `  <img src="${RAW}/${COMPARE_COMMIT}/tests/e2e/screenshots/b-new.png" width="360">`,
-    )
+    assert.equal(lines[at + 3], `  <img src="${RAW}/${previewHash('b-new.png')}.png" width="360">`)
     assert.doesNotMatch(body, /\| Screenshot \|/)
   })
 
@@ -1115,7 +1241,10 @@ describe('parent screenshot evidence comment', () => {
     assert.match(bodies[0] ?? '', /Changed reference candidates for `abc123abc123` are in/)
     assert.match(bodies[0] ?? '', /actions\/runs\/99\/artifacts\/42/)
     assert.doesNotMatch(bodies[0] ?? '', /compare\/|cherry-pick|<img/)
-    assert.match(bodies[0] ?? '', /download the artifact and commit the intended PNGs/)
+    assert.match(
+      bodies[0] ?? '',
+      /download the artifact, upload intended PNGs, and commit their manifest hashes/,
+    )
   })
 
   it('deletes the just-pushed compare branch and posts no stale link when the parent advances', async () => {
@@ -1223,5 +1352,122 @@ describe('closing a screenshot parent', () => {
         'heads/screenshots/pr-123/abc123abc123',
       ],
     })
+  })
+})
+
+// A slow source run may finish after a body edit on the same commit. Its
+// publication must not replace the evidence from the current declaration.
+describe('superseded stack publications', () => {
+  const declaration = `<!-- copse-screenshot-stack: #122@${'a'.repeat(40)} tip=#123 -->`
+  const manifest = JSON.stringify({ declaration, number: 123, head: SHA, base: COMPARE_COMMIT })
+  const live = { ...parent(), body: declaration, draft: false }
+
+  async function preflight(
+    text: string,
+    pr = live,
+    file: { symlink?: boolean; size?: number } = {},
+  ): Promise<Map<string, string>> {
+    const outputs = new Map<string, string>()
+    await execute('Reject superseded screenshot stack publications', {
+      context,
+      process: { env: { PR_NUMBER: '123', HEAD_SHA: SHA, MANIFEST_PATH: '/coverage.json' } },
+      core: { ...core, setOutput: (key: string, value: string) => outputs.set(key, value) },
+      github: { rest: { pulls: { get: async () => ({ data: pr }) } } },
+      require: (name: string) => {
+        assert.equal(name, 'node:fs')
+        return {
+          lstatSync: (): {
+            isFile: () => boolean
+            isSymbolicLink: () => boolean
+            size: number
+          } => ({
+            isFile: (): boolean => true,
+            isSymbolicLink: (): boolean => file.symlink ?? false,
+            size: file.size ?? Buffer.byteLength(text),
+          }),
+          readFileSync: (): string => text,
+        }
+      },
+    })
+    return outputs
+  }
+
+  it('admits only the live declaration and head before any publication writes', async () => {
+    const current = await preflight(manifest)
+    assert.equal(current.get('current'), 'true')
+    assert.equal(current.get('declaration'), declaration)
+    for (const changed of [
+      { ...live, body: declaration.replace('a'.repeat(40), 'c'.repeat(40)) },
+      { ...live, body: 'Stack removed' },
+      { ...live, head: { ...live.head, sha: COMPARE_COMMIT } },
+      { ...live, state: 'closed' },
+      { ...live, draft: true },
+    ]) {
+      const result = await preflight(manifest, changed)
+      assert.equal(result.get('current'), 'false')
+      assert.equal(result.has('declaration'), false)
+    }
+  })
+
+  it('keeps malformed, misattributed, oversized and symlinked manifests fail-closed', async () => {
+    for (const text of [
+      'not json',
+      '{}',
+      manifest.replace('"number":123', '"number":124'),
+      manifest.replace(SHA, COMPARE_COMMIT),
+      manifest + ' '.repeat(4097),
+    ])
+      await assert.rejects(preflight(text))
+    await assert.rejects(preflight(manifest, live, { symlink: true }))
+    await assert.rejects(preflight(manifest, { ...live, body: `${declaration}\n${declaration}` }))
+  })
+
+  it('guards every evidence/status mutation and checks staleness before candidate checkout', () => {
+    const preflightIndex = steps.findIndex((step) => step.id === 'stack-request')
+    const candidateCheckout = steps.findIndex(
+      (step) => step.with?.['ref'] === '${{ steps.discover.outputs.head-sha }}',
+    )
+    assert.ok(preflightIndex >= 0 && preflightIndex < candidateCheckout)
+    for (const name of [
+      'Validate and apply candidate PNGs',
+      'Push the view-only screenshot compare branch',
+      'Gate the parent on screenshot review',
+      'Close legacy screenshot review PRs',
+      'Delete superseded screenshot compare branches',
+      'Link screenshot evidence from the parent',
+      'Attest combined screenshot stack coverage',
+      'Fail the screenshot review closed',
+    ])
+      assert.match(
+        steps.find((step) => step.name === name)?.if ?? '',
+        /steps\.stack-request\.outputs\.current != 'false'/,
+        name,
+      )
+  })
+
+  it('does not overwrite a newer review if the declaration changes during a failed publication', async () => {
+    for (const body of [
+      declaration,
+      declaration.replace('a'.repeat(40), 'c'.repeat(40)),
+      'Stack removed',
+    ]) {
+      const writes: unknown[] = []
+      await execute('Fail the screenshot review closed', {
+        context,
+        core,
+        process: { env: { PR_NUMBER: '123', GATE_SHA: SHA, STACK_DECLARATION: declaration } },
+        github: {
+          rest: {
+            pulls: { get: async () => ({ data: { ...live, body } }) },
+            repos: {
+              createCommitStatus: async (payload: unknown) => {
+                writes.push(payload)
+              },
+            },
+          },
+        },
+      })
+      assert.equal(writes.length, body === declaration ? 1 : 0)
+    }
   })
 })

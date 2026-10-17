@@ -547,6 +547,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A schedule whose finished runs still hold worktrees: the same warning amber
+   the plugin settings use for a skipped run, small enough to sit by the count. */
+.automation-schedule-held {
+  flex: none;
+  padding: 0 var(--spacing-xs);
+  border: 1px solid var(--warning, currentColor);
+  border-radius: var(--radius-sm);
+  color: var(--warning, var(--text-secondary));
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
 .automation-schedule-count {
   margin-left: auto;
   color: var(--text-muted);
@@ -587,11 +598,30 @@
 .automation-schedule-toggle .chat-thread-owner {
   margin-left: 0;
 }
+/* "Never run" marker on a schedule with no thread of its own yet. Fixed width
+   (not flexing like `.chat-thread-owner`) since it is short and always present
+   on this row — nothing else needs the space back. */
+.automation-row-unrun-badge {
+  flex: 0 0 auto;
+  margin-left: var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
 /* On a thread row the project label is the part that tells rows apart, so the
    title gives way first: the label keeps its natural width up to a cap and only
-   a very long project name ellipsizes. */
+   a very long project name ellipsizes. Growing the label (not just sizing it to
+   content) is what claims the row's leftover space here: with neither it nor the
+   title growing, `.chat-row`'s `justify-content: space-between` split that space
+   across every gap between the title, the label and any trailing status icon
+   instead of in one place, so the icon's distance from the label — and from the
+   row's trailing edge — drifted with however much spare width the row had. A
+   growing label absorbs that space itself (invisibly, since its text stays
+   left-anchored in the wider box), so anything after it — the PR/changes glyph,
+   the row menu button — lands flush against the row's trailing edge on every
+   row. See docs/ui-taste.md -> "Align trailing row icons". */
 .chats-list .chat-row .chat-thread-owner {
-  flex: 0 0 auto;
+  flex: 1 0 auto;
   max-width: 45%;
 }
 /* One row standing for several runs of a schedule: "N need you" or "N failed". */
@@ -764,6 +794,22 @@
   margin-left: 4px;
   color: var(--text-primary);
   animation: chat-attention-pulse 1.8s ease-in-out infinite;
+}
+/* The owner label's own growth (above) only reaches the row's trailing edge up
+   to its 45% cap — a short title next to a long project name can still leave
+   space stranded past that cap, which `.chat-row`'s `space-between` would
+   otherwise split across every remaining gap. Whichever status icon comes
+   first after the label claims that leftover itself, so the icon (and the row
+   menu button after it) still lands flush against the trailing edge. Only the
+   first one asks: a later icon that also set `margin-left: auto` would split
+   the same leftover space before *it* instead, prying it apart from the one
+   ahead of it. */
+.chats-list .chat-row .chat-attention-bell {
+  margin-left: auto;
+}
+.chats-list .chat-row:not(:has(.chat-attention-bell)) .chat-pr-status,
+.chats-list .chat-row:not(:has(.chat-attention-bell)) .chat-changes-status {
+  margin-left: auto;
 }
 .project-row .chat-attention-bell {
   margin-left: auto;
@@ -956,21 +1002,18 @@
   left: 50%;
   right: auto;
   transform: translate(-50%, -50%);
-  /* The docked card's real border would stack under the hairline ring. */
   border: none;
-  border-radius: var(--radius-lg);
-  box-shadow:
-    0 0 0 1px var(--border),
-    var(--shadow-lg);
+  border-radius: var(--composer-radius);
+  box-shadow: var(--composer-shadow);
   /* Centred on both axes, so a long draft is capped to the pane. */
   max-height: calc(100% - 2 * var(--spacing-xl));
 }
 .pane-chat.is-activity-idle .prompt-input {
   border-top: none;
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  border-radius: var(--composer-radius) var(--composer-radius) 0 0;
 }
 .pane-chat.is-activity-idle .input-footer {
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  border-radius: 0 0 var(--composer-radius) var(--composer-radius);
 }
 .pane-chat.is-activity-home .conversation {
   /* The empty thread has nothing to show; the Activity home (views/activity-home.ts)
@@ -1258,6 +1301,14 @@
   font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--text-secondary);
+}
+.git-changes-header-owner {
+  font-size: var(--font-size-2xs);
+  color: var(--text-tertiary, var(--text-secondary));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 .git-changes-bulk-actions {
   display: flex;
@@ -2574,14 +2625,17 @@ summary.pr-check-group-heading::-webkit-details-marker {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  /* Transparent canvas artefacts expose this surface. The headless mirror
-     captures against the resolved value of the same token. The text colour is
-     read back and injected into such guests (browser-pane.ts), since host CSS
-     does not inherit into a webview. */
-  background: var(--bg-base);
+  /* Ordinary pages use the browser's light default canvas. A transparent page
+     must not put its default black text on Copse's dark app surface. */
+  background: var(--browser-page-background);
   color: var(--text-primary);
   -webkit-app-region: no-drag;
   position: relative;
+}
+.browser-webview-host.is-canvas {
+  /* Inline Canvas artefacts deliberately share the app surface; browser-pane
+     also supplies its foreground when their roots are transparent. */
+  background: var(--bg-base);
 }
 .browser-webview {
   flex: 1;

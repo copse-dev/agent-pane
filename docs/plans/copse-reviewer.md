@@ -177,7 +177,7 @@ list is the design, the exact encoding is Phase 1's to settle:
   challenged it and lost.
 - **evidence** — an ordered list of `{ kind, command, exitCode, excerpt }` or
   `{ kind: 'reproducer', testPath, failsOnHead, passesOnBase }` or `{ kind: 'citation',
-path, lines }`.
+  path, lines }`.
 - **verdict** — `confirmed` | `refuted` | `unverified`, with the reason.
 - **remedy** — optional minimal patch.
 
@@ -1511,8 +1511,9 @@ Reviewers read it before the diff. Copse Reviewer now does the same, under B4 as
   `write_summary`, with one repair turn if it ends in prose. The prompt tells the model to
   describe, not review. It reuses the review's model route; it adds no new trust boundary.
 - **Grounding.** The model proposes the level; evidence can only raise it. A surfaced high or
-  critical finding makes it High, any surfaced finding makes Low into Medium, and the block
-  says why. Stage 0's regressions are findings, so they count.
+  critical finding makes it High, a medium-severity finding makes Low into Medium, and the block
+  says why. Low-severity findings remain visible without raising the risk. Stage 0's regressions
+  are findings, so they count according to their severity.
 - **Inertness.** Every model-written line goes through the same `inertMarkdown` as review
   comments and is flattened to one quoted line. `<` becomes `&lt;`, so a diff that steers
   the model cannot forge the end marker, hide the author's text or mention anyone.

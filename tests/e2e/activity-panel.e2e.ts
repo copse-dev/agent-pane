@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { E2E_VIEWPORT, saveAppScreenshot } from './helpers/screenshot.ts'
 import {
   resetUserData,
   seedE2eViewport,
@@ -28,7 +28,9 @@ const AUTH_COMMAND = "printf 'auth-check-passed\\n'"
 const AUTH_REPLY = 'The auth verification script passed.'
 const AUDIT_PROMPT = 'Audit the dependency tree.'
 const AUDIT_REPLY = 'The dependency audit found nothing to update.'
-const SEEDED_AT = 1_786_000_000_000
+// Keep the displayed age stable across CI dates, with an hour of margin before
+// the next day boundary. A fixed calendar timestamp ages the screenshot daily.
+const SEEDED_AT = Date.now() - (60 * 24 + 1) * 60 * 60 * 1_000
 
 function seededThread(id: string, title: string, request: string, answer: string) {
   return {
@@ -111,6 +113,9 @@ describe('Activity panel', function () {
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
+    // The panel observes run-start events even while closed. Starting before
+    // it mounts leaves the working row with an unknown age in the capture.
+    await $('#activity-panel').waitForExist({ timeout: 30_000 })
   })
 
   after(() => {
@@ -178,6 +183,7 @@ describe('Activity panel', function () {
     const workingRow = $(rowSelector('working', AUDIT_THREAD))
     await expect(workingRow).toBeDisplayed()
     await expect(workingRow.$('.activity-state')).toHaveText('Running')
+    await expect(workingRow.$('time.activity-age')).toBeExisting()
     assert.deepEqual(
       await $$('#activity-panel .activity-group').map((group) => group.getAttribute('data-group')),
       ['needs-you', 'working', 'recent'],
@@ -280,7 +286,34 @@ describe('Activity panel', function () {
       scrollAfterApproval > 0,
       `the activity list should keep its position after the update (scrollTop=${String(scrollAfterApproval)})`,
     )
-    await saveAppScreenshot('activity-panel-scroll-preserved.png')
+    await saveAppScreenshot('activity-panel-scroll-preserved.png', E2E_VIEWPORT, async () => {
+      const motion = await browser.execute((threadId) => {
+        const paths = document.querySelectorAll(
+          `.chat-row.is-running[data-thread-id="${CSS.escape(threadId)}"] .chat-running-status path`,
+        )
+        const loops = Array.from(paths).flatMap((path) =>
+          path
+            .getAnimations()
+            .filter((animation) => animation.effect?.getTiming().iterations === Infinity),
+        )
+        return loops.map((animation) => {
+          const timing = animation.effect?.getTiming()
+          return {
+            paused: animation.playState === 'paused',
+            enrolled: window.e2eCaptureAnimations?.some((saved) => saved.animation === animation),
+            time: animation.currentTime,
+            expected:
+              (timing?.delay ?? 0) +
+              (typeof timing?.duration === 'number' ? timing.duration / 2 : 0),
+          }
+        })
+      }, AUDIT_THREAD)
+      assert.equal(motion.length, 3, 'the working sidebar row retains its three running dots')
+      assert.ok(
+        motion.every((loop) => loop.paused && loop.enrolled && loop.time === loop.expected),
+        `running indicators must be pinned after framing: ${JSON.stringify(motion)}`,
+      )
+    })
     // Proof the answer reached main: A's tool runs and its turn finishes, so its
     // row lands in Recently finished while B is still working.
     const finishedRow = $(rowSelector('recent', AUTH_THREAD))

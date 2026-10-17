@@ -32,8 +32,9 @@ function stdioServerEntry(): Record<string, unknown> {
 }
 
 async function createWorkspace(id: string, mcpServers: Record<string, unknown>): Promise<string> {
-  const workspace = await mkdtemp(join(tmpdir(), `copse-mcp-${id}-`))
-  temporaryWorkspaces.push(workspace)
+  const parent = await mkdtemp(join(tmpdir(), `copse-mcp-${id}-`))
+  temporaryWorkspaces.push(parent)
+  const workspace = join(parent, 'workspace')
   await mkdir(join(workspace, '.cursor'), { recursive: true })
   await writeFile(join(workspace, '.cursor', 'mcp.json'), JSON.stringify({ mcpServers }), 'utf8')
   return workspace

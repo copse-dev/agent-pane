@@ -6,6 +6,7 @@ import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GhCliStatus, GhPrChecksState, GhPrDetails, GhPrSummary } from '@shared/types/git.ts'
 import { mountPrPane } from './pr-pane.ts'
+import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import type { GitDiffMonaco } from '../monaco/git-diff-viewer.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -82,6 +83,7 @@ function mount(
     prDetails?: ApiClient['gh']['prDetails']
     prChecks?: ApiClient['gh']['prChecks']
     gh?: Partial<ApiClient['gh']>
+    extraThreads?: readonly Thread[]
   } = {},
 ): {
   listRoot: HTMLElement
@@ -96,6 +98,7 @@ function mount(
     rightPanelMode: 'prs',
     threads: [
       makeThread('thread-1', options.linkedUrls ?? 'See https://github.com/acme/widgets/pull/42'),
+      ...(options.extraThreads ?? []),
     ],
   })
   const base = createFakeApi()
@@ -148,6 +151,28 @@ afterEach(() => {
 })
 
 describe('pr pane filter (issue #2482)', () => {
+  for (const installed of [true, false]) {
+    it(`does not claim to check CI when GitHub is ${installed ? 'signed out' : 'unavailable'}`, async () => {
+      let requests = 0
+      const { listRoot } = mount([], {
+        workspacePrs: [],
+        gh: {
+          status: async () => ({ installed, authenticated: false, username: null, message: null }),
+        },
+        prChecks: async () => {
+          requests++
+          return 'success'
+        },
+      })
+      await settle()
+      assert.equal(requests, 0)
+      assert.equal(listRoot.querySelector('.pr-list-checks-label')?.textContent, 'CI unavailable')
+      assert.match(
+        listRoot.querySelector('.pr-list-status')?.getAttribute('aria-label') ?? '',
+        /CI unavailable/,
+      )
+    })
+  }
   it('keeps relationship labels with repository and CI metadata in the current row layout', async () => {
     const { listRoot } = mount()
     await settle()
@@ -278,6 +303,78 @@ describe('pr pane filter (issue #2482)', () => {
     dispose()
   })
 
+  it('Fix on a failing check sends the fix prompt to the thread that produced the PR, not a new one', async () => {
+    const draftsSent: string[] = []
+    const unregister = registerPromptAttachments({
+      attachFile: () => {},
+      attachTextBlock: () => {},
+      quoteText: () => {},
+      attachImage: () => {},
+      attachVideo: () => Promise.resolve(),
+      attachArchive: () => Promise.resolve(),
+      sendMessage: async (content) => {
+        draftsSent.push(content)
+        return true
+      },
+    })
+    try {
+      const { viewerRoot, store, dispose } = mount([], {
+        workspacePrs: [],
+        extraThreads: [makeThread('producer', 'opened the PR')],
+        prDetails: async (_owner, _repo, number) =>
+          number === LINKED_PR.number
+            ? {
+                ...LINKED_PR,
+                body: '',
+                files: [],
+                activity: {
+                  comments: [],
+                  checks: [
+                    { name: 'build', state: 'FAILURE', url: 'https://github.com/acme/widgets/42' },
+                  ],
+                  headSha: 'abc1234',
+                  commentsTruncated: false,
+                  checksTruncated: false,
+                },
+              }
+            : null,
+        gh: {
+          prThreadRelationships: async () => [
+            {
+              threadId: 'producer',
+              title: 'Producer thread',
+              kinds: ['produced'],
+              productions: [],
+            },
+          ],
+        },
+      })
+      try {
+        await settle()
+        viewerRoot.querySelector<HTMLButtonElement>('[data-section="checks"]')?.click()
+        await settle()
+        const threadCountBefore = store.getState().threads.length
+        const fixBtn = viewerRoot.querySelector<HTMLButtonElement>('.pr-check-fix-btn')
+        assert.ok(fixBtn)
+        fixBtn.click()
+        await settle()
+        assert.equal(store.getState().activeThreadId, 'producer')
+        assert.equal(
+          store.getState().threads.length,
+          threadCountBefore,
+          'must not spin up a new thread',
+        )
+        assert.equal(draftsSent.length, 1)
+        assert.match(draftsSent[0] ?? '', /Fix the failing check "build"/)
+        assert.match(draftsSent[0] ?? '', /abc1234/)
+      } finally {
+        dispose()
+      }
+    } finally {
+      unregister()
+    }
+  })
+
   it('shows known conflicts as an X while retaining the failing CI label', async () => {
     const { listRoot } = mount([], {
       linkedUrls: 'https://github.com/acme/widgets/pull/994',
@@ -332,6 +429,11 @@ describe('pr pane filter (issue #2482)', () => {
     resolveChecks('failure')
     await settle()
     assert.ok(listRoot.querySelector('.pr-list-status.is-open.has-ci-failure'))
+    assert.equal(
+      listRoot.querySelector('.pr-list-status.is-open.has-ci-failure + .pr-list-checks-label')
+        ?.textContent,
+      'CI failing',
+    )
     listRoot.querySelector<HTMLButtonElement>('.pr-other-toggle')?.click()
     await settle()
     const merged = listRoot.querySelector('.pr-list-status.is-merged')

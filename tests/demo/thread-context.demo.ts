@@ -1,7 +1,44 @@
 import { $, $$, browser, expect } from '@wdio/globals'
-import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
+import { saveElementScreenshot, waitForSettledLayout } from '../e2e/helpers/screenshot.ts'
 
 const MAIN = 'Fix flaky mermaid e2e'
+
+async function showSideChatsForCapture(actions: readonly [string, string][]): Promise<void> {
+  await $('[data-context-section="side-chats"]').scrollIntoView({
+    block: 'start',
+    inline: 'nearest',
+  })
+  await waitForSettledLayout('#pane-files')
+  for (const [id, action] of actions) {
+    await expect($(`[data-action="${action}"][data-side-chat-id="${id}"]`)).toBeEnabled()
+  }
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() => {
+        const host = document.querySelector('#context-viewer-host')
+        const section = document.querySelector('[data-context-section="side-chats"]')
+        if (!host || !section) return false
+        const port = host.getBoundingClientRect()
+        // The wrappers include each row's sibling Archive/Restore action.
+        const nodes = [section, ...section.querySelectorAll('.thread-context-row-wrap')]
+        return (
+          nodes.length === 3 &&
+          nodes.every((node) => {
+            const box = node.getBoundingClientRect()
+            return (
+              box.width > 0 &&
+              box.height > 0 &&
+              box.top >= port.top &&
+              box.bottom <= port.bottom &&
+              box.left >= port.left &&
+              box.right <= port.right
+            )
+          })
+        )
+      }),
+    { timeout: 10_000, timeoutMsg: 'Both side chats and their actions must fit the Context pane' },
+  )
+}
 
 /** The panel control toggles, so only click it when the Context pane is not already showing. */
 async function openContext(): Promise<void> {
@@ -18,12 +55,45 @@ describe('The thread Context panel', () => {
     await browser.url('/?scenario=thread-context')
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await openContext()
+    await $('#resizer-files').dragAndDrop({ x: 240, y: 0 })
   })
 
   it('lists repos, side chats, links, mentions and subagents for the open thread', async () => {
+    await expect($('[data-context-storage-size]')).toHaveText('24 KB')
+    await expect($('[data-context-section="storage"] [data-context-change-stats]')).toHaveText(
+      '+42 −7',
+    )
+    await expect(
+      $('[data-context-section="storage"] .thread-context-row:nth-of-type(2) .thread-context-main'),
+    ).toHaveText('Changes')
+    const colors = await browser.execute(() => {
+      const additions = document.querySelector(
+        '[data-context-change-stats] .git-change-status-added',
+      )
+      const deletions = document.querySelector(
+        '[data-context-change-stats] .git-change-status-deleted',
+      )
+      const probe = document.createElement('span')
+      document.body.append(probe)
+      probe.style.color = 'var(--change-added)'
+      const green = getComputedStyle(probe).color
+      probe.style.color = 'var(--change-deleted)'
+      const red = getComputedStyle(probe).color
+      probe.remove()
+      return {
+        additions: additions ? getComputedStyle(additions).color : null,
+        deletions: deletions ? getComputedStyle(deletions).color : null,
+        green,
+        red,
+      }
+    })
+    expect(colors.additions).toBe(colors.green)
+    expect(colors.deletions).toBe(colors.red)
+    expect(colors.additions).not.toBe(colors.deletions)
+    await expect($('[data-action="archive-thread"]')).toBeEnabled()
     await expect($('.chat-row.selected .chat-title')).toHaveText(MAIN)
     await expect($('[data-context-section="repos"] .thread-context-repo')).toHaveText(
-      expect.stringContaining('fix/mermaid-wait'),
+      expect.stringContaining('Primary · fix/mermaid-wait'),
     )
     await expect($$('.thread-context-row[data-side-chat-id]')).toBeElementsArrayOfSize(2)
     await expect($('.thread-context-row[data-side-chat-id="sc-side-1"]')).toHaveAttribute(
@@ -34,11 +104,11 @@ describe('The thread Context panel', () => {
       'data-archived',
       'true',
     )
-    await expect($('[data-link-group="pr"] .thread-context-row')).toHaveText('acme/widgets#42')
-    await expect($('[data-link-group="url"] .thread-context-row')).toHaveText(
+    await expect($('[data-link-group="pr"] .thread-context-title')).toHaveText('acme/widgets#42')
+    await expect($('[data-context-section="sources"] .thread-context-row')).toHaveText(
       'webdriver.io/docs/api/element/waitForDisplayed',
     )
-    await expect($('[data-link-group="thread"] .thread-context-row')).toHaveText(
+    await expect($('[data-link-group="thread"] .thread-context-title')).toHaveText(
       'Release notes draft',
     )
     await $('[data-link-group="mentioned-in"]').waitForExist({ timeout: 10_000 })
@@ -51,7 +121,40 @@ describe('The thread Context panel', () => {
       return viewer ? viewer.scrollWidth - viewer.clientWidth : -1
     })
     expect(overflow).toBe(0)
+    const layout = await browser.execute(() => {
+      const header = document.querySelector('#context-host')?.getBoundingClientRect()
+      const content = document.querySelector('#context-viewer-host')?.getBoundingClientRect()
+      const row = document.querySelector('.thread-context-repo')
+      return {
+        aligned: header?.left === content?.left && header?.width === content?.width,
+        stacked: !!header && !!content && header.bottom <= content.top,
+        border: row ? getComputedStyle(row).borderTopWidth : null,
+      }
+    })
+    expect(layout).toEqual({ aligned: true, stacked: true, border: '0px' })
+    await expect($('#resizer-tree')).not.toBeDisplayed()
+    await expect($('#right-sidebar')).not.toBeDisplayed()
+    await expect($$('.thread-context-index-row')).toBeElementsArrayOfSize(0)
+    await expect($('.thread-context-thread-title')).toHaveText(MAIN)
+    const paneHeight = await browser.execute(() => {
+      const first = document.querySelector('[data-context-section="subagents"]')
+      return first?.getBoundingClientRect().height ?? 0
+    })
+    expect(paneHeight).toBeLessThan(110)
+    await showSideChatsForCapture([
+      ['sc-side-1', 'archive-side-chat'],
+      ['sc-side-2', 'restore-side-chat'],
+    ])
     await saveElementScreenshot('#pane-files', 'side-chats-context-panel.png')
+  })
+
+  it('expands and closes the single context panel', async () => {
+    await $('[aria-label="Expand context over chat"]').click()
+    await expect($('#body')).toHaveElementClass('is-right-panel-maximized')
+    await $('[aria-label="Restore context"]').click()
+    await $('[aria-label="Close context"]').click()
+    await expect($('#pane-files')).not.toBeDisplayed()
+    await openContext()
   })
 
   it('archives and restores side chats from the panel', async () => {
@@ -65,6 +168,10 @@ describe('The thread Context panel', () => {
       'data-archived',
       'true',
     )
+    await showSideChatsForCapture([
+      ['sc-side-1', 'restore-side-chat'],
+      ['sc-side-2', 'archive-side-chat'],
+    ])
     await saveElementScreenshot('#pane-files', 'side-chats-archive-restore.png')
   })
 
@@ -73,5 +180,25 @@ describe('The thread Context panel', () => {
     await $('.side-chat-body-host').waitForDisplayed({ timeout: 10_000 })
     await expect($('.chat-row.selected .chat-title')).toHaveText(MAIN)
     await expect($('.side-chat-row.is-selected')).toHaveAttribute('data-side-chat-id', 'sc-side-2')
+    await expect($('#right-sidebar')).toBeDisplayed()
+  })
+  it('archives the current thread from Context', async () => {
+    await openContext()
+    await $('[data-action="archive-thread"]').click()
+    await expect($('.chat-row.selected .chat-title')).not.toHaveText(MAIN)
+    await saveElementScreenshot('#pane-files', 'thread-context-after-archive.png')
+  })
+  it('identifies a dedicated worktree visibly in a narrow panel', async () => {
+    await browser.url('/?scenario=thread-context-worktree')
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await openContext()
+    await expect($('.thread-context-repo .thread-context-meta')).toHaveText(
+      'Worktree · fix/mermaid-wait',
+    )
+    await expect($('.thread-context-repo')).toHaveAttribute(
+      'data-repo-path',
+      '/demo/widgets/.copse/worktrees/mermaid-wait',
+    )
+    await saveElementScreenshot('#pane-files', 'thread-context-worktree-owner.png')
   })
 })

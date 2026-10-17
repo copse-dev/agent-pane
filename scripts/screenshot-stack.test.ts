@@ -6,8 +6,11 @@ import { load } from 'js-yaml'
 import { z } from 'zod'
 import {
   attestScreenshotStack,
+  memoizeScreenshotStackAncestry,
   parseScreenshotStack,
   reconcileScreenshotStack,
+  selectScreenshotStackCompletion,
+  selectScreenshotStackPulls,
   STACK_COVERAGE,
   STACK_DECISION,
   verifyScreenshotStack,
@@ -41,6 +44,11 @@ function status(
   author = 41898282,
 ): { context: string; id: number; description: string; state: string; creator: { id: number } } {
   return { context, id, description, state, creator: { id: author } }
+}
+/** GitHub's combined-status endpoint uses status-simple, which omits creator. */
+function compactStatus(value: unknown): Record<string, unknown> {
+  assert.ok(value !== null && typeof value === 'object')
+  return Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'creator'))
 }
 interface Fixture {
   github: StackGitHub
@@ -127,6 +135,188 @@ describe('screenshot stack declarations', () => {
 })
 
 describe('combined stack review gates', () => {
+  it('hydrates creator-less current statuses without walking unrelated history and observes revocation', async () => {
+    const f = fixture()
+    let reads = 0
+    let historyReads = 0
+    f.github.rest.repos.listCommitStatusesForRef = async ({
+      ref,
+      page,
+    }): Promise<{ data: unknown }> => {
+      assert.equal(page, 1, 'current proof is found on the first history page')
+      historyReads += 1
+      return {
+        data: [
+          ...(f.statuses.get(ref) ?? []),
+          ...Array.from({ length: 97 }, (_, i) => status(`Other ${String(i)}`, 100 + i)),
+        ],
+      }
+    }
+    f.github.rest.repos.getCombinedStatusForRef = async ({
+      ref,
+      page,
+    }): Promise<{ data: unknown }> => {
+      assert.equal(page, 1)
+      reads += 1
+      return { data: { statuses: (f.statuses.get(ref) ?? []).map(compactStatus) } }
+    }
+    const policy = memoizeScreenshotStackAncestry(f.github)
+    assert.equal((await verifyScreenshotStack(policy, input))?.approved, true)
+    f.statuses.set(TIP, [status('Screenshot review', 4, 'Review revoked', 'error')])
+    assert.equal((await verifyScreenshotStack(policy, input))?.approved, false)
+    assert.equal(reads, 2, 'decision reads remain live despite shared immutable ancestry')
+    assert.equal(historyReads, 2, 'hydrate only the current proof, not unrelated status history')
+  })
+  it('rejects untrusted creators even when compact status states and declaration digests match', async () => {
+    for (const context of ['Screenshot review', STACK_COVERAGE, STACK_DECISION]) {
+      const f = fixture()
+      f.statuses.set(TIP, [
+        status(
+          'Screenshot review',
+          1,
+          undefined,
+          'success',
+          context === 'Screenshot review' ? 123 : 41898282,
+        ),
+        status(
+          STACK_COVERAGE,
+          2,
+          `Stack coverage ${DIGEST}`,
+          'success',
+          context === STACK_COVERAGE ? 123 : 41898282,
+        ),
+        status(
+          STACK_DECISION,
+          3,
+          `Stack decision ${DIGEST}`,
+          'success',
+          context === STACK_DECISION ? 123 : 41898282,
+        ),
+      ])
+      f.github.rest.repos.getCombinedStatusForRef = async ({
+        ref,
+      }): Promise<{ data: unknown }> => ({
+        data: { statuses: (f.statuses.get(ref) ?? []).map(compactStatus) },
+      })
+      assert.equal((await verifyScreenshotStack(f.github, input))?.approved, false)
+    }
+  })
+  it('observes a newer revocation while hydrating creator identity', async () => {
+    const f = fixture()
+    const snapshot = (f.statuses.get(TIP) ?? []).map(compactStatus)
+    f.github.rest.repos.getCombinedStatusForRef = async (): Promise<{ data: unknown }> => ({
+      data: { statuses: snapshot },
+    })
+    f.statuses.set(TIP, [
+      status('Screenshot review', 4, 'Review revoked during hydration', 'error'),
+      ...(f.statuses.get(TIP) ?? []),
+    ])
+    assert.equal((await verifyScreenshotStack(f.github, input))?.approved, false)
+  })
+  it('fails closed when full statuses cannot resolve the current status IDs', async () => {
+    const f = fixture()
+    f.github.rest.repos.getCombinedStatusForRef = async ({ ref }): Promise<{ data: unknown }> => ({
+      data: { statuses: (f.statuses.get(ref) ?? []).map(compactStatus) },
+    })
+    f.github.rest.repos.listCommitStatusesForRef = async (): Promise<{ data: unknown }> => ({
+      data: [],
+    })
+    await assert.rejects(verifyScreenshotStack(f.github, input), /creators unavailable/)
+  })
+  it('paginates current contexts and fails closed for malformed combined responses', async () => {
+    const f = fixture()
+    const pages: number[] = []
+    f.github.rest.repos.getCombinedStatusForRef = async ({
+      ref,
+      page,
+    }): Promise<{ data: unknown }> => {
+      pages.push(page)
+      return {
+        data: {
+          statuses:
+            page === 1
+              ? Array.from({ length: 100 }, (_, i) => status(`Other ${String(i)}`, 100 + i))
+              : (f.statuses.get(ref) ?? []),
+        },
+      }
+    }
+    assert.equal((await verifyScreenshotStack(f.github, input))?.approved, true)
+    assert.deepEqual(pages, [1, 2])
+    f.github.rest.repos.getCombinedStatusForRef = async (): Promise<{ data: unknown }> => ({
+      data: {},
+    })
+    await assert.rejects(verifyScreenshotStack(f.github, input), /statuses unavailable/)
+  })
+  it('shares immutable ancestry comparisons across a ten-PR stack, not live proof', async () => {
+    const f = fixture()
+    const sha = (number: number): string => number.toString(16).padStart(40, '0')
+    const text = `<!-- copse-screenshot-stack: ${Array.from({ length: 9 }, (_, i) => `#${String(i + 1)}@${sha(i + 1)}`).join(' ')} tip=#10 -->`
+    const parsed = parseScreenshotStack(text)
+    assert.ok(parsed)
+    for (let number = 1; number <= 10; number += 1) {
+      f.pulls.set(number, pull(number, sha(number), text))
+    }
+    f.statuses.set(sha(10), [
+      status('Screenshot review', 1),
+      status(STACK_COVERAGE, 2, `Stack coverage ${parsed.digest}`),
+      status(STACK_DECISION, 3, `Stack decision ${parsed.digest}`),
+    ])
+    let comparisons = 0
+    const compare = f.github.rest.repos.compareCommitsWithBasehead.bind(f.github.rest.repos)
+    f.github.rest.repos.compareCommitsWithBasehead = async (
+      request,
+    ): Promise<{ data: unknown }> => {
+      comparisons += 1
+      return compare(request)
+    }
+    const cached = memoizeScreenshotStackAncestry(f.github)
+    for (let number = 1; number <= 10; number += 1) {
+      assert.equal((await verifyScreenshotStack(cached, { ...input, number }))?.approved, true)
+    }
+    assert.equal(comparisons, 17, 'one query per immutable ancestry pair, rather than 170')
+    f.statuses.set(sha(10), [status('Screenshot review', 4, 'Review revoked', 'error')])
+    assert.equal((await verifyScreenshotStack(cached, { ...input, number: 10 }))?.approved, false)
+    f.pulls.set(3, pull(3, BASE, text))
+    await assert.rejects(
+      verifyScreenshotStack(cached, { ...input, number: 10 }),
+      /head or declaration changed/,
+    )
+  })
+  it('does not append duplicate trusted statuses and returns the verified outcome', async () => {
+    const f = fixture()
+    const description = `Stack deferred to approved tip #2 at ${TIP.slice(0, 12)}`
+    f.statuses.set(LOWER, [status('Screenshot review', 4, description)])
+    assert.deepEqual(await reconcileScreenshotStack(f.github, input), {
+      head: LOWER,
+      state: 'success',
+      description,
+    })
+    assert.deepEqual(f.writes, [])
+    f.statuses.set(LOWER, [status('Screenshot review', 5, description, 'success', 123)])
+    await reconcileScreenshotStack(f.github, input)
+    assert.equal(f.writes.length, 1, 'an untrusted lookalike must be replaced')
+  })
+  it('keeps racing-push checks live when ancestry results are already cached', async () => {
+    const f = fixture()
+    const cached = memoizeScreenshotStackAncestry(f.github)
+    await verifyScreenshotStack(cached, tipInput)
+    const get = f.github.rest.pulls.get.bind(f.github.rest.pulls)
+    let lowerReads = 0
+    f.github.rest.pulls.get = async (request): Promise<{ data: unknown }> => {
+      const result = await get(request)
+      if (request.pull_number === 1 && ++lowerReads === 1) f.pulls.set(1, pull(1, BASE))
+      return result
+    }
+    await assert.rejects(verifyScreenshotStack(cached, tipInput), /changed during validation/)
+  })
+  it('does not grow pending status history while the tip is still awaiting review', async () => {
+    const f = fixture()
+    f.statuses.set(TIP, [])
+    const description = 'Stack waiting for covered screenshot approval on tip #2'
+    f.statuses.set(LOWER, [status('Screenshot review', 4, description, 'pending')])
+    assert.equal((await reconcileScreenshotStack(f.github, input))?.state, 'pending')
+    assert.deepEqual(f.writes, [])
+  })
   it('defers lower review only to an approved tip with declaration-bound coverage', async () => {
     const f = fixture()
     const stack = await verifyScreenshotStack(f.github, input)
@@ -265,6 +455,18 @@ describe('stack coverage attestation', () => {
     assert.equal(f.writes.at(-1)?.sha, TIP)
     assert.equal(f.writes.at(-1)?.description, `Stack coverage ${DIGEST}`)
   })
+  it('preserves an explicit tip decision while refreshing creator-less combined coverage', async () => {
+    const f = fixture()
+    f.github.rest.repos.getCombinedStatusForRef = async ({ ref }): Promise<{ data: unknown }> => ({
+      data: { statuses: (f.statuses.get(ref) ?? []).map(compactStatus) },
+    })
+    const result = await attestScreenshotStack(f.github, tipInput, TIP, manifest)
+    assert.equal(result.needsReview, false)
+    assert.deepEqual(
+      f.writes.map((write) => write.context),
+      [STACK_COVERAGE],
+    )
+  })
   it('does not reuse an individual PR review made before combined coverage', async () => {
     const f = fixture()
     f.statuses.set(TIP, [
@@ -317,7 +519,371 @@ const workflowSchema = z.object({
     }),
   ),
 })
+describe('incremental screenshot stack selection', () => {
+  it('bounds ordinary-PR reconciliation to two API reads in a 50-PR repository', async () => {
+    const f = fixture()
+    const open = Array.from({ length: 50 }, (_, index) => pull(index + 1, BASE, ''))
+    let reads = 0
+    f.github.rest.pulls.get = async ({ pull_number }): Promise<{ data: unknown }> => {
+      assert.equal(pull_number, 50, 'unrelated PRs must not be validated')
+      reads++
+      return { data: open[49] }
+    }
+    f.github.rest.repos.listCommitStatusesForRef = async (): Promise<{ data: unknown }> => {
+      reads++
+      return { data: [] }
+    }
+    for (const number of selectScreenshotStackPulls(open, 'pull_request_target', {
+      pull_request: open[49],
+    }))
+      await reconcileScreenshotStack(f.github, { ...input, number })
+    assert.equal(reads, 2, 'excludes the single paginated open-PR discovery request')
+    assert.equal(f.writes.length, 0)
+  })
+  const other = `<!-- copse-screenshot-stack: #3@${BASE} tip=#4 -->`
+  const open = [
+    pull(1, LOWER),
+    pull(2, TIP),
+    pull(3, BASE, other),
+    pull(4, BASE, other),
+    pull(5, BASE, ''),
+  ]
+  it('selects one ordinary PR without validating unrelated stacks', () => {
+    assert.deepEqual(
+      selectScreenshotStackPulls(open, 'pull_request_target', {
+        pull_request: pull(5, BASE, ''),
+      }),
+      [5],
+    )
+  })
+  it('selects the connected stack for a lower push or tip approval', () => {
+    for (const number of [1, 2])
+      assert.deepEqual(
+        selectScreenshotStackPulls(open, 'pull_request_target', {
+          pull_request: pull(number, TIP),
+        }),
+        [1, 2],
+      )
+    assert.deepEqual(
+      selectScreenshotStackPulls(open, 'workflow_run', {
+        workflow_run: { pull_requests: [{ number: 2 }] },
+      }),
+      [1, 2],
+    )
+  })
+  it('revokes removed declarations and follows the old membership', () => {
+    const removed = [pull(1, LOWER, ''), pull(2, TIP, ''), ...open.slice(2)]
+    assert.deepEqual(
+      selectScreenshotStackPulls(removed, 'pull_request_target', {
+        pull_request: pull(1, LOWER, ''),
+        changes: { body: { from: TEXT } },
+      }),
+      [1, 2],
+    )
+  })
+  it('follows old and new membership transitively', () => {
+    const moved = [pull(1, LOWER, other), ...open.slice(1)]
+    assert.deepEqual(
+      selectScreenshotStackPulls(moved, 'pull_request_target', {
+        pull_request: pull(1, LOWER, other),
+        changes: { body: { from: TEXT } },
+      }),
+      [1, 2, 3, 4],
+    )
+  })
+  it('invalidates dependents of a closed tip absent from the open list', () => {
+    assert.deepEqual(
+      selectScreenshotStackPulls(
+        open.filter((_, index) => index !== 1),
+        'pull_request_target',
+        {
+          pull_request: { number: 2, body: '' },
+        },
+      ),
+      [1],
+    )
+  })
+  it('includes malformed declarations for live error validation', () => {
+    const broken = [pull(1, LOWER, `<!-- copse-screenshot-stack: broken #2`), ...open.slice(1)]
+    assert.deepEqual(
+      selectScreenshotStackPulls(broken, 'workflow_run', {
+        workflow_run: { pull_requests: [{ number: 2 }] },
+      }),
+      [1, 2],
+    )
+  })
+  it('uses matching heads and falls back when workflow association is unavailable', () => {
+    assert.deepEqual(
+      selectScreenshotStackPulls(open, 'workflow_run', {
+        workflow_run: { head_sha: TIP, pull_requests: [] },
+      }),
+      [1, 2],
+    )
+    for (const payload of [{}, { workflow_run: { head_sha: 'unknown', pull_requests: [] } }]) {
+      assert.deepEqual(selectScreenshotStackPulls(open, 'workflow_run', payload), [1, 2, 3, 4, 5])
+    }
+  })
+  it('performs complete manual/scheduled repair and handles invalid event numbers', () => {
+    for (const event of ['schedule', 'workflow_dispatch', 'unknown', 'pull_request_target']) {
+      assert.deepEqual(selectScreenshotStackPulls(open, event, {}), [1, 2, 3, 4, 5])
+    }
+  })
+  it('selects the same dependency closure independently of list order', () => {
+    const payload = { pull_request: pull(1, LOWER, other), changes: { body: { from: TEXT } } }
+    assert.deepEqual(
+      selectScreenshotStackPulls([...open].reverse(), 'pull_request_target', payload).sort(),
+      [1, 2, 3, 4],
+    )
+  })
+
+  describe('unassociated workflow completions', () => {
+    // Publisher, decision and selection runs complete on main: no PR metadata,
+    // and a head SHA that matches no open PR.
+    const MAIN = 'f'.repeat(40)
+    const THIRD = 'd'.repeat(40)
+    const FOURTH = 'e'.repeat(40)
+    const STARTED = '2026-10-14T20:00:00Z'
+    const payload = {
+      workflow_run: { head_sha: MAIN, pull_requests: [], run_started_at: STARTED },
+    }
+    const repository = { owner: 'copse-dev', repo: 'agent-pane' }
+    const stacks = [
+      pull(1, LOWER),
+      pull(2, TIP),
+      pull(3, THIRD, other),
+      pull(4, FOURTH, other),
+      pull(5, BASE, ''),
+    ]
+    function written(context: string, at: string): Record<string, unknown> {
+      return { ...status(context, 1), created_at: at, updated_at: at }
+    }
+    function reads(
+      statuses: Map<string, unknown>,
+      combined = false,
+    ): { github: StackGitHub; refs: string[]; pulls: number } {
+      const refs: string[] = []
+      const read = async ({ ref }: { ref: string }): Promise<{ data: unknown }> => {
+        refs.push(ref)
+        const data = statuses.get(ref) ?? []
+        return { data: combined ? { statuses: data } : data }
+      }
+      const github: StackGitHub = {
+        rest: {
+          pulls: {
+            get: async (): Promise<{ data: unknown }> => {
+              result.pulls++
+              return { data: undefined }
+            },
+          },
+          repos: {
+            compareCommitsWithBasehead: async (): Promise<never> =>
+              assert.fail('selection never compares'),
+            listCommitStatusesForRef: combined
+              ? async (): Promise<never> => assert.fail('the combined endpoint was available')
+              : read,
+            ...(combined ? { getCombinedStatusForRef: read } : {}),
+            createCommitStatus: async (): Promise<never> => assert.fail('selection never writes'),
+          },
+        },
+      }
+      const result = { github, refs, pulls: 0 }
+      return result
+    }
+    it('reads only declared heads and selects the stack whose evidence changed', async () => {
+      const f = reads(
+        new Map<string, unknown>([
+          [LOWER, [written('Screenshot review', '2026-10-14T20:00:05Z')]],
+          [TIP, [written('Screenshot review', '2026-10-14T19:00:00Z')]],
+          [FOURTH, [written(STACK_DECISION, '2026-10-14T19:59:59Z')]],
+        ]),
+      )
+      assert.deepEqual(
+        await selectScreenshotStackCompletion(f.github, repository, stacks, payload),
+        [1, 2],
+      )
+      assert.deepEqual(f.refs.sort(), [LOWER, TIP, THIRD, FOURTH].sort(), 'ordinary heads unread')
+      assert.equal(f.pulls, 0)
+    })
+    it('selects nothing when no declared head changed, and only on evidence contexts', async () => {
+      for (const statuses of [
+        new Map<string, unknown>(),
+        new Map<string, unknown>([[LOWER, [written('ci/lint', '2026-10-14T20:00:05Z')]]]),
+        new Map<string, unknown>([[TIP, [written(STACK_COVERAGE, '2026-10-14T19:59:59Z')]]]),
+        new Map<string, unknown>([[BASE, [written('Screenshot review', '2026-10-14T20:00:05Z')]]]),
+      ]) {
+        const f = reads(statuses)
+        assert.deepEqual(
+          await selectScreenshotStackCompletion(f.github, repository, stacks, payload),
+          [],
+        )
+      }
+    })
+    it('treats tip approval evidence as a change for the whole stack', async () => {
+      for (const context of ['Screenshot review', STACK_COVERAGE, STACK_DECISION]) {
+        const f = reads(new Map<string, unknown>([[FOURTH, [written(context, STARTED)]]]))
+        assert.deepEqual(
+          await selectScreenshotStackCompletion(f.github, repository, stacks, payload),
+          [3, 4],
+        )
+      }
+    })
+    it('uses the combined endpoint when available and selects a full first page', async () => {
+      const f = reads(
+        new Map<string, unknown>([[THIRD, [written(STACK_DECISION, '2026-10-14T20:00:01Z')]]]),
+        true,
+      )
+      assert.deepEqual(
+        await selectScreenshotStackCompletion(f.github, repository, stacks, payload),
+        [3, 4],
+      )
+      const full = reads(
+        new Map<string, unknown>([
+          [LOWER, Array.from({ length: 100 }, () => written('ci/lint', '2026-01-01T00:00:00Z'))],
+        ]),
+        true,
+      )
+      assert.deepEqual(
+        await selectScreenshotStackCompletion(full.github, repository, stacks, payload),
+        [1, 2],
+      )
+    })
+    it('validates rather than guesses for unreadable statuses, undated writes or bad heads', async () => {
+      const unreadable = reads(new Map<string, unknown>([[LOWER, 'unavailable']]))
+      assert.deepEqual(
+        await selectScreenshotStackCompletion(unreadable.github, repository, stacks, payload),
+        [1, 2],
+      )
+      const undated = reads(new Map<string, unknown>([[TIP, [status('Screenshot review', 1)]]]))
+      assert.deepEqual(
+        await selectScreenshotStackCompletion(undated.github, repository, stacks, payload),
+        [1, 2],
+      )
+      const f = reads(new Map<string, unknown>())
+      const broken = [...stacks]
+      broken[2] = { ...pull(3, THIRD, other), head: { sha: 'main' } }
+      assert.deepEqual(
+        await selectScreenshotStackCompletion(f.github, repository, broken, payload),
+        [3, 4],
+      )
+      assert.ok(!f.refs.includes('main'))
+    })
+    it('keeps the full sweep when the completion carries no usable timestamp', async () => {
+      for (const run of [
+        { head_sha: MAIN, pull_requests: [] },
+        { head_sha: MAIN, pull_requests: [], run_started_at: 'yesterday' },
+        { head_sha: MAIN, pull_requests: [], run_started_at: 20 },
+      ]) {
+        const f = reads(new Map<string, unknown>())
+        assert.deepEqual(
+          await selectScreenshotStackCompletion(f.github, repository, stacks, {
+            workflow_run: run,
+          }),
+          [1, 2, 3, 4, 5],
+        )
+        assert.equal(f.refs.length, 0)
+      }
+      const created = reads(
+        new Map<string, unknown>([[LOWER, [written('Screenshot review', STARTED)]]]),
+      )
+      assert.deepEqual(
+        await selectScreenshotStackCompletion(created.github, repository, stacks, {
+          workflow_run: { head_sha: MAIN, pull_requests: [], created_at: STARTED },
+        }),
+        [1, 2],
+      )
+    })
+    it('routes associated completions without reading any status', async () => {
+      for (const run of [
+        { pull_requests: [{ number: 3 }], run_started_at: STARTED },
+        { head_sha: FOURTH, pull_requests: [], run_started_at: STARTED },
+      ]) {
+        const f = reads(
+          new Map<string, unknown>([[LOWER, [written('Screenshot review', STARTED)]]]),
+        )
+        assert.deepEqual(
+          await selectScreenshotStackCompletion(f.github, repository, stacks, {
+            workflow_run: run,
+          }),
+          [3, 4],
+        )
+        assert.equal(f.refs.length, 0)
+      }
+    })
+    it('bounds an ordinary-PR publication to one read per declared head', async () => {
+      const f = reads(new Map<string, unknown>())
+      const open = [
+        ...stacks,
+        ...Array.from({ length: 45 }, (_, index) => pull(10 + index, BASE, '')),
+      ]
+      assert.deepEqual(
+        await selectScreenshotStackCompletion(f.github, repository, open, payload),
+        [],
+      )
+      assert.equal(f.refs.length, 4, 'four declared heads, forty-six ordinary PRs unread')
+    })
+  })
+})
 describe('stack workflow integration', () => {
+  it('retains distinct events and performs full repair sweeps for missed removals', async () => {
+    const source = readFileSync('.github/workflows/screenshot-stack.yml', 'utf8')
+    const routing = z
+      .object({
+        concurrency: z.object({ queue: z.literal('max'), 'cancel-in-progress': z.literal(false) }),
+        on: z.object({ schedule: z.array(z.object({ cron: z.string() })) }),
+      })
+      .parse(load(source))
+    assert.equal(routing.on.schedule.length, 1)
+    const workflow = workflowSchema.parse(
+      load(readFileSync('.github/workflows/screenshot-stack.yml', 'utf8')),
+    )
+    const script = workflow.jobs['reconcile']?.steps.find(
+      (step) => step.name === 'Reconcile live screenshot stacks',
+    )?.with?.['script']
+    assert.equal(typeof script, 'string')
+    assert.ok(typeof script === 'string')
+    const start = script.indexOf('const eligible =')
+    const end = script.indexOf('for (const pr of selected)', start)
+    assert.ok(start >= 0 && end > start)
+    const removed = pull(3, BASE, '')
+    const foreign = {
+      ...pull(4, BASE),
+      head: { sha: BASE, repo: { full_name: 'someone/fork' } },
+    }
+    const open = [pull(1, LOWER), removed, foreign]
+    const calls: unknown[] = []
+    const select = async (eventName: string, payload: unknown): Promise<unknown> =>
+      new Script(
+        `(async () => {\n${script.slice(start, end)}\nreturn selected.map(pr => pr.number) })()`,
+      ).runInNewContext({
+        open,
+        owner: 'copse-dev',
+        repo: 'agent-pane',
+        policy: 'memoized-client',
+        selectScreenshotStackPulls,
+        selectScreenshotStackCompletion: async (...args: unknown[]): Promise<number[]> => {
+          calls.push(args)
+          return [3]
+        },
+        core: { info: (): void => {} },
+        context: { eventName, payload },
+      })
+    assert.equal(JSON.stringify(await select('schedule', {})), '[1,3]')
+    assert.equal(calls.length, 0, 'repair sweeps never read statuses to select')
+    const payload = { workflow_run: { head_sha: BASE, pull_requests: [] } }
+    assert.equal(JSON.stringify(await select('workflow_run', payload)), '[3]')
+    // The script runs in another realm: compare structure, not prototypes.
+    assert.equal(
+      JSON.stringify(calls),
+      JSON.stringify([
+        [
+          'memoized-client',
+          { owner: 'copse-dev', repo: 'agent-pane' },
+          [open[0], removed],
+          payload,
+        ],
+      ]),
+    )
+  })
   it('forces combined coverage before the screenshot-only shortcut and preserves source-event evidence', () => {
     const ci = readFileSync('.github/workflows/ci.yml', 'utf8')
     const workflow = workflowSchema.parse(load(ci))

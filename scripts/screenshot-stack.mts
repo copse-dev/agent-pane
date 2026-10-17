@@ -32,6 +32,13 @@ export interface StackGitHub {
         repo: string
         basehead: string
       }): Promise<{ data: unknown }>
+      getCombinedStatusForRef?(input: {
+        owner: string
+        repo: string
+        ref: string
+        per_page: number
+        page: number
+      }): Promise<{ data: unknown }>
       listCommitStatusesForRef(input: {
         owner: string
         repo: string
@@ -49,6 +56,28 @@ export interface StackGitHub {
         target_url?: string
       }): Promise<unknown>
     }
+  }
+}
+
+/** Share only immutable SHA comparisons within one reconciliation run. */
+export function memoizeScreenshotStackAncestry(github: StackGitHub): StackGitHub {
+  const comparisons = new Map<string, Promise<{ data: unknown }>>()
+  return {
+    rest: {
+      pulls: github.rest.pulls,
+      repos: {
+        ...github.rest.repos,
+        compareCommitsWithBasehead(input): Promise<{ data: unknown }> {
+          const key = JSON.stringify([input.owner, input.repo, input.basehead])
+          let result = comparisons.get(key)
+          if (!result) {
+            result = github.rest.repos.compareCommitsWithBasehead(input)
+            comparisons.set(key, result)
+          }
+          return result
+        },
+      },
+    },
   }
 }
 
@@ -89,10 +118,168 @@ export function parseScreenshotStack(body: unknown): Declaration | null {
   return { members, tip, text, digest: createHash('sha256').update(text).digest('hex') }
 }
 
-interface Input {
+interface Repository {
   owner: string
   repo: string
+}
+
+interface Input extends Repository {
   number: number
+}
+
+function numberOf(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : undefined
+}
+
+function timestamp(value: unknown): number | undefined {
+  const parsed = typeof value === 'string' ? Date.parse(value) : Number.NaN
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+// Over-select malformed declarations too: validation must revoke their old
+// status. PR bodies are routing hints, not trusted stack declarations.
+function references(body: unknown): number[] {
+  if (typeof body !== 'string' || !body.includes(PREFIX)) return []
+  return [...body.matchAll(/#([1-9][0-9]*)/g)].flatMap((match) => {
+    const number = numberOf(Number(match[1]))
+    return number === undefined ? [] : [number]
+  })
+}
+
+/** PRs a workflow completion names: its PR metadata or an open head matching its SHA. */
+function completionPulls(open: unknown[], payload: unknown): Set<number> {
+  const affected = new Set<number>()
+  const run = field(payload, 'workflow_run')
+  const pulls = field(run, 'pull_requests')
+  if (Array.isArray(pulls)) {
+    for (const pr of pulls) {
+      const number = numberOf(field(pr, 'number'))
+      if (number !== undefined) affected.add(number)
+    }
+  }
+  const sha = field(run, 'head_sha')
+  if (typeof sha === 'string' && SHA.test(sha)) {
+    for (const pr of open) {
+      const number = numberOf(field(pr, 'number'))
+      if (number !== undefined && field(field(pr, 'head'), 'sha') === sha) affected.add(number)
+    }
+  }
+  return affected
+}
+
+// Follow both directions and transitively: membership edits can connect old
+// and new stacks, including a closed triggering tip absent from `open`.
+function connected(open: unknown[], affected: Set<number>): number[] {
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const pr of open) {
+      const number = numberOf(field(pr, 'number'))
+      if (number === undefined) continue
+      const linked = references(field(pr, 'body'))
+      if (!affected.has(number) && !linked.some((member) => affected.has(member))) continue
+      for (const member of [number, ...linked]) {
+        if (!affected.has(member)) {
+          affected.add(member)
+          changed = true
+        }
+      }
+    }
+  }
+  return open.flatMap((pr) => {
+    const number = numberOf(field(pr, 'number'))
+    return number !== undefined && affected.has(number) ? [number] : []
+  })
+}
+
+/** Select work, never evidence: every selected PR still receives live validation. */
+export function selectScreenshotStackPulls(
+  open: unknown[],
+  eventName: string,
+  payload: unknown,
+): number[] {
+  const numbers = open.flatMap((pr) => {
+    const number = numberOf(field(pr, 'number'))
+    return number === undefined ? [] : [number]
+  })
+  const affected = new Set<number>()
+  if (eventName === 'pull_request_target') {
+    const pr = field(payload, 'pull_request')
+    const number = numberOf(field(pr, 'number'))
+    if (number === undefined) return numbers
+    affected.add(number)
+    for (const member of references(field(pr, 'body'))) affected.add(member)
+    // An edit can remove the only edge connecting this PR to its former stack.
+    const oldBody = field(field(field(payload, 'changes'), 'body'), 'from')
+    for (const member of references(oldBody)) affected.add(member)
+  } else if (eventName === 'workflow_run') {
+    for (const number of completionPulls(open, payload)) affected.add(number)
+    // Default-branch publishers can have neither PR metadata nor a matching
+    // head. Keep the full sweep rather than guessing which approval changed.
+    if (affected.size === 0) return numbers
+  } else {
+    return numbers // Manual/scheduled repair and unknown event shapes.
+  }
+  return connected(open, affected)
+}
+
+const EVIDENCE = new Set(['Screenshot review', STACK_COVERAGE, STACK_DECISION])
+
+/** Whether a head's screenshot evidence was written at or after `since`. */
+async function evidenceChangedSince(
+  github: StackGitHub,
+  repository: Repository,
+  ref: string,
+  since: number,
+): Promise<boolean> {
+  const combined = github.rest.repos.getCombinedStatusForRef?.bind(github.rest.repos)
+  const { data: response } = await (
+    combined ?? github.rest.repos.listCommitStatusesForRef.bind(github.rest.repos)
+  )({ owner: repository.owner, repo: repository.repo, ref, per_page: 100, page: 1 })
+  const data = combined ? field(response, 'statuses') : response
+  // An unreadable or unbounded status list is validated, never assumed unchanged.
+  if (!Array.isArray(data) || data.length >= 100) return true
+  return data.some((status) => {
+    const context = field(status, 'context')
+    if (typeof context !== 'string' || !EVIDENCE.has(context)) return false
+    const written = timestamp(field(status, 'updated_at')) ?? timestamp(field(status, 'created_at'))
+    return written === undefined || written >= since
+  })
+}
+
+/**
+ * Publisher, decision and selection runs complete on the default branch with
+ * neither PR metadata nor a matching head, so plain selection sweeps every
+ * open PR. Their only effect on a stack is a commit status on a declared head:
+ * read each declared head's latest statuses and select the stacks whose
+ * screenshot evidence changed since the triggering run started. This selects
+ * work, never evidence: every selected PR is still validated live, ordinary PRs
+ * have no stack status to repair, and the scheduled sweep remains the backstop.
+ */
+export async function selectScreenshotStackCompletion(
+  github: StackGitHub,
+  repository: Repository,
+  open: unknown[],
+  payload: unknown,
+): Promise<number[]> {
+  const associated = completionPulls(open, payload)
+  if (associated.size > 0) return connected(open, associated)
+  const run = field(payload, 'workflow_run')
+  const since = timestamp(field(run, 'run_started_at')) ?? timestamp(field(run, 'created_at'))
+  if (since === undefined) return selectScreenshotStackPulls(open, 'workflow_run', payload)
+  const affected = new Set<number>()
+  for (const pr of open) {
+    const number = numberOf(field(pr, 'number'))
+    if (number === undefined || !references(field(pr, 'body')).length) continue
+    const sha = field(field(pr, 'head'), 'sha')
+    if (
+      typeof sha !== 'string' ||
+      !SHA.test(sha) ||
+      (await evidenceChangedSince(github, repository, sha, since))
+    )
+      affected.add(number)
+  }
+  return connected(open, affected)
 }
 
 async function statuses(
@@ -101,6 +288,58 @@ async function statuses(
   ref: string,
 ): Promise<Map<string, unknown>> {
   const latest = new Map<string, unknown>()
+  for (let page = 1; page <= 20; page += 1) {
+    // The combined endpoint returns the latest status for each context, rather
+    // than walking every historical deferral written on an unchanged SHA.
+    // Keep live reads uncached so revoked decisions are observed immediately.
+    const combined = github.rest.repos.getCombinedStatusForRef?.bind(github.rest.repos)
+    const { data: response } = await (
+      combined
+        ? combined.bind(github.rest.repos)
+        : github.rest.repos.listCommitStatusesForRef.bind(github.rest.repos)
+    )({
+      owner: input.owner,
+      repo: input.repo,
+      ref,
+      per_page: 100,
+      page,
+    })
+    const data = combined ? field(response, 'statuses') : response
+    if (!Array.isArray(data))
+      throw new StackValidationError('Screenshot stack statuses unavailable')
+    for (const status of data) {
+      const context = field(status, 'context')
+      const id = field(status, 'id')
+      if (typeof context !== 'string' || typeof id !== 'number' || !Number.isSafeInteger(id)) {
+        throw new StackValidationError('Invalid screenshot stack status')
+      }
+      const previous = field(latest.get(context), 'id')
+      if (typeof previous !== 'number' || id > previous) latest.set(context, status)
+    }
+    if (data.length < 100) {
+      if (combined) await hydrateStatusCreators(github, input, ref, latest)
+      return latest
+    }
+  }
+  throw new StackValidationError('Screenshot stack status pagination limit exceeded')
+}
+
+/** status-simple omits creator; authenticate only the current screenshot proof. */
+async function hydrateStatusCreators(
+  github: StackGitHub,
+  input: Input,
+  ref: string,
+  latest: Map<string, unknown>,
+): Promise<void> {
+  const contexts = new Set(['Screenshot review', STACK_COVERAGE, STACK_DECISION])
+  const pending = new Set<string>()
+  for (const context of contexts) {
+    const status = latest.get(context)
+    if (status && typeof field(field(status, 'creator'), 'id') !== 'number') {
+      pending.add(context)
+    }
+  }
+  if (pending.size === 0) return
   for (let page = 1; page <= 20; page += 1) {
     const { data } = await github.rest.repos.listCommitStatusesForRef({
       owner: input.owner,
@@ -117,12 +356,19 @@ async function statuses(
       if (typeof context !== 'string' || typeof id !== 'number' || !Number.isSafeInteger(id)) {
         throw new StackValidationError('Invalid screenshot stack status')
       }
+      if (!contexts.has(context)) continue
       const previous = field(latest.get(context), 'id')
-      if (typeof previous !== 'number' || id > previous) latest.set(context, status)
+      // Equal IDs hydrate the compact record. A newer record must win too,
+      // including a revocation published between the two API reads.
+      if (typeof previous !== 'number' || id >= previous) {
+        latest.set(context, status)
+        pending.delete(context)
+      }
     }
-    if (data.length < 100) return latest
+    if (pending.size === 0) return
+    if (data.length < 100) break
   }
-  throw new StackValidationError('Screenshot stack status pagination limit exceeded')
+  throw new StackValidationError('Screenshot stack status creators unavailable')
 }
 
 function successful(status: unknown): boolean {
@@ -303,7 +549,16 @@ export async function attestScreenshotStack(
   return { base: manifest.base, needsReview }
 }
 
-export async function reconcileScreenshotStack(github: StackGitHub, input: Input): Promise<void> {
+interface ReconciledReview {
+  head: string
+  state: 'pending' | 'success' | 'error'
+  description: string
+}
+
+export async function reconcileScreenshotStack(
+  github: StackGitHub,
+  input: Input,
+): Promise<ReconciledReview | undefined> {
   const { data: pr } = await github.rest.pulls.get({
     owner: input.owner,
     repo: input.repo,
@@ -313,13 +568,14 @@ export async function reconcileScreenshotStack(github: StackGitHub, input: Input
   const head = sourceHead(pr, input)
   const latest = await statuses(github, input, head)
   const old = field(latest.get('Screenshot review'), 'description')
+  let review: ReconciledReview | undefined
   // Removing a declaration must revoke a previous deferral on the same SHA.
   try {
     const declaration = parseScreenshotStack(field(pr, 'body'))
     if (!declaration) {
       if (typeof old !== 'string' || !old.startsWith('Stack ')) return
       await write('pending', 'Stack removed; rerun CI for individual screenshot review')
-      return
+      return review
     }
     const stack = await verifyScreenshotStack(github, input)
     if (!stack) throw new StackValidationError('Screenshot stack disappeared')
@@ -332,7 +588,7 @@ export async function reconcileScreenshotStack(github: StackGitHub, input: Input
           'Stack ready; waiting for combined CI and explicit tip screenshot review',
         )
       }
-      return
+      return review
     }
     await write(
       stack.approved ? 'success' : 'pending',
@@ -347,7 +603,16 @@ export async function reconcileScreenshotStack(github: StackGitHub, input: Input
         : 'Validation unavailable; retry stack gates or check workflow logs'
     await write('error', `Stack blocked: ${reason}`.slice(0, 140))
   }
+  return review
   async function write(state: 'pending' | 'success' | 'error', description: string): Promise<void> {
+    review = { head, state, description }
+    const current = latest.get('Screenshot review')
+    if (
+      field(field(current, 'creator'), 'id') === BOT &&
+      field(current, 'state') === state &&
+      field(current, 'description') === description
+    )
+      return
     await github.rest.repos.createCommitStatus({
       owner: input.owner,
       repo: input.repo,

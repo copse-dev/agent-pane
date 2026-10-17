@@ -221,7 +221,7 @@ Prerequisites:
   `GetParameter` for the Ubuntu AMI lookup.
 - An EC2 key pair and local private key (`--key-name`, `--key-path`).
 - A subnet that can reach GitHub and apt repositories. If you use `--ssh-host
-public` (the default), instances must receive public IPv4 addresses; otherwise
+  public` (the default), instances must receive public IPv4 addresses; otherwise
   run from a host with private VPC access and pass `--ssh-host private`.
 - A security group allowing SSH from the machine running the CLI.
 - `GITHUB_RUNNER_PAT` with GitHub self-hosted runner registration permission

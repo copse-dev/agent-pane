@@ -176,6 +176,7 @@ jobs:
               ['repos', 'getCommit'],
               ['repos', 'compareCommitsWithBasehead'],
               ['repos', 'listCommitStatusesForRef'],
+              ['repos', 'getCombinedStatusForRef'],
               ['repos', 'createCommitStatus'],
             ]) {
               if (typeof github.rest[namespace]?.[method] !== 'function') {
@@ -447,6 +448,7 @@ jobs:
         env:
           STACK_TIP: ${{ steps.screenshot-stack.outputs.tip }}
           EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
           BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
           # PR/queue base on pull_request; previous-tip on push. Empty for schedule.
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
@@ -469,6 +471,13 @@ jobs:
             { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # The tagged release commit must run its own complete suite. Neither
+          # the promotion merge ref nor an oracle-thinned push proves this.
+          if [ "$EVENT" = "push" ] && { [ "$REF" = "refs/heads/release" ] || [[ "$REF" = refs/tags/v* ]]; }; then
+            echo "Release commit -> full e2e and unit suites"
+            { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # A stack tip covers all lower layers, not only its immediate PR
           # diff. Run the complete suite even for a PNG-only acceptance commit;
           # the coverage attestation must belong to this exact combined head.
@@ -484,7 +493,7 @@ jobs:
           # does not turn the reviewed follow-up into another expensive full run.
           if [ -n "$HEAD_SHA" ]; then
             changed="$(git diff --name-only "${HEAD_SHA}^" "${HEAD_SHA}" 2>/dev/null || true)"
-            if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qv '^tests/e2e/screenshots/'; then
+            if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qEv '^(tests/e2e/screenshots/manifest\.json|README\.md)$'; then
               echo "HEAD commit only refreshes reference screenshots -> skip e2e"
               { echo "mode=skip"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
               exit 0
@@ -633,6 +642,32 @@ jobs:
   # (promote-develop.yml), must hold only commits already on `main`, and a
   # format commit pushed there would reach `release` without ever landing on
   # trunk. Those commits were formatted on their own PRs.
+  # Prove that the committed hashes can restore a clean checkout without keys.
+  # This gate also warms the immutable object cache used by visual test workers.
+  screenshot-baselines:
+    needs: precheck
+    if: ${{ !cancelled() && needs.precheck.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/cache@v4
+        with:
+          path: .cache/screenshots/sha256
+          key: screenshot-r2-v1-${{ hashFiles('tests/e2e/screenshots/manifest.json') }}
+          restore-keys: screenshot-r2-v1-
+      - name: Restore and verify R2 baselines
+        run: |
+          node scripts/screenshot-storage.mts hydrate
+          node scripts/screenshot-storage.mts check
+
   autoformat:
     if: >-
       github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.base_ref != 'release' && !(github.event_name == 'pull_request' &&
@@ -1268,6 +1303,12 @@ jobs:
         with:
           persist-credentials: ${{ github.event_name != 'merge_group' }}
       - uses: ./.github/actions/setup
+      - name: Cache verified R2 baseline objects
+        uses: actions/cache@v4
+        with:
+          path: .cache/screenshots/sha256
+          key: screenshot-r2-v1-${{ hashFiles('tests/e2e/screenshots/manifest.json') }}
+          restore-keys: screenshot-r2-v1-
       - run: npm run build
       # Plain-Chrome geometry coverage replaces Electron specs that do not need
       # main/preload IPC. Skip screenshot-only heads: their parent already ran
@@ -1288,12 +1329,7 @@ jobs:
         run: |
           mkdir -p changed/tests/e2e/screenshots
           touch changed/.demo
-          mapfile -t files < <(
-            {
-              git diff --name-only -- tests/e2e/screenshots/
-              git ls-files --others --exclude-standard -- tests/e2e/screenshots/
-            } | sort -u
-          )
+          mapfile -t files < <(node scripts/screenshot-storage.mts changed)
           for f in "${files[@]}"; do
             [ -n "$f" ] || continue
             cp "$f" "changed/tests/e2e/screenshots/"
@@ -1446,10 +1482,22 @@ jobs:
       # by default unless developers opt out with the same variable.
       COPSE_E2E_HEADLESS: '0'
     steps:
+      # Measurement only: the shard's job start, before checkout wipes the
+      # workspace (RUNNER_TEMP survives it). The collect step below folds it
+      # into the shard's provenance marker so `screenshot-artifacts` can report
+      # e2e wall minutes without an Actions API token.
+      - name: Record shard start
+        run: date -u +%FT%TZ > "$RUNNER_TEMP/shard-job-started"
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: ${{ github.event_name != 'merge_group' }}
       - uses: ./.github/actions/setup
+      - name: Cache verified R2 baseline objects
+        uses: actions/cache@v4
+        with:
+          path: .cache/screenshots/sha256
+          key: screenshot-r2-v1-${{ hashFiles('tests/e2e/screenshots/manifest.json') }}
+          restore-keys: screenshot-r2-v1-
       # No disk-cleanup step. One used to delete ~30 GB of preloaded toolchains
       # and prune Docker images because shards hit "No space left on device" on
       # the private-repo hosted runner (14 GB SSD). The public-repo runner's root
@@ -1534,6 +1582,18 @@ jobs:
             echo "::error title=e2e checkout is dirty before tests::Remove generated files from the checkout or ignore them before starting e2e."
             exit 1
           fi
+      # SHADOW MODE (docs/plans/screenshot-evidence-reuse.md): hydrate the R2
+      # baselines the run step would hydrate anyway, then stamp a marker. The
+      # record step below reads it to tell a PNG this shard's specs rendered
+      # from a baseline that was merely restored. Observe-only: `continue-on-
+      # error` keeps it from ever failing a shard, the launcher's own hydration
+      # skips files that already exist, and nothing downstream reads the marker.
+      - name: Prepare rendering-input identity marker (shadow mode)
+        if: >-
+          needs.precheck.outputs.mode == 'full' ||
+          needs.precheck.outputs.mode == 'subset'
+        continue-on-error: true
+        run: node scripts/screenshot-identity.mts prepare
       # The Electron/Chromedriver e2e session occasionally fails to start on the
       # runner ("DevToolsActivePort file doesn't exist" / "POST /session" timeout).
       # The hang wedges the whole wdio run, so in-process retries don't recover —
@@ -1548,6 +1608,10 @@ jobs:
       # is tuned for); `skip` runs nothing. Every shard still reports a status, so
       # this composes with any required check without depending on an aggregate
       # gate first.
+      # Measurement only: when the suite itself starts, after setup and the
+      # dist download, so setup overhead and spec time are separable.
+      - name: Record suite start
+        run: date -u +%FT%TZ > "$RUNNER_TEMP/shard-suite-started"
       - name: e2e shard ${{ matrix.shard }}/${{ env.SHARD_TOTAL }} (oracle-gated, retry on flaky session startup)
         if: >-
           needs.precheck.outputs.mode == 'full' ||
@@ -1933,22 +1997,30 @@ jobs:
       # non-empty when a shard rendered no diffs.
       - name: Collect changed reference screenshots
         if: success() && github.event_name == 'pull_request'
+        env:
+          SHARD: ${{ matrix.shard }}
+          PLAN_MODE: ${{ needs.precheck.outputs.mode }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
         run: |
           mkdir -p changed/tests/e2e/screenshots
-          touch "changed/.shard-${{ matrix.shard }}"
           # Untracked PNGs are first-time reference shots from a new spec and
           # must be included alongside modifications.
-          mapfile -t files < <(
-            {
-              git diff --name-only -- tests/e2e/screenshots/
-              git ls-files --others --exclude-standard -- tests/e2e/screenshots/
-            } | sort -u
-          )
+          mapfile -t files < <(node scripts/screenshot-storage.mts changed)
           for f in "${files[@]}"; do
             [ -n "$f" ] || continue
             cp "$f" "changed/tests/e2e/screenshots/"
           done
           echo "Collected ${#files[@]} changed screenshot(s) for shard ${{ matrix.shard }}"
+          # The per-shard provenance marker. Consumers (the trusted publisher's
+          # artifact validation) only test that it exists; its content is this
+          # shard's measurement record (timing, runner, oracle mode, changed
+          # count) for the screenshot metrics `screenshot-artifacts` reports.
+          # The record must never fail the shard: fall back to an empty marker.
+          CHANGED_COUNT="${#files[@]}" \
+          JOB_STARTED_FILE="$RUNNER_TEMP/shard-job-started" \
+          SUITE_STARTED_FILE="$RUNNER_TEMP/shard-suite-started" \
+            node scripts/screenshot-metrics.mts shard-record > "changed/.shard-${{ matrix.shard }}" \
+            || : > "changed/.shard-${{ matrix.shard }}"
       - uses: actions/upload-artifact@v7
         if: success() && github.event_name == 'pull_request'
         with:
@@ -1961,6 +2033,46 @@ jobs:
           # default 90-day retention made this the largest draw on the org's
           # Actions storage quota. Expire fast, keeping a small debug window.
           retention-days: 3
+      # SHADOW MODE (docs/plans/screenshot-evidence-reuse.md): record, for every
+      # reference PNG this shard's specs own, the hash of each rendering input
+      # the oracle maps to the spec (spec + imports, fixtures, renderer source,
+      # assets, lockfile, capture helpers), the runtime (Electron, Chromium,
+      # runner image, system fonts) and the resulting PNG sha256. Its own
+      # artifact, on every event that runs e2e, so identical identities can be
+      # compared across runs and runner classes. It is not a candidate, not a
+      # gate input and not an approval: no status, label, publisher or
+      # acceptance path reads it, and `continue-on-error` keeps a recording
+      # failure from touching the shard result. The shard resolves its specs
+      # exactly as the run step did, from the same plan and weights.
+      - name: Record rendering-input identity (shadow mode)
+        if: success()
+        continue-on-error: true
+        env:
+          PLAN_MODE: ${{ needs.precheck.outputs.mode }}
+          PLAN_SPECS: ${{ needs.precheck.outputs.specs }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          args=(record --shard "${{ matrix.shard }}/$SHARD_TOTAL"
+            --out "screenshot-identity/shard-${{ matrix.shard }}.json")
+          if [ -n "$PR_HEAD_SHA" ]; then args+=(--pr-head "$PR_HEAD_SHA"); fi
+          if [ -n "$BASE_SHA" ]; then args+=(--base "$BASE_SHA"); fi
+          if [ "$PLAN_MODE" = "subset" ]; then
+            # shellcheck disable=SC2086 # PLAN_SPECS is a space-separated list
+            args+=(--specs $PLAN_SPECS)
+          fi
+          node scripts/screenshot-identity.mts "${args[@]}"
+      - uses: actions/upload-artifact@v7
+        if: success()
+        continue-on-error: true
+        with:
+          name: screenshot-identity-shard-${{ matrix.shard }}
+          path: screenshot-identity/
+          if-no-files-found: ignore
+          # Measurement data, not evidence anyone acts on; long enough to
+          # compare a fortnight of runs, short enough to stay off the quota.
+          retention-days: 14
       # Keep successful responsiveness measurements too; timing is report-only
       # while fixed-worker base/head variance is being calibrated.
       - uses: actions/upload-artifact@v7
@@ -2024,6 +2136,12 @@ jobs:
           git fetch --no-tags --quiet --unshallow origin "$(git rev-parse HEAD)" \
             '+refs/heads/main:refs/remotes/origin/main'
       - uses: ./.github/actions/setup
+      - name: Cache verified R2 baseline objects
+        uses: actions/cache@v4
+        with:
+          path: .cache/screenshots/sha256
+          key: screenshot-r2-v1-${{ hashFiles('tests/e2e/screenshots/manifest.json') }}
+          restore-keys: screenshot-r2-v1-
       - name: Download rendered screenshot candidates
         uses: actions/download-artifact@v8
         with:
@@ -2043,6 +2161,9 @@ jobs:
       # merges the shard slices, so the candidate artifact carries only real
       # changes and its compare view is worth reviewing.
       - name: Drop render noise from the candidate set
+        # `id` only so the metrics step below can read the filter's counts
+        # (`kept-count`, `ignored-count`, … are its GITHUB_OUTPUT lines).
+        id: filter
         env:
           # The filter's documented escape hatch: the label means "refresh
           # everything", including sub-threshold micro-diffs.
@@ -2053,8 +2174,14 @@ jobs:
           shots='candidates/tests/e2e/screenshots'
           if ! compgen -G "$shots/*.png" > /dev/null; then
             echo 'No candidate PNGs to filter.'
+            { echo "ran=false"; echo "rendered-changed=0"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # Measurement: how many shots the shards rendered differently from
+          # the baseline before any filtering, and how long the filter took.
+          rendered="$(find "$shots" -maxdepth 1 -name '*.png' | wc -l | tr -d ' ')"
+          { echo "ran=true"; echo "rendered-changed=$rendered"; } >> "$GITHUB_OUTPUT"
+          filter_started="$(date +%s)"
 
           # Lay the re-renders over the checked-out baseline. A plain copy, not
           # `git checkout` — the latter writes the index too, and the filter
@@ -2064,15 +2191,15 @@ jobs:
 
           # Restores every sub-threshold shot to its committed bytes in place.
           node scripts/filter-screenshots.mts
+          echo "seconds=$(( $(date +%s) - filter_started ))" >> "$GITHUB_OUTPUT"
 
           # Whatever the filter restored no longer differs from the baseline, so
           # drop it from the artifact. Iterating the artifact (not the worktree)
           # keeps the per-shard `.shard-N` provenance markers untouched.
+          node scripts/screenshot-storage.mts changed > "$RUNNER_TEMP/changed-screenshots"
           for png in "$shots"/*.png; do
             rel="tests/e2e/screenshots/$(basename "$png")"
-            if git diff --quiet -- "$rel" 2>/dev/null &&
-              ! git ls-files --others --exclude-standard --error-unmatch "$rel" > /dev/null 2>&1
-            then
+            if ! grep -qxF -- "$rel" "$RUNNER_TEMP/changed-screenshots"; then
               rm -f "$png"
             fi
           done
@@ -2109,6 +2236,43 @@ jobs:
           # places the PNGs exactly where the reviewer expects.
           path: candidates/
           if-no-files-found: error
+          retention-days: 14
+      # Measurement only (docs/plans item: screenshot review amplification).
+      # Reads the shard markers, the filter's counts and the surviving
+      # candidates, and writes one JSON record plus a job-summary table. It
+      # runs PR code on the untrusted side, so the record is evidence for
+      # humans and scripts/screenshot-metrics-baseline.mts, never an input to
+      # the trusted publisher — which is why it is written OUTSIDE candidates/
+      # (the publisher rejects unexpected files in that artifact) and uploaded
+      # separately. `continue-on-error`: metrics must never block the gate.
+      - name: Record screenshot review metrics
+        continue-on-error: true
+        env:
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CI_FULL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'ci-full') }}
+          UPDATE_SCREENSHOTS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }}
+          FILTER_RAN: ${{ steps.filter.outputs.ran }}
+          RENDERED_CHANGED: ${{ steps.filter.outputs.rendered-changed }}
+          FILTER_SECONDS: ${{ steps.filter.outputs.seconds }}
+          KEPT_COUNT: ${{ steps.filter.outputs.kept-count }}
+          IGNORED_COUNT: ${{ steps.filter.outputs.ignored-count }}
+          FLAPPING_COUNT: ${{ steps.filter.outputs.flapping-count }}
+          CONTESTED_COUNT: ${{ steps.filter.outputs.contested-count }}
+          OUT_OF_SCOPE_COUNT: ${{ steps.filter.outputs.out-of-scope-count }}
+          CANDIDATES_DIR: candidates
+          METRICS_OUT: ${{ runner.temp }}/screenshot-metrics/screenshot-metrics.json
+        run: node scripts/screenshot-metrics.mts run
+      - name: Upload screenshot review metrics
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshot-metrics-${{ github.run_id }}
+          path: ${{ runner.temp }}/screenshot-metrics/screenshot-metrics.json
+          if-no-files-found: ignore
           retention-days: 14
 
   # Required aggregate: cancellation must produce failure/cancelled, never
@@ -2162,7 +2326,8 @@ jobs:
     # Metadata runs earn this result through the same candidate jobs as source
     # runs; there is no success path that bypasses dependency validation.
     if: ${{ always() }}
-    needs: [precheck, check, review-cell, bench, build, e2e, screenshot-artifacts]
+    needs:
+      [precheck, screenshot-baselines, check, review-cell, bench, build, e2e, screenshot-artifacts]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -2181,6 +2346,7 @@ jobs:
           ANY_CANCELLED: ${{ contains(needs.*.result, 'cancelled') }}
           PRECHECK_RESULT: ${{ needs.precheck.result }}
           CHECK_RESULT: ${{ needs.check.result }}
+          BASELINES_RESULT: ${{ needs.screenshot-baselines.result }}
           MERGE_GROUP: ${{ github.event_name == 'merge_group' }}
           QUEUE_BASE_REF: ${{ github.event.merge_group.base_ref }}
           BENCH_RESULT: ${{ needs.bench.result }}
@@ -2204,6 +2370,10 @@ jobs:
           if [ "$ANY_FAILURE" = "true" ] || [ "$PRECHECK_RESULT" != "success" ]; then
             echo "CI has failed jobs or no successful precheck."
             printf '%s\n' "$NEEDS_JSON"
+            exit 1
+          fi
+          if [ "$BASELINES_RESULT" != "success" ]; then
+            echo "Required R2 baseline hydration did not complete successfully."
             exit 1
           fi
           if [ "$FORK_PR" = "true" ]; then
@@ -2268,3 +2438,32 @@ jobs:
             exit 1
           fi
           echo "All CI jobs passed (or were intentionally skipped)."
+
+  # A separate contract from the merge gate: no skipped jobs or selected suite
+  # can authorize release packaging. Always evaluate failures/cancellation.
+  full-release-validation:
+    name: Full release validation
+    if: >-
+      always() && github.event_name == 'push' &&
+      (github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v'))
+    needs: [precheck, screenshot-baselines, check, bench, build, e2e, ci-passed]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Reject cancelled release validation
+        if: ${{ cancelled() }}
+        run: exit 1
+      - name: Require complete release coverage
+        if: ${{ !cancelled() }}
+        env:
+          MODE: ${{ needs.precheck.outputs.mode }}
+          UNIT_MODE: ${{ needs.precheck.outputs.unit_mode }}
+          SHARDS: ${{ needs.precheck.outputs.e2e_shard_total }}
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          test "$MODE" = full
+          test "$UNIT_MODE" = full
+          test "$SHARDS" = 8
+          jq -e 'length == 7 and all(.[]; .result == "success")' <<< "$RESULTS"

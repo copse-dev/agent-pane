@@ -156,6 +156,7 @@ test('a worktree thread reports its own branch', () => {
       seededFromDirtyProject: false,
     },
   })
+  assert.equal(deriveThreadContext({ thread: t, project, threads: [t] }).repos[0]?.path, '/x')
   assert.equal(
     deriveThreadContext({ thread: t, project, threads: [t] }).repos[0]?.checkout,
     'worktree',

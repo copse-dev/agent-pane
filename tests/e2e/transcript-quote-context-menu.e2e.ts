@@ -4,7 +4,11 @@ import {
   seedStableWorkspace,
   seedTranscriptQuoteFixture,
 } from './helpers/seed-config.ts'
-import { prepareChatMessageScreenshot, saveAppScreenshot } from './helpers/screenshot.ts'
+import {
+  parkPointer,
+  prepareChatMessageScreenshot,
+  saveAppScreenshot,
+} from './helpers/screenshot.ts'
 import { composerText, setComposerValue } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 
@@ -425,6 +429,9 @@ describe('transcript selection: quote into the reply', () => {
       expect(geometry.focused).toBe(true)
       expect(geometry.buttons).toBe(1)
       await browser.keys('Ship these together.')
+      // Clear hover actions so the wrapped selected passage stays readable.
+      await parkPointer()
+      await expect(popup.$('textarea')).toBeFocused()
       await saveAppScreenshot('transcript-quote-multiline-reply.png')
       await browser.keys('Enter')
       expect(await composerText()).toBe(`> ${phrase}\n\nShip these together.`)

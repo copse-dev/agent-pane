@@ -137,7 +137,7 @@ describe('projects pane thread rename + archive (component)', () => {
     const menu = document.querySelector<HTMLElement>('.context-menu')
     assert.ok(menu)
     const labels = Array.from(menu.querySelectorAll('.context-menu-item')).map((i) => i.textContent)
-    assert.deepEqual(labels, ['Rename', 'Fork', 'Archive', 'Delete'])
+    assert.deepEqual(labels, ['Conversation access…', 'Rename', 'Fork', 'Archive', 'Delete'])
 
     const archiveItem = Array.from(
       menu.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
@@ -248,7 +248,8 @@ describe('projects pane thread rename + archive (component)', () => {
       item.click()
       await new Promise<void>((resolve) => setTimeout(resolve, 0))
     }
-    await openArchive()
+    store.emit('thread_archive_requested', 'a', 't2')
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
     const dialog = document.querySelector('#confirm-dialog')
     assert.ok(dialog)
     assert.match(dialog.textContent, /README.md/)
@@ -434,7 +435,7 @@ describe('projects pane thread rename + archive (component)', () => {
     const labels = (): (string | null)[] =>
       Array.from(document.querySelectorAll('.context-menu-item')).map((item) => item.textContent)
     const buttonLabels = labels()
-    assert.deepEqual(buttonLabels, ['Rename', 'Fork', 'Archive', 'Delete'])
+    assert.deepEqual(buttonLabels, ['Conversation access…', 'Rename', 'Fork', 'Archive', 'Delete'])
     assert.equal(store.getState().activeThreadId, 't1')
     assert.equal(store.getState().threads.length, 2)
     assert.deepEqual(cleared, [])

@@ -232,6 +232,41 @@ test('maybeNameThread waits past a chip-only first prompt without spending a pas
   assert.equal(requireThread(store, 't-only-chip').autoTitleCount, 1)
 })
 
+// A paste chip's exact text travels on the attachment, not `content` — a
+// message that is only a paste chip (no typed words alongside it) still has
+// words to name the thread by. Unlike the bare chip above (no attachment, no
+// recoverable text), this must not be stuck on "New Thread" even when the
+// paste-and-send is the thread's only message.
+test('maybeNameThread names a thread whose first prompt is only a pasted block', async () => {
+  messageSeq += 1
+  const pasteOnly: Message = {
+    id: `u${String(messageSeq)}`,
+    role: 'user',
+    content: '￼',
+    attachments: [
+      {
+        kind: 'paste',
+        label: 'Pasted text',
+        content: 'TypeError: Cannot read properties of undefined',
+      },
+    ],
+    toolCalls: [],
+    createdAt: 1,
+  }
+  const store = createStore({
+    threads: [newThread('t-paste-only', [pasteOnly])],
+    activeThreadId: 't-paste-only',
+  })
+  const { api, titleCalls } = apiWithTitle(async () => 'Debug Undefined Property Error')
+
+  maybeNameThread(store, api, 't-paste-only')
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.deepEqual(titleCalls, ['TypeError: Cannot read properties of undefined'])
+  assert.equal(requireThread(store, 't-paste-only').title, 'Debug Undefined Property Error')
+  assert.equal(requireThread(store, 't-paste-only').autoTitleCount, 1)
+})
+
 test('maybeNameThread is a no-op when the title is already set', async () => {
   const named = newThread('t-named', [userMessage('Already named')])
   named.title = 'Custom Title'

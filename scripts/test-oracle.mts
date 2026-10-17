@@ -47,6 +47,8 @@
  */
 import { isDirectExecution } from './lib/direct-execution.mts'
 import { execFileSync } from 'node:child_process'
+import { manifestChangedPaths } from './lib/screenshot-git.mts'
+import { SCREENSHOT_MANIFEST } from './lib/screenshot-manifest.mts'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { safeJsonParse } from './lib/safe-json.mts'
@@ -57,7 +59,10 @@ const E2E_GLOB_EXCLUDE = new Set(['agent-eval-drive.e2e.ts']) // excluded by wdi
 
 // Files whose change plausibly affects (almost) every spec. Changing one of
 // these flips the recommendation to "run everything" rather than a subset.
-const BROAD_PATTERNS: RegExp[] = [
+// Exported so the shadow-mode rendering-input identity
+// (scripts/lib/screenshot-identity.mts) hashes the same global inputs the
+// selector treats as render-affecting, instead of keeping a second list.
+export const BROAD_PATTERNS: readonly RegExp[] = [
   /^wdio\..*\.ts$/,
   /^tests\/e2e\/helpers\//,
   /^tests\/e2e\/helpers\.ts$/,
@@ -270,6 +275,8 @@ export function changedFiles(base: string): string[] | null {
   }
   // Deleted paths still affect their old consumers. They must not disappear
   // from the change set merely because the current tree cannot read them.
+  if (set.has(SCREENSHOT_MANIFEST))
+    for (const path of manifestChangedPaths(mergeBase, undefined, ROOT)) set.add(path)
   return [...set]
 }
 
@@ -317,9 +324,9 @@ export function ciExcludedSpecs(tree: OracleFiles = workingTree): Set<string> {
 }
 
 /** The full CI e2e suite: every spec wdio would glob, minus wdio.ci.conf.ts excludes. */
-function listCiSpecs(): string[] {
-  const excluded = ciExcludedSpecs()
-  return listSpecs().filter((spec) => !excluded.has(spec))
+export function listCiSpecs(tree: OracleFiles = workingTree): string[] {
+  const excluded = ciExcludedSpecs(tree)
+  return listSpecs(tree).filter((spec) => !excluded.has(spec))
 }
 
 /**
@@ -487,7 +494,7 @@ function emitCiPlan(sel: Selection): void {
 }
 
 // ── Selector vocabulary ──────────────────────────────────────────────────────
-type Token = { kind: 'id' | 'cls' | 'txt'; value: string }
+export type Token = { kind: 'id' | 'cls' | 'txt'; value: string }
 
 // File extensions / generic words that look like classes in a path but never
 // identify a DOM node — dropped so import strings don't pollute the vocabulary.
@@ -564,12 +571,22 @@ export function extractSpecScreenshots(src: string): string[] {
   return [...out]
 }
 
-/** Does a (source/css/html) file body contain a token's literal name? */
-export function fileContainsToken(body: string, tok: Token): boolean {
-  if (tok.kind === 'txt') return body.includes(tok.value)
+/**
+ * The predicate behind {@link fileContainsToken}, built once per token so a
+ * caller matching one token against many files (the rendering-input identity)
+ * shares the oracle's exact matching rules without rebuilding the RegExp.
+ */
+export function tokenMatcher(tok: Token): (body: string) => boolean {
+  if (tok.kind === 'txt') return (body) => body.includes(tok.value)
   // id/class: word-bounded so `pane` doesn't match `pane-files`.
   const esc = tok.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`(?<![\\w-])${esc}(?![\\w-])`).test(body)
+  const re = new RegExp(`(?<![\\w-])${esc}(?![\\w-])`)
+  return (body) => re.test(body)
+}
+
+/** Does a (source/css/html) file body contain a token's literal name? */
+export function fileContainsToken(body: string, tok: Token): boolean {
+  return tokenMatcher(tok)(body)
 }
 
 // ── Import graph ─────────────────────────────────────────────────────────────
@@ -714,13 +731,15 @@ export function listUnitTests(tree: OracleFiles = workingTree): string[] {
 }
 
 /** Shipped source the selector vocabulary resolves against (no test files). */
-export function listSourceFiles(): string[] {
-  return walk('src').filter(
-    (f) =>
-      (CODE_EXTS.some((e) => f.endsWith(e)) || f.endsWith('.css') || f.endsWith('.html')) &&
-      !f.endsWith('.test.ts') &&
-      !f.endsWith('.e2e.ts'),
-  )
+export function listSourceFiles(tree: OracleFiles = workingTree): string[] {
+  return tree
+    .paths('src')
+    .filter(
+      (f) =>
+        (CODE_EXTS.some((e) => f.endsWith(e)) || f.endsWith('.css') || f.endsWith('.html')) &&
+        !f.endsWith('.test.ts') &&
+        !f.endsWith('.e2e.ts'),
+    )
 }
 
 /**

@@ -513,6 +513,10 @@ export default ts.config(
       'prototypes/**/*.js',
       'src/shared/demo-sites/**/*.js',
       'benchmarks/benchmark-explorer/**/*.js',
+      // The mobile companion's client: served to the paired phone as-is
+      // (src/mobile/index.html loads it with a plain <script> tag), same as
+      // the static sites above.
+      'src/mobile/*.js',
     ],
     extends: [ts.configs.disableTypeChecked],
     languageOptions: {
@@ -533,11 +537,41 @@ export default ts.config(
         Image: 'readonly',
         location: 'readonly',
         XMLSerializer: 'readonly',
+        localStorage: 'readonly',
+        crypto: 'readonly',
+        setTimeout: 'readonly',
+        setInterval: 'readonly',
       },
     },
     rules: {
       '@typescript-eslint/explicit-function-return-type': 'off',
       // Plain JS cannot annotate its exports; the rule would flag every ES-module prototype.
+      '@typescript-eslint/explicit-module-boundary-types': 'off',
+    },
+  },
+  {
+    // Mobile Companion's phone-served page: plain browser JS bundled by esbuild
+    // (scripts/mobile-build.mts), not part of the TS project graph.
+    files: ['src/mobile/**/*.js'],
+    extends: [ts.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        window: 'readonly',
+        document: 'readonly',
+        fetch: 'readonly',
+        localStorage: 'readonly',
+        crypto: 'readonly',
+        history: 'readonly',
+        setTimeout: 'readonly',
+        setInterval: 'readonly',
+        getComputedStyle: 'readonly',
+        requestAnimationFrame: 'readonly',
+        cancelAnimationFrame: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'off',
     },
   },

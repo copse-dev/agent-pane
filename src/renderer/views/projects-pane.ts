@@ -71,6 +71,12 @@ import { hasAutomationDialog, openAutomationDialog } from './automation-dialog.t
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { showErrorToast, showToast } from './toast.ts'
+import {
+  heldAutomationRuns,
+  heldRunsLabel,
+  heldRunsTooltip,
+} from '../controller/automation-held-runs.ts'
+import { describeRetainedWorktree } from './automation-retained-worktrees.ts'
 import { forkThread } from '../controller/fork-thread.ts'
 import {
   createThreadFilter,
@@ -94,6 +100,10 @@ import { getAttentionThreadIds, isThreadAwaitingAttention } from '../controller/
 import { openActivityPanel } from './activity-panel.ts'
 import { openThreadHistoryEditor } from './thread-history-editor.ts'
 import { foldAutomationRuns } from '../controller/automation-fold.ts'
+import {
+  getCachedAutomationSchedules,
+  getCachedEventAutomations,
+} from '../controller/automations.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
 import { maybeRenameThreadBranch } from '../controller/thread-naming.ts'
 import { flushProjectThreads } from '../controller/persistence.ts'
@@ -283,6 +293,57 @@ function startRunNow(api: ApiClient, target: AutomationMenuTarget): void {
     })
 }
 
+/** "Mar 3, 9:30 AM", the way a run row names itself, so identically titled runs tell apart. */
+function runWhenLabel(triggeredAt: number | undefined): string {
+  return triggeredAt
+    ? new Date(triggeredAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+    : 'Unknown time'
+}
+
+/**
+ * Release the finished runs of one schedule whose checkouts are safe to remove,
+ * through the same path the scheduler uses, then say what is left. Anything that
+ * is not safe stays put: the dialog names each such run and why, and offers to
+ * open the first one so the user can commit, discard or delete it themselves.
+ */
+async function cleanUpScheduleRuns(
+  store: AppStore,
+  api: ApiClient,
+  target: AutomationMenuTarget,
+): Promise<void> {
+  try {
+    const result = await api.automations.cleanupRuns(target.project.id, target.scheduleId)
+    const freed = result.released.length
+    const freedText = `${String(freed)} worktree${freed === 1 ? '' : 's'}`
+    if (result.retained.length === 0) {
+      showToast(
+        freed === 0
+          ? `Nothing to clean up for “${target.scheduleName}”.`
+          : `Freed ${freedText} for “${target.scheduleName}”.`,
+      )
+      return
+    }
+    const known = new Map(getSidebarThreads(store, target.project.id).map((t) => [t.id, t]))
+    const lines = result.retained.map((run) => {
+      const when = runWhenLabel(known.get(run.threadId)?.automation?.triggeredAt)
+      return `• ${describeRetainedWorktree(run, `${run.title} · ${when}`)}`
+    })
+    const first = result.retained[0]
+    const opened = await showConfirmDialog({
+      message: `${String(result.retained.length)} run${result.retained.length === 1 ? '' : 's'} of “${target.scheduleName}” still hold${result.retained.length === 1 ? 's' : ''} a worktree`,
+      detail: `${freed > 0 ? `Freed ${freedText}. ` : ''}These need a decision from you, so they were left alone:\n${lines.join('\n')}`,
+      confirmLabel: result.retained.length === 1 ? 'Open run' : 'Open first run',
+      cancelLabel: 'Close',
+    })
+    if (opened && first) switchProjectThread(store, api, target.project.id, first.threadId)
+  } catch (error) {
+    showErrorToast(
+      `Could not clean up “${target.scheduleName}”`,
+      ipcErrorMessage(error, 'The cleanup could not finish'),
+    )
+  }
+}
+
 /**
  * One schedule's shared right-click actions, rendered on the sidebar's
  * schedule headings. "Run now" is the editor's Run-now button, reached
@@ -292,15 +353,25 @@ function automationMenuEntries(
   api: ApiClient,
   target: AutomationMenuTarget,
   openSetup: () => void,
+  cleanUp?: () => void,
 ): ContextMenuEntry[] {
+  const eventAutomation = getCachedEventAutomations(target.project.id).some(
+    (definition) => definition.id === target.scheduleId,
+  )
+  const runEntries: ContextMenuEntry[] = eventAutomation
+    ? []
+    : [
+        {
+          label: 'Run now',
+          onSelect: (): void => {
+            startRunNow(api, target)
+          },
+        },
+      ]
   return [
     { heading: target.scheduleName },
-    {
-      label: 'Run now',
-      onSelect: (): void => {
-        startRunNow(api, target)
-      },
-    },
+    ...runEntries,
+    ...(cleanUp ? [{ label: 'Clean up finished runs…', onSelect: cleanUp }] : []),
     {
       label: 'Automation setup…',
       onSelect: openSetup,
@@ -399,6 +470,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   let compactRows = false
   // Which project the list shows. Session-only: a fresh launch shows them all.
   let projectFilterId: string | null = null
+  // Narrow to threads with unlanded work (an open PR, or uncommitted/unpushed
+  // changes). Session-only, like the project filter; a thread whose PR/change
+  // state hasn't been fetched yet counts as matching so it isn't hidden before
+  // its data has loaded (see `threadNeedsCleanup`).
+  let needsCleanupOnly = false
   const filterLabel = el('span', { class: 'projects-filter-label' }, 'All projects')
   const projectFilterBtn = el(
     'button',
@@ -482,9 +558,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     const chosen = projects.find((project) => project.id === projectFilterId)
     if (!chosen) projectFilterId = null
     const projectName = chosen ? projectDisplayName(chosen) : 'All projects'
-    filterLabel.textContent = projectName
-    projectFilterBtn.classList.toggle('is-filtering', chosen !== undefined)
-    projectFilterBtn.setAttribute('aria-label', `Show: ${projectName}`)
+    filterLabel.textContent = needsCleanupOnly ? `${projectName} · Needs cleanup` : projectName
+    projectFilterBtn.classList.toggle('is-filtering', chosen !== undefined || needsCleanupOnly)
+    projectFilterBtn.setAttribute(
+      'aria-label',
+      needsCleanupOnly ? `Show: ${projectName}, needs cleanup only` : `Show: ${projectName}`,
+    )
     sortLabel.textContent = SORT_LABELS[sidebarThreadSort]
     // The arrow points the way the list runs: newest, or A first, is down.
     sortDir.textContent = sidebarThreadSortReverse ? '↑' : '↓'
@@ -517,6 +596,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           render()
         },
       })),
+      { separator: true },
+      {
+        label: 'Needs cleanup only',
+        toggle: true,
+        checked: needsCleanupOnly,
+        onSelect: (): void => {
+          needsCleanupOnly = !needsCleanupOnly
+          render()
+        },
+      },
     ])
   })
   sortBtn.addEventListener('click', () => {
@@ -649,16 +738,18 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   const threadChangeKey = (projectId: string, threadId: string): string =>
     `${projectId}\0${threadId}`
 
-  // Rows drawn by the latest render, so an idle sidebar can re-check them.
+  // Rows the latest render drew, or hid under the cleanup filter because their
+  // last summary was clean, so an idle sidebar can re-check them.
   let threadChangeRendered: Array<{ projectId: string; threadId: string }> = []
 
   function refreshThreadChanges(
     refs: Array<{ projectId: string; threadId: string }>,
     opts: { fresh?: boolean } = {},
   ): void {
-    const batch = refs
-      .filter((ref) => !threadChangeInFlight.has(threadChangeKey(ref.projectId, ref.threadId)))
-      .slice(0, THREAD_CHANGE_MAX_PER_PASS)
+    const pending = refs.filter(
+      (ref) => !threadChangeInFlight.has(threadChangeKey(ref.projectId, ref.threadId)),
+    )
+    const batch = pending.slice(0, THREAD_CHANGE_MAX_PER_PASS)
     if (batch.length === 0) return
     const generation = threadChangeGeneration
     for (const ref of batch) threadChangeInFlight.add(threadChangeKey(ref.projectId, ref.threadId))
@@ -668,13 +759,26 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         const key = threadChangeKey(ref.projectId, ref.threadId)
         threadChangeInFlight.delete(key)
         const summary = results[i] ?? null
-        if (!sameThreadChangeSummary(threadChangeCache.get(key)?.summary ?? null, summary)) {
+        const previous = threadChangeCache.get(key)
+        if (!sameThreadChangeSummary(previous?.summary ?? null, summary)) {
           changed = true
         }
+        // A never-read summary keeps its row visible under the cleanup filter,
+        // so its first answer must redraw even when it is clean.
+        if (needsCleanupOnly && !previous) changed = true
         threadChangeCache.set(key, { summary, at: Date.now() })
       }
       // Only an unmounted pane must not redraw from a late answer.
-      if (changed && generation === threadChangeGeneration) render(true)
+      if (generation !== threadChangeGeneration) return
+      if (changed) render(true)
+      // An unchanged batch redraws nothing, so nothing else would re-request the
+      // rest of an oversized request; read whatever of it is still stale.
+      const now = Date.now()
+      const rest = pending.slice(batch.length).filter(({ projectId, threadId }) => {
+        const cached = threadChangeCache.get(threadChangeKey(projectId, threadId))
+        return !cached || now - cached.at > THREAD_CHANGE_TTL_MS
+      })
+      refreshThreadChanges(rest, opts)
     }
     void api.git.threadChangeSummary(batch, opts).then(settle, () => {
       settle([])
@@ -939,6 +1043,35 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     ensurePrLifecycles(refs)
     const states = refs.map((ref) => cachedPrLifecycle(githubPrKey(ref)) ?? 'unknown')
     return summarizeThreadPrStatus(states, refs)
+  }
+
+  /**
+   * Unlanded work: an open PR, or uncommitted/unpushed changes. Mirrors the
+   * row's own "has-changes-status"/"has-pr-status" badges so the filter agrees
+   * with what's on screen. A thread whose PR or change state hasn't been
+   * fetched yet counts as matching, not excluded — otherwise toggling the
+   * filter on would hide everything until each row happened to scroll into
+   * view and backfill (see the IntersectionObserver-gated fetches below).
+   * An expired change summary keeps its last answer while it is re-read:
+   * treating it as unknown made every clean thread blink back in each TTL.
+   */
+  function threadNeedsCleanup(project: Project, thread: SidebarThread): boolean {
+    // Filtering runs before pagination. Only rendered rows may start lookups.
+    if (
+      sidebarPrRefs(thread).some((ref) => {
+        const state = cachedPrLifecycle(githubPrKey(ref)) ?? 'unknown'
+        return state === 'open' || state === 'unknown'
+      })
+    )
+      return true
+    // An open PR still needs attention while its thread runs. Only local
+    // working-tree cleanup waits for the run to finish.
+    if (thread.status === 'running') return false
+    // PR lifecycle is available for SSH projects; local git summaries are not.
+    if (project.sshHost) return false
+    const cached = threadChangeCache.get(threadChangeKey(project.id, thread.id))
+    if (!cached) return true
+    return describeThreadChanges(cached.summary) !== null
   }
 
   // The quarantine notice shown when a project's folder could not be opened
@@ -1418,6 +1551,21 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     const threadChangeWanted: Array<{ projectId: string; threadId: string }> = []
     const threadChangeSeen: Array<{ projectId: string; threadId: string }> = []
     const threadChangeSeenKeys = new Set<string>()
+    // The cleanup filter's predicate. A thread it hides for a clean summary is
+    // never drawn, so track it here as the row would: keep its summary from
+    // being pruned and re-read it once expired, or it could never come back.
+    const matchesCleanupFilter = (project: Project, thread: SidebarThread): boolean => {
+      if (threadNeedsCleanup(project, thread)) return true
+      const key = threadChangeKey(project.id, thread.id)
+      const cached = threadChangeCache.get(key)
+      if (cached && thread.status !== 'running' && !project.sshHost) {
+        const ref = { projectId: project.id, threadId: thread.id }
+        threadChangeSeen.push(ref)
+        threadChangeSeenKeys.add(key)
+        if (Date.now() - cached.at > THREAD_CHANGE_TTL_MS) threadChangeWanted.push(ref)
+      }
+      return false
+    }
     syncFilterControls()
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } =
       store.getState()
@@ -1508,6 +1656,25 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       })
       const openThreadMenu = (x: number, y: number): void => {
         showContextMenu(x, y, [
+          {
+            label: 'Conversation access…',
+            onSelect: (): void => {
+              showContextMenu(x, y, [
+                {
+                  label: 'Revoke reading other threads',
+                  onSelect: (): void => {
+                    void api.threadPrompts.revokeAccess(thread.id, 'read')
+                  },
+                },
+                {
+                  label: 'Revoke sending to other threads',
+                  onSelect: (): void => {
+                    void api.threadPrompts.revokeAccess(thread.id, 'send')
+                  },
+                },
+              ])
+            },
+          },
           ...(canMutate
             ? [
                 ...(allowRename
@@ -1569,6 +1736,20 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                     })
                   },
                 },
+                ...(heldAutomationRuns([thread]).length > 0
+                  ? [
+                      {
+                        label: 'Clean up finished runs…',
+                        onSelect: (): void => {
+                          void cleanUpScheduleRuns(store, api, {
+                            project,
+                            scheduleName: thread.automation?.scheduleName ?? thread.title,
+                            scheduleId,
+                          })
+                        },
+                      },
+                    ]
+                  : []),
                 {
                   label: 'Automation setup…',
                   onSelect: (): void => {
@@ -1640,13 +1821,19 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             prRollup.kind === 'open' && conflictsForThread(thread),
           ),
         )
-      } else if (thread.status !== 'running' && thread.prRefs !== undefined && !project.sshHost) {
+      }
+      if (
+        (!prRollup || (needsCleanupOnly && prRollup.kind !== 'open')) &&
+        thread.status !== 'running' &&
+        thread.prRefs !== undefined &&
+        !project.sshHost
+      ) {
         const key = threadChangeKey(project.id, thread.id)
         threadChangeSeen.push({ projectId: project.id, threadId: thread.id })
         threadChangeSeenKeys.add(key)
         const cached = threadChangeCache.get(key)
         const changesLabel = describeThreadChanges(cached?.summary ?? null)
-        if (changesLabel) {
+        if (changesLabel && !prRollup) {
           chatRow.classList.add('has-changes-status')
           chatRow.append(chatChangesStatus(changesLabel))
         }
@@ -1691,26 +1878,50 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
      * muted suffix so same-named schedules in different projects stay
      * distinguishable.
      *
-     * Automation data is strictly project-owned (`AutomationSchedule.projectId`,
+     * Automation data is project-owned (`AutomationSchedule.projectId`,
      * `SidebarThread.automation`); there is no workspace-level store to read
      * instead. `getSidebarThreads` has data for the active project plus every
      * project switched to or read in the background after startup (see
      * `preloadSidebarThreads` in controller/projects.ts), so a project whose
      * background read has not finished yet contributes nothing until it does.
+     *
+     * A brand-new schedule has no run yet, so it would otherwise have no row
+     * here at all until it fires once — `getCachedAutomationSchedules` /
+     * `getCachedEventAutomations` (controller/automations.ts) seed one entry
+     * per known schedule up front, and the thread scan below only adds runs
+     * on top of it.
      */
     function renderAutomationsSection(): HTMLElement | null {
       const scheduleOwners = new Map<
         string,
-        { project: Project; scheduleId: string; runs: SidebarThread[] }
+        { project: Project; scheduleId: string; scheduleName: string; runs: SidebarThread[] }
       >()
       for (const project of projects) {
+        for (const schedule of getCachedAutomationSchedules(project.id)) {
+          scheduleOwners.set(`${project.id}\0${schedule.id}`, {
+            project,
+            scheduleId: schedule.id,
+            scheduleName: schedule.name,
+            runs: [],
+          })
+        }
+        for (const eventAutomation of getCachedEventAutomations(project.id)) {
+          scheduleOwners.set(`${project.id}\0${eventAutomation.id}`, {
+            project,
+            scheduleId: eventAutomation.id,
+            scheduleName: eventAutomation.name,
+            runs: [],
+          })
+        }
         for (const thread of getSidebarThreads(store, project.id)) {
           const scheduleId = thread.automation?.scheduleId
           if (!scheduleId) continue
           const scheduleKey = `${project.id}\0${scheduleId}`
           const owner = scheduleOwners.get(scheduleKey)
+          const scheduleName = thread.automation?.scheduleName ?? thread.title
           if (owner) owner.runs.push(thread)
-          else scheduleOwners.set(scheduleKey, { project, scheduleId, runs: [thread] })
+          else
+            scheduleOwners.set(scheduleKey, { project, scheduleId, scheduleName, runs: [thread] })
         }
       }
       if (scheduleOwners.size === 0) return null
@@ -1780,18 +1991,51 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
       if (sectionExpanded) {
         const rows = el('div', { class: 'automation-thread-rows' })
-        for (const { project, scheduleId, runs } of scheduleOwners.values()) {
-          const firstRun = runs[0]
-          if (!firstRun) continue
+        for (const { project, scheduleId, scheduleName, runs } of scheduleOwners.values()) {
           const projectSuffix = el(
             'span',
             { class: 'chat-thread-owner' },
             `· ${projectDisplayName(project)}`,
           )
+          if (runs.length === 0) {
+            // A schedule just created has not produced a run (and so no thread)
+            // yet — show it from its own definition instead of waiting for one.
+            const row = el(
+              'div',
+              { class: 'chat-row is-automation is-automation-unrun' },
+              el('span', { class: 'chat-title' }, scheduleName),
+            )
+            row.append(
+              projectSuffix,
+              el('span', { class: 'automation-row-unrun-badge' }, 'Never run'),
+            )
+            const setupBtn = automationSetupBtn(`${scheduleName} setup`, () => {
+              openAutomationDialog(store, api, { projectId: project.id, scheduleId })
+            })
+            row.append(setupBtn)
+            row.addEventListener('click', () => {
+              openAutomationDialog(store, api, { projectId: project.id, scheduleId })
+            })
+            row.addEventListener('contextmenu', (e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              showContextMenu(
+                e.clientX,
+                e.clientY,
+                automationMenuEntries(api, { project, scheduleName, scheduleId }, () => {
+                  openAutomationDialog(store, api, { projectId: project.id, scheduleId })
+                }),
+              )
+            })
+            rows.append(row)
+            continue
+          }
+
+          const firstRun = runs[0]
+          if (!firstRun) continue
           if (runs.length === 1) {
             const row = renderThreadRow(project, firstRun)
             row.querySelector('.chat-title')?.after(projectSuffix)
-            const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title
             const setupBtn = automationSetupBtn(`${scheduleName} setup`, () => {
               openAutomationDialog(store, api, { projectId: project.id, scheduleId })
             })
@@ -1812,7 +2056,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           // the finished ones into its heading's run count (see `foldAutomationRuns`).
           const foldEntries = foldAutomationRuns(runs, isThreadAwaitingAttention)
           const scheduleRevealed = showingAllRuns || foldEntries.length > 0
-          const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title
           const scheduleGroup = el('div', {
             class: 'automation-schedule-group',
             'data-schedule-id': scheduleId,
@@ -1833,6 +2076,21 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             projectSuffix,
             el('span', { class: 'automation-schedule-count' }, `${String(runs.length)} runs`),
           )
+          const heldRuns = heldAutomationRuns(runs)
+          if (heldRuns.length > 0) {
+            scheduleToggle.querySelector('.automation-schedule-count')?.before(
+              el(
+                'span',
+                {
+                  class: 'automation-schedule-held',
+                  role: 'img',
+                  'aria-label': heldRunsTooltip(heldRuns.length),
+                  title: heldRunsTooltip(heldRuns.length),
+                },
+                heldRunsLabel(heldRuns.length),
+              ),
+            )
+          }
           if (runs.some((thread) => thread.status === 'running')) {
             const status = runningStatusIcon('ui-icon ui-icon-sm automation-threads-running')
             status.setAttribute('role', 'img')
@@ -1874,6 +2132,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 () => {
                   openAutomationDialog(store, api, { projectId: project.id, scheduleId })
                 },
+                heldRuns.length > 0
+                  ? (): void => {
+                      void cleanUpScheduleRuns(store, api, { project, scheduleName, scheduleId })
+                    }
+                  : undefined,
               ),
             )
           })
@@ -2151,7 +2414,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       // Automation runs are collated in the workspace-level Automations section
       // (#2511) instead of rendering inside their project by default.
       const conversationThreads = orderSidebarThreads(
-        matchingThreads.filter((thread) => thread.automation === undefined),
+        matchingThreads.filter(
+          (thread) =>
+            thread.automation === undefined &&
+            (!needsCleanupOnly || matchesCleanupFilter(project, thread)),
+        ),
         // A filter's matches stay newest first; the chosen order is for the browse list.
         isFiltering ? 'activity' : store.getState().sidebarThreadSort,
         !isFiltering && store.getState().sidebarThreadSortReverse,
@@ -2210,8 +2477,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         )
       } else if (isFiltering && !contentFilter.waiting && matchingThreads.length === 0) {
         chats.append(el('div', { class: 'sidebar-empty' }, 'No matching threads'))
+      } else if (isFiltering && !contentFilter.waiting && conversationThreads.length === 0) {
+        chats.append(el('div', { class: 'sidebar-empty' }, 'No matching threads need cleanup'))
       } else if (!isFiltering && visibleThreads.length === 0) {
-        chats.append(el('div', { class: 'sidebar-empty' }, 'No threads yet'))
+        chats.append(
+          el(
+            'div',
+            { class: 'sidebar-empty' },
+            needsCleanupOnly ? 'Nothing needs cleanup' : 'No threads yet',
+          ),
+        )
       }
 
       for (const thread of visibleThreads) {
@@ -2268,7 +2543,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         if (project.missing) continue
         owners.set(project.id, project)
         for (const thread of getSidebarThreads(store, project.id)) {
-          if (thread.automation === undefined) rows.push({ projectId: project.id, thread })
+          if (
+            thread.automation === undefined &&
+            (!needsCleanupOnly || matchesCleanupFilter(project, thread))
+          ) {
+            rows.push({ projectId: project.id, thread })
+          }
         }
       }
       const { sidebarThreadSort, sidebarThreadSortReverse } = store.getState()
@@ -2279,27 +2559,38 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           : [{ id: 'all', label: '', rows: ordered }]
       // The tree is gone in this layout, so a project with no threads would vanish
       // with it, taking its name and its "+" along. Keep one compact row for each,
-      // whether or not other projects have threads.
+      // whether or not other projects have threads. Skipped under the cleanup
+      // filter: there every project with nothing unlanded is meant to drop out,
+      // not reappear as an empty placeholder.
       const withThreads = new Set(ordered.map((row) => row.projectId))
-      const emptyProjectRows = Array.from(owners.values())
-        .filter((project) => !withThreads.has(project.id))
-        .map((project) => {
-          const nameRow = el(
-            'button',
-            { class: 'project-row', title: project.path },
-            el('span', { class: 'project-name' }, projectDisplayName(project)),
-          )
-          nameRow.addEventListener('click', () => {
-            switchProject(store, api, project.id)
-          })
-          return el(
-            'div',
-            { class: 'project-entry', 'data-project-id': project.id },
-            el('div', { class: 'project-line' }, nameRow, renderNewThreadButton(project)),
-          )
-        })
+      const emptyProjectRows = needsCleanupOnly
+        ? []
+        : Array.from(owners.values())
+            .filter((project) => !withThreads.has(project.id))
+            .map((project) => {
+              const nameRow = el(
+                'button',
+                { class: 'project-row', title: project.path },
+                el('span', { class: 'project-name' }, projectDisplayName(project)),
+              )
+              nameRow.addEventListener('click', () => {
+                switchProject(store, api, project.id)
+              })
+              return el(
+                'div',
+                { class: 'project-entry', 'data-project-id': project.id },
+                el('div', { class: 'project-line' }, nameRow, renderNewThreadButton(project)),
+              )
+            })
       if (ordered.length === 0) {
-        return [el('div', { class: 'sidebar-empty' }, 'No threads yet'), ...emptyProjectRows]
+        return [
+          el(
+            'div',
+            { class: 'sidebar-empty' },
+            needsCleanupOnly ? 'Nothing needs cleanup' : 'No threads yet',
+          ),
+          ...emptyProjectRows,
+        ]
       }
       return sections
         .map((section) => {
@@ -2453,12 +2744,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   document.addEventListener('visibilitychange', recheckStaleThreadChanges)
 
   const unsubs = [
+    store.on('thread_archive_requested', (projectId, threadId) => {
+      void archiveProjectThread(projectId, threadId)
+    }),
     unsubWorkingTree,
     store.on('projects_changed', render),
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
     store.on('threads_changed', render),
     store.on('sidebar_threads_loaded', render),
+    store.on('automation_schedules_loaded', render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
     store.on('thread_status_changed', () => {

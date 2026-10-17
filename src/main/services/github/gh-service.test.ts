@@ -27,6 +27,33 @@ describe('formatGhPrList', () => {
   it('returns empty message for no PRs', () => {
     assert.equal(formatGhPrList([]), '(no pull requests)')
   })
+
+  it('includes the fields needed for an open PR automation in detailed mode', () => {
+    const text = formatGhPrList(
+      [
+        {
+          number: 42,
+          title: 'Add feature',
+          url: 'https://github.com/org/repo/pull/42',
+          state: 'OPEN',
+          headRefName: 'feature',
+          headRefOid: '123456789abcdef',
+          baseRefName: 'main',
+          isDraft: false,
+          mergeStateStatus: 'CLEAN',
+          mergeable: 'MERGEABLE',
+          reviewDecision: 'APPROVED',
+          labels: [{ name: 'ready' }],
+          author: { login: 'alice' },
+          updatedAt: '2026-10-10T12:34:00Z',
+        },
+      ],
+      true,
+    )
+    assert.match(text, /Draft: no; Base: main; Head SHA: 123456789/)
+    assert.match(text, /Merge state: CLEAN; Mergeable: MERGEABLE; Review: APPROVED/)
+    assert.match(text, /Labels: ready; Updated: 2026-10-10T12:34:00Z/)
+  })
 })
 
 describe('ghEnv', () => {

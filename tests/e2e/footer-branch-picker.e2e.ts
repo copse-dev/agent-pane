@@ -11,9 +11,12 @@ const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 async function expectPickerContainment(): Promise<void> {
   // Filtering resizes the popup; let CSS anchor fallbacks settle before measuring it.
-  await browser.executeAsync((done) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => done()))
-  })
+  await browser.execute(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      }),
+  )
   const geometry = await browser.execute(() => {
     const menu = document.querySelector<HTMLElement>('.branch-picker-menu')
     const filter = menu?.querySelector<HTMLElement>('.branch-picker-filter')
@@ -230,6 +233,18 @@ describe('footer branch picker', () => {
     const filter = menu.$('.branch-picker-filter')
     await filter.setValue(longBranch)
     await expect(menu.$('.branch-picker-option-label')).toHaveText(longBranch, { wait: 2000 })
+    // Pin the editing position before capture; native input scrolling otherwise
+    // races the frame resize and alternates between the prefix and suffix.
+    await filter.click()
+    await browser.keys('Home')
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const input = document.querySelector<HTMLInputElement>('.branch-picker-filter')
+          return input?.selectionStart === 0 && input.scrollLeft === 0
+        }),
+      { timeout: 5_000, timeoutMsg: 'branch filter did not settle at its prefix' },
+    )
     await expectPickerContainment()
     await saveAppScreenshot('footer-branch-picker-long-filter.png')
     await expectPickerContainment()
@@ -249,6 +264,26 @@ describe('footer branch picker', () => {
             (await $('.input-footer').getAttribute('class'))?.includes('is-compact') ?? false,
           { timeout: 3000, timeoutMsg: 'narrow owning footer must enter compact mode' },
         )
+        const controls = await browser.execute(() =>
+          ['.model-picker-trigger', '.footer-checkout-btn', '.branch-picker-trigger'].map(
+            (selector) => {
+              const control = document.querySelector(selector)
+              if (!control) throw new Error(`Missing footer control: ${selector}`)
+              const rect = control.getBoundingClientRect()
+              return {
+                selector,
+                width: rect.width,
+                hit: control.contains(
+                  document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2),
+                ),
+              }
+            },
+          ),
+        )
+        for (const control of controls) {
+          expect(control.width).toBeGreaterThanOrEqual(24)
+          expect(control.hit).toBe(true)
+        }
         await trigger.click()
         await expect(menu).toBeDisplayed()
         await expect(menu.$('.branch-picker-default-badge')).toBeDisplayed()

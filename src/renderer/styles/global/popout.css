@@ -41,6 +41,8 @@ html.is-popout .pane-maximize-btn {
 
 /* A detached Roadmap window has no chat pane for a thread to land in — hide
    both starting a new thread and reopening a tracked one. */
+html.is-popout .roadmap-develop-btn,
+html.is-popout .roadmap-attempts,
 html.is-popout .roadmap-start-btn,
 html.is-popout .roadmap-reopen-btn,
 html.is-popout .roadmap-thread-indicator {
