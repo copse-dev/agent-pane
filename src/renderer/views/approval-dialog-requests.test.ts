@@ -125,6 +125,23 @@ describe('approval requests handle', () => {
     )
   })
 
+  it('deduplicates requests replayed while already queued or visible', () => {
+    emit(shell('background', 'other'))
+    emit(shell('background', 'other'))
+    emit(shell('foreground', 'focused'))
+    emit(shell('foreground', 'focused'))
+    assert.deepEqual(
+      requests.pending().map((request) => request.id),
+      ['background', 'foreground'],
+    )
+    requests.answerOnce('foreground', true)
+    assert.equal(responses.length, 1)
+    assert.deepEqual(
+      requests.pending().map((request) => request.id),
+      ['background'],
+    )
+  })
+
   it('answers a background request once, without a grant, and clears its bell', () => {
     let changes = 0
     requests.onChange(() => {

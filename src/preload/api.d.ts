@@ -18,6 +18,7 @@ import type {
   MachineAgentRunRequest,
   MachineDispatchResult,
   StreamChunk,
+  TranscriptStamp,
 } from '@shared/types'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
@@ -380,7 +381,18 @@ export interface ApiClient {
     ) => Promise<string | null>
     /** Tab-completable next step for the composer placeholder; null = no obvious step. */
     suggestNextStep: (contextJson: string) => Promise<string | null>
-    onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => () => void
+    /**
+     * `stamp` is present when main has already persisted this chunk's turn; the
+     * window then draws it with main's message ids and writes nothing itself.
+     */
+    replayPendingDecisions: () => Promise<void>
+    attachTranscripts: (projectId: string, threadIds: string[]) => Promise<void>
+    onTranscriptSnapshot: (
+      handler: (snapshot: import('@shared/types').TranscriptSnapshot) => void,
+    ) => () => void
+    onChunk: (
+      handler: (threadId: string, chunk: StreamChunk, stamp?: TranscriptStamp) => void,
+    ) => () => void
     onApprovalRequest: (
       handler: (req: {
         id: string
@@ -659,6 +671,13 @@ export interface ApiClient {
       projectId: string,
       threadId: string,
       message: import('@shared/types').Message,
+    ) => Promise<void>
+    /** Merge a window-derived label into a message main owns, and persist it. */
+    annotateMessage: (
+      projectId: string,
+      threadId: string,
+      messageId: string,
+      annotation: import('@shared/types').TranscriptAnnotation,
     ) => Promise<void>
     updateMeta: (
       projectId: string,
