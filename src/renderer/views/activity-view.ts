@@ -35,6 +35,7 @@ import {
   type ApprovalTimer,
 } from './approval-dialog.ts'
 import type { Project } from '@shared/types'
+import { ASK_USER_ANSWER_MAX_LENGTH } from '@copse/agent/ask-user-format.ts'
 import type { AskUserRequests } from './ask-user-dialog.ts'
 
 /**
@@ -361,6 +362,7 @@ export function createActivityView(
       class: 'activity-answer-input',
       rows: '2',
       placeholder: 'Or type an answer…',
+      maxlength: String(ASK_USER_ANSWER_MAX_LENGTH),
       'data-control': `answer-${String(index)}`,
       'aria-labelledby': questionId,
     })
@@ -370,7 +372,9 @@ export function createActivityView(
       next[index] = input.value
       drafts.set(requestId, next)
       const send = detail.querySelector<HTMLButtonElement>('.activity-answer')
-      if (send) send.disabled = !hasAnswer(requestId)
+      // A keystroke must not light up Send while the pane settles: it would look
+      // live but `sendAnswer` drops the click. The settle timer turns it back on.
+      if (send) send.disabled = settling || !hasAnswer(requestId)
     }
     input.addEventListener('input', sync)
     // Cmd/Ctrl+Enter sends, as in the ask dialog; plain Enter stays a newline.
