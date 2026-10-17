@@ -95,6 +95,11 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // prompts and, when approved, runs outside the ACP process's seatbelt.
   'run_shell',
   'run_background',
+  // Read-only worktree readiness and model-tier advice are useful to either
+  // executor and need no native-loop state. Preparation itself still requires
+  // the host's separate install approval, so it is not offered here.
+  'preflight_worktree',
+  'suggest_model',
   // Saved decision classifiers run through Copse's permission and provider gates.
   'ask_classifier',
   // Host GUI launch via Launch Services. run_shell/open cannot reach the
@@ -151,6 +156,8 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'browser_click',
   'browser_type',
   'browser_tabs',
+  // Only promotes an already-open page or this thread's rendered artefact.
+  'browser_show',
 ]
 
 /**

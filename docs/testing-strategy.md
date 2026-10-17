@@ -487,6 +487,16 @@ checkout, and commit only the intentional updates. `pnpm run filter:screenshots`
 is available locally after copying the candidates to discard known render noise
 and shots outside the diff's ownership map; it is an aid, not an author.
 
+The same job also records how much review work the run generated. Each e2e
+shard writes its timing, runner and oracle mode into its `.shard-N` provenance
+marker, and `screenshot-artifacts` folds those, the filter's verdict counts and
+the surviving candidates' before/after hashes into a `screenshot-metrics-<run-id>`
+artifact plus a job-summary table. The trusted publisher appends its own
+duration and approximate API-call count to its summary. All of it is
+measurement produced by PR code: evidence for people and for
+`pnpm run screenshots:metrics-baseline`, which summarises the last N PRs' runs,
+job logs and compare branches read-only, never an input to a gate.
+
 ### Reviewing a small PR stack once
 
 Screenshot review can be deferred to a declared stack tip. Intermediate states
