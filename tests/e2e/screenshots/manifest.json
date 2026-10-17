@@ -1037,6 +1037,14 @@
       "sha256": "8073bb47a2370050cc537985ecaf623ac6586d73217c2fc0dd03b65c8ead9728",
       "bytes": 349465
     },
+    "classifier-tool-approval-collapsed.png": {
+      "sha256": "ea65388700b0dae64769ece999f83a0d85239ced932bf8ffb3c24612feff12d7",
+      "bytes": 204162
+    },
+    "classifier-tool-approval-expanded.png": {
+      "sha256": "67d972d1329ebc8f9448d1299e3cb78d37c4c448c64c20e7f71d06f68d8f45de",
+      "bytes": 233914
+    },
     "classifier-use-hover.png": {
       "sha256": "29470c124e210f995b3547304c084e0341be805daf23e769aee81b718fc6cf1c",
       "bytes": 324244
@@ -3437,9 +3445,13 @@
       "sha256": "fad43a9aa056c36a560438137f72291ce84ff78a7cc1980d659b0eebf6c3e464",
       "bytes": 255214
     },
+    "settings-classifiers-agent-permission.png": {
+      "sha256": "89fb497733b2a1df0d7417444306770c8459d6c120f557f379efa71cd03d12bd",
+      "bytes": 235619
+    },
     "settings-classifiers-background.png": {
-      "sha256": "2ba5d28bba94ccf8493261c7c18da64d0610a34261c63f8f4b3bf5d3c52baadd",
-      "bytes": 241163
+      "sha256": "a81f465f2c0bb1b0847bbe3aba3e6dc2cbf4d2223aa3af82895c1ff44cc1d8ff",
+      "bytes": 267323
     },
     "settings-classifiers-destination.png": {
       "sha256": "76c27587658c319006447aa7edbc6f73ce83c60ba558307803eba4157f29252e",
@@ -3478,8 +3490,8 @@
       "bytes": 13571
     },
     "settings-classifiers-install-test.png": {
-      "sha256": "a34d1f4682ee7978dcad2c450467c75f952c9545af36bdb241d98baa0f35a139",
-      "bytes": 149568
+      "sha256": "76c858f32c16a0548fa830fa7070a6a56d8fdaa3be10a84f89e7980b1a4b0800",
+      "bytes": 158855
     },
     "settings-classifiers-install-uninstall-confirm.png": {
       "sha256": "68311d89602eb94a997b239f3f42a8f4d01318251ad1c6ddf3c6ece8951611c2",
@@ -3510,8 +3522,8 @@
       "bytes": 57973
     },
     "settings-classifiers-screening.png": {
-      "sha256": "8af6d547f1339418776557180a6ef11598dc92a717e2863477c34b3d359773a3",
-      "bytes": 255652
+      "sha256": "00ca8a75172355637308bdd93bc32c2228fffda61e8fe2d73431b001aa20ac18",
+      "bytes": 260949
     },
     "settings-classifiers.png": {
       "sha256": "3b3b78ed6ffdd12f2b19b3da040fecb8cd196a5b24644c01827767ad254989f2",
