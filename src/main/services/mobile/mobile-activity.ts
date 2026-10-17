@@ -6,6 +6,8 @@ import { pendingApprovalCountForThread, pendingApprovalRequestsForThread } from 
 import { pendingAskUserCountForThread, pendingAskUserQuestionsForThread } from '../ask-user.ts'
 import { storageGet } from '../storage/storage.ts'
 import { loadProjectThreadMetas, loadThreadMessages } from '../thread-store.ts'
+import { inspectThreadCheckoutRoot } from '../thread-execution-context.ts'
+import { threadHasUncommittedChanges } from '../thread-dirty-status.ts'
 
 const projectSchema = z.array(
   z.object({
@@ -20,7 +22,7 @@ export interface MobileActivityRow {
   projectName: string
   threadId: string
   title: string
-  group: 'needs-you' | 'working' | 'recent'
+  group: 'needs-you' | 'working' | 'has-changes' | 'recent'
   state: 'needs-approval' | 'needs-answer' | 'working' | 'failed' | 'finished'
   detail: string
   updatedAt: number
@@ -32,6 +34,25 @@ export function mobileProjects(): Array<{ id: string; name: string }> {
   return parsed.success ? parsed.data : []
 }
 
+/**
+ * Whether a settled thread's checkout has uncommitted work worth a trip back
+ * to the desktop. Inspect-only: a poll must never restore a retired worktree,
+ * so a retired, PR'd or unresolvable checkout just reads as clean rather than
+ * failing the whole activity feed over a cosmetic signal.
+ */
+async function settledThreadHasChanges(
+  projectId: string,
+  threadId: string,
+  updatedAt: number,
+): Promise<boolean> {
+  try {
+    const root = await inspectThreadCheckoutRoot(projectId, threadId)
+    return root !== null && (await threadHasUncommittedChanges(threadId, root, updatedAt))
+  } catch {
+    return false
+  }
+}
+
 export async function mobileActivity(): Promise<MobileActivityRow[]> {
   const running = new Set(listRunningThreadIds())
   const groups: MobileActivityRow[] = []
@@ -41,6 +62,7 @@ export async function mobileActivity(): Promise<MobileActivityRow[]> {
       if (thread.archivedAt !== undefined) continue
       const approvals = pendingApprovalCountForThread(thread.id)
       const questions = pendingAskUserCountForThread(thread.id)
+      const settled = approvals === 0 && questions === 0 && !running.has(thread.id)
       const state: MobileActivityRow['state'] =
         approvals > 0
           ? 'needs-approval'
@@ -51,6 +73,9 @@ export async function mobileActivity(): Promise<MobileActivityRow[]> {
               : thread.status === 'error'
                 ? 'failed'
                 : 'finished'
+      const hasChanges = settled
+        ? await settledThreadHasChanges(project.id, thread.id, thread.updatedAt)
+        : false
       groups.push({
         projectId: project.id,
         projectName: project.name,
@@ -61,7 +86,9 @@ export async function mobileActivity(): Promise<MobileActivityRow[]> {
             ? 'needs-you'
             : running.has(thread.id)
               ? 'working'
-              : 'recent',
+              : hasChanges
+                ? 'has-changes'
+                : 'recent',
         state,
         detail:
           approvals > 0
@@ -78,7 +105,7 @@ export async function mobileActivity(): Promise<MobileActivityRow[]> {
       })
     }
   }
-  const order = { 'needs-you': 0, working: 1, recent: 2 }
+  const order = { 'needs-you': 0, working: 1, 'has-changes': 2, recent: 3 }
   return groups.sort((a, b) => order[a.group] - order[b.group] || b.updatedAt - a.updatedAt)
 }
 

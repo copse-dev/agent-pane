@@ -89,3 +89,5 @@ docs/plans/perf-data*/runs/*warmup*/
 # R2-backed screenshot references and local immutable object cache.
 /tests/e2e/screenshots/*.png
 /.screenshot-policy/
+
+/e2e-evidence/
