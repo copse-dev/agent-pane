@@ -118,67 +118,58 @@ export function parseScreenshotStack(body: unknown): Declaration | null {
   return { members, tip, text, digest: createHash('sha256').update(text).digest('hex') }
 }
 
-interface Input {
+interface Repository {
   owner: string
   repo: string
+}
+
+interface Input extends Repository {
   number: number
 }
 
-/** Select work, never evidence: every selected PR still receives live validation. */
-export function selectScreenshotStackPulls(
-  open: unknown[],
-  eventName: string,
-  payload: unknown,
-): number[] {
-  const numberOf = (value: unknown): number | undefined =>
-    typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : undefined
-  const numbers = open.flatMap((pr) => {
-    const number = numberOf(field(pr, 'number'))
+function numberOf(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : undefined
+}
+
+function timestamp(value: unknown): number | undefined {
+  const parsed = typeof value === 'string' ? Date.parse(value) : Number.NaN
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+// Over-select malformed declarations too: validation must revoke their old
+// status. PR bodies are routing hints, not trusted stack declarations.
+function references(body: unknown): number[] {
+  if (typeof body !== 'string' || !body.includes(PREFIX)) return []
+  return [...body.matchAll(/#([1-9][0-9]*)/g)].flatMap((match) => {
+    const number = numberOf(Number(match[1]))
     return number === undefined ? [] : [number]
   })
+}
+
+/** PRs a workflow completion names: its PR metadata or an open head matching its SHA. */
+function completionPulls(open: unknown[], payload: unknown): Set<number> {
   const affected = new Set<number>()
-  // Over-select malformed declarations too: validation must revoke their old
-  // status. PR bodies are routing hints, not trusted stack declarations.
-  const references = (body: unknown): number[] => {
-    if (typeof body !== 'string' || !body.includes(PREFIX)) return []
-    return [...body.matchAll(/#([1-9][0-9]*)/g)].flatMap((match) => {
-      const number = numberOf(Number(match[1]))
-      return number === undefined ? [] : [number]
-    })
-  }
-  if (eventName === 'pull_request_target') {
-    const pr = field(payload, 'pull_request')
-    const number = numberOf(field(pr, 'number'))
-    if (number === undefined) return numbers
-    affected.add(number)
-    for (const member of references(field(pr, 'body'))) affected.add(member)
-    // An edit can remove the only edge connecting this PR to its former stack.
-    const oldBody = field(field(field(payload, 'changes'), 'body'), 'from')
-    for (const member of references(oldBody)) affected.add(member)
-  } else if (eventName === 'workflow_run') {
-    const run = field(payload, 'workflow_run')
-    const pulls = field(run, 'pull_requests')
-    if (Array.isArray(pulls)) {
-      for (const pr of pulls) {
-        const number = numberOf(field(pr, 'number'))
-        if (number !== undefined) affected.add(number)
-      }
+  const run = field(payload, 'workflow_run')
+  const pulls = field(run, 'pull_requests')
+  if (Array.isArray(pulls)) {
+    for (const pr of pulls) {
+      const number = numberOf(field(pr, 'number'))
+      if (number !== undefined) affected.add(number)
     }
-    const sha = field(run, 'head_sha')
-    if (typeof sha === 'string' && SHA.test(sha)) {
-      for (const pr of open) {
-        const number = numberOf(field(pr, 'number'))
-        if (number !== undefined && field(field(pr, 'head'), 'sha') === sha) affected.add(number)
-      }
-    }
-    // Default-branch publishers can have neither PR metadata nor a matching
-    // head. Keep the full sweep rather than guessing which approval changed.
-    if (affected.size === 0) return numbers
-  } else {
-    return numbers // Manual/scheduled repair and unknown event shapes.
   }
-  // Follow both directions and transitively: membership edits can connect old
-  // and new stacks, including a closed triggering tip absent from `open`.
+  const sha = field(run, 'head_sha')
+  if (typeof sha === 'string' && SHA.test(sha)) {
+    for (const pr of open) {
+      const number = numberOf(field(pr, 'number'))
+      if (number !== undefined && field(field(pr, 'head'), 'sha') === sha) affected.add(number)
+    }
+  }
+  return affected
+}
+
+// Follow both directions and transitively: membership edits can connect old
+// and new stacks, including a closed triggering tip absent from `open`.
+function connected(open: unknown[], affected: Set<number>): number[] {
   let changed = true
   while (changed) {
     changed = false
@@ -195,7 +186,100 @@ export function selectScreenshotStackPulls(
       }
     }
   }
-  return numbers.filter((number) => affected.has(number))
+  return open.flatMap((pr) => {
+    const number = numberOf(field(pr, 'number'))
+    return number !== undefined && affected.has(number) ? [number] : []
+  })
+}
+
+/** Select work, never evidence: every selected PR still receives live validation. */
+export function selectScreenshotStackPulls(
+  open: unknown[],
+  eventName: string,
+  payload: unknown,
+): number[] {
+  const numbers = open.flatMap((pr) => {
+    const number = numberOf(field(pr, 'number'))
+    return number === undefined ? [] : [number]
+  })
+  const affected = new Set<number>()
+  if (eventName === 'pull_request_target') {
+    const pr = field(payload, 'pull_request')
+    const number = numberOf(field(pr, 'number'))
+    if (number === undefined) return numbers
+    affected.add(number)
+    for (const member of references(field(pr, 'body'))) affected.add(member)
+    // An edit can remove the only edge connecting this PR to its former stack.
+    const oldBody = field(field(field(payload, 'changes'), 'body'), 'from')
+    for (const member of references(oldBody)) affected.add(member)
+  } else if (eventName === 'workflow_run') {
+    for (const number of completionPulls(open, payload)) affected.add(number)
+    // Default-branch publishers can have neither PR metadata nor a matching
+    // head. Keep the full sweep rather than guessing which approval changed.
+    if (affected.size === 0) return numbers
+  } else {
+    return numbers // Manual/scheduled repair and unknown event shapes.
+  }
+  return connected(open, affected)
+}
+
+const EVIDENCE = new Set(['Screenshot review', STACK_COVERAGE, STACK_DECISION])
+
+/** Whether a head's screenshot evidence was written at or after `since`. */
+async function evidenceChangedSince(
+  github: StackGitHub,
+  repository: Repository,
+  ref: string,
+  since: number,
+): Promise<boolean> {
+  const combined = github.rest.repos.getCombinedStatusForRef?.bind(github.rest.repos)
+  const { data: response } = await (
+    combined ?? github.rest.repos.listCommitStatusesForRef.bind(github.rest.repos)
+  )({ owner: repository.owner, repo: repository.repo, ref, per_page: 100, page: 1 })
+  const data = combined ? field(response, 'statuses') : response
+  // An unreadable or unbounded status list is validated, never assumed unchanged.
+  if (!Array.isArray(data) || data.length >= 100) return true
+  return data.some((status) => {
+    const context = field(status, 'context')
+    if (typeof context !== 'string' || !EVIDENCE.has(context)) return false
+    const written = timestamp(field(status, 'updated_at')) ?? timestamp(field(status, 'created_at'))
+    return written === undefined || written >= since
+  })
+}
+
+/**
+ * Publisher, decision and selection runs complete on the default branch with
+ * neither PR metadata nor a matching head, so plain selection sweeps every
+ * open PR. Their only effect on a stack is a commit status on a declared head:
+ * read each declared head's latest statuses and select the stacks whose
+ * screenshot evidence changed since the triggering run started. This selects
+ * work, never evidence: every selected PR is still validated live, ordinary PRs
+ * have no stack status to repair, and the scheduled sweep remains the backstop.
+ */
+export async function selectScreenshotStackCompletion(
+  github: StackGitHub,
+  repository: Repository,
+  open: unknown[],
+  payload: unknown,
+): Promise<number[]> {
+  const associated = completionPulls(open, payload)
+  if (associated.size > 0) return connected(open, associated)
+  const run = field(payload, 'workflow_run')
+  const since = timestamp(field(run, 'run_started_at')) ?? timestamp(field(run, 'created_at'))
+  if (since === undefined) return selectScreenshotStackPulls(open, 'workflow_run', payload)
+  const affected = new Set<number>()
+  for (const pr of open) {
+    const number = numberOf(field(pr, 'number'))
+    if (number === undefined || !references(field(pr, 'body')).length) continue
+    const sha = field(field(pr, 'head'), 'sha')
+    if (
+      typeof sha !== 'string' ||
+      !SHA.test(sha) ||
+      (await evidenceChangedSince(github, repository, sha, since))
+    )
+      affected.add(number)
+  }
+  return connected(open, affected)
 }
 
 async function statuses(

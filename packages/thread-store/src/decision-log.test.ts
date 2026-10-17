@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { parseSpineLine } from './spine-schema.ts'
 import {
   DECISION_LOG_CONFORMANCE,
   DECISION_LOG_MEDIA_TYPE,
@@ -23,6 +24,25 @@ const baseInput: DecisionInput = {
 }
 
 describe('decision-log schema', () => {
+  it('round-trips bridge execution identity without inventing a transcript ID', () => {
+    const event = makeDecisionEvent(
+      {
+        kind: 'bridge-request',
+        actor: 'system',
+        verdict: 'requested',
+        subject: 'run_shell',
+        bridgeExecutionId: 'bridge-execution-uuid',
+      },
+      'request-event',
+      1234,
+    )
+    assert.deepEqual(parseDecisionLine(serializeDecisionLine(event)), event)
+    assert.deepEqual(parseSpineLine(serializeDecisionLine(event)), event)
+    assert.equal(event.toolCallId, undefined)
+    assert.equal(parseDecisionLine(JSON.stringify({ ...event, bridgeExecutionId: 7 })), null)
+    assert.equal(parseSpineLine(JSON.stringify({ ...event, bridgeExecutionId: 7 })), null)
+  })
+
   it('stamps v/type/id/at and preserves fields', () => {
     const e = makeDecisionEvent(
       { ...baseInput, scope: 'sandbox', remembered: true, threadId: 't1' },
