@@ -458,6 +458,12 @@ events, including labels, drafts, forks and stack tips, before anyone trusts it.
 - Release pushes now force `full`; observe a real promotion and release through the new
   exact-commit gate before treating the release assurance prerequisite as proven.
 
+## First implementation slice
+
+The additive evidence pipeline and advisory selector are documented in
+[the first-slice report](main-gate-shadow-first-slice.md). This leaves the policy and exit criteria
+above unchanged; the historical replay and live reliability window remain outstanding.
+
 ## Next action
 
 Open the per-spec result artifact and plan artifact as the first implementation PR (it is
