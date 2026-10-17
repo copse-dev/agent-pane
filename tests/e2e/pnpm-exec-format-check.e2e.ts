@@ -1,5 +1,13 @@
 import { $, browser, expect } from '@wdio/globals'
-import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { delimiter, dirname, join } from 'node:path'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -48,11 +56,20 @@ describe('pnpm exec format check', function () {
       '-m',
       'Seed formatter fixture',
     ])
+    // pnpm links oxfmt's dependencies into its store directory. cpSync's
+    // `dereference` resolves only the top-level source, so resolve each link
+    // here: the sandbox cannot read the repository's store when it sits under
+    // HOME, as it does on CI runners.
+    const copyResolved = (from: string, to: string): void => {
+      mkdirSync(to, { recursive: true })
+      for (const name of readdirSync(from)) {
+        const source = realpathSync(join(from, name))
+        if (name.startsWith('@')) copyResolved(source, join(to, name))
+        else cpSync(source, join(to, name), { recursive: true })
+      }
+    }
     const installed = dirname(realpathSync(join(process.cwd(), 'node_modules', 'oxfmt')))
-    cpSync(installed, join(fixtureWorkspace, 'node_modules'), {
-      recursive: true,
-      dereference: true,
-    })
+    copyResolved(installed, join(fixtureWorkspace, 'node_modules'))
     mkdirSync(join(fixtureWorkspace, 'node_modules', '.bin'), { recursive: true })
     writeFileSync(
       join(fixtureWorkspace, 'node_modules', '.bin', 'oxfmt'),
