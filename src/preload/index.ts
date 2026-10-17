@@ -221,6 +221,8 @@ const api: ApiClient = {
   },
   security: {
     getGuardedYolo: (threadId: string) => ipcRenderer.invoke('security:get-guarded-yolo', threadId),
+    getContextPermissions: (projectId: string, threadId: string, checkoutRoot: string) =>
+      ipcRenderer.invoke('security:get-context-permissions', projectId, threadId, checkoutRoot),
     enableGuardedYolo: (threadId: string) =>
       ipcRenderer.invoke('security:enable-guarded-yolo', threadId),
     disableGuardedYolo: (threadId: string) =>
@@ -1216,6 +1218,8 @@ const api: ApiClient = {
   },
   decisions: {
     list: (projectId?: string) => ipcRenderer.invoke('decisions:list', projectId),
+    listThread: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('decisions:list-thread', projectId, threadId),
     export: (projectId?: string) => ipcRenderer.invoke('decisions:export', projectId),
   },
   index: {

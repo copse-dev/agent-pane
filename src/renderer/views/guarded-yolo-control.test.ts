@@ -27,6 +27,11 @@ function createApi(): {
   }
   const security: ApiClient['security'] = {
     getGuardedYolo: async (threadId) => states.get(threadId) ?? off(threadId),
+    getContextPermissions: async () => ({
+      outsideReadPaths: [],
+      browserOrigins: [],
+      portBindingAllowed: false,
+    }),
     enableGuardedYolo: async (threadId) => {
       enabled.push(threadId)
       const state: GuardedYoloState = {
