@@ -38,6 +38,11 @@ import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
 const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
 const SCHEDULER_HANDLER = 'automation_scheduler_tick'
 const SCHEDULER_MAX_DURATION_MS = 120_000
+// Below SCHEDULER_MAX_DURATION_MS, so a hung trigger (a stuck git/worktree
+// operation) is isolated per schedule instead of blowing the whole tick's
+// duration budget — which fails every other due schedule too and gets this
+// task replaced, only for the replacement to hang on the same schedule again.
+const SCHEDULER_TRIGGER_TIMEOUT_MS = 90_000
 const SCHEDULER_RECOVERY_DELAY_MS = 5_000
 /** How late a wake may be and still run the minute it was armed for rather than the current one. */
 const MAX_WAKE_LATENESS_MS = 2 * 60_000
@@ -919,12 +924,26 @@ export function createAutomationService(
       // the scheduler task's duration budget and take the whole scheduler down.
       await Promise.all(
         due.map(async (schedule) => {
+          let timer: ReturnType<typeof setTimeout> | undefined
+          const timedOut = new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => {
+              reject(
+                new Error(
+                  `Trigger timed out after ${String(SCHEDULER_TRIGGER_TIMEOUT_MS)}ms; it may still finish in the background`,
+                ),
+              )
+            }, SCHEDULER_TRIGGER_TIMEOUT_MS)
+          })
           try {
-            await trigger(schedule, now, 'schedule')
+            await Promise.race([trigger(schedule, now, 'schedule'), timedOut])
           } catch (error) {
-            // Isolate failures so one project cannot prevent other matching
-            // schedules from running. Do not retry repeatedly in the same minute.
+            // Isolate failures — including a hang, which would otherwise block this
+            // Promise.all and take the whole tick past its own duration budget — so
+            // one project cannot prevent other matching schedules from running.
+            // Do not retry repeatedly in the same minute.
             await logTriggerFailure(schedule, error)
+          } finally {
+            clearTimeout(timer)
           }
         }),
       )

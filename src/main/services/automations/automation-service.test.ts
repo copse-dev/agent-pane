@@ -18,6 +18,8 @@ import { createAutomationService, type AutomationTaskSupervisor } from './automa
 
 const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
 const SCHEDULER_HANDLER = 'automation_scheduler_tick'
+// Mirrors automation-service.ts's SCHEDULER_TRIGGER_TIMEOUT_MS.
+const SCHEDULER_TRIGGER_TIMEOUT_MS = 90_000
 
 /**
  * Durable tasks only become visible once `start()` has replayed them off disk,
@@ -1434,6 +1436,42 @@ describe('AutomationService', () => {
 
     assert.equal(outcome, 'done')
     assert.deepEqual(begun.sort(), ['a', 'b', 'c'])
+  })
+
+  it('isolates a trigger that hangs instead of letting it block the tick past its own timeout', async (context) => {
+    context.mock.method(console, 'error', () => {})
+    context.mock.timers.enable({ apis: ['setTimeout'] })
+    storageSet(STORAGE_KEY, [
+      {
+        id: 'stuck',
+        projectId: 'project-a',
+        name: 'stuck',
+        cron: '* * * * *',
+        prompt: 'p',
+        model: 'm',
+        enabled: true,
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    ])
+    const service = createAutomationService({
+      now: () => new Date(2026, 6, 27, 9, 0, 5).getTime(),
+      isPluginEnabled: () => true,
+      // A stuck git/worktree operation: the promise never settles.
+      createProjectThread: () => new Promise<void>(() => {}),
+      loadProjectThreads: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
+    })
+
+    const pending = service.tick()
+    // Let the hung trigger actually start before advancing past its timeout.
+    for (let i = 0; i < 5; i++) await Promise.resolve()
+    context.mock.timers.tick(SCHEDULER_TRIGGER_TIMEOUT_MS)
+    await pending
+
+    const problem = service.list('project-a')[0]?.lastProblem
+    assert.equal(problem?.kind, 'failed')
+    assert.match(problem.message, /timed out/)
   })
 
   describe('trigger problems the user can see', () => {
