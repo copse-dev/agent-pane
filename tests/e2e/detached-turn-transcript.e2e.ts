@@ -346,13 +346,15 @@ describe('a turn outlives its window', function () {
             {
               user: prompt,
               responses: [
-                {
-                  text: raisedWhileDetached
-                    ? 'Preparing a decision for you before continuing with the requested work.'
-                    : '',
-                  chunkDelayMs: raisedWhileDetached ? 250 : 0,
-                  toolCalls: [toolCall],
-                },
+                ...(raisedWhileDetached
+                  ? [
+                      {
+                        text: 'Preparing a decision for you before continuing with the requested work.',
+                        toolCalls: [{ name: 'read_file', args: { path: 'PLAN.md' } }],
+                      },
+                      { waitFor: 'detached-decision', toolCalls: [toolCall] },
+                    ]
+                  : [{ toolCalls: [toolCall] }]),
                 { text: 'Decision received.', expectToolResults: [{ name: toolCall.name }] },
               ],
             },
@@ -366,6 +368,7 @@ describe('a turn outlives its window', function () {
             async () => (await $('.msg-assistant .message-text').getText()).startsWith('Preparing'),
             { timeout: 30_000 },
           )
+          await scenario.waitForHold('detached-decision')
         } else {
           await $(selector).waitForDisplayed({ timeout: 30_000 })
         }
@@ -381,6 +384,7 @@ describe('a turn outlives its window', function () {
               return event ? [event] : []
             })
         if (raisedWhileDetached) {
+          await scenario.release('detached-decision')
           await browser.waitUntil(() => requests().some((event) => event.url === 'about:blank'), {
             timeout: 30_000,
           })
