@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "entries": [
     {
       "spec": "tests/e2e/agent-eval-drive.e2e.ts",
@@ -46,7 +46,12 @@
       "markers": [
         "describeSkipInCi: context wheel footer live mock",
         "describeSkipInCi: context wheel footer seeded"
-      ]
+      ],
+      "accountability": {
+        "owner": null,
+        "disposition": "restore",
+        "nextStep": "Split seeded rendering from the live context-estimation journey; use a fixed small workspace and verify current Linux runtime memory and both journeys before restoring CI."
+      }
     },
     {
       "spec": "tests/e2e/explorer-reload-spaced-path.e2e.ts",
@@ -68,7 +73,12 @@
       "recordedOn": "2026-09-20",
       "reviewBy": "2026-09-27",
       "coverage": "No equivalent full runtime evidence is established by this inventory.",
-      "markers": ["wdio.ci.conf.ts: exclude"]
+      "markers": ["wdio.ci.conf.ts: exclude"],
+      "accountability": {
+        "owner": null,
+        "disposition": "restore",
+        "nextStep": "Isolate scenario and workspace lifecycle, wait for a fresh completed turn and actual Git-stat IPC results, and restore after a first-attempt Linux run."
+      }
     },
     {
       "spec": "tests/e2e/git-commit-approval.e2e.ts",
@@ -123,7 +133,12 @@
       "recordedOn": "2026-09-20",
       "reviewBy": "2026-09-27",
       "coverage": "No equivalent layout/runtime evidence is established by this inventory.",
-      "markers": ["wdio.ci.conf.ts: exclude"]
+      "markers": ["wdio.ci.conf.ts: exclude"],
+      "accountability": {
+        "owner": null,
+        "disposition": "restore",
+        "nextStep": "Use a fixed small workspace and retain actual native portrait window sizing; verify Linux sizing before restoring CI."
+      }
     },
     {
       "spec": "tests/e2e/queued-pinned.e2e.ts",
@@ -134,7 +149,12 @@
       "recordedOn": "2026-09-20",
       "reviewBy": "2026-09-27",
       "coverage": "message-queue, queued-send-now, and queued-message-edit component tests cover related behaviors, not the remaining scroll geometry.",
-      "markers": ["wdio.ci.conf.ts: exclude"]
+      "markers": ["wdio.ci.conf.ts: exclude"],
+      "accountability": {
+        "owner": null,
+        "disposition": "restore",
+        "nextStep": "Use a fixed small workspace and observable running/queued states; retain real streaming scroll geometry and verify Linux before restoring CI."
+      }
     },
     {
       "spec": "tests/e2e/scroll-to-bottom.e2e.ts",
@@ -149,7 +169,12 @@
         "itSkipInCi: hides scroll-to-bottom while auto-scrolling during streaming",
         "itSkipInCi: keeps the view pinned when the user scrolls up during streaming",
         "wdio.ci.conf.ts: exclude"
-      ]
+      ],
+      "accountability": {
+        "owner": null,
+        "disposition": "restore",
+        "nextStep": "Use fixed fixtures and observable streaming/scroll states; verify both quarantined streaming cases and remaining native scroll journeys before restoring CI."
+      }
     },
     {
       "spec": "tests/e2e/settings-plaintext-secret-storage.e2e.ts",
@@ -171,7 +196,12 @@
       "recordedOn": "2026-09-20",
       "reviewBy": "2026-09-27",
       "coverage": "Unit/component assertions do not replace Monaco approval IPC. Current runtime reproduction and successful evidence remain outstanding.",
-      "markers": ["wdio.ci.conf.ts: exclude"]
+      "markers": ["wdio.ci.conf.ts: exclude"],
+      "accountability": {
+        "owner": null,
+        "disposition": "restore",
+        "nextStep": "Isolate the multi-turn workspace and dirty-tree sentinel; verify session reload, real Monaco rendering and approval IPC on Linux before restoring CI."
+      }
     },
     {
       "spec": "tests/e2e/thread-deep-links.e2e.ts",

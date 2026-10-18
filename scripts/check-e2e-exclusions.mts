@@ -32,6 +32,10 @@ for (const entry of registry.entries)
   console.log(
     `${entry.category}: ${entry.spec} — ${entry.ownerRole}; review by ${entry.reviewBy}; ${entry.tracker}`,
   )
+for (const entry of registry.entries.filter((entry) => entry.category === 'quarantine'))
+  console.log(
+    `quarantine disposition: ${entry.spec}; accountable person ${entry.accountability?.owner ?? 'unassigned'}; ${entry.accountability?.disposition ?? 'missing'}; ${entry.accountability?.nextStep ?? 'missing action'}`,
+  )
 console.log(
   `check-e2e-exclusions: ${String(registry.entries.length)} specs, ${String(actual.length)} exclusion markers, ${String(result.due.length)} reviews due. Inventory is not acceptance of missing coverage.`,
 )
