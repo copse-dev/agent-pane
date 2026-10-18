@@ -187,6 +187,7 @@ async function startDemoServer(): Promise<void> {
                     : [],
               messages: [
                 { role: 'user', content: 'Check the release notes.', summary: null },
+                { role: 'assistant', content: '', summary: 'Read RELEASE_NOTES.md' },
                 ...(mobileText ? [{ role: 'user', content: mobileText, summary: null }] : []),
                 {
                   role: 'assistant',

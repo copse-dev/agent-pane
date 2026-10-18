@@ -22,7 +22,7 @@ import { isRecord } from '@shared/unknown-value.ts'
  * shared by both ACP roles:
  *
  * - **Agent role** (Copse is driven by an ACP client such as Buzz):
- *   {@link streamChunkToSessionUpdate} turns chunks emitted by the agent loop
+ *   {@link createAgentUpdateTranslator} turns chunks emitted by the agent loop
  *   into updates we notify the client with.
  * - **Client role** (Copse drives an external ACP agent):
  *   {@link sessionUpdateToStreamChunks} turns updates received from the agent
@@ -88,10 +88,38 @@ function shellCommandFromToolArgs(args: unknown): string | null {
   return typeof command === 'string' && command.trim() ? command.trim() : null
 }
 
+/**
+ * Agent-role translator for one prompt turn. ACP v1 has no update that replaces
+ * text a client has already rendered, so `text_replace` (Copse's "replace the
+ * current assistant message") cannot be sent as an append: a client would show
+ * the original and the rewrite back to back. Track the text sent for the
+ * current message and forward only what a v1 client can apply — the extension
+ * when the rewrite keeps the sent prefix, nothing when it would need a
+ * retraction. A tool call or result ends the current message, as it does in the
+ * renderer.
+ */
+export function createAgentUpdateTranslator(): (chunk: StreamChunk) => SessionUpdate | null {
+  let sentText = ''
+  return (chunk) => {
+    if (chunk.type === 'text_replace') {
+      if (!chunk.text.startsWith(sentText)) return null
+      const extension = chunk.text.slice(sentText.length)
+      sentText = chunk.text
+      return extension ? streamChunkToSessionUpdate({ type: 'text', text: extension }) : null
+    }
+    if (chunk.type === 'text') sentText += chunk.text
+    else if (chunk.type === 'tool_call' || chunk.type === 'tool_result') sentText = ''
+    return streamChunkToSessionUpdate(chunk)
+  }
+}
+
+/**
+ * Stateless agent-role mapping. `text_replace` maps to `null` here because it
+ * depends on what was already sent; use {@link createAgentUpdateTranslator}.
+ */
 export function streamChunkToSessionUpdate(chunk: StreamChunk): SessionUpdate | null {
   switch (chunk.type) {
     case 'text':
-    case 'text_replace':
       return {
         sessionUpdate: 'agent_message_chunk',
         content: { type: 'text', text: chunk.text },
