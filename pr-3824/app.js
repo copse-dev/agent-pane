@@ -33830,7 +33830,7 @@ var init_model_catalog_generated = __esm({
       "claude-sonnet-5-5": {
         inputPricePerMTok: 2,
         outputPricePerMTok: 10,
-        cacheReadPricePerMTok: 0.2,
+        cacheReadPricePerMTok: 0.1,
         cacheCreationPricePerMTok: 2.5,
         contextWindow: 1e6,
         maxOutputTokens: 128e3
@@ -50631,7 +50631,7 @@ function createMobileCompanionSection(api2) {
     }
   }
   function pairingKey(state) {
-    return state.pairing ? `${state.pairing.label}:${state.pairing.code}` : null;
+    return state.pairing?.id ?? null;
   }
   function renderPairing(state) {
     const key = pairingKey(state);
@@ -50652,13 +50652,14 @@ function createMobileCompanionSection(api2) {
       controlBtn.toggleAttribute("disabled", !trustInput.checked);
     });
     readBtn.addEventListener("click", () => {
-      void api2.mobile.respondPairing("read");
+      void api2.mobile.respondPairing("read", pairing.code, pairing.id);
     });
     controlBtn.addEventListener("click", () => {
-      if (trustInput.checked) void api2.mobile.respondPairing("control");
+      if (trustInput.checked)
+        void api2.mobile.respondPairing("control", pairing.code, pairing.id, trustInput.checked);
     });
     denyBtn.addEventListener("click", () => {
-      void api2.mobile.respondPairing("deny");
+      void api2.mobile.respondPairing("deny", pairing.code, pairing.id);
     });
     pairingHost.append(
       el(
@@ -50669,7 +50670,7 @@ function createMobileCompanionSection(api2) {
         el(
           "p",
           { class: "field-hint" },
-          "Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold. Allow control opens a desktop confirmation of certificate trust."
+          "Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold. Confirm below that the Copse Local Root is installed and trusted on this phone before allowing control."
         ),
         el(
           "label",
@@ -50703,14 +50704,15 @@ function createMobileCompanionSection(api2) {
         toControlBtn.toggleAttribute("disabled", !trustInput.checked);
       });
       toControlBtn.addEventListener("click", () => {
-        if (trustInput.checked) void api2.mobile.setDeviceAccess(device.id, "control");
+        if (trustInput.checked)
+          void api2.mobile.setDeviceAccess(device.id, "control", trustInput.checked);
       });
       actions.append(
         el(
           "label",
           { class: "checkbox-label mobile-companion-trust-label" },
           trustInput,
-          " Trusted"
+          " The Copse Local Root is installed and trusted on this phone"
         ),
         toControlBtn
       );
@@ -61953,6 +61955,7 @@ var init_tool_display = __esm({
         running: "Presenting visual evidence",
         done: "Presented visual evidence"
       },
+      init_submodules: { running: "Checking out submodules", done: "Checked out submodules" },
       git_status: { running: "Checking git status", done: "Checked git status" },
       git_diff: { running: "Viewing git diff", done: "Viewed git diff" },
       git_log: { running: "Viewing git log", done: "Viewed git log" },
@@ -94985,6 +94988,7 @@ function mountProjectsPane(root, store2, api2) {
   function endDrag() {
     activeDrag = null;
     clearDropIndicators();
+    list.classList.remove(...DROP_CLASSES);
     for (const dragging of list.querySelectorAll(".is-dragging")) {
       dragging.classList.remove("is-dragging");
     }
@@ -95047,6 +95051,10 @@ function mountProjectsPane(root, store2, api2) {
   list.addEventListener("dragover", (e3) => {
     if (!isSidebarDrag(e3.dataTransfer?.types)) return;
     if (activeDrag?.kind !== "project") return;
+    if (e3.target !== list) {
+      list.classList.remove(...DROP_CLASSES);
+      return;
+    }
     e3.preventDefault();
     if (e3.dataTransfer) e3.dataTransfer.dropEffect = "move";
     clearDropIndicators();
@@ -95057,6 +95065,7 @@ function mountProjectsPane(root, store2, api2) {
   });
   list.addEventListener("drop", (e3) => {
     if (!isSidebarDrag(e3.dataTransfer?.types)) return;
+    if (e3.target !== list) return;
     e3.preventDefault();
     const payload = parseSidebarDrag(e3.dataTransfer?.getData(SIDEBAR_DRAG_MIME) ?? "") ?? activeDrag;
     list.classList.remove(...DROP_CLASSES);
@@ -95196,6 +95205,7 @@ function mountProjectsPane(root, store2, api2) {
     return entries2;
   }
   function render2(preserveScroll = false) {
+    endDrag();
     const scrollTop = preserveScroll ? list.scrollTop : 0;
     prBackfillObserver?.disconnect();
     prBackfillObserver = null;
