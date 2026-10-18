@@ -90332,7 +90332,9 @@ function mountTitlebar(root, store2, api2) {
         label: projectDisplayName(project2),
         checked: project2.id === activeProjectId,
         disabled: project2.missing === true,
-        onSelect: () => setSidebarProjectFilter(store2, api2, project2.id)
+        onSelect: () => {
+          setSidebarProjectFilter(store2, api2, project2.id);
+        }
       }))
     );
     if (event.detail === 0) {
@@ -192638,7 +192640,9 @@ function mountCommandPalette(store2, api2) {
       commands.push({
         kind: "command",
         label: "New thread",
-        run: () => openNewProjectThread(store2, api2)
+        run: () => {
+          openNewProjectThread(store2, api2);
+        }
       });
       commands.push({
         kind: "command",
