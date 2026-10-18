@@ -7,6 +7,10 @@ inputs:
   request:
     description: Authorized JSON request containing repository, pr, head and base SHA
     required: true
+outputs:
+  ready:
+    description: Whether the pinned PR was prepared for grounding
+    value: ${{ steps.prepare.outputs.ready }}
 runs:
   using: composite
   steps:
@@ -23,12 +27,14 @@ runs:
         pnpm install --frozen-lockfile --ignore-scripts --filter '@copse/review...'
         echo "COPSE_REVIEWER_ROOT=$reviewer_root" >> "$GITHUB_ENV"
     - name: Prepare pinned source, dependencies and validation image
+      id: prepare
       shell: bash
       env:
         COPSE_REVIEW_REQUEST: ${{ inputs.request }}
         COPSE_REVIEW_PREPARATION: ${{ inputs.preparation }}
       run: node "$COPSE_REVIEWER_ROOT/packages/review/ci/prepare-action.mts"
     - name: Run isolated build and test grounding
+      if: ${{ steps.prepare.outputs.ready == 'true' }}
       shell: bash
       env:
         COPSE_REVIEW_REQUEST: ${{ inputs.request }}
@@ -44,6 +50,7 @@ runs:
           --trusted-prepare "$COPSE_REVIEW_PREPARE" \
           --no-model --json "$RUNNER_TEMP/copse-review-ground/report.json"
     - uses: actions/upload-artifact@v7
+      if: ${{ steps.prepare.outputs.ready == 'true' }}
       with:
         name: copse-review-ground-${{ github.run_id }}-${{ github.run_attempt }}
         path: ${{ runner.temp }}/copse-review-ground/report.json
