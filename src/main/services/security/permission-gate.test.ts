@@ -281,6 +281,18 @@ describe('prepare_worktree permission', () => {
         true,
       )
       assert.equal(prompts, 1)
+      setApprovalHandler(async () => {
+        prompts += 1
+        return { approved: false, remember: false }
+      })
+      assert.equal(
+        await ensureToolPermitted(
+          { toolName: 'prepare_worktree', args: { offline: false, planFingerprint } },
+          new AbortController().signal,
+        ),
+        false,
+      )
+      assert.equal(prompts, 2)
       writeFileSync(join(root, 'package.json'), '{"packageManager":"npm@11.20.0"}')
       await assert.rejects(
         ensureToolPermitted(
@@ -289,7 +301,7 @@ describe('prepare_worktree permission', () => {
         ),
         /plan changed/,
       )
-      assert.equal(prompts, 1)
+      assert.equal(prompts, 2)
     } finally {
       setApprovalHandler(null)
       setWorkspaceRootForTest(null)
