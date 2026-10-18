@@ -300,6 +300,10 @@
     "label": "A capable model’s turn on a profile with no stored setting"
   },
   {
+    "id": "concise-state-recovery-layout",
+    "label": "Interrupted turn with a long fallback model name"
+  },
+  {
     "id": "concise-state-failed",
     "label": "A turn that failed partway"
   },
