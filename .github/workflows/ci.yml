@@ -305,10 +305,25 @@ jobs:
         env:
           # PR/queue base; previous tip on push. Empty for schedule.
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           # The branch the change lands on (`main` or `release`).
           TARGET_REF: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref_name }}
         run: |
           set -euo pipefail
+          # A PR event can retain an older base.sha even though checkout tests
+          # a newer refs/pull/N/merge. Compare the actual merge's first parent,
+          # after proving its second parent is this event's expected PR head.
+          # Otherwise unrelated changes already on main look like PR API breaks.
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            parents=$(git show -s --format=%P HEAD)
+            read -r merge_base merge_head extra_parent <<< "$parents"
+            if [ -z "$merge_base" ] || [ -z "$merge_head" ] || [ -n "$extra_parent" ] ||
+               [ "$merge_head" != "${PR_HEAD_SHA:-}" ]; then
+              echo "::error::Expected a two-parent PR merge with the event head as its second parent."
+              exit 1
+            fi
+            BASE_SHA="$merge_base"
+          fi
           # No usable base (schedule, first push, branch create) -> nothing to
           # compare against. Skipping here is safe: the PR that introduces a
           # change always has one.
