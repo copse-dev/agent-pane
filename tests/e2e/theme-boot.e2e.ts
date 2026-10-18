@@ -68,6 +68,11 @@ describe('theme boot before first paint (#41)', () => {
     await $('#file-tree-host .file-tree').waitForDisplayed({ timeout: 30_000 })
     await $('#file-tree-host .tree-row').waitForExist({ timeout: 30_000 })
     await waitForImagesSettled('#file-tree-host', { minImages: 1 })
+    // The context view mounts independently of the explorer after Monaco loads.
+    // A populated file tree can still leave that half of the popout unpainted.
+    const emptyState = $('#file-viewer .panel-empty')
+    await expect(emptyState).toBeDisplayed({ wait: 30_000 })
+    await expect(emptyState).toHaveText('Open a file or run a task to see content here')
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'theme-boot-popout-light.png'))
 
     await browser.closeWindow()
