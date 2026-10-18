@@ -64,7 +64,8 @@ const DEMO_TOOL_PERMISSIONS: ToolPermissionCatalog = {
           id: 'copse:run-shell',
           executionName: 'run_shell',
           name: 'Run shell command',
-          description: 'Run a command in the project sandbox.',
+          description:
+            'Run a command in the project sandbox.\n\nUse `run_shell` for tests and builds; use the dedicated file tools for inspection and edits.\n\n- Commands run in the active workspace.\n- Commands that need external access may require approval.\n\n```sh\npnpm test\n```',
           policy: 'ask',
           defaultPolicy: 'ask',
           overridden: true,

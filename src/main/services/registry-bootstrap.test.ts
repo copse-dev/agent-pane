@@ -25,8 +25,12 @@ import { refreshSkillsRegistry, setSkillsForTest } from './skills/skills-registr
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { deleteApiKey, setApiKey, setSetting } from './storage/settings.test-shim.ts'
 import { setGhAvailableForTest } from './tool-availability.ts'
-import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import {
+  getDefaultPluginRegistry,
+  setDefaultPluginRegistry,
+} from '@copse/agent/plugins/default-plugin-registry.ts'
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
+import { BRIDGE_TOOL_NAMES } from './acp/acp-native-bridge.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
 import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import {
@@ -506,5 +510,90 @@ describe('pluginEnableRefusal', () => {
     deleteApiKey('parallel')
     assert.equal(pluginEnableRefusal(PARALLEL_SEARCH_PLUGIN_ID, false), null)
     assert.equal(pluginEnableRefusal(OKF_MEMORIES_PLUGIN_ID, true), null)
+  })
+})
+
+describe('ACP bridge exposure decisions', () => {
+  afterEach(() => {
+    setSetting('modelClassifierEnabled', false)
+    setSetting('orchestrationStrategyEnabled', false)
+    deleteApiKey('openai')
+    setGhAvailableForTest(null)
+    setDefaultPluginRegistry(null)
+  })
+
+  it('classifies every registered core tool as bridged or deliberately native-only', () => {
+    setDefaultPluginRegistry(createFirstPartyPluginRegistry())
+    setSetting('modelClassifierEnabled', true)
+    setSetting('orchestrationStrategyEnabled', true)
+    setApiKey('openai', 'test-key')
+    setGhAvailableForTest(true)
+    const registry = createRegistry()
+    const pluginTools = new Set(
+      getDefaultPluginRegistry()
+        .all()
+        .flatMap((plugin) => plugin.contributions.toolNames),
+    )
+    // These need native-loop state, an explicit per-turn offering condition,
+    // or a separate exposure review because they access user data or spend money.
+    const nativeOnly = new Set([
+      'ask_user',
+      'explore',
+      'investigate_ci',
+      'delegate_step',
+      'update_todos',
+      'update_thread_plan',
+      'report_plan_completion',
+      'read_skill',
+      'request_write_access',
+      'prepare_worktree',
+      'read_terminal',
+      'run_checkup',
+      'image_gen',
+      // Publishing a branch is a separate external effect, so it needs an
+      // explicit bridge exposure decision.
+      'gh_push',
+      // The bridge returns text/images and would drop this tool's
+      // visualEvidence payload instead of publishing the durable artifact.
+      'present_visual_evidence',
+    ])
+    const undecided = registry
+      .names()
+      .filter(
+        (name) =>
+          !name.startsWith('mcp__') &&
+          !pluginTools.has(name) &&
+          !BRIDGE_TOOL_NAMES.includes(name) &&
+          !nativeOnly.has(name),
+      )
+    assert.deepEqual(undecided, [], 'review ACP exposure when adding a core tool')
+    for (const name of nativeOnly) {
+      assert.ok(!BRIDGE_TOOL_NAMES.includes(name), `${name} must stay out of the ACP bridge`)
+    }
+  })
+
+  it('classifies every first-party plugin tool for ACP exposure', () => {
+    const plugins = createFirstPartyPluginRegistry().all()
+    const nativeOnly = new Set([
+      'investigate_ci',
+      'reveal_pii',
+      'review_changes',
+      'track_long_task',
+      'remember',
+      'recall',
+      'update_todos',
+      'roadmap_plan',
+    ])
+    const undecided = plugins.flatMap((plugin) =>
+      (plugin.manifest.tools?.native ?? [])
+        .filter(
+          (name) =>
+            !BRIDGE_TOOL_NAMES.includes(name) &&
+            !plugin.manifest.tools?.acpTools?.includes(name) &&
+            !nativeOnly.has(name),
+        )
+        .map((name) => `${plugin.id}:${name}`),
+    )
+    assert.deepEqual(undecided, [], 'review ACP exposure when adding a first-party plugin tool')
   })
 })
