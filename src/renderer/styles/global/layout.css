@@ -708,6 +708,14 @@
 .chat-row:focus-within .chat-menu-btn {
   opacity: 1;
 }
+/* Same footprint as `.chat-menu-btn`, on a row with no menu button of its own
+   (a thread from a project other than the active one) — see the "else" branch
+   in `renderThreadRow`. */
+.chat-menu-btn-space {
+  flex-shrink: 0;
+  width: var(--projects-action-size);
+  height: var(--projects-action-size);
+}
 /* A single-run automation row (#2511) has no schedule heading of its own to
    carry `.automation-setup-btn`, so it sits directly on the row — same quiet
    reveal as the menu button beside it. */
@@ -769,6 +777,16 @@
   align-items: center;
   margin-left: var(--spacing-xs);
   color: var(--text-muted);
+}
+/* Lucide's git-branch puts its two nodes top-right/bottom-left; git-pull-request and
+   git-merge put theirs top-left/bottom-right. Flush against the same trailing edge
+   as a PR icon, that reads as a shift rather than a different glyph. Flipping
+   vertically lands git-branch's nodes on git-pull-request's exact coordinates
+   (its (18,9)/(6,21) mirror to (18,15)/(6,3)), so the column reads as one
+   consistent mark regardless of which status is showing — see docs/ui-taste.md
+   -> "Align trailing row icons". */
+.chat-changes-status svg {
+  transform: scaleY(-1);
 }
 .chat-pr-status.is-open {
   color: var(--accent);
