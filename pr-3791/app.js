@@ -30415,11 +30415,15 @@ function createClassifiersSection(api2) {
         api2.classifiers.list(),
         api2.classifiers.screening(),
         api2.classifiers.background(),
-        api2.toolPermissions.list()
+        api2.toolPermissions.list().then(
+          (catalog) => ({ catalog, error: null }),
+          (error62) => ({ catalog: null, error: classifierErrorMessage(error62) })
+        )
       ]);
       if (signal?.aborted || request !== refreshGeneration) return;
       [profiles, screeningId, backgroundId] = loaded;
-      const classifierTool = loaded[3].groups.flatMap((group) => group.tools).find((tool) => tool.executionName === "ask_classifier");
+      const permissionResult = loaded[3];
+      const classifierTool = permissionResult.catalog?.groups.flatMap((group) => group.tools).find((tool) => tool.executionName === "ask_classifier");
       classifierToolPermissionId = classifierTool?.id ?? null;
       askBeforeHosted.checked = classifierTool?.policy === "ask";
       askBeforeHosted.disabled = classifierTool === void 0 || classifierTool.policy === "block";
@@ -30428,6 +30432,7 @@ function createClassifiersSection(api2) {
       if (selectedId !== null && !drafts.has(selectedId) && !profiles.some((item) => item.profile.id === selectedId))
         selectedId = null;
       render2();
+      if (permissionResult.error !== null) setInlineStatus(status, "error", permissionResult.error);
     } catch (error62) {
       if (signal?.aborted || request !== refreshGeneration) return;
       setInlineStatus(status, "error", classifierErrorMessage(error62));
@@ -94901,6 +94906,7 @@ function mountProjectsPane(root, store2, api2) {
   function endDrag() {
     activeDrag = null;
     clearDropIndicators();
+    list.classList.remove(...DROP_CLASSES);
     for (const dragging of list.querySelectorAll(".is-dragging")) {
       dragging.classList.remove("is-dragging");
     }
@@ -94963,6 +94969,10 @@ function mountProjectsPane(root, store2, api2) {
   list.addEventListener("dragover", (e3) => {
     if (!isSidebarDrag(e3.dataTransfer?.types)) return;
     if (activeDrag?.kind !== "project") return;
+    if (e3.target !== list) {
+      list.classList.remove(...DROP_CLASSES);
+      return;
+    }
     e3.preventDefault();
     if (e3.dataTransfer) e3.dataTransfer.dropEffect = "move";
     clearDropIndicators();
@@ -94973,6 +94983,7 @@ function mountProjectsPane(root, store2, api2) {
   });
   list.addEventListener("drop", (e3) => {
     if (!isSidebarDrag(e3.dataTransfer?.types)) return;
+    if (e3.target !== list) return;
     e3.preventDefault();
     const payload = parseSidebarDrag(e3.dataTransfer?.getData(SIDEBAR_DRAG_MIME) ?? "") ?? activeDrag;
     list.classList.remove(...DROP_CLASSES);
@@ -95112,6 +95123,7 @@ function mountProjectsPane(root, store2, api2) {
     return entries2;
   }
   function render2(preserveScroll = false) {
+    endDrag();
     const scrollTop = preserveScroll ? list.scrollTop : 0;
     prBackfillObserver?.disconnect();
     prBackfillObserver = null;
