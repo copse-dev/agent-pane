@@ -1001,6 +1001,10 @@
       "sha256": "1e0c3d0aa96b2e0a733a96eb4dc637f18cc1becb965d4554305630cc0d8b93d7",
       "bytes": 252639
     },
+    "chatgpt-callback.png": {
+      "sha256": "5aae78a15e0b9ee9218ffe15d3a36f2fe783587f95aca0452a6bd6bae6ee95b2",
+      "bytes": 41049
+    },
     "chatgpt-plan-account-options.png": {
       "sha256": "ebe1eb0d9cff3583257054a3e617b78fa150d7509cf5d10fb4afd3cbd48eec7d",
       "bytes": 21089
