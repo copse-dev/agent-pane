@@ -340,7 +340,7 @@ describe('ci.yml workflow invariants', () => {
   })
 
   it('forces promotion PRs through full e2e before consulting the oracle', () => {
-    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- name: Plan reference)/)?.[0]
+    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- (?:name|id):)/)?.[0]
     assert.ok(planStep, 'expected the e2e planning step in ci.yml')
     assert.match(
       planStep,
@@ -468,7 +468,7 @@ describe('ci.yml workflow invariants', () => {
     // pin the unit tier to `full`. A branch that emits only `mode=` would leave
     // `unit_mode` empty — safe today because `check` falls through to the full
     // suite, but the pin keeps that from being load-bearing by accident.
-    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- name: Plan reference)/)?.[0]
+    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- (?:name|id):)/)?.[0]
     assert.ok(planStep, 'expected the plan step in ci.yml')
     const emits = planStep.match(/echo "mode=(?:full|subset|skip)"/g) ?? []
     const unitEmits = planStep.match(/echo "unit_mode=full"/g) ?? []
@@ -479,7 +479,7 @@ describe('ci.yml workflow invariants', () => {
     )
     assert.match(
       planStep,
-      /grep -E '\^\(mode\|specs\|unit_mode\|unit_specs\)=' plan\.txt/,
+      /grep -E '\^\(mode\|specs\|unit_mode\|unit_specs\)=' "\$plan_file"/,
       'the oracle path must forward the unit plan to $GITHUB_OUTPUT',
     )
   })
@@ -632,7 +632,7 @@ describe('ci.yml workflow invariants', () => {
     const precheck = jobBlock('precheck')
     const binding =
       'BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}'
-    assert.equal(precheck.split(binding).length - 1, 3)
+    assert.equal(precheck.split(binding).length - 1, 4) // includes the advisory shadow comparison
     const plan = precheck.slice(precheck.indexOf('- id: plan'))
     assert.match(plan, /HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/)
     assert.doesNotMatch(plan, /HEAD_SHA: [^\n]*merge_group/)
@@ -640,7 +640,7 @@ describe('ci.yml workflow invariants', () => {
   })
 
   it('keeps main queue oracle selection and forces full release queue plans', () => {
-    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- name: Plan reference)/)?.[0]
+    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- (?:name|id):)/)?.[0]
     assert.ok(planStep)
     const script = planStep.slice(planStep.indexOf('        run: |\n') + '        run: |\n'.length)
     for (const base of ['main', 'release']) {
@@ -668,6 +668,7 @@ describe('ci.yml workflow invariants', () => {
               CI_FULL_LABEL: 'false',
               GITHUB_OUTPUT: output,
               GITHUB_STEP_SUMMARY: join(root, 'summary'),
+              RUNNER_TEMP: root,
               TRACE: trace,
             },
           },
@@ -688,6 +689,94 @@ describe('ci.yml workflow invariants', () => {
       } finally {
         rmSync(root, { recursive: true, force: true })
       }
+    }
+  })
+
+  it('compares PR protocols with the tested merge parent, not a stale event base', () => {
+    const root = mkdtempSync(join(tmpdir(), 'copse-ci-protocol-base-'))
+    const git = (...args: string[]): string => {
+      const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' })
+      assert.equal(result.status, 0, result.stderr)
+      return result.stdout.trim()
+    }
+    try {
+      git('init', '-b', 'main')
+      git('config', 'user.name', 'CI fixture')
+      git('config', 'user.email', 'ci@example.invalid')
+      git('config', 'commit.gpgsign', 'false')
+      git('commit', '--allow-empty', '-m', 'event base')
+      const staleBase = git('rev-parse', 'HEAD')
+      git('switch', '-c', 'feature')
+      writeFileSync(join(root, 'feature'), 'PR change')
+      git('add', 'feature')
+      git('commit', '-m', 'feature')
+      const head = git('rev-parse', 'HEAD')
+      git('switch', 'main')
+      writeFileSync(join(root, 'base'), 'new base surface')
+      git('add', 'base')
+      git('commit', '-m', 'base advanced')
+      const testedBase = git('rev-parse', 'HEAD')
+      git('merge', '--no-ff', 'feature', '-m', 'tested PR merge')
+
+      const step = jobBlock('precheck').split('- name: API protocol compatibility')[1]
+      const runBlock = step?.match(/run: \|\n([\s\S]*?)(?=\n {6}#|\n {6}-)/)?.[1]
+      assert.ok(runBlock)
+      // Exercise the real base-selection shell with real Git topology, without
+      // depending on network release discovery or the host's Bash array rules.
+      const selection = runBlock.split('          # No usable base')[0]
+      assert.ok(selection)
+      const script = `${selection}\nnode scripts/gen-api-protocol.mts --compare-ref "$BASE_SHA"`
+      const run = (
+        expectedHead: string,
+        event = 'pull_request',
+        failComparison = false,
+      ): SpawnSyncReturns<string> =>
+        spawnSync(
+          'bash',
+          [
+            '-eu',
+            '-c',
+            `node() { printf 'PROTOCOL:%s:%s:%s\\n' "$1" "$2" "$3"; return ${failComparison ? '1' : '0'}; }\n${script}`,
+          ],
+          {
+            cwd: root,
+            encoding: 'utf8',
+            env: {
+              ...process.env,
+              BASE_SHA: staleBase,
+              PR_HEAD_SHA: expectedHead,
+              TARGET_REF: 'main',
+              GITHUB_EVENT_NAME: event,
+            },
+          },
+        )
+
+      const fresh = run(head)
+      assert.equal(fresh.status, 0, fresh.stderr)
+      assert.ok(fresh.stdout.includes(`--compare-ref:${testedBase}`), fresh.stdout)
+      assert.ok(!fresh.stdout.includes(`--compare-ref:${staleBase}`))
+
+      const wrongHead = run(staleBase)
+      assert.equal(wrongHead.status, 1)
+      assert.match(wrongHead.stdout, /Expected a two-parent PR merge/)
+      assert.doesNotMatch(wrongHead.stdout, /PROTOCOL:/)
+      assert.equal(
+        run(head, 'pull_request', true).status,
+        1,
+        'compatibility failures stay blocking',
+      )
+
+      const push = run(head, 'push')
+      assert.equal(push.status, 0, push.stderr)
+      assert.ok(push.stdout.includes(`--compare-ref:${staleBase}`))
+
+      git('checkout', '--detach', head)
+      const notMerge = run(head)
+      assert.equal(notMerge.status, 1)
+      assert.match(notMerge.stdout, /Expected a two-parent PR merge/)
+      assert.doesNotMatch(notMerge.stdout, /PROTOCOL:/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 

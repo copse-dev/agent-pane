@@ -128,7 +128,14 @@ function authFixture(
           bad.searchParams.set('state', 'unsolicited')
           assert.equal((await fetch(bad)).status, 400)
         }
-        assert.equal((await fetch(callback)).status, 200)
+        const callbackResponse = await fetch(callback)
+        assert.equal(callbackResponse.status, 200)
+        assert.match(callbackResponse.headers.get('content-type') ?? '', /text\/html/)
+        assert.equal(callbackResponse.headers.get('cache-control'), 'no-store')
+        const callbackPage = await callbackResponse.text()
+        assert.match(callbackPage, /ChatGPT authorization received · Copse/)
+        assert.match(callbackPage, /Return to Copse to finish connecting/)
+        assert.doesNotMatch(callbackPage, /one-time-code/)
       },
       fetch: async (input, init): Promise<Response> => {
         const url =

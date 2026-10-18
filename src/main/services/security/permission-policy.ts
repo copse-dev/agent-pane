@@ -34,6 +34,8 @@ export const SANDBOX_TOOLS = new Set([
   'gh_pr_list',
   'gh_pr_view',
   'read_terminal',
+  // Offline copy of already-initialised submodules into the thread's own worktree.
+  'init_submodules',
 ])
 
 /**
