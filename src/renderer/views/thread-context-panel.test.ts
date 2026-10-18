@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import { createStore } from '@shared/store/store.ts'
 import type { ForkedHistoryResult } from '@shared/types'
 import type { ThreadBacklink } from '@shared/threads/thread-links.ts'
+import type { DeferredApproval } from '@shared/threads/deferred-approval.ts'
 import { addMessage, createThread } from '@shared/store/thread-helpers.ts'
 import type { ThreadContextModel } from './thread-context-model.ts'
 import {
@@ -12,6 +13,7 @@ import {
   type ThreadContextHandlers,
 } from './thread-context-panel.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import type { AskUserRequests, PendingQuestionSummary } from './ask-user-dialog.ts'
 
 const pr = {
   owner: 'acme',
@@ -213,6 +215,105 @@ test('the mounted pane renders the active thread, uses one header, and starts a 
   )
   list.querySelector<HTMLElement>('[aria-label="Close context"]')?.click()
   assert.equal(store.getState().filesPaneOpen, false)
+  dispose()
+})
+
+test('Context shows saved questions and deferred actions without implying approval', async () => {
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'p',
+    projects: [{ id: 'p', path: '/work', name: 'Work' }],
+    filesPaneOpen: true,
+    rightPanelMode: 'context',
+  })
+  const threadId = createThread(store)
+  store.setState({
+    threads: store.getState().threads.map((thread) =>
+      thread.id === threadId
+        ? {
+            ...thread,
+            messages: [
+              {
+                id: 'message-1',
+                role: 'assistant',
+                content: '',
+                createdAt: 1,
+                toolCalls: [
+                  {
+                    id: 'question-1',
+                    name: 'request_review_input',
+                    status: 'done',
+                    result: 'Saved',
+                    args: { question: 'Which branch?', context: 'Pick a branch.' },
+                  },
+                ],
+              },
+            ],
+          }
+        : thread,
+    ),
+  })
+  const deferred: DeferredApproval = {
+    v: 1,
+    id: 'approval-1',
+    at: 1,
+    status: 'pending',
+    threadId,
+    kind: 'shell',
+    title: 'Run git fetch',
+    subject: 'git fetch',
+  }
+  const base = createFakeApi()
+  const api = {
+    ...base,
+    threads: {
+      ...base.threads,
+      pendingApprovals: async (): Promise<DeferredApproval[]> => [deferred],
+    },
+  }
+  const opened: string[] = []
+  store.on('reviewer_input_open', (id) => opened.push(id))
+  let live: PendingQuestionSummary[] = [
+    {
+      id: 'live-1',
+      threadId,
+      questions: ['Continue with the release?'],
+      options: [['Yes', 'No']],
+      receivedAt: 1,
+    },
+  ]
+  let changed: (() => void) | undefined
+  const liveQuestions: AskUserRequests = {
+    pending: () => live,
+    answer: () => false,
+    onChange: (listener) => {
+      changed = listener
+      return () => {
+        changed = undefined
+      }
+    },
+  }
+  const viewer = document.createElement('div')
+  const dispose = mountThreadContextPane(
+    document.createElement('div'),
+    viewer,
+    store,
+    api,
+    liveQuestions,
+  )
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const requests = viewer.querySelector('[data-context-section="requests"]')
+  assert.ok(requests)
+  assert.match(requests.textContent, /Which branch\?/)
+  assert.match(requests.textContent, /Continue with the release\?/)
+  assert.match(requests.textContent, /Run git fetch/)
+  assert.match(requests.textContent, /Not run/)
+  assert.equal(requests.querySelectorAll('button').length, 2)
+  requests.querySelector<HTMLElement>('[data-reviewer-input-id="question-1"]')?.click()
+  assert.deepEqual(opened, ['question-1'])
+  live = []
+  changed?.()
+  assert.equal(viewer.querySelector('[data-agent-question-id="live-1"]'), null)
   dispose()
 })
 

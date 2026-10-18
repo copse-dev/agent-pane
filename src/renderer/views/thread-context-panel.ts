@@ -10,6 +10,8 @@ import {
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
+import type { DeferredApproval } from '@shared/threads/deferred-approval.ts'
+import { reviewerInputAnswer, reviewerInputRequests } from '@shared/threads/reviewer-input.ts'
 import {
   archiveThread,
   getActiveThread,
@@ -20,6 +22,8 @@ import { openBrowserUrl, openPullRequest, toggleFilesPane } from '../controller/
 import { startSideChat } from '../controller/side-chat.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
+import { openActivityPanel } from './activity-panel.ts'
+import type { AskUserRequests } from './ask-user-dialog.ts'
 import { deriveThreadContext, type ThreadContextModel } from './thread-context-model.ts'
 
 /** A compact, single-column overview of the active thread. */
@@ -35,9 +39,10 @@ export interface ThreadContextHandlers {
   restoreSideChat: (threadId: string) => void
 }
 
-type ContextSection = 'repos' | 'side-chats' | 'links' | 'subagents' | 'sources'
+type ContextSection = 'requests' | 'repos' | 'side-chats' | 'links' | 'subagents' | 'sources'
 
 const SECTION_TITLES: Record<ContextSection, string> = {
+  requests: 'Needs your input',
   repos: 'Access',
   'side-chats': 'Side chats',
   links: 'Links & references',
@@ -337,6 +342,7 @@ export function mountThreadContextPane(
   viewerRoot: HTMLElement,
   store: AppStore,
   api: ApiClient,
+  liveQuestions?: AskUserRequests,
 ): () => void {
   const close = el(
     'button',
@@ -367,6 +373,10 @@ export function mountThreadContextPane(
   let changesKey = ''
   let changesText = 'Calculating…'
   let changeStats: { additions: number; deletions: number } | null = null
+  let approvals: DeferredApproval[] = []
+  let approvalsKey = ''
+  let approvalsToken = 0
+  let approvalsError = false
   let disposed = false
 
   function activeStorageKey(): string {
@@ -488,6 +498,81 @@ export function mountThreadContextPane(
       mentionedIn: mentionedFor === thread.id ? mentionedIn : [],
     })
     const content = renderThreadContext(model, handlers)
+    const questions = reviewerInputRequests(thread).filter(
+      (request) => !reviewerInputAnswer(thread.reviewerInputAnswers, request.id),
+    )
+    const agentQuestions =
+      liveQuestions?.pending().filter((request) => request.threadId === thread.id) ?? []
+    const pending = approvalsKey === activeStorageKey() ? approvals : []
+    const requestRows: HTMLElement[] = agentQuestions.map((request) => {
+      const button = rowButton(
+        { 'data-agent-question-id': request.id },
+        el(
+          'span',
+          { class: 'thread-context-main' },
+          el(
+            'span',
+            { class: 'thread-context-title', title: request.questions.join(' · ') },
+            request.questions.join(' · '),
+          ),
+          el('span', { class: 'thread-context-sub' }, 'Agent question · Answer in Activity'),
+        ),
+      )
+      button.addEventListener('click', openActivityPanel)
+      return button
+    })
+    requestRows.push(
+      ...questions.map((request) => {
+        const button = rowButton(
+          { 'data-reviewer-input-id': request.id },
+          el(
+            'span',
+            { class: 'thread-context-main' },
+            el(
+              'span',
+              { class: 'thread-context-title', title: request.question },
+              request.question,
+            ),
+            el('span', { class: 'thread-context-sub' }, 'Question · Open to answer'),
+          ),
+        )
+        button.addEventListener('click', () => {
+          store.emit('reviewer_input_open', request.id)
+        })
+        return button
+      }),
+    )
+    requestRows.push(
+      ...pending.map((request) =>
+        el(
+          'div',
+          { class: 'thread-context-row', 'data-deferred-approval-id': request.id },
+          el(
+            'span',
+            { class: 'thread-context-main' },
+            el('span', { class: 'thread-context-title', title: request.title }, request.title),
+            el(
+              'span',
+              { class: 'thread-context-sub' },
+              `Approval needed · Not run · ${request.subject}`,
+            ),
+          ),
+        ),
+      ),
+    )
+    const requestSection = section(
+      'requests',
+      requestRows.length
+        ? el('div', { class: 'thread-context-rows' }, ...requestRows)
+        : emptyNote(
+            approvalsError && approvalsKey === activeStorageKey()
+              ? 'Approval requests unavailable.'
+              : approvalsKey === activeStorageKey()
+                ? 'Nothing waiting.'
+                : 'Checking requests…',
+          ),
+    )
+    content.querySelector('[data-context-section="subagents"]')?.before(requestSection)
     const archive = el(
       'button',
       {
@@ -543,6 +628,7 @@ export function mountThreadContextPane(
   /** Backlinks come from the index; ignore an answer for a thread since closed. */
   async function refreshMentions(): Promise<void> {
     void refreshStorage()
+    void refreshApprovals()
     const thread = getActiveThread(store)
     const projectId = store.getState().activeProjectId
     if (!thread || !projectId) return
@@ -559,7 +645,36 @@ export function mountThreadContextPane(
     if (contextModeActive(store)) render()
   }
 
+  async function refreshApprovals(): Promise<void> {
+    const thread = getActiveThread(store)
+    const projectId = store.getState().activeProjectId
+    if (!thread || !projectId) return
+    const mine = ++approvalsToken
+    const key = activeStorageKey()
+    approvalsKey = ''
+    approvalsError = false
+    try {
+      const rows = await api.threads.pendingApprovals(projectId, thread.id)
+      if (disposed || mine !== approvalsToken || key !== activeStorageKey()) return
+      approvals = rows
+    } catch (error) {
+      if (disposed || mine !== approvalsToken || key !== activeStorageKey()) return
+      console.error('[context] pending approvals lookup failed:', error)
+      approvals = []
+      approvalsError = true
+    }
+    approvalsKey = key
+    if (contextModeActive(store)) render()
+  }
+
   const offs = [
+    ...(liveQuestions
+      ? [
+          liveQuestions.onChange(() => {
+            if (contextModeActive(store)) render()
+          }),
+        ]
+      : []),
     store.on('right_panel_mode_changed', () => {
       if (!contextModeActive(store)) return
       render()
@@ -584,6 +699,8 @@ export function mountThreadContextPane(
     }),
     store.on('workspace_changed', () => {
       mentionedFor = null
+      approvalsKey = ''
+      approvalsToken++
       storageKey = ''
       changesKey = ''
       changesToken++
@@ -604,6 +721,7 @@ export function mountThreadContextPane(
     token++
     storageToken++
     changesToken++
+    approvalsToken++
     for (const off of offs) off()
   }
 }

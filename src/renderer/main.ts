@@ -695,6 +695,7 @@ function mountFullLayout(): void {
     requireElement('context-viewer-host'),
     store,
     api,
+    activitySources?.questions,
   )
   mountSideChatPane(
     requireElement('side-chat-host'),

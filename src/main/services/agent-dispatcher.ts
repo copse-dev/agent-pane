@@ -43,9 +43,13 @@ import {
 } from './thread-store.ts'
 import type { ToolRegistry } from './tool-registry.ts'
 import { perfMark } from './diagnostics/perf-trace.ts'
+import { getAutomationService } from './automations/automation-service.ts'
+import { beginDeferralMode, endDeferralMode } from './security/deferral-mode.ts'
 
 export interface AgentDispatchPayload {
   userContent: UserContent
+  /** Renderer claim, corroborated against the main-owned schedule run record. */
+  automationRun?: true
   executionMode?: 'agent'
   invokedSkills: string[]
   /** Subagent the user invoked with `/name` this turn. */
@@ -116,6 +120,7 @@ export interface AgentDispatcherDependencies {
     registry: ToolRegistry,
     options: RunAgentOptions,
   ) => ReturnType<typeof runAgent>
+  isScheduledAutomationRun: (context: ThreadExecutionContext) => boolean
 }
 
 async function threadTranscriptLength(projectId: string, threadId: string): Promise<number> {
@@ -148,6 +153,9 @@ const defaultDependencies: AgentDispatcherDependencies = {
   now: Date.now,
   createId: randomUUID,
   prepareExecutionContext: prepareThreadExecutionContext,
+  isScheduledAutomationRun: (context) =>
+    context.automation !== undefined &&
+    getAutomationService().ownsRunThread(context.projectId, context.threadId, context.automation),
   transcriptLength: threadTranscriptLength,
   run: runAgent,
 }
@@ -706,6 +714,14 @@ export class AgentDispatcher {
           host.emit(threadId, { type: 'thread_checkout', prepared })
         })
       : null
+    // The first turn of a schedule-created thread runs without a person waiting
+    // at the approval dialog. Keep the normal interactive path for later turns
+    // the user sends to that same thread.
+    const deferApprovals =
+      payload.automationRun === true &&
+      !priorMessages.some((message) => message.role === 'assistant' || message.role === 'tool') &&
+      this.dependencies.isScheduledAutomationRun(executionContext)
+    if (deferApprovals) beginDeferralMode(threadId)
     try {
       result = await runWithThreadExecutionContext(executionContext, () =>
         runWithThreadPlan(plan, () =>
@@ -722,6 +738,7 @@ export class AgentDispatcher {
         ),
       )
     } finally {
+      if (deferApprovals) endDeferralMode(threadId)
       stopCheckoutForwarding?.()
       if (executionContext.deferredWorktree) releaseUpgradedThreadExecutionContext(executionContext)
       // Drain before the commit below so no checkpoint can land on top of the

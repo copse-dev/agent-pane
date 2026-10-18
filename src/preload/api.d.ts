@@ -714,6 +714,10 @@ export interface ApiClient {
       kind: 'url' | 'thread',
       target: string,
     ) => Promise<import('@shared/threads/thread-links.ts').ThreadBacklink[]>
+    pendingApprovals: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/threads/deferred-approval.ts').DeferredApproval[]>
     historySnapshot: (
       projectId: string,
       threadId: string,

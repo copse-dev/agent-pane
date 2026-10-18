@@ -99,6 +99,9 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // executor and need no native-loop state. Preparation itself still requires
   // the host's separate install approval, so it is not offered here.
   'preflight_worktree',
+  // A deferred request is thread-owned; the bridge restores the same thread
+  // execution context before invoking this read-only status tool.
+  'deferred_approval_status',
   'suggest_model',
   // Saved decision classifiers run through Copse's permission and provider gates.
   'ask_classifier',

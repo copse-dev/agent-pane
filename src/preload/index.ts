@@ -919,6 +919,8 @@ const api: ApiClient = {
       ),
     backlinks: (projectId: string, kind: 'url' | 'thread', target: string) =>
       ipcRenderer.invoke('threads:backlinks', projectId, kind, target),
+    pendingApprovals: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('threads:pending-approvals', projectId, threadId),
     historySnapshot: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:history-snapshot', projectId, threadId),
     editHistory: (

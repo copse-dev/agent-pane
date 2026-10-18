@@ -132,6 +132,7 @@ test('a cron trigger submits its prompt as a new root agent turn', async () => {
   assert.ok(isRecord(payload))
   assert.equal(payload['content'], 'Review CI and report any failures.')
   assert.equal(payload['model'], 'mock-model')
+  assert.equal(payload['automationRun'], true)
   assert.equal(typeof payload['turnTreeId'], 'string')
   assert.equal(payload['continuationBudgetUsed'], 0)
 

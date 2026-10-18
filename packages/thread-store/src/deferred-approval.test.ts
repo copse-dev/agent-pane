@@ -40,7 +40,11 @@ function entry(overrides: Partial<DeferredApproval> = {}): DeferredApproval {
 }
 
 describe('deferredApprovalMessage', () => {
-  const message = deferredApprovalMessage({ title: 'Run outside sandbox?', reasons: ['git push'] })
+  const message = deferredApprovalMessage({
+    id: 'id-1',
+    title: 'Run outside sandbox?',
+    reasons: ['git push'],
+  })
 
   it('says plainly that the action did not run', () => {
     assert.match(message, /not run/i)
@@ -48,13 +52,15 @@ describe('deferredApprovalMessage', () => {
   })
 
   it('names what was queued, and why', () => {
+    assert.match(message, /request id-1/)
     assert.match(message, /Run outside sandbox\?/)
     assert.match(message, /git push/)
   })
 
   it('redirects rather than inviting a retry — the loop risk this wording exists to avoid', () => {
-    assert.match(message, /continue with the other parts/i)
+    assert.match(message, /Continue independent work/i)
     assert.match(message, /Do not retry/i)
+    assert.match(message, /existing permissions/i)
     // Must not read as failure-worth-retrying, nor as success.
     assert.doesNotMatch(message, /try again/i)
     assert.doesNotMatch(message, /\bdone\b/i)
@@ -62,7 +68,7 @@ describe('deferredApprovalMessage', () => {
   })
 
   it('omits the parenthetical when there are no reasons', () => {
-    const bare = deferredApprovalMessage({ title: 'Allow web origin?' })
+    const bare = deferredApprovalMessage({ id: 'id-2', title: 'Allow web origin?' })
     assert.match(bare, /Allow web origin\?\. /)
   })
 })
