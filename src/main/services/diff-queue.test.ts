@@ -1007,7 +1007,10 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
     assert.equal(peakReads, 8)
     assert.deepEqual([...baseline.keys()], fileNames)
     for (const [index, name] of fileNames.entries()) {
-      assert.equal(baseline.get(name), `changed ${String(index)}\n`)
+      assert.deepEqual(baseline.get(name), {
+        fingerprint: `changed ${String(index)}\n`,
+        content: `changed ${String(index)}\n`,
+      })
     }
   })
 

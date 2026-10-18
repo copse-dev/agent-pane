@@ -62,7 +62,10 @@ import {
 } from '../thread-execution-context.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
 import { suggestModelTool } from '../../tools/model-classifier-tool.ts'
-import { preflightWorktreeTool } from '../../tools/worktree-preparation-tool.ts'
+import {
+  preflightWorktreeTool,
+  prepareWorktreeTool,
+} from '../../tools/worktree-preparation-tool.ts'
 import { browserShowTool } from '../../tools/browser-tools.ts'
 import { setSetting } from '../storage/settings.test-shim.ts'
 import {
@@ -1472,6 +1475,7 @@ describe('startAcpNativeBridge', () => {
     setPermissionGateForTests(() => Promise.resolve(true))
     const registry = testRegistry([])
     registry.register(preflightWorktreeTool)
+    registry.register(prepareWorktreeTool)
     registry.register(suggestModelTool)
     registry.register(browserShowTool)
     bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
@@ -1484,6 +1488,8 @@ describe('startAcpNativeBridge', () => {
     const listed = await rpc(bridge, LIST_TOOLS)
     const names = recordArrayOrEmpty(rpcResult(listed)['tools']).map((tool) => tool['name'])
     assert.ok(names.includes('preflight_worktree'))
+    assert.ok(names.includes('prepare_worktree'))
+    assert.ok(bridge.toolNames.includes('prepare_worktree'))
     assert.ok(names.includes('suggest_model'))
     assert.ok(names.includes('browser_show'))
 
@@ -1496,6 +1502,51 @@ describe('startAcpNativeBridge', () => {
     assert.equal(rpcResult(advice)['isError'], undefined)
     assert.match(contentText(advice) ?? '', /Recommended intellect band:/)
   })
+
+  for (const checkoutMode of ['shared', 'worktree', 'deferred'] as const) {
+    it(`keeps preparation permission-gated in a ${checkoutMode} bridge`, async () => {
+      const registry = testRegistry([])
+      registry.register(preflightWorktreeTool)
+      registry.register(prepareWorktreeTool)
+      const checkedRoots: (string | null)[] = []
+      setPermissionGateForTests(async (check) => {
+        assert.equal(check.toolName, 'prepare_worktree')
+        checkedRoots.push(getAgentExecutionRoot())
+        return false
+      })
+      bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+        threadId: 'bridge-prepare',
+        offerWriteAccess: checkoutMode === 'deferred',
+      })
+      assert.ok(bridge)
+      const root = checkoutMode === 'worktree' ? '/worktrees/prepare' : '/project/checkout'
+      bridge.setExecutionContext({
+        ...worktreeContext('bridge-prepare', root),
+        checkoutMode: checkoutMode === 'worktree' ? 'worktree' : 'shared',
+        ...(checkoutMode === 'deferred'
+          ? { deferredWorktree: { baseBranch: 'main', requestedAt: 1 } }
+          : {}),
+      })
+      const names = recordArrayOrEmpty(rpcResult(await rpc(bridge, LIST_TOOLS))['tools']).map(
+        (tool) => tool['name'],
+      )
+      assert.ok(names.includes('preflight_worktree'))
+      assert.ok(names.includes('prepare_worktree'))
+      assert.equal(names.includes('request_write_access'), checkoutMode === 'deferred')
+
+      const denied = await rpc(bridge, {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'prepare_worktree',
+          arguments: { planFingerprint: 'a'.repeat(64) },
+        },
+      })
+      assert.equal(contentText(denied), 'User rejected the prepare_worktree tool call.')
+      assert.deepEqual(checkedRoots, [root])
+    })
+  }
 
   it('rejects requests without the per-turn bearer token', async () => {
     setPermissionGateForTests(() => Promise.resolve(true))

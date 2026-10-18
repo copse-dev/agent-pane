@@ -19,6 +19,16 @@ import {
 /** Two maximum-size videos can coexist while successive frame reads reuse a pull. */
 const MATERIALIZED_CACHE_MAX_BYTES = 512 * 1024 * 1024
 const MATERIALIZED_CACHE_TTL_MS = 5 * 60_000
+const FINGERPRINT_BATCH_MAX_PATHS = 512
+const FINGERPRINT_BATCH_MAX_BYTES = 64 * 1024
+
+const FINGERPRINT_SCRIPT = `for path do
+  fingerprint=
+  if [ -f "$path" ] || [ -L "$path" ]; then
+    fingerprint=$(git hash-object --no-filters -- "$path" 2>/dev/null) || fingerprint=
+  fi
+  printf '%s\\000' "$fingerprint"
+done`
 
 interface MaterializedCacheEntry extends MaterializedWorkspaceFile {
   lastUsedAt: number
@@ -196,6 +206,54 @@ export class SshWorkspaceFs implements WorkspaceFsPathProbe {
     } finally {
       await rm(localPath, { force: true }).catch(() => undefined)
     }
+  }
+
+  /**
+   * Hash dirty worktree paths on the SSH host instead of pulling every file to
+   * the desktop. Paths travel over stdin as NUL-delimited fields and hashes come
+   * back in the same order, so whitespace and shell metacharacters stay data.
+   * Batches keep both stdin and the command's capped stdout comfortably bounded.
+   */
+  async fingerprintFiles(paths: readonly string[]): Promise<ReadonlyMap<string, string | null>> {
+    const fingerprints = new Map<string, string | null>()
+    let batch: string[] = []
+    let batchBytes = 0
+
+    const flush = async (): Promise<void> => {
+      if (batch.length === 0) return
+      const result = await this.exec(
+        `xargs -0 sh -c ${posixQuote(FINGERPRINT_SCRIPT)} sh`,
+        `${batch.join('\0')}\0`,
+      )
+      if (result.code !== 0) throw remoteFsError('workspace fingerprints', result)
+      const values = nulTerminatedFields(result.stdout)
+      if (values.length !== batch.length) {
+        throw new Error(
+          `Remote workspace fingerprint response returned ${String(values.length)} values for ${String(batch.length)} paths.`,
+        )
+      }
+      for (const [index, path] of batch.entries()) {
+        const value = values[index]
+        fingerprints.set(path, value?.length ? value : null)
+      }
+      batch = []
+      batchBytes = 0
+    }
+
+    for (const path of paths) {
+      const pathBytes = Buffer.byteLength(path) + 1
+      if (
+        batch.length > 0 &&
+        (batch.length >= FINGERPRINT_BATCH_MAX_PATHS ||
+          batchBytes + pathBytes > FINGERPRINT_BATCH_MAX_BYTES)
+      ) {
+        await flush()
+      }
+      batch.push(path)
+      batchBytes += pathBytes
+    }
+    await flush()
+    return fingerprints
   }
 
   async readFileBytes(path: string, options?: WorkspaceBinaryReadOptions): Promise<Buffer> {
