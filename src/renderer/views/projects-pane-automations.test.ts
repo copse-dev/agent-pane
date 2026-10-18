@@ -511,12 +511,7 @@ describe('projects pane automation setup links', () => {
       'Automation setup…',
       'Delete',
     ])
-    assert.deepEqual(labelsFor(conversationRow), [
-      'Rename',
-      'Fork',
-      'Archive',
-      'Delete',
-    ])
+    assert.deepEqual(labelsFor(conversationRow), ['Rename', 'Fork', 'Archive', 'Delete'])
   })
 })
 
