@@ -237,7 +237,7 @@ describe('package command approval scope', () => {
         true,
       )
       assert.equal(requests.length, 0)
-      await ensureShellCommandPermitted('rm -f probe.e2e.ts && npx wdio run wdio.conf.ts', {
+      await ensureShellCommandPermitted('rm -rf probe-output && npx wdio run wdio.conf.ts', {
         sandboxEnabled: true,
         autoRun: true,
         executionRoot: root,
