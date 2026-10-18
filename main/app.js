@@ -94868,6 +94868,7 @@ function mountProjectsPane(root, store2, api2) {
   function endDrag() {
     activeDrag = null;
     clearDropIndicators();
+    list.classList.remove(...DROP_CLASSES);
     for (const dragging of list.querySelectorAll(".is-dragging")) {
       dragging.classList.remove("is-dragging");
     }
@@ -94930,6 +94931,10 @@ function mountProjectsPane(root, store2, api2) {
   list.addEventListener("dragover", (e3) => {
     if (!isSidebarDrag(e3.dataTransfer?.types)) return;
     if (activeDrag?.kind !== "project") return;
+    if (e3.target !== list) {
+      list.classList.remove(...DROP_CLASSES);
+      return;
+    }
     e3.preventDefault();
     if (e3.dataTransfer) e3.dataTransfer.dropEffect = "move";
     clearDropIndicators();
@@ -94940,6 +94945,7 @@ function mountProjectsPane(root, store2, api2) {
   });
   list.addEventListener("drop", (e3) => {
     if (!isSidebarDrag(e3.dataTransfer?.types)) return;
+    if (e3.target !== list) return;
     e3.preventDefault();
     const payload = parseSidebarDrag(e3.dataTransfer?.getData(SIDEBAR_DRAG_MIME) ?? "") ?? activeDrag;
     list.classList.remove(...DROP_CLASSES);
@@ -95079,6 +95085,7 @@ function mountProjectsPane(root, store2, api2) {
     return entries2;
   }
   function render2(preserveScroll = false) {
+    endDrag();
     const scrollTop = preserveScroll ? list.scrollTop : 0;
     prBackfillObserver?.disconnect();
     prBackfillObserver = null;
