@@ -5,7 +5,7 @@ import { setInlineStatus } from '../../dom/inline-status.ts'
 
 export function createMachinesSection(api: Pick<ApiClient, 'machines' | 'classifiers'>): {
   root: HTMLDivElement
-  refresh: () => Promise<void>
+  refresh: (signal?: AbortSignal) => Promise<void>
 } {
   const status = el('div', { class: 'machine-status', role: 'status' })
   const sharingFeedback = el('div', { class: 'machine-sharing-feedback', role: 'status' })
