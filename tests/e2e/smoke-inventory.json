@@ -281,7 +281,7 @@
       "prefix": "src/renderer/views/pr-pane.ts",
       "smoke": ["tests/e2e/pr-panel.e2e.ts"],
       "evidence": {
-        "tests/e2e/pr-panel.e2e.ts": "selector txt:Open pull requests, cls:pr-list-row, cls:git-changes-section-title, cls:pr-list-title, txt:linked, cls:pr-pane-filter, cls:pr-list-body, cls:pr-list-status, cls:has-ci-failure, cls:pr-other-toggle, cls:git-changes-empty, cls:pr-viewer-title, cls:pr-viewer-description, cls:pr-viewer-files, cls:pr-viewer-description-fill, cls:panel-empty, cls:pr-detail-section, txt:files, cls:pr-files-header, cls:pr-file-row, cls:is-selected, cls:git-diff-editor-wrap, cls:git-image-diff, cls:message-text, txt:agent in src/renderer/views/pr-pane.ts"
+        "tests/e2e/pr-panel.e2e.ts": "selector txt:Open pull requests, cls:pr-list-row, cls:git-changes-section-title, cls:pr-list-title, txt:linked, cls:pr-pane-filter, cls:pr-list-body, cls:pr-list-status, cls:has-ci-failure, cls:pr-other-toggle, cls:pr-viewer-title, txt:viewing, cls:is-selected, cls:pr-viewer-description-fill, cls:panel-empty, cls:git-changes-empty, cls:pr-viewer-description, cls:pr-viewer-files, cls:pr-detail-section, txt:files, cls:pr-files-header, cls:pr-file-row, cls:git-diff-editor-wrap, cls:git-image-diff, cls:message-text, txt:agent in src/renderer/views/pr-pane.ts"
       }
     },
     {
