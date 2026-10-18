@@ -116,7 +116,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['scroll-to-bottom-dark.png', 'scroll-to-bottom-light.png'],
   },
   'tests/e2e/settings-acp-agents-list.e2e.ts': {
-    sourceSha256: '7ff6317ed573002b78368877ff380890bbb4645e672604c27f88defa9825bb8d',
+    sourceSha256: '32dfcaecfc30192db1983b21df000d67fe6c27ba6819de0231c334a9f7703ebf',
     filenames: [
       'settings-acp-agents-list-codex-ready.png',
       'settings-acp-agents-list-page-2.png',

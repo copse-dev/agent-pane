@@ -30,7 +30,7 @@ describe('Coding agents list in Settings', () => {
     mkdirSync(fixtureBin, { recursive: true })
     const agentModule = pathToFileURL(join(process.cwd(), 'tests/fixtures/mock-acp-agent.mjs'))
     adapterStatus = join(fixtureBin, 'adapter-status.txt')
-    writeFileSync(adapterStatus, '')
+    writeFileSync(adapterStatus, 'Not logged in\n')
     // Like the real npm adapter, `codex-acp cli …` runs its bundled Codex CLI;
     // anything else starts the (mock) ACP server.
     const adapterModule = join(fixtureBin, 'codex-acp.mjs')
