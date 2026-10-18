@@ -45557,11 +45557,11 @@ var init_acp_known_agents = __esm({
           // even allowlisted ChatGPT workspace-routing requests fail before a turn.
           allowMacOsTrustd: true
         },
-        setup: "codex login",
-        // ChatGPT sign-in; set NO_BROWSER=1 for headless, or use CODEX_API_KEY
-        reauth: "codex login",
+        setup: "codex-acp cli login",
+        // Use the adapter's bundled CLI; no standalone codex required.
+        reauth: "codex-acp cli login",
         docsUrl: "https://www.npmjs.com/package/@agentclientprotocol/codex-acp",
-        note: "Runs OpenAI Codex. Sign in with `codex login` (ChatGPT), or set `CODEX_API_KEY`."
+        note: "Runs OpenAI Codex. Sign in with `codex-acp cli login` (ChatGPT), or set `CODEX_API_KEY`."
       },
       {
         id: "github-copilot-cli",
