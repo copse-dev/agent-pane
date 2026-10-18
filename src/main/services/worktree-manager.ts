@@ -730,6 +730,24 @@ async function fetchDefaultBranch(projectRoot: string, branch: string): Promise<
   await git(projectRoot, ['fetch', '--quiet', 'origin', branch]).catch(() => undefined)
 }
 
+/**
+ * Whether the project checkout lacks commits the default branch has upstream,
+ * so a thread reading it as-is would read older files than `origin/<branch>`.
+ * Refreshes `origin/<branch>` first. False when there is no origin or fetched
+ * tip, or when HEAD already contains the tip (equal or ahead).
+ */
+export async function projectCheckoutBehindDefaultBranch(
+  projectRoot: string,
+  branch: string,
+): Promise<boolean> {
+  if (!(await hasOriginRemote(projectRoot))) return false
+  await fetchDefaultBranch(projectRoot, branch)
+  const remote = await resolveCommit(projectRoot, `refs/remotes/origin/${branch}`)
+  if (remote === null) return false
+  const result = await git(projectRoot, ['merge-base', '--is-ancestor', remote, 'HEAD'])
+  return result.code === 1
+}
+
 export async function hasOriginRemote(projectRoot: string): Promise<boolean> {
   return (await git(projectRoot, ['remote', 'get-url', 'origin'])).code === 0
 }
