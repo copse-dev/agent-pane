@@ -17398,6 +17398,7 @@ dialog.activity-panel-overlay {
 }
 .mobile-companion-device-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-md);
@@ -17411,6 +17412,7 @@ dialog.activity-panel-overlay {
 }
 .mobile-companion-device-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   flex: none;
   gap: var(--spacing-sm);
@@ -17433,7 +17435,8 @@ dialog.activity-panel-overlay {
 .mobile-companion-trust-label {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
-  white-space: nowrap;
+  max-width: 240px;
+  white-space: normal;
 }
 .mobile-companion-qr {
   display: flex;

@@ -50325,7 +50325,7 @@ function createMobileCompanionSection(api2) {
     }
   }
   function pairingKey(state) {
-    return state.pairing ? `${state.pairing.label}:${state.pairing.code}` : null;
+    return state.pairing?.id ?? null;
   }
   function renderPairing(state) {
     const key = pairingKey(state);
@@ -50346,13 +50346,14 @@ function createMobileCompanionSection(api2) {
       controlBtn.toggleAttribute("disabled", !trustInput.checked);
     });
     readBtn.addEventListener("click", () => {
-      void api2.mobile.respondPairing("read");
+      void api2.mobile.respondPairing("read", pairing.code, pairing.id);
     });
     controlBtn.addEventListener("click", () => {
-      if (trustInput.checked) void api2.mobile.respondPairing("control");
+      if (trustInput.checked)
+        void api2.mobile.respondPairing("control", pairing.code, pairing.id, trustInput.checked);
     });
     denyBtn.addEventListener("click", () => {
-      void api2.mobile.respondPairing("deny");
+      void api2.mobile.respondPairing("deny", pairing.code, pairing.id);
     });
     pairingHost.append(
       el(
@@ -50363,7 +50364,7 @@ function createMobileCompanionSection(api2) {
         el(
           "p",
           { class: "field-hint" },
-          "Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold. Allow control opens a desktop confirmation of certificate trust."
+          "Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold. Confirm below that the Copse Local Root is installed and trusted on this phone before allowing control."
         ),
         el(
           "label",
@@ -50397,14 +50398,15 @@ function createMobileCompanionSection(api2) {
         toControlBtn.toggleAttribute("disabled", !trustInput.checked);
       });
       toControlBtn.addEventListener("click", () => {
-        if (trustInput.checked) void api2.mobile.setDeviceAccess(device.id, "control");
+        if (trustInput.checked)
+          void api2.mobile.setDeviceAccess(device.id, "control", trustInput.checked);
       });
       actions.append(
         el(
           "label",
           { class: "checkbox-label mobile-companion-trust-label" },
           trustInput,
-          " Trusted"
+          " The Copse Local Root is installed and trusted on this phone"
         ),
         toControlBtn
       );
