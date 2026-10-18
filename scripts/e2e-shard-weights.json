@@ -1,5 +1,5 @@
 {
-  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-08; six recovery specs measured from successful CI run 38434453035, 2026-10-13; send-now-preserves-shell measured from two PASSED attempts in CI38619810736/job116049833854, 2026-10-14; agent-execution-mode measured from CI38619822117/job116050261558, 2026-10-14; pnpm-exec-format-check provisional at the median (8s) until its first CI run is measured, 2026-10-16; thread-submodule-worktree provisional at the median (8s) until its first CI run is measured, 2026-10-17",
+  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-08; six recovery specs measured from successful CI run 38434453035, 2026-10-13; send-now-preserves-shell measured from two PASSED attempts in CI38619810736/job116049833854, 2026-10-14; agent-execution-mode measured from CI38619822117/job116050261558, 2026-10-14; settings-profile-vault measured from five PASSED attempts in CI38322948245/job115058110678, CI38317537601/job115046081258, CI38317489762/job115045720916, CI38192430593/job114634731269 and CI38185862211/job114614686598, 2026-10-16; pnpm-exec-format-check provisional at the median (8s) until its first CI run is measured, 2026-10-16; thread-submodule-worktree provisional at the median (8s) until its first CI run is measured, 2026-10-17",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 14.9,
     "tests/e2e/acp-auth-error.e2e.ts": 20.2,
@@ -270,6 +270,7 @@
     "tests/e2e/settings-plaintext-secret-storage.e2e.ts": 6.3,
     "tests/e2e/settings-plugin-catalog.e2e.ts": 10.1,
     "tests/e2e/settings-plugins.e2e.ts": 18.4,
+    "tests/e2e/settings-profile-vault.e2e.ts": 11.4,
     "tests/e2e/settings-provider-hosts.e2e.ts": 8.7,
     "tests/e2e/settings-read-terminal.e2e.ts": 7.1,
     "tests/e2e/settings-save.e2e.ts": 7.2,

@@ -18,6 +18,7 @@ import {
 import { requestApproval } from '../approval.ts'
 import { runCommand } from '../exec/command-runner.ts'
 import { getAgentProjectRoot } from '../execution-root.ts'
+import { nodeWorkerExecutable } from '../node-worker-runtime.ts'
 import {
   isActiveSshWorkspace,
   resolveSshExecutionTargetForCwd,
@@ -235,7 +236,7 @@ export async function leaseGitSigningBroker(
     }
     const rememberAllowed = resolveToolPermission('git_commit')?.policy !== 'ask'
     if (!privateKey && (!rememberAllowed || grants.get(project) !== identity)) {
-      const probe = await runCommand(process.execPath, ['-e', SOCKET_PROBE, socketPath], {
+      const probe = await runCommand(nodeWorkerExecutable(), ['-e', SOCKET_PROBE, socketPath], {
         cwd: directory,
         env: helperEnv(directory),
         requireSandbox: true,
@@ -304,7 +305,7 @@ export async function leaseGitSigningBroker(
     const wrapper = join(directory, 'signer')
     await writeFile(
       wrapper,
-      `#!/bin/sh\nexec /usr/bin/env -u NODE_OPTIONS -u NODE_PATH ELECTRON_RUN_AS_NODE=1 ${posixQuote(process.execPath)} -e ${posixQuote(bridgeClient(brokerPath, nonce))} -- "$@"\n`,
+      `#!/bin/sh\nexec /usr/bin/env -u NODE_OPTIONS -u NODE_PATH ELECTRON_RUN_AS_NODE=1 ${posixQuote(nodeWorkerExecutable())} -e ${posixQuote(bridgeClient(brokerPath, nonce))} -- "$@"\n`,
       { mode: 0o500 },
     )
     const signOverlay = gitCommitSigningSandboxOverlay(directory, socketPath ? [socketPath] : [])
