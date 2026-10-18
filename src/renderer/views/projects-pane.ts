@@ -1280,6 +1280,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   function endDrag(): void {
     activeDrag = null
     clearDropIndicators()
+    list.classList.remove(...DROP_CLASSES)
     for (const dragging of list.querySelectorAll('.is-dragging')) {
       dragging.classList.remove('is-dragging')
     }
@@ -1381,6 +1382,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   list.addEventListener('dragover', (e) => {
     if (!isSidebarDrag(e.dataTransfer?.types)) return
     if (activeDrag?.kind !== 'project') return
+    // Child rows bubble here too. Only the list's empty space means "move
+    // out of a group"; hovering a thread must not highlight the whole pane.
+    if (e.target !== list) {
+      list.classList.remove(...DROP_CLASSES)
+      return
+    }
     e.preventDefault()
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
     clearDropIndicators()
@@ -1391,6 +1398,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   })
   list.addEventListener('drop', (e) => {
     if (!isSidebarDrag(e.dataTransfer?.types)) return
+    if (e.target !== list) return
     e.preventDefault()
     const payload = parseSidebarDrag(e.dataTransfer?.getData(SIDEBAR_DRAG_MIME) ?? '') ?? activeDrag
     list.classList.remove(...DROP_CLASSES)
@@ -1540,6 +1548,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function render(preserveScroll = false): void {
+    // A redraw removes the source row, so Chromium may have nowhere to send
+    // its eventual dragend. Clear the gesture before replacing its DOM.
+    endDrag()
     // Rebuilding the list removes its children synchronously. In Chromium that
     // clamps the scroll container to the top while the content is empty, so the
     // dismiss action opts into keeping the reader's position.
