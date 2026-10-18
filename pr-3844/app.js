@@ -169502,7 +169502,7 @@ function linksSection(model, handlers4, prStatuses) {
             el(
               "span",
               { class: "thread-context-chip" },
-              link.kind === "pr" ? knownStatus ? knownStatus.state[0]?.toUpperCase() + knownStatus.state.slice(1) : "PR" : "Thread"
+              link.kind === "pr" ? knownStatus ? knownStatus.state.charAt(0).toUpperCase() + knownStatus.state.slice(1) : "PR" : "Thread"
             )
           );
           button.addEventListener("click", () => {
