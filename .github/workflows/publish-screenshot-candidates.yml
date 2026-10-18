@@ -54,6 +54,19 @@ jobs:
       pull-requests: write
       statuses: write
     steps:
+      # Measurement only: wall clock and the token's remaining core quota at
+      # entry, so the final step can report this publication's duration and an
+      # approximate API call count. `rate_limit` is not itself counted, and
+      # the GITHUB_TOKEN budget is shared by every run in the repository, so
+      # the delta is an upper bound, not an exact count. No new permissions.
+      - name: Record publisher start
+        id: start
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "seconds=$(date +%s)" >> "$GITHUB_OUTPUT"
+          remaining="$(gh api rate_limit --jq '.resources.core.remaining' 2>/dev/null || echo '')"
+          echo "remaining=$remaining" >> "$GITHUB_OUTPUT"
       - name: Resolve the live parent PR and exact artifact
         id: discover
         uses: actions/github-script@v9
@@ -795,6 +808,17 @@ jobs:
             // ticks names, then the last box; screenshot-review-selection.yml
             // commits only those. The hidden marker pins the list to this head.
             const selectionLimit = 100;
+            // The candidate step lists at most 50 names (PR-touched first), so
+            // a larger change has unlisted candidates. Say so: the compare
+            // view, the labels and the cherry-pick still cover every candidate.
+            const candidateTotal = Math.max(
+              Number(process.env.CANDIDATE_COUNT) || 0,
+              candidateEntries.length,
+            );
+            const listed = [
+              ...candidateEntries.filter((entry) => entry.focus === true).sort(byName),
+              ...candidateEntries.filter((entry) => entry.focus !== true).sort(byName),
+            ].slice(0, selectionLimit);
             const selection =
               acceptable && candidateEntries.length > 0
                 ? [
@@ -802,11 +826,7 @@ jobs:
                     'Or commit only some: tick the screenshots to keep, then tick the last box. ' +
                       'The others are not committed.',
                     '',
-                    ...[
-                      ...candidateEntries.filter((entry) => entry.focus === true).sort(byName),
-                      ...candidateEntries.filter((entry) => entry.focus !== true).sort(byName),
-                    ]
-                      .slice(0, selectionLimit)
+                    ...listed
                       .flatMap((entry, index) => [
                         `- [ ] \`${entry.name}\`${entry.new ? ' *(new)*' : ''}`,
                         ...(index < previewLimit
@@ -817,8 +837,12 @@ jobs:
                             ]
                           : []),
                       ]),
-                    ...(candidateEntries.length > selectionLimit
-                      ? [`…and ${candidateEntries.length - selectionLimit} more, which only the labels can commit.`]
+                    ...(candidateTotal > listed.length
+                      ? [
+                          `…and ${candidateTotal - listed.length} more that this list cannot tick: ` +
+                            `see [the compare view](${compareUrl}); the labels, the cherry-pick and ` +
+                            '`pnpm screenshots:accept` cover every candidate.',
+                        ]
                       : []),
                     '- [ ] **Commit the ticked screenshots**',
                     '',
@@ -981,6 +1005,54 @@ jobs:
             const existing = comments.find((comment) => comment.user?.id === 41898282 && comment.body?.includes(marker));
             if (existing) await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
             else await github.rest.issues.createComment({ ...context.repo, issue_number: Number(process.env.PR_NUMBER), body });
+
+      # Measurement only, every outcome: this publication's wall-clock seconds
+      # and the approximate API calls it consumed (see `Record publisher
+      # start`), with the per-step outcomes a reader needs to attribute them.
+      # Same read-only `rate_limit` endpoint, no new permissions, never fails
+      # the job.
+      - name: Record publisher metrics
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STARTED_SECONDS: ${{ steps.start.outputs.seconds }}
+          STARTED_REMAINING: ${{ steps.start.outputs.remaining }}
+          ELIGIBLE: ${{ steps.discover.outputs.eligible }}
+          HAS_ARTIFACT: ${{ steps.discover.outputs.has-artifact }}
+          CANDIDATE_COUNT: ${{ steps.candidates.outputs.count }}
+          COMPARE_PUSHED: ${{ steps.compare.outputs.pushed }}
+          REVIEW_PENDING: ${{ steps.gate.outputs.pending }}
+          CANDIDATES_OUTCOME: ${{ steps.candidates.outcome }}
+          COMPARE_OUTCOME: ${{ steps.compare.outcome }}
+          GATE_OUTCOME: ${{ steps.gate.outcome }}
+        run: |
+          now="$(date +%s)"
+          seconds=''
+          case "$STARTED_SECONDS" in
+            ''|*[!0-9]*) ;;
+            *) seconds=$(( now - STARTED_SECONDS )) ;;
+          esac
+          remaining="$(gh api rate_limit --jq '.resources.core.remaining' 2>/dev/null || echo '')"
+          calls=''
+          case "$STARTED_REMAINING$remaining" in
+            ''|*[!0-9]*) ;;
+            *) calls=$(( STARTED_REMAINING - remaining )) ;;
+          esac
+          {
+            echo '## Publisher metrics'
+            echo
+            echo 'Measurement only; the API call count is a rate-limit delta on a budget shared with other runs (upper bound).'
+            echo
+            echo '| Metric | Value |'
+            echo '| --- | --- |'
+            echo "| Publisher seconds | ${seconds:-n/a} |"
+            echo "| Approximate API calls | ${calls:-n/a} |"
+            echo "| Eligible / artifact | ${ELIGIBLE:-n/a} / ${HAS_ARTIFACT:-n/a} |"
+            echo "| Candidates (changed hashes) | ${CANDIDATE_COUNT:-0} |"
+            echo "| Compare pushed / review pending | ${COMPARE_PUSHED:-n/a} / ${REVIEW_PENDING:-n/a} |"
+            echo "| Step outcomes: candidates / compare / gate | ${CANDIDATES_OUTCOME:-skipped} / ${COMPARE_OUTCOME:-skipped} / ${GATE_OUTCOME:-skipped} |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Fail the gate closed: a head whose evidence could not be validated or
       # linked must not look reviewable, and a missing status reads as "waiting"

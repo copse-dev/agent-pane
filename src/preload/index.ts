@@ -54,11 +54,15 @@ const api: ApiClient = {
     setDeviceAccess: (
       id: string,
       access: import('@shared/types/mobile-companion.ts').MobileCompanionAccess,
-    ) => ipcRenderer.invoke('mobile:set-device-access', id, access),
+      rootTrusted?: boolean,
+    ) => ipcRenderer.invoke('mobile:set-device-access', id, access, rootTrusted),
     revokeDevice: (id: string) => ipcRenderer.invoke('mobile:revoke-device', id),
     respondPairing: (
       decision: import('@shared/types/mobile-companion.ts').MobileCompanionAccess | 'deny',
-    ) => ipcRenderer.invoke('mobile:respond-pairing', decision),
+      code: string,
+      pairingId: string,
+      rootTrusted?: boolean,
+    ) => ipcRenderer.invoke('mobile:respond-pairing', decision, code, pairingId, rootTrusted),
     revealCertificate: () => ipcRenderer.invoke('mobile:reveal-certificate'),
     onChat: (handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void) => {
       const listener = (

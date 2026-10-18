@@ -1,7 +1,7 @@
 /**
  * Mobile Companion is managed entirely from Settings > Experimental, including
- * pairing approval. Control grants additionally require an OS-native trust confirmation. The renderer polls
- * nothing — the main process pushes a fresh snapshot on every change.
+ * pairing approval and the local-root trust acknowledgement for control grants.
+ * The main process pushes a fresh snapshot on every change.
  */
 export interface MobileCompanionAddress {
   address: string
@@ -19,6 +19,7 @@ export interface MobileCompanionDevice {
 
 /** A phone is mid-pairing and waiting for this Mac to confirm its code. */
 export interface MobileCompanionPairing {
+  id: string
   label: string
   code: string
 }

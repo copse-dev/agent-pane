@@ -21,7 +21,7 @@ const LEGACY_MCP_GRANTS_STORAGE_KEY = 'mcp-remembered-grants'
 const EMPTY_OVERRIDES: Record<string, ToolPermissionPolicy> = {}
 
 const ALWAYS_ASK_TOOLS = new Set([
-  'classify_text',
+  'ask_classifier',
   'browser_navigate',
   'fetch_url',
   'parallel_search',
@@ -78,7 +78,9 @@ function encodeIdentityPart(value: string): string {
 }
 
 export function copseToolPermissionId(toolName: string): string {
-  return `copse:${encodeIdentityPart(toolName)}`
+  // Keep saved classify_text overrides when the public tool becomes ask_classifier.
+  const permissionName = toolName === 'ask_classifier' ? 'classify_text' : toolName
+  return `copse:${encodeIdentityPart(permissionName)}`
 }
 
 export function mcpToolPermissionId(target: McpPermissionTarget): string {

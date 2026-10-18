@@ -38,7 +38,6 @@ import {
   getGitStatus,
   isInsideGitWorkTree,
   localBranchExists,
-  findSubmoduleDeclaration,
 } from './github/git-service.ts'
 
 export interface PrepareThreadCheckoutInput {
@@ -67,9 +66,6 @@ interface CheckoutInspection {
   currentBranch: string | null
   defaultBranch: string | null
   isDirty: boolean
-  hasSubmodules: boolean
-  /** The `.gitmodules` behind `hasSubmodules`, surfaced when a checkout is refused. */
-  submoduleDeclaration?: string | null
 }
 
 /**
@@ -227,7 +223,6 @@ export async function inspectProject(
       currentBranch: null,
       defaultBranch: null,
       isDirty: false,
-      hasSubmodules: false,
     }
   }
   const [currentBranch, defaultBranch, status] = await Promise.all([
@@ -235,18 +230,11 @@ export async function inspectProject(
     getDefaultBranch(project.path),
     getGitStatus(project.path),
   ])
-  // The Linux sandbox used by read-only Git commands can briefly materialize
-  // deny-path sentinels such as `.gitmodules`. Do not race the raw filesystem
-  // probe against getGitStatus's sandbox lifecycle or a repository without
-  // submodules can be rejected as if that transient guard were a declaration.
-  const submoduleDeclaration = await findSubmoduleDeclaration(project.path)
   return {
     isGitRepository: true,
     currentBranch,
     defaultBranch,
     isDirty: Boolean(status && (status.staged.length > 0 || status.unstaged.length > 0)),
-    hasSubmodules: submoduleDeclaration !== null,
-    submoduleDeclaration,
   }
 }
 
@@ -401,16 +389,7 @@ export function createThreadCheckoutTransaction(
       })
 
       if (decision.checkoutMode === 'blocked') {
-        // Name the evidence. `submodules unsupported` alone cannot be checked
-        // against the filesystem afterwards, and an automation swallows this
-        // error into a thread that simply never starts.
-        const detail =
-          decision.reason === 'submodules-unsupported' && inspection.submoduleDeclaration
-            ? ` (${inspection.submoduleDeclaration}, for project ${project.path})`
-            : ''
-        throw new Error(
-          `Isolated worktree is unavailable: ${decision.reason.replaceAll('-', ' ')}${detail}`,
-        )
+        throw new Error(`Isolated worktree is unavailable: ${decision.reason.replaceAll('-', ' ')}`)
       }
       if (decision.checkoutMode === 'shared') {
         // A shared thread runs in the project checkout itself, so a picked

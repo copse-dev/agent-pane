@@ -12,7 +12,13 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseSpineEntries } from '@shared/threads/spine-schema.ts'
-import { recordDecision, readDecisionLog, exportDecisionLog } from './decision-log-store.ts'
+import {
+  recordDecision,
+  readDecisionLog,
+  exportDecisionLog,
+  runWithDecisionRecorder,
+  type RecordedDecision,
+} from './decision-log-store.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 
 const PROJECT = 'proj-1'
@@ -93,6 +99,69 @@ describe('decision-log-store', () => {
       readFileSync(join(root, PROJECT, THREAD, line.detail.ref), 'utf8'),
     )
     assert.deepEqual(detail, { originalCommand: 'echo safe', harmDecision: 'prompt' })
+  })
+
+  it('isolates asynchronous host audit records and resumes desktop persistence outside the scope', async () => {
+    const outer: RecordedDecision[] = []
+    const inner: RecordedDecision[] = []
+    const other: RecordedDecision[] = []
+    const record = (subject: string): void => {
+      recordDecision({
+        projectId: PROJECT,
+        threadId: THREAD,
+        kind: 'shell',
+        actor: 'user',
+        verdict: 'approved',
+        subject,
+        toolCallId: subject,
+        detail: { toolCallIds: [subject] },
+      })
+    }
+    await Promise.all([
+      runWithDecisionRecorder(
+        (decision) => outer.push(decision),
+        async () => {
+          record('outer-first')
+          await Promise.resolve()
+          runWithDecisionRecorder(
+            (decision) => inner.push(decision),
+            () => {
+              record('inner')
+            },
+          )
+          record('outer-last')
+        },
+      ),
+      runWithDecisionRecorder(
+        (decision) => other.push(decision),
+        async () => {
+          await Promise.resolve()
+          record('other')
+        },
+      ),
+    ])
+    assert.deepEqual(
+      outer.map((decision) => decision.line.subject),
+      ['outer-first', 'outer-last'],
+    )
+    assert.deepEqual(
+      inner.map((decision) => decision.line.subject),
+      ['inner'],
+    )
+    assert.deepEqual(
+      other.map((decision) => decision.line.subject),
+      ['other'],
+    )
+    assert.equal(existsSync(threadEventsPath(root)), false)
+    const nested = inner[0]
+    assert.ok(nested)
+    assert.equal(nested.line.toolCallId, 'inner')
+    assert.equal(nested.detailContents, JSON.stringify({ toolCallIds: ['inner'] }))
+    record('desktop')
+    assert.deepEqual(
+      (await readDecisionLog(PROJECT)).map((event) => event.subject),
+      ['desktop'],
+    )
   })
 
   it('deletes a legacy project decisions.jsonl on read', async () => {

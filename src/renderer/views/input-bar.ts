@@ -693,6 +693,11 @@ export function mountInputBar(
       name,
       bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
     })
+    // Focusing an unfocused contenteditable with a newly replaced draft can
+    // create a selection at its start and scroll the symptom line out of view.
+    // Establish the intended insertion point before Chromium focuses it.
+    const end = composer.value.length
+    composer.setSelectionRange(end, end)
     composer.focus()
   }
 

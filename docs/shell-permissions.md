@@ -83,6 +83,22 @@ approval: worktree preparation, mutating GitHub actions, host GUI launch, and cu
 schedule-scoped automation opt-in described below. An approval prompt's existing “remember” action
 writes the same explicit Always allow policy when that policy is available.
 
+## Approval audit evidence
+
+Approval decisions persist the available tool-call ID, including cancellation and
+replayed answers. A shared prompt remains one decision; its detail blob lists the
+tool-call IDs still waiting when it settles. The top-level ID identifies the
+request that opened the prompt. Audit routing is captured at request time so an
+abort outside the original async context does not lose its project/thread.
+
+Shell escalation, expected-block, retry, contained-command and harm prompts retain
+their structured reasons. Their detail blobs also capture request-time booleans:
+sandbox availability, the configured auto-run setting, workspace trust,
+Guarded YOLO and active network scope. These are diagnostic
+facts, not a complete snapshot of all grants or an execution authorization.
+Coalesced prompts retain the opening request's context. Raw command text is still
+omitted: use the tool-call reference to find the existing tool arguments.
+
 ## High-level tool restrictions
 
 This table covers the built-in registry and dynamic tool families. Feature/plugin enrollment,
@@ -207,6 +223,12 @@ an active sandbox: the TypeScript file belongs to `wc`, not to the interpreter.
 A following script execution, download, or outside-project read still contributes
 its own escalation reason. Quoted newlines and backslash line continuations remain
 part of their original command's arguments.
+Other package-manager `exec` commands (`npm exec`, `yarn exec`, `bun exec`) are ambiguous: they
+run a project command, but npm may fetch a missing executable. They start inside an active sandbox
+and ask before an outside retry only if that sandbox blocks them. Local `pnpm exec` follows the
+contained `pnpm run` treatment described above. Explicit package installs remain hard-external. The
+shell `exec` builtin in command position, `find -exec`, and container `exec` remain hard-external as
+dynamic execution.
 
 A native `run_shell`, `run_background` or todo-verification command in an SSH workspace
 (`docs/plans/ssh-remote-repo.md`) is spawned on the remote host, where Copse applies no sandbox. The

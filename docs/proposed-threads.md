@@ -92,7 +92,7 @@ made it.
 ### When isolation is not available
 
 The repository has the last word. Current main fails an explicit `worktree`
-request closed for a non-Git folder, remote project, detached HEAD or submodules;
+request closed for a non-Git folder, remote project or detached HEAD;
 an explicit request also overrides a project's automatic-worktree preference.
 The failure is shown after navigation, and no work is dispatched. See
 [`worktree-policy.ts`](../src/shared/git/worktree-policy.ts).
