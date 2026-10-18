@@ -878,24 +878,35 @@ async function checkWebSearchPermission(
 }
 
 /**
- * `ask_classifier` sends model-supplied input to a saved classifier connection.
- * Host approval is the classifier service's own gate, applied again at call
- * time (`assertApprovedProviderHost`), so a host the user never approved fails
- * there whatever this returns. This gate decides whether the call needs a
- * prompt: a connection that leaves the machine asks, a local server or SemIf
- * scorer does not, and an explicit "allow" or "ask" override wins either way.
+ * Saved classifier connections may be used without another tool prompt.
+ * Provider-host approval remains a separate gate at call time. An explicit
+ * Always ask override reviews each question with its exact input tucked away
+ * until the person expands the details.
  */
 async function checkAskClassifierPermission(
   args: unknown,
   signal?: AbortSignal,
   explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
 ): Promise<boolean> {
-  if (explicitPolicy === 'allow') return true
+  if (explicitPolicy !== 'ask') return true
   const id = isRecord(args) && typeof args['classifier'] === 'string' ? args['classifier'] : ''
-  if (explicitPolicy === 'ask' || classifierSendsOffMachine(id)) {
-    return promptExplicitToolAsk('ask_classifier', args, signal)
-  }
-  return true
+  const offMachine = classifierSendsOffMachine(id)
+  const { approved } = await requestApproval(
+    {
+      title: 'Allow this classifier question?',
+      body: JSON.stringify(args, null, 2),
+      bodyAdvice: offMachine
+        ? 'The question and supplied content will be sent to a hosted classifier.'
+        : 'This classifier runs on this machine.',
+      type: 'mcp',
+      subject: 'ask_classifier',
+      cause: 'mcp-tool',
+      approveLabel: 'Allow once',
+      collapseDetails: true,
+    },
+    signal,
+  )
+  return approved
 }
 
 async function checkParallelSearchPermission(
