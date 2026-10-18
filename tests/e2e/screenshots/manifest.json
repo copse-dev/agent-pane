@@ -2317,6 +2317,10 @@
       "sha256": "6437581ed7130fb78116f01dc3cda4a964dbf6289b35aaf4281a3dc5e2dc6f9e",
       "bytes": 37923
     },
+    "model-picker-coverage-chatgpt-plan.png": {
+      "sha256": "45b283af63473fbe36060fa1d95f45fd47c61c1f3575ae78708623c2e7d70f79",
+      "bytes": 9549
+    },
     "model-picker-coverage-dark.png": {
       "sha256": "813544dc111201893ed15783e4d1e224fcb42c4dac00ba70b6ea3bf362593277",
       "bytes": 25463
