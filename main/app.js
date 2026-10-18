@@ -33524,7 +33524,7 @@ var init_model_catalog_generated = __esm({
       "claude-sonnet-5-5": {
         inputPricePerMTok: 2,
         outputPricePerMTok: 10,
-        cacheReadPricePerMTok: 0.2,
+        cacheReadPricePerMTok: 0.1,
         cacheCreationPricePerMTok: 2.5,
         contextWindow: 1e6,
         maxOutputTokens: 128e3
