@@ -590,27 +590,52 @@ async function canApplyFileOpDirectly(
  */
 const WORKTREE_BASELINE_READ_CONCURRENCY = 8
 
-export async function captureWorktreeBaseline(): Promise<Map<string, string>> {
-  const state = stateFor()
-  const baseline = new Map<string, string>()
-  const status = await getGitStatus(executionRootFor(state), { untrackedFiles: 'all' })
-  if (!status) return baseline
-  const paths = [...new Set([...status.staged, ...status.unstaged].map((c) => c.path))]
-  const root = executionRootFor(state)
-  // Local files are independent reads, and remote/sandboxed workspaces can add
-  // meaningful latency to each one. Bound the fan-out so a very dirty tree
-  // cannot flood the filesystem transport, then insert each completed batch in
-  // git-status order to keep the returned Map deterministic.
+export interface WorktreeFileSnapshot {
+  /** Stable only within the workspace filesystem implementation that produced it. */
+  fingerprint: string | null
+  /** Present for local snapshots; remote snapshots avoid transferring unchanged content. */
+  content?: string
+}
+
+export type WorktreeBaseline = Map<string, WorktreeFileSnapshot>
+
+async function snapshotWorktreePaths(
+  paths: readonly string[],
+  root: string | null,
+): Promise<WorktreeBaseline> {
+  const fs = getActiveWorkspaceFs()
+  const baseline: WorktreeBaseline = new Map()
+  if (fs.fingerprintFiles) {
+    const fingerprints = await fs.fingerprintFiles(paths)
+    for (const path of paths) {
+      baseline.set(ownedKey(path), { fingerprint: fingerprints.get(path) ?? null })
+    }
+    return baseline
+  }
+
+  // Local files are independent reads. Bound the fan-out so a very dirty tree
+  // cannot flood the filesystem, then insert completed batches in git-status
+  // order to keep the returned Map deterministic.
   for (let offset = 0; offset < paths.length; offset += WORKTREE_BASELINE_READ_CONCURRENCY) {
     const batch = paths.slice(offset, offset + WORKTREE_BASELINE_READ_CONCURRENCY)
     const entries = await Promise.all(
-      batch.map(async (path) => [path, await readCurrentContent(path, root)] as const),
+      batch.map(async (path) => {
+        const content = await readCurrentContent(path, root)
+        return [path, { fingerprint: content, content }] as const
+      }),
     )
-    for (const [path, content] of entries) {
-      baseline.set(ownedKey(path), content)
-    }
+    for (const [path, snapshot] of entries) baseline.set(ownedKey(path), snapshot)
   }
   return baseline
+}
+
+/** Snapshot every currently dirty path for the post-command worktree audit. */
+export async function captureWorktreeBaseline(): Promise<WorktreeBaseline> {
+  const state = stateFor()
+  const status = await getGitStatus(executionRootFor(state), { untrackedFiles: 'all' })
+  if (!status) return new Map()
+  const paths = [...new Set([...status.staged, ...status.unstaged].map((c) => c.path))]
+  return snapshotWorktreePaths(paths, executionRootFor(state))
 }
 
 /**
@@ -623,27 +648,35 @@ export async function captureWorktreeBaseline(): Promise<Map<string, string>> {
  * unowned edits the command did not touch keep their status, so the
  * stale-overwrite guard still protects them. Returns the adopted paths.
  */
-export async function adoptWorktreeChangesSince(baseline: Map<string, string>): Promise<string[]> {
+export async function adoptWorktreeChangesSince(baseline: WorktreeBaseline): Promise<string[]> {
   const state = stateFor()
-  const changes = await worktreeChangesSince(baseline)
+  const changes = await worktreeChangesSince(baseline, { includeContent: true })
   for (const { path, after } of changes) recordDirectAppliedSnapshot(state, path, after)
   return changes.map((c) => c.path)
 }
 
 /** Paths in `git status` whose content now differs from the baseline snapshot. */
 async function worktreeChangesSince(
-  baseline: Map<string, string>,
+  baseline: WorktreeBaseline,
+  options: { includeContent: boolean },
 ): Promise<{ path: string; after: string }[]> {
   const state = stateFor()
   const root = executionRootFor(state)
   const status = await getGitStatus(executionRootFor(state), { untrackedFiles: 'all' })
   if (!status) return []
   const paths = new Set([...status.staged, ...status.unstaged].map((c) => c.path))
+  const afterSnapshots = await snapshotWorktreePaths([...paths], root)
   const changes: { path: string; after: string }[] = []
   for (const path of paths) {
-    const after = await readCurrentContent(path, root)
-    const before = baseline.get(ownedKey(path))
-    if (before === undefined || before !== after) changes.push({ path, after })
+    const key = ownedKey(path)
+    const afterSnapshot = afterSnapshots.get(key) ?? { fingerprint: null }
+    const beforeSnapshot = baseline.get(key)
+    if (beforeSnapshot === undefined || beforeSnapshot.fingerprint !== afterSnapshot.fingerprint) {
+      const after = options.includeContent
+        ? (afterSnapshot.content ?? (await readCurrentContent(path, root)))
+        : ''
+      changes.push({ path, after })
+    }
   }
   return changes
 }
@@ -658,8 +691,8 @@ async function worktreeChangesSince(
  * workspace is not a git repo — the audit degrades to silence rather than
  * failing the turn.
  */
-export async function listWorktreeChangesSince(baseline: Map<string, string>): Promise<string[]> {
-  return (await worktreeChangesSince(baseline)).map((c) => c.path)
+export async function listWorktreeChangesSince(baseline: WorktreeBaseline): Promise<string[]> {
+  return (await worktreeChangesSince(baseline, { includeContent: false })).map((c) => c.path)
 }
 
 /**
