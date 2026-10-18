@@ -85644,6 +85644,10 @@ var init_demo_scenarios = __esm({
           uiTintStrength: "off",
           sidebarThreadGroup: "status"
         },
+        threadChanges: {
+          "demo-other-projects-active-chat": { dirty: true },
+          "demo-other-projects-docs-0": { dirty: false, unpushed: 2 }
+        },
         // The open project has one thread; two more projects hold threads that are only
         // read in the background after startup, so their titles must still be listed.
         threads: [
@@ -85653,6 +85657,7 @@ var init_demo_scenarios = __esm({
             status: "idle",
             messages: [],
             messagesLoaded: false,
+            prRefs: [],
             usage: { inputTokens: 0, outputTokens: 0 },
             createdAt: FIXED_TIME,
             updatedAt: FIXED_TIME
@@ -85667,6 +85672,7 @@ var init_demo_scenarios = __esm({
               status: "idle",
               messages: [],
               messagesLoaded: false,
+              prRefs: [],
               usage: { inputTokens: 0, outputTokens: 0 },
               createdAt: FIXED_TIME - 10 - index,
               updatedAt: FIXED_TIME - 10 - index
@@ -85681,11 +85687,32 @@ var init_demo_scenarios = __esm({
                 status: "idle",
                 messages: [],
                 messagesLoaded: false,
+                prRefs: [
+                  {
+                    owner: "acme",
+                    repo: "api-server",
+                    number: 42,
+                    url: "https://github.com/acme/api-server/pull/42"
+                  }
+                ],
                 usage: { inputTokens: 0, outputTokens: 0 },
                 createdAt: FIXED_TIME - 20,
                 updatedAt: FIXED_TIME - 20
               }
             ]
+          }
+        ],
+        pullRequests: [
+          {
+            owner: "acme",
+            repo: "api-server",
+            number: 42,
+            url: "https://github.com/acme/api-server/pull/42",
+            title: "Add pagination",
+            state: "OPEN",
+            body: "",
+            files: [],
+            checks: "success"
           }
         ]
       },
@@ -95474,6 +95501,8 @@ function mountProjectsPane(root, store2, api2) {
           openThreadMenu(rect.left, rect.bottom);
         });
         chatRow.append(menuButton);
+      } else {
+        chatRow.append(el("span", { class: "chat-menu-btn-space", "aria-hidden": "true" }));
       }
       return chatRow;
     }
