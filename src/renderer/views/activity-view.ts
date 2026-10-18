@@ -17,6 +17,8 @@ import {
   warningIcon,
 } from '../dom/icons.ts'
 import { switchProjectThread } from '../controller/projects.ts'
+import { createFinalReplyCache } from '../controller/activity-final-reply.ts'
+import { getThreadById } from '@shared/store/thread-helpers.ts'
 import {
   collectActivityThreads,
   deriveActivity,
@@ -178,6 +180,12 @@ export function createActivityView(
   const now = deps.now ?? Date.now
   const setTimer = deps.setTimer ?? defaultTimer
   const timings = trackRunTimings(store, now)
+  const finalReply = createFinalReplyCache(
+    (projectId, threadId) => api.threads.loadMessages(projectId, threadId),
+    () => {
+      scheduleRender()
+    },
+  )
 
   const summary = el('p', { id: `${host.idPrefix}-summary`, class: 'activity-panel-summary' })
   const list = el('nav', { class: 'activity-list', 'aria-label': 'Threads' })
@@ -539,7 +547,28 @@ export function createActivityView(
     }
     // An issue block already says what happened; repeating the row's summary under it adds nothing.
     if (row.issue) return issueBlock(row)
-    return [el('p', { class: 'activity-detail-text' }, row.want)]
+    return finalReplyContent(row) ?? [el('p', { class: 'activity-detail-text' }, row.want)]
+  }
+
+  /** A settled thread's last reply, so the pane says what it ended with rather than that it ended. */
+  function finalReplyContent(row: ActivityRow): HTMLElement[] | null {
+    if (row.state !== 'finished' && row.state !== 'failed') return null
+    if (row.fold || !row.threadId || !row.projectId) return null
+    const thread = getThreadById(store, row.threadId)
+    const reply = finalReply({
+      key: `${row.threadId}:${String(row.since)}`,
+      projectId: row.projectId,
+      threadId: row.threadId,
+      messages: thread && thread.messagesLoaded !== false ? thread.messages : null,
+    })
+    if (reply.state === 'loading') {
+      return [el('p', { class: 'activity-detail-note' }, 'Loading the final response…')]
+    }
+    if (reply.text === null) return null
+    const text = el('div', { class: 'activity-final-reply streaming-markdown' })
+    text.innerHTML = renderMarkdown(reply.text)
+    const label = row.state === 'failed' ? 'Last response' : 'Final response'
+    return [el('p', { class: 'activity-detail-label' }, label), text]
   }
 
   function detailActions(row: ActivityRow): HTMLElement {

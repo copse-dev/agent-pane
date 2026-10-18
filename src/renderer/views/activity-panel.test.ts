@@ -167,7 +167,10 @@ describe('activity panel', () => {
   let askResponses: Array<{ id: string; answers: string[] }>
   let renders: number
 
-  function mount(threads: Thread[]): void {
+  function mount(
+    threads: Thread[],
+    apiOverrides: Readonly<Record<string, (...args: never[]) => unknown>> = {},
+  ): void {
     store = createStore({
       projects: [{ id: 'p1', path: '/work', name: 'workspace' }],
       activeProjectId: 'p1',
@@ -205,6 +208,7 @@ describe('activity panel', () => {
         askResponses.push({ id, answers })
         return Promise.resolve()
       },
+      ...apiOverrides,
     })
     emitApproval = (req): void => {
       onApproval(req)
@@ -720,5 +724,65 @@ describe('activity panel', () => {
     assert.equal(qsRequired(rowFor('thread:done'), '.activity-state').textContent, 'Done')
     assert.equal(qsRequired(detail(), '.activity-detail-state').textContent, 'Failed')
     assert.equal(qsRequired(detail(), '.activity-detail-text').textContent, 'Ended with an error')
+  })
+
+  it("shows a finished thread's final response as Markdown instead of a bare Finished", () => {
+    mount([
+      thread('focused'),
+      thread('done', {
+        messages: [
+          { id: 'u1', role: 'user', content: 'Fix it', toolCalls: [], createdAt: 1 },
+          {
+            id: 'a1',
+            role: 'assistant',
+            content: 'Fixed the **icon** alignment.',
+            toolCalls: [],
+            createdAt: 1,
+          },
+        ],
+      }),
+    ])
+    setThreadStatus(store, 'done', 'running')
+    time.advance(60_000)
+    setThreadStatus(store, 'done', 'idle')
+    panel.open()
+    assert.equal(qsRequired(detail(), '.activity-detail-label').textContent, 'Final response')
+    const reply = qsRequired(detail(), '.activity-final-reply')
+    assert.equal(qsRequired(reply, 'strong').textContent, 'icon')
+    assert.equal(reply.textContent.trim(), 'Fixed the icon alignment.')
+    assert.equal(detail().querySelector('.activity-detail-text'), null)
+  })
+
+  it('reads the final response of a thread loaded metadata-only from the thread store', async () => {
+    const loads: Array<[string, string]> = []
+    mount([thread('focused'), thread('done', { messagesLoaded: false })], {
+      'threads.loadMessages': (projectId: string, threadId: string) => {
+        loads.push([projectId, threadId])
+        return Promise.resolve([
+          {
+            id: 'a1',
+            role: 'assistant',
+            content: 'All four PRs reviewed.',
+            toolCalls: [],
+            createdAt: 1,
+          },
+        ])
+      },
+    })
+    setThreadStatus(store, 'done', 'running')
+    time.advance(60_000)
+    setThreadStatus(store, 'done', 'idle')
+    panel.open()
+    assert.equal(
+      qsRequired(detail(), '.activity-detail-note').textContent,
+      'Loading the final response…',
+    )
+    await new Promise((resolve) => setImmediate(resolve))
+    time.advance(ACTIVITY_RENDER_INTERVAL_MS)
+    assert.deepEqual(loads, [['p1', 'done']])
+    assert.equal(
+      qsRequired(detail(), '.activity-final-reply').textContent.trim(),
+      'All four PRs reviewed.',
+    )
   })
 })
