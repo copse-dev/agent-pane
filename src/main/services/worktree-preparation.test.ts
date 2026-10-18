@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
+  assertPreparationPlan,
   inspectWorktreePreparation,
   preparationEnvironment,
   worktreePreparationShellEnvironment,
@@ -51,6 +52,21 @@ function probe(command: string, args: readonly string[]): string | null {
     return args[0]?.split('@')[1] ?? (args[0] === 'yarn' ? '1.22.22' : '10.34.5')
   return null
 }
+it('requires a fresh plan after moving from the project checkout to a worktree', () => {
+  const worktree = mkdtempSync(join(tmpdir(), 'preparation-new-worktree-'))
+  try {
+    write(PREPARATION_CONFIG, '{"version":1}')
+    mkdirSync(join(worktree, '.copse'))
+    writeFileSync(join(worktree, PREPARATION_CONFIG), '{"version":1}')
+    const sharedPlan = readWorktreePreparationPlan(root)
+    assert.throws(() => assertPreparationPlan(worktree, sharedPlan.fingerprint), /plan changed/)
+    const worktreePlan = readWorktreePreparationPlan(worktree)
+    assert.equal(assertPreparationPlan(worktree, worktreePlan.fingerprint).root, worktree)
+  } finally {
+    rmSync(worktree, { recursive: true, force: true })
+  }
+})
+
 const inspect = (offline = false): ReturnType<typeof inspectWorktreePreparation> =>
   inspectWorktreePreparation(root, { probe, offline })
 

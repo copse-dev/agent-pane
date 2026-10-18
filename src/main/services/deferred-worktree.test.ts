@@ -527,6 +527,7 @@ describe('toolNeedsWritableCheckout', () => {
       'read_file',
       'search_code',
       'git_log',
+      'preflight_worktree',
       'explore',
       'fetch_url',
       'gh_pr_view',
