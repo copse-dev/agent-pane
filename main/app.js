@@ -29678,6 +29678,7 @@ function createClassifiersSection(api2) {
   const status = el("p", { class: "classifier-status", role: "status", "aria-live": "polite" });
   const screening = el("select", { name: "classifierScreening" });
   const background = el("select", { name: "classifierBackground" });
+  const askBeforeHosted = el("input", { type: "checkbox", name: "classifierToolPrompt" });
   const localHost = el("div", {
     class: "classifier-local",
     "aria-label": "Local classifier servers"
@@ -29713,6 +29714,17 @@ function createClassifiersSection(api2) {
         "Which classifier rates roadmap items when you save them, gives the verdict for fit checks and roadmap reviews, checks which open issues the roadmap already covers, and picks follow-ups after each turn. If it fails, the small-tasks model answers instead. A hosted classifier receives that text, including issues, commit history and each finished turn's messages, with saved keys redacted."
       )
     ),
+    el(
+      "label",
+      { class: "checkbox-label classifier-tool-prompt" },
+      askBeforeHosted,
+      "Ask before agent classifier questions"
+    ),
+    el(
+      "span",
+      { class: "field-hint" },
+      "Off by default. Turn on to review each agent question before it reaches a classifier. Hosted classifiers receive the question and supplied content. Safety screening and background questions use their own settings above."
+    ),
     localHost,
     chips,
     formHost,
@@ -29722,10 +29734,26 @@ function createClassifiersSection(api2) {
   let screeningId = null;
   let backgroundId = null;
   let selectedId = null;
+  let classifierToolPermissionId = null;
   const drafts = /* @__PURE__ */ new Map();
   let captureDraft;
   const pending = /* @__PURE__ */ new Map();
   let busy = false;
+  askBeforeHosted.addEventListener("change", () => {
+    const id = classifierToolPermissionId;
+    if (id === null) return;
+    askBeforeHosted.disabled = true;
+    const request = askBeforeHosted.checked ? api2.toolPermissions.set({ toolIds: [id], policy: "ask" }) : api2.toolPermissions.reset({ toolIds: [id] });
+    void request.then((catalog) => {
+      const tool = catalog.groups.flatMap((group) => group.tools).find((item) => item.id === id);
+      askBeforeHosted.checked = tool?.policy === "ask";
+      askBeforeHosted.disabled = tool === void 0 || tool.policy === "block";
+    }).catch((error62) => {
+      askBeforeHosted.checked = !askBeforeHosted.checked;
+      askBeforeHosted.disabled = false;
+      setInlineStatus(status, "error", classifierErrorMessage(error62));
+    });
+  });
   function renderChips() {
     clear(chips);
     const items = [...profiles.map((item) => item.profile), ...drafts.values()].filter(
@@ -30386,15 +30414,25 @@ function createClassifiersSection(api2) {
       const loaded = await Promise.all([
         api2.classifiers.list(),
         api2.classifiers.screening(),
-        api2.classifiers.background()
+        api2.classifiers.background(),
+        api2.toolPermissions.list().then(
+          (catalog) => ({ catalog, error: null }),
+          (error62) => ({ catalog: null, error: classifierErrorMessage(error62) })
+        )
       ]);
       if (signal?.aborted || request !== refreshGeneration) return;
       [profiles, screeningId, backgroundId] = loaded;
+      const permissionResult = loaded[3];
+      const classifierTool = permissionResult.catalog?.groups.flatMap((group) => group.tools).find((tool) => tool.executionName === "ask_classifier");
+      classifierToolPermissionId = classifierTool?.id ?? null;
+      askBeforeHosted.checked = classifierTool?.policy === "ask";
+      askBeforeHosted.disabled = classifierTool === void 0 || classifierTool.policy === "block";
       selectedId ??= profiles[0]?.profile.id ?? null;
       void refreshLocal(signal);
       if (selectedId !== null && !drafts.has(selectedId) && !profiles.some((item) => item.profile.id === selectedId))
         selectedId = null;
       render2();
+      if (permissionResult.error !== null) setInlineStatus(status, "error", permissionResult.error);
     } catch (error62) {
       if (signal?.aborted || request !== refreshGeneration) return;
       setInlineStatus(status, "error", classifierErrorMessage(error62));
