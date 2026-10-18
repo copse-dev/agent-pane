@@ -588,7 +588,6 @@ describe('ACP bridge exposure decisions', () => {
       'report_plan_completion',
       'read_skill',
       'request_write_access',
-      'prepare_worktree',
       'read_terminal',
       'run_checkup',
       'image_gen',

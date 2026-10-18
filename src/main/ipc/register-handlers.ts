@@ -1032,9 +1032,15 @@ export function registerAllHandlers(
   ipcMain.handle('fs:read-image', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
-    const abs = await resolvePathWithinRoot(relPath, root)
-    return gatewayReadImage(abs, root, relPath)
+    // Missing or oversized previews are routine (a thread can outlive its worktree
+    // files), so report them as data; a rejected handler makes Electron log a stack.
+    try {
+      const { root } = await resolveThreadExecutionContext(projectId, threadId)
+      const abs = await resolvePathWithinRoot(relPath, root)
+      return { ok: true, data: await gatewayReadImage(abs, root, relPath) }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
   })
 
   ipcMain.handle('fs:write-file', async (event, ...rawArgs) => {
