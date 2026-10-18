@@ -2,6 +2,7 @@ import { formatByteSize } from '@shared/file-bytes.ts'
 import { el, clear } from '../dom/helpers.ts'
 import {
   gitBranchIcon,
+  gitMergeIcon,
   gitPullRequestIcon,
   externalLinkIcon,
   plusIcon,
@@ -10,6 +11,10 @@ import {
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
+import { githubPrKey } from '@shared/git/github-pr-url.ts'
+import { normalizePrLifecycleState, type PrLifecycleState } from '@shared/git/thread-pr-status.ts'
+import type { GhPrChecksState } from '@shared/types/git.ts'
+import { prHasMergeConflicts } from '../dom/pr-status.ts'
 import {
   archiveThread,
   getActiveThread,
@@ -36,6 +41,15 @@ export interface ThreadContextHandlers {
 }
 
 type ContextSection = 'repos' | 'side-chats' | 'links' | 'subagents' | 'sources'
+
+interface ContextPrStatus {
+  state: PrLifecycleState
+  checks?: GhPrChecksState
+  conflicts?: boolean
+  fetchedAt: number
+}
+
+const PR_STATUS_CACHE_TTL_MS = 60_000
 
 const SECTION_TITLES: Record<ContextSection, string> = {
   repos: 'Access',
@@ -170,7 +184,11 @@ function sideChatsSection(model: ThreadContextModel, handlers: ThreadContextHand
   )
 }
 
-function linksSection(model: ThreadContextModel, handlers: ThreadContextHandlers): HTMLElement {
+function linksSection(
+  model: ThreadContextModel,
+  handlers: ThreadContextHandlers,
+  prStatuses: ReadonlyMap<string, ContextPrStatus>,
+): HTMLElement {
   const groups: Array<'pr' | 'thread'> = ['pr', 'thread']
   const children: HTMLElement[] = []
   for (const group of groups) {
@@ -181,18 +199,50 @@ function linksSection(model: ThreadContextModel, handlers: ThreadContextHandlers
         'div',
         { class: 'thread-context-group', 'data-link-group': group },
         ...rows.map((link) => {
+          const status = link.pr ? prStatuses.get(githubPrKey(link.pr)) : undefined
+          const knownStatus = status?.state === 'unknown' ? undefined : status
+          const conflicts = knownStatus?.state === 'open' && knownStatus.conflicts === true
+          const failing = knownStatus?.state === 'open' && knownStatus.checks === 'failure'
+          const statusLabel = knownStatus
+            ? `Pull request #${String(link.pr?.number)} is ${knownStatus.state}${failing ? '; checks are failing' : ''}${conflicts ? '; merge conflicts' : ''}`
+            : undefined
+          const prIcon =
+            knownStatus?.state === 'merged'
+              ? gitMergeIcon('ui-icon ui-icon-sm')
+              : gitPullRequestIcon('ui-icon ui-icon-sm', conflicts)
+          prIcon.setAttribute('aria-hidden', 'true')
           const button = rowButton(
             {
               'data-link-key': link.key,
               'data-unresolved': link.unresolved ? 'true' : undefined,
+              'aria-label': statusLabel ? `${link.label}; ${statusLabel}` : undefined,
             },
             link.kind === 'pr'
-              ? gitPullRequestIcon('ui-icon ui-icon-sm')
+              ? knownStatus
+                ? el(
+                    'span',
+                    {
+                      class: `chat-pr-status thread-context-pr-status is-${knownStatus.state}${conflicts ? ' has-conflicts' : failing ? ' has-ci-failure' : ''}`,
+                      role: 'img',
+                      'aria-label': statusLabel,
+                      'data-tooltip': statusLabel,
+                    },
+                    prIcon,
+                  )
+                : prIcon
               : link.kind === 'url'
                 ? externalLinkIcon('ui-icon ui-icon-sm')
                 : '',
             el('span', { class: 'thread-context-title', title: link.label }, link.label),
-            el('span', { class: 'thread-context-chip' }, link.kind === 'pr' ? 'PR' : 'Thread'),
+            el(
+              'span',
+              { class: 'thread-context-chip' },
+              link.kind === 'pr'
+                ? knownStatus
+                  ? knownStatus.state[0]?.toUpperCase() + knownStatus.state.slice(1)
+                  : 'PR'
+                : 'Thread',
+            ),
           )
           button.addEventListener('click', () => {
             if (link.kind === 'pr' && link.pr) handlers.openPr(link.pr)
@@ -287,6 +337,7 @@ function sourcesSection(model: ThreadContextModel, handlers: ThreadContextHandle
 export function renderThreadContext(
   model: ThreadContextModel,
   handlers: ThreadContextHandlers,
+  prStatuses: ReadonlyMap<string, ContextPrStatus> = new Map(),
 ): HTMLElement {
   const host = el('div', { class: 'thread-context', 'aria-label': 'Thread context' })
   if (model.title) host.append(el('div', { class: 'thread-context-thread-title' }, model.title))
@@ -319,7 +370,7 @@ export function renderThreadContext(
   host.append(
     subagentsSection(model),
     reposSection(model),
-    linksSection(model, handlers),
+    linksSection(model, handlers, prStatuses),
     sourcesSection(model, handlers),
     sideChatsSection(model, handlers),
   )
@@ -368,6 +419,50 @@ export function mountThreadContextPane(
   let changesText = 'Calculating…'
   let changeStats: { additions: number; deletions: number } | null = null
   let disposed = false
+  const prStatuses = new Map<string, ContextPrStatus>()
+  const prFetchInFlight = new Set<string>()
+
+  function ensurePrStatuses(links: ThreadContextModel['links']): void {
+    for (const link of links) {
+      if (!link.pr) continue
+      const ref = link.pr
+      const key = githubPrKey(ref)
+      const cached = prStatuses.get(key)
+      if (
+        prFetchInFlight.has(key) ||
+        (cached && Date.now() - cached.fetchedAt <= PR_STATUS_CACHE_TTL_MS)
+      )
+        continue
+      prFetchInFlight.add(key)
+      void api.gh
+        .prDetails(ref.owner, ref.repo, ref.number)
+        .then(async (details) => {
+          const state = details ? normalizePrLifecycleState(details.state) : 'unknown'
+          const conflicts = state === 'open' && details !== null && prHasMergeConflicts(details)
+          let checks: GhPrChecksState | undefined
+          if (state === 'open') {
+            try {
+              checks = await api.gh.prChecks(ref.owner, ref.repo, ref.number)
+            } catch {
+              checks = undefined
+            }
+          }
+          prStatuses.set(key, {
+            state,
+            conflicts,
+            ...(checks ? { checks } : {}),
+            fetchedAt: Date.now(),
+          })
+        })
+        .catch(() => {
+          prStatuses.set(key, { ...(cached ?? { state: 'unknown' }), fetchedAt: Date.now() })
+        })
+        .finally(() => {
+          prFetchInFlight.delete(key)
+          if (!disposed && contextModeActive(store)) render()
+        })
+    }
+  }
 
   function activeStorageKey(): string {
     const state = store.getState()
@@ -487,7 +582,8 @@ export function mountThreadContextPane(
       threads: state.threads,
       mentionedIn: mentionedFor === thread.id ? mentionedIn : [],
     })
-    const content = renderThreadContext(model, handlers)
+    ensurePrStatuses(model.links)
+    const content = renderThreadContext(model, handlers, prStatuses)
     const archive = el(
       'button',
       {
@@ -595,6 +691,10 @@ export function mountThreadContextPane(
       }
     }),
   ]
+  const onFocus = (): void => {
+    if (contextModeActive(store)) render()
+  }
+  window.addEventListener('focus', onFocus)
   if (contextModeActive(store)) {
     render()
     void refreshMentions()
@@ -604,6 +704,7 @@ export function mountThreadContextPane(
     token++
     storageToken++
     changesToken++
+    window.removeEventListener('focus', onFocus)
     for (const off of offs) off()
   }
 }

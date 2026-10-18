@@ -3070,6 +3070,19 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     },
     threads: SIDE_CHATS_THREADS,
+    pullRequests: [
+      {
+        owner: 'acme',
+        repo: 'widgets',
+        number: 42,
+        url: 'https://github.com/acme/widgets/pull/42',
+        title: 'Add widget support',
+        state: 'OPEN',
+        body: '',
+        files: [],
+        checks: 'success',
+      },
+    ],
   },
   {
     id: 'thread-context-worktree',

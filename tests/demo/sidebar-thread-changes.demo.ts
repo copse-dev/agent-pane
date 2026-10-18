@@ -69,7 +69,7 @@ describe('sidebar thread changes glyph', () => {
   })
   it('keeps new work after merged and closed PRs while hiding a clean completed thread', async () => {
     await browser.url('/?scenario=sidebar-cleanup-after-pr')
-    await $('.chat-pr-status').waitForExist({ timeout: 30_000 })
+    await $('.chat-row').waitForExist({ timeout: 30_000 })
     await $('.projects-filter-btn').click()
     await $('.context-menu-item*=Needs cleanup only').click()
     await browser.keys('Escape')
@@ -85,7 +85,7 @@ describe('sidebar thread changes glyph', () => {
   })
   it('keeps a running SSH thread with an open PR in the cleanup filter', async () => {
     await browser.url('/?scenario=sidebar-cleanup-ssh')
-    await $('.chat-pr-status').waitForExist({ timeout: 30_000 })
+    await $('.chat-row').waitForExist({ timeout: 30_000 })
     await $('.projects-filter-btn').click()
     await $('.context-menu-item*=Needs cleanup only').click()
     await browser.keys('Escape')
@@ -96,7 +96,7 @@ describe('sidebar thread changes glyph', () => {
       },
       { timeout: 5_000, timeoutMsg: 'the open remote PR must remain visible' },
     )
-    await expect($('.chat-pr-status')).toBeDisplayed()
+    await expect($('.chats-list .chat-pr-status')).not.toExist()
     await saveAppScreenshot('sidebar-cleanup-ssh.png')
   })
 })

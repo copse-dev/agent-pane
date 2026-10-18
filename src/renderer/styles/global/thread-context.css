@@ -123,6 +123,9 @@ button.thread-context-row:disabled {
   color: var(--text-muted);
   font-size: var(--font-size-2xs);
 }
+.thread-context-row .thread-context-pr-status {
+  margin-left: 0;
+}
 .thread-context-empty {
   margin: 0;
   color: var(--text-muted);

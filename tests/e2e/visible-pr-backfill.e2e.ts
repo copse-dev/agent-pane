@@ -61,39 +61,30 @@ describe('visible legacy thread PR backfill', () => {
     resetUserData()
   })
 
-  it('fills visible chips and leaves unrevealed threads unread until Show more', async function () {
+  it('backfills visible PR references without adding status glyphs to thread rows', async function () {
     this.timeout(90_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await $('.chat-row[data-thread-id="thread-01"] .chat-pr-status').waitForExist({
-      timeout: 15_000,
-    })
     await browser.waitUntil(() => metaHasPrRefs('thread-01'), { timeout: 15_000 })
+    await expect($('.chat-row[data-thread-id="thread-01"] .chat-pr-status')).not.toExist()
     await expect($('.chat-row[data-thread-id="thread-11"]')).not.toExist()
     expect(metaHasPrRefs('thread-11')).toBe(false)
 
     await $('.chats-show-more').click()
     const laterRow = await $('.chat-row[data-thread-id="thread-11"]')
     await laterRow.scrollIntoView()
-    const laterChip = await laterRow.$('.chat-pr-status')
-    await laterChip.waitForExist({ timeout: 15_000 })
-    await expect(laterChip).toHaveAttribute('aria-label', expect.stringMatching(/merged/i))
     await browser.waitUntil(() => metaHasPrRefs('thread-11'), { timeout: 15_000 })
-    await saveElementScreenshot('#pane-projects', 'visible-pr-backfill.png', {
-      beforeCapture: async () => {
-        // The Settings footer overflows its hidden pane by half a CSS pixel.
-        // scrollIntoView can pan that pane while revealing the last thread;
-        // the inner list owns scrolling, so return the outer frame to origin.
-        await browser.execute(() => {
-          const pane = document.getElementById('pane-projects')
-          if (!pane) throw new Error('Projects pane is missing')
-          pane.scrollTop = 0
-        })
-        expect(await $('#pane-projects').getProperty('scrollTop')).toBe(0)
-        await expect($('.chat-row[data-thread-id="thread-11"] .chat-pr-status')).toHaveAttribute(
-          'aria-label',
-          expect.stringMatching(/merged/i),
-        )
-      },
-    })
+    await expect(laterRow.$('.chat-pr-status')).not.toExist()
+    await laterRow.click()
+    const pane = $('#pane-files')
+    if (!(await pane.isDisplayed())) {
+      await $('[aria-label="Toggle right panel"]').click()
+      await pane.waitForDisplayed({ timeout: 10_000 })
+    }
+    if (!(await $('.thread-context').isDisplayed()))
+      await $('[aria-label="Open thread context"]').click()
+    const merged = $('[data-link-group="pr"] .thread-context-pr-status.is-merged')
+    await merged.waitForExist({ timeout: 15_000 })
+    await expect(merged).toHaveAttribute('aria-label', expect.stringMatching(/merged/i))
+    await saveElementScreenshot('#pane-files', 'visible-pr-backfill-context.png')
   })
 })

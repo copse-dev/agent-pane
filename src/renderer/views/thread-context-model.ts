@@ -1,5 +1,6 @@
 import type { Project, Thread } from '@shared/types'
 import { githubPrKey, type GithubPrRef } from '@shared/git/github-pr-url.ts'
+import { collectThreadPrRefs } from '@shared/git/thread-pr-status.ts'
 import { sideChatsOf, type SideChatRow } from '@shared/threads/side-chat.ts'
 import {
   collectThreadLinks,
@@ -115,7 +116,12 @@ export function deriveThreadContext(input: ThreadContextInput): ThreadContextMod
 
   const links: ContextLink[] = []
   const seenPr = new Set<string>()
-  for (const pr of [...(thread.prRefs ?? []), ...(thread.prProductions ?? []).map((p) => p.pr)]) {
+  const prRefs = [
+    ...(thread.prRefs ?? []),
+    ...(thread.prProductions ?? []).map((production) => production.pr),
+    ...(loaded ? collectThreadPrRefs(thread) : []),
+  ]
+  for (const pr of prRefs) {
     const key = githubPrKey(pr)
     if (seenPr.has(key)) continue
     seenPr.add(key)

@@ -141,6 +141,78 @@ test('renders every section with safe text and routes each click to its own hand
   ])
 })
 
+test('shows linked PR lifecycle and prioritizes merge conflicts over failing checks', () => {
+  const statuses = new Map([
+    [
+      'acme/widget#42',
+      { state: 'open' as const, checks: 'failure' as const, conflicts: true, fetchedAt: 1 },
+    ],
+  ])
+  const host = renderThreadContext(model(), recorder().handlers, statuses)
+  const row = host.querySelector('[data-link-key="pr:acme/widget#42"]')
+  const status = row?.querySelector('.thread-context-pr-status')
+  assert.ok(status)
+  assert.ok(status.classList.contains('is-open'))
+  assert.ok(status.classList.contains('has-conflicts'))
+  assert.equal(status.classList.contains('has-ci-failure'), false)
+  assert.match(status.getAttribute('aria-label') ?? '', /checks are failing; merge conflicts/)
+  assert.equal(row?.querySelector('.thread-context-chip')?.textContent, 'Open')
+  assert.equal(status.querySelector('svg path:nth-child(2)')?.getAttribute('d'), 'M3 3l6 6m0-6L3 9')
+
+  const merged = renderThreadContext(
+    model(),
+    recorder().handlers,
+    new Map([['acme/widget#42', { state: 'merged' as const, fetchedAt: 2 }]]),
+  )
+  assert.ok(merged.querySelector('.thread-context-pr-status.is-merged svg[data-icon="git-merge"]'))
+  assert.equal(
+    merged.querySelector('[data-link-key="pr:acme/widget#42"] .thread-context-chip')?.textContent,
+    'Merged',
+  )
+})
+
+test('the mounted Context panel resolves a linked PR from GitHub', async () => {
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'p',
+    projects: [{ id: 'p', path: '/work/widgets', name: 'Widgets' }],
+    filesPaneOpen: true,
+    rightPanelMode: 'context',
+  })
+  const threadId = createThread(store)
+  store.setState({
+    threads: store
+      .getState()
+      .threads.map((thread) => (thread.id === threadId ? { ...thread, prRefs: [pr] } : thread)),
+  })
+  const base = createFakeApi()
+  const api = {
+    ...base,
+    gh: {
+      ...base.gh,
+      prDetails: async () => ({
+        ...pr,
+        title: 'Fix widgets',
+        state: 'OPEN',
+        body: '',
+        files: [],
+      }),
+      prChecks: async () => 'failure' as const,
+    },
+  }
+  const viewer = document.createElement('div')
+  const dispose = mountThreadContextPane(document.createElement('div'), viewer, store, api)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const status = viewer.querySelector('.thread-context-pr-status.is-open.has-ci-failure')
+  assert.ok(status)
+  assert.match(status.getAttribute('aria-label') ?? '', /checks are failing/)
+  assert.equal(
+    viewer.querySelector('[data-link-group="pr"] .thread-context-chip')?.textContent,
+    'Open',
+  )
+  dispose()
+})
+
 test('a side chat links back to its parent and cannot start another', () => {
   const { handlers, calls } = recorder()
   const host = renderThreadContext(

@@ -760,8 +760,7 @@
 }
 /* Bell on a background thread/project awaiting the user. Uses the warning
    accent and a gentle pulse so it reads as "needs attention" without shouting. */
-/* Single GitHub PR icon — color encodes lifecycle (open / merged / closed).
-   Details stay in the title / aria-label; no text chip. */
+/* GitHub PR icon — color encodes lifecycle (open / merged / closed). */
 .chat-pr-status,
 .chat-changes-status {
   flex-shrink: 0;
@@ -807,7 +806,6 @@
 .chats-list .chat-row .chat-attention-bell {
   margin-left: auto;
 }
-.chats-list .chat-row:not(:has(.chat-attention-bell)) .chat-pr-status,
 .chats-list .chat-row:not(:has(.chat-attention-bell)) .chat-changes-status {
   margin-left: auto;
 }

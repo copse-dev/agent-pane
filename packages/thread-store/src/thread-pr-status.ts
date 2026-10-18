@@ -11,8 +11,8 @@ import {
 export type PrLifecycleState = 'open' | 'merged' | 'closed' | 'unknown'
 
 /**
- * Compact rollup shown on a sidebar thread row: unfinished work (open) wins over
- * terminal states so a mixed set still surfaces "N open".
+ * Compact rollup used by sidebar cleanup filtering: unfinished work (open) wins
+ * over terminal states in a mixed set.
  */
 export type ThreadPrRollup =
   | { kind: 'open'; openCount: number; totalCount: number; primaryNumber?: number }
@@ -96,7 +96,7 @@ export function summarizeThreadPrStatus(
   return { kind: 'closed', totalCount: knownCount }
 }
 
-/** Short label for the projects-pane chip. */
+/** Short label for compact PR summaries. */
 export function formatThreadPrStatus(rollup: ThreadPrRollup): string {
   switch (rollup.kind) {
     case 'open':
@@ -111,7 +111,7 @@ export function formatThreadPrStatus(rollup: ThreadPrRollup): string {
   }
 }
 
-/** Accessible description for the chip. */
+/** Accessible description for compact PR summaries. */
 export function describeThreadPrStatus(rollup: ThreadPrRollup): string {
   switch (rollup.kind) {
     case 'open':

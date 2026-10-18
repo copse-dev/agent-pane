@@ -1,269 +1,77 @@
-// Sidebar thread rows show a single GitHub PR icon (color = open / merged /
-// closed) once linked PR details resolve via the mock/gh backend.
+// Sidebar PR data still supports cleanup filtering and visible-thread backfill.
 import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import type { GhPrDetails } from '@shared/types/git.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountProjectsPane } from './projects-pane.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
-// Mirror gh-pr-mock fixtures (keep renderer tests free of main-process imports).
-const OWNER = 'copse-dev'
-const REPO = 'copse-panel'
-const OPEN_NUMBER = 42
-const MERGED_NUMBER = 99
-const OPEN_URL = `https://github.com/${OWNER}/${REPO}/pull/${String(OPEN_NUMBER)}`
-const MERGED_URL = `https://github.com/${OWNER}/${REPO}/pull/${String(MERGED_NUMBER)}`
-
-function thread(
-  id: string,
-  title: string,
-  overrides: Partial<Pick<Thread, 'messages' | 'remoteAgentLink'>> = {},
-): Thread {
-  const base: Thread = {
+function thread(id: string, title: string): Thread {
+  return {
     id,
     title,
     status: 'idle',
-    messages: overrides.messages ?? [],
+    messages: [],
     usage: { inputTokens: 0, outputTokens: 0 },
     createdAt: 1,
     updatedAt: 1,
   }
-  if (overrides.remoteAgentLink) base.remoteAgentLink = overrides.remoteAgentLink
-  return base
 }
 
-function assistant(id: string, content: string): Thread['messages'][number] {
-  return { id, role: 'assistant', content, toolCalls: [], createdAt: 1 }
-}
-
-function details(number: number, state: string): GhPrDetails {
+function apiWithPrDetails(): ApiClient {
+  const base = createFakeApi()
   return {
-    owner: OWNER,
-    repo: REPO,
-    number,
-    title: `PR ${String(number)}`,
-    url: `https://github.com/${OWNER}/${REPO}/pull/${String(number)}`,
-    state,
-    body: '',
-    files: [],
+    ...base,
+    threads: { ...base.threads, listOrphans: async (): Promise<never[]> => [] },
+    gh: { ...base.gh, prDetails: async () => null },
   }
 }
 
-function apiWithPrDetails(
-  resolve: (owner: string, repo: string, number: number) => Promise<GhPrDetails | null>,
-): ApiClient {
-  return ((): ApiClient => {
-    const base = createFakeApi()
-    return {
-      ...base,
-      threads: {
-        ...base['threads'],
-        listOrphans: async (): Promise<never[]> => [],
-      },
-      gh: {
-        ...base['gh'],
-        prDetails: resolve,
-      },
-    } satisfies ApiClient
-  })()
+function rowByTitle(title: string): HTMLElement | undefined {
+  return Array.from(document.querySelectorAll<HTMLElement>('.chat-row')).find(
+    (row) => row.querySelector('.chat-title')?.textContent === title,
+  )
 }
 
 afterEach(() => {
   document.body.replaceChildren()
 })
 
-describe('projects pane thread PR status (component)', () => {
-  it('uses a conflict X instead of the CI dot when both are known', async () => {
+describe('projects pane PR behavior (component)', () => {
+  it('keeps the PR status glyph out of a thread row', async () => {
     const store = createStore({
       projects: [{ id: 'p1', path: '/proj', name: 'Proj' }],
       activeProjectId: 'p1',
+      expandedProjectId: 'p1',
+      workspaceRoot: '/proj',
       threads: [
-        thread('conflict', 'Conflicting PR', {
-          messages: [assistant('m-conflict', OPEN_URL)],
-        }),
+        {
+          ...thread('linked', 'Linked PR'),
+          prRefs: [
+            {
+              owner: 'copse-dev',
+              repo: 'copse-panel',
+              number: 42,
+              url: 'https://github.com/copse-dev/copse-panel/pull/42',
+            },
+          ],
+        },
       ],
+      activeThreadId: 'linked',
     })
-    const base = apiWithPrDetails(async () => ({
-      ...details(OPEN_NUMBER, 'OPEN'),
-      mergeable: 'CONFLICTING',
-    }))
-    mount(store, {
-      ...base,
-      gh: { ...base.gh, prChecks: async () => 'failure' },
-    })
-    const icon = await waitForIcon('Conflicting PR', 'open')
-    assert.equal(icon.classList.contains('has-conflicts'), true)
-    assert.equal(icon.classList.contains('has-ci-failure'), false)
-    assert.match(icon.getAttribute('aria-label') ?? '', /merge conflicts/)
-    assert.match(icon.getAttribute('aria-label') ?? '', /checks are failing/)
-    assert.equal(icon.querySelector('svg path:nth-child(2)')?.getAttribute('d'), 'M3 3l6 6m0-6L3 9')
-  })
-
-  function mount(store: ReturnType<typeof createStore>, api: ApiClient): HTMLElement {
     const host = document.createElement('div')
     document.body.append(host)
-    mountProjectsPane(host, store, api)
-    return host
-  }
-
-  function rowByTitle(title: string): HTMLElement | undefined {
-    return Array.from(document.querySelectorAll<HTMLElement>('.chat-row')).find(
-      (r) => r.querySelector('.chat-title')?.textContent === title,
-    )
-  }
-
-  async function waitForIcon(
-    title: string,
-    kind: 'open' | 'merged' | 'closed',
-  ): Promise<HTMLElement> {
-    const deadline = Date.now() + 2_000
-    while (Date.now() < deadline) {
-      const row = rowByTitle(title)
-      const icon = row?.querySelector<HTMLElement>(`.chat-pr-status.is-${kind}`)
-      const glyph = kind === 'merged' ? 'git-merge' : 'git-pull-request'
-      if (icon?.querySelector(`svg[data-icon="${glyph}"]`)) return icon
-      await new Promise((r) => setTimeout(r, 10))
+    const cleanup = mountProjectsPane(host, store, apiWithPrDetails())
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const row = rowByTitle('Linked PR')
+      assert.ok(row)
+      assert.equal(row.querySelector('.chat-pr-status'), null)
+    } finally {
+      cleanup()
     }
-    throw new Error(`Timed out waiting for PR ${kind} icon on "${title}"`)
-  }
-
-  it('shows an open PR icon for a single open PR linked from chat', async () => {
-    const store = createStore({
-      projects: [{ id: 'p1', path: '/proj', name: 'Proj' }],
-      activeProjectId: 'p1',
-      expandedProjectId: 'p1',
-      workspaceRoot: '/proj',
-      threads: [
-        thread('open', 'Open PR work', {
-          messages: [assistant('m1', `Opened ${OPEN_URL}`)],
-        }),
-        thread('plain', 'No PR'),
-      ],
-      activeThreadId: 'open',
-    })
-    mount(
-      store,
-      apiWithPrDetails(async (_o, _r, number) =>
-        number === OPEN_NUMBER ? details(number, 'OPEN') : null,
-      ),
-    )
-
-    const icon = await waitForIcon('Open PR work', 'open')
-    assert.match(icon.getAttribute('aria-label') ?? '', /#42.*open/i)
-    assert.equal(rowByTitle('No PR')?.querySelector('.chat-pr-status'), null)
-  })
-
-  it('shows a merged PR icon when every linked PR is merged', async () => {
-    const store = createStore({
-      projects: [{ id: 'p1', path: '/proj', name: 'Proj' }],
-      activeProjectId: 'p1',
-      expandedProjectId: 'p1',
-      workspaceRoot: '/proj',
-      threads: [
-        thread('done', 'Shipped work', {
-          messages: [assistant('m1', `Landed ${MERGED_URL} and ${OPEN_URL}`)],
-          remoteAgentLink: {
-            provider: 'cursor',
-            agentId: 'a1',
-            prUrl: MERGED_URL,
-            createdAt: 1,
-          },
-        }),
-      ],
-      activeThreadId: 'done',
-    })
-    mount(
-      store,
-      apiWithPrDetails(async (_o, _r, number) => {
-        if (number === MERGED_NUMBER) return details(number, 'MERGED')
-        if (number === OPEN_NUMBER) return details(number, 'MERGED')
-        return null
-      }),
-    )
-
-    const icon = await waitForIcon('Shipped work', 'merged')
-    assert.match(icon.getAttribute('aria-label') ?? '', /all linked.*merged/i)
-  })
-
-  it('keeps the open icon when multiple PRs are still open', async () => {
-    const store = createStore({
-      projects: [{ id: 'p1', path: '/proj', name: 'Proj' }],
-      activeProjectId: 'p1',
-      expandedProjectId: 'p1',
-      workspaceRoot: '/proj',
-      threads: [
-        thread('multi', 'Multi-PR thread', {
-          messages: [assistant('m1', `${OPEN_URL} and ${MERGED_URL}`)],
-        }),
-      ],
-      activeThreadId: 'multi',
-    })
-    mount(
-      store,
-      apiWithPrDetails(async (_o, _r, number) => {
-        if (number === OPEN_NUMBER) return details(number, 'OPEN')
-        if (number === MERGED_NUMBER) return details(number, 'OPEN')
-        return null
-      }),
-    )
-
-    const icon = await waitForIcon('Multi-PR thread', 'open')
-    assert.match(icon.getAttribute('aria-label') ?? '', /2 pull requests are open/i)
-  })
-
-  it('keeps a cached icon mounted while its expired lifecycle refreshes', async (t) => {
-    let requestCount = 0
-    let resolveRefresh: ((value: GhPrDetails | null) => void) | undefined
-    const store = createStore({
-      projects: [{ id: 'p1', path: '/proj', name: 'Proj' }],
-      activeProjectId: 'p1',
-      expandedProjectId: 'p1',
-      workspaceRoot: '/proj',
-      threads: [
-        thread('refreshing', 'Refreshing PR', {
-          messages: [assistant('m1', `Opened ${OPEN_URL}`)],
-        }),
-      ],
-      activeThreadId: 'refreshing',
-    })
-    mount(
-      store,
-      apiWithPrDetails((_owner, _repo, number) => {
-        requestCount += 1
-        if (requestCount === 1) return Promise.resolve(details(number, 'OPEN'))
-        return new Promise((resolve) => {
-          resolveRefresh = resolve
-        })
-      }),
-    )
-
-    await waitForIcon('Refreshing PR', 'open')
-    const expiredAt = Date.now() + 60_001
-    t.mock.method(Date, 'now', () => expiredAt)
-
-    const searchInput = document.querySelector<HTMLInputElement>('.projects-search-input')
-    assert.ok(searchInput)
-    searchInput.dispatchEvent(new Event('input', { bubbles: true }))
-
-    assert.equal(requestCount, 2)
-    const refreshingIcon =
-      rowByTitle('Refreshing PR')?.querySelector<HTMLElement>('.chat-pr-status.is-open')
-    assert.ok(refreshingIcon)
-    assert.ok(refreshingIcon.querySelector('svg[data-icon="git-pull-request"]'))
-    assert.match(refreshingIcon.getAttribute('aria-label') ?? '', /#42.*open/i)
-
-    t.mock.restoreAll()
-    assert.ok(resolveRefresh)
-    resolveRefresh(details(OPEN_NUMBER, 'OPEN'))
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    assert.equal(
-      rowByTitle('Refreshing PR')?.querySelector('.chat-pr-status.is-open'),
-      refreshingIcon,
-    )
   })
 
   it('re-observes the current visible row when an older render request fails', async (t) => {
@@ -308,7 +116,7 @@ describe('projects pane thread PR status (component)', () => {
 
     let attempts = 0
     let rejectFirst: ((reason: Error) => void) | undefined
-    const base = apiWithPrDetails(async () => null)
+    const base = apiWithPrDetails()
     const api = {
       ...base,
       threads: {

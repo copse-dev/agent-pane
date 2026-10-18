@@ -125,6 +125,17 @@ test('an unloaded transcript falls back to recorded links and shows no subagents
   assert.deepEqual(model.subagents, [])
 })
 
+test('shows a PR linked in the live conversation before metadata is backfilled', () => {
+  const live = thread('live', {
+    messages: [message('m', `Review ${pr.url}`)],
+  })
+  const model = deriveThreadContext({ thread: live, project, threads: [live] })
+  assert.deepEqual(
+    model.links.filter((link) => link.kind === 'pr').map((link) => link.target),
+    [pr.url],
+  )
+})
+
 test('flags a thread link whose target is outside the project', () => {
   const t = thread('t', { messages: [message('m', `copse://thread/${ID}`)] })
   const [link] = deriveThreadContext({ thread: t, project, threads: [t] }).links

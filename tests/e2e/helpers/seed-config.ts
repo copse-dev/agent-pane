@@ -5471,8 +5471,8 @@ export function seedHeldQueueFixture(workspaceRoot: string): void {
 }
 
 /**
- * Sidebar threads with open + merged GitHub PRs for the thread PR-status chip
- * eval. Relies on `COPSE_PANEL_MOCK_GH=1` fixtures (#42 open, #99 merged).
+ * Threads with open + merged GitHub PRs for the Context PR-status eval.
+ * Relies on `COPSE_PANEL_MOCK_GH=1` fixtures (#42 open, #99 merged).
  */
 export function seedThreadPrStatusFixture(workspaceRoot: string): {
   openThreadTitle: string

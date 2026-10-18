@@ -105,6 +105,14 @@ describe('The thread Context panel', () => {
       'true',
     )
     await expect($('[data-link-group="pr"] .thread-context-title')).toHaveText('acme/widgets#42')
+    const prStatus = $('[data-link-group="pr"] .thread-context-pr-status.is-open')
+    await prStatus.waitForExist({ timeout: 10_000 })
+    await expect(prStatus).toHaveAttribute('aria-label', expect.stringMatching(/#42.*open/i))
+    await expect($('[data-link-group="pr"] .thread-context-chip')).toHaveText('Open')
+    await expect($('.chat-row.selected .chat-pr-status')).not.toExist()
+    await $('[data-link-group="pr"]').scrollIntoView({ block: 'center', inline: 'nearest' })
+    await waitForSettledLayout('#pane-files')
+    await saveElementScreenshot('#pane-files', 'thread-context-pr-status.png')
     await expect($('[data-context-section="sources"] .thread-context-row')).toHaveText(
       'webdriver.io/docs/api/element/waitForDisplayed',
     )

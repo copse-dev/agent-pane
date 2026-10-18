@@ -14,9 +14,7 @@ import {
   bellIcon,
   chevronDownIcon,
   chevronRightIcon,
-  gitMergeIcon,
   gitBranchIcon,
-  gitPullRequestIcon,
   moreHorizontalIcon,
   moreVerticalIcon,
   plusIcon,
@@ -41,7 +39,6 @@ import {
 } from '@shared/store/thread-helpers.ts'
 import { githubPrKey, type GithubPrRef } from '@shared/git/github-pr-url.ts'
 import {
-  describeThreadPrStatus,
   normalizePrLifecycleState,
   summarizeThreadPrStatus,
   type PrLifecycleState,
@@ -180,29 +177,6 @@ function runningStatus(label: string): SVGSVGElement {
   svg.setAttribute('data-tooltip', label)
   svg.removeAttribute('aria-hidden')
   return svg
-}
-
-/** Single GitHub PR icon on a thread row; color encodes open / merged / closed. */
-function chatPrStatus(rollup: ThreadPrRollup, ciFailing: boolean, conflicts: boolean): HTMLElement {
-  const statusLabel = ciFailing
-    ? `${describeThreadPrStatus(rollup)}; checks are failing`
-    : describeThreadPrStatus(rollup)
-  const label = conflicts ? `${statusLabel}; merge conflicts` : statusLabel
-  const icon =
-    rollup.kind === 'merged'
-      ? gitMergeIcon('ui-icon ui-icon-sm')
-      : gitPullRequestIcon('ui-icon ui-icon-sm', conflicts)
-  icon.setAttribute('aria-hidden', 'true')
-  return el(
-    'span',
-    {
-      class: `chat-pr-status is-${rollup.kind}${conflicts ? ' has-conflicts' : ciFailing ? ' has-ci-failure' : ''}`,
-      role: 'img',
-      'aria-label': label,
-      'data-tooltip': label,
-    },
-    icon,
-  )
 }
 
 /** Muted branch glyph for a finished thread with unlanded work and no PR; detail is tooltip-only. */
@@ -1023,20 +997,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     )
   }
 
-  function ciFailingForThread(thread: SidebarThread): boolean {
-    return sidebarPrRefs(thread).some((ref) => {
-      const entry = prLifecycleCache.get(githubPrKey(ref))
-      return entry?.state === 'open' && entry.checks === 'failure'
-    })
-  }
-
-  function conflictsForThread(thread: SidebarThread): boolean {
-    return sidebarPrRefs(thread).some((ref) => {
-      const entry = prLifecycleCache.get(githubPrKey(ref))
-      return entry?.state === 'open' && entry.conflicts === true
-    })
-  }
-
   function rollupForThread(thread: SidebarThread): ThreadPrRollup | null {
     const refs = sidebarPrRefs(thread)
     if (refs.length === 0) return null
@@ -1047,8 +1007,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
   /**
    * Unlanded work: an open PR, or uncommitted/unpushed changes. Mirrors the
-   * row's own "has-changes-status"/"has-pr-status" badges so the filter agrees
-   * with what's on screen. A thread whose PR or change state hasn't been
+   * Context panel's PR status and the row's changes badge so the filter agrees
+   * with those indicators. A thread whose PR or change state hasn't been
    * fetched yet counts as matching, not excluded — otherwise toggling the
    * filter on would hide everything until each row happened to scroll into
    * view and backfill (see the IntersectionObserver-gated fetches below).
@@ -1823,16 +1783,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       }
 
       const prRollup = rollupForThread(thread)
-      if (prRollup) {
-        chatRow.classList.add('has-pr-status')
-        chatRow.append(
-          chatPrStatus(
-            prRollup,
-            prRollup.kind === 'open' && ciFailingForThread(thread),
-            prRollup.kind === 'open' && conflictsForThread(thread),
-          ),
-        )
-      }
       if (
         (!prRollup || (needsCleanupOnly && prRollup.kind !== 'open')) &&
         thread.status !== 'running' &&

@@ -4,9 +4,7 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedThreadPrStatusFixture } from './helpers/seed-config.ts'
 
-describe('thread GitHub PR status refresh', () => {
-  let openThreadTitle: string
-
+describe('thread Context PR status refresh', () => {
   before(() => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
   })
@@ -21,7 +19,7 @@ describe('thread GitHub PR status refresh', () => {
       COPSE_PANEL_MOCK_GH_STATUS: 'ready',
     })
     resetUserData()
-    ;({ openThreadTitle } = seedThreadPrStatusFixture(process.cwd()))
+    seedThreadPrStatusFixture(process.cwd())
     await browser.reloadSession()
   })
 
@@ -29,24 +27,25 @@ describe('thread GitHub PR status refresh', () => {
     resetUserData()
   })
 
-  it('keeps the current PR icon visible while expired status refreshes', async function () {
+  it('keeps a cached status visible while it refreshes on focus', async function () {
     this.timeout(90_000)
-
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await expect($('.chat-row.selected .chat-title')).toHaveText(openThreadTitle)
-
-    const openIcon = await $('.chat-row.selected .chat-pr-status')
-    await openIcon.waitForExist({ timeout: 15_000 })
-    await expect(openIcon).toHaveElementClass('is-open')
+    const pane = $('#pane-files')
+    if (!(await pane.isDisplayed())) {
+      await $('[aria-label="Toggle right panel"]').click()
+      await pane.waitForDisplayed({ timeout: 10_000 })
+    }
+    if (!(await $('.thread-context').isDisplayed()))
+      await $('[aria-label="Open thread context"]').click()
+    const open = $('[data-link-group="pr"] .thread-context-pr-status.is-open')
+    await open.waitForExist({ timeout: 15_000 })
 
     const refreshing = await browser.execute(() => {
       const originalNow = Date.now
-      const expiredAt = originalNow() + 60_001
-      Date.now = () => expiredAt
+      Date.now = () => originalNow() + 60_001
       try {
-        const searchInput = document.querySelector<HTMLInputElement>('.projects-search-input')
-        searchInput?.dispatchEvent(new Event('input', { bubbles: true }))
-        const icon = document.querySelector('.chat-row.selected .chat-pr-status')
+        window.dispatchEvent(new Event('focus'))
+        const icon = document.querySelector('[data-link-group="pr"] .thread-context-pr-status')
         return {
           exists: icon !== null,
           open: icon?.classList.contains('is-open') ?? false,
@@ -57,9 +56,9 @@ describe('thread GitHub PR status refresh', () => {
       }
     })
 
-    await expect(refreshing.exists).toBe(true)
-    await expect(refreshing.open).toBe(true)
-    await expect(refreshing.label).toMatch(/#42.*open/i)
-    await saveElementScreenshot('#pane-projects', 'thread-pr-status-refresh.png')
+    expect(refreshing.exists).toBe(true)
+    expect(refreshing.open).toBe(true)
+    expect(refreshing.label).toMatch(/#42.*open/i)
+    await saveElementScreenshot('#pane-files', 'thread-pr-context-refresh.png')
   })
 })
