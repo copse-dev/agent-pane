@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createStore } from '@shared/store/store.ts'
 import type { ForkedHistoryResult } from '@shared/types'
+import type { GhPrDetails } from '@shared/types/git.ts'
 import type { ThreadBacklink } from '@shared/threads/thread-links.ts'
 import { addMessage, createThread } from '@shared/store/thread-helpers.ts'
 import type { ThreadContextModel } from './thread-context-model.ts'
@@ -190,7 +191,7 @@ test('the mounted Context panel resolves a linked PR from GitHub', async () => {
     ...base,
     gh: {
       ...base.gh,
-      prDetails: async () => ({
+      prDetails: async (): Promise<GhPrDetails> => ({
         ...pr,
         title: 'Fix widgets',
         state: 'OPEN',

@@ -239,7 +239,7 @@ function linksSection(
               { class: 'thread-context-chip' },
               link.kind === 'pr'
                 ? knownStatus
-                  ? knownStatus.state[0]?.toUpperCase() + knownStatus.state.slice(1)
+                  ? knownStatus.state.charAt(0).toUpperCase() + knownStatus.state.slice(1)
                   : 'PR'
                 : 'Thread',
             ),
