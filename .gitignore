@@ -89,5 +89,12 @@ docs/plans/perf-data*/runs/*warmup*/
 # R2-backed screenshot references and local immutable object cache.
 /tests/e2e/screenshots/*.png
 /.screenshot-policy/
+# Locally prepared and signed native vault helpers.
+native/profile-vault/dist/
+
+# Browser drivers downloaded by focused visual evals.
+.cache/wdio-demo/
+
+native/node-runtime/dist/
 
 /e2e-evidence/

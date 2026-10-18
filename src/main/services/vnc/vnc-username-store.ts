@@ -1,3 +1,4 @@
+import { VaultError, type SecretRecordIdentity } from '@copse/store-kit/profile-vault-crypto.ts'
 import { createHash } from 'node:crypto'
 import type { VncTarget } from '@shared/types/vnc.ts'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -45,6 +46,16 @@ function settingKey(prefix: string, target: VncTarget): string {
   return `${prefix}${digest}`
 }
 
+function recordIdentity(key: string): SecretRecordIdentity {
+  const prefix = key.startsWith(VNC_USERNAME_SETTING_PREFIX)
+    ? VNC_USERNAME_SETTING_PREFIX
+    : VNC_PASSWORD_SETTING_PREFIX
+  return {
+    store: prefix === VNC_USERNAME_SETTING_PREFIX ? 'vnc-username' : 'vnc-password',
+    record: key.slice(prefix.length),
+  }
+}
+
 function readSecret(
   prefix: string,
   target: VncTarget,
@@ -55,8 +66,12 @@ function readSecret(
   const cipher = dependencies.getCipher()
   if (!cipher) return null
   try {
-    return cipher.decryptString(Buffer.from(stored.enc, 'base64'))
-  } catch {
+    return cipher.decryptString(
+      Buffer.from(stored.enc, 'base64'),
+      recordIdentity(settingKey(prefix, target)),
+    )
+  } catch (error) {
+    if (error instanceof VaultError) throw error
     return null
   }
 }
@@ -71,7 +86,7 @@ async function rememberSecret(
   if (!value || !cipher?.isEncryptionAvailable()) return false
   const record: StoredVncUsername = {
     v: 1,
-    enc: cipher.encryptString(value).toString('base64'),
+    enc: cipher.encryptString(value, recordIdentity(settingKey(prefix, target))).toString('base64'),
   }
   await dependencies.write(settingKey(prefix, target), record)
   return true
@@ -90,8 +105,9 @@ export function getVncUsername(
   const encrypted = Buffer.from(stored.enc, 'base64')
   let username: string
   try {
-    username = cipher.decryptString(encrypted).trim()
-  } catch {
+    username = cipher.decryptString(encrypted, recordIdentity(key)).trim()
+  } catch (error) {
+    if (error instanceof VaultError) throw error
     return null
   }
   if (!username || username.length > 256) return null
@@ -155,7 +171,9 @@ export function migrateStoredVncUsernames(
     const encrypted = Buffer.from(record.enc, 'base64')
     let username: string
     try {
-      username = cipher.decryptString(encrypted).trim()
+      username = cipher
+        .decryptString(encrypted, recordIdentity(`${VNC_USERNAME_SETTING_PREFIX}${hash}`))
+        .trim()
     } catch {
       continue
     }
@@ -222,6 +240,7 @@ export function forgetVncPassword(
   target: VncTarget,
   dependencies: VncUsernameStoreDependencies = defaultDependencies,
 ): Promise<void> {
+  assertWritable(dependencies)
   return dependencies.remove(settingKey(VNC_PASSWORD_SETTING_PREFIX, target))
 }
 
@@ -230,6 +249,7 @@ export async function forgetVncCredentials(
   target: VncTarget,
   dependencies: VncUsernameStoreDependencies = defaultDependencies,
 ): Promise<void> {
+  assertWritable(dependencies)
   await Promise.all([
     dependencies.remove(settingKey(VNC_USERNAME_SETTING_PREFIX, target)),
     dependencies.remove(settingKey(VNC_PASSWORD_SETTING_PREFIX, target)),
@@ -241,4 +261,10 @@ export function canStoreVncCredentials(
   dependencies: VncUsernameStoreDependencies = defaultDependencies,
 ): boolean {
   return dependencies.getCipher()?.isEncryptionAvailable() === true
+}
+
+function assertWritable(dependencies: VncUsernameStoreDependencies): void {
+  const cipher = dependencies.getCipher()
+  if (cipher?.protection === 'device-vault' && !cipher.isEncryptionAvailable())
+    throw new VaultError('locked')
 }
