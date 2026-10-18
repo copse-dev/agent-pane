@@ -29678,6 +29678,7 @@ function createClassifiersSection(api2) {
   const status = el("p", { class: "classifier-status", role: "status", "aria-live": "polite" });
   const screening = el("select", { name: "classifierScreening" });
   const background = el("select", { name: "classifierBackground" });
+  const askBeforeHosted = el("input", { type: "checkbox", name: "classifierToolPrompt" });
   const localHost = el("div", {
     class: "classifier-local",
     "aria-label": "Local classifier servers"
@@ -29713,6 +29714,17 @@ function createClassifiersSection(api2) {
         "Which classifier rates roadmap items when you save them, gives the verdict for fit checks and roadmap reviews, checks which open issues the roadmap already covers, and picks follow-ups after each turn. If it fails, the small-tasks model answers instead. A hosted classifier receives that text, including issues, commit history and each finished turn's messages, with saved keys redacted."
       )
     ),
+    el(
+      "label",
+      { class: "checkbox-label classifier-tool-prompt" },
+      askBeforeHosted,
+      "Ask before agent classifier questions"
+    ),
+    el(
+      "span",
+      { class: "field-hint" },
+      "Off by default. Turn on to review each agent question before it reaches a classifier. Hosted classifiers receive the question and supplied content. Safety screening and background questions use their own settings above."
+    ),
     localHost,
     chips,
     formHost,
@@ -29722,10 +29734,26 @@ function createClassifiersSection(api2) {
   let screeningId = null;
   let backgroundId = null;
   let selectedId = null;
+  let classifierToolPermissionId = null;
   const drafts = /* @__PURE__ */ new Map();
   let captureDraft;
   const pending = /* @__PURE__ */ new Map();
   let busy = false;
+  askBeforeHosted.addEventListener("change", () => {
+    const id = classifierToolPermissionId;
+    if (id === null) return;
+    askBeforeHosted.disabled = true;
+    const request = askBeforeHosted.checked ? api2.toolPermissions.set({ toolIds: [id], policy: "ask" }) : api2.toolPermissions.reset({ toolIds: [id] });
+    void request.then((catalog) => {
+      const tool = catalog.groups.flatMap((group) => group.tools).find((item) => item.id === id);
+      askBeforeHosted.checked = tool?.policy === "ask";
+      askBeforeHosted.disabled = tool === void 0 || tool.policy === "block";
+    }).catch((error62) => {
+      askBeforeHosted.checked = !askBeforeHosted.checked;
+      askBeforeHosted.disabled = false;
+      setInlineStatus(status, "error", classifierErrorMessage(error62));
+    });
+  });
   function renderChips() {
     clear(chips);
     const items = [...profiles.map((item) => item.profile), ...drafts.values()].filter(
@@ -30386,15 +30414,25 @@ function createClassifiersSection(api2) {
       const loaded = await Promise.all([
         api2.classifiers.list(),
         api2.classifiers.screening(),
-        api2.classifiers.background()
+        api2.classifiers.background(),
+        api2.toolPermissions.list().then(
+          (catalog) => ({ catalog, error: null }),
+          (error62) => ({ catalog: null, error: classifierErrorMessage(error62) })
+        )
       ]);
       if (signal?.aborted || request !== refreshGeneration) return;
       [profiles, screeningId, backgroundId] = loaded;
+      const permissionResult = loaded[3];
+      const classifierTool = permissionResult.catalog?.groups.flatMap((group) => group.tools).find((tool) => tool.executionName === "ask_classifier");
+      classifierToolPermissionId = classifierTool?.id ?? null;
+      askBeforeHosted.checked = classifierTool?.policy === "ask";
+      askBeforeHosted.disabled = classifierTool === void 0 || classifierTool.policy === "block";
       selectedId ??= profiles[0]?.profile.id ?? null;
       void refreshLocal(signal);
       if (selectedId !== null && !drafts.has(selectedId) && !profiles.some((item) => item.profile.id === selectedId))
         selectedId = null;
       render2();
+      if (permissionResult.error !== null) setInlineStatus(status, "error", permissionResult.error);
     } catch (error62) {
       if (signal?.aborted || request !== refreshGeneration) return;
       setInlineStatus(status, "error", classifierErrorMessage(error62));
@@ -45557,11 +45595,11 @@ var init_acp_known_agents = __esm({
           // even allowlisted ChatGPT workspace-routing requests fail before a turn.
           allowMacOsTrustd: true
         },
-        setup: "codex login",
-        // ChatGPT sign-in; set NO_BROWSER=1 for headless, or use CODEX_API_KEY
-        reauth: "codex login",
+        setup: "codex-acp cli login",
+        // Use the adapter's bundled CLI; no standalone codex required.
+        reauth: "codex-acp cli login",
         docsUrl: "https://www.npmjs.com/package/@agentclientprotocol/codex-acp",
-        note: "Runs OpenAI Codex. Sign in with `codex login` (ChatGPT), or set `CODEX_API_KEY`."
+        note: "Runs OpenAI Codex. Sign in with `codex-acp cli login` (ChatGPT), or set `CODEX_API_KEY`."
       },
       {
         id: "github-copilot-cli",
@@ -85506,6 +85544,10 @@ var init_demo_scenarios = __esm({
           uiTintStrength: "off",
           sidebarThreadGroup: "status"
         },
+        threadChanges: {
+          "demo-other-projects-active-chat": { dirty: true },
+          "demo-other-projects-docs-0": { dirty: false, unpushed: 2 }
+        },
         // The open project has one thread; two more projects hold threads that are only
         // read in the background after startup, so their titles must still be listed.
         threads: [
@@ -85515,6 +85557,7 @@ var init_demo_scenarios = __esm({
             status: "idle",
             messages: [],
             messagesLoaded: false,
+            prRefs: [],
             usage: { inputTokens: 0, outputTokens: 0 },
             createdAt: FIXED_TIME,
             updatedAt: FIXED_TIME
@@ -85529,6 +85572,7 @@ var init_demo_scenarios = __esm({
               status: "idle",
               messages: [],
               messagesLoaded: false,
+              prRefs: [],
               usage: { inputTokens: 0, outputTokens: 0 },
               createdAt: FIXED_TIME - 10 - index,
               updatedAt: FIXED_TIME - 10 - index
@@ -85543,11 +85587,32 @@ var init_demo_scenarios = __esm({
                 status: "idle",
                 messages: [],
                 messagesLoaded: false,
+                prRefs: [
+                  {
+                    owner: "acme",
+                    repo: "api-server",
+                    number: 42,
+                    url: "https://github.com/acme/api-server/pull/42"
+                  }
+                ],
                 usage: { inputTokens: 0, outputTokens: 0 },
                 createdAt: FIXED_TIME - 20,
                 updatedAt: FIXED_TIME - 20
               }
             ]
+          }
+        ],
+        pullRequests: [
+          {
+            owner: "acme",
+            repo: "api-server",
+            number: 42,
+            url: "https://github.com/acme/api-server/pull/42",
+            title: "Add pagination",
+            state: "OPEN",
+            body: "",
+            files: [],
+            checks: "success"
           }
         ]
       },
@@ -86092,6 +86157,78 @@ var init_demo_scenarios = __esm({
             createdAt: Date.now() - ago - 6e4,
             updatedAt: Date.now() - ago,
             ...slug2 === "legacy" ? {} : { lastPromptAt: Date.now() - ago - 3e4 - index }
+          }))
+        ]
+      },
+      {
+        id: "activity-home-final-response",
+        label: "Activity home showing the final response of finished threads",
+        project: project("demo-activity-final-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // Both settled threads are metadata-only, as threads that ended before launch
+        // are: the detail pane reads their last reply through threads.loadMessages.
+        threads: [
+          {
+            id: "demo-activity-final-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          ...[
+            [
+              "review",
+              "Review open PRs",
+              "idle",
+              36e5,
+              [
+                "Reviewed the four open PRs.",
+                "",
+                "- **#3744** is ready to merge; CI is green.",
+                "- **#3728** needs a rebase onto `main` before review.",
+                "- **#3702** and **#3695** overlap; I left a comment suggesting #3695 lands first.",
+                "",
+                "Nothing else is waiting on you."
+              ].join("\n")
+            ],
+            [
+              "flaky",
+              "Fix the flaky sandbox test",
+              "error",
+              36e5 * 3,
+              "The retry wrapper is in place, but `pnpm test -- sandbox` still times out on the second run."
+            ]
+          ].map(([slug2, title, status, ago, reply], index) => ({
+            id: `demo-activity-final-${slug2}`,
+            title,
+            status,
+            messages: [
+              {
+                id: `demo-activity-final-${slug2}-user`,
+                role: "user",
+                content: title,
+                toolCalls: [],
+                createdAt: Date.now() - ago - 3e4
+              },
+              {
+                id: `demo-activity-final-${slug2}-reply`,
+                role: "assistant",
+                content: reply,
+                toolCalls: [],
+                createdAt: Date.now() - ago
+              }
+            ],
+            messagesLoaded: false,
+            usage: { inputTokens: 1200, outputTokens: 300 },
+            createdAt: Date.now() - ago - 6e4,
+            updatedAt: Date.now() - ago,
+            lastPromptAt: Date.now() - ago - 3e4 - index
           }))
         ]
       },
@@ -91024,6 +91161,60 @@ var init_patch_children = __esm({
   }
 });
 
+// src/renderer/controller/activity-final-reply.ts
+function finalReplyText(messages) {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message2 = messages[index];
+    if (!message2 || message2.role === "user") return null;
+    if (message2.role !== "assistant") continue;
+    const text2 = message2.content.trim();
+    if (text2 === "") continue;
+    return text2.length <= FINAL_REPLY_MAX_CHARS ? text2 : `${text2.slice(0, FINAL_REPLY_MAX_CHARS).trimEnd()}\u2026`;
+  }
+  return null;
+}
+function createFinalReplyCache(load, onLoaded) {
+  const entries2 = /* @__PURE__ */ new Map();
+  const remember = (key, reply) => {
+    entries2.delete(key);
+    entries2.set(key, reply);
+    while (entries2.size > FINAL_REPLY_CACHE_SIZE) {
+      const oldest = entries2.keys().next().value;
+      if (oldest === void 0) break;
+      entries2.delete(oldest);
+    }
+  };
+  return (request) => {
+    if (request.messages) {
+      const reply = { state: "ready", text: finalReplyText(request.messages) };
+      remember(request.key, reply);
+      return reply;
+    }
+    const known = entries2.get(request.key);
+    if (known) return known;
+    const loading = { state: "loading" };
+    remember(request.key, loading);
+    load(request.projectId, request.threadId).then(
+      (messages) => {
+        remember(request.key, { state: "ready", text: finalReplyText(messages) });
+        onLoaded();
+      },
+      () => {
+        remember(request.key, { state: "ready", text: null });
+        onLoaded();
+      }
+    );
+    return loading;
+  };
+}
+var FINAL_REPLY_MAX_CHARS, FINAL_REPLY_CACHE_SIZE;
+var init_activity_final_reply = __esm({
+  "src/renderer/controller/activity-final-reply.ts"() {
+    FINAL_REPLY_MAX_CHARS = 2e4;
+    FINAL_REPLY_CACHE_SIZE = 20;
+  }
+});
+
 // src/renderer/controller/activity-model.ts
 function truncateText(text2, max = WANT_MAX_CHARS) {
   const flat = text2.replace(/\s+/g, " ").trim();
@@ -92037,6 +92228,36 @@ var init_approval_dialog = __esm({
   }
 });
 
+// packages/agent/src/ask-user-format.ts
+var askUserQuestionSchema, askUserParamsSchema, ASK_USER_ANSWER_MAX_LENGTH;
+var init_ask_user_format = __esm({
+  "packages/agent/src/ask-user-format.ts"() {
+    init_zod();
+    askUserQuestionSchema = external_exports.object({
+      question: external_exports.string().min(1).describe("The clarifying question to ask the user."),
+      options: external_exports.array(external_exports.string().min(1)).max(8).optional().describe("Optional suggested answers the user can pick from instead of typing."),
+      recommendedOption: external_exports.string().min(1).optional().describe("The exact option the agent recommends, when one is supported by the evidence."),
+      recommendationReason: external_exports.string().min(1).optional().describe("A brief reason for the recommendation, shown to the user.")
+    }).refine(
+      (question) => !question.recommendedOption || question.options?.includes(question.recommendedOption),
+      {
+        message: "recommendedOption must be one of options",
+        path: ["recommendedOption"]
+      }
+    ).refine(
+      (question) => Boolean(question.recommendedOption) === Boolean(question.recommendationReason),
+      {
+        message: "A recommendation needs both an option and a reason",
+        path: ["recommendationReason"]
+      }
+    );
+    askUserParamsSchema = external_exports.object({
+      questions: external_exports.array(askUserQuestionSchema).min(1).max(10).describe("One or more clarifying questions to ask the user before continuing.")
+    });
+    ASK_USER_ANSWER_MAX_LENGTH = 8192;
+  }
+});
+
 // src/renderer/views/activity-view.ts
 function stateGlyph(state) {
   const className = "ui-icon ui-icon-sm activity-glyph";
@@ -92057,6 +92278,12 @@ function createActivityView(api2, store2, sources3, deps, host) {
   const now = deps.now ?? Date.now;
   const setTimer = deps.setTimer ?? defaultTimer2;
   const timings = trackRunTimings(store2, now);
+  const finalReply = createFinalReplyCache(
+    (projectId, threadId) => api2.threads.loadMessages(projectId, threadId),
+    () => {
+      scheduleRender();
+    }
+  );
   const summary = el("p", { id: `${host.idPrefix}-summary`, class: "activity-panel-summary" });
   const list = el("nav", { class: "activity-list", "aria-label": "Threads" });
   const detail = el("section", {
@@ -92182,6 +92409,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
       class: "activity-answer-input",
       rows: "2",
       placeholder: "Or type an answer\u2026",
+      maxlength: String(ASK_USER_ANSWER_MAX_LENGTH),
       "data-control": `answer-${String(index)}`,
       "aria-labelledby": questionId
     });
@@ -92191,7 +92419,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
       next[index] = input2.value;
       drafts.set(requestId, next);
       const send = detail.querySelector(".activity-answer");
-      if (send) send.disabled = !hasAnswer(requestId);
+      if (send) send.disabled = settling || !hasAnswer(requestId);
     };
     input2.addEventListener("input", sync);
     input2.addEventListener("keydown", (event) => {
@@ -92333,7 +92561,26 @@ function createActivityView(api2, store2, sources3, deps, host) {
       ];
     }
     if (row2.issue) return issueBlock(row2);
-    return [el("p", { class: "activity-detail-text" }, row2.want)];
+    return finalReplyContent(row2) ?? [el("p", { class: "activity-detail-text" }, row2.want)];
+  }
+  function finalReplyContent(row2) {
+    if (row2.state !== "finished" && row2.state !== "failed") return null;
+    if (row2.fold || !row2.threadId || !row2.projectId) return null;
+    const thread = getThreadById(store2, row2.threadId);
+    const reply = finalReply({
+      key: `${row2.threadId}:${String(row2.since)}`,
+      projectId: row2.projectId,
+      threadId: row2.threadId,
+      messages: thread && thread.messagesLoaded !== false ? thread.messages : null
+    });
+    if (reply.state === "loading") {
+      return [el("p", { class: "activity-detail-note" }, "Loading the final response\u2026")];
+    }
+    if (reply.text === null) return null;
+    const text2 = el("div", { class: "activity-final-reply streaming-markdown" });
+    text2.innerHTML = renderMarkdown(reply.text);
+    const label = row2.state === "failed" ? "Last response" : "Final response";
+    return [el("p", { class: "activity-detail-label" }, label), text2];
   }
   function detailActions(row2) {
     const actions = [openThreadButton(row2)];
@@ -93048,8 +93295,11 @@ var init_activity_view = __esm({
     init_patch_children();
     init_icons();
     init_projects();
+    init_activity_final_reply();
+    init_thread_helpers();
     init_activity_model();
     init_approval_dialog();
+    init_ask_user_format();
     ACTIVITY_RENDER_INTERVAL_MS = 250;
     ACTIVITY_AGE_REFRESH_MS = 3e4;
     STATE_SHORT = {
@@ -95311,6 +95561,8 @@ function mountProjectsPane(root, store2, api2) {
           openThreadMenu(rect.left, rect.bottom);
         });
         chatRow.append(menuButton);
+      } else {
+        chatRow.append(el("span", { class: "chat-menu-btn-space", "aria-hidden": "true" }));
       }
       return chatRow;
     }
@@ -191737,6 +191989,7 @@ function mountAskUserDialog(api2, store2) {
       const input2 = el("textarea", {
         class: "ask-user-input",
         rows: "2",
+        maxlength: String(ASK_USER_ANSWER_MAX_LENGTH),
         "data-question-index": String(i3),
         "aria-labelledby": questionId
       });
@@ -191859,7 +192112,10 @@ function mountAskUserDialog(api2, store2) {
       if (idx === -1) return;
       queue.splice(idx, 1);
     }
-    void api2.ask.respond(request.id, answers);
+    void api2.ask.respond(
+      request.id,
+      answers.map((answer) => answer.slice(0, ASK_USER_ANSWER_MAX_LENGTH))
+    );
     showNext();
     syncAttention();
   }
@@ -191954,6 +192210,7 @@ var init_ask_user_dialog = __esm({
     init_projects();
     init_side_chat3();
     init_dialog_shell();
+    init_ask_user_format();
   }
 });
 
