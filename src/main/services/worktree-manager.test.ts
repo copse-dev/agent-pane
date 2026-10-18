@@ -29,11 +29,11 @@ import {
   clearAllowedWorkspaceRootsForTest,
   getInternalWorkspaceRootRegistration,
 } from './workspace.ts'
+import { changedPaths } from './git-status-paths.ts'
 import {
   adoptThreadWorktree,
   allocateThreadWorktree,
   canAdoptThreadWorktree,
-  changedPaths,
   expectedThreadWorktreePath,
   inspectManagedThreadWorktreePath,
   inspectThreadWorktreeAttachment,
