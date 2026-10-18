@@ -14,7 +14,7 @@ export function threadAccessApproval(access: 'read' | 'send'): ApprovalDetails &
       access === 'read'
         ? 'Allow this thread to read all your other conversations.'
         : 'Allow this thread to send prompts that run in your other conversations.',
-    bodyFooter: 'Applies only to this thread. Revoke it in the thread menu → Conversation access.',
+    bodyFooter: 'Applies only to this thread. Revoke it in the thread’s Context panel → Permissions.',
     approveLabel: access === 'read' ? 'Allow reading' : 'Allow sending',
     allowRemember: false,
   }
