@@ -83416,7 +83416,7 @@ function threadAccessApproval(access) {
     title: access === "read" ? "Read your other threads?" : "Send prompts to your other threads?",
     body: "",
     bodyAdvice: access === "read" ? "Allow this thread to read all your other conversations." : "Allow this thread to send prompts that run in your other conversations.",
-    bodyFooter: "Applies only to this thread. Revoke it in the thread menu \u2192 Conversation access.",
+    bodyFooter: "Applies only to this thread. Revoke it in the thread\u2019s Context panel \u2192 Permissions.",
     approveLabel: access === "read" ? "Allow reading" : "Allow sending",
     allowRemember: false
   };
@@ -95270,25 +95270,6 @@ function mountProjectsPane(root, store2, api2) {
       });
       const openThreadMenu = (x3, y3) => {
         showContextMenu(x3, y3, [
-          {
-            label: "Conversation access\u2026",
-            onSelect: () => {
-              showContextMenu(x3, y3, [
-                {
-                  label: "Revoke reading other threads",
-                  onSelect: () => {
-                    void api2.threadPrompts.revokeAccess(thread.id, "read");
-                  }
-                },
-                {
-                  label: "Revoke sending to other threads",
-                  onSelect: () => {
-                    void api2.threadPrompts.revokeAccess(thread.id, "send");
-                  }
-                }
-              ]);
-            }
-          },
           ...canMutate ? [
             ...allowRename ? [
               {
@@ -95379,11 +95360,13 @@ function mountProjectsPane(root, store2, api2) {
           ] : []
         ]);
       };
-      chatRow.addEventListener("contextmenu", (e3) => {
-        e3.preventDefault();
-        e3.stopPropagation();
-        openThreadMenu(e3.clientX, e3.clientY);
-      });
+      if (canMutate || scheduleId) {
+        chatRow.addEventListener("contextmenu", (e3) => {
+          e3.preventDefault();
+          e3.stopPropagation();
+          openThreadMenu(e3.clientX, e3.clientY);
+        });
+      }
       if (thread.status === "running") {
         chatRow.classList.add("is-running");
         chatRow.insertBefore(runningStatus("Agent is working"), title);
