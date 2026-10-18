@@ -317,6 +317,12 @@ describe('Mobile Companion at phone width', () => {
         expect.stringContaining('</p><img src=x onerror=alert(1)>'),
       )
       expect(await browser.execute(() => document.querySelectorAll('#messages img').length)).toBe(0)
+      await expect($('#messages .message:nth-child(2) .message-summary')).toHaveText(
+        'Read RELEASE_NOTES.md',
+      )
+      await expect($('#messages .message:nth-child(2) .message-content')).not.toExist()
+      await expect($('#messages')).not.toHaveText(expect.stringContaining('Tool activity'))
+      await expect($('#messages')).not.toHaveText(expect.stringContaining('No saved text'))
       await expect($('.topbar #back svg')).toExist()
       await browser.waitUntil(
         () =>

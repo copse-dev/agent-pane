@@ -24,6 +24,7 @@ import {
   allocateThreadWorktree,
   expectedThreadWorktreePath,
   listProjectWorktrees,
+  projectCheckoutBehindDefaultBranch,
   readThreadWorktreeRecoveryMetadata,
   renameThreadWorktreeBranch,
   restoreThreadWorktreeBranch,
@@ -150,6 +151,12 @@ export interface ThreadCheckoutTransactionDependencies {
     projectRoot: string
     baseBranch: string
   }) => Promise<ThreadWorktree | null>
+  /**
+   * Whether the project checkout lags the upstream tip of `branch`, after a
+   * fresh fetch. A deferred thread reads the checkout, so a lagging one must
+   * not be deferred. Absent means "never known to lag".
+   */
+  checkoutBehindDefaultBranch?: (projectRoot: string, branch: string) => Promise<boolean>
   /** Whether the repository holds this branch, checked against its refs. */
   branchExists: (projectRoot: string, branch: string) => Promise<boolean>
   /** Switch the shared checkout, for a shared thread that picked a branch. */
@@ -295,6 +302,7 @@ const defaultDependencies: ThreadCheckoutTransactionDependencies = {
   allocate: allocateThreadWorktree,
   reuseAutomationWorktree: (input) => getAutomationWorktreeReuse().reuseFor(input),
   recoverUnpersisted: recoverUnpersistedWorktree,
+  checkoutBehindDefaultBranch: projectCheckoutBehindDefaultBranch,
   branchExists: localBranchExists,
   checkoutBranch: checkoutGitBranch,
   validate: validateThreadWorktree,
@@ -443,10 +451,18 @@ export function createThreadCheckoutTransaction(
         inspection,
         input.baseBranch,
       )
-      if (
+      // A deferred thread reads the project checkout until its first write, and
+      // only allocation fetches the upstream default. Defer only when that read
+      // is current; otherwise allocate now, which cuts from the fetched tip.
+      const deferrable =
         decision.deferAllocation &&
-        canDeferAllocation(input.model, dependencies.canDeferAcpModel, isLocal)
-      ) {
+        canDeferAllocation(input.model, dependencies.canDeferAcpModel, isLocal) &&
+        !(
+          dependencies.checkoutBehindDefaultBranch &&
+          baseBranch === inspection.defaultBranch &&
+          (await dependencies.checkoutBehindDefaultBranch(project.path, baseBranch))
+        )
+      if (deferrable) {
         // Isolation is decided now; only the checkout waits. The base is
         // resolved (and a picked branch validated) here so the eventual
         // allocation starts where the user asked even if the project checkout
