@@ -24,6 +24,7 @@
 }
 .mobile-companion-device-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-md);
@@ -37,6 +38,7 @@
 }
 .mobile-companion-device-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   flex: none;
   gap: var(--spacing-sm);
@@ -59,7 +61,8 @@
 .mobile-companion-trust-label {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
-  white-space: nowrap;
+  max-width: 240px;
+  white-space: normal;
 }
 /* The QR always needs a white card behind it — its black/white contrast is
    what a camera scans, so it must not inherit the dark-theme surface color. */

@@ -13,6 +13,27 @@ import { switchTheme, tokenColour } from './helpers/theme.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
+// Pointer movement cancels row tooltip timers; Monaco scrollbars fade afterward.
+async function waitForDiffHoverChrome(): Promise<void> {
+  await parkPointer()
+  let quietSince = 0
+  await browser.waitUntil(
+    async () => {
+      const settled = await browser.execute(() => {
+        const bars = [...document.querySelectorAll('#git-diff-viewer-host .scrollbar')]
+        return bars.length > 0 && bars.every((bar) => getComputedStyle(bar).opacity === '0')
+      })
+      if (!settled) {
+        quietSince = 0
+        return false
+      }
+      if (!quietSince) quietSince = Date.now()
+      return Date.now() - quietSince >= 500
+    },
+    { timeout: 3_000, timeoutMsg: 'Monaco hover scrollbars did not settle after the pointer left' },
+  )
+}
+
 async function waitForComposer(): Promise<void> {
   await $('.prompt-input').waitForExist({ timeout: 60_000 })
 }
@@ -252,7 +273,11 @@ describe('git changes viewer', function () {
       },
     )
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-diff.png'))
+    await withCaptureFrame(async () => {
+      await waitForDiffHoverChrome()
+      await waitForGitChangesSettled()
+      await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-diff.png'))
+    })
 
     // Large staged.ts diffs collapse unchanged lines with context + expandable regions.
     await browser.waitUntil(async () => (await $$('.diff-hidden-lines-widget').length) >= 1, {

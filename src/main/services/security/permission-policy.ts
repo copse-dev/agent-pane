@@ -34,6 +34,8 @@ export const SANDBOX_TOOLS = new Set([
   'gh_pr_list',
   'gh_pr_view',
   'read_terminal',
+  // Offline copy of already-initialised submodules into the thread's own worktree.
+  'init_submodules',
 ])
 
 /**
@@ -505,7 +507,20 @@ export function formatExternalSandboxPromptParts(
 export function formatExpectedSandboxBlockPromptParts(
   command: string,
   reasons: string[],
+  source: 'agent' | 'prior-denial' = 'agent',
 ): ShellPromptParts {
+  if (source === 'prior-denial') {
+    return {
+      command,
+      bodyAdvice: buildOutsideSandboxAdvice({
+        leadIn: 'A previous sandbox denial was recorded for this operation:',
+        reasons,
+        trailing: githubShellActionAdvice(command) ?? '',
+      }),
+      bodyFooter:
+        'This command has not been tried in the sandbox again. Allow running it once outside the sandbox?',
+    }
+  }
   return {
     command,
     bodyAdvice: buildOutsideSandboxAdvice({

@@ -266,7 +266,12 @@ describe('settings → Storage → worktree actions', function () {
       expect.stringContaining('stops after the current worktree finishes'),
     )
     await expect($('.sources-row[data-cleanup-state="cleaning"]')).toExist()
-    await saveAppScreenshot('settings-worktree-cleanup-pending.png')
+    const restorePendingPath = await pinProfilePathForCapture('#settings-dialog')
+    try {
+      await saveAppScreenshot('settings-worktree-cleanup-pending.png')
+    } finally {
+      await restorePendingPath()
+    }
     await confirm.$('.confirm-dialog-cancel').click()
     await expect(confirm).not.toBeDisplayed()
     await expect($('#sources-worktrees-status')).toHaveText(

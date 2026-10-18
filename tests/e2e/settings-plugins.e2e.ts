@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -62,8 +62,9 @@ describe('settings plugins (about:addons)', function () {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    localPluginRoot = mkdtempSync(join(tmpdir(), 'copse-e2e-selected-plugin-'))
-    mkdirSync(join(localPluginRoot, 'dist'))
+    localPluginRoot = join(tmpdir(), 'copse-e2e', 'selected-plugin')
+    rmSync(localPluginRoot, { recursive: true, force: true })
+    mkdirSync(join(localPluginRoot, 'dist'), { recursive: true })
     writeFileSync(join(localPluginRoot, 'dist', 'index.mjs'), 'export default {}\n')
     writeFileSync(
       join(localPluginRoot, 'copse-plugin.json'),
@@ -144,7 +145,7 @@ describe('settings plugins (about:addons)', function () {
     // Long-horizon tasks plugin (#558): listed, default-OFF (ships disabled).
     const longHorizonRow = plugins.$('.plugin-row[data-plugin-id="copse.long-horizon-tasks"]')
     await expect(longHorizonRow).toBeDisplayed()
-    assert.equal(await longHorizonRow.$('.plugin-name').getText(), 'Long-horizon tasks')
+    assert.equal(await longHorizonRow.$('.plugin-name').getText(), 'Long horizon tasks')
     await expect(longHorizonRow.$('.plugin-badge-first-party')).toBeDisplayed()
     await expect(longHorizonRow.$('.plugin-badge-experimental')).toHaveText('Experimental', {
       ignoreCase: true,
@@ -409,7 +410,7 @@ describe('settings plugins (about:addons)', function () {
     // re-review.
     const postTurnReviewRow = plugins.$('.plugin-row[data-plugin-id="copse.post-turn-review"]')
     await expect(postTurnReviewRow).toBeDisplayed()
-    assert.equal(await postTurnReviewRow.$('.plugin-name').getText(), 'Post-turn review')
+    assert.equal(await postTurnReviewRow.$('.plugin-name').getText(), 'Post turn review')
     // A plugin's fields live behind its closed "Plugin settings" disclosure.
     await postTurnReviewRow.$('.plugin-settings-summary').click()
     const reviewCyclesInput = postTurnReviewRow.$(

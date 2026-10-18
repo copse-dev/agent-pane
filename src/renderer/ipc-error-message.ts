@@ -26,3 +26,11 @@ export function ipcErrorMessage(err: unknown, fallback: string): string {
   if (!(err instanceof Error)) return fallback
   return unwrapIpcErrorText(err.message) || fallback
 }
+
+/** Expected invalid checkout states remain recoverable through the thread. */
+export function isUnavailableThreadCheckoutError(err: unknown): boolean {
+  return (
+    err instanceof Error &&
+    /^ThreadWorktree(?:OnBaseBranch|Detached)Error:/.test(unwrapIpcErrorText(err.message))
+  )
+}

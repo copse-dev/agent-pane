@@ -4,7 +4,12 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
-import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_VIEWPORT,
+  parkPointer,
+  saveAppScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import {
   COPSE_TINT_COLOR,
   applyAppearanceViaSettings,
@@ -148,7 +153,11 @@ describe('file viewer Changes view', () => {
       { timeout: 15_000, timeoutMsg: 'expected insert decorations in the file viewer diff' },
     )
 
-    await saveAppScreenshot('file-viewer-changes-diff.png')
+    await saveAppScreenshot(
+      'file-viewer-changes-diff.png',
+      E2E_VIEWPORT,
+      waitForFileViewerScrollbarsHidden,
+    )
   })
 
   it('returns to the editor via the Source toggle', async () => {
@@ -198,7 +207,11 @@ describe('file viewer Changes view', () => {
       'file-viewer-toolbar-toggle.png',
     )
 
-    await saveAppScreenshot('file-viewer-changes-source.png')
+    await saveAppScreenshot(
+      'file-viewer-changes-source.png',
+      E2E_VIEWPORT,
+      waitForFileViewerScrollbarsHidden,
+    )
   })
 
   it('offers to open the viewed file in the browser on right-click', async () => {
@@ -208,7 +221,11 @@ describe('file viewer Changes view', () => {
     const menu = await $('.context-menu')
     await menu.waitForDisplayed({ timeout: 5_000 })
     await expect($('.context-menu-item')).toHaveText('Open in browser')
-    await saveAppScreenshot('file-viewer-default-browser-menu.png')
+    await saveAppScreenshot(
+      'file-viewer-default-browser-menu.png',
+      E2E_VIEWPORT,
+      waitForFileViewerScrollbarsHidden,
+    )
 
     await browser.keys('Escape')
     await expect(menu).not.toBeExisting()

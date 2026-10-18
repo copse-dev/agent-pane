@@ -5,6 +5,8 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, pinTextForCapture, saveAppScreenshot } from './helpers/screenshot.ts'
 
+import { pinRoadmapDisplayTimestamp } from './helpers/roadmap-capture.ts'
+
 const PROJECT_ID = 'e2e-roadmap-attachments'
 const PENDING_SCREENSHOT = 'roadmap-attachments-pending.png'
 const SAVED_SCREENSHOT = 'roadmap-attachments-saved.png'
@@ -103,6 +105,22 @@ describe('Roadmap item attachments', () => {
       { timeout: 10_000, timeoutMsg: 'expected the list row to show an attachment badge' },
     )
     assert.equal(await $('.roadmap-attachment-badge').getText(), '2')
+
+    // Keep the real save/IPC round trip above, then pin only the persisted
+    // note's display timestamp before reopening it. The attachments remain
+    // exactly the bytes written by the product.
+    pinRoadmapDisplayTimestamp(PROJECT_ID)
+    await $('.roadmap-refresh-btn').click()
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          () =>
+            document
+              .querySelector('.roadmap-form .memories-meta')
+              ?.textContent?.includes('2026-01-15') ?? false,
+        ),
+      { timeout: 10_000, timeoutMsg: 'expected the pinned roadmap display date' },
+    )
 
     // ...and reopening the item renders chips hydrated from disk, image thumb included.
     await $('.roadmap-row').click()

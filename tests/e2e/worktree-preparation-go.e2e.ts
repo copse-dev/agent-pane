@@ -11,6 +11,8 @@ const fixture = createFixtureDirectory('go-preparation-approval')
 const { root } = fixture
 describe('automatic Go preparation approval', () => {
   before(async () => {
+    rmSync(root, { recursive: true, force: true })
+    mkdirSync(root, { recursive: true })
     writeFileSync(join(root, 'go.mod'), 'module example.test/ordinary\n\ngo 1.24\n')
     writeFileSync(join(root, 'main.go'), 'package main\nfunc main() {}\n')
     resetUserData()

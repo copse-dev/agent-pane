@@ -146,7 +146,7 @@ semantics: TTL is the safety net, `down` is the real cleanup).
   `/opt/deps/tree` iff `.lockhash` matches (fall back to `npm ci`, which needs
   the baked-in token _only_ when the lockfile changed — surfacing that as a
   warning beats hiding it) → `node scripts/build.mts` → `wdio run
-wdio.ci.conf.ts` (or `wdio.conf.ts` under `--all`) with the requested specs
+  wdio.ci.conf.ts` (or `wdio.conf.ts` under `--all`) with the requested specs
   under Xvfb → tar artifacts back over the same SSH channel.
 - Runs are serialized per container, parallel across containers. `--shard N`
   can split a spec list across containers exactly as CI shards do.

@@ -40,7 +40,8 @@ describe('Activity home recent history', () => {
       expect(geometry).not.toBeNull()
       expect(geometry?.left).toBeGreaterThanOrEqual(0)
       expect(geometry?.right).toBeGreaterThanOrEqual(0)
-      await saveAppScreenshot(`activity-read-history-${width}.png`)
+      // Preserve the width under test instead of the helper's default 1280px cap.
+      await saveAppScreenshot(`activity-read-history-${width}.png`, { width, height: 900 })
     })
   }
 })

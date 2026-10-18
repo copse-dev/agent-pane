@@ -33,6 +33,24 @@ describe('settings usage model value map cost axis', () => {
         },
       ],
     })
+    writeSettings({
+      ...readSeededSettings(),
+      extraProviders: [
+        {
+          slug: 'legacy',
+          label: 'Legacy',
+          // A configured loopback provider is available without validating a
+          // fake key against the network. No inference is requested here.
+          baseUrl: 'http://127.0.0.1:9/v1',
+          // A free plan route alone intentionally does not dominate a paid
+          // route. Seed an equally capable priced alternative as well.
+          models: [
+            { id: 'o1-pro', inputPricePerMTok: 150, outputPricePerMTok: 600 },
+            { id: 'gpt-6-sol', inputPricePerMTok: 3, outputPricePerMTok: 12 },
+          ],
+        },
+      ],
+    })
     await browser.reloadSession()
   })
 
@@ -89,9 +107,54 @@ describe('settings usage model value map cost axis', () => {
     )
     assert.match(await chart.getText(), /GPT-6 Astra \(~\) · plan/)
     assert.equal(await fieldset.$('details.frontier-unpriced-list').isExisting(), false)
+    assert.equal(
+      await fieldset.$('circle.frontier-point[data-model-id="legacy:o1-pro"]').isExisting(),
+      false,
+      'a severely dominated routed model must not stretch the default price axis',
+    )
+    const hiddenOutliers = fieldset.$('details.frontier-severely-dominated')
+    await expect(hiddenOutliers).toBeExisting()
+    await expect(hiddenOutliers.$('summary')).toHaveText(
+      '1 model costs at least 4× more than an equally capable priced model',
+    )
+    assert.match(
+      await browser.execute(
+        () => document.querySelector('details.frontier-severely-dominated')?.textContent ?? '',
+      ),
+      /o1-pro/,
+    )
 
     await prepareE2eScreenshot()
-    await saveElementScreenshot('.frontier-fieldset', 'settings-usage-value-map-mtok.png')
+    // The complete fieldset is taller than the settings scrollport. Capture
+    // the chart and its routed-model disclosure separately to avoid clipping.
+    await saveElementScreenshot('.frontier-chart', 'settings-usage-value-map-mtok.png')
+    await hiddenOutliers.$('summary').click()
+    await expect(hiddenOutliers).toHaveAttribute('open')
+    await saveElementScreenshot(
+      'details.frontier-severely-dominated',
+      'settings-usage-value-map-hidden-routes.png',
+    )
+    await hiddenOutliers.$('summary').click()
+
+    await fieldset.$('button.frontier-expand').click()
+    const expanded = $('dialog.frontier-expand-dialog')
+    await expect(expanded).toBeDisplayed()
+    assert.equal(
+      await expanded.$('circle.frontier-point[data-model-id="legacy:o1-pro"]').isExisting(),
+      false,
+    )
+    const expandedOutliers = expanded.$('details.frontier-severely-dominated')
+    await expect(expandedOutliers).toBeExisting()
+    await expandedOutliers.$('summary').click()
+    await expect(expandedOutliers).toHaveAttribute('open')
+    await expect(expandedOutliers).toHaveText(expect.stringContaining('o1-pro'))
+    await expect(expandedOutliers).toHaveText(expect.stringContaining('$240'))
+    await saveElementScreenshot(
+      'dialog.frontier-expand-dialog details.frontier-severely-dominated',
+      'settings-usage-value-map-expanded-hidden-routes.png',
+    )
+    await expanded.$('button=Close').click()
+    await expect(expanded).not.toExist()
 
     await taskBtn.click()
     await browser.waitUntil(
@@ -109,7 +172,7 @@ describe('settings usage model value map cost axis', () => {
       '$/task pill width must not change when selected',
     )
     const taskChartText = await chart.getText()
-    assert.match(taskChartText, /AA cost per Intelligence Index task/)
+    assert.match(taskChartText, /AA cost per intelligence index task/)
     // Subscription-backed Codex models remain plan routes on the task axis.
     assert.match(taskChartText, /GPT-6 Astra \(~\) · plan/)
     assert.equal(await taskBtn.getAttribute('aria-pressed'), 'true')
@@ -208,7 +271,7 @@ describe('settings usage model value map cost axis', () => {
 
     const discoverBtn = fieldset.$('button.frontier-discover')
     await expect(discoverBtn).toBeDisplayed()
-    const discoverLabels = await discoverBtn.$$('.frontier-discover-label')
+    const discoverLabels = await discoverBtn.$$('.frontier-discover-label').getElements()
     assert.equal(discoverLabels.length, 2)
     const inactiveDiscoverLabel = discoverLabels[0]
     const activeDiscoverLabel = discoverLabels[1]
@@ -241,8 +304,8 @@ describe('settings usage model value map cost axis', () => {
       ['true', 'false'],
       'only the active action label should be exposed after selection',
     )
-    // The AA fixture includes a curated, unroutable $240/MTok legacy model.
-    // It belongs in the dominated disclosure and must not stretch the plot.
+    // Discoveries have their own disclosure; the configured legacy route
+    // stays in the severely dominated list rather than becoming a discovery.
     assert.equal(
       await fieldset.$('circle.frontier-point[data-model-id="o1-pro"]').isExisting(),
       false,
@@ -251,7 +314,14 @@ describe('settings usage model value map cost axis', () => {
     const dominatedText = await browser.execute(
       () => document.querySelector('details.frontier-dominated-live')?.textContent ?? '',
     )
-    assert.match(dominatedText, /o1-pro/)
+    assert.match(dominatedText, /Claude Fable 5/)
+    assert.doesNotMatch(dominatedText, /o1-pro/)
+    assert.match(
+      await browser.execute(
+        () => document.querySelector('details.frontier-severely-dominated')?.textContent ?? '',
+      ),
+      /o1-pro/,
+    )
     const plottedCount = await fieldset.$$('circle.frontier-point').length
     assert.ok(
       plottedCount < 20,
@@ -259,7 +329,7 @@ describe('settings usage model value map cost axis', () => {
     )
 
     await prepareE2eScreenshot()
-    await saveElementScreenshot('.frontier-fieldset', 'settings-usage-value-map-discovery.png')
+    await saveElementScreenshot('.frontier-chart', 'settings-usage-value-map-discovery.png')
 
     // A translation can make either state the wider label. The hidden label
     // must still reserve intrinsic space so switching state never reflows.

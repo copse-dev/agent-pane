@@ -447,7 +447,7 @@ export function acpModelVersionName(description: string | undefined): string | n
  * model everywhere else — the agent's own house style ("Opus 4.8") would
  * otherwise read as a different vendor's model next to a "Claude Opus 4.8" row.
  */
-export function acpModelChoiceLabel(choice: AcpModelChoice): string {
+export function acpModelChoiceLabel(choice: AcpModelChoice, separator = ' — '): string {
   const name = acpModelVersionName(choice.description)
   if (name === null || choice.label.includes(name)) return canonicalModelLabel(choice.label)
   const [family = ''] = name.split(/\s+/)
@@ -456,7 +456,7 @@ export function acpModelChoiceLabel(choice: AcpModelChoice): string {
     !/[a-z0-9]/i.test(choice.label.charAt(family.length))
   // The family merge runs on the agent's spelling (its label and the described
   // name share a family there); only the finished label is renamed.
-  if (!sharesFamily) return `${choice.label} — ${canonicalModelLabel(name)}`
+  if (!sharesFamily) return `${choice.label}${separator}${canonicalModelLabel(name)}`
   const rest = choice.label.slice(family.length).trim()
   return canonicalModelLabel(rest ? `${name} ${rest}` : name)
 }

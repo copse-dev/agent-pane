@@ -28,6 +28,8 @@ const ALLOWED: Readonly<Record<string, string>> = {
   'packages/llm/src/model-maker-block.ts':
     'maps vendor and agent names to a maker for the user-maintained block list; not a request route',
   'packages/llm/src/model-label.ts': 'display-name formatting, not routing',
+  'packages/llm/src/model-version-suppression.ts':
+    'compares versioned names for picker suppression; does not choose a provider or request transport',
 }
 
 /** A literal model-family prefix in a string-matching call or a regex literal. */

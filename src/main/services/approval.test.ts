@@ -1,6 +1,10 @@
 import { describe, it, afterEach, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import {
+  runWithApprovalToolCallId,
+  runWithBridgeExecutionId,
+} from './approval-tool-call-context.ts'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -34,6 +38,7 @@ import {
 import { runWithActiveRunIdentity } from './thread-models.ts'
 import { runWithThreadExecutionContext } from './thread-execution-context.ts'
 import { storageSet } from './storage/storage.ts'
+import { drainWriteQueue } from './storage/write-queue.ts'
 
 const PROJECT = 'proj-approval'
 const THREAD = 't-approval'
@@ -76,6 +81,55 @@ describe('requestApproval pluggable transport', () => {
     assert.equal(events.at(-1)?.actor, 'system')
     assert.equal(events.at(-1)?.verdict, 'cancelled')
     assert.equal(events.at(-1)?.source, 'unavailable')
+  })
+
+  it('denies and dismisses a safety prompt at its deadline, ignoring a late approval', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    let promptSignal: AbortSignal | undefined
+    let answer: (response: ApprovalResponse) => void = () => {}
+    setApprovalHandler((_request, signal) => {
+      promptSignal = signal
+      return new Promise<ApprovalResponse>((resolve) => {
+        answer = resolve
+      })
+    })
+    const timed = { ...req, timeoutMs: 120_000 }
+    const first = requestUnderThread(timed)
+    const duplicate = requestUnderThread(timed)
+    t.mock.timers.tick(119_999)
+    assert.equal(promptSignal?.aborted, false)
+    runWithActiveRunIdentity(THREAD, () => {
+      t.mock.timers.tick(1)
+    })
+    const denial = { approved: false, remember: false, resolution: 'timeout' }
+    assert.deepEqual(await first, denial)
+    assert.deepEqual(await duplicate, denial)
+    assert.equal(promptSignal.aborted, true)
+    assert.equal(pendingApprovalCountForThread(THREAD), 0)
+    answer({ approved: true, remember: true })
+    await Promise.resolve()
+    t.mock.timers.reset()
+    await drainWriteQueue()
+    const events = await readDecisionLog(PROJECT)
+    assert.equal(events.at(-1)?.verdict, 'timeout')
+    assert.equal(events.at(-1)?.actor, 'system')
+  })
+
+  it('keeps ordinary prompts pending past the safety timeout', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    let signal: AbortSignal | undefined
+    setApprovalHandler((_request, nextSignal) => {
+      signal = nextSignal
+      return new Promise(() => {})
+    })
+    const controller = new AbortController()
+    const pending = requestUnderThread(req, controller.signal)
+    t.mock.timers.tick(240_000)
+    assert.equal(signal?.aborted, false)
+    assert.equal(pendingApprovalCountForThread(THREAD), 1)
+    controller.abort()
+    assert.equal((await pending).approved, false)
+    assert.equal(signal.aborted, true)
   })
 
   it('routes the request to the registered handler', async () => {
@@ -218,6 +272,166 @@ describe('requestApproval pluggable transport', () => {
     assert.deepEqual(event.reasons, ['reads outside the project: ~/.copse'])
     assert.equal(event.scope, 'external-read')
     assert.equal(event.remembered, true)
+  })
+
+  it('persists bridged identity and captures context before the handler settles', async () => {
+    setApprovalHandler(async () => ({ approved: true, remember: false }))
+    const shellContext = {
+      sandboxAvailable: false,
+      autoRunEnabled: true,
+      workspaceTrusted: false,
+      guardedYolo: false,
+      networkScopeActive: false,
+    }
+    await runWithApprovalToolCallId('bridged-call', () =>
+      requestUnderThread({
+        ...req,
+        subject: 'shell command (arguments omitted)',
+        shellContext,
+      }),
+    )
+    const event = (await readDecisionLog(PROJECT)).at(-1)
+    assert.ok(event)
+    assert.equal(event.toolCallId, 'bridged-call')
+    const detail = readFileSync(
+      join(auditRoot, PROJECT, THREAD, 'blobs', `decision-${event.id}.detail.json`),
+      'utf8',
+    )
+    assert.ok(detail.includes(JSON.stringify(shellContext)))
+    assert.ok(!detail.includes(req.body))
+  })
+
+  it('keeps every bridge execution linked when identical prompts coalesce', async () => {
+    let answer: (response: ApprovalResponse) => void = () => {}
+    const prompts: ApprovalRequest[] = []
+    setApprovalHandler((request) => {
+      prompts.push(request)
+      return new Promise<ApprovalResponse>((resolve) => {
+        answer = resolve
+      })
+    })
+    const first = runWithBridgeExecutionId('bridge-first', () => requestUnderThread(req))
+    const second = runWithBridgeExecutionId('bridge-second', () => requestUnderThread(req))
+    assert.equal(prompts.length, 1)
+    assert.equal(prompts[0]?.bridgeExecutionId, 'bridge-first')
+    answer({ approved: true, remember: false })
+    await Promise.all([first, second])
+    const event = (await readDecisionLog(PROJECT)).at(-1)
+    assert.ok(event)
+    assert.equal(event.bridgeExecutionId, undefined)
+    assert.equal(event.toolCallId, undefined)
+    const detail = readFileSync(
+      join(auditRoot, PROJECT, THREAD, 'blobs', `decision-${event.id}.detail.json`),
+      'utf8',
+    )
+    assert.ok(detail.includes('"bridgeExecutionIds":["bridge-first","bridge-second"]'))
+  })
+
+  it('preserves bridge identity on cancellation outside the originating async context', async () => {
+    const abort = new AbortController()
+    setApprovalHandler(() => new Promise(() => {}))
+    const pending = runWithBridgeExecutionId('bridge-cancelled', () =>
+      requestUnderThread(req, abort.signal),
+    )
+    abort.abort()
+    await pending
+    const event = (await readDecisionLog(PROJECT)).at(-1)
+    assert.equal(event?.bridgeExecutionId, 'bridge-cancelled')
+    assert.equal(event.source, 'aborted')
+    assert.equal(event.toolCallId, undefined)
+  })
+
+  it('does not attribute a shared approval to the caller that cancelled', async () => {
+    let answer: (response: ApprovalResponse) => void = () => {}
+    setApprovalHandler(
+      () =>
+        new Promise<ApprovalResponse>((resolve) => {
+          answer = resolve
+        }),
+    )
+    const abort = new AbortController()
+    const first = runWithBridgeExecutionId('cancelled-owner', () =>
+      requestUnderThread(req, abort.signal),
+    )
+    const second = runWithBridgeExecutionId('remaining-owner', () => requestUnderThread(req))
+    abort.abort()
+    await first
+    answer({ approved: true, remember: false })
+    await second
+    const events = await readDecisionLog(PROJECT)
+    assert.ok(
+      events.some(
+        (event) => event.bridgeExecutionId === 'cancelled-owner' && event.verdict === 'cancelled',
+      ),
+    )
+    assert.equal(events.at(-1)?.bridgeExecutionId, 'remaining-owner')
+    assert.equal(events.at(-1)?.verdict, 'approved')
+  })
+
+  it('records the new bridge execution when an abandoned verdict is replayed', async () => {
+    let answer: (response: ApprovalResponse) => void = () => {}
+    setApprovalHandler(
+      () =>
+        new Promise<ApprovalResponse>((resolve) => {
+          answer = resolve
+        }),
+    )
+    const abort = new AbortController()
+    const first = runWithBridgeExecutionId('bridge-abandoned', () =>
+      requestUnderThread(req, abort.signal),
+    )
+    abort.abort(new AbandonedCallAbort('client timeout'))
+    await assert.rejects(first, ApprovalPendingError)
+    answer({ approved: true, remember: false })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    const result = await runWithBridgeExecutionId('bridge-retry', () => requestUnderThread(req))
+    assert.equal(result.approved, true)
+    const events = await readDecisionLog(PROJECT)
+    assert.ok(
+      events.some(
+        (event) => event.bridgeExecutionId === 'bridge-abandoned' && event.verdict === 'approved',
+      ),
+    )
+    const replay = events.at(-1)
+    assert.equal(replay?.bridgeExecutionId, 'bridge-retry')
+    assert.equal(replay.source, 'abandoned-call-replay')
+  })
+
+  it('records explicit identity on unavailable and cancelled approvals', async () => {
+    setApprovalHandler(null)
+    await runWithApprovalToolCallId('ambient', () =>
+      requestUnderThread({ ...req, toolCallId: 'explicit' }),
+    )
+    const controller = new AbortController()
+    setApprovalHandler(() => new Promise(() => {}))
+    const pending = runWithApprovalToolCallId('cancelled-call', () =>
+      requestUnderThread(req, controller.signal),
+    )
+    controller.abort()
+    await pending
+    const events = await readDecisionLog(PROJECT)
+    assert.equal(events.at(-2)?.toolCallId, 'explicit')
+    assert.equal(events.at(-2)?.source, 'unavailable')
+    assert.equal(events.at(-1)?.toolCallId, 'cancelled-call')
+    assert.equal(events.at(-1)?.source, 'aborted')
+  })
+
+  it('keeps every coalesced tool identity in one prompt audit record', async () => {
+    const gate = Promise.withResolvers<ApprovalResponse>()
+    setApprovalHandler(() => gate.promise)
+    const a = requestUnderThread({ ...req, toolCallId: 'first' })
+    const b = requestUnderThread({ ...req, toolCallId: 'second' })
+    gate.resolve({ approved: true, remember: false })
+    await Promise.all([a, b])
+    const events = await readDecisionLog(PROJECT)
+    assert.equal(events.length, 1)
+    const event = events[0]
+    assert.ok(event)
+    const detail = readFileSync(
+      join(auditRoot, PROJECT, THREAD, 'blobs', `decision-${event.id}.detail.json`),
+      'utf8',
+    )
+    assert.ok(detail.includes('"toolCallIds":["first","second"]'))
   })
 
   it('omits reasons from the log when the request carries none', async () => {
@@ -527,11 +741,12 @@ describe('abandoned calls (parked prompts and verdict replay)', () => {
     await Promise.resolve()
     assert.equal(parkedApprovalCount(), 0)
 
-    const retry = await requestUnderThread(req)
+    const retry = await requestUnderThread({ ...req, toolCallId: 'replayed-call' })
     assert.equal(retry.approved, true)
     assert.equal(handlerCalls, 1, 'the retry must not open a second prompt')
 
     const events = await readDecisionLog(PROJECT)
+    assert.equal(events.at(-1)?.toolCallId, 'replayed-call')
     assert.deepEqual(
       events.slice(-2).map((event) => [event.verdict, event.source ?? 'user']),
       [
@@ -676,7 +891,7 @@ describe('abandoned calls (parked prompts and verdict replay)', () => {
     release?.({ approved: true, remember: false, resolution: 'user' })
     await Promise.resolve()
     assert.equal(parkedApprovalCount(), 0)
-    const retry = await requestUnderThread(req)
+    const retry = await requestUnderThread({ ...req, toolCallId: 'replayed-call' })
     assert.equal(retry.approved, true)
     assert.equal(handlerCalls, 1, 'the retry reuses the answer without prompting again')
   })

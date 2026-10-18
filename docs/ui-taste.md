@@ -329,7 +329,7 @@ rendered colour, case, and corner.
 Approval is a workbench decision surface, not a debug dump:
 
 - Titles are **questions in plain language** (`Mark pull request ready for review?`, `Run package
-install?`) — never snake_case tool ids (`gh_pr_mark_ready`) or `GitHub action: …` prefixes.
+  install?`) — never snake_case tool ids (`gh_pr_mark_ready`) or `GitHub action: …` prefixes.
 - Bodies lead with the **thing at stake** (PR target, command, origin). Pretty-printed JSON args
   are a last-resort fallback when the gate cannot summarize, not the default.
 - Buttons use `.ui-btn*` via `uiActions` (Approve = primary, Reject = secondary). Do not paint
@@ -1006,6 +1006,36 @@ elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
 
 Specs: `src/shared/tools/tool-display.test.ts`, `src/renderer/views/tool-display.test.ts`,
 `tests/e2e/tool-display-rollup.e2e.ts`, `tests/e2e/browser-tools.e2e.ts`.
+
+## Concise threads: hide the process, never the way back
+
+For a model above the intellect gate (`views/concise-thread.ts`) the transcript shows what the
+turn _said and produced_ — every assistant message, screenshots, evidence and canvas previews (see
+[Concise thread content](#concise-thread-content)) — and hides tool cards, reasoning and recovered
+tool errors. On by default; Settings → Appearance → Concise threads
+turns it off. Hiding is only acceptable while these hold:
+
+- **Every abridged turn has an exit.** A finished turn carries a quiet footer under it (`Show steps ›
+  3 tool calls +5 −3`) that opens that one turn in full and closes it again; the running turn opens
+  from its activity row. Opening is UI-only state, never persisted, and a turn the user opened stays
+  open after it finishes — nothing collapses under their pointer.
+- **What the hidden cards said that nothing else says moves to the footer.** A Stop's "Interrupted by
+  you." lived on a tool card, so the footer repeats it; the edit total is the one fact about hidden
+  work a reader needs unasked. Failed turns keep their text and recovery card (the model never saw
+  that error, so it cannot have handled it).
+- **A bubble with no user-facing content takes no room**, including the turn's last one when it has
+  no text; prose is never hidden because a tool ran or a later message arrived. Chrome
+  that belongs to a bubble (the model label, the agent marker) is placed on the next bubble that is
+  _painted_, or a mid-thread model switch would be invisible.
+- **Toggling holds the reader's place.** Opening keeps the turn's prompt where it is so the steps
+  unfold beneath it; closing keeps the footer under the pointer; flipping the setting holds the first
+  visible item. A pointer press in the transcript dismisses a text selection by design
+  (`selection-quote.ts`), so the keyboard path is the one that keeps it.
+- **Permission and question dialogs are unaffected**; they sit above the transcript, and the activity
+  row names the specific item (`Running pnpm install…`) rather than the tool's generic verb.
+
+Visual evals: `tests/demo/concise-thread*.demo.ts` (states from
+`src/shared/demo-concise-states.ts`).
 
 ## Hook cards are a distinct card family — right-aligned, blue, not a user message
 

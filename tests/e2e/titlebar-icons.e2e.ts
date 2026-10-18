@@ -5,6 +5,7 @@ import { createFixtureDirectory } from './helpers/fixture-directory.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
 describe('titlebar panel icons', () => {
+  let workspaceParent: string
   let workspaceRoot: string
   let cleanupWorkspace = () => {}
 

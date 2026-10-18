@@ -98,7 +98,7 @@ export interface QueuedUserMessage {
    * hook-originated message keeps `kind: 'hook'` even after a human edits it
    * (that flips {@link editedByUser} instead), so authorship is never lost.
    */
-  origin?: QueuedMessageOrigin
+  origin?: MessageOrigin
   /**
    * True once a human edits a hook-originated message (decision 10). The origin
    * stays `kind: 'hook'`; this records that the text no longer matches the hook's
@@ -325,6 +325,8 @@ export interface ThreadLink {
 export interface Thread {
   id: string
   title: string
+  /** Absent means Copse manages the external agent's execution. */
+  executionMode?: 'agent'
   /**
    * How many times auto-naming has written {@link title}. Absent means the title
    * is nobody's but the user's — either the untouched `New Thread` default or a
@@ -350,6 +352,12 @@ export interface Thread {
    * Never persisted: both `metaOf` implementations strip it before writing.
    */
   messagesLoaded?: boolean
+  /**
+   * A committed plan (including an ended plan) makes this a used task even with
+   * no messages or composer draft. Derived from the spine on load and set after
+   * a successful plan save. Session-only; never persisted in meta.json.
+   */
+  hasSavedPlan?: boolean
   /**
    * GitHub PRs linked from this thread, cached on its metadata.
    *

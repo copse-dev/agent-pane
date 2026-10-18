@@ -113,6 +113,7 @@ describe('thread-cycle shortcuts', () => {
     })
     await expect(chords.next).toEqual(['Ctrl', 'Tab'])
     await expect(chords.previous).toEqual(['Ctrl', chords.isMac ? '⇧' : 'Shift', 'Tab'])
+    await $('.context-wheel.has-breakdown').waitForDisplayed({ timeout: 15_000 })
     await saveAppScreenshot('thread-cycle-shortcuts.png')
   })
 })

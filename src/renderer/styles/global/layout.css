@@ -547,6 +547,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A schedule whose finished runs still hold worktrees: the same warning amber
+   the plugin settings use for a skipped run, small enough to sit by the count. */
+.automation-schedule-held {
+  flex: none;
+  padding: 0 var(--spacing-xs);
+  border: 1px solid var(--warning, currentColor);
+  border-radius: var(--radius-sm);
+  color: var(--warning, var(--text-secondary));
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
 .automation-schedule-count {
   margin-left: auto;
   color: var(--text-muted);
@@ -697,6 +708,14 @@
 .chat-row:focus-within .chat-menu-btn {
   opacity: 1;
 }
+/* Same footprint as `.chat-menu-btn`, on a row with no menu button of its own
+   (a thread from a project other than the active one) — see the "else" branch
+   in `renderThreadRow`. */
+.chat-menu-btn-space {
+  flex-shrink: 0;
+  width: var(--projects-action-size);
+  height: var(--projects-action-size);
+}
 /* A single-run automation row (#2511) has no schedule heading of its own to
    carry `.automation-setup-btn`, so it sits directly on the row — same quiet
    reveal as the menu button beside it. */
@@ -758,6 +777,16 @@
   align-items: center;
   margin-left: var(--spacing-xs);
   color: var(--text-muted);
+}
+/* Lucide's git-branch puts its two nodes top-right/bottom-left; git-pull-request and
+   git-merge put theirs top-left/bottom-right. Flush against the same trailing edge
+   as a PR icon, that reads as a shift rather than a different glyph. Flipping
+   vertically lands git-branch's nodes on git-pull-request's exact coordinates
+   (its (18,9)/(6,21) mirror to (18,15)/(6,3)), so the column reads as one
+   consistent mark regardless of which status is showing — see docs/ui-taste.md
+   -> "Align trailing row icons". */
+.chat-changes-status svg {
+  transform: scaleY(-1);
 }
 .chat-pr-status.is-open {
   color: var(--accent);
@@ -991,21 +1020,18 @@
   left: 50%;
   right: auto;
   transform: translate(-50%, -50%);
-  /* The docked card's real border would stack under the hairline ring. */
   border: none;
-  border-radius: var(--radius-lg);
-  box-shadow:
-    0 0 0 1px var(--border),
-    var(--shadow-lg);
+  border-radius: var(--composer-radius);
+  box-shadow: var(--composer-shadow);
   /* Centred on both axes, so a long draft is capped to the pane. */
   max-height: calc(100% - 2 * var(--spacing-xl));
 }
 .pane-chat.is-activity-idle .prompt-input {
   border-top: none;
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  border-radius: var(--composer-radius) var(--composer-radius) 0 0;
 }
 .pane-chat.is-activity-idle .input-footer {
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  border-radius: 0 0 var(--composer-radius) var(--composer-radius);
 }
 .pane-chat.is-activity-home .conversation {
   /* The empty thread has nothing to show; the Activity home (views/activity-home.ts)
@@ -1293,6 +1319,14 @@
   font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--text-secondary);
+}
+.git-changes-header-owner {
+  font-size: var(--font-size-2xs);
+  color: var(--text-tertiary, var(--text-secondary));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 .git-changes-bulk-actions {
   display: flex;
@@ -2609,14 +2643,17 @@ summary.pr-check-group-heading::-webkit-details-marker {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  /* Transparent canvas artefacts expose this surface. The headless mirror
-     captures against the resolved value of the same token. The text colour is
-     read back and injected into such guests (browser-pane.ts), since host CSS
-     does not inherit into a webview. */
-  background: var(--bg-base);
+  /* Ordinary pages use the browser's light default canvas. A transparent page
+     must not put its default black text on Copse's dark app surface. */
+  background: var(--browser-page-background);
   color: var(--text-primary);
   -webkit-app-region: no-drag;
   position: relative;
+}
+.browser-webview-host.is-canvas {
+  /* Inline Canvas artefacts deliberately share the app surface; browser-pane
+     also supplies its foreground when their roots are transparent. */
+  background: var(--bg-base);
 }
 .browser-webview {
   flex: 1;

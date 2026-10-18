@@ -1,0 +1,66 @@
+{
+  "unauthenticatedRequests": [],
+  "localProviderRequests": [
+    {
+      "method": "POST",
+      "host": "127.0.0.1:18883",
+      "path": "/v1/chat/completions",
+      "model": "copse-local-fixture",
+      "stream": true,
+      "tools": [
+        "agent",
+        "ask_user_question",
+        "edit",
+        "enter_plan_mode",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep_search",
+        "list_agents",
+        "notebook_edit",
+        "read_file",
+        "run_shell_command",
+        "skill",
+        "tool_call",
+        "tool_search",
+        "update_goal",
+        "write_file"
+      ]
+    },
+    {
+      "method": "POST",
+      "host": "127.0.0.1:18883",
+      "path": "/v1/chat/completions",
+      "model": "copse-local-fixture",
+      "stream": true,
+      "tools": [
+        "agent",
+        "ask_user_question",
+        "edit",
+        "enter_plan_mode",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep_search",
+        "list_agents",
+        "notebook_edit",
+        "read_file",
+        "run_shell_command",
+        "skill",
+        "tool_call",
+        "tool_search",
+        "update_goal",
+        "write_file"
+      ]
+    },
+    {
+      "method": "POST",
+      "host": "127.0.0.1:18883",
+      "path": "/v1/chat/completions",
+      "model": "copse-local-fixture",
+      "stream": true,
+      "tools": ["read_file", "grep_search", "glob", "write_file", "edit"]
+    }
+  ],
+  "externalProviderRequestsObserved": []
+}

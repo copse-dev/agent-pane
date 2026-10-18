@@ -11,6 +11,8 @@ const fixture = createFixtureDirectory('python-preparation-approval')
 const { root } = fixture
 describe('automatic Python preparation approval', () => {
   before(async () => {
+    rmSync(root, { recursive: true, force: true })
+    mkdirSync(root, { recursive: true })
     writeFileSync(
       join(root, 'pyproject.toml'),
       '[project]\nname="ordinary-python-app"\nversion="0.1.0"\nrequires-python=">=3.11"\ndependencies=[]\n',

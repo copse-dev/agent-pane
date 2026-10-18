@@ -193,6 +193,9 @@ describe('local provider default worktree isolation', () => {
     // settles; without this wait some runs capture the composer before it.
     await $('.follow-up-bubble-changes').waitForDisplayed({ timeout: 15_000 })
     await expect($('.follow-up-bubble-changes .follow-up-stat-add')).toHaveText('+1')
+    // The sidebar summary has its own status refresh, independent of the
+    // composer's round trip. Capture only once both report this unlanded write.
+    await $('.chat-row.selected .chat-changes-status').waitForDisplayed({ timeout: 40_000 })
     await saveAppScreenshot('local-model-worktree-isolation.png')
   })
 })

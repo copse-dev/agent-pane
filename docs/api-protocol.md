@@ -25,7 +25,7 @@ compiler API:
   reviewable form: a rename, an added channel, or an arity change is a
   one-line diff, and the invariants test fails when it is stale.
 - **`dist/schemas/api-protocol.schema.json`** — a build output (`pnpm run
-build`, or `pnpm run gen:api-protocol --schema`), not committed. The full
+  build`, or `pnpm run gen:api-protocol --schema`), not committed. The full
   JSON Schema with every type, for a transport or external client to code
   against. It is about 550 KB and regenerated on every build, so it is never
   stale and never a diff.

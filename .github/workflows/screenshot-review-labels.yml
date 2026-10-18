@@ -21,7 +21,7 @@ name: Screenshot review decision
 # compare commit adds only PNGs, so CI's screenshot-only escape skips e2e on
 # it. The token reaches one API call; nothing is checked out and no PR code
 # runs here. Before that call, the compare commit is checked to be a single
-# commit on the live head whose tree differs only in tests/e2e/screenshots/*.png.
+# commit on the live head whose tree differs only in manifest hashes and matching README image URLs.
 #
 # `pull_request`, not `pull_request_target`, like
 # close-orphaned-screenshot-reviews.yml: forks never get a compare branch or a
@@ -57,6 +57,22 @@ jobs:
       pull-requests: write
       statuses: write
     steps:
+      - name: Load trusted screenshot storage policy
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .screenshot-policy
+          persist-credentials: false
+          sparse-checkout: |
+            .nvmrc
+            scripts/lib
+            scripts/screenshot-candidates.mts
+            scripts/screenshot-storage.mts
+            packages/std/package.json
+            packages/std/src/unknown-value.ts
+            packages/std/src/nullish.ts
+          sparse-checkout-cone-mode: false
+
       # Read-only: every write happens in the last step, so a refusal and a
       # decision take the same path.
       - name: Validate the decision against the live head
@@ -154,57 +170,16 @@ jobs:
               return;
             }
 
-            // Walk tests/e2e/screenshots one tree level at a time: everything
-            // beside the path must be identical, and inside it only flat
-            // regular-file PNGs may be added or changed.
+            const { validateManifestCompare } = require(`${process.env.GITHUB_WORKSPACE}/.screenshot-policy/scripts/lib/screenshot-review-manifest.mts`);
             const { data: headCommit } = await github.rest.git.getCommit({ owner, repo, commit_sha: head });
-            const readTree = async (treeSha) => {
-              const { data } = await github.rest.git.getTree({ owner, repo, tree_sha: treeSha });
-              if (data.truncated) throw new Error(`Tree ${treeSha} is truncated.`);
-              return new Map(data.tree.map((entry) => [entry.path, entry]));
-            };
-            const same = (a, b) => a?.mode === b?.mode && a?.type === b?.type && a?.sha === b?.sha;
-            let before = headCommit.tree.sha;
-            let after = commit.tree.sha;
-            for (const [depth, name] of ['tests', 'e2e', 'screenshots'].entries()) {
-              const [a, b] = await Promise.all([readTree(before), readTree(after)]);
-              const where = ['tests', 'e2e', 'screenshots'].slice(0, depth).join('/');
-              for (const path of new Set([...a.keys(), ...b.keys()])) {
-                if (path !== name && !same(a.get(path), b.get(path))) {
-                  refuse(`the compare commit changes \`${where ? `${where}/` : ''}${path}\`, outside tests/e2e/screenshots/.`);
-                  return;
-                }
-              }
-              if (a.get(name)?.type !== 'tree' || b.get(name)?.type !== 'tree') {
-                refuse('the compare commit has no tests/e2e/screenshots/ tree to accept.');
-                return;
-              }
-              before = a.get(name).sha;
-              after = b.get(name).sha;
-            }
-            const [a, b] = await Promise.all([readTree(before), readTree(after)]);
-            let changed = 0;
-            for (const path of new Set([...a.keys(), ...b.keys()])) {
-              const entry = b.get(path);
-              if (same(a.get(path), entry)) continue;
-              if (
-                entry?.type !== 'blob' ||
-                entry.mode !== '100644' ||
-                !/^[A-Za-z0-9][A-Za-z0-9._-]*\.png$/.test(path)
-              ) {
-                refuse(`the compare commit changes \`tests/e2e/screenshots/${path}\`, which is not an added or updated PNG.`);
-                return;
-              }
-              changed += 1;
-            }
-            if (changed === 0) {
-              refuse('the compare commit changes no screenshot.');
-              return;
-            }
+            let changed;
+            try {
+              ({ changed } = await validateManifestCompare(github, owner, repo, headCommit.tree.sha, commit.tree.sha));
+            } catch (error) { refuse(error.message); return; }
             core.setOutput('outcome', 'accept');
             core.setOutput('compare-commit', compareCommit);
             core.setOutput('head-ref', pr.head.ref);
-            core.setOutput('changed', String(changed));
+            core.setOutput('changed', String(changed.length));
 
       # continue-on-error: a missing or broken App credential leaves the token
       # empty, and the last step refuses with the manual cherry-pick route.

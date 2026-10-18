@@ -1,0 +1,340 @@
+{
+  "version": 1,
+  "areas": [
+    {
+      "prefix": "packages/agent/src/",
+      "smoke": null
+    },
+    {
+      "prefix": "packages/extract-zip/src/",
+      "smoke": null
+    },
+    {
+      "prefix": "packages/hooks-dialects/src/",
+      "smoke": null
+    },
+    {
+      "prefix": "packages/llm/src/",
+      "smoke": null
+    },
+    {
+      "prefix": "packages/plan-usage/src/",
+      "smoke": null
+    },
+    {
+      "prefix": "packages/plugin-sdk/src/",
+      "smoke": null
+    },
+    {
+      "prefix": "packages/procwatch/src/",
+      "smoke": null
+    },
+    {
+      "prefix": "packages/review/src/",
+      "smoke": null
+    },
+    {
+      "prefix": "packages/shell-guard/src/",
+      "smoke": null
+    },
+    {
+      "prefix": "packages/std/src/",
+      "smoke": null
+    },
+    {
+      "prefix": "packages/store-kit/src/",
+      "smoke": null
+    },
+    {
+      "prefix": "packages/thread-store/src/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/agent/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/about/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/acp/",
+      "smoke": ["tests/e2e/acp-startup-tools.e2e.ts"],
+      "evidence": {
+        "tests/e2e/acp-startup-tools.e2e.ts": "imports src/main/services/acp/acp-agent-registry.ts"
+      }
+    },
+    {
+      "prefix": "src/main/services/agents/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/android-desktop/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/app-run/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/apple-development/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/archive/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/automations/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/browser/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/classifiers/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/container-runtime/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/diagnostics/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/discovery/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/editors/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/exec/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/git/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/github/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/hooks/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/mcp/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/mobile/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/plugins/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/ports/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/providers/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/remote/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/review/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/search/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/security/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/simulator-desktop/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/skills/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/ssh-workspace/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/storage/",
+      "smoke": ["tests/e2e/settings-save.e2e.ts"],
+      "evidence": {
+        "tests/e2e/settings-save.e2e.ts": "imports src/main/services/storage/api-key-readability.ts"
+      }
+    },
+    {
+      "prefix": "src/main/services/supervisor/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/terminal/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/video/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/visual-evidence/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/vnc/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/web-search/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/workspace-fs/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/renderer/main.ts",
+      "smoke": ["tests/e2e/smoke.e2e.ts", "tests/e2e/theme-boot.e2e.ts"],
+      "evidence": {
+        "tests/e2e/smoke.e2e.ts": "selector id:app in src/renderer/main.ts",
+        "tests/e2e/theme-boot.e2e.ts": "selector id:app, id:file-tree-host, cls:file-tree, id:file-viewer in src/renderer/main.ts"
+      }
+    },
+    {
+      "prefix": "src/renderer/markdown/",
+      "smoke": ["tests/e2e/markdown-conformance.e2e.ts"],
+      "evidence": {
+        "tests/e2e/markdown-conformance.e2e.ts": "imports src/renderer/markdown/inline-markdown.ts"
+      }
+    },
+    {
+      "prefix": "src/renderer/styles/",
+      "smoke": ["tests/e2e/smoke.e2e.ts", "tests/e2e/theme-boot.e2e.ts"],
+      "evidence": {
+        "tests/e2e/smoke.e2e.ts": "selector id:app in src/renderer/styles/global/activity-panel.css",
+        "tests/e2e/theme-boot.e2e.ts": "selector id:app in src/renderer/styles/global/activity-panel.css"
+      }
+    },
+    {
+      "prefix": "src/renderer/views/activity-panel.ts",
+      "smoke": ["tests/e2e/activity-panel.e2e.ts"],
+      "evidence": {
+        "tests/e2e/activity-panel.e2e.ts": "selector id:activity-panel in src/renderer/views/activity-panel.ts"
+      }
+    },
+    {
+      "prefix": "src/renderer/views/browser-pane.ts",
+      "smoke": ["tests/e2e/browser-display.e2e.ts"],
+      "evidence": {
+        "tests/e2e/browser-display.e2e.ts": "selector cls:browser-url-input, cls:browser-tabs-list-header, cls:browser-tabs-tab, cls:browser-tabs-tab-label, cls:browser-toolbar, cls:browser-nav-btn, txt:Back, cls:browser-tab-panel, cls:browser-webview-host, cls:browser-tabs-new-btn in src/renderer/views/browser-pane.ts"
+      }
+    },
+    {
+      "prefix": "src/renderer/views/git-changes-pane.ts",
+      "smoke": ["tests/e2e/git-changes.e2e.ts"],
+      "evidence": {
+        "tests/e2e/git-changes.e2e.ts": "selector cls:git-changes-refresh-btn, txt:Refresh changes, cls:git-change-row, cls:git-changes-section-title, cls:git-change-status-untracked, cls:git-change-row-committed, cls:git-change-path in src/renderer/views/git-changes-pane.ts"
+      }
+    },
+    {
+      "prefix": "src/renderer/views/command-palette.ts",
+      "smoke": ["tests/e2e/command-palette.e2e.ts", "tests/e2e/file-search-palette.e2e.ts"],
+      "evidence": {
+        "tests/e2e/command-palette.e2e.ts": "selector id:command-palette-dialog, cls:command-palette-input, cls:command-palette-name, cls:command-palette-pr in src/renderer/views/command-palette.ts",
+        "tests/e2e/file-search-palette.e2e.ts": "selector id:file-search-dialog in src/renderer/views/command-palette.ts"
+      }
+    },
+    {
+      "prefix": "src/renderer/styles/global/input-bar.css",
+      "smoke": ["tests/e2e/composer-surface.e2e.ts"],
+      "evidence": {
+        "tests/e2e/composer-surface.e2e.ts": "selector cls:prompt-input, cls:footer-branch-status, cls:submit-btn, cls:footer-model-host, cls:model-picker-trigger, cls:footer-overflow-trigger, cls:context-wheel, cls:attach-btn, cls:model-picker-label, id:input-bar in src/renderer/styles/global/input-bar.css"
+      }
+    },
+    {
+      "prefix": "src/renderer/controller/panels.ts",
+      "smoke": ["tests/e2e/panel-position.e2e.ts"],
+      "evidence": {
+        "tests/e2e/panel-position.e2e.ts": "selector id:pane-files in src/renderer/controller/panels.ts"
+      }
+    },
+    {
+      "prefix": "src/renderer/views/pr-pane.ts",
+      "smoke": ["tests/e2e/pr-panel.e2e.ts"],
+      "evidence": {
+        "tests/e2e/pr-panel.e2e.ts": "selector txt:Open pull requests, cls:pr-list-row, cls:git-changes-section-title, cls:pr-list-title, txt:linked, cls:pr-pane-filter, cls:pr-list-body, cls:pr-list-status, cls:has-ci-failure, cls:pr-other-toggle, cls:pr-viewer-title, txt:viewing, cls:is-selected, cls:pr-viewer-description-fill, cls:panel-empty, cls:git-changes-empty, cls:pr-viewer-description, cls:pr-viewer-files, cls:pr-detail-section, txt:files, cls:pr-files-header, cls:pr-file-row, cls:git-diff-editor-wrap, cls:git-image-diff, cls:message-text, txt:agent in src/renderer/views/pr-pane.ts"
+      }
+    },
+    {
+      "prefix": "src/renderer/controller/projects.ts",
+      "smoke": ["tests/e2e/new-project-flow.e2e.ts"],
+      "evidence": {
+        "tests/e2e/new-project-flow.e2e.ts": "imports src/renderer/controller/projects.ts"
+      }
+    },
+    {
+      "prefix": "src/renderer/views/settings/",
+      "smoke": ["tests/e2e/settings-save.e2e.ts", "tests/e2e/appearance-settings.e2e.ts"],
+      "evidence": {
+        "tests/e2e/settings-save.e2e.ts": "imports src/renderer/views/settings/about-markup.ts",
+        "tests/e2e/appearance-settings.e2e.ts": "imports src/renderer/views/settings/about-markup.ts"
+      }
+    },
+    {
+      "prefix": "src/renderer/views/setup/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/renderer/views/projects-pane.ts",
+      "smoke": ["tests/e2e/thread-sidebar-selection.e2e.ts"],
+      "evidence": {
+        "tests/e2e/thread-sidebar-selection.e2e.ts": "selector cls:chat-row, cls:chat-title in src/renderer/views/projects-pane.ts"
+      }
+    },
+    {
+      "prefix": "src/renderer/views/terminals-pane.ts",
+      "smoke": ["tests/e2e/terminal-display.e2e.ts"],
+      "evidence": {
+        "tests/e2e/terminal-display.e2e.ts": "selector cls:terminal-container, cls:xterm in src/renderer/views/terminals-pane.ts"
+      }
+    },
+    {
+      "prefix": "src/renderer/styles/global/titlebar.css",
+      "smoke": ["tests/e2e/titlebar-icons.e2e.ts"],
+      "evidence": {
+        "tests/e2e/titlebar-icons.e2e.ts": "selector id:titlebar, cls:titlebar-text-btn, cls:titlebar-btn-icon in src/renderer/styles/global/titlebar.css"
+      }
+    },
+    {
+      "prefix": "src/renderer/styles/global/tool-cards.css",
+      "smoke": ["tests/e2e/tool-display-live-mock.e2e.ts", "tests/e2e/worktree-preparation.e2e.ts"],
+      "evidence": {
+        "tests/e2e/tool-display-live-mock.e2e.ts": "selector cls:tool-card, cls:tool-name, cls:tool-card-rollup in src/renderer/styles/global/tool-cards.css",
+        "tests/e2e/worktree-preparation.e2e.ts": "selector cls:tool-card, cls:tool-name, cls:tool-card-header, cls:tool-result in src/renderer/styles/global/tool-cards.css"
+      }
+    },
+    {
+      "prefix": "src/shared/",
+      "smoke": null
+    }
+  ]
+}

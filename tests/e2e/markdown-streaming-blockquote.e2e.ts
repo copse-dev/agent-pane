@@ -50,21 +50,17 @@ describe('markdown streaming blockquote pending', () => {
     await expect($('.msg-user .message-text')).toHaveText('Show the streaming blockquote state.')
 
     const result = await browser.execute(() => {
-      const list = document.querySelector('.messages-list')
-      if (!list) return { error: 'no messages list' }
-
-      const msg = document.createElement('div')
-      msg.className = 'msg msg-assistant'
-      const text = document.createElement('div')
-      text.className = 'message-text streaming-markdown is-streaming'
+      const text = document.querySelector(
+        '[data-message-id="streaming-markdown-message"] .message-text',
+      )
+      if (!text) return { error: 'no visible assistant message' }
+      text.classList.add('streaming-markdown', 'is-streaming')
       text.innerHTML = [
         '<div class="stream-complete">',
         '<p>Intro paragraph.</p>',
         '<blockquote class="stream-pending stream-pending-blockquote stream-pending-block"><p>Quoted guidance for the team.</p></blockquote>',
         '</div>',
       ].join('')
-      msg.append(text)
-      list.append(msg)
 
       const quote = text.querySelector('blockquote.stream-pending-blockquote')
       const styles = quote ? getComputedStyle(quote) : null

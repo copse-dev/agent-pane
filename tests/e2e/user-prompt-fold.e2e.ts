@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedUserPromptFoldFixture } from './helpers/seed-config.ts'
-import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import { parkPointer, saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
 describe('user prompt mid-fold accordion', () => {
   before(async function () {
@@ -48,6 +48,16 @@ describe('user prompt mid-fold accordion', () => {
     await expect(bubble.$('.msg-user-fold-label')).toHaveText('collapse')
     await expect(bubble.$('.msg-user-fold-middle')).toBeDisplayed()
     await expect(bubble.$('.msg-user-fold-middle')).toHaveText(/Environment note/)
+    await parkPointer()
+    await browser.waitUntil(
+      () =>
+        browser.execute(() =>
+          [...document.querySelectorAll('.msg-actions')].every(
+            (actions) => getComputedStyle(actions).opacity === '0',
+          ),
+        ),
+      { timeout: 2_000, timeoutMsg: 'Prompt actions did not leave their hover state' },
+    )
 
     await saveElementScreenshot(
       '[data-message-id="msg-user-fold"]',

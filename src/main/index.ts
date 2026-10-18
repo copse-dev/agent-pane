@@ -1,5 +1,6 @@
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
+import { initThreadPrompts } from './services/thread-prompts.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
 import {
@@ -24,6 +25,7 @@ installIpcPerfTracing()
 import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import { ThreadDeepLinks } from './services/thread-deep-links.ts'
 import { findThreadOwners } from './services/thread-store.ts'
+import { z } from 'zod'
 import { setExplainerPreviewCapture } from './services/explainer-preview.ts'
 import { captureExplainerFrames } from './windows/explainer-preview.ts'
 import { attachWebContentsLockdown } from './windows/web-contents-lockdown.ts'
@@ -628,6 +630,7 @@ app
     initApproval(win, ipcMain, alertUser)
     initAskUser(win, ipcMain, alertUser)
     initMobileChat(win, ipcMain)
+    initThreadPrompts(win, ipcMain)
     // Lets main-process code hand the user a running command in the Shells pane
     // (the ACP re-authentication offer). The renderer owns the PTY's xterm tab,
     // so the request is forwarded rather than spawned here.
@@ -962,11 +965,12 @@ app
       invalidateCursorCloudModelsCache()
     })
 
-    ipcMain.handle('agent:abort', (event, threadIdArg: unknown) => {
+    ipcMain.handle('agent:abort', (event, threadIdArg: unknown, reasonArg: unknown) => {
       assertMainFrameSender(event, win)
       assertPrimaryMainWindow(event.sender)
       const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-      abortAgent(threadId)
+      const reason = z.literal('send_now').optional().parse(reasonArg)
+      abortAgent(threadId, reason)
     })
 
     // Thread ids with a live in-process run, so a renderer that's just loaded a

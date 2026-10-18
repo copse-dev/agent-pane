@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { parseSpineLine } from './spine-schema.ts'
 import {
   DECISION_LOG_CONFORMANCE,
   DECISION_LOG_MEDIA_TYPE,
@@ -23,6 +24,25 @@ const baseInput: DecisionInput = {
 }
 
 describe('decision-log schema', () => {
+  it('round-trips bridge execution identity without inventing a transcript ID', () => {
+    const event = makeDecisionEvent(
+      {
+        kind: 'bridge-request',
+        actor: 'system',
+        verdict: 'requested',
+        subject: 'run_shell',
+        bridgeExecutionId: 'bridge-execution-uuid',
+      },
+      'request-event',
+      1234,
+    )
+    assert.deepEqual(parseDecisionLine(serializeDecisionLine(event)), event)
+    assert.deepEqual(parseSpineLine(serializeDecisionLine(event)), event)
+    assert.equal(event.toolCallId, undefined)
+    assert.equal(parseDecisionLine(JSON.stringify({ ...event, bridgeExecutionId: 7 })), null)
+    assert.equal(parseSpineLine(JSON.stringify({ ...event, bridgeExecutionId: 7 })), null)
+  })
+
   it('stamps v/type/id/at and preserves fields', () => {
     const e = makeDecisionEvent(
       { ...baseInput, scope: 'sandbox', remembered: true, threadId: 't1' },
@@ -215,5 +235,53 @@ describe('redactSecrets', () => {
     const e = makeDecisionEvent({ ...baseInput, subject: 'x'.repeat(9000) }, 'id', 1)
     assert.ok(e.subject.length <= 4001)
     assert.equal(e.subject.endsWith('…'), true)
+  })
+})
+
+describe('decision-log classifier-call fields', () => {
+  const callInput: DecisionInput = {
+    kind: 'classifier-call',
+    actor: 'classifier',
+    verdict: 'classified',
+    subject: 'shell-scope',
+    scope: 'sandbox',
+    source: 'Kev 4B',
+    latencyMs: 850,
+    inputTokens: 120,
+    outputTokens: 4,
+  }
+
+  it('round-trips latency and token counts', () => {
+    const line = serializeDecisionLine(makeDecisionEvent(callInput, 'id-1', 1))
+    const parsed = parseDecisionLine(line)
+    assert.equal(parsed?.latencyMs, 850)
+    assert.equal(parsed.inputTokens, 120)
+    assert.equal(parsed.outputTokens, 4)
+  })
+
+  it('omits the fields when a call reported none', () => {
+    const event = makeDecisionEvent({ ...baseInput }, 'id-2', 1)
+    assert.equal('latencyMs' in event, false)
+    assert.equal('inputTokens' in event, false)
+    assert.equal('outputTokens' in event, false)
+  })
+
+  it('rejects a negative or fractional count rather than reporting it', () => {
+    for (const bad of [{ latencyMs: -1 }, { inputTokens: 1.5 }, { outputTokens: 'x' }]) {
+      const line = JSON.stringify({ ...makeDecisionEvent(callInput, 'id-3', 1), ...bad })
+      assert.equal(parseDecisionLine(line), null, JSON.stringify(bad))
+    }
+  })
+
+  it('still reads a line written before the fields existed', () => {
+    const {
+      latencyMs: _l,
+      inputTokens: _i,
+      outputTokens: _o,
+      ...legacy
+    } = makeDecisionEvent(callInput, 'id-4', 1)
+    const parsed = parseDecisionLine(JSON.stringify(legacy))
+    assert.ok(parsed)
+    assert.equal(parsed.latencyMs, undefined)
   })
 })

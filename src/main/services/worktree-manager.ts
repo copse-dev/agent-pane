@@ -32,6 +32,12 @@ import {
 } from '../project-sandbox/worktree-config.ts'
 import { isMandatoryWriteDenyMountPath } from '../project-sandbox/mandatory-write-deny.ts'
 import { cloneIgnoredEntries } from './worktree-ignored-clone.ts'
+import { changedPaths } from './git-status-paths.ts'
+import {
+  holdsOnlyAbsorbedSubmodules,
+  inspectSubmoduleRetention,
+  submoduleRetentionPaths,
+} from './worktree-submodules.ts'
 
 const OWNER_ID = /^[\w-]{1,128}$/
 
@@ -257,6 +263,35 @@ export class ThreadWorktreeDetachedError extends Error {
     super('Thread worktree is on a detached HEAD')
     this.name = 'ThreadWorktreeDetachedError'
     this.branch = branch
+  }
+}
+
+/**
+ * The linked checkout's HEAD is the thread's recorded base branch (#1882).
+ * Git refuses to check a branch out twice, so this cannot happen while the
+ * project checkout still holds the base branch; it happens once the user has
+ * moved the project checkout elsewhere and an agent (or the user) then runs
+ * `git checkout <base>` inside the thread worktree. Validation stays fail
+ * closed: edits in that state would land directly on the base branch. The
+ * error carries what the recovery needs, so callers can say which checkout
+ * is on which branch and which thread branch to return to.
+ */
+export class ThreadWorktreeOnBaseBranchError extends Error {
+  /** The recorded base branch the checkout is unexpectedly on. */
+  readonly baseBranch: string
+  /** The thread branch the metadata recorded for this checkout. */
+  readonly branch: string
+  /** The linked checkout's canonical path. */
+  readonly path: string
+
+  constructor(input: { baseBranch: string; branch: string; path: string }) {
+    super(
+      `Thread worktree branch must differ from its recorded base branch: ${input.path} is checked out on "${input.baseBranch}" instead of its thread branch "${input.branch}"`,
+    )
+    this.name = 'ThreadWorktreeOnBaseBranchError'
+    this.baseBranch = input.baseBranch
+    this.branch = input.branch
+    this.path = input.path
   }
 }
 
@@ -531,18 +566,34 @@ const git = runWorktreeGit
  * Git confirms the checkout is no longer registered, and remove the empty
  * directory on the host. `rmdir` will not follow a swapped symlink or delete
  * newly-created content.
+ *
+ * Git refuses to remove a checkout holding submodule repositories without
+ * `--force`, which would also skip its check for modified and untracked files.
+ * When the only obstacle is the module repositories Copse keeps in the
+ * checkout's administration directory (whose commits callers have already
+ * accounted for with `inspectSubmoduleRetention`), run that same clean check
+ * here and force only past the submodule refusal.
  */
 export async function removeRegisteredWorktreeCheckout(
   repositoryRoot: string,
   path: string,
   force = false,
 ): Promise<{ stdout: string; stderr: string; code: number }> {
-  const removed = await git(
-    repositoryRoot,
-    ['worktree', 'remove', ...(force ? ['--force'] : []), path],
-    undefined,
-    [path],
-  )
+  const remove = (forced: boolean): Promise<CommandResult> =>
+    git(repositoryRoot, ['worktree', 'remove', ...(forced ? ['--force'] : []), path], undefined, [
+      path,
+    ])
+  let removed = await remove(force)
+  if (
+    removed.code !== 0 &&
+    !force &&
+    (await holdsOnlyAbsorbedSubmodules(path).catch(() => false))
+  ) {
+    // `git worktree remove`'s own check, without the submodule refusal.
+    const status = await git(path, ['status', '--porcelain', '--ignore-submodules=none'])
+    if (status.code !== 0 || status.stdout.trim()) return removed
+    removed = await remove(true)
+  }
   if (removed.code === 0) return removed
   const remainsRegistered = (await listRecords(repositoryRoot)).some((record) =>
     sameWorktreePath(record.path, path),
@@ -677,6 +728,24 @@ async function symbolicHeadBranch(worktreePath: string): Promise<string | null> 
  */
 async function fetchDefaultBranch(projectRoot: string, branch: string): Promise<void> {
   await git(projectRoot, ['fetch', '--quiet', 'origin', branch]).catch(() => undefined)
+}
+
+/**
+ * Whether the project checkout lacks commits the default branch has upstream,
+ * so a thread reading it as-is would read older files than `origin/<branch>`.
+ * Refreshes `origin/<branch>` first. False when there is no origin or fetched
+ * tip, or when HEAD already contains the tip (equal or ahead).
+ */
+export async function projectCheckoutBehindDefaultBranch(
+  projectRoot: string,
+  branch: string,
+): Promise<boolean> {
+  if (!(await hasOriginRemote(projectRoot))) return false
+  await fetchDefaultBranch(projectRoot, branch)
+  const remote = await resolveCommit(projectRoot, `refs/remotes/origin/${branch}`)
+  if (remote === null) return false
+  const result = await git(projectRoot, ['merge-base', '--is-ancestor', remote, 'HEAD'])
+  return result.code === 1
 }
 
 export async function hasOriginRemote(projectRoot: string): Promise<boolean> {
@@ -1359,7 +1428,11 @@ async function validateThreadWorktreeState(
   // is retained here for the recovery-only validator below.
   if (liveBranch) {
     if (liveBranch === input.worktree.baseBranch) {
-      throw new Error('Thread worktree branch must differ from its recorded base branch')
+      throw new ThreadWorktreeOnBaseBranchError({
+        baseBranch: input.worktree.baseBranch,
+        branch: input.worktree.branch,
+        path: canonicalPath,
+      })
     }
   }
 
@@ -1595,6 +1668,7 @@ export async function archiveThreadWorktree(
         '--porcelain=v1',
         '-z',
         '--untracked-files=all',
+        '--ignore-submodules=none',
       ])
       const head = await inspectGit(validated.path, ['rev-parse', 'HEAD'])
       const branch = await inspectGit(validated.path, [
@@ -1614,6 +1688,11 @@ export async function archiveThreadWorktree(
         throw new Error('Cannot completely inspect thread worktree status.')
       if (branch.stdout.trim() !== validated.branch)
         throw new Error('Archive checkout changed during inspection; try again.')
+      // Work inside submodules is part of what archiving discards: changes in
+      // their checkouts, and commits only this checkout's module repositories
+      // hold. Ignored files are regenerable here as in the superproject.
+      const submodules = await inspectSubmoduleRetention(validated.path, { includeIgnored: false })
+      const retained = submoduleRetentionPaths(submodules)
       const fingerprint = createHash('sha256')
         .update(
           JSON.stringify([
@@ -1623,10 +1702,15 @@ export async function archiveThreadWorktree(
             branch.stdout,
             head.stdout,
             status.stdout,
+            submodules,
           ]),
         )
         .digest('hex')
-      return { paths: changedPaths(status.stdout), fingerprint, dirty: status.stdout.length > 0 }
+      return {
+        paths: [...new Set([...changedPaths(status.stdout), ...retained])],
+        fingerprint,
+        dirty: status.stdout.length > 0 || retained.length > 0,
+      }
     }
     const initial = await snapshot()
     if (initial.dirty && confirmation !== initial.fingerprint)
@@ -1662,25 +1746,29 @@ export async function archiveThreadWorktree(
   })
 }
 
-/** Paths out of `git status --porcelain=v1 -z`, with rename/copy sources folded in. */
-export function changedPaths(raw: string): string[] {
-  const out: string[] = []
-  const entries = raw.split('\0').filter(Boolean)
-  for (let index = 0; index < entries.length; index++) {
-    const entry = entries[index]
-    if (!entry || entry.length < 4 || entry[2] !== ' ') continue
-    const path = entry.slice(3)
-    if (path) out.push(path)
-    // `-z` always follows a rename/copy with its bare source field, which has no
-    // status prefix. Consume it unconditionally: a source such as `01 intro.md`
-    // only looks like a status entry.
-    if (entry[0] === 'R' || entry[0] === 'C' || entry[1] === 'R' || entry[1] === 'C') {
-      const source = entries[index + 1]
-      if (source) out.push(source)
-      index++
-    }
+/**
+ * What removing `checkout` would discard: the superproject's changes (with
+ * submodule changes never hidden by an `ignore` setting) and the work inside
+ * its submodules, including commits only the checkout's own module
+ * repositories hold. Throws when the checkout cannot be inspected.
+ */
+export async function inspectRemovalBlockers(
+  checkout: string,
+  options: { includeIgnored: boolean },
+): Promise<{ dirty: boolean; paths: string[] }> {
+  const status = await git(checkout, [
+    'status',
+    '--porcelain=v1',
+    '-z',
+    '--ignore-submodules=none',
+    ...(options.includeIgnored ? ['--ignored=matching'] : []),
+  ])
+  if (status.code !== 0) throw commandFailure('Cannot inspect thread worktree', status)
+  const submodules = submoduleRetentionPaths(await inspectSubmoduleRetention(checkout, options))
+  return {
+    dirty: status.stdout.length > 0 || submodules.length > 0,
+    paths: [...new Set([...changedPaths(status.stdout), ...submodules])],
   }
-  return [...new Set(out)]
 }
 
 export interface RetireThreadWorktreeOptions {
@@ -1701,14 +1789,10 @@ export async function retireThreadWorktree(
   // `git worktree remove` deletes ignored files without `--force`. Include
   // ignored entries so build output or other local-only content is never
   // silently discarded merely because ordinary `git status` calls it clean.
-  const status = await git(validated.path, [
-    'status',
-    '--porcelain=v1',
-    '-z',
-    ...(options.ignoreIgnoredFiles ? [] : ['--ignored=matching']),
-  ])
-  if (status.code !== 0) throw commandFailure('Cannot inspect thread worktree', status)
-  if (status.stdout) return { status: 'blocked-dirty', paths: changedPaths(status.stdout) }
+  const blockers = await inspectRemovalBlockers(validated.path, {
+    includeIgnored: !options.ignoreIgnoredFiles,
+  })
+  if (blockers.dirty) return { status: 'blocked-dirty', paths: blockers.paths }
 
   const merged = await git(input.projectRoot, [
     'merge-base',
@@ -2018,9 +2102,8 @@ export async function parkThreadWorktree(
   input: ValidateWorktreeInput,
 ): Promise<ParkWorktreeResult> {
   const validated = await validateThreadWorktree(input)
-  const status = await git(validated.path, ['status', '--porcelain=v1', '-z', '--ignored=matching'])
-  if (status.code !== 0) throw commandFailure('Cannot inspect thread worktree', status)
-  if (status.stdout) return { status: 'blocked-dirty', paths: changedPaths(status.stdout) }
+  const blockers = await inspectRemovalBlockers(validated.path, { includeIgnored: true })
+  if (blockers.dirty) return { status: 'blocked-dirty', paths: blockers.paths }
 
   const head = await requireGitValue(
     validated.path,
@@ -2118,13 +2201,10 @@ export async function pruneSafeOrphans(
         continue
       }
 
-      const status = await git(record.path, [
-        'status',
-        '--porcelain=v1',
-        '-z',
-        '--ignored=matching',
-      ]).catch(() => null)
-      if (!status || status.code !== 0) {
+      const blockers = await inspectRemovalBlockers(record.path, { includeIgnored: true }).catch(
+        () => null,
+      )
+      if (!blockers) {
         report.retained.push({
           threadId,
           path: record.path,
@@ -2133,13 +2213,13 @@ export async function pruneSafeOrphans(
         })
         continue
       }
-      if (status.stdout) {
+      if (blockers.dirty) {
         report.retained.push({
           threadId,
           path: record.path,
           branch: record.branch,
           reason: 'dirty',
-          paths: changedPaths(status.stdout),
+          paths: blockers.paths,
         })
         continue
       }

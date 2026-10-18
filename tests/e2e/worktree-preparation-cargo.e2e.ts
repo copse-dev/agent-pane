@@ -11,6 +11,8 @@ const fixture = createFixtureDirectory('cargo-preparation-approval')
 const { root } = fixture
 describe('automatic Cargo preparation approval', () => {
   before(async () => {
+    rmSync(root, { recursive: true, force: true })
+    mkdirSync(root, { recursive: true })
     mkdirSync(join(root, 'src'))
     writeFileSync(
       join(root, 'Cargo.toml'),

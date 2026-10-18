@@ -243,11 +243,17 @@ describe('Process manager', function () {
     await $('.context-menu-item=Jump to thread').click()
     await dialog.waitForDisplayed({ reverse: true, timeout: 5_000 })
     await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', originalThreadId)
+    await expect($(`.chat-row[data-thread-id="${otherThreadId}"] .chat-title`)).toHaveText(
+      'Process manager other thread',
+    )
 
     await $('.prompt-input').click()
     await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'Shift', 'p'])
     await dialog.waitForDisplayed({ timeout: 10_000 })
     await dialog.$(ownedSelector).waitForDisplayed({ timeout: 10_000 })
+    await expect(
+      dialog.$(`[data-group-key="${otherThreadId}"] .process-manager-group-title`),
+    ).toHaveText('Process manager other thread')
     await dialog.$(ownedSelector).click({ button: 'right' })
     await expect($('.context-menu-item=Stop terminal')).toBeDisplayed()
     await maskProcessManagerLiveValues()

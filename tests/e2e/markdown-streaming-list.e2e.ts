@@ -44,20 +44,16 @@ describe('markdown streaming list pending', () => {
     await expect($('.msg-user .message-text')).toHaveText('Show the streaming list state.')
 
     const result = await browser.execute(() => {
-      const list = document.querySelector('.messages-list')
-      if (!list) return { error: 'no messages list' }
-
-      const msg = document.createElement('div')
-      msg.className = 'msg msg-assistant'
-      const text = document.createElement('div')
-      text.className = 'message-text streaming-markdown is-streaming'
+      const text = document.querySelector(
+        '[data-message-id="streaming-markdown-message"] .message-text',
+      )
+      if (!text) return { error: 'no visible assistant message' }
+      text.classList.add('streaming-markdown', 'is-streaming')
       text.innerHTML = [
         '<div class="stream-complete">',
         '<ul><li>Database migration ran flawlessly<span class="stream-pending stream-pending-list-continuation stream-pending-block">  - zero downtime during production rollout.</span></li></ul>',
         '</div>',
       ].join('')
-      msg.append(text)
-      list.append(msg)
 
       const li = text.querySelector('li')
       const continuation = text.querySelector('.stream-pending-list-continuation')
@@ -89,20 +85,16 @@ describe('markdown streaming list pending', () => {
     await expect($('.msg-user .message-text')).toHaveText('Show the streaming list state.')
 
     const result = await browser.execute(() => {
-      const list = document.querySelector('.messages-list')
-      if (!list) return { error: 'no messages list' }
-
-      const msg = document.createElement('div')
-      msg.className = 'msg msg-assistant'
-      const text = document.createElement('div')
-      text.className = 'message-text streaming-markdown is-streaming'
+      const text = document.querySelector(
+        '[data-message-id="streaming-markdown-message"] .message-text',
+      )
+      if (!text) return { error: 'no visible assistant message' }
+      text.classList.add('streaming-markdown', 'is-streaming')
       text.innerHTML = [
         '<div class="stream-complete">',
         '<ul><li>First item</li><li class="stream-pending stream-pending-list-item stream-pending-block">Second item</li></ul>',
         '</div>',
       ].join('')
-      msg.append(text)
-      list.append(msg)
 
       const items = [...text.querySelectorAll('li')]
       const pending = text.querySelector('li.stream-pending-list-item')

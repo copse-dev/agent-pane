@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { syncThreadGitBranchIfChanged } from '@shared/git/sync-thread-branch.ts'
+import { isUnavailableThreadCheckoutError } from '../ipc-error-message.ts'
 
 /**
  * Rebind the thread if HEAD moved. Callers gate this on the foreground thread:
@@ -16,7 +17,15 @@ export async function syncThreadGitBranchAfterShell(
 ): Promise<void> {
   const projectId = store.getState().activeProjectId
   if (!projectId) return
-  const { currentBranch } = await api.git.branchStatus(projectId, threadId)
+  let currentBranch: string | null
+  try {
+    ;({ currentBranch } = await api.git.branchStatus(projectId, threadId))
+  } catch (error) {
+    // The agent's failure already explains these states. This supplementary
+    // refresh must not turn that recoverable refusal into an unhandled toast.
+    if (!isUnavailableThreadCheckoutError(error)) throw error
+    return
+  }
   if (syncThreadGitBranchIfChanged(store, threadId, currentBranch)) {
     store.emit('git_branch_changed')
   }

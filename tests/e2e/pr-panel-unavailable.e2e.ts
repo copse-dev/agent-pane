@@ -37,9 +37,13 @@ describe('PR panel gh unavailable (mock)', () => {
       await pane.waitForDisplayed({ timeout: 10_000 })
     }
     await $('[aria-label="Open pull requests"]').click()
-    await browser.pause(800)
 
     await (await $('.git-changes-section-title*=Related PRs')).waitForDisplayed({ timeout: 10_000 })
+    // Missing gh is a terminal state, not an in-flight CI lookup. Capture
+    // only once the chat-linked row reports that same settled result.
+    await expect($('.pr-list-row[data-pr-section="linked"] .pr-list-checks-label')).toHaveText(
+      'CI unavailable',
+    )
 
     const bannerText = await browser.execute(
       () => document.querySelector('.pr-empty-state')?.textContent?.trim() ?? '',

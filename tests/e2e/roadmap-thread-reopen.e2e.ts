@@ -5,6 +5,8 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, pinTextForCapture, saveAppScreenshot } from './helpers/screenshot.ts'
 
+import { pinRoadmapDisplayTimestamp } from './helpers/roadmap-capture.ts'
+
 const PROMPT = 'Ship the roadmap reopen feature'
 
 describe('roadmap start-thread tracking and reopen', () => {
@@ -83,6 +85,19 @@ describe('roadmap start-thread tracking and reopen', () => {
       originPlacement.bottom <= originPlacement.composerTop,
       'the composer does not cover the roadmap link',
     )
+    pinRoadmapDisplayTimestamp('e2e-roadmap-reopen')
+    await $('.roadmap-refresh-btn').click()
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          () =>
+            document
+              .querySelector('.roadmap-form .memories-meta')
+              ?.textContent?.includes('2026-01-15') ?? false,
+        ),
+      { timeout: 10_000, timeoutMsg: 'expected the pinned roadmap display date' },
+    )
+    await $('.roadmap-row').click()
     await browser.execute(() => {
       const viewer = document.querySelector<HTMLElement>('.memories-viewer-host')
       if (viewer) viewer.scrollTop = viewer.scrollHeight

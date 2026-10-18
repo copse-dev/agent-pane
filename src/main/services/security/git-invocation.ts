@@ -10,6 +10,10 @@ const INTERNAL_GIT_COMMANDS = new Set([
   'cat-file',
   'check-ignore',
   'check-ref-format',
+  // Only the local submodule clone `assertLocalSubmoduleClone` admits: no
+  // checkout (so no hooks or smudge filters), no templates, and no option that
+  // selects a helper program. `internalGitTransport` limits it to `file`.
+  'clone',
   // User-requested commits go through a permission-gated execution profile, so
   // hooks/signing work there. Only automatic commit-tree snapshots belong here.
   'commit-tree',
@@ -108,6 +112,7 @@ export function withGitInvocationArgs(
   if (!command || !INTERNAL_GIT_COMMANDS.has(command)) {
     throw new Error(`Unsupported internal Git command: ${command ?? '(missing)'}`)
   }
+  if (command === 'clone') assertLocalSubmoduleClone(rest)
   // A caller cannot prepend -c/--config-env to undo the policy. Diff flags go
   // before revisions/pathspecs, never after a caller's `--` separator.
   const diffFlags =
@@ -126,8 +131,48 @@ export function withGitInvocationArgs(
   ]
 }
 
+/**
+ * Admit exactly `clone --no-checkout --template= --separate-git-dir <dir> -- <source> <target>`.
+ *
+ * Config-execution audit: with `--no-checkout` nothing is written to a working
+ * tree, so no hook, smudge filter or fsmonitor runs; an empty `--template=`
+ * installs no hooks into the new repository; `file` is the only transport (see
+ * `internalGitTransport`), and a local clone copies objects and refs without
+ * consulting the source's configuration. Every option that names a program or
+ * writes configuration (`--upload-pack`, `--config`, `--recurse-submodules`, a
+ * template directory) is refused rather than enumerated.
+ */
+function assertLocalSubmoduleClone(args: string[]): void {
+  const [noCheckout, template, separateGitDir, gitDir, separator, source, target, ...extra] = args
+  if (
+    noCheckout !== '--no-checkout' ||
+    template !== '--template=' ||
+    separateGitDir !== '--separate-git-dir' ||
+    !gitDir ||
+    separator !== '--' ||
+    !source ||
+    !target ||
+    extra.length > 0
+  ) {
+    throw new Error('Unsupported internal Git clone')
+  }
+}
+
+/**
+ * The transports an internal command may use: the network remotes `fetch` and
+ * `push` need, `file` alone for a local clone, and nothing for anything else.
+ */
+export function internalGitTransport(command: string | undefined): 'remote' | 'local' | 'none' {
+  if (command === 'fetch' || command === 'push') return 'remote'
+  if (command === 'clone') return 'local'
+  return 'none'
+}
+
 /** Strip inherited Git execution/config injection; preserve explicit index/identity env. */
-export function internalGitEnv(base: NodeJS.ProcessEnv, transport = false): NodeJS.ProcessEnv {
+export function internalGitEnv(
+  base: NodeJS.ProcessEnv,
+  transport: ReturnType<typeof internalGitTransport> = 'none',
+): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {}
   for (const [key, value] of Object.entries(base)) {
     if (
@@ -156,7 +201,8 @@ export function internalGitEnv(base: NodeJS.ProcessEnv, transport = false): Node
   // partial clone must not silently invoke a transport/remote helper.
   return {
     ...env,
-    GIT_ALLOW_PROTOCOL: transport ? 'https:http:ssh:file' : '',
+    GIT_ALLOW_PROTOCOL:
+      transport === 'remote' ? 'https:http:ssh:file' : transport === 'local' ? 'file' : '',
     GIT_NO_LAZY_FETCH: '1',
     GIT_OPTIONAL_LOCKS: '0',
     GIT_PAGER: 'cat',

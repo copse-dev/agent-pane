@@ -1,18 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
-import {
-  existsSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { runInNewContext } from 'node:vm'
+import { parseScreenshotManifest } from './lib/screenshot-manifest.mts'
 import { readShardWeights } from './test-oracle.mts'
 
 /**
@@ -88,8 +81,10 @@ describe('ci.yml workflow invariants', () => {
     // This bound replaces #3355's rule that the explainer specs never share a
     // worker, which stood in for it.
     const weights = readShardWeights()
+    const recorded = [...weights.values()].sort((a, b) => a - b)
+    const unrecorded = recorded[Math.floor(recorded.length / 2)] ?? 0
     const loads = buckets.map((bucket) =>
-      bucket.reduce((sum, spec) => sum + (weights.get(spec) ?? 0), 0),
+      bucket.reduce((sum, spec) => sum + (weights.get(spec) ?? unrecorded), 0),
     )
     assert.ok(
       Math.max(...loads) - Math.min(...loads) < 30,
@@ -345,7 +340,7 @@ describe('ci.yml workflow invariants', () => {
   })
 
   it('forces promotion PRs through full e2e before consulting the oracle', () => {
-    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- name: Plan reference)/)?.[0]
+    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- (?:name|id):)/)?.[0]
     assert.ok(planStep, 'expected the e2e planning step in ci.yml')
     assert.match(
       planStep,
@@ -473,7 +468,7 @@ describe('ci.yml workflow invariants', () => {
     // pin the unit tier to `full`. A branch that emits only `mode=` would leave
     // `unit_mode` empty — safe today because `check` falls through to the full
     // suite, but the pin keeps that from being load-bearing by accident.
-    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- name: Plan reference)/)?.[0]
+    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- (?:name|id):)/)?.[0]
     assert.ok(planStep, 'expected the plan step in ci.yml')
     const emits = planStep.match(/echo "mode=(?:full|subset|skip)"/g) ?? []
     const unitEmits = planStep.match(/echo "unit_mode=full"/g) ?? []
@@ -484,7 +479,7 @@ describe('ci.yml workflow invariants', () => {
     )
     assert.match(
       planStep,
-      /grep -E '\^\(mode\|specs\|unit_mode\|unit_specs\)=' plan\.txt/,
+      /grep -E '\^\(mode\|specs\|unit_mode\|unit_specs\)=' "\$plan_file"/,
       'the oracle path must forward the unit plan to $GITHUB_OUTPUT',
     )
   })
@@ -521,7 +516,7 @@ describe('ci.yml workflow invariants', () => {
     const aggregate = jobBlock('ci-passed')
     assert.match(
       aggregate,
-      /needs: \[precheck, check, review-cell, bench, build, e2e, screenshot-artifacts\]/,
+      /needs:\s+\[precheck, screenshot-baselines, check, review-cell, bench, build, e2e, screenshot-artifacts\]/,
       'the aggregate must wait until immutable screenshot evidence is published',
     )
   })
@@ -545,7 +540,7 @@ describe('ci.yml workflow invariants', () => {
     assert.match(cell, /npm test -- packages\/review\/src\/hostile-fixture\.test\.ts/)
 
     const aggregate = jobBlock('ci-passed')
-    assert.match(aggregate, /needs: \[[^\]]*review-cell[^\]]*\]/)
+    assert.match(aggregate, /needs:\s+\[[^\]]*review-cell[^\]]*\]/)
   })
 
   it('never pushes a format commit to a promotion into release', () => {
@@ -637,7 +632,7 @@ describe('ci.yml workflow invariants', () => {
     const precheck = jobBlock('precheck')
     const binding =
       'BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}'
-    assert.equal(precheck.split(binding).length - 1, 3)
+    assert.equal(precheck.split(binding).length - 1, 4) // includes the advisory shadow comparison
     const plan = precheck.slice(precheck.indexOf('- id: plan'))
     assert.match(plan, /HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/)
     assert.doesNotMatch(plan, /HEAD_SHA: [^\n]*merge_group/)
@@ -645,7 +640,7 @@ describe('ci.yml workflow invariants', () => {
   })
 
   it('keeps main queue oracle selection and forces full release queue plans', () => {
-    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- name: Plan reference)/)?.[0]
+    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- (?:name|id):)/)?.[0]
     assert.ok(planStep)
     const script = planStep.slice(planStep.indexOf('        run: |\n') + '        run: |\n'.length)
     for (const base of ['main', 'release']) {
@@ -673,6 +668,7 @@ describe('ci.yml workflow invariants', () => {
               CI_FULL_LABEL: 'false',
               GITHUB_OUTPUT: output,
               GITHUB_STEP_SUMMARY: join(root, 'summary'),
+              RUNNER_TEMP: root,
               TRACE: trace,
             },
           },
@@ -693,6 +689,94 @@ describe('ci.yml workflow invariants', () => {
       } finally {
         rmSync(root, { recursive: true, force: true })
       }
+    }
+  })
+
+  it('compares PR protocols with the tested merge parent, not a stale event base', () => {
+    const root = mkdtempSync(join(tmpdir(), 'copse-ci-protocol-base-'))
+    const git = (...args: string[]): string => {
+      const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' })
+      assert.equal(result.status, 0, result.stderr)
+      return result.stdout.trim()
+    }
+    try {
+      git('init', '-b', 'main')
+      git('config', 'user.name', 'CI fixture')
+      git('config', 'user.email', 'ci@example.invalid')
+      git('config', 'commit.gpgsign', 'false')
+      git('commit', '--allow-empty', '-m', 'event base')
+      const staleBase = git('rev-parse', 'HEAD')
+      git('switch', '-c', 'feature')
+      writeFileSync(join(root, 'feature'), 'PR change')
+      git('add', 'feature')
+      git('commit', '-m', 'feature')
+      const head = git('rev-parse', 'HEAD')
+      git('switch', 'main')
+      writeFileSync(join(root, 'base'), 'new base surface')
+      git('add', 'base')
+      git('commit', '-m', 'base advanced')
+      const testedBase = git('rev-parse', 'HEAD')
+      git('merge', '--no-ff', 'feature', '-m', 'tested PR merge')
+
+      const step = jobBlock('precheck').split('- name: API protocol compatibility')[1]
+      const runBlock = step?.match(/run: \|\n([\s\S]*?)(?=\n {6}#|\n {6}-)/)?.[1]
+      assert.ok(runBlock)
+      // Exercise the real base-selection shell with real Git topology, without
+      // depending on network release discovery or the host's Bash array rules.
+      const selection = runBlock.split('          # No usable base')[0]
+      assert.ok(selection)
+      const script = `${selection}\nnode scripts/gen-api-protocol.mts --compare-ref "$BASE_SHA"`
+      const run = (
+        expectedHead: string,
+        event = 'pull_request',
+        failComparison = false,
+      ): SpawnSyncReturns<string> =>
+        spawnSync(
+          'bash',
+          [
+            '-eu',
+            '-c',
+            `node() { printf 'PROTOCOL:%s:%s:%s\\n' "$1" "$2" "$3"; return ${failComparison ? '1' : '0'}; }\n${script}`,
+          ],
+          {
+            cwd: root,
+            encoding: 'utf8',
+            env: {
+              ...process.env,
+              BASE_SHA: staleBase,
+              PR_HEAD_SHA: expectedHead,
+              TARGET_REF: 'main',
+              GITHUB_EVENT_NAME: event,
+            },
+          },
+        )
+
+      const fresh = run(head)
+      assert.equal(fresh.status, 0, fresh.stderr)
+      assert.ok(fresh.stdout.includes(`--compare-ref:${testedBase}`), fresh.stdout)
+      assert.ok(!fresh.stdout.includes(`--compare-ref:${staleBase}`))
+
+      const wrongHead = run(staleBase)
+      assert.equal(wrongHead.status, 1)
+      assert.match(wrongHead.stdout, /Expected a two-parent PR merge/)
+      assert.doesNotMatch(wrongHead.stdout, /PROTOCOL:/)
+      assert.equal(
+        run(head, 'pull_request', true).status,
+        1,
+        'compatibility failures stay blocking',
+      )
+
+      const push = run(head, 'push')
+      assert.equal(push.status, 0, push.stderr)
+      assert.ok(push.stdout.includes(`--compare-ref:${staleBase}`))
+
+      git('checkout', '--detach', head)
+      const notMerge = run(head)
+      assert.equal(notMerge.status, 1)
+      assert.match(notMerge.stdout, /Expected a two-parent PR merge/)
+      assert.doesNotMatch(notMerge.stdout, /PROTOCOL:/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 
@@ -805,11 +889,11 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
     // so a budget below the reference set fails every labelled refresh.
     const count = Number(/"\$count" -gt (\d+)/.exec(workflow)?.[1])
     const total = Number(/"\$total" -gt (\d+)/.exec(workflow)?.[1])
-    const references = readdirSync('tests/e2e/screenshots').filter((name) => name.endsWith('.png'))
-    const bytes = references.reduce(
-      (sum, name) => sum + statSync(resolve('tests/e2e/screenshots', name)).size,
-      0,
+    const references = Object.values(
+      parseScreenshotManifest(readFileSync('tests/e2e/screenshots/manifest.json', 'utf8'))
+        .screenshots,
     )
+    const bytes = references.reduce((sum, entry) => sum + entry.bytes, 0)
     assert.ok(
       count >= 2 * references.length,
       `count budget ${String(count)} < 2 × ${String(references.length)}`,
@@ -822,7 +906,16 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
     // token's pushes and PRs start workflows, and a child PR is review noise,
     // so the publisher must not regain either.
     assert.doesNotMatch(workflow, /create-pull-request|create-github-app-token|app-token/)
-    assert.doesNotMatch(workflow, /secrets\./)
+    const upload = workflow.slice(
+      workflow.indexOf('      - name: Upload verified candidates to R2'),
+      workflow.indexOf(
+        '      - name:',
+        workflow.indexOf('      - name: Upload verified candidates to R2') + 10,
+      ),
+    )
+    assert.match(upload, /secrets\.SCREENSHOT_R2_ACCESS_KEY_ID/)
+    assert.match(upload, /\.screenshot-policy\/scripts\/screenshot-storage\.mts/)
+    assert.doesNotMatch(workflow.replace(upload, ''), /secrets\.SCREENSHOT_R2/)
     assert.doesNotMatch(workflow, /rest\.pulls\.create\b/)
     assert.doesNotMatch(workflow, /review-branch|create-review/)
     assert.match(workflow, /<!-- copse-e2e-screenshot-review -->/)

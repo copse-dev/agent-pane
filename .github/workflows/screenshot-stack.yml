@@ -9,13 +9,15 @@ on:
       [Publish screenshot candidates, Screenshot review decision, Screenshot review selection]
     types: [completed]
   workflow_dispatch:
+  schedule:
+    - cron: '17,47 * * * *'
 
 permissions: {}
 
 concurrency:
   group: screenshot-stack-policy
-  # Every run reconciles current state. Keep only the newest waiting run;
-  # preserve the active run so a burst of edits cannot interrupt its writes.
+  # Incremental runs must retain distinct edits, especially removed declarations.
+  queue: max
   cancel-in-progress: false
 
 jobs:
@@ -43,7 +45,7 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const { reconcileScreenshotStack, parseScreenshotStack, memoizeScreenshotStackAncestry } = await import(
+            const { reconcileScreenshotStack, parseScreenshotStack, memoizeScreenshotStackAncestry, selectScreenshotStackPulls, selectScreenshotStackCompletion } = await import(
               `${process.env.GITHUB_WORKSPACE}/scripts/screenshot-stack.mts`);
             const { owner, repo } = context.repo;
             // Comparisons name immutable SHAs. Live PRs, declarations and
@@ -52,10 +54,15 @@ jobs:
             const open = await github.paginate(github.rest.pulls.list, {
               owner, repo, state: 'open', per_page: 100,
             });
-            // Include PRs whose declaration was removed: their triggering run
-            // may have been replaced by a newer pending reconciliation.
-            const selected = open.filter((pr) =>
+            const eligible = open.filter((pr) =>
               pr.head.repo?.full_name === `${owner}/${repo}`);
+            // Publisher completions carry no PR association: select the stacks
+            // whose evidence changed instead of sweeping every open PR.
+            const affected = new Set(context.eventName === 'workflow_run'
+              ? await selectScreenshotStackCompletion(policy, { owner, repo }, eligible, context.payload)
+              : selectScreenshotStackPulls(eligible, context.eventName, context.payload));
+            const selected = eligible.filter((pr) => affected.has(pr.number));
+            core.info(`Reconciling ${selected.length}/${eligible.length} open same-repository PRs`);
             for (const pr of selected) {
               const review = await reconcileScreenshotStack(policy, { owner, repo, number: pr.number });
               if (!review?.description?.startsWith('Stack ')) continue;

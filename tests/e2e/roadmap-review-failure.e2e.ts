@@ -3,7 +3,7 @@ import { mkdirSync, rmSync } from 'node:fs'
 import { createFixtureDirectory } from './helpers/fixture-directory.ts'
 import { $, browser } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, saveAppViewportScreenshot } from './helpers/screenshot.ts'
 
 // A deep resolution check that fails has no verdict to show, so the result box
 // carries the reason instead: a short label on the lowercase-styled meta line
@@ -55,6 +55,7 @@ describe('roadmap resolution check failure', () => {
     await $('.roadmap-row').waitForDisplayed({ timeout: 20_000 })
     await $('.roadmap-row').click()
 
+    await $('.roadmap-details > summary').click()
     const errorBox = $('.roadmap-review-result.is-error')
     await errorBox.waitForDisplayed({ timeout: 30_000 })
     assert.equal(
@@ -65,6 +66,30 @@ describe('roadmap resolution check failure', () => {
     assert.ok(explanation.length > 0, 'the failure explains itself in the body')
     assert.doesNotMatch(explanation, /^\s*$/)
 
-    await saveAppScreenshot('roadmap-review-failure.png')
+    await saveAppViewportScreenshot('roadmap-review-failure.png', async () => {
+      // The document editor owns its scrollport; prepare the final capture
+      // frame before bringing the actual failure above the fixed action row.
+      await errorBox.scrollIntoView({ block: 'center', inline: 'nearest' })
+      await browser.waitUntil(
+        () =>
+          browser.execute(() => {
+            const error = document.querySelector('.roadmap-review-result.is-error')
+            const scroll = document.querySelector('.roadmap-document-scroll')
+            const footer = document.querySelector('.roadmap-document-footer')
+            if (!error || !scroll || !footer) return false
+            const box = error.getBoundingClientRect()
+            const viewport = scroll.getBoundingClientRect()
+            const actions = footer.getBoundingClientRect()
+            return (
+              box.height > 0 &&
+              box.top >= viewport.top &&
+              box.bottom <= Math.min(viewport.bottom, actions.top) &&
+              box.left >= viewport.left &&
+              box.right <= viewport.right
+            )
+          }),
+        { timeout: 5_000, timeoutMsg: 'expected the full failure explanation above the footer' },
+      )
+    })
   })
 })

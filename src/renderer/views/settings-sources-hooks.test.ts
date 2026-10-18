@@ -12,7 +12,7 @@ import type {
   HookValidationWarning,
 } from '@shared/types/hooks.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { mountSettingsDialog } from './settings-dialog.ts'
+import { mountSettingsDialog, openSettingsDialog } from './settings-dialog.ts'
 import { createPendingApi } from '../fake-api.test-support.ts'
 
 /** Records the last `hooks:test` request the stub received (for click-through assertions). */
@@ -25,6 +25,7 @@ let lastTestRequest: unknown
  */
 function stubApi(hooksResult: HooksListResult, testResult?: HookTestResult): ApiClient {
   return createPendingApi({
+    'settings.getSnapshot': () => Promise.resolve({}),
     'instructions.list': () => Promise.resolve([]),
     'cursorRules.list': () => Promise.resolve([]),
     'skills.sources': () =>
@@ -91,6 +92,7 @@ async function openSources(
 ): Promise<HTMLElement> {
   document.body.innerHTML = ''
   mountSettingsDialog(createStore({ developerMode }), stubApi(hooksResult, testResult))
+  openSettingsDialog('customise')
   const sourcesBtn = document.querySelector<HTMLButtonElement>(
     '.settings-nav-btn[data-section="customise"]',
   )

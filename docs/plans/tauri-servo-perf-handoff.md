@@ -115,7 +115,7 @@ faster — measure, don't assume.
 - **Leave `COPSE_RELEASE` unset for perf runs.** `scripts/build.mts` defines
   `__COPSE_TEST_SCENARIOS__` as `String(!isRelease)`, but
   `scripts/build-tauri.mts` hardcodes it to `'true'`. A `COPSE_RELEASE=1 pnpm
-build` therefore gives the Electron main process a mock provider with the
+  build` therefore gives the Electron main process a mock provider with the
   test conversation runner stripped and the sidecar one with it compiled
   in — the two mains stop being the same code, which is the assumption the
   whole comparison rests on. (`--release` in §2.2 is the _cargo_ profile; that

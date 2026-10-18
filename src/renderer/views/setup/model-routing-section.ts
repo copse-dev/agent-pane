@@ -23,9 +23,9 @@ export interface ModelRoutingSnapshot {
 
 export interface ModelRoutingSection {
   root: HTMLElement
-  /** Discard cancelled role edits immediately, without waiting for provider reads. */
+  refresh: (snapshot?: ModelRoutingSnapshot, signal?: AbortSignal) => Promise<void>
+  refreshOptions: (signal?: AbortSignal) => Promise<void>
   reset: () => void
-  refresh: (snapshot?: ModelRoutingSnapshot) => Promise<void>
   /** Only user-edited additional roles; parent Save merges these atomically. */
   readRoleModels: () => Record<string, string> | undefined
   readValues: () => {
@@ -70,7 +70,7 @@ export function createModelRoutingSection(
       routingField(
         'Instruct / safety model',
         safetyModel,
-        'Classifies shell commands and screens terminal reads. Defaults to the best model on this device that clears a minimum intelligence score, and to the cheapest cloud route that clears it when no local model does — a cloud choice sends that screening content to its provider. A classifier chosen under Classifiers → Safety screening replaces it.',
+        'Classifies shell commands and screens terminal reads. Defaults to the best model on this device that clears a minimum intelligence score, and to the cheapest cloud route that clears it when no local model does, a cloud choice sends that screening content to its provider. A classifier chosen under Classifiers → Safety screening replaces it.',
       ),
       routingField('Post-turn review model', reviewModel, 'Reviews the diff after an editing turn'),
     ),
@@ -119,7 +119,7 @@ export function createModelRoutingSection(
           // of silently rendering as the auto option.
           coder: (current: string): Promise<ModelOption[]> =>
             Promise.resolve(
-              localModelOptions(availableLocalModels, '(auto — first loaded model)', current),
+              localModelOptions(availableLocalModels, '(auto, first loaded model)', current),
             ),
           research: (current: string): Promise<ModelOption[]> =>
             Promise.resolve(
@@ -127,7 +127,7 @@ export function createModelRoutingSection(
             ),
           safety: (current: string): Promise<ModelOption[]> =>
             Promise.resolve(
-              localModelOptions(availableLocalModels, '(auto — first loaded model)', current),
+              localModelOptions(availableLocalModels, '(auto, first loaded model)', current),
             ),
           review: (current: string): Promise<ModelOption[]> =>
             Promise.resolve(
@@ -215,12 +215,8 @@ export function createModelRoutingSection(
     )
   }
 
-  function reset(): void {
-    pendingRoles = {}
-  }
-
-  async function refresh(snapshot?: ModelRoutingSnapshot): Promise<void> {
-    reset()
+  async function refresh(snapshot?: ModelRoutingSnapshot, signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return
     const localModel = optionalString(
       snapshot ? snapshot.localDefaultModel : await api.settings.get('localDefaultModel'),
     )
@@ -236,6 +232,9 @@ export function createModelRoutingSection(
     const roleModels = stringRecordOrEmpty(
       snapshot ? snapshot.roleModels : await api.settings.get('roleModels'),
     )
+    if (signal?.aborted) return
+    pendingRoles = {}
+
     if (modelScope === 'all') {
       const coder = roleModels['coder'] ?? localModel
       const research = roleModels['research'] ?? subagent
@@ -244,14 +243,18 @@ export function createModelRoutingSection(
           coder
             ? canonicalRoleSelection(coder)
             : lmStudioChatModelValue(at(PREFERRED_MODELS, 0).id),
+          signal,
         ),
-        modelPickers.research.refresh(canonicalRoleSelection(research ?? '')),
+        modelPickers.research.refresh(canonicalRoleSelection(research ?? ''), signal),
         // Unset means the *rule*, not the model we recommend downloading —
         // showing a concrete local id here would misreport what actually runs.
-        modelPickers.safety.refresh(safety ? canonicalRoleSelection(safety) : DEFAULT_SAFETY_MODEL),
-        modelPickers.review.refresh(canonicalRoleSelection(review ?? '')),
+        modelPickers.safety.refresh(
+          safety ? canonicalRoleSelection(safety) : DEFAULT_SAFETY_MODEL,
+          signal,
+        ),
+        modelPickers.review.refresh(canonicalRoleSelection(review ?? ''), signal),
         ...additionalRoles.map((entry) =>
-          entry.picker.refresh(canonicalRoleSelection(roleModels[entry.role.id] ?? '')),
+          entry.picker.refresh(canonicalRoleSelection(roleModels[entry.role.id] ?? ''), signal),
         ),
       ])
       return
@@ -263,14 +266,19 @@ export function createModelRoutingSection(
     } catch {
       models = []
     }
+    if (signal?.aborted) return
     availableLocalModels = models
     await Promise.all([
       modelPickers.coder.refresh(
         localModel?.replace(/^lmstudio:/, '') ?? at(PREFERRED_MODELS, 0).id,
+        signal,
       ),
-      modelPickers.research.refresh(subagent?.replace(/^lmstudio:/, '') ?? ''),
-      modelPickers.safety.refresh(safety?.replace(/^lmstudio:/, '') ?? DEFAULT_SAFETY_MODEL),
-      modelPickers.review.refresh(review?.replace(/^lmstudio:/, '') ?? ''),
+      modelPickers.research.refresh(subagent?.replace(/^lmstudio:/, '') ?? '', signal),
+      modelPickers.safety.refresh(
+        safety?.replace(/^lmstudio:/, '') ?? DEFAULT_SAFETY_MODEL,
+        signal,
+      ),
+      modelPickers.review.refresh(review?.replace(/^lmstudio:/, '') ?? '', signal),
     ])
   }
 
@@ -290,8 +298,16 @@ export function createModelRoutingSection(
 
   return {
     root,
-    reset,
     refresh,
+    refreshOptions: async (signal?: AbortSignal): Promise<void> => {
+      await Promise.all([
+        ...Object.values(modelPickers).map((picker) => picker.refresh(undefined, signal)),
+        ...additionalRoles.map((entry) => entry.picker.refresh(undefined, signal)),
+      ])
+    },
+    reset: (): void => {
+      pendingRoles = {}
+    },
     readValues,
     readRoleModels: (): Record<string, string> | undefined =>
       Object.keys(pendingRoles).length ? { ...pendingRoles } : undefined,

@@ -11,6 +11,8 @@ const fixture = createFixtureDirectory('project-preparation-approval')
 const { root } = fixture
 describe('project preparation approval', () => {
   before(async () => {
+    rmSync(root, { recursive: true, force: true })
+    mkdirSync(root, { recursive: true })
     mkdirSync(join(root, '.copse'))
     writeFileSync(join(root, 'package.json'), '{"packageManager":"npm@11.19.0"}')
     writeFileSync(join(root, 'package-lock.json'), '{}')

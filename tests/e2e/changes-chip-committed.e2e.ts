@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { prepareMockTurn } from './helpers/mock-scenario.ts'
-import { prepareE2eScreenshot, savePreparedAppScreenshot } from './helpers/screenshot.ts'
+import { saveAppViewportScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 

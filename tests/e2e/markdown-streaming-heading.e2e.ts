@@ -44,21 +44,17 @@ describe('markdown streaming heading pending', () => {
     await expect($('.msg-user .message-text')).toHaveText('Show the streaming heading state.')
 
     const result = await browser.execute(() => {
-      const list = document.querySelector('.messages-list')
-      if (!list) return { error: 'no messages list' }
-
-      const msg = document.createElement('div')
-      msg.className = 'msg msg-assistant'
-      const text = document.createElement('div')
-      text.className = 'message-text streaming-markdown is-streaming'
+      const text = document.querySelector(
+        '[data-message-id="streaming-markdown-message"] .message-text',
+      )
+      if (!text) return { error: 'no visible assistant message' }
+      text.classList.add('streaming-markdown', 'is-streaming')
       text.innerHTML = [
         '<div class="stream-complete">',
         '<h2>Summary</h2>',
         '<div class="stream-pending stream-pending-heading stream-pending-h3 stream-pending-block" data-heading-level="3">Architecture Highlights</div>',
         '</div>',
       ].join('')
-      msg.append(text)
-      list.append(msg)
 
       const heading = text.querySelector('.stream-pending-heading')
       return {

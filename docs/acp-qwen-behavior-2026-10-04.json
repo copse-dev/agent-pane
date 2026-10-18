@@ -1,0 +1,16 @@
+{
+  "generatedBy": "npm run probe:acp:behavior",
+  "probedAt": "2026-10-04T12:18:30.695Z",
+  "host": "linux 6.18.44 (2b6dc4994e92)",
+  "reports": [
+    {
+      "agentId": "qwen-code",
+      "title": "Qwen Code",
+      "command": "qwen",
+      "args": ["--acp"],
+      "prompt": "Create a new file named .copse-acp-behavior-probe.txt in the workspace root containing exactly the text PROBE_OK (and nothing else). Prefer the ACP filesystem write API when available. Then stop — do not run further tools.",
+      "ok": false,
+      "error": "Authentication required: Use Qwen Code CLI to authenticate first.: {\"authMethods\":[{\"id\":\"openai\",\"name\":\"Use OpenAI API key\",\"description\":\"Requires setting the `OPENAI_API_KEY` environment variable\",\"_meta\":{\"type\":\"terminal\",\"args\":[\"--auth-type=openai\"]}}]}"
+    }
+  ]
+}

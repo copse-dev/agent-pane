@@ -7,7 +7,7 @@ import {
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
   cleanupGitChangesFixture,
@@ -242,10 +242,13 @@ describe('git changes image preview', function () {
       gte: 2,
     })
     await waitForImagesSettled('#git-diff-viewer-host', { minImages: 2 })
+    await parkPointer()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-unstaged.png'))
 
     await clickChange('new.png')
-    await $('#git-diff-viewer-host .git-image-diff').waitForDisplayed({ timeout: 30_000 })
+    await $('#git-diff-viewer-host .git-image-diff-img[alt="new.png (after)"]').waitForDisplayed({
+      timeout: 30_000,
+    })
     await expect($$('#git-diff-viewer-host .git-image-diff-img')).toBeElementsArrayOfSize(1)
     await expect($('#git-diff-viewer-host .git-image-diff-label')).toHaveText(
       expect.stringMatching(/^after$/i),

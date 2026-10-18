@@ -6,7 +6,8 @@ const EXPERIMENTAL = '.settings-section[data-section="experimental"]'
 const MOBILE_FIELDSET = `${EXPERIMENTAL} fieldset:has(input[name="mobileCompanionEnabled"])`
 const VNC_FIELDSET = `${EXPERIMENTAL} fieldset:has(input[name="vncEnabled"])`
 const DEVELOPER_FIELDSET = `${EXPERIMENTAL} fieldset:has(input[name="developerMode"])`
-const CONCISE_FIELDSET = `${EXPERIMENTAL} fieldset:has(input[name="conciseThreadsEnabled"])`
+const APPEARANCE = '.settings-section[data-section="appearance"]'
+const CONCISE_FIELDSET = `${APPEARANCE} fieldset:has(input[name="conciseThreadsEnabled"])`
 const SSH_AGENT_FIELDSET =
   '.settings-section[data-section="ssh"] fieldset:has(input[name="acpOverSshEnabled"])'
 
@@ -60,17 +61,8 @@ describe('browser-hosted Experimental settings copy', () => {
     await saveElementScreenshot(VNC_FIELDSET, 'settings-experimental-desktop-copy.png')
   })
 
-  it('offers concise threads off by default and says which models it affects', async () => {
-    const fieldset = $(CONCISE_FIELDSET)
-    await fieldset.scrollIntoView()
-    await expect(fieldset).toBeDisplayed()
-    await expect(fieldset.$('input[name="conciseThreadsEnabled"]')).not.toBeSelected()
-    const hint = await fieldset.$('.field-hint').getText()
-    assert.match(hint, /above 50 on the Artificial Analysis Intelligence Index/)
-    assert.match(hint, /Other models always show the full thread/)
-    assert.match(hint, /keeps all assistant messages and screenshots visible/)
-
-    await saveElementScreenshot(CONCISE_FIELDSET, 'settings-experimental-concise-threads.png')
+  it('no longer lists concise threads as experimental', async () => {
+    await expect($(`${EXPERIMENTAL} input[name="conciseThreadsEnabled"]`)).not.toBeExisting()
   })
 
   it('names the Developer Tools menu item that Developer mode adds', async () => {
@@ -151,15 +143,21 @@ describe('browser-hosted Experimental settings copy', () => {
     }
     assert.equal(await $$('#advisorModel').length, 1)
   })
-  it('explains the native trust confirmation before granting a pairing control', async () => {
+  it('grants pairing control with one inline trust acknowledgement', async () => {
     await browser.url('/?scenario=settings-footer')
     await $('.prompt-input').waitForExist()
     await browser.execute(() => {
       const getState = window.api.mobile.getState
       window.api.mobile.getState = async () => ({
         ...(await getState()),
-        pairing: { label: 'My phone', code: '123456' },
+        pairing: { id: '8abde2d0-8c97-4a99-9ea8-a7518309ee52', label: 'My phone', code: '123456' },
       })
+      document.body.dataset.mobilePairingCalls = '[]'
+      window.api.mobile.respondPairing = async (decision, code, pairingId, rootTrusted) => {
+        document.body.dataset.mobilePairingCalls = JSON.stringify([
+          [decision, code, pairingId, rootTrusted],
+        ])
+      }
     })
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').$('button[data-section="experimental"]').click()
@@ -167,7 +165,9 @@ describe('browser-hosted Experimental settings copy', () => {
     await expect(banner).toBeDisplayed()
     await expect(banner.$('.mobile-companion-pairing-code')).toHaveText('123456')
     await expect(banner.$('.field-hint')).toHaveText(
-      expect.stringContaining('Allow control opens a desktop confirmation of certificate trust.'),
+      expect.stringContaining(
+        'Confirm below that the Copse Local Root is installed and trusted on this phone before allowing control.',
+      ),
     )
     const control = banner.$('button=Allow control')
     await expect(control).toBeDisabled()
@@ -178,5 +178,81 @@ describe('browser-hosted Experimental settings copy', () => {
       `${MOBILE_FIELDSET} .mobile-companion-pairing-banner`,
       'settings-mobile-companion-pairing.png',
     )
+    await control.click()
+    assert.equal(
+      await browser.execute(() => document.body.dataset.mobilePairingCalls),
+      JSON.stringify([['control', '123456', '8abde2d0-8c97-4a99-9ea8-a7518309ee52', true]]),
+    )
+    await expect($('#settings-dialog')).toBeDisplayed()
+  })
+})
+
+describe('browser-hosted Mobile Companion device control', () => {
+  it('acknowledges certificate trust inline when upgrading a read-only phone', async () => {
+    await browser.url('/?scenario=settings-footer')
+    await $('.prompt-input').waitForExist()
+    await browser.execute(() => {
+      const getState = window.api.mobile.getState
+      window.api.mobile.getState = async () => ({
+        ...(await getState()),
+        devices: [
+          {
+            id: '8abde2d0-8c97-4a99-9ea8-a7518309ee52',
+            label: 'My phone',
+            access: 'read',
+            createdAt: 0,
+          },
+        ],
+      })
+      document.body.dataset.mobileAccessCalls = '[]'
+      window.api.mobile.setDeviceAccess = async (id, access, rootTrusted) => {
+        document.body.dataset.mobileAccessCalls = JSON.stringify([[id, access, rootTrusted]])
+      }
+    })
+    await $('[aria-label="Settings"]').click()
+    await $('#settings-dialog').$('button[data-section="experimental"]').click()
+    const row = $(`${MOBILE_FIELDSET} .mobile-companion-device-row`)
+    const control = row.$('button=Allow control')
+    await expect(control).toBeDisabled()
+    await expect(row.$('label')).toHaveText(
+      expect.stringContaining('The Copse Local Root is installed and trusted on this phone'),
+    )
+    await row.$('input[type="checkbox"]').click()
+    await expect(control).toBeEnabled()
+    await row.scrollIntoView()
+    const fits = await row.execute((element) => element.scrollWidth <= element.clientWidth)
+    assert.equal(fits, true, 'device trust controls must fit inside their row')
+    await saveElementScreenshot(
+      `${MOBILE_FIELDSET} .mobile-companion-device-row`,
+      'settings-mobile-companion-device-trust.png',
+    )
+    await control.click()
+    assert.equal(
+      await browser.execute(() => document.body.dataset.mobileAccessCalls),
+      JSON.stringify([['8abde2d0-8c97-4a99-9ea8-a7518309ee52', 'control', true]]),
+    )
+  })
+})
+
+describe('browser-hosted Concise threads setting', () => {
+  it('is on by default under Appearance, and says how to turn it off', async () => {
+    await browser.url('/?scenario=settings-footer')
+    await $('.prompt-input').waitForExist()
+    await $('[aria-label="Settings"]').click()
+    await $('#settings-dialog').$('button[data-section="appearance"]').click()
+    await $(APPEARANCE).waitForDisplayed()
+
+    const fieldset = $(CONCISE_FIELDSET)
+    await fieldset.scrollIntoView()
+    await expect(fieldset).toBeDisplayed()
+    await expect(fieldset.$('input[name="conciseThreadsEnabled"]')).toBeSelected()
+    const hint = await fieldset.$('.field-hint').getText()
+    assert.match(hint, /above 50 on the Artificial Analysis Intelligence Index/)
+    assert.match(hint, /keeps all assistant messages and screenshots visible/)
+    assert.match(hint, /Show steps button/)
+    assert.match(hint, /Turn off to always show the full thread/)
+    assert.doesNotMatch(await fieldset.getText(), /experimental/i)
+
+    await saveElementScreenshot(CONCISE_FIELDSET, 'settings-appearance-concise-threads.png')
   })
 })

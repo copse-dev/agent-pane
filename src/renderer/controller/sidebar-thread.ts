@@ -2,6 +2,7 @@ import type { Message, Thread } from '@shared/types'
 import { githubPrKey, type GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { collectThreadPrRefs } from '@shared/git/thread-pr-status.ts'
 import { isHumanUserPrompt } from '@copse/thread-store/thread-sort.ts'
+import { automationRunBlock } from '@shared/automation-run-state.ts'
 
 /**
  * Everything the projects sidebar reads off a thread to draw one row: its title,
@@ -32,6 +33,10 @@ export interface SidebarThread {
   /** Marks a side chat: hidden from thread browsers, listed under its parent. */
   sideChat?: Thread['sideChat']
   automation?: Thread['automation']
+  /** Preserve pending-start classification when the full draft is compacted away. */
+  automationPendingStart?: boolean
+  /** The checkout an automation run left behind; the sidebar flags runs still holding one. */
+  worktree?: Thread['worktree']
   remoteAgentLink?: Thread['remoteAgentLink']
   /**
    * Whether the thread was ever run, from metadata alone (see {@link sidebarHasRun}).
@@ -97,7 +102,7 @@ export function sidebarLastPromptAt(thread: SidebarThread): number | undefined {
 
 /** The metadata a live {@link Thread} carries beyond {@link SidebarThread}, used to tell it ran. */
 export type RunSignals = SidebarThread &
-  Partial<Pick<Thread, 'usage' | 'workingBrief' | 'autoTitleCount'>>
+  Partial<Pick<Thread, 'usage' | 'workingBrief' | 'autoTitleCount' | 'draftPrompt'>>
 
 /**
  * Whether a thread was ever run, without reading its transcript.
@@ -136,6 +141,14 @@ export function compactSidebarThread(thread: RunSignals): SidebarThread {
     ...(thread.archivedAt !== undefined ? { archivedAt: thread.archivedAt } : {}),
     ...(thread.sideChat ? { sideChat: thread.sideChat } : {}),
     ...(thread.automation ? { automation: thread.automation } : {}),
+    ...(thread.automation
+      ? {
+          automationPendingStart:
+            thread.automationPendingStart === true ||
+            automationRunBlock(thread) === 'pending-start',
+        }
+      : {}),
+    ...(thread.worktree ? { worktree: thread.worktree } : {}),
     ...(thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}),
     prRefs: sidebarPrRefs(thread),
     ...(thread.prProductions ? { prProductions: thread.prProductions } : {}),

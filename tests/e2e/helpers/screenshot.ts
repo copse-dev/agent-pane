@@ -1,9 +1,12 @@
 import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 import { PNG } from 'pngjs'
 import { browser } from '@wdio/globals'
 import { recentreClippedCapture, restoreScrollAfterCapture } from './capture-framing.ts'
 import { mockConversationLeaks } from './mock-content.ts'
+import { withFrozenAnimations } from './frozen-animations.ts'
+import { installCaptureTextPin, restoreCaptureTextPin } from './screenshot-text-pin.ts'
 
 /** Fixed viewport for committed e2e reference screenshots (see tests/e2e/screenshots/). */
 export const E2E_VIEWPORT = { width: 1280, height: 800 } as const
@@ -150,7 +153,25 @@ export async function parkPointer(): Promise<void> {
 }
 
 /** Capture sizing must not become the layout used by subsequent interactions. */
-async function withCaptureFrame(capture: () => Promise<void>): Promise<void> {
+export async function withCaptureFrame(capture: () => Promise<void>): Promise<void> {
+  await browser.execute(async () => {
+    await document.fonts.ready
+  })
+  // Motion is tested before/after capture. Reference images need the same
+  // visible frame regardless of worker scheduling, without hiding indicators.
+  const motion = await browser.execute(() =>
+    [...document.querySelectorAll('.reasoning-activity-path')].map((path) =>
+      path.getAnimations().map((animation) => {
+        const saved = {
+          time: typeof animation.currentTime === 'number' ? animation.currentTime : null,
+          running: animation.playState === 'running',
+        }
+        animation.pause()
+        animation.currentTime = 1250
+        return saved
+      }),
+    ),
+  )
   const saved = await browser.execute(() => {
     const app = document.getElementById('app')
     if (!app) return []
@@ -161,8 +182,18 @@ async function withCaptureFrame(capture: () => Promise<void>): Promise<void> {
     ])
   })
   try {
-    await capture()
+    await withFrozenAnimations(capture)
   } finally {
+    await browser.execute((savedMotion) => {
+      document.querySelectorAll('.reasoning-activity-path').forEach((path, pathIndex) => {
+        path.getAnimations().forEach((animation, animationIndex) => {
+          const saved = savedMotion[pathIndex]?.[animationIndex]
+          if (!saved) return
+          animation.currentTime = saved.time
+          if (saved.running) animation.play()
+        })
+      })
+    }, motion)
     await browser.execute((styles) => {
       const app = document.getElementById('app')
       if (!app) return
@@ -181,9 +212,12 @@ async function withCaptureFrame(capture: () => Promise<void>): Promise<void> {
 export async function saveAppScreenshot(
   filename: string,
   size: { width: number; height: number } = E2E_VIEWPORT,
+  beforeCapture?: () => Promise<void>,
 ): Promise<void> {
   await withCaptureFrame(async () => {
     await prepareE2eScreenshot(size)
+    // Wait on the owning surface after resize, which can reveal scroll chrome.
+    await beforeCapture?.()
     await savePreparedAppScreenshot(filename)
   })
 }
@@ -198,6 +232,41 @@ export async function savePreparedAppScreenshot(
   await waitForSettledLayout('#app')
   await beforeCapture?.()
   await app.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+}
+
+/** Capture native webviews without ChromeDriver's element-capture rescaling. */
+export async function saveAppViewportScreenshot(
+  filename: string,
+  beforeCapture?: () => Promise<void>,
+): Promise<void> {
+  await withCaptureFrame(async () => {
+    await prepareE2eScreenshot()
+    await waitForSettledLayout('#app')
+    await beforeCapture?.()
+    const bounds = await browser.execute(() => {
+      const rect = document.getElementById('app')?.getBoundingClientRect()
+      if (!rect) throw new Error('App shell is missing')
+      return {
+        x: Math.round(rect.x * devicePixelRatio),
+        y: Math.round(rect.y * devicePixelRatio),
+        width: Math.round(rect.width * devicePixelRatio),
+        height: Math.round(rect.height * devicePixelRatio),
+      }
+    })
+    const viewport = PNG.sync.read(Buffer.from(await browser.takeScreenshot(), 'base64'))
+    if (
+      bounds.x < 0 ||
+      bounds.y < 0 ||
+      bounds.width <= 0 ||
+      bounds.height <= 0 ||
+      bounds.x + bounds.width > viewport.width ||
+      bounds.y + bounds.height > viewport.height
+    )
+      throw new Error('App shell extends beyond the captured viewport')
+    const cropped = new PNG({ width: bounds.width, height: bounds.height })
+    PNG.bitblt(viewport, cropped, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0)
+    writeFileSync(join(E2E_SCREENSHOT_DIR, filename), PNG.sync.write(cropped))
+  })
 }
 
 /**
@@ -432,72 +501,22 @@ export async function pinTextForCapture(
   pattern: RegExp,
   replacement: string,
 ): Promise<() => Promise<void>> {
-  const result = await browser.execute(
-    (sel: string, source: string, flags: string, next: string) => {
-      type Pin = { id: number; observer: MutationObserver; pinned: Map<Text, string> }
-      const win = window as unknown as {
-        __copsePinnedText?: Pin[]
-        __copseCapturePinId?: number
-      }
-      const re = new RegExp(source, flags)
-      const pinned = new Map<Text, string>()
-      const apply = (): number => {
-        const host = document.querySelector(sel)
-        if (!host) return 0
-        let matched = 0
-        const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)
-        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-          const text = node as Text
-          // `search` ignores lastIndex, so a /g pattern cannot skip a node.
-          if (text.data.search(re) === -1) continue
-          // A live value that already reads as the stand-in (a 40 ms dry-run
-          // pinned to "40 ms") is pinned all the same; counting only rewrites
-          // made such a run look like the value was missing.
-          matched += 1
-          const replaced = text.data.replace(re, next)
-          // Already pinned: leave it, or the observer would chase its own writes.
-          if (replaced === text.data) continue
-          if (!pinned.has(text)) pinned.set(text, text.data)
-          text.data = replaced
-        }
-        return matched
-      }
-      const first = apply()
-      const id = (win.__copseCapturePinId ?? 0) + 1
-      win.__copseCapturePinId = id
-      if (first === 0) return { count: first, id }
-      const observer = new MutationObserver(() => {
-        observer.disconnect()
-        apply()
-        observer.observe(document.body, { subtree: true, childList: true, characterData: true })
-      })
-      observer.observe(document.body, { subtree: true, childList: true, characterData: true })
-      win.__copsePinnedText ??= []
-      win.__copsePinnedText.push({ id, observer, pinned })
-      return { count: first, id }
-    },
+  const id = randomUUID()
+  const count = await browser.execute(
+    installCaptureTextPin,
+    id,
     selector,
     pattern.source,
     pattern.flags,
     replacement,
   )
-  if (result.count === 0) {
+  if (count === 0) {
     throw new Error(
       `pinTextForCapture: nothing under ${selector} matched ${String(pattern)} — the value it exists to hide is not there, so the capture would not be pinning anything`,
     )
   }
   return async () => {
-    await browser.execute((id: number) => {
-      type Pin = { id: number; observer: MutationObserver; pinned: Map<Text, string> }
-      const win = window as unknown as { __copsePinnedText?: Pin[] }
-      const pin = win.__copsePinnedText?.find((candidate) => candidate.id === id)
-      if (!pin) return
-      pin.observer.disconnect()
-      // A node the page has since replaced already shows the live text.
-      for (const [node, text] of pin.pinned) if (node.isConnected) node.data = text
-      win.__copsePinnedText = win.__copsePinnedText?.filter((candidate) => candidate.id !== id)
-      if (win.__copsePinnedText?.length === 0) delete win.__copsePinnedText
-    }, result.id)
+    await browser.execute(restoreCaptureTextPin, id)
   }
 }
 
