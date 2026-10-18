@@ -167768,6 +167768,21 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     const linkedPrs = query ? linkedPrsAll.filter((pr2) => prMatchesFilter(pr2, query)) : linkedPrsAll;
     const repoPrs = query ? repoPrsAll.filter((pr2) => prMatchesFilter(pr2, query)) : repoPrsAll;
     const otherPrs = query ? otherPrsAll.filter((pr2) => prMatchesFilter(pr2, query)) : otherPrsAll;
+    const selectedKey = selectedPr && githubPrKey(selectedPr);
+    const selectedVisible = selectedKey !== null && (linkedPrs.some((pr2) => githubPrKey(pr2) === selectedKey) || repoPrs.some((pr2) => githubPrKey(pr2) === selectedKey) || otherExpanded && otherPrs.some((pr2) => githubPrKey(pr2) === selectedKey));
+    const selectedSummary = selectedPr ? prDetails ?? prList.find((pr2) => githubPrKey(pr2) === selectedKey) ?? {
+      ...selectedPr,
+      title: placeholderPrTitle(selectedPr.number),
+      url: `https://github.com/${selectedPr.owner}/${selectedPr.repo}/pull/${String(selectedPr.number)}`,
+      state: "OPEN"
+    } : null;
+    const viewingPr = selectedSummary && !selectedVisible && (!query || prMatchesFilter(selectedSummary, query)) ? selectedSummary : null;
+    if (viewingPr && ghStatus?.authenticated) {
+      const section2 = el("div", { class: "git-changes-section" });
+      section2.append(el("div", { class: "git-changes-section-title" }, "Viewing"));
+      section2.append(renderPrRow(viewingPr, "viewing"));
+      listBody.append(section2);
+    }
     if (linkedPrs.length > 0) {
       ensureTitles(linkedPrs);
       const section2 = el("div", { class: "git-changes-section" });
@@ -167797,7 +167812,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       listBody.append(section2);
     }
     if (ghStatus?.authenticated) {
-      const title = repoPrs.length > 0 || linkedPrs.length > 0 ? "Your other open PRs" : "Your open PRs";
+      const title = repoPrs.length > 0 || linkedPrs.length > 0 || viewingPr ? "Your other open PRs" : "Your open PRs";
       const section2 = el("div", { class: "git-changes-section" });
       const header = el(
         "button",
@@ -167834,7 +167849,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       listBody.append(section2);
     }
     const otherGroupShown = Boolean(ghStatus?.authenticated) && otherExpanded && !otherLoading;
-    if (query && linkedPrs.length === 0 && repoPrs.length === 0 && !otherGroupShown) {
+    if (query && linkedPrs.length === 0 && repoPrs.length === 0 && !viewingPr && !otherGroupShown) {
       listBody.append(
         el(
           "div",
@@ -168412,6 +168427,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     renderFiles();
     clearDiff();
     renderSections();
+    renderList();
     await loadPrRelationships();
   }
   function resetOther() {
@@ -168486,20 +168502,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     }
     prList = mergePrLists(linkedRefs, [workspacePrs, myPrs]);
     renderList();
-    if (reason === "poll") {
-      if (selectedPr) {
-        const current = selectedPr;
-        const stillExists = prList.some(
-          (pr2) => pr2.owner === current.owner && pr2.repo === current.repo && pr2.number === current.number
-        );
-        if (!stillExists) {
-          selectedPr = null;
-          prDetails = null;
-          clearDiff();
-        }
-      }
-      return;
-    }
+    if (reason === "poll") return;
     const openTarget = pendingOpen;
     pendingOpen = null;
     if (openTarget) {
@@ -168507,14 +168510,8 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       return;
     }
     if (selectedPr) {
-      const current = selectedPr;
-      const stillExists = prList.some(
-        (pr2) => pr2.owner === current.owner && pr2.repo === current.repo && pr2.number === current.number
-      );
-      if (stillExists) {
-        await selectPr(selectedPr);
-        return;
-      }
+      await selectPr(selectedPr);
+      return;
     }
     if (linkedRefs.length > 0) {
       await selectPr(at(linkedRefs, 0));
