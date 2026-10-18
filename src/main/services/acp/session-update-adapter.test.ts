@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import type { SessionUpdate } from '@agentclientprotocol/sdk'
 import type { StreamChunk } from '@shared/types'
 import {
+  createAgentUpdateTranslator,
   sessionUpdateToStreamChunks,
   streamChunkToSessionUpdate,
 } from './session-update-adapter.ts'
@@ -16,9 +17,8 @@ describe('streamChunkToSessionUpdate (agent role)', () => {
     })
   })
 
-  it('maps text_replace to an agent_message_chunk', () => {
-    const update = streamChunkToSessionUpdate({ type: 'text_replace', text: 'redo' })
-    assert.equal(update?.sessionUpdate, 'agent_message_chunk')
+  it('leaves text_replace to the stateful translator', () => {
+    assert.equal(streamChunkToSessionUpdate({ type: 'text_replace', text: 'redo' }), null)
   })
 
   it('maps a tool_call to a pending tool_call update with its ACP kind', () => {
@@ -998,5 +998,51 @@ describe('sessionUpdateToStreamChunks (client role)', () => {
       },
     ]
     for (const update of updates) assert.deepEqual(sessionUpdateToStreamChunks(update), [])
+  })
+})
+
+describe('createAgentUpdateTranslator (agent role)', () => {
+  /** The text a v1 client renders: every agent_message_chunk appended in order. */
+  function clientText(chunks: StreamChunk[]): string {
+    const translate = createAgentUpdateTranslator()
+    let text = ''
+    for (const chunk of chunks) {
+      const update = translate(chunk)
+      if (update?.sessionUpdate === 'agent_message_chunk' && update.content.type === 'text') {
+        text += update.content.text
+      }
+    }
+    return text
+  }
+
+  it('never re-sends text a rewrite would retract', () => {
+    // Pseudo-XML tool-call recovery: the streamed markup is stripped by a rewrite.
+    const text = clientText([
+      { type: 'text', text: 'I will read it.\n' },
+      { type: 'text', text: '<read_file>a.ts</read_file>' },
+      { type: 'text_replace', text: 'I will read it.' },
+      { type: 'tool_call', toolCall: { id: 't1', name: 'read_file', args: { path: 'a.ts' } } },
+    ])
+    assert.equal(text, 'I will read it.\n<read_file>a.ts</read_file>')
+  })
+
+  it('sends only the extension when a rewrite keeps the sent prefix', () => {
+    const text = clientText([
+      { type: 'text', text: 'Hello' },
+      { type: 'text_replace', text: 'Hello, world' },
+      { type: 'text_replace', text: 'Hello, world' },
+      { type: 'text', text: '!' },
+    ])
+    assert.equal(text, 'Hello, world!')
+  })
+
+  it('starts a new message after a tool call or result', () => {
+    const text = clientText([
+      { type: 'text', text: 'before ' },
+      { type: 'tool_call', toolCall: { id: 't1', name: 'read_file', args: { path: 'a.ts' } } },
+      { type: 'tool_result', toolCallId: 't1', result: 'ok', isError: false },
+      { type: 'text_replace', text: 'after' },
+    ])
+    assert.equal(text, 'before after')
   })
 })

@@ -11,7 +11,7 @@ import {
 } from '@agentclientprotocol/sdk'
 import { nodeReadableStream, nodeWritableStream } from './node-byte-streams.ts'
 import type { StreamChunk } from '@shared/types'
-import { streamChunkToSessionUpdate } from './session-update-adapter.ts'
+import { createAgentUpdateTranslator } from './session-update-adapter.ts'
 
 /**
  * ACP **Agent role** for Copse: expose Copse's agent loop over the Agent Client
@@ -112,6 +112,7 @@ export function buildAcpAgentApp(runner: AcpTurnRunner, options: AcpAgentOptions
       pending.get(params.sessionId)?.abort()
       const controller = new AbortController()
       pending.set(params.sessionId, controller)
+      const toSessionUpdate = createAgentUpdateTranslator()
 
       const turnCtx: AcpTurnContext = {
         sessionId: params.sessionId,
@@ -119,7 +120,7 @@ export function buildAcpAgentApp(runner: AcpTurnRunner, options: AcpAgentOptions
         promptBlocks: params.prompt,
         signal: controller.signal,
         emit: async (chunk) => {
-          const update = streamChunkToSessionUpdate(chunk)
+          const update = toSessionUpdate(chunk)
           if (update) {
             await peer.notify(methods.client.session.update, {
               sessionId: params.sessionId,

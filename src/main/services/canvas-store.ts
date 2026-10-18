@@ -18,13 +18,14 @@
  */
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import type { CanvasArtefact, CanvasArtefactSummary } from '@shared/types/canvas.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { projectStoreDir } from './storage/copse-paths.ts'
 import { runSerialized } from './storage/write-queue.ts'
-import { resolveWorkspacePath } from './workspace.ts'
+import { resolvePathWithinRoot, resolveWorkspacePath } from './workspace.ts'
+import { inspectThreadCheckoutRoot } from './thread-execution-context.ts'
 
 const CANVAS_DIR = 'canvas'
 const INDEX_FILE = 'index.json'
@@ -47,11 +48,11 @@ const storedArtefactSchema = z.object({
   mimeType: z.string(),
   bodyFile: z.string(),
   previewFile: z.string().optional(),
-  /** Workspace-relative source, when the artefact was rendered from a file. */
+  /** Canonical source path (older records may contain a workspace-relative path). */
   sourcePath: z.string().optional(),
   /**
    * Where `sourcePath` pointed when it was written. Reopening re-resolves the
-   * relative path against the workspace that is open *now* and reads the file
+   * path within the owning thread checkout (or legacy workspace) and reads the file
    * only if the two agree — otherwise the same relative path in a different
    * project would silently render someone else's file.
    */
@@ -110,11 +111,23 @@ async function writeIndex(
   )
 }
 
-/** Absolute path of `sourcePath` in the workspace that is open now, if any. */
-async function resolveSource(sourcePath: string | undefined): Promise<string | undefined> {
+/** Resolve source provenance only within an independently trusted root. */
+async function resolveSource(
+  projectId: string,
+  threadId: string,
+  sourcePath: string | undefined,
+  resolveCheckoutRoot: typeof inspectThreadCheckoutRoot,
+): Promise<string | undefined> {
   if (!sourcePath) return undefined
   try {
-    return await resolveWorkspacePath(sourcePath)
+    const root = await resolveCheckoutRoot(projectId, threadId)
+    // Only the owning thread's inspected checkout grants access to worktree
+    // sources. Legacy relative workspace records retain their containment guard;
+    // an absolute source never acquires authority from the renderer selection.
+    if (!root && isAbsolute(sourcePath)) return undefined
+    return root
+      ? await resolvePathWithinRoot(sourcePath, root)
+      : await resolveWorkspacePath(sourcePath)
   } catch {
     return undefined
   }
@@ -132,8 +145,14 @@ export async function rememberCanvasArtefact(
   projectId: string,
   threadId: string,
   artefact: CanvasArtefact,
+  resolveCheckoutRoot = inspectThreadCheckoutRoot,
 ): Promise<void> {
-  const sourceAbsPath = await resolveSource(artefact.sourcePath)
+  const sourceAbsPath = await resolveSource(
+    projectId,
+    threadId,
+    artefact.sourcePath,
+    resolveCheckoutRoot,
+  )
   await runSerialized(`canvas-store:${projectId}:${threadId}`, async () => {
     const dir = canvasDir(projectId, threadId)
     await mkdir(dir, { recursive: true })
@@ -210,13 +229,18 @@ export async function readStoredCanvasArtefact(
   projectId: string,
   threadId: string,
   title: string,
+  resolveCheckoutRoot = inspectThreadCheckoutRoot,
 ): Promise<CanvasArtefact | null> {
   const dir = canvasDir(projectId, threadId)
   const record = (await readIndex(projectId, threadId)).find((a) => a.title === title)
   if (!record) return null
 
   let body: string | null = null
-  if (record.sourceAbsPath && (await resolveSource(record.sourcePath)) === record.sourceAbsPath) {
+  if (
+    record.sourceAbsPath &&
+    (await resolveSource(projectId, threadId, record.sourcePath, resolveCheckoutRoot)) ===
+      record.sourceAbsPath
+  ) {
     body = await readFile(record.sourceAbsPath, 'utf8').catch(() => null)
   }
   body ??= await readFile(join(dir, record.bodyFile), 'utf8').catch(() => null)
