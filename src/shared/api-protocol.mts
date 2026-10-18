@@ -99,4 +99,5 @@
 // v59 integrates explicit local terminal creation targets.
 // v60 adds living-plan reads and revision-checked changes.
 // v61 integrates Send now abort causes and cross-thread read/send permissions.
-export const API_PROTOCOL_VERSION = 62 as const
+// v63 removes renderer-controlled automation appearance IPC.
+export const API_PROTOCOL_VERSION = 63 as const
