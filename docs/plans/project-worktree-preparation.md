@@ -19,8 +19,59 @@ Preflight is read-only. It returns the detected package manager, runtime require
 - Project-specific native setup is opt-in through the same declaration. Copse's Electron/gortex setup becomes one ordinary declaration in this repository; there is no privileged application-side adapter for it.
 - Fingerprint runtime/package-manager identity, lockfiles, package manifests throughout the project (including `apps/`), package configuration, patches, the declaration, and additional declared inputs. Never reuse readiness merely because `node_modules` exists.
 - Preserve OS containment and read-only/offline preflight. Approved commands may write only the execution root and enumerated managed caches. No configurable home-directory grant, arbitrary cache roots, or unsandboxed fallback.
-- Preparation is never automatic on worktree creation. Instead, a native turn running in its thread's linked worktree gets a short system-prompt block (`WORKTREE_PREPARATION_BLOCK`, gated on the worktree checkout mode and on `preflight_worktree` being offered) telling the agent to preflight before its first typecheck, test, lint, or build, and to treat unresolved-module and missing-runtime-type errors in an unprepared worktree as environment state rather than code defects (#2493). ACP agents do not receive these tools through the native bridge, so they get no such steering.
+- Preparation is never automatic on worktree creation. Instead, a native turn running in its thread's linked worktree gets a short system-prompt block (`WORKTREE_PREPARATION_BLOCK`, gated on the worktree checkout mode and on `preflight_worktree` being offered) telling the agent to preflight before its first typecheck, test, lint, or build, and to treat unresolved-module and missing-runtime-type errors in an unprepared worktree as environment state rather than code defects (#2493). ACP agents receive both preparation tools through the native bridge. Calls re-enter the same registry, deferred-checkout transition, exact-plan approval, and bounded preparation runner; bridge exposure does not grant install permission. The native system-prompt block is not injected into ACP sessions.
 - Approval names project-defined commands as executable repository code. A declaration is not a trust grant. Changing its inputs invalidates the plan fingerprint and requires a new approval.
+
+## ACP availability investigation (base 5dbc01fb3)
+
+The native registry registers both tools. The ACP bridge's curated allowlist previously
+included only `preflight_worktree`, explicitly excluding preparation because it needs
+approval. That produced an unusable remediation even in an already-materialized worktree.
+Both are now advertised; preparation still executes through `ToolRegistry` and the existing
+permission gate. No renderer or approval presentation changes are needed.
+
+The deferred entry path remains: inspect the shared checkout without allocating, request
+write access, allocate the thread worktree, and restart the ACP process under its new cwd
+and sandbox before continuing. A direct write-capable bridged call also enters the registry's
+allocation seam before host policy. The plan fingerprint includes the project root, so a
+fingerprint obtained before materialization is rejected in the new root; preflight must run
+again there before approving setup. Read-only run mode rejects preparation before allocation.
+
+The bridge answers each `tools/list` from the current registry and curated allowlist, while
+its diagnostic `toolNames` snapshot is captured at bridge startup. There is no tools-list-change
+notification. The ACP pool reuses matching live sessions, and replaces the process/bridge when
+cwd or sandbox configuration changes, carrying the conversation forward. A source edit does
+not update the running application's bridge code; verification requires the updated app.
+Refreshing an old catalog alone cannot fix the original hardcoded omission.
+
+The reported `env: npm: No such file or directory` is not explained by tool exposure.
+Preparation can bootstrap Socket Firewall with `npm` even for a pnpm project. This is a
+separate runtime/sandbox-path hypothesis pending reproduction through supported preparation;
+no ad-hoc installation or relaxation of containment is part of this change.
+
+Acceptance: both tools advertised for shared, linked and deferred ACP contexts; denied setup
+does not execute; read-only mode blocks before allocation; fingerprints from the previous root
+are rejected; actual approved setup from an unprepared tree passes repeat preflight.
+Focused bridge, registry, deferred-policy, fingerprint and approval regressions cover the
+boundaries. Full `pnpm run check` and real unprepared-to-ready setup remain required evidence.
+The external-file access repair is excluded.
+
+Local evidence (2026-10-18, current task checkout):
+
+- `preflight_worktree({directory: ".", offline: false})`: absent; Node 24.20.0 ready,
+  pnpm@10.34.5 unavailable, dependencies missing, native check cannot resolve @copse/std.
+- `node --version && command -v corepack pnpm npm`: Node 24.20.0 and fnm tool paths
+  found through the host command route. This does not establish preparation-sandbox readiness.
+- `COREPACK_ENABLE_NETWORK=0 pnpm test -- acp-native-bridge deferred-worktree tool-registry worktree-preparation permission-gate`:
+  exit 127, `/bin/bash: pnpm: command not found`; log `.tmp/preparation-investigation/focused.log`.
+- `COREPACK_ENABLE_NETWORK=0 pnpm run check`: same exit 127 before checks started;
+  log `.tmp/preparation-investigation/check.log`.
+- Background validation launch refused completion wake registration with
+  `run_background cannot wake without an active human turn-tree`; bounded foreground calls
+  produced the results above.
+- No real preparation or fresh-app entry-path eval has run. The current running ACP bridge
+  still lacks `prepare_worktree`; a native turn using fresh preflight and exact-plan approval,
+  or an updated app exposing the tool, is needed to unblock setup. No install bypass was used.
 
 ## Declaration
 
