@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ToolRegistry, setPermissionGateForTests } from './tool-registry.ts'
 import { runWithAgentRunReadonly } from './agent-run-readonly.ts'
+import { prepareWorktreeTool } from '../tools/worktree-preparation-tool.ts'
 import {
   runWithThreadExecutionContext,
   type ThreadExecutionContext,
@@ -824,6 +825,39 @@ describe('ToolRegistry', () => {
 })
 
 describe('ToolRegistry in a deferred-worktree thread', () => {
+  it('blocks preparation in read-only mode before approval or allocation', async () => {
+    const reg = new ToolRegistry()
+    reg.register(prepareWorktreeTool)
+    setPermissionGateForTests(async () => {
+      assert.fail('read-only preparation must not reach approval')
+    })
+    try {
+      const result = await runWithAgentRunReadonly(true, () =>
+        runWithThreadExecutionContext(
+          {
+            projectId: 'missing-project',
+            threadId: 'readonly-preparation',
+            projectRoot: '/project',
+            root: '/project',
+            checkoutMode: 'shared',
+            branch: 'main',
+            deferredWorktree: { baseBranch: 'main', requestedAt: 1 },
+          },
+          () =>
+            reg.execute(
+              'prepare_worktree',
+              { planFingerprint: 'a'.repeat(64) },
+              new AbortController().signal,
+            ),
+        ),
+      )
+      assert.ok(typeof result === 'string')
+      assert.match(result, /prepare_worktree: Blocked in read-only mode/)
+    } finally {
+      setPermissionGateForTests(null)
+    }
+  })
+
   it('gets the worktree before a write-capable tool runs, and leaves reads alone', async () => {
     // A project the store does not know makes the allocation fail at its first
     // step. That failure is the observable: it proves the registry tried to
