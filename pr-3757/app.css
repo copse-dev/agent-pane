@@ -210,7 +210,7 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   --group-header-font-weight: 600;
 }
 
-/* node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/core.css */
+/* node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/core.css */
 .streaming-markdown {
   & .stream-pending {
     white-space: pre-wrap;
@@ -286,7 +286,7 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   }
 }
 
-/* node_modules/.pnpm/@copse+streaming-markdown@1.6.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css */
+/* node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css */
 .streaming-markdown {
   line-height: var(--sm-line-height, 1.55);
   word-break: break-word;
@@ -13467,6 +13467,44 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   line-height: var(--line-height-base);
   overflow-wrap: anywhere;
 }
+.tool-permission-description > :first-child {
+  margin-top: 0;
+}
+.tool-permission-description > :last-child {
+  margin-bottom: 0;
+}
+.tool-permission-description p,
+.tool-permission-description ul,
+.tool-permission-description ol {
+  margin-block: var(--spacing-xs);
+}
+.tool-permission-description pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
+}
+.tool-permission-description code {
+  font-family: var(--font-mono);
+}
+.tool-permission-description.is-collapsed {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  max-height: calc(2 * var(--line-height-base));
+}
+.tool-permission-description-toggle {
+  padding: 0;
+  margin-top: var(--spacing-xs);
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .tool-permission-actions {
   display: flex;
   align-items: center;
@@ -17380,6 +17418,7 @@ dialog.activity-panel-overlay {
 }
 .mobile-companion-device-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-md);
@@ -17393,6 +17432,7 @@ dialog.activity-panel-overlay {
 }
 .mobile-companion-device-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   flex: none;
   gap: var(--spacing-sm);
@@ -17415,7 +17455,8 @@ dialog.activity-panel-overlay {
 .mobile-companion-trust-label {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
-  white-space: nowrap;
+  max-width: 240px;
+  white-space: normal;
 }
 .mobile-companion-qr {
   display: flex;
