@@ -1,0 +1,62 @@
+name: Gate shadow report
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/gate-shadow-report.yml
+      - scripts/collect-gate-evidence.mts
+      - scripts/report-gate-evidence.mts
+      - scripts/archive-gate-report.mts
+      - scripts/lib/gate-report.mts
+
+permissions:
+  contents: read
+  actions: read
+  checks: read
+
+concurrency:
+  group: gate-shadow-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Collect latest 300 completed PR CI runs
+        id: collect
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/collect-gate-evidence.mts gate-report-data 300
+      - name: Generate report from retained observations
+        id: report
+        if: always() && steps.collect.outcome != 'skipped'
+        run: node scripts/report-gate-evidence.mts gate-report-data/manifest.json > gate-report-data/report.json
+      - name: Archive immutable report and manifest
+        if: always() && steps.report.outcome == 'success'
+        env:
+          COLLECTION_OUTCOME: ${{ steps.collect.outcome }}
+          SCREENSHOT_R2_ACCOUNT_ID: ${{ secrets.SCREENSHOT_R2_ACCOUNT_ID || vars.SCREENSHOT_R2_ACCOUNT_ID }}
+          SCREENSHOT_R2_BUCKET: ${{ secrets.SCREENSHOT_R2_BUCKET || vars.SCREENSHOT_R2_BUCKET || 'copse-screenshots' }}
+          SCREENSHOT_R2_PUBLIC_URL: ${{ vars.SCREENSHOT_R2_PUBLIC_URL || secrets.SCREENSHOT_R2_PUBLIC_URL || 'https://pub-7ec931b58a7b480ba1cd3e535dc12f3c.r2.dev' }}
+          SCREENSHOT_R2_ACCESS_KEY_ID: ${{ secrets.SCREENSHOT_R2_ACCESS_KEY_ID }}
+          SCREENSHOT_R2_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOT_R2_SECRET_ACCESS_KEY }}
+        run: node scripts/archive-gate-report.mts gate-report-data
+      - name: Retain report, manifest and downloaded records
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gate-shadow-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: gate-report-data/
+          if-no-files-found: warn
+          retention-days: 90

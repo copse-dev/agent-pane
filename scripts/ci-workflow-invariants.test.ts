@@ -340,7 +340,7 @@ describe('ci.yml workflow invariants', () => {
   })
 
   it('forces promotion PRs through full e2e before consulting the oracle', () => {
-    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- name: Plan reference)/)?.[0]
+    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- (?:name|id):)/)?.[0]
     assert.ok(planStep, 'expected the e2e planning step in ci.yml')
     assert.match(
       planStep,
@@ -468,7 +468,7 @@ describe('ci.yml workflow invariants', () => {
     // pin the unit tier to `full`. A branch that emits only `mode=` would leave
     // `unit_mode` empty — safe today because `check` falls through to the full
     // suite, but the pin keeps that from being load-bearing by accident.
-    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- name: Plan reference)/)?.[0]
+    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- (?:name|id):)/)?.[0]
     assert.ok(planStep, 'expected the plan step in ci.yml')
     const emits = planStep.match(/echo "mode=(?:full|subset|skip)"/g) ?? []
     const unitEmits = planStep.match(/echo "unit_mode=full"/g) ?? []
@@ -479,7 +479,7 @@ describe('ci.yml workflow invariants', () => {
     )
     assert.match(
       planStep,
-      /grep -E '\^\(mode\|specs\|unit_mode\|unit_specs\)=' plan\.txt/,
+      /grep -E '\^\(mode\|specs\|unit_mode\|unit_specs\)=' "\$plan_file"/,
       'the oracle path must forward the unit plan to $GITHUB_OUTPUT',
     )
   })
@@ -632,7 +632,7 @@ describe('ci.yml workflow invariants', () => {
     const precheck = jobBlock('precheck')
     const binding =
       'BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}'
-    assert.equal(precheck.split(binding).length - 1, 3)
+    assert.equal(precheck.split(binding).length - 1, 4) // includes the advisory shadow comparison
     const plan = precheck.slice(precheck.indexOf('- id: plan'))
     assert.match(plan, /HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/)
     assert.doesNotMatch(plan, /HEAD_SHA: [^\n]*merge_group/)
@@ -640,7 +640,7 @@ describe('ci.yml workflow invariants', () => {
   })
 
   it('keeps main queue oracle selection and forces full release queue plans', () => {
-    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- name: Plan reference)/)?.[0]
+    const planStep = workflow.match(/ {6}- id: plan\n[\s\S]*?(?=\n {6}- (?:name|id):)/)?.[0]
     assert.ok(planStep)
     const script = planStep.slice(planStep.indexOf('        run: |\n') + '        run: |\n'.length)
     for (const base of ['main', 'release']) {
@@ -668,6 +668,7 @@ describe('ci.yml workflow invariants', () => {
               CI_FULL_LABEL: 'false',
               GITHUB_OUTPUT: output,
               GITHUB_STEP_SUMMARY: join(root, 'summary'),
+              RUNNER_TEMP: root,
               TRACE: trace,
             },
           },
