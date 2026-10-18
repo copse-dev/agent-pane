@@ -4165,6 +4165,9 @@ html.is-popout .thread-context-close {
   max-width: 40%;
 }
 #titlebar button.workspace-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
   appearance: none;
   border: 0;
   background: transparent;
@@ -4176,9 +4179,14 @@ html.is-popout .thread-context-close {
   text-align: left;
   cursor: pointer;
 }
-#titlebar button.workspace-name:enabled::after {
-  content: "\2304";
-  margin-left: var(--spacing-xs);
+#titlebar .workspace-name-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#titlebar button.workspace-name:disabled .workspace-name-chevron {
+  display: none;
 }
 #titlebar button.workspace-name:enabled:hover {
   background: var(--bg-hover);

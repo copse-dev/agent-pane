@@ -90316,10 +90316,12 @@ function basename2(p2) {
 function mountTitlebar(root, store2, api2) {
   root.classList.add("titlebar");
   const leftCluster = el("div", { class: "titlebar-left" });
+  const workspaceLabel = el("span", { class: "workspace-name-label" }, "No folder");
   const workspaceName = el(
     "button",
     { type: "button", class: "workspace-name", "aria-haspopup": "menu" },
-    "No folder"
+    workspaceLabel,
+    chevronDownIcon("ui-icon ui-icon-sm workspace-name-chevron")
   );
   workspaceName.addEventListener("click", (event) => {
     if (workspaceName.disabled || contextMenuClosedByPressOn(workspaceName)) return;
@@ -90421,7 +90423,7 @@ function mountTitlebar(root, store2, api2) {
   function syncName() {
     const { workspaceRoot, activeProjectId, projects } = store2.getState();
     const project2 = projects.find((p2) => p2.id === activeProjectId);
-    workspaceName.textContent = project2 ? projectDisplayName(project2) : workspaceRoot ? basename2(workspaceRoot) : "No folder";
+    workspaceLabel.textContent = project2 ? projectDisplayName(project2) : workspaceRoot ? basename2(workspaceRoot) : "No folder";
     syncProjectPicker();
     setTooltip(workspaceName, workspaceRoot);
     if (project2?.sshHost) {
