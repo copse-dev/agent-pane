@@ -1,3 +1,5 @@
+import { renderMarkdown } from '@copse/streaming-markdown'
+import { dompurifyBackend } from '@copse/streaming-markdown/sanitizers/dompurify'
 import { errorMessage } from '@shared/errors.ts'
 import { memberOf } from '@shared/member-of.ts'
 import {
@@ -9,7 +11,6 @@ import {
 } from '@shared/types/tool-permissions.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { banIcon, checkIcon, chevronDownIcon, shieldIcon } from '../dom/icons.ts'
-import { setInlineMarkdown } from '../markdown/inline-markdown.ts'
 
 const isToolPermissionPolicy = memberOf(TOOL_PERMISSION_POLICIES)
 
@@ -136,6 +137,7 @@ export function createToolPermissionsPanel(
   let pendingToolIds = new Set<string>()
   let policyFocus: { toolId: string; policy: ToolPermissionPolicy } | null = null
   const groupOpenState = new Map<string, boolean>()
+  const expandedDescriptions = new Set<string>()
 
   root.addEventListener('focusin', (event) => {
     const target = event.target
@@ -283,12 +285,46 @@ export function createToolPermissionsPanel(
     title.append(inherited)
     copy.append(title)
     if (tool.description) {
-      const description = document.createElement('p')
+      const description = document.createElement('div')
       description.className = 'tool-permission-description'
-      // Tool descriptions are written for the model and name commands and
-      // parameters in backticks; show those as inline code, not delimiters.
-      setInlineMarkdown(description, tool.description)
+      description.id = 'tool-description-' + tool.id
+      // Descriptions come from both built-in tools and external MCP servers.
+      description.innerHTML = renderMarkdown(tool.description, {
+        htmlPolicy: 'escape-all',
+        sanitizerBackend: {
+          sanitize: (html, config) =>
+            dompurifyBackend.sanitize(html, {
+              ...config,
+              allowedTags: config.allowedTags.filter((tag) => tag !== 'img'),
+            }),
+        },
+      })
+      // Settings needs a scan-friendly preview; retain the complete instructions
+      // for inspection and search without changing the model's tool contract.
+      const expandable = tool.description.length > 240 || tool.description.includes('\n')
+      const expanded = expandedDescriptions.has(tool.id)
+      description.classList.toggle('is-collapsed', expandable && !expanded)
       copy.append(description)
+      if (expandable) {
+        const toggle = document.createElement('button')
+        toggle.type = 'button'
+        toggle.className = 'tool-permission-description-toggle'
+        toggle.setAttribute('aria-controls', description.id)
+        const updateToggle = (): void => {
+          const open = expandedDescriptions.has(tool.id)
+          toggle.textContent = open ? 'Show less' : 'Show full description'
+          toggle.setAttribute('aria-expanded', String(open))
+          toggle.setAttribute('aria-label', toggle.textContent + ' for ' + tool.name)
+          description.classList.toggle('is-collapsed', !open)
+        }
+        updateToggle()
+        toggle.addEventListener('click', () => {
+          if (expandedDescriptions.has(tool.id)) expandedDescriptions.delete(tool.id)
+          else expandedDescriptions.add(tool.id)
+          updateToggle()
+        })
+        copy.append(toggle)
+      }
     }
 
     const actions = document.createElement('div')
