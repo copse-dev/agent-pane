@@ -75,7 +75,7 @@ describe('markdown prose text-wrap: pretty', () => {
       const pre = document.querySelector('.message-text pre')
       const code = document.querySelector('.message-text pre code')
       if (!messageText || paragraphs.length < 2 || !listItem || !pre || !code) {
-        return { error: 'missing fixture element' }
+        throw new Error('missing fixture element')
       }
       return {
         hostTextWrap: getComputedStyle(messageText).textWrap,

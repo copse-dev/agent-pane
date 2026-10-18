@@ -1,3 +1,4 @@
+import { findAsync } from './helpers/find-async.ts'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -80,8 +81,8 @@ describe('staged diff approval UI', () => {
     await $('.git-changes-section-proposed').waitForDisplayed({ timeout: 30_000 })
     await $('#git-diff-viewer-host .monaco-diff-editor').waitForDisplayed({ timeout: 30_000 })
 
-    const acceptBtn = await $('#git-diff-viewer-host .diff-accept-btn')
-    const rejectBtn = await $('#git-diff-viewer-host .diff-reject-btn')
+    const acceptBtn = await $('#git-diff-viewer-host .diff-accept-btn').getElement()
+    const rejectBtn = await $('#git-diff-viewer-host .diff-reject-btn').getElement()
     await acceptBtn.waitForDisplayed({ timeout: 5_000 })
     await browser.waitUntil(async () => (await acceptBtn.getText()) === 'Accept', {
       timeout: 5_000,
@@ -105,7 +106,7 @@ describe('staged diff approval UI', () => {
       return { top, bottom }
     })
     if (!editorRect || !acceptRect) throw new Error('missing diff editor or accept button rect')
-    await expect(acceptRect.top >= editorRect.bottom).toBe(true)
+    expect(acceptRect.top >= editorRect.bottom).toBe(true)
 
     // Accept/Reject are yes/no chrome, so they use the kit (Accept = primary,
     // Reject = secondary), never the --success / --error status hues (#3065).
@@ -144,14 +145,14 @@ describe('staged diff approval UI', () => {
       return paint
     })
     if (!approvalPaint) throw new Error('missing diff approval bar buttons')
-    await expect(approvalPaint.acceptBg).toBe(approvalPaint.accentFill)
-    await expect(approvalPaint.rejectBg).toBe('rgba(0, 0, 0, 0)')
+    expect(approvalPaint.acceptBg).toBe(approvalPaint.accentFill)
+    expect(approvalPaint.rejectBg).toBe('rgba(0, 0, 0, 0)')
     for (const fill of [approvalPaint.acceptBg, approvalPaint.rejectBg]) {
-      await expect(fill).not.toBe(approvalPaint.successHue)
-      await expect(fill).not.toBe(approvalPaint.errorHue)
+      expect(fill).not.toBe(approvalPaint.successHue)
+      expect(fill).not.toBe(approvalPaint.errorHue)
     }
-    await expect(approvalPaint.gap).toBe(approvalPaint.spacingMd)
-    await expect(approvalPaint.heightsMatch).toBe(true)
+    expect(approvalPaint.gap).toBe(approvalPaint.spacingMd)
+    expect(approvalPaint.heightsMatch).toBe(true)
 
     await saveAppScreenshot('staged-diff-single.png')
 
@@ -163,21 +164,24 @@ describe('staged diff approval UI', () => {
       'I prepared the proposed change for src/e2e-staged-b.ts.',
     )
 
-    await browser.waitUntil(async () => (await $$('.git-change-row-proposed')).length === 2, {
-      timeout: 30_000,
-      timeoutMsg: 'expected two proposed diff rows',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.git-change-row-proposed').getElements()).length === 2,
+      {
+        timeout: 30_000,
+        timeoutMsg: 'expected two proposed diff rows',
+      },
+    )
 
     await expect($('.git-changes-bulk-actions')).toBeDisplayed()
     await expect($('button*=Accept all')).toBeDisplayed()
     await expect($('button*=Reject all')).toBeDisplayed()
 
     const paths = await $$('.git-change-row-proposed .git-change-path').map((el) => el.getText())
-    await expect(paths).toContain('src/e2e-staged-a.ts')
-    await expect(paths).toContain('src/e2e-staged-b.ts')
+    expect(paths).toContain('src/e2e-staged-a.ts')
+    expect(paths).toContain('src/e2e-staged-b.ts')
 
-    const rows = await $$('.git-change-row-proposed')
-    const second = await rows.find(async (row) =>
+    const rows = await $$('.git-change-row-proposed').getElements()
+    const second = await findAsync(rows, async (row) =>
       (await row.$('.git-change-path').getText()).includes('e2e-staged-b.ts'),
     )
     if (!second) throw new Error('missing e2e-staged-b.ts proposed row')
@@ -193,7 +197,7 @@ describe('staged diff approval UI', () => {
       for (const path of ['src/e2e-staged-a.ts', 'src/e2e-staged-b.ts']) {
         const row = [
           ...document.querySelectorAll<HTMLButtonElement>('.git-change-row-proposed'),
-        ].find((candidate) => candidate.textContent?.includes(path))
+        ].find((candidate) => candidate.textContent.includes(path))
         row?.click()
       }
     })
@@ -202,9 +206,9 @@ describe('staged diff approval UI', () => {
         await browser.execute(() => {
           const selected = document.querySelector('.git-change-row-proposed.is-selected')
           const viewerText =
-            document.querySelector('#git-diff-viewer-host')?.textContent?.replace(/\s/g, '') ?? ''
+            document.querySelector('#git-diff-viewer-host')?.textContent.replace(/\s/g, '') ?? ''
           return (
-            selected?.textContent?.includes('src/e2e-staged-b.ts') === true &&
+            selected?.textContent.includes('src/e2e-staged-b.ts') === true &&
             viewerText.includes('exportconstb=2')
           )
         }),
@@ -223,23 +227,26 @@ describe('staged diff approval UI', () => {
     })
     await saveAppScreenshot('staged-diff-thread-isolated.png')
 
-    const showMore = await $('.chats-show-more')
+    const showMore = await $('.chats-show-more').getElement()
     if (await showMore.isExisting()) await showMore.click()
     await browser.execute(() => {
       const rows = [...document.querySelectorAll('.chats-list .chat-row')]
       const row = rows.find((candidate) => !candidate.classList.contains('selected'))
       row?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    await browser.waitUntil(async () => (await $$('.git-change-row-proposed')).length === 2, {
-      timeout: 10_000,
-      timeoutMsg: 'returning to the owner thread must restore its proposed diffs',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.git-change-row-proposed').getElements()).length === 2,
+      {
+        timeout: 10_000,
+        timeoutMsg: 'returning to the owner thread must restore its proposed diffs',
+      },
+    )
   })
 
   it('accepting a CSS staged diff clears the view without error toasts', async function () {
     this.timeout(120_000)
 
-    const rejectAllBtn = await $('button*=Reject all')
+    const rejectAllBtn = await $('button*=Reject all').getElement()
     if (await rejectAllBtn.isDisplayed()) {
       await rejectAllBtn.click()
       await browser.waitUntil(
@@ -262,7 +269,7 @@ describe('staged diff approval UI', () => {
     await $('.git-changes-section-proposed').waitForDisplayed({ timeout: 15_000 })
     await $('#git-diff-viewer-host .monaco-diff-editor').waitForDisplayed({ timeout: 15_000 })
 
-    const acceptBtn = await $('#git-diff-viewer-host .diff-accept-btn')
+    const acceptBtn = await $('#git-diff-viewer-host .diff-accept-btn').getElement()
     await acceptBtn.waitForDisplayed({ timeout: 5_000 })
     await acceptBtn.click()
 
@@ -273,7 +280,7 @@ describe('staged diff approval UI', () => {
 
     await browser.pause(3_000)
     await saveAppScreenshot('staged-diff-css-accept-no-error.png')
-    await expect(await collectErrorToasts()).toEqual([])
+    expect(await collectErrorToasts()).toEqual([])
   })
 
   it('shows Proposed rows in the Changes pop-out (#1718)', async function () {
@@ -289,7 +296,7 @@ describe('staged diff approval UI', () => {
     await $('.git-changes-section-proposed').waitForDisplayed({ timeout: 30_000 })
 
     const before = await browser.getWindowHandles()
-    const popoutBtn = await $('#git-changes-host .pane-popout-btn')
+    const popoutBtn = await $('#git-changes-host .pane-popout-btn').getElement()
     await popoutBtn.waitForClickable({ timeout: 10_000 })
     await popoutBtn.click()
 
@@ -317,6 +324,8 @@ describe('staged diff approval UI', () => {
     )
     await saveAppScreenshot('staged-diff-popout-proposed.png')
     await browser.closeWindow()
-    await browser.switchToWindow(before[0])
+    const originalHandle = before[0]
+    if (!originalHandle) throw new Error('Original window handle missing')
+    await browser.switchToWindow(originalHandle)
   })
 })

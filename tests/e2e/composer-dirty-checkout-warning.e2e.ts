@@ -28,7 +28,7 @@ describe('composer dirty checkout warning', () => {
     await setComposerValue('Refactor the parser')
     await $('.submit-btn').click()
 
-    const warning = await $('.composer-dirty-warning')
+    const warning = await $('.composer-dirty-warning').getElement()
     await expect(warning).toBeDisplayed()
     await expect(warning.$('.composer-dirty-warning-text')).toHaveText(
       'This checkout has uncommitted changes. Work will run on top of them.',

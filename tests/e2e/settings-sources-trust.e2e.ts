@@ -108,7 +108,7 @@ describe('settings sources workspace trust', function () {
     await confirm.$('.confirm-dialog-confirm').click()
 
     await browser.waitUntil(
-      async () => (await row.$$('button.sources-badge-untrusted')).length === 0,
+      async () => (await row.$$('button.sources-badge-untrusted').getElements()).length === 0,
       { timeout: 15_000, timeoutMsg: 'expected the instruction row to reload as trusted' },
     )
     // The badge's capital comes from CSS `::first-letter`, which getText() ignores.

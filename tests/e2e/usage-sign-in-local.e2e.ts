@@ -92,7 +92,9 @@ describe('usage sign-in local terminal routing', () => {
     // Match the other terminal evals: retain a visible steady outline instead
     // of capturing an arbitrary phase of xterm's focused canvas cursor.
     const terminalControl = $('.titlebar-btn[aria-label="Open terminal"]')
-    await terminalControl.execute((button) => button.focus())
+    await terminalControl.execute((button) => {
+      button.focus()
+    })
     await expect(terminalControl).toBeFocused()
     // Keep evidence on the local terminal result. The unrelated project index
     // can fail because this fixture deliberately points it at an invalid SSH host.

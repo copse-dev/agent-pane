@@ -39,17 +39,17 @@ describe('follow-up suggestion bubbles', () => {
       await expect($('.follow-up-bubble-changes')).not.toExist()
 
       // The accented "publish it" offer sits first, before the prompt chips.
-      const createPrBubble = await $('.follow-up-bubble[data-id="create-pr"]')
+      const createPrBubble = await $('.follow-up-bubble[data-id="create-pr"]').getElement()
       await expect(createPrBubble).toHaveText('Create PR')
       await expect(createPrBubble).toHaveElementClass('follow-up-bubble-create-pr')
 
-      const ciBubble = await $('.follow-up-bubble[data-id="debug-ci"]')
+      const ciBubble = await $('.follow-up-bubble[data-id="debug-ci"]').getElement()
       await expect(ciBubble).toHaveText('Debug CI Failure')
 
-      const reviewBubble = await $('.follow-up-bubble[data-id="review-changes"]')
+      const reviewBubble = await $('.follow-up-bubble[data-id="review-changes"]').getElement()
       await expect(reviewBubble).toHaveText('Review changes')
 
-      const continuePlanBubble = await $('.follow-up-bubble[data-id="continue-plan"]')
+      const continuePlanBubble = await $('.follow-up-bubble[data-id="continue-plan"]').getElement()
       await expect(continuePlanBubble).toHaveText('Continue: Run the test suite')
 
       await expect($('.prompt-input')).toHaveAttribute('data-placeholder', 'Send follow-up')
@@ -97,7 +97,9 @@ describe('follow-up suggestion bubbles', () => {
       await expect($('.chat-row.selected .chat-title')).toHaveText(originalThreadTitle)
       await expect($('.messages-list .msg-user')).toBeDisplayed()
       await waitForAgentIdle()
-      const assistantMessages = await $$('.messages-list .msg-assistant .message-text')
+      const assistantMessages = await $$(
+        '.messages-list .msg-assistant .message-text',
+      ).getElements()
       const finalReply = assistantMessages.at(-1)
       if (!finalReply) throw new Error('expected the Debug CI follow-up reply')
       await expect(finalReply).toHaveText(
@@ -125,14 +127,14 @@ describe('follow-up suggestion bubbles', () => {
     it('shows a Changes bubble from real git diff stats', async () => {
       const scenario = await completeMockTurn()
 
-      const changesBubble = await $('.follow-up-bubble-changes')
+      const changesBubble = await $('.follow-up-bubble-changes').getElement()
       await expect(changesBubble).toBeDisplayed()
       await expect(changesBubble.$('.follow-up-label')).toHaveText('Changes')
 
       const addText = await changesBubble.$('.follow-up-stat-add').getText()
       const delText = await changesBubble.$('.follow-up-stat-del').getText()
-      await expect(addText.startsWith('+')).toBe(true)
-      await expect(delText.startsWith('-')).toBe(true)
+      expect(addText.startsWith('+')).toBe(true)
+      expect(delText.startsWith('-')).toBe(true)
 
       await saveAppScreenshot('follow-up-suggestions-git-changes.png')
       await scenario.assertComplete()

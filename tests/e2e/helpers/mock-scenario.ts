@@ -1,3 +1,4 @@
+import type {} from './browser-globals.d.ts'
 import { randomUUID } from 'node:crypto'
 import { browser } from '@wdio/globals'
 import { setComposerValue } from './composer.ts'
@@ -9,18 +10,30 @@ import type {
 
 type ScenarioStatus = ReturnType<typeof mockScenarioStatus>
 
-interface ScenarioBridge {
+export interface ScenarioBridge {
   setMockScenario(id: string, scenario: MockScenario, scope?: string): Promise<ScenarioStatus>
   mockScenarioStatus(id: string): Promise<ScenarioStatus>
   releaseMockScenario(id: string, hold: string): Promise<void>
   assertMockScenarioComplete(id: string): Promise<void>
   clearMockScenarios(): Promise<void>
-}
-
-declare global {
-  interface Window {
-    __copseE2e?: ScenarioBridge
-  }
+  setVncNearbyServers(servers: unknown): Promise<void>
+  pushErrorToast(message: string): void
+  getErrorToasts(): string[]
+  requestSshPrompt(prompt: string, kind: 'confirm' | 'secret'): Promise<unknown>
+  requestCloseConfirm(): Promise<boolean>
+  createMainWindow(): Promise<void>
+  markQuit(): Promise<void>
+  openWorkspace(root: string): Promise<unknown>
+  requestAcpPackageInstallApproval(
+    scenario?: 'install' | 'firewall-bootstrap' | 'mixed-bootstrap',
+  ): Promise<unknown>
+  emitAgentChunks(threadId: string, chunks: unknown[]): Promise<void>
+  emitApprovalRequests(requests: unknown): Promise<void>
+  cancelApprovalRequest(id: string): Promise<void>
+  setSemanticIndexScaleGuard(phase: 'limited' | 'skipped', reason: string): Promise<void>
+  setPortRows(rows: unknown): Promise<void>
+  setSimulatorDesktop(value: unknown): Promise<void>
+  showSimulatorDesktop(udid: string): Promise<void>
 }
 
 export interface ScenarioHandle {
@@ -40,7 +53,7 @@ export async function expectAssistantReply(text: string): Promise<void> {
     async () =>
       (await browser.execute(() => {
         const replies = document.querySelectorAll<HTMLElement>('.msg-assistant .message-text')
-        return replies.item(replies.length - 1)?.innerText.trim() ?? ''
+        return replies.item(replies.length - 1).innerText.trim()
       })) === text,
     { timeout: 15_000, interval: 100, timeoutMsg: `Expected assistant reply: ${text}` },
   )
@@ -68,7 +81,7 @@ export async function installMockScenario(
         registration.scopeOverride === null
           ? undefined
           : (registration.scopeOverride ??
-            document.querySelector<HTMLElement>('.chat-row.selected')?.dataset.threadId)
+            document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId'])
       await bridge.setMockScenario(registration.id, registration.scenario, scope)
     },
     { id, scenario, scopeOverride },
@@ -76,7 +89,7 @@ export async function installMockScenario(
   installed.push(id)
 
   return {
-    async release(hold) {
+    async release(hold): Promise<void> {
       await browser.execute(
         async ({ scenarioId, name }) => {
           const bridge = window.__copseE2e
@@ -86,7 +99,7 @@ export async function installMockScenario(
         { scenarioId: id, name: hold },
       )
     },
-    async waitForHold(hold) {
+    async waitForHold(hold): Promise<void> {
       await browser.waitUntil(
         async () => {
           const status = await browser.execute(async (scenarioId) => {
@@ -100,7 +113,7 @@ export async function installMockScenario(
         { timeout: 30_000, interval: 50, timeoutMsg: `Scenario did not reach hold: ${hold}` },
       )
     },
-    async waitForComplete(timeoutMs = 25_000) {
+    async waitForComplete(timeoutMs = 25_000): Promise<void> {
       await browser.waitUntil(
         async () => {
           const status = await browser.execute(async (scenarioId) => {
@@ -118,7 +131,7 @@ export async function installMockScenario(
         },
       )
     },
-    async assertComplete() {
+    async assertComplete(): Promise<void> {
       await browser.execute(async (scenarioId) => {
         const bridge = window.__copseE2e
         if (!bridge) throw new Error('The test scenario bridge is unavailable')

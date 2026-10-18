@@ -10,9 +10,9 @@ describe('native git commit signing permission', function () {
   this.timeout(90_000)
 
   beforeEach(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-git-commit-signing-permission')
     seedE2eViewport({ width: 1200, height: 800 }, { theme: 'dark' })

@@ -33,9 +33,9 @@ describe('ACP rich content', () => {
     audio.write('data', 36)
     audio.writeUInt32LE(8000, 40)
     audio.fill(128, 44)
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     writeSeedConfig({
@@ -229,17 +229,19 @@ describe('ACP rich content', () => {
         new Promise<boolean>((resolve) => {
           const audio = document.createElement('audio')
           const url = 'https://example.invalid/copse-audio-policy-probe.wav'
-          const finish = (result: boolean) => {
+          const finish = (result: boolean): void => {
             clearTimeout(timeout)
             document.removeEventListener('securitypolicyviolation', onViolation)
             audio.removeAttribute('src')
             audio.load()
             resolve(result)
           }
-          const onViolation = (event: SecurityPolicyViolationEvent) => {
+          const onViolation = (event: SecurityPolicyViolationEvent): void => {
             if (event.blockedURI === url && event.effectiveDirective === 'media-src') finish(true)
           }
-          const timeout = setTimeout(() => finish(false), 5000)
+          const timeout = setTimeout(() => {
+            finish(false)
+          }, 5000)
           document.addEventListener('securitypolicyviolation', onViolation)
           audio.src = url
           audio.load()

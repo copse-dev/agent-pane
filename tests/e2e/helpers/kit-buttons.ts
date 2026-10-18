@@ -58,7 +58,7 @@ export async function measureKitButtonRow(rowSelector: string): Promise<KitButto
       columnGap: parseFloat(getComputedStyle(row).columnGap),
       gaps,
       buttons: visible.map((button, index) => ({
-        label: (button.getAttribute('aria-label') ?? button.textContent ?? '').trim(),
+        label: (button.getAttribute('aria-label') ?? button.textContent).trim(),
         classes: [...button.classList],
         radius: getComputedStyle(button).borderTopLeftRadius,
         width: Math.round((rects[index]?.width ?? 0) * 10) / 10,

@@ -13,9 +13,9 @@ describe('side chat titles and context line read as plain text', () => {
   before(async function () {
     this.timeout(90_000)
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedSideChatMarkdownFixture(seedStableWorkspace())
     writeSettings({ model: 'claude-sonnet-4-6' })

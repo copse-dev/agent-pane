@@ -17,7 +17,7 @@ describe('browser tool display', () => {
   it('renders a screenshot outside the collapsed browser-tool rollup', async () => {
     await $('.messages-list .msg-assistant').waitForExist({ timeout: 30_000 })
 
-    const rollup = await $('.tool-card-rollup')
+    const rollup = await $('.tool-card-rollup').getElement()
     await expect(rollup).toBeDisplayed()
     await expect(rollup.$('summary.tool-card-header .tool-name')).toHaveText('Used browser')
     await expect(rollup.$('summary.tool-card-header .tool-count')).toHaveText('×3')
@@ -27,13 +27,13 @@ describe('browser tool display', () => {
     )
     await screenshot.waitForDisplayed({ timeout: 15_000 })
     await expect(screenshot).toHaveAttribute('alt', 'browser-tab-1.png')
-    assert.match(await screenshot.getAttribute('src'), /^data:image\/png;base64,/)
+    assert.match((await screenshot.getAttribute('src')) ?? '', /^data:image\/png;base64,/)
 
     await saveAppScreenshot('browser-tools-collapsed.png')
 
     await rollup.$('summary.tool-card-header').click()
     await expect(rollup).toHaveAttribute('open')
-    const group = await rollup.$('.tool-card-group')
+    const group = await rollup.$('.tool-card-group').getElement()
     await expect(group.$('.tool-name')).toHaveText('Used browser')
     await expect(screenshot).toBeDisplayed()
     await saveAppScreenshot('browser-tools-expanded.png')
@@ -41,12 +41,12 @@ describe('browser tool display', () => {
     await group.$(':scope > summary').click()
     await expect(group).toHaveAttribute('open')
 
-    const screenshotTool = await group.$('[data-tool-id="tc-browser-screenshot"]')
+    const screenshotTool = await group.$('[data-tool-id="tc-browser-screenshot"]').getElement()
     await expect(screenshotTool).toBeDisplayed()
     await screenshotTool.$(':scope > summary').click()
     await expect(screenshotTool).toHaveAttribute('open')
 
-    const result = await screenshotTool.$('.tool-result')
+    const result = await screenshotTool.$('.tool-result').getElement()
     await expect(result).toHaveText(
       expect.stringContaining('Capture handle (thread-scoped and short-lived):'),
     )

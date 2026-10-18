@@ -153,6 +153,9 @@ importers:
       '@types/micromatch':
         specifier: ^4.0.9
         version: 4.0.10
+      '@types/mocha':
+        specifier: 10.0.10
+        version: 10.0.10
       '@types/node':
         specifier: ^26.6.4
         version: 26.6.4

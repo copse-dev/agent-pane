@@ -21,7 +21,7 @@ describe('open in editor dropdown', () => {
   it('shows the split control defaulting to the first detected editor', async () => {
     await $('.titlebar').waitForExist({ timeout: 30_000 })
 
-    const control = await $('.open-in-editor')
+    const control = await $('.open-in-editor').getElement()
     await expect(control).toBeDisplayed()
 
     // No last-used editor persisted, so the primary defaults to the first
@@ -35,20 +35,22 @@ describe('open in editor dropdown', () => {
   })
 
   it('lists every detected editor when the caret is clicked', async () => {
-    const menu = await $('.open-in-editor-menu')
+    const menu = await $('.open-in-editor-menu').getElement()
     await expect(menu).not.toBeDisplayed()
 
     await $('.open-in-editor-caret').click()
     await expect(menu).toBeDisplayed()
 
-    const options = await $$('.open-in-editor-option')
+    const options = await $$('.open-in-editor-option').getElements()
     await expect(options).toBeElementsArrayOfSize(5)
-    await expect(await $('[data-editor-id="vscode"]')).toHaveText('Open in Visual Studio Code')
-    await expect(await $('[data-editor-id="cursor"]')).toHaveText('Open in Cursor')
-    await expect(await $('[data-editor-id="zed"]')).toHaveText('Open in Zed')
+    await expect(await $('[data-editor-id="vscode"]').getElement()).toHaveText(
+      'Open in Visual Studio Code',
+    )
+    await expect(await $('[data-editor-id="cursor"]').getElement()).toHaveText('Open in Cursor')
+    await expect(await $('[data-editor-id="zed"]').getElement()).toHaveText('Open in Zed')
     // Codex-style system targets sit alongside the code editors.
-    await expect(await $('[data-editor-id="finder"]')).toHaveText('Open in Finder')
-    await expect(await $('[data-editor-id="terminal"]')).toHaveText('Open in Terminal')
+    await expect(await $('[data-editor-id="finder"]').getElement()).toHaveText('Open in Finder')
+    await expect(await $('[data-editor-id="terminal"]').getElement()).toHaveText('Open in Terminal')
 
     await $('.titlebar').saveScreenshot(join(SCREENSHOT_DIR, 'open-in-editor-open.png'))
   })

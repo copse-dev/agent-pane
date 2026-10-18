@@ -4,9 +4,9 @@ import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 describe('Git attribution setting', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-git-attribution-setting')
     await browser.reloadSession()

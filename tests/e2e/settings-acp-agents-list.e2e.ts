@@ -131,7 +131,7 @@ describe('Coding agents list in Settings', () => {
       const out: string[] = []
       for (const row of document.querySelectorAll('.acp-row')) {
         if (row.scrollWidth > row.clientWidth)
-          out.push(`${row.getAttribute('data-agent')}: overflow`)
+          out.push(`${row.getAttribute('data-agent') ?? ''}: overflow`)
         const parts = [
           '.acp-logo',
           '.acp-row-name strong',
@@ -148,7 +148,8 @@ describe('Coding agents list in Settings', () => {
               b.r.right <= a.r.left + 0.5 ||
               a.r.bottom <= b.r.top + 0.5 ||
               b.r.bottom <= a.r.top + 0.5
-            if (!apart) out.push(`${row.getAttribute('data-agent')}: ${a.sel} overlaps ${b.sel}`)
+            if (!apart)
+              out.push(`${row.getAttribute('data-agent') ?? ''}: ${a.sel} overlaps ${b.sel}`)
           }
         }
       }

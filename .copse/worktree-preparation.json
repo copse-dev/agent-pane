@@ -2,6 +2,7 @@
   "version": 1,
   "inputs": [
     "scripts/prepare-native-artifacts.mts",
+    "scripts/lib/native-preparation-steps.mts",
     "scripts/check-prepared-worktree.mts",
     "scripts/lib/native-artifacts.mts",
     "scripts/check-node-version.cjs",

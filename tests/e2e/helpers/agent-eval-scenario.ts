@@ -166,13 +166,13 @@ export function createEvalProject(scenario: EvalScenario): {
   cleanup: () => void
 } {
   if (scenario.workspace?.type !== 'tempProject') {
-    return { root: process.cwd(), cleanup: () => undefined }
+    return { root: process.cwd(), cleanup: (): void => undefined }
   }
   const prefix = scenario.workspace.prefix ?? `${scenario.id}-`
   const root = mkdtempSync(join(tmpdir(), prefix))
   return {
     root,
-    cleanup: () => {
+    cleanup: (): void => {
       if (process.env['COPSE_EVAL_KEEP_WORKSPACE'] === '1') return
       rmSync(root, { recursive: true, force: true })
     },
