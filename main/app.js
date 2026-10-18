@@ -92069,6 +92069,36 @@ var init_approval_dialog = __esm({
   }
 });
 
+// packages/agent/src/ask-user-format.ts
+var askUserQuestionSchema, askUserParamsSchema, ASK_USER_ANSWER_MAX_LENGTH;
+var init_ask_user_format = __esm({
+  "packages/agent/src/ask-user-format.ts"() {
+    init_zod();
+    askUserQuestionSchema = external_exports.object({
+      question: external_exports.string().min(1).describe("The clarifying question to ask the user."),
+      options: external_exports.array(external_exports.string().min(1)).max(8).optional().describe("Optional suggested answers the user can pick from instead of typing."),
+      recommendedOption: external_exports.string().min(1).optional().describe("The exact option the agent recommends, when one is supported by the evidence."),
+      recommendationReason: external_exports.string().min(1).optional().describe("A brief reason for the recommendation, shown to the user.")
+    }).refine(
+      (question) => !question.recommendedOption || question.options?.includes(question.recommendedOption),
+      {
+        message: "recommendedOption must be one of options",
+        path: ["recommendedOption"]
+      }
+    ).refine(
+      (question) => Boolean(question.recommendedOption) === Boolean(question.recommendationReason),
+      {
+        message: "A recommendation needs both an option and a reason",
+        path: ["recommendationReason"]
+      }
+    );
+    askUserParamsSchema = external_exports.object({
+      questions: external_exports.array(askUserQuestionSchema).min(1).max(10).describe("One or more clarifying questions to ask the user before continuing.")
+    });
+    ASK_USER_ANSWER_MAX_LENGTH = 8192;
+  }
+});
+
 // src/renderer/views/activity-view.ts
 function stateGlyph(state) {
   const className = "ui-icon ui-icon-sm activity-glyph";
@@ -92214,6 +92244,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
       class: "activity-answer-input",
       rows: "2",
       placeholder: "Or type an answer\u2026",
+      maxlength: String(ASK_USER_ANSWER_MAX_LENGTH),
       "data-control": `answer-${String(index)}`,
       "aria-labelledby": questionId
     });
@@ -92223,7 +92254,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
       next[index] = input2.value;
       drafts.set(requestId, next);
       const send = detail.querySelector(".activity-answer");
-      if (send) send.disabled = !hasAnswer(requestId);
+      if (send) send.disabled = settling || !hasAnswer(requestId);
     };
     input2.addEventListener("input", sync);
     input2.addEventListener("keydown", (event) => {
@@ -93082,6 +93113,7 @@ var init_activity_view = __esm({
     init_projects();
     init_activity_model();
     init_approval_dialog();
+    init_ask_user_format();
     ACTIVITY_RENDER_INTERVAL_MS = 250;
     ACTIVITY_AGE_REFRESH_MS = 3e4;
     STATE_SHORT = {
@@ -191736,6 +191768,7 @@ function mountAskUserDialog(api2, store2) {
       const input2 = el("textarea", {
         class: "ask-user-input",
         rows: "2",
+        maxlength: String(ASK_USER_ANSWER_MAX_LENGTH),
         "data-question-index": String(i3),
         "aria-labelledby": questionId
       });
@@ -191858,7 +191891,10 @@ function mountAskUserDialog(api2, store2) {
       if (idx === -1) return;
       queue.splice(idx, 1);
     }
-    void api2.ask.respond(request.id, answers);
+    void api2.ask.respond(
+      request.id,
+      answers.map((answer) => answer.slice(0, ASK_USER_ANSWER_MAX_LENGTH))
+    );
     showNext();
     syncAttention();
   }
@@ -191953,6 +191989,7 @@ var init_ask_user_dialog = __esm({
     init_projects();
     init_side_chat3();
     init_dialog_shell();
+    init_ask_user_format();
   }
 });
 
