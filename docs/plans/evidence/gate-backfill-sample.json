@@ -1,0 +1,142 @@
+[
+  {
+    "runId": 39011670753,
+    "head": "9a33f7e424ebdf4e15c317e2ada98a081ed4c7bc",
+    "candidate": "8982b8e01443d3887491c07f3f4f04264b2f52b2",
+    "attempt": 1,
+    "createdAt": "2026-10-17T06:54:59Z",
+    "planContext": [
+      "2026-10-17T06:56:00.8002879Z   BASE_SHA: 82cfeab8ec08cb9d8547dddbbe1bdc3f4a1340d2",
+      "2026-10-17T07:00:10.0072780Z   BASE_SHA: 82cfeab8ec08cb9d8547dddbbe1bdc3f4a1340d2",
+      "2026-10-17T07:00:32.4898540Z   PR_DRAFT: false",
+      "2026-10-17T07:00:32.4898751Z   HEAD_SHA: 9a33f7e424ebdf4e15c317e2ada98a081ed4c7bc",
+      "2026-10-17T07:00:32.5788803Z   BASE_REF: main",
+      "2026-10-17T07:00:32.5789017Z   BASE_SHA: 82cfeab8ec08cb9d8547dddbbe1bdc3f4a1340d2",
+      "2026-10-17T07:00:32.5789296Z   HEAD_SHA: 9a33f7e424ebdf4e15c317e2ada98a081ed4c7bc",
+      "2026-10-17T07:00:32.5789544Z   UPDATE_SCREENSHOTS_LABEL: false",
+      "2026-10-17T07:00:32.5789760Z   CI_FULL_LABEL: false",
+      "2026-10-17T07:00:34.0504575Z   BASE_SHA: 82cfeab8ec08cb9d8547dddbbe1bdc3f4a1340d2",
+      "2026-10-17T07:00:34.0504845Z   UPDATE_SCREENSHOTS_LABEL: false"
+    ],
+    "failureLines": [
+      "2026-10-17T07:11:46.0809494Z [0-24] FAILED in chrome(152.0.7977.130) - file:///tests/e2e/pnpm-exec-format-check.e2e.ts",
+      "2026-10-17T07:16:32.6888259Z Spec Files:\t 50 passed, 1 failed, 51 total (100% completed) in 00:09:22  ",
+      "2026-10-17T07:16:33.2476808Z Spec Files:\t 50 passed, 1 failed, 51 total (100% completed) in 00:09:22  ",
+      "2026-10-17T07:21:13.8308253Z [0-24] FAILED in chrome(152.0.7977.130) - file:///tests/e2e/pnpm-exec-format-check.e2e.ts",
+      "2026-10-17T07:25:53.9951371Z Spec Files:\t 50 passed, 1 failed, 51 total (100% completed) in 00:09:18  ",
+      "2026-10-17T07:25:54.5162961Z Spec Files:\t 50 passed, 1 failed, 51 total (100% completed) in 00:09:18  "
+    ],
+    "structuredArtifactNames": [],
+    "classification": "real by the shaping plan definition: repeated failure followed by a fix to the failing spec",
+    "classificationEvidence": "https://github.com/copse-dev/agent-pane/commit/e9d9bb66f7931f23623941cdfdaa11bff2d53982"
+  },
+  {
+    "runId": 39009358898,
+    "head": "9a33f7e424ebdf4e15c317e2ada98a081ed4c7bc",
+    "candidate": "8982b8e01443d3887491c07f3f4f04264b2f52b2",
+    "attempt": 1,
+    "createdAt": "2026-10-17T06:17:27Z",
+    "planContext": [
+      "2026-10-17T06:18:33.9433672Z   BASE_SHA: 82cfeab8ec08cb9d8547dddbbe1bdc3f4a1340d2",
+      "2026-10-17T06:23:34.6555495Z   BASE_SHA: 82cfeab8ec08cb9d8547dddbbe1bdc3f4a1340d2",
+      "2026-10-17T06:23:56.3058879Z   PR_DRAFT: false",
+      "2026-10-17T06:23:56.3059140Z   HEAD_SHA: 9a33f7e424ebdf4e15c317e2ada98a081ed4c7bc",
+      "2026-10-17T06:23:56.4177454Z   BASE_REF: main",
+      "2026-10-17T06:23:56.4177699Z   BASE_SHA: 82cfeab8ec08cb9d8547dddbbe1bdc3f4a1340d2",
+      "2026-10-17T06:23:56.4178030Z   HEAD_SHA: 9a33f7e424ebdf4e15c317e2ada98a081ed4c7bc",
+      "2026-10-17T06:23:56.4178340Z   UPDATE_SCREENSHOTS_LABEL: false",
+      "2026-10-17T06:23:56.4178590Z   CI_FULL_LABEL: false",
+      "2026-10-17T06:23:57.9425466Z   BASE_SHA: 82cfeab8ec08cb9d8547dddbbe1bdc3f4a1340d2",
+      "2026-10-17T06:23:57.9425795Z   UPDATE_SCREENSHOTS_LABEL: false"
+    ],
+    "failureLines": [
+      "2026-10-17T06:37:06.4349729Z [0-24] FAILED in chrome(152.0.7977.130) - file:///tests/e2e/pnpm-exec-format-check.e2e.ts",
+      "2026-10-17T06:42:39.5165370Z Spec Files:\t 50 passed, 1 failed, 51 total (100% completed) in 00:10:59  ",
+      "2026-10-17T06:42:40.0912702Z Spec Files:\t 50 passed, 1 failed, 51 total (100% completed) in 00:10:59  ",
+      "2026-10-17T06:48:05.3736860Z [0-24] FAILED in chrome(152.0.7977.130) - file:///tests/e2e/pnpm-exec-format-check.e2e.ts",
+      "2026-10-17T06:53:32.4199599Z Spec Files:\t 50 passed, 1 failed, 51 total (100% completed) in 00:10:49  ",
+      "2026-10-17T06:53:32.9997196Z Spec Files:\t 50 passed, 1 failed, 51 total (100% completed) in 00:10:49  "
+    ],
+    "structuredArtifactNames": [],
+    "classification": "real by the shaping plan definition: repeated failure followed by a fix to the failing spec",
+    "classificationEvidence": "https://github.com/copse-dev/agent-pane/commit/e9d9bb66f7931f23623941cdfdaa11bff2d53982"
+  },
+  {
+    "runId": 38911917469,
+    "head": "8c4e69fb00d6e6d36d236f5ab4fa6f52f14d9780",
+    "candidate": "1cde33c0a93830a918a5d555ce398952053c12b9",
+    "attempt": 1,
+    "createdAt": "2026-10-16T13:57:38Z",
+    "planContext": [
+      "2026-10-16T14:04:29.3023004Z   BASE_SHA: 911774a126d7471ab22b84357a84d97d17e6660f",
+      "2026-10-16T14:04:29.3023368Z   HEAD_SHA: 8c4e69fb00d6e6d36d236f5ab4fa6f52f14d9780",
+      "2026-10-16T14:04:29.3023711Z   UPDATE_SCREENSHOTS_LABEL: false",
+      "2026-10-16T14:04:29.3023999Z   CI_FULL_LABEL: false",
+      "2026-10-16T14:04:30.7698925Z   BASE_SHA: 911774a126d7471ab22b84357a84d97d17e6660f",
+      "2026-10-16T14:04:30.7699261Z   BASE_REF: main",
+      "2026-10-16T14:04:30.7699565Z   HEAD_SHA: 8c4e69fb00d6e6d36d236f5ab4fa6f52f14d9780",
+      "2026-10-16T14:04:30.7699895Z   PR_DRAFT: false",
+      "2026-10-16T14:04:30.7700598Z   CI_FULL_LABEL: false",
+      "2026-10-16T14:04:30.7700866Z   UPDATE_SCREENSHOTS_LABEL: false",
+      "2026-10-16T14:04:33.0365819Z   BASE_SHA: 911774a126d7471ab22b84357a84d97d17e6660f",
+      "2026-10-16T14:04:33.0366230Z   UPDATE_SCREENSHOTS_LABEL: false"
+    ],
+    "failureLines": [
+      "2026-10-16T14:16:15.6738613Z [0-17] FAILED in chrome(152.0.7977.130) - file:///tests/e2e/create-pr-dialog.e2e.ts",
+      "2026-10-16T14:23:09.6632752Z Spec Files:\t 50 passed, 1 failed, 51 total (100% completed) in 00:10:18  ",
+      "2026-10-16T14:23:10.2033971Z Spec Files:\t 50 passed, 1 failed, 51 total (100% completed) in 00:10:18  ",
+      "2026-10-16T14:26:38.6174197Z [0-17] FAILED in chrome(152.0.7977.130) - file:///tests/e2e/create-pr-dialog.e2e.ts",
+      "2026-10-16T14:33:30.3098657Z Spec Files:\t 50 passed, 1 failed, 51 total (100% completed) in 00:10:17  ",
+      "2026-10-16T14:33:30.8489520Z Spec Files:\t 50 passed, 1 failed, 51 total (100% completed) in 00:10:17  "
+    ],
+    "structuredArtifactNames": [
+      {
+        "id": 12052685818,
+        "name": "e2e-evidence-shard-7-1",
+        "digest": "sha256:ce6e0bef1833af694f9e2d4aae58fe8c27da780d1c625880c86013303b53fea5"
+      },
+      {
+        "id": 12052483876,
+        "name": "e2e-evidence-shard-4-1",
+        "digest": "sha256:a10e2f687e2f5e5966adff0792030fba98c57249223210f4cacf6aca18253c99"
+      },
+      {
+        "id": 12052166356,
+        "name": "e2e-evidence-shard-5-1",
+        "digest": "sha256:e0dd4c5f26b1496a060d1c086e48cc40db239c0cc96f84152f216a3b218a60b4"
+      },
+      {
+        "id": 12052052419,
+        "name": "e2e-evidence-shard-2-1",
+        "digest": "sha256:cc75c05c8936707d0912d1a2488a64f97ce9b1f8a67f98fe8045377559eb7fb9"
+      },
+      {
+        "id": 12051752613,
+        "name": "e2e-evidence-shard-6-1",
+        "digest": "sha256:5aedbf83f248c9ba062356888f5bda032a9801807166f193ea5b7f7b8591453b"
+      },
+      {
+        "id": 12051732812,
+        "name": "e2e-evidence-shard-1-1",
+        "digest": "sha256:cb2bad1ee974c65ec637e9b215afb976c26745075d1bf85e1d08ec90e03ab45c"
+      },
+      {
+        "id": 12051558393,
+        "name": "e2e-evidence-shard-3-1",
+        "digest": "sha256:065358547ef4d22751fdf326b6a8c4e5330f242495a0b3c799d3f6b06da1994f"
+      },
+      {
+        "id": 12051329105,
+        "name": "e2e-evidence-shard-8-1",
+        "digest": "sha256:1959424420cc76a72c8cfb25ae7bbc0b0e5641d77108e8ba7ae002a7f58f5b78"
+      },
+      {
+        "id": 12050668136,
+        "name": "e2e-evidence-plan-1",
+        "digest": "sha256:d0c32fbf4f78890d2a8b11531d3cf76637f33b84b7b5d353f2aac5a9e4ff6576"
+      }
+    ],
+    "classification": "unclassified",
+    "classificationEvidence": null
+  }
+]

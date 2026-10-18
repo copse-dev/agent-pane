@@ -8,14 +8,14 @@ released — rather than copying every published entry.
 
 ## Unreleased
 
+## 0.1.0-beta.15
+
 - The footer hover now reports what the classifiers did for the thread: for the
   shell guard, the shell approval tier and the terminal-read screen, how many
   checks ran on which model or classifier connection, what they decided, how
   long they took on average, and the tokens they used. Calls that never reached
   a classifier (screening off, a missing model) are not counted, and no command
   text is stored.
-
-## 0.1.0-beta.14
 
 - Settings → About has an update channel. Beta gets new features first; switch
   to Stable and Copse keeps installing betas until the next stable release,

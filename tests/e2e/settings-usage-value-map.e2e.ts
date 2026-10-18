@@ -111,6 +111,9 @@ describe('settings usage model value map cost axis', () => {
     )
     const hiddenOutliers = fieldset.$('details.frontier-severely-dominated')
     await expect(hiddenOutliers).toBeExisting()
+    await expect(hiddenOutliers.$('summary')).toHaveText(
+      '1 model costs at least 4× more than an equally capable priced model',
+    )
     assert.match(
       await browser.execute(
         () => document.querySelector('details.frontier-severely-dominated')?.textContent ?? '',
