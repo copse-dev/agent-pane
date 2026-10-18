@@ -7,6 +7,33 @@ the TypeScript SDK we consume publishes a v2 API too — but on a separate
 main entry, the one our client is built on, still negotiates v1. This page
 tracks what's coming, how far along it is, and where it lands.**
 
+## Status update (2026-10-16)
+
+The section below dates from 2026-07 and is kept as history. Since then:
+
+- **Schema:** `v2.0.0-alpha.9` (prerelease, 2026-10-16), roughly weekly since
+  alpha.7 (2026-10-01). Recent alphas mostly pin down normative rules — prompt
+  insertion (#2392), foreground state transitions (#2411, #2387), cancellation
+  (#2390, #2385), replay ids and unsupported cursors (#2398), failure after
+  insertion as `idle` + `stopReason: "error"` (#2281), per-type entity ids (#2332),
+  `_meta` patching on upserts (#2372). v2 as a whole is still labelled draft:
+  "Don't ship it by default in production."
+- **SDK:** `main` locks **1.7.0**; npm `latest` is **1.9.0**, still only at
+  `./experimental/v2`. 1.9.0 changed the v2 client lifecycle ("decouple session
+  updates from prompt completion", typescript-sdk #280; negotiation #286), so
+  behaviour observed on ≤ 1.8 is not a guide.
+- **Adoption:** `claude-agent-acp` 0.92.0 serves v2 behind
+  `CLAUDE_AGENT_ACP_EXPERIMENTAL_V2=1` (session baseline, resume with replay,
+  fork, delete, permissions, terminals, subagents) and was verified to negotiate
+  v2 and complete a gated tool turn plus a cross-process resume. Zed `main`
+  compiles the Rust crate with `unstable_protocol_v2` (runtime use unverified);
+  `codex-acp` pins a pre-v2 crate.
+- **Measured round trip:** a throwaway exploration drove a realistic Copse turn
+  through v2 and back with zero transcript loss, and measured the losses in Copse's
+  own adapters ([results](plans/acp-v2-execution-boundary.md#evidence-so-far)). Finding 3 below and the prompt-lifecycle row are
+  corrected by it. The boundary decision it informs is
+  [`plans/acp-v2-execution-boundary.md`](plans/acp-v2-execution-boundary.md).
+
 ## Where v2 actually stands (dug through the SDKs + schema, 2026-07)
 
 Two different projects, at two very different stages:
@@ -44,7 +71,7 @@ import change. So **v2 stays a watch item**, with the trigger sharpened: not
 tracking is automated rather than a periodic manual re-check of npm; see
 [The watch](#the-watch-how-well-find-out) below.
 
-> `package.json` depends on `@agentclientprotocol/sdk@^1.3.0` (locked `1.3.0`).
+> `package.json` depends on `@agentclientprotocol/sdk@^1.7.0` (locked `1.7.0`; 1.9.0 is the first release with the v2 insertion-receipt lifecycle).
 > The unit gate pins both halves of what that version means
 > (`scripts/acp-v2-watch.test.ts`): the main entry is `PROTOCOL_VERSION === 1`,
 > and `./experimental/v2` is `PROTOCOL_VERSION === 2`.
@@ -94,19 +121,19 @@ From the [v2 RFDs](https://agentclientprotocol.com/rfds/v2/overview)
 "docs: announce ACP v2 draft"). These are **breaking** and only stabilize in
 protocol version 2:
 
-| v2 change                                                                                                                                                         | Touches (Copse)                                            |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| **New prompt lifecycle.** `session/prompt` returns `{}` on _accept_, not end-of-turn. Turns decouple from prompts.                                                | `acp-client.ts` turn/stop plumbing, `acp-session-pool.ts`  |
-| **New `state_update`** update (`running` / `idle`+`stopReason` / `requires_action`) carries turn end + usage.                                                     | `session-update-adapter.ts`, `acp-turn-usage.ts`           |
-| **Whole-message updates** `user_message` / `agent_message` / `agent_thought` (upserts keyed by `messageId`) + chunks.                                             | `session-update-adapter.ts`                                |
-| **Single `tool_call_update` upsert** replaces the v1 `tool_call` / `tool_call_update` split; + content chunks.                                                    | `session-update-adapter.ts`                                |
-| **Permission requests** get a required `title` + optional structured `subject` tagged union (`tool_call` → `ToolCallUpdate`).                                     | `acp-native-bridge.ts` (title-regex heuristic), approvals  |
-| **Client fs/terminal surface removed** — no `clientCapabilities.fs`, `fs/*`, `terminal/*` (auth.terminal stays).                                                  | `acp-client.ts` fs handlers, the diff-queue write path     |
-| **Session modes removed;** model/mode state moves to session config options.                                                                                      | `modelSelectorFrom`, `model-options.ts`, probe `modes` row |
-| **`session/load` removed;** `session/resume` + optional `replayFrom` cursor covers no-replay and full replay.                                                     | probe `loadSession`/`resume` rows, `acp-session-pool.ts`   |
-| **Capability rename/regroup:** single `capabilities` + `info` in initialize; object-shaped support markers; `session.prompt` / `session.mcp`; `session` optional. | `extractCapabilitySnapshot` (all field reads)              |
-| **MCP:** SSE transport removed; stdio an explicit `session.mcp.stdio` capability; `type` discriminator required.                                                  | `toAcpMcpServers`, probe MCP rows                          |
-| **JSON-RPC 2.0 batching**; domain-specific ID names (`messageId`, `toolCallId`, …).                                                                               | schema-wide                                                |
+| v2 change                                                                                                                                                                                                                                                                               | Touches (Copse)                                            |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| **New prompt lifecycle.** `session/prompt` returns `{ messageId }` once the user message is _inserted_ (not on receipt, not at end of turn); a JSON-RPC error means it was not inserted. Turn end is `idle`; nothing binds an idle to a particular prompt, and there is **no turn id**. | `acp-client.ts` turn/stop plumbing, `acp-session-pool.ts`  |
+| **New `state_update`** update (`running` / `idle`+`stopReason` / `requires_action`) carries turn end + usage.                                                                                                                                                                           | `session-update-adapter.ts`, `acp-turn-usage.ts`           |
+| **Whole-message updates** `user_message` / `agent_message` / `agent_thought` (upserts keyed by `messageId`) + chunks.                                                                                                                                                                   | `session-update-adapter.ts`                                |
+| **Single `tool_call_update` upsert** replaces the v1 `tool_call` / `tool_call_update` split; + content chunks.                                                                                                                                                                          | `session-update-adapter.ts`                                |
+| **Permission requests** get a required `title` + optional structured `subject` tagged union (`tool_call` → `ToolCallUpdate`).                                                                                                                                                           | `acp-native-bridge.ts` (title-regex heuristic), approvals  |
+| **Client fs/terminal surface removed** — no `clientCapabilities.fs`, `fs/*`, `terminal/*` (auth.terminal stays).                                                                                                                                                                        | `acp-client.ts` fs handlers, the diff-queue write path     |
+| **Session modes removed;** model/mode state moves to session config options.                                                                                                                                                                                                            | `modelSelectorFrom`, `model-options.ts`, probe `modes` row |
+| **`session/load` removed;** `session/resume` + optional `replayFrom` cursor covers no-replay and full replay.                                                                                                                                                                           | probe `loadSession`/`resume` rows, `acp-session-pool.ts`   |
+| **Capability rename/regroup:** single `capabilities` + `info` in initialize; object-shaped support markers; `session.prompt` / `session.mcp`; `session` optional.                                                                                                                       | `extractCapabilitySnapshot` (all field reads)              |
+| **MCP:** SSE transport removed; stdio an explicit `session.mcp.stdio` capability; `type` discriminator required.                                                                                                                                                                        | `toAcpMcpServers`, probe MCP rows                          |
+| **JSON-RPC 2.0 batching**; domain-specific ID names (`messageId`, `toolCallId`, …).                                                                                                                                                                                                     | schema-wide                                                |
 
 ## Two v2 changes that matter to the "SDK vs ACP" question
 
@@ -191,6 +218,11 @@ RFDs: `initialize` requires the new `info` object (omit it and you get
 whole messages keyed by `messageId` replace the chunk stream. When
 `session-update-adapter.ts` learns v2, that arm is the checklist.
 
+Gap: the v2 arm does not await `session.prompt()`, so it cannot see the
+insertion receipt. On SDK 1.9.0 the prompt resolves with `{ messageId }` before
+`idle`, and that id equals the `user_message` update's id; the arm should assert
+both once the pin moves to 1.9.0.
+
 When it fires, triage before bumping: confirm what the new surface actually
 negotiates. If the migration will take longer than a night, add the new
 `kind:name` to `ACKNOWLEDGED` in `scripts/acp-v2-watch.mts` with the reasoning —
@@ -230,14 +262,18 @@ narrows properly. **v2 mapping is a guard chain, not a switch** — the v1 adapt
 shape does not survive the port. (Constructing typed literals works fine; it is
 only reading that fails, so test fixtures need no casts.)
 
-**3. The whole-message upsert is free.** The table above treats v2's replacement
-of the chunk stream as a major adapter change. It is not: Copse's chunk
-vocabulary already has `text_replace` ("replace accumulated assistant text"),
-added for an unrelated reason, and whole-message updates map onto it exactly. The
-one subtlety is that `text_replace` replaces the _turn's_ accumulated text rather
-than one message, so revising one of several messages re-sends the concatenation.
-Reasoning has no equivalent primitive, so a whole `agent_thought` upsert cannot
-be expressed today.
+**3. ~~The whole-message upsert is free.~~ Retracted (2026-10-16).** Whole-message
+updates do _not_ map onto `text_replace`. In the renderer `text_replace` replaces
+the **current** assistant message (`src/renderer/controller/agent.ts`), not the
+turn's text, so the prototype's "send the concatenation" collapses several
+messages into one. Measured ([results](plans/acp-v2-execution-boundary.md#evidence-so-far)): revising the first of
+two messages yields one message `"ONEtwo"`; a whole `agent_thought` is ignored; a
+tool call whose first update is already `completed` stays `running`; tool output
+(`rawOutput`/`content`, and Claude's `terminal_update`) never becomes a result;
+and replay applied after live updates duplicates text. The missing piece is an
+internal "replace message _X_" primitive for text and reasoning keyed by
+`messageId` — the v1 path already carries ids through `acp_content`, but only for
+appends.
 
 **4. `StopReason` is not re-exported** from the v2 entry point — only reachable
 as `schema.StopReason` inside the SDK's own declarations. Derive it from the
@@ -245,6 +281,14 @@ union rather than deep-importing.
 
 What the prototype does **not** touch, and what therefore still carries the risk:
 permissions, the `fs/*` write path, the session pool, and turn/usage plumbing.
+
+**5. ACP v2 does not provide durability, dedupe or ownership.** Agents "are not
+required to persist every inserted user message"; the returned id "is an
+acknowledgment, not a client-supplied idempotency key"; clients "MUST NOT rely on"
+agent or thought ids to deduplicate replay (only user message ids must stay
+stable). Claude Code's ids did survive a process restart in the capture — because
+it persists its own session file, not because the protocol requires it. The
+thread store, the writer lease and submission dedupe stay Copse's.
 
 ## When v2 stabilizes — the plan
 
@@ -256,13 +300,22 @@ permissions, the `fs/*` write path, the session pool, and turn/usage plumbing.
 2. Add a v2 branch to `extractCapabilitySnapshot` reading the new `capabilities`
    / `info` shape, and probe with `--protocol 2` (sends `protocolVersion: 2`; a
    v1 agent still answers v1 and the matrix flags the downgrade).
-3. Teach `session-update-adapter.ts` the new update kinds (`state_update`,
-   whole-message, tool-call upsert, `plan_update`) — as a guard chain, and
-   carrying the state the upsert model needs (finding 2). The prototype adapter
-   covers text, thought, tool calls, state and usage; plan, terminals, commands
-   and config options are still open.
-4. Revisit permission handling to consume the structured `subject`, and the
-   write path now that `fs/*` is gone.
+3. Add a message-id-keyed replace for text and reasoning to the internal chunk
+   vocabulary (finding 3), then teach `session-update-adapter.ts` the new update
+   kinds (`state_update`, whole-message, tool-call upsert, `terminal_update`,
+   `plan_update`) — as a guard chain, carrying the state the upsert model needs
+   (finding 2). Conformance: fold every captured stream with a spec-literal
+   reference fold and require equality with the Copse transcript (stage S1 of
+   [`plans/acp-v2-execution-boundary.md`](plans/acp-v2-execution-boundary.md#staged-migration)).
+4. Revisit permission handling to consume the structured `subject` — choosing
+   options by `kind`, never by agent-defined id, and never treating `cancelled`
+   or an unknown outcome as approval — and the write path now that `fs/*` is gone.
+5. On the agent side (`copse --acp`), fix the v1 `text_replace`-as-append bug
+   first ([#3829](https://github.com/copse-dev/agent-pane/pull/3829) removes the
+   doubled text; the stripped markup needs v2), then add a v2 handler behind
+   `agentProtocolRouter().withV1().withV2()` on the existing `AcpTurnContext`
+   seam: respond to `session/prompt` on insertion with the spine user message id,
+   and carry Copse-only data in `_meta["copse.dev"]`.
 
 Until then this is a watch item, not a task — an automated one. The probe is
 complete for the v1 surface Copse actually speaks.

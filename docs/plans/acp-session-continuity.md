@@ -157,6 +157,11 @@ We should nevertheless adopt the SDK more consistently:
   persistence, and UI reconciliation remain Copse responsibilities.
 - Stay on ACP v1 while the TypeScript SDK is v1-only. When it publishes v2
   types, add a negotiated v2 adapter; do not hand-roll a parallel v2 schema.
+  _(2026-10-16: that trigger fired at SDK 1.3.0, but v2 is still experimental
+  and draft; the operative trigger is the one in
+  [`../acp-v2-readiness.md`](../acp-v2-readiness.md) — v2 leaving
+  `./experimental/` — plus per-agent opt-in for agents that already serve v2
+  behind a flag, such as `claude-agent-acp`.)_
 
 Adopting separate Codex, Claude, Gemini, and Cursor SDKs for continuation would
 fragment behavior and make custom ACP agents second-class. A provider-native
@@ -259,7 +264,12 @@ that earlier tool calls ran under Copse's sandbox or approval policy.
 Buffer and normalize them before mutating the thread spine.
 
 1. Prefer stable ACP message/tool identifiers when the negotiated protocol
-   provides them.
+   provides them — with v2's limits: only **user** message ids must stay stable
+   across replay; clients "MUST NOT rely on" agent or thought ids to deduplicate
+   replay. Deduplicate by user `messageId` and fold agent/tool updates as
+   upserts by id (idempotent under the spec), rather than treating a matching
+   agent id as proof of identity. A replay that follows live updates must go
+   through the upsert fold, never the append path.
 2. For v1 updates without durable IDs, use ordered content hashes plus role and
    event kind only to deduplicate an exact prefix; never merge merely similar
    messages.
@@ -371,7 +381,9 @@ WebdriverIO visual eval and screenshot.
 
 ### Phase 5 — ACP v2
 
-- Upgrade when the official TypeScript SDK publishes v2 types.
+- Upgrade when v2 leaves `./experimental/`, or earlier per agent behind a flag
+  for agents that already serve v2 (`claude-agent-acp`); require SDK ≥ 1.9.0,
+  the first release with the insertion-receipt prompt lifecycle.
 - Add a versioned lifecycle implementation using resume plus `replayFrom`.
 - Keep v1 negotiation and tests for installed v1-only agents.
 - Follow the broader adapter and permission changes in
