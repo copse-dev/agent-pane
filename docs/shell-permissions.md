@@ -83,6 +83,14 @@ approval: worktree preparation, mutating GitHub actions, host GUI launch, and cu
 schedule-scoped automation opt-in described below. An approval prompt's existing “remember” action
 writes the same explicit Always allow policy when that policy is available.
 
+`ask_classifier` uses saved classifier connections without a tool prompt by default.
+Settings → Classifiers exposes “Ask before agent classifier questions” as an
+opt-in. Enabling it writes the per-tool Always ask policy and prompts for each
+question, with the full request behind Show details. Disabling it resets the
+override to the default. An existing Always allow override remains valid, while
+Blocked continues to deny. Each configured classifier's provider-host approval
+remains a separate gate.
+
 ## Approval audit evidence
 
 Approval decisions persist the available tool-call ID, including cancellation and
