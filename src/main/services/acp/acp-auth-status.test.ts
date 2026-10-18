@@ -78,7 +78,7 @@ describe('probeAcpAuth', () => {
         }),
       )
     assert.equal(await probe('Logged in using ChatGPT'), 'signed-in')
-    assert.deepEqual(calls, ['codex login status', 'codex-acp cli login status'])
+    assert.deepEqual(calls, ['codex-acp cli login status'])
     assert.equal(await probe('Not logged in'), 'signed-out')
     assert.equal(await probe('Usage: codex-acp [options]'), 'unknown')
     calls.length = 0
@@ -86,19 +86,26 @@ describe('probeAcpAuth', () => {
       command: 'npx',
       args: ['-y', '@agentclientprotocol/codex-acp'],
     })
-    assert.equal(calls[1], 'npx -y @agentclientprotocol/codex-acp cli login status')
+    assert.equal(calls[0], 'npx -y @agentclientprotocol/codex-acp cli login status')
   })
 
-  it('uses a standalone `codex` answer without spawning the adapter', async () => {
-    const calls: string[] = []
-    const d = deps({
-      exec: async (command) => {
-        calls.push(command)
-        return 'Not logged in'
-      },
-    })
-    assert.equal(await probeAcpAuth('codex-acp', d), 'signed-out')
-    assert.deepEqual(calls, ['codex'])
+  it('uses the adapter status even when standalone Codex would contradict it', async () => {
+    for (const [adapter, standalone, expected] of [
+      ['Logged in using ChatGPT', 'Not logged in', 'signed-in'],
+      ['Not logged in', 'Logged in using ChatGPT', 'signed-out'],
+      ['Usage: codex-acp', 'Logged in using ChatGPT', 'unknown'],
+    ] as const) {
+      const calls: string[] = []
+      const d = deps({
+        env: { CODEX_PATH: '/custom/codex' },
+        exec: async (command) => {
+          calls.push(command)
+          return command === 'codex' ? standalone : adapter
+        },
+      })
+      assert.equal(await probeAcpAuth('codex-acp', d), expected)
+      assert.deepEqual(calls, ['codex-acp'])
+    }
   })
 
   it('parses `cursor-agent status`', async () => {

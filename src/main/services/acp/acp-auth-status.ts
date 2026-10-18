@@ -73,11 +73,10 @@ const CHECKS: Readonly<Record<string, (deps: AcpAuthProbeDeps) => Promise<AcpAut
   },
   'codex-acp': async (deps) => {
     if (hasEnv(deps, 'OPENAI_API_KEY', 'CODEX_API_KEY')) return 'signed-in'
-    const standalone = await codexLoginStatus(deps, 'codex', [])
-    if (standalone !== 'unknown') return standalone
-    // The npm adapter bundles its own Codex CLI (honouring CODEX_PATH) and
-    // exposes it as `codex-acp cli`, so an install with no `codex` on PATH is
-    // still answered by the same CLI and credential store the agent runs on.
+    // Ask the CLI this adapter actually runs (including CODEX_PATH). A separate
+    // `codex` on PATH may use different credentials and cannot answer for it.
+    // If the adapter cannot report status, preserve unknown rather than infer
+    // authentication from another installation.
     return codexLoginStatus(deps, deps.agent.command, [...deps.agent.args, 'cli'])
   },
   gemini: async (deps) =>
