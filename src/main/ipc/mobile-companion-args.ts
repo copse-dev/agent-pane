@@ -9,7 +9,12 @@ export const mobileDeviceAccessArgsSchema = z
   })
 
 export const mobilePairingArgsSchema = z
-  .tuple([z.enum(['read', 'control', 'deny']), z.string().regex(/^\d{6}$/), z.boolean().optional()])
-  .refine(([decision, , rootTrusted]) => decision !== 'control' || rootTrusted === true, {
+  .tuple([
+    z.enum(['read', 'control', 'deny']),
+    z.string().regex(/^\d{6}$/),
+    z.uuid(),
+    z.boolean().optional(),
+  ])
+  .refine(([decision, , , rootTrusted]) => decision !== 'control' || rootTrusted === true, {
     message: 'Confirm that the Copse Local Root is installed and trusted on this phone',
   })

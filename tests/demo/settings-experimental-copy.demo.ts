@@ -150,11 +150,13 @@ describe('browser-hosted Experimental settings copy', () => {
       const getState = window.api.mobile.getState
       window.api.mobile.getState = async () => ({
         ...(await getState()),
-        pairing: { label: 'My phone', code: '123456' },
+        pairing: { id: '8abde2d0-8c97-4a99-9ea8-a7518309ee52', label: 'My phone', code: '123456' },
       })
       document.body.dataset.mobilePairingCalls = '[]'
-      window.api.mobile.respondPairing = async (decision, code, rootTrusted) => {
-        document.body.dataset.mobilePairingCalls = JSON.stringify([[decision, code, rootTrusted]])
+      window.api.mobile.respondPairing = async (decision, code, pairingId, rootTrusted) => {
+        document.body.dataset.mobilePairingCalls = JSON.stringify([
+          [decision, code, pairingId, rootTrusted],
+        ])
       }
     })
     await $('[aria-label="Settings"]').click()
@@ -179,7 +181,7 @@ describe('browser-hosted Experimental settings copy', () => {
     await control.click()
     assert.equal(
       await browser.execute(() => document.body.dataset.mobilePairingCalls),
-      JSON.stringify([['control', '123456', true]]),
+      JSON.stringify([['control', '123456', '8abde2d0-8c97-4a99-9ea8-a7518309ee52', true]]),
     )
     await expect($('#settings-dialog')).toBeDisplayed()
   })

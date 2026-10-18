@@ -24,6 +24,7 @@ function mockApi(initial: Partial<MobileCompanionState> = {}): {
     pairing: Array<{
       decision: MobileCompanionAccess | 'deny'
       code: string
+      pairingId: string
       rootTrusted: boolean | undefined
     }>
     revealed: number
@@ -54,6 +55,7 @@ function mockApi(initial: Partial<MobileCompanionState> = {}): {
     pairing: [] as Array<{
       decision: MobileCompanionAccess | 'deny'
       code: string
+      pairingId: string
       rootTrusted: boolean | undefined
     }>,
     revealed: 0,
@@ -92,8 +94,8 @@ function mockApi(initial: Partial<MobileCompanionState> = {}): {
         calls.revoke.push(id)
         state.devices = state.devices.filter((candidate) => candidate.id !== id)
       },
-      respondPairing: async (decision, code, rootTrusted) => {
-        calls.pairing.push({ decision, code, rootTrusted })
+      respondPairing: async (decision, code, pairingId, rootTrusted) => {
+        calls.pairing.push({ decision, code, pairingId, rootTrusted })
         state.pairing = null
       },
       revealCertificate: async () => {
@@ -206,7 +208,13 @@ describe('createMobileCompanionSection', () => {
     document.body.append(section.root)
     await section.refresh()
 
-    push({ pairing: { label: "Jonathan's iPhone", code: '123456' } })
+    push({
+      pairing: {
+        id: '8abde2d0-8c97-4a99-9ea8-a7518309ee52',
+        label: "Jonathan's iPhone",
+        code: '123456',
+      },
+    })
 
     assert.match(section.root.textContent, /123456/)
     assert.match(section.root.textContent, /Jonathan's iPhone/)
@@ -228,11 +236,20 @@ describe('createMobileCompanionSection', () => {
     trustInput.dispatchEvent(new Event('change'))
     assert.equal(controlBtn.hasAttribute('disabled'), false)
     controlBtn.click()
-    assert.deepEqual(calls.pairing, [{ decision: 'control', code: '123456', rootTrusted: true }])
+    assert.deepEqual(calls.pairing, [
+      {
+        decision: 'control',
+        code: '123456',
+        pairingId: '8abde2d0-8c97-4a99-9ea8-a7518309ee52',
+        rootTrusted: true,
+      },
+    ])
   })
 
-  it('requires a fresh acknowledgement when the pending pairing changes', async () => {
-    const { api, calls, push } = mockApi({ pairing: { label: 'First phone', code: '123456' } })
+  it('requires fresh acknowledgement when a replacement repeats both label and code', async () => {
+    const { api, calls, push } = mockApi({
+      pairing: { id: '8abde2d0-8c97-4a99-9ea8-a7518309ee52', label: 'First phone', code: '123456' },
+    })
     const section = createMobileCompanionSection(api)
     document.body.append(section.root)
     await section.refresh()
@@ -243,7 +260,9 @@ describe('createMobileCompanionSection', () => {
     originalTrust.checked = true
     originalTrust.dispatchEvent(new Event('change'))
 
-    push({ pairing: { label: 'Second phone', code: '654321' } })
+    push({
+      pairing: { id: '8abde2d0-8c97-4a99-9ea8-a7518309ee53', label: 'First phone', code: '123456' },
+    })
     const banner = section.root.querySelector('.mobile-companion-pairing-banner')
     assert.ok(banner)
     const trust = banner.querySelector<HTMLInputElement>('input')
@@ -257,11 +276,20 @@ describe('createMobileCompanionSection', () => {
     trust.checked = true
     trust.dispatchEvent(new Event('change'))
     control.click()
-    assert.deepEqual(calls.pairing, [{ decision: 'control', code: '654321', rootTrusted: true }])
+    assert.deepEqual(calls.pairing, [
+      {
+        decision: 'control',
+        code: '123456',
+        pairingId: '8abde2d0-8c97-4a99-9ea8-a7518309ee53',
+        rootTrusted: true,
+      },
+    ])
   })
 
   it('allows read-only pairing without requiring the trust checkbox', async () => {
-    const { api, calls } = mockApi({ pairing: { label: 'My phone', code: '123456' } })
+    const { api, calls } = mockApi({
+      pairing: { id: '8abde2d0-8c97-4a99-9ea8-a7518309ee52', label: 'My phone', code: '123456' },
+    })
     const section = createMobileCompanionSection(api)
     document.body.append(section.root)
     await section.refresh()
@@ -270,7 +298,14 @@ describe('createMobileCompanionSection', () => {
     )
     assert.ok(read)
     read.click()
-    assert.deepEqual(calls.pairing, [{ decision: 'read', code: '123456', rootTrusted: undefined }])
+    assert.deepEqual(calls.pairing, [
+      {
+        decision: 'read',
+        code: '123456',
+        pairingId: '8abde2d0-8c97-4a99-9ea8-a7518309ee52',
+        rootTrusted: undefined,
+      },
+    ])
   })
 
   it('denies pairing without requiring the trust checkbox', async () => {
@@ -279,13 +314,26 @@ describe('createMobileCompanionSection', () => {
     document.body.append(section.root)
     await section.refresh()
 
-    push({ pairing: { label: 'Unknown phone', code: '000000' } })
+    push({
+      pairing: {
+        id: '8abde2d0-8c97-4a99-9ea8-a7518309ee52',
+        label: 'Unknown phone',
+        code: '000000',
+      },
+    })
     const denyBtn = Array.from(section.root.querySelectorAll('button')).find(
       (button) => button.textContent === 'Deny',
     )
     assert.ok(denyBtn)
     denyBtn.click()
-    assert.deepEqual(calls.pairing, [{ decision: 'deny', code: '000000', rootTrusted: undefined }])
+    assert.deepEqual(calls.pairing, [
+      {
+        decision: 'deny',
+        code: '000000',
+        pairingId: '8abde2d0-8c97-4a99-9ea8-a7518309ee52',
+        rootTrusted: undefined,
+      },
+    ])
   })
 
   it('lists paired devices and revokes on request', async () => {

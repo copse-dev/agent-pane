@@ -1,3 +1,4 @@
+import { MobilePairing } from './mobile-pairing.ts'
 import QRCode from 'qrcode'
 import type {
   MobileCompanionAccess,
@@ -17,11 +18,7 @@ let quitting = false
 let generation = 0
 let lastError: string | null = null
 let qrCache: { url: string; svg: string } | null = null
-let pendingPairing: {
-  label: string
-  code: string
-  resolve: (decision: MobileCompanionAccess | null) => void
-} | null = null
+const pairingRequests = new MobilePairing()
 const RETRY_MS = 15_000
 
 function savedPreference(): MobilePreference {
@@ -69,7 +66,7 @@ export function getMobileCompanionState(): MobileCompanionState {
     rootCertificatePath: running ? (active?.rootPath ?? null) : null,
     addresses: mobileLanAddresses(),
     devices: devices().list(),
-    pairing: pendingPairing ? { label: pendingPairing.label, code: pendingPairing.code } : null,
+    pairing: pairingRequests.current(),
     lastError,
   }
 }
@@ -90,23 +87,18 @@ function scheduleRetry(): void {
 
 /** The one in-flight pairing a phone can have; Settings shows and resolves it. */
 function approvePair(label: string, code: string): Promise<MobileCompanionAccess | null> {
-  return new Promise((resolve) => {
-    pendingPairing = { label, code, resolve }
-    publish()
-  })
+  const result = pairingRequests.request(label, code)
+  publish()
+  return result
 }
 
 export function respondToMobilePairing(
   decision: MobileCompanionAccess | 'deny',
   code: string,
+  id: string,
 ): void {
-  const pairing = pendingPairing
-  // An old Settings response must never approve a replacement pairing.
-  if (!pairing || pairing.code !== code || quitting) return
-  const { resolve } = pairing
-  pendingPairing = null
-  resolve(decision === 'deny' ? null : decision)
-  publish()
+  if (quitting) return
+  if (pairingRequests.respond(decision, code, id)) publish()
 }
 
 function launch(address: string): Promise<MobileServer> {

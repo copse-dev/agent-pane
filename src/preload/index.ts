@@ -60,8 +60,9 @@ const api: ApiClient = {
     respondPairing: (
       decision: import('@shared/types/mobile-companion.ts').MobileCompanionAccess | 'deny',
       code: string,
+      pairingId: string,
       rootTrusted?: boolean,
-    ) => ipcRenderer.invoke('mobile:respond-pairing', decision, code, rootTrusted),
+    ) => ipcRenderer.invoke('mobile:respond-pairing', decision, code, pairingId, rootTrusted),
     revealCertificate: () => ipcRenderer.invoke('mobile:reveal-certificate'),
     onChat: (handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void) => {
       const listener = (

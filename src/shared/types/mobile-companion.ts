@@ -19,6 +19,7 @@ export interface MobileCompanionDevice {
 
 /** A phone is mid-pairing and waiting for this Mac to confirm its code. */
 export interface MobileCompanionPairing {
+  id: string
   label: string
   code: string
 }

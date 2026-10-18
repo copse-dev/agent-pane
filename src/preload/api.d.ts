@@ -206,6 +206,7 @@ export interface ApiClient {
     respondPairing: (
       decision: import('@shared/types/mobile-companion.ts').MobileCompanionAccess | 'deny',
       code: string,
+      pairingId: string,
       rootTrusted?: boolean,
     ) => Promise<void>
     revealCertificate: () => Promise<void>

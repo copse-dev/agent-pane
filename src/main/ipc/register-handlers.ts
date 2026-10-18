@@ -646,8 +646,8 @@ export function registerAllHandlers(
   })
   ipcMain.handle('mobile:respond-pairing', (event, ...args) => {
     assertMainFrameSender(event, win)
-    const [decision, code] = parseIpcArgs(mobilePairingArgsSchema, args)
-    respondToMobilePairing(decision, code)
+    const [decision, code, pairingId] = parseIpcArgs(mobilePairingArgsSchema, args)
+    respondToMobilePairing(decision, code, pairingId)
   })
   ipcMain.handle('mobile:reveal-certificate', (event) => {
     assertMainFrameSender(event, win)

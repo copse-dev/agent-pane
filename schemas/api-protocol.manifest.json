@@ -1406,8 +1406,8 @@
       "mobile:respond-pairing": {
         "api": "mobile.respondPairing",
         "args": [
-          2,
-          3
+          3,
+          4
         ]
       },
       "mobile:reveal-certificate": {

@@ -114,7 +114,7 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
   }
 
   function pairingKey(state: MobileCompanionState): string | null {
-    return state.pairing ? `${state.pairing.label}:${state.pairing.code}` : null
+    return state.pairing?.id ?? null
   }
 
   function renderPairing(state: MobileCompanionState): void {
@@ -136,14 +136,14 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
       controlBtn.toggleAttribute('disabled', !trustInput.checked)
     })
     readBtn.addEventListener('click', () => {
-      void api.mobile.respondPairing('read', pairing.code)
+      void api.mobile.respondPairing('read', pairing.code, pairing.id)
     })
     controlBtn.addEventListener('click', () => {
       if (trustInput.checked)
-        void api.mobile.respondPairing('control', pairing.code, trustInput.checked)
+        void api.mobile.respondPairing('control', pairing.code, pairing.id, trustInput.checked)
     })
     denyBtn.addEventListener('click', () => {
-      void api.mobile.respondPairing('deny', pairing.code)
+      void api.mobile.respondPairing('deny', pairing.code, pairing.id)
     })
     pairingHost.append(
       el(

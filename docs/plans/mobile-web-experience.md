@@ -235,7 +235,9 @@ expensive is an axis this version simply does not have.
     acknowledgement are rejected. There is no second native confirmation. This trusts the
     desktop renderer for the human gesture, as with other Settings changes; it does not
     claim protection against a compromised desktop renderer. Pairing responses include the
-    displayed code so a stale response cannot approve a replacement request. Device existence
+    displayed code and an opaque per-request UUID, so a stale response cannot approve a
+    replacement even when its label and code repeat. A replacement resets the inline
+    trust acknowledgement. Device existence
     and shutdown state are checked synchronously when granting access. The grant is persisted per device and
     checked on every POST, including again after asynchronous store reads. Browsers
     cannot attest their trust settings to this server: this is a human-confirmed
