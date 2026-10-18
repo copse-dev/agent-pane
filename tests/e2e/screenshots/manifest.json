@@ -233,6 +233,10 @@
       "sha256": "b57fea277f319232c81336407e98300a3c5f34fb1e92e6ed5d1552f99b0030a9",
       "bytes": 35006
     },
+    "activity-final-response.png": {
+      "sha256": "967551819c1fade6126a54fb81a33760461d0f35d6c151658b6843059b97f3ad",
+      "bytes": 129929
+    },
     "activity-home-bottom-panel-light.png": {
       "sha256": "2e14cba45ccab7cbb2de17012a2fee7fcd1c674437b592dd5538b3350275adff",
       "bytes": 84172
@@ -1414,8 +1418,8 @@
       "bytes": 96761
     },
     "debug-trace-composer.png": {
-      "sha256": "dad57d231833f8dd39e663cdf36fc086ae69674e8451f9c1dbe0668bfcf6f267",
-      "bytes": 402999
+      "sha256": "4db752d24abda7be14bedc39ac1de9aa500ae5cb9286e0e4bb5e36f54bdc0434",
+      "bytes": 412911
     },
     "deepseek-dsml-recovery.png": {
       "sha256": "91d0a05d49344fe63b3a2f9e68b567fe1b4cf2082ae9f29b65e40175daacba57",
