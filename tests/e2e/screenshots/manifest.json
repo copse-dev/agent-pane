@@ -205,6 +205,10 @@
       "sha256": "47ddc54d823eec5f306f8a6dbe26deb17eee8d8ac071f9f1198618d08f3ac69e",
       "bytes": 108294
     },
+    "activity-answer-long-filled.png": {
+      "sha256": "dd57515d6311d59f50cf216d4ec8684ef1a21145cfdc64b2a716d27e0d42314f",
+      "bytes": 194372
+    },
     "activity-answer-panel-filled.png": {
       "sha256": "405a57a2192f1fd6f4f0b7a8a4b90112733755858f75ebf2bfa7726529dddd30",
       "bytes": 196042
@@ -232,6 +236,10 @@
     "activity-dialog-text-selection.png": {
       "sha256": "b57fea277f319232c81336407e98300a3c5f34fb1e92e6ed5d1552f99b0030a9",
       "bytes": 35006
+    },
+    "activity-final-response.png": {
+      "sha256": "967551819c1fade6126a54fb81a33760461d0f35d6c151658b6843059b97f3ad",
+      "bytes": 129929
     },
     "activity-home-bottom-panel-light.png": {
       "sha256": "2e14cba45ccab7cbb2de17012a2fee7fcd1c674437b592dd5538b3350275adff",
@@ -686,8 +694,8 @@
       "bytes": 10298
     },
     "automation-sidebar-run-now-context-menu.png": {
-      "sha256": "edbe3137d8e872b40a5f9e7ee87e6c781779cfb9d1c52c2deb21fb5f88eaf241",
-      "bytes": 278541
+      "sha256": "2bd8c001cc02f4793d90c871e49ce0d20584db85f9c5d22437eed6c644460a10",
+      "bytes": 278798
     },
     "automation-thread-group.png": {
       "sha256": "f6192477669a73cab830ab8683870dddd6afa2f613d6076a5faf08333d2f7f13",
@@ -706,8 +714,8 @@
       "bytes": 304439
     },
     "automation-workspace-section.png": {
-      "sha256": "dad0e35a303e14bf2cb7fcabb0a8cb752029e38e4f5ae5f35ff06575f975b905",
-      "bytes": 14037
+      "sha256": "8d4ab6e06079af09eb9cf14532db6955551a148fe5c830ad8957c8a9fe506062",
+      "bytes": 14063
     },
     "automation-workspace-sidebar.png": {
       "sha256": "2018d675a6a26b00748eb83e52fce88def817116216ed31dee744a9ebf883eef",
@@ -1040,6 +1048,14 @@
     "ci-investigator-display-expanded.png": {
       "sha256": "8073bb47a2370050cc537985ecaf623ac6586d73217c2fc0dd03b65c8ead9728",
       "bytes": 349465
+    },
+    "classifier-tool-approval-collapsed.png": {
+      "sha256": "ea65388700b0dae64769ece999f83a0d85239ced932bf8ffb3c24612feff12d7",
+      "bytes": 204162
+    },
+    "classifier-tool-approval-expanded.png": {
+      "sha256": "67d972d1329ebc8f9448d1299e3cb78d37c4c448c64c20e7f71d06f68d8f45de",
+      "bytes": 233914
     },
     "classifier-use-hover.png": {
       "sha256": "29470c124e210f995b3547304c084e0341be805daf23e769aee81b718fc6cf1c",
@@ -1414,8 +1430,8 @@
       "bytes": 96761
     },
     "debug-trace-composer.png": {
-      "sha256": "dad57d231833f8dd39e663cdf36fc086ae69674e8451f9c1dbe0668bfcf6f267",
-      "bytes": 402999
+      "sha256": "4db752d24abda7be14bedc39ac1de9aa500ae5cb9286e0e4bb5e36f54bdc0434",
+      "bytes": 412911
     },
     "deepseek-dsml-recovery.png": {
       "sha256": "91d0a05d49344fe63b3a2f9e68b567fe1b4cf2082ae9f29b65e40175daacba57",
@@ -3353,6 +3369,10 @@
       "sha256": "d992f62537a642fd3061478caed6e600c7ed400d23657cec6d80f6bfcb0cfebb",
       "bytes": 221652
     },
+    "settings-acp-agents-list-codex-ready.png": {
+      "sha256": "5aa7dc74916f94e2f57c16119bf4b21f8ed7866a326cc3b246ae895247dd00b8",
+      "bytes": 244351
+    },
     "settings-acp-agents-list-page-2.png": {
       "sha256": "03c3d774b5c66141a8fba9ab02b3fad3bb4f9dd851e72dd091901aa68c498346",
       "bytes": 256079
@@ -3453,9 +3473,21 @@
       "sha256": "fad43a9aa056c36a560438137f72291ce84ff78a7cc1980d659b0eebf6c3e464",
       "bytes": 255214
     },
+    "settings-classifier-permission-failure-detail.png": {
+      "sha256": "f7112e559b2fd14dfa2222dc51af540a3ab3b503121130d1efba5d390275e28f",
+      "bytes": 52222
+    },
+    "settings-classifier-permission-failure.png": {
+      "sha256": "d1c02677497beab410ed83d5bc13ef8253f523f84b8b26a1dc61cd909e7aedb7",
+      "bytes": 106392
+    },
+    "settings-classifiers-agent-permission.png": {
+      "sha256": "89fb497733b2a1df0d7417444306770c8459d6c120f557f379efa71cd03d12bd",
+      "bytes": 235619
+    },
     "settings-classifiers-background.png": {
-      "sha256": "2ba5d28bba94ccf8493261c7c18da64d0610a34261c63f8f4b3bf5d3c52baadd",
-      "bytes": 241163
+      "sha256": "a81f465f2c0bb1b0847bbe3aba3e6dc2cbf4d2223aa3af82895c1ff44cc1d8ff",
+      "bytes": 267323
     },
     "settings-classifiers-destination.png": {
       "sha256": "76c27587658c319006447aa7edbc6f73ce83c60ba558307803eba4157f29252e",
@@ -3494,8 +3526,8 @@
       "bytes": 13571
     },
     "settings-classifiers-install-test.png": {
-      "sha256": "a34d1f4682ee7978dcad2c450467c75f952c9545af36bdb241d98baa0f35a139",
-      "bytes": 149568
+      "sha256": "76c858f32c16a0548fa830fa7070a6a56d8fdaa3be10a84f89e7980b1a4b0800",
+      "bytes": 158855
     },
     "settings-classifiers-install-uninstall-confirm.png": {
       "sha256": "68311d89602eb94a997b239f3f42a8f4d01318251ad1c6ddf3c6ece8951611c2",
@@ -3526,8 +3558,8 @@
       "bytes": 57973
     },
     "settings-classifiers-screening.png": {
-      "sha256": "8af6d547f1339418776557180a6ef11598dc92a717e2863477c34b3d359773a3",
-      "bytes": 255652
+      "sha256": "00ca8a75172355637308bdd93bc32c2228fffda61e8fe2d73431b001aa20ac18",
+      "bytes": 260949
     },
     "settings-classifiers.png": {
       "sha256": "3b3b78ed6ffdd12f2b19b3da040fecb8cd196a5b24644c01827767ad254989f2",
