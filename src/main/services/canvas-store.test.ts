@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -102,6 +102,104 @@ describe('canvas store', () => {
     assert.ok(restored)
     assert.equal(restored.body, '<!doctype html><h1>edited</h1>')
     assert.equal(restored.sourcePath, 'demo.html')
+  })
+
+  it('follows the owning worktree source after its rendering turn ends', async () => {
+    const checkout = await mkdtemp(join(tmpdir(), 'canvas-checkout-'))
+    const resolveCheckout = async (): Promise<string> => checkout
+    try {
+      const source = join(checkout, 'demo.html')
+      await writeFile(source, '<h1>worktree original</h1>')
+      await writeFile(join(workspace, 'demo.html'), '<h1>shared checkout</h1>')
+      await rememberCanvasArtefact(
+        'project-1',
+        'thread-1',
+        artefact({
+          body: '<h1>worktree original</h1>',
+          sourcePath: await realpath(source),
+        }),
+        resolveCheckout,
+      )
+      await writeFile(source, '<h1>worktree edited</h1>')
+      const restored = await readStoredCanvasArtefact(
+        'project-1',
+        'thread-1',
+        'Sales Dashboard',
+        resolveCheckout,
+      )
+      assert.equal(restored?.body, '<h1>worktree edited</h1>')
+      // Retiring/moving the checkout must not authorize reading the old absolute path.
+      const restoreSelected = setWorkspaceRootForTest(checkout)
+      try {
+        assert.equal(
+          (
+            await readStoredCanvasArtefact(
+              'project-1',
+              'thread-1',
+              'Sales Dashboard',
+              async () => null,
+            )
+          )?.body,
+          '<h1>worktree original</h1>',
+        )
+      } finally {
+        restoreSelected()
+      }
+    } finally {
+      await rm(checkout, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects outside source paths and symlinks even with an owning checkout', async () => {
+    const checkout = await mkdtemp(join(tmpdir(), 'canvas-checkout-'))
+    const resolveCheckout = async (): Promise<string> => checkout
+    try {
+      const outside = join(workspace, 'secret.html')
+      await writeFile(outside, '<h1>private</h1>')
+      for (const sourcePath of [outside, join(checkout, 'escape.html')]) {
+        if (sourcePath.endsWith('escape.html')) await symlink(outside, sourcePath)
+        await rememberCanvasArtefact(
+          'project-1',
+          'thread-1',
+          artefact({ sourcePath }),
+          resolveCheckout,
+        )
+        assert.equal(
+          (
+            await readStoredCanvasArtefact(
+              'project-1',
+              'thread-1',
+              'Sales Dashboard',
+              resolveCheckout,
+            )
+          )?.body,
+          '<!doctype html><h1>v1</h1>',
+        )
+      }
+      const source = join(checkout, 'demo.html')
+      await writeFile(source, '<h1>original</h1>')
+      await rememberCanvasArtefact(
+        'project-1',
+        'thread-1',
+        artefact({ sourcePath: source }),
+        resolveCheckout,
+      )
+      await rm(source)
+      await symlink(outside, source)
+      assert.equal(
+        (
+          await readStoredCanvasArtefact(
+            'project-1',
+            'thread-1',
+            'Sales Dashboard',
+            resolveCheckout,
+          )
+        )?.body,
+        '<!doctype html><h1>v1</h1>',
+      )
+    } finally {
+      await rm(checkout, { recursive: true, force: true })
+    }
   })
 
   it('falls back to its own snapshot when the source file is gone', async () => {
