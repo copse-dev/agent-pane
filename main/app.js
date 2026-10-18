@@ -48663,6 +48663,7 @@ var init_model_version_suppression = __esm({
 function modelCoverage(value, context) {
   if (!value || value.startsWith("auto:")) return void 0;
   if (value.startsWith("lmstudio:")) return "local";
+  if (parseChatGptPlanModel(value)) return "plan";
   const providerId = extraProviderSlugFromModel(value);
   if (context.extraProviders.some((provider2) => provider2.id === providerId && provider2.local)) {
     return "local";
@@ -48691,6 +48692,7 @@ var init_model_coverage = __esm({
   "src/renderer/views/model-coverage.ts"() {
     init_extra_providers();
     init_agent_model_identity();
+    init_chatgpt_plan();
     init_acp();
     init_acp_known_agents();
     init_plan_inclusion();
