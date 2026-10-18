@@ -12,6 +12,55 @@ const SCOPES = 'openid profile email offline_access resource.invoke chatgpt.toke
 // available while the user finishes; explicit cancellation still closes it.
 const SIGN_IN_TIMEOUT_MS = 15 * 60_000
 
+const CALLBACK_CLOSE_SCRIPT = `
+  try { history.replaceState(null, '', '/auth/callback') } catch {}
+  window.close()
+`
+const CALLBACK_SCRIPT_HASH = createHash('sha256').update(CALLBACK_CLOSE_SCRIPT).digest('base64')
+export const CHATGPT_CALLBACK_PAGE = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>ChatGPT authorization received · Copse</title>
+    <style>
+      :root { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      * { box-sizing: border-box; }
+      body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; background: #0d211c; color: #fffdf7; }
+      main { width: min(100%, 520px); }
+      .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; font-size: 21px; font-weight: 650; letter-spacing: -.03em; }
+      .brand svg { width: 40px; height: 40px; border-radius: 8px; flex: none; }
+      .card { padding: clamp(28px, 6vw, 44px); border: 1px solid #426b5b; border-radius: 20px; background: #18372d; box-shadow: 0 24px 60px #07151066; }
+      .mark { display: grid; place-items: center; width: 48px; height: 48px; margin-bottom: 24px; border-radius: 50%; background: #20fd85; color: #003a35; }
+      .eyebrow { margin: 0 0 10px; color: #b9d3c3; font-size: 13px; font-weight: 650; letter-spacing: .09em; text-transform: uppercase; }
+      h1 { margin: 0 0 14px; font-size: clamp(28px, 5vw, 36px); font-weight: 650; line-height: 1.15; letter-spacing: -.04em; }
+      p { margin: 0; color: #d9e7db; font-size: 16px; line-height: 1.6; }
+      .hint { margin-top: 28px; color: #b9d3c3; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand">
+        <svg viewBox="0 0 512 512" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+          <defs><linearGradient id="g" x1="145.7" y1="85.8" x2="406.7" y2="346.8" gradientTransform="scale(0.98604077,1.0141569)" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#003a35"/><stop offset="100%" stop-color="#001f1c"/></linearGradient></defs>
+          <rect width="512" height="512" rx="72" fill="#20fd85"/>
+          <g transform="translate(-12,38)"><g transform="translate(256,256) scale(1.18) translate(-256,-256)"><path d="m 380,180 c 0,-70 -90,-90 -155,-55 -65,35 -80,115 -35,170 45,55 130,45 155,-15 20,-45 -15,-85 -60,-75 -35,8 -45,50 -17,70 20,14 46,7 52,-15" fill="none" stroke="url(#g)" stroke-width="42" stroke-linecap="round"/></g></g>
+        </svg>
+        <span>Copse</span>
+      </div>
+      <section class="card" aria-labelledby="result-title">
+        <div class="mark" aria-hidden="true"><svg width="25" height="25" viewBox="0 0 24 24" fill="none"><path d="m5 12 4.5 4.5L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <p class="eyebrow">ChatGPT connection</p>
+        <h1 id="result-title">Authorization received</h1>
+        <p>Return to Copse to finish connecting your ChatGPT account. Copse will confirm when sign-in is complete.</p>
+        <p class="hint">If this tab stays open, you can close it and return to Copse.</p>
+      </section>
+    </main>
+    <script>${CALLBACK_CLOSE_SCRIPT}</script>
+  </body>
+</html>`
+
 export const oauthTokenSchema = z.object({
   access_token: z.string().min(1),
   refresh_token: z.string().min(1).optional(),
@@ -195,8 +244,14 @@ export async function authorizeChatGpt(
       const result = validateChatGptCallback(url, state, options.clientId)
       consumed = true
       response
-        .writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' })
-        .end('ChatGPT authorization received. Return to Copse to finish connecting.')
+        .writeHead(200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'Referrer-Policy': 'no-referrer',
+          'X-Content-Type-Options': 'nosniff',
+          'Content-Security-Policy': `default-src 'none'; script-src 'sha256-${CALLBACK_SCRIPT_HASH}'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`,
+        })
+        .end(CHATGPT_CALLBACK_PAGE)
       accept(result)
     } catch (error) {
       response

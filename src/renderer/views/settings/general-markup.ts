@@ -5,7 +5,7 @@ export const generalMarkup = `
           <section class="settings-section active" data-section="general">
             <h3>General</h3>
             <p class="settings-section-desc">
-              What Copse detected on this machine, the providers it can send work to, and the
+              The coding agents on this machine, the API keys Copse can use, and the
               models it picks by default.
             </p>
 
@@ -13,7 +13,7 @@ export const generalMarkup = `
                  top-level panel MUST carry class="settings-mount" so its injected
                  fieldset gets the same inter-panel spacing as inline ones: see the
                  .settings-section > .settings-mount > fieldset rule in settings.css. -->
-            <div id="settings-env-detect-host" class="settings-mount"></div>
+            <div id="settings-agents-host" class="settings-mount"></div>
 
             <div id="settings-providers-host" class="settings-mount"></div>
 
@@ -32,7 +32,7 @@ export const generalMarkup = `
                   the model that gives the most for what it costs on your plan, and sends the turn
                   to that provider. You can pin a specific model here instead, or from the picker
                   beside the chat box. Picking a cloud agent sends each turn to that provider's
-                  machines rather than running it here; set one up under Providers.
+                  machines rather than running it here; set one up under API keys.
                 </span>
               </label>
               <label>

@@ -23,6 +23,7 @@ const pr = {
 function model(fields: Partial<ThreadContextModel> = {}): ThreadContextModel {
   return {
     threadId: 'main',
+    title: 'Fix the flaky test',
     repos: [{ name: 'Widgets', path: '/work/widgets', branch: 'feature/x', checkout: 'shared' }],
     links: [
       { kind: 'pr', key: 'pr:acme/widget#42', label: 'acme/widget#42', target: pr.url, pr },
@@ -78,6 +79,19 @@ function recorder(): { handlers: ThreadContextHandlers; calls: string[] } {
   }
 }
 
+test('identifies primary and worktree checkouts with their branch', () => {
+  for (const checkout of ['shared', 'worktree'] as const) {
+    const host = renderThreadContext(
+      model({ repos: [{ name: 'Widgets', path: '/work/widgets', branch: 'feature/x', checkout }] }),
+      recorder().handlers,
+    )
+    assert.equal(
+      host.querySelector('.thread-context-repo .thread-context-meta')?.textContent,
+      `${checkout === 'worktree' ? 'Worktree' : 'Primary'} · feature/x`,
+    )
+  }
+})
+
 test('renders every section with safe text and routes each click to its own handler', () => {
   const { handlers, calls } = recorder()
   const host = renderThreadContext(model(), handlers)
@@ -87,6 +101,18 @@ test('renders every section with safe text and routes each click to its own hand
   assert.equal(host.querySelector('img'), null, 'titles are text, never markup')
   assert.equal(host.querySelectorAll('[data-side-chat-id][data-unread="true"]').length, 1)
   assert.ok(host.querySelector('.chat-unread-dot'))
+  assert.equal(
+    host.querySelector('.thread-context-thread-title')?.textContent,
+    'Fix the flaky test',
+  )
+  assert.deepEqual(
+    Array.from(host.querySelectorAll('[data-context-section]'), (node) =>
+      node.getAttribute('data-context-section'),
+    ),
+    ['subagents', 'repos', 'links', 'sources', 'side-chats'],
+  )
+  assert.equal(host.querySelector('.thread-context-count')?.textContent, '1 done')
+  assert.ok(host.querySelector('[data-context-section="sources"] [data-link-key="url:u"]'))
   assert.equal(host.querySelector('[data-link-key="thread:t2"]')?.hasAttribute('disabled'), true)
 
   host.querySelector<HTMLElement>('[data-link-key="pr:acme/widget#42"]')?.click()
@@ -135,10 +161,10 @@ test('empty sections say so', () => {
     model({ repos: [], links: [], mentionedIn: [], sideChats: [], subagents: [] }),
     recorder().handlers,
   )
-  assert.equal(host.querySelectorAll('.thread-context-empty').length, 4)
+  assert.equal(host.querySelectorAll('.thread-context-empty').length, 5)
 })
 
-test('the mounted pane renders the active thread, indexes sections, and starts a side chat', async () => {
+test('the mounted pane renders the active thread, uses one header, and starts a side chat', async () => {
   const store = createStore()
   store.setState({
     activeProjectId: 'p',
@@ -168,7 +194,8 @@ test('the mounted pane renders the active thread, indexes sections, and starts a
   const dispose = mountThreadContextPane(list, viewer, store, api)
 
   assert.ok(viewer.querySelector('[data-link-key="url:https://docs.example.com/a"]'))
-  assert.equal(list.querySelectorAll('[data-index]').length, 4)
+  assert.equal(list.querySelectorAll('[data-index]').length, 0)
+  assert.ok(list.querySelector('[aria-label="Close context"]'))
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.ok(viewer.querySelector('[data-thread-id="other"]'), 'backlinks arrive from the index')
 
@@ -184,6 +211,8 @@ test('the mounted pane renders the active thread, indexes sections, and starts a
     1,
     'and it is listed under Side chats',
   )
+  list.querySelector<HTMLElement>('[aria-label="Close context"]')?.click()
+  assert.equal(store.getState().filesPaneOpen, false)
   dispose()
 })
 
@@ -219,6 +248,13 @@ test('storage combines saved files with the owned checkout and archive uses the 
         truncated: false,
       }),
     },
+    git: {
+      ...base.git,
+      changeStats: async (): ReturnType<typeof base.git.changeStats> => ({
+        additions: 42,
+        deletions: 7,
+      }),
+    },
     worktrees: {
       ...base.worktrees,
       size: async (): ReturnType<typeof base.worktrees.size> => ({
@@ -236,6 +272,19 @@ test('storage combines saved files with the owned checkout and archive uses the 
   assert.equal(viewer.querySelector('[data-context-storage-size]')?.textContent, 'Calculating…')
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.equal(viewer.querySelector('[data-context-storage-size]')?.textContent, 'At least 3.0 KB')
+  assert.equal(
+    viewer.querySelector('[data-context-section="storage"] [data-context-change-stats]')
+      ?.textContent,
+    '+42 −7',
+  )
+  assert.equal(
+    viewer.querySelector('[data-context-change-stats] .git-change-status-added')?.textContent,
+    '+42',
+  )
+  assert.equal(
+    viewer.querySelector('[data-context-change-stats] .git-change-status-deleted')?.textContent,
+    '−7',
+  )
   viewer.querySelector<HTMLElement>('[data-action="archive-thread"]')?.click()
   assert.deepEqual(requests, [['p', id]])
   assert.equal(store.getState().threads[0]?.archivedAt, undefined)
@@ -277,5 +326,51 @@ test('storage ignores a previous thread response and reports lookup failure', as
   finish({ bytes: 1024, truncated: false })
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.equal(viewer.querySelector('[data-context-storage-size]')?.textContent, 'Unavailable')
+  dispose()
+})
+
+test('Storage line totals reject stale thread replies, handle clean checkouts and stop while hidden', async () => {
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'p',
+    projects: [{ id: 'p', path: '/work', name: 'Work' }],
+    filesPaneOpen: true,
+    rightPanelMode: 'context',
+  })
+  createThread(store)
+  const base = createFakeApi()
+  const replies: Array<{
+    resolve: (stats: { additions: number; deletions: number } | null) => void
+    reject: (error: Error) => void
+  }> = []
+  const api = {
+    ...base,
+    git: {
+      ...base.git,
+      changeStats: (): ReturnType<typeof base.git.changeStats> =>
+        new Promise((resolve, reject) => replies.push({ resolve, reject })),
+    },
+  }
+  const viewer = document.createElement('div')
+  const dispose = mountThreadContextPane(document.createElement('div'), viewer, store, api)
+  createThread(store)
+  assert.equal(replies.length, 2)
+  replies[1]?.resolve(null)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  replies[0]?.resolve({ additions: 100, deletions: 20 })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(viewer.querySelector('[data-context-change-stats]')?.textContent, '+0 −0')
+  store.emit('message_done', 'completed-message')
+  replies[2]?.reject(new Error('Git unavailable'))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(viewer.querySelector('[data-context-change-stats]')?.textContent, 'Unavailable')
+  assert.equal(
+    viewer.querySelector('[data-context-storage-size]')?.textContent,
+    '24 KB',
+    'Git failure does not affect disk size',
+  )
+  store.setState({ filesPaneOpen: false })
+  store.emit('message_done', 'completed-message')
+  assert.equal(replies.length, 3)
   dispose()
 })

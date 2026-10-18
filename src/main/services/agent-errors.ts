@@ -388,7 +388,7 @@ function acpCredentialsNote(known: { title: string; envHints?: string[] } | unde
   if (!known?.envHints || known.envHints.length === 0)
     return `${lead} Configure credentials for the agent itself.`
   const variables = known.envHints.map((name) => `\`${name}\``).join(' or ')
-  return `${lead} Configure credentials for the agent itself, or set ${variables} for ${known.title} in Settings → General → Providers.`
+  return `${lead} Configure credentials for the agent itself, or set ${variables} for ${known.title} in Settings → General → Coding agents.`
 }
 
 /** The agent's own words, kept verbatim below the guidance rather than leading with it. */

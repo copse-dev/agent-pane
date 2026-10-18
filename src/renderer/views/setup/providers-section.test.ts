@@ -562,6 +562,14 @@ describe('providers panel', () => {
       [...kind.options].map((option) => option.value),
       ['api', 'local', 'agent'],
     )
+    // The API-key branch is the paste-a-key form; "Other" opens the full add form.
+    assert.ok(panel.root.querySelector('[data-testid="paste-key-form"]'))
+    const provider = panel.root.querySelector<HTMLSelectElement>(
+      '[data-testid="paste-key-provider"]',
+    )
+    assert.ok(provider)
+    provider.value = '__other'
+    provider.dispatchEvent(new Event('change'))
     assert.match(panel.root.textContent, /Add a provider/)
 
     kind.value = 'agent'

@@ -18,6 +18,8 @@ import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 export interface FooterModelPickerOptions {
   /** When true, ACP agents are omitted (SSH workspaces). */
   isSshWorkspace?: () => boolean
+  /** Agent managed fixes the agent's own mode to Auto; omit that selector. */
+  isAgentManaged?: () => boolean
   /** Called after the menu closes (e.g. return focus to the composer). */
   onClose?: () => void
   /** Most-recent-first model values from prior threads. */
@@ -94,7 +96,11 @@ export function mountFooterModelPicker(
       // effort). Both hang off whichever value is selected, so they reload with
       // the model list.
       loadValueGroups: async (current) => {
-        const loaded = await loadAcpOptionGroups(api, current)
+        const loaded = await loadAcpOptionGroups(
+          api,
+          current,
+          pickerOpts.isAgentManaged?.() === true,
+        )
         optionAgentId = loaded?.agentId ?? null
         optionGroups = loaded?.groups ?? []
         const reasoning = pickerOpts.getReasoning

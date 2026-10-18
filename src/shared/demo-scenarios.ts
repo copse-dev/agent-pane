@@ -16,6 +16,7 @@ import {
   browserApprovalDetails,
   providerApprovalDetails,
   webApprovalDetails,
+  threadAccessApproval,
 } from './approval-copy.ts'
 
 const FIXED_TIME = Date.UTC(2026, 6, 17, 9, 0, 0)
@@ -3052,6 +3053,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   },
   {
     id: 'thread-context',
+    changeStats: { additions: 42, deletions: 7 },
     label: 'The thread Context panel',
     project: project('demo-thread-context', 'Widgets', '/demo/widgets'),
     settings: {
@@ -3068,6 +3070,33 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     },
     threads: SIDE_CHATS_THREADS,
+  },
+  {
+    id: 'thread-context-worktree',
+    label: 'Context identifies a dedicated worktree and its branch',
+    project: project('demo-context-worktree', 'Widgets', '/demo/widgets'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      filesPaneOpen: true,
+      rightPanelMode: 'context',
+    },
+    threads: SIDE_CHATS_THREADS.map((thread) =>
+      thread.id === SIDE_CHATS_MAIN_ID
+        ? {
+            ...thread,
+            worktree: {
+              path: '/demo/widgets/.copse/worktrees/mermaid-wait',
+              branch: 'fix/mermaid-wait',
+              baseBranch: 'main',
+              baseCommit: '0000000000000000000000000000000000000000',
+              createdAt: FIXED_TIME,
+              seededFromDirtyProject: false,
+            },
+          }
+        : thread,
+    ),
   },
   {
     id: 'side-chat-approval',
@@ -3328,6 +3357,13 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   ...SITE_TOUR_SCENARIOS,
   // Concise thread view in each state a thread can be in (see demo-concise-states.ts).
   ...CONCISE_STATE_SCENARIOS,
+  ...(['read', 'send'] as const).map((access) =>
+    approvalRiskScenario(`approval-thread-${access}`, {
+      id: `thread-${access}`,
+      type: 'mcp',
+      ...threadAccessApproval(access),
+    }),
+  ),
   approvalRiskScenario('approval-web-url', {
     id: 'web-url',
     title: 'Allow web origin?',

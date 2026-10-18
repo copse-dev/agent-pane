@@ -1,13 +1,59 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import { assignShards } from './test-oracle.mts'
 
 const ORACLE = resolve('scripts/test-oracle.mts')
+
+it('CI plan capture preserves docs-only selection and still detects untracked source', () => {
+  const root = mkdtempSync(join(tmpdir(), 'copse-oracle-capture-'))
+  const runnerTemp = mkdtempSync(join(tmpdir(), 'copse-runner-temp-'))
+  try {
+    git(root, 'init', '-q')
+    const base = commit(root, 'README.md', 'base\n')
+    commit(root, 'README.md', 'updated docs\n')
+    const workflow = readFileSync('.github/workflows/ci.yml', 'utf8')
+    const start = workflow.indexOf('          plan_file=')
+    const end = workflow.indexOf('\n      # Advisory only:', start)
+    assert(start >= 0 && end > start)
+    const fragment = workflow
+      .slice(start, end)
+      .replace('node scripts/test-oracle.mts', '"$ORACLE_NODE" "$ORACLE_SCRIPT"')
+    const output = join(runnerTemp, 'output')
+    const summary = join(runnerTemp, 'summary')
+    const capture = (): string => {
+      writeFileSync(output, '')
+      writeFileSync(summary, '')
+      execFileSync('bash', ['-euo', 'pipefail', '-c', fragment], {
+        cwd: root,
+        env: {
+          ...process.env,
+          BASE_SHA: base,
+          RUNNER_TEMP: runnerTemp,
+          GITHUB_OUTPUT: output,
+          GITHUB_STEP_SUMMARY: summary,
+          ORACLE_NODE: process.execPath,
+          ORACLE_SCRIPT: ORACLE,
+        },
+        stdio: 'pipe',
+      })
+      return readFileSync(output, 'utf8')
+    }
+    assert.match(capture(), /^unit_mode=skip$/m)
+    assert.match(readFileSync(summary, 'utf8'), /^unit_mode=skip$/m)
+    assert.deepEqual(changed(root, base), ['README.md'])
+    writeFileSync(join(root, 'untracked.ts'), 'export const value = 1\n')
+    assert.match(capture(), /^unit_mode=full$/m)
+    assert.deepEqual(changed(root, base).sort(), ['README.md', 'untracked.ts'])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(runnerTemp, { recursive: true, force: true })
+  }
+})
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync(

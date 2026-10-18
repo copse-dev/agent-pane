@@ -83,6 +83,23 @@ describe('tool permissions', () => {
     assert.equal(tool.overridden, true)
   })
 
+  it('keeps saved classify_text permissions for ask_classifier', async () => {
+    const registry = new ToolRegistry()
+    registerTool(registry, 'ask_classifier')
+    const legacyId = copseToolPermissionId('classify_text')
+    assert.equal(copseToolPermissionId('ask_classifier'), legacyId)
+    await setSetting(OVERRIDES_KEY, { [legacyId]: 'block' })
+
+    assert.deepEqual(resolveToolPermission('ask_classifier'), {
+      id: legacyId,
+      policy: 'block',
+    })
+    const tool = listToolPermissionCatalog(registry, []).groups[0]?.tools[0]
+    assert.equal(tool?.executionName, 'ask_classifier')
+    assert.equal(tool.id, legacyId)
+    assert.equal(tool.policy, 'block')
+  })
+
   it('migrates only uniquely registered legacy MCP grants without overwriting an override', async () => {
     const target: McpPermissionTarget = {
       serverName: 'mail',

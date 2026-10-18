@@ -1,7 +1,7 @@
 import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
 import { captureInlineCanvasScope } from '../inline-canvas-context.ts'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { Server as McpBridgeServer } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
@@ -13,7 +13,8 @@ import {
 import { errorMessage } from '@shared/errors.ts'
 import { getSetting } from '../storage/settings.ts'
 import { AbandonedCallAbort } from '../approval.ts'
-import { runWithApprovalToolCallId } from '../approval-tool-call-context.ts'
+import { runWithBridgeExecutionId } from '../approval-tool-call-context.ts'
+import { recordDecision } from '../security/decision-log-store.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import type { ToolResultImage } from '@shared/types'
 import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
@@ -33,6 +34,8 @@ import { unwrapInlineCode } from './session-update-adapter.ts'
 
 import { BRIDGE_MCP_SERVER_NAME, matchesBridgedToolName } from './acp-bridge-name.ts'
 import { isAppleDevelopmentToolOffered } from '../apple-development/apple-development-tool-scope.ts'
+import { configuredClassifierProfiles } from '../classifiers/classifier-service.ts'
+import { ASK_CLASSIFIER_TOOL_NAME, describeClassifyTool } from '../../tools/classifier-tool.ts'
 
 export { BRIDGE_MCP_SERVER_NAME }
 
@@ -92,6 +95,13 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // prompts and, when approved, runs outside the ACP process's seatbelt.
   'run_shell',
   'run_background',
+  // Read-only worktree readiness and model-tier advice are useful to either
+  // executor and need no native-loop state. Preparation itself still requires
+  // the host's separate install approval, so it is not offered here.
+  'preflight_worktree',
+  'suggest_model',
+  // Saved decision classifiers run through Copse's permission and provider gates.
+  'ask_classifier',
   // Host GUI launch via Launch Services. run_shell/open cannot reach the
   // window server from the seatbelt; this tool asks once, then launches
   // unsandboxed from the host process (gui-app-launch-tool.ts).
@@ -123,9 +133,13 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // attached archive — the bridge's tool list is sent once per session, so the
   // per-turn schema cost that motivates the native gate does not apply.
   'read_archive',
+  // Offline submodule checkout in the thread worktree (init-submodules-tool.ts).
+  'init_submodules',
   // Model-proposed threads. The ACP agent can offer the work, but the
   // renderer card remains the approval boundary that actually starts it.
   'propose_thread',
+  'list_threads',
+  'send_thread_prompt',
   // Visibility into pending diff-queue approvals.
   'staged_diffs',
   'read_staged_diff',
@@ -144,6 +158,8 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'browser_click',
   'browser_type',
   'browser_tabs',
+  // Only promotes an already-open page or this thread's rendered artefact.
+  'browser_show',
 ]
 
 /**
@@ -291,7 +307,14 @@ function bridgedTools(
   // toMcpTools, not toLLMTools: the agent forwards these schemas to the
   // Anthropic API, which validates them as JSON Schema draft 2020-12 and
   // 400s the whole request on the openapi-3.0 flavor.
-  return registry.toMcpTools().filter((tool) => offered.has(tool.name))
+  return registry
+    .toMcpTools()
+    .filter((tool) => offered.has(tool.name))
+    .map((tool) =>
+      tool.name === ASK_CLASSIFIER_TOOL_NAME
+        ? { ...tool, description: describeClassifyTool(configuredClassifierProfiles()) }
+        : tool,
+    )
 }
 
 interface BridgeExecuteContext {
@@ -486,6 +509,9 @@ function buildMcpServer(
       }
     }
     const requestKey = String(extra.requestId)
+    // MCP request numbers can repeat across sessions/retries and are not ACP
+    // transcript IDs. Own the identity of this execution at the host boundary.
+    const bridgeExecutionId = randomUUID()
     ctx.inflightCalls.set(requestKey, ctx.abandonCall)
     // Same-server cancellation (a batched cancel, or a future stateful mode)
     // is an abandonment too, not a turn-level cancel.
@@ -532,8 +558,22 @@ function buildMcpServer(
       }
       executeSignal.addEventListener('abort', stopKeepalive, { once: true })
       if (executeSignal.aborted) stopKeepalive()
-      const execute = (): ReturnType<ToolRegistry['executeNormalized']> =>
-        registry.executeNormalized(name, request.params.arguments, executeSignal)
+      const execute = (): ReturnType<ToolRegistry['executeNormalized']> => {
+        recordDecision({
+          kind: 'bridge-request',
+          actor: 'system',
+          verdict: 'requested',
+          subject: name,
+          source: 'acp-native-bridge',
+          bridgeExecutionId,
+          projectId: executionContext.projectId,
+          threadId: ctx.threadId,
+          // Arguments belong in the private thread blob, like transcript tool
+          // arguments, never the redacted decision summary shown in the UI.
+          detail: { mcpRequestId: requestKey, arguments: request.params.arguments ?? {} },
+        })
+        return registry.executeNormalized(name, request.params.arguments, executeSignal)
+      }
       const withPermissionContext = (): ReturnType<ToolRegistry['executeNormalized']> =>
         ctx.networkScopeAlreadyApplies
           ? runWithAcpBridgePermissionContext({ networkScopeAlreadyApplies: true }, execute)
@@ -553,7 +593,7 @@ function buildMcpServer(
         inlineCanvasScope(() =>
           runWithActiveRunIdentity(ctx.threadId, () =>
             runWithThreadExecutionContext(executionContext, () =>
-              runWithApprovalToolCallId(requestKey, withPermissionContext),
+              runWithBridgeExecutionId(bridgeExecutionId, withPermissionContext),
             ),
           ),
         )

@@ -147,11 +147,11 @@ describe('installSettingsActionBarClickSafety', () => {
   /** `scrolled` is what the in-page measurement reports back: did the port move? */
   function fakeSession(scrolled = true): {
     session: ActionBarClickSession
-    registered: { name: string; attachToElement?: boolean }[]
+    registered: { name: string; options?: unknown }[]
     order: string[]
     invokeClick: (throwOn: (n: number) => Error | null) => Promise<unknown>
   } {
-    const registered: { name: string; attachToElement?: boolean }[] = []
+    const registered: { name: string; options?: unknown }[] = []
     const order: string[] = []
     let patched: ((this: unknown, orig: (...a: unknown[]) => unknown) => unknown) | null = null
 
@@ -160,8 +160,8 @@ describe('installSettingsActionBarClickSafety', () => {
         order.push('execute')
         return scrolled
       },
-      overwriteCommand: (name, fn, attachToElement) => {
-        registered.push({ name, ...(attachToElement === undefined ? {} : { attachToElement }) })
+      overwriteCommand: (name, fn, options) => {
+        registered.push({ name, ...(options === undefined ? {} : { options }) })
         patched = fn
       },
     }
@@ -208,7 +208,9 @@ describe('installSettingsActionBarClickSafety', () => {
   it('overwrites click on the element scope', () => {
     const { session, registered } = fakeSession()
     installSettingsActionBarClickSafety(session)
-    assert.deepEqual(registered, [{ name: 'click', attachToElement: true }])
+    // WDIO v10 throws on the old boolean third argument, so the options object
+    // is the whole contract here, not a style preference.
+    assert.deepEqual(registered, [{ name: 'click', options: { attachToElement: true } }])
   })
 
   it('does not touch a click that succeeds', async () => {

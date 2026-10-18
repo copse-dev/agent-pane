@@ -4,6 +4,24 @@ import { setComposerValue, submitComposer } from '../e2e/helpers/composer.ts'
 import { waitForAgentIdle } from '../e2e/helpers.ts'
 
 describe('ACP bridge tool presentation', () => {
+  it('shows both saved Codex proposal envelopes with Start buttons outside the tool rollup', async () => {
+    await browser.url('/?scenario=bridged-thread-proposals&autoplay=0')
+    await $('.thread-proposal-start').waitForDisplayed()
+    await expect($('.messages-list').$$('.thread-proposal')).toBeElementsArrayOfSize(2)
+    const cards = await $('.messages-list').$$('.thread-proposal')
+    for (const card of cards) {
+      await expect(card.$('.thread-proposal-start')).toBeDisplayed()
+      await expect(card).toHaveAttribute('data-proposal-status', 'pending')
+    }
+    await expect($('.messages-list').$$('.thread-proposal-title')).toHaveText([
+      'Fix Codex readiness detection',
+      'Finish the combined Models & agents list',
+    ])
+    await expect($('.tool-card-rollup')).toBeDisplayed()
+    await expect($('.tool-card-rollup .thread-proposal')).not.toExist()
+    await saveAppScreenshot('bridged-thread-proposals.png')
+  })
+
   it('shows patch file links and shell task output for wrapped names without an ACP kind', async () => {
     await browser.url('/?scenario=bridged-tools&autoplay=0')
     const card = $('.tool-card:not(.tool-card-rollup)')

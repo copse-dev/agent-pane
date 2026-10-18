@@ -87,7 +87,6 @@ function fixture(
       currentBranch: 'main',
       defaultBranch: 'main',
       isDirty: false,
-      hasSubmodules: false,
     }),
     allocate: async (input) => {
       allocations.push(input)

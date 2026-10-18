@@ -16,6 +16,23 @@ exposePerfBridge()
 // missing, extra, or mistyped member fails typecheck here, and the API protocol
 // schema (`pnpm run gen:api-protocol`) is generated from this binding.
 const api: ApiClient = {
+  threadPrompts: {
+    revokeAccess: (threadId, access) =>
+      ipcRenderer.invoke('thread-prompts:revoke-access', threadId, access),
+    onPrompt: (handler) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        command: import('@shared/thread-prompt.ts').ThreadPromptCommand,
+      ): void => {
+        handler(command)
+      }
+      ipcRenderer.on('thread-prompts:prompt', listener)
+      return () => {
+        ipcRenderer.off('thread-prompts:prompt', listener)
+      }
+    },
+    reply: (id, result) => ipcRenderer.invoke('thread-prompts:reply', id, result),
+  },
   mobile: {
     getState: () => ipcRenderer.invoke('mobile:get-state'),
     onStateChanged: (
@@ -37,11 +54,15 @@ const api: ApiClient = {
     setDeviceAccess: (
       id: string,
       access: import('@shared/types/mobile-companion.ts').MobileCompanionAccess,
-    ) => ipcRenderer.invoke('mobile:set-device-access', id, access),
+      rootTrusted?: boolean,
+    ) => ipcRenderer.invoke('mobile:set-device-access', id, access, rootTrusted),
     revokeDevice: (id: string) => ipcRenderer.invoke('mobile:revoke-device', id),
     respondPairing: (
       decision: import('@shared/types/mobile-companion.ts').MobileCompanionAccess | 'deny',
-    ) => ipcRenderer.invoke('mobile:respond-pairing', decision),
+      code: string,
+      pairingId: string,
+      rootTrusted?: boolean,
+    ) => ipcRenderer.invoke('mobile:respond-pairing', decision, code, pairingId, rootTrusted),
     revealCertificate: () => ipcRenderer.invoke('mobile:reveal-certificate'),
     onChat: (handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void) => {
       const listener = (
@@ -319,7 +340,8 @@ const api: ApiClient = {
     resetDefaultBranchCache: () => ipcRenderer.invoke('agent:reset-default-branch-cache'),
     estimateContext: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:estimate-context', projectId, threadId, payload),
-    abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),
+    abort: (threadId: string, reason?: 'send_now') =>
+      ipcRenderer.invoke('agent:abort', threadId, reason),
     runningThreadIds: () => ipcRenderer.invoke('agent:running-thread-ids'),
     retryReview: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:retry-review', projectId, threadId, payload),
@@ -1101,6 +1123,7 @@ const api: ApiClient = {
     browseRegistry: (refresh?: boolean) => ipcRenderer.invoke('acp:browse-registry', refresh),
     detectAgents: () => ipcRenderer.invoke('acp:detect-agents'),
     probeAgent: (agentId: string) => ipcRenderer.invoke('acp:probe-agent', agentId),
+    authStatus: (ids: string[]) => ipcRenderer.invoke('acp:auth-status', ids),
     autoSetup: () => ipcRenderer.invoke('acp:auto-setup'),
   },
   classifiers: {

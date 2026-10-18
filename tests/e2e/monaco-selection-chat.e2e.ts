@@ -8,11 +8,7 @@ import {
   seedEmptyProject,
   seedStableWorkspace,
 } from './helpers/seed-config.ts'
-import {
-  parkPointer,
-  prepareE2eScreenshot,
-  savePreparedAppScreenshot,
-} from './helpers/screenshot.ts'
+import { parkPointer, saveAppViewportScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-monaco-selection-project'
 const SAMPLE_FILE = 'selection-sample.txt'
@@ -113,17 +109,17 @@ describe('Monaco selection to chat attachment', () => {
     )
 
     await $('#file-viewer .selected-text').waitForDisplayed({ timeout: 5_000 })
-    await prepareE2eScreenshot()
-    await parkPointer()
-    await browser.waitUntil(
-      () =>
-        browser.execute(() =>
-          [...document.querySelectorAll('#file-viewer .scrollbar.horizontal')].every(
-            (element) => getComputedStyle(element).opacity === '0',
+    await saveAppViewportScreenshot(SCREENSHOT, async () => {
+      await parkPointer()
+      await browser.waitUntil(
+        () =>
+          browser.execute(() =>
+            [...document.querySelectorAll('#file-viewer .scrollbar.horizontal')].every(
+              (element) => getComputedStyle(element).opacity === '0',
+            ),
           ),
-        ),
-      { timeout: 3_000, timeoutMsg: 'Monaco scrollbar did not fade before capture' },
-    )
-    await savePreparedAppScreenshot(SCREENSHOT)
+        { timeout: 3_000, timeoutMsg: 'Monaco scrollbar did not fade before capture' },
+      )
+    })
   })
 })

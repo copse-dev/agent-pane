@@ -17,7 +17,6 @@ const supported: WorktreePolicyInput = {
   currentBranch: 'main',
   defaultBranch: 'main',
   isDirty: false,
-  hasSubmodules: false,
 }
 
 describe('decideThreadWorktreePolicy', () => {
@@ -39,7 +38,6 @@ describe('decideThreadWorktreePolicy', () => {
       { patch: { isGitRepository: false }, mode: 'shared', reason: 'not-git' },
       { patch: { defaultBranch: null }, mode: 'worktree', reason: 'project-always' },
       { patch: { currentBranch: null }, mode: 'shared', reason: 'detached-head' },
-      { patch: { hasSubmodules: true }, mode: 'shared', reason: 'submodules-unsupported' },
       { patch: { isLocal: false }, mode: 'shared', reason: 'not-local' },
       { patch: { projectMode: 'always' }, mode: 'worktree', reason: 'project-always' },
       { patch: { projectMode: 'never' }, mode: 'shared', reason: 'project-disabled' },
@@ -130,11 +128,11 @@ describe('decideThreadWorktreePolicy', () => {
     const decision = decideThreadWorktreePolicy({
       ...supported,
       choice: 'worktree',
-      hasSubmodules: true,
+      currentBranch: null,
     })
     assert.deepEqual(decision, {
       checkoutMode: 'blocked',
-      reason: 'submodules-unsupported',
+      reason: 'detached-head',
       seededFromDirtyProject: false,
     })
   })
@@ -175,15 +173,7 @@ const INSPECTIONS: Inspection[] = ((): Inspection[] => {
       for (const currentBranch of ['main', 'feature', null])
         for (const defaultBranch of ['main', null])
           for (const isDirty of [true, false])
-            for (const hasSubmodules of [true, false])
-              out.push({
-                isLocal,
-                isGitRepository,
-                currentBranch,
-                defaultBranch,
-                isDirty,
-                hasSubmodules,
-              })
+            out.push({ isLocal, isGitRepository, currentBranch, defaultBranch, isDirty })
   return out
 })()
 

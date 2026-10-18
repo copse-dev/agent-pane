@@ -89,17 +89,15 @@ describe('manual ACP catalog entry', function () {
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').waitForDisplayed()
     await $('.settings-nav-btn[data-section="general"]').click()
-    const chip = await $('.provider-chip[data-provider="github-copilot-cli"]')
+    await $('[data-testid="acp-add-toggle"]').click()
+    const chip = await $('.acp-add-row[data-agent="github-copilot-cli"]').$('button=Set up')
     await chip.waitForDisplayed()
     await chip.click()
     const note = await $('.acp-known-agent-note')
     await expect(note).toHaveText(expect.stringContaining('Manual setup'))
     await expect(note).toHaveText(expect.stringContaining('BYOK is billed by your model provider'))
     await note.scrollIntoView({ block: 'center' })
-    await saveElementScreenshot(
-      '.provider-capability .provider-form',
-      'acp-copilot-manual-setup.png',
-    )
+    await saveElementScreenshot('.acp-add-menu .provider-form', 'acp-copilot-manual-setup.png')
     await $('button=Add to my agents').click()
 
     const card = await $('.acp-agent-card')
