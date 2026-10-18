@@ -89,6 +89,57 @@ describe('SshWorkspaceFs', () => {
     await getSshConnectionManager().disconnect('dev')
   })
 
+  it(
+    'fingerprints dirty paths in one remote command without transferring files',
+    { skip: process.platform === 'win32' },
+    async (t) => {
+      const root = await mkdtemp(join(tmpdir(), 'copse-remote-fingerprints-'))
+      t.after(() => rm(root, { recursive: true, force: true }))
+      const first = 'first.txt'
+      const second = 'line\nbreak.txt'
+      await writeFile(join(root, first), 'one\n')
+      await writeFile(join(root, second), 'two\n')
+      spawnSync('git', ['init'], { cwd: root, stdio: 'pipe' })
+
+      resetSshConnectionManagerForTests()
+      const transport = new FakeSshTransport()
+      let fingerprintCommands = 0
+      t.mock.method(
+        transport,
+        'execShell',
+        async (command: string, options: SshExecOptions = {}) => {
+          if (command.startsWith('xargs -0 ')) fingerprintCommands += 1
+          const result = spawnSync('/bin/sh', ['-c', command], {
+            cwd: options.cwd,
+            input: options.stdin,
+            encoding: 'utf8',
+          })
+          return { stdout: result.stdout, stderr: result.stderr, code: result.status ?? 1 }
+        },
+      )
+      setSshTransportFactory(() => transport)
+      const fs = new SshWorkspaceFs('dev', root)
+
+      const fingerprints = await fs.fingerprintFiles([first, second, 'missing.txt'])
+
+      const expected = (path: string): string =>
+        spawnSync('git', ['hash-object', '--no-filters', '--', path], {
+          cwd: root,
+          encoding: 'utf8',
+        }).stdout.trim()
+      assert.deepEqual(
+        [...fingerprints],
+        [
+          [first, expected(first)],
+          [second, expected(second)],
+          ['missing.txt', null],
+        ],
+      )
+      assert.equal(fingerprintCommands, 1)
+      assert.equal(transport.calls.filter((call) => call.kind === 'fetch').length, 0)
+    },
+  )
+
   it('reads a text file past the command-output cap in full', async () => {
     // The exec path caps stdout at COMMAND_OUTPUT_MAX_BYTES and splices a
     // marker into the middle; persisting that string would destroy the file.
