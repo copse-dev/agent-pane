@@ -12,29 +12,38 @@ const envelope = {
   issuedAt: z.number().int().nonnegative(),
   projectId: id,
 }
-export const mobileActionSchema = z.discriminatedUnion('action', [
-  z.strictObject({
-    ...envelope,
-    action: z.literal('approval'),
-    threadId: id,
-    decisionId: z.uuid(),
-    approved: z.boolean(),
-  }),
-  z.strictObject({
-    ...envelope,
-    action: z.literal('answer'),
-    threadId: id,
-    decisionId: z.uuid(),
-    answers: z.array(z.string().max(8000)).min(1).max(10),
-  }),
-  z.strictObject({ ...envelope, action: z.literal('stop'), threadId: id, runId: z.uuid() }),
-  z.strictObject({
-    ...envelope,
-    action: z.literal('message'),
-    threadId: id.nullable(),
-    text: z.string().trim().min(1).max(32_000),
-  }),
-])
+export const mobileActionSchema = z
+  .discriminatedUnion('action', [
+    z.strictObject({
+      ...envelope,
+      action: z.literal('approval'),
+      threadId: id,
+      decisionId: z.uuid(),
+      approved: z.boolean(),
+    }),
+    z.strictObject({
+      ...envelope,
+      action: z.literal('answer'),
+      threadId: id,
+      decisionId: z.uuid(),
+      answers: z.array(z.string().max(8000)).min(1).max(10),
+    }),
+    z.strictObject({ ...envelope, action: z.literal('stop'), threadId: id, runId: z.uuid() }),
+    z.strictObject({
+      ...envelope,
+      action: z.literal('message'),
+      threadId: id.nullable(),
+      text: z.string().trim().max(32_000),
+      image: z
+        .string()
+        .regex(/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/)
+        .max(4_200_000)
+        .optional(),
+    }),
+  ])
+  .refine(
+    (value) => value.action !== 'message' || value.text.length > 0 || value.image !== undefined,
+  )
 export type MobileAction = z.infer<typeof mobileActionSchema>
 export interface MobileActionResult {
   status: number
@@ -66,6 +75,7 @@ export async function performMobileAction(
       projectId: action.projectId,
       threadId: action.threadId,
       text: action.text,
+      ...(action.image ? { image: action.image } : {}),
     })
     if (!result.ok) return { status: 409, body: { error: result.error } }
     recordDecision({

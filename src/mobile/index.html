@@ -43,15 +43,54 @@
           <label for="project">Project</label>
           <select id="project" required></select>
           <label for="new-message">Message</label>
-          <textarea
-            id="new-message"
-            rows="4"
-            maxlength="32000"
-            required
-            placeholder="What would you like to work on?"
-          ></textarea>
+          <div class="message-compose">
+            <div id="new-image-preview" class="image-preview" hidden>
+              <img alt="Image to send" />
+              <button
+                type="button"
+                class="ui-btn image-remove"
+                aria-label="Remove image"
+                title="Remove image"
+              >
+                <span class="image-remove-glyph" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false">
+                    <path d="M5 5 19 19M19 5 5 19" />
+                  </svg>
+                </span>
+              </button>
+            </div>
+            <textarea
+              id="new-message"
+              rows="4"
+              maxlength="32000"
+              placeholder="What would you like to work on?"
+            ></textarea>
+            <div class="composer-actions">
+              <div class="image-attachment">
+                <button
+                  class="ui-btn ui-btn-ghost image-picker"
+                  type="button"
+                  aria-label="Add image"
+                  title="Add image"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path
+                      d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"
+                    />
+                  </svg>
+                </button>
+                <input
+                  id="new-image"
+                  type="file"
+                  accept="image/*"
+                  aria-label="Choose image"
+                  tabindex="-1"
+                />
+              </div>
+              <button class="ui-btn ui-btn-primary" type="submit">Start chat</button>
+            </div>
+          </div>
           <p class="hint">Opens on your Mac using its project and model settings.</p>
-          <button class="ui-btn ui-btn-primary" type="submit">Start chat</button>
         </form>
         <div id="groups"></div>
         <div id="inline-decision" hidden></div>
@@ -65,14 +104,53 @@
         <div id="attention"></div>
         <form id="composer" hidden>
           <label for="message">Message</label>
-          <textarea
-            id="message"
-            rows="3"
-            maxlength="32000"
-            required
-            placeholder="Send a follow-up…"
-          ></textarea>
-          <button id="send" class="ui-btn ui-btn-primary" type="submit">Send</button>
+          <div class="message-compose">
+            <div id="message-image-preview" class="image-preview" hidden>
+              <img alt="Image to send" />
+              <button
+                type="button"
+                class="ui-btn image-remove"
+                aria-label="Remove image"
+                title="Remove image"
+              >
+                <span class="image-remove-glyph" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false">
+                    <path d="M5 5 19 19M19 5 5 19" />
+                  </svg>
+                </span>
+              </button>
+            </div>
+            <textarea
+              id="message"
+              rows="3"
+              maxlength="32000"
+              placeholder="Send a follow-up…"
+            ></textarea>
+            <div class="composer-actions">
+              <div class="image-attachment">
+                <button
+                  class="ui-btn ui-btn-ghost image-picker"
+                  type="button"
+                  aria-label="Add image"
+                  title="Add image"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path
+                      d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"
+                    />
+                  </svg>
+                </button>
+                <input
+                  id="message-image"
+                  type="file"
+                  accept="image/*"
+                  aria-label="Choose image"
+                  tabindex="-1"
+                />
+              </div>
+              <button id="send" class="ui-btn ui-btn-primary" type="submit">Send</button>
+            </div>
+          </div>
         </form>
       </section>
       <p id="action-status" class="status" role="status"></p>
