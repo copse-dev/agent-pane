@@ -59,6 +59,29 @@ describe('mobile control boundary', () => {
       mobileActionSchema.safeParse({ ...message(randomUUID()), text: 'x'.repeat(32001) }).success,
       false,
     )
+    const image = 'data:image/png;base64,iVBORw0KGgo='
+    assert.equal(
+      mobileActionSchema.safeParse({ ...message(randomUUID()), text: '', image }).success,
+      true,
+    )
+    assert.equal(
+      mobileActionSchema.safeParse({ ...message(randomUUID()), text: '' }).success,
+      false,
+    )
+    assert.equal(
+      mobileActionSchema.safeParse({
+        ...message(randomUUID()),
+        image: 'data:text/html;base64,AA==',
+      }).success,
+      false,
+    )
+    assert.equal(
+      mobileActionSchema.safeParse({
+        ...message(randomUUID()),
+        image: image + 'A'.repeat(4_200_000),
+      }).success,
+      false,
+    )
     assert.equal(mobileActionSchema.safeParse({ ...valid, projectId: '../p' }).success, false)
     assert.equal(mobileActionSchema.safeParse({ ...valid, action: 'run-shell' }).success, false)
   })

@@ -2,6 +2,8 @@ import { renderMarkdown } from '@copse/streaming-markdown'
 import { dompurifyBackend } from '@copse/streaming-markdown/sanitizers/dompurify'
 
 export function renderMessageContent(target, message, index) {
+  target.hidden = !message.content && message.imageCount > 0
+  if (target.hidden) return
   const markdown = message.content && (message.role === 'user' || message.role === 'assistant')
   target.classList.toggle('message-content-plain', !markdown)
   if (!markdown) {

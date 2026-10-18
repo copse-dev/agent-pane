@@ -42,6 +42,90 @@ const messageInput = document.getElementById('message')
 const actionStatus = document.getElementById('action-status')
 const { focusComposer, revealComposer } = installComposerFocus()
 
+function readDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () =>
+      typeof reader.result === 'string'
+        ? resolve(reader.result)
+        : reject(new Error('Could not read this image.'))
+    reader.onerror = () => reject(new Error('Could not read this image.'))
+    reader.readAsDataURL(file)
+  })
+}
+
+async function prepareImage(file) {
+  const direct = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)
+  if (!direct && !['image/heic', 'image/heif'].includes(file.type))
+    throw new Error('Choose a PNG, JPEG, WebP, GIF or HEIC image.')
+  if (file.size > 20_000_000) throw new Error('Choose an image smaller than 20 MB.')
+  const source = await readDataUrl(file)
+  if (direct && file.size <= 3_000_000) return source
+  const image = new Image()
+  image.src = source
+  await image.decode()
+  const scale = Math.min(1, 1600 / Math.max(image.naturalWidth, image.naturalHeight))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
+  canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height)
+  return canvas.toDataURL('image/jpeg', 0.8)
+}
+
+function imageAttachment(inputId, previewId) {
+  const input = document.getElementById(inputId)
+  const preview = document.getElementById(previewId)
+  const picker = input.parentElement.querySelector('.image-picker')
+  const image = preview.querySelector('img')
+  let dataUrl = null
+  let pending = null
+  let imageError = null
+  let generation = 0
+  const clear = () => {
+    generation += 1
+    dataUrl = null
+    pending = null
+    imageError = null
+    input.value = ''
+    image.removeAttribute('src')
+    preview.hidden = true
+  }
+  picker.addEventListener('click', () => input.click())
+  preview.querySelector('button').addEventListener('click', clear)
+  input.addEventListener('change', () => {
+    const file = input.files?.[0]
+    if (!file) return
+    const current = ++generation
+    imageError = null
+    pending = prepareImage(file)
+      .then((value) => {
+        if (current !== generation) return
+        if (value.length > 4_200_000) throw new Error('This image is too large to send.')
+        dataUrl = value
+        image.src = value
+        preview.hidden = false
+        fail('')
+      })
+      .catch((cause) => {
+        if (current !== generation) return
+        clear()
+        imageError = cause
+        fail(cause.message)
+      })
+  })
+  return {
+    clear,
+    async value() {
+      await pending
+      if (imageError) throw imageError
+      return dataUrl
+    },
+  }
+}
+
+const threadImage = imageAttachment('message-image', 'message-image-preview')
+const newChatImage = imageAttachment('new-image', 'new-image-preview')
+
 function show(view) {
   pair.hidden = view !== pair
   activity.hidden = view !== activity
@@ -407,6 +491,43 @@ async function refreshInlineDecision() {
   }
 }
 
+async function loadMessageImage(image) {
+  const url = image.dataset.mobileImageUrl
+  const frame = image.parentElement
+  try {
+    const result = await api(url)
+    if (!image.isConnected || image.dataset.mobileImageUrl !== url) return
+    if (!/^data:image\/(?:png|jpeg|webp|gif);base64,/i.test(result.image))
+      throw new Error('Invalid image')
+    image.onload = () => {
+      image.hidden = false
+      frame.querySelector('.message-image-loading')?.remove()
+    }
+    image.onerror = () => {
+      const loading = frame.querySelector('.message-image-loading')
+      if (loading) loading.textContent = 'Image unavailable'
+    }
+    image.src = result.image
+  } catch {
+    if (image.isConnected && image.dataset.mobileImageUrl === url) {
+      const loading = frame.querySelector('.message-image-loading')
+      if (loading) loading.textContent = 'Image unavailable'
+    }
+  }
+}
+
+const messageImageObserver = new IntersectionObserver(
+  (entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue
+      messageImageObserver.unobserve(entry.target)
+      const image = entry.target.querySelector('img')
+      if (image) void loadMessageImage(image)
+    }
+  },
+  { rootMargin: '200px' },
+)
+
 function renderMessages(list) {
   if (!list.length) {
     messages.replaceChildren(
@@ -425,6 +546,10 @@ function renderMessages(list) {
     if (!card) {
       card = element('article', 'message')
       messages.append(card)
+    }
+    if (card.dataset.messageId !== message.id) {
+      card.replaceChildren()
+      card.dataset.messageId = message.id
     }
     let role = card.querySelector('.message-role')
     if (!role) {
@@ -448,6 +573,28 @@ function renderMessages(list) {
       card.append(content)
     }
     renderMessageContent(content, message, index)
+    let gallery = card.querySelector('.message-images')
+    const imageCount = Number.isSafeInteger(message.imageCount) ? message.imageCount : 0
+    if (gallery?.dataset.imageCount !== String(imageCount)) {
+      gallery?.remove()
+      gallery = null
+    }
+    if (imageCount > 0 && !gallery && selected) {
+      gallery = element('div', 'message-images')
+      gallery.dataset.imageCount = String(imageCount)
+      for (let imageIndex = 0; imageIndex < imageCount; imageIndex++) {
+        const frame = element('div', 'message-image-frame')
+        const image = document.createElement('img')
+        image.className = 'message-image'
+        image.alt = message.role === 'user' ? 'Attached image' : 'Image from response'
+        image.hidden = true
+        image.dataset.mobileImageUrl = `/api/thread/${encodeURIComponent(selected.projectId)}/${encodeURIComponent(selected.threadId)}/image/${encodeURIComponent(message.id)}/${imageIndex}`
+        frame.append(element('span', 'message-image-loading', 'Loading image…'), image)
+        gallery.append(frame)
+        messageImageObserver.observe(frame)
+      }
+      card.append(gallery)
+    }
   })
   while (messages.children.length > list.length) messages.lastChild.remove()
 }
@@ -504,6 +651,7 @@ async function openThread(row, addHistory = true) {
   inlineDecision.hidden = true
   inlineDecision.replaceChildren()
   selected = row
+  threadImage.clear()
   runId = null
   decisionSignature = ''
   messageSignature = ''
@@ -523,19 +671,26 @@ composer.addEventListener('submit', async (event) => {
   event.preventDefault()
   const row = selected
   const text = messageInput.value.trim()
-  if (!row || !text || sending) return
+  if (!row || sending) return
   sending = true
   document.getElementById('send').disabled = true
   try {
     fail('')
+    const image = await threadImage.value()
+    if (!text && !image) {
+      fail('Add a message or image to send.')
+      return
+    }
     const result = await act({
       action: 'message',
       projectId: row.projectId,
       threadId: row.threadId,
       text,
+      ...(image ? { image } : {}),
     })
     drafts.delete(row.threadId)
     if (selected === row && messageInput.value.trim() === text) messageInput.value = ''
+    if (selected === row) threadImage.clear()
     actionStatus.textContent = result.queued
       ? 'Message queued on your Mac.'
       : 'Message sent to your Mac.'
@@ -584,14 +739,26 @@ document.getElementById('new-chat-form').addEventListener('submit', async (event
   const project = document.getElementById('project')
   const text = input.value.trim()
   const projectId = project.value
-  if (!text || !projectId) return
-  const button = event.currentTarget.querySelector('button')
+  if (!projectId) return
+  const button = event.currentTarget.querySelector('button[type="submit"]')
   sending = true
   button.disabled = true
   try {
     fail('')
-    const result = await act({ action: 'message', projectId, threadId: null, text })
+    const image = await newChatImage.value()
+    if (!text && !image) {
+      fail('Add a message or image to start a chat.')
+      return
+    }
+    const result = await act({
+      action: 'message',
+      projectId,
+      threadId: null,
+      text,
+      ...(image ? { image } : {}),
+    })
     input.value = ''
+    newChatImage.clear()
     document.getElementById('new-chat-form').hidden = true
     await openThread({
       projectId,

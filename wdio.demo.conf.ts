@@ -45,6 +45,7 @@ async function startDemoServer(): Promise<void> {
   await hydrateScreenshots()
   let mobileStep = 0
   let mobileText = ''
+  let mobileImage = ''
   const mobileSession = '11111111-1111-4111-8111-111111111111'
   const approvalId = '22222222-2222-4222-8222-222222222222'
   const questionId = '33333333-3333-4333-8333-333333333333'
@@ -58,6 +59,7 @@ async function startDemoServer(): Promise<void> {
     if (pathname === '/mobile-fixture/reset') {
       mobileStep = 0
       mobileText = ''
+      mobileImage = ''
       response.writeHead(200).end('{}')
       return
     }
@@ -71,6 +73,7 @@ async function startDemoServer(): Promise<void> {
             z.object({
               action: z.enum(['approval', 'answer', 'stop', 'message']),
               text: z.string().optional(),
+              image: z.string().optional(),
             }),
           ),
         )
@@ -81,11 +84,24 @@ async function startDemoServer(): Promise<void> {
         if (body.action === 'approval') mobileStep = 1
         if (body.action === 'answer') mobileStep = 2
         if (body.action === 'stop') mobileStep = 3
-        if (body.action === 'message') mobileText = body.text ?? ''
+        if (body.action === 'message') {
+          mobileText = body.text ?? ''
+          mobileImage = body.image ?? ''
+        }
         response
           .writeHead(200, { 'Content-Type': 'application/json' })
           .end(JSON.stringify({ ok: true, threadId: 'thread-1', queued: mobileStep < 3 }))
       })
+      return
+    }
+    if (/^\/api\/thread\/proj-1\/thread-1\/image\/(?:mobile-user|assistant-1)\/0$/.test(pathname)) {
+      if (request.headers.authorization !== 'Bearer visual-test-token' || !mobileImage) {
+        response.writeHead(404).end('{}')
+        return
+      }
+      response
+        .writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+        .end(JSON.stringify({ image: mobileImage }))
       return
     }
     if (pathname === '/api/activity' || pathname === '/api/thread/proj-1/thread-1') {
@@ -186,12 +202,30 @@ async function startDemoServer(): Promise<void> {
                       ]
                     : [],
               messages: [
-                { role: 'user', content: 'Check the release notes.', summary: null },
-                ...(mobileText ? [{ role: 'user', content: mobileText, summary: null }] : []),
                 {
+                  id: 'initial-user',
+                  role: 'user',
+                  content: 'Check the release notes.',
+                  summary: null,
+                  imageCount: 0,
+                },
+                ...(mobileText || mobileImage
+                  ? [
+                      {
+                        id: 'mobile-user',
+                        role: 'user',
+                        content: mobileText,
+                        summary: null,
+                        imageCount: mobileImage ? 1 : 0,
+                      },
+                    ]
+                  : []),
+                {
+                  id: 'assistant-1',
                   role: 'assistant',
                   content: 'The release notes are ready. </p><img src=x onerror=alert(1)>',
                   summary: 'Reviewed three files',
+                  imageCount: mobileImage ? 1 : 0,
                 },
               ],
             }
