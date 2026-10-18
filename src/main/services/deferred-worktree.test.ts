@@ -9,7 +9,7 @@ import type { PreparedThreadCheckout, ThreadWorktree } from '@shared/types/workt
 import { toolNeedsWritableCheckout } from '@shared/tools/deferred-checkout-tools.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
 import { clearAllowedWorkspaceRootsForTest, resolvePathWithinRoot } from './workspace.ts'
-import { allocateThreadWorktree } from './worktree-manager.ts'
+import { allocateThreadWorktree, projectCheckoutBehindDefaultBranch } from './worktree-manager.ts'
 import {
   createDeferredWorktreeAllocation,
   createThreadCheckoutTransaction,
@@ -125,6 +125,52 @@ describe('first message in an on-write project', () => {
     assert.equal(prepared.deferredWorktree?.baseBranch, 'feature')
     assert.equal(getThread().deferredWorktree?.baseBranch, 'feature')
     assert.equal(getThread().worktreeChoice, 'automatic')
+  })
+
+  it('allocates now instead of deferring when the checkout lags the upstream default', async () => {
+    const probes: Array<{ root: string; branch: string }> = []
+    const { dependencies, allocations } = fixture({
+      checkoutBehindDefaultBranch: async (root, branch) => {
+        probes.push({ root, branch })
+        return true
+      },
+    })
+    const prepared = await createThreadCheckoutTransaction(dependencies)({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'why does login redirect twice?',
+      choice: 'automatic',
+      model: NATIVE_MODEL,
+    })
+    assert.deepEqual(probes, [{ root: ON_WRITE.path, branch: 'main' }])
+    assert.equal(allocations.length, 1)
+    assert.equal(prepared.checkoutMode, 'worktree')
+    assert.equal(prepared.deferredWorktree, undefined)
+  })
+
+  it('still defers when the checkout is current, and never probes a non-default base', async () => {
+    const probes: string[] = []
+    const { dependencies, allocations } = fixture({
+      checkoutBehindDefaultBranch: async (_root, branch) => {
+        probes.push(branch)
+        return false
+      },
+    })
+    const prepare = createThreadCheckoutTransaction(dependencies)
+    const base = {
+      projectId: 'project-1',
+      prompt: 'explain this',
+      choice: 'automatic' as const,
+      model: NATIVE_MODEL,
+    }
+    assert.ok((await prepare({ ...base, threadId: 'thread-1' })).deferredWorktree)
+    assert.deepEqual(probes, ['main'])
+    probes.length = 0
+    assert.ok(
+      (await prepare({ ...base, threadId: 'thread-2', baseBranch: 'feature' })).deferredWorktree,
+    )
+    assert.deepEqual(probes, [])
+    assert.equal(allocations.length, 0)
   })
 
   it('returns the same deferral when the first send is retried', async () => {
@@ -638,6 +684,38 @@ describe('deferred allocation against a real repository', () => {
     // The user's checkout is exactly as it was: same branch, same dirty file.
     assert.equal(git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']).trim(), 'main')
     assert.equal(git(repo, ['status', '--porcelain']).trim(), 'M README.md')
+  })
+
+  it('fetches origin and reports whether the checkout lacks the upstream tip', async () => {
+    const temp = await mkdtemp(join(tmpdir(), 'copse-behind-'))
+    cleanups.push(temp)
+    setGitAvailableForTest(true)
+    const origin = join(temp, 'origin')
+    const clone = join(temp, 'clone')
+    await mkdir(origin, { recursive: true })
+    git(origin, ['init', '-q', '-b', 'main'])
+    await writeFile(join(origin, 'README.md'), 'one\n')
+    git(origin, ['add', '.'])
+    git(origin, ['commit', '-q', '-m', 'one'])
+    git(temp, ['clone', '-q', origin, clone])
+
+    assert.equal(await projectCheckoutBehindDefaultBranch(clone, 'main'), false)
+
+    await writeFile(join(origin, 'README.md'), 'two\n')
+    git(origin, ['commit', '-q', '-am', 'two'])
+    // The clone has not fetched: only a fresh fetch can reveal the new tip.
+    assert.equal(await projectCheckoutBehindDefaultBranch(clone, 'main'), true)
+
+    git(clone, ['merge', '-q', '--ff-only', 'origin/main'])
+    assert.equal(await projectCheckoutBehindDefaultBranch(clone, 'main'), false)
+  })
+
+  it('is false without an origin remote', async () => {
+    const temp = await mkdtemp(join(tmpdir(), 'copse-behind-'))
+    cleanups.push(temp)
+    setGitAvailableForTest(true)
+    git(temp, ['init', '-q', '-b', 'main'])
+    assert.equal(await projectCheckoutBehindDefaultBranch(temp, 'main'), false)
   })
 })
 
