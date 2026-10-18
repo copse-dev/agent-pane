@@ -410,7 +410,13 @@ async function refreshInlineDecision() {
 function renderMessages(list) {
   if (!list.length) {
     messages.replaceChildren(
-      element('p', 'empty', 'A running response appears after it is saved on the desktop.'),
+      element(
+        'p',
+        'empty',
+        runId
+          ? 'The response will appear once it is saved on the desktop.'
+          : 'No text messages to show on this phone.',
+      ),
     )
     return
   }
@@ -443,6 +449,10 @@ function renderMessages(list) {
       summary.remove()
     }
     let content = card.querySelector('.message-content')
+    if (message.summary && !message.content.trim()) {
+      content?.remove()
+      return
+    }
     if (!content) {
       content = element('div', 'message-content')
       card.append(content)
