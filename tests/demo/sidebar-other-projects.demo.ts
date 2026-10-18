@@ -69,6 +69,7 @@ describe('sidebar listing projects not opened yet', () => {
     )
     expect(positions).toHaveLength(3)
     const first = positions[0]
+    if (!first) throw new Error('Missing status icon positions')
     for (const position of positions) {
       expect(Math.abs(position.right - first.right)).toBeLessThan(1)
       expect(Math.abs(position.centerY)).toBeLessThan(1)
