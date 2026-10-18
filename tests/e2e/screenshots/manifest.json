@@ -3665,6 +3665,10 @@
       "sha256": "df4005aaf1170a73c10b96f7269ba867a8d11980e86042051926fb3833f3d95b",
       "bytes": 273538
     },
+    "settings-mobile-companion-device-trust.png": {
+      "sha256": "a81ec30b44ca1d9cdc341aea65573c7a874eaf08ea77668be3c69134dd3f5105",
+      "bytes": 11261
+    },
     "settings-mobile-companion-pairing.png": {
       "sha256": "e3aa0b122473fa3983025db79a9f7c59118d3002d74cfa5e4f06b2bbab9d79ca",
       "bytes": 30105
