@@ -209,6 +209,13 @@ async function startDemoServer(): Promise<void> {
                   summary: null,
                   imageCount: 0,
                 },
+                {
+                  id: 'tool-summary',
+                  role: 'assistant',
+                  content: '',
+                  summary: 'Read RELEASE_NOTES.md',
+                  imageCount: 0,
+                },
                 ...(mobileText || mobileImage
                   ? [
                       {

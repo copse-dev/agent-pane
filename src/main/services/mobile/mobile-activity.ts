@@ -9,6 +9,7 @@ import { loadProjectThreadMetas, loadThreadMessages } from '../thread-store.ts'
 import { inspectThreadCheckoutRoot } from '../thread-execution-context.ts'
 import { threadHasUncommittedChanges } from '../thread-dirty-status.ts'
 import { mobileMessageImages } from './mobile-message-images.ts'
+import { mobileTranscriptMessages, type MobileMessage } from './mobile-transcript.ts'
 
 const projectSchema = z.array(
   z.object({
@@ -119,13 +120,7 @@ export async function mobileThread(
   attention: Array<{ title: string; body: string }>
   decisions: MobileDecision[]
   runId: string | null
-  messages: Array<{
-    id: string
-    role: 'user' | 'assistant' | 'error'
-    content: string
-    summary: string | null
-    imageCount: number
-  }>
+  messages: MobileMessage[]
 } | null> {
   if (!safeId.test(projectId) || !safeId.test(threadId)) return null
   const project = mobileProjects().find((item) => item.id === projectId)
@@ -134,13 +129,7 @@ export async function mobileThread(
     (item) => item.id === threadId && item.archivedAt === undefined,
   )
   if (!thread) return null
-  const messages = (await loadThreadMessages(projectId, threadId)).slice(-40).map((message) => ({
-    id: message.id,
-    role: message.role,
-    content: message.content.slice(0, 20_000),
-    summary: message.runSummary ?? message.toolSummary ?? message.commandSummary ?? null,
-    imageCount: mobileMessageImages(message).length,
-  }))
+  const messages = mobileTranscriptMessages(await loadThreadMessages(projectId, threadId))
   const attention = [
     ...pendingApprovalRequestsForThread(threadId).map((request) => ({
       title: request.title,
