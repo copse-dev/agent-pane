@@ -42,6 +42,12 @@ const context = {
 }
 
 describe('model route coverage', () => {
+  it('classifies native ChatGPT sign-in routes as plan without an ACP usage snapshot', () => {
+    const nativeContext = { ...context, agents: [], planUsage: null }
+    assert.equal(modelCoverage('chatgpt-plan:account#gpt-6.1-sol', nativeContext), 'plan')
+    assert.equal(modelCoverage('gpt-6.1-sol', nativeContext), 'paid')
+  })
+
   it('recognizes local inference rather than agents merely running on this device', () => {
     assert.equal(modelCoverage('lmstudio:qwen', context), 'local')
     assert.equal(modelCoverage('my-local:qwen', context), 'local')

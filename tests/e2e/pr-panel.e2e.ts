@@ -118,6 +118,21 @@ describe('PR panel (mock gh)', () => {
     await expect(await $('.pr-list-title*=Polish footer branch status')).toBeDisplayed()
     await expect(await $('.pr-list-status[aria-label="PR #17 open; CI running"]')).toBeDisplayed()
 
+    // A viewed PR remains visible when its lazy cross-repo group is collapsed.
+    await $('.pr-list-title*=Polish footer branch status').click()
+    await expect(await $('.pr-viewer-title')).toHaveText('Polish footer branch status')
+    await $('.pr-other-toggle').click()
+    const viewingRow = await $('.pr-list-row[data-pr-section="viewing"]')
+    await expect(viewingRow).toBeDisplayed()
+    await expect(viewingRow).toHaveAttribute('aria-pressed', 'true')
+    await expect(await $$('.pr-list-row.is-selected')).toBeElementsArrayOfSize(1)
+    await expect(await $('.pr-viewer-description-fill')).toBeDisplayed()
+    await expect(await $('#pr-viewer-host .panel-empty')).not.toBeDisplayed()
+    await saveElementScreenshot('#pane-files', 'pr-panel-viewing-collapsed-pr.png')
+    await $('.pr-other-toggle').click()
+    await expect(await $('.pr-list-row[data-pr-section="viewing"]')).not.toBeExisting()
+    await $('.pr-list-row[data-pr-section="linked"]').click()
+
     // The expanded group uses the same single, readable filter-aware empty
     // state even when every loaded cross-repo PR is filtered out. The component
     // test covers the zero-loaded-PR edge case from the Copse review.

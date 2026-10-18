@@ -1,0 +1,59 @@
+name: Publish gate evidence
+
+# No PR code executes with credentials. This workflow and checkout are trusted;
+# the downloaded JSON is bounded, decoded data, even for failed/cancelled runs.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  publish:
+    if: github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+          pattern: e2e-evidence-*
+          path: incoming
+      - name: Validate and publish immutable evidence
+        env:
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          SOURCE_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          SOURCE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          SCREENSHOT_R2_ACCOUNT_ID: ${{ secrets.SCREENSHOT_R2_ACCOUNT_ID || vars.SCREENSHOT_R2_ACCOUNT_ID }}
+          SCREENSHOT_R2_BUCKET: ${{ secrets.SCREENSHOT_R2_BUCKET || vars.SCREENSHOT_R2_BUCKET || 'copse-screenshots' }}
+          SCREENSHOT_R2_PUBLIC_URL: ${{ vars.SCREENSHOT_R2_PUBLIC_URL || secrets.SCREENSHOT_R2_PUBLIC_URL || 'https://pub-7ec931b58a7b480ba1cd3e535dc12f3c.r2.dev' }}
+          SCREENSHOT_R2_ACCESS_KEY_ID: ${{ secrets.SCREENSHOT_R2_ACCESS_KEY_ID }}
+          SCREENSHOT_R2_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOT_R2_SECRET_ACCESS_KEY }}
+        run: node scripts/publish-gate-evidence.mts incoming
+      - name: Publish neutral advisory check
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('node:fs');
+            const publication = JSON.parse(fs.readFileSync('gate-publication.json', 'utf8'));
+            await core.summary.addHeading('Small gate (shadow)').addRaw(publication.text).write();
+            await github.rest.checks.create({
+              ...context.repo,
+              name: 'Small gate (shadow)',
+              head_sha: context.payload.workflow_run.head_sha,
+              status: 'completed', conclusion: 'neutral',
+              output: { title: publication.shadowAvailable ? `Would run ${publication.count} specs` : 'Shadow unavailable', summary: publication.text },
+              details_url: publication.url,
+            });

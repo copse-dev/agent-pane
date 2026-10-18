@@ -1001,6 +1001,10 @@
       "sha256": "1e0c3d0aa96b2e0a733a96eb4dc637f18cc1becb965d4554305630cc0d8b93d7",
       "bytes": 252639
     },
+    "chatgpt-callback.png": {
+      "sha256": "5aae78a15e0b9ee9218ffe15d3a36f2fe783587f95aca0452a6bd6bae6ee95b2",
+      "bytes": 41049
+    },
     "chatgpt-plan-account-options.png": {
       "sha256": "ebe1eb0d9cff3583257054a3e617b78fa150d7509cf5d10fb4afd3cbd48eec7d",
       "bytes": 21089
@@ -1138,8 +1142,8 @@
       "bytes": 90633
     },
     "composer-long-prompt-cap-typed.png": {
-      "sha256": "481c5fcb0693dc5bae353c61ea9b4dbd9be707de25ddcee582e54e4680aee02f",
-      "bytes": 104241
+      "sha256": "75a69b73779977501a4c0ecd0909cab64313631b62a8cd2d6acb984983c6253f",
+      "bytes": 101966
     },
     "composer-pills-light.png": {
       "sha256": "90aec9a66b781775ab5a9d6678a48ffec862ab6aa3977283df4c4f4a96c12243",
@@ -2313,6 +2317,10 @@
       "sha256": "6437581ed7130fb78116f01dc3cda4a964dbf6289b35aaf4281a3dc5e2dc6f9e",
       "bytes": 37923
     },
+    "model-picker-coverage-chatgpt-plan.png": {
+      "sha256": "45b283af63473fbe36060fa1d95f45fd47c61c1f3575ae78708623c2e7d70f79",
+      "bytes": 9549
+    },
     "model-picker-coverage-dark.png": {
       "sha256": "813544dc111201893ed15783e4d1e224fcb42c4dac00ba70b6ea3bf362593277",
       "bytes": 25463
@@ -2569,6 +2577,10 @@
       "sha256": "0e28a5b4f6604b98907aa8b5bde35569701713cd1a68d01c339d755497dff469",
       "bytes": 43285
     },
+    "pnpm-exec-format-check.png": {
+      "sha256": "eb624686427e3059e4b0c3f30807f18d3b37c6e54759d0040c14f7f9c86ba9c8",
+      "bytes": 273258
+    },
     "portrait-panel-controls-all-buttons.png": {
       "sha256": "87b68204003622b852d7e224071b414900805f740f863ce4ea51144aeef81852",
       "bytes": 16378
@@ -2760,6 +2772,10 @@
     "pr-panel-viewer.png": {
       "sha256": "4668182b40046a2feaf27283f658393e4b87ea5145bff62286f47257d4b12955",
       "bytes": 125618
+    },
+    "pr-panel-viewing-collapsed-pr.png": {
+      "sha256": "228d258e726fd9160a765222094922d5ff20419471200341f52f2ef9baf5ed04",
+      "bytes": 107784
     },
     "pr-producing-and-related-threads-expanded.png": {
       "sha256": "d23d31e21e2c2b29b740c6b12a4e1ca2f8e6377cf31b57aa7ecd3171f44f5a3a",
@@ -3630,8 +3646,8 @@
       "bytes": 226143
     },
     "settings-gui-app-permission.png": {
-      "sha256": "1b3ec79abfb612901be3fe9987b7a6b0073f3d5806cec19e5661bf761c6dc1f2",
-      "bytes": 349356
+      "sha256": "caa9ef3e719c182979c23e10fc66310e96658df22b94ca86d6a8c38b64d35ede",
+      "bytes": 320623
     },
     "settings-load-failed.png": {
       "sha256": "cea5d5c94293d40fb101d6cc19edbc3afc07755cc40df2c47feba4aa4f88b010",
@@ -3654,8 +3670,8 @@
       "bytes": 281462
     },
     "settings-mcp-permission-group-blocked.png": {
-      "sha256": "f33427c45feb86b456edfa519de88e6c8be832315ecb073772809457915dca79",
-      "bytes": 275125
+      "sha256": "2b7f00f46214d60afa36ddaa52b1abdb759da108021474646f013b81c00aaaa9",
+      "bytes": 270238
     },
     "settings-mcp-server-row.png": {
       "sha256": "df4005aaf1170a73c10b96f7269ba867a8d11980e86042051926fb3833f3d95b",
@@ -3778,8 +3794,8 @@
       "bytes": 212832
     },
     "settings-provider-host-approval.png": {
-      "sha256": "9a9b08c34fd547a5a9db5ab357d2fcbcdc97981122be788df3ac23742f12a00f",
-      "bytes": 295134
+      "sha256": "d57fbfd3292ee4f8c94291b561b6ee9fb151acb39b9703e23c564bcfe7b127d7",
+      "bytes": 267428
     },
     "settings-provider-hosts-page-2.png": {
       "sha256": "cc68716fb3d61e00d9d23e776b6a6742626feb507d2422c767f524b4b41dc6ce",
@@ -3993,6 +4009,14 @@
       "sha256": "3707a7271e5a1b21940deabfd60a928bea99db12f636f5abe2af87538b79d576",
       "bytes": 211460
     },
+    "settings-tool-descriptions-compact.png": {
+      "sha256": "a4ca87b60a27956103153812725d092a7d68300d1143b6a110f984778d8e380a",
+      "bytes": 110331
+    },
+    "settings-tool-descriptions-expanded.png": {
+      "sha256": "3b8f2d55f2c94f917b76c44cb5ff46a801f128583067ca4e008675e43c47787d",
+      "bytes": 109913
+    },
     "settings-tool-permissions.png": {
       "sha256": "bc354e36c945a171b6d59fa035357e09f241bee03e0104b2853bcc980aef7443",
       "bytes": 134431
@@ -4066,12 +4090,12 @@
       "bytes": 79726
     },
     "settings-usage-value-map-expanded-hidden-routes.png": {
-      "sha256": "eecb307afc31fd9f453f1b4490e44876d7b737595ee6e8e886e77ff32b450041",
-      "bytes": 18494
+      "sha256": "a290ed8817a940ca8a246ac88c103f3bec76acf4546882c204f3a601a0b90902",
+      "bytes": 18575
     },
     "settings-usage-value-map-hidden-routes.png": {
-      "sha256": "5add875f6c299fd7345ff53415d448a316c1beae7f99f6154861d308a266e679",
-      "bytes": 12923
+      "sha256": "565636f2aea55da8bdd5742979bd6ec5f5dc25b36b237559aaba49bb43619177",
+      "bytes": 13226
     },
     "settings-usage-value-map-mtok.png": {
       "sha256": "0ce369550fbf2ad0f2144e01ba665c9d6d6305dab558f29f0a958802dc9def3c",

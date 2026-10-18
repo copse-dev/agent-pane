@@ -476,7 +476,7 @@ export function mountPrPane(
 
   function renderPrRow(
     pr: GhPrSummary,
-    section: 'linked' | 'workspace' | 'mine',
+    section: 'linked' | 'workspace' | 'mine' | 'viewing',
   ): HTMLButtonElement {
     const isSelected =
       selectedPr?.owner === pr.owner &&
@@ -643,6 +643,35 @@ export function mountPrPane(
     const repoPrs = query ? repoPrsAll.filter((pr) => prMatchesFilter(pr, query)) : repoPrsAll
     const otherPrs = query ? otherPrsAll.filter((pr) => prMatchesFilter(pr, query)) : otherPrsAll
 
+    // A PR opened from a link, notification, or pop-out seed may be closed or
+    // outside the workspace's open-PR pools. Keep the viewed PR in the list even
+    // when the lazy "Your open PRs" section has not been expanded.
+    const selectedKey = selectedPr && githubPrKey(selectedPr)
+    const selectedVisible =
+      selectedKey !== null &&
+      (linkedPrs.some((pr) => githubPrKey(pr) === selectedKey) ||
+        repoPrs.some((pr) => githubPrKey(pr) === selectedKey) ||
+        (otherExpanded && otherPrs.some((pr) => githubPrKey(pr) === selectedKey)))
+    const selectedSummary = selectedPr
+      ? (prDetails ??
+        prList.find((pr) => githubPrKey(pr) === selectedKey) ?? {
+          ...selectedPr,
+          title: placeholderPrTitle(selectedPr.number),
+          url: `https://github.com/${selectedPr.owner}/${selectedPr.repo}/pull/${String(selectedPr.number)}`,
+          state: 'OPEN' as const,
+        })
+      : null
+    const viewingPr =
+      selectedSummary && !selectedVisible && (!query || prMatchesFilter(selectedSummary, query))
+        ? selectedSummary
+        : null
+    if (viewingPr && ghStatus?.authenticated) {
+      const section = el('div', { class: 'git-changes-section' })
+      section.append(el('div', { class: 'git-changes-section-title' }, 'Viewing'))
+      section.append(renderPrRow(viewingPr, 'viewing'))
+      listBody.append(section)
+    }
+
     if (linkedPrs.length > 0) {
       ensureTitles(linkedPrs)
       const section = el('div', { class: 'git-changes-section' })
@@ -677,7 +706,9 @@ export function mountPrPane(
     // so we never spend a cross-repo search just to show a count.
     if (ghStatus?.authenticated) {
       const title =
-        repoPrs.length > 0 || linkedPrs.length > 0 ? 'Your other open PRs' : 'Your open PRs'
+        repoPrs.length > 0 || linkedPrs.length > 0 || viewingPr
+          ? 'Your other open PRs'
+          : 'Your open PRs'
       const section = el('div', { class: 'git-changes-section' })
       const header = el(
         'button',
@@ -719,7 +750,7 @@ export function mountPrPane(
     // so skip this when that is the group currently on screen to avoid saying it
     // twice.
     const otherGroupShown = Boolean(ghStatus?.authenticated) && otherExpanded && !otherLoading
-    if (query && linkedPrs.length === 0 && repoPrs.length === 0 && !otherGroupShown) {
+    if (query && linkedPrs.length === 0 && repoPrs.length === 0 && !viewingPr && !otherGroupShown) {
       listBody.append(
         el(
           'div',
@@ -1387,6 +1418,7 @@ export function mountPrPane(
     renderFiles()
     clearDiff()
     renderSections()
+    renderList()
     await loadPrRelationships()
   }
 
@@ -1480,21 +1512,7 @@ export function mountPrPane(
     prList = mergePrLists(linkedRefs, [workspacePrs, myPrs])
     renderList()
 
-    if (reason === 'poll') {
-      if (selectedPr) {
-        const current = selectedPr
-        const stillExists = prList.some(
-          (pr) =>
-            pr.owner === current.owner && pr.repo === current.repo && pr.number === current.number,
-        )
-        if (!stillExists) {
-          selectedPr = null
-          prDetails = null
-          clearDiff()
-        }
-      }
-      return
-    }
+    if (reason === 'poll') return
 
     const openTarget = pendingOpen
     pendingOpen = null
@@ -1504,15 +1522,8 @@ export function mountPrPane(
     }
 
     if (selectedPr) {
-      const current = selectedPr
-      const stillExists = prList.some(
-        (pr) =>
-          pr.owner === current.owner && pr.repo === current.repo && pr.number === current.number,
-      )
-      if (stillExists) {
-        await selectPr(selectedPr)
-        return
-      }
+      await selectPr(selectedPr)
+      return
     }
 
     if (linkedRefs.length > 0) {

@@ -57,6 +57,7 @@ describe('native ChatGPT plan picker', () => {
     assert.ok(plan)
     assert.equal(plan.value, 'chatgpt-plan:oaiapp_account#gpt-6.1-sol')
     assert.equal(plan.label, 'GPT-6.1 Sol · ChatGPT plan')
+    assert.equal(plan.coverage, 'plan')
     assert.equal(
       options.some((option) => option.value === 'gpt-6.1-sol'),
       false,
