@@ -58,6 +58,10 @@ describe('coverage in the real composer model picker', () => {
         deepseek: false,
         huggingface: false,
       })
+      window.api.chatGptPlan.models = async () => ({
+        clientId: 'demo-plan-account',
+        models: [{ slug: 'gpt-6.1-sol', displayName: 'GPT-6.1 Sol' }],
+      })
       window.api.settings.extraProviders = async () => []
       window.api.lmStudio.models = async () => ['qwen-local']
       window.api.lmStudio.modelInfo = async () => [{ id: 'qwen-local', supportsImages: false }]
@@ -122,10 +126,31 @@ describe('coverage in the real composer model picker', () => {
     await saveElementScreenshot(MENU, 'model-picker-coverage-recent.png')
     await $(MENU + ' .model-picker-browse').click()
     await chooseCoverage('plan')
-    await expect($$(MENU + ' .model-picker-option')).toBeElementsArrayOfSize(1)
+    await expect($$(MENU + ' .model-picker-option')).toBeElementsArrayOfSize(2)
+    await $(FILTER).setValue('Claude Sonnet')
     await expect($(MENU + ' .model-picker-coverage-label')).toHaveText('Plan')
     await $(MENU + ' .model-picker-option').click()
     await expect($(MENU)).not.toBeDisplayed()
+    await expect($(TRIGGER + ' .model-picker-cost')).not.toBeDisplayed()
+  })
+
+  it('groups native ChatGPT sign-in models under Plan and selects them without a dollar badge', async () => {
+    await $(TRIGGER).click()
+    await $(MENU + ' .model-picker-browse').click()
+    await chooseCoverage('plan')
+    await $(FILTER).setValue('ChatGPT plan')
+    await expect($$(MENU + ' .model-picker-option')).toBeElementsArrayOfSize(1)
+    await expect($(MENU + ' .model-picker-coverage-label')).toHaveText('Plan')
+    await expect($(MENU + ' .model-picker-option')).toHaveText(
+      expect.stringContaining('GPT-6.1 Sol'),
+    )
+    await saveElementScreenshot(MENU, 'model-picker-coverage-chatgpt-plan.png')
+    await chooseCoverage('paid')
+    await expect($(MENU + ' .model-picker-empty')).toHaveText('No matching models')
+    await chooseCoverage('plan')
+    await $(MENU + ' .model-picker-option').click()
+    await expect($(MENU)).not.toBeDisplayed()
+    await expect($(TRIGGER + ' .model-picker-label')).toHaveText('GPT-6.1 Sol · ChatGPT plan')
     await expect($(TRIGGER + ' .model-picker-cost')).not.toBeDisplayed()
   })
 
