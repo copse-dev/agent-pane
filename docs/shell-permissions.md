@@ -39,6 +39,18 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 
 ## Per-tool permission settings
 
+### Web search providers
+
+Settings → Web search selects Tavily, Parallel, or Not configured. `web_search` is offered only
+when a provider is selected and its API key resolves; provider and key changes update availability
+without restarting. `fetch_url` remains available independently. A stale call after configuration
+changes returns setup guidance without making a network request. Searches never fall back to DuckDuckGo or a
+different provider. Selecting a provider does not bypass web-origin permissions: `web_search`
+checks that provider's fixed API origin, respects disabled approvals and per-tool overrides, and
+names the provider and potential API-credit charge in the approval prompt. API keys use the
+existing secret store. Tavily also supports `TAVILY_API_KEY`; Parallel supports `PARALLEL_API_KEY`.
+Tavily uses Basic search with generated answers and automatic parameter selection disabled.
+
 ### Access to other conversations
 
 An agent's first read of another thread asks **Read your other threads?** Once approved,

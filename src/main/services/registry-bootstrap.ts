@@ -98,6 +98,7 @@ import {
 import { launchGuiAppTool } from '../tools/gui-app-launch-tool.ts'
 import { deviceHubTool } from '../tools/device-hub-tool.ts'
 import { IMAGE_GEN_TOOL_NAME, imageGenTool } from '../tools/image-gen-tool.ts'
+import { resolveWebSearchProvider } from '@shared/web-search.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -212,9 +213,9 @@ export function createRegistry(): ToolRegistry {
   // the schema is not free.
   registry.register(videoFramesTool)
   registry.register(readArchiveTool)
-  // Submodules in a thread worktree start empty; this fills them offline.
+  // Preserve conditional web search and offline submodule preparation.
   registry.register(initSubmodulesTool)
-  registry.register(webSearchTool)
+  syncWebSearchTools(registry)
   registry.register(fetchUrlTool)
   // Always registered, offered per turn: `parentTools` withholds it until a
   // classifier connection is saved, as `video_frames` waits for a video. Saving
@@ -500,6 +501,16 @@ export function syncReadTerminalTools(registry: ToolRegistry): void {
     if (!registry.has('read_terminal')) registry.register(readTerminalTool)
   } else {
     registry.unregister('read_terminal')
+  }
+}
+
+/** Offer search only while the selected provider has a readable credential. */
+export function syncWebSearchTools(registry: ToolRegistry): void {
+  const provider = resolveWebSearchProvider(getSetting('webSearchProvider', 'none'))
+  if (provider !== 'none' && resolveApiKey(provider) !== null) {
+    if (!registry.has('web_search')) registry.register(webSearchTool)
+  } else {
+    registry.unregister('web_search')
   }
 }
 

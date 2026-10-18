@@ -54,14 +54,13 @@ import { detectCheckoutDetachingCommand } from '@copse/shell-guard/checkout-deta
 import { isInsideManagedThreadWorktree } from '../worktree-manager.ts'
 import { requestApproval, type ApprovalRequest } from '../approval.ts'
 import { recordDecision } from './decision-log-store.ts'
-import { getSetting, updateSetting } from '../storage/settings.ts'
+import { getSetting, updateSetting, resolveApiKey } from '../storage/settings.ts'
 import {
   SANDBOX_TOOLS,
   decideShellPermission,
   decideTerminalPermission,
   decideMcpPermission,
   decideWebFetchPermission,
-  decideWebSearchPermission,
   describeMcpAnnotations,
   fetchUrlFromArgs,
   shellCommandFromArgs,
@@ -853,8 +852,16 @@ async function checkWebSearchPermission(
   signal?: AbortSignal,
   explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
 ): Promise<boolean> {
+  const { getWebSearchProvider } = await import('../web-search/provider.ts')
+  const { WEB_SEARCH_ENDPOINTS, WEB_SEARCH_LABELS } = await import('@shared/web-search.ts')
+  const provider = getWebSearchProvider()
+  // Let the tool return setup guidance without asking for an unrelated origin.
+  if (provider === 'none' || !resolveApiKey(provider)) {
+    return explicitPolicy === 'ask' ? promptExplicitToolAsk('web_search', {}, signal) : true
+  }
   const saved = getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)
-  const decision = decideWebSearchPermission({
+  const decision = decideWebFetchPermission({
+    url: WEB_SEARCH_ENDPOINTS[provider],
     allowedOrigins: webAllowedOriginsWithDefaults(saved),
     allowUserApproval: getSetting<boolean>(WEB_ALLOW_USER_APPROVAL_SETTING, true),
   })
@@ -873,7 +880,7 @@ async function checkWebSearchPermission(
     decision.origin,
     signal,
     explicitPolicy !== 'ask',
-    'Search queries will be sent to DuckDuckGo.',
+    `Search queries will be sent to ${WEB_SEARCH_LABELS[provider]} and may consume paid API credits.`,
   )
 }
 
