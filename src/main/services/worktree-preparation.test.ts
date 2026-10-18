@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, beforeEach, describe, it } from 'node:test'
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
@@ -53,7 +53,7 @@ function probe(command: string, args: readonly string[]): string | null {
   return null
 }
 it('requires a fresh plan after moving from the project checkout to a worktree', () => {
-  const worktree = mkdtempSync(join(tmpdir(), 'preparation-new-worktree-'))
+  const worktree = realpathSync(mkdtempSync(join(tmpdir(), 'preparation-new-worktree-')))
   try {
     write(PREPARATION_CONFIG, '{"version":1}')
     mkdirSync(join(worktree, '.copse'))
