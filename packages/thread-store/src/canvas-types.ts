@@ -28,8 +28,9 @@ export interface CanvasArtefact {
    */
   preview?: string
   /**
-   * Workspace-relative path of the file the artefact was rendered from, when it
-   * came from one (`render_html_artefact`'s preferred `path` argument). Absent
+   * Canonical path of the file the artefact was rendered from, when it came
+   * from one (`render_html_artefact`'s preferred `path` argument). Older records
+   * may use workspace-relative paths. Absent
    * for inline HTML and for external MCP servers, which have no such file.
    *
    * Provenance, and the reason a restored artefact can show later edits: when
