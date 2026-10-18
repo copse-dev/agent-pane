@@ -86,10 +86,15 @@ remove cumulative validation. Protected squash landing also works, but requires
 preserved source provenance and deliberate retirement/reparenting of descendants.
 Choose the method from live repository rules, not a blanket ancestry preference.
 
-The recovery used protected squash merges. The older
-[base-freshness plan](ci-base-freshness.md) describes an available/configured merge
-queue. Verify live rules and supported merge methods before designing automation;
-reconcile that documentation discrepancy in the implementation PR. Never bypass
+The recovery batches landed as protected squash merges. The live `Main protect`
+ruleset (24342803, checked 2026-10-15) allows squash merges and requires `CI Passed`,
+`Screenshot review` and `CLA`, but defines no merge queue; the Actions API reports
+no `merge_group` runs. [Testing strategy](../testing-strategy.md#where-each-tier-runs-main-and-release)
+describes a queue, the [base-freshness plan](ci-base-freshness.md) relies on it,
+and [`merge-queue-gates.yml`](../../.github/workflows/merge-queue-gates.yml) handles
+`merge_group` events, but those files do not establish live queue configuration.
+Reconcile the documentation and settings before relying on a queue. Verify live
+rules and supported merge methods before designing automation. Never bypass
 required checks to emulate a queue.
 
 ## Proposed next improvements, in priority order
@@ -155,6 +160,59 @@ histories. Only hand off at a recoverable checkpoint.
 Provide a read-only backlog view separating ready work, failing checks, missing
 visual decisions, substantive acceptance holds and superseded originals. Avoid
 polling every PR from every agent; share bounded snapshots and react to events.
+
+### Batch record template
+
+The record lives in the batch PR's body. Refresh it in place when status changes;
+do not append a second copy or a running history.
+
+```markdown
+## Batch record
+
+- Owner:
+- Originals: #NNNN @ `<head sha>`, #NNNN @ `<head sha>`
+- Candidate: `<head sha>` on `<base sha>` (`<branch>`)
+- Included:
+- Excluded (and why):
+- CI evidence: run `<id>` on `<head sha>` (result), run `<id>` (result)
+- Screenshot evidence: packet `<location>`, receipts `<location>`
+- Unresolved findings:
+- Next action:
+```
+
+## Delivery order
+
+Each step has one owner and an owning issue, with exit and kill criteria recorded
+on that issue before work starts. Steps 1, 2 and 3 can run in parallel; 4 and 5
+wait for the measurements.
+
+- **Step 0: plan fixes.** This document: queue wording, batch record template and
+  this ordering.
+- **Step 1: measure screenshot amplification.** No gate changes. Record the
+  counts the filter already emits, total rendered, focus versus non-focus, unique
+  pairs, minutes by oracle mode, and publisher duration and API calls, broken down
+  by runner label. Measure from the manifest diff, not the evidence comment, which
+  caps its listing at 50 names.
+- **Step 2: one bounded repair chosen from step 1 data.** Candidates: review
+  presentation grouping over existing receipts; the stack-gates full-sweep fallback
+  and 30-minute repair sweep budget; capture-environment pinning if runner variance
+  dominates.
+- **Step 3: read-only backlog view and handoff record.** Item 4, in parallel with
+  steps 1 and 2.
+- **Step 4: evidence reuse, shadow mode first.** Record a rendering-input identity
+  and measure the identical-identity to identical-bytes rate before any reuse.
+  Negative tests for each input and for forged provenance.
+- **Step 5: small main gate, last.** Audit what promotion already runs, build the
+  smoke inventory with ownership mapping, shadow run over past PRs, then change the
+  gate. Queue documentation moves in the same PR.
+
+Cross-cutting:
+
+- Metrics produced in the e2e job are untrusted data. The publisher must not gain
+  write tokens for reporting.
+- Report minutes per oracle mode: full-mode renders of about 1274 references
+  across 8 shards are the real cost.
+- Count how often the `ci-full` and `update-screenshots` labels are used.
 
 ## Next-agent brief
 

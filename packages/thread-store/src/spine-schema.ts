@@ -648,6 +648,7 @@ const DECISION_LINE_FIELDS: RequiredFieldChecks<SpineDecisionLine> = {
     value === 'system' ||
     value === 'mobile-device',
   verdict: (value) =>
+    value === 'requested' ||
     value === 'approved' ||
     value === 'denied' ||
     value === 'allowed' ||
@@ -663,6 +664,7 @@ const DECISION_LINE_OPTIONAL: OptionalFieldChecks<SpineDecisionLine, 'cause'> = 
   detail: isContentRef,
   cause: isPromptCause,
   toolCallId: (value) => typeof value === 'string',
+  bridgeExecutionId: (value) => typeof value === 'string',
   turnId: (value) => typeof value === 'string',
   step: (value) => typeof value === 'number',
 }

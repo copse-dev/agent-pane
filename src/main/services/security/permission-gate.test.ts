@@ -116,6 +116,35 @@ function underAutomation<T>(fn: () => T): T {
   )
 }
 
+describe('shell prompt audit evidence', () => {
+  for (const { cause, prompt } of [
+    { cause: 'shell-expected-sandbox-block', prompt: promptExpectedSandboxBlock },
+    { cause: 'shell-sandbox-retry', prompt: promptUnsandboxedShell },
+  ]) {
+    it(`preserves structured reasons for ${cause}`, async () => {
+      setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+      const reasons = ['OS denied the requested network access']
+      setApprovalHandler(async (request) => {
+        assert.equal(request.cause, cause)
+        assert.deepEqual(request.reasons, reasons)
+        assert.equal(typeof request.shellContext?.sandboxAvailable, 'boolean')
+        assert.equal(typeof request.shellContext?.workspaceTrusted, 'boolean')
+        return { approved: false, remember: false }
+      })
+      try {
+        assert.equal(
+          await prompt('curl https://example.com', reasons, undefined, {
+            requireInteractiveApproval: true,
+          }),
+          false,
+        )
+      } finally {
+        setApprovalHandler(null)
+      }
+    })
+  }
+})
+
 describe('package command approval scope', () => {
   it('runs the direct typecheck contained and explicitly names an agent escape request', async () => {
     setPermissionGateForTests(null)

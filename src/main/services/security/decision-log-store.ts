@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
@@ -78,6 +79,33 @@ export type RecordDecisionInput = Omit<DecisionInput, 'threadId'> & {
   detail?: Record<string, unknown>
 }
 
+export interface RecordedDecision {
+  readonly projectId: string
+  readonly threadId: string
+  readonly line: SpineDecisionLine
+  readonly detailContents?: string
+}
+
+const scopedRecorder = new AsyncLocalStorage<(decision: RecordedDecision) => void>()
+
+/** Route an explicit host's audit records without writing the desktop thread store. */
+export function runWithDecisionRecorder<T>(
+  recorder: (decision: RecordedDecision) => void,
+  operation: () => T,
+): T {
+  return scopedRecorder.run(recorder, operation)
+}
+
+/** Persist an explicitly owned host record through the normal serialized thread writer. */
+export function persistRecordedDecision(decision: RecordedDecision): void {
+  void appendSpineDecision(
+    decision.projectId,
+    decision.threadId,
+    decision.line,
+    decision.detailContents,
+  ).catch(() => undefined)
+}
+
 /**
  * Record one decision onto the active thread spine. Best-effort and
  * fire-and-forget.
@@ -114,7 +142,22 @@ export function recordDecision(input: RecordDecisionInput): void {
       }
     }
 
-    void appendSpineDecision(projectId, threadId, line, detailContents).catch(() => undefined)
+    const recorder = scopedRecorder.getStore()
+    if (recorder) {
+      recorder({
+        projectId,
+        threadId,
+        line,
+        ...(detailContents !== undefined ? { detailContents } : {}),
+      })
+    } else {
+      persistRecordedDecision({
+        projectId,
+        threadId,
+        line,
+        ...(detailContents !== undefined ? { detailContents } : {}),
+      })
+    }
   } catch {
     // Never let an audit-log failure escape into the decision path.
   }

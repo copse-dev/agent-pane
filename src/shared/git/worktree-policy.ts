@@ -19,7 +19,6 @@ export type WorktreePolicyReason =
   | 'not-local'
   | 'not-git'
   | 'detached-head'
-  | 'submodules-unsupported'
 
 export interface WorktreePolicyInput {
   choice?: ThreadWorktreeChoice
@@ -30,7 +29,6 @@ export interface WorktreePolicyInput {
   currentBranch: string | null
   defaultBranch: string | null
   isDirty: boolean
-  hasSubmodules: boolean
 }
 
 export type WorktreePolicyDecision =
@@ -52,7 +50,7 @@ export type WorktreePolicyDecision =
     }
   | {
       checkoutMode: 'blocked'
-      reason: 'not-local' | 'not-git' | 'detached-head' | 'submodules-unsupported'
+      reason: 'not-local' | 'not-git' | 'detached-head'
       seededFromDirtyProject: false
     }
 
@@ -61,7 +59,6 @@ function unsupportedReason(
 ): Extract<WorktreePolicyDecision, { checkoutMode: 'blocked' }>['reason'] | null {
   if (!input.isLocal) return 'not-local'
   if (!input.isGitRepository) return 'not-git'
-  if (input.hasSubmodules) return 'submodules-unsupported'
   if (!input.currentBranch) return 'detached-head'
   return null
 }

@@ -30,6 +30,53 @@ describe('analyzeShellCommand', () => {
     assert.equal(r.verdict, 'external')
   })
 
+  it('runs package exec inside an active sandbox unless another hard signal is present', () => {
+    for (const command of ['npm exec tsc --noEmit', 'yarn exec eslint .', 'bun exec tsc']) {
+      const result = analyzeShellCommand(command, root)
+      assert.equal(result.verdict, 'ambiguous', command)
+      assert.deepEqual(result.reasons, [
+        'package command runner (exec may install missing dependencies)',
+      ])
+    }
+    // Local `pnpm exec` is treated like `pnpm run` (see the next test), so it is
+    // contained without the package-runner ambiguity.
+    const formatter =
+      'pnpm exec oxfmt --check src/main/services/thread-execution-context.ts src/renderer/views/footer-branch-status.ts tests/e2e/footer-branch-status.e2e.ts'
+    assert.equal(analyzeShellCommand(formatter, root).verdict, 'sandbox')
+    for (const command of [
+      'pnpm exec oxfmt --check . && pnpm install',
+      'pnpm exec oxfmt --check /Users/me/other/file.ts',
+      'npm exec tsc && npm install',
+      'npm exec tsc -- /Users/me/other/file.ts',
+    ]) {
+      assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
+    }
+    // An opaque local script keeps the interpreter's own ambiguity under either runner.
+    for (const command of ['pnpm exec node ./script.js', 'npm exec node ./script.js']) {
+      const result = analyzeShellCommand(command, root)
+      assert.equal(result.verdict, 'ambiguous', command)
+      assert.ok(
+        result.reasons.includes(
+          'runs a local script via an interpreter (contents opaque to analysis)',
+        ),
+        command,
+      )
+    }
+  })
+
+  it('keeps other exec forms hard-external', () => {
+    for (const command of [
+      'exec ./script',
+      'echo ok && exec ./script',
+      "find . -name '*.tmp' -type f -exec cat {} +",
+      'podman exec app pwd',
+    ]) {
+      const result = analyzeShellCommand(command, root)
+      assert.equal(result.verdict, 'external', command)
+      assert.ok(result.reasons.includes('dynamic execution / encoding'), command)
+    }
+  })
+
   it('keeps local pnpm exec commands contained without hiding their payload', () => {
     for (const command of [
       'pnpm exec tsc --noEmit',
@@ -40,7 +87,6 @@ describe('analyzeShellCommand', () => {
     }
     for (const command of [
       'pnpm install',
-      'npm exec tsc',
       'corepack pnpm exec tsc',
       'pnpm exec curl https://example.com',
       'pnpm exec node -e "process.exit()"',
@@ -51,6 +97,9 @@ describe('analyzeShellCommand', () => {
     ]) {
       assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
     }
+    // Other package managers' `exec` is not masked as a local run: it stays a
+    // package runner tried inside the sandbox rather than a contained command.
+    assert.equal(analyzeShellCommand('npm exec tsc', root).verdict, 'ambiguous')
     assert.equal(analyzeShellCommand('pnpm dlx tsc', root).verdict, 'ambiguous')
   })
 
