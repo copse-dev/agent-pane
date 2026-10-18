@@ -1875,6 +1875,15 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           openThreadMenu(rect.left, rect.bottom)
         })
         chatRow.append(menuButton)
+      } else {
+        // A thread from a project other than the active one has no menu button — it
+        // can only be read here, not mutated (see `canMutate` above). Reserve the
+        // button's footprint anyway so the trailing status icon lands in the same
+        // column as an active-project row's; otherwise it drifts right by exactly
+        // --projects-action-size on every row that happens to belong to a project
+        // the sidebar hasn't switched to. See docs/ui-taste.md -> "Align trailing
+        // row icons".
+        chatRow.append(el('span', { class: 'chat-menu-btn-space', 'aria-hidden': 'true' }))
       }
       return chatRow
     }
