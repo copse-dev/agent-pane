@@ -1567,6 +1567,11 @@ copse-ui-field input[type=password],
 .chat-row:focus-within .chat-menu-btn {
   opacity: 1;
 }
+.chat-menu-btn-space {
+  flex-shrink: 0;
+  width: var(--projects-action-size);
+  height: var(--projects-action-size);
+}
 .chat-row:hover .automation-setup-btn {
   opacity: 1;
 }
@@ -1614,6 +1619,9 @@ copse-ui-field input[type=password],
   align-items: center;
   margin-left: var(--spacing-xs);
   color: var(--text-muted);
+}
+.chat-changes-status svg {
+  transform: scaleY(-1);
 }
 .chat-pr-status.is-open {
   color: var(--accent);
