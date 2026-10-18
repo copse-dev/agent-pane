@@ -99,4 +99,44 @@ describe('ACP agent <-> client loopback', () => {
       content: [{ type: 'content', content: { type: 'text', text: 'file contents' } }],
     })
   })
+
+  it('does not re-send a rewritten message to the client', async () => {
+    const c2a = new TransformStream<Uint8Array, Uint8Array>()
+    const a2c = new TransformStream<Uint8Array, Uint8Array>()
+    const runner: AcpTurnRunner = async (ctx) => {
+      // Pseudo-XML tool-call recovery rewrites the streamed text, then calls the tool.
+      await ctx.emit({ type: 'text', text: 'I will read it.\n<read_file>a.ts</read_file>' })
+      await ctx.emit({ type: 'text_replace', text: 'I will read it.' })
+      await ctx.emit({
+        type: 'tool_call',
+        toolCall: { id: 't1', name: 'read_file', args: { path: 'a.ts' } },
+      })
+      await ctx.emit({ type: 'tool_result', toolCallId: 't1', result: 'ok', isError: false })
+      await ctx.emit({ type: 'text_replace', text: 'Done.' })
+      return { stopReason: 'end_turn' }
+    }
+    buildAcpAgentApp(runner).connect(ndJsonStream(a2c.writable, c2a.readable))
+
+    const texts: string[] = []
+    await client({ name: 'test-client' }).connectWith(
+      ndJsonStream(c2a.writable, a2c.readable),
+      async (ctx) => {
+        await ctx.request(methods.agent.initialize, { protocolVersion: PROTOCOL_VERSION })
+        return ctx.buildSession('/tmp/project').withSession(async (session) => {
+          session.prompt('hello')
+          for (;;) {
+            const message = await session.nextUpdate()
+            if (message.kind === 'stop') return
+            for (const chunk of sessionUpdateToStreamChunks(message.update)) {
+              if (chunk.type === 'text') texts.push(chunk.text)
+            }
+          }
+        })
+      },
+    )
+
+    // v1 cannot retract the streamed markup, but the rewrite must not double the
+    // prose; the post-tool rewrite starts a new message and arrives whole.
+    assert.deepEqual(texts, ['I will read it.\n<read_file>a.ts</read_file>', 'Done.'])
+  })
 })
