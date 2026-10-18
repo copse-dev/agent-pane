@@ -200,10 +200,14 @@ export interface ApiClient {
     setDeviceAccess: (
       id: string,
       access: import('@shared/types/mobile-companion.ts').MobileCompanionAccess,
+      rootTrusted?: boolean,
     ) => Promise<void>
     revokeDevice: (id: string) => Promise<void>
     respondPairing: (
       decision: import('@shared/types/mobile-companion.ts').MobileCompanionAccess | 'deny',
+      code: string,
+      pairingId: string,
+      rootTrusted?: boolean,
     ) => Promise<void>
     revealCertificate: () => Promise<void>
     onChat: (

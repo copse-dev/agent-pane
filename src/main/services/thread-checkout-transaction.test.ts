@@ -70,7 +70,6 @@ function fixture(overrides: Partial<ThreadCheckoutTransactionDependencies> = {})
       currentBranch: 'main',
       defaultBranch: 'main',
       isDirty: false,
-      hasSubmodules: false,
     }),
     allocate: async () => {
       throw new Error('unexpected allocation')
@@ -112,7 +111,6 @@ describe('first-message checkout transaction', () => {
           currentBranch: 'main',
           defaultBranch: 'main',
           isDirty: false,
-          hasSubmodules: false,
         }
       },
       allocate: async ({ baseBranch }) => {
@@ -193,10 +191,9 @@ describe('first-message checkout transaction', () => {
     const unsupported = fixture({
       inspect: async () => ({
         isGitRepository: true,
-        currentBranch: 'main',
+        currentBranch: null,
         defaultBranch: 'main',
         isDirty: false,
-        hasSubmodules: true,
       }),
     })
     assert.deepEqual(await unsupported.preview({ projectId: 'project-1', choice: 'automatic' }), {
@@ -215,18 +212,13 @@ describe('first-message checkout transaction', () => {
     })
   })
 
-  it('names the declaration when it refuses a worktree for submodules', async () => {
-    // The refusal is otherwise unfalsifiable: an automation swallows it into a
-    // thread that never starts, and "submodules unsupported" on its own cannot
-    // be checked against the filesystem afterwards.
+  it('refuses an explicit worktree the repository cannot support, naming why', async () => {
     const blocked = fixture({
       inspect: async () => ({
         isGitRepository: true,
-        currentBranch: 'main',
+        currentBranch: null,
         defaultBranch: 'main',
         isDirty: false,
-        hasSubmodules: true,
-        submoduleDeclaration: '/repo/.gitmodules',
       }),
     })
     await assert.rejects(
@@ -236,12 +228,7 @@ describe('first-message checkout transaction', () => {
         prompt: 'go',
         choice: 'worktree',
       }),
-      (error: Error) => {
-        assert.match(error.message, /submodules unsupported/)
-        assert.match(error.message, /\/repo\/\.gitmodules/)
-        assert.match(error.message, /for project \/repo/)
-        return true
-      },
+      /Isolated worktree is unavailable: detached head/,
     )
   })
 
@@ -280,7 +267,6 @@ describe('first-message checkout transaction', () => {
         currentBranch: 'copse/previous-thread',
         defaultBranch: 'main',
         isDirty: true,
-        hasSubmodules: false,
       }),
       allocate: async ({ baseBranch, seedFromDirtyProject }) => {
         allocations.push({ baseBranch, seedFromDirtyProject })
@@ -424,7 +410,6 @@ describe('first-message checkout transaction', () => {
         currentBranch: null,
         defaultBranch: null,
         isDirty: false,
-        hasSubmodules: false,
       }),
     })
 
@@ -538,7 +523,6 @@ describe('first-message checkout transaction', () => {
         currentBranch: 'work',
         defaultBranch: 'main',
         isDirty: false,
-        hasSubmodules: false,
       }),
       branchExists: async (_projectRoot, branch) => {
         probed.push(branch)
@@ -577,7 +561,6 @@ describe('first-message checkout transaction', () => {
         currentBranch: 'work',
         defaultBranch: null,
         isDirty: false,
-        hasSubmodules: false,
       }),
       branchExists: async () => false,
       allocate: async ({ baseBranch }) => {
@@ -643,7 +626,6 @@ describe('first-message checkout transaction', () => {
         currentBranch: null,
         defaultBranch: null,
         isDirty: false,
-        hasSubmodules: false,
       }),
     })
 
@@ -711,7 +693,6 @@ describe('first-message checkout transaction', () => {
         currentBranch: 'feature/switched-after-failure',
         defaultBranch: 'main',
         isDirty: true,
-        hasSubmodules: false,
       }),
       allocate: async () => {
         allocations += 1

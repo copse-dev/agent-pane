@@ -198,6 +198,44 @@ describe('tool permissions panel', () => {
     assert.doesNotMatch(description.textContent, /`/)
   })
 
+  it('renders block Markdown, escapes HTML, and keeps full descriptions searchable', async () => {
+    const initialCatalog = catalog()
+    const tool = initialCatalog.groups[0]?.tools[0]
+    assert.ok(tool)
+    tool.description =
+      'Read **project files**.\n\n- Keep `<path>` literal.\n- Find a needle-in-details.\n\n```ts\nconst value = 1\n```\n\n<img src="https://example.com/a.png" onerror="alert(1)">'
+    const root = await mount(apiHarness({ initialCatalog }))
+    const description = root.querySelector('.tool-permission-description')
+    const toggle = root.querySelector<HTMLButtonElement>('.tool-permission-description-toggle')
+    assert.ok(description)
+    assert.ok(toggle)
+    assert.equal(description.querySelector('strong')?.textContent, 'project files')
+    assert.equal(description.querySelectorAll('li').length, 2)
+    assert.equal(description.querySelector('pre code')?.textContent.trim(), 'const value = 1')
+    assert.equal(description.querySelector('img'), null)
+    assert.match(description.textContent, /<path>/)
+    assert.equal(toggle.getAttribute('aria-expanded'), 'false')
+    assert.equal(description.classList.contains('is-collapsed'), true)
+    toggle.click()
+    assert.equal(toggle.getAttribute('aria-expanded'), 'true')
+    assert.equal(description.classList.contains('is-collapsed'), false)
+
+    const search = root.querySelector<HTMLInputElement>('input[type="search"]')
+    assert.ok(search)
+    search.value = 'needle-in-details'
+    search.dispatchEvent(new Event('input'))
+    assert.equal(root.querySelectorAll('.tool-permission-row').length, 1)
+    assert.equal(
+      root.querySelector('.tool-permission-description-toggle')?.getAttribute('aria-expanded'),
+      'true',
+    )
+    root.querySelector<HTMLButtonElement>('.tool-permission-description-toggle')?.click()
+    assert.equal(
+      root.querySelector('.tool-permission-description')?.classList.contains('is-collapsed'),
+      true,
+    )
+  })
+
   it('summarises a group whose effective defaults all match', async () => {
     const initialCatalog = catalog()
     const proton = initialCatalog.groups.find((group) => group.id === 'mcp:project:proton')
