@@ -1,4 +1,4 @@
-import { confirmMobileControl } from '../services/mobile/mobile-control-confirmation.ts'
+import { mobileDeviceAccessArgsSchema, mobilePairingArgsSchema } from './mobile-companion-args.ts'
 import { networkActivity } from '../services/diagnostics/network-activity.ts'
 import { inspectStorageMaintenance, saveStorageRetention } from '../services/storage-maintenance.ts'
 import { readOpenAiArtifact } from '../services/remote/openai-agents-client.ts'
@@ -7,6 +7,7 @@ import { storageCleanup } from '../services/storage-cleanup.ts'
 import { storageAreaSchema, storageRetentionSchema } from '../../shared/types/storage-cleanup.ts'
 import { machineManager, syncMachineService } from '../services/machines/machine-service.ts'
 import { machineSharingSchema, REMOTE_SYSTEM_ONE_MODELS_SETTING } from '@shared/machines.ts'
+import { registerPlanHandlers } from './plan-handlers.ts'
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
 import { getSettingsSnapshot, updateSettings } from '../services/storage/settings-transaction.ts'
 import { modelInvalidationService } from '../services/providers/model-invalidation.ts'
@@ -87,6 +88,7 @@ import {
   type WorkspaceProjectRef,
 } from '../services/workspace.ts'
 import { exportDecisionLog, readDecisionLog } from '../services/security/decision-log-store.ts'
+import { getThreadClassifierUse } from '../services/security/classifier-use-report.ts'
 import { loadCanvasArtefactSummaries, readStoredCanvasArtefact } from '../services/canvas-store.ts'
 import { CANVAS_ARTEFACT_CHANNEL } from '../services/canvas-dispatch.ts'
 import {
@@ -99,6 +101,7 @@ import {
   modelCardIdsSchema,
   setKeyOptionsSchema,
   parseIpcArgs,
+  parseAcpAuthStatusArgs,
   parsePortKillArgs,
   zMcpServerName,
   zModelId,
@@ -188,6 +191,7 @@ import { browserPaneSessionSchema, decodeBrowserPaneSession } from '../windows/m
 import {
   measureThreadStorage,
   backfillThreadPrRefs,
+  getLatestThreadPlan,
   loadProjectThreadMetas,
   loadThreadMessages,
   createThread,
@@ -227,6 +231,7 @@ import {
 } from '../services/thread-history-edit.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
 import { browseAcpRegistry } from '../services/acp/acp-registry-discovery.ts'
+import { detectAcpAuthStatus } from '../services/acp/acp-auth-status.ts'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import {
   listExternalEditors,
@@ -616,9 +621,7 @@ export function registerAllHandlers(
   threadArchivingRuntime: ThreadArchivingRuntime,
 ): void {
   const mobileAddressSchema = z.string().regex(/^(?:\d{1,3}\.){3}\d{1,3}$/)
-  const mobileDeviceAccessPairSchema = z.tuple([z.uuid(), z.enum(['read', 'control'])])
   const mobileDeviceIdSchema = z.uuid()
-  const mobilePairingDecisionSchema = z.enum(['read', 'control', 'deny'])
 
   ipcMain.handle('mobile:get-state', (event) => {
     assertMainFrameSender(event, win)
@@ -633,24 +636,20 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     await disableMobileCompanion()
   })
-  ipcMain.handle('mobile:set-device-access', async (event, ...args) => {
+  ipcMain.handle('mobile:set-device-access', (event, ...args) => {
     assertMainFrameSender(event, win)
-    const [id, access] = parseIpcArgs(mobileDeviceAccessPairSchema, args)
-    await setMobileDeviceAccess(id, access, (label) =>
-      confirmMobileControl((options) => dialog.showMessageBox(win, options), label),
-    )
+    const [id, access] = parseIpcArgs(mobileDeviceAccessArgsSchema, args)
+    setMobileDeviceAccess(id, access)
   })
   ipcMain.handle('mobile:revoke-device', (event, rawId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(mobileDeviceIdSchema, [rawId])
     revokeMobileDevice(id)
   })
-  ipcMain.handle('mobile:respond-pairing', async (event, rawDecision: unknown) => {
+  ipcMain.handle('mobile:respond-pairing', (event, ...args) => {
     assertMainFrameSender(event, win)
-    const decision = parseIpcArgs(mobilePairingDecisionSchema, [rawDecision])
-    await respondToMobilePairing(decision, (label, code) =>
-      confirmMobileControl((options) => dialog.showMessageBox(win, options), label, code),
-    )
+    const [decision, code, pairingId] = parseIpcArgs(mobilePairingArgsSchema, args)
+    respondToMobilePairing(decision, code, pairingId)
   })
   ipcMain.handle('mobile:reveal-certificate', (event) => {
     assertMainFrameSender(event, win)
@@ -662,6 +661,17 @@ export function registerAllHandlers(
   // closed, and a second main window can outlive it.
   const primaryWebContentsId = win.webContents.id
 
+  // Reserve container starts before asynchronous preflight, so plan writes and
+  // container launches cannot pass each other's idle check.
+  const startingContainerThreads = new Set<string>()
+  registerPlanHandlers(
+    win,
+    (projectId, threadId) =>
+      isDispatcherThreadActive(projectId, threadId) ||
+      listRunningThreadIds().includes(threadId) ||
+      startingContainerThreads.has(threadId) ||
+      getContainerRunService().isActive(threadId),
+  )
   const processManagerSnapshot = createProcessManagerSampler(
     () => app.getAppMetrics(),
     processManagerLabels,
@@ -1023,9 +1033,15 @@ export function registerAllHandlers(
   ipcMain.handle('fs:read-image', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
-    const abs = await resolvePathWithinRoot(relPath, root)
-    return gatewayReadImage(abs, root, relPath)
+    // Missing or oversized previews are routine (a thread can outlive its worktree
+    // files), so report them as data; a rejected handler makes Electron log a stack.
+    try {
+      const { root } = await resolveThreadExecutionContext(projectId, threadId)
+      const abs = await resolvePathWithinRoot(relPath, root)
+      return { ok: true, data: await gatewayReadImage(abs, root, relPath) }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
   })
 
   ipcMain.handle('fs:write-file', async (event, ...rawArgs) => {
@@ -1879,6 +1895,13 @@ export function registerAllHandlers(
     setAutomationAppIconMode(enabled, mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
   })
   ipcMain.handle('usage:get-summary', () => getUsageSummary())
+  // What the classifiers (shell guard, tier screen, terminal-read screen) did for one
+  // thread: calls, verdicts, latency and tokens, from the thread's decision log.
+  ipcMain.handle('usage:get-thread-classifier-use', (event, ...rawArgs: unknown[]) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), rawArgs)
+    return getThreadClassifierUse(projectId, threadId)
+  })
   ipcMain.handle('usage:get-plan-usage', async (_event, force: unknown) => {
     const refresh = parseIpcArgs(z.boolean().optional(), [force])
     return loadPlanUsageSnapshotAndSample({ force: refresh === true })
@@ -1982,22 +2005,41 @@ export function registerAllHandlers(
   // Unattended container runs (docs/plans/thread-in-container.md). The
   // renderer sends the prompt, the model and the budgets; the main process
   // resolves the checkout, the provider and its key, and owns the run.
-  ipcMain.handle('container:run-thread', (event, request: unknown) => {
+  ipcMain.handle('container:run-thread', async (event, request: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(containerRunRequestSchema, [request])
-    return getContainerRunService().start({
-      projectId: parsed.projectId,
-      threadId: parsed.threadId,
-      prompt: parsed.prompt,
-      model: parsed.model,
-      budgets: parsed.budgets,
-      ...(parsed.useAgentLogin !== undefined ? { useAgentLogin: parsed.useAgentLogin } : {}),
-      ...(parsed.installDependencies !== undefined
-        ? { installDependencies: parsed.installDependencies }
-        : {}),
-      ...(parsed.continueFrom !== undefined ? { continueFrom: parsed.continueFrom } : {}),
-      ...(parsed.continueContext !== undefined ? { continueContext: parsed.continueContext } : {}),
-    })
+    const [projectId, threadId] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [
+      parsed.projectId,
+      parsed.threadId,
+    ])
+    if (startingContainerThreads.has(threadId))
+      throw new Error('A container run is already starting')
+    startingContainerThreads.add(threadId)
+    try {
+      const activePlan = await getLatestThreadPlan(projectId, threadId)
+      if (activePlan && activePlan.meta.status !== 'abandoned') {
+        throw new Error(
+          'Container runs cannot enforce the plan workflow. End the plan before starting a container run.',
+        )
+      }
+      return await getContainerRunService().start({
+        projectId,
+        threadId,
+        prompt: parsed.prompt,
+        model: parsed.model,
+        budgets: parsed.budgets,
+        ...(parsed.useAgentLogin !== undefined ? { useAgentLogin: parsed.useAgentLogin } : {}),
+        ...(parsed.installDependencies !== undefined
+          ? { installDependencies: parsed.installDependencies }
+          : {}),
+        ...(parsed.continueFrom !== undefined ? { continueFrom: parsed.continueFrom } : {}),
+        ...(parsed.continueContext !== undefined
+          ? { continueContext: parsed.continueContext }
+          : {}),
+      })
+    } finally {
+      startingContainerThreads.delete(threadId)
+    }
   })
   // Why each model could not run in a container, or null when it could — the
   // resolver's own answer, so the dialog's greyed rows never disagree with a
@@ -2811,6 +2853,18 @@ export function registerAllHandlers(
     },
   )
 
+  ipcMain.handle(
+    'automations:cleanup-runs',
+    async (event, rawProjectId: unknown, rawScheduleId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, scheduleId] = parseIpcArgs(
+        z.tuple([zProjectId, zNonEmptyString.max(256)]),
+        [rawProjectId, rawScheduleId],
+      )
+      return getAutomationService().cleanupRuns(projectId, scheduleId)
+    },
+  )
+
   ipcMain.handle('automations:list-branch-ci', (event, rawProjectId: unknown) => {
     assertMainFrameSender(event, win)
     const projectId = parseIpcArgs(zProjectId, [rawProjectId])
@@ -3468,6 +3522,11 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     if (typeof agentId !== 'string') throw new Error('acp:probe-agent requires an agent id')
     return probeAcpAgentForSettings(agentId)
+  })
+  ipcMain.handle('acp:auth-status', (event, ids: unknown) => {
+    assertMainFrameSender(event, win)
+    const agentIds = parseAcpAuthStatusArgs([ids])
+    return detectAcpAuthStatus(agentIds)
   })
   ipcMain.handle('acp:auto-setup', (event) => {
     assertMainFrameSender(event, win)

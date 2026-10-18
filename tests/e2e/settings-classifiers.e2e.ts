@@ -13,8 +13,8 @@ import type { listClassifierProfiles } from '../../src/main/services/classifiers
 import { $, browser, expect } from '@wdio/globals'
 import {
   E2E_SCREENSHOT_DIR,
-  pinTextForCapture,
   saveElementScreenshot,
+  pinTextForCapture,
 } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { listenOnFixturePort } from './helpers/fixture-server.ts'
@@ -235,7 +235,15 @@ describe('classifier connections settings', () => {
     await assertKitButtonChrome('#settings-classifiers-host .classifier-save', 'primary')
     await assertKitButtonChrome('#settings-classifiers-host .classifier-test', 'secondary')
     await assertKitButtonChrome('#settings-classifiers-host .classifier-remove', 'danger')
-    await saveClassifierScreenshot('#settings-dialog', 'settings-classifiers.png')
+    // The real request's latency cannot be seeded; retain the behavior checks
+    // above and pin only its elapsed display while the screenshot is taken.
+    assert.match(await host.$('.classifier-status').getText(), /\d+ ms/)
+    const restoreLatency = await pinTextForCapture('.classifier-status', /\d+ ms/g, '14 ms')
+    try {
+      await saveClassifierScreenshot('#settings-dialog', 'settings-classifiers.png')
+    } finally {
+      await restoreLatency()
+    }
     await host.$('[name="classifierUrl"]').setValue('https://example.com/v1')
     await expect(host.$('.classifier-destination-note')).toBeDisplayed()
     await expect(host.$('.classifier-destination-note')).toHaveText(

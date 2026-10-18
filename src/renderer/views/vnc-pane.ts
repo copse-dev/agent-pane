@@ -1,6 +1,8 @@
 import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
 import RFB from '@novnc/novnc'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
+import { attachAnnotation } from '../drawing/attach-annotation.ts'
+import { mountAnnotationLayer, type AnnotationLayer } from '../drawing/annotation-layer.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
 import { el } from '../dom/helpers.ts'
 import { closeIcon, monitorIcon, plusIcon, refreshIcon } from '../dom/icons.ts'
@@ -23,6 +25,7 @@ import { showToast } from './toast.ts'
 import { createSimulatorDesktopView, type SimulatorDesktopView } from './simulator-desktop-view.ts'
 import { openRightPanel } from '../controller/panels.ts'
 import { DESKTOP_VIEWER_OFF_DETAIL, DESKTOP_VIEWER_OFF_TITLE } from '@shared/desktop-viewer.ts'
+import { createVncSshHostForm } from './vnc-ssh-host-form.ts'
 
 const CHOOSE_MACHINE_TEXT = 'Choose a device, enter an address, or select a saved SSH machine.'
 
@@ -138,6 +141,22 @@ function mountVncSession(
     role: 'list',
     'aria-label': 'Desktop devices',
   })
+  const addSshButton = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary vnc-add-ssh-btn' },
+    'Add SSH machine',
+  )
+  const sshHostForm = createVncSshHostForm(
+    api,
+    async (hostId) => {
+      await refreshSshHosts(sshMachineValue(hostId))
+      await discoverSelectedMachine()
+    },
+    () => {
+      addSshButton.hidden = false
+      deviceList.hidden = false
+    },
+  )
   const nearbyButton = el(
     'button',
     {
@@ -211,6 +230,17 @@ function mountVncSession(
     },
     'Control desktop',
   )
+  const shareButton = el(
+    'button',
+    { type: 'button', class: 'ui-btn vnc-share-btn', hidden: true },
+    'Share screenshot',
+  )
+  const annotateButton = el(
+    'button',
+    { type: 'button', class: 'ui-btn vnc-annotate-btn', 'aria-pressed': 'false', hidden: true },
+    'Annotate',
+  )
+  const captureActions = el('div', { class: 'vnc-capture-actions' }, shareButton, annotateButton)
   const homeButton = el(
     'button',
     { type: 'button', class: 'ui-btn vnc-home-btn', hidden: true },
@@ -418,15 +448,12 @@ function mountVncSession(
     { class: 'vnc-setup-fields' },
     devicesHeading,
     nearbyFeedback,
+    addSshButton,
+    sshHostForm.root,
     deviceList,
     machineSelect,
   )
   const form = el('div', { class: 'vnc-connect-form' }, setupFields, authPanel)
-  const note = el(
-    'p',
-    { class: 'vnc-view-only-note' },
-    'Desktop connections start in view-only mode. Turn on control after connecting.',
-  )
   const controlsBody = el(
     'div',
     { class: 'vnc-controls-body' },
@@ -434,9 +461,9 @@ function mountVncSession(
     status,
     forgetLoginButton,
     controlButton,
+    captureActions,
     deviceNavigation,
     disconnectButton,
-    note,
   )
   controlsRoot.append(controlsBody)
 
@@ -445,6 +472,7 @@ function mountVncSession(
   viewerRoot.append(screen, empty)
 
   let rfb: RFB | null = null
+  let annotation: AnnotationLayer | null = null
   let channel: VncIpcChannel | null = null
   let connectGeneration = 0
   let discoveryGeneration = 0
@@ -523,6 +551,10 @@ function mountVncSession(
     setupCredentialHint.textContent = secureCredentialStorage
       ? 'Your login is stored securely after a successful connection.'
       : 'Your login is used for this connection only.'
+    if (machineSelect.value.startsWith(SSH_MACHINE_PREFIX)) {
+      setupCredentialHint.textContent =
+        'SSH secures the connection. Enter a desktop login only if screen sharing requires one.'
+    }
     if (!selectedHasSavedPassword) return
     savedLoginCopy.replaceChildren(
       selectedSavedUsername
@@ -586,11 +618,12 @@ function mountVncSession(
     connectButton.hidden = active
     disconnectButton.hidden = !active
     controlButton.hidden = !connected
+    shareButton.hidden = !connected
+    annotateButton.hidden = !connected
     homeButton.hidden = !connected || simulatorSessionId === null
     const android = selectedSimulator()?.platform === 'android'
     backButton.hidden = !connected || !android
     overviewButton.hidden = !connected || !android
-    note.hidden = active || isSimulatorMachine(machineSelect.value)
     disconnectButton.textContent = connected ? 'Disconnect' : 'Cancel'
     portInput.disabled = active
     addressInput.disabled = active
@@ -667,6 +700,7 @@ function mountVncSession(
 
   function setControlEnabled(enabled: boolean): void {
     if ((!rfb && !simulatorView) || !connectedAtLeastOnce) return
+    if (enabled) annotation?.deactivate()
     controlEnabled = enabled
     if (rfb) rfb.viewOnly = !enabled
     simulatorView?.setControlEnabled(enabled)
@@ -697,6 +731,9 @@ function mountVncSession(
   }
 
   function clearViewer(title: string, kind: VncStatusKind = 'idle', detail = ''): void {
+    annotation?.dispose()
+    annotation = null
+    annotateButton.setAttribute('aria-pressed', 'false')
     rfb = null
     channel = null
     activeTarget = null
@@ -989,10 +1026,8 @@ function mountVncSession(
       discoveryGeneration++
       renderDiscoveredPorts([])
       empty.textContent = `Connect to view ${selectedSimulator()?.name ?? 'this Simulator'}.`
-      note.hidden = true
     } else if (!channel) {
       empty.textContent = CHOOSE_MACHINE_TEXT
-      note.hidden = false
     }
     const nearby = selectedNearbyServer()
     if (nearby) {
@@ -1585,6 +1620,41 @@ function mountVncSession(
     }
   }
 
+  function captureScreenForAnnotation(): string | null {
+    const canvas = screen.querySelector<HTMLCanvasElement>('canvas')
+    if (!connectedAtLeastOnce || !canvas || canvas.width === 0 || canvas.height === 0) return null
+    const host = screen.getBoundingClientRect()
+    const frame = canvas.getBoundingClientRect()
+    const capture = document.createElement('canvas')
+    capture.width = Math.max(1, Math.round(host.width))
+    capture.height = Math.max(1, Math.round(host.height))
+    const context = capture.getContext('2d')
+    if (!context) return null
+    context.drawImage(
+      canvas,
+      frame.left - host.left,
+      frame.top - host.top,
+      frame.width,
+      frame.height,
+    )
+    return capture.toDataURL('image/png')
+  }
+
+  shareButton.addEventListener('click', shareCurrentScreen)
+  annotateButton.addEventListener('click', () => {
+    if (!connectedAtLeastOnce) return
+    if (controlEnabled) setControlEnabled(false)
+    annotation ??= mountAnnotationLayer(screen, {
+      label: connectedMachineName ?? 'desktop',
+      captureBase: () => Promise.resolve(captureScreenForAnnotation()),
+      onSend: (payload) => attachAnnotation(payload, connectedMachineName ?? 'desktop'),
+      onDeactivate: () => {
+        annotateButton.setAttribute('aria-pressed', 'false')
+      },
+    })
+    annotateButton.setAttribute('aria-pressed', String(annotation.toggle()))
+  })
+
   const onScreenContextMenu = (event: MouseEvent): void => {
     const canvas = screen.querySelector<HTMLCanvasElement>('canvas')
     if (!connectedAtLeastOnce || !canvas) return
@@ -1630,6 +1700,11 @@ function mountVncSession(
     void loadMachines().finally(() => {
       refreshDevicesButton.disabled = false
     })
+  })
+  addSshButton.addEventListener('click', () => {
+    sshHostForm.open()
+    addSshButton.hidden = true
+    deviceList.hidden = true
   })
   authenticateButton.addEventListener('click', submitCredentials)
   const forgetLogin = (): void => {
@@ -1767,6 +1842,8 @@ function mountVncSession(
       void showSimulatorFromAgent(udid, presentation)
     },
     cleanup: (): void => {
+      annotation?.dispose()
+      annotation = null
       connectGeneration++
       discoveryGeneration++
       nearbyGeneration++

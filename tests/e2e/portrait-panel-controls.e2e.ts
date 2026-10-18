@@ -18,7 +18,8 @@ async function savePortraitElementScreenshot(selector: string, filename: string)
 
 /** Wide enough for all labeled modes at a normal projects width on CI fonts. */
 const PORTRAIT_WIDTH = 920
-const PORTRAIT_HEIGHT = 1180
+// Fits the CI display at 2x scale so the bottom mode strip is captured whole.
+const PORTRAIT_HEIGHT = 1000
 
 async function setProjectsWidth(px: number): Promise<void> {
   await browser.execute((width) => {
@@ -88,7 +89,7 @@ async function openPortraitChrome(): Promise<void> {
   })
   await browser.waitUntil(
     async () => {
-      const overflow = await $('.portrait-panel-overflow')
+      const overflow = await $('.portrait-panel-bar .portrait-panel-overflow')
       return !(await overflow.isExisting()) || !(await overflow.isDisplayed())
     },
     { timeout: 5_000, timeoutMsg: 'expected all portrait panel modes to fit without overflow' },
@@ -97,7 +98,7 @@ async function openPortraitChrome(): Promise<void> {
 
 async function openEmptyThreadPortraitChrome(): Promise<void> {
   resetUserData()
-  seedEmptyProject(seedStableWorkspace(), 'e2e-portrait-panel-centered', {
+  seedEmptyProject(seedStableWorkspace(), 'e2e-portrait-right-panel-project', {
     okfMemoriesEnabled: true,
     roadmapPlansEnabled: true,
     rightPanelPosition: 'bottom',
@@ -149,7 +150,7 @@ describe('portrait panel controls row', () => {
 
     const portraitBar = await $('.portrait-panel-bar')
     await expect(portraitBar).toBeDisplayed()
-    await expect($('.portrait-panel-overflow')).not.toBeDisplayed()
+    await expect($('.portrait-panel-bar .portrait-panel-overflow')).not.toBeDisplayed()
 
     const labeled = [
       { label: 'Toggle right panel', text: 'Panel' },
@@ -363,7 +364,7 @@ describe('portrait panel controls row', () => {
     await setProjectsWidth(420)
     await browser.waitUntil(
       async () => {
-        const overflow = await $('.portrait-panel-overflow')
+        const overflow = await $('.portrait-panel-bar .portrait-panel-overflow')
         return overflow.isExisting() && (await overflow.isDisplayed())
       },
       { timeout: 5_000, timeoutMsg: 'expected portrait panel overflow trigger when cramped' },
@@ -381,19 +382,22 @@ describe('portrait panel controls row', () => {
       'portrait-panel-controls-overflow.png',
     )
 
-    await $('.portrait-panel-overflow-trigger').click()
-    const menu = await $('.portrait-panel-overflow-menu')
+    await $('.portrait-panel-bar .portrait-panel-overflow-trigger').click()
+    const menu = await $('.portrait-panel-bar .portrait-panel-overflow-menu')
     await expect(menu).toBeDisplayed()
-    const items = await $$('.portrait-panel-overflow-item')
+    const items = await $$('.portrait-panel-bar .portrait-panel-overflow-item')
     expect(items.length).toBeGreaterThan(0)
     const labels = await browser.execute(() =>
-      Array.from(document.querySelectorAll('.portrait-panel-overflow-item')).map((el) =>
-        (el.textContent ?? '').trim(),
-      ),
+      Array.from(
+        document.querySelectorAll('.portrait-panel-bar .portrait-panel-overflow-item'),
+      ).map((el) => (el.textContent ?? '').trim()),
     )
     expect(labels).toContain('Browser')
 
-    await savePortraitElementScreenshot('#input-bar', 'portrait-panel-controls-overflow-open.png')
+    await savePortraitElementScreenshot(
+      '.portrait-panel-bar .portrait-panel-overflow-menu',
+      'portrait-panel-controls-overflow-open.png',
+    )
 
     const browserItem = await menu.$('.portrait-panel-overflow-item*=Browser')
     await browserItem.waitForClickable({ timeout: 5_000 })

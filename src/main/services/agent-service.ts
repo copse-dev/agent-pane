@@ -1,7 +1,15 @@
+import { AgentTurnBusyError } from '@shared/agent-turn-busy.ts'
+import { agentTurnScheduler, AGENT_TURN_QUEUE_NOTICE } from './agent-turn-scheduler.ts'
 import { OpenAiCancellationError } from './remote/openai-agents-api.ts'
 import { runWithInlineCanvas } from './inline-canvas-context.ts'
 import { MATCH_PROMPT_MODEL_SELECTOR } from '@copse/llm/dynamic-model.ts'
 import { promptRoutingContext, resolvePromptModel } from './providers/prompt-model-routing.ts'
+import {
+  getRunPlan,
+  isPlanningRun,
+  planToolBlockReason,
+  threadPlanInstructions,
+} from './thread-plan-context.ts'
 import { randomUUID } from 'node:crypto'
 import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
 import { errorMessage } from '@shared/errors.ts'
@@ -70,7 +78,12 @@ import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { isAppleDevelopmentToolOffered } from './apple-development/apple-development-tool-scope.ts'
 import { dispatchInlineVisualization } from './inline-visualization.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
-import { appendContextCompaction, getThreadMeta, updateMeta } from './thread-store.ts'
+import {
+  appendContextCompaction,
+  getThreadMeta,
+  getLatestThreadPlan,
+  updateMeta,
+} from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
@@ -138,6 +151,7 @@ import {
   readFileLimitsFromConversationBudget,
 } from './agent-run-read-limits.ts'
 import { runWithAgentRunReadonly } from './agent-run-readonly.ts'
+import { runWithAgentRunExploreMode } from './agent-run-explore-mode.ts'
 import {
   isToolAllowedInReadonlyMode,
   REQUEST_WRITE_ACCESS_TOOL,
@@ -395,7 +409,7 @@ function parentTools(
 ): LLMTool[] {
   const executionContext = getThreadExecutionContext()
   let tools = withoutUnofferedWriteAccess(
-    registry.toLLMTools(),
+    registry.toLLMTools().filter((tool) => !planToolBlockReason(tool.name)),
     executionContext?.deferredWorktree !== undefined,
   ).filter((tool) => isAppleDevelopmentToolOffered(tool.name, executionContext?.projectId))
   // Hide the advisor tool when the configured advisor is not more capable than
@@ -446,7 +460,7 @@ function parentTools(
   // is gated the same way, on attached archives.
   tools = applyVideoToolAvailability(tools, threadVideos)
   tools = applyArchiveToolAvailability(tools, threadArchives)
-  // classify_text is offered once a classifier connection is saved.
+  // ask_classifier is offered once a classifier connection is saved.
   tools = withClassifierToolOffer(tools, configuredClassifierProfiles())
   return tools
 }
@@ -734,6 +748,7 @@ function fireAfterToolUseHook(args: {
 }
 
 export interface RunAgentOptions {
+  executionMode?: 'agent'
   invokedSkills?: string[]
   /** Subagent explicitly invoked by the user's leading `/name`. */
   invokedAgent?: string
@@ -799,9 +814,46 @@ export async function runAgent(
   registry: ToolRegistry,
   options?: RunAgentOptions,
 ): Promise<RunAgentResult> {
-  return runWithInlineCanvas(threadId, host, (inlineHost) =>
-    runAgentWithInlineCanvas(threadId, userPrompt, priorMessages, inlineHost, registry, options),
-  )
+  // Register before admission so Stop, mobile Stop and renderer reconnection
+  // continue to own a queued turn even though no provider process has started.
+  if (abortMap.has(threadId)) throw new AgentTurnBusyError(threadId)
+  const admission = new AbortController()
+  abortMap.set(threadId, admission)
+  const phase = { preflightComplete: false }
+  try {
+    return await agentTurnScheduler.run(
+      admission.signal,
+      () => {
+        host.emit(threadId, { type: 'text', text: AGENT_TURN_QUEUE_NOTICE })
+      },
+      () => {
+        return runWithInlineCanvas(threadId, host, (inlineHost) =>
+          runAgentWithInlineCanvas(
+            threadId,
+            userPrompt,
+            priorMessages,
+            inlineHost,
+            registry,
+            admission,
+            () => {
+              phase.preflightComplete = true
+            },
+            options,
+          ),
+        )
+      },
+    )
+  } catch (error) {
+    if (phase.preflightComplete || !admission.signal.aborted || error !== admission.signal.reason)
+      throw error
+    host.emit(threadId, { type: 'done', stopReason: 'cancelled' })
+    return {
+      usage: { inputTokens: 0, outputTokens: 0 },
+      messages: [...priorMessages, { role: 'user', content: userPrompt }],
+    }
+  } finally {
+    if (abortMap.get(threadId) === admission) abortMap.delete(threadId)
+  }
 }
 
 async function runAgentWithInlineCanvas(
@@ -810,6 +862,8 @@ async function runAgentWithInlineCanvas(
   priorMessages: LLMMessage[],
   host: AgentHost<StreamChunk>,
   registry: ToolRegistry,
+  admission: AbortController,
+  onPreflightComplete: () => void,
   options?: RunAgentOptions,
 ): Promise<RunAgentResult> {
   perfMark('ttft:agent-run-start')
@@ -826,6 +880,7 @@ async function runAgentWithInlineCanvas(
   const resolved = await perfSpan('ttft:model-resolve', () =>
     resolveAgentChatModel(previousPromptModel ?? requestedModel),
   )
+  admission.signal.throwIfAborted()
   let model = resolved.model
   recordThreadModel(threadId, model)
   // Persist the resolved model so a turn that fails before any usage (e.g. a
@@ -942,6 +997,36 @@ async function runAgentWithInlineCanvas(
   // the existing text/`done` channel and return without starting the turn — the
   // blocked prompt never enters LLM history. Spine recording is attributed the
   // same way the turn's own hooks are (decision 6, always-on).
+  if (getRunPlan() && (acpSelection || remoteSelection || pluginModel)) {
+    sendChunk({
+      type: 'text',
+      text: 'Plans currently require a model hosted by Copse. Choose a provider model to continue, or end the plan in Plan.',
+    })
+    recordTurnFailure(new Error('Selected executor cannot enforce the plan workflow'), {
+      source: 'host',
+      stopReason: 'tool_denied',
+    })
+    sendChunk({ type: 'done' })
+    return resultWithOutcome({
+      usage: { inputTokens: 0, outputTokens: 0 },
+      messages: priorMessages,
+    })
+  }
+  if (isPlanningRun() && options?.invokedAgent) {
+    sendChunk({
+      type: 'text',
+      text: 'Child agents are unavailable during draft planning. Submit a normal message to refine the plan.',
+    })
+    recordTurnFailure(new Error('Draft planning cannot invoke a child agent'), {
+      source: 'host',
+      stopReason: 'tool_denied',
+    })
+    sendChunk({ type: 'done' })
+    return resultWithOutcome({
+      usage: { inputTokens: 0, outputTokens: 0 },
+      messages: priorMessages,
+    })
+  }
   const submit = await runBeforeSubmitPrompt(threadId, userPrompt)
   if (submit.blocked) {
     sendChunk({ type: 'text', text: submit.blocked })
@@ -975,6 +1060,8 @@ async function runAgentWithInlineCanvas(
     threadId,
     withReviewContext(userPrompt, options?.reviewContext),
   )
+  admission.signal.throwIfAborted()
+  onPreflightComplete()
   const outboundPrompt = redaction.content
   if (redaction.notice) {
     sendChunk({ type: 'text', text: redaction.notice })
@@ -987,17 +1074,35 @@ async function runAgentWithInlineCanvas(
     priorMessages.length === 0 &&
     !options?.provider
   ) {
-    const routingController = new AbortController()
+    const routingController = admission
     abortMap.set(threadId, routingController)
     try {
       const context = await redactUserContent(
         threadId,
         promptRoutingContext(outboundPrompt, priorMessages),
       )
+      const { estimateContextBreakdown } = await import('./context-estimate.ts')
+      const draftText = promptTextForSubmit(outboundPrompt)
+      const estimate = await estimateContextBreakdown(registry, {
+        ...(runContext ? { projectId: runContext.projectId } : {}),
+        draftText,
+        invokedSkills: options?.invokedSkills ?? [],
+        imageCount:
+          typeof outboundPrompt === 'string'
+            ? 0
+            : outboundPrompt.filter((block) => block.type === 'image').length,
+        priorMessages,
+        model,
+      })
+      // Leave room for the reply and token-estimation error. LM Studio's loaded
+      // context length is checked against this before the model is triggered.
+      const requiredTokens =
+        estimate.totalTokens + Math.max(1024, Math.ceil(estimate.totalTokens * 0.1))
       model = await resolvePromptModel(
         promptTextForSubmit(context.content),
         model,
         routingController.signal,
+        requiredTokens,
       )
       recordThreadModel(threadId, model)
       setActiveRunModel(model)
@@ -1020,8 +1125,6 @@ async function runAgentWithInlineCanvas(
         })
       }
       throw err
-    } finally {
-      if (abortMap.get(threadId) === routingController) abortMap.delete(threadId)
     }
   }
   // Prompt matching chooses once. Pin the route in both persisted and live
@@ -1041,7 +1144,7 @@ async function runAgentWithInlineCanvas(
   if (pluginModel) {
     /** Append a recorded cause to a plugin error, or nothing when none was captured. */
     const suffixFor = (reason: string | undefined): string => (reason ? ` ${reason}` : '')
-    const controller = new AbortController()
+    const controller = admission
     abortMap.set(threadId, controller)
     setActiveRunThread(threadId)
     beginHookRunRecording(threadId)
@@ -1119,7 +1222,6 @@ async function runAgentWithInlineCanvas(
       fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
       endHookRunRecording(threadId)
       clearActiveRunThread(threadId)
-      abortMap.delete(threadId)
     }
   }
 
@@ -1135,7 +1237,7 @@ async function runAgentWithInlineCanvas(
   ): Promise<RunAgentResult> => {
     perfMark('ttft:acp-route-start')
     terminalContext = { executor: 'acp', provider: acpRunAgentId, model: executorModel }
-    const controller = new AbortController()
+    const controller = admission
     abortMap.set(threadId, controller)
     setActiveRunThread(threadId)
     // ACP-native tool bridge calls share the host permission gate. Keep the
@@ -1255,25 +1357,27 @@ async function runAgentWithInlineCanvas(
         }
       : null
     try {
-      // `turnStart` is an executor-neutral assembly event (decision 20): ACP
-      // receives the same active first-party plugin hooks as the built-in loop.
-      // Only Copse's bridged tools are listed because the host cannot inspect
-      // the external agent's private tool catalogue.
-      const operatorInstructions = await perfSpan('ttft:acp-turn-assembly', () =>
-        assembleAcpTurnStart({
-          userText: promptTextForSubmit(userPrompt),
-          priorTodos: options?.priorTodos ?? [],
-          model: executorModel,
-          registry,
-          signal: controller.signal,
-          resolveGithubRepoSlug: () => getGithubRepoSlug(),
-          resolvePluginSetting,
-          recordHookRun: recordFunctionHookRun,
-        }),
-      )
+      // Copse-managed ACP turns use the canonical turnStart assembly (decision
+      // 20). Agent-managed turns leave the agent's own prompt behavior intact.
+      const operatorInstructions =
+        options?.executionMode === 'agent'
+          ? ''
+          : await perfSpan('ttft:acp-turn-assembly', () =>
+              assembleAcpTurnStart({
+                userText: promptTextForSubmit(userPrompt),
+                priorTodos: options?.priorTodos ?? [],
+                model: executorModel,
+                registry,
+                signal: controller.signal,
+                resolveGithubRepoSlug: () => getGithubRepoSlug(),
+                resolvePluginSetting,
+                recordHookRun: recordFunctionHookRun,
+              }),
+            )
       let result = await runAcpAgentFromSettings({
         threadId,
         agentId: acpRunAgentId,
+        ...(options?.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
         userPrompt: outboundPrompt,
         priorMessages,
         signal: controller.signal,
@@ -1291,7 +1395,9 @@ async function runAgentWithInlineCanvas(
         { role: 'user' as const, content: outboundPrompt },
         ...result.messages,
       ]
-      const endedAfterTools = shouldRecoverAcpTurn(result.stopReason, acpProgress.turn)
+      const endedAfterTools =
+        options?.executionMode !== 'agent' &&
+        shouldRecoverAcpTurn(result.stopReason, acpProgress.turn)
       const endedOn = acpProgress.turn.lastEvent
       let recoveryAttempted = false
       let recoverySucceeded = false
@@ -1485,7 +1591,6 @@ async function runAgentWithInlineCanvas(
       clearHookRunLiveSink(acpHookCardSink)
       endHookRunRecording(threadId)
       clearActiveRunThread(threadId)
-      abortMap.delete(threadId)
       budgetLedger.forget(turnTreeId)
     }
   }
@@ -1521,9 +1626,9 @@ async function runAgentWithInlineCanvas(
     }
     // A credentials / billing failure is the one case worth offering an
     // alternative billing path for, and the offer has to happen *outside* this
-    // block: its `finally` tears down the run's abort registration, which a
-    // follow-on ACP run then re-establishes for itself. So the run reports the
-    // block instead of writing the error to the transcript, and the caller
+    // block: its `finally` clears the provider deadline and hook recording.
+    // The outer admission owner keeps the same Stop identity across fallback.
+    // Report the block without writing the error to the transcript; the caller
     // below either re-routes or prints it.
     const outcome = await (async (): Promise<
       | { kind: 'done'; result: typeof emptyTurn }
@@ -1534,7 +1639,7 @@ async function runAgentWithInlineCanvas(
           error: NonNullable<TurnOutcome['error']>
         }
     > => {
-      const controller = new AbortController()
+      const controller = admission
       abortMap.set(threadId, controller)
       setActiveRunThread(threadId)
       const runAbort = createAgentRunAbortScheduler(
@@ -1609,7 +1714,6 @@ async function runAgentWithInlineCanvas(
         }
         runAbort.clear()
         clearActiveRunThread(threadId)
-        abortMap.delete(threadId)
       }
     })()
 
@@ -1668,7 +1772,7 @@ async function runAgentWithInlineCanvas(
     }
   }
 
-  const controller = new AbortController()
+  const controller = admission
   abortMap.set(threadId, controller)
   setActiveRunThread(threadId)
   // H3: register this run as the abort target for hook `haltRun` (decision 12).
@@ -1745,10 +1849,8 @@ async function runAgentWithInlineCanvas(
     const resolvePluginSetting =
       options?.resolvePluginSetting ??
       ((pluginId: string, key: string): unknown => getPluginService().getSetting(pluginId, key))
-    const subagentsEnabled = getSetting<boolean>(
-      SUBAGENTS_ENABLED_SETTING,
-      SUBAGENTS_ENABLED_DEFAULT,
-    )
+    const subagentsEnabled =
+      !isPlanningRun() && getSetting<boolean>(SUBAGENTS_ENABLED_SETTING, SUBAGENTS_ENABLED_DEFAULT)
     const contextWindow = options?.contextWindow ?? (await resolveContextWindow(model))
     const toolSchemaReserve = toolSchemaReserveForModel(model)
     const providerOptions = {
@@ -1832,7 +1934,7 @@ async function runAgentWithInlineCanvas(
       trackInstructionActivation: true,
       nestedInstructionTurn,
     })
-    const systemPrompt = systemPromptBuild.prompt
+    const systemPrompt = systemPromptBuild.prompt + threadPlanInstructions()
     const skillActivationTurn = createSkillActivationTurn(
       invokedSkills,
       parentLoopTools.map((tool) => tool.name),
@@ -2170,6 +2272,8 @@ async function runAgentWithInlineCanvas(
                 'only in a project enrolled in Apple Development on a local Mac.',
             )
           }
+          const planBlock = planToolBlockReason(name)
+          if (planBlock) return planBlock
           const instructionContextPaths = instructionContextPathsForTool(name, args)
           if (instructionContextPaths.length > 0) {
             const activation = await activateNestedInstructionSources(
@@ -2362,104 +2466,106 @@ async function runAgentWithInlineCanvas(
         await runWithSubagentUsageScope(() =>
           runWithAgentRunReadonly(readonlyMode, async () => {
             await runWithAgentRunReadFileLimits(runReadLimits, async () => {
-              await runAgentLoop({
-                provider,
-                messages: trimmed,
-                tools: parentLoopTools,
-                usageModel: model,
-                maxLlmCalls: options?.maxLlmCalls ?? DEFAULT_MAX_LLM_CALLS,
-                ...(options?.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
-                ...(options?.adaptiveExtensions !== undefined
-                  ? { adaptiveExtensions: options.adaptiveExtensions }
-                  : {}),
-                reasoningCheckpointPolicy: productReasoningCheckpointPolicy(
-                  options?.reasoningRecoveryMaxTokens,
-                ),
-                reasoningRunawayTextToleranceChars:
-                  PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
-                runDeadline: runAbort.deadline,
-                onRunDeadlineActivity: runAbort.schedule,
-                coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
-                getOpenTodos: () => getAgentRunTodos(),
-                continuationBudget,
-                resolvePluginSetting,
-                artifactCheckpointEligible: true,
-                recordHookRun: recordFunctionHookRun,
-                recordAppliedNudge: recordAppliedNudgeRun,
-                onLlmCall: (count) => {
-                  setHookRunStep(count)
-                  // `messages` above is `trimmed`, mutated in place as turns land, so
-                  // this persists everything the previous step produced.
-                  checkpointHistory()
-                  // The previous step's tool results have been streamed; a notice
-                  // here cannot come between a tool call and its result.
-                  flushNestedInstructionNotices()
-                },
-                recordStreamCut: (record) => {
-                  recordStreamCut(record, model)
-                },
-                recordReasoningCheckpoint: (record) => {
-                  recordReasoningCheckpoint(record, model)
-                },
-                executeTool: executeParentTool,
-                signal: controller.signal,
-                maxContextTokens: contextWindow,
-                toolSchemaReserveTokens: toolSchemaReserve,
-                onHistoryTrimmed: () => {
-                  notifyTrimmed(sendTrimNotice)
-                },
-                getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
-                onChunk: (chunk) => {
-                  if (chunk.type === 'done') {
-                    // Suppress the loop's terminal `done` (E3): the run emits one
-                    // terminal `done` after post-turn work. Keep its stop reason.
-                    loopStopReason = chunk.stopReason
-                    return
-                  }
-                  sendChunk(chunk)
-                  if (chunk.type === 'context_compacted' && runContext) {
-                    // The boundary is canonical; the opaque item stays in the
-                    // provider-history projection. Best effort like the other
-                    // observational spine lines: a failed append must not fail the turn.
-                    void appendContextCompaction(runContext.projectId, threadId, {
-                      v: SPINE_SCHEMA_VERSION,
-                      type: 'context_compaction',
-                      id: randomUUID(),
-                      recordedAt: Date.now(),
-                      provider: chunk.provider,
-                      model: chunk.model,
-                      projectionVersion: 1,
-                      itemId: chunk.itemId,
-                    }).catch(() => undefined)
-                  }
-                  if (chunk.type === 'usage') {
-                    inputTokens += chunk.inputTokens
-                    outputTokens += chunk.outputTokens
-                  }
-                },
-              })
-              // A loop that stopped on a tool step (step cap, abort) still owes
-              // the notice for what that step activated.
-              flushNestedInstructionNotices()
-
-              const subUsage = getAccumulatedSubagentUsage()
-              if (subUsage.inputTokens || subUsage.outputTokens) {
-                inputTokens += subUsage.inputTokens
-                outputTokens += subUsage.outputTokens
-                sendChunk({
-                  type: 'usage',
-                  model: subagentUsageModel,
-                  subagentUsage: true,
-                  inputTokens: subUsage.inputTokens,
-                  outputTokens: subUsage.outputTokens,
-                  ...(subUsage.cacheReadTokens !== undefined
-                    ? { cacheReadTokens: subUsage.cacheReadTokens }
+              await runWithAgentRunExploreMode(subagentsEnabled, async () => {
+                await runAgentLoop({
+                  provider,
+                  messages: trimmed,
+                  tools: parentLoopTools,
+                  usageModel: model,
+                  maxLlmCalls: options?.maxLlmCalls ?? DEFAULT_MAX_LLM_CALLS,
+                  ...(options?.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
+                  ...(options?.adaptiveExtensions !== undefined
+                    ? { adaptiveExtensions: options.adaptiveExtensions }
                     : {}),
-                  ...(subUsage.cacheCreationTokens !== undefined
-                    ? { cacheCreationTokens: subUsage.cacheCreationTokens }
-                    : {}),
+                  reasoningCheckpointPolicy: productReasoningCheckpointPolicy(
+                    options?.reasoningRecoveryMaxTokens,
+                  ),
+                  reasoningRunawayTextToleranceChars:
+                    PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
+                  runDeadline: runAbort.deadline,
+                  onRunDeadlineActivity: runAbort.schedule,
+                  coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
+                  getOpenTodos: () => getAgentRunTodos(),
+                  continuationBudget,
+                  resolvePluginSetting,
+                  artifactCheckpointEligible: true,
+                  recordHookRun: recordFunctionHookRun,
+                  recordAppliedNudge: recordAppliedNudgeRun,
+                  onLlmCall: (count) => {
+                    setHookRunStep(count)
+                    // `messages` above is `trimmed`, mutated in place as turns land, so
+                    // this persists everything the previous step produced.
+                    checkpointHistory()
+                    // The previous step's tool results have been streamed; a notice
+                    // here cannot come between a tool call and its result.
+                    flushNestedInstructionNotices()
+                  },
+                  recordStreamCut: (record) => {
+                    recordStreamCut(record, model)
+                  },
+                  recordReasoningCheckpoint: (record) => {
+                    recordReasoningCheckpoint(record, model)
+                  },
+                  executeTool: executeParentTool,
+                  signal: controller.signal,
+                  maxContextTokens: contextWindow,
+                  toolSchemaReserveTokens: toolSchemaReserve,
+                  onHistoryTrimmed: () => {
+                    notifyTrimmed(sendTrimNotice)
+                  },
+                  getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
+                  onChunk: (chunk) => {
+                    if (chunk.type === 'done') {
+                      // Suppress the loop's terminal `done` (E3): the run emits one
+                      // terminal `done` after post-turn work. Keep its stop reason.
+                      loopStopReason = chunk.stopReason
+                      return
+                    }
+                    sendChunk(chunk)
+                    if (chunk.type === 'context_compacted' && runContext) {
+                      // The boundary is canonical; the opaque item stays in the
+                      // provider-history projection. Best effort like the other
+                      // observational spine lines: a failed append must not fail the turn.
+                      void appendContextCompaction(runContext.projectId, threadId, {
+                        v: SPINE_SCHEMA_VERSION,
+                        type: 'context_compaction',
+                        id: randomUUID(),
+                        recordedAt: Date.now(),
+                        provider: chunk.provider,
+                        model: chunk.model,
+                        projectionVersion: 1,
+                        itemId: chunk.itemId,
+                      }).catch(() => undefined)
+                    }
+                    if (chunk.type === 'usage') {
+                      inputTokens += chunk.inputTokens
+                      outputTokens += chunk.outputTokens
+                    }
+                  },
                 })
-              }
+                // A loop that stopped on a tool step (step cap, abort) still owes
+                // the notice for what that step activated.
+                flushNestedInstructionNotices()
+
+                const subUsage = getAccumulatedSubagentUsage()
+                if (subUsage.inputTokens || subUsage.outputTokens) {
+                  inputTokens += subUsage.inputTokens
+                  outputTokens += subUsage.outputTokens
+                  sendChunk({
+                    type: 'usage',
+                    model: subagentUsageModel,
+                    subagentUsage: true,
+                    inputTokens: subUsage.inputTokens,
+                    outputTokens: subUsage.outputTokens,
+                    ...(subUsage.cacheReadTokens !== undefined
+                      ? { cacheReadTokens: subUsage.cacheReadTokens }
+                      : {}),
+                    ...(subUsage.cacheCreationTokens !== undefined
+                      ? { cacheCreationTokens: subUsage.cacheCreationTokens }
+                      : {}),
+                  })
+                }
+              })
             })
           }),
         )
@@ -2515,9 +2621,11 @@ async function runAgentWithInlineCanvas(
 
         // Pre-review gate: if the plan still has open todos, give the parent a couple
         // of deterministic continuation turns to reconcile them before review runs.
-        if (getAgentRunTodos().length > 0 && hasOpenTodos(getAgentRunTodos())) {
+        if (!isPlanningRun() && getAgentRunTodos().length > 0 && hasOpenTodos(getAgentRunTodos())) {
           await runWithAgentRunReadFileLimits(runReadLimits, async () => {
-            await runPreReviewTodoGate(parentContinuationBase)
+            await runWithAgentRunExploreMode(subagentsEnabled, async () => {
+              await runPreReviewTodoGate(parentContinuationBase)
+            })
           })
         }
 
@@ -2696,16 +2804,18 @@ async function runAgentWithInlineCanvas(
             runRemediationTurn: async (nudge) => {
               const remediation = { madeEdits: false }
               await runWithAgentRunReadFileLimits(runReadLimits, async () => {
-                await runParentContinuationTurn({
-                  ...parentContinuationBase,
-                  userNudge: nudge,
-                  maxSteps: 8,
-                  onEditTool: (name: string): void => {
-                    if (isEditTool(name)) {
-                      turnChangedFiles = true
-                      remediation.madeEdits = true
-                    }
-                  },
+                await runWithAgentRunExploreMode(subagentsEnabled, async () => {
+                  await runParentContinuationTurn({
+                    ...parentContinuationBase,
+                    userNudge: nudge,
+                    maxSteps: 8,
+                    onEditTool: (name: string): void => {
+                      if (isEditTool(name)) {
+                        turnChangedFiles = true
+                        remediation.madeEdits = true
+                      }
+                    },
+                  })
                 })
               })
               return remediation
@@ -2787,7 +2897,6 @@ async function runAgentWithInlineCanvas(
     endHookRunRecording(threadId)
     clearActiveRunThread(threadId)
     clearHaltTarget(threadId, turnTreeId)
-    abortMap.delete(threadId)
   }
 
   return resultWithOutcome({
@@ -2796,8 +2905,8 @@ async function runAgentWithInlineCanvas(
   })
 }
 
-export function abortAgent(threadId: string): void {
-  abortMap.get(threadId)?.abort()
+export function abortAgent(threadId: string, reason?: 'send_now'): void {
+  abortMap.get(threadId)?.abort(reason)
 }
 
 const mobileRunIds = new WeakMap<AbortController, string>()
@@ -2853,6 +2962,18 @@ function beginRetryRun(threadId: string): {
 const RUN_ALREADY_ACTIVE_MESSAGE =
   'Skipped: this thread already has a run in progress. Wait for it to finish, or stop it, then retry.'
 
+/** Standalone review starts outside the dispatcher; enforce the draft boundary too. */
+async function assertStandaloneReviewAllowed(): Promise<void> {
+  const owner = getThreadExecutionContext()
+  if (!owner) return
+  const plan = await getLatestThreadPlan(owner.projectId, owner.threadId)
+  if (plan?.meta.status === 'draft') {
+    throw new Error(
+      'Standalone review is unavailable during draft planning. Use a normal planning turn to inspect the code, or approve or end the plan first.',
+    )
+  }
+}
+
 /**
  * Re-run the post-turn review for a thread on demand — the retry action on a
  * failed review card. The review reads the current working diff, so a failure
@@ -2881,6 +3002,7 @@ export async function retryPostTurnReview(
 
   sendChunk({ type: 'post_turn_review', status: 'running', summary: '' })
   try {
+    await assertStandaloneReviewAllowed()
     const contextWindow = await resolveContextWindow(model)
     const toolSchemaReserve = toolSchemaReserveForModel(model)
     const provider = await buildProvider(model, threadId)
@@ -2947,6 +3069,7 @@ export async function runReviewForThread(
   if (!begun) throw new Error(RUN_ALREADY_ACTIVE_MESSAGE)
   const { controller, runAbort } = begun
   try {
+    await assertStandaloneReviewAllowed()
     const result = await runThreadReview({
       threadId,
       root: executionRoot,

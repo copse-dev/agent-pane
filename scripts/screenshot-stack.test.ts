@@ -9,6 +9,8 @@ import {
   memoizeScreenshotStackAncestry,
   parseScreenshotStack,
   reconcileScreenshotStack,
+  selectScreenshotStackCompletion,
+  selectScreenshotStackPulls,
   STACK_COVERAGE,
   STACK_DECISION,
   verifyScreenshotStack,
@@ -517,8 +519,320 @@ const workflowSchema = z.object({
     }),
   ),
 })
+describe('incremental screenshot stack selection', () => {
+  it('bounds ordinary-PR reconciliation to two API reads in a 50-PR repository', async () => {
+    const f = fixture()
+    const open = Array.from({ length: 50 }, (_, index) => pull(index + 1, BASE, ''))
+    let reads = 0
+    f.github.rest.pulls.get = async ({ pull_number }): Promise<{ data: unknown }> => {
+      assert.equal(pull_number, 50, 'unrelated PRs must not be validated')
+      reads++
+      return { data: open[49] }
+    }
+    f.github.rest.repos.listCommitStatusesForRef = async (): Promise<{ data: unknown }> => {
+      reads++
+      return { data: [] }
+    }
+    for (const number of selectScreenshotStackPulls(open, 'pull_request_target', {
+      pull_request: open[49],
+    }))
+      await reconcileScreenshotStack(f.github, { ...input, number })
+    assert.equal(reads, 2, 'excludes the single paginated open-PR discovery request')
+    assert.equal(f.writes.length, 0)
+  })
+  const other = `<!-- copse-screenshot-stack: #3@${BASE} tip=#4 -->`
+  const open = [
+    pull(1, LOWER),
+    pull(2, TIP),
+    pull(3, BASE, other),
+    pull(4, BASE, other),
+    pull(5, BASE, ''),
+  ]
+  it('selects one ordinary PR without validating unrelated stacks', () => {
+    assert.deepEqual(
+      selectScreenshotStackPulls(open, 'pull_request_target', {
+        pull_request: pull(5, BASE, ''),
+      }),
+      [5],
+    )
+  })
+  it('selects the connected stack for a lower push or tip approval', () => {
+    for (const number of [1, 2])
+      assert.deepEqual(
+        selectScreenshotStackPulls(open, 'pull_request_target', {
+          pull_request: pull(number, TIP),
+        }),
+        [1, 2],
+      )
+    assert.deepEqual(
+      selectScreenshotStackPulls(open, 'workflow_run', {
+        workflow_run: { pull_requests: [{ number: 2 }] },
+      }),
+      [1, 2],
+    )
+  })
+  it('revokes removed declarations and follows the old membership', () => {
+    const removed = [pull(1, LOWER, ''), pull(2, TIP, ''), ...open.slice(2)]
+    assert.deepEqual(
+      selectScreenshotStackPulls(removed, 'pull_request_target', {
+        pull_request: pull(1, LOWER, ''),
+        changes: { body: { from: TEXT } },
+      }),
+      [1, 2],
+    )
+  })
+  it('follows old and new membership transitively', () => {
+    const moved = [pull(1, LOWER, other), ...open.slice(1)]
+    assert.deepEqual(
+      selectScreenshotStackPulls(moved, 'pull_request_target', {
+        pull_request: pull(1, LOWER, other),
+        changes: { body: { from: TEXT } },
+      }),
+      [1, 2, 3, 4],
+    )
+  })
+  it('invalidates dependents of a closed tip absent from the open list', () => {
+    assert.deepEqual(
+      selectScreenshotStackPulls(
+        open.filter((_, index) => index !== 1),
+        'pull_request_target',
+        {
+          pull_request: { number: 2, body: '' },
+        },
+      ),
+      [1],
+    )
+  })
+  it('includes malformed declarations for live error validation', () => {
+    const broken = [pull(1, LOWER, `<!-- copse-screenshot-stack: broken #2`), ...open.slice(1)]
+    assert.deepEqual(
+      selectScreenshotStackPulls(broken, 'workflow_run', {
+        workflow_run: { pull_requests: [{ number: 2 }] },
+      }),
+      [1, 2],
+    )
+  })
+  it('uses matching heads and falls back when workflow association is unavailable', () => {
+    assert.deepEqual(
+      selectScreenshotStackPulls(open, 'workflow_run', {
+        workflow_run: { head_sha: TIP, pull_requests: [] },
+      }),
+      [1, 2],
+    )
+    for (const payload of [{}, { workflow_run: { head_sha: 'unknown', pull_requests: [] } }]) {
+      assert.deepEqual(selectScreenshotStackPulls(open, 'workflow_run', payload), [1, 2, 3, 4, 5])
+    }
+  })
+  it('performs complete manual/scheduled repair and handles invalid event numbers', () => {
+    for (const event of ['schedule', 'workflow_dispatch', 'unknown', 'pull_request_target']) {
+      assert.deepEqual(selectScreenshotStackPulls(open, event, {}), [1, 2, 3, 4, 5])
+    }
+  })
+  it('selects the same dependency closure independently of list order', () => {
+    const payload = { pull_request: pull(1, LOWER, other), changes: { body: { from: TEXT } } }
+    assert.deepEqual(
+      selectScreenshotStackPulls([...open].reverse(), 'pull_request_target', payload).sort(),
+      [1, 2, 3, 4],
+    )
+  })
+
+  describe('unassociated workflow completions', () => {
+    // Publisher, decision and selection runs complete on main: no PR metadata,
+    // and a head SHA that matches no open PR.
+    const MAIN = 'f'.repeat(40)
+    const THIRD = 'd'.repeat(40)
+    const FOURTH = 'e'.repeat(40)
+    const STARTED = '2026-10-14T20:00:00Z'
+    const payload = {
+      workflow_run: { head_sha: MAIN, pull_requests: [], run_started_at: STARTED },
+    }
+    const repository = { owner: 'copse-dev', repo: 'agent-pane' }
+    const stacks = [
+      pull(1, LOWER),
+      pull(2, TIP),
+      pull(3, THIRD, other),
+      pull(4, FOURTH, other),
+      pull(5, BASE, ''),
+    ]
+    function written(context: string, at: string): Record<string, unknown> {
+      return { ...status(context, 1), created_at: at, updated_at: at }
+    }
+    function reads(
+      statuses: Map<string, unknown>,
+      combined = false,
+    ): { github: StackGitHub; refs: string[]; pulls: number } {
+      const refs: string[] = []
+      const read = async ({ ref }: { ref: string }): Promise<{ data: unknown }> => {
+        refs.push(ref)
+        const data = statuses.get(ref) ?? []
+        return { data: combined ? { statuses: data } : data }
+      }
+      const github: StackGitHub = {
+        rest: {
+          pulls: {
+            get: async (): Promise<{ data: unknown }> => {
+              result.pulls++
+              return { data: undefined }
+            },
+          },
+          repos: {
+            compareCommitsWithBasehead: async (): Promise<never> =>
+              assert.fail('selection never compares'),
+            listCommitStatusesForRef: combined
+              ? async (): Promise<never> => assert.fail('the combined endpoint was available')
+              : read,
+            ...(combined ? { getCombinedStatusForRef: read } : {}),
+            createCommitStatus: async (): Promise<never> => assert.fail('selection never writes'),
+          },
+        },
+      }
+      const result = { github, refs, pulls: 0 }
+      return result
+    }
+    it('reads only declared heads and selects the stack whose evidence changed', async () => {
+      const f = reads(
+        new Map<string, unknown>([
+          [LOWER, [written('Screenshot review', '2026-10-14T20:00:05Z')]],
+          [TIP, [written('Screenshot review', '2026-10-14T19:00:00Z')]],
+          [FOURTH, [written(STACK_DECISION, '2026-10-14T19:59:59Z')]],
+        ]),
+      )
+      assert.deepEqual(
+        await selectScreenshotStackCompletion(f.github, repository, stacks, payload),
+        [1, 2],
+      )
+      assert.deepEqual(f.refs.sort(), [LOWER, TIP, THIRD, FOURTH].sort(), 'ordinary heads unread')
+      assert.equal(f.pulls, 0)
+    })
+    it('selects nothing when no declared head changed, and only on evidence contexts', async () => {
+      for (const statuses of [
+        new Map<string, unknown>(),
+        new Map<string, unknown>([[LOWER, [written('ci/lint', '2026-10-14T20:00:05Z')]]]),
+        new Map<string, unknown>([[TIP, [written(STACK_COVERAGE, '2026-10-14T19:59:59Z')]]]),
+        new Map<string, unknown>([[BASE, [written('Screenshot review', '2026-10-14T20:00:05Z')]]]),
+      ]) {
+        const f = reads(statuses)
+        assert.deepEqual(
+          await selectScreenshotStackCompletion(f.github, repository, stacks, payload),
+          [],
+        )
+      }
+    })
+    it('treats tip approval evidence as a change for the whole stack', async () => {
+      for (const context of ['Screenshot review', STACK_COVERAGE, STACK_DECISION]) {
+        const f = reads(new Map<string, unknown>([[FOURTH, [written(context, STARTED)]]]))
+        assert.deepEqual(
+          await selectScreenshotStackCompletion(f.github, repository, stacks, payload),
+          [3, 4],
+        )
+      }
+    })
+    it('uses the combined endpoint when available and selects a full first page', async () => {
+      const f = reads(
+        new Map<string, unknown>([[THIRD, [written(STACK_DECISION, '2026-10-14T20:00:01Z')]]]),
+        true,
+      )
+      assert.deepEqual(
+        await selectScreenshotStackCompletion(f.github, repository, stacks, payload),
+        [3, 4],
+      )
+      const full = reads(
+        new Map<string, unknown>([
+          [LOWER, Array.from({ length: 100 }, () => written('ci/lint', '2026-01-01T00:00:00Z'))],
+        ]),
+        true,
+      )
+      assert.deepEqual(
+        await selectScreenshotStackCompletion(full.github, repository, stacks, payload),
+        [1, 2],
+      )
+    })
+    it('validates rather than guesses for unreadable statuses, undated writes or bad heads', async () => {
+      const unreadable = reads(new Map<string, unknown>([[LOWER, 'unavailable']]))
+      assert.deepEqual(
+        await selectScreenshotStackCompletion(unreadable.github, repository, stacks, payload),
+        [1, 2],
+      )
+      const undated = reads(new Map<string, unknown>([[TIP, [status('Screenshot review', 1)]]]))
+      assert.deepEqual(
+        await selectScreenshotStackCompletion(undated.github, repository, stacks, payload),
+        [1, 2],
+      )
+      const f = reads(new Map<string, unknown>())
+      const broken = [...stacks]
+      broken[2] = { ...pull(3, THIRD, other), head: { sha: 'main' } }
+      assert.deepEqual(
+        await selectScreenshotStackCompletion(f.github, repository, broken, payload),
+        [3, 4],
+      )
+      assert.ok(!f.refs.includes('main'))
+    })
+    it('keeps the full sweep when the completion carries no usable timestamp', async () => {
+      for (const run of [
+        { head_sha: MAIN, pull_requests: [] },
+        { head_sha: MAIN, pull_requests: [], run_started_at: 'yesterday' },
+        { head_sha: MAIN, pull_requests: [], run_started_at: 20 },
+      ]) {
+        const f = reads(new Map<string, unknown>())
+        assert.deepEqual(
+          await selectScreenshotStackCompletion(f.github, repository, stacks, {
+            workflow_run: run,
+          }),
+          [1, 2, 3, 4, 5],
+        )
+        assert.equal(f.refs.length, 0)
+      }
+      const created = reads(
+        new Map<string, unknown>([[LOWER, [written('Screenshot review', STARTED)]]]),
+      )
+      assert.deepEqual(
+        await selectScreenshotStackCompletion(created.github, repository, stacks, {
+          workflow_run: { head_sha: MAIN, pull_requests: [], created_at: STARTED },
+        }),
+        [1, 2],
+      )
+    })
+    it('routes associated completions without reading any status', async () => {
+      for (const run of [
+        { pull_requests: [{ number: 3 }], run_started_at: STARTED },
+        { head_sha: FOURTH, pull_requests: [], run_started_at: STARTED },
+      ]) {
+        const f = reads(
+          new Map<string, unknown>([[LOWER, [written('Screenshot review', STARTED)]]]),
+        )
+        assert.deepEqual(
+          await selectScreenshotStackCompletion(f.github, repository, stacks, {
+            workflow_run: run,
+          }),
+          [3, 4],
+        )
+        assert.equal(f.refs.length, 0)
+      }
+    })
+    it('bounds an ordinary-PR publication to one read per declared head', async () => {
+      const f = reads(new Map<string, unknown>())
+      const open = [
+        ...stacks,
+        ...Array.from({ length: 45 }, (_, index) => pull(10 + index, BASE, '')),
+      ]
+      assert.deepEqual(
+        await selectScreenshotStackCompletion(f.github, repository, open, payload),
+        [],
+      )
+      assert.equal(f.refs.length, 4, 'four declared heads, forty-six ordinary PRs unread')
+    })
+  })
+})
 describe('stack workflow integration', () => {
-  it('reconciles removed declarations when their event is replaced by another pending run', () => {
+  it('retains distinct events and performs full repair sweeps for missed removals', async () => {
+    const source = readFileSync('.github/workflows/screenshot-stack.yml', 'utf8')
+    const routing = z
+      .object({
+        concurrency: z.object({ queue: z.literal('max'), 'cancel-in-progress': z.literal(false) }),
+        on: z.object({ schedule: z.array(z.object({ cron: z.string() })) }),
+      })
+      .parse(load(source))
+    assert.equal(routing.on.schedule.length, 1)
     const workflow = workflowSchema.parse(
       load(readFileSync('.github/workflows/screenshot-stack.yml', 'utf8')),
     )
@@ -527,7 +841,7 @@ describe('stack workflow integration', () => {
     )?.with?.['script']
     assert.equal(typeof script, 'string')
     assert.ok(typeof script === 'string')
-    const start = script.indexOf('const selected =')
+    const start = script.indexOf('const eligible =')
     const end = script.indexOf('for (const pr of selected)', start)
     assert.ok(start >= 0 && end > start)
     const removed = pull(3, BASE, '')
@@ -535,15 +849,40 @@ describe('stack workflow integration', () => {
       ...pull(4, BASE),
       head: { sha: BASE, repo: { full_name: 'someone/fork' } },
     }
-    const selected: unknown = new Script(
-      `${script.slice(start, end)}\nselected.map(pr => pr.number)`,
-    ).runInNewContext({
-      open: [pull(1, LOWER), removed, foreign],
-      owner: 'copse-dev',
-      repo: 'agent-pane',
-      context: { payload: { pull_request: { number: 1 } } },
-    })
-    assert.equal(JSON.stringify(selected), '[1,3]')
+    const open = [pull(1, LOWER), removed, foreign]
+    const calls: unknown[] = []
+    const select = async (eventName: string, payload: unknown): Promise<unknown> =>
+      new Script(
+        `(async () => {\n${script.slice(start, end)}\nreturn selected.map(pr => pr.number) })()`,
+      ).runInNewContext({
+        open,
+        owner: 'copse-dev',
+        repo: 'agent-pane',
+        policy: 'memoized-client',
+        selectScreenshotStackPulls,
+        selectScreenshotStackCompletion: async (...args: unknown[]): Promise<number[]> => {
+          calls.push(args)
+          return [3]
+        },
+        core: { info: (): void => {} },
+        context: { eventName, payload },
+      })
+    assert.equal(JSON.stringify(await select('schedule', {})), '[1,3]')
+    assert.equal(calls.length, 0, 'repair sweeps never read statuses to select')
+    const payload = { workflow_run: { head_sha: BASE, pull_requests: [] } }
+    assert.equal(JSON.stringify(await select('workflow_run', payload)), '[3]')
+    // The script runs in another realm: compare structure, not prototypes.
+    assert.equal(
+      JSON.stringify(calls),
+      JSON.stringify([
+        [
+          'memoized-client',
+          { owner: 'copse-dev', repo: 'agent-pane' },
+          [open[0], removed],
+          payload,
+        ],
+      ]),
+    )
   })
   it('forces combined coverage before the screenshot-only shortcut and preserves source-event evidence', () => {
     const ci = readFileSync('.github/workflows/ci.yml', 'utf8')

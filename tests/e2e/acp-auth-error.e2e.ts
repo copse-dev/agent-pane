@@ -1,6 +1,29 @@
 import { $, browser, expect } from '@wdio/globals'
+import { join } from 'node:path'
 import { resetUserData, seedAcpAuthErrorFixture } from './helpers/seed-config.ts'
-import { saveElementScreenshot, savePreparedElementScreenshot } from './helpers/screenshot.ts'
+import { prepareE2eScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
+
+async function saveAuthMessage(selector: string, filename: string): Promise<void> {
+  await prepareE2eScreenshot()
+  if (await $('#pane-projects').isDisplayed()) await $('[aria-label="Toggle sidebar"]').click()
+  await $(selector).scrollIntoView({ block: 'center' })
+  const bounds = await browser.execute((sel) => {
+    for (const block of document.querySelectorAll<HTMLElement>(`${sel} pre`)) block.scrollLeft = 0
+    const message = document.querySelector(sel)!.getBoundingClientRect()
+    const composer = document.querySelector('#input-bar')!.getBoundingClientRect()
+    const transcript = document.querySelector('.conversation-scroll')!.getBoundingClientRect()
+    return {
+      top: message.top,
+      bottom: message.bottom,
+      viewportTop: transcript.top,
+      composerTop: composer.top,
+    }
+  }, selector)
+  expect(bounds.top).toBeGreaterThanOrEqual(bounds.viewportTop)
+  expect(bounds.bottom).toBeLessThanOrEqual(bounds.composerTop)
+  await saveElementScreenshot(selector, filename, { frame: 'document' })
+}
 
 /**
  * Where each env-var hint rendered: inside the numbered sign-in steps (the
@@ -20,6 +43,8 @@ async function hintPlacement(messageId: string) {
 }
 
 describe('ACP authentication error presentation', () => {
+  const originalPath = process.env['PATH']
+  const originalPreservePath = process.env['COPSE_PRESERVE_PATH']
   // Screenshot preparation changes the frame and overflow. Each recovery path
   // needs a fresh viewport so one capture cannot clip the next message's prose.
   beforeEach(async () => {
@@ -27,6 +52,16 @@ describe('ACP authentication error presentation', () => {
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
     resetUserData()
+    // This fixture exercises sign-in guidance, not installed host CLIs. A host
+    // Codex binary can otherwise trigger a late adapter-install approval over
+    // the Claude panel after its text assertions have already passed.
+    writeE2eEnv({
+      COPSE_PRESERVE_PATH: '1',
+      PATH:
+        process.platform === 'win32'
+          ? join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32')
+          : '/usr/bin:/bin',
+    })
     seedAcpAuthErrorFixture(process.cwd())
     await browser.reloadSession()
     await $('[data-message-id="msg-assistant-acp-auth"] .message-text').waitForExist({
@@ -41,13 +76,29 @@ describe('ACP authentication error presentation', () => {
   })
 
   after(() => {
+    writeE2eEnv({ COPSE_PRESERVE_PATH: originalPreservePath, PATH: originalPath })
     resetUserData()
   })
 
   it('shows the dedicated Claude sign-in command in setup without adapter jargon', async () => {
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').waitForDisplayed({ timeout: 10_000 })
-    await $('.provider-chip[data-provider="anthropic"]').click()
+    await $('[data-testid="acp-add-toggle"]').click()
+    await $('.acp-add-row[data-agent="claude-acp"]').$('button=Set up').click()
+    // Provider discovery can find a host client outside PATH and offer its
+    // adapter. Decline through the real UI before reviewing sign-in guidance.
+    const approval = $('#approval-dialog')
+    const offeredInstall = await approval.waitForDisplayed({ timeout: 10_000 }).then(
+      () => true,
+      () => false,
+    )
+    if (offeredInstall) {
+      await expect(approval.$('.approval-heading')).toHaveText(
+        'Install software to connect your coding agents?',
+      )
+      await approval.$('.approval-reject').click()
+      await expect(approval).not.toBeDisplayed()
+    }
     const signIn = await $('.acp-cmd-row*=Sign in')
     await expect(signIn.$('.acp-cmd')).toHaveText('claude auth login')
     const note = await $('.acp-known-agent-note')
@@ -55,10 +106,8 @@ describe('ACP authentication error presentation', () => {
     await expect(note).toHaveText(expect.stringContaining('ANTHROPIC_API_KEY'))
     await expect(note).not.toHaveText(expect.stringContaining('claude-agent-acp'))
     await expect(signIn).not.toHaveText(expect.stringContaining('--sso'))
-    await saveElementScreenshot(
-      '.provider-capability:has(.acp-known-agent-note)',
-      'claude-sign-in.png',
-    )
+    await expect($('#approval-dialog')).not.toBeDisplayed()
+    await saveElementScreenshot('.acp-add-menu .provider-form', 'claude-sign-in.png')
   })
 
   it('leads with recovery and keeps opaque ACP diagnostics subordinate', async () => {
@@ -111,10 +160,7 @@ describe('ACP authentication error presentation', () => {
     expect(hints.inSteps).toEqual(['claude auth login'])
     expect(hints.inNote).toEqual(['ANTHROPIC_API_KEY'])
 
-    await savePreparedElementScreenshot(
-      '[data-message-id="msg-assistant-acp-auth"]',
-      'acp-auth-error.png',
-    )
+    await saveAuthMessage('[data-message-id="msg-assistant-acp-auth"]', 'acp-auth-error.png')
   })
 
   it("shows Cursor's rejected session as an expired sign-in with its own recovery path", async () => {
@@ -132,7 +178,7 @@ describe('ACP authentication error presentation', () => {
       expect.stringContaining('expired WorkosCursorSessionToken'),
     )
 
-    await savePreparedElementScreenshot(
+    await saveAuthMessage(
       '[data-message-id="msg-assistant-cursor-auth"]',
       'cursor-acp-auth-error.png',
     )
@@ -153,7 +199,8 @@ describe('ACP authentication error presentation', () => {
       expect.stringContaining('workspace routing discovery unauthorized (401)'),
     )
 
-    await savePreparedElementScreenshot(
+    await $('.context-wheel.has-breakdown').waitForDisplayed({ timeout: 15_000 })
+    await saveAuthMessage(
       '[data-message-id="msg-assistant-codex-auth"]',
       'codex-workspace-routing-auth-error.png',
     )

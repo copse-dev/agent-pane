@@ -246,7 +246,7 @@ new tests should keep that trend:
   the oracle liveness gate (`npm run check:oracle`) passing.
 - **Base-change refresh planning** is a separate opt-in oracle mode:
   `pnpm run oracle -- --refresh --tested-base <sha> --tested-candidate <sha> --tested-pr-head <sha>
---base <sha> --pr-head <sha> --candidate <sha> --json`. It compares affected
+  --base <sha> --pr-head <sha> --candidate <sha> --json`. It compares affected
   areas on both sides and emits `skip`, explicit bounded test lists, or `review`.
   It never requests a full-suite rerun or executes tests, and it does not replace
   required CI. See [bounded refresh planning](plans/ci-base-freshness.md#bounded-oracle-refresh-planning--3-october-2026)
@@ -487,6 +487,16 @@ checkout, and commit only the intentional updates. `pnpm run filter:screenshots`
 is available locally after copying the candidates to discard known render noise
 and shots outside the diff's ownership map; it is an aid, not an author.
 
+The same job also records how much review work the run generated. Each e2e
+shard writes its timing, runner and oracle mode into its `.shard-N` provenance
+marker, and `screenshot-artifacts` folds those, the filter's verdict counts and
+the surviving candidates' before/after hashes into a `screenshot-metrics-<run-id>`
+artifact plus a job-summary table. The trusted publisher appends its own
+duration and approximate API-call count to its summary. All of it is
+measurement produced by PR code: evidence for people and for
+`pnpm run screenshots:metrics-baseline`, which summarises the last N PRs' runs,
+job logs and compare branches read-only, never an input to a gate.
+
 ### Reviewing a small PR stack once
 
 Screenshot review can be deferred to a declared stack tip. Intermediate states
@@ -527,7 +537,14 @@ A changed lower head, changed membership, closed/draft tip or removed declaratio
 cannot reuse a deferral. Update the shared declaration on every member and rerun
 tip CI. To return to individual review, remove the declaration and rerun the
 individual PR's CI. The **Screenshot stack gates** workflow can be dispatched
-manually to refresh status/comments after an interrupted reconciliation.
+manually to refresh status/comments after an interrupted reconciliation. Normal
+events reconcile the affected PR and connected stacks, including old membership
+from body edits. The workflow retains queued events and runs a full repair sweep
+every 30 minutes. Publisher, decision and selection completions carry no usable
+PR association, so they read the latest statuses on every declared head and
+reconcile only the stacks whose screenshot evidence changed since that run
+started. Selection only reduces work: live heads, declarations and approval
+provenance are still verified before a stack status is written.
 
 Ordinary PRs keep their existing per-PR review. GitHub's queue still admits one
 entry per build: this feature consolidates screenshot decisions without adding

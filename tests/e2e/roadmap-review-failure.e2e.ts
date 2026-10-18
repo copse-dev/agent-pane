@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { $, browser } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, saveAppViewportScreenshot } from './helpers/screenshot.ts'
 
 // A deep resolution check that fails has no verdict to show, so the result box
 // carries the reason instead: a short label on the lowercase-styled meta line
@@ -23,7 +23,11 @@ describe('roadmap resolution check failure', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-review-fail-'))
+    workspaceRoot = join(
+      mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-review-fail-')),
+      'workspace',
+    )
+    mkdirSync(workspaceRoot, { recursive: true })
     knowledgeDir = seedRoadmapNotes('e2e-roadmap-review-fail', [
       {
         id: 'e2e-roadmap-review-fail',
@@ -41,7 +45,7 @@ describe('roadmap resolution check failure', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
     rmSync(knowledgeDir, { recursive: true, force: true })
   })
 
@@ -53,6 +57,7 @@ describe('roadmap resolution check failure', () => {
     await $('.roadmap-row').waitForDisplayed({ timeout: 20_000 })
     await $('.roadmap-row').click()
 
+    await $('.roadmap-details > summary').click()
     const errorBox = $('.roadmap-review-result.is-error')
     await errorBox.waitForDisplayed({ timeout: 30_000 })
     assert.equal(
@@ -63,6 +68,30 @@ describe('roadmap resolution check failure', () => {
     assert.ok(explanation.length > 0, 'the failure explains itself in the body')
     assert.doesNotMatch(explanation, /^\s*$/)
 
-    await saveAppScreenshot('roadmap-review-failure.png')
+    await saveAppViewportScreenshot('roadmap-review-failure.png', async () => {
+      // The document editor owns its scrollport; prepare the final capture
+      // frame before bringing the actual failure above the fixed action row.
+      await errorBox.scrollIntoView({ block: 'center', inline: 'nearest' })
+      await browser.waitUntil(
+        () =>
+          browser.execute(() => {
+            const error = document.querySelector('.roadmap-review-result.is-error')
+            const scroll = document.querySelector('.roadmap-document-scroll')
+            const footer = document.querySelector('.roadmap-document-footer')
+            if (!error || !scroll || !footer) return false
+            const box = error.getBoundingClientRect()
+            const viewport = scroll.getBoundingClientRect()
+            const actions = footer.getBoundingClientRect()
+            return (
+              box.height > 0 &&
+              box.top >= viewport.top &&
+              box.bottom <= Math.min(viewport.bottom, actions.top) &&
+              box.left >= viewport.left &&
+              box.right <= viewport.right
+            )
+          }),
+        { timeout: 5_000, timeoutMsg: 'expected the full failure explanation above the footer' },
+      )
+    })
   })
 })

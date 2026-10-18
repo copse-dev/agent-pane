@@ -132,6 +132,8 @@ export const MAIN_ONLY_SETTING_SCHEMAS = {
   mcpAutoAllowReadOnly: z.boolean(),
   // Per-tool user overrides. Missing entries preserve the existing dynamic
   // permission policy; stable keys are constructed in tool-permissions.ts.
+  threadReadAccess: z.array(z.string().min(1)),
+  threadSendAccess: z.array(z.string().min(1)),
   toolPermissionOverrides: z
     .record(z.string().min(1).max(8192), z.enum(TOOL_PERMISSION_POLICIES))
     .refine((value) => Object.keys(value).length <= 10_000, 'Too many tool permission overrides'),

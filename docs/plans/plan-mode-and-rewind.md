@@ -2,12 +2,141 @@
 
 Tracking: [#1080](https://github.com/copse-dev/agent-pane/issues/1080)
 
-**Status: Active (P1 in progress).** Design contract landed on `main` via
-[#1138](https://github.com/copse-dev/agent-pane/pull/1138). P1 adds the on-disk
-plan artifact layout, zod/JSON Schema, and spine `plan` lifecycle events (fixtures
-validate; no UI). Later PRs should link here and keep the working brief (#35),
-long-horizon checklists (#558), and thread worktrees (#869) as
-**foundations/consumers**, not alternate planning or history systems.
+**Status: living plan workflow implemented; full static/unit and focused visual checks pass.** The optional
+composer Plan control supports editable revisions, passage feedback, exact approval,
+a new implementation turn, and criterion-level completion evidence. Prompt-boundary
+rewind remains a later slice. Working briefs, execution todos and thread worktrees
+remain separate foundations.
+
+The [roadmap prototype](roadmap-plans.md#roadmap--living-plan-prototype-2026-09-26)
+reuses this editor and opens the same task-owned plan from a roadmap item. Plan
+actions now enter through the ordinary composer submission path so checkout
+preflight, attachments and draft consumption behave consistently with Send.
+
+### Current task brief
+
+Review fixes: protect both new and saved drafts from accidental dismissal; accept
+formatted required headings; retain complete multiline acceptance criteria in the
+agent context and completion UI. Parse Markdown structure so fenced examples do not
+become headings or criteria, and nested sections do not silently drop requirements.
+Add component/store regressions and focused Electron assertions with screenshots,
+then rerun the full local gate. Preserve document bytes and exact approval identity.
+
+Rich-editor follow-up: replace the source textarea with an editable document and
+compact formatting toolbar, with feedback beside the selected passage. Headings,
+lists, emphasis, keyboard undo, source editing and read-only history must work;
+opening or approving an unchanged document must preserve its exact Markdown bytes.
+Passage anchors must still identify the selected occurrence in the saved revision.
+Validate serialization/selection in component tests and real editing in Electron,
+capture the new layout, and rerun the Markdown visual suite and full local gate.
+
+Base: `bbbca7e30` (main synced on 2026-09-26). The risk surfaces are persisted
+approval identity, renderer/main IPC, and agent tool/hook permissions; they require
+the full local check plus focused Electron evidence.
+
+Acceptance criteria:
+
+- Quick tasks work without a plan. Clarification can show a recommended answer and reason.
+- A plan has nonempty Goal, Constraints, Scope and Definition of done sections;
+  bullet criteria have stable IDs within the approved revision.
+- Saved revisions and passage comments survive reload. Stale writes and approval hashes fail closed.
+- Draft turns advertise and enforce a strict built-in read-tool allowlist. Shell,
+  MCP, custom tools, background work, executable todo checks and child agents are denied.
+- Only the user can approve, while idle. Approval records the exact revision/hash
+  and host-owned `implementation` profile; implementation starts a new human turn.
+- Completion reports bind to that approval and cover each criterion exactly once
+  with met, partial or unverified plus evidence. Missing reports display unverified.
+- Interrupted writes cannot expose an uncommitted revision or approval; full thread saves preserve the artifacts.
+
+Current boundaries:
+
+- Copse-hosted provider models support this workflow. Container, ACP, remote and plugin-hosted
+  executors fail closed while a plan is active because their native tools cannot
+  be constrained by the Copse planning allowlist.
+- Standalone review is unavailable during drafts; use the ordinary planning turn
+  for read-only inspection. Container starts reserve the thread during preflight;
+  plan edits also reject while a container is starting or running.
+- Command hooks are denied at the host runner during drafts, including fail-open
+  hooks. Blocking hooks may therefore stop a draft turn. Function hooks retain
+  their canonical routing; no new continuation or hook event vocabulary is added.
+- There is one current plan per thread. Approved revisions are immutable. End the
+  current plan before creating a replacement; the new metadata links the previous
+  plan via `supersedesPlanId`. Earlier artifacts remain in the thread archive.
+- Completion is agent-reported evidence, not a host attestation that every assertion
+  is true. Missing validation must be marked unverified. Rewind and automatic
+  conversion of criteria to executable todo checks are outside this slice.
+
+### Completion evidence (2026-09-26)
+
+#### Review fixes
+
+- New, unsaved plans now participate in dirty tracking: Escape preserves title and
+  body edits, idle refreshes keep them intact, and closing explicitly offers discard.
+- Required sections and acceptance criteria now share a Markdown lexer with the
+  document editor. Formatted headings save without changing the stored body/hash;
+  multiline items retain their full text. Nested criteria and subheadings stay in
+  order, while fenced and quoted examples do not invent criteria. Inline code keeps
+  significant spaces.
+- The focused parser, store and editor run passed **339 tests**. The final Electron
+  plan workflow plus the six Markdown specs passed **ten tests** across seven specs.
+  This includes bold-heading save, Escape protection, approval, and the complete
+  multiline criterion after reload. The build passed.
+- The final `pnpm run check` passed every static gate and **11,066 tests**, with
+  zero failures, skips or cancellations. This includes the additional inline-code
+  whitespace regression.
+- Inspected [new-draft protection](../../tests/e2e/screenshots/thread-plan-unsaved.png),
+  [draft review](../../tests/e2e/screenshots/thread-plan-review.png) and
+  [completion evidence](../../tests/e2e/screenshots/thread-plan-completion.png): the
+  document and controls are readable, and the full criterion wraps in the sidebar.
+- Broad Electron validation remains incomplete: the 321-spec headless run passed
+  **14 specs**, then timed out in `acp-unfinished-turn-recovery.e2e.ts` setup. The
+  isolated headless retry also timed out while ChromeDriver waited for the renderer.
+  Running that same spec with `COPSE_E2E_HEADLESS=0` passed **all five tests** in
+  23 seconds. The full headless suite is not a green gate; live inference and rewind
+  remain outside the completed slice. Logs are under `.tmp/plan-fixes-*` locally.
+
+#### Rich editor follow-up
+
+- The default Document view now uses Tiptap for editable headings, paragraphs,
+  emphasis, lists and inline code, with undo/redo and a Markdown source view.
+  Feedback and completion evidence sit beside the document. Tables and task lists
+  survive loading; image Markdown appears as a reference without a rendered image.
+- Unchanged documents retain their original Markdown bytes, including reference
+  links and emphasis spelling. Rendered selections map to the corresponding source
+  occurrence before the existing revision-specific comment operation is called.
+- `pnpm run check` passed every static stage; its first unit run found two stylesheet
+  convention violations. After fixing those, `pnpm test` passed **11,060 tests**,
+  zero failed/skipped/cancelled. The focused editor, dialog, accent-rail and typography
+  run passed **27 tests**; formatting and `git diff --check` also passed.
+- `pnpm run build` passed. The plan spec plus the six specs named by
+  `test:e2e:markdown` passed **ten Electron tests**. The final plan spec was rerun
+  after the stylesheet fixes: **three passed**, including keyboard undo, toolbar
+  formatting/redo, source history, feedback, approval and persistence.
+- The updated draft and completion screenshots linked below were inspected: all
+  document sections, feedback/results and approval controls are readable without
+  clipping. The broader Electron coverage gap recorded below remains open.
+
+#### Initial workflow implementation
+
+- `pnpm run check`: passed all static gates and **11,057 tests**, zero failed,
+  skipped or cancelled. Includes stale writes, interrupted state commits, approval
+  identity, concurrent plan contexts, draft tool/hook denial and execution-todo isolation.
+- `pnpm run build`: passed on the synced base with the complete implementation.
+- `node scripts/gen-api-protocol.mts --compare-ref HEAD`: passed; six additive
+  surfaces and two conservatively classified event-shape changes, version 20 → 21.
+- `pnpm run test:e2e -- --spec tests/e2e/thread-plan.e2e.ts --spec tests/e2e/ask-user-dialog.e2e.ts --mochaOpts.timeout=90000`:
+  **seven tests passed** across both specs. Exercises user edits, passage feedback,
+  prior revisions, agent refinement, approval into a new turn, completion reports,
+  reload persistence, draft container/review rejection and recommended clarification.
+- Visually inspected the captured [draft review](../../tests/e2e/screenshots/thread-plan-review.png),
+  [completion evidence](../../tests/e2e/screenshots/thread-plan-completion.png) and
+  [clarification](../../tests/e2e/screenshots/ask-user-dialog.png) screenshots.
+- **Remaining validation gap:** the oracle selected broad Electron coverage. The
+  pre-sync `pnpm run test:e2e -- --bail=1 --mochaOpts.timeout=90000` attempt passed
+  11 specs, then stopped in `acp-tool-diff.e2e.ts` setup when ChromeDriver refused
+  its localhost connection. That spec passed on retry; the complete 321-spec suite
+  has not passed. Provider behavior was exercised through the existing mock-model
+  boundary, not live inference. Rewind remains open under #1080.
 
 Parent investigation: [`grok-build-architecture-comparison.md`](grok-build-architecture-comparison.md).
 Related durable state: [`../thread-store-format.md`](../thread-store-format.md),
@@ -89,7 +218,8 @@ messages):
   meta.json
   revision-<n>.md
   comments.json
-  approval.json          # only after approve
+  approval.json          # only after approve; convenience projection
+  states/<eventId>.json   # immutable metadata/comments/approval/completion snapshot
 ```
 
 Minimum fields (zod in [`plan-schema.ts`](../../packages/thread-store/src/plan-schema.ts);
@@ -108,8 +238,17 @@ relate approved work to execution progress, express dependency edges, size routi
 observable result without changing execution behavior. Existing P1 fixtures remain valid.
 
 Spine events use `type: "plan"` with
-`action: create | revise | comment | approve | abandon` (see
+`action: create | revise | comment | approve | abandon | report` (see
 [`thread-store-format.md`](../thread-store-format.md)).
+
+Every writer prepares the revision and a hashed state snapshot, then appends the
+spine line as its commit point. Readers use only committed `state` and `artifact`
+refs, validate identities and hashes, and ignore orphan files. `meta.json`,
+`comments.json` and `approval.json` are repairable convenience projections, never
+approval authority. Full thread saves retain both refs. Original P1 fixture lines
+without state snapshots remain readable as history but cannot authorize execution.
+UI writes check thread idleness again immediately before committing, preventing
+approval races with a turn that starts while artifact writes are pending.
 
 ### Capability profile (planning)
 

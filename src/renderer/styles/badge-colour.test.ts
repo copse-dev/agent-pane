@@ -68,6 +68,9 @@ const SIGNAL_BADGES: { selector: string; why: string }[] = [
   },
   { selector: '.provider-privacy-badge.trains', why: 'data policy: may train on your data' },
   { selector: '.provider-privacy-badge.unknown', why: 'data policy: unknown retention' },
+  // Settings → Coding agents
+  { selector: '.acp-row-chip.ok', why: 'sign-in status: the agent is signed in and ready' },
+  { selector: '.acp-row-chip.warn', why: 'sign-in status: the agent needs signing in' },
   // Settings → Customise (sources lists, worktrees)
   { selector: '.sources-badge-warning', why: 'authoring warning, overridden, uncommitted, …' },
   { selector: '.sources-badge-error', why: 'skipped file or runtime failure' },

@@ -1,3 +1,4 @@
+import { hydrateScreenshots } from './scripts/lib/screenshot-hydration.mts'
 import { z } from 'zod'
 import { safeJsonParse, decodeWithSchema } from './packages/std/src/safe-json.ts'
 import type { Server } from 'node:http'
@@ -41,6 +42,7 @@ const contentTypes: Readonly<Record<string, string>> = {
 }
 
 async function startDemoServer(): Promise<void> {
+  await hydrateScreenshots()
   let mobileStep = 0
   let mobileText = ''
   const mobileSession = '11111111-1111-4111-8111-111111111111'
@@ -139,6 +141,16 @@ async function startDemoServer(): Promise<void> {
                   detail: 'Latest completed output',
                   lastSavedAt: Date.now() - 480_000,
                 },
+                {
+                  projectId: 'proj-1',
+                  projectName: 'Copse',
+                  threadId: 'thread-4',
+                  title: 'Polish the onboarding copy',
+                  group: 'has-changes',
+                  state: 'finished',
+                  detail: 'Latest completed output',
+                  lastSavedAt: Date.now() - 300_000,
+                },
               ],
             }
           : {
@@ -175,6 +187,7 @@ async function startDemoServer(): Promise<void> {
                     : [],
               messages: [
                 { role: 'user', content: 'Check the release notes.', summary: null },
+                { role: 'assistant', content: '', summary: 'Read RELEASE_NOTES.md' },
                 ...(mobileText ? [{ role: 'user', content: mobileText, summary: null }] : []),
                 {
                   role: 'assistant',
@@ -259,6 +272,8 @@ function stopDemoServer(): Promise<void> {
 }
 
 export const config: Options.Testrunner = {
+  // Preserve v9's first-match `$` behavior for the existing fixture selectors.
+  strictSelectors: false,
   runner: 'local',
   // The check fleet runs several PR build jobs concurrently. WebdriverIO's
   // default shared /tmp cache lets one interrupted download leave another job

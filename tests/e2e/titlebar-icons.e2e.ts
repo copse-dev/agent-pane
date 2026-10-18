@@ -6,19 +6,24 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
 describe('titlebar panel icons', () => {
+  let workspaceParent: string
   let workspaceRoot: string
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-panel-titlebar-icons-'))
+    workspaceParent = mkdtempSync(join(tmpdir(), 'copse-panel-titlebar-icons-'))
+    // The titlebar uses the directory basename. A random suffix changes the
+    // width left for the action strip, even when all icons are identical.
+    workspaceRoot = join(workspaceParent, 'workspace')
+    mkdirSync(workspaceRoot)
     seedEmptyProject(workspaceRoot, 'e2e-titlebar-icons-project')
     await browser.reloadSession()
   })
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    rmSync(workspaceParent, { recursive: true, force: true })
   })
 
   it('shows consistent outline icons on the panel controls', async () => {

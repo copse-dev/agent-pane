@@ -75,6 +75,20 @@ describe('shell permissions: macOS with ASRT sandbox active', () => {
     assert.equal(d.action, 'allow')
   })
 
+  it('starts pnpm exec checks inside the sandbox and keeps outside approvals', () => {
+    const check = 'pnpm exec oxfmt --check src/main/services/thread-execution-context.ts'
+    assert.equal(decideShellPermission(check, { ...opts, classification: null }).action, 'allow')
+    assert.equal(shellRequiresOutsideSandbox(check, root, true), false)
+    assert.equal(
+      decideShellPermission(check, { ...opts, sandboxEnabled: false, classification: null }).action,
+      'prompt',
+    )
+    assert.equal(
+      decideShellPermission('pnpm install', { ...opts, classification: null }).action,
+      'prompt',
+    )
+  })
+
   it('auto-opens a local user terminal on macOS', () => {
     assert.deepEqual(
       decideTerminalPermission({
@@ -221,6 +235,21 @@ for (const platform of ['Windows', 'sandbox init failure'] as const) {
 }
 
 describe('shell permissions: agent-declared "expects_sandbox_block" up-front escalation', () => {
+  it('tries a direct typecheck contained and allows an explicit agent escape request', () => {
+    const command =
+      './node_modules/.bin/tsc --noEmit -p tsconfig.node.json 2>&1 | tail -60; echo "NODE_EXIT=$?"'
+    const opts = { workspaceRoot: root, sandboxEnabled: true, autoRun: true, classification: null }
+    assert.equal(decideShellPermission(command, opts).action, 'allow')
+    assert.equal(shellRequiresOutsideSandbox(command, root, true), false)
+    assert.equal(shellExpectedBlockEscalation(command, root, true).eligible, true)
+    assert.equal(
+      decideShellPermission(command, { ...opts, sandboxEnabled: false }).action,
+      'prompt',
+    )
+    assert.equal(decideShellPermission(command, { ...opts, autoRun: false }).action, 'prompt')
+    assert.equal(decideShellPermission(`${command}; rm -rf src`, opts).action, 'prompt')
+  })
+
   it('is eligible for an ambiguous command when the sandbox is active', () => {
     // gh/cloud CLIs/nc would auto-run inside seatbelt and escalate on a real block;
     // the up-front hint may pull that same prompt forward.

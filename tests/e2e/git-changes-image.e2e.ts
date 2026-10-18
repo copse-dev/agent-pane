@@ -6,7 +6,7 @@ import {
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
   cleanupGitChangesFixture,
@@ -15,7 +15,12 @@ import {
   seedGitImageChangesFixture,
 } from './helpers/seed-config.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
-import { saveElementScreenshot, waitForImagesSettled } from './helpers/screenshot.ts'
+import {
+  parkPointer,
+  saveElementScreenshot,
+  waitForImagesSettled,
+  withCaptureFrame,
+} from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -95,7 +100,7 @@ describe('git changes image preview', function () {
 
   after(() => {
     resetUserData()
-    if (repoRoot) cleanupGitChangesFixture(repoRoot)
+    if (repoRoot) cleanupGitChangesFixture(dirname(repoRoot))
     if (proposedRoot) cleanupGitChangesFixture(proposedRoot)
   })
 
@@ -107,6 +112,62 @@ describe('git changes image preview', function () {
     await expect(paths).toContain('unstaged.png')
     await expect(paths).toContain('new.png')
 
+    // Rows render before the automatically selected staged image attaches.
+    await $('#git-diff-viewer-host .git-image-diff-img[alt="staged.png (after)"]').waitForDisplayed(
+      { timeout: 30_000 },
+    )
+    await waitForImagesSettled('#git-diff-viewer-host', { minImages: 2 })
+    await parkPointer()
+    // A settled frame can precede the 500ms watcher debounce. Keep the
+    // expected rows visible without pending work beyond that debounce.
+    let settledSince = 0
+    await browser
+      .waitUntil(
+        async () => {
+          const settled = await browser.execute(() => {
+            const list = document.querySelector('#git-changes-host .git-changes-list')
+            const paths = [...(list?.querySelectorAll('.git-change-path') ?? [])].map(
+              (path) => path.textContent,
+            )
+            return (
+              ['staged.png', 'unstaged.png', 'new.png'].every((path) => paths.includes(path)) &&
+              !list?.querySelector('.pane-loading') &&
+              !(list?.textContent ?? '').includes('Checking committed changes')
+            )
+          })
+          if (!settled) {
+            settledSince = 0
+            return false
+          }
+          settledSince ||= Date.now()
+          return Date.now() - settledSince >= 750
+        },
+        {
+          timeout: 15_000,
+          interval: 100,
+          timeoutMsg: 'expected image change rows to remain settled beyond the watcher debounce',
+        },
+      )
+      .catch(async (error: unknown) => {
+        const snapshot = await browser.execute(() => {
+          const host = document.querySelector('#git-changes-host')
+          const list = host?.querySelector('.git-changes-list')
+          return {
+            hostPresent: Boolean(host),
+            listPresent: Boolean(list),
+            paths: [...(list?.querySelectorAll('.git-change-path') ?? [])].map(
+              (path) => path.textContent,
+            ),
+            pending: [...(list?.querySelectorAll('.pane-loading') ?? [])].map(
+              (row) => row.textContent,
+            ),
+            text: list?.textContent,
+          }
+        })
+        throw new Error(`Changes capture readiness failed: ${JSON.stringify(snapshot)}`, {
+          cause: error,
+        })
+      })
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-list.png'))
 
     await clickChange('staged.png')
@@ -116,6 +177,8 @@ describe('git changes image preview', function () {
       gte: 2,
     })
     await expect($('#git-diff-viewer-host .monaco-diff-editor')).not.toBeDisplayed()
+    await waitForImagesSettled('#git-diff-viewer-host', { minImages: 2 })
+    await parkPointer()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-staged.png'))
 
     const stagedAfter = await $(
@@ -128,6 +191,7 @@ describe('git changes image preview', function () {
     const expandedImg = await $('.image-expand-image')
     await expect(expandedImg).toExist()
     await expect(expandedImg).toHaveAttribute('src', stagedAfterSrc ?? '')
+    await parkPointer()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-expand.png'))
     await $('.attachment-preview-close').click()
     await browser.waitUntil(
@@ -189,7 +253,10 @@ describe('git changes image preview', function () {
     await preview.waitForDisplayed({ timeout: 5_000 })
     await expect(preview.$('.attachment-preview-title')).toHaveText('staged.png (before)')
     await expect(preview.$('.image-expand-image')).toHaveAttribute('src', beforeSrc ?? '')
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-expanded.png'))
+    await parkPointer()
+    await withCaptureFrame(async () => {
+      await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-expanded.png'))
+    })
 
     await browser.keys('Escape')
     await preview.waitForDisplayed({ reverse: true, timeout: 5_000 })
@@ -229,14 +296,19 @@ describe('git changes image preview', function () {
       gte: 2,
     })
     await waitForImagesSettled('#git-diff-viewer-host', { minImages: 2 })
+    await parkPointer()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-unstaged.png'))
 
     await clickChange('new.png')
-    await $('#git-diff-viewer-host .git-image-diff').waitForDisplayed({ timeout: 30_000 })
+    await $('#git-diff-viewer-host .git-image-diff-img[alt="new.png (after)"]').waitForDisplayed({
+      timeout: 30_000,
+    })
     await expect($$('#git-diff-viewer-host .git-image-diff-img')).toBeElementsArrayOfSize(1)
     await expect($('#git-diff-viewer-host .git-image-diff-label')).toHaveText(
       expect.stringMatching(/^after$/i),
     )
+    await waitForImagesSettled('#git-diff-viewer-host', { minImages: 1 })
+    await parkPointer()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-untracked.png'))
   })
 

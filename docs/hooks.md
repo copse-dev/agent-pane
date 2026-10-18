@@ -312,7 +312,7 @@ hooks cannot retroactively block work that already completed.
   changed (or “No changes”) before the run count. Expanding it keeps passive runs collapsed
   while applied effects open individually with the effect above timing/executor metadata.
   Hook-originated turns carry an `origin` marker (`Hook · <id>
-(<Event>)`); the message role stays `user` for the LLM, and a human edit shows an `edited`
+  (<Event>)`); the message role stays `user` for the LLM, and a human edit shows an `edited`
   note (the [hook-card attribution decision](./plans/hooks-and-feature-packs.md#decisions-log)). The card model is `src/shared/hooks/hook-card.ts`; styling is
   `src/renderer/styles/global/hook-cards.css`. Conventions are in
   [`docs/ui-taste.md`](./ui-taste.md).

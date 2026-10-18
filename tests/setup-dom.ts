@@ -20,6 +20,8 @@ Object.assign(globalThis, {
   document: win.document,
   window: win,
   customElements: win.customElements,
+  CSS: win.CSS,
+  HTMLDetailsElement: win.HTMLDetailsElement,
   // Expose happy-dom's Event constructors as globals. happy-dom 20 strictly
   // rejects events in dispatchEvent() that aren't instances of its own Event
   // class, so `new Event()` must resolve to happy-dom's rather than Node's
@@ -35,6 +37,7 @@ Object.assign(globalThis, {
   // DOMRect backs getBoundingClientRect stubs without `as DOMRect` casts.
   DOMRect: win.DOMRect,
   Element: win.Element,
+  DOMParser: win.DOMParser,
   // HTMLElement is what renderer DOM helpers / tip layers return. Expose it so
   // `instanceof HTMLElement` works under happy-dom the same way Element does —
   // without this, tests that need `.style` / `.hidden` either throw at runtime

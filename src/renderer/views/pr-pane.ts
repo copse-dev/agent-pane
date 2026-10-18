@@ -324,7 +324,7 @@ export function mountPrPane(
   // titleAttempted so renderList cannot turn into a fetch loop.
   const titleInFlight = new Set<string>()
   const titleAttempted = new Set<string>()
-  let ciEls = new Map<string, HTMLElement>()
+  let ciEls = new Map<string, { icon: HTMLElement; label: HTMLElement }>()
   let ciGen = 0
   let refreshInFlight = false
   let disposed = false
@@ -342,8 +342,9 @@ export function mountPrPane(
     }, 0)
   }
 
-  const CI_LABEL: Record<GhPrChecksState | 'loading', string> = {
+  const CI_LABEL: Record<GhPrChecksState | 'loading' | 'unavailable', string> = {
     loading: 'Checking CI…',
+    unavailable: 'CI unavailable',
     pending: 'CI running',
     success: 'CI passing',
     failure: 'CI failing',
@@ -357,7 +358,7 @@ export function mountPrPane(
   function applyPrStatus(
     node: HTMLElement,
     pr: GhPrSummary,
-    checks: GhPrChecksState | 'loading',
+    checks: GhPrChecksState | 'loading' | 'unavailable',
   ): void {
     const lifecycle = cachedPrTitle(pr)?.state ?? (isPlaceholderPr(pr) ? 'UNKNOWN' : pr.state)
     const kind =
@@ -404,8 +405,13 @@ export function mountPrPane(
       .finally(() => {
         checksInFlight.delete(key)
         if (gen !== ciGen) return
-        const node = ciEls.get(key)
-        if (node) applyPrStatus(node, pr, checksCache.get(key) ?? 'no_checks')
+        const nodes = ciEls.get(key)
+        if (nodes) {
+          const state = checksCache.get(key) ?? 'no_checks'
+          applyPrStatus(nodes.icon, pr, state)
+          nodes.label.textContent = CI_LABEL[state]
+          nodes.label.dataset['state'] = state
+        }
       })
   }
 
@@ -470,7 +476,7 @@ export function mountPrPane(
 
   function renderPrRow(
     pr: GhPrSummary,
-    section: 'linked' | 'workspace' | 'mine',
+    section: 'linked' | 'workspace' | 'mine' | 'viewing',
   ): HTMLButtonElement {
     const isSelected =
       selectedPr?.owner === pr.owner &&
@@ -478,8 +484,15 @@ export function mountPrPane(
       selectedPr.number === pr.number
     const ci = el('span', {})
     const state = knownChecks(pr)
-    applyPrStatus(ci, pr, state ?? 'loading')
-    ciEls.set(githubPrKey(pr), ci)
+    const displayedState =
+      state ?? (ghStatus && !ghStatus.authenticated ? 'unavailable' : 'loading')
+    applyPrStatus(ci, pr, displayedState)
+    const checksLabel = el(
+      'span',
+      { class: 'pr-list-checks-label', 'data-state': displayedState },
+      CI_LABEL[displayedState],
+    )
+    ciEls.set(githubPrKey(pr), { icon: ci, label: checksLabel })
     const agents = agentLinks.get(githubPrKey(pr)) ?? []
     const agentBadge =
       agents.length > 0
@@ -537,11 +550,7 @@ export function mountPrPane(
           : []),
         ...(agentBadge ? [agentBadge] : []),
         ci,
-        el(
-          'span',
-          { class: 'pr-list-checks-label', 'data-state': state ?? 'loading' },
-          CI_LABEL[state ?? 'loading'],
-        ),
+        checksLabel,
       ),
     )
     row.addEventListener('click', () => void selectPr(pr))
@@ -634,6 +643,35 @@ export function mountPrPane(
     const repoPrs = query ? repoPrsAll.filter((pr) => prMatchesFilter(pr, query)) : repoPrsAll
     const otherPrs = query ? otherPrsAll.filter((pr) => prMatchesFilter(pr, query)) : otherPrsAll
 
+    // A PR opened from a link, notification, or pop-out seed may be closed or
+    // outside the workspace's open-PR pools. Keep the viewed PR in the list even
+    // when the lazy "Your open PRs" section has not been expanded.
+    const selectedKey = selectedPr && githubPrKey(selectedPr)
+    const selectedVisible =
+      selectedKey !== null &&
+      (linkedPrs.some((pr) => githubPrKey(pr) === selectedKey) ||
+        repoPrs.some((pr) => githubPrKey(pr) === selectedKey) ||
+        (otherExpanded && otherPrs.some((pr) => githubPrKey(pr) === selectedKey)))
+    const selectedSummary = selectedPr
+      ? (prDetails ??
+        prList.find((pr) => githubPrKey(pr) === selectedKey) ?? {
+          ...selectedPr,
+          title: placeholderPrTitle(selectedPr.number),
+          url: `https://github.com/${selectedPr.owner}/${selectedPr.repo}/pull/${String(selectedPr.number)}`,
+          state: 'OPEN' as const,
+        })
+      : null
+    const viewingPr =
+      selectedSummary && !selectedVisible && (!query || prMatchesFilter(selectedSummary, query))
+        ? selectedSummary
+        : null
+    if (viewingPr && ghStatus?.authenticated) {
+      const section = el('div', { class: 'git-changes-section' })
+      section.append(el('div', { class: 'git-changes-section-title' }, 'Viewing'))
+      section.append(renderPrRow(viewingPr, 'viewing'))
+      listBody.append(section)
+    }
+
     if (linkedPrs.length > 0) {
       ensureTitles(linkedPrs)
       const section = el('div', { class: 'git-changes-section' })
@@ -668,7 +706,9 @@ export function mountPrPane(
     // so we never spend a cross-repo search just to show a count.
     if (ghStatus?.authenticated) {
       const title =
-        repoPrs.length > 0 || linkedPrs.length > 0 ? 'Your other open PRs' : 'Your open PRs'
+        repoPrs.length > 0 || linkedPrs.length > 0 || viewingPr
+          ? 'Your other open PRs'
+          : 'Your open PRs'
       const section = el('div', { class: 'git-changes-section' })
       const header = el(
         'button',
@@ -710,7 +750,7 @@ export function mountPrPane(
     // so skip this when that is the group currently on screen to avoid saying it
     // twice.
     const otherGroupShown = Boolean(ghStatus?.authenticated) && otherExpanded && !otherLoading
-    if (query && linkedPrs.length === 0 && repoPrs.length === 0 && !otherGroupShown) {
+    if (query && linkedPrs.length === 0 && repoPrs.length === 0 && !viewingPr && !otherGroupShown) {
       listBody.append(
         el(
           'div',
@@ -1378,6 +1418,7 @@ export function mountPrPane(
     renderFiles()
     clearDiff()
     renderSections()
+    renderList()
     await loadPrRelationships()
   }
 
@@ -1471,21 +1512,7 @@ export function mountPrPane(
     prList = mergePrLists(linkedRefs, [workspacePrs, myPrs])
     renderList()
 
-    if (reason === 'poll') {
-      if (selectedPr) {
-        const current = selectedPr
-        const stillExists = prList.some(
-          (pr) =>
-            pr.owner === current.owner && pr.repo === current.repo && pr.number === current.number,
-        )
-        if (!stillExists) {
-          selectedPr = null
-          prDetails = null
-          clearDiff()
-        }
-      }
-      return
-    }
+    if (reason === 'poll') return
 
     const openTarget = pendingOpen
     pendingOpen = null
@@ -1495,15 +1522,8 @@ export function mountPrPane(
     }
 
     if (selectedPr) {
-      const current = selectedPr
-      const stillExists = prList.some(
-        (pr) =>
-          pr.owner === current.owner && pr.repo === current.repo && pr.number === current.number,
-      )
-      if (stillExists) {
-        await selectPr(selectedPr)
-        return
-      }
+      await selectPr(selectedPr)
+      return
     }
 
     if (linkedRefs.length > 0) {

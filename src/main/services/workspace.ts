@@ -3,6 +3,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { copseWorkspaceDir } from './storage/copse-paths.ts'
+import { ensureChatStoreRead } from './security/thread-access.ts'
 import { storageGet, storageSet } from './storage/storage.ts'
 import { getActivePathBackend } from './workspace-fs/get-path-backend.ts'
 import { localWorkspaceFs } from './workspace-fs/local-workspace-fs.ts'
@@ -650,12 +651,15 @@ export async function resolveLocalChatStorePath(path: string): Promise<string | 
   if (!isAbsolute(path)) return null
   const root = await getChatStoreRoot(localWorkspaceFs)
   if (!root) return null
+  let candidate: string
   try {
-    const candidate = await localWorkspaceFs.realpath(resolve(path))
-    return isPathInsideRoot(candidate, root) ? candidate : null
+    candidate = await localWorkspaceFs.realpath(resolve(path))
   } catch {
     return null
   }
+  if (!isPathInsideRoot(candidate, root)) return null
+  await ensureChatStoreRead(candidate, root)
+  return candidate
 }
 
 export interface ResolvedReadableFile {
@@ -716,14 +720,18 @@ export async function resolveReadablePathWithinRoot(
   root: string,
   backend: PathBackend = getActivePathBackend(),
 ): Promise<string> {
+  let resolvedPath: string
   try {
-    return await resolvePathWithinRoot(path, root, backend)
+    resolvedPath = await resolvePathWithinRoot(path, root, backend)
   } catch (workspaceErr) {
     if (isAbsolute(path)) {
       const chatRoot = await getChatStoreRoot(backend)
       if (chatRoot) {
         const absInput = await resolveThroughExistingPrefix(resolve(path), backend)
-        if (isPathInsideRoot(absInput, chatRoot)) return absInput
+        if (isPathInsideRoot(absInput, chatRoot)) {
+          await ensureChatStoreRead(absInput, chatRoot)
+          return absInput
+        }
       }
     }
     if (workspaceErr instanceof Error && workspaceErr.message.startsWith('No workspace open')) {
@@ -734,6 +742,10 @@ export async function resolveReadablePathWithinRoot(
       { cause: workspaceErr },
     )
   }
+  const chatRoot = await getChatStoreRoot(backend)
+  if (chatRoot && isPathInsideRoot(resolvedPath, chatRoot))
+    await ensureChatStoreRead(resolvedPath, chatRoot)
+  return resolvedPath
 }
 
 /**

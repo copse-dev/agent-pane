@@ -151,6 +151,73 @@ afterEach(() => {
 })
 
 describe('pr pane filter (issue #2482)', () => {
+  it('keeps a directly opened PR visible and selected across list refreshes', async () => {
+    const { listRoot, viewerRoot, store, dispose } = mount([OTHER_PR], {
+      linkedUrls: '',
+      workspacePrs: [],
+      prDetails: async (_owner, _repo, number) =>
+        number === OTHER_PR.number ? { ...OTHER_PR, body: 'Review this change.', files: [] } : null,
+    })
+    try {
+      await settle()
+      store.emit('pr_open_requested', OTHER_PR.owner, OTHER_PR.repo, OTHER_PR.number)
+      await settle()
+      const viewingRow = listRoot.querySelector<HTMLButtonElement>(
+        '.pr-list-row[data-pr-section="viewing"]',
+      )
+      assert.ok(viewingRow)
+      assert.equal(viewingRow.getAttribute('aria-pressed'), 'true')
+      assert.equal(viewingRow.querySelector('.pr-list-title')?.textContent, OTHER_PR.title)
+      assert.equal(listRoot.querySelectorAll('.pr-list-row').length, 1)
+      assert.equal(viewerRoot.querySelector('.pr-viewer-title')?.textContent, OTHER_PR.title)
+      assert.match(
+        viewerRoot.querySelector('.pr-viewer-description-fill')?.textContent ?? '',
+        /Review this change\./,
+      )
+      assert.equal(viewerRoot.querySelector<HTMLElement>('.panel-empty')?.hidden, true)
+
+      listRoot.querySelector<HTMLButtonElement>('.pr-pane-refresh-btn')?.click()
+      await settle()
+      assert.equal(listRoot.querySelectorAll('.pr-list-row[data-pr-section="viewing"]').length, 1)
+      assert.equal(viewerRoot.querySelector('.pr-viewer-title')?.textContent, OTHER_PR.title)
+
+      listRoot.querySelector<HTMLButtonElement>('.pr-other-toggle')?.click()
+      await settle()
+      assert.equal(listRoot.querySelectorAll('.pr-list-row[data-pr-section="viewing"]').length, 0)
+      assert.equal(listRoot.querySelectorAll('.pr-list-row.is-selected').length, 1)
+      assert.equal(
+        listRoot
+          .querySelector('.pr-list-row[data-pr-section="mine"]')
+          ?.getAttribute('aria-pressed'),
+        'true',
+      )
+    } finally {
+      dispose()
+    }
+  })
+
+  for (const installed of [true, false]) {
+    it(`does not claim to check CI when GitHub is ${installed ? 'signed out' : 'unavailable'}`, async () => {
+      let requests = 0
+      const { listRoot } = mount([], {
+        workspacePrs: [],
+        gh: {
+          status: async () => ({ installed, authenticated: false, username: null, message: null }),
+        },
+        prChecks: async () => {
+          requests++
+          return 'success'
+        },
+      })
+      await settle()
+      assert.equal(requests, 0)
+      assert.equal(listRoot.querySelector('.pr-list-checks-label')?.textContent, 'CI unavailable')
+      assert.match(
+        listRoot.querySelector('.pr-list-status')?.getAttribute('aria-label') ?? '',
+        /CI unavailable/,
+      )
+    })
+  }
   it('keeps relationship labels with repository and CI metadata in the current row layout', async () => {
     const { listRoot } = mount()
     await settle()
@@ -407,6 +474,11 @@ describe('pr pane filter (issue #2482)', () => {
     resolveChecks('failure')
     await settle()
     assert.ok(listRoot.querySelector('.pr-list-status.is-open.has-ci-failure'))
+    assert.equal(
+      listRoot.querySelector('.pr-list-status.is-open.has-ci-failure + .pr-list-checks-label')
+        ?.textContent,
+      'CI failing',
+    )
     listRoot.querySelector<HTMLButtonElement>('.pr-other-toggle')?.click()
     await settle()
     const merged = listRoot.querySelector('.pr-list-status.is-merged')

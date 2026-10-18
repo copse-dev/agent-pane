@@ -40,8 +40,8 @@ describe('ask_user dialog', () => {
                     questions: [
                       {
                         question:
-                          'Claude’s saved sign-in has expired. Run `claude /login` in a terminal to sign in again?',
-                        options: ['Run `claude /login`', 'Not now'],
+                          'Claude’s saved sign-in has expired. Run `claude auth login` in a terminal to sign in again?',
+                        options: ['Run `claude auth login`', 'Not now'],
                       },
                     ],
                   },
@@ -83,7 +83,7 @@ describe('ask_user dialog', () => {
     await expect(question.$('.ask-user-question')).toHaveText(
       expect.stringContaining('saved sign-in has expired'),
     )
-    await expect(question.$('.ask-user-question code')).toHaveText('claude /login')
+    await expect(question.$('.ask-user-question code')).toHaveText('claude auth login')
     await saveElementScreenshot('#ask-user-dialog', 'claude-login-after-settings.png')
     await question.$('.ask-user-option=Not now').click()
     await question.$('.ask-user-submit').click()
@@ -100,6 +100,7 @@ describe('ask_user dialog', () => {
           user: 'Help me sign in to Claude.',
           responses: [
             {
+              waitFor: 'before-recommended-question',
               toolCalls: [
                 {
                   name: 'ask_user',
@@ -109,6 +110,8 @@ describe('ask_user dialog', () => {
                         question:
                           'Claude is not signed in. Run `claude auth login` in a terminal, then re-send your message.',
                         options: ['Run `claude auth login`', 'Not now'],
+                        recommendedOption: 'Run `claude auth login`',
+                        recommendationReason: 'Sign-in is required before this task can continue.',
                       },
                     ],
                   },
@@ -125,6 +128,20 @@ describe('ask_user dialog', () => {
     })
     await setComposerValue('Help me sign in to Claude.')
     await submitComposer()
+    await scenario.waitForHold('before-recommended-question')
+    await $('.projects-activity-btn').click()
+    await $('#activity-panel').waitForDisplayed({ timeout: 10_000 })
+    await scenario.release('before-recommended-question')
+    const activity = $('#activity-panel')
+    await activity.$('.activity-option').waitForExist({ timeout: 30_000 })
+    await expect(activity.$('.ask-user-recommended-label')).toHaveText('Recommended')
+    await expect(activity.$('.ask-user-recommendation-reason')).toHaveText(
+      'Sign-in is required before this task can continue.',
+    )
+    await activity.$('.ask-user-option-recommended').click()
+    await expect(activity.$('.activity-answer-input')).toHaveValue('Run claude auth login')
+    await saveAppScreenshot('activity-recommended-question.png')
+    await activity.$('.activity-panel-close').click()
 
     const dialog = await $('#ask-user-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
@@ -134,6 +151,10 @@ describe('ask_user dialog', () => {
 
     const option = await dialog.$('.ask-user-option*=Run')
     await expect(option.$('code')).toHaveText('claude auth login')
+    await expect(option.$('.ask-user-recommended-label')).toHaveText('Recommended')
+    await expect(dialog.$('.ask-user-recommendation-reason')).toHaveText(
+      'Sign-in is required before this task can continue.',
+    )
     await saveElementScreenshot('#ask-user-dialog', 'ask-user-dialog.png')
     await option.click()
 

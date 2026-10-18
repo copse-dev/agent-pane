@@ -46,6 +46,7 @@ import type {
   AutomationPermissionOption,
   AutomationSchedule,
   AutomationScheduleInput,
+  AutomationCleanupResult,
   AutomationSchedulerHealth,
   AutomationTriggerEvent,
   BranchCiAutomation,
@@ -113,7 +114,7 @@ import type {
   StoredExtraProvider,
 } from '@copse/llm/extra-providers.ts'
 import type { DetectedAcpAgent } from '@shared/acp-known-agents.ts'
-import type { AcpAgentProbe, AcpAutoSetupResult } from '@shared/types/acp.ts'
+import type { AcpAgentProbe, AcpAuthStatus, AcpAutoSetupResult } from '@shared/types/acp.ts'
 import type { ExternalEditorList } from '@shared/types/editors.ts'
 import type {
   PreparedThreadCheckout,
@@ -178,6 +179,16 @@ export interface DetectedEnvKey {
 }
 
 export interface ApiClient {
+  threadPrompts: {
+    revokeAccess: (threadId: string, access: 'read' | 'send') => Promise<void>
+    onPrompt: (
+      handler: (command: import('@shared/thread-prompt.ts').ThreadPromptCommand) => void,
+    ) => () => void
+    reply: (
+      id: string,
+      result: import('@shared/thread-prompt.ts').ThreadPromptResult,
+    ) => Promise<void>
+  }
   chatGptPlan: import('@shared/types/chatgpt-plan.ts').ChatGptPlanClient
   mobile: {
     getState: () => Promise<import('@shared/types/mobile-companion.ts').MobileCompanionState>
@@ -189,10 +200,14 @@ export interface ApiClient {
     setDeviceAccess: (
       id: string,
       access: import('@shared/types/mobile-companion.ts').MobileCompanionAccess,
+      rootTrusted?: boolean,
     ) => Promise<void>
     revokeDevice: (id: string) => Promise<void>
     respondPairing: (
       decision: import('@shared/types/mobile-companion.ts').MobileCompanionAccess | 'deny',
+      code: string,
+      pairingId: string,
+      rootTrusted?: boolean,
     ) => Promise<void>
     revealCertificate: () => Promise<void>
     onChat: (
@@ -342,7 +357,7 @@ export interface ApiClient {
       threadId: string,
       payload: string,
     ) => Promise<ContextBreakdown>
-    abort: (threadId: string) => Promise<void>
+    abort: (threadId: string, reason?: 'send_now') => Promise<void>
     runningThreadIds: () => Promise<string[]>
     retryReview: (projectId: string, threadId: string, payload: string) => Promise<void>
     clearHistory: (projectId: string, threadId: string) => Promise<void>
@@ -396,7 +411,7 @@ export interface ApiClient {
       handler: (req: {
         id: string
         threadId?: string
-        questions: { question: string; options?: string[] }[]
+        questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
       }) => void,
     ) => () => void
     onAskUserCancelled: (handler: (req: { id: string }) => void) => () => void
@@ -596,6 +611,23 @@ export interface ApiClient {
     ) => Promise<void>
     get: (key: string) => Promise<unknown>
     set: (key: string, value: unknown) => Promise<void>
+  }
+  plans: {
+    get: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@copse/thread-store/plan-schema.ts').StoredThreadPlan | null>
+    revision: (
+      projectId: string,
+      threadId: string,
+      planId: string,
+      revision: number,
+    ) => Promise<string | null>
+    change: (
+      projectId: string,
+      threadId: string,
+      change: import('@copse/thread-store/plan-schema.ts').PlanChange,
+    ) => Promise<import('@copse/thread-store/plan-schema.ts').StoredThreadPlan | null>
   }
   threads: {
     storageSize: (
@@ -879,6 +911,11 @@ export interface ApiClient {
      */
     probeAgent: (agentId: string) => Promise<AcpAgentProbe>
     /**
+     * Whether each named agent's CLI is signed in, without running a turn.
+     * `unknown` when the check cannot tell; agents are matched by catalog id.
+     */
+    authStatus: (ids: string[]) => Promise<AcpAuthStatus[]>
+    /**
      * "Just works" setup for the curated presets (Claude, Cursor): detect
      * clients, Socket-Firewall-install missing npm adapters, register + detect
      * models. Safe to call on every ACP settings-tab open (idempotent).
@@ -1019,6 +1056,11 @@ export interface ApiClient {
   }
   usage: {
     getSummary: () => Promise<import('@shared/usage/aggregate-usage.ts').UsageSummary>
+    /** Classifier calls, verdicts, latency and tokens a thread caused (its decision log). */
+    getThreadClassifierUse: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/usage/classifier-use.ts').ThreadClassifierUse>
     getPlanUsage: (force?: boolean) => Promise<import('@copse/plan-usage').PlanUsageSnapshot>
     getPlanWorthIt: () => Promise<import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload>
     setClaudePlanMonthlyFee: (
@@ -1263,6 +1305,8 @@ export interface ApiClient {
     upsert: (projectId: string, input: AutomationScheduleInput) => Promise<AutomationSchedule>
     remove: (projectId: string, scheduleId: string) => Promise<void>
     runNow: (projectId: string, scheduleId: string) => Promise<AutomationTriggerEvent>
+    /** Remove every finished run's checkout that is safe to remove; report the runs that must stay. */
+    cleanupRuns: (projectId: string, scheduleId: string) => Promise<AutomationCleanupResult>
     listBranchCi: (projectId: string) => Promise<BranchCiAutomation[]>
     upsertBranchCi: (
       projectId: string,

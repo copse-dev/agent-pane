@@ -36,6 +36,7 @@ export interface SettingsValues {
   uiTintColor: string
   uiTintStrength: 'off' | 'subtle' | 'medium' | 'strong'
   appearanceDefaultsMigrationVersion: 1
+  conciseThreadsDefaultMigrated: true
   appIconVariant:
     | 'rose'
     | 'pink-lady'
@@ -192,6 +193,8 @@ export interface SettingsValues {
   trustedShellCommands: Array<string>
   mcpAutoAllowReadOnly: boolean
   toolPermissionOverrides: Record<string, 'allow' | 'ask' | 'block'>
+  threadReadAccess: string[]
+  threadSendAccess: string[]
   cursorHooksEnabled: boolean
   defaultReadonlyMode: boolean
   safeInstallEnabled: boolean
@@ -252,6 +255,8 @@ type DedicatedSettingKey =
   | 'trustedShellCommands'
   | 'mcpAutoAllowReadOnly'
   | 'toolPermissionOverrides'
+  | 'threadReadAccess'
+  | 'threadSendAccess'
   | 'cursorHooksEnabled'
   | 'defaultReadonlyMode'
   | 'safeInstallEnabled'

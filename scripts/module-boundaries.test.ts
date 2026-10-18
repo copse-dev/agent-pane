@@ -20,7 +20,7 @@ import { dirname, join, normalize } from 'node:path'
  * What the boundary buys, concretely. Today `agent-tasks.ts` RESPECTS it by hand-copying
  * `stripTerminalControlSequences` out of `subprocess-output-cap.ts` — its comment says the
  * copy exists "to avoid importing a main-process module into the renderer bundle" — while
- * `settings-dialog.ts` reaches straight through it twice. One file pays for the rule in
+ * Settings uses shared capability contracts. One file pays for the rule in
  * duplicated code, the other ignores it, and nothing tells either of them.
  */
 
@@ -79,25 +79,7 @@ const ALIASES: readonly (readonly [string, string])[] = [
  * `eslint.config.mjs` — an exemption that no longer exempts anything is as misleading as a
  * missing rule.
  */
-const EXCEPTIONS: readonly { from: string; to: string; reason: string }[] = [
-  {
-    from: 'src/renderer/views/settings-dialog.ts',
-    to: 'src/main/services/advisor-strategy.ts',
-    reason:
-      'Pulls the pure `validateAdvisorPair` out of a main-process module. Harmless at ' +
-      'runtime (advisor-strategy imports only @shared and @copse/llm) but pointed the ' +
-      'wrong way. Fix by moving the validator to src/shared; sequenced behind the ' +
-      'in-flight advisor work rather than done here.',
-  },
-  {
-    from: 'src/renderer/views/settings-dialog.ts',
-    to: 'src/main/services/orchestration-strategy.ts',
-    reason:
-      'Pulls the DEFAULT_ORCHESTRATION_WORKER_MODEL constant out of a main-process ' +
-      'module. Same shape and same fix as the advisor import above: the constant is ' +
-      'shared vocabulary and belongs in src/shared.',
-  },
-]
+const EXCEPTIONS: readonly { from: string; to: string; reason: string }[] = []
 
 /**
  * Static `import ... from '…'`, side-effect `import '…'`, and re-exporting

@@ -135,7 +135,7 @@ jobs:
             // workflow_dispatch is the documented exception that does fire, and
             // dispatching also avoids a third heavy-tier CI run on this SHA: the
             // push that promoted it is already producing the `CI Passed` check
-            // that the release preflight waits for.
+            // and full-release validation that preflight waits for.
             await github.rest.actions.createWorkflowDispatch({
               owner,
               repo,

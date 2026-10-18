@@ -16,6 +16,23 @@ exposePerfBridge()
 // missing, extra, or mistyped member fails typecheck here, and the API protocol
 // schema (`pnpm run gen:api-protocol`) is generated from this binding.
 const api: ApiClient = {
+  threadPrompts: {
+    revokeAccess: (threadId, access) =>
+      ipcRenderer.invoke('thread-prompts:revoke-access', threadId, access),
+    onPrompt: (handler) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        command: import('@shared/thread-prompt.ts').ThreadPromptCommand,
+      ): void => {
+        handler(command)
+      }
+      ipcRenderer.on('thread-prompts:prompt', listener)
+      return () => {
+        ipcRenderer.off('thread-prompts:prompt', listener)
+      }
+    },
+    reply: (id, result) => ipcRenderer.invoke('thread-prompts:reply', id, result),
+  },
   mobile: {
     getState: () => ipcRenderer.invoke('mobile:get-state'),
     onStateChanged: (
@@ -37,11 +54,15 @@ const api: ApiClient = {
     setDeviceAccess: (
       id: string,
       access: import('@shared/types/mobile-companion.ts').MobileCompanionAccess,
-    ) => ipcRenderer.invoke('mobile:set-device-access', id, access),
+      rootTrusted?: boolean,
+    ) => ipcRenderer.invoke('mobile:set-device-access', id, access, rootTrusted),
     revokeDevice: (id: string) => ipcRenderer.invoke('mobile:revoke-device', id),
     respondPairing: (
       decision: import('@shared/types/mobile-companion.ts').MobileCompanionAccess | 'deny',
-    ) => ipcRenderer.invoke('mobile:respond-pairing', decision),
+      code: string,
+      pairingId: string,
+      rootTrusted?: boolean,
+    ) => ipcRenderer.invoke('mobile:respond-pairing', decision, code, pairingId, rootTrusted),
     revealCertificate: () => ipcRenderer.invoke('mobile:reveal-certificate'),
     onChat: (handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void) => {
       const listener = (
@@ -250,8 +271,14 @@ const api: ApiClient = {
   fs: {
     readFile: (projectId: string, threadId: string, path: string) =>
       ipcRenderer.invoke('fs:read-file', projectId, threadId, path),
-    readImage: (projectId: string, threadId: string, path: string) =>
-      ipcRenderer.invoke('fs:read-image', projectId, threadId, path),
+    readImage: async (projectId: string, threadId: string, path: string): Promise<string> => {
+      const result: unknown = await ipcRenderer.invoke('fs:read-image', projectId, threadId, path)
+      if (typeof result === 'object' && result !== null) {
+        if ('data' in result && typeof result.data === 'string') return result.data
+        if ('error' in result && typeof result.error === 'string') throw new Error(result.error)
+      }
+      throw new Error('Unexpected fs:read-image response')
+    },
     writeFile: (projectId: string, threadId: string, path: string, content: string) =>
       ipcRenderer.invoke('fs:write-file', projectId, threadId, path, content),
     readdir: (projectId: string, threadId: string, path: string) =>
@@ -319,7 +346,8 @@ const api: ApiClient = {
     resetDefaultBranchCache: () => ipcRenderer.invoke('agent:reset-default-branch-cache'),
     estimateContext: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:estimate-context', projectId, threadId, payload),
-    abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),
+    abort: (threadId: string, reason?: 'send_now') =>
+      ipcRenderer.invoke('agent:abort', threadId, reason),
     runningThreadIds: () => ipcRenderer.invoke('agent:running-thread-ids'),
     retryReview: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:retry-review', projectId, threadId, payload),
@@ -413,7 +441,7 @@ const api: ApiClient = {
       handler: (req: {
         id: string
         threadId?: string
-        questions: { question: string; options?: string[] }[]
+        questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
       }) => void,
     ) => {
       const listener = (
@@ -421,7 +449,7 @@ const api: ApiClient = {
         req: {
           id: string
           threadId?: string
-          questions: { question: string; options?: string[] }[]
+          questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
         },
       ): void => {
         handler(req)
@@ -790,6 +818,17 @@ const api: ApiClient = {
     get: (key: string) => ipcRenderer.invoke('storage:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('storage:set', key, value),
   },
+  plans: {
+    get: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('plans:get', projectId, threadId),
+    revision: (projectId: string, threadId: string, planId: string, revision: number) =>
+      ipcRenderer.invoke('plans:revision', projectId, threadId, planId, revision),
+    change: (
+      projectId: string,
+      threadId: string,
+      change: import('@copse/thread-store/plan-schema.ts').PlanChange,
+    ) => ipcRenderer.invoke('plans:change', projectId, threadId, change),
+  },
   threads: {
     storageSize: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:storage-size', projectId, threadId),
@@ -1090,6 +1129,7 @@ const api: ApiClient = {
     browseRegistry: (refresh?: boolean) => ipcRenderer.invoke('acp:browse-registry', refresh),
     detectAgents: () => ipcRenderer.invoke('acp:detect-agents'),
     probeAgent: (agentId: string) => ipcRenderer.invoke('acp:probe-agent', agentId),
+    authStatus: (ids: string[]) => ipcRenderer.invoke('acp:auth-status', ids),
     autoSetup: () => ipcRenderer.invoke('acp:auto-setup'),
   },
   machines: {
@@ -1186,6 +1226,8 @@ const api: ApiClient = {
   },
   usage: {
     getSummary: () => ipcRenderer.invoke('usage:get-summary'),
+    getThreadClassifierUse: (projectId, threadId) =>
+      ipcRenderer.invoke('usage:get-thread-classifier-use', projectId, threadId),
     getPlanUsage: (force?: boolean) => ipcRenderer.invoke('usage:get-plan-usage', force),
     getPlanWorthIt: () => ipcRenderer.invoke('usage:get-plan-worth-it'),
     setClaudePlanMonthlyFee: (fee: number | null) =>
@@ -1479,6 +1521,8 @@ const api: ApiClient = {
       ipcRenderer.invoke('automations:remove', projectId, scheduleId),
     runNow: (projectId: string, scheduleId: string) =>
       ipcRenderer.invoke('automations:run-now', projectId, scheduleId),
+    cleanupRuns: (projectId: string, scheduleId: string) =>
+      ipcRenderer.invoke('automations:cleanup-runs', projectId, scheduleId),
     listBranchCi: (projectId: string) =>
       ipcRenderer.invoke('automations:list-branch-ci', projectId),
     upsertBranchCi: (projectId: string, input: unknown) =>

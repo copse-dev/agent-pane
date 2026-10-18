@@ -71,6 +71,12 @@ import { hasAutomationDialog, openAutomationDialog } from './automation-dialog.t
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { showErrorToast, showToast } from './toast.ts'
+import {
+  heldAutomationRuns,
+  heldRunsLabel,
+  heldRunsTooltip,
+} from '../controller/automation-held-runs.ts'
+import { describeRetainedWorktree } from './automation-retained-worktrees.ts'
 import { forkThread } from '../controller/fork-thread.ts'
 import {
   createThreadFilter,
@@ -287,6 +293,57 @@ function startRunNow(api: ApiClient, target: AutomationMenuTarget): void {
     })
 }
 
+/** "Mar 3, 9:30 AM", the way a run row names itself, so identically titled runs tell apart. */
+function runWhenLabel(triggeredAt: number | undefined): string {
+  return triggeredAt
+    ? new Date(triggeredAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+    : 'Unknown time'
+}
+
+/**
+ * Release the finished runs of one schedule whose checkouts are safe to remove,
+ * through the same path the scheduler uses, then say what is left. Anything that
+ * is not safe stays put: the dialog names each such run and why, and offers to
+ * open the first one so the user can commit, discard or delete it themselves.
+ */
+async function cleanUpScheduleRuns(
+  store: AppStore,
+  api: ApiClient,
+  target: AutomationMenuTarget,
+): Promise<void> {
+  try {
+    const result = await api.automations.cleanupRuns(target.project.id, target.scheduleId)
+    const freed = result.released.length
+    const freedText = `${String(freed)} worktree${freed === 1 ? '' : 's'}`
+    if (result.retained.length === 0) {
+      showToast(
+        freed === 0
+          ? `Nothing to clean up for “${target.scheduleName}”.`
+          : `Freed ${freedText} for “${target.scheduleName}”.`,
+      )
+      return
+    }
+    const known = new Map(getSidebarThreads(store, target.project.id).map((t) => [t.id, t]))
+    const lines = result.retained.map((run) => {
+      const when = runWhenLabel(known.get(run.threadId)?.automation?.triggeredAt)
+      return `• ${describeRetainedWorktree(run, `${run.title} · ${when}`)}`
+    })
+    const first = result.retained[0]
+    const opened = await showConfirmDialog({
+      message: `${String(result.retained.length)} run${result.retained.length === 1 ? '' : 's'} of “${target.scheduleName}” still hold${result.retained.length === 1 ? 's' : ''} a worktree`,
+      detail: `${freed > 0 ? `Freed ${freedText}. ` : ''}These need a decision from you, so they were left alone:\n${lines.join('\n')}`,
+      confirmLabel: result.retained.length === 1 ? 'Open run' : 'Open first run',
+      cancelLabel: 'Close',
+    })
+    if (opened && first) switchProjectThread(store, api, target.project.id, first.threadId)
+  } catch (error) {
+    showErrorToast(
+      `Could not clean up “${target.scheduleName}”`,
+      ipcErrorMessage(error, 'The cleanup could not finish'),
+    )
+  }
+}
+
 /**
  * One schedule's shared right-click actions, rendered on the sidebar's
  * schedule headings. "Run now" is the editor's Run-now button, reached
@@ -296,6 +353,7 @@ function automationMenuEntries(
   api: ApiClient,
   target: AutomationMenuTarget,
   openSetup: () => void,
+  cleanUp?: () => void,
 ): ContextMenuEntry[] {
   const eventAutomation = getCachedEventAutomations(target.project.id).some(
     (definition) => definition.id === target.scheduleId,
@@ -313,6 +371,7 @@ function automationMenuEntries(
   return [
     { heading: target.scheduleName },
     ...runEntries,
+    ...(cleanUp ? [{ label: 'Clean up finished runs…', onSelect: cleanUp }] : []),
     {
       label: 'Automation setup…',
       onSelect: openSetup,
@@ -679,16 +738,18 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   const threadChangeKey = (projectId: string, threadId: string): string =>
     `${projectId}\0${threadId}`
 
-  // Rows drawn by the latest render, so an idle sidebar can re-check them.
+  // Rows the latest render drew, or hid under the cleanup filter because their
+  // last summary was clean, so an idle sidebar can re-check them.
   let threadChangeRendered: Array<{ projectId: string; threadId: string }> = []
 
   function refreshThreadChanges(
     refs: Array<{ projectId: string; threadId: string }>,
     opts: { fresh?: boolean } = {},
   ): void {
-    const batch = refs
-      .filter((ref) => !threadChangeInFlight.has(threadChangeKey(ref.projectId, ref.threadId)))
-      .slice(0, THREAD_CHANGE_MAX_PER_PASS)
+    const pending = refs.filter(
+      (ref) => !threadChangeInFlight.has(threadChangeKey(ref.projectId, ref.threadId)),
+    )
+    const batch = pending.slice(0, THREAD_CHANGE_MAX_PER_PASS)
     if (batch.length === 0) return
     const generation = threadChangeGeneration
     for (const ref of batch) threadChangeInFlight.add(threadChangeKey(ref.projectId, ref.threadId))
@@ -702,15 +763,22 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         if (!sameThreadChangeSummary(previous?.summary ?? null, summary)) {
           changed = true
         }
-        // Unknown and expired summaries keep a row visible while refreshing.
-        // Re-evaluate even when the refreshed summary is still clean.
-        if (needsCleanupOnly && (!previous || Date.now() - previous.at > THREAD_CHANGE_TTL_MS)) {
-          changed = true
-        }
+        // A never-read summary keeps its row visible under the cleanup filter,
+        // so its first answer must redraw even when it is clean.
+        if (needsCleanupOnly && !previous) changed = true
         threadChangeCache.set(key, { summary, at: Date.now() })
       }
       // Only an unmounted pane must not redraw from a late answer.
-      if (changed && generation === threadChangeGeneration) render(true)
+      if (generation !== threadChangeGeneration) return
+      if (changed) render(true)
+      // An unchanged batch redraws nothing, so nothing else would re-request the
+      // rest of an oversized request; read whatever of it is still stale.
+      const now = Date.now()
+      const rest = pending.slice(batch.length).filter(({ projectId, threadId }) => {
+        const cached = threadChangeCache.get(threadChangeKey(projectId, threadId))
+        return !cached || now - cached.at > THREAD_CHANGE_TTL_MS
+      })
+      refreshThreadChanges(rest, opts)
     }
     void api.git.threadChangeSummary(batch, opts).then(settle, () => {
       settle([])
@@ -946,9 +1014,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // window regains focus or becomes visible, which is when someone looks again.
   function recheckStaleThreadChanges(): void {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-    // Re-admit hidden rows with expired clean summaries before refreshing.
-    // Their absence from threadChangeRendered must not make clean state permanent.
-    if (needsCleanupOnly) render()
     const now = Date.now()
     refreshThreadChanges(
       threadChangeRendered.filter(({ projectId, threadId }) => {
@@ -987,6 +1052,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
    * fetched yet counts as matching, not excluded — otherwise toggling the
    * filter on would hide everything until each row happened to scroll into
    * view and backfill (see the IntersectionObserver-gated fetches below).
+   * An expired change summary keeps its last answer while it is re-read:
+   * treating it as unknown made every clean thread blink back in each TTL.
    */
   function threadNeedsCleanup(project: Project, thread: SidebarThread): boolean {
     // Filtering runs before pagination. Only rendered rows may start lookups.
@@ -1003,7 +1070,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     // PR lifecycle is available for SSH projects; local git summaries are not.
     if (project.sshHost) return false
     const cached = threadChangeCache.get(threadChangeKey(project.id, thread.id))
-    if (!cached || Date.now() - cached.at > THREAD_CHANGE_TTL_MS) return true
+    if (!cached) return true
     return describeThreadChanges(cached.summary) !== null
   }
 
@@ -1213,6 +1280,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   function endDrag(): void {
     activeDrag = null
     clearDropIndicators()
+    list.classList.remove(...DROP_CLASSES)
     for (const dragging of list.querySelectorAll('.is-dragging')) {
       dragging.classList.remove('is-dragging')
     }
@@ -1314,6 +1382,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   list.addEventListener('dragover', (e) => {
     if (!isSidebarDrag(e.dataTransfer?.types)) return
     if (activeDrag?.kind !== 'project') return
+    // Child rows bubble here too. Only the list's empty space means "move
+    // out of a group"; hovering a thread must not highlight the whole pane.
+    if (e.target !== list) {
+      list.classList.remove(...DROP_CLASSES)
+      return
+    }
     e.preventDefault()
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
     clearDropIndicators()
@@ -1324,6 +1398,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   })
   list.addEventListener('drop', (e) => {
     if (!isSidebarDrag(e.dataTransfer?.types)) return
+    if (e.target !== list) return
     e.preventDefault()
     const payload = parseSidebarDrag(e.dataTransfer?.getData(SIDEBAR_DRAG_MIME) ?? '') ?? activeDrag
     list.classList.remove(...DROP_CLASSES)
@@ -1473,6 +1548,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function render(preserveScroll = false): void {
+    // A redraw removes the source row, so Chromium may have nowhere to send
+    // its eventual dragend. Clear the gesture before replacing its DOM.
+    endDrag()
     // Rebuilding the list removes its children synchronously. In Chromium that
     // clamps the scroll container to the top while the content is empty, so the
     // dismiss action opts into keeping the reader's position.
@@ -1484,6 +1562,21 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     const threadChangeWanted: Array<{ projectId: string; threadId: string }> = []
     const threadChangeSeen: Array<{ projectId: string; threadId: string }> = []
     const threadChangeSeenKeys = new Set<string>()
+    // The cleanup filter's predicate. A thread it hides for a clean summary is
+    // never drawn, so track it here as the row would: keep its summary from
+    // being pruned and re-read it once expired, or it could never come back.
+    const matchesCleanupFilter = (project: Project, thread: SidebarThread): boolean => {
+      if (threadNeedsCleanup(project, thread)) return true
+      const key = threadChangeKey(project.id, thread.id)
+      const cached = threadChangeCache.get(key)
+      if (cached && thread.status !== 'running' && !project.sshHost) {
+        const ref = { projectId: project.id, threadId: thread.id }
+        threadChangeSeen.push(ref)
+        threadChangeSeenKeys.add(key)
+        if (Date.now() - cached.at > THREAD_CHANGE_TTL_MS) threadChangeWanted.push(ref)
+      }
+      return false
+    }
     syncFilterControls()
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } =
       store.getState()
@@ -1574,6 +1667,25 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       })
       const openThreadMenu = (x: number, y: number): void => {
         showContextMenu(x, y, [
+          {
+            label: 'Conversation access…',
+            onSelect: (): void => {
+              showContextMenu(x, y, [
+                {
+                  label: 'Revoke reading other threads',
+                  onSelect: (): void => {
+                    void api.threadPrompts.revokeAccess(thread.id, 'read')
+                  },
+                },
+                {
+                  label: 'Revoke sending to other threads',
+                  onSelect: (): void => {
+                    void api.threadPrompts.revokeAccess(thread.id, 'send')
+                  },
+                },
+              ])
+            },
+          },
           ...(canMutate
             ? [
                 ...(allowRename
@@ -1635,6 +1747,20 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                     })
                   },
                 },
+                ...(heldAutomationRuns([thread]).length > 0
+                  ? [
+                      {
+                        label: 'Clean up finished runs…',
+                        onSelect: (): void => {
+                          void cleanUpScheduleRuns(store, api, {
+                            project,
+                            scheduleName: thread.automation?.scheduleName ?? thread.title,
+                            scheduleId,
+                          })
+                        },
+                      },
+                    ]
+                  : []),
                 {
                   label: 'Automation setup…',
                   onSelect: (): void => {
@@ -1749,6 +1875,15 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           openThreadMenu(rect.left, rect.bottom)
         })
         chatRow.append(menuButton)
+      } else {
+        // A thread from a project other than the active one has no menu button — it
+        // can only be read here, not mutated (see `canMutate` above). Reserve the
+        // button's footprint anyway so the trailing status icon lands in the same
+        // column as an active-project row's; otherwise it drifts right by exactly
+        // --projects-action-size on every row that happens to belong to a project
+        // the sidebar hasn't switched to. See docs/ui-taste.md -> "Align trailing
+        // row icons".
+        chatRow.append(el('span', { class: 'chat-menu-btn-space', 'aria-hidden': 'true' }))
       }
       return chatRow
     }
@@ -1961,6 +2096,21 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             projectSuffix,
             el('span', { class: 'automation-schedule-count' }, `${String(runs.length)} runs`),
           )
+          const heldRuns = heldAutomationRuns(runs)
+          if (heldRuns.length > 0) {
+            scheduleToggle.querySelector('.automation-schedule-count')?.before(
+              el(
+                'span',
+                {
+                  class: 'automation-schedule-held',
+                  role: 'img',
+                  'aria-label': heldRunsTooltip(heldRuns.length),
+                  title: heldRunsTooltip(heldRuns.length),
+                },
+                heldRunsLabel(heldRuns.length),
+              ),
+            )
+          }
           if (runs.some((thread) => thread.status === 'running')) {
             const status = runningStatusIcon('ui-icon ui-icon-sm automation-threads-running')
             status.setAttribute('role', 'img')
@@ -2002,6 +2152,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 () => {
                   openAutomationDialog(store, api, { projectId: project.id, scheduleId })
                 },
+                heldRuns.length > 0
+                  ? (): void => {
+                      void cleanUpScheduleRuns(store, api, { project, scheduleName, scheduleId })
+                    }
+                  : undefined,
               ),
             )
           })
@@ -2282,7 +2437,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         matchingThreads.filter(
           (thread) =>
             thread.automation === undefined &&
-            (!needsCleanupOnly || threadNeedsCleanup(project, thread)),
+            (!needsCleanupOnly || matchesCleanupFilter(project, thread)),
         ),
         // A filter's matches stay newest first; the chosen order is for the browse list.
         isFiltering ? 'activity' : store.getState().sidebarThreadSort,
@@ -2410,7 +2565,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         for (const thread of getSidebarThreads(store, project.id)) {
           if (
             thread.automation === undefined &&
-            (!needsCleanupOnly || threadNeedsCleanup(project, thread))
+            (!needsCleanupOnly || matchesCleanupFilter(project, thread))
           ) {
             rows.push({ projectId: project.id, thread })
           }

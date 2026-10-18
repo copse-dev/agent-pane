@@ -160,6 +160,20 @@ describe('new thread default branch checkout', () => {
           mode === 'explicit' ? FEATURE : 'main',
         )
       }
+      // First send can rename the anonymous worktree branch after the reply.
+      // Observe the live checkout inside the retry instead of freezing that
+      // temporary name before the titlebar's debounced refresh.
+      await browser.waitUntil(
+        async () => {
+          const branch = git(checkout, ['branch', '--show-current'])
+          if (mode === 'worktree' && branch === 'copse/thread-thread') return false
+          return (await $('.workspace-branch').getText()) === branch
+        },
+        {
+          timeout: 10_000,
+          timeoutMsg: 'titlebar must show the settled actual checkout branch',
+        },
+      )
       await saveAppScreenshot(`new-thread-default-branch-${mode}-sent.png`)
     })
   }

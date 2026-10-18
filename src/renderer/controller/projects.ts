@@ -189,11 +189,17 @@ function supersedePendingSwitch(): void {
 
 export function getSidebarThreads(store: AppStore, projectId: string): SidebarThread[] {
   const { activeProjectId, threads } = store.getState()
-  const list = projectId === activeProjectId ? threads : (threadCache.get(projectId) ?? [])
+  // Called per branch (rather than on a `Thread[] | SidebarThread[]` union) so each
+  // call infers its own element type instead of collapsing to `Thread`, which would
+  // reject the `SidebarThread` branch for lacking `Thread`-only fields like `usage`.
+  const list =
+    projectId === activeProjectId
+      ? withoutSideChats(threads)
+      : withoutSideChats(threadCache.get(projectId) ?? [])
   // Archived threads stay in the project store / on disk but leave the sidebar.
   // Side chats are hidden by default too: they are listed beside their parent in
   // the Side chat panel, and an unread one rolls up to the parent's row dot.
-  return withoutSideChats(list).filter((t) => t.archivedAt == null)
+  return list.filter((t) => t.archivedAt == null)
 }
 
 const sideChatUnreadCache = new WeakMap<object, Set<string>>()

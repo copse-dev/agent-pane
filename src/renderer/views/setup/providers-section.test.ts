@@ -9,6 +9,8 @@ import { createProvidersPanel } from './providers-section.ts'
 import { fetchModelOptions } from '../model-options.ts'
 import { el } from '../../dom/helpers.ts'
 import { createFakeApi } from '../../fake-api.test-support.ts'
+import { deferred } from '../../../../tests/deferred.ts'
+import type { SettingsSnapshot } from '@shared/settings-contract.ts'
 
 interface StubState {
   settings: Record<string, unknown>
@@ -339,6 +341,78 @@ describe('providers panel', () => {
     assert.equal(state.settings['openAiServiceTier'], 'flex')
   })
 
+  it('preserves ordinary provider drafts while retrying a cancelled initial probe', async () => {
+    const base = stubApi(state)
+    const initialAgents = deferred<DetectedAcpAgent[]>()
+    let reads = 0
+    const panel = createProvidersPanel(
+      {
+        ...base,
+        acp: {
+          ...base.acp,
+          detectAgents: async () => (++reads === 1 ? initialAgents.promise : []),
+        },
+      },
+      { showOpenAiServiceTier: true, deferOrdinaryWrites: true },
+    )
+    document.body.append(panel.root)
+    const first = new AbortController()
+    const snapshot: SettingsSnapshot = {
+      openAiServiceTier: 'priority',
+      openRouterZdrOnly: true,
+      openRouterModel: 'provider/stored-model',
+      openRouterFreeMode: true,
+      openRouterAllowTraining: false,
+    }
+    const pending = panel.refresh(snapshot, first.signal)
+    await flush()
+    clickChip(panel.root, 'openai')
+    const tier = panel.root.querySelector<HTMLSelectElement>('[name="openAiServiceTier"]')
+    assert.ok(tier)
+    assert.equal(tier.value, 'fast')
+    tier.value = 'flex'
+    tier.dispatchEvent(new Event('change', { bubbles: true }))
+    clickChip(panel.root, 'openrouter')
+    const zdr = [...panel.root.querySelectorAll<HTMLLabelElement>('label')]
+      .find((label) => label.textContent.includes('zero-data-retention'))
+      ?.querySelector<HTMLInputElement>('input')
+    assert.ok(zdr)
+    zdr.checked = false
+    zdr.dispatchEvent(new Event('change', { bubbles: true }))
+    const train = [...panel.root.querySelectorAll<HTMLLabelElement>('label')]
+      .find((label) => label.textContent.includes('Allow providers that may train'))
+      ?.querySelector<HTMLInputElement>('input')
+    assert.ok(train)
+    train.checked = true
+    train.dispatchEvent(new Event('change', { bubbles: true }))
+    const free = panel.root.querySelector<HTMLInputElement>('[name="openRouterFreeMode"]')
+    assert.ok(free)
+    assert.equal(free.checked, true)
+    free.checked = false
+    free.dispatchEvent(new Event('change', { bubbles: true }))
+    const customModel = panel.root.querySelector<HTMLInputElement>('[name="openRouterModel"]')
+    assert.ok(customModel)
+    assert.equal(customModel.value, 'provider/stored-model')
+    customModel.value = ''
+    customModel.dispatchEvent(new Event('input', { bubbles: true }))
+    first.abort()
+    await panel.refresh(snapshot, new AbortController().signal)
+    initialAgents.resolve([])
+    await pending
+    assert.deepEqual(panel.readUpdate(), {
+      openAiServiceTier: 'flex',
+      openRouterZdrOnly: false,
+      openRouterFreeMode: false,
+      openRouterAllowTraining: true,
+      openRouterModel: '',
+    })
+    clickChip(panel.root, 'openai')
+    assert.equal(
+      panel.root.querySelector<HTMLSelectElement>('[name="openAiServiceTier"]')?.value,
+      'flex',
+    )
+  })
+
   it('retains an advanced or unknown current tier until a supported choice is made', async () => {
     for (const current of ['scale', 'future-tier']) {
       state.settings['openAiServiceTier'] = current
@@ -488,6 +562,14 @@ describe('providers panel', () => {
       [...kind.options].map((option) => option.value),
       ['api', 'local', 'agent'],
     )
+    // The API-key branch is the paste-a-key form; "Other" opens the full add form.
+    assert.ok(panel.root.querySelector('[data-testid="paste-key-form"]'))
+    const provider = panel.root.querySelector<HTMLSelectElement>(
+      '[data-testid="paste-key-provider"]',
+    )
+    assert.ok(provider)
+    provider.value = '__other'
+    provider.dispatchEvent(new Event('change'))
     assert.match(panel.root.textContent, /Add a provider/)
 
     kind.value = 'agent'

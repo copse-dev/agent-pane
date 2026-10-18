@@ -5,7 +5,8 @@ import {
   buildFooterUsageTooltip,
   type FooterUsageTooltipModel,
 } from '@shared/usage/footer-usage-tooltip.ts'
-import { appendUsageSections } from './footer-usage-popover.ts'
+import type { ThreadClassifierUse } from '@shared/usage/classifier-use.ts'
+import { appendClassifierSection, appendUsageSections } from './footer-usage-popover.ts'
 
 afterEach(() => {
   document.body.replaceChildren()
@@ -341,5 +342,74 @@ describe('footer usage popover subagent runs (component)', () => {
 
     assert.equal(popover.root.querySelectorAll('.footer-usage-popover-row.is-run').length, 5)
     assert.match(popover.root.textContent, /\+2 more/)
+  })
+})
+
+describe('footer usage popover classifier section (component)', () => {
+  const use: ThreadClassifierUse = {
+    calls: 24,
+    rows: [
+      {
+        subject: 'shell-scope',
+        engine: 'Kev 4B',
+        calls: 18,
+        verdicts: [
+          { label: 'sandbox', count: 15 },
+          { label: 'external', count: 3 },
+        ],
+        noVerdict: 0,
+        averageLatencyMs: 900,
+        inputTokens: 2200,
+        outputTokens: 90,
+      },
+      {
+        subject: 'terminal-read',
+        engine: 'Winnow 12B',
+        calls: 6,
+        verdicts: [{ label: 'safe', count: 5 }],
+        noVerdict: 1,
+        averageLatencyMs: 1400,
+        inputTokens: 0,
+        outputTokens: 0,
+      },
+    ],
+  }
+
+  it('lists each subject with its engine, latency, verdict pills and call count', () => {
+    const root = document.createElement('div')
+    appendClassifierSection(root, use)
+
+    assert.match(root.textContent, /Classifiers · 24 calls/)
+    const rows = [...root.querySelectorAll('.footer-usage-popover-row.is-classifier')]
+    assert.equal(rows.length, 2)
+    assert.match(rows[0]?.textContent ?? '', /Shell guard/)
+    assert.match(rows[0]?.textContent ?? '', /Kev 4B · 900ms avg · 2\.2k in \/ 90 out/)
+    assert.match(rows[0]?.textContent ?? '', /18 calls/)
+    assert.match(rows[1]?.textContent ?? '', /Terminal read screen/)
+    assert.match(rows[1]?.textContent ?? '', /Winnow 12B · 1\.4s avg/)
+
+    const pills = [...(rows[0]?.querySelectorAll('.footer-usage-popover-pill') ?? [])]
+    assert.deepEqual(
+      pills.map((pill) => [pill.textContent, pill.classList.contains('is-ok')]),
+      [
+        ['15 sandbox', true],
+        ['3 external', false],
+      ],
+    )
+    assert.ok(rows[1]?.textContent.includes('1 no verdict'))
+  })
+
+  it('adds nothing when no classifier was asked', () => {
+    const root = document.createElement('div')
+    appendClassifierSection(root, { calls: 0, rows: [] })
+    assert.equal(root.childElementCount, 0)
+  })
+
+  it('says "1 call" in the singular', () => {
+    const root = document.createElement('div')
+    const [row] = use.rows
+    assert.ok(row)
+    appendClassifierSection(root, { calls: 1, rows: [{ ...row, calls: 1 }] })
+    assert.match(root.textContent, /Classifiers · 1 call(?!s)/)
   })
 })

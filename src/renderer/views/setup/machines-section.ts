@@ -340,12 +340,14 @@ export function createMachinesSection(api: Pick<ApiClient, 'machines' | 'classif
       )
     }, sharingFeedback)
   })
-  async function refresh(): Promise<void> {
+  async function refresh(signal?: AbortSignal): Promise<void> {
     if (refreshing || busy) return
     refreshing = true
     try {
-      show(await api.machines.state())
+      const state = await api.machines.state()
+      if (!signal?.aborted) show(state)
     } catch (error) {
+      if (signal?.aborted) return
       setInlineStatus(
         status,
         'error',

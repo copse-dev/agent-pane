@@ -193,6 +193,21 @@ describe('composer long-prompt cap (#2489)', () => {
     // px like the exact `scrollTop = scrollHeight` assignment above.
     expect(m.scrollTop).toBeGreaterThanOrEqual(m.scrollHeight - m.clientHeight - 24)
 
+    // Native caret scrolling may settle anywhere within the line-height
+    // tolerance above. Keep that behavioral assertion before normalizing the
+    // screenshot, so a broken native scroll cannot be hidden by the fixture.
+    await browser.execute(() => {
+      const prompt = document.querySelector('.prompt-input')
+      if (!(prompt instanceof HTMLElement)) throw new Error('Missing prompt input')
+      prompt.scrollTo({ top: prompt.scrollHeight, behavior: 'instant' })
+    })
+    await waitForSettledLayout('#input-bar')
+    const captured = await readComposerCapMetrics()
+    expect(captured.error).toBeUndefined()
+    expect(captured.scrollTop).toBeGreaterThanOrEqual(
+      captured.scrollHeight - captured.clientHeight - 2,
+    )
+
     await browser
       .$('#input-bar')
       .saveScreenshot(join(E2E_SCREENSHOT_DIR, 'composer-long-prompt-cap-typed.png'))

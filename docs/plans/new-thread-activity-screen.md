@@ -169,7 +169,7 @@ This document, plus the `mission-control.md` update. No code.
 ### 1. Extract a reusable activity view (2-3 days)
 
 - Split `mountActivityPanel` into `createActivityView({store, sources, api, deps}) ->
-{root, render, dispose}`; the overlay wraps it.
+  {root, render, dispose}`; the overlay wraps it.
 - Behaviour must be identical. `activity-panel.test.ts` and `tests/e2e/activity-panel.e2e.ts`
   pass unchanged (that is the proof).
 - Risk: low. It touches the approval path, so keep exactly one caller of
