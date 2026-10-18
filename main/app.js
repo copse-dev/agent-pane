@@ -88403,6 +88403,7 @@ var init_autoplay = __esm({
 // src/renderer/controller/mobile-chat.ts
 async function acceptMobileChat(store2, api2, command2) {
   let ownedThread = null;
+  const text2 = command2.text || "Please look at this image.";
   const checkCurrent = () => {
     if (Date.now() >= command2.expiresAt) throw new Error("This send expired. Try again.");
     if (store2.getState().activeProjectId !== command2.projectId)
@@ -88428,7 +88429,7 @@ async function acceptMobileChat(store2, api2, command2) {
       const prepared = await api2.agent.prepareCheckout(
         command2.projectId,
         threadId,
-        command2.text,
+        text2,
         "automatic",
         initial.model
       );
@@ -88438,8 +88439,19 @@ async function acceptMobileChat(store2, api2, command2) {
     const current = getThreadById(store2, threadId);
     if (!current || current.archivedAt !== void 0) throw new Error("Thread unavailable.");
     checkCurrent();
-    const payload = { content: command2.text };
-    const messageId = addMessage(store2, threadId, "user", command2.text);
+    const payload = {
+      content: command2.image ? [
+        { type: "image", dataUrl: command2.image },
+        { type: "text", text: text2 }
+      ] : text2
+    };
+    const messageId = addMessage(
+      store2,
+      threadId,
+      "user",
+      text2,
+      command2.image ? [command2.image] : void 0
+    );
     const queued = { messageId, payload, createdAt: Date.now() };
     const running = current.status === "running";
     if (running) enqueueUserMessage(store2, threadId, queued);
