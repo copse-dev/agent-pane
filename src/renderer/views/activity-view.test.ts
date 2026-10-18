@@ -583,6 +583,23 @@ describe('activity view answering a question in place', () => {
     assert.deepEqual(fake.answers, [])
   })
 
+  it('keeps Send off while the pane is settling, even as the user types', () => {
+    const { harness, fake } = showAsked([ASKED, { ...ASKED, id: 'ask2', receivedAt: 2 }])
+    // Another question leaves, so the list changed under the one in view.
+    fake.settle('ask2')
+    harness.flush()
+    assert.equal(sendButton(harness).disabled, true, 'Send waits for the pane to settle')
+
+    // Typing must not light up a Send that would drop the click.
+    typeInto(field(harness, 0), 'Postgres')
+    assert.equal(sendButton(harness).disabled, true, 'still settling after a keystroke')
+
+    harness.flush()
+    assert.equal(sendButton(harness).disabled, false, 'and comes back once it has')
+    sendButton(harness).click()
+    assert.deepEqual(fake.answers, [{ id: 'ask1', answers: ['Postgres', ''] }])
+  })
+
   it('forgets a draft once its question is gone', () => {
     const { harness, fake } = showAsked()
     typeInto(field(harness, 0), 'Postgres')

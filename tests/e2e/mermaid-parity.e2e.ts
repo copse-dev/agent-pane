@@ -90,6 +90,11 @@ function measure(selector: string) {
       lineHeight: style.lineHeight,
     },
     rect: [rect.width, rect.height],
+    colors: {
+      label: style?.fill,
+      edge: svg.querySelector('path') ? getComputedStyle(svg.querySelector('path')!).stroke : null,
+      background: getComputedStyle(root.querySelector('.mermaid-diagram') ?? root).backgroundColor,
+    },
     math: svg.querySelectorAll('.katex').length,
     fontRuns,
     loadedPliant: Array.from(document.fonts)
@@ -164,6 +169,8 @@ describe('Mermaid same-environment rendering parity', () => {
         expect(isolated.box).toEqual(baseline.box)
         expect(isolated.font).toEqual(baseline.font)
         expect(isolated.fontRuns).toEqual(baseline.fontRuns)
+        expect(isolated.colors).toEqual(baseline.colors)
+        expect(['rgb(221, 221, 221)', 'rgb(170, 170, 170)']).toContain(baseline.colors?.label)
         expect(isolated.loadedPliant).toEqual(['italic', 'normal'])
         expect(baseline.loadedPliant).toEqual(['italic', 'normal'])
         for (const run of isolated.fontRuns!) expect(run.family).toContain('Pliant')

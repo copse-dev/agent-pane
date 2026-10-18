@@ -52,8 +52,12 @@ describe('mobile LAN interfaces', () => {
 describe('mobile request boundary', () => {
   const authority = '192.168.1.41:4000'
   const origin = `https://${authority}`
-  it('has exactly two read-only data operations', () => {
-    assert.deepEqual(Object.keys(MOBILE_READ_DISPATCH).sort(), ['activity', 'thread'])
+  it('limits paired phones to activity, thread, and thread-image reads', () => {
+    assert.deepEqual(Object.keys(MOBILE_READ_DISPATCH).sort(), [
+      'activity',
+      'thread',
+      'threadImage',
+    ])
   })
   it('allows only the literal bound host and a private peer', () => {
     assert.equal(mobileRequestAllowed(request('192.168.1.55'), authority, origin), true)
