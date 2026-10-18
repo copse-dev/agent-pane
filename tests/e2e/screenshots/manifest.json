@@ -2769,6 +2769,10 @@
       "sha256": "4668182b40046a2feaf27283f658393e4b87ea5145bff62286f47257d4b12955",
       "bytes": 125618
     },
+    "pr-panel-viewing-collapsed-pr.png": {
+      "sha256": "228d258e726fd9160a765222094922d5ff20419471200341f52f2ef9baf5ed04",
+      "bytes": 107784
+    },
     "pr-producing-and-related-threads-expanded.png": {
       "sha256": "d23d31e21e2c2b29b740c6b12a4e1ca2f8e6377cf31b57aa7ecd3171f44f5a3a",
       "bytes": 43625
