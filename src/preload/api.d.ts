@@ -284,7 +284,7 @@ export interface ApiClient {
     getContextPermissions: (
       projectId: string,
       threadId: string,
-      checkoutRoot: string,
+      projectRoot: string,
     ) => Promise<import('@shared/types/context-permissions.ts').ContextPermissionSnapshot>
     enableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
     disableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>

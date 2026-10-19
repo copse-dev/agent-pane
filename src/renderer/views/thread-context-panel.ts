@@ -582,13 +582,14 @@ export function mountThreadContextPane(
     }
     try {
       const project = store.getState().projects.find((candidate) => candidate.id === projectId)
-      const checkoutRoot = getActiveThread(store)?.worktree?.path ?? project?.path
-      if (!checkoutRoot) return
+      // Port-binding grants are saved per project, even for a worktree thread.
+      const projectRoot = project?.path
+      if (!projectRoot) return
       const [read, send, context, guardedYolo, trusted, savedOrigins, overrides, decisions] =
         await Promise.all([
           api.settings.get('threadReadAccess'),
           api.settings.get('threadSendAccess'),
-          api.security.getContextPermissions(projectId, threadId, checkoutRoot),
+          api.security.getContextPermissions(projectId, threadId, projectRoot),
           api.security.getGuardedYolo(threadId),
           api.workspace.isTrusted(),
           api.settings.get('webAllowedOrigins'),

@@ -225,8 +225,8 @@ const api: ApiClient = {
   },
   security: {
     getGuardedYolo: (threadId: string) => ipcRenderer.invoke('security:get-guarded-yolo', threadId),
-    getContextPermissions: (projectId: string, threadId: string, checkoutRoot: string) =>
-      ipcRenderer.invoke('security:get-context-permissions', projectId, threadId, checkoutRoot),
+    getContextPermissions: (projectId: string, threadId: string, projectRoot: string) =>
+      ipcRenderer.invoke('security:get-context-permissions', projectId, threadId, projectRoot),
     enableGuardedYolo: (threadId: string) =>
       ipcRenderer.invoke('security:enable-guarded-yolo', threadId),
     disableGuardedYolo: (threadId: string) =>

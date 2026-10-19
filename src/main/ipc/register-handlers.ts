@@ -1953,11 +1953,11 @@ export function registerAllHandlers(
   })
   ipcMain.handle(
     'security:get-context-permissions',
-    (event, projectId: unknown, threadId: unknown, checkoutRoot: unknown) => {
+    (event, projectId: unknown, threadId: unknown, projectRoot: unknown) => {
       assertMainFrameSender(event, win)
       const [pid, tid, root] = parseIpcArgs(
         z.tuple([zProjectId, zThreadId, zNonEmptyString.max(4096)]),
-        [projectId, threadId, checkoutRoot],
+        [projectId, threadId, projectRoot],
       )
       return {
         outsideReadPaths: listReadOutsideProjectGrants(tid),

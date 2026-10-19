@@ -242,6 +242,7 @@ test('storage combines saved files with the owned checkout and archive uses the 
     })),
   })
   const base = createFakeApi()
+  const permissionRoots: string[] = []
   const api = {
     ...base,
     threads: {
@@ -267,6 +268,17 @@ test('storage combines saved files with the owned checkout and archive uses the 
         truncated: true,
       }),
     },
+    security: {
+      ...base.security,
+      getContextPermissions: async (
+        _projectId: string,
+        _threadId: string,
+        projectRoot: string,
+      ): Promise<ContextPermissionSnapshot> => {
+        permissionRoots.push(projectRoot)
+        return { outsideReadPaths: [], browserOrigins: [], portBindingAllowed: false }
+      },
+    },
   }
   const viewer = document.createElement('div')
   const requests: string[][] = []
@@ -288,6 +300,8 @@ test('storage combines saved files with the owned checkout and archive uses the 
     viewer.querySelector('[data-context-change-stats] .git-change-status-deleted')?.textContent,
     '−7',
   )
+  // Port-binding grants are saved under the project root, not the worktree.
+  assert.deepEqual(permissionRoots, ['/work'])
   viewer.querySelector<HTMLElement>('[data-action="archive-thread"]')?.click()
   assert.deepEqual(requests, [['p', id]])
   assert.equal(store.getState().threads[0]?.archivedAt, undefined)
