@@ -30473,6 +30473,312 @@ var init_classifiers_section = __esm({
   }
 });
 
+// src/shared/web-search.ts
+function resolveWebSearchProvider(value) {
+  return value === "tavily" || value === "parallel" ? value : "none";
+}
+var WEB_SEARCH_PROVIDERS, WEB_SEARCH_LABELS;
+var init_web_search = __esm({
+  "src/shared/web-search.ts"() {
+    WEB_SEARCH_PROVIDERS = ["none", "tavily", "parallel"];
+    WEB_SEARCH_LABELS = {
+      none: "Not configured",
+      tavily: "Tavily",
+      parallel: "Parallel"
+    };
+  }
+});
+
+// src/renderer/views/setup/api-keys-section.ts
+function keyStatusClass(ok) {
+  if (ok === true) return "key-status ok";
+  if (ok === false) return "key-status err";
+  return "key-status";
+}
+function createApiKeysSection(api2, opts = {}) {
+  const legend = opts.legend ?? "API Keys";
+  const providers = opts.providers ?? ["anthropic", "openai", "openrouter", "cursor"];
+  const validateOnInput = opts.validateOnInput ?? true;
+  const fields = providers.map((provider) => {
+    const config2 = API_KEY_PROVIDER_CONFIGS[provider];
+    const input2 = el("input", {
+      type: "password",
+      name: config2.name,
+      placeholder: config2.placeholder,
+      autocomplete: "off"
+    });
+    const status = el("span", { class: "key-status", "data-key": provider });
+    const atRest = el("span", { class: "key-status", "data-at-rest": provider });
+    const label = el(
+      "label",
+      {},
+      config2.label,
+      input2,
+      status,
+      atRest,
+      el("span", { class: "field-hint" }, config2.hint)
+    );
+    return { ...config2, input: input2, status, atRest, label };
+  });
+  const plaintextNote = el(
+    "p",
+    { class: "field-hint", "data-at-rest-note": "", hidden: true },
+    "One or more keys are stored unencrypted because the OS secure storage is unavailable. Install and unlock a system keyring to encrypt them at rest."
+  );
+  const fieldset = el(
+    "fieldset",
+    {},
+    el("legend", {}, legend),
+    ...fields.map((field) => field.label),
+    plaintextNote
+  );
+  let generation = 0;
+  const validationTimers = /* @__PURE__ */ new Map();
+  async function validateField(provider, input2, statusEl) {
+    const mine = generation;
+    const value = input2.value.trim();
+    if (!value) {
+      statusEl.replaceChildren();
+      statusEl.className = "key-status";
+      return;
+    }
+    setInlineStatus(statusEl, "pending", "Checking\u2026");
+    statusEl.className = "key-status";
+    const result = await api2.settings.validateKey(provider, value);
+    if (mine !== generation || input2.value.trim() !== value) return;
+    if (result.ok) {
+      setInlineStatus(statusEl, "ok", "Valid key");
+      statusEl.className = keyStatusClass(true);
+    } else {
+      setInlineStatus(statusEl, "error", result.error ?? "Invalid key");
+      statusEl.className = keyStatusClass(false);
+    }
+  }
+  function bindValidation(provider, input2, statusEl) {
+    if (!validateOnInput) return;
+    input2.addEventListener("input", () => {
+      const existing = validationTimers.get(provider);
+      if (existing) clearTimeout(existing);
+      validationTimers.set(
+        provider,
+        setTimeout(() => {
+          void validateField(provider, input2, statusEl);
+        }, 500)
+      );
+    });
+  }
+  for (const field of fields) {
+    bindValidation(field.provider, field.input, field.status);
+  }
+  async function refreshKeyStatus(signal) {
+    const mine = generation;
+    if (signal?.aborted) return;
+    let anyPlaintext = false;
+    for (const field of fields) {
+      const saved = await api2.settings.getKey(field.provider);
+      if (mine !== generation || signal?.aborted) return;
+      if (!field.input.value.trim()) {
+        setInlineStatus(field.status, saved ? "filled" : "idle", saved ? "saved" : "not set");
+        field.status.className = "key-status";
+      }
+      const encrypted = saved ? await api2.settings.getKeyEncrypted(field.provider) : null;
+      if (mine !== generation || signal?.aborted) return;
+      if (encrypted === true) {
+        setInlineStatus(field.atRest, "ok", "Encrypted by OS keychain");
+        field.atRest.className = "key-status";
+      } else if (encrypted === false) {
+        anyPlaintext = true;
+        setInlineStatus(field.atRest, "warn", "Stored unencrypted");
+        field.atRest.className = "key-status";
+      } else {
+        field.atRest.replaceChildren();
+        field.atRest.className = "key-status";
+      }
+    }
+    plaintextNote.hidden = !anyPlaintext;
+  }
+  async function confirmPlaintextStorage(provider) {
+    const label = API_KEY_PROVIDER_CONFIGS[provider].label;
+    return showConfirmDialog({
+      message: `No OS keyring is available to encrypt your ${label} at rest. Install and unlock a system keyring to store it encrypted.`,
+      detail: "Store it unencrypted on this machine anyway?",
+      confirmLabel: "Store anyway"
+    });
+  }
+  async function saveKeys() {
+    let savedAny = false;
+    const failures = [];
+    for (const field of fields) {
+      const key = field.input.value.trim();
+      if (!key) {
+        field.input.value = "";
+        continue;
+      }
+      let result = await api2.settings.setKey(field.provider, key);
+      if (!result.ok && result.reason === "plaintext-consent-required" && await confirmPlaintextStorage(field.provider)) {
+        result = await api2.settings.setKey(field.provider, key, { allowPlaintext: true });
+      }
+      if (result.ok) {
+        field.input.value = "";
+        savedAny = true;
+      } else {
+        const message2 = result.reason === "plaintext-storage-disabled" ? `Not saved: ${PLAINTEXT_STORAGE_DISABLED_REASON}` : "Not saved: unencrypted storage declined";
+        failures.push(message2);
+        setInlineStatusMarkdown(field.status, "error", message2);
+        field.status.className = keyStatusClass(false);
+      }
+    }
+    if (savedAny) await refreshKeyStatus();
+    return failures.length === 0;
+  }
+  return {
+    root: fieldset,
+    refreshKeyStatus,
+    saveKeys,
+    reset: () => {
+      generation += 1;
+      for (const timer of validationTimers.values()) clearTimeout(timer);
+      validationTimers.clear();
+      for (const field of fields) {
+        field.input.value = "";
+        field.status.replaceChildren();
+      }
+    }
+  };
+}
+var PLAINTEXT_STORAGE_DISABLED_REASON, API_KEY_PROVIDER_CONFIGS;
+var init_api_keys_section = __esm({
+  "src/renderer/views/setup/api-keys-section.ts"() {
+    init_helpers();
+    init_inline_status();
+    init_confirm_dialog();
+    PLAINTEXT_STORAGE_DISABLED_REASON = "secure storage is unavailable and plaintext secret storage is disabled. Start Copse with `COPSE_ALLOW_PLAINTEXT_SECRETS=1` to opt in.";
+    API_KEY_PROVIDER_CONFIGS = {
+      tavily: {
+        provider: "tavily",
+        name: "tavilyKey",
+        label: "Tavily API key",
+        placeholder: "tvly-\u2026",
+        hint: "Basic search uses one API credit per request. Generated answers are disabled."
+      },
+      anthropic: {
+        provider: "anthropic",
+        name: "anthropicKey",
+        label: "Anthropic API key",
+        placeholder: "sk-ant-\u2026",
+        hint: "Checked with a free request, so no tokens are charged."
+      },
+      openai: {
+        provider: "openai",
+        name: "openaiKey",
+        label: "OpenAI API key",
+        placeholder: "sk-\u2026",
+        hint: "Checked with a free request, so no tokens are charged."
+      },
+      cursor: {
+        provider: "cursor",
+        name: "cursorKey",
+        label: "Cursor API key",
+        placeholder: "cur_\u2026",
+        hint: "For runs on Cursor\u2019s machines. Checked with a free request."
+      },
+      openrouter: {
+        provider: "openrouter",
+        name: "openrouterKey",
+        label: "OpenRouter API key",
+        placeholder: "sk-or-\u2026",
+        hint: "One key for Claude, GPT, Gemini, Llama, and more. Checked with a free request."
+      },
+      github: {
+        provider: "github",
+        name: "githubKey",
+        label: "GitHub token",
+        placeholder: "github_pat_\u2026 or ghp_\u2026",
+        hint: "Lets the Claude cloud agent clone your repository, push branches, and open pull requests. Use a fine-grained token with repository access."
+      },
+      "artificial-analysis": {
+        provider: "artificial-analysis",
+        name: "artificialAnalysisKey",
+        label: "Artificial Analysis API key",
+        placeholder: "aa-\u2026",
+        hint: "Optional: live Intelligence Index data for the model value map, including models beyond the curated list. Free key from artificialanalysis.ai (their terms require the attribution shown on the map)."
+      },
+      parallel: {
+        provider: "parallel",
+        name: "parallelKey",
+        label: "Parallel API key",
+        placeholder: "Parallel API key",
+        hint: "Used only for the direct Search API. Requests may be billable; ZDR depends on your Parallel account agreement."
+      }
+    };
+  }
+});
+
+// src/renderer/views/settings/web-search-section.ts
+function createWebSearchSection(api2) {
+  const provider = el("select", { name: "webSearchProvider" });
+  for (const value of WEB_SEARCH_PROVIDERS) {
+    provider.append(el("option", { value }, WEB_SEARCH_LABELS[value]));
+  }
+  const tavily = createApiKeysSection(api2, {
+    legend: "Tavily account",
+    providers: ["tavily"],
+    validateOnInput: false
+  });
+  const parallel = createApiKeysSection(api2, {
+    legend: "Parallel account",
+    providers: ["parallel"],
+    validateOnInput: false
+  });
+  const note = el(
+    "p",
+    { class: "field-hint" },
+    "Queries and returned excerpts are included in the conversation. Provider retention and usage terms apply. Saving credentials does not run a search."
+  );
+  const root = el(
+    "fieldset",
+    {},
+    el("legend", {}, "Search provider"),
+    el("label", {}, "Default provider", provider),
+    tavily.root,
+    parallel.root,
+    note
+  );
+  const sync = () => {
+    tavily.root.hidden = provider.value !== "tavily";
+    parallel.root.hidden = provider.value !== "parallel";
+  };
+  provider.addEventListener("change", sync);
+  provider.value = "none";
+  sync();
+  return {
+    root,
+    refresh: async (snapshot, signal) => {
+      if (signal.aborted) return;
+      provider.value = resolveWebSearchProvider(snapshot.webSearchProvider);
+      sync();
+      await Promise.all([tavily.refreshKeyStatus(signal), parallel.refreshKeyStatus(signal)]);
+    },
+    collect: (dirty) => dirty.has("webSearchProvider") ? { webSearchProvider: resolveWebSearchProvider(provider.value) } : {},
+    saveKeys: async () => {
+      if (provider.value === "tavily") return tavily.saveKeys();
+      if (provider.value === "parallel") return parallel.saveKeys();
+      return true;
+    },
+    reset: () => {
+      tavily.reset();
+      parallel.reset();
+    }
+  };
+}
+var init_web_search_section = __esm({
+  "src/renderer/views/settings/web-search-section.ts"() {
+    init_web_search();
+    init_helpers();
+    init_api_keys_section();
+  }
+});
+
 // packages/std/src/unknown-value.ts
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -52783,224 +53089,6 @@ var init_models_section = __esm({
     init_model_picker();
     init_model_routing_section();
     init_model_parameters_section();
-  }
-});
-
-// src/renderer/views/setup/api-keys-section.ts
-function keyStatusClass(ok) {
-  if (ok === true) return "key-status ok";
-  if (ok === false) return "key-status err";
-  return "key-status";
-}
-function createApiKeysSection(api2, opts = {}) {
-  const legend = opts.legend ?? "API Keys";
-  const providers = opts.providers ?? ["anthropic", "openai", "openrouter", "cursor"];
-  const validateOnInput = opts.validateOnInput ?? true;
-  const fields = providers.map((provider) => {
-    const config2 = API_KEY_PROVIDER_CONFIGS[provider];
-    const input2 = el("input", {
-      type: "password",
-      name: config2.name,
-      placeholder: config2.placeholder,
-      autocomplete: "off"
-    });
-    const status = el("span", { class: "key-status", "data-key": provider });
-    const atRest = el("span", { class: "key-status", "data-at-rest": provider });
-    const label = el(
-      "label",
-      {},
-      config2.label,
-      input2,
-      status,
-      atRest,
-      el("span", { class: "field-hint" }, config2.hint)
-    );
-    return { ...config2, input: input2, status, atRest, label };
-  });
-  const plaintextNote = el(
-    "p",
-    { class: "field-hint", "data-at-rest-note": "", hidden: true },
-    "One or more keys are stored unencrypted because the OS secure storage is unavailable. Install and unlock a system keyring to encrypt them at rest."
-  );
-  const fieldset = el(
-    "fieldset",
-    {},
-    el("legend", {}, legend),
-    ...fields.map((field) => field.label),
-    plaintextNote
-  );
-  let generation = 0;
-  const validationTimers = /* @__PURE__ */ new Map();
-  async function validateField(provider, input2, statusEl) {
-    const mine = generation;
-    const value = input2.value.trim();
-    if (!value) {
-      statusEl.replaceChildren();
-      statusEl.className = "key-status";
-      return;
-    }
-    setInlineStatus(statusEl, "pending", "Checking\u2026");
-    statusEl.className = "key-status";
-    const result = await api2.settings.validateKey(provider, value);
-    if (mine !== generation || input2.value.trim() !== value) return;
-    if (result.ok) {
-      setInlineStatus(statusEl, "ok", "Valid key");
-      statusEl.className = keyStatusClass(true);
-    } else {
-      setInlineStatus(statusEl, "error", result.error ?? "Invalid key");
-      statusEl.className = keyStatusClass(false);
-    }
-  }
-  function bindValidation(provider, input2, statusEl) {
-    if (!validateOnInput) return;
-    input2.addEventListener("input", () => {
-      const existing = validationTimers.get(provider);
-      if (existing) clearTimeout(existing);
-      validationTimers.set(
-        provider,
-        setTimeout(() => {
-          void validateField(provider, input2, statusEl);
-        }, 500)
-      );
-    });
-  }
-  for (const field of fields) {
-    bindValidation(field.provider, field.input, field.status);
-  }
-  async function refreshKeyStatus(signal) {
-    const mine = generation;
-    if (signal?.aborted) return;
-    let anyPlaintext = false;
-    for (const field of fields) {
-      const saved = await api2.settings.getKey(field.provider);
-      if (mine !== generation || signal?.aborted) return;
-      if (!field.input.value.trim()) {
-        setInlineStatus(field.status, saved ? "filled" : "idle", saved ? "saved" : "not set");
-        field.status.className = "key-status";
-      }
-      const encrypted = saved ? await api2.settings.getKeyEncrypted(field.provider) : null;
-      if (mine !== generation || signal?.aborted) return;
-      if (encrypted === true) {
-        setInlineStatus(field.atRest, "ok", "Encrypted by OS keychain");
-        field.atRest.className = "key-status";
-      } else if (encrypted === false) {
-        anyPlaintext = true;
-        setInlineStatus(field.atRest, "warn", "Stored unencrypted");
-        field.atRest.className = "key-status";
-      } else {
-        field.atRest.replaceChildren();
-        field.atRest.className = "key-status";
-      }
-    }
-    plaintextNote.hidden = !anyPlaintext;
-  }
-  async function confirmPlaintextStorage(provider) {
-    const label = API_KEY_PROVIDER_CONFIGS[provider].label;
-    return showConfirmDialog({
-      message: `No OS keyring is available to encrypt your ${label} at rest. Install and unlock a system keyring to store it encrypted.`,
-      detail: "Store it unencrypted on this machine anyway?",
-      confirmLabel: "Store anyway"
-    });
-  }
-  async function saveKeys() {
-    let savedAny = false;
-    const failures = [];
-    for (const field of fields) {
-      const key = field.input.value.trim();
-      if (!key) {
-        field.input.value = "";
-        continue;
-      }
-      let result = await api2.settings.setKey(field.provider, key);
-      if (!result.ok && result.reason === "plaintext-consent-required" && await confirmPlaintextStorage(field.provider)) {
-        result = await api2.settings.setKey(field.provider, key, { allowPlaintext: true });
-      }
-      if (result.ok) {
-        field.input.value = "";
-        savedAny = true;
-      } else {
-        const message2 = result.reason === "plaintext-storage-disabled" ? `Not saved: ${PLAINTEXT_STORAGE_DISABLED_REASON}` : "Not saved: unencrypted storage declined";
-        failures.push(message2);
-        setInlineStatusMarkdown(field.status, "error", message2);
-        field.status.className = keyStatusClass(false);
-      }
-    }
-    if (savedAny) await refreshKeyStatus();
-    return failures.length === 0;
-  }
-  return {
-    root: fieldset,
-    refreshKeyStatus,
-    saveKeys,
-    reset: () => {
-      generation += 1;
-      for (const timer of validationTimers.values()) clearTimeout(timer);
-      validationTimers.clear();
-      for (const field of fields) {
-        field.input.value = "";
-        field.status.replaceChildren();
-      }
-    }
-  };
-}
-var PLAINTEXT_STORAGE_DISABLED_REASON, API_KEY_PROVIDER_CONFIGS;
-var init_api_keys_section = __esm({
-  "src/renderer/views/setup/api-keys-section.ts"() {
-    init_helpers();
-    init_inline_status();
-    init_confirm_dialog();
-    PLAINTEXT_STORAGE_DISABLED_REASON = "secure storage is unavailable and plaintext secret storage is disabled. Start Copse with `COPSE_ALLOW_PLAINTEXT_SECRETS=1` to opt in.";
-    API_KEY_PROVIDER_CONFIGS = {
-      anthropic: {
-        provider: "anthropic",
-        name: "anthropicKey",
-        label: "Anthropic API key",
-        placeholder: "sk-ant-\u2026",
-        hint: "Checked with a free request, so no tokens are charged."
-      },
-      openai: {
-        provider: "openai",
-        name: "openaiKey",
-        label: "OpenAI API key",
-        placeholder: "sk-\u2026",
-        hint: "Checked with a free request, so no tokens are charged."
-      },
-      cursor: {
-        provider: "cursor",
-        name: "cursorKey",
-        label: "Cursor API key",
-        placeholder: "cur_\u2026",
-        hint: "For runs on Cursor\u2019s machines. Checked with a free request."
-      },
-      openrouter: {
-        provider: "openrouter",
-        name: "openrouterKey",
-        label: "OpenRouter API key",
-        placeholder: "sk-or-\u2026",
-        hint: "One key for Claude, GPT, Gemini, Llama, and more. Checked with a free request."
-      },
-      github: {
-        provider: "github",
-        name: "githubKey",
-        label: "GitHub token",
-        placeholder: "github_pat_\u2026 or ghp_\u2026",
-        hint: "Lets the Claude cloud agent clone your repository, push branches, and open pull requests. Use a fine-grained token with repository access."
-      },
-      "artificial-analysis": {
-        provider: "artificial-analysis",
-        name: "artificialAnalysisKey",
-        label: "Artificial Analysis API key",
-        placeholder: "aa-\u2026",
-        hint: "Optional: live Intelligence Index data for the model value map, including models beyond the curated list. Free key from artificialanalysis.ai (their terms require the attribution shown on the map)."
-      },
-      parallel: {
-        provider: "parallel",
-        name: "parallelKey",
-        label: "Parallel API key",
-        placeholder: "Parallel API key",
-        hint: "Used only for the direct Search API. Requests may be billable; ZDR depends on your Parallel account agreement."
-      }
-    };
   }
 });
 
@@ -77437,6 +77525,20 @@ var init_classifiers_markup = __esm({
   }
 });
 
+// src/renderer/views/settings/web-search-markup.ts
+var webSearchMarkup;
+var init_web_search_markup = __esm({
+  "src/renderer/views/settings/web-search-markup.ts"() {
+    webSearchMarkup = `
+  <section class="settings-section" data-section="web-search">
+    <h3>Web search</h3>
+    <p class="settings-section-desc">Choose where agents send web searches. Search is available once a provider and API key are configured. Searches use your provider account and may be billable. There is no automatic fallback to another service.</p>
+    <div id="settings-web-search-host" class="settings-mount"></div>
+  </section>
+`;
+  }
+});
+
 // src/renderer/views/settings/usage-markup.ts
 var usageMarkup;
 var init_usage_markup = __esm({
@@ -78591,6 +78693,7 @@ var init_registry = __esm({
   "src/renderer/views/settings/registry.ts"() {
     init_general_markup();
     init_classifiers_markup();
+    init_web_search_markup();
     init_usage_markup();
     init_agent_markup();
     init_permissions_markup();
@@ -78604,6 +78707,7 @@ var init_registry = __esm({
     SETTINGS_SECTIONS = [
       { id: "general", label: "General", markup: generalMarkup, fields: generalFields },
       { id: "classifiers", label: "Classifiers", markup: classifiersMarkup, fields: [] },
+      { id: "web-search", label: "Web search", markup: webSearchMarkup, fields: [] },
       { id: "usage", label: "Usage", markup: usageMarkup, fields: [] },
       { id: "agent", label: "Agent", markup: agentMarkup, fields: agentFields },
       { id: "permissions", label: "Permissions", markup: permissionsMarkup, fields: permissionsFields },
@@ -78699,7 +78803,7 @@ var isSettingsSection, overlayEl, submitting, pendingSection, pendingPluginDetai
 var init_navigation = __esm({
   "src/renderer/views/settings/navigation.ts"() {
     init_automations_plugin();
-    isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental" || value === "about";
+    isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "web-search" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental" || value === "about";
     overlayEl = null;
     submitting = false;
     pendingSection = null;
@@ -78978,6 +79082,8 @@ function mountSettingsDialog(store2, api2) {
   qsRequired(overlay, "#settings-close").append(closeIcon("ui-icon"));
   const classifiersSection = createClassifiersSection(api2);
   qsRequired(overlay, "#settings-classifiers-host").append(classifiersSection.root);
+  const webSearchSection = createWebSearchSection(api2);
+  qsRequired(overlay, "#settings-web-search-host").append(webSearchSection.root);
   const sshWorkspaceSection = createSshWorkspaceSection(api2, {
     deferOrdinaryWrites: true,
     // Dedicated host edits wake project-menu listeners immediately.
@@ -79078,6 +79184,10 @@ function mountSettingsDialog(store2, api2) {
       classifiers: {
         refresh: (_values, signal) => classifiersSection.refresh(signal)
       },
+      "web-search": {
+        retainDrafts: true,
+        refresh: (values, signal) => webSearchSection.refresh(values, signal)
+      },
       usage: {
         refresh: async (_values, signal) => {
           await Promise.all([usageSection.refresh(signal), providersSection.refreshUsage(signal)]);
@@ -79165,6 +79275,7 @@ function mountSettingsDialog(store2, api2) {
     dirty.clear();
     snapshot = null;
     providersSection.reset();
+    webSearchSection.reset();
     storage.reset();
     appearance.begin();
     status.hidden = true;
@@ -79242,7 +79353,8 @@ function mountSettingsDialog(store2, api2) {
         ...modelsSection.collect(data, savedDirty),
         ...providersSection.collect(data, savedDirty),
         ...appearance.collect(data, savedDirty),
-        ...sshWorkspaceSection.collect(data, savedDirty)
+        ...sshWorkspaceSection.collect(data, savedDirty),
+        ...webSearchSection.collect(savedDirty)
       };
       for (const section2 of SETTINGS_SECTIONS)
         Object.assign(changes, collectSimpleFields(section2.fields, data, savedDirty));
@@ -79259,6 +79371,12 @@ function mountSettingsDialog(store2, api2) {
       store2.emit("settings_changed");
       window.dispatchEvent(new Event("copse:skills-changed"));
       await security.save(data, savedDirty);
+      if (!await webSearchSection.saveKeys()) {
+        nav2.show("web-search");
+        status.textContent = "Preferences saved. Review the search API key before saving again.";
+        status.hidden = false;
+        return;
+      }
       if (!await providersSection.saveKeys()) {
         if (mine === openGeneration && isSettingsDialogOpen()) {
           nav2.show("general");
@@ -79294,6 +79412,7 @@ function mountSettingsDialog(store2, api2) {
     snapshot = null;
     appearance.rollback();
     providersSection.reset();
+    webSearchSection.reset();
     dirty.clear();
   });
   qsRequired(overlay, "#settings-cancel").addEventListener("click", closeSettingsDialog);
@@ -79306,6 +79425,7 @@ var init_settings_dialog = __esm({
     init_icons();
     init_ipc_error_message();
     init_classifiers_section();
+    init_web_search_section();
     init_ssh_workspace_section();
     init_tool_permissions_panel();
     init_usage_section();
