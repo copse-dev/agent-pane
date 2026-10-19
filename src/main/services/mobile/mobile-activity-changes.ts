@@ -1,5 +1,6 @@
 interface Entry {
   updatedAt: number
+  projectRoot: string | null
   hasChanges: boolean
   checkedAt: number
 }
@@ -8,6 +9,7 @@ interface Check {
   projectId: string
   threadId: string
   updatedAt: number
+  projectRoot: string | null
 }
 
 /** Activity never waits for checkout inspection or Git, including on a cold cache. */
@@ -28,15 +30,23 @@ export class MobileActivityChanges {
     this.inspect = inspect
   }
 
-  read(projectId: string, threadId: string, updatedAt: number): boolean {
+  read(
+    projectId: string,
+    threadId: string,
+    updatedAt: number,
+    projectRoot: string | null,
+  ): boolean {
     const key = `${projectId}\0${threadId}`
     const cached = this.cache.get(key)
     if (
       !this.pending.has(key) &&
-      (!cached || cached.updatedAt !== updatedAt || Date.now() - cached.checkedAt >= 30_000)
+      (!cached ||
+        cached.updatedAt !== updatedAt ||
+        cached.projectRoot !== projectRoot ||
+        Date.now() - cached.checkedAt >= 30_000)
     ) {
       this.pending.add(key)
-      this.queue.set(key, { projectId, threadId, updatedAt })
+      this.queue.set(key, { projectId, threadId, updatedAt, projectRoot })
       this.drain()
     }
     // Keep the last known group while refreshing; unseen threads start in Recent.
@@ -54,10 +64,15 @@ export class MobileActivityChanges {
       void Promise.resolve()
         .then(() => this.inspect(check.projectId, check.threadId, check.updatedAt))
         .then((hasChanges) => {
-          this.remember(key, check.updatedAt, hasChanges)
+          this.remember(key, check.updatedAt, check.projectRoot, hasChanges)
         })
         .catch(() => {
-          this.remember(key, check.updatedAt, this.cache.get(key)?.hasChanges ?? false)
+          this.remember(
+            key,
+            check.updatedAt,
+            check.projectRoot,
+            this.cache.get(key)?.hasChanges ?? false,
+          )
         })
         .finally(() => {
           this.pending.delete(key)
@@ -67,7 +82,12 @@ export class MobileActivityChanges {
     }
   }
 
-  private remember(key: string, updatedAt: number, hasChanges: boolean): void {
-    this.cache.set(key, { updatedAt, hasChanges, checkedAt: Date.now() })
+  private remember(
+    key: string,
+    updatedAt: number,
+    projectRoot: string | null,
+    hasChanges: boolean,
+  ): void {
+    this.cache.set(key, { updatedAt, projectRoot, hasChanges, checkedAt: Date.now() })
   }
 }

@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { mobileDecisions, type MobileDecision } from './mobile-decisions.ts'
 import { mobileRunId } from '../agent-service.ts'
 import { listRunningThreadIds } from '../agent-service.ts'
 import { pendingApprovalCountForThread, pendingApprovalRequestsForThread } from '../approval.ts'
@@ -8,6 +7,8 @@ import { storageGet } from '../storage/storage.ts'
 import { loadProjectThreadMetas, loadThreadMessages } from '../thread-store.ts'
 import { inspectThreadCheckoutRoot } from '../thread-execution-context.ts'
 import { threadHasUncommittedChanges } from '../thread-dirty-status.ts'
+import { getProjectRoot } from '../workspace.ts'
+import { mobileDecisions, type MobileDecision } from './mobile-decisions.ts'
 import { mobileMessageImages } from './mobile-message-images.ts'
 import { mobileTranscriptMessages, type MobileMessage } from './mobile-transcript.ts'
 import { MobileActivityChanges } from './mobile-activity-changes.ts'
@@ -64,6 +65,7 @@ export async function mobileActivity(
   const running = new Set(listRunningThreadIds())
   const groups: MobileActivityRow[] = []
   for (const project of mobileProjects()) {
+    const projectRoot = getProjectRoot(project.id)
     const threads = await loadProjectThreadMetas(project.id)
     for (const thread of threads) {
       if (thread.archivedAt !== undefined) continue
@@ -80,7 +82,9 @@ export async function mobileActivity(
               : thread.status === 'error'
                 ? 'failed'
                 : 'finished'
-      const hasChanges = settled ? changes.read(project.id, thread.id, thread.updatedAt) : false
+      const hasChanges = settled
+        ? changes.read(project.id, thread.id, thread.updatedAt, projectRoot)
+        : false
       groups.push({
         projectId: project.id,
         projectName: project.name,

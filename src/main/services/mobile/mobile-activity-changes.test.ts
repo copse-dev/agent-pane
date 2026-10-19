@@ -30,21 +30,31 @@ function fixture(): { changes: MobileActivityChanges; checks: Inspection[] } {
   return { changes, checks }
 }
 
+function read(
+  changes: MobileActivityChanges,
+  projectId: string,
+  threadId: string,
+  updatedAt: number,
+  projectRoot = `/${projectId}`,
+): boolean {
+  return changes.read(projectId, threadId, updatedAt, projectRoot)
+}
+
 it('returns cold rows immediately while slow checks are deduplicated and bounded', async () => {
   const { changes, checks } = fixture()
-  for (let id = 0; id < 10; id++) assert.equal(changes.read('p', String(id), 1), false)
+  for (let id = 0; id < 10; id++) assert.equal(read(changes, 'p', String(id), 1), false)
   assert.equal(checks.length, 0, 'inspection starts after the synchronous read returns')
   await setImmediate()
   assert.equal(checks.length, 2, 'only two checks may run, even with ten visible threads')
-  for (let id = 0; id < 10; id++) assert.equal(changes.read('p', String(id), 1), false)
+  for (let id = 0; id < 10; id++) assert.equal(read(changes, 'p', String(id), 1), false)
   await setImmediate()
   assert.equal(checks.length, 2, 'repeat polls cannot duplicate queued or running work')
 
   // One hung checkout does not prevent another worker from progressing.
   result(checks, 1).resolve(true)
   await setImmediate()
-  assert.equal(changes.read('p', '1', 1), true)
-  assert.equal(changes.read('p', '0', 1), false)
+  assert.equal(read(changes, 'p', '1', 1), true)
+  assert.equal(read(changes, 'p', '0', 1), false)
   assert.equal(checks.length, 3)
   for (let index = 2; index < 10; index++) {
     result(checks, index).resolve(false)
@@ -58,32 +68,32 @@ it('returns cold rows immediately while slow checks are deduplicated and bounded
 it('serves stale dirty results while refreshing and publishes the completed check on a later poll', async () => {
   mock.timers.enable({ apis: ['Date'], now: 1_000_000 })
   const { changes, checks } = fixture()
-  changes.read('p', 't', 1)
+  read(changes, 'p', 't', 1)
   await setImmediate()
   result(checks, 0).resolve(true)
   await setImmediate()
   mock.timers.tick(29_999)
-  assert.equal(changes.read('p', 't', 1), true)
+  assert.equal(read(changes, 'p', 't', 1), true)
   await setImmediate()
   assert.equal(checks.length, 1)
 
   mock.timers.tick(1)
-  assert.equal(changes.read('p', 't', 1), true, 'expiry must not make the list wait or flicker')
+  assert.equal(read(changes, 'p', 't', 1), true, 'expiry must not make the list wait or flicker')
   await setImmediate()
   assert.equal(checks.length, 2)
   result(checks, 1).resolve(false)
   await setImmediate()
-  assert.equal(changes.read('p', 't', 1), false)
+  assert.equal(read(changes, 'p', 't', 1), false)
 })
 
 it('refreshes changed metadata even when it changes during an in-flight check', async () => {
   const { changes, checks } = fixture()
-  changes.read('p', 't', 1)
+  read(changes, 'p', 't', 1)
   await setImmediate()
-  changes.read('p', 't', 2)
+  read(changes, 'p', 't', 2)
   result(checks, 0).resolve(true)
   await setImmediate()
-  assert.equal(changes.read('p', 't', 2), true)
+  assert.equal(read(changes, 'p', 't', 2), true)
   await setImmediate()
   assert.deepEqual(
     checks.map((check) => check.updatedAt),
@@ -91,13 +101,13 @@ it('refreshes changed metadata even when it changes during an in-flight check', 
   )
   result(checks, 1).resolve(false)
   await setImmediate()
-  assert.equal(changes.read('p', 't', 2), false)
+  assert.equal(read(changes, 'p', 't', 2), false)
 })
 
 it('isolates projects even when their thread ids match', async () => {
   const { changes, checks } = fixture()
-  changes.read('first', 't', 1)
-  changes.read('second', 't', 1)
+  read(changes, 'first', 't', 1)
+  read(changes, 'second', 't', 1)
   await setImmediate()
   assert.deepEqual(
     checks.map((check) => check.projectId),
@@ -106,16 +116,36 @@ it('isolates projects even when their thread ids match', async () => {
   result(checks, 0).resolve(true)
   result(checks, 1).resolve(false)
   await setImmediate()
-  assert.equal(changes.read('first', 't', 1), true)
-  assert.equal(changes.read('second', 't', 1), false)
+  assert.equal(read(changes, 'first', 't', 1), true)
+  assert.equal(read(changes, 'second', 't', 1), false)
+})
+
+it('refreshes immediately when a project checkout root changes', async () => {
+  const { changes, checks } = fixture()
+  read(changes, 'p', 't', 1, '/projects/old')
+  await setImmediate()
+  result(checks, 0).resolve(true)
+  await setImmediate()
+  assert.equal(read(changes, 'p', 't', 1, '/projects/old'), true)
+
+  assert.equal(
+    read(changes, 'p', 't', 1, '/projects/new'),
+    true,
+    'the last known group remains visible while the new root is inspected',
+  )
+  await setImmediate()
+  assert.equal(checks.length, 2)
+  result(checks, 1).resolve(false)
+  await setImmediate()
+  assert.equal(read(changes, 'p', 't', 1, '/projects/new'), false)
 })
 
 it('handles failed checks without blocking the queue or retrying on every poll', async () => {
   mock.timers.enable({ apis: ['Date'], now: 1_000_000 })
   const { changes, checks } = fixture()
-  changes.read('p', 'failed', 1)
-  changes.read('p', 'other', 1)
-  changes.read('p', 'queued', 1)
+  read(changes, 'p', 'failed', 1)
+  read(changes, 'p', 'other', 1)
+  read(changes, 'p', 'queued', 1)
   await setImmediate()
   result(checks, 0).reject(new Error('Unavailable checkout'))
   result(checks, 1).resolve(false)
@@ -123,13 +153,13 @@ it('handles failed checks without blocking the queue or retrying on every poll',
   assert.equal(checks[2]?.threadId, 'queued')
   result(checks, 2).resolve(false)
   await setImmediate()
-  assert.equal(changes.read('p', 'failed', 1), false)
+  assert.equal(read(changes, 'p', 'failed', 1), false)
   await setImmediate()
   assert.equal(checks.length, 3)
   mock.timers.tick(30_000)
-  changes.read('p', 'failed', 1)
+  read(changes, 'p', 'failed', 1)
   await setImmediate()
   result(checks, 3).resolve(true)
   await setImmediate()
-  assert.equal(changes.read('p', 'failed', 1), true)
+  assert.equal(read(changes, 'p', 'failed', 1), true)
 })
