@@ -1,5 +1,5 @@
 {
-  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-08; six recovery specs measured from successful CI run 38434453035, 2026-10-13; send-now-preserves-shell measured from two PASSED attempts in CI38619810736/job116049833854, 2026-10-14; agent-execution-mode measured from CI38619822117/job116050261558, 2026-10-14; settings-profile-vault measured from five PASSED attempts in CI38322948245/job115058110678, CI38317537601/job115046081258, CI38317489762/job115045720916, CI38192430593/job114634731269 and CI38185862211/job114614686598, 2026-10-16; pnpm-exec-format-check provisional at the median (8s) until its first CI run is measured, 2026-10-16; thread-submodule-worktree provisional at the median (8s) until its first CI run is measured, 2026-10-17",
+  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-08; six recovery specs measured from successful CI run 38434453035, 2026-10-13; send-now-preserves-shell measured from two PASSED attempts in CI38619810736/job116049833854, 2026-10-14; agent-execution-mode measured from CI38619822117/job116050261558, 2026-10-14; settings-profile-vault measured from five PASSED attempts in CI38322948245/job115058110678, CI38317537601/job115046081258, CI38317489762/job115045720916, CI38192430593/job114634731269 and CI38185862211/job114614686598, 2026-10-16; pnpm-exec-format-check provisional at the median (8s) until its first CI run is measured, 2026-10-16; thread-submodule-worktree provisional at the median (8s) until its first CI run is measured, 2026-10-17; classifier-tool-approval measured from three PASSED attempts in CI38809174942/job116682878956, CI38809160545/job116682662943 and CI38805203304/job116669177660, 2026-10-15",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 14.9,
     "tests/e2e/acp-auth-error.e2e.ts": 20.2,
@@ -67,6 +67,7 @@
     "tests/e2e/checkup-skill.e2e.ts": 7.5,
     "tests/e2e/ci-investigator-display.e2e.ts": 7.5,
     "tests/e2e/ci-investigator-follow-up.e2e.ts": 7.6,
+    "tests/e2e/classifier-tool-approval.e2e.ts": 7.6,
     "tests/e2e/close-confirm.e2e.ts": 6.6,
     "tests/e2e/code-block-copy.e2e.ts": 18.2,
     "tests/e2e/command-palette.e2e.ts": 8.5,

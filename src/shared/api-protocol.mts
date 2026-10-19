@@ -99,5 +99,5 @@
 // v59 integrates explicit local terminal creation targets.
 // v60 adds living-plan reads and revision-checked changes.
 // v61 integrates Send now abort causes and cross-thread read/send permissions.
-// v62 integrates the device-bound vault wire changes.
+// v62 integrates missing-worktree recovery and the device-bound vault wire changes.
 export const API_PROTOCOL_VERSION = 62 as const

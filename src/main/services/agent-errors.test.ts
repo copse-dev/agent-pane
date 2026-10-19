@@ -112,7 +112,7 @@ describe('classifyAgentError', () => {
     )
     const out = classifyAgentError(err, { acpAgentId: 'codex-acp' })
     assert.match(out, /Codex sign-in expired/)
-    assert.match(out, /codex login/)
+    assert.match(out, /codex-acp cli login/)
     assert.match(out, /Technical details[\s\S]*workspace routing discovery unauthorized/)
     assert.doesNotMatch(out, /^An error occurred:/)
   })

@@ -201,7 +201,7 @@
 {"id":"scope-cat-paths-3","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":true,"harm":"allow"}
 {"id":"scope-cat-paths-4","scope":"sandbox","autoApproval":{"read":"read","local-write":"read","remote-write":"read"},"readOutside":false,"harm":"allow"}
 {"id":"scope-cat-paths-5","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":true,"harm":"allow"}
-{"id":"scope-rm-paths-1","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
+{"id":"scope-rm-paths-1","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"scope-rm-paths-2","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"scope-rm-paths-3","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"scope-rm-paths-4","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}

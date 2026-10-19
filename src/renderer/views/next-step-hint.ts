@@ -4,7 +4,7 @@ import { getThreadById } from '@shared/store/thread-helpers.ts'
 import { lastExchange } from './last-exchange.ts'
 
 /**
- * The composer's Tab-completable next step (experimental, off by default).
+ * The composer's Tab-completable next step, enabled by default.
  *
  * When a turn ends, a small-tasks model call may name one obvious, high-value
  * next step. The input bar shows it as placeholder text and inserts it on Tab;
@@ -66,9 +66,9 @@ export function mountNextStepHint(
       refreshDisplayed()
       return
     }
-    // Experimental and off by default; checked per turn so flipping the toggle
+    // Enabled by default; checked per turn so flipping the toggle
     // needs no reload. Main gates too, so this only avoids a pointless IPC.
-    if ((await api.settings.get('nextStepSuggestionEnabled')) !== true) {
+    if ((await api.settings.get('nextStepSuggestionEnabled')) === false) {
       refreshDisplayed()
       return
     }
