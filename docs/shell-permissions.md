@@ -43,7 +43,10 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 
 An agent's first read of another thread asks **Read your other threads?** Once approved,
 that thread can read every other conversation in the local chat store without another
-conversation-access prompt. Its own transcript remains readable. File read guards,
+conversation-access prompt. Its own transcript remains readable, and so is the one parent thread a
+thread was explicitly started from with **Create follow-up thread** (recorded at creation as
+`followUpOf`; read-only, direct parent only, never inherited by forks or by a follow-up of the
+follow-up). File read guards,
 the shell classifier and the sandbox read mount use the same thread-scoped permission;
 the chat store is never writable through these grants.
 
@@ -55,10 +58,18 @@ conversation-read consent; revoking that consent leaves the outside-path grant i
 read tools. `send_thread_prompt` asks a separate **Send prompts to your other threads?**
 approval. Reading never grants sending. Both grants are persisted in main-owned settings,
 keyed by the requesting thread; they are not inherited by destination or forked threads.
-Either permission can be revoked through the thread menu → Conversation access.
+Either permission can be revoked in the thread’s Context panel → Permissions.
 Destination prompts enter the normal queue with machine provenance, consume the existing
 continuation budget and respect held/paused queues. They do not interrupt active work or
 switch the visible thread. An unavailable or archived destination is rejected.
+
+The experimental interactive-client API requires its default-off plugin and desktop pairing.
+Viewing and submitting decisions are separate session-only grants across all projects. A client
+may approve once or deny an exact pending standard shell-command session/request/revision; it cannot create remembered
+grants or task leases. Pairing is desktop-only, and agent-invoked plugin runtimes have no decision
+write API. Disable or quit revokes every client. Audit events identify the paired client as the
+human-response source. Authentication trusts the paired software; it does not attest a physical
+gesture. See [the client protocol](plugin-client-api.md).
 
 Settings → Permissions lists registered Copse, custom, and connected MCP tools. Each tool can keep
 its inherited default or receive one explicit override:

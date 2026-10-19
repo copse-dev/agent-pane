@@ -30,6 +30,7 @@ describe('Developer mode surfaces', function () {
       'Enable Guarded YOLO',
       'Run unattended in a container…',
       'Debug trace',
+      'Create follow-up thread',
       'Share trace',
     ])
     await saveElementScreenshot('#input-bar', 'developer-mode-footer-menu-default.png')
@@ -61,6 +62,7 @@ describe('Developer mode surfaces', function () {
       'Export conversation (JSONL)',
       'Export thread folder (ZIP)',
       'Debug trace',
+      'Create follow-up thread',
       'Share trace',
     ])
     await saveElementScreenshot('#input-bar', 'developer-mode-footer-menu.png')

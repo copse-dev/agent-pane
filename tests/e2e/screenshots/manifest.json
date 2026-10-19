@@ -1454,12 +1454,12 @@
       "bytes": 29689
     },
     "developer-mode-footer-menu-default.png": {
-      "sha256": "56445b889e122c8592698aef582b04e1774af2750038064658682665ee32b031",
-      "bytes": 29819
+      "sha256": "591de206a1c00b41e2807b457a55663837731744ceabbb831e63992a6de9e2dd",
+      "bytes": 31563
     },
     "developer-mode-footer-menu.png": {
-      "sha256": "56445b889e122c8592698aef582b04e1774af2750038064658682665ee32b031",
-      "bytes": 29819
+      "sha256": "591de206a1c00b41e2807b457a55663837731744ceabbb831e63992a6de9e2dd",
+      "bytes": 31563
     },
     "developer-mode-hooks-settings.png": {
       "sha256": "a3c4fbdda726495619297dc1dc36f148c0affbe0d46a078c6509ef8b7e079589",
@@ -1613,6 +1613,14 @@
       "sha256": "15eb3371b1ef72817fd2c77d4f33e0b708f317d8adb79c707f2ed4296344e169",
       "bytes": 280351
     },
+    "follow-up-thread-created.png": {
+      "sha256": "88c8050e53597a558898b9c964c6e116c8340a867882ba0503e29528bf93e09a",
+      "bytes": 97739
+    },
+    "follow-up-thread-menu.png": {
+      "sha256": "926569370902974df15536dd9bb2c20799d67e49a248e264974402ac89973acf",
+      "bytes": 100435
+    },
     "footer-branch-bisect-in-progress.png": {
       "sha256": "c8a061899e183369a5133db93a85c83ff4b50c03a7cbb796d0f2a83366f47e51",
       "bytes": 36486
@@ -1714,12 +1722,12 @@
       "bytes": 267519
     },
     "footer-overflow-bounded.png": {
-      "sha256": "69c63884998caa8f1164ed480a4b97572b075087c74cd4882f88d5b6b1fd9915",
-      "bytes": 213458
+      "sha256": "5b5df692135aba39563a3a7ca7b13e8333a674a986e393c98b544cb37fce166f",
+      "bytes": 219493
     },
     "footer-overflow-trigger-anchored.png": {
-      "sha256": "1b92127205c1ff2b23977d75659347825b854d3bc3d69fd4f2769daed0f5ef13",
-      "bytes": 285115
+      "sha256": "f3fa20541169f3618106d38d3e986ac61483a96741f46e3e17349caa68e698ab",
+      "bytes": 291191
     },
     "footer-reasoning-effort.png": {
       "sha256": "f093efef44cf84072fc567bf648348b2827016146e34cb65213023e55838346f",
@@ -2257,6 +2265,14 @@
       "sha256": "cd808a11d361a752bf5ce49255c14215503c446b7e63e551a10ac488c919120b",
       "bytes": 168076
     },
+    "mobile-auth-pairing-stopped.png": {
+      "sha256": "54c2bab9d9168e665ed978aefc675d7bf733a2ada2c04c96e7bd59ed53f178f5",
+      "bytes": 107371
+    },
+    "mobile-auth-pairing.png": {
+      "sha256": "faf4228b8367af89edd5b1dba8e6f046e6d5e29e48925a3e3a266d57dd5ced3f",
+      "bytes": 67299
+    },
     "mobile-companion-activity-dark.png": {
       "sha256": "0b7dc9632e93f0861f7eefb767cf11797f52e4f9211c9ae14f1476b74171dc16",
       "bytes": 42040
@@ -2596,6 +2612,14 @@
     "plain-language-settings-codex-agent.png": {
       "sha256": "2bd9295151013e748f90c487ba9da154f2dc3cf418a742d8f91d2be99c076f72",
       "bytes": 214616
+    },
+    "plugin-client-api-settings.png": {
+      "sha256": "c56c4328acb1b4849069f7c122cf417f671b2ab613d94205e74819a6869ccb8d",
+      "bytes": 42738
+    },
+    "plugin-client-pairing.png": {
+      "sha256": "baed287fe0efffbb2f32f0079d8439e197b6a889a20201cdea5c5d40c45d351d",
+      "bytes": 63569
     },
     "plugin-hook-loading.png": {
       "sha256": "c104bb3b1c4a9a90a7441137b5d88a308a6ec8c932aeb568e96b4d7376ec00dd",
@@ -3598,8 +3622,8 @@
       "bytes": 249049
     },
     "settings-composition-packs.png": {
-      "sha256": "b55ee55ed701a664be252971e52603a1fbcd3b1095c43d0e26b3a92a6e179e3d",
-      "bytes": 250502
+      "sha256": "e486d1e1a4088c0dd10eea318d4bf409abf55fa5c74889bdd0643ca9b42bfe5a",
+      "bytes": 227204
     },
     "settings-composition-source-folders.png": {
       "sha256": "2a162a97ddebfa1b6a0386d52511dde7567a8cea5d66108cd4ab8af2c8464004",
@@ -4269,6 +4293,10 @@
       "sha256": "1e5ea24de1e2a55d0e4eb71ad3d68eccf04ef7f6247b8a015dfd7443e4ad46c8",
       "bytes": 40317
     },
+    "side-chats-context-permissions-decisions.png": {
+      "sha256": "a6189cf00fb5b82dba2378a163d04cac7e5625b5e1ec1a195ee65212a7b5dbd2",
+      "bytes": 38820
+    },
     "sidebar-add-menu.png": {
       "sha256": "945b996a898ab56972b56fae70ad8643d69386850995f27406cb3c64c59868ed",
       "bytes": 92984
@@ -4310,8 +4338,8 @@
       "bytes": 76241
     },
     "sidebar-hidden-panel-maximized.png": {
-      "sha256": "75692382cbf3c110bb53468cb8fa6d7829720bc209641223679638ca0915459a",
-      "bytes": 126537
+      "sha256": "57006ee5a91f36ae53bbfcd19b31f7b8e6649ccc77f21cd7426f0a9e3bce4d35",
+      "bytes": 134753
     },
     "sidebar-hidden.png": {
       "sha256": "eec0f08c92e2199359cb0be856c27c3b5c737b5228d129331c3af516ec03ec20",
@@ -4628,10 +4656,6 @@
     "theme-boot-popout-light.png": {
       "sha256": "6fa55e97db8fc9b18cb00806addbbfd4aa88e44892947d48a093ab43fc14cdb9",
       "bytes": 46662
-    },
-    "thread-access-menu.png": {
-      "sha256": "1beaf634364c2cf7d87dcb69462d7e97db5bf721bd0b2cda61faaf236d26d538",
-      "bytes": 5409
     },
     "thread-actions-menu.png": {
       "sha256": "a9f52549796204c421e845d88a6609d1058c5c2ae3969a177d8e04a4b44868d6",

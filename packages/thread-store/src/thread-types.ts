@@ -315,6 +315,11 @@ export interface SideChatLink {
   anchorMessageId: string
 }
 
+/** Marks a thread started as a follow-up to another; the parent stays readable to it. */
+export interface FollowUpLink {
+  parentThreadId: string
+}
+
 /** One non-PR reference recorded for the Context panel. */
 export interface ThreadLink {
   kind: 'url' | 'thread'
@@ -374,6 +379,12 @@ export interface Thread {
    * (own model, own usage, archivable); this link is all that marks them.
    */
   sideChat?: SideChatLink
+  /**
+   * Set when the user started this thread as a follow-up to another. The parent
+   * transcript is readable by this thread's agent without a consent prompt; the
+   * link is fixed at creation and never grants access beyond that one thread.
+   */
+  followUpOf?: FollowUpLink
   /**
    * Non-PR links this thread has mentioned (web pages and other Copse threads),
    * cached on metadata like {@link prRefs} so the index can answer "which threads

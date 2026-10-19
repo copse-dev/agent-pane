@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
+import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { $, browser, expect } from '@wdio/globals'
@@ -12,22 +13,49 @@ import { copseDataRoot } from '../../src/main/services/storage/copse-paths.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { installMockScenario, expectAssistantReply } from './helpers/mock-scenario.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
 const projectId = 'e2e-mobile-control'
 const token = randomBytes(32).toString('hex')
 const readToken = randomBytes(32).toString('hex')
-const address = Object.values(networkInterfaces())
+const addresses = Object.values(networkInterfaces())
   .flatMap((entries) => entries ?? [])
-  .find(
+  .filter(
     (entry) =>
       entry.family === 'IPv4' &&
       !entry.internal &&
       /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(entry.address),
-  )?.address
-const origin = `https://${address ?? 'unavailable'}:42773`
+  )
+  .map((entry) => entry.address)
+let origin = ''
+
+async function availableAddress(): Promise<string | undefined> {
+  // A daily Copse may already own the stable port on one interface. Probe only
+  // availability; never stop it or send test actions to an unrelated profile.
+  for (const address of addresses) {
+    const available = await new Promise<boolean>((resolve) => {
+      const probe = createServer()
+      probe.once('error', () => {
+        resolve(false)
+      })
+      probe.listen(42773, address, () => {
+        probe.close(() => {
+          resolve(true)
+        })
+      })
+    })
+    if (available) return address
+  }
+  return undefined
+}
+
 const root = join(copseDataRoot(), 'lan')
 const responseSchema = z.object({
+  id: z.uuid().optional(),
+  code: z.string().optional(),
+  state: z.string().optional(),
+  token: z.string().optional(),
+  access: z.enum(['read', 'control']).optional(),
   sessionId: z.string().optional(),
   threadId: z.string().optional(),
   ok: z.boolean().optional(),
@@ -69,7 +97,12 @@ function action(sessionId: string, payload: object): Record<string, unknown> {
 describe('Mobile Companion control over verified local HTTPS', function () {
   this.timeout(180_000)
   before(async () => {
-    assert.ok(address, 'The LAN runtime eval requires an active private IPv4 address')
+    const address = await availableAddress()
+    assert.ok(
+      address,
+      'The LAN runtime eval requires an unused private IPv4 interface on port 42773',
+    )
+    origin = `https://${address}:42773`
     resetUserData()
     seedEmptyProject(process.cwd(), projectId, {
       model: 'claude-sonnet-4-6',
@@ -364,5 +397,107 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     await waitForAgentIdle(30_000)
     await stopScenario.assertComplete()
     await saveAppScreenshot('mobile-controls-stopped-desktop.png')
+  })
+
+  it('pairs through shared auth, retains phone credentials on restart, revokes them and cancels pending consent on stop', async () => {
+    await $('[aria-label="Settings"]').click()
+    await $('#settings-dialog button[data-section="experimental"]').click()
+    let enabled = $('input[name="mobileCompanionEnabled"]')
+    await enabled.scrollIntoView({ block: 'center' })
+    const pairing = request('/api/pair/request', { label: 'Shared auth phone' })
+    assert.ok(pairing.id)
+    assert.ok(pairing.code)
+    let banner = $('.mobile-companion-pairing-banner')
+    await banner.waitForDisplayed()
+    assert.equal(await banner.$('.mobile-companion-pairing-code').getText(), pairing.code)
+    assert.equal(await banner.$('button=Allow control').isEnabled(), false)
+    await saveElementScreenshot('.mobile-companion-pairing-banner', 'mobile-auth-pairing.png', {
+      beforeCapture: async () => {
+        await browser.execute(() => {
+          const code = document.querySelector('.mobile-companion-pairing-code')
+          if (code) code.textContent = '123456'
+        })
+      },
+    })
+    await banner.$('button=Read only').click()
+    await banner.waitForDisplayed({ reverse: true })
+    let pairedToken = ''
+    await browser.waitUntil(() => {
+      const result = request(`/api/pair/result?id=${pairing.id}`)
+      pairedToken = result.token ?? ''
+      return result.state === 'approved' && Boolean(pairedToken)
+    })
+    assert.match(request(`/api/pair/result?id=${pairing.id}`).error ?? '', /expired/)
+    assert.equal(request('/api/activity', undefined, pairedToken).access, 'read')
+    assert.match(request('/api/action', {}, pairedToken).error ?? '', /Enable control/)
+    // The real service publishes the newly issued credential after durable storage.
+    await expect($('.mobile-companion-device-list')).toHaveText(
+      expect.stringContaining('Shared auth phone'),
+    )
+    await browser.reloadSession()
+    enabled = $('input[name="mobileCompanionEnabled"]')
+    banner = $('.mobile-companion-pairing-banner')
+    await $('.prompt-input').waitForExist({ timeout: 30000 })
+    await browser.waitUntil(
+      () => {
+        try {
+          return request('/api/activity', undefined, pairedToken).access === 'read'
+        } catch {
+          return false
+        }
+      },
+      { timeout: 30000 },
+    )
+    await $('[aria-label="Settings"]').click()
+    await $('#settings-dialog button[data-section="experimental"]').click()
+    await enabled.scrollIntoView({ block: 'center' })
+    // Select by visible label, then operate the real device row's revoke control.
+    const label = $('strong=Shared auth phone')
+    await label.waitForDisplayed()
+    await label.parentElement().parentElement().$('.mobile-companion-device-revoke').click()
+    await browser.waitUntil(() => Boolean(request('/api/activity', undefined, pairedToken).error))
+    assert.match(request('/api/activity', undefined, pairedToken).error ?? '', /Pair this phone/)
+    const pending = request('/api/pair/request', { label: 'Cancelled auth phone' })
+    assert.ok(pending.id)
+    await banner.waitForDisplayed()
+    await enabled.click()
+    await banner.waitForDisplayed({ reverse: true })
+    assert.equal(await enabled.isSelected(), false)
+    await saveElementScreenshot(
+      'fieldset:has(input[name="mobileCompanionEnabled"])',
+      'mobile-auth-pairing-stopped.png',
+      {
+        beforeCapture: async () => {
+          await browser.execute(() => {
+            const select = document.querySelector<HTMLSelectElement>(
+              'select[name="mobileCompanionAddress"]',
+            )
+            const option = select?.selectedOptions.item(0)
+            if (option) option.textContent = 'Test network — 192.168.1.41'
+          })
+        },
+      },
+    )
+    await $('select[name="mobileCompanionAddress"]').selectByAttribute(
+      'value',
+      new URL(origin).hostname,
+    )
+    await enabled.click()
+    await browser.waitUntil(
+      () => {
+        try {
+          return Boolean(request('/api/activity').sessionId)
+        } catch {
+          return false
+        }
+      },
+      { timeout: 30000 },
+    )
+    assert.match(request(`/api/pair/result?id=${pending.id}`).error ?? '', /expired/)
+    assert.equal(await label.isExisting(), false)
+    assert.equal(
+      (await $('.mobile-companion-device-list').getText()).includes('Cancelled auth phone'),
+      false,
+    )
   })
 })

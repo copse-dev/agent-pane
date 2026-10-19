@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 
 const PROJECT_ID = 'e2e-panel-toggle-project'
@@ -63,7 +63,7 @@ async function closeRightPanelIfOpen(): Promise<void> {
 describe('right panel toggle and shortcuts', () => {
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), PROJECT_ID)
+    seedEmptyProject(seedStableWorkspace(), PROJECT_ID)
     await browser.reloadSession()
     await waitForComposer()
     // A prior spec can leave the first-run overlay visible across the app
@@ -177,7 +177,20 @@ describe('right panel toggle and shortcuts', () => {
       bounds.paneLeft <= bounds.bodyLeft + 1,
       `expected maximized pane at body left edge, got ${JSON.stringify(bounds)}`,
     )
+    await expect($('#context-viewer-host [data-context-section="permissions"]')).toHaveText(
+      expect.stringContaining('No saved conversation access.'),
+    )
+    await expect(
+      $('#context-viewer-host [data-context-change-stats] .git-change-status-added'),
+    ).toHaveText('+0')
+    await expect(
+      $('#context-viewer-host [data-context-change-stats] .git-change-status-deleted'),
+    ).toHaveText('−0')
+    await expect($('#context-viewer-host [data-context-storage-size]')).toHaveText(/^\d+ B$/)
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'sidebar-hidden-panel-maximized.png'))
+    const archive = $('#context-viewer-host [data-action="archive-thread"]')
+    await archive.scrollIntoView({ block: 'end' })
+    await expect(archive).toBeDisplayedInViewport()
 
     await sidebarToggle.click()
     await maximize.click()

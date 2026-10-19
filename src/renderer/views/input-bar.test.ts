@@ -1845,7 +1845,13 @@ describe('input bar developer diagnostics', () => {
       Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
         item.textContent.trim(),
       ),
-      ['Enable Guarded YOLO', 'Run unattended in a container…', 'Debug trace', 'Share trace'],
+      [
+        'Enable Guarded YOLO',
+        'Run unattended in a container…',
+        'Debug trace',
+        'Create follow-up thread',
+        'Share trace',
+      ],
     )
 
     store.setState({ developerMode: true })
@@ -1863,6 +1869,7 @@ describe('input bar developer diagnostics', () => {
         'Export conversation (JSONL)',
         'Export thread folder (ZIP)',
         'Debug trace',
+        'Create follow-up thread',
         'Share trace',
       ],
     )
@@ -1875,7 +1882,13 @@ describe('input bar developer diagnostics', () => {
       Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
         item.textContent.trim(),
       ),
-      ['Enable Guarded YOLO', 'Run unattended in a container…', 'Debug trace', 'Share trace'],
+      [
+        'Enable Guarded YOLO',
+        'Run unattended in a container…',
+        'Debug trace',
+        'Create follow-up thread',
+        'Share trace',
+      ],
     )
   })
 })

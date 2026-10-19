@@ -103,6 +103,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     request_terminal_command: new Set(),
     code_block_run_requested: new Set(),
     code_block_run_finished: new Set(),
+    thread_reference_attach: new Set(),
     attention_changed: new Set(),
     sidebar_threads_loaded: new Set(),
     automation_schedules_loaded: new Set(),
