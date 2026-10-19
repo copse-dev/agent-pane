@@ -228,7 +228,7 @@ export function attachAutomationController(
       addMessage(store, threadId, 'user', prompt)
       setThreadDraftPrompt(store, threadId, '')
       startAutomationTurnTree(store, threadId)
-      dispatchAgentRun(store, api, threadId, { content: prompt })
+      dispatchAgentRun(store, api, threadId, { content: prompt, automationRun: true })
     } catch (error) {
       // Checkout failures happen before the user bubble is added, so keep the
       // prompt as a draft rather than losing scheduled work. Agent-run failures

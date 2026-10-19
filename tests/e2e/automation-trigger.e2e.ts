@@ -243,7 +243,15 @@ describe('cron automation trigger', function () {
             responses: [
               {
                 waitFor: 'review-ready',
-                text: 'The CI review is complete; no failures were found.',
+                toolCalls: [
+                  { name: 'run_shell', args: { command: 'git worktree add ../approval-checkout' } },
+                ],
+              },
+              {
+                text: 'The checkout request is waiting for your approval; I completed the review I could do now.',
+                expectToolResults: [
+                  { name: 'run_shell', includes: 'Queued for review as request' },
+                ],
               },
             ],
           },
@@ -400,7 +408,8 @@ describe('cron automation trigger', function () {
     }
 
     await scenario.release('review-ready')
-    const expectedResponse = 'The CI review is complete; no failures were found.'
+    const expectedResponse =
+      'The checkout request is waiting for your approval; I completed the review I could do now.'
     await browser.waitUntil(
       async () => {
         const assistantMessages = await $$('.msg-assistant .message-text')
@@ -415,6 +424,18 @@ describe('cron automation trigger', function () {
       },
     )
     assert.equal(await $('.prompt-input').getText(), '')
+    await scenario.assertComplete()
+    await expect($('.tool-card[data-status="error"]')).toBeExisting()
+    await expect($('#approval-dialog')).not.toBeDisplayed()
+    assert.equal(
+      existsSync(join(dirname(process.env['COPSE_WORKTREES_DIR'] ?? ''), 'approval-checkout')),
+      false,
+    )
+    const restoreRequestId = await pinTextForCapture(
+      '#app',
+      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/,
+      '00000000-0000-0000-0000-000000000000',
+    )
     await browser.waitUntil(
       () => browser.execute(() => !document.documentElement.hasAttribute('data-automation-active')),
       {
@@ -441,9 +462,29 @@ describe('cron automation trigger', function () {
     try {
       await expect($('.apple-development-error')).not.toExist()
       await saveAppScreenshot('automation-trigger.png')
+      if (!(await $('#pane-files').isDisplayed()))
+        await $('[aria-label="Toggle right panel"]').click()
+      await $('[aria-label="Open thread context"]').click()
+      await expect($('[data-context-section="requests"]')).toBeDisplayed()
+      await expect($('[data-context-section="requests"] [data-deferred-approval-id]')).toExist()
+      await expect($('[data-context-section="requests"]')).toHaveText(
+        expect.stringContaining('Not run'),
+      )
+      await expect($('[data-context-change-stats]')).not.toHaveText('Calculating…')
+      const restoreContextBranch = await pinTextForCapture(
+        '.thread-context-repo .thread-context-meta',
+        /^Worktree · copse\/ci-review-[a-f0-9]+$/,
+        'Worktree · copse/ci-review-000001',
+      )
+      try {
+        await saveElementScreenshot('#pane-files', 'automation-deferred-context.png')
+      } finally {
+        await restoreContextBranch()
+      }
     } finally {
       await restoreFinalBranch()
       await restoreFinalRunTime()
+      await restoreRequestId()
     }
   })
 })

@@ -227,6 +227,12 @@ function minuteStamp(timestamp: number): number {
 export interface AutomationService {
   list(projectId: string): AutomationSchedule[]
   permissionOptions(): AutomationPermissionOption[]
+  /** Main-owned proof that a thread is the latest run created by this schedule. */
+  ownsRunThread(
+    projectId: string,
+    threadId: string,
+    automation: NonNullable<Thread['automation']>,
+  ): boolean
   permissionPreferenceForThread(
     projectId: string,
     threadId: string,
@@ -680,6 +686,16 @@ export function createAutomationService(
         .sort((a, b) => a.createdAt - b.createdAt)
     },
     permissionOptions,
+    ownsRunThread(projectId, threadId, automation) {
+      return service
+        .list(projectId)
+        .some(
+          (schedule) =>
+            schedule.id === automation.scheduleId &&
+            schedule.lastCreatedThreadId === threadId &&
+            schedule.lastRunAt === automation.triggeredAt,
+        )
+    },
     permissionPreferenceForThread(projectId, threadId, automation, permission) {
       const schedule = service
         .list(projectId)
