@@ -1454,12 +1454,12 @@
       "bytes": 29689
     },
     "developer-mode-footer-menu-default.png": {
-      "sha256": "56445b889e122c8592698aef582b04e1774af2750038064658682665ee32b031",
-      "bytes": 29819
+      "sha256": "591de206a1c00b41e2807b457a55663837731744ceabbb831e63992a6de9e2dd",
+      "bytes": 31563
     },
     "developer-mode-footer-menu.png": {
-      "sha256": "56445b889e122c8592698aef582b04e1774af2750038064658682665ee32b031",
-      "bytes": 29819
+      "sha256": "591de206a1c00b41e2807b457a55663837731744ceabbb831e63992a6de9e2dd",
+      "bytes": 31563
     },
     "developer-mode-hooks-settings.png": {
       "sha256": "a3c4fbdda726495619297dc1dc36f148c0affbe0d46a078c6509ef8b7e079589",
@@ -1613,6 +1613,14 @@
       "sha256": "15eb3371b1ef72817fd2c77d4f33e0b708f317d8adb79c707f2ed4296344e169",
       "bytes": 280351
     },
+    "follow-up-thread-created.png": {
+      "sha256": "88c8050e53597a558898b9c964c6e116c8340a867882ba0503e29528bf93e09a",
+      "bytes": 97739
+    },
+    "follow-up-thread-menu.png": {
+      "sha256": "926569370902974df15536dd9bb2c20799d67e49a248e264974402ac89973acf",
+      "bytes": 100435
+    },
     "footer-branch-bisect-in-progress.png": {
       "sha256": "c8a061899e183369a5133db93a85c83ff4b50c03a7cbb796d0f2a83366f47e51",
       "bytes": 36486
@@ -1714,12 +1722,12 @@
       "bytes": 267519
     },
     "footer-overflow-bounded.png": {
-      "sha256": "69c63884998caa8f1164ed480a4b97572b075087c74cd4882f88d5b6b1fd9915",
-      "bytes": 213458
+      "sha256": "5b5df692135aba39563a3a7ca7b13e8333a674a986e393c98b544cb37fce166f",
+      "bytes": 219493
     },
     "footer-overflow-trigger-anchored.png": {
-      "sha256": "1b92127205c1ff2b23977d75659347825b854d3bc3d69fd4f2769daed0f5ef13",
-      "bytes": 285115
+      "sha256": "f3fa20541169f3618106d38d3e986ac61483a96741f46e3e17349caa68e698ab",
+      "bytes": 291191
     },
     "footer-reasoning-effort.png": {
       "sha256": "f093efef44cf84072fc567bf648348b2827016146e34cb65213023e55838346f",
