@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { z } from 'zod'
 import {
   GH_API_READ_MAX_OUTPUT_BYTES,
   GH_API_READ_MAX_PAGES,
@@ -22,8 +23,15 @@ function input(args: Parameters<typeof parseGhApiReadArgs>[0]): GhApiReadInput {
 
 function refused(args: Parameters<typeof parseGhApiReadArgs>[0]): string {
   const parsed = parseGhApiReadArgs(args)
-  assert.equal(parsed.ok, false, JSON.stringify(args))
-  return parsed.ok ? '' : parsed.error
+  if (parsed.ok) assert.fail(`accepted ${JSON.stringify(args)}`)
+  return parsed.error
+}
+
+/** The `index`th recorded call's stdin, parsed. */
+function sentBody(calls: readonly Call[], index: number): unknown {
+  const stdin = calls[index]?.stdin
+  assert.ok(stdin !== undefined, `call ${String(index)} had no stdin`)
+  return JSON.parse(stdin)
 }
 
 interface Call {
@@ -181,7 +189,7 @@ describe('runGhApiRead', () => {
     )
     assert.equal(text, '{"data":{"repository":{"name":"r"}}}')
     assert.deepEqual(gh.calls[0]?.args, ['api', 'graphql', '--input', '-'])
-    assert.deepEqual(JSON.parse(gh.calls[0]?.stdin ?? ''), {
+    assert.deepEqual(sentBody(gh.calls, 0), {
       query,
       variables: { o: '-F', n: 'r' },
     })
@@ -228,7 +236,10 @@ describe('runGhApiRead', () => {
     )
     assert.equal(text, 'page 0\npage 1')
     assert.equal(gh.calls.length, 2)
-    assert.equal(JSON.parse(gh.calls[1]?.stdin ?? '{}').variables.endCursor, 'c0')
+    assert.deepEqual(
+      z.object({ variables: z.object({ endCursor: z.string() }) }).parse(sentBody(gh.calls, 1)),
+      { variables: { endCursor: 'c0' } },
+    )
     assert.match(gh.calls[0]?.args.at(-1) ?? '', /^--jq=.*\n\.data\.viewer\.repositories/s)
   })
 

@@ -77,7 +77,6 @@ export async function fetchThroughScratchRepository(input: {
       projectGit(projectRoot, ['rev-parse', '--verify', '--quiet', `${destination}^{commit}`]),
     ),
   ])
-  if (!commonDir) return failed('Project Git directory lookup failed')
   if (commonDir.code !== 0) return commonDir
   const objects = join(resolve(projectRoot, commonDir.stdout.trim()), 'objects')
   // `alternates` is one path per line.

@@ -117,11 +117,8 @@ describe('fetchOriginRefs', () => {
     // The production path admits only network origins; a local bare origin
     // stands in for one here, through the same scratch-repository fetch.
     const scratch = join(temp, 'scratch.git')
-    const fetchFromOrigin: typeof fetchFromOriginOnHost = (
-      projectRoot,
-      refs,
-      projectGit,
-    ) => fetchThroughScratchRepository({ projectRoot, url: remote, refs, scratch, projectGit })
+    const fetchFromOrigin: typeof fetchFromOriginOnHost = (projectRoot, refs, projectGit) =>
+      fetchThroughScratchRepository({ projectRoot, url: remote, refs, scratch, projectGit })
     return { temp, project, remote, fetchFromOrigin }
   }
 

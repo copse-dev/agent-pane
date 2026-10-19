@@ -218,11 +218,7 @@ describe('shellCommandDisplacements', () => {
   it('leaves gh subcommands with no first-class equivalent alone', () => {
     // The "when a dedicated tool could have done the same job" qualifier: these
     // are unavoidable shell, and flagging them would make the eval flaky.
-    for (const command of [
-      'gh issue create --title x',
-      'gh workflow list',
-      'gh release view',
-    ]) {
+    for (const command of ['gh issue create --title x', 'gh workflow list', 'gh release view']) {
       assert.deepEqual(ids(command), [], command)
     }
   })
