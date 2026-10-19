@@ -704,7 +704,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .cache/screenshots/sha256
           key: screenshot-r2-v1-${{ hashFiles('tests/e2e/screenshots/manifest.json') }}
@@ -1350,7 +1350,7 @@ jobs:
           persist-credentials: ${{ github.event_name != 'merge_group' }}
       - uses: ./.github/actions/setup
       - name: Cache verified R2 baseline objects
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .cache/screenshots/sha256
           key: screenshot-r2-v1-${{ hashFiles('tests/e2e/screenshots/manifest.json') }}
@@ -1539,7 +1539,7 @@ jobs:
           persist-credentials: ${{ github.event_name != 'merge_group' }}
       - uses: ./.github/actions/setup
       - name: Cache verified R2 baseline objects
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .cache/screenshots/sha256
           key: screenshot-r2-v1-${{ hashFiles('tests/e2e/screenshots/manifest.json') }}
@@ -2193,7 +2193,7 @@ jobs:
             '+refs/heads/main:refs/remotes/origin/main'
       - uses: ./.github/actions/setup
       - name: Cache verified R2 baseline objects
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .cache/screenshots/sha256
           key: screenshot-r2-v1-${{ hashFiles('tests/e2e/screenshots/manifest.json') }}
