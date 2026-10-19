@@ -64234,8 +64234,11 @@ function setSidebarProjectFilter(store2, api2, projectId) {
   store2.setState({ sidebarProjectFilterId: projectId });
   store2.emit("sidebar_project_filter_changed");
   const thread = getActiveThread(store2);
-  if (thread && !isBlankThread(thread)) return;
   const activeProjectId = store2.getState().activeProjectId;
+  if (thread && !isBlankThread(thread)) {
+    if (pendingSwitch && activeProjectId) switchProject(store2, api2, activeProjectId);
+    return;
+  }
   if (projectId && projectId !== activeProjectId) {
     openNewProjectThread(store2, api2, projectId);
   } else if (activeProjectId) {
