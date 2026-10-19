@@ -170,18 +170,25 @@ describe('The thread Context panel', () => {
       ['sc-side-1', 'archive-side-chat'],
       ['sc-side-2', 'restore-side-chat'],
     ])
-    await saveElementScreenshot('#pane-files', 'side-chats-context-panel.png')
     await $('[data-context-section="decisions"]').scrollIntoView()
     await saveElementScreenshot('#pane-files', 'side-chats-context-permissions-decisions.png')
   })
 
   it('expands and closes the single context panel', async () => {
+    const storageSectionId = (await $('[data-context-section="storage"]')).elementId
     await $('[aria-label="Expand context over chat"]').click()
     await expect($('#body')).toHaveElementClass('is-right-panel-maximized')
     await $('[aria-label="Restore context"]').click()
     await $('[aria-label="Close context"]').click()
     await expect($('#pane-files')).not.toBeDisplayed()
     await openContext()
+    expect((await $('[data-context-section="storage"]')).elementId).toBe(storageSectionId)
+    await expect($('[data-context-storage-size]')).toHaveText('24 KB')
+    await showSideChatsForCapture([
+      ['sc-side-1', 'archive-side-chat'],
+      ['sc-side-2', 'restore-side-chat'],
+    ])
+    await saveElementScreenshot('#pane-files', 'side-chats-context-panel.png')
   })
 
   it('archives and restores side chats from the panel', async () => {

@@ -461,6 +461,71 @@ test('Context discards permissions returned for a thread that is no longer activ
   dispose()
 })
 
+test('Context keeps recent storage results and its DOM stable across repeated updates', async (t) => {
+  let now = Date.now()
+  t.mock.method(Date, 'now', () => now)
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'p',
+    projects: [{ id: 'p', path: '/work', name: 'Work' }],
+    filesPaneOpen: true,
+    rightPanelMode: 'context',
+  })
+  createThread(store)
+  const base = createFakeApi()
+  let storageCalls = 0
+  let changeCalls = 0
+  let bytes = 1024
+  const api = {
+    ...base,
+    threads: {
+      ...base.threads,
+      storageSize: async (): ReturnType<typeof base.threads.storageSize> => {
+        storageCalls++
+        return { bytes, truncated: false }
+      },
+    },
+    git: {
+      ...base.git,
+      changeStats: async (): ReturnType<typeof base.git.changeStats> => {
+        changeCalls++
+        return { additions: 2, deletions: 1 }
+      },
+    },
+  }
+  const viewer = document.createElement('div')
+  const dispose = mountThreadContextPane(document.createElement('div'), viewer, store, api)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const section = viewer.querySelector('[data-context-section="storage"]')
+  const size = viewer.querySelector('[data-context-storage-size]')
+  assert.ok(size)
+  const sizeText = size.firstChild
+  assert.equal(size.textContent, '1.0 KB')
+
+  for (let i = 0; i < 3; i++) store.emit('message_done', `message-${String(i)}`)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(storageCalls, 1)
+  assert.equal(changeCalls, 1)
+  assert.equal(viewer.querySelector('[data-context-section="storage"]'), section)
+  assert.equal(size.firstChild, sizeText)
+
+  now += 61_000
+  store.emit('message_done', 'later-message')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(storageCalls, 1)
+  assert.equal(changeCalls, 2)
+  assert.equal(viewer.querySelector('[data-context-section="storage"]'), section)
+
+  now += 5 * 60_000
+  bytes = 2048
+  store.emit('message_done', 'much-later-message')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(storageCalls, 2)
+  assert.equal(size.textContent, '2.0 KB')
+  assert.equal(viewer.querySelector('[data-context-section="storage"]'), section)
+  dispose()
+})
+
 test('storage ignores a previous thread response and reports lookup failure', async () => {
   const store = createStore()
   store.setState({
@@ -499,7 +564,9 @@ test('storage ignores a previous thread response and reports lookup failure', as
   dispose()
 })
 
-test('Storage line totals reject stale thread replies, handle clean checkouts and stop while hidden', async () => {
+test('Storage line totals reject stale thread replies, handle clean checkouts and stop while hidden', async (t) => {
+  let now = Date.now()
+  t.mock.method(Date, 'now', () => now)
   const store = createStore()
   store.setState({
     activeProjectId: 'p',
@@ -530,6 +597,7 @@ test('Storage line totals reject stale thread replies, handle clean checkouts an
   replies[0]?.resolve({ additions: 100, deletions: 20 })
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.equal(viewer.querySelector('[data-context-change-stats]')?.textContent, '+0 −0')
+  now += 61_000
   store.emit('message_done', 'completed-message')
   replies[2]?.reject(new Error('Git unavailable'))
   await new Promise((resolve) => setTimeout(resolve, 0))
