@@ -11,7 +11,7 @@ import { removeE2eTree } from './helpers/remove-tree.ts'
 // environment for API keys. The e2e harness blanks every provider env var (see
 // wdio.conf.ts), so the scan runs end-to-end through the real IPC and
 // deterministically reports nothing new. Imported-key rendering is covered by the
-// component test (src/renderer/views/setup/acp-agents-list.test.ts).
+// component test (src/renderer/views/setup/models-agents-list.test.ts).
 describe('Re-scan finds nothing new in a clean environment (Settings → General)', () => {
   const originalHome = process.env['HOME']
   let cleanHome = ''
@@ -38,9 +38,9 @@ describe('Re-scan finds nothing new in a clean environment (Settings → General
 
     // The old separate "Find keys on this Mac" box is gone: one control does both.
     await expect($('#settings-env-detect-host')).not.toExist()
-    const list = $('[data-testid="acp-agents-fieldset"]')
+    const list = $('[data-testid="models-agents-fieldset"]')
     await list.waitForExist({ timeout: 15_000 })
-    const status = list.$('[data-testid="acp-scan-status"]')
+    const status = list.$('[data-testid="connections-scan-status"]')
     await expect(status).toHaveText('')
 
     // Clicking Re-scan is the explicit opt-in; it runs the real scan over the
@@ -50,7 +50,7 @@ describe('Re-scan finds nothing new in a clean environment (Settings → General
 
     await list.scrollIntoView({ block: 'center' })
     await saveElementScreenshot(
-      '[data-testid="acp-agents-fieldset"]',
+      '[data-testid="models-agents-fieldset"]',
       'settings-env-key-detect.png',
     )
   })

@@ -8,6 +8,9 @@ import type { DemoTrace } from './demo-traces.ts'
 import type { FollowUpSuggestion } from './follow-ups/types.ts'
 import type { ToolPermissionCatalog } from './types/tool-permissions.ts'
 import type { GhPrDetails } from './types/git.ts'
+import type { ContextPermissionSnapshot } from './types/context-permissions.ts'
+import type { GuardedYoloPhase } from './types/guarded-yolo.ts'
+import type { DecisionEvent } from './threads/decision-log.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
 import { SITE_TOUR_SCENARIOS } from './demo-site-tour.ts'
 import { CONCISE_SCREENSHOT, CONCISE_STATE_SCENARIOS } from './demo-concise-states.ts'
@@ -52,6 +55,9 @@ export interface DemoScenario {
    */
   otherProjects?: ReadonlyArray<{ project: Project; threads: Thread[] }>
   settings: Readonly<Record<string, unknown>>
+  contextPermissions?: ContextPermissionSnapshot
+  guardedYoloPhase?: GuardedYoloPhase
+  decisions?: DecisionEvent[]
   /** Optional read-only PR showcase data for the browser demo's PR panel. */
   pullRequests?: GhPrDetails[]
   /**
@@ -2385,6 +2391,30 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'sidebar-background-project-running',
+    label: 'Running agent in a collapsed project',
+    project: project('demo-running-project', 'workbench', '/demo/workbench'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threads: [
+      {
+        id: 'demo-running-thread',
+        title: 'Finish the migration',
+        status: 'running',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    otherProjects: [
+      {
+        project: project('demo-running-other', 'docs-site', '/demo/docs-site'),
+        threads: [],
+      },
+    ],
+  },
+  {
     id: 'sidebar-thread-sort',
     label: 'Sidebar thread sort',
     project: project('demo-sidebar-sort-project'),
@@ -3157,12 +3187,50 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     changeStats: { additions: 42, deletions: 7 },
     label: 'The thread Context panel',
     project: project('demo-thread-context', 'Widgets', '/demo/widgets'),
+    guardedYoloPhase: 'active',
+    contextPermissions: {
+      outsideReadPaths: ['/demo/notes'],
+      browserOrigins: ['https://docs.example.com:443'],
+      portBindingAllowed: true,
+    },
+    decisions: [
+      {
+        v: 1,
+        type: 'decision',
+        id: 'context-decision-1',
+        at: FIXED_TIME - 60_000,
+        kind: 'shell',
+        actor: 'user',
+        verdict: 'approved',
+        subject: 'shell command (arguments omitted)',
+        scope: 'external',
+        remembered: true,
+        threadId: SIDE_CHATS_MAIN_ID,
+      },
+      {
+        v: 1,
+        type: 'decision',
+        id: 'context-decision-2',
+        at: FIXED_TIME,
+        kind: 'web',
+        actor: 'user',
+        verdict: 'denied',
+        subject: 'https://example.net:443',
+        scope: 'external',
+        remembered: false,
+        threadId: SIDE_CHATS_MAIN_ID,
+      },
+    ],
     settings: {
       onboardingCompleted: true,
       theme: 'dark',
       uiTintStrength: 'off',
       filesPaneOpen: true,
       rightPanelMode: 'context',
+      threadReadAccess: [SIDE_CHATS_MAIN_ID],
+      threadSendAccess: [SIDE_CHATS_MAIN_ID],
+      webAllowedOrigins: ['https://example.org:443'],
+      toolPermissionOverrides: { 'copse:run_shell': 'ask' },
       layout: {
         projectsPaneWidth: 240,
         filesPaneWidth: 680,
