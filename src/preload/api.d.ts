@@ -200,10 +200,14 @@ export interface ApiClient {
     setDeviceAccess: (
       id: string,
       access: import('@shared/types/mobile-companion.ts').MobileCompanionAccess,
+      rootTrusted?: boolean,
     ) => Promise<void>
     revokeDevice: (id: string) => Promise<void>
     respondPairing: (
       decision: import('@shared/types/mobile-companion.ts').MobileCompanionAccess | 'deny',
+      code: string,
+      pairingId: string,
+      rootTrusted?: boolean,
     ) => Promise<void>
     revealCertificate: () => Promise<void>
     onChat: (
@@ -1465,6 +1469,8 @@ export interface ApiClient {
     worktreeAttachment: (projectId: string, threadId: string) => Promise<ThreadWorktreeAttachment>
     /** Put a detached thread checkout back on its branch, keeping any detached commits. */
     reattachWorktree: (projectId: string, threadId: string) => Promise<ThreadWorktreeReattachResult>
+    /** Recreate a missing thread checkout from its retained branch, preserving the chat. */
+    restoreWorktree: (projectId: string, threadId: string) => Promise<void>
     /** HEAD commit + dirty state snapshot for a prompt about to be sent. */
     promptState: (projectId: string, threadId: string) => Promise<GitPromptState>
     checkoutBranch: (projectId: string, threadId: string, branch: string) => Promise<void>

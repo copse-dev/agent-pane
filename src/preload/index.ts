@@ -54,11 +54,15 @@ const api: ApiClient = {
     setDeviceAccess: (
       id: string,
       access: import('@shared/types/mobile-companion.ts').MobileCompanionAccess,
-    ) => ipcRenderer.invoke('mobile:set-device-access', id, access),
+      rootTrusted?: boolean,
+    ) => ipcRenderer.invoke('mobile:set-device-access', id, access, rootTrusted),
     revokeDevice: (id: string) => ipcRenderer.invoke('mobile:revoke-device', id),
     respondPairing: (
       decision: import('@shared/types/mobile-companion.ts').MobileCompanionAccess | 'deny',
-    ) => ipcRenderer.invoke('mobile:respond-pairing', decision),
+      code: string,
+      pairingId: string,
+      rootTrusted?: boolean,
+    ) => ipcRenderer.invoke('mobile:respond-pairing', decision, code, pairingId, rootTrusted),
     revealCertificate: () => ipcRenderer.invoke('mobile:reveal-certificate'),
     onChat: (handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void) => {
       const listener = (
@@ -267,8 +271,14 @@ const api: ApiClient = {
   fs: {
     readFile: (projectId: string, threadId: string, path: string) =>
       ipcRenderer.invoke('fs:read-file', projectId, threadId, path),
-    readImage: (projectId: string, threadId: string, path: string) =>
-      ipcRenderer.invoke('fs:read-image', projectId, threadId, path),
+    readImage: async (projectId: string, threadId: string, path: string): Promise<string> => {
+      const result: unknown = await ipcRenderer.invoke('fs:read-image', projectId, threadId, path)
+      if (typeof result === 'object' && result !== null) {
+        if ('data' in result && typeof result.data === 'string') return result.data
+        if ('error' in result && typeof result.error === 'string') throw new Error(result.error)
+      }
+      throw new Error('Unexpected fs:read-image response')
+    },
     writeFile: (projectId: string, threadId: string, path: string, content: string) =>
       ipcRenderer.invoke('fs:write-file', projectId, threadId, path, content),
     readdir: (projectId: string, threadId: string, path: string) =>
@@ -1671,6 +1681,8 @@ const api: ApiClient = {
       ipcRenderer.invoke('git:worktree-attachment', projectId, threadId),
     reattachWorktree: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('git:reattach-worktree', projectId, threadId),
+    restoreWorktree: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:restore-worktree', projectId, threadId),
     promptState: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('git:prompt-state', projectId, threadId),
     checkoutBranch: (projectId: string, threadId: string, branch: string) =>

@@ -252,14 +252,109 @@ export function isReadOnlySimpleCommand(segment: string): boolean {
   if (tokens.length === 0 || !tokens.every((token) => typeof token === 'string')) {
     return false
   }
+  return isReadOnlyArgv(tokens)
+}
 
-  const argv = tokens
+function isReadOnlyArgv(argv: readonly string[]): boolean {
   const name = basename(argv[0] ?? '')
   if (!name) return false
   if (name === 'git') return isReadOnlyGitCommand(argv)
   if (name === 'sed') return isReadOnlySedCommand(argv)
   if (!READ_ONLY_SHELL_BASENAMES.has(name)) return false
   return !argv.slice(1).some((arg) => isEscapeHatchFlag(name, arg))
+}
+
+/**
+ * Whether a parsed segment can only read or print: a {@link isReadOnlySimpleCommand}
+ * shape, or `echo`/`printf` (which write bytes and run nothing, unless `printf -v`
+ * assigns a shell variable). Its operands are data the program never executes.
+ *
+ * Wider than the read-only shape on purpose, and only for one question: whether a
+ * word in this segment can name a program that runs. `isReadOnlySimpleCommand`
+ * answers a different one — whether a segment may be auto-approved — and stays
+ * narrow. Redirect targets are already gone from a parsed segment; whether a
+ * redirect writes somewhere it should not is the outside-path scanner's job.
+ */
+export function isInertReadArgv(argv: readonly string[]): boolean {
+  if (isReadOnlyArgv(argv)) return true
+  const name = commandName(argv[0])
+  return (name === 'echo' || name === 'printf') && !printfAssignsShellVariable(argv)
+}
+
+/** One simple command from the shell parser, with the control operator before it. */
+export interface ParsedShellSegment {
+  argv: string[]
+  /** The operator that introduced this segment (`|`, `;`, `&&`, …), or null for the first. */
+  after: string | null
+}
+
+/**
+ * The parser's segmentation alone, or null when the parser cannot give a reading
+ * the shell is bound to agree with.
+ *
+ * {@link shellSegmentsQuoteAware} appends a raw fallback split that only respects
+ * single quotes, so `grep -E "a|ssh"` also yields a phantom `ssh` segment. That is
+ * right for checks that may only add reasons. A caller that *relaxes* a reason
+ * needs the opposite: the shell's own reading, and nothing at all when there is
+ * none to trust. So this returns null for a parse failure, for ambiguous quoting,
+ * for command substitution (`$(…)`, backticks), whose output is code nobody can
+ * see here, and for process substitution (`<(…)`, `>(…)`), whose body feeds
+ * another command as a file.
+ *
+ * A variable expansion stays in the argv as its source text (`$TMPDIR/t.log`,
+ * `exit=$?`) instead of `shell-quote`'s empty string, which is not what the shell
+ * runs. Its value is unknown, so a caller must treat any word containing `$` as
+ * unknown too — above all a command word: `x=ssh; $x host` runs `ssh`.
+ *
+ * Redirect targets are dropped and globs kept as operands, as in
+ * {@link shellSegments}; the operator before each segment is kept so a caller can
+ * see what a pipe feeds.
+ */
+export function parsedShellSegments(command: string): ParsedShellSegment[] | null {
+  const masked = maskInertQuotedText(command)
+  if (masked === null || /`|\$\(/.test(masked)) return null
+  let tokens: ReturnType<typeof parseShellCommand>
+  try {
+    tokens = []
+    for (const line of splitShellCommandLines(command)) {
+      tokens.push(...parseShellCommand(line, (name) => `$${name}`), { op: ';' })
+    }
+  } catch {
+    return null
+  }
+  const segments: ParsedShellSegment[] = []
+  let current: string[] = []
+  let after: string | null = null
+  let awaitingRedirectTarget = false
+  for (const token of tokens) {
+    if (typeof token === 'string') {
+      if (awaitingRedirectTarget) awaitingRedirectTarget = false
+      else current.push(token)
+      continue
+    }
+    if ('op' in token && token.op === 'glob') {
+      if (awaitingRedirectTarget) awaitingRedirectTarget = false
+      else current.push(token.pattern)
+      continue
+    }
+    // A comment carries no operator and ends nothing.
+    if (!('op' in token)) continue
+    if (token.op === '<(' || token.op === '>(') return null
+    if (REDIRECTS.has(token.op)) {
+      awaitingRedirectTarget = true
+      continue
+    }
+    // Keep the first operator since the last segment: in `a | (b)` what feeds `b`
+    // is the pipe, not the `(` that follows it.
+    if (current.length > 0) {
+      segments.push({ argv: current, after })
+      current = []
+      after = token.op
+    } else {
+      after ??= token.op
+    }
+  }
+  return segments
 }
 
 /** Long options that leave `sed` a pure filter. Anything else disqualifies it. */

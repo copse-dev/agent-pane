@@ -83,6 +83,14 @@ approval: worktree preparation, mutating GitHub actions, host GUI launch, and cu
 schedule-scoped automation opt-in described below. An approval prompt's existing “remember” action
 writes the same explicit Always allow policy when that policy is available.
 
+`ask_classifier` uses saved classifier connections without a tool prompt by default.
+Settings → Classifiers exposes “Ask before agent classifier questions” as an
+opt-in. Enabling it writes the per-tool Always ask policy and prompts for each
+question, with the full request behind Show details. Disabling it resets the
+override to the default. An existing Always allow override remains valid, while
+Blocked continues to deny. Each configured classifier's provider-host approval
+remains a separate gate.
+
 ## Approval audit evidence
 
 Approval decisions persist the available tool-call ID, including cancellation and
@@ -206,10 +214,40 @@ Where a sandbox is active, the sandbox—not a fuzzy match—decides whether the
 sandbox there is no containment boundary, so ambiguity must prompt, and auto-approval cannot skip
 that prompt.
 
+A hard matcher that names a program (`ssh`, `curl`, `pnpm install`, `exec`, `eval`, `git push`,
+`docker run`, …) is only a signal when something runs that program. When every segment of the
+shell parser's own reading that contains the word is an inert read — a read-only tool without
+an option that runs a program (`rg --pre`, `fd -x`, `sort --compress-program`, an active `sed`
+script), or `echo`/`printf` without `printf -v` — the word is a search pattern, file name or
+printed text. The same holds for an argument to a project script (`pnpm|npm|yarn|bun run|test`,
+never `exec`, `dlx` or `x`): `pnpm test -- acp-ssh-transport` hands a test filter to a script that
+already runs contained on its own. The command then reports the ambiguous reason _names a network
+or code-running command only as an argument_ instead: `grep -rn ssh src`,
+`sed -n 1,80p services/exec/a.ts; echo ---` and `grep "pnpm install" docs/a.md` start inside an
+active sandbox, and still prompt without one. Ambiguous is not `sandbox`, so deterministic
+auto-approval cannot run them outside. This relaxation fails closed: the hard reason stays when the
+line does not parse, when it contains command substitution (`$(…)`, backticks) or process
+substitution, when a variable decides which program runs (`$x host`), when a pipe feeds an
+interpreter, `xargs`, `parallel`, `source` or `eval`, or when any segment holding the word is
+anything else (`grep x f; ssh host`, `bash -c "ssh host"`, `timeout 5 ssh host`, `yarn ssh`). A
+variable in an operand or redirect target (`grep ssh $FILE > $TMPDIR/out`) names no program.
+Destructive and privileged matchers (`sudo`, `rm -rf`, `kill -9`, `chmod 777`, `dd`) never relax.
+
+`rm` prompts inside an active sandbox as a recursive delete when it is recursive (`-r`, `-R`,
+`--recursive`). A forced `rm -f` without `-r` deletes exactly what a plain `rm` does, which runs
+contained, so `rm -f e2e-failure-artifacts/demo-failure.png` does too when every `rm` on the line
+is run directly and names literal paths under the working directory. A forced delete still prompts
+when its operands come from `xargs` or another wrapper, or name a path outside the project, a
+variable or a glob (`find … | xargs rm -f`, `rm -f /elsewhere/x`, `rm -f *.log`).
+
 `pnpm exec <command>` runs an installed command and is not itself an install or shell
-`exec` signal. Its child command still receives the normal scope checks, so downloads,
-opaque interpreter code, and outside-project paths keep their existing policy. Corepack
-and package downloads retain their existing gates.
+`exec` signal, including with global options before `exec` (`pnpm -s exec tsc`). Its child
+command still receives the normal scope checks, so downloads, opaque interpreter code, and
+outside-project paths keep their existing policy. Corepack and package downloads retain their
+existing gates. Package-manager global options never hide an install: `pnpm -s install`,
+`npm --prefix web install` and `pnpm --filter app add` are hard-external like `pnpm install`.
+Options are read on one line only, so a shell `exec` on the following line stays dynamic
+execution.
 
 Remembered local port-binding consent is keyed by the project root, shared across its
 thread worktrees. Command execution still uses the thread's execution root and passes
@@ -417,6 +455,14 @@ to need network or outside-workspace access. This only advances the same unsandb
 - a hard-external command already prompts and runs outside;
 - a sandbox-contained command ignores the hint and must earn escalation through a verified block;
 - declining the advanced prompt runs the command in the sandbox without prompting again on failure.
+
+When the command is bounded opaque local execution — its only reasons are a project script or
+executable, with no network, outside-path, destructive or install signal — the advanced prompt
+also offers “Allow retries outside the sandbox (up to 10, for 2 hours)”. Ticking it leases that
+exact command line, byte for byte, to the current human turn tree in this thread and execution
+root, so an agent rerunning the same browser demo or harness after each fix is not asked again.
+Any other command, a changed command, another turn tree or another thread asks again. The same
+outside-sandbox lease, with the same bounds, is offered when a verified sandbox block escalates.
 
 The prompt is titled “Agent requests sandbox escape” and describes this as the agent's
 expectation, not a confirmed sandbox failure. A cached denial instead retains “Run outside

@@ -24,6 +24,7 @@ import {
   allocateThreadWorktree,
   expectedThreadWorktreePath,
   listProjectWorktrees,
+  projectCheckoutBehindDefaultBranch,
   readThreadWorktreeRecoveryMetadata,
   renameThreadWorktreeBranch,
   restoreThreadWorktreeBranch,
@@ -38,7 +39,6 @@ import {
   getGitStatus,
   isInsideGitWorkTree,
   localBranchExists,
-  findSubmoduleDeclaration,
 } from './github/git-service.ts'
 
 export interface PrepareThreadCheckoutInput {
@@ -67,9 +67,6 @@ interface CheckoutInspection {
   currentBranch: string | null
   defaultBranch: string | null
   isDirty: boolean
-  hasSubmodules: boolean
-  /** The `.gitmodules` behind `hasSubmodules`, surfaced when a checkout is refused. */
-  submoduleDeclaration?: string | null
 }
 
 /**
@@ -154,6 +151,12 @@ export interface ThreadCheckoutTransactionDependencies {
     projectRoot: string
     baseBranch: string
   }) => Promise<ThreadWorktree | null>
+  /**
+   * Whether the project checkout lags the upstream tip of `branch`, after a
+   * fresh fetch. A deferred thread reads the checkout, so a lagging one must
+   * not be deferred. Absent means "never known to lag".
+   */
+  checkoutBehindDefaultBranch?: (projectRoot: string, branch: string) => Promise<boolean>
   /** Whether the repository holds this branch, checked against its refs. */
   branchExists: (projectRoot: string, branch: string) => Promise<boolean>
   /** Switch the shared checkout, for a shared thread that picked a branch. */
@@ -227,7 +230,6 @@ export async function inspectProject(
       currentBranch: null,
       defaultBranch: null,
       isDirty: false,
-      hasSubmodules: false,
     }
   }
   const [currentBranch, defaultBranch, status] = await Promise.all([
@@ -235,18 +237,11 @@ export async function inspectProject(
     getDefaultBranch(project.path),
     getGitStatus(project.path),
   ])
-  // The Linux sandbox used by read-only Git commands can briefly materialize
-  // deny-path sentinels such as `.gitmodules`. Do not race the raw filesystem
-  // probe against getGitStatus's sandbox lifecycle or a repository without
-  // submodules can be rejected as if that transient guard were a declaration.
-  const submoduleDeclaration = await findSubmoduleDeclaration(project.path)
   return {
     isGitRepository: true,
     currentBranch,
     defaultBranch,
     isDirty: Boolean(status && (status.staged.length > 0 || status.unstaged.length > 0)),
-    hasSubmodules: submoduleDeclaration !== null,
-    submoduleDeclaration,
   }
 }
 
@@ -307,6 +302,7 @@ const defaultDependencies: ThreadCheckoutTransactionDependencies = {
   allocate: allocateThreadWorktree,
   reuseAutomationWorktree: (input) => getAutomationWorktreeReuse().reuseFor(input),
   recoverUnpersisted: recoverUnpersistedWorktree,
+  checkoutBehindDefaultBranch: projectCheckoutBehindDefaultBranch,
   branchExists: localBranchExists,
   checkoutBranch: checkoutGitBranch,
   validate: validateThreadWorktree,
@@ -401,16 +397,7 @@ export function createThreadCheckoutTransaction(
       })
 
       if (decision.checkoutMode === 'blocked') {
-        // Name the evidence. `submodules unsupported` alone cannot be checked
-        // against the filesystem afterwards, and an automation swallows this
-        // error into a thread that simply never starts.
-        const detail =
-          decision.reason === 'submodules-unsupported' && inspection.submoduleDeclaration
-            ? ` (${inspection.submoduleDeclaration}, for project ${project.path})`
-            : ''
-        throw new Error(
-          `Isolated worktree is unavailable: ${decision.reason.replaceAll('-', ' ')}${detail}`,
-        )
+        throw new Error(`Isolated worktree is unavailable: ${decision.reason.replaceAll('-', ' ')}`)
       }
       if (decision.checkoutMode === 'shared') {
         // A shared thread runs in the project checkout itself, so a picked
@@ -464,10 +451,18 @@ export function createThreadCheckoutTransaction(
         inspection,
         input.baseBranch,
       )
-      if (
+      // A deferred thread reads the project checkout until its first write, and
+      // only allocation fetches the upstream default. Defer only when that read
+      // is current; otherwise allocate now, which cuts from the fetched tip.
+      const deferrable =
         decision.deferAllocation &&
-        canDeferAllocation(input.model, dependencies.canDeferAcpModel, isLocal)
-      ) {
+        canDeferAllocation(input.model, dependencies.canDeferAcpModel, isLocal) &&
+        !(
+          dependencies.checkoutBehindDefaultBranch &&
+          baseBranch === inspection.defaultBranch &&
+          (await dependencies.checkoutBehindDefaultBranch(project.path, baseBranch))
+        )
+      if (deferrable) {
         // Isolation is decided now; only the checkout waits. The base is
         // resolved (and a picked branch validated) here so the eventual
         // allocation starts where the user asked even if the project checkout

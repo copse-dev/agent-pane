@@ -66,6 +66,19 @@ export const appearanceMarkup = `
               </p>
             </fieldset>
 
+            <fieldset data-testid="settings-next-step">
+              <legend>Next-step tab complete</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="nextStepSuggestionEnabled" />
+                Offer an obvious next step in the message box after each turn
+              </label>
+              <p class="field-hint">
+                When a turn ends with one clearly valuable next move, it appears as placeholder
+                text in the message box — press Tab to accept it, or just type to ignore it.
+                Uses the small-tasks model; most turns show nothing.
+              </p>
+            </fieldset>
+
             <fieldset>
               <legend>Display</legend>
               <label>
@@ -191,6 +204,7 @@ export const appearanceFields: readonly SettingField[] = [
   { name: 'openLinksInBuiltInBrowser', kind: 'checkbox', default: true, save: true },
   { name: 'animateAgentAvatars', kind: 'checkbox', default: true, save: true },
   { name: 'conciseThreadsEnabled', kind: 'checkbox', default: true, save: true },
+  { name: 'nextStepSuggestionEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'alertOnInteraction', kind: 'checkbox', default: true, save: true },
   { name: 'alertOnThreadFinished', kind: 'checkbox', default: true, save: true },
   { name: 'alertSystemNotification', kind: 'checkbox', default: true, save: true },

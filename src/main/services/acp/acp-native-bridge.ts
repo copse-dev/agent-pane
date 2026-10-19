@@ -95,10 +95,10 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // prompts and, when approved, runs outside the ACP process's seatbelt.
   'run_shell',
   'run_background',
-  // Read-only worktree readiness and model-tier advice are useful to either
-  // executor and need no native-loop state. Preparation itself still requires
-  // the host's separate install approval, so it is not offered here.
+  // Preparation re-enters the registry's checkout transition and exact-plan
+  // approval, then runs in its bounded OS sandbox, just as for native agents.
   'preflight_worktree',
+  'prepare_worktree',
   'suggest_model',
   // Saved decision classifiers run through Copse's permission and provider gates.
   'ask_classifier',
@@ -133,6 +133,8 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // attached archive — the bridge's tool list is sent once per session, so the
   // per-turn schema cost that motivates the native gate does not apply.
   'read_archive',
+  // Offline submodule checkout in the thread worktree (init-submodules-tool.ts).
+  'init_submodules',
   // Model-proposed threads. The ACP agent can offer the work, but the
   // renderer card remains the approval boundary that actually starts it.
   'propose_thread',

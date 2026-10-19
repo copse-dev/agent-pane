@@ -45,6 +45,12 @@ export interface WorkspaceFs {
   access: (path: string) => Promise<void>
   readdir: (path: string) => Promise<string[]>
   readdirWithTypes: (path: string) => Promise<Array<{ name: string; isDir: boolean }>>
+  /**
+   * Fingerprint many workspace-relative files without transferring their contents.
+   * Remote implementations use this to bracket dirty-worktree audits in a bounded
+   * number of transport calls. A null value means the path could not be read.
+   */
+  fingerprintFiles?: (paths: readonly string[]) => Promise<ReadonlyMap<string, string | null>>
 }
 
 export interface WorkspaceFsStat {

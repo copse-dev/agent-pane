@@ -27,7 +27,8 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { readFile } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { z } from 'zod'
-import { resolveWorkspacePath } from '../workspace.ts'
+import { requireAgentExecutionRoot } from '../execution-root.ts'
+import { resolvePathWithinRoot } from '../workspace.ts'
 import { UI_RESOURCE_SOURCE_PATH_META } from './mcp-schema.ts'
 
 const MAX_ARTEFACT_BYTES = 512 * 1024
@@ -36,7 +37,9 @@ const MAX_ARTEFACT_BYTES = 512 * 1024
  * Resolve the HTML to render from either an inline string or a workspace file
  * path. Reading from a written file is preferred — it keeps the artefact as a
  * real, editable, versioned file rather than an inline blob. Path access is
- * confined to the workspace by `resolveWorkspacePath`.
+ * confined to the agent's execution root (the turn's worktree when one is
+ * active, not the renderer-selected shared checkout — see #1724) by
+ * `resolvePathWithinRoot`.
  */
 async function resolveArtefactHtml(input: {
   html?: string | undefined
@@ -44,7 +47,7 @@ async function resolveArtefactHtml(input: {
   title?: string | undefined
 }): Promise<{ html: string; title: string; sourcePath?: string }> {
   if (input.path) {
-    const abs = await resolveWorkspacePath(input.path) // throws if outside the workspace
+    const abs = await resolvePathWithinRoot(input.path, requireAgentExecutionRoot()) // throws if outside the root
     let raw: string
     try {
       raw = await readFile(abs, 'utf8')
@@ -59,7 +62,7 @@ async function resolveArtefactHtml(input: {
     // The path travels with the artefact so the canvas store can reopen the
     // living file after a restart instead of the snapshot it took at render
     // time — the point of preferring `path` over inline `html`.
-    return { html: raw, title: input.title ?? fallbackTitle, sourcePath: input.path }
+    return { html: raw, title: input.title ?? fallbackTitle, sourcePath: abs }
   }
   if (input.html) {
     return { html: input.html, title: input.title ?? 'artefact' }

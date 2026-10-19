@@ -6,7 +6,7 @@ import { promisify } from 'node:util'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { buildAcpAgentEnv } from './acp-client.ts'
-import { canonicalAcpAgentId } from '@shared/acp-known-agents.ts'
+import { canonicalAcpAgentId, KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import type { AcpAgentConfig, AcpAuthState, AcpAuthStatus } from '@shared/types/acp.ts'
 import { listAcpAgents } from './acp-agent-registry.ts'
 
@@ -20,6 +20,8 @@ export interface AcpAuthProbeDeps {
   /** Run a CLI and return its stdout; rejects on a non-zero exit or timeout. */
   exec: (command: string, args: string[]) => Promise<string>
   home: string
+  /** The launch command Copse would spawn for this agent (saved entry or catalog). */
+  agent: { command: string; args: readonly string[] }
 }
 
 function hasEnv(deps: AcpAuthProbeDeps, ...names: string[]): boolean {
@@ -28,6 +30,24 @@ function hasEnv(deps: AcpAuthProbeDeps, ...names: string[]): boolean {
 
 function state(signedIn: boolean): AcpAuthState {
   return signedIn ? 'signed-in' : 'signed-out'
+}
+
+/** `codex login status` via `command` (plus any leading args); unknown on failure. */
+async function codexLoginStatus(
+  deps: AcpAuthProbeDeps,
+  command: string,
+  args: readonly string[],
+): Promise<AcpAuthState> {
+  try {
+    const out = await deps.exec(command, [...args, 'login', 'status'])
+    if (/not logged in/i.test(out)) return 'signed-out'
+    if (/logged in using/i.test(out)) return 'signed-in'
+    return 'unknown'
+  } catch {
+    // A missing CLI, timeout or execution failure cannot establish logout.
+    // Credential-file absence is not proof either: the CLI owns its store.
+    return 'unknown'
+  }
 }
 
 /**
@@ -53,16 +73,11 @@ const CHECKS: Readonly<Record<string, (deps: AcpAuthProbeDeps) => Promise<AcpAut
   },
   'codex-acp': async (deps) => {
     if (hasEnv(deps, 'OPENAI_API_KEY', 'CODEX_API_KEY')) return 'signed-in'
-    try {
-      const out = await deps.exec('codex', ['login', 'status'])
-      if (/not logged in/i.test(out)) return 'signed-out'
-      if (/logged in using/i.test(out)) return 'signed-in'
-      return 'unknown'
-    } catch {
-      // A missing CLI, timeout or execution failure cannot establish logout.
-      // Credential-file absence is not proof either: the CLI owns its store.
-      return 'unknown'
-    }
+    // Ask the CLI this adapter actually runs (including CODEX_PATH). A separate
+    // `codex` on PATH may use different credentials and cannot answer for it.
+    // If the adapter cannot report status, preserve unknown rather than infer
+    // authentication from another installation.
+    return codexLoginStatus(deps, deps.agent.command, [...deps.agent.args, 'cli'])
   },
   gemini: async (deps) =>
     hasEnv(deps, 'GEMINI_API_KEY', 'GOOGLE_API_KEY')
@@ -92,9 +107,13 @@ export async function probeAcpAuth(agentId: string, deps: AcpAuthProbeDeps): Pro
   }
 }
 
-function defaultDeps(env: Readonly<Record<string, string | undefined>>): AcpAuthProbeDeps {
+function defaultDeps(
+  env: Readonly<Record<string, string | undefined>>,
+  agent: AcpAuthProbeDeps['agent'],
+): AcpAuthProbeDeps {
   return {
     env,
+    agent,
     home: env['HOME'] ?? env['USERPROFILE'] ?? homedir(),
     fileExists: (path) =>
       access(path).then(
@@ -106,11 +125,11 @@ function defaultDeps(env: Readonly<Record<string, string | undefined>>): AcpAuth
       ),
     exec: async (command, args): Promise<string> => {
       try {
-        const { stdout, stderr } = await run(command, args, {
-          env,
-          timeout: 6000,
-          maxBuffer: 64 * 1024,
-        })
+        const pending = run(command, args, { env, timeout: 6000, maxBuffer: 64 * 1024 })
+        // A launcher that ignores the status arguments and starts an ACP
+        // server would otherwise wait on stdin until the timeout.
+        pending.child.stdin?.end()
+        const { stdout, stderr } = await pending
         return stdout.length > 0 ? stdout : stderr
       } catch (error) {
         // These status commands can return useful signed-out output with exit 1.
@@ -132,7 +151,10 @@ function defaultDeps(env: Readonly<Record<string, string | undefined>>): AcpAuth
  */
 export async function detectAcpAuthStatus(
   ids: readonly string[],
-  deps?: (env: Readonly<Record<string, string | undefined>>) => AcpAuthProbeDeps,
+  deps?: (
+    env: Readonly<Record<string, string | undefined>>,
+    agent: AcpAuthProbeDeps['agent'],
+  ) => AcpAuthProbeDeps,
 ): Promise<AcpAuthStatus[]> {
   const makeDeps = deps ?? defaultDeps
   let saved: AcpAgentConfig[] = []
@@ -144,12 +166,15 @@ export async function detectAcpAuthStatus(
   return Promise.all(
     ids.map(async (id) => {
       const entry = saved.find((agent) => canonicalAcpAgentId(agent.id) === id)
+      const known = KNOWN_ACP_AGENTS.find((agent) => agent.id === id)
+      const launch = entry ?? known
+      const agent = { command: launch?.command ?? id, args: launch?.args ?? [] }
       const env = buildAcpAgentEnv({
-        command: entry?.command ?? id,
+        command: agent.command,
         cwd: process.cwd(),
         ...(entry?.env ? { env: entry.env } : {}),
       })
-      return { id, state: await probeAcpAuth(id, makeDeps(env)) }
+      return { id, state: await probeAcpAuth(id, makeDeps(env, agent)) }
     }),
   )
 }

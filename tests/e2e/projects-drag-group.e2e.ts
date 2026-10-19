@@ -85,4 +85,37 @@ describe('projects sidebar groups', () => {
     await expect($('.project-group-children .project-row')).not.toBeExisting()
     await saveElementScreenshot('#pane-projects', 'projects-group-collapsed.png')
   })
+
+  it('clears an accidental list drop highlight when the sidebar redraws', async () => {
+    resetUserData()
+    const { projectIds } = seedProjectGroupsFixture(process.cwd(), { withGroup: true })
+    const [alpha] = projectIds
+    if (!alpha) throw new Error('fixture did not seed three projects')
+    await browser.reloadSession()
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await $('.project-group-row').waitForExist({ timeout: 10_000 })
+
+    const started = await browser.execute((projectId) => {
+      const row = document.querySelector(
+        `.project-entry[data-project-id="${projectId}"] .project-row`,
+      )
+      const list = document.querySelector('.projects-list')
+      if (!row || !list) return false
+      const dataTransfer = new DataTransfer()
+      row.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer }))
+      list.dispatchEvent(
+        new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer }),
+      )
+      return true
+    }, alpha)
+    expect(started).toBe(true)
+    await expect($('.projects-list.drop-into')).toBeExisting()
+
+    // A live thread update redraws the list and removes the drag source.
+    // Expanding or collapsing the group reaches the same render path.
+    await $('.project-group-row').click()
+    await expect($('.projects-list.drop-into')).not.toBeExisting()
+    await expect($('.projects-list .is-dragging')).not.toBeExisting()
+    await saveElementScreenshot('#pane-projects', 'projects-group-drag-cancelled.png')
+  })
 })
