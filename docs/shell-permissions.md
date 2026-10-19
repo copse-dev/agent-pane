@@ -55,7 +55,7 @@ conversation-read consent; revoking that consent leaves the outside-path grant i
 read tools. `send_thread_prompt` asks a separate **Send prompts to your other threads?**
 approval. Reading never grants sending. Both grants are persisted in main-owned settings,
 keyed by the requesting thread; they are not inherited by destination or forked threads.
-Either permission can be revoked through the thread menu → Conversation access.
+Either permission can be revoked in the thread’s Context panel → Permissions.
 Destination prompts enter the normal queue with machine provenance, consume the existing
 continuation budget and respect held/paused queues. They do not interrupt active work or
 switch the visible thread. An unavailable or archived destination is rejected.

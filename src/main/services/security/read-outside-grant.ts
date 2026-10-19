@@ -105,6 +105,15 @@ export function grantReadOutsideProject(threadId: string, targets: readonly stri
   grantedPaths.set(threadId, paths)
 }
 
+/** Only return paths whose approved filesystem identity still matches. */
+export function listReadOutsideProjectGrants(threadId: string): string[] {
+  const paths = grantedPaths.get(threadId)
+  if (!paths) return []
+  return [...paths]
+    .filter(([path, grant]) => stillNamesApprovedPath(path, grant.identity))
+    .map(([path]) => path)
+}
+
 export function hasReadOutsideProjectGrant(
   threadId: string | null,
   targets: readonly string[],
