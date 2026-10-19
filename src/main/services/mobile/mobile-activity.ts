@@ -10,6 +10,7 @@ import { inspectThreadCheckoutRoot } from '../thread-execution-context.ts'
 import { threadHasUncommittedChanges } from '../thread-dirty-status.ts'
 import { mobileMessageImages } from './mobile-message-images.ts'
 import { mobileTranscriptMessages, type MobileMessage } from './mobile-transcript.ts'
+import { MobileActivityChanges } from './mobile-activity-changes.ts'
 
 const projectSchema = z.array(
   z.object({
@@ -55,7 +56,11 @@ async function settledThreadHasChanges(
   }
 }
 
-export async function mobileActivity(): Promise<MobileActivityRow[]> {
+const activityChanges = new MobileActivityChanges(settledThreadHasChanges)
+
+export async function mobileActivity(
+  changes: Pick<MobileActivityChanges, 'read'> = activityChanges,
+): Promise<MobileActivityRow[]> {
   const running = new Set(listRunningThreadIds())
   const groups: MobileActivityRow[] = []
   for (const project of mobileProjects()) {
@@ -75,9 +80,7 @@ export async function mobileActivity(): Promise<MobileActivityRow[]> {
               : thread.status === 'error'
                 ? 'failed'
                 : 'finished'
-      const hasChanges = settled
-        ? await settledThreadHasChanges(project.id, thread.id, thread.updatedAt)
-        : false
+      const hasChanges = settled ? changes.read(project.id, thread.id, thread.updatedAt) : false
       groups.push({
         projectId: project.id,
         projectName: project.name,
