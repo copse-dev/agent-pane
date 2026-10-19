@@ -34,7 +34,7 @@ describe('Qwen Code setup guidance', () => {
     this.timeout(60_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
-    await $('[data-testid="acp-add-toggle"]').click()
+    await $('[data-testid="connections-add-toggle"]').click()
     await $('.acp-add-row[data-agent="qwen-code"]').$('button=Set up').click()
     const form = $('.acp-add-menu .provider-form')
     await expect(form.$('.provider-form-title')).toHaveText(expect.stringContaining('Qwen Code'))

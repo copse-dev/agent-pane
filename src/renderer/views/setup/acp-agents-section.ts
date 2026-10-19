@@ -255,6 +255,13 @@ export function createAcpAgentsSection(
     embedded?: boolean
     /** Fired after a refresh so an embedded host can rebuild its chip row. */
     onChanged?: () => void
+    /**
+     * Embedded only: omit this panel's own "Re-scan device" row. Set this when
+     * the host already owns a single Re-scan action and drives `scan`/`reload`
+     * itself, so an agent's open options don't show a second, narrower rescan
+     * button nested inside them.
+     */
+    hideRescanAction?: boolean
   } = {},
 ): AcpAgentsSection {
   const embedded = opts.embedded ?? false
@@ -286,7 +293,9 @@ export function createAcpAgentsSection(
     ? el(
         'div',
         { class: 'provider-panel-embedded' },
-        el('div', { class: 'provider-actions' }, rescanBtn, scanStatus),
+        ...(opts.hideRescanAction
+          ? []
+          : [el('div', { class: 'provider-actions' }, rescanBtn, scanStatus)]),
         formHost,
       )
     : el(
