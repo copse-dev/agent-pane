@@ -74593,7 +74593,7 @@ function attachAutomationController(store2, api2) {
       addMessage(store2, threadId, "user", prompt);
       setThreadDraftPrompt(store2, threadId, "");
       startAutomationTurnTree(store2, threadId);
-      dispatchAgentRun(store2, api2, threadId, { content: prompt });
+      dispatchAgentRun(store2, api2, threadId, { content: prompt, automationRun: true });
     } catch (error62) {
       console.error("[automations] Failed to start scheduled task:", error62);
       if (hydrated) {
@@ -79658,6 +79658,7 @@ function parseAgentRunPayload(rawPrompt) {
       })) : [];
       return {
         userContent: content2.data,
+        ...parsed2["automationRun"] === true ? { automationRun: true } : {},
         ...parsed2["executionMode"] === "agent" ? { executionMode: "agent" } : {},
         invokedSkills: invokedSkills.success ? invokedSkills.data : [],
         priorTodos: normalizedTodos,
@@ -87553,6 +87554,7 @@ function createDemoApi(scenario2, options = {}) {
       // transcript copy (which the renderer owns) is the whole demo story.
       fork: () => resolved2({ source: "empty", messageCount: 0 }),
       backlinks: (_projectId, kind, target) => resolved2(backlinksFor(threads, kind, target)),
+      pendingApprovals: () => resolved2([]),
       historySnapshot: unsupported,
       editHistory: unsupported,
       undoHistoryEdit: unsupported,
@@ -153868,7 +153870,11 @@ function mountInputBar(root, store2, api2, opts = {}) {
   const chips = el("div", { class: "attachment-chips" });
   const composer = mountComposerEditor();
   composer.setPlaceholder("Message\u2026");
-  const submitBtn = el("button", { class: "submit-btn", type: "button" }, "Send");
+  const submitBtn = el(
+    "button",
+    { class: "submit-btn", type: "button", "data-tooltip-placement": "top" },
+    "Send"
+  );
   const stopBtn = el(
     "button",
     {
@@ -154837,11 +154843,16 @@ ${description}
   function updateState() {
     const running = isRunning();
     const id = getActiveThreadId();
-    submitBtn.disabled = imageDescriptionInProgress || id !== null && isThreadSubmitting(store2, id);
+    const preparingCheckout = id !== null && checkoutPreparations.has(id);
+    submitBtn.disabled = imageDescriptionInProgress || preparingCheckout || id !== null && isThreadSubmitting(store2, id);
     stopBtn.hidden = !running;
     updateTargetPicker();
     submitBtn.textContent = running ? "Queue" : "Send";
-    submitBtn.setAttribute("aria-label", running ? "Queue message" : "Send message");
+    submitBtn.setAttribute(
+      "aria-label",
+      preparingCheckout ? "Preparing checkout" : running ? "Queue message" : "Send message"
+    );
+    setTooltip(submitBtn, preparingCheckout ? "Preparing the checkout for this thread\u2026" : null);
     submitBtn.classList.toggle("with-stop", running);
     composer.el.classList.toggle("with-stop", running);
     if (!running || stopPendingThreadId !== getActiveThreadId()) clearStopPending();
@@ -155399,6 +155410,7 @@ ${description}
       checkoutErrors.delete(id);
       checkoutPreparations.add(id);
       updateCheckoutControl();
+      updateState();
       try {
         const branchDecision = baseBranchResult ? (await baseBranchResult)[0] : void 0;
         if (branchDecision?.status === "rejected") throw branchDecision.reason;
@@ -155423,6 +155435,7 @@ ${description}
       } finally {
         checkoutPreparations.delete(id);
         updateCheckoutControl();
+        updateState();
       }
     }
     if (prefetchedPromptState?.status === "rejected") throw prefetchedPromptState.reason;
@@ -156056,6 +156069,7 @@ var init_input_bar = __esm({
     init_icons();
     init_attachment_icons();
     init_context_menu();
+    init_tooltip();
     init_markdown_quote();
     init_image_expand();
     init_text_expand();
@@ -171185,7 +171199,7 @@ function contextModeActive(store2) {
   const { filesPaneOpen, rightPanelMode } = store2.getState();
   return filesPaneOpen && rightPanelMode === "context";
 }
-function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
+function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestions) {
   const close2 = el(
     "button",
     { type: "button", class: "thread-context-close", "aria-label": "Close context" },
@@ -171216,6 +171230,10 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
   let changesKey = "";
   let changesText = "Calculating\u2026";
   let changeStats = null;
+  let approvals = [];
+  let approvalsKey = "";
+  let approvalsToken = 0;
+  let approvalsError = false;
   let changesCheckedAt = 0;
   let changesPending = false;
   let renderedKey = "";
@@ -171579,10 +171597,21 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
       threads: state.threads,
       mentionedIn: mentionedFor === thread.id ? mentionedIn : []
     });
+    const questions = reviewerInputRequests(thread).filter(
+      (request) => !reviewerInputAnswer(thread.reviewerInputAnswers, request.id)
+    );
+    const agentQuestions = liveQuestions?.pending().filter((request) => request.threadId === thread.id) ?? [];
+    const approvalsLoaded = approvalsKey === activeStorageKey();
+    const pending = approvalsLoaded ? approvals : [];
     const key = JSON.stringify([
       state.activeProjectId,
       model,
       thread.archivedAt,
+      questions,
+      agentQuestions,
+      pending,
+      approvalsLoaded,
+      approvalsError,
       accessFor,
       accessGrants,
       accessStatus
@@ -171591,6 +171620,69 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     renderedKey = key;
     clear(viewerRoot);
     const content = renderThreadContext(model, handlers4);
+    const requestRows = agentQuestions.map((request) => {
+      const button = rowButton(
+        { "data-agent-question-id": request.id },
+        el(
+          "span",
+          { class: "thread-context-main" },
+          el(
+            "span",
+            { class: "thread-context-title", title: request.questions.join(" \xB7 ") },
+            request.questions.join(" \xB7 ")
+          ),
+          el("span", { class: "thread-context-sub" }, "Agent question \xB7 Answer in Activity")
+        )
+      );
+      button.addEventListener("click", openActivityPanel);
+      return button;
+    });
+    requestRows.push(
+      ...questions.map((request) => {
+        const button = rowButton(
+          { "data-reviewer-input-id": request.id },
+          el(
+            "span",
+            { class: "thread-context-main" },
+            el(
+              "span",
+              { class: "thread-context-title", title: request.question },
+              request.question
+            ),
+            el("span", { class: "thread-context-sub" }, "Question \xB7 Open to answer")
+          )
+        );
+        button.addEventListener("click", () => {
+          store2.emit("reviewer_input_open", request.id);
+        });
+        return button;
+      })
+    );
+    requestRows.push(
+      ...pending.map(
+        (request) => el(
+          "div",
+          { class: "thread-context-row", "data-deferred-approval-id": request.id },
+          el(
+            "span",
+            { class: "thread-context-main" },
+            el("span", { class: "thread-context-title", title: request.title }, request.title),
+            el(
+              "span",
+              { class: "thread-context-sub" },
+              `Approval needed \xB7 Not run \xB7 ${request.subject}`
+            )
+          )
+        )
+      )
+    );
+    const requestSection = section(
+      "requests",
+      requestRows.length ? el("div", { class: "thread-context-rows" }, ...requestRows) : emptyNote(
+        approvalsError && approvalsLoaded ? "Approval requests unavailable." : approvalsLoaded ? "Nothing waiting." : "Checking requests\u2026"
+      )
+    );
+    content.querySelector('[data-context-section="subagents"]')?.before(requestSection);
     const archive = el(
       "button",
       {
@@ -171646,6 +171738,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
   }
   async function refreshMentions() {
     void refreshStorage();
+    void refreshApprovals();
     void refreshAccess();
     const thread = getActiveThread(store2);
     const projectId = store2.getState().activeProjectId;
@@ -171662,7 +171755,32 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     mentionedFor = thread.id;
     if (contextModeActive(store2)) render2();
   }
+  async function refreshApprovals() {
+    const thread = getActiveThread(store2);
+    const projectId = store2.getState().activeProjectId;
+    if (!thread || !projectId) return;
+    const mine = ++approvalsToken;
+    const key = activeStorageKey();
+    try {
+      const rows = await api2.threads.pendingApprovals(projectId, thread.id);
+      if (disposed || mine !== approvalsToken || key !== activeStorageKey()) return;
+      approvals = rows;
+      approvalsError = false;
+    } catch (error62) {
+      if (disposed || mine !== approvalsToken || key !== activeStorageKey()) return;
+      console.error("[context] pending approvals lookup failed:", error62);
+      approvals = [];
+      approvalsError = true;
+    }
+    approvalsKey = key;
+    if (contextModeActive(store2)) render2();
+  }
   const offs = [
+    ...liveQuestions ? [
+      liveQuestions.onChange(() => {
+        if (contextModeActive(store2)) render2();
+      })
+    ] : [],
     api2.security.onGuardedYoloChanged((state) => {
       if (contextModeActive(store2) && getActiveThread(store2)?.id === state.threadId) {
         void refreshAccess();
@@ -171692,6 +171810,8 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     }),
     store2.on("workspace_changed", () => {
       mentionedFor = null;
+      approvalsKey = "";
+      approvalsToken++;
       storageKey = "";
       changesKey = "";
       changesToken++;
@@ -171715,6 +171835,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     token++;
     storageToken++;
     changesToken++;
+    approvalsToken++;
     accessToken++;
     for (const off of offs) off();
   };
@@ -171725,15 +171846,18 @@ var init_thread_context_panel = __esm({
     init_file_bytes();
     init_helpers();
     init_icons();
+    init_reviewer_input();
     init_thread_helpers();
     init_panels();
     init_side_chat3();
     init_pane_maximize_button();
     init_pane_popout_button();
+    init_activity_panel();
     init_thread_context_model();
     init_toast();
     init_settings_dialog();
     SECTION_TITLES = {
+      requests: "Needs your input",
       repos: "Access",
       "side-chats": "Side chats",
       links: "Links & references",
@@ -205202,7 +205326,8 @@ function mountFullLayout() {
     requireElement("context-host"),
     requireElement("context-viewer-host"),
     store,
-    api
+    api,
+    activitySources?.questions
   );
   mountSideChatPane(
     requireElement("side-chat-host"),
