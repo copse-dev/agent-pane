@@ -153868,7 +153868,11 @@ function mountInputBar(root, store2, api2, opts = {}) {
   const chips = el("div", { class: "attachment-chips" });
   const composer = mountComposerEditor();
   composer.setPlaceholder("Message\u2026");
-  const submitBtn = el("button", { class: "submit-btn", type: "button" }, "Send");
+  const submitBtn = el(
+    "button",
+    { class: "submit-btn", type: "button", "data-tooltip-placement": "top" },
+    "Send"
+  );
   const stopBtn = el(
     "button",
     {
@@ -154837,11 +154841,16 @@ ${description}
   function updateState() {
     const running = isRunning();
     const id = getActiveThreadId();
-    submitBtn.disabled = imageDescriptionInProgress || id !== null && isThreadSubmitting(store2, id);
+    const preparingCheckout = id !== null && checkoutPreparations.has(id);
+    submitBtn.disabled = imageDescriptionInProgress || preparingCheckout || id !== null && isThreadSubmitting(store2, id);
     stopBtn.hidden = !running;
     updateTargetPicker();
     submitBtn.textContent = running ? "Queue" : "Send";
-    submitBtn.setAttribute("aria-label", running ? "Queue message" : "Send message");
+    submitBtn.setAttribute(
+      "aria-label",
+      preparingCheckout ? "Preparing checkout" : running ? "Queue message" : "Send message"
+    );
+    setTooltip(submitBtn, preparingCheckout ? "Preparing the checkout for this thread\u2026" : null);
     submitBtn.classList.toggle("with-stop", running);
     composer.el.classList.toggle("with-stop", running);
     if (!running || stopPendingThreadId !== getActiveThreadId()) clearStopPending();
@@ -155399,6 +155408,7 @@ ${description}
       checkoutErrors.delete(id);
       checkoutPreparations.add(id);
       updateCheckoutControl();
+      updateState();
       try {
         const branchDecision = baseBranchResult ? (await baseBranchResult)[0] : void 0;
         if (branchDecision?.status === "rejected") throw branchDecision.reason;
@@ -155423,6 +155433,7 @@ ${description}
       } finally {
         checkoutPreparations.delete(id);
         updateCheckoutControl();
+        updateState();
       }
     }
     if (prefetchedPromptState?.status === "rejected") throw prefetchedPromptState.reason;
@@ -156056,6 +156067,7 @@ var init_input_bar = __esm({
     init_icons();
     init_attachment_icons();
     init_context_menu();
+    init_tooltip();
     init_markdown_quote();
     init_image_expand();
     init_text_expand();
