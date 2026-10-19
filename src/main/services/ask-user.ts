@@ -10,7 +10,7 @@ import {
 } from '../ipc/ipc-guards.ts'
 import { getActiveRunThread } from './thread-models.ts'
 import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
-import { mobileDecisions, mobileDecisionSource } from './mobile/mobile-decisions.ts'
+import { humanDecisions, humanDecisionSource, humanDecisionActor } from './human-decisions.ts'
 import { getActiveProjectId } from './workspace.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { recordDecision } from './security/decision-log-store.ts'
@@ -239,9 +239,9 @@ export function createWindowAskUserHandler(deps: WindowAskUserDeps): AskUserHand
       }, ASK_USER_TIMEOUT_MS)
       if (typeof timer.unref === 'function') timer.unref()
       const projectId = getThreadExecutionContext()?.projectId ?? getActiveProjectId()
-      const removeMobile =
+      const removeDecision =
         projectId && threadId
-          ? mobileDecisions.register(
+          ? humanDecisions.register(
               projectId,
               threadId,
               { id, kind: 'question', questions: req.questions },
@@ -251,10 +251,10 @@ export function createWindowAskUserHandler(deps: WindowAskUserDeps): AskUserHand
                   projectId,
                   threadId,
                   kind: 'ask-user',
-                  actor: 'mobile-device',
+                  actor: humanDecisionActor(device),
                   verdict: 'approved',
                   subject: 'Answered agent questions',
-                  source: mobileDecisionSource(device),
+                  source: humanDecisionSource(device),
                 })
                 deps.settle(id, { answers: answer.answers })
               },
@@ -263,7 +263,7 @@ export function createWindowAskUserHandler(deps: WindowAskUserDeps): AskUserHand
       deps.register(
         id,
         (result) => {
-          removeMobile()
+          removeDecision()
           deps.send('agent:ask-user-cancelled', { id })
           clearTimeout(timer)
           signal?.removeEventListener('abort', onAbort)

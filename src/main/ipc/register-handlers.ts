@@ -24,6 +24,8 @@ import { homedir } from 'node:os'
 import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 import { skillRootsSchema } from '../services/skills/skill-roots-schema.ts'
 import { z } from 'zod'
+import { syncPluginClientApi } from '../services/plugins/plugin-client-service.ts'
+import { PLUGIN_CLIENT_API_ID } from '@copse/agent/plugins/plugin-client-api-plugin.ts'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
 import {
   backgroundClassifierId,
@@ -85,7 +87,16 @@ import {
   setWorkspaceRoot,
   type WorkspaceProjectRef,
 } from '../services/workspace.ts'
-import { exportDecisionLog, readDecisionLog } from '../services/security/decision-log-store.ts'
+import {
+  exportDecisionLog,
+  readDecisionLog,
+  readThreadDecisionLog,
+} from '../services/security/decision-log-store.ts'
+import { listReadOutsideProjectGrants } from '../services/security/read-outside-grant.ts'
+import { browserSessionOrigins } from '../services/browser/browser-network-grants.ts'
+import { browserThreadScope } from '@shared/browser-session.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { getThreadClassifierUse } from '../services/security/classifier-use-report.ts'
 import { loadCanvasArtefactSummaries, readStoredCanvasArtefact } from '../services/canvas-store.ts'
 import { CANVAS_ARTEFACT_CHANNEL } from '../services/canvas-dispatch.ts'
@@ -1899,6 +1910,11 @@ export function registerAllHandlers(
     if (!resolved) return []
     return readDecisionLog(resolved)
   })
+  ipcMain.handle('decisions:list-thread', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return readThreadDecisionLog(pid, tid)
+  })
   ipcMain.handle('decisions:export', (event, rawProjectId: unknown) => {
     assertMainFrameSender(event, win)
     const projectId = parseIpcArgs(zProjectId.optional(), [rawProjectId])
@@ -1937,6 +1953,23 @@ export function registerAllHandlers(
     const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
     return getGuardedYoloState(id)
   })
+  ipcMain.handle(
+    'security:get-context-permissions',
+    (event, projectId: unknown, threadId: unknown, projectRoot: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, root] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, zNonEmptyString.max(4096)]),
+        [projectId, threadId, projectRoot],
+      )
+      return {
+        outsideReadPaths: listReadOutsideProjectGrants(tid),
+        browserOrigins: browserSessionOrigins(browserThreadScope(pid, tid)),
+        portBindingAllowed:
+          getDefaultPluginRegistry().isPermissionDeclared(LOOPBACK_BIND_PERMISSION) &&
+          getSetting<string[]>('portBindingAllowedRoots', []).includes(root),
+      }
+    },
+  )
   ipcMain.handle('security:enable-guarded-yolo', async (event, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
@@ -2663,6 +2696,7 @@ export function registerAllHandlers(
     if (refusal) throw new IpcValidationError(refusal)
     const pluginService = getPluginService()
     await pluginService.setEnabled(id, enabled)
+    if (id === PLUGIN_CLIENT_API_ID) await syncPluginClientApi()
     if (pluginService.hasUserPlugin(id)) {
       // The plugin toggle is the portable component consent boundary. Refresh
       // both registries immediately so skills and MCP disappear atomically on

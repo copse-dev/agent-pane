@@ -759,6 +759,13 @@
           1
         ]
       },
+      "decisions:list-thread": {
+        "api": "decisions.listThread",
+        "args": [
+          2,
+          2
+        ]
+      },
       "deep-links:ready": {
         "api": "deepLinks.ready",
         "args": [
@@ -1842,6 +1849,13 @@
         "args": [
           1,
           1
+        ]
+      },
+      "security:get-context-permissions": {
+        "api": "security.getContextPermissions",
+        "args": [
+          3,
+          3
         ]
       },
       "security:get-guarded-yolo": {

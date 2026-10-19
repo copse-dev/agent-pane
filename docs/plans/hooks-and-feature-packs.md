@@ -244,6 +244,18 @@ revisiting this document, not silently diverging in an implementation PR.
     tabs and durable session remain.
     Direct network, arbitrary IPC/Electron access, generic host calls, and unused renderer
     contribution placeholders remain unavailable.
+    **Plugin capability API foundation:** the host's shared human-decision registry underlies
+    the mobile adapter and future capability consumers. It grants no new runtime access or
+    network authority. Provider contributions, explicit consumer grants and bounded SDK/transport
+    operations must follow the separate stages in [plugin-capability-api.md](plugin-capability-api.md);
+    they do not weaken this selected-runtime boundary.
+    **Interactive-client preview:** the experimental first-party `copse.plugin-client-api`
+    capability may start a host-owned loopback approval transport only after explicit plugin
+    enablement. Each client additionally needs desktop consent for session-only viewing or
+    decision submission. Pairing prompts have no agent/thread identity and never enter the
+    remote feed; no tool or selected runtime receives this write authority. Disabling closes
+    the service and revokes every token. This preview does not add generic provider registration,
+    durable grants, or a user-runtime host gateway. See [the client protocol](../plugin-client-api.md).
     **External function-hook registration (SDK stage 1):** a selected user plugin may
     declare `runtime.hooks: [{ id, event }]`, including a hook-only runtime. Events
     use the canonical catalogue; IDs are unique per plugin. API v1 adds

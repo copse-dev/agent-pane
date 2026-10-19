@@ -1,5 +1,9 @@
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
+import {
+  syncPluginClientApi,
+  stopPluginClientApi,
+} from './services/plugins/plugin-client-service.ts'
 import { initThreadPrompts } from './services/thread-prompts.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
@@ -693,6 +697,7 @@ app
       replayApprovals(event.sender)
       replayQuestions(event.sender)
     })
+    void syncPluginClientApi()
     initMobileChat(win, ipcMain)
     initThreadPrompts(win, ipcMain)
     // Lets main-process code hand the user a running command in the Shells pane
@@ -1347,6 +1352,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   getAutomationService().stop()
   getBranchCiAutomationService().stop()
   await stopMobileCompanion()
+  await stopPluginClientApi()
   disposeDarkFactorySensor?.()
   disposeDarkFactorySensor = undefined
   disposeTaskSupervisorEvents?.()
