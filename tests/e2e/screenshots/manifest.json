@@ -1629,6 +1629,10 @@
       "sha256": "d80b6c574fc7fe54fea0ef787aa8210ca1505f20b0ad60b2ff8ff52985a9b7cf",
       "bytes": 20440
     },
+    "footer-branch-missing-worktree.png": {
+      "sha256": "69938d8c437036b682e1ec9289eb034f41e682bc95d627ceb799b411ccec2c22",
+      "bytes": 19180
+    },
     "footer-branch-picker-compact-220.png": {
       "sha256": "ae9f9dd5bdd91d974862cef73fd551a3697fc21d13ea7c40cfffc5b453374f1c",
       "bytes": 183347
@@ -1672,6 +1676,14 @@
     "footer-branch-recovery-continued.png": {
       "sha256": "41cceea4c342a49d4f6b11ee0c1e4dae79291221f0ed6452585cff5bfe9e19f3",
       "bytes": 244017
+    },
+    "footer-branch-restored-composer.png": {
+      "sha256": "d702ad7d4545ded9e22a14900e0b2e42648c8c00009231cc8d0b6ee084511e0e",
+      "bytes": 384842
+    },
+    "footer-branch-restored-worktree.png": {
+      "sha256": "e0ddff6d22b15e1fe3a24f367d5728ce32764c9a094862b9ac3b23709c148777",
+      "bytes": 14788
     },
     "footer-branch-uncommitted-pick.png": {
       "sha256": "90ee901da4870098dba128536f2f2fb351c6868a916e53ab6f2cd6ee5108b5e1",

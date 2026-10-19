@@ -16,6 +16,7 @@ import {
   inspectThreadWorktreeAttachment,
   reattachThreadWorktree,
   restoreRetiredThreadWorktree,
+  restoreMissingThreadWorktree,
   ThreadWorktreeDetachedError,
   validateThreadWorktree,
   validateThreadWorktreeRecovery,
@@ -264,6 +265,23 @@ const resolvedProjectRoots = new Map<string, Set<string>>()
  */
 export function wasThreadContextResolvedAt(projectId: string, root: string): boolean {
   return resolvedProjectRoots.get(projectId)?.has(root) === true
+}
+
+/** Restore an externally removed checkout only after the user clicks in its owning thread. */
+export async function restoreThreadCheckout(
+  projectId: string,
+  threadId: string,
+  isBusy: ThreadCheckoutBusy,
+): Promise<void> {
+  if (isBusy(projectId, threadId)) {
+    throw new Error(
+      'The agent is still working in this checkout. Wait for it to finish, then restore.',
+    )
+  }
+  const input = await activeThreadWorktreeInput(projectId, threadId)
+  if (!input) throw new Error('Only an isolated thread worktree can be restored')
+  const worktree = await restoreMissingThreadWorktree(input)
+  await syncAdoptedWorktreeBranch(projectId, threadId, worktree)
 }
 
 async function resolveThreadExecutionContextUncached(
