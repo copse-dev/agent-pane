@@ -87846,6 +87846,7 @@ function createDemoApi(scenario2, options = {}) {
       // The demo has no linked worktrees, so there is never a detached one.
       worktreeAttachment: () => resolved2({ state: "attached" }),
       reattachWorktree: () => Promise.reject(new Error("The demo has no thread worktrees")),
+      restoreWorktree: () => Promise.reject(new Error("The demo has no thread worktrees")),
       promptState: () => resolved2({ startingCommit: null, dirty: false }),
       checkoutBranch: (_projectId, _threadId, branch) => {
         currentBranch = branch;
@@ -149032,7 +149033,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     return thread ? isBlankThread(thread) : false;
   }
   function getDisplayBranch() {
-    return activeBaseBranch() ?? getActiveThreadBranch() ?? status?.currentBranch ?? null;
+    return activeBaseBranch() ?? getActiveThreadBranch() ?? getActiveThread2()?.worktree?.branch ?? status?.currentBranch ?? null;
   }
   function getVisiblePr() {
     const pr2 = status?.pr;
@@ -149126,6 +149127,15 @@ function mountFooterBranchStatus(host, store2, api2) {
       trigger.title = `This checkout is detached from ${current.branch}. Recovery is offered once the agent stops working in it.`;
     }
     if (!shown) return;
+    if (current.state === "missing") {
+      const title2 = current.reason ?? "Worktree removed. Restore committed files from the retained branch to continue this chat. Dependencies and local-only files are not restored.";
+      trigger.title = title2;
+      reattachButton.title = title2;
+      reattachButton.disabled = reattaching || current.reason !== null;
+      reattachButton.setAttribute("aria-label", `Restore worktree for ${current.branch}`);
+      reattachButton.textContent = reattaching ? "Restoring\u2026" : "Restore worktree";
+      return;
+    }
     const title = detachedTitle(current);
     trigger.title = title;
     reattachButton.title = title;
@@ -149159,7 +149169,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     reattachButton.textContent = reattaching ? "Reattaching\u2026" : "Reattach";
   }
   function agentCanTouchCheckout(current) {
-    return getActiveThread2()?.status === "running" || current?.agentBusy === true;
+    return getActiveThread2()?.status === "running" || current?.state === "detached" && current.agentBusy === true;
   }
   function activeDetached() {
     return detached?.threadId === store2.getState().activeThreadId ? detached : null;
@@ -149174,7 +149184,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   async function readDetachedAttachment(owner) {
     try {
       const attachment = await api2.git.worktreeAttachment(owner.projectId, owner.threadId);
-      return attachment.state === "detached" ? attachment : null;
+      return attachment.state !== "attached" ? attachment : null;
     } catch (error62) {
       reportBranchFailure("inspect worktree attachment", error62);
       return null;
@@ -149185,7 +149195,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     const current = activeDetached();
     if (!owner || !current || agentCanTouchCheckout(current) || reattaching || activeRecoveryRunId() !== null)
       return;
-    if (current.recovery) {
+    if (current.state === "detached" && current.recovery) {
       const runId = globalThis.crypto.randomUUID();
       recoveryRuns.set(recoveryKey(owner.projectId, owner.threadId), runId);
       renderReattach();
@@ -149206,13 +149216,23 @@ function mountFooterBranchStatus(host, store2, api2) {
     reattaching = true;
     renderReattach();
     try {
+      if (current.state === "missing") {
+        await api2.git.restoreWorktree(owner.projectId, owner.threadId);
+        store2.emit("thread_checkout_changed", owner.threadId);
+        showToast(`Restored worktree for ${current.branch}. You can continue this chat.`);
+        store2.emit("git_branch_changed");
+        return;
+      }
       const result = await api2.git.reattachWorktree(owner.projectId, owner.threadId);
       showToast(
         result.backupBranch ? `Reattached to ${result.branch}. Its previous tip is saved as ${result.backupBranch}.` : `Reattached to ${result.branch}`
       );
       store2.emit("git_branch_changed");
     } catch (error62) {
-      showErrorToast("Could not reattach the checkout", error62);
+      showErrorToast(
+        current.state === "missing" ? "Could not restore the worktree" : "Could not reattach the checkout",
+        error62
+      );
     } finally {
       reattaching = false;
       refreshNow();
@@ -154446,6 +154466,10 @@ ${reply}`);
     }),
     store2.on("git_branch_changed", () => {
       void refreshAutomaticCheckoutPreview();
+    }),
+    store2.on("thread_checkout_changed", (threadId) => {
+      checkoutErrors.delete(threadId);
+      updateCheckoutControl();
     })
   ];
   const observer = new MutationObserver(() => {
