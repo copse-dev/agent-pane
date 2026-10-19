@@ -249,6 +249,30 @@ describe('planAgentTextChunk', () => {
     assert.equal(plan.action === 'append' && plan.startNewMessage, false)
   })
 
+  it('does not carry an unmatched backtick across a paragraph break', () => {
+    const { plan } = planAgentTextChunk(
+      {
+        msgId: 'msg-1',
+        toolSinceText: true,
+        currentText: 'Example `unfinished\n\nThis paragraph is complete.',
+      },
+      'A new answer.',
+    )
+    assert.equal(plan.action === 'append' && plan.startNewMessage, true)
+  })
+
+  it('keeps an inline code span together across a soft line break', () => {
+    const { plan } = planAgentTextChunk(
+      {
+        msgId: 'msg-1',
+        toolSinceText: true,
+        currentText: 'Example `unfinished\nstill inside',
+      },
+      ' the span`.',
+    )
+    assert.equal(plan.action === 'append' && plan.startNewMessage, false)
+  })
+
   it('starts a fresh bubble after a completed emphasis span', () => {
     const { plan } = planAgentTextChunk(
       { msgId: 'msg-1', toolSinceText: true, currentText: '**Completed.**' },
