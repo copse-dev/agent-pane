@@ -238,6 +238,17 @@ describe('planAgentTextChunk', () => {
     assert.equal(plan.action === 'append' && plan.startNewMessage, false)
   })
 
+  it('keeps an inline code span together when a tool call cuts it mid-content', () => {
+    // "`docs/plans" streamed, then a tool call, then "/thread-in-container.md`"
+    // closes the span. The cut lands on a letter, not the opening backtick, so
+    // this must not be confused with a fresh reply.
+    const { plan } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: 'Updates to `docs/plans' },
+      '/thread-in-container.md` and `docs/threat-model.md`.',
+    )
+    assert.equal(plan.action === 'append' && plan.startNewMessage, false)
+  })
+
   it('starts a fresh bubble after a completed emphasis span', () => {
     const { plan } = planAgentTextChunk(
       { msgId: 'msg-1', toolSinceText: true, currentText: '**Completed.**' },
