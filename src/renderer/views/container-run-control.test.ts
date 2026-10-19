@@ -3,7 +3,12 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ContainerModelVerdict } from '@shared/types/container-run.ts'
 import type { FetchModelOptionsOpts, ModelOption } from './model-options.ts'
-import { agentModelsNote, loadRunModelOptions, startBlocker } from './container-run-control.ts'
+import {
+  agentModelsNote,
+  fallbackModel,
+  loadRunModelOptions,
+  startBlocker,
+} from './container-run-control.ts'
 
 /**
  * The model roster the container-run sheet offers.
@@ -162,6 +167,33 @@ describe('loadRunModelOptions', () => {
     assert.deepEqual(
       options.find((option) => option.value === PROVIDER.value),
       PROVIDER,
+    )
+  })
+})
+
+describe('fallbackModel', () => {
+  const disabledClaude = { ...CLAUDE, disabled: true, label: 'Opus 5 — needs an API key' }
+
+  it('switches away from a preselected row the resolver refuses', () => {
+    assert.equal(
+      fallbackModel([disabledClaude, PROVIDER], { reason: 'needs an API key' }),
+      PROVIDER.value,
+    )
+  })
+
+  it('keeps the selection when the resolver accepts it', () => {
+    assert.equal(fallbackModel([disabledClaude, PROVIDER], { reason: null }), null)
+  })
+
+  it('keeps the selection while the resolver has not answered yet', () => {
+    assert.equal(fallbackModel([disabledClaude, PROVIDER], undefined), null)
+  })
+
+  it('has nowhere to fall back to when every row is disabled', () => {
+    const disabledProvider = { ...PROVIDER, disabled: true, label: 'GPT-5.6 Sol — no key' }
+    assert.equal(
+      fallbackModel([disabledClaude, disabledProvider], { reason: 'needs an API key' }),
+      null,
     )
   })
 })
