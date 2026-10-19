@@ -83,6 +83,9 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   font-display: swap;
 }
 :root {
+  --brand-chatgpt-background: #000;
+  --credential-logo-background: #d9a441;
+  --credential-logo-foreground: #2a1c00;
   --browser-page-background: #ffffff;
   --tint-hue: #244c25;
   --tint-amount: 4%;
@@ -1313,6 +1316,40 @@ copse-ui-field input[type=password],
 .project-twisty.expanded {
   transform: rotate(90deg);
 }
+.project-row.is-running .project-twisty {
+  animation: project-chevron-color-sweep 2.4s ease-in-out infinite;
+}
+@keyframes project-chevron-color-sweep {
+  0%, 7%, 45%, 100% {
+    color: var(--text-muted);
+  }
+  16%, 30% {
+    color: var(--accent);
+  }
+}
+.project-row.is-running .project-name {
+  color: var(--text-secondary);
+  background-image:
+    linear-gradient(
+      90deg,
+      var(--text-secondary) 42%,
+      var(--accent) 49%,
+      var(--accent) 51%,
+      var(--text-secondary) 58%);
+  background-size: 250% 100%;
+  background-position: 100% 0;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: project-name-color-sweep 2.4s ease-in-out infinite;
+}
+@keyframes project-name-color-sweep {
+  0%, 15% {
+    background-position: 100% 0;
+  }
+  85%, 100% {
+    background-position: 0 0;
+  }
+}
 .chats-list {
   display: flex;
   flex-direction: column;
@@ -1633,6 +1670,15 @@ copse-ui-field input[type=password],
 @media (prefers-reduced-motion: reduce) {
   .chat-attention-bell {
     animation: none;
+  }
+  .project-row.is-running .project-twisty {
+    animation: none;
+    color: var(--accent);
+  }
+  .project-row.is-running .project-name {
+    animation: none;
+    background-image: none;
+    -webkit-text-fill-color: currentColor;
   }
   .chat-running-status path {
     animation: none;
@@ -7646,6 +7692,10 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   border-radius: 999px;
   padding: 6px 16px;
 }
+.submit-btn:disabled {
+  cursor: wait;
+  opacity: 0.7 !important;
+}
 .footer-queue {
   font-size: var(--font-size-xs);
   color: var(--text-muted);
@@ -11820,6 +11870,14 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .acp-logo[data-brand=gemini] {
   background: #fff;
 }
+.acp-logo[data-brand=chatgpt] {
+  background: var(--brand-chatgpt-background);
+}
+.acp-logo[data-brand=key] {
+  background: var(--credential-logo-background);
+  border-color: transparent;
+  color: var(--credential-logo-foreground);
+}
 .acp-logo[data-brand=codex] {
   border: 0;
 }
@@ -11856,6 +11914,21 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 .acp-add-menu[hidden] {
   display: none;
+}
+.connections-menu-group {
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+.connections-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.acp-row-head > .acp-link {
+  flex: none;
 }
 .acp-add-menu .provider-panel-embedded {
   padding: var(--spacing-md);
