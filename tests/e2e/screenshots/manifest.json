@@ -4681,6 +4681,10 @@
       "sha256": "2d29a3a183f90f3fa71ac383c1c1d8d79eeff61aee7240ebe24c0be274d47c71",
       "bytes": 27467
     },
+    "thread-checkout-preparing-send.png": {
+      "sha256": "f1bff95c14dba1d36def84ac3e5111ec9e968bf693ebbd7fcce1be4640572e7d",
+      "bytes": 295884
+    },
     "thread-checkout-switch-background.png": {
       "sha256": "f6dc2b47853018d4b10149ee645263707f5747b1109c7df314e7f85170b781c0",
       "bytes": 271589
