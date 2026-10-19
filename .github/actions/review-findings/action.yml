@@ -67,17 +67,19 @@ runs:
         pnpm install --frozen-lockfile --ignore-scripts --filter '@copse/review...'
         echo "COPSE_REVIEWER_ROOT=$reviewer_root" >> "$GITHUB_ENV"
     - name: Prepare pinned source, dependencies and validation image
+      id: prepare
       shell: bash
       env:
         COPSE_REVIEW_REQUEST: ${{ inputs.request }}
         COPSE_REVIEW_PREPARATION: ${{ inputs.preparation }}
       run: node "$COPSE_REVIEWER_ROOT/packages/review/ci/prepare-action.mts"
     - uses: actions/download-artifact@v8
+      if: ${{ steps.prepare.outputs.ready == 'true' }}
       with:
         name: copse-review-ground-${{ github.run_id }}-${{ github.run_attempt }}
         path: ${{ runner.temp }}/copse-review-ground
     - name: Mint repository-scoped App publishing token
-      if: ${{ inputs.app-id != '' && inputs.app-private-key != '' }}
+      if: ${{ steps.prepare.outputs.ready == 'true' && inputs.app-id != '' && inputs.app-private-key != '' }}
       id: app-token
       uses: actions/create-github-app-token@v3
       with:
@@ -85,6 +87,7 @@ runs:
         private-key: ${{ inputs.app-private-key }}
         permission-pull-requests: write
     - name: Review and publish findings
+      if: ${{ steps.prepare.outputs.ready == 'true' }}
       shell: bash
       env:
         COPSE_REVIEW_REQUEST: ${{ inputs.request }}
@@ -163,7 +166,7 @@ runs:
           --sarif "$RUNNER_TEMP/copse-review-findings/report.sarif" \
           --events "$RUNNER_TEMP/copse-review-findings/events.jsonl"
     - uses: actions/upload-artifact@v7
-      if: ${{ always() }}
+      if: ${{ always() && steps.prepare.outputs.ready == 'true' }}
       with:
         name: copse-review-findings-${{ github.run_id }}-${{ github.run_attempt }}
         path: ${{ runner.temp }}/copse-review-findings/

@@ -12,6 +12,7 @@ import assert from 'node:assert/strict'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createStore, type AppStore } from '@shared/store/store.ts'
+import { ASK_USER_ANSWER_MAX_LENGTH } from '@copse/agent/ask-user-format.ts'
 import { mountAskUserDialog } from './ask-user-dialog.ts'
 import { isThreadAwaitingAttention, resetAttention } from '../controller/attention.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
@@ -784,6 +785,20 @@ describe('answering from another surface', () => {
     assert.deepEqual(requests.pending(), [])
     assert.equal(isThreadAwaitingAttention('other'), false)
     assert.equal(dialog().open, false)
+  })
+
+  it('sends no answer longer than main accepts, so the agent is never left waiting', () => {
+    const { api, harness } = stubApi()
+    const requests = mountHandle(api)
+    harness.emit({ id: 'q', threadId: 'focused', questions: [{ question: 'Notes?' }] })
+    assert.equal(at(inputs(), 0).maxLength, ASK_USER_ANSWER_MAX_LENGTH)
+
+    const long = 'x'.repeat(ASK_USER_ANSWER_MAX_LENGTH + 100)
+    assert.equal(requests.answer('q', [long]), true)
+
+    assert.deepEqual(harness.responses, [
+      { id: 'q', answers: [long.slice(0, ASK_USER_ANSWER_MAX_LENGTH)] },
+    ])
   })
 
   it('answers a queued question without disturbing the one on screen', () => {

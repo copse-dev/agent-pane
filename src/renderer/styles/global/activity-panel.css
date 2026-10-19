@@ -292,7 +292,8 @@ dialog.activity-panel-overlay {
   flex-direction: column;
   gap: var(--spacing-sm);
 }
-.activity-question {
+.activity-question,
+.activity-final-reply {
   margin: 0;
   line-height: var(--line-height-base);
   overflow-wrap: anywhere;
