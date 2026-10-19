@@ -90290,16 +90290,24 @@ function titlebarNeedsCompact(titlebar) {
   const wasCompact = titlebar.classList.contains(TITLEBAR_COMPACT_CLASS);
   const overflowed = [...titlebar.querySelectorAll("[data-portrait-overflow]")];
   const controls = titlebar.querySelector(".titlebar-panel-controls");
+  const overflowMenus = [...titlebar.querySelectorAll(".portrait-panel-overflow")];
+  const menuVisibility = overflowMenus.map((menu) => menu.hidden);
   const alignment = controls?.style.justifyContent ?? "";
   if (controls) controls.style.justifyContent = "flex-start";
   overflowed.forEach((button) => {
     button.removeAttribute("data-portrait-overflow");
+  });
+  overflowMenus.forEach((menu) => {
+    menu.hidden = true;
   });
   titlebar.classList.remove(TITLEBAR_COMPACT_CLASS);
   const needsCompact = titlebar.scrollWidth > titlebar.clientWidth;
   titlebar.classList.toggle(TITLEBAR_COMPACT_CLASS, wasCompact);
   overflowed.forEach((button) => {
     button.setAttribute("data-portrait-overflow", "");
+  });
+  overflowMenus.forEach((menu, index) => {
+    menu.hidden = menuVisibility[index] ?? true;
   });
   if (controls) controls.style.justifyContent = alignment;
   return needsCompact;
