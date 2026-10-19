@@ -30,8 +30,8 @@
       "bytes": 51960
     },
     "accent-settings.png": {
-      "sha256": "0c52b28b0392a5340f5537b8612b670912615ec7deacf4ae2360a01259b22b35",
-      "bytes": 213087
+      "sha256": "be058a259c7284b88c3bdcfae76010afd4697816e436d9d6ca9c3e9043c37290",
+      "bytes": 219827
     },
     "accent-strong-green.png": {
       "sha256": "3e4a46fc824b313d03d88e3c8aee3c60c91fe1f5c356d0786c255a7deefd3ac5",
@@ -358,8 +358,8 @@
       "bytes": 381294
     },
     "agent-avatars-appearance.png": {
-      "sha256": "67d0ddb8be732fe2fd728034902b07170d8c48783c9ada52ea12152b8dfca879",
-      "bytes": 210314
+      "sha256": "bd3ec7f956e541273af08dc9db437087767f0547ebbe96234cda30ac0cb0ceea",
+      "bytes": 230677
     },
     "agent-avatars-dark.png": {
       "sha256": "c29b866636e0f2fdbc75ca5176adffb5f0114e63abeb42b138ddd4bd89fc3f6c",
@@ -3414,12 +3414,16 @@
       "bytes": 272758
     },
     "settings-alerts.png": {
-      "sha256": "f5f1da5c5726af7836470fd2cc89f09ad33b117411f4eecd092b00f11996e477",
-      "bytes": 192488
+      "sha256": "a49d0f9fe5bb39a5fb907503d2e1d381f92a005e91cfa2c834f95c399564531a",
+      "bytes": 198868
     },
     "settings-appearance-concise-threads.png": {
       "sha256": "29bc06d7ef2b03c54e011e578d5373a5ac54940001fffb987f20d09c18cba13c",
       "bytes": 28837
+    },
+    "settings-appearance-next-step.png": {
+      "sha256": "d7e36880620d87d4d3857ff3a04cb2611cb77445c80c95ab2a7ea434da9fd2e3",
+      "bytes": 20237
     },
     "settings-artifact-checkpoint-plugin.png": {
       "sha256": "43f4cd539100f7ccdfcb16efb3cdfa8f4b541ccbbafbdfb395b115c5914619e2",
@@ -3586,8 +3590,8 @@
       "bytes": 211494
     },
     "settings-composition-invalid-save.png": {
-      "sha256": "0162a499f5fd5923ad09fe6ef527da3ef2d7bdbc7275f892b1f6c7248cdf16b4",
-      "bytes": 248973
+      "sha256": "37507e65656b96cf90f92be21c29f3244bf03451f2d4ce3190b86f03b43f2536",
+      "bytes": 246814
     },
     "settings-composition-models.png": {
       "sha256": "16cf66f2d8beea599988cecab2246da08ee2f17ec73fc450087440924d5f3be8",
@@ -3606,8 +3610,8 @@
       "bytes": 249154
     },
     "settings-composition-sticky-footer.png": {
-      "sha256": "3670cb5bf00a63be4dd9219484d612252d9e8b335aa36af14a9a7de433729ed4",
-      "bytes": 186072
+      "sha256": "fa821dd4b4571f4b79239a50532ca3ca146f172466acd09dba6665de3e80c6bf",
+      "bytes": 193398
     },
     "settings-container-runs-egress-copy.png": {
       "sha256": "911feb807cca57d81bd25e315e29a599d2e12becbece9d1a9773a0c69481a31e",
@@ -3666,8 +3670,8 @@
       "bytes": 87711
     },
     "settings-experimental.png": {
-      "sha256": "86fe52b66a2d88db06ca343d36786110e23e3b94dfbc7a9672fc281336947f23",
-      "bytes": 233794
+      "sha256": "bc81df274d5effce11f1ba28a8258e360df04128c63c08cf46963b7ee2b09dc9",
+      "bytes": 231826
     },
     "settings-explainers-browse-recovery.png": {
       "sha256": "870633effa91d34bcb401b47c5f0d6a914df9ca8d132617f15d3eff4b014dc9d",
@@ -4022,20 +4026,20 @@
       "bytes": 250539
     },
     "settings-styling-appearance.png": {
-      "sha256": "52931c0804477f8476e18335adcab1342618f71ad5f4cec6872cbba6b8f2ee5d",
-      "bytes": 186644
+      "sha256": "46f10a4a8dc6842aa8c2a4cd646f5116a857b417d54bc8ecb1e90c1a8686afbf",
+      "bytes": 193208
     },
     "settings-styling-footer.png": {
-      "sha256": "2284e1fd50ef8cb63c7778446ae6bc7e3d4214354eadef2e170c008eeca8c6fb",
-      "bytes": 269592
+      "sha256": "42560474d553f5ad0b16d9aec25e32c7108a01078c98d59890c4c585d9fd68fc",
+      "bytes": 228782
     },
     "settings-styling-general.png": {
       "sha256": "c869a4b92e59c241474291058fc165f2c444c749cf041560f7fefa6a6ccb1187",
       "bytes": 213529
     },
     "settings-styling-nav-subheadings.png": {
-      "sha256": "00e4b62b1251e9a4f75994dd4de310ad35c82944e35e39055816a19b317236b6",
-      "bytes": 258866
+      "sha256": "e4483b8611c76740b1bbe4af1c0a30627c5d49be8e2f363243b45376fc9cc6b6",
+      "bytes": 266338
     },
     "settings-styling-plugin-settings-open.png": {
       "sha256": "7e83252ff2f25e09faa692d460fb665702946892d3015da70c18b9510af27fe2",
@@ -5046,8 +5050,8 @@
       "bytes": 310934
     },
     "ui-scale-settings.png": {
-      "sha256": "c8ba49aaf47c6081fbafe9a58281064b5d5e73faf064391dbfa647d827f1daa7",
-      "bytes": 191583
+      "sha256": "dd44f4a2511bd5e7805138a4603baec4281bc23847a6d331d06223b83a230120",
+      "bytes": 197755
     },
     "unicode-chat-fallbacks.png": {
       "sha256": "32a2175cf10125c65be73c2bdfc0d26ae922fe5d293fd97b2ff380e1ea621e9c",
