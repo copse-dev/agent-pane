@@ -15,6 +15,7 @@ import {
   syncOkfMemoryTools,
   syncOrchestrationStrategyTools,
   syncParallelSearchTools,
+  syncWebSearchTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
   syncReviewerInputTools,
@@ -382,6 +383,47 @@ describe('syncImageGenerationTools', () => {
     deleteApiKey('openai')
     syncImageGenerationTools(registry)
     assert.equal(registry.has(IMAGE_GEN_TOOL_NAME), false)
+  })
+})
+
+describe('syncWebSearchTools', () => {
+  afterEach(() => {
+    setSetting('webSearchProvider', 'none')
+    deleteApiKey('tavily')
+    deleteApiKey('parallel')
+  })
+
+  it('withholds search at startup but keeps URL fetching available', () => {
+    setSetting('webSearchProvider', 'none')
+    const registry = createRegistry()
+    assert.equal(registry.has('web_search'), false)
+    assert.equal(registry.has('fetch_url'), true)
+  })
+
+  it('adds and removes search when the selected account changes without restarting', () => {
+    const registry = new ToolRegistry()
+    setSetting('webSearchProvider', 'tavily')
+    syncWebSearchTools(registry)
+    assert.equal(registry.has('web_search'), false)
+    setApiKey('tavily', 'tavily-fixture')
+    syncWebSearchTools(registry)
+    assert.equal(registry.has('web_search'), true)
+    deleteApiKey('tavily')
+    syncWebSearchTools(registry)
+    assert.equal(registry.has('web_search'), false)
+    setApiKey('parallel', 'parallel-fixture')
+    syncWebSearchTools(registry)
+    assert.equal(
+      registry.has('web_search'),
+      false,
+      'a different provider key does not enable search',
+    )
+    setSetting('webSearchProvider', 'parallel')
+    syncWebSearchTools(registry)
+    assert.equal(registry.has('web_search'), true)
+    setSetting('webSearchProvider', 'none')
+    syncWebSearchTools(registry)
+    assert.equal(registry.has('web_search'), false)
   })
 })
 

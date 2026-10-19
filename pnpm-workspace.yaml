@@ -4,7 +4,6 @@ packages:
   - 'packages/*'
 
 allowBuilds:
-  ddg-search: true
   edgedriver: true
   electron-chromedriver: true
   electron-winstaller: true

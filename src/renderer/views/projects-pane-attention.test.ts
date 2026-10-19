@@ -11,6 +11,7 @@ import { createStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
 import { mountProjectsPane } from './projects-pane.ts'
 import { setAttentionThreads, resetAttention } from '../controller/attention.ts'
+import { resetProjectSwitchStateForTest, setThreadCacheForTest } from '../controller/projects.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { mountActivityPanel } from './activity-panel.ts'
 import type { ApprovalRequests } from './approval-dialog.ts'
@@ -43,6 +44,7 @@ const apiStub = ((): ApiClient => {
 afterEach(() => {
   document.body.replaceChildren()
   resetAttention()
+  resetProjectSwitchStateForTest()
 })
 
 describe('projects pane SSH labels (component)', () => {
@@ -111,6 +113,40 @@ describe('projects pane attention bell (component)', () => {
     assert.ok(waiting?.classList.contains('needs-attention'), 'waiting row is flagged')
     assert.equal(waiting?.querySelectorAll('.chat-attention-bell').length, 1)
     assert.equal(focused?.querySelectorAll('.chat-attention-bell').length, 0)
+  })
+
+  it('announces both running work and a separate pending request on a collapsed project', () => {
+    const store = createStore({
+      projects: [
+        { id: 'p1', path: '/current', name: 'Current' },
+        { id: 'p2', path: '/other', name: 'Other' },
+      ],
+      activeProjectId: 'p1',
+      expandedProjectId: 'p1',
+      workspaceRoot: '/current',
+      threads: [thread('focused', 'Focused')],
+      backgroundThreads: [
+        { projectId: 'p2', thread: { ...thread('working', 'Working'), status: 'running' } },
+        { projectId: 'p2', thread: thread('waiting', 'Waiting') },
+      ],
+      activeThreadId: 'focused',
+    })
+    setThreadCacheForTest('p2', [thread('working', 'Working'), thread('waiting', 'Waiting')])
+    const host = mount(store)
+    const projectRow = (): HTMLElement | null =>
+      host.querySelector('.project-entry[data-project-id="p2"] .project-row')
+
+    setAttentionThreads(store, 'approval', ['waiting'])
+    assert.equal(
+      projectRow()?.getAttribute('aria-label'),
+      'Other — agent is working; a thread needs your attention',
+    )
+    assert.equal(projectRow()?.querySelectorAll('.chat-attention-bell').length, 1)
+    assert.equal(projectRow()?.classList.contains('is-running'), true)
+
+    setAttentionThreads(store, 'approval', [])
+    assert.equal(projectRow()?.getAttribute('aria-label'), 'Other — agent is working')
+    assert.equal(projectRow()?.querySelectorAll('.chat-attention-bell').length, 0)
   })
 
   it('drops the bell once the thread no longer needs attention', () => {

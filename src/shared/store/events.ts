@@ -128,6 +128,11 @@ export interface StoreEvents {
   // the composer stages as an @shell attachment on the originating thread.
   code_block_run_requested: [request: CodeBlockRunRequest]
   code_block_run_finished: [result: CodeBlockRunResult]
+  // A thread reference to attach to a thread's unsent composer as a chip.
+  thread_reference_attach: [
+    threadId: string,
+    ref: { threadId: string; title: string; updatedAt: number; spinePath: string },
+  ]
   // The set of non-focused threads awaiting user input (a pending approval or
   // ask_user question) changed. Drives the sidebar attention indicator.
   attention_changed: []
