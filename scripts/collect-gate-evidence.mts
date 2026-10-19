@@ -36,6 +36,7 @@ mkdirSync(directory, { recursive: true })
 const manifest: z.infer<typeof gateManifestSchema> = []
 writeFileSync(join(directory, 'manifest.json'), '[]\n')
 const checks = new Map<string, string[]>()
+const seen = new Set<string>()
 for (let page = 1; manifest.length < limit; page++) {
   const response = safeJsonParse(
     api(
@@ -47,6 +48,11 @@ for (let page = 1; manifest.length < limit; page++) {
   if (!response.workflow_runs.length) break
   for (const run of response.workflow_runs) {
     if (manifest.length >= limit) break
+    // Completed runs can move between API pages while collection is in flight.
+    // Count each attempt once; a later rerun remains a separate observation.
+    const key = `${String(run.id)}/${String(run.run_attempt)}`
+    if (seen.has(key)) continue
+    seen.add(key)
     const entry: z.infer<typeof gateManifestSchema>[number] = {
       runId: String(run.id),
       attempt: String(run.run_attempt),
