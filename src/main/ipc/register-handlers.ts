@@ -121,6 +121,7 @@ import {
   inspectThreadCheckoutAttachment,
   inspectThreadCheckoutRoot,
   reattachThreadCheckout,
+  restoreThreadCheckout,
   resolveThreadExecutionContext,
 } from '../services/thread-execution-context.ts'
 import { expectedThreadWorktreePath, repositoryLocation } from '../services/worktree-manager.ts'
@@ -3260,6 +3261,11 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
     return reattachThreadCheckout(projectId, threadId, threadCheckoutBusy)
+  })
+  ipcMain.handle('git:restore-worktree', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    return restoreThreadCheckout(projectId, threadId, threadCheckoutBusy)
   })
   ipcMain.handle('git:prompt-state', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)

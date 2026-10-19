@@ -2884,6 +2884,10 @@ export function mountInputBar(
     store.on('git_branch_changed', () => {
       void refreshAutomaticCheckoutPreview()
     }),
+    store.on('thread_checkout_changed', (threadId) => {
+      checkoutErrors.delete(threadId)
+      updateCheckoutControl()
+    }),
   ]
 
   const observer = new MutationObserver(() => {

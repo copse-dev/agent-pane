@@ -4,7 +4,15 @@ import { parseShellComposition } from './command-routing.ts'
 
 export const SHELL_REPLAY_LEASE_TTL_MS = 15 * 60_000
 export const SHELL_REPLAY_LEASE_SANDBOX_MAX_REPLAYS = 10
-export const SHELL_REPLAY_LEASE_EXTERNAL_MAX_REPLAYS = 2
+/**
+ * An outside-sandbox lease covers one exact command the user approved, inside one
+ * turn tree, thread and execution root. Task loops that need it (a browser demo
+ * rerun after each fix) routinely span more than half an hour, and a lease that
+ * lapsed between two byte-identical runs asked again 37 minutes later, after the
+ * person had walked away. The turn tree still ends it with the task.
+ */
+export const SHELL_REPLAY_LEASE_EXTERNAL_TTL_MS = 2 * 60 * 60_000
+export const SHELL_REPLAY_LEASE_EXTERNAL_MAX_REPLAYS = 10
 
 export interface ShellReplayLeaseIdentity {
   projectId: string
@@ -53,7 +61,11 @@ export class ShellReplayLeaseStore {
       id: this.createId(),
       identity: { ...identity },
       command,
-      expiresAt: this.now() + SHELL_REPLAY_LEASE_TTL_MS,
+      expiresAt:
+        this.now() +
+        (identity.containment === 'project-sandbox'
+          ? SHELL_REPLAY_LEASE_TTL_MS
+          : SHELL_REPLAY_LEASE_EXTERNAL_TTL_MS),
       remainingReplays:
         identity.containment === 'project-sandbox'
           ? SHELL_REPLAY_LEASE_SANDBOX_MAX_REPLAYS
