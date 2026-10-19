@@ -1,5 +1,13 @@
 /** Trusted workflow_run entry point. Artifacts are data; never import their code. */
-import { readdirSync, readFileSync, lstatSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs'
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  lstatSync,
+  writeFileSync,
+  mkdtempSync,
+  rmSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
@@ -30,7 +38,17 @@ function walk(dir: string): void {
     }
   }
 }
-walk(directory)
+// download-artifact does not create the directory when no artifacts match.
+if (existsSync(directory)) walk(directory)
+if (
+  files.length === 0 &&
+  (env['SOURCE_CONCLUSION'] === 'cancelled' || env['SOURCE_CONCLUSION'] === 'failure')
+) {
+  const text = `Shadow unavailable; ${env['SOURCE_CONCLUSION']} CI run produced no evidence artifacts. No successful replay is recorded.`
+  writeFileSync('gate-publication.json', JSON.stringify({ text, count: 0, shadowAvailable: false }))
+  console.log(text)
+  process.exit(0)
+}
 // Preserve earlier artifacts for audit, but only the current workflow attempt
 // can establish complete coverage; reused jobs cannot prove rerun execution.
 const plans = files.filter(
