@@ -85762,6 +85762,30 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "sidebar-background-project-running",
+        label: "Running agent in a collapsed project",
+        project: project("demo-running-project", "workbench", "/demo/workbench"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        threads: [
+          {
+            id: "demo-running-thread",
+            title: "Finish the migration",
+            status: "running",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        otherProjects: [
+          {
+            project: project("demo-running-other", "docs-site", "/demo/docs-site"),
+            threads: []
+          }
+        ]
+      },
+      {
         id: "sidebar-thread-sort",
         label: "Sidebar thread sort",
         project: project("demo-sidebar-sort-project"),
@@ -96210,11 +96234,16 @@ function mountProjectsPane(root, store2, api2) {
     function renderProjectEntry(project2) {
       const entry = el("div", { class: "project-entry", "data-project-id": project2.id });
       const isExpanded = project2.id === expandedId;
+      const hasRunningThread = store2.getState().backgroundThreads.some(
+        ({ projectId, thread }) => projectId === project2.id && thread.status === "running"
+      );
+      const needsAttention = !project2.missing && !isExpanded && getSidebarThreads(store2, project2.id).some((t2) => isThreadAwaitingAttention(t2.id));
       const projectRow = el(
         "button",
         {
-          class: `project-row${isExpanded ? " active" : ""}${project2.missing ? " missing" : ""}`,
-          title: project2.missing ? `${project2.path} \u2014 folder missing` : project2.path
+          class: `project-row${isExpanded ? " active" : ""}${project2.missing ? " missing" : ""}${!isExpanded && hasRunningThread ? " is-running" : ""}`,
+          title: project2.missing ? `${project2.path} \u2014 folder missing` : project2.path,
+          "aria-label": !isExpanded && hasRunningThread ? `${projectDisplayName(project2)} \u2014 agent is working${needsAttention ? "; a thread needs your attention" : ""}` : void 0
         },
         el(
           "span",
@@ -96232,12 +96261,7 @@ function mountProjectsPane(root, store2, api2) {
       bindDropTarget(projectRow, entry, node2);
       if (project2.missing) {
         projectRow.append(warningIcon("ui-icon ui-icon-sm project-missing-icon"));
-      } else if (
-        // A collapsed project hides its thread rows, so surface any thread of its
-        // own that is waiting on the user right on the project row (expanded
-        // projects show the per-thread bells below instead).
-        !isExpanded && getSidebarThreads(store2, project2.id).some((t2) => isThreadAwaitingAttention(t2.id))
-      ) {
+      } else if (needsAttention) {
         projectRow.append(attentionBell("A thread in this project needs your attention"));
       }
       projectRow.addEventListener("click", () => {
