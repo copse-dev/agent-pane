@@ -50792,7 +50792,7 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
   const chevron = el(
     "span",
     { class: "model-picker-chevron", "aria-hidden": "true" },
-    chevronDownIcon("ui-icon ui-icon-sm")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   const triggerCost = el(
     "span",
@@ -89559,7 +89559,7 @@ function mountOpenInEditor(root, store2, api2) {
       "aria-haspopup": "menu",
       "aria-expanded": "false"
     },
-    chevronDownIcon("ui-icon ui-icon-sm")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   const menu = el("div", { class: "open-in-editor-menu", role: "menu", hidden: "" });
   const backdrop = el("div", { class: "open-in-editor-backdrop", hidden: "" });
@@ -90443,7 +90443,7 @@ function mountTitlebar(root, store2, api2) {
     "button",
     { type: "button", class: "workspace-name", "aria-haspopup": "menu" },
     workspaceLabel,
-    chevronDownIcon("ui-icon ui-icon-sm workspace-name-chevron")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron workspace-name-chevron")
   );
   workspaceName.addEventListener("click", (event) => {
     if (workspaceName.disabled || contextMenuClosedByPressOn(workspaceName)) return;
@@ -94556,7 +94556,7 @@ function mountProjectsPane(root, store2, api2) {
     "button",
     { type: "button", class: "projects-filter-btn", "aria-haspopup": "menu" },
     filterLabel,
-    chevronDownIcon("ui-icon ui-icon-sm")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   const sortDir = el("span", { class: "projects-sort-dir" }, "\u2193");
   const sortLabel = el("span", { class: "projects-filter-label" }, "Activity order");
@@ -94570,7 +94570,7 @@ function mountProjectsPane(root, store2, api2) {
     },
     sortDir,
     sortLabel,
-    chevronDownIcon("ui-icon ui-icon-sm")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   const filtersRow = el("div", { class: "projects-filters" }, projectFilterBtn, sortBtn);
   searchInput.addEventListener("input", () => {
@@ -149010,7 +149010,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   const chevron = el(
     "span",
     { class: "branch-picker-chevron", "aria-hidden": "true" },
-    chevronDownIcon("ui-icon ui-icon-sm")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   trigger.append(label, chevron);
   const reattachButton = el(
