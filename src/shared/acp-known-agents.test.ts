@@ -53,6 +53,13 @@ describe('KNOWN_ACP_AGENTS', () => {
       assert.doesNotMatch(claude.note ?? '', /claude-agent-acp|SDK|ACP|--sso/)
     }
   })
+  it('uses the adapter-bundled Codex CLI for setup and sign-in recovery', () => {
+    const codex = findAcpCatalogEntry('codex-acp')
+    assert.ok(codex)
+    assert.equal(codex.setup, 'codex-acp cli login')
+    assert.equal(acpReauthCommand(codex), 'codex-acp cli login')
+    assert.match(codex.note ?? '', /codex-acp cli login/)
+  })
   it('launches Gemini CLI with the canonical --acp flag, not the deprecated alias', () => {
     // `--acp` landed in @google/gemini-cli 0.33.0 and is what the ACP registry
     // lists for agent id `gemini`. `--experimental-acp` still works as a

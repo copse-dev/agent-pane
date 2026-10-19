@@ -7,7 +7,7 @@ import { setAttentionThreads } from '../controller/attention.ts'
 import { attentionThreadId } from '../controller/projects.ts'
 import { sideChatPromptOrigin } from '../controller/side-chat.ts'
 import { isAnyDialogOpen } from './dialog-shell.ts'
-import type { AskUserQuestion } from '@copse/agent/ask-user-format.ts'
+import { ASK_USER_ANSWER_MAX_LENGTH, type AskUserQuestion } from '@copse/agent/ask-user-format.ts'
 
 interface AskUserRequest {
   id: string
@@ -123,6 +123,7 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
       const input = el('textarea', {
         class: 'ask-user-input',
         rows: '2',
+        maxlength: String(ASK_USER_ANSWER_MAX_LENGTH),
         'data-question-index': String(i),
         'aria-labelledby': questionId,
       })
@@ -278,7 +279,13 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
       if (idx === -1) return
       queue.splice(idx, 1)
     }
-    void api.ask.respond(request.id, answers)
+    // Main drops an answer longer than this without telling anyone, and the agent
+    // would wait out its timeout. The fields stop there; a quick answer filled in
+    // by script does not, so clamp here too.
+    void api.ask.respond(
+      request.id,
+      answers.map((answer) => answer.slice(0, ASK_USER_ANSWER_MAX_LENGTH)),
+    )
     showNext()
     syncAttention()
   }

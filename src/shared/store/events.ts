@@ -107,8 +107,8 @@ export interface StoreEvents {
   // its findings was dismissed or restored.
   review_report_changed: [threadId: string, messageId: string | null]
   git_branch_changed: []
-  // A blank thread committed its checkout decision. Shells created before an
-  // isolated worktree existed use this to stop presenting the shared checkout
+  // A thread committed its checkout decision or restored its missing checkout.
+  // Shells created before an isolated worktree existed stop presenting the shared checkout
   // as though it were the thread's current execution root.
   thread_checkout_changed: [threadId: string]
   composer_draft_flush: []

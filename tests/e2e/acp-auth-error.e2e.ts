@@ -188,12 +188,12 @@ describe('ACP authentication error presentation', () => {
     const message = await $('[data-message-id="msg-assistant-codex-auth"] .message-text')
     const warning = await message.$('.markdown-alert-warning')
     await expect(warning.$('strong')).toHaveText('Codex sign-in expired')
-    await expect(message.$('ol code')).toHaveText('codex login')
+    await expect(message.$('ol code')).toHaveText('codex-acp cli login')
     const paragraphCodeText = await message.$$('p code').map((code) => code.getText())
     expect(paragraphCodeText).toContain('CODEX_API_KEY')
     expect(paragraphCodeText).toContain('OPENAI_API_KEY')
     const hints = await hintPlacement('msg-assistant-codex-auth')
-    expect(hints.inSteps).toEqual(['codex login'])
+    expect(hints.inSteps).toEqual(['codex-acp cli login'])
     expect(hints.inNote).toEqual(['CODEX_API_KEY', 'OPENAI_API_KEY'])
     await expect(message.$('pre code')).toHaveText(
       expect.stringContaining('workspace routing discovery unauthorized (401)'),

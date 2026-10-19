@@ -43,6 +43,14 @@ async function harness(): Promise<{
     pretendToBeVisual: true,
   })
   const { window } = dom
+  // JSDOM has no viewport intersection API; these fixtures contain no images.
+  Object.defineProperty(window, 'IntersectionObserver', {
+    value: class {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    },
+  })
   let poll = (): void => {}
   const requests: Array<(data: unknown) => void> = []
   Object.defineProperty(window, 'matchMedia', {

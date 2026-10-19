@@ -4,6 +4,7 @@ import {
   getThreadExecutionContext,
   inspectThreadCheckoutRoot,
   reattachThreadCheckout,
+  restoreThreadCheckout,
   prepareThreadExecutionContext,
   requireThreadExecutionContext,
   resolveThreadExecutionContext,
@@ -589,5 +590,19 @@ describe('reattachThreadCheckout', () => {
       reattachThreadCheckout('project-1', 'thread-1', () => true),
       /agent is still working in this checkout/,
     )
+  })
+})
+
+describe('restoreThreadCheckout', () => {
+  it('refuses while a dispatcher turn or background task can still touch the checkout', async () => {
+    const owners: string[][] = []
+    await assert.rejects(
+      restoreThreadCheckout('project-1', 'thread-1', (projectId, threadId) => {
+        owners.push([projectId, threadId])
+        return true
+      }),
+      /agent is still working in this checkout/,
+    )
+    assert.deepEqual(owners, [['project-1', 'thread-1']])
   })
 })

@@ -48,6 +48,12 @@ export const askUserParamsSchema = z.object({
     .describe('One or more clarifying questions to ask the user before continuing.'),
 })
 
+/**
+ * The longest answer the window may return for one question. The `ask:respond`
+ * handler drops a longer one, so the answer fields stop here too.
+ */
+export const ASK_USER_ANSWER_MAX_LENGTH = 8192
+
 export type AskUserQuestion = z.infer<typeof askUserQuestionSchema>
 export type AskUserParams = z.infer<typeof askUserParamsSchema>
 
