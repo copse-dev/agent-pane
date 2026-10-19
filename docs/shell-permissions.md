@@ -43,7 +43,10 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 
 An agent's first read of another thread asks **Read your other threads?** Once approved,
 that thread can read every other conversation in the local chat store without another
-conversation-access prompt. Its own transcript remains readable. File read guards,
+conversation-access prompt. Its own transcript remains readable, and so is the one parent thread a
+thread was explicitly started from with **Create follow-up thread** (recorded at creation as
+`followUpOf`; read-only, direct parent only, never inherited by forks or by a follow-up of the
+follow-up). File read guards,
 the shell classifier and the sandbox read mount use the same thread-scoped permission;
 the chat store is never writable through these grants.
 

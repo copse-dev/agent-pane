@@ -262,9 +262,9 @@ describe('footer overflow menu bounds', () => {
       { timeoutMsg: 'expected the narrow composer footer to enter compact layout' },
     )
     // Guarded YOLO + Run unattended in a container + Copy thread ID + both
-    // exports + Debug trace + Share trace. The roster is pinned by label in
+    // exports + Debug trace + Create follow-up thread + Share trace. The roster is pinned by label in
     // input-bar.test.ts; keep the two in step when it grows.
-    await expect($$('.footer-overflow-item')).toBeElementsArrayOfSize(7)
+    await expect($$('.footer-overflow-item')).toBeElementsArrayOfSize(8)
 
     await browser.waitUntil(
       async () => {
