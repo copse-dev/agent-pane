@@ -5,6 +5,7 @@ import { outlineIcon } from '../dom/outline-icon.ts'
 import { closeIcon } from '../dom/icons.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
+import { setTooltip } from '../dom/tooltip.ts'
 import { formatMarkdownQuote } from '../dom/markdown-quote.ts'
 import { attachImageExpand } from '../attachments/image-expand.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
@@ -183,7 +184,11 @@ export function mountInputBar(
   const chips = el('div', { class: 'attachment-chips' })
   const composer = mountComposerEditor()
   composer.setPlaceholder('Message…')
-  const submitBtn = el('button', { class: 'submit-btn', type: 'button' }, 'Send')
+  const submitBtn = el(
+    'button',
+    { class: 'submit-btn', type: 'button', 'data-tooltip-placement': 'top' },
+    'Send',
+  )
   const stopBtn = el(
     'button',
     {
@@ -1430,12 +1435,19 @@ export function mountInputBar(
   function updateState(): void {
     const running = isRunning()
     const id = getActiveThreadId()
+    const preparingCheckout = id !== null && checkoutPreparations.has(id)
     submitBtn.disabled =
-      imageDescriptionInProgress || (id !== null && isThreadSubmitting(store, id))
+      imageDescriptionInProgress ||
+      preparingCheckout ||
+      (id !== null && isThreadSubmitting(store, id))
     stopBtn.hidden = !running
     updateTargetPicker()
     submitBtn.textContent = running ? 'Queue' : 'Send'
-    submitBtn.setAttribute('aria-label', running ? 'Queue message' : 'Send message')
+    submitBtn.setAttribute(
+      'aria-label',
+      preparingCheckout ? 'Preparing checkout' : running ? 'Queue message' : 'Send message',
+    )
+    setTooltip(submitBtn, preparingCheckout ? 'Preparing the checkout for this thread…' : null)
     // Not styling — the demo autoplay driver and the e2e specs read this class
     // off `.submit-btn` to tell a run in flight from a finished one.
     submitBtn.classList.toggle('with-stop', running)
@@ -2235,6 +2247,7 @@ export function mountInputBar(
       checkoutErrors.delete(id)
       checkoutPreparations.add(id)
       updateCheckoutControl()
+      updateState()
       try {
         const branchDecision = baseBranchResult ? (await baseBranchResult)[0] : undefined
         if (branchDecision?.status === 'rejected') throw branchDecision.reason
@@ -2261,6 +2274,7 @@ export function mountInputBar(
       } finally {
         checkoutPreparations.delete(id)
         updateCheckoutControl()
+        updateState()
       }
     }
 
