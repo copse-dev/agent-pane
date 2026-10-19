@@ -122,7 +122,7 @@ it('reports npm bootstrap failure separately from a ready pnpm manager', async (
     (component) => component.name === 'Socket Firewall bootstrap',
   )
   assert.equal(bootstrap?.ready, false)
-  assert.match(bootstrap?.detail ?? '', /npm is required.*unavailable in preparation confinement/)
+  assert.match(bootstrap.detail, /npm is required.*unavailable in preparation confinement/)
 })
 
 it('does not require npm bootstrap when managed Socket Firewall is usable', async () => {

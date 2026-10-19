@@ -413,13 +413,14 @@ async function inspectPlan(
     if ((await probe(firewall, ['--version'], env)) === null) {
       probeFailures.length = 0
       const npm = await probe('npm', ['--version'], env)
+      const npmFailure = probeFailures.at(-1)
       components.push({
         name: 'Socket Firewall bootstrap',
         ready: npm !== null && valid(npm) !== null,
         detail:
           npm !== null && valid(npm) !== null
             ? `npm ${npm} available for managed Socket Firewall bootstrap`
-            : `npm is required to bootstrap Socket Firewall but is unavailable in preparation confinement${probeFailures.at(-1) ? `: ${probeFailures.at(-1)}` : '.'}`,
+            : `npm is required to bootstrap Socket Firewall but is unavailable in preparation confinement${npmFailure ? `: ${npmFailure}` : '.'}`,
       })
     }
     const invocation = packageManagerCommand(plan)
