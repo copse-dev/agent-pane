@@ -5081,6 +5081,10 @@
       "sha256": "64b4a725eb85ddbe2b700f4b1deb8c876d275be9b86d1c05b96c91bdab1160c0",
       "bytes": 353501
     },
+    "user-prompt-previews-boundary.png": {
+      "sha256": "8e340b552ad32dd799952df29a6b162e06f96b08c8c6de67ea62d805d4c8267f",
+      "bytes": 487863
+    },
     "user-prompt-previews-full.png": {
       "sha256": "9747f3a6fcc60ea7012e3679aa5b85b308f405a4f3225dfde803f13dbe30241f",
       "bytes": 368203
