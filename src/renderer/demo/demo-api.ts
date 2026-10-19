@@ -17,6 +17,7 @@ import {
 } from '@copse/agent/plugins/advisor-strategy-plugin.ts'
 import { workingBriefFromUserContent } from '@copse/agent/working-brief.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import type { GuardedYoloPhase } from '@shared/types/guarded-yolo.ts'
 import type { DemoScenario } from './scenarios.ts'
 import { playTrace, type TracePlayerOptions } from './trace-player.ts'
 import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
@@ -421,6 +422,31 @@ function unsupported(): Promise<never> {
 
 export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = {}): ApiClient {
   const settings = new Map(Object.entries(scenario.settings))
+  const guardedYoloPhases = new Map<string, GuardedYoloPhase>(
+    scenario.guardedYoloPhase && scenario.threads[0]
+      ? [[scenario.threads[0].id, scenario.guardedYoloPhase]]
+      : [],
+  )
+  const guardedYoloListeners = new Set<
+    Parameters<ApiClient['security']['onGuardedYoloChanged']>[0]
+  >()
+  const demoGuardedYoloState = (
+    threadId: string,
+  ): Awaited<ReturnType<ApiClient['security']['getGuardedYolo']>> => ({
+    threadId,
+    phase: guardedYoloPhases.get(threadId) ?? 'off',
+    containment: 'unsandboxed',
+    expiresAt: null,
+  })
+  const updateGuardedYolo = (
+    threadId: string,
+    phase: GuardedYoloPhase,
+  ): ReturnType<ApiClient['security']['getGuardedYolo']> => {
+    guardedYoloPhases.set(threadId, phase)
+    const state = demoGuardedYoloState(threadId)
+    for (const listener of guardedYoloListeners) listener(state)
+    return resolved(state)
+  }
   let toolPermissionCatalog = structuredClone(scenario.toolPermissions ?? DEMO_TOOL_PERMISSIONS)
   let mcpStatuses: readonly McpServerStatus[] = scenario.mcpServers ?? DEMO_MCP_STATUSES
   const pendingMcpSignIns = new Map<string, () => void>()
@@ -624,13 +650,23 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onPluginTabRequest: subscribe,
     },
     security: {
-      getGuardedYolo: (threadId) =>
-        resolved({ threadId, phase: 'off', containment: 'unsandboxed', expiresAt: null }),
-      enableGuardedYolo: (threadId) =>
-        resolved({ threadId, phase: 'off', containment: 'unsandboxed', expiresAt: null }),
-      disableGuardedYolo: (threadId) =>
-        resolved({ threadId, phase: 'off', containment: 'unsandboxed', expiresAt: null }),
-      onGuardedYoloChanged: subscribe,
+      getGuardedYolo: (threadId) => resolved(demoGuardedYoloState(threadId)),
+      getContextPermissions: () =>
+        resolved(
+          scenario.contextPermissions ?? {
+            outsideReadPaths: [],
+            browserOrigins: [],
+            portBindingAllowed: false,
+          },
+        ),
+      enableGuardedYolo: (threadId) => updateGuardedYolo(threadId, 'armed'),
+      disableGuardedYolo: (threadId) => updateGuardedYolo(threadId, 'off'),
+      onGuardedYoloChanged: (listener) => {
+        guardedYoloListeners.add(listener)
+        return () => {
+          guardedYoloListeners.delete(listener)
+        }
+      },
     },
     container: {
       runThread: (request) =>
@@ -1484,7 +1520,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       rollback: unsupported,
     },
     decisions: {
-      list: emptyArray,
+      list: () => resolved(scenario.decisions ?? []),
+      listThread: (_projectId, threadId) =>
+        resolved((scenario.decisions ?? []).filter((decision) => decision.threadId === threadId)),
       export: () => resolved({ path: '', count: 0 }),
     },
     automations: {

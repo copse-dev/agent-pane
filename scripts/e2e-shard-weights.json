@@ -1,5 +1,5 @@
 {
-  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-08; six recovery specs measured from successful CI run 38434453035, 2026-10-13; send-now-preserves-shell measured from two PASSED attempts in CI38619810736/job116049833854, 2026-10-14; agent-execution-mode measured from CI38619822117/job116050261558, 2026-10-14; 20 missing specs measured from successful CI run 38619837838, 2026-10-14; pnpm-exec-format-check provisional at the median (8s) until its first CI run is measured, 2026-10-16; thread-submodule-worktree provisional at the median (8s) until its first CI run is measured, 2026-10-17; classifier-tool-approval measured from three PASSED attempts in CI38809174942/job116682878956, CI38809160545/job116682662943 and CI38805203304/job116669177660, 2026-10-15",
+  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-08; six recovery specs measured from successful CI run 38434453035, 2026-10-13; send-now-preserves-shell measured from two PASSED attempts in CI38619810736/job116049833854, 2026-10-14; agent-execution-mode measured from CI38619822117/job116050261558, 2026-10-14; 20 missing specs measured from successful CI run 38619837838, 2026-10-14; pnpm-exec-format-check provisional at the median (8s) until its first CI run is measured, 2026-10-16; thread-submodule-worktree provisional at the median (8s) until its first CI run is measured, 2026-10-17; classifier-tool-approval measured from three PASSED attempts in CI38809174942/job116682878956, CI38809160545/job116682662943 and CI38805203304/job116669177660, 2026-10-15; plugin-client-approvals provisional at the median (8s) until its first CI run is measured, 2026-10-19",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 14.9,
     "tests/e2e/acp-auth-error.e2e.ts": 20.2,
@@ -191,6 +191,7 @@
     "tests/e2e/paste-attachment.e2e.ts": 8.6,
     "tests/e2e/perplexity-agent-provider.e2e.ts": 7,
     "tests/e2e/plain-language-copy.e2e.ts": 13,
+    "tests/e2e/plugin-client-approvals.e2e.ts": 8,
     "tests/e2e/plugin-hook-loading.e2e.ts": 1.9,
     "tests/e2e/pnpm-exec-format-check.e2e.ts": 8,
     "tests/e2e/portrait-panel-controls.e2e.ts": 13.3,

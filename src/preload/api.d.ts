@@ -283,6 +283,11 @@ export interface ApiClient {
   }
   security: {
     getGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
+    getContextPermissions: (
+      projectId: string,
+      threadId: string,
+      projectRoot: string,
+    ) => Promise<import('@shared/types/context-permissions.ts').ContextPermissionSnapshot>
     enableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
     disableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
     onGuardedYoloChanged: (handler: (state: GuardedYoloState) => void) => () => void
@@ -1070,6 +1075,10 @@ export interface ApiClient {
   }
   decisions: {
     list: (projectId?: string) => Promise<import('@shared/threads/decision-log.ts').DecisionEvent[]>
+    listThread: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/threads/decision-log.ts').DecisionEvent[]>
     export: (projectId?: string) => Promise<{ path: string; count: number }>
   }
   index: {

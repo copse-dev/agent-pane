@@ -9,6 +9,10 @@ import { registerProfileVaultIpc } from './ipc/profile-vault.ts'
 import { getSshConnectionManager } from './services/ssh-workspace/connection-manager.ts'
 import { clearSshCredentialCache } from './services/ssh-workspace/ssh-credential-cache.ts'
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
+import {
+  syncPluginClientApi,
+  stopPluginClientApi,
+} from './services/plugins/plugin-client-service.ts'
 import { initThreadPrompts } from './services/thread-prompts.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
@@ -674,6 +678,7 @@ app
     setExplainerPreviewCapture(captureExplainerFrames)
     initApproval(win, ipcMain, alertUser)
     initAskUser(win, ipcMain, alertUser)
+    void syncPluginClientApi()
     initMobileChat(win, ipcMain)
     initThreadPrompts(win, ipcMain)
     // Lets main-process code hand the user a running command in the Shells pane
@@ -1331,6 +1336,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   getAutomationService().stop()
   getBranchCiAutomationService().stop()
   await stopMobileCompanion()
+  await stopPluginClientApi()
   disposeDarkFactorySensor?.()
   disposeDarkFactorySensor = undefined
   disposeTaskSupervisorEvents?.()
