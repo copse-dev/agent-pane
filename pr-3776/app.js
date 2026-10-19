@@ -54937,7 +54937,17 @@ function createCustomProvidersSection(api2, opts = {}) {
     const mine = refreshGeneration;
     const signal = activeSignal;
     if (signal?.aborted) return;
-    const results = await detectLocalServers(api2);
+    let lmStudioUrl = "";
+    try {
+      const saved = await api2.settings.get("localServerUrl");
+      lmStudioUrl = typeof saved === "string" ? saved.trim() : "";
+    } catch {
+    }
+    if (mine !== refreshGeneration || signal?.aborted) return;
+    const targets = localServerTargets().map(
+      (target) => target.id === "lmstudio" && lmStudioUrl ? { ...target, baseUrl: lmStudioUrl } : target
+    );
+    const results = await detectLocalServers(api2, targets);
     if (mine !== refreshGeneration || signal?.aborted) return;
     reachable.clear();
     for (const r2 of results) if (r2.reachable) reachable.add(r2.id);
