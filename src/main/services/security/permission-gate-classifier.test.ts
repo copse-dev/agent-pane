@@ -39,17 +39,67 @@ describe('ask_classifier permission', () => {
     assert.deepEqual(prompts, [])
   })
 
-  it('asks before text goes to a classifier that leaves the machine, and shows what is sent', async () => {
+  it('uses a saved hosted classifier without a tool prompt by default', async () => {
     await configure('typesafe')
     const args = { ...ARGS, classifier: 'typesafe' }
     assert.equal(await ensureToolPermitted({ toolName: 'ask_classifier', args }), true)
-    assert.equal(prompts.length, 1)
-    assert.match(prompts[0]?.body ?? '', /private text/)
-    assert.match(prompts[0]?.subject ?? '', /ask_classifier/)
+    assert.deepEqual(prompts, [])
+  })
+
+  it('asks for each question when Always ask is selected', async () => {
+    await configure('typesafe')
+    await setSetting('toolPermissionOverrides', {
+      [copseToolPermissionId('ask_classifier')]: 'ask',
+    })
+    const args = { ...ARGS, classifier: 'typesafe' }
+    assert.equal(await ensureToolPermitted({ toolName: 'ask_classifier', args }), true)
+    assert.equal(
+      await ensureToolPermitted({
+        toolName: 'ask_classifier',
+        args: { ...args, text: 'different private text', question: 'Another question?' },
+      }),
+      true,
+    )
+    assert.equal(prompts.length, 2)
+    const prompt = prompts[0]
+    assert.ok(prompt)
+    assert.equal(prompt.title, 'Allow this classifier question?')
+    assert.equal(prompt.collapseDetails, true)
+    assert.equal(prompt.approveLabel, 'Allow once')
+    assert.match(prompt.body, /private text/)
+    assert.equal(prompt.allowRemember, undefined)
+  })
+
+  it('does not replace a block set while approval is pending', async () => {
+    await configure('typesafe')
+    await setSetting('toolPermissionOverrides', {
+      [copseToolPermissionId('ask_classifier')]: 'ask',
+    })
+    let answer: ((value: { approved: boolean; remember: boolean }) => void) | undefined
+    setApprovalHandler(
+      async () =>
+        await new Promise((resolve) => {
+          answer = resolve
+        }),
+    )
+    const pending = ensureToolPermitted({
+      toolName: 'ask_classifier',
+      args: { ...ARGS, classifier: 'typesafe' },
+    })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    await setSetting('toolPermissionOverrides', {
+      [copseToolPermissionId('ask_classifier')]: 'block',
+    })
+    answer?.({ approved: true, remember: true })
+    assert.equal(await pending, false)
+    assert.deepEqual(prompts, [])
   })
 
   it('does not run when the person declines the prompt', async () => {
     await configure('typesafe')
+    await setSetting('toolPermissionOverrides', {
+      [copseToolPermissionId('ask_classifier')]: 'ask',
+    })
     setApprovalHandler(async () => ({ approved: false, remember: false }))
     const args = { ...ARGS, classifier: 'typesafe' }
     assert.equal(await ensureToolPermitted({ toolName: 'ask_classifier', args }), false)
@@ -73,6 +123,9 @@ describe('ask_classifier permission', () => {
     await setSetting('toolPermissionOverrides', { [id]: 'ask' })
     assert.equal(await ensureToolPermitted({ toolName: 'ask_classifier', args: ARGS }), true)
     assert.equal(prompts.length, 1)
+    const prompt = prompts[0]
+    assert.ok(prompt)
+    assert.equal(prompt.approveLabel, 'Allow once')
 
     prompts = []
     await setSetting('toolPermissionOverrides', { [id]: 'allow' })
@@ -92,6 +145,9 @@ describe('ask_classifier permission', () => {
 
   it('shows structured state before sending it to a remote classifier', async () => {
     await configure('typesafe')
+    await setSetting('toolPermissionOverrides', {
+      [copseToolPermissionId('ask_classifier')]: 'ask',
+    })
     const args = {
       classifier: 'typesafe',
       state: { task: 'private task' },

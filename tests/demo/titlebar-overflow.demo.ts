@@ -1,5 +1,5 @@
 import { $, browser, expect } from '@wdio/globals'
-import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
+import { saveAppScreenshot, waitForSettledLayout } from '../e2e/helpers/screenshot.ts'
 
 describe('titlebar panel overflow', () => {
   for (const width of [1200, 800, 600]) {
@@ -21,6 +21,12 @@ describe('titlebar panel overflow', () => {
           ssh.textContent = 'developer@a-very-long-remote-development-host.example.com'
         }
       })
+      // Font metrics determine which actions move into the overflow menu.
+      // Settle them before reading the plan, as the screenshot helper does later.
+      await browser.execute(async () => {
+        await document.fonts.ready
+      })
+      await waitForSettledLayout('#titlebar .titlebar-panel-controls')
       await browser
         .waitUntil(
           async () =>

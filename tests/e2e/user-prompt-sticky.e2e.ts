@@ -194,6 +194,75 @@ describe('latest user prompt anchor', () => {
     await browser.waitUntil(async () => (await firstImage.getSize('width')) > 100)
   })
 
+  it('keeps a preview compact when its own shrink clamps the scroll position', async () => {
+    const result = await browser.execute(async () => {
+      const list = document.querySelector<HTMLElement>('.messages-list')
+      const prompt = document.querySelector<HTMLElement>(
+        '[data-message-id="msg-user-sticky-latest"]',
+      )
+      const previous = prompt?.previousElementSibling
+      const image = prompt?.querySelector<HTMLImageElement>('.message-image')
+      if (!list || !prompt || !previous || !image) throw new Error('sticky fixture is missing')
+
+      list.scrollTop = 0
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => {
+          resolve()
+        }),
+      )
+      await Promise.all(
+        prompt
+          .getAnimations({ subtree: true })
+          .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+          .map((animation) => animation.finished.catch(() => {})),
+      )
+      const listStyle = getComputedStyle(list)
+      const promptStyle = getComputedStyle(prompt)
+      const stickyTop =
+        list.getBoundingClientRect().top +
+        Number.parseFloat(listStyle.paddingTop) +
+        Number.parseFloat(promptStyle.top)
+      const naturalTop =
+        previous.getBoundingClientRect().bottom + Number.parseFloat(listStyle.rowGap)
+      const thresholdScrollTop = naturalTop - stickyTop + list.scrollTop
+      // Resize the conversation viewport so its bottom is just past the sticky
+      // threshold. Compacting the image then shortens scrollHeight enough to
+      // clamp scrollTop back across that threshold.
+      const height = list.scrollHeight - thresholdScrollTop - 8
+      if (height <= 0) throw new Error('sticky fixture cannot reach the boundary')
+      list.style.flex = `0 0 ${String(height)}px`
+      list.style.height = `${String(height)}px`
+      const changes: boolean[] = []
+      const observer = new MutationObserver(() => {
+        changes.push(prompt.classList.contains('is-preview-compact'))
+      })
+      observer.observe(prompt, { attributes: true, attributeFilter: ['class'] })
+      list.scrollTop = list.scrollHeight
+      await new Promise((resolve) => setTimeout(resolve, 900))
+      observer.disconnect()
+      const result = {
+        changes,
+        compact: prompt.classList.contains('is-preview-compact'),
+        imageWidth: image.getBoundingClientRect().width,
+        atBottom: list.scrollHeight - list.clientHeight - list.scrollTop <= 1,
+      }
+      return result
+    })
+    try {
+      expect(result.changes.length).toBeLessThanOrEqual(1)
+      expect(result.compact).toBe(true)
+      expect(result.imageWidth).toBeLessThanOrEqual(90)
+      expect(result.atBottom).toBe(true)
+      await saveAppScreenshot('user-prompt-previews-boundary.png')
+    } finally {
+      await browser.execute(() => {
+        const list = document.querySelector<HTMLElement>('.messages-list')
+        list?.style.removeProperty('flex')
+        list?.style.removeProperty('height')
+      })
+    }
+  })
+
   it('returns the latest prompt to the transcript when the chat pane is narrow', async () => {
     await browser.execute(() => {
       const app = document.getElementById('app')

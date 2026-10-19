@@ -10,7 +10,9 @@ import {
   SHELL_INTERPRETERS,
   commandName,
   inlineLeadingLiteralAssignments,
+  isInertReadArgv,
   isStructurallyReadOnlyShellCommand,
+  parsedShellSegments,
   shellSegmentsQuoteAware,
   unwrapWrappers,
 } from './shell-argv.ts'
@@ -78,6 +80,16 @@ export function configureShellScopeEnvironment(next: ShellScopeEnvironment = {})
  * keying off `argv[0]`. The token layer can only ever add reasons / escalate; it
  * never removes a reason or downgrades a verdict, so it cannot make the gate more
  * permissive than the regex path alone.
+ *
+ * One narrow exception relaxes the regex pass itself: a hard matcher marked
+ * `commandWord` (it names a program — `ssh`, `curl`, `pnpm install`) whose word
+ * appears only as text in inert reads (`grep -rn ssh src`, `sed -n 1p
+ * services/exec/a.ts`) or as a project script's argument (`pnpm test -- ssh`)
+ * reports an ambiguous reason instead. That decision uses
+ * only the shell parser's own reading and fails closed to the hard verdict
+ * whenever the parser cannot give one (see `textOnlyMentionTest`). Ambiguous
+ * still prompts without an OS sandbox and still blocks deterministic
+ * auto-approval, which requires `sandbox`.
  */
 
 // A command-invocation position: start of the string, or immediately after a
@@ -113,25 +125,55 @@ const HOST_OPENERS: ReadonlyMap<string, ScopeReason> = new Map([
 // boundary, these auto-run *inside* the sandbox and rely on the failure→retry
 // escalation if the OS actually blocks them, instead of prompting upfront on a
 // guess. Without an OS sandbox they still prompt, like any external command.
-const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: boolean }> = [
-  { re: /\bcurl\b|\bwget\b/i, reason: 'network download (curl/wget)' },
+// Global options a package manager accepts before its subcommand, each with at
+// most one value word: `pnpm -s exec`, `npm --prefix web install`, `pnpm --filter
+// app add`. Without this, `pnpm -s install` scored `sandbox` and `pnpm -s exec`
+// read as the shell's `exec` builtin. Spaces and tabs only, never a newline: an
+// option list must not run on into the next command line.
+const PKG_GLOBAL_OPTIONS = String.raw`(?:[ \t]+-[^\s;&|]+(?:[ \t]+[^\s;&|-][^\s;&|]*)?)*`
+
+/**
+ * `commandWord: true` marks a hard matcher that names a *program* (`ssh`,
+ * `curl`, `pnpm install`, `exec`). Such a word is only a signal when something
+ * runs it. When every parsed segment that contains it is an inert read — the
+ * word is a `grep` pattern, part of a file name `sed -n` prints, or `echo`ed —
+ * or an argument to a project script (`pnpm test -- acp-ssh-transport`),
+ * `collectExternalReasons` reports {@link REASON_NAMED_AS_TEXT} (ambiguous)
+ * instead. Matchers for destructive or privileged commands are deliberately not
+ * marked: they stay hard wherever they appear.
+ */
+const EXTERNAL_PATTERNS: Array<{
+  re: RegExp
+  reason: ScopeReason
+  ambiguous?: boolean
+  commandWord?: boolean
+}> = [
+  { re: /\bcurl\b|\bwget\b/i, reason: 'network download (curl/wget)', commandWord: true },
   // The standalone `fetch` downloader is anchored to a command position so it fires
   // on `fetch <url>` but NOT on `git fetch` (where `fetch` is git's subcommand — a
   // network *read* handled by the ambiguous git matcher below). (#500)
-  { re: new RegExp(`${CMD_POS}fetch\\b`, 'i'), reason: 'network download (fetch)' },
+  {
+    re: new RegExp(`${CMD_POS}fetch\\b`, 'i'),
+    reason: 'network download (fetch)',
+    commandWord: true,
+  },
   {
     // `dlx` is intentionally absent: it's an ephemeral runner, handled by the
     // ambiguous ephemeral-runner matcher below so it gets the same in-sandbox
     // treatment as npx/bunx rather than a hard prompt. (#500)
-    re: /\b(npm|yarn|pnpm|bun)\s+(i|in|install|ci|update|upgrade|publish|add|create)\b/i,
+    re: new RegExp(
+      String.raw`\b(?:npm|yarn|pnpm|bun)${PKG_GLOBAL_OPTIONS}[ \t]+(?:i|in|install|ci|update|upgrade|publish|add|create)\b`,
+      'i',
+    ),
     reason: 'package install/update (may fetch + run code from network)',
+    commandWord: true,
   },
   {
     // `exec` runs a project command, but npm may fetch a missing binary, so let
     // the OS sandbox contain it and offer escalation only after a verified block.
     // A local `pnpm exec` in command position is rewritten to `pnpm run` before
     // these patterns run (see collectExternalReasons), so it is contained outright.
-    re: /\b(?:npm|yarn|pnpm|bun)\s+exec\b/i,
+    re: new RegExp(String.raw`\b(?:npm|yarn|pnpm|bun)${PKG_GLOBAL_OPTIONS}[ \t]+exec\b`, 'i'),
     reason: 'package command runner (exec may install missing dependencies)',
     ambiguous: true,
   },
@@ -149,21 +191,47 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: bo
     reason: 'ephemeral package runner (npx/dlx/bunx/uvx/pipx — may fetch & run unpinned code)',
     ambiguous: true,
   },
-  { re: /\bcorepack\b/i, reason: 'corepack (downloads package-manager binaries)' },
+  {
+    re: /\bcorepack\b/i,
+    reason: 'corepack (downloads package-manager binaries)',
+    commandWord: true,
+  },
   {
     re: /\bpip3?\s+install\b|\buv\s+pip\s+install\b|\buv\s+add\b/i,
     reason: 'pip install (may fetch from network)',
+    commandWord: true,
   },
-  { re: /\bcargo\s+install\b/i, reason: 'cargo install (may fetch from network)' },
-  { re: /\bgo\s+(install|get)\b/i, reason: 'go install/get (may fetch + run code from network)' },
-  { re: /\bgem\s+install\b/i, reason: 'gem install (may fetch from network)' },
-  { re: /\bbrew\s+(install|update|upgrade)\b/i, reason: 'Homebrew install/update' },
+  {
+    re: /\bcargo\s+install\b/i,
+    reason: 'cargo install (may fetch from network)',
+    commandWord: true,
+  },
+  {
+    re: /\bgo\s+(install|get)\b/i,
+    reason: 'go install/get (may fetch + run code from network)',
+    commandWord: true,
+  },
+  { re: /\bgem\s+install\b/i, reason: 'gem install (may fetch from network)', commandWord: true },
+  {
+    re: /\bbrew\s+(install|update|upgrade)\b/i,
+    reason: 'Homebrew install/update',
+    commandWord: true,
+  },
   {
     re: /\b(apt|apt-get|dnf|yum|pacman)\s+(install|update|upgrade)\b/i,
     reason: 'system package manager',
+    commandWord: true,
   },
-  { re: /\bssh\b|\bscp\b|\brsync\b/i, reason: 'remote shell/copy (ssh/scp/rsync)' },
-  { re: /\bsocat\b|\blftp\b|\bftp\b/i, reason: 'network utility (socat/ftp/lftp)' },
+  {
+    re: /\bssh\b|\bscp\b|\brsync\b/i,
+    reason: 'remote shell/copy (ssh/scp/rsync)',
+    commandWord: true,
+  },
+  {
+    re: /\bsocat\b|\blftp\b|\bftp\b/i,
+    reason: 'network utility (socat/ftp/lftp)',
+    commandWord: true,
+  },
   // Bash's magic `/dev/tcp/<host>/<port>` and `/dev/udp/...` pseudo-devices open a
   // raw socket via a redirect (`cat </dev/tcp/evil/443`, `exec 3<>/dev/tcp/...`),
   // with no network-tool name for the matchers above to catch. The outside-path
@@ -177,6 +245,7 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: bo
   {
     re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*(push|pull|clone|remote|archive)\b/i,
     reason: 'git network operation',
+    commandWord: true,
   },
   // `git submodule` is mixed: `update`/`add` fetch from the network and check out +
   // run hooks (a clone-style RCE surface), and `foreach` runs an arbitrary command,
@@ -188,6 +257,7 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: bo
   {
     re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*submodule\s+(?!status\b|summary\b)\S/i,
     reason: 'git submodule network/checkout operation',
+    commandWord: true,
   },
   // `git fetch` only reads refs/objects from the remote — it doesn't modify the
   // remote or run the checkout/merge hooks that `clone`/`submodule update`/`pull` can.
@@ -199,12 +269,21 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: bo
     reason: 'git network read (fetch)',
     ambiguous: true,
   },
-  { re: /\bdocker\s+(pull|push|run)\b/i, reason: 'docker network/container operation' },
+  {
+    re: /\bdocker\s+(pull|push|run)\b/i,
+    reason: 'docker network/container operation',
+    commandWord: true,
+  },
   {
     re: /\bcontainer\s+(?:run|image\s+(?:pull|push))\b/i,
     reason: 'apple container network/container operation',
+    commandWord: true,
   },
-  { re: /\bkubectl\b|\bhelm\s+install\b/i, reason: 'kubernetes remote operation' },
+  {
+    re: /\bkubectl\b|\bhelm\s+install\b/i,
+    reason: 'kubernetes remote operation',
+    commandWord: true,
+  },
   {
     re: /\b(aws|gcloud|az)\s+/i,
     reason: 'cloud CLI (may reach external services)',
@@ -231,7 +310,7 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: bo
     re: new RegExp(`${CMD_POS}open\\b`, 'i'),
     reason: REASON_OPEN,
   },
-  { re: /\bxdg-open\b/i, reason: REASON_XDG_OPEN },
+  { re: /\bxdg-open\b/i, reason: REASON_XDG_OPEN, commandWord: true },
   {
     // Direct execution of a workspace-relative file starting with `./` or `../`.
     // Relative paths with a slash but no leading dot (`bin/tool`) are caught by the
@@ -250,6 +329,7 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: bo
     // opaque to this classifier, so it must always prompt.
     re: /\b(?:python3?|node|deno|bun|ruby|perl)\b[^\n|;&]*\s(?:-c|-e|--eval)\b/i,
     reason: 'inline script (interpreter -c/-e/--eval)',
+    commandWord: true,
   },
   {
     // An interpreter executing a local script file (`node ./x.js`, `bash deploy.sh`).
@@ -273,13 +353,17 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: bo
     reason: 'heredoc script fed to an interpreter',
     ambiguous: true,
   },
-  { re: /\beval\b|\bbase64\b/i, reason: 'dynamic execution / encoding' },
+  { re: /\beval\b|\bbase64\b/i, reason: 'dynamic execution / encoding', commandWord: true },
   {
     // Keep the existing hard-external treatment of other exec forms, including
-    // `find -exec` and container exec. Package-manager subcommands alone are
-    // tried inside the OS sandbox.
-    re: /(?<!\b(?:npm|yarn|pnpm|bun)\s+)\bexec\b/i,
+    // `find -exec` and container exec. Package-manager subcommands alone, global
+    // options included (`pnpm -s exec`), are tried inside the OS sandbox.
+    re: new RegExp(
+      String.raw`(?<!\b(?:npm|yarn|pnpm|bun)${PKG_GLOBAL_OPTIONS}[ \t]+)\bexec\b`,
+      'i',
+    ),
     reason: 'dynamic execution / encoding',
+    commandWord: true,
   },
   { re: /\bpkill\b|\bkillall\b|\bkill\s+-9\b/i, reason: 'process kill (system-wide)' },
   { re: /\bsudo\b|\bsu\s+-/i, reason: 'privilege escalation' },
@@ -545,6 +629,93 @@ function tokenBasedExternalReasons(command: string): {
   return { reasons, hasHard }
 }
 
+/**
+ * A `commandWord` matcher fired, but only on text: every parsed segment holding
+ * the word is an inert read. Ambiguous, so a sandboxed platform tries it
+ * contained and an unsandboxed one still asks.
+ */
+const REASON_NAMED_AS_TEXT: ScopeReason =
+  'names a network or code-running command only as an argument, never as the command run'
+
+// `pnpm exec` runs an installed command, like `pnpm run`; it neither installs
+// packages nor invokes the shell's `exec` builtin. Global options may sit between
+// the two (`pnpm -s exec tsc`). Rewrite only this command head, leaving the
+// entire child command visible to every existing scope check.
+const LOCAL_PNPM_EXEC = new RegExp(
+  `(${CMD_POS})pnpm(${PKG_GLOBAL_OPTIONS})[ \\t]+exec(?=[ \\t]|$)`,
+  'g',
+)
+
+function rewriteLocalPnpmExec(text: string): string {
+  return text.replace(LOCAL_PNPM_EXEC, '$1pnpm$2 run')
+}
+
+/** Operators that hand one command's output to the next as its stdin. */
+const PIPE_OPERATORS: ReadonlySet<string> = new Set(['|', '|&'])
+
+/** Commands that turn the text on their stdin into something that runs. */
+const STDIN_EXECUTORS: ReadonlySet<string> = new Set(['xargs', 'parallel', 'source', '.', 'eval'])
+
+function runsItsInput(argv: readonly string[]): boolean {
+  if (STDIN_EXECUTORS.has(commandName(argv[0]))) return true
+  const head = commandName(unwrapWrappers(argv)[0])
+  return CODE_INTERPRETERS.has(head) || STDIN_EXECUTORS.has(head)
+}
+
+/**
+ * A test for whether a matcher's word appears in this command only as text, or
+ * null when no such judgement is safe: the parser cannot give a reading
+ * (`parsedShellSegments`), a variable decides which program a segment runs
+ * (`$x host`), or a pipe feeds an interpreter or `xargs`, where
+ * `echo ssh host | sh` turns the echoed text into a command.
+ *
+ * The word counts as text when at least one parsed segment contains it and every
+ * one that does is an inert read (`isInertReadArgv`) or hands it to a project
+ * script as an argument (`runsProjectScript`). A match the segments cannot
+ * account for keeps the hard verdict.
+ */
+function textOnlyMentionTest(command: string): ((re: RegExp) => boolean) | null {
+  const segments = parsedShellSegments(command)
+  if (segments === null) return null
+  const unknownProgram = segments.some(
+    ({ argv }) => (argv[0] ?? '').includes('$') || (unwrapWrappers(argv)[0] ?? '').includes('$'),
+  )
+  if (unknownProgram) return null
+  const feedsExecution = segments.some(
+    (segment) =>
+      segment.after !== null && PIPE_OPERATORS.has(segment.after) && runsItsInput(segment.argv),
+  )
+  if (feedsExecution) return null
+  const texts = segments.map((segment) => {
+    const text = rewriteLocalPnpmExec(segment.argv.join(' '))
+    return { argv: segment.argv, variants: [text, normalizeShellCommandForAnalysis(text)] }
+  })
+  return (re) => {
+    const holding = texts.filter(({ variants }) => variants.some((text) => re.test(text)))
+    return (
+      holding.length > 0 &&
+      holding.every(({ argv }) => isInertReadArgv(argv) || runsProjectScript(argv))
+    )
+  }
+}
+
+const PROJECT_SCRIPT_RUNNERS: ReadonlySet<string> = new Set(['npm', 'pnpm', 'yarn', 'bun'])
+/** Subcommands that run a `package.json` script. Not `exec`, `dlx` or `x`: their arguments are a command. */
+const PROJECT_SCRIPT_SUBCOMMANDS: ReadonlySet<string> = new Set(['run', 'run-script', 'test', 't'])
+
+/**
+ * `pnpm test -- acp-ssh-transport`, `npm run build -- --filter ssh`: the words
+ * after the subcommand are handed to a project script, which already runs
+ * contained (`sandbox`) on its own. A program name among them is a test filter or
+ * flag value, not a command. Global options are skipped; an option that takes a
+ * separate value leaves that value as the apparent subcommand, which fails closed.
+ */
+function runsProjectScript(argv: readonly string[]): boolean {
+  if (!PROJECT_SCRIPT_RUNNERS.has(commandName(argv[0]))) return false
+  const subcommand = argv.slice(1).find((arg) => !arg.startsWith('-'))
+  return subcommand !== undefined && PROJECT_SCRIPT_SUBCOMMANDS.has(subcommand)
+}
+
 // `hasHard` is true when at least one matched signal is a definite escape
 // (network download, install, git push, command substitution, …) rather than a
 // fuzzy `ambiguous` matcher. It decides whether the verdict is `external`
@@ -552,20 +723,25 @@ function tokenBasedExternalReasons(command: string): {
 function collectExternalReasons(command: string): { reasons: ScopeReason[]; hasHard: boolean } {
   const reasons: ScopeReason[] = []
   let hasHard = false
+  let namedAsText = false
   const shellCommand = maskInterpreterHeredocBodies(command)
-  // `pnpm exec` runs an installed command, like `pnpm run`; it neither installs
-  // packages nor invokes the shell's `exec` builtin. Mask only this command head,
-  // leaving the entire child command visible to every existing scope check.
-  const localPnpmExec = new RegExp(`(${CMD_POS})pnpm[ \\t]+exec(?=[ \\t]|$)`, 'g')
-  const variants = [shellCommand, normalizeShellCommandForAnalysis(shellCommand)].map((text) =>
-    text.replace(localPnpmExec, '$1pnpm run'),
+  const variants = [shellCommand, normalizeShellCommandForAnalysis(shellCommand)].map(
+    rewriteLocalPnpmExec,
   )
+  // Built on first use: most commands match no `commandWord` matcher at all.
+  let textOnly: ((re: RegExp) => boolean) | null | undefined
   for (const text of variants) {
-    for (const { re, reason, ambiguous } of EXTERNAL_PATTERNS) {
-      if (re.test(text) && !reasons.includes(reason)) {
-        reasons.push(reason)
-        if (!ambiguous) hasHard = true
+    for (const { re, reason, ambiguous, commandWord } of EXTERNAL_PATTERNS) {
+      if (!re.test(text) || reasons.includes(reason)) continue
+      if (commandWord && !ambiguous) {
+        if (textOnly === undefined) textOnly = textOnlyMentionTest(shellCommand)
+        if (textOnly?.(re)) {
+          namedAsText = true
+          continue
+        }
       }
+      reasons.push(reason)
+      if (!ambiguous) hasHard = true
     }
     for (const { re, reason } of REGISTRY_REDIRECT_PATTERNS) {
       if (re.test(text) && !reasons.includes(reason)) {
@@ -574,6 +750,8 @@ function collectExternalReasons(command: string): { reasons: ScopeReason[]; hasH
       }
     }
   }
+  // Ambiguous, so it never clears `hasHard` that another matcher set.
+  if (namedAsText) reasons.push(REASON_NAMED_AS_TEXT)
   if (/\$\(|`/.test(shellCommand)) {
     reasons.push('command substitution (may hide network or outside-path tools)')
     hasHard = true
@@ -968,7 +1146,7 @@ function pipesIntoInterpreter(command: string): boolean {
 }
 
 const DANGEROUS_IN_SANDBOX_PATTERNS: Array<{ re: RegExp; reason: ScopeReason }> = [
-  { re: /\brm\s+-\S*[rf]/i, reason: REASON_RECURSIVE_DELETE },
+  { re: /\brm\s+(?:-\S+\s+)*(?:-[^-\s]*r|--recursive\b)/i, reason: REASON_RECURSIVE_DELETE },
   { re: /\bgit\s+clean\s+-\S*[dfx]/i, reason: 'git clean removes untracked files' },
   { re: /\bgit\s+reset\s+--hard\b/i, reason: 'git reset --hard discards changes' },
   { re: /\bgit\s+checkout\s+--\s+\./i, reason: 'git checkout discards local changes' },
@@ -981,6 +1159,34 @@ const DANGEROUS_IN_SANDBOX_PATTERNS: Array<{ re: RegExp; reason: ScopeReason }> 
   { re: /\byes\b\s*\|/i, reason: 'unbounded `yes` output' },
 ]
 
+const FORCED_RM = /\brm\s+(?:-\S+\s+)*(?:-[^-\s]*f|--force\b)/i
+
+/** A literal path inside the working directory: no root, home, parent, variable or glob. */
+function isLiteralLocalPath(path: string): boolean {
+  if (path.startsWith('/') || path.startsWith('~') || /[$*?[{]/.test(path)) return false
+  return !path.split('/').includes('..')
+}
+
+/**
+ * `rm -f` without `-r` deletes exactly what `rm` would; `-f` only skips missing
+ * operands and the write-protect question. So when every `rm` here is run
+ * directly and names literal files under the working directory
+ * (`rm -f e2e-failure-artifacts/demo-failure.png`), the forced flag adds nothing
+ * a plain `rm`, which runs contained, does not. Anything less certain keeps the
+ * prompt: operands fed by `xargs` or another wrapper, a path outside the project,
+ * a variable or glob, or a line the parser cannot read.
+ */
+function forcedDeletesOnlyNamedLocalFiles(command: string): boolean {
+  const segments = parsedShellSegments(command)
+  if (segments === null) return false
+  return segments.every(({ argv }) => {
+    if (commandName(unwrapWrappers(argv)[0]) !== 'rm') return true
+    if (commandName(argv[0]) !== 'rm') return false
+    const operands = argv.slice(1).filter((arg) => !arg.startsWith('-'))
+    return operands.length > 0 && operands.every(isLiteralLocalPath)
+  })
+}
+
 /** Destructive/resource-exhausting patterns that warrant a prompt even when sandboxed. */
 export function dangerousInSandboxReasons(command: string): string[] {
   const reasons: ScopeReason[] = []
@@ -988,6 +1194,13 @@ export function dangerousInSandboxReasons(command: string): string[] {
   for (const text of variants) {
     for (const { re, reason } of DANGEROUS_IN_SANDBOX_PATTERNS) {
       if (re.test(text) && !reasons.includes(reason)) reasons.push(reason)
+    }
+    if (
+      FORCED_RM.test(text) &&
+      !reasons.includes(REASON_RECURSIVE_DELETE) &&
+      !forcedDeletesOnlyNamedLocalFiles(command)
+    ) {
+      reasons.push(REASON_RECURSIVE_DELETE)
     }
   }
   if (pipesIntoInterpreter(command)) reasons.push(REASON_PIPE_TO_INTERPRETER)
@@ -1125,6 +1338,8 @@ const SCOPE_REASON_TEXT = {
     'Opens a raw network connection through a shell redirect',
   'command substitution (may hide network or outside-path tools)':
     'Runs a nested command whose output it substitutes in, which can hide what it reaches',
+  'names a network or code-running command only as an argument, never as the command run':
+    'Mentions a network or code-running command only as an argument, such as a search pattern, file name or test filter',
 
   // Fetching and running someone else's code
   'package install/update (may fetch + run code from network)':

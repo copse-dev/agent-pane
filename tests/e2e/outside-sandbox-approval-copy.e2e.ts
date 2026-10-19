@@ -71,4 +71,32 @@ describe('outside-sandbox approval copy', () => {
     await expectAssistantReply('I left the draft pull requests unchanged.')
     await scenario.assertComplete()
   })
+
+  it('offers bounded retries when the agent expects a project script to need the outside', async () => {
+    // A browser demo rerun after each fix: opaque local execution, nothing else.
+    const command = 'node scripts/run-demo.mts --spec tests/demo/remote-acp-first-run.demo.ts'
+    const scenario = await prepareMockToolTurn(
+      'Run the browser demo outside the sandbox.',
+      { name: 'run_shell', args: { command, expects_sandbox_block: true } },
+      'I left the browser demo unrun.',
+    )
+    await submitComposer()
+
+    const dialog = await $('#approval-dialog')
+    await dialog.waitForDisplayed({ timeout: 30_000 })
+    await expect(dialog.$('.approval-heading')).toHaveText('Agent requests sandbox escape')
+    const leaseOption = dialog.$('.approval-turn-tree')
+    await expect(leaseOption).toBeDisplayed()
+    await expect(leaseOption).toHaveText(
+      'Allow retries outside the sandbox (up to 10, for 2 hours)',
+    )
+    // Opt-in: leaving the sandbox again is never the default.
+    await expect(leaseOption.$('.approval-turn-tree-input')).not.toBeChecked()
+
+    await saveElementScreenshot('#approval-dialog', 'agent-escape-retry-lease-approval.png')
+    await dialog.$('.approval-reject').click()
+    await waitForAgentIdle(30_000)
+    await expectAssistantReply('I left the browser demo unrun.')
+    await scenario.assertComplete()
+  })
 })

@@ -6,7 +6,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
   Record<string, { readonly sourceSha256: string; readonly filenames: readonly string[] }>
 > = {
   'tests/e2e/acp-auth-error.e2e.ts': {
-    sourceSha256: '3db2d8fc0b120fa6f6a7eba74c2d563fecf90e5b8fc9c34634e016857c53f952',
+    sourceSha256: '498b76753541e84d14172097b338dc524ae9cad2cf4d63167f397b901c9ab9a5',
     filenames: [
       'acp-auth-error.png',
       'codex-workspace-routing-auth-error.png',
@@ -60,7 +60,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['markdown-ordered-list-after.png', 'markdown-ordered-list-before.png'],
   },
   'tests/e2e/mermaid-parity.e2e.ts': {
-    sourceSha256: '123f2aaed4b7ebd84267bffecdf33557cbb9943cf7de533e7f2301edce90df52',
+    sourceSha256: '3a180b3692bedbd1d04ad848bf579d0e4ca91cafe3eafaa525ed92fcca8fa569',
     filenames: [
       'mermaid-parity-class.png',
       'mermaid-parity-flowchart.png',
@@ -116,8 +116,12 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['scroll-to-bottom-dark.png', 'scroll-to-bottom-light.png'],
   },
   'tests/e2e/settings-acp-agents-list.e2e.ts': {
-    sourceSha256: 'd1eba281fd9f50e6259b5e60b72fe1df7d0606e71cba7b32a46c3749754d02d5',
-    filenames: ['settings-acp-agents-list-page-2.png', 'settings-acp-agents-list.png'],
+    sourceSha256: 'f3e5b48f3cbf52fa8bcede8ef74afe1752f8d40ad183f9fa7355c1b6e0b47081',
+    filenames: [
+      'settings-acp-agents-list-codex-ready.png',
+      'settings-acp-agents-list-page-2.png',
+      'settings-acp-agents-list.png',
+    ],
   },
   'tests/e2e/settings-automations.e2e.ts': {
     sourceSha256: 'fbdd02764a0dfab43472813022ccbba1a7dd34c9f7406bae1afa87cccf9ff78e',

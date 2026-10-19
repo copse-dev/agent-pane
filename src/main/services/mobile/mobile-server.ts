@@ -9,7 +9,12 @@ import { isPrivateOrLinkLocalHost } from '@copse/llm/credential-url.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { MOBILE_CONTENT_SECURITY_POLICY } from '../../../shared/mobile-content-security-policy.ts'
 import { MobileActionRequests, mobileActionSchema, performMobileAction } from './mobile-actions.ts'
-import { mobileActivity, mobileThread, mobileProjects } from './mobile-activity.ts'
+import {
+  mobileActivity,
+  mobileThread,
+  mobileThreadImage,
+  mobileProjects,
+} from './mobile-activity.ts'
 import { mobileCertificate } from './mobile-certificate.ts'
 import { MobileDevices } from './mobile-devices.ts'
 
@@ -17,6 +22,7 @@ import { MobileDevices } from './mobile-devices.ts'
 export const MOBILE_READ_DISPATCH = Object.freeze({
   activity: mobileActivity,
   thread: mobileThread,
+  threadImage: mobileThreadImage,
 })
 
 const PAIR_TIMEOUT_MS = 120_000
@@ -242,7 +248,7 @@ export async function startMobileServer(options: {
             })
             return
           }
-          const raw = await readBody(req, 128_000)
+          const raw = await readBody(req, 4_300_000)
           const action =
             raw === null ? null : safeJsonParse(raw, decodeWithSchema(mobileActionSchema))
           if (!action) {
@@ -269,6 +275,28 @@ export async function startMobileServer(options: {
             access: principal.access,
             sessionId: actions.sessionId,
           })
+          return
+        }
+        const imageMatch = /^\/api\/thread\/([^/]+)\/([^/]+)\/image\/([^/]+)\/(\d+)$/.exec(
+          path.pathname,
+        )
+        const imageProjectId = imageMatch?.[1] ?? ''
+        const imageThreadId = imageMatch?.[2] ?? ''
+        const imageMessageId = imageMatch?.[3] ?? ''
+        if (
+          req.method === 'GET' &&
+          imageMatch &&
+          idPattern.test(imageProjectId) &&
+          idPattern.test(imageThreadId) &&
+          idPattern.test(imageMessageId)
+        ) {
+          const image = await MOBILE_READ_DISPATCH.threadImage(
+            imageProjectId,
+            imageThreadId,
+            imageMessageId,
+            Number(imageMatch[4]),
+          )
+          send(res, image ? 200 : 404, image ? { image } : { error: 'Image unavailable' })
           return
         }
         const match = /^\/api\/thread\/([^/]+)\/([^/]+)$/.exec(path.pathname)
