@@ -30473,6 +30473,312 @@ var init_classifiers_section = __esm({
   }
 });
 
+// src/shared/web-search.ts
+function resolveWebSearchProvider(value) {
+  return value === "tavily" || value === "parallel" ? value : "none";
+}
+var WEB_SEARCH_PROVIDERS, WEB_SEARCH_LABELS;
+var init_web_search = __esm({
+  "src/shared/web-search.ts"() {
+    WEB_SEARCH_PROVIDERS = ["none", "tavily", "parallel"];
+    WEB_SEARCH_LABELS = {
+      none: "Not configured",
+      tavily: "Tavily",
+      parallel: "Parallel"
+    };
+  }
+});
+
+// src/renderer/views/setup/api-keys-section.ts
+function keyStatusClass(ok) {
+  if (ok === true) return "key-status ok";
+  if (ok === false) return "key-status err";
+  return "key-status";
+}
+function createApiKeysSection(api2, opts = {}) {
+  const legend = opts.legend ?? "API Keys";
+  const providers = opts.providers ?? ["anthropic", "openai", "openrouter", "cursor"];
+  const validateOnInput = opts.validateOnInput ?? true;
+  const fields = providers.map((provider) => {
+    const config2 = API_KEY_PROVIDER_CONFIGS[provider];
+    const input2 = el("input", {
+      type: "password",
+      name: config2.name,
+      placeholder: config2.placeholder,
+      autocomplete: "off"
+    });
+    const status = el("span", { class: "key-status", "data-key": provider });
+    const atRest = el("span", { class: "key-status", "data-at-rest": provider });
+    const label = el(
+      "label",
+      {},
+      config2.label,
+      input2,
+      status,
+      atRest,
+      el("span", { class: "field-hint" }, config2.hint)
+    );
+    return { ...config2, input: input2, status, atRest, label };
+  });
+  const plaintextNote = el(
+    "p",
+    { class: "field-hint", "data-at-rest-note": "", hidden: true },
+    "One or more keys are stored unencrypted because the OS secure storage is unavailable. Install and unlock a system keyring to encrypt them at rest."
+  );
+  const fieldset = el(
+    "fieldset",
+    {},
+    el("legend", {}, legend),
+    ...fields.map((field) => field.label),
+    plaintextNote
+  );
+  let generation = 0;
+  const validationTimers = /* @__PURE__ */ new Map();
+  async function validateField(provider, input2, statusEl) {
+    const mine = generation;
+    const value = input2.value.trim();
+    if (!value) {
+      statusEl.replaceChildren();
+      statusEl.className = "key-status";
+      return;
+    }
+    setInlineStatus(statusEl, "pending", "Checking\u2026");
+    statusEl.className = "key-status";
+    const result = await api2.settings.validateKey(provider, value);
+    if (mine !== generation || input2.value.trim() !== value) return;
+    if (result.ok) {
+      setInlineStatus(statusEl, "ok", "Valid key");
+      statusEl.className = keyStatusClass(true);
+    } else {
+      setInlineStatus(statusEl, "error", result.error ?? "Invalid key");
+      statusEl.className = keyStatusClass(false);
+    }
+  }
+  function bindValidation(provider, input2, statusEl) {
+    if (!validateOnInput) return;
+    input2.addEventListener("input", () => {
+      const existing = validationTimers.get(provider);
+      if (existing) clearTimeout(existing);
+      validationTimers.set(
+        provider,
+        setTimeout(() => {
+          void validateField(provider, input2, statusEl);
+        }, 500)
+      );
+    });
+  }
+  for (const field of fields) {
+    bindValidation(field.provider, field.input, field.status);
+  }
+  async function refreshKeyStatus(signal) {
+    const mine = generation;
+    if (signal?.aborted) return;
+    let anyPlaintext = false;
+    for (const field of fields) {
+      const saved = await api2.settings.getKey(field.provider);
+      if (mine !== generation || signal?.aborted) return;
+      if (!field.input.value.trim()) {
+        setInlineStatus(field.status, saved ? "filled" : "idle", saved ? "saved" : "not set");
+        field.status.className = "key-status";
+      }
+      const encrypted = saved ? await api2.settings.getKeyEncrypted(field.provider) : null;
+      if (mine !== generation || signal?.aborted) return;
+      if (encrypted === true) {
+        setInlineStatus(field.atRest, "ok", "Encrypted by OS keychain");
+        field.atRest.className = "key-status";
+      } else if (encrypted === false) {
+        anyPlaintext = true;
+        setInlineStatus(field.atRest, "warn", "Stored unencrypted");
+        field.atRest.className = "key-status";
+      } else {
+        field.atRest.replaceChildren();
+        field.atRest.className = "key-status";
+      }
+    }
+    plaintextNote.hidden = !anyPlaintext;
+  }
+  async function confirmPlaintextStorage(provider) {
+    const label = API_KEY_PROVIDER_CONFIGS[provider].label;
+    return showConfirmDialog({
+      message: `No OS keyring is available to encrypt your ${label} at rest. Install and unlock a system keyring to store it encrypted.`,
+      detail: "Store it unencrypted on this machine anyway?",
+      confirmLabel: "Store anyway"
+    });
+  }
+  async function saveKeys() {
+    let savedAny = false;
+    const failures = [];
+    for (const field of fields) {
+      const key = field.input.value.trim();
+      if (!key) {
+        field.input.value = "";
+        continue;
+      }
+      let result = await api2.settings.setKey(field.provider, key);
+      if (!result.ok && result.reason === "plaintext-consent-required" && await confirmPlaintextStorage(field.provider)) {
+        result = await api2.settings.setKey(field.provider, key, { allowPlaintext: true });
+      }
+      if (result.ok) {
+        field.input.value = "";
+        savedAny = true;
+      } else {
+        const message2 = result.reason === "plaintext-storage-disabled" ? `Not saved: ${PLAINTEXT_STORAGE_DISABLED_REASON}` : "Not saved: unencrypted storage declined";
+        failures.push(message2);
+        setInlineStatusMarkdown(field.status, "error", message2);
+        field.status.className = keyStatusClass(false);
+      }
+    }
+    if (savedAny) await refreshKeyStatus();
+    return failures.length === 0;
+  }
+  return {
+    root: fieldset,
+    refreshKeyStatus,
+    saveKeys,
+    reset: () => {
+      generation += 1;
+      for (const timer of validationTimers.values()) clearTimeout(timer);
+      validationTimers.clear();
+      for (const field of fields) {
+        field.input.value = "";
+        field.status.replaceChildren();
+      }
+    }
+  };
+}
+var PLAINTEXT_STORAGE_DISABLED_REASON, API_KEY_PROVIDER_CONFIGS;
+var init_api_keys_section = __esm({
+  "src/renderer/views/setup/api-keys-section.ts"() {
+    init_helpers();
+    init_inline_status();
+    init_confirm_dialog();
+    PLAINTEXT_STORAGE_DISABLED_REASON = "secure storage is unavailable and plaintext secret storage is disabled. Start Copse with `COPSE_ALLOW_PLAINTEXT_SECRETS=1` to opt in.";
+    API_KEY_PROVIDER_CONFIGS = {
+      tavily: {
+        provider: "tavily",
+        name: "tavilyKey",
+        label: "Tavily API key",
+        placeholder: "tvly-\u2026",
+        hint: "Basic search uses one API credit per request. Generated answers are disabled."
+      },
+      anthropic: {
+        provider: "anthropic",
+        name: "anthropicKey",
+        label: "Anthropic API key",
+        placeholder: "sk-ant-\u2026",
+        hint: "Checked with a free request, so no tokens are charged."
+      },
+      openai: {
+        provider: "openai",
+        name: "openaiKey",
+        label: "OpenAI API key",
+        placeholder: "sk-\u2026",
+        hint: "Checked with a free request, so no tokens are charged."
+      },
+      cursor: {
+        provider: "cursor",
+        name: "cursorKey",
+        label: "Cursor API key",
+        placeholder: "cur_\u2026",
+        hint: "For runs on Cursor\u2019s machines. Checked with a free request."
+      },
+      openrouter: {
+        provider: "openrouter",
+        name: "openrouterKey",
+        label: "OpenRouter API key",
+        placeholder: "sk-or-\u2026",
+        hint: "One key for Claude, GPT, Gemini, Llama, and more. Checked with a free request."
+      },
+      github: {
+        provider: "github",
+        name: "githubKey",
+        label: "GitHub token",
+        placeholder: "github_pat_\u2026 or ghp_\u2026",
+        hint: "Lets the Claude cloud agent clone your repository, push branches, and open pull requests. Use a fine-grained token with repository access."
+      },
+      "artificial-analysis": {
+        provider: "artificial-analysis",
+        name: "artificialAnalysisKey",
+        label: "Artificial Analysis API key",
+        placeholder: "aa-\u2026",
+        hint: "Optional: live Intelligence Index data for the model value map, including models beyond the curated list. Free key from artificialanalysis.ai (their terms require the attribution shown on the map)."
+      },
+      parallel: {
+        provider: "parallel",
+        name: "parallelKey",
+        label: "Parallel API key",
+        placeholder: "Parallel API key",
+        hint: "Used only for the direct Search API. Requests may be billable; ZDR depends on your Parallel account agreement."
+      }
+    };
+  }
+});
+
+// src/renderer/views/settings/web-search-section.ts
+function createWebSearchSection(api2) {
+  const provider = el("select", { name: "webSearchProvider" });
+  for (const value of WEB_SEARCH_PROVIDERS) {
+    provider.append(el("option", { value }, WEB_SEARCH_LABELS[value]));
+  }
+  const tavily = createApiKeysSection(api2, {
+    legend: "Tavily account",
+    providers: ["tavily"],
+    validateOnInput: false
+  });
+  const parallel = createApiKeysSection(api2, {
+    legend: "Parallel account",
+    providers: ["parallel"],
+    validateOnInput: false
+  });
+  const note = el(
+    "p",
+    { class: "field-hint" },
+    "Queries and returned excerpts are included in the conversation. Provider retention and usage terms apply. Saving credentials does not run a search."
+  );
+  const root = el(
+    "fieldset",
+    {},
+    el("legend", {}, "Search provider"),
+    el("label", {}, "Default provider", provider),
+    tavily.root,
+    parallel.root,
+    note
+  );
+  const sync = () => {
+    tavily.root.hidden = provider.value !== "tavily";
+    parallel.root.hidden = provider.value !== "parallel";
+  };
+  provider.addEventListener("change", sync);
+  provider.value = "none";
+  sync();
+  return {
+    root,
+    refresh: async (snapshot, signal) => {
+      if (signal.aborted) return;
+      provider.value = resolveWebSearchProvider(snapshot.webSearchProvider);
+      sync();
+      await Promise.all([tavily.refreshKeyStatus(signal), parallel.refreshKeyStatus(signal)]);
+    },
+    collect: (dirty) => dirty.has("webSearchProvider") ? { webSearchProvider: resolveWebSearchProvider(provider.value) } : {},
+    saveKeys: async () => {
+      if (provider.value === "tavily") return tavily.saveKeys();
+      if (provider.value === "parallel") return parallel.saveKeys();
+      return true;
+    },
+    reset: () => {
+      tavily.reset();
+      parallel.reset();
+    }
+  };
+}
+var init_web_search_section = __esm({
+  "src/renderer/views/settings/web-search-section.ts"() {
+    init_web_search();
+    init_helpers();
+    init_api_keys_section();
+  }
+});
+
 // packages/std/src/unknown-value.ts
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -52786,226 +53092,1082 @@ var init_models_section = __esm({
   }
 });
 
-// src/renderer/views/setup/api-keys-section.ts
-function keyStatusClass(ok) {
-  if (ok === true) return "key-status ok";
-  if (ok === false) return "key-status err";
-  return "key-status";
-}
-function createApiKeysSection(api2, opts = {}) {
-  const legend = opts.legend ?? "API Keys";
-  const providers = opts.providers ?? ["anthropic", "openai", "openrouter", "cursor"];
-  const validateOnInput = opts.validateOnInput ?? true;
-  const fields = providers.map((provider) => {
-    const config2 = API_KEY_PROVIDER_CONFIGS[provider];
-    const input2 = el("input", {
-      type: "password",
-      name: config2.name,
-      placeholder: config2.placeholder,
-      autocomplete: "off"
-    });
-    const status = el("span", { class: "key-status", "data-key": provider });
-    const atRest = el("span", { class: "key-status", "data-at-rest": provider });
-    const label = el(
-      "label",
-      {},
-      config2.label,
-      input2,
-      status,
-      atRest,
-      el("span", { class: "field-hint" }, config2.hint)
-    );
-    return { ...config2, input: input2, status, atRest, label };
-  });
-  const plaintextNote = el(
-    "p",
-    { class: "field-hint", "data-at-rest-note": "", hidden: true },
-    "One or more keys are stored unencrypted because the OS secure storage is unavailable. Install and unlock a system keyring to encrypt them at rest."
-  );
-  const fieldset = el(
-    "fieldset",
-    {},
-    el("legend", {}, legend),
-    ...fields.map((field) => field.label),
-    plaintextNote
-  );
-  let generation = 0;
-  const validationTimers = /* @__PURE__ */ new Map();
-  async function validateField(provider, input2, statusEl) {
-    const mine = generation;
-    const value = input2.value.trim();
-    if (!value) {
-      statusEl.replaceChildren();
-      statusEl.className = "key-status";
-      return;
-    }
-    setInlineStatus(statusEl, "pending", "Checking\u2026");
-    statusEl.className = "key-status";
-    const result = await api2.settings.validateKey(provider, value);
-    if (mine !== generation || input2.value.trim() !== value) return;
-    if (result.ok) {
-      setInlineStatus(statusEl, "ok", "Valid key");
-      statusEl.className = keyStatusClass(true);
-    } else {
-      setInlineStatus(statusEl, "error", result.error ?? "Invalid key");
-      statusEl.className = keyStatusClass(false);
-    }
-  }
-  function bindValidation(provider, input2, statusEl) {
-    if (!validateOnInput) return;
-    input2.addEventListener("input", () => {
-      const existing = validationTimers.get(provider);
-      if (existing) clearTimeout(existing);
-      validationTimers.set(
-        provider,
-        setTimeout(() => {
-          void validateField(provider, input2, statusEl);
-        }, 500)
-      );
-    });
-  }
-  for (const field of fields) {
-    bindValidation(field.provider, field.input, field.status);
-  }
-  async function refreshKeyStatus(signal) {
-    const mine = generation;
-    if (signal?.aborted) return;
-    let anyPlaintext = false;
-    for (const field of fields) {
-      const saved = await api2.settings.getKey(field.provider);
-      if (mine !== generation || signal?.aborted) return;
-      if (!field.input.value.trim()) {
-        setInlineStatus(field.status, saved ? "filled" : "idle", saved ? "saved" : "not set");
-        field.status.className = "key-status";
-      }
-      const encrypted = saved ? await api2.settings.getKeyEncrypted(field.provider) : null;
-      if (mine !== generation || signal?.aborted) return;
-      if (encrypted === true) {
-        setInlineStatus(field.atRest, "ok", "Encrypted by OS keychain");
-        field.atRest.className = "key-status";
-      } else if (encrypted === false) {
-        anyPlaintext = true;
-        setInlineStatus(field.atRest, "warn", "Stored unencrypted");
-        field.atRest.className = "key-status";
-      } else {
-        field.atRest.replaceChildren();
-        field.atRest.className = "key-status";
-      }
-    }
-    plaintextNote.hidden = !anyPlaintext;
-  }
-  async function confirmPlaintextStorage(provider) {
-    const label = API_KEY_PROVIDER_CONFIGS[provider].label;
-    return showConfirmDialog({
-      message: `No OS keyring is available to encrypt your ${label} at rest. Install and unlock a system keyring to store it encrypted.`,
-      detail: "Store it unencrypted on this machine anyway?",
-      confirmLabel: "Store anyway"
-    });
-  }
-  async function saveKeys() {
-    let savedAny = false;
-    const failures = [];
-    for (const field of fields) {
-      const key = field.input.value.trim();
-      if (!key) {
-        field.input.value = "";
-        continue;
-      }
-      let result = await api2.settings.setKey(field.provider, key);
-      if (!result.ok && result.reason === "plaintext-consent-required" && await confirmPlaintextStorage(field.provider)) {
-        result = await api2.settings.setKey(field.provider, key, { allowPlaintext: true });
-      }
-      if (result.ok) {
-        field.input.value = "";
-        savedAny = true;
-      } else {
-        const message2 = result.reason === "plaintext-storage-disabled" ? `Not saved: ${PLAINTEXT_STORAGE_DISABLED_REASON}` : "Not saved: unencrypted storage declined";
-        failures.push(message2);
-        setInlineStatusMarkdown(field.status, "error", message2);
-        field.status.className = keyStatusClass(false);
-      }
-    }
-    if (savedAny) await refreshKeyStatus();
-    return failures.length === 0;
-  }
-  return {
-    root: fieldset,
-    refreshKeyStatus,
-    saveKeys,
-    reset: () => {
-      generation += 1;
-      for (const timer of validationTimers.values()) clearTimeout(timer);
-      validationTimers.clear();
-      for (const field of fields) {
-        field.input.value = "";
-        field.status.replaceChildren();
-      }
-    }
-  };
-}
-var PLAINTEXT_STORAGE_DISABLED_REASON, API_KEY_PROVIDER_CONFIGS;
-var init_api_keys_section = __esm({
-  "src/renderer/views/setup/api-keys-section.ts"() {
-    init_helpers();
-    init_inline_status();
-    init_confirm_dialog();
-    PLAINTEXT_STORAGE_DISABLED_REASON = "secure storage is unavailable and plaintext secret storage is disabled. Start Copse with `COPSE_ALLOW_PLAINTEXT_SECRETS=1` to opt in.";
-    API_KEY_PROVIDER_CONFIGS = {
-      anthropic: {
-        provider: "anthropic",
-        name: "anthropicKey",
-        label: "Anthropic API key",
-        placeholder: "sk-ant-\u2026",
-        hint: "Checked with a free request, so no tokens are charged."
-      },
-      openai: {
-        provider: "openai",
-        name: "openaiKey",
-        label: "OpenAI API key",
-        placeholder: "sk-\u2026",
-        hint: "Checked with a free request, so no tokens are charged."
-      },
-      cursor: {
-        provider: "cursor",
-        name: "cursorKey",
-        label: "Cursor API key",
-        placeholder: "cur_\u2026",
-        hint: "For runs on Cursor\u2019s machines. Checked with a free request."
-      },
-      openrouter: {
-        provider: "openrouter",
-        name: "openrouterKey",
-        label: "OpenRouter API key",
-        placeholder: "sk-or-\u2026",
-        hint: "One key for Claude, GPT, Gemini, Llama, and more. Checked with a free request."
-      },
-      github: {
-        provider: "github",
-        name: "githubKey",
-        label: "GitHub token",
-        placeholder: "github_pat_\u2026 or ghp_\u2026",
-        hint: "Lets the Claude cloud agent clone your repository, push branches, and open pull requests. Use a fine-grained token with repository access."
-      },
-      "artificial-analysis": {
-        provider: "artificial-analysis",
-        name: "artificialAnalysisKey",
-        label: "Artificial Analysis API key",
-        placeholder: "aa-\u2026",
-        hint: "Optional: live Intelligence Index data for the model value map, including models beyond the curated list. Free key from artificialanalysis.ai (their terms require the attribution shown on the map)."
-      },
-      parallel: {
-        provider: "parallel",
-        name: "parallelKey",
-        label: "Parallel API key",
-        placeholder: "Parallel API key",
-        hint: "Used only for the direct Search API. Requests may be billable; ZDR depends on your Parallel account agreement."
-      }
+// src/renderer/views/setup/agent-logos.ts
+var AGENT_LOGO_SVG;
+var init_agent_logos = __esm({
+  "src/renderer/views/setup/agent-logos.ts"() {
+    AGENT_LOGO_SVG = {
+      claude: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#fff" d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg>',
+      codex: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M9.064 3.344a4.578 4.578 0 012.285-.312c1 .115 1.891.54 2.673 1.275.01.01.024.017.037.021a.09.09 0 00.043 0 4.55 4.55 0 013.046.275l.047.022.116.057a4.581 4.581 0 012.188 2.399c.209.51.313 1.041.315 1.595a4.24 4.24 0 01-.134 1.223.123.123 0 00.03.115c.594.607.988 1.33 1.183 2.17.289 1.425-.007 2.71-.887 3.854l-.136.166a4.548 4.548 0 01-2.201 1.388.123.123 0 00-.081.076c-.191.551-.383 1.023-.74 1.494-.9 1.187-2.222 1.846-3.711 1.838-1.187-.006-2.239-.44-3.157-1.302a.107.107 0 00-.105-.024c-.388.125-.78.143-1.204.138a4.441 4.441 0 01-1.945-.466 4.544 4.544 0 01-1.61-1.335c-.152-.202-.303-.392-.414-.617a5.81 5.81 0 01-.37-.961 4.582 4.582 0 01-.014-2.298.124.124 0 00.006-.056.085.085 0 00-.027-.048 4.467 4.467 0 01-1.034-1.651 3.896 3.896 0 01-.251-1.192 5.189 5.189 0 01.141-1.6c.337-1.112.982-1.985 1.933-2.618.212-.141.413-.251.601-.33.215-.089.43-.164.646-.227a.098.098 0 00.065-.066 4.51 4.51 0 01.829-1.615 4.535 4.535 0 011.837-1.388zm3.482 10.565a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="url(#cdx)"></path><defs><linearGradient gradientUnits="userSpaceOnUse" id="cdx" x1="12" x2="12" y1="3" y2="21"><stop stop-color="#B1A7FF"></stop><stop offset=".5" stop-color="#7A9DFF"></stop><stop offset="1" stop-color="#3941FF"></stop></linearGradient></defs></svg>',
+      gemini: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="gg" x1="3" y1="21" x2="21" y2="3" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#4285f4"/><stop offset=".55" stop-color="#9b72cb"/><stop offset="1" stop-color="#d96570"/></linearGradient></defs><path fill="url(#gg)" d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></svg>',
+      cursor: '<svg width="22" height="22" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 466.73 533.32"> <path fill="#72716d" d="M233.37,266.66l231.16,133.46c-1.42,2.46-3.48,4.56-6.03,6.03l-216.06,124.74c-5.61,3.24-12.53,3.24-18.14,0L8.24,406.15c-2.55-1.47-4.61-3.57-6.03-6.03l231.16-133.46h0Z"/> <path fill="#55544f" d="M233.37,0v266.66L2.21,400.12c-1.42-2.46-2.21-5.3-2.21-8.24v-250.44c0-5.89,3.14-11.32,8.24-14.27L224.29,2.43c2.81-1.62,5.94-2.43,9.07-2.43h.01Z"/> <path fill="#43413c" d="M464.52,133.2c-1.42-2.46-3.48-4.56-6.03-6.03L242.43,2.43c-2.8-1.62-5.93-2.43-9.06-2.43v266.66l231.16,133.46c1.42-2.46,2.21-5.3,2.21-8.24v-250.44c0-2.95-.78-5.77-2.21-8.24h-.01Z"/> <path fill="#d6d5d2" d="M448.35,142.54c1.31,2.26,1.49,5.16,0,7.74l-209.83,363.42c-1.41,2.46-5.16,1.45-5.16-1.38v-239.48c0-1.91-.51-3.75-1.44-5.36l216.42-124.95h.01Z"/> <path fill="#fff" d="M448.35,142.54l-216.42,124.95c-.92-1.6-2.26-2.96-3.92-3.92L20.62,143.83c-2.46-1.41-1.45-5.16,1.38-5.16h419.65c2.98,0,5.4,1.61,6.7,3.87Z"/> </svg>',
+      // Lucide key-round (ISC), for API-key rows in the Models & agents list.
+      key: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/></svg>'
     };
   }
 });
 
-// packages/llm/src/provider-slug.ts
+// src/renderer/views/setup/acp-agents-list.ts
+function agentChip(auth) {
+  if (auth === "signed-in") return "ready";
+  if (auth === "signed-out") return "needs-sign-in";
+  return null;
+}
+function listedAgents(known, detected, configured, auth) {
+  const configuredIds = new Set(configured.map((a3) => a3.id));
+  const rows = [];
+  for (const k4 of known) {
+    if (!configuredIds.has(k4.id) && !detected.get(k4.id)?.installed) continue;
+    const chip2 = agentChip(auth.get(k4.id));
+    rows.push({
+      id: k4.id,
+      title: k4.title,
+      chip: chip2,
+      signInCommand: chip2 === "needs-sign-in" ? acpReauthCommand(k4) : null
+    });
+  }
+  const knownIds = new Set(known.map((k4) => k4.id));
+  for (const a3 of configured) {
+    if (knownIds.has(a3.id)) continue;
+    rows.push({ id: a3.id, title: a3.title, chip: null, signInCommand: null });
+  }
+  return rows;
+}
+function addableAgents(known, detected, configured) {
+  const configuredIds = new Set(configured.map((a3) => a3.id));
+  return known.filter((k4) => !configuredIds.has(k4.id) && !detected.get(k4.id)?.installed);
+}
+function logoTile(id, title) {
+  const key = LOGO_KEY[id];
+  const svg2 = key ? AGENT_LOGO_SVG[key] : void 0;
+  const tile = el("span", { class: "acp-logo", "aria-hidden": "true" });
+  if (key) tile.dataset["brand"] = key;
+  if (!svg2) {
+    tile.textContent = title.slice(0, 1).toUpperCase();
+    return tile;
+  }
+  const doc3 = new DOMParser().parseFromString(svg2, "image/svg+xml");
+  tile.append(document.importNode(doc3.documentElement, true));
+  return tile;
+}
+var LOGO_KEY;
+var init_acp_agents_list = __esm({
+  "src/renderer/views/setup/acp-agents-list.ts"() {
+    init_acp_known_agents();
+    init_helpers();
+    init_agent_logos();
+    LOGO_KEY = {
+      "claude-acp": "claude",
+      "claude-code-acp": "claude",
+      "codex-acp": "codex",
+      gemini: "gemini",
+      cursor: "cursor"
+    };
+  }
+});
+
+// src/shared/acp-registry.ts
+var ACP_REGISTRY_URL;
+var init_acp_registry = __esm({
+  "src/shared/acp-registry.ts"() {
+    ACP_REGISTRY_URL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
+  }
+});
+
+// src/renderer/views/setup/acp-registry-browser.ts
+function createAcpRegistryBrowser(api2, onChoose) {
+  let listing;
+  let visibleCount = 20;
+  let loading = false;
+  const toggle = el(
+    "button",
+    {
+      type: "button",
+      class: "provider-secondary acp-registry-toggle",
+      "aria-expanded": "false"
+    },
+    "Browse agent registry"
+  );
+  const refresh = el("button", { type: "button", class: "provider-secondary" }, "Refresh registry");
+  const search = el("input", {
+    type: "search",
+    placeholder: "Search agents",
+    "aria-label": "Search agent registry"
+  });
+  const status = el("p", { class: "field-hint", role: "status" });
+  const results = el("div", { class: "acp-registry-results" });
+  const more = el(
+    "button",
+    { type: "button", class: "provider-secondary", hidden: true },
+    "Show more"
+  );
+  const content = el(
+    "div",
+    { class: "acp-registry-content", hidden: true },
+    el(
+      "p",
+      { class: "field-hint" },
+      "Community registry entries are unverified by Copse. Browsing does not install or start agents. Review the publisher\u2019s authentication, billing and platform requirements before enabling one."
+    ),
+    el("div", { class: "acp-registry-controls" }, search, refresh),
+    status,
+    results,
+    more,
+    el(
+      "a",
+      { href: ACP_REGISTRY_URL, target: "_blank", rel: "noopener noreferrer" },
+      "Registry source"
+    )
+  );
+  function renderResults() {
+    clear(results);
+    if (!listing) return;
+    const query = search.value.trim().toLowerCase();
+    const matches3 = listing.entries.filter(
+      (entry) => `${entry.title} ${entry.id} ${entry.description} ${entry.packages.join(" ")}`.toLowerCase().includes(query)
+    );
+    for (const entry of matches3.slice(0, visibleCount)) {
+      const choose = el(
+        "button",
+        { type: "button", class: "provider-secondary" },
+        "Review configuration"
+      );
+      choose.addEventListener("click", () => {
+        content.hidden = true;
+        toggle.setAttribute("aria-expanded", "false");
+        toggle.textContent = "Browse agent registry";
+        onChoose(entry);
+      });
+      const row2 = el(
+        "article",
+        { class: "acp-registry-entry", "data-registry-id": entry.id },
+        el(
+          "div",
+          { class: "acp-registry-entry-head" },
+          el("strong", {}, entry.title),
+          el("span", { class: "field-hint" }, `v${entry.version} \xB7 Unverified`)
+        ),
+        el("p", {}, entry.description),
+        el(
+          "p",
+          { class: "field-hint acp-registry-install-status" },
+          entry.installedPath ? `Executable found: ${entry.installedPath}` : entry.command ? `Executable not found on PATH: ${entry.command}` : "Installed status unknown: this entry does not identify a direct executable for this platform."
+        ),
+        ...entry.packages.map(
+          (pkg) => el("div", { class: "acp-registry-package" }, el("code", {}, pkg))
+        ),
+        ...entry.platforms.length ? [el("p", { class: "field-hint" }, `Binary targets: ${entry.platforms.join(", ")}`)] : [],
+        el(
+          "div",
+          { class: "provider-actions" },
+          choose,
+          ...entry.website ? [
+            el(
+              "a",
+              { href: entry.website, target: "_blank", rel: "noopener noreferrer" },
+              "Publisher documentation"
+            )
+          ] : []
+        )
+      );
+      results.append(row2);
+    }
+    if (!matches3.length)
+      results.append(
+        el(
+          "p",
+          { class: "field-hint" },
+          query ? "No agents match your search." : "The registry has no usable entries."
+        )
+      );
+    more.hidden = matches3.length <= visibleCount;
+  }
+  async function load(force = false) {
+    if (loading) return;
+    loading = true;
+    refresh.disabled = true;
+    status.textContent = "Loading agent registry\u2026";
+    try {
+      listing = await api2.acp.browseRegistry(force);
+      status.textContent = `${String(listing.entries.length)} registry entries` + (listing.skipped ? ` \xB7 ${String(listing.skipped)} invalid or duplicate entries skipped` : "") + ". Executable presence does not verify compatibility.";
+      renderResults();
+    } catch (error62) {
+      status.textContent = `Could not load the agent registry. ${error62 instanceof Error ? error62.message : "Try again."}` + (listing ? " Previously loaded entries are still shown." : " Use Refresh registry to retry, or configure a custom agent below.");
+    } finally {
+      loading = false;
+      refresh.disabled = false;
+    }
+  }
+  toggle.addEventListener("click", () => {
+    content.hidden = !content.hidden;
+    toggle.setAttribute("aria-expanded", String(!content.hidden));
+    toggle.textContent = content.hidden ? "Browse agent registry" : "Hide agent registry";
+    if (!content.hidden && !listing) void load();
+  });
+  refresh.addEventListener("click", () => void load(true));
+  search.addEventListener("input", () => {
+    visibleCount = 20;
+    renderResults();
+  });
+  more.addEventListener("click", () => {
+    visibleCount += 20;
+    renderResults();
+  });
+  return el(
+    "section",
+    { class: "acp-registry-browser", "aria-label": "Agent registry" },
+    toggle,
+    content
+  );
+}
+var init_acp_registry_browser = __esm({
+  "src/renderer/views/setup/acp-registry-browser.ts"() {
+    init_acp_registry();
+    init_helpers();
+  }
+});
+
+// src/renderer/views/setup/acp-agents-section.ts
+function retentionNotice(agent2) {
+  const known = agent2 ? findAcpCatalogEntry(agent2.id) : void 0;
+  const source = agent2 && known && launchesAcpCatalogEntry(agent2, known) ? AGENT_DATA_POLICY_URLS[known.id] : void 0;
+  return el(
+    "div",
+    { class: "acp-retention-notice" },
+    el("span", { class: "ui-badge provider-privacy-badge unknown" }, ACP_RETENTION_NOTICE.label),
+    el("p", { class: "field-hint" }, ACP_RETENTION_NOTICE.detail),
+    ...source ? [
+      el(
+        "p",
+        { class: "field-hint" },
+        el(
+          "a",
+          { href: source, target: "_blank", rel: "noopener noreferrer" },
+          "Agent data policy"
+        )
+      )
+    ] : []
+  );
+}
+function parseEnvText(text2) {
+  const env = {};
+  for (const line of text2.split("\n")) {
+    const trimmed2 = line.trim();
+    if (!trimmed2) continue;
+    const eq = trimmed2.indexOf("=");
+    if (eq <= 0) continue;
+    env[trimmed2.slice(0, eq).trim()] = trimmed2.slice(eq + 1).trim();
+  }
+  return env;
+}
+function formatEnvText(env) {
+  if (!env) return "";
+  return Object.entries(env).map(([k4, v4]) => `${k4}=${v4}`).join("\n");
+}
+function parseArgsText(text2) {
+  return text2.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
+}
+function formatArgsText(args) {
+  return (args ?? []).join("\n");
+}
 function slugify2(value) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
+}
+function upsertAgent(list, agent2) {
+  const idx = list.findIndex((a3) => a3.id === agent2.id);
+  if (idx === -1) return [...list, agent2];
+  const next = [...list];
+  next[idx] = agent2;
+  return next;
+}
+function selectorChoicesAfterProbe(cached2, selector) {
+  return selector?.choices ?? cached2;
+}
+function removeAgent(list, id) {
+  return list.filter((a3) => a3.id !== id);
+}
+function knownToConfig(known) {
+  const env = known.envHints?.length ? Object.fromEntries(known.envHints.map((name) => [name, ""])) : void 0;
+  return {
+    id: known.id,
+    title: known.title,
+    command: known.command,
+    ...known.args.length ? { args: known.args } : {},
+    ...env ? { env } : {},
+    enabled: true
+  };
+}
+function registryToDraft(entry) {
+  let id = `registry-${entry.id}`;
+  if (id.length > 64) {
+    let hash2 = 0xcbf29ce484222325n;
+    for (const character of entry.id) {
+      hash2 = BigInt.asUintN(64, (hash2 ^ BigInt(character.charCodeAt(0))) * 0x100000001b3n);
+    }
+    id = `${id.slice(0, 47)}-${hash2.toString(16).padStart(16, "0")}`;
+  }
+  return {
+    id,
+    title: entry.title,
+    command: entry.installedPath ?? entry.command ?? "",
+    args: [...entry.args],
+    enabled: false
+  };
+}
+function validateDraft(draft, existingIds) {
+  if (!ID_RE.test(draft.id)) return "Id must be a lowercase slug (a-z, 0-9, -).";
+  if (existingIds.includes(draft.id)) return `An agent with id "${draft.id}" already exists.`;
+  if (!draft.title.trim()) return "Title is required.";
+  if (!draft.command.trim()) return "Command is required.";
+  const catalog = findAcpCatalogEntry(draft.id);
+  if (catalog && !launchesAcpCatalogEntry(draft, catalog)) {
+    return `Id "${draft.id}" belongs to ${catalog.title} (${catalog.command}); a custom agent needs its own id.`;
+  }
+  return null;
+}
+function commandRow(label, command2) {
+  const code2 = el("code", { class: "acp-cmd" }, command2);
+  const copy2 = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary acp-cmd-copy", title: "Copy" },
+    "Copy"
+  );
+  copy2.addEventListener("click", () => {
+    void navigator.clipboard.writeText(command2);
+  });
+  return el(
+    "div",
+    { class: "acp-cmd-row" },
+    el("span", { class: "acp-cmd-label" }, label),
+    code2,
+    copy2
+  );
+}
+function detectedStatus(detected) {
+  const installed2 = detected?.installed ?? false;
+  const status = el("span", { class: `acp-known-status ${installed2 ? "ok" : "missing"}` });
+  status.append(
+    inlineStatus(
+      installed2 ? "ok" : "idle",
+      installed2 ? `installed${detected?.running ? " \xB7 running" : ""}` : "not installed"
+    )
+  );
+  return status;
+}
+function createAcpAgentsSection(api2, opts = {}) {
+  const embedded = opts.embedded ?? false;
+  let agents = [];
+  let detectedById = /* @__PURE__ */ new Map();
+  const knownById = new Map(KNOWN_ACP_AGENTS.map((k4) => [k4.id, k4]));
+  let registryDraft;
+  const registryBrowser = createAcpRegistryBrowser(api2, (entry) => {
+    registryDraft = registryToDraft(entry);
+    renderForm();
+  });
+  let selected = "";
+  const chipRow = el("div", { class: "provider-chips", role: "tablist" });
+  const formHost = el("div", { class: "provider-form-host" });
+  const scanStatus = el("span", { class: "key-status" });
+  const rescanBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary" },
+    "Re-scan device"
+  );
+  rescanBtn.addEventListener("click", () => void scan());
+  const root = embedded ? el(
+    "div",
+    { class: "provider-panel-embedded" },
+    ...opts.hideRescanAction ? [] : [el("div", { class: "provider-actions" }, rescanBtn, scanStatus)],
+    formHost
+  ) : el(
+    "fieldset",
+    {},
+    el("legend", {}, "Agents on this device"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Run a coding agent that is installed on this machine (Claude, Gemini CLI, Cursor, Codex) and drive it from Copse. Each agent is a separate program: install it with the command shown, then sign in. Agents you add appear in the model picker under their own heading. Open a folder first, since the agent works in that folder and its edits go through the review queue. Not available in remote SSH workspaces."
+    ),
+    el("div", { class: "provider-actions" }, rescanBtn, scanStatus),
+    chipRow,
+    formHost
+  );
+  async function persist(next) {
+    agents = next;
+    await api2.settings.set("registeredAcpAgents", agents);
+    render2();
+  }
+  async function scan() {
+    setInlineStatus(scanStatus, "pending", "Scanning\u2026");
+    scanStatus.className = "key-status";
+    try {
+      const found2 = await api2.acp.detectAgents();
+      detectedById = new Map(found2.map((agent2) => [agent2.id, agent2]));
+      const installed2 = found2.filter((agent2) => agent2.installed).length;
+      if (installed2) setInlineStatus(scanStatus, "ok", `${String(installed2)} installed`);
+      else scanStatus.textContent = "None installed yet";
+      scanStatus.className = `key-status ${installed2 ? "ok" : ""}`;
+    } catch {
+      detectedById = /* @__PURE__ */ new Map();
+      setInlineStatus(scanStatus, "error", "Could not scan");
+      scanStatus.className = "key-status err";
+    }
+    renderChips();
+    if (selected !== "other" && !agents.some((a3) => a3.id === selected)) renderForm();
+  }
+  function chipKeys() {
+    const ordered = KNOWN_ACP_AGENTS.map((k4) => k4.id);
+    for (const a3 of agents) if (!ordered.includes(a3.id)) ordered.push(a3.id);
+    ordered.push("other");
+    return ordered;
+  }
+  function chipLabel(key) {
+    if (key === "other") return "Add agent";
+    return knownById.get(key)?.title ?? agents.find((a3) => a3.id === key)?.title ?? key;
+  }
+  function defaultSelected() {
+    const configured = chipKeys().find((k4) => k4 !== "other" && agents.some((a3) => a3.id === k4));
+    return configured ?? KNOWN_ACP_AGENTS[0]?.id ?? "other";
+  }
+  function renderChips() {
+    if (embedded) return;
+    clear(chipRow);
+    for (const key of chipKeys()) {
+      const chip2 = el(
+        "button",
+        { type: "button", class: "provider-chip", role: "tab" },
+        chipLabel(key)
+      );
+      chip2.dataset["agent"] = key;
+      chip2.classList.toggle("active", key === selected);
+      if (key !== "other" && agents.some((a3) => a3.id === key)) {
+        chip2.append(el("span", { class: "provider-chip-dot", title: "Added" }));
+      }
+      chip2.addEventListener("click", () => {
+        selected = key;
+        renderChips();
+        renderForm();
+      });
+      chipRow.append(chip2);
+    }
+  }
+  function agentForm(options) {
+    const isEdit = Boolean(options.initial);
+    const idInput = el("input", {
+      type: "text",
+      placeholder: "gemini",
+      autocomplete: "off",
+      ...isEdit ? { readonly: true } : {}
+    });
+    const titleInput = el("input", { type: "text", autocomplete: "off" });
+    const commandInput = el("input", {
+      type: "text",
+      placeholder: "gemini",
+      autocomplete: "off"
+    });
+    const argsArea = el("textarea", {
+      rows: "2",
+      spellcheck: false,
+      placeholder: "one argument per line, e.g. --acp"
+    });
+    const envArea = el("textarea", {
+      rows: "2",
+      spellcheck: false,
+      placeholder: "KEY=value per line"
+    });
+    const enabledBox = el("input", { type: "checkbox", checked: true });
+    const status = el("span", { class: "key-status" });
+    const DEFAULT_MODEL_LABEL = "Agent default";
+    const modelSelect = el("select", {});
+    const detectModels = el(
+      "button",
+      { type: "button", class: "provider-secondary" },
+      "Detect models"
+    );
+    const modelRow = el("div", { class: "acp-model-row" }, modelSelect, detectModels);
+    const modelStatus = el("span", { class: "field-hint" });
+    const DEFAULT_MODE_LABEL = "Agent default";
+    const modeSelect = el("select", {});
+    const setModeOptions = (choices, selected2) => {
+      modeSelect.replaceChildren(el("option", { value: "" }, DEFAULT_MODE_LABEL));
+      for (const choice of choices) {
+        modeSelect.append(
+          el(
+            "option",
+            { value: choice.value, ...choice.description ? { title: choice.description } : {} },
+            choice.label
+          )
+        );
+      }
+      if (selected2 && !choices.some((c3) => c3.value === selected2)) {
+        modeSelect.append(el("option", { value: selected2 }, `${selected2} (saved)`));
+      }
+      modeSelect.value = selected2;
+    };
+    const values = options.initial ?? options.draft;
+    if (values) {
+      idInput.value = values.id;
+      titleInput.value = values.title;
+      commandInput.value = values.command;
+      argsArea.value = formatArgsText(values.args);
+      envArea.value = formatEnvText(values.env);
+      enabledBox.checked = values.enabled;
+    }
+    if (options.draft) enabledBox.disabled = true;
+    let detectedModels = options.initial?.availableModels ?? [];
+    let detectedModelsAt = options.initial?.modelsProbedAt;
+    const initialModel = options.initial?.model ?? "";
+    modelSelect.append(el("option", { value: initialModel }, initialModel || DEFAULT_MODEL_LABEL));
+    modelSelect.value = initialModel;
+    let detectedModes = options.initial?.availablePermissionModes ?? [];
+    setModeOptions(detectedModes, options.initial?.permissionMode ?? "");
+    const modelPicker = mountModelSelectPicker(modelSelect, {
+      loadOptions: (current) => {
+        const pickerOptions = [
+          { value: "", label: DEFAULT_MODEL_LABEL, retention: ACP_RETENTION_NOTICE },
+          ...detectedModels.map((choice) => ({
+            value: choice.value,
+            label: acpModelChoiceLabel(choice),
+            group: "Detected models",
+            retention: ACP_RETENTION_NOTICE
+          }))
+        ];
+        if (current && !detectedModels.some((choice) => choice.value === current)) {
+          pickerOptions.push({
+            value: current,
+            label: `${current} (saved)`,
+            retention: ACP_RETENTION_NOTICE
+          });
+        }
+        return Promise.resolve(pickerOptions);
+      },
+      ariaLabel: "Agent model",
+      loadOnMount: false
+    });
+    void modelPicker.refresh(initialModel);
+    const canDetectModels = options.initial?.enabled === true;
+    detectModels.disabled = !canDetectModels;
+    if (!isEdit) modelStatus.textContent = "Save the agent first, then detect its models.";
+    else if (!canDetectModels)
+      modelStatus.textContent = "Enable and save the agent first, then detect its models.";
+    detectModels.addEventListener("click", () => {
+      if (!canDetectModels) return;
+      const id = idInput.value.trim();
+      detectModels.disabled = true;
+      setInlineStatus(modelStatus, "pending", "Detecting\u2026 (starting the agent)");
+      void api2.acp.probeAgent(id).then((probe) => {
+        detectedModels = selectorChoicesAfterProbe(detectedModels, probe.models);
+        detectedModes = selectorChoicesAfterProbe(detectedModes, probe.modes);
+        if (probe.models) {
+          void modelPicker.refresh(modelSelect.value || probe.models.currentValue);
+        }
+        if (probe.modes) {
+          setModeOptions(probe.modes.choices, modeSelect.value || probe.modes.currentValue);
+        }
+        detectedModelsAt = Date.now();
+        const saved = agents.find((candidate) => candidate.id === id);
+        if (saved) {
+          agents = upsertAgent(agents, {
+            ...saved,
+            ...probe.models ? { availableModels: probe.models.choices } : {},
+            ...probe.modes ? { availablePermissionModes: probe.modes.choices } : {},
+            // Every other selector the agent advertised (reasoning level, …),
+            // cached so the composer picker can offer them without a re-probe.
+            ...probe.configOptions ? { availableConfigOptions: probe.configOptions } : {},
+            modelsProbedAt: detectedModelsAt
+          });
+          void api2.settings.set("registeredAcpAgents", agents);
+        }
+        const bits = [
+          probe.models ? `${String(probe.models.choices.length)} models (default: ${probe.models.currentValue})` : "no selectable models",
+          probe.modes ? `${String(probe.modes.choices.length)} permission modes` : ""
+        ].filter(Boolean);
+        setInlineStatus(modelStatus, "ok", `Detected ${bits.join(", ")}.`);
+      }).catch((err2) => {
+        setInlineStatus(modelStatus, "error", err2 instanceof Error ? err2.message : String(err2));
+      }).finally(() => {
+        detectModels.disabled = !canDetectModels;
+      });
+    });
+    let idEdited = isEdit || Boolean(options.draft);
+    idInput.addEventListener("input", () => {
+      idEdited = true;
+    });
+    titleInput.addEventListener("input", () => {
+      if (!idEdited) idInput.value = slugify2(titleInput.value);
+    });
+    const submit = el("button", { type: "button", class: "provider-save" }, options.submitLabel);
+    submit.addEventListener("click", () => {
+      const id = idInput.value.trim();
+      const args = parseArgsText(argsArea.value);
+      const draft = { id, title: titleInput.value.trim(), command: commandInput.value.trim(), args };
+      const existingIds = isEdit ? [] : agents.map((a3) => a3.id);
+      const error62 = validateDraft(draft, existingIds);
+      if (error62) {
+        setInlineStatus(status, "error", error62);
+        status.className = "key-status err";
+        return;
+      }
+      const env = parseEnvText(envArea.value);
+      const model = modelSelect.value.trim();
+      const permissionMode = modeSelect.value.trim();
+      options.onSubmit({
+        id,
+        title: draft.title,
+        command: draft.command,
+        ...args.length ? { args } : {},
+        ...Object.keys(env).length ? { env } : {},
+        ...model ? { model } : {},
+        ...detectedModels.length ? { availableModels: detectedModels } : {},
+        ...detectedModels.length && detectedModelsAt !== void 0 ? { modelsProbedAt: detectedModelsAt } : {},
+        ...permissionMode ? { permissionMode } : {},
+        ...detectedModes.length ? { availablePermissionModes: detectedModes } : {},
+        enabled: options.draft ? false : enabledBox.checked
+      });
+    });
+    const fields = el(
+      "div",
+      { class: "acp-agent-fields" },
+      retentionNotice(options.initial),
+      el("label", {}, "Id", idInput),
+      el("label", {}, "Title", titleInput),
+      el("label", {}, "Command", commandInput),
+      el("label", {}, "Arguments", argsArea),
+      el("label", {}, "Environment", envArea),
+      el("label", {}, "Model", modelRow, modelStatus),
+      el(
+        "label",
+        { class: "acp-permission-mode-field" },
+        "Permission mode",
+        modeSelect,
+        el(
+          "span",
+          { class: "field-hint" },
+          "How much the agent asks before it acts. Leave this on Agent default unless you want to loosen or tighten its own prompts."
+        )
+      ),
+      el("label", { class: "checkbox-label" }, enabledBox, " Enabled (shown in the model picker)"),
+      ...options.initial?.id.startsWith("registry-") ? [
+        el(
+          "p",
+          { class: "field-hint" },
+          "Unverified custom agent. Enabling authorizes Copse to start this command, including model detection. Review its arguments and publisher requirements first."
+        )
+      ] : []
+    );
+    const actions = el("div", { class: "provider-actions provider-form-footer" }, submit, status);
+    return el("div", { class: "acp-agent-form" }, fields, actions);
+  }
+  function knownForm(known) {
+    const detected = detectedById.get(known.id);
+    const installed2 = detected?.installed ?? false;
+    const form = el(
+      "div",
+      { class: "provider-form" },
+      el("h4", { class: "provider-form-title" }, known.title, detectedStatus(detected))
+    );
+    if (!installed2 && known.install) form.append(commandRow("Install", known.install));
+    if (known.setup) form.append(commandRow("Sign in", known.setup));
+    if (known.note) {
+      const note = el("p", { class: "field-hint acp-known-agent-note" });
+      setInlineMarkdown(note, known.note);
+      form.append(note);
+    }
+    if (known.docsUrl) {
+      form.append(
+        el(
+          "p",
+          { class: "field-hint" },
+          el(
+            "a",
+            { href: known.docsUrl, target: "_blank", rel: "noopener noreferrer" },
+            "Documentation"
+          )
+        )
+      );
+    }
+    form.append(retentionNotice(known));
+    const add2 = el("button", { type: "button", class: "provider-save" }, "Add to my agents");
+    add2.addEventListener("click", () => {
+      selected = known.id;
+      void persist(upsertAgent(agents, knownToConfig(known)));
+    });
+    form.append(el("div", { class: "provider-actions provider-form-footer" }, add2));
+    return form;
+  }
+  function configuredForm(agent2) {
+    const known = knownById.get(agent2.id);
+    const remove = el("button", { type: "button", class: "provider-delete" }, "Remove");
+    remove.addEventListener("click", () => {
+      if (!knownById.has(agent2.id)) selected = "";
+      void persist(removeAgent(agents, agent2.id));
+    });
+    const card = el(
+      "div",
+      { class: "acp-agent-card" },
+      el(
+        "div",
+        { class: "acp-agent-card-head" },
+        el("strong", {}, agent2.title),
+        ...known ? [detectedStatus(detectedById.get(known.id))] : [],
+        remove
+      )
+    );
+    if (known) {
+      const installed2 = detectedById.get(known.id)?.installed ?? false;
+      if (!installed2 && known.install) card.append(commandRow("Install", known.install));
+      if (known.setup) card.append(commandRow("Sign in", known.setup));
+    }
+    card.append(
+      agentForm({
+        initial: agent2,
+        submitLabel: "Save",
+        onSubmit: (draft) => void persist(upsertAgent(agents, draft))
+      })
+    );
+    return card;
+  }
+  function addForm() {
+    return el(
+      "div",
+      { class: "provider-form" },
+      el("h4", { class: "provider-form-title" }, "Add a custom agent"),
+      registryBrowser,
+      el(
+        "p",
+        { class: "field-hint" },
+        "Add any agent program installed on this machine that Copse can drive. Give it a name, the command that launches it, and the arguments it needs to start in agent mode."
+      ),
+      ...registryDraft ? [
+        el(
+          "p",
+          { class: "field-hint acp-registry-draft-note" },
+          "Unverified registry draft. Review the command and arguments; install and authenticate separately. Adding leaves it disabled. Selecting Enabled authorizes Copse to start this command, including model detection. Custom agents have no Copse sandbox profile unless you configure one. No registry permissions are imported."
+        )
+      ] : [],
+      agentForm({
+        ...registryDraft ? { draft: registryDraft } : {},
+        submitLabel: "Add agent",
+        onSubmit: (draft) => {
+          registryDraft = void 0;
+          selected = draft.id;
+          void persist(upsertAgent(agents, draft));
+        }
+      })
+    );
+  }
+  function renderForm() {
+    clear(formHost);
+    if (selected === "other") {
+      formHost.append(addForm());
+      return;
+    }
+    const configured = agents.find((a3) => a3.id === selected);
+    if (configured) {
+      formHost.append(configuredForm(configured));
+      return;
+    }
+    const known = knownById.get(selected);
+    if (known) formHost.append(knownForm(known));
+  }
+  function render2() {
+    if (!embedded && selected !== "other" && !chipKeys().includes(selected)) {
+      selected = defaultSelected();
+    }
+    renderChips();
+    renderForm();
+    opts.onChanged?.();
+  }
+  async function reloadAgents(signal) {
+    if (signal?.aborted) return;
+    try {
+      const values = await api2.settings.get("registeredAcpAgents");
+      if (signal?.aborted) return;
+      agents = parseAcpAgentConfigs(values);
+    } catch {
+      agents = [];
+    }
+  }
+  async function autoSetup() {
+    try {
+      const result = await api2.acp.autoSetup();
+      if (result.installed.length || result.upgraded.length || result.registered.length || result.modelsDetected.length) {
+        await reloadAgents();
+        render2();
+        await scan();
+        const bits = [
+          result.installed.length ? `installed ${String(result.installed.length)}` : "",
+          result.upgraded.length ? `updated ${String(result.upgraded.length)}` : "",
+          result.registered.length ? `added ${String(result.registered.length)}` : "",
+          // Only worth calling out when nothing was installed/updated/added (a pure model refresh).
+          !result.installed.length && !result.upgraded.length && !result.registered.length && result.modelsDetected.length ? `detected models for ${String(result.modelsDetected.length)}` : ""
+        ].filter(Boolean);
+        if (bits.length) {
+          setInlineStatus(scanStatus, "ok", `Presets ready (${bits.join(", ")})`);
+          scanStatus.className = "key-status ok";
+        }
+      }
+    } catch {
+    }
+  }
+  async function refresh() {
+    await reloadAgents();
+    render2();
+    await scan();
+    await autoSetup();
+  }
+  function agentIds() {
+    return chipKeys().filter((key) => key !== "other");
+  }
+  function labelFor(id) {
+    return agentIds().includes(id) ? chipLabel(id) : null;
+  }
+  function isConfigured(id) {
+    return agents.some((agent2) => agent2.id === id);
+  }
+  function select(id) {
+    selected = id;
+    renderForm();
+  }
+  async function reload(signal) {
+    await reloadAgents(signal);
+    if (!signal?.aborted) render2();
+  }
+  return { root, refresh, reload, scan, agentIds, labelFor, isConfigured, select };
+}
+var AGENT_DATA_POLICY_URLS, ID_RE;
+var init_acp_agents_section = __esm({
+  "src/renderer/views/setup/acp-agents-section.ts"() {
+    init_acp_retention();
+    init_acp();
+    init_acp_known_agents();
+    init_helpers();
+    init_inline_markdown();
+    init_inline_status();
+    init_model_picker();
+    init_acp_registry_browser();
+    AGENT_DATA_POLICY_URLS = {
+      "claude-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
+      "claude-code-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
+      gemini: "https://github.com/google-gemini/gemini-cli/blob/main/docs/resources/tos-privacy.md",
+      "qwen-code": "https://github.com/QwenLM/qwen-code/blob/main/docs/users/support/tos-privacy.md"
+    };
+    ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+  }
+});
+
+// src/renderer/views/setup/chatgpt-plan-section.ts
+function createChatGptPlanSection(api2, onChanged) {
+  const root = el("div", { "data-testid": "chatgpt-plan-section" });
+  let status = { accounts: [], activeClientId: null };
+  let busy = false;
+  let message2 = "";
+  let signingIn = false;
+  let accountOptionsOpen = false;
+  let welcomeShowing = false;
+  async function act(work, isSignIn = false) {
+    signingIn = isSignIn;
+    busy = true;
+    message2 = "";
+    render2();
+    try {
+      await work();
+    } catch (error62) {
+      message2 = error62 instanceof Error ? error62.message : "Could not connect ChatGPT.";
+    } finally {
+      busy = false;
+      render2();
+      onChanged();
+      if (isSignIn) await welcome();
+    }
+  }
+  function render2() {
+    accountOptionsOpen = root.querySelector("details")?.open ?? accountOptionsOpen;
+    clear(root);
+    const active3 = status.accounts.find((account) => account.clientId === status.activeClientId);
+    if (status.accounts.length) {
+      const picker = el("select", { "aria-label": "ChatGPT account", disabled: busy });
+      picker.append(el("option", { value: "" }, "Choose a ChatGPT account"));
+      for (const [index, account] of status.accounts.entries()) {
+        picker.append(
+          el(
+            "option",
+            { value: account.clientId },
+            `${account.label} \xB7 connection ${String(index + 1)}${account.connected ? "" : " (signed out)"}`
+          )
+        );
+      }
+      picker.value = status.activeClientId ?? "";
+      picker.addEventListener("change", () => {
+        if (picker.value)
+          void act(async () => {
+            status = await api2.chatGptPlan.selectAccount(picker.value);
+          });
+      });
+      root.append(el("label", {}, "ChatGPT account", picker));
+    }
+    if (active3?.connected) {
+      root.append(
+        el(
+          "p",
+          { role: "status", class: "field-hint" },
+          active3.planEnabled ? "Using ChatGPT plan. Select a model from the ChatGPT plan group to start." : "Signed in. ChatGPT plan permission was not granted; reconnect to enable it."
+        )
+      );
+    }
+    const actions = el("div", { class: "provider-actions" });
+    const connect = el(
+      "button",
+      {
+        type: "button",
+        class: "ui-btn chatgpt-sign-in",
+        disabled: busy,
+        "data-testid": "chatgpt-plan-connect"
+      },
+      el("img", {
+        src: "./chatgpt-logo-white.svg",
+        alt: "",
+        width: "21",
+        height: "21",
+        "aria-hidden": "true"
+      }),
+      "Continue with ChatGPT"
+    );
+    connect.addEventListener("click", () => {
+      void act(async () => {
+        status = await api2.chatGptPlan.signIn(active3?.clientId);
+      }, true);
+    });
+    if (!active3?.connected || !active3.planEnabled) actions.append(connect);
+    const accountActions = el("div", { class: "provider-actions" });
+    if (busy) {
+      root.append(
+        el(
+          "p",
+          { role: "status", class: "field-hint" },
+          signingIn ? "Finish signing in in your browser." : "Updating connection\u2026"
+        )
+      );
+      const cancel = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary" },
+        "Cancel sign-in"
+      );
+      cancel.addEventListener("click", () => {
+        void api2.chatGptPlan.cancelSignIn();
+      });
+      if (signingIn) actions.append(cancel);
+    }
+    if (active3?.connected) {
+      const disconnect = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary", disabled: busy },
+        "Sign out"
+      );
+      disconnect.addEventListener("click", () => {
+        void act(async () => {
+          const result = await api2.chatGptPlan.signOut(active3.clientId);
+          status = result.status;
+          if (!result.revoked)
+            message2 = "Signed out locally. Remote revocation was not confirmed; disconnect Copse in ChatGPT settings.";
+        });
+      });
+      const renew = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary", disabled: busy },
+        "Refresh connection"
+      );
+      renew.addEventListener("click", () => {
+        void act(async () => {
+          status = await api2.chatGptPlan.refreshAccount(active3.clientId);
+          message2 = "Connection refreshed.";
+        });
+      });
+      accountActions.append(renew, disconnect);
+    }
+    const add2 = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-secondary", disabled: busy },
+      "Add another account"
+    );
+    add2.addEventListener("click", () => {
+      void act(async () => {
+        status = await api2.chatGptPlan.signIn();
+      }, true);
+    });
+    if (status.accounts.length) accountActions.append(add2);
+    const usage = el(
+      "button",
+      {
+        type: "button",
+        class: active3?.planEnabled ? "ui-btn ui-btn-primary" : "ui-btn ui-btn-secondary"
+      },
+      "Manage usage"
+    );
+    usage.addEventListener("click", () => {
+      void api2.shell.openExternal(USAGE_URL);
+    });
+    actions.append(usage);
+    root.append(actions);
+    if (status.accounts.length) {
+      const options = el("details", {}, el("summary", {}, "Account options"), accountActions);
+      options.open = accountOptionsOpen;
+      root.append(options);
+    }
+    if (message2)
+      root.append(
+        el(
+          "p",
+          { role: "status", class: "field-hint", "data-testid": "chatgpt-plan-message" },
+          message2
+        )
+      );
+  }
+  async function welcome() {
+    if (welcomeShowing || !status.accounts.some((account) => account.connected && account.planEnabled))
+      return;
+    welcomeShowing = true;
+    try {
+      if (await api2.settings.get("chatGptPlanWelcomeSeen") === true) return;
+      await showConfirmDialog({
+        message: "You\u2019re using your ChatGPT plan",
+        detail: "Copse uses your ChatGPT plan or available credits for ChatGPT plan models. Manage Copse\u2019s allowance and credit usage in ChatGPT Settings \u2192 Usage.",
+        confirmLabel: "Got it",
+        cancelLabel: "Close"
+      });
+      await api2.settings.set("chatGptPlanWelcomeSeen", true);
+    } catch {
+    } finally {
+      welcomeShowing = false;
+    }
+  }
+  async function refresh() {
+    try {
+      status = await api2.chatGptPlan.status();
+    } catch (error62) {
+      message2 = error62 instanceof Error ? error62.message : "Could not read the ChatGPT connection.";
+    }
+    render2();
+    await welcome();
+  }
+  render2();
+  return {
+    root,
+    refresh,
+    configured: () => status.accounts.some((account) => account.planEnabled && account.connected)
+  };
+}
+var USAGE_URL;
+var init_chatgpt_plan_section = __esm({
+  "src/renderer/views/setup/chatgpt-plan-section.ts"() {
+    init_confirm_dialog();
+    init_helpers();
+    USAGE_URL = "https://chatgpt.com/settings/usage";
+  }
+});
+
+// packages/llm/src/provider-slug.ts
+function slugify3(value) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 function providerSlugFromBaseUrl(baseUrl) {
@@ -53016,11 +54178,11 @@ function providerSlugFromBaseUrl(baseUrl) {
     return "";
   }
   if (!host) return "";
-  if (host === "localhost" || /^\d+(\.\d+)*$/.test(host)) return slugify2(host);
+  if (host === "localhost" || /^\d+(\.\d+)*$/.test(host)) return slugify3(host);
   const labels = host.split(".").filter(Boolean);
   if (labels.length > 2 && (labels[0] === "api" || labels[0] === "www")) labels.shift();
   const primary = (labels.length >= 2 ? labels[labels.length - 2] : labels[0]) ?? "";
-  return slugify2(primary);
+  return slugify3(primary);
 }
 var init_provider_slug = __esm({
   "packages/llm/src/provider-slug.ts"() {
@@ -53036,9 +54198,9 @@ function localServerTargets() {
   }));
   return [{ id: "lmstudio", label: "LM Studio", baseUrl: DEFAULT_LM_STUDIO_URL }, ...presets];
 }
-async function detectLocalServers(api2) {
+async function detectLocalServers(api2, targets = localServerTargets()) {
   return Promise.all(
-    localServerTargets().map(async (target) => {
+    targets.map(async (target) => {
       try {
         const res = await api2.lmStudio.test(target.baseUrl);
         return {
@@ -53863,7 +55025,17 @@ function createCustomProvidersSection(api2, opts = {}) {
     const mine = refreshGeneration;
     const signal = activeSignal;
     if (signal?.aborted) return;
-    const results = await detectLocalServers(api2);
+    let lmStudioUrl = "";
+    try {
+      const saved = await api2.settings.get("localServerUrl");
+      lmStudioUrl = typeof saved === "string" ? saved.trim() : "";
+    } catch {
+    }
+    if (mine !== refreshGeneration || signal?.aborted) return;
+    const targets = localServerTargets().map(
+      (target) => target.id === "lmstudio" && lmStudioUrl ? { ...target, baseUrl: lmStudioUrl } : target
+    );
+    const results = await detectLocalServers(api2, targets);
     if (mine !== refreshGeneration || signal?.aborted) return;
     reachable.clear();
     for (const r2 of results) if (r2.reachable) reachable.add(r2.id);
@@ -54044,796 +55216,6 @@ var init_custom_providers_section = __esm({
   }
 });
 
-// src/shared/acp-registry.ts
-var ACP_REGISTRY_URL;
-var init_acp_registry = __esm({
-  "src/shared/acp-registry.ts"() {
-    ACP_REGISTRY_URL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
-  }
-});
-
-// src/renderer/views/setup/acp-registry-browser.ts
-function createAcpRegistryBrowser(api2, onChoose) {
-  let listing;
-  let visibleCount = 20;
-  let loading = false;
-  const toggle = el(
-    "button",
-    {
-      type: "button",
-      class: "provider-secondary acp-registry-toggle",
-      "aria-expanded": "false"
-    },
-    "Browse agent registry"
-  );
-  const refresh = el("button", { type: "button", class: "provider-secondary" }, "Refresh registry");
-  const search = el("input", {
-    type: "search",
-    placeholder: "Search agents",
-    "aria-label": "Search agent registry"
-  });
-  const status = el("p", { class: "field-hint", role: "status" });
-  const results = el("div", { class: "acp-registry-results" });
-  const more = el(
-    "button",
-    { type: "button", class: "provider-secondary", hidden: true },
-    "Show more"
-  );
-  const content = el(
-    "div",
-    { class: "acp-registry-content", hidden: true },
-    el(
-      "p",
-      { class: "field-hint" },
-      "Community registry entries are unverified by Copse. Browsing does not install or start agents. Review the publisher\u2019s authentication, billing and platform requirements before enabling one."
-    ),
-    el("div", { class: "acp-registry-controls" }, search, refresh),
-    status,
-    results,
-    more,
-    el(
-      "a",
-      { href: ACP_REGISTRY_URL, target: "_blank", rel: "noopener noreferrer" },
-      "Registry source"
-    )
-  );
-  function renderResults() {
-    clear(results);
-    if (!listing) return;
-    const query = search.value.trim().toLowerCase();
-    const matches3 = listing.entries.filter(
-      (entry) => `${entry.title} ${entry.id} ${entry.description} ${entry.packages.join(" ")}`.toLowerCase().includes(query)
-    );
-    for (const entry of matches3.slice(0, visibleCount)) {
-      const choose = el(
-        "button",
-        { type: "button", class: "provider-secondary" },
-        "Review configuration"
-      );
-      choose.addEventListener("click", () => {
-        content.hidden = true;
-        toggle.setAttribute("aria-expanded", "false");
-        toggle.textContent = "Browse agent registry";
-        onChoose(entry);
-      });
-      const row2 = el(
-        "article",
-        { class: "acp-registry-entry", "data-registry-id": entry.id },
-        el(
-          "div",
-          { class: "acp-registry-entry-head" },
-          el("strong", {}, entry.title),
-          el("span", { class: "field-hint" }, `v${entry.version} \xB7 Unverified`)
-        ),
-        el("p", {}, entry.description),
-        el(
-          "p",
-          { class: "field-hint acp-registry-install-status" },
-          entry.installedPath ? `Executable found: ${entry.installedPath}` : entry.command ? `Executable not found on PATH: ${entry.command}` : "Installed status unknown: this entry does not identify a direct executable for this platform."
-        ),
-        ...entry.packages.map(
-          (pkg) => el("div", { class: "acp-registry-package" }, el("code", {}, pkg))
-        ),
-        ...entry.platforms.length ? [el("p", { class: "field-hint" }, `Binary targets: ${entry.platforms.join(", ")}`)] : [],
-        el(
-          "div",
-          { class: "provider-actions" },
-          choose,
-          ...entry.website ? [
-            el(
-              "a",
-              { href: entry.website, target: "_blank", rel: "noopener noreferrer" },
-              "Publisher documentation"
-            )
-          ] : []
-        )
-      );
-      results.append(row2);
-    }
-    if (!matches3.length)
-      results.append(
-        el(
-          "p",
-          { class: "field-hint" },
-          query ? "No agents match your search." : "The registry has no usable entries."
-        )
-      );
-    more.hidden = matches3.length <= visibleCount;
-  }
-  async function load(force = false) {
-    if (loading) return;
-    loading = true;
-    refresh.disabled = true;
-    status.textContent = "Loading agent registry\u2026";
-    try {
-      listing = await api2.acp.browseRegistry(force);
-      status.textContent = `${String(listing.entries.length)} registry entries` + (listing.skipped ? ` \xB7 ${String(listing.skipped)} invalid or duplicate entries skipped` : "") + ". Executable presence does not verify compatibility.";
-      renderResults();
-    } catch (error62) {
-      status.textContent = `Could not load the agent registry. ${error62 instanceof Error ? error62.message : "Try again."}` + (listing ? " Previously loaded entries are still shown." : " Use Refresh registry to retry, or configure a custom agent below.");
-    } finally {
-      loading = false;
-      refresh.disabled = false;
-    }
-  }
-  toggle.addEventListener("click", () => {
-    content.hidden = !content.hidden;
-    toggle.setAttribute("aria-expanded", String(!content.hidden));
-    toggle.textContent = content.hidden ? "Browse agent registry" : "Hide agent registry";
-    if (!content.hidden && !listing) void load();
-  });
-  refresh.addEventListener("click", () => void load(true));
-  search.addEventListener("input", () => {
-    visibleCount = 20;
-    renderResults();
-  });
-  more.addEventListener("click", () => {
-    visibleCount += 20;
-    renderResults();
-  });
-  return el(
-    "section",
-    { class: "acp-registry-browser", "aria-label": "Agent registry" },
-    toggle,
-    content
-  );
-}
-var init_acp_registry_browser = __esm({
-  "src/renderer/views/setup/acp-registry-browser.ts"() {
-    init_acp_registry();
-    init_helpers();
-  }
-});
-
-// src/renderer/views/setup/acp-agents-section.ts
-function retentionNotice(agent2) {
-  const known = agent2 ? findAcpCatalogEntry(agent2.id) : void 0;
-  const source = agent2 && known && launchesAcpCatalogEntry(agent2, known) ? AGENT_DATA_POLICY_URLS[known.id] : void 0;
-  return el(
-    "div",
-    { class: "acp-retention-notice" },
-    el("span", { class: "ui-badge provider-privacy-badge unknown" }, ACP_RETENTION_NOTICE.label),
-    el("p", { class: "field-hint" }, ACP_RETENTION_NOTICE.detail),
-    ...source ? [
-      el(
-        "p",
-        { class: "field-hint" },
-        el(
-          "a",
-          { href: source, target: "_blank", rel: "noopener noreferrer" },
-          "Agent data policy"
-        )
-      )
-    ] : []
-  );
-}
-function parseEnvText(text2) {
-  const env = {};
-  for (const line of text2.split("\n")) {
-    const trimmed2 = line.trim();
-    if (!trimmed2) continue;
-    const eq = trimmed2.indexOf("=");
-    if (eq <= 0) continue;
-    env[trimmed2.slice(0, eq).trim()] = trimmed2.slice(eq + 1).trim();
-  }
-  return env;
-}
-function formatEnvText(env) {
-  if (!env) return "";
-  return Object.entries(env).map(([k4, v4]) => `${k4}=${v4}`).join("\n");
-}
-function parseArgsText(text2) {
-  return text2.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
-}
-function formatArgsText(args) {
-  return (args ?? []).join("\n");
-}
-function slugify3(value) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
-}
-function upsertAgent(list, agent2) {
-  const idx = list.findIndex((a3) => a3.id === agent2.id);
-  if (idx === -1) return [...list, agent2];
-  const next = [...list];
-  next[idx] = agent2;
-  return next;
-}
-function selectorChoicesAfterProbe(cached2, selector) {
-  return selector?.choices ?? cached2;
-}
-function removeAgent(list, id) {
-  return list.filter((a3) => a3.id !== id);
-}
-function knownToConfig(known) {
-  const env = known.envHints?.length ? Object.fromEntries(known.envHints.map((name) => [name, ""])) : void 0;
-  return {
-    id: known.id,
-    title: known.title,
-    command: known.command,
-    ...known.args.length ? { args: known.args } : {},
-    ...env ? { env } : {},
-    enabled: true
-  };
-}
-function registryToDraft(entry) {
-  let id = `registry-${entry.id}`;
-  if (id.length > 64) {
-    let hash2 = 0xcbf29ce484222325n;
-    for (const character of entry.id) {
-      hash2 = BigInt.asUintN(64, (hash2 ^ BigInt(character.charCodeAt(0))) * 0x100000001b3n);
-    }
-    id = `${id.slice(0, 47)}-${hash2.toString(16).padStart(16, "0")}`;
-  }
-  return {
-    id,
-    title: entry.title,
-    command: entry.installedPath ?? entry.command ?? "",
-    args: [...entry.args],
-    enabled: false
-  };
-}
-function validateDraft(draft, existingIds) {
-  if (!ID_RE.test(draft.id)) return "Id must be a lowercase slug (a-z, 0-9, -).";
-  if (existingIds.includes(draft.id)) return `An agent with id "${draft.id}" already exists.`;
-  if (!draft.title.trim()) return "Title is required.";
-  if (!draft.command.trim()) return "Command is required.";
-  const catalog = findAcpCatalogEntry(draft.id);
-  if (catalog && !launchesAcpCatalogEntry(draft, catalog)) {
-    return `Id "${draft.id}" belongs to ${catalog.title} (${catalog.command}); a custom agent needs its own id.`;
-  }
-  return null;
-}
-function commandRow(label, command2) {
-  const code2 = el("code", { class: "acp-cmd" }, command2);
-  const copy2 = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-secondary acp-cmd-copy", title: "Copy" },
-    "Copy"
-  );
-  copy2.addEventListener("click", () => {
-    void navigator.clipboard.writeText(command2);
-  });
-  return el(
-    "div",
-    { class: "acp-cmd-row" },
-    el("span", { class: "acp-cmd-label" }, label),
-    code2,
-    copy2
-  );
-}
-function detectedStatus(detected) {
-  const installed2 = detected?.installed ?? false;
-  const status = el("span", { class: `acp-known-status ${installed2 ? "ok" : "missing"}` });
-  status.append(
-    inlineStatus(
-      installed2 ? "ok" : "idle",
-      installed2 ? `installed${detected?.running ? " \xB7 running" : ""}` : "not installed"
-    )
-  );
-  return status;
-}
-function createAcpAgentsSection(api2, opts = {}) {
-  const embedded = opts.embedded ?? false;
-  let agents = [];
-  let detectedById = /* @__PURE__ */ new Map();
-  const knownById = new Map(KNOWN_ACP_AGENTS.map((k4) => [k4.id, k4]));
-  let registryDraft;
-  const registryBrowser = createAcpRegistryBrowser(api2, (entry) => {
-    registryDraft = registryToDraft(entry);
-    renderForm();
-  });
-  let selected = "";
-  const chipRow = el("div", { class: "provider-chips", role: "tablist" });
-  const formHost = el("div", { class: "provider-form-host" });
-  const scanStatus = el("span", { class: "key-status" });
-  const rescanBtn = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-secondary" },
-    "Re-scan device"
-  );
-  rescanBtn.addEventListener("click", () => void scan());
-  const root = embedded ? el(
-    "div",
-    { class: "provider-panel-embedded" },
-    el("div", { class: "provider-actions" }, rescanBtn, scanStatus),
-    formHost
-  ) : el(
-    "fieldset",
-    {},
-    el("legend", {}, "Agents on this device"),
-    el(
-      "p",
-      { class: "settings-fieldset-desc" },
-      "Run a coding agent that is installed on this machine (Claude, Gemini CLI, Cursor, Codex) and drive it from Copse. Each agent is a separate program: install it with the command shown, then sign in. Agents you add appear in the model picker under their own heading. Open a folder first, since the agent works in that folder and its edits go through the review queue. Not available in remote SSH workspaces."
-    ),
-    el("div", { class: "provider-actions" }, rescanBtn, scanStatus),
-    chipRow,
-    formHost
-  );
-  async function persist(next) {
-    agents = next;
-    await api2.settings.set("registeredAcpAgents", agents);
-    render2();
-  }
-  async function scan() {
-    setInlineStatus(scanStatus, "pending", "Scanning\u2026");
-    scanStatus.className = "key-status";
-    try {
-      const found2 = await api2.acp.detectAgents();
-      detectedById = new Map(found2.map((agent2) => [agent2.id, agent2]));
-      const installed2 = found2.filter((agent2) => agent2.installed).length;
-      if (installed2) setInlineStatus(scanStatus, "ok", `${String(installed2)} installed`);
-      else scanStatus.textContent = "None installed yet";
-      scanStatus.className = `key-status ${installed2 ? "ok" : ""}`;
-    } catch {
-      detectedById = /* @__PURE__ */ new Map();
-      setInlineStatus(scanStatus, "error", "Could not scan");
-      scanStatus.className = "key-status err";
-    }
-    renderChips();
-    if (selected !== "other" && !agents.some((a3) => a3.id === selected)) renderForm();
-  }
-  function chipKeys() {
-    const ordered = KNOWN_ACP_AGENTS.map((k4) => k4.id);
-    for (const a3 of agents) if (!ordered.includes(a3.id)) ordered.push(a3.id);
-    ordered.push("other");
-    return ordered;
-  }
-  function chipLabel(key) {
-    if (key === "other") return "Add agent";
-    return knownById.get(key)?.title ?? agents.find((a3) => a3.id === key)?.title ?? key;
-  }
-  function defaultSelected() {
-    const configured = chipKeys().find((k4) => k4 !== "other" && agents.some((a3) => a3.id === k4));
-    return configured ?? KNOWN_ACP_AGENTS[0]?.id ?? "other";
-  }
-  function renderChips() {
-    if (embedded) return;
-    clear(chipRow);
-    for (const key of chipKeys()) {
-      const chip2 = el(
-        "button",
-        { type: "button", class: "provider-chip", role: "tab" },
-        chipLabel(key)
-      );
-      chip2.dataset["agent"] = key;
-      chip2.classList.toggle("active", key === selected);
-      if (key !== "other" && agents.some((a3) => a3.id === key)) {
-        chip2.append(el("span", { class: "provider-chip-dot", title: "Added" }));
-      }
-      chip2.addEventListener("click", () => {
-        selected = key;
-        renderChips();
-        renderForm();
-      });
-      chipRow.append(chip2);
-    }
-  }
-  function agentForm(options) {
-    const isEdit = Boolean(options.initial);
-    const idInput = el("input", {
-      type: "text",
-      placeholder: "gemini",
-      autocomplete: "off",
-      ...isEdit ? { readonly: true } : {}
-    });
-    const titleInput = el("input", { type: "text", autocomplete: "off" });
-    const commandInput = el("input", {
-      type: "text",
-      placeholder: "gemini",
-      autocomplete: "off"
-    });
-    const argsArea = el("textarea", {
-      rows: "2",
-      spellcheck: false,
-      placeholder: "one argument per line, e.g. --acp"
-    });
-    const envArea = el("textarea", {
-      rows: "2",
-      spellcheck: false,
-      placeholder: "KEY=value per line"
-    });
-    const enabledBox = el("input", { type: "checkbox", checked: true });
-    const status = el("span", { class: "key-status" });
-    const DEFAULT_MODEL_LABEL = "Agent default";
-    const modelSelect = el("select", {});
-    const detectModels = el(
-      "button",
-      { type: "button", class: "provider-secondary" },
-      "Detect models"
-    );
-    const modelRow = el("div", { class: "acp-model-row" }, modelSelect, detectModels);
-    const modelStatus = el("span", { class: "field-hint" });
-    const DEFAULT_MODE_LABEL = "Agent default";
-    const modeSelect = el("select", {});
-    const setModeOptions = (choices, selected2) => {
-      modeSelect.replaceChildren(el("option", { value: "" }, DEFAULT_MODE_LABEL));
-      for (const choice of choices) {
-        modeSelect.append(
-          el(
-            "option",
-            { value: choice.value, ...choice.description ? { title: choice.description } : {} },
-            choice.label
-          )
-        );
-      }
-      if (selected2 && !choices.some((c3) => c3.value === selected2)) {
-        modeSelect.append(el("option", { value: selected2 }, `${selected2} (saved)`));
-      }
-      modeSelect.value = selected2;
-    };
-    const values = options.initial ?? options.draft;
-    if (values) {
-      idInput.value = values.id;
-      titleInput.value = values.title;
-      commandInput.value = values.command;
-      argsArea.value = formatArgsText(values.args);
-      envArea.value = formatEnvText(values.env);
-      enabledBox.checked = values.enabled;
-    }
-    if (options.draft) enabledBox.disabled = true;
-    let detectedModels = options.initial?.availableModels ?? [];
-    let detectedModelsAt = options.initial?.modelsProbedAt;
-    const initialModel = options.initial?.model ?? "";
-    modelSelect.append(el("option", { value: initialModel }, initialModel || DEFAULT_MODEL_LABEL));
-    modelSelect.value = initialModel;
-    let detectedModes = options.initial?.availablePermissionModes ?? [];
-    setModeOptions(detectedModes, options.initial?.permissionMode ?? "");
-    const modelPicker = mountModelSelectPicker(modelSelect, {
-      loadOptions: (current) => {
-        const pickerOptions = [
-          { value: "", label: DEFAULT_MODEL_LABEL, retention: ACP_RETENTION_NOTICE },
-          ...detectedModels.map((choice) => ({
-            value: choice.value,
-            label: acpModelChoiceLabel(choice),
-            group: "Detected models",
-            retention: ACP_RETENTION_NOTICE
-          }))
-        ];
-        if (current && !detectedModels.some((choice) => choice.value === current)) {
-          pickerOptions.push({
-            value: current,
-            label: `${current} (saved)`,
-            retention: ACP_RETENTION_NOTICE
-          });
-        }
-        return Promise.resolve(pickerOptions);
-      },
-      ariaLabel: "Agent model",
-      loadOnMount: false
-    });
-    void modelPicker.refresh(initialModel);
-    const canDetectModels = options.initial?.enabled === true;
-    detectModels.disabled = !canDetectModels;
-    if (!isEdit) modelStatus.textContent = "Save the agent first, then detect its models.";
-    else if (!canDetectModels)
-      modelStatus.textContent = "Enable and save the agent first, then detect its models.";
-    detectModels.addEventListener("click", () => {
-      if (!canDetectModels) return;
-      const id = idInput.value.trim();
-      detectModels.disabled = true;
-      setInlineStatus(modelStatus, "pending", "Detecting\u2026 (starting the agent)");
-      void api2.acp.probeAgent(id).then((probe) => {
-        detectedModels = selectorChoicesAfterProbe(detectedModels, probe.models);
-        detectedModes = selectorChoicesAfterProbe(detectedModes, probe.modes);
-        if (probe.models) {
-          void modelPicker.refresh(modelSelect.value || probe.models.currentValue);
-        }
-        if (probe.modes) {
-          setModeOptions(probe.modes.choices, modeSelect.value || probe.modes.currentValue);
-        }
-        detectedModelsAt = Date.now();
-        const saved = agents.find((candidate) => candidate.id === id);
-        if (saved) {
-          agents = upsertAgent(agents, {
-            ...saved,
-            ...probe.models ? { availableModels: probe.models.choices } : {},
-            ...probe.modes ? { availablePermissionModes: probe.modes.choices } : {},
-            // Every other selector the agent advertised (reasoning level, …),
-            // cached so the composer picker can offer them without a re-probe.
-            ...probe.configOptions ? { availableConfigOptions: probe.configOptions } : {},
-            modelsProbedAt: detectedModelsAt
-          });
-          void api2.settings.set("registeredAcpAgents", agents);
-        }
-        const bits = [
-          probe.models ? `${String(probe.models.choices.length)} models (default: ${probe.models.currentValue})` : "no selectable models",
-          probe.modes ? `${String(probe.modes.choices.length)} permission modes` : ""
-        ].filter(Boolean);
-        setInlineStatus(modelStatus, "ok", `Detected ${bits.join(", ")}.`);
-      }).catch((err2) => {
-        setInlineStatus(modelStatus, "error", err2 instanceof Error ? err2.message : String(err2));
-      }).finally(() => {
-        detectModels.disabled = !canDetectModels;
-      });
-    });
-    let idEdited = isEdit || Boolean(options.draft);
-    idInput.addEventListener("input", () => {
-      idEdited = true;
-    });
-    titleInput.addEventListener("input", () => {
-      if (!idEdited) idInput.value = slugify3(titleInput.value);
-    });
-    const submit = el("button", { type: "button", class: "provider-save" }, options.submitLabel);
-    submit.addEventListener("click", () => {
-      const id = idInput.value.trim();
-      const args = parseArgsText(argsArea.value);
-      const draft = { id, title: titleInput.value.trim(), command: commandInput.value.trim(), args };
-      const existingIds = isEdit ? [] : agents.map((a3) => a3.id);
-      const error62 = validateDraft(draft, existingIds);
-      if (error62) {
-        setInlineStatus(status, "error", error62);
-        status.className = "key-status err";
-        return;
-      }
-      const env = parseEnvText(envArea.value);
-      const model = modelSelect.value.trim();
-      const permissionMode = modeSelect.value.trim();
-      options.onSubmit({
-        id,
-        title: draft.title,
-        command: draft.command,
-        ...args.length ? { args } : {},
-        ...Object.keys(env).length ? { env } : {},
-        ...model ? { model } : {},
-        ...detectedModels.length ? { availableModels: detectedModels } : {},
-        ...detectedModels.length && detectedModelsAt !== void 0 ? { modelsProbedAt: detectedModelsAt } : {},
-        ...permissionMode ? { permissionMode } : {},
-        ...detectedModes.length ? { availablePermissionModes: detectedModes } : {},
-        enabled: options.draft ? false : enabledBox.checked
-      });
-    });
-    const fields = el(
-      "div",
-      { class: "acp-agent-fields" },
-      retentionNotice(options.initial),
-      el("label", {}, "Id", idInput),
-      el("label", {}, "Title", titleInput),
-      el("label", {}, "Command", commandInput),
-      el("label", {}, "Arguments", argsArea),
-      el("label", {}, "Environment", envArea),
-      el("label", {}, "Model", modelRow, modelStatus),
-      el(
-        "label",
-        { class: "acp-permission-mode-field" },
-        "Permission mode",
-        modeSelect,
-        el(
-          "span",
-          { class: "field-hint" },
-          "How much the agent asks before it acts. Leave this on Agent default unless you want to loosen or tighten its own prompts."
-        )
-      ),
-      el("label", { class: "checkbox-label" }, enabledBox, " Enabled (shown in the model picker)"),
-      ...options.initial?.id.startsWith("registry-") ? [
-        el(
-          "p",
-          { class: "field-hint" },
-          "Unverified custom agent. Enabling authorizes Copse to start this command, including model detection. Review its arguments and publisher requirements first."
-        )
-      ] : []
-    );
-    const actions = el("div", { class: "provider-actions provider-form-footer" }, submit, status);
-    return el("div", { class: "acp-agent-form" }, fields, actions);
-  }
-  function knownForm(known) {
-    const detected = detectedById.get(known.id);
-    const installed2 = detected?.installed ?? false;
-    const form = el(
-      "div",
-      { class: "provider-form" },
-      el("h4", { class: "provider-form-title" }, known.title, detectedStatus(detected))
-    );
-    if (!installed2 && known.install) form.append(commandRow("Install", known.install));
-    if (known.setup) form.append(commandRow("Sign in", known.setup));
-    if (known.note) {
-      const note = el("p", { class: "field-hint acp-known-agent-note" });
-      setInlineMarkdown(note, known.note);
-      form.append(note);
-    }
-    if (known.docsUrl) {
-      form.append(
-        el(
-          "p",
-          { class: "field-hint" },
-          el(
-            "a",
-            { href: known.docsUrl, target: "_blank", rel: "noopener noreferrer" },
-            "Documentation"
-          )
-        )
-      );
-    }
-    form.append(retentionNotice(known));
-    const add2 = el("button", { type: "button", class: "provider-save" }, "Add to my agents");
-    add2.addEventListener("click", () => {
-      selected = known.id;
-      void persist(upsertAgent(agents, knownToConfig(known)));
-    });
-    form.append(el("div", { class: "provider-actions provider-form-footer" }, add2));
-    return form;
-  }
-  function configuredForm(agent2) {
-    const known = knownById.get(agent2.id);
-    const remove = el("button", { type: "button", class: "provider-delete" }, "Remove");
-    remove.addEventListener("click", () => {
-      if (!knownById.has(agent2.id)) selected = "";
-      void persist(removeAgent(agents, agent2.id));
-    });
-    const card = el(
-      "div",
-      { class: "acp-agent-card" },
-      el(
-        "div",
-        { class: "acp-agent-card-head" },
-        el("strong", {}, agent2.title),
-        ...known ? [detectedStatus(detectedById.get(known.id))] : [],
-        remove
-      )
-    );
-    if (known) {
-      const installed2 = detectedById.get(known.id)?.installed ?? false;
-      if (!installed2 && known.install) card.append(commandRow("Install", known.install));
-      if (known.setup) card.append(commandRow("Sign in", known.setup));
-    }
-    card.append(
-      agentForm({
-        initial: agent2,
-        submitLabel: "Save",
-        onSubmit: (draft) => void persist(upsertAgent(agents, draft))
-      })
-    );
-    return card;
-  }
-  function addForm() {
-    return el(
-      "div",
-      { class: "provider-form" },
-      el("h4", { class: "provider-form-title" }, "Add a custom agent"),
-      registryBrowser,
-      el(
-        "p",
-        { class: "field-hint" },
-        "Add any agent program installed on this machine that Copse can drive. Give it a name, the command that launches it, and the arguments it needs to start in agent mode."
-      ),
-      ...registryDraft ? [
-        el(
-          "p",
-          { class: "field-hint acp-registry-draft-note" },
-          "Unverified registry draft. Review the command and arguments; install and authenticate separately. Adding leaves it disabled. Selecting Enabled authorizes Copse to start this command, including model detection. Custom agents have no Copse sandbox profile unless you configure one. No registry permissions are imported."
-        )
-      ] : [],
-      agentForm({
-        ...registryDraft ? { draft: registryDraft } : {},
-        submitLabel: "Add agent",
-        onSubmit: (draft) => {
-          registryDraft = void 0;
-          selected = draft.id;
-          void persist(upsertAgent(agents, draft));
-        }
-      })
-    );
-  }
-  function renderForm() {
-    clear(formHost);
-    if (selected === "other") {
-      formHost.append(addForm());
-      return;
-    }
-    const configured = agents.find((a3) => a3.id === selected);
-    if (configured) {
-      formHost.append(configuredForm(configured));
-      return;
-    }
-    const known = knownById.get(selected);
-    if (known) formHost.append(knownForm(known));
-  }
-  function render2() {
-    if (!embedded && selected !== "other" && !chipKeys().includes(selected)) {
-      selected = defaultSelected();
-    }
-    renderChips();
-    renderForm();
-    opts.onChanged?.();
-  }
-  async function reloadAgents(signal) {
-    if (signal?.aborted) return;
-    try {
-      const values = await api2.settings.get("registeredAcpAgents");
-      if (signal?.aborted) return;
-      agents = parseAcpAgentConfigs(values);
-    } catch {
-      agents = [];
-    }
-  }
-  async function autoSetup() {
-    try {
-      const result = await api2.acp.autoSetup();
-      if (result.installed.length || result.upgraded.length || result.registered.length || result.modelsDetected.length) {
-        await reloadAgents();
-        render2();
-        await scan();
-        const bits = [
-          result.installed.length ? `installed ${String(result.installed.length)}` : "",
-          result.upgraded.length ? `updated ${String(result.upgraded.length)}` : "",
-          result.registered.length ? `added ${String(result.registered.length)}` : "",
-          // Only worth calling out when nothing was installed/updated/added (a pure model refresh).
-          !result.installed.length && !result.upgraded.length && !result.registered.length && result.modelsDetected.length ? `detected models for ${String(result.modelsDetected.length)}` : ""
-        ].filter(Boolean);
-        if (bits.length) {
-          setInlineStatus(scanStatus, "ok", `Presets ready (${bits.join(", ")})`);
-          scanStatus.className = "key-status ok";
-        }
-      }
-    } catch {
-    }
-  }
-  async function refresh() {
-    await reloadAgents();
-    render2();
-    await scan();
-    await autoSetup();
-  }
-  function agentIds() {
-    return chipKeys().filter((key) => key !== "other");
-  }
-  function labelFor(id) {
-    return agentIds().includes(id) ? chipLabel(id) : null;
-  }
-  function isConfigured(id) {
-    return agents.some((agent2) => agent2.id === id);
-  }
-  function select(id) {
-    selected = id;
-    renderForm();
-  }
-  async function reload(signal) {
-    await reloadAgents(signal);
-    if (!signal?.aborted) render2();
-  }
-  return { root, refresh, reload, scan, agentIds, labelFor, isConfigured, select };
-}
-var AGENT_DATA_POLICY_URLS, ID_RE;
-var init_acp_agents_section = __esm({
-  "src/renderer/views/setup/acp-agents-section.ts"() {
-    init_acp_retention();
-    init_acp();
-    init_acp_known_agents();
-    init_helpers();
-    init_inline_markdown();
-    init_inline_status();
-    init_model_picker();
-    init_acp_registry_browser();
-    AGENT_DATA_POLICY_URLS = {
-      "claude-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
-      "claude-code-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
-      gemini: "https://github.com/google-gemini/gemini-cli/blob/main/docs/resources/tos-privacy.md",
-      "qwen-code": "https://github.com/QwenLM/qwen-code/blob/main/docs/users/support/tos-privacy.md"
-    };
-    ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
-  }
-});
-
 // packages/llm/src/service-tier.ts
 function usageServiceTierFor(value) {
   switch (value) {
@@ -54883,213 +55265,91 @@ var init_service_tier = __esm({
   }
 });
 
-// src/renderer/views/setup/chatgpt-plan-section.ts
-function createChatGptPlanSection(api2, onChanged) {
-  const root = el("div", { "data-testid": "chatgpt-plan-section" });
-  let status = { accounts: [], activeClientId: null };
-  let busy = false;
-  let message2 = "";
-  let signingIn = false;
-  let accountOptionsOpen = false;
-  let welcomeShowing = false;
-  async function act(work, isSignIn = false) {
-    signingIn = isSignIn;
-    busy = true;
-    message2 = "";
-    render2();
-    try {
-      await work();
-    } catch (error62) {
-      message2 = error62 instanceof Error ? error62.message : "Could not connect ChatGPT.";
-    } finally {
-      busy = false;
-      render2();
-      onChanged();
-      if (isSignIn) await welcome();
-    }
+// src/renderer/views/setup/openai-service-tier-field.ts
+function choiceForStored(value) {
+  if (value === "") return "auto";
+  if (value === "priority") return "fast";
+  return value;
+}
+function retainedLabel(value) {
+  if (value === "scale") return "Scale (current advanced value)";
+  const visible = value.length > 80 ? `${value.slice(0, 79)}\u2026` : value;
+  return `Current advanced value: ${visible || "(empty)"}`;
+}
+function describe3(value) {
+  const choice = SERVICE_TIER_CHOICES.find((entry) => entry.value === value);
+  if (choice) return choice.description;
+  if (value === "scale") {
+    return "Uses committed Scale Tier capacity. It remains selected until you choose another tier.";
   }
-  function render2() {
-    accountOptionsOpen = root.querySelector("details")?.open ?? accountOptionsOpen;
-    clear(root);
-    const active3 = status.accounts.find((account) => account.clientId === status.activeClientId);
-    if (status.accounts.length) {
-      const picker = el("select", { "aria-label": "ChatGPT account", disabled: busy });
-      picker.append(el("option", { value: "" }, "Choose a ChatGPT account"));
-      for (const [index, account] of status.accounts.entries()) {
-        picker.append(
-          el(
-            "option",
-            { value: account.clientId },
-            `${account.label} \xB7 connection ${String(index + 1)}${account.connected ? "" : " (signed out)"}`
-          )
-        );
-      }
-      picker.value = status.activeClientId ?? "";
-      picker.addEventListener("change", () => {
-        if (picker.value)
-          void act(async () => {
-            status = await api2.chatGptPlan.selectAccount(picker.value);
-          });
-      });
-      root.append(el("label", {}, "ChatGPT account", picker));
-    }
-    if (active3?.connected) {
-      root.append(
-        el(
-          "p",
-          { role: "status", class: "field-hint" },
-          active3.planEnabled ? "Using ChatGPT plan. Select a model from the ChatGPT plan group to start." : "Signed in. ChatGPT plan permission was not granted; reconnect to enable it."
-        )
-      );
-    }
-    const actions = el("div", { class: "provider-actions" });
-    const connect = el(
-      "button",
-      {
-        type: "button",
-        class: "ui-btn chatgpt-sign-in",
-        disabled: busy,
-        "data-testid": "chatgpt-plan-connect"
-      },
-      el("img", {
-        src: "./chatgpt-logo-white.svg",
-        alt: "",
-        width: "21",
-        height: "21",
-        "aria-hidden": "true"
-      }),
-      "Continue with ChatGPT"
-    );
-    connect.addEventListener("click", () => {
-      void act(async () => {
-        status = await api2.chatGptPlan.signIn(active3?.clientId);
-      }, true);
+  return "This value is not offered by this version. It remains selected until you choose another tier.";
+}
+function createOpenAiServiceTierField(api2) {
+  let initial = "auto";
+  let pending = "auto";
+  let dirty = false;
+  let generation = 0;
+  const hasDraft = () => dirty;
+  async function refresh(snapshot, signal) {
+    const mine = ++generation;
+    if (hasDraft()) return;
+    const raw = snapshot ? snapshot.openAiServiceTier : await api2.settings.get("openAiServiceTier");
+    if (hasDraft() || mine !== generation || signal?.aborted) return;
+    initial = choiceForStored(typeof raw === "string" ? raw : "");
+    pending = initial;
+  }
+  function element() {
+    const picker = el("select", {
+      name: "openAiServiceTier",
+      "data-testid": "openai-service-tier"
     });
-    if (!active3?.connected || !active3.planEnabled) actions.append(connect);
-    const accountActions = el("div", { class: "provider-actions" });
-    if (busy) {
-      root.append(
-        el(
-          "p",
-          { role: "status", class: "field-hint" },
-          signingIn ? "Finish signing in in your browser." : "Updating connection\u2026"
-        )
-      );
-      const cancel = el(
-        "button",
-        { type: "button", class: "ui-btn ui-btn-secondary" },
-        "Cancel sign-in"
-      );
-      cancel.addEventListener("click", () => {
-        void api2.chatGptPlan.cancelSignIn();
-      });
-      if (signingIn) actions.append(cancel);
+    for (const choice of SERVICE_TIER_CHOICES) {
+      picker.append(el("option", { value: choice.value }, choice.label));
     }
-    if (active3?.connected) {
-      const disconnect = el(
-        "button",
-        { type: "button", class: "ui-btn ui-btn-secondary", disabled: busy },
-        "Sign out"
-      );
-      disconnect.addEventListener("click", () => {
-        void act(async () => {
-          const result = await api2.chatGptPlan.signOut(active3.clientId);
-          status = result.status;
-          if (!result.revoked)
-            message2 = "Signed out locally. Remote revocation was not confirmed; disconnect Copse in ChatGPT settings.";
-        });
-      });
-      const renew = el(
-        "button",
-        { type: "button", class: "ui-btn ui-btn-secondary", disabled: busy },
-        "Refresh connection"
-      );
-      renew.addEventListener("click", () => {
-        void act(async () => {
-          status = await api2.chatGptPlan.refreshAccount(active3.clientId);
-          message2 = "Connection refreshed.";
-        });
-      });
-      accountActions.append(renew, disconnect);
+    if (!OFFERED.has(pending)) {
+      picker.append(el("option", { value: pending }, retainedLabel(pending)));
     }
-    const add2 = el(
-      "button",
-      { type: "button", class: "ui-btn ui-btn-secondary", disabled: busy },
-      "Add another account"
-    );
-    add2.addEventListener("click", () => {
-      void act(async () => {
-        status = await api2.chatGptPlan.signIn();
-      }, true);
+    picker.value = pending;
+    const field = uiField({
+      label: "Global OpenAI service tier",
+      control: picker,
+      hint: describe3(pending)
     });
-    if (status.accounts.length) accountActions.append(add2);
-    const usage = el(
-      "button",
-      {
-        type: "button",
-        class: active3?.planEnabled ? "ui-btn ui-btn-primary" : "ui-btn ui-btn-secondary"
-      },
-      "Manage usage"
-    );
-    usage.addEventListener("click", () => {
-      void api2.shell.openExternal(USAGE_URL);
+    picker.addEventListener("change", () => {
+      pending = picker.value;
+      dirty = pending !== initial;
+      field.setAttribute("hint", describe3(pending));
     });
-    actions.append(usage);
-    root.append(actions);
-    if (status.accounts.length) {
-      const options = el("details", {}, el("summary", {}, "Account options"), accountActions);
-      options.open = accountOptionsOpen;
-      root.append(options);
-    }
-    if (message2)
-      root.append(
-        el(
-          "p",
-          { role: "status", class: "field-hint", "data-testid": "chatgpt-plan-message" },
-          message2
-        )
-      );
+    return el(
+      "div",
+      { class: "provider-capability", "data-testid": "openai-service-tier-block" },
+      el("h4", { class: "provider-capability-title" }, "Request processing"),
+      field,
+      el(
+        "p",
+        { class: "field-hint openai-service-tier-scope" },
+        "Applies to OpenAI API-key requests. ChatGPT plan and the Codex agent use their own processing settings. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost."
+      )
+    );
   }
-  async function welcome() {
-    if (welcomeShowing || !status.accounts.some((account) => account.connected && account.planEnabled))
-      return;
-    welcomeShowing = true;
-    try {
-      if (await api2.settings.get("chatGptPlanWelcomeSeen") === true) return;
-      await showConfirmDialog({
-        message: "You\u2019re using your ChatGPT plan",
-        detail: "Copse uses your ChatGPT plan or available credits for ChatGPT plan models. Manage Copse\u2019s allowance and credit usage in ChatGPT Settings \u2192 Usage.",
-        confirmLabel: "Got it",
-        cancelLabel: "Close"
-      });
-      await api2.settings.set("chatGptPlanWelcomeSeen", true);
-    } catch {
-    } finally {
-      welcomeShowing = false;
-    }
-  }
-  async function refresh() {
-    try {
-      status = await api2.chatGptPlan.status();
-    } catch (error62) {
-      message2 = error62 instanceof Error ? error62.message : "Could not read the ChatGPT connection.";
-    }
-    render2();
-    await welcome();
-  }
-  render2();
   return {
-    root,
     refresh,
-    configured: () => status.accounts.some((account) => account.planEnabled && account.connected)
+    element,
+    readUpdate: () => dirty && isServiceTier(pending) ? { openAiServiceTier: pending } : {},
+    reset: () => {
+      generation += 1;
+      dirty = false;
+      pending = initial;
+    }
   };
 }
-var USAGE_URL;
-var init_chatgpt_plan_section = __esm({
-  "src/renderer/views/setup/chatgpt-plan-section.ts"() {
-    init_confirm_dialog();
+var OFFERED;
+var init_openai_service_tier_field = __esm({
+  "src/renderer/views/setup/openai-service-tier-field.ts"() {
+    init_service_tier();
     init_helpers();
-    USAGE_URL = "https://chatgpt.com/settings/usage";
+    init_ui();
+    OFFERED = new Set(SERVICE_TIER_CHOICES.map((choice) => choice.value));
   }
 });
 
@@ -55295,588 +55555,161 @@ var init_paste_key_form = __esm({
   }
 });
 
-// src/renderer/views/setup/providers-section.ts
-function createProvidersPanel(api2, opts = {}) {
-  const cloudAgents = opts.cloudAgents ?? [];
-  const cloudAgentByVendor = new Map(cloudAgents.map((entry) => [entry.vendor, entry]));
-  const cloudAgentKeys = /* @__PURE__ */ new Set();
-  const rebuild = () => {
-    renderChips();
-    renderForm();
-  };
-  const apiPanel = createCustomProvidersSection(api2, {
-    variant: "cloud",
-    deferOrdinaryWrites: opts.deferOrdinaryWrites,
-    embedded: true,
-    onChanged: rebuild
-  });
-  const chatGptPlan = createChatGptPlanSection(api2, () => {
-    renderChips();
-    if (selected === "openai") renderForm();
-  });
-  const localPanel = createCustomProvidersSection(api2, {
-    variant: "local",
-    deferOrdinaryWrites: opts.deferOrdinaryWrites,
-    embedded: true,
-    onChanged: rebuild,
-    onStatusChanged: renderChips,
-    ...opts.nativeLocalProviders ? { nativeProviders: opts.nativeLocalProviders } : {}
-  });
-  const agentsPanel = createAcpAgentsSection(api2, { embedded: true, onChanged: rebuild });
-  const pasteKey = createPasteKeyForm(api2, {
-    providers: () => apiPanel.providerIds().map((id) => ({ id, label: apiPanel.labelFor(id) ?? id })),
-    onSaved: () => {
-      void refresh();
-    },
-    renderOther: () => {
-      apiPanel.select(ADD_KEY);
-      return apiPanel.root;
-    }
-  });
-  const chipRow = el("div", { class: "provider-chips", role: "tablist" });
-  const formHost = el("div", { class: "provider-form-host" });
-  const cloudAgentOptions = opts.cloudAgentOptions;
-  if (cloudAgentOptions) cloudAgentOptions.hidden = true;
-  const fieldset = el(
-    "fieldset",
-    {},
-    el("legend", {}, "API keys"),
-    el(
-      "p",
-      { class: "settings-fieldset-desc" },
-      "Add a key and its models show up in the model picker. Pick a provider to add its key, set up its cloud agent, or connect a model server you run yourself."
-    ),
-    chipRow,
-    formHost,
-    ...cloudAgentOptions ? [cloudAgentOptions] : []
-  );
-  let selected = "";
-  let selectedAgentId = "";
-  let selectedAddKind = "api";
-  const expandedConnections = /* @__PURE__ */ new Set();
-  let deviceScanned = false;
-  let providerPicked = false;
-  let autoSetupRun = false;
-  let initialOpenAiTierChoice = "auto";
-  let pendingOpenAiTierChoice = "auto";
-  let openAiTierDirty = false;
-  const deviceAutoSetup = opts.deviceAutoSetup ?? true;
-  const deviceAgents = opts.deviceAgents ?? true;
-  const offeredOpenAiTier = new Set(SERVICE_TIER_CHOICES.map((choice) => choice.value));
-  function openAiTierChoiceForStored(value) {
-    if (value === "") return "auto";
-    if (value === "priority") return "fast";
-    return value;
-  }
-  function retainedOpenAiTierLabel(value) {
-    if (value === "scale") return "Scale (current advanced value)";
-    const visible = value.length > 80 ? `${value.slice(0, 79)}\u2026` : value;
-    return `Current advanced value: ${visible || "(empty)"}`;
-  }
-  function openAiTierDescription(value) {
-    const choice = SERVICE_TIER_CHOICES.find((entry) => entry.value === value);
-    if (choice) return choice.description;
-    if (value === "scale") {
-      return "Uses committed Scale Tier capacity. It remains selected until you choose another tier.";
-    }
-    return "This value is not offered by this version. It remains selected until you choose another tier.";
-  }
-  function hasOpenAiTierDraft() {
-    return openAiTierDirty;
-  }
-  async function refreshOpenAiTier(snapshot, generation, signal) {
-    if (!opts.showOpenAiServiceTier || hasOpenAiTierDraft()) return;
-    const raw = snapshot ? snapshot.openAiServiceTier : await api2.settings.get("openAiServiceTier");
-    if (hasOpenAiTierDraft() || generation !== refreshGeneration || signal?.aborted) return;
-    const stored = typeof raw === "string" ? raw : "";
-    initialOpenAiTierChoice = openAiTierChoiceForStored(stored);
-    pendingOpenAiTierChoice = initialOpenAiTierChoice;
-    openAiTierDirty = false;
-  }
-  function openAiTierBlock() {
-    const picker = el("select", {
-      name: "openAiServiceTier",
-      "data-testid": "openai-service-tier"
-    });
-    for (const choice of SERVICE_TIER_CHOICES) {
-      picker.append(el("option", { value: choice.value }, choice.label));
-    }
-    if (!offeredOpenAiTier.has(pendingOpenAiTierChoice)) {
-      picker.append(
-        el(
-          "option",
-          { value: pendingOpenAiTierChoice },
-          retainedOpenAiTierLabel(pendingOpenAiTierChoice)
-        )
-      );
-    }
-    picker.value = pendingOpenAiTierChoice;
-    const field = uiField({
-      label: "Global OpenAI service tier",
-      control: picker,
-      hint: openAiTierDescription(pendingOpenAiTierChoice)
-    });
-    picker.addEventListener("change", () => {
-      pendingOpenAiTierChoice = picker.value;
-      openAiTierDirty = pendingOpenAiTierChoice !== initialOpenAiTierChoice;
-      field.setAttribute("hint", openAiTierDescription(pendingOpenAiTierChoice));
-    });
-    const tierBlock = block(
-      "Request processing",
-      field,
-      el(
-        "p",
-        { class: "field-hint openai-service-tier-scope" },
-        "Applies to OpenAI API-key requests. ChatGPT plan and the Codex agent use their own processing settings. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost."
-      )
-    );
-    tierBlock.dataset["testid"] = "openai-service-tier-block";
-    return tierBlock;
-  }
-  function loadDeviceInfoOnce(agentId) {
-    const preset = KNOWN_ACP_AGENTS.some((agent2) => agent2.id === agentId && agent2.preset);
-    if (deviceAutoSetup && providerPicked && preset && !autoSetupRun) {
-      autoSetupRun = true;
-      deviceScanned = true;
-      void agentsPanel.refresh();
-      return;
-    }
-    if (!deviceScanned) {
-      deviceScanned = true;
-      void agentsPanel.scan();
-    }
-  }
-  function resolve(vendor) {
-    return {
-      api: (vendor.api ?? []).filter((id) => apiPanel.labelFor(id) !== null),
-      local: (vendor.local ?? []).filter((id) => localPanel.labelFor(id) !== null),
-      agents: deviceAgents ? (vendor.agents ?? []).filter((id) => agentsPanel.labelFor(id) !== null) : [],
-      cloud: cloudAgentByVendor.get(vendor.id)
-    };
-  }
-  function hasAnything(vendor) {
-    const caps = resolve(vendor);
-    return Boolean(caps.api.length || caps.local.length || caps.agents.length || caps.cloud);
-  }
-  function vendors() {
-    const list = [];
-    const claimed = /* @__PURE__ */ new Set();
-    for (const vendor of MERGED_VENDORS) {
-      if (!hasAnything(vendor)) continue;
-      list.push(vendor);
-      for (const id of [...vendor.api ?? [], ...vendor.local ?? [], ...vendor.agents ?? []]) {
-        claimed.add(id);
-      }
-    }
-    for (const id of apiPanel.providerIds()) {
-      if (claimed.has(id)) continue;
-      list.push({ id, label: apiPanel.labelFor(id) ?? id, api: [id] });
-    }
-    for (const id of deviceAgents ? agentsPanel.agentIds() : []) {
-      if (claimed.has(id)) continue;
-      list.push({ id, label: agentsPanel.labelFor(id) ?? id, agents: [id] });
-    }
-    for (const id of localPanel.providerIds()) {
-      if (claimed.has(id)) continue;
-      list.push({ id, label: localPanel.labelFor(id) ?? id, local: [id] });
-    }
-    return list;
-  }
-  function isConfigured(vendor) {
-    if (vendor.id === "openai" && chatGptPlan.configured()) return true;
-    const caps = resolve(vendor);
-    if (caps.api.some((id) => apiPanel.isConfigured(id))) return true;
-    if (caps.local.some((id) => localPanel.isConfigured(id))) return true;
-    if (caps.agents.some((id) => agentsPanel.isConfigured(id))) return true;
-    return caps.cloud ? caps.cloud.keySlugs.some((slug2) => cloudAgentKeys.has(slug2)) : false;
-  }
-  function renderChips() {
-    clear(chipRow);
-    for (const vendor of [...vendors(), { id: ADD_KEY, label: "Add" }]) {
-      const chip2 = el(
-        "button",
-        { type: "button", class: "provider-chip", role: "tab" },
-        vendor.label
-      );
-      chip2.dataset["provider"] = vendor.id;
-      chip2.classList.toggle("active", vendor.id === selected);
-      if (vendor.id !== ADD_KEY && isConfigured(vendor)) {
-        chip2.append(el("span", { class: "provider-chip-dot", title: "Set up" }));
-      }
-      chip2.addEventListener("click", () => {
-        if (vendor.id === "openai" && selected !== "openai") void chatGptPlan.refresh();
-        selected = vendor.id;
-        selectedAgentId = "";
-        providerPicked = true;
-        renderChips();
-        renderForm();
-      });
-      chipRow.append(chip2);
-    }
-  }
-  function block(title, ...children) {
-    return el(
-      "div",
-      { class: "provider-capability" },
-      el("h4", { class: "provider-capability-title" }, title),
-      ...children
-    );
-  }
-  function agentBlock(agentIds) {
-    if (!agentIds.includes(selectedAgentId)) selectedAgentId = agentIds[0] ?? "";
-    const children = [];
-    if (agentIds.length > 1) {
-      const picker = el("select", {});
-      for (const id of agentIds) {
-        picker.append(el("option", { value: id }, agentsPanel.labelFor(id) ?? id));
-      }
-      picker.value = selectedAgentId;
-      picker.addEventListener("change", () => {
-        selectedAgentId = picker.value;
-        renderForm();
-      });
-      children.push(el("label", {}, "Version", picker));
-    }
-    agentsPanel.select(selectedAgentId);
-    children.push(agentsPanel.root);
-    loadDeviceInfoOnce(selectedAgentId);
-    return block("On this machine", ...children);
-  }
-  function addForm() {
-    const picker = el("select", {});
-    for (const entry of ADD_KINDS.filter((e3) => deviceAgents || e3.kind !== "agent")) {
-      picker.append(el("option", { value: entry.kind }, entry.label));
-    }
-    picker.value = selectedAddKind;
-    picker.addEventListener("change", () => {
-      const next = ADD_KINDS.find((entry) => entry.kind === picker.value);
-      selectedAddKind = next?.kind ?? "api";
-      renderForm();
-    });
-    const host = el("div", { class: "provider-add-host" });
-    if (selectedAddKind === "api") {
-      host.append(pasteKey.root);
-    } else if (selectedAddKind === "local") {
-      localPanel.select(ADD_KEY);
-      host.append(localPanel.root);
-    } else {
-      agentsPanel.select(ADD_KEY);
-      host.append(agentsPanel.root);
-      loadDeviceInfoOnce();
-    }
-    return el(
-      "div",
-      { class: "provider-vendor" },
-      el("label", {}, "What are you adding?", picker),
-      host
-    );
-  }
-  function connectionDetails(id, label, ...children) {
-    const details = el("details", { "data-testid": id }, el("summary", {}, label), ...children);
-    details.open = expandedConnections.has(id);
-    details.addEventListener("toggle", () => {
-      if (details.open) expandedConnections.add(id);
-      else expandedConnections.delete(id);
-    });
-    return details;
-  }
-  function openAiCards(agentIds) {
-    const cards = el("div", { class: "provider-vendor openai-connections" });
-    apiPanel.select("openai");
-    const apiDetails = connectionDetails(
-      "openai-api-details",
-      "Configure API access",
-      apiPanel.root,
-      ...opts.showOpenAiServiceTier ? [openAiTierBlock()] : []
-    );
-    const entries2 = [
-      {
-        title: "ChatGPT plan",
-        configured: chatGptPlan.configured(),
-        description: "Copse\u2019s agent and tools, using your ChatGPT plan or available credits.",
-        content: chatGptPlan.root,
-        id: "chatgpt"
-      },
-      {
-        title: "OpenAI API",
-        configured: apiPanel.isConfigured("openai"),
-        description: "Copse\u2019s agent and tools, billed to your OpenAI API account.",
-        content: apiDetails,
-        id: "api"
-      }
-    ];
-    if (agentIds.length) {
-      entries2.push({
-        title: "Codex agent",
-        configured: agentIds.some((id) => agentsPanel.isConfigured(id)),
-        description: "Codex\u2019s agent, running on this machine.",
-        content: connectionDetails(
-          "openai-codex-details",
-          "Configure Codex agent",
-          agentBlock(agentIds)
-        ),
-        id: "codex"
-      });
-    }
-    entries2.sort((a3, b5) => Number(b5.configured) - Number(a3.configured));
-    for (const entry of entries2) {
-      cards.append(
-        el(
-          "section",
-          { class: "openai-connection-card", "data-connection": entry.id },
-          el(
-            "div",
-            { class: "openai-connection-heading" },
-            el("h4", {}, entry.title),
-            el("span", { class: "field-hint" }, entry.configured ? "Set up" : "Not set up")
-          ),
-          el("p", { class: "field-hint" }, entry.description),
-          entry.content
-        )
-      );
-    }
-    return cards;
-  }
-  function renderForm() {
-    clear(formHost);
-    if (cloudAgentOptions) cloudAgentOptions.hidden = true;
-    if (!selected) return;
-    if (selected === ADD_KEY) {
-      formHost.append(addForm());
-      return;
-    }
-    const vendor = vendors().find((entry) => entry.id === selected);
-    if (!vendor) return;
-    const caps = resolve(vendor);
-    if (vendor.id === "openai") {
-      formHost.append(openAiCards(caps.agents));
-      return;
-    }
-    const body = el("div", { class: "provider-vendor" });
-    if (caps.api.length) {
-      const [first2] = caps.api;
-      if (first2 !== void 0) {
-        apiPanel.select(first2);
-        body.append(block("API key", apiPanel.root));
-      }
-    }
-    if (caps.cloud) {
-      body.append(block("Cloud agent", caps.cloud.element));
-      if (cloudAgentOptions) cloudAgentOptions.hidden = false;
-    }
-    if (caps.agents.length) body.append(agentBlock(caps.agents));
-    if (caps.local.length) {
-      const [first2] = caps.local;
-      if (first2 !== void 0) {
-        localPanel.select(first2);
-        body.append(block("Model server on this machine", localPanel.root));
-      }
-    }
-    formHost.append(body);
-  }
-  async function refreshCloudAgentKeys() {
-    cloudAgentKeys.clear();
-    const slugs = [...new Set(cloudAgents.flatMap((entry) => [...entry.keySlugs]))];
-    await Promise.all(
-      slugs.map(async (slug2) => {
-        try {
-          if (await api2.settings.getKey(slug2)) cloudAgentKeys.add(slug2);
-        } catch {
-        }
-      })
-    );
-  }
-  let refreshGeneration = 0;
-  async function refresh(snapshot, signal) {
-    const mine = ++refreshGeneration;
-    if (signal?.aborted) return;
-    await refreshOpenAiTier(snapshot, mine, signal);
-    if (mine !== refreshGeneration || signal?.aborted) return;
-    await apiPanel.refresh(snapshot, signal);
-    if (mine !== refreshGeneration || signal?.aborted) return;
-    await localPanel.refresh(snapshot, signal);
-    if (mine !== refreshGeneration || signal?.aborted) return;
-    await agentsPanel.reload(signal);
-    if (mine !== refreshGeneration || signal?.aborted) return;
-    await refreshCloudAgentKeys();
-    if (mine !== refreshGeneration || signal?.aborted) return;
-    if (selected === "openai") await chatGptPlan.refresh();
-    if (mine !== refreshGeneration || signal?.aborted) return;
-    if (selected !== ADD_KEY && !vendors().some((vendor) => vendor.id === selected)) {
-      selected = "";
-    }
-    pasteKey.refreshChoices();
-    rebuild();
-  }
-  async function saveKeys() {
-    const [apiSaved, localSaved] = await Promise.all([apiPanel.saveKeys(), localPanel.saveKeys()]);
-    if (!apiSaved || !localSaved) return false;
-    if (openAiTierDirty && !opts.deferOrdinaryWrites) {
-      await api2.settings.set("openAiServiceTier", pendingOpenAiTierChoice);
-      initialOpenAiTierChoice = pendingOpenAiTierChoice;
-      openAiTierDirty = false;
-    }
-    return true;
-  }
-  return {
-    root: fieldset,
-    refresh,
-    saveKeys,
-    reset: () => {
-      refreshGeneration += 1;
-      pasteKey.reset();
-      apiPanel.reset();
-      localPanel.reset();
-      openAiTierDirty = false;
-      selected = "";
-      rebuild();
-    },
-    readUpdate: () => ({
-      ...apiPanel.readUpdate(),
-      ...localPanel.readUpdate(),
-      ...openAiTierDirty && isServiceTier(pendingOpenAiTierChoice) ? { openAiServiceTier: pendingOpenAiTierChoice } : {}
-    })
-  };
-}
-var MERGED_VENDORS, ADD_KEY, ADD_KINDS;
-var init_providers_section = __esm({
-  "src/renderer/views/setup/providers-section.ts"() {
-    init_helpers();
-    init_custom_providers_section();
-    init_acp_agents_section();
-    init_acp_known_agents();
-    init_service_tier();
-    init_ui();
-    init_chatgpt_plan_section();
-    init_paste_key_form();
-    MERGED_VENDORS = [
-      {
-        id: "anthropic",
-        label: "Anthropic",
-        api: ["anthropic"],
-        agents: ["claude-acp"]
-      },
-      { id: "openai", label: "OpenAI", api: ["openai"], agents: ["codex-acp"] },
-      { id: "cursor", label: "Cursor", agents: ["cursor"] },
-      { id: "gemini", label: "Google Gemini", api: ["gemini"], agents: ["gemini"] }
-    ];
-    ADD_KEY = "other";
-    ADD_KINDS = [
-      { kind: "api", label: "A provider with an API key" },
-      { kind: "local", label: "A model server on this machine" },
-      { kind: "agent", label: "An agent installed on this machine" }
-    ];
-  }
-});
-
-// src/renderer/views/setup/agent-logos.ts
-var AGENT_LOGO_SVG;
-var init_agent_logos = __esm({
-  "src/renderer/views/setup/agent-logos.ts"() {
-    AGENT_LOGO_SVG = {
-      claude: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#fff" d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg>',
-      codex: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M9.064 3.344a4.578 4.578 0 012.285-.312c1 .115 1.891.54 2.673 1.275.01.01.024.017.037.021a.09.09 0 00.043 0 4.55 4.55 0 013.046.275l.047.022.116.057a4.581 4.581 0 012.188 2.399c.209.51.313 1.041.315 1.595a4.24 4.24 0 01-.134 1.223.123.123 0 00.03.115c.594.607.988 1.33 1.183 2.17.289 1.425-.007 2.71-.887 3.854l-.136.166a4.548 4.548 0 01-2.201 1.388.123.123 0 00-.081.076c-.191.551-.383 1.023-.74 1.494-.9 1.187-2.222 1.846-3.711 1.838-1.187-.006-2.239-.44-3.157-1.302a.107.107 0 00-.105-.024c-.388.125-.78.143-1.204.138a4.441 4.441 0 01-1.945-.466 4.544 4.544 0 01-1.61-1.335c-.152-.202-.303-.392-.414-.617a5.81 5.81 0 01-.37-.961 4.582 4.582 0 01-.014-2.298.124.124 0 00.006-.056.085.085 0 00-.027-.048 4.467 4.467 0 01-1.034-1.651 3.896 3.896 0 01-.251-1.192 5.189 5.189 0 01.141-1.6c.337-1.112.982-1.985 1.933-2.618.212-.141.413-.251.601-.33.215-.089.43-.164.646-.227a.098.098 0 00.065-.066 4.51 4.51 0 01.829-1.615 4.535 4.535 0 011.837-1.388zm3.482 10.565a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="url(#cdx)"></path><defs><linearGradient gradientUnits="userSpaceOnUse" id="cdx" x1="12" x2="12" y1="3" y2="21"><stop stop-color="#B1A7FF"></stop><stop offset=".5" stop-color="#7A9DFF"></stop><stop offset="1" stop-color="#3941FF"></stop></linearGradient></defs></svg>',
-      gemini: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="gg" x1="3" y1="21" x2="21" y2="3" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#4285f4"/><stop offset=".55" stop-color="#9b72cb"/><stop offset="1" stop-color="#d96570"/></linearGradient></defs><path fill="url(#gg)" d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></svg>',
-      cursor: '<svg width="22" height="22" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 466.73 533.32"> <path fill="#72716d" d="M233.37,266.66l231.16,133.46c-1.42,2.46-3.48,4.56-6.03,6.03l-216.06,124.74c-5.61,3.24-12.53,3.24-18.14,0L8.24,406.15c-2.55-1.47-4.61-3.57-6.03-6.03l231.16-133.46h0Z"/> <path fill="#55544f" d="M233.37,0v266.66L2.21,400.12c-1.42-2.46-2.21-5.3-2.21-8.24v-250.44c0-5.89,3.14-11.32,8.24-14.27L224.29,2.43c2.81-1.62,5.94-2.43,9.07-2.43h.01Z"/> <path fill="#43413c" d="M464.52,133.2c-1.42-2.46-3.48-4.56-6.03-6.03L242.43,2.43c-2.8-1.62-5.93-2.43-9.06-2.43v266.66l231.16,133.46c1.42-2.46,2.21-5.3,2.21-8.24v-250.44c0-2.95-.78-5.77-2.21-8.24h-.01Z"/> <path fill="#d6d5d2" d="M448.35,142.54c1.31,2.26,1.49,5.16,0,7.74l-209.83,363.42c-1.41,2.46-5.16,1.45-5.16-1.38v-239.48c0-1.91-.51-3.75-1.44-5.36l216.42-124.95h.01Z"/> <path fill="#fff" d="M448.35,142.54l-216.42,124.95c-.92-1.6-2.26-2.96-3.92-3.92L20.62,143.83c-2.46-1.41-1.45-5.16,1.38-5.16h419.65c2.98,0,5.4,1.61,6.7,3.87Z"/> </svg>'
-    };
-  }
-});
-
-// src/renderer/views/setup/acp-agents-list.ts
-function agentChip(auth) {
-  if (auth === "signed-in") return "ready";
-  if (auth === "signed-out") return "needs-sign-in";
-  return null;
-}
-function listedAgents(known, detected, configured, auth) {
-  const configuredIds = new Set(configured.map((a3) => a3.id));
+// src/renderer/views/setup/models-agents-list.ts
+function connectionRows(agents, keys2, servers) {
   const rows = [];
-  for (const k4 of known) {
-    if (!configuredIds.has(k4.id) && !detected.get(k4.id)?.installed) continue;
-    const chip2 = agentChip(auth.get(k4.id));
-    rows.push({
-      id: k4.id,
-      title: k4.title,
-      chip: chip2,
-      signInCommand: chip2 === "needs-sign-in" ? acpReauthCommand(k4) : null
-    });
+  const agentSet = new Set(agents);
+  const keySet = new Set(keys2);
+  for (const family of FAMILIES2) {
+    if (family.plan) rows.push({ kind: "plan", id: family.plan });
+    for (const id of family.agents) if (agentSet.has(id)) rows.push({ kind: "agent", id });
+    if (keySet.has(family.key)) rows.push({ kind: "key", id: family.key });
   }
-  const knownIds = new Set(known.map((k4) => k4.id));
-  for (const a3 of configured) {
-    if (knownIds.has(a3.id)) continue;
-    rows.push({ id: a3.id, title: a3.title, chip: null, signInCommand: null });
-  }
+  const familyAgents = new Set(FAMILIES2.flatMap((family) => family.agents));
+  const familyKeys = new Set(FAMILIES2.map((family) => family.key));
+  for (const id of agents) if (!familyAgents.has(id)) rows.push({ kind: "agent", id });
+  for (const id of keys2) if (!familyKeys.has(id)) rows.push({ kind: "key", id });
+  for (const id of servers) rows.push({ kind: "server", id });
   return rows;
 }
-function addableAgents(known, detected, configured) {
-  const configuredIds = new Set(configured.map((a3) => a3.id));
-  return known.filter((k4) => !configuredIds.has(k4.id) && !detected.get(k4.id)?.installed);
-}
-function logoTile(id, title) {
-  const key = LOGO_KEY[id];
-  const svg2 = key ? AGENT_LOGO_SVG[key] : void 0;
-  const tile = el("span", { class: "acp-logo", "aria-hidden": "true" });
-  if (key) tile.dataset["brand"] = key;
-  if (!svg2) {
-    tile.textContent = title.slice(0, 1).toUpperCase();
-    return tile;
-  }
-  const doc3 = new DOMParser().parseFromString(svg2, "image/svg+xml");
-  tile.append(document.importNode(doc3.documentElement, true));
-  return tile;
-}
-function createAcpAgentsList(api2, opts = {}) {
+function createModelsAgentsList(api2, opts = {}) {
   let configured = [];
   let detected = /* @__PURE__ */ new Map();
   let auth = /* @__PURE__ */ new Map();
+  const storedKeys = /* @__PURE__ */ new Set();
+  const encrypted = /* @__PURE__ */ new Map();
+  let running = /* @__PURE__ */ new Set();
   let openId = "";
   let menuOpen = false;
-  let setupId = "";
+  let addForm = "";
+  let agentSetupId = "";
+  let serverChoice = "";
   let loaded = false;
   let activeSignal;
   let generation = 0;
   let autoSetupRun = false;
-  const panel = createAcpAgentsSection(api2, {
+  const launched = /* @__PURE__ */ new Set();
+  const repaint = () => {
+    if (loaded && !activeSignal?.aborted) render2();
+  };
+  const agentsPanel = createAcpAgentsSection(api2, {
     embedded: true,
+    hideRescanAction: true,
     onChanged: () => {
       void api2.settings.get("registeredAcpAgents").then((value) => {
         const previousIds = new Set(configured.map((agent2) => agent2.id));
         configured = parseAcpAgentConfigs(value);
         const added = configured.find((agent2) => !previousIds.has(agent2.id));
         if (added && menuOpen) {
-          openId = added.id;
-          menuOpen = false;
-          setupId = "";
+          openId = `agent:${added.id}`;
+          closeMenu();
         }
-        if (loaded && !activeSignal?.aborted) render2();
+        repaint();
       }).catch(() => {
       });
     }
   });
-  const list = el("div", { class: "acp-list", "data-testid": "acp-agents-list" });
+  const keysPanel = createCustomProvidersSection(api2, {
+    variant: "cloud",
+    deferOrdinaryWrites: true,
+    embedded: true,
+    onChanged: repaint
+  });
+  const serversPanel = createCustomProvidersSection(api2, {
+    variant: "local",
+    deferOrdinaryWrites: true,
+    embedded: true,
+    onChanged: repaint,
+    ...opts.nativeLocalProviders ? { nativeProviders: opts.nativeLocalProviders } : {}
+  });
+  const chatGptPlan = createChatGptPlanSection(api2, repaint);
+  let planReady = false;
+  let planOpened = false;
+  const tier = createOpenAiServiceTierField(api2);
+  function keyChoices() {
+    return [
+      ...keysPanel.providerIds().map((id) => ({ id, label: keysPanel.labelFor(id) ?? id })),
+      ...OTHER_KEY_PROVIDERS
+    ];
+  }
+  const pasteKey = createPasteKeyForm(api2, {
+    providers: keyChoices,
+    onSaved: () => {
+      void refreshKeys().then(() => opts.onKeysChanged?.());
+    },
+    renderOther: () => {
+      keysPanel.select("other");
+      return keysPanel.root;
+    }
+  });
+  const cloudByProvider = new Map((opts.cloudAgents ?? []).map((c3) => [c3.provider, c3]));
+  const parking = el("div", { hidden: true });
+  const homes = /* @__PURE__ */ new Map();
+  for (const element of [
+    ...(opts.cloudAgents ?? []).map((c3) => c3.element),
+    ...opts.cloudAgentOptions ? [opts.cloudAgentOptions] : []
+  ]) {
+    homes.set(element, element.parentElement ?? parking);
+  }
+  function park() {
+    for (const [element, home] of homes) home.append(element);
+    if (opts.cloudAgentOptions) opts.cloudAgentOptions.hidden = true;
+  }
+  const list = el("div", { class: "acp-list", "data-testid": "models-agents-list" });
   const addToggle = el(
     "button",
-    { type: "button", class: "ui-btn ui-btn-secondary", "data-testid": "acp-add-toggle" },
-    "+ Add an agent"
+    {
+      type: "button",
+      class: "ui-btn ui-btn-secondary",
+      "data-testid": "connections-add-toggle",
+      "aria-expanded": "false"
+    },
+    "+ Add"
   );
-  const menu = el("div", { class: "acp-add-menu", "data-testid": "acp-add-menu" });
+  const menu = el("div", { class: "acp-add-menu", "data-testid": "connections-add-menu" });
+  menu.hidden = true;
   addToggle.addEventListener("click", () => {
     menuOpen = !menuOpen;
-    setupId = "";
+    addForm = "";
+    agentSetupId = "";
     if (menuOpen) openId = "";
     render2();
   });
-  const rescan = el("button", { type: "button", class: "acp-link" }, "Re-scan");
+  const rescan = el(
+    "button",
+    { type: "button", class: "acp-link", "data-testid": "connections-rescan" },
+    "Re-scan"
+  );
   const scanStatus = el("span", {
     class: "field-hint acp-scan-status",
-    "data-testid": "acp-scan-status"
+    "data-testid": "connections-scan-status",
+    role: "status"
   });
   rescan.addEventListener("click", () => void rescanAll());
+  const root = el(
+    "fieldset",
+    { "data-testid": "models-agents-fieldset" },
+    el("legend", {}, "Models & agents"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Everything Copse can run a turn on. A ChatGPT plan, a coding agent and an API key are separate connections, so use any of them, or all. Agents and model servers on this machine show up on their own. Re-scan also reads API keys from your environment and shell startup files and imports new ones; existing keys are never overwritten."
+    ),
+    el("div", { class: "acp-list-bar" }, scanStatus, rescan),
+    list,
+    el("div", { class: "acp-add" }, addToggle, menu),
+    parking
+  );
+  function closeMenu() {
+    menuOpen = false;
+    addForm = "";
+    agentSetupId = "";
+  }
   async function rescanAll() {
     rescan.disabled = true;
     scanStatus.textContent = "Scanning\u2026";
     try {
-      const pending = refresh(activeSignal);
+      const pending = refresh(void 0, activeSignal);
       const mine = generation;
       await pending;
       if (mine !== generation || activeSignal?.aborted || !loaded) return;
@@ -55892,169 +55725,410 @@ function createAcpAgentsList(api2, opts = {}) {
       const { imported, skipped } = await api2.settings.importEnvKeys(
         fresh.map((key) => key.provider)
       );
+      if (mine !== generation || activeSignal?.aborted) return;
       scanStatus.textContent = imported.length === 0 ? "Nothing new to import." : `Added ${String(imported.length)} key${imported.length === 1 ? "" : "s"} found on this machine. Remove any you don\u2019t want.`;
       if (skipped.length > 0)
         scanStatus.textContent += ` ${String(skipped.length)} keys could not be imported. Review secure storage settings.`;
-      if (imported.length > 0) opts.onKeysImported?.();
+      if (imported.length > 0) {
+        await refreshKeys();
+        opts.onKeysChanged?.();
+      }
     } catch (err2) {
       scanStatus.textContent = ipcErrorMessage(err2, "Scan failed. Please try again.");
     } finally {
       rescan.disabled = false;
     }
   }
-  const root = el(
-    "fieldset",
-    { "data-testid": "acp-agents-fieldset" },
-    el("legend", {}, "Coding agents"),
-    el(
-      "p",
-      { class: "settings-fieldset-desc" },
-      "Agents on this machine show up here on their own. Re-scan also reads API keys from your environment and shell startup files and imports new keys. Existing keys are never overwritten."
-    ),
-    el("div", { class: "acp-list-bar" }, scanStatus, rescan),
-    list,
-    el("div", { class: "acp-add" }, addToggle, menu)
-  );
-  function chipEl(chip2) {
-    if (!chip2) return [];
-    return [
-      el(
-        "span",
-        { class: `acp-row-chip ${chip2 === "ready" ? "ok" : "warn"}` },
-        chip2 === "ready" ? "Ready" : "Needs sign-in"
-      )
-    ];
+  function chip2(text2, tone) {
+    return el("span", { class: `acp-row-chip${tone ? ` ${tone}` : ""}` }, text2);
   }
-  function row2(model) {
-    const open2 = openId === model.id;
-    const options = el(
+  function optionsButton(id, label = "Options") {
+    const open2 = openId === id;
+    const button = el(
       "button",
       { type: "button", class: "acp-link", "aria-expanded": String(open2) },
-      open2 ? "Hide options" : "Options"
+      open2 ? "Hide options" : label
     );
-    options.addEventListener("click", () => {
-      openId = open2 ? "" : model.id;
-      menuOpen = false;
+    button.addEventListener("click", () => {
+      openId = open2 ? "" : id;
+      closeMenu();
       render2();
-      if (openId && !autoSetupRun && KNOWN_ACP_AGENTS.some((agent2) => agent2.id === openId)) {
-        autoSetupRun = true;
-        void panel.refresh().then(() => refresh());
-      }
     });
-    const action = model.signInCommand ? copyButton("Copy sign-in command", model.signInCommand, "ui-btn ui-btn-primary") : options;
+    return button;
+  }
+  function row2(rowId, tile, title, chips, desc, actions, options) {
     const head = el(
       "div",
       { class: "acp-row-head" },
-      logoTile(model.id, model.title),
+      tile,
       el(
         "div",
         { class: "acp-row-text" },
-        el("div", { class: "acp-row-name" }, el("strong", {}, model.title), ...chipEl(model.chip)),
-        el("div", { class: "acp-row-desc" }, describe4(model))
+        el("div", { class: "acp-row-name" }, el("strong", {}, title), ...chips),
+        el("div", { class: "acp-row-desc" }, desc)
       ),
-      action
+      ...actions
     );
-    const r2 = el("div", { class: "acp-row", "data-agent": model.id }, head);
-    if (model.signInCommand) r2.append(el("div", { class: "acp-row-extra" }, options));
-    if (open2) {
-      panel.select(model.id);
-      r2.append(el("div", { class: "acp-row-options" }, panel.root));
-    }
+    const r2 = el("div", { class: "acp-row", "data-row": rowId }, head);
+    if (openId === rowId) r2.append(el("div", { class: "acp-row-options" }, ...options()));
     return r2;
   }
-  function describe4(model) {
-    const known = KNOWN_ACP_AGENTS.find((k4) => k4.id === model.id);
-    const path = detected.get(model.id)?.path;
-    if (path) return path;
-    return known ? `${known.title} on this machine.` : "Custom agent.";
-  }
-  function copyButton(label, command2, cls) {
+  function commandButton(label, pendingLabel, command2, cls) {
     const b5 = el("button", { type: "button", class: cls, title: command2 }, label);
+    if (launched.has(command2)) b5.textContent = opts.runInTerminal ? pendingLabel : "Copied";
     b5.addEventListener("click", () => {
-      void navigator.clipboard.writeText(command2);
-      b5.textContent = "Copied";
+      launched.add(command2);
+      if (opts.runInTerminal) {
+        b5.textContent = pendingLabel;
+        opts.runInTerminal(command2);
+      } else {
+        void navigator.clipboard.writeText(command2);
+        b5.textContent = "Copied";
+      }
       watchForChanges();
     });
     return b5;
   }
-  function addRow2(known) {
-    const install = known.install;
-    const action = install ? copyButton("Copy install command", install, "ui-btn ui-btn-secondary") : el("span", { class: "acp-row-desc" }, "Not available");
-    const setup = el("button", { type: "button", class: "acp-link" }, "Set up");
-    setup.addEventListener("click", () => {
-      setupId = known.id;
-      render2();
+  function agentRow(model) {
+    const rowId = `agent:${model.id}`;
+    const options = optionsButton(rowId);
+    options.addEventListener("click", () => {
+      if (openId === rowId && !autoSetupRun && KNOWN_ACP_AGENTS.some((agent2) => agent2.id === model.id)) {
+        autoSetupRun = true;
+        void agentsPanel.refresh().then(() => refresh(void 0, activeSignal));
+      }
     });
-    return el(
-      "div",
-      { class: "acp-row acp-add-row", "data-agent": known.id },
-      el(
-        "div",
-        { class: "acp-row-head" },
-        logoTile(known.id, known.title),
-        el(
-          "div",
-          { class: "acp-row-text" },
-          el("div", { class: "acp-row-name" }, el("strong", {}, known.title)),
-          el(
-            "div",
-            { class: "acp-row-desc" },
-            "Run the install command in a terminal, then Re-scan."
-          )
-        ),
-        action,
-        setup
-      )
-    );
-  }
-  function render2() {
-    clear(list);
-    const rows = listedAgents(KNOWN_ACP_AGENTS, detected, configured, auth);
-    for (const model of rows) list.append(row2(model));
-    if (!rows.length) {
-      list.append(
-        el(
-          "div",
-          { class: "acp-empty" },
-          loaded ? "No agents on this machine yet. Add one below." : "Looking for agents\u2026"
+    const actions = [];
+    if (model.signInCommand) {
+      actions.push(
+        commandButton(
+          opts.runInTerminal ? "Sign in" : "Copy sign-in command",
+          "Opened in a terminal\u2026",
+          model.signInCommand,
+          "ui-btn ui-btn-primary"
         )
       );
     }
+    actions.push(options);
+    const known = KNOWN_ACP_AGENTS.find((k4) => k4.id === model.id);
+    const chips = model.chip === "ready" ? [chip2("Ready", "ok")] : model.chip === "needs-sign-in" ? [chip2("Needs sign-in", "warn")] : [];
+    const r2 = row2(
+      rowId,
+      logoTile(model.id, model.title),
+      model.title,
+      chips,
+      detected.get(model.id)?.path ?? (known ? `${known.title} on this machine.` : "Custom agent."),
+      actions,
+      () => {
+        agentsPanel.select(model.id);
+        return [agentsPanel.root];
+      }
+    );
+    r2.dataset["agent"] = model.id;
+    return r2;
+  }
+  function planRow() {
+    const rowId = "plan:chatgpt";
+    const ready3 = planOpened ? chatGptPlan.configured() : planReady;
+    const tile = el("span", { class: "acp-logo", "data-brand": "chatgpt", "aria-hidden": "true" });
+    tile.append(el("img", { src: "./chatgpt-logo-white.svg", alt: "", width: "20", height: "20" }));
+    const options = optionsButton(rowId, ready3 ? "Options" : "Sign in");
+    options.addEventListener("click", () => {
+      if (openId !== rowId || planOpened) return;
+      planOpened = true;
+      void chatGptPlan.refresh();
+    });
+    return row2(
+      rowId,
+      tile,
+      "ChatGPT",
+      ready3 ? [chip2("Ready", "ok")] : [],
+      "Copse\u2019s own agent and tools, using your ChatGPT plan or available credits.",
+      [options],
+      () => [chatGptPlan.root]
+    );
+  }
+  function keyLabel2(id) {
+    return keysPanel.labelFor(id) ?? OTHER_KEY_PROVIDERS.find((entry) => entry.id === id)?.label ?? id;
+  }
+  function keyTile() {
+    const tile = el("span", { class: "acp-logo", "data-brand": "key", "aria-hidden": "true" });
+    const glyph = AGENT_LOGO_SVG["key"];
+    if (glyph) {
+      const doc3 = new DOMParser().parseFromString(glyph, "image/svg+xml");
+      tile.append(document.importNode(doc3.documentElement, true));
+    }
+    return tile;
+  }
+  function hasStoredKey(id) {
+    return storedKeys.has(id);
+  }
+  function cloudBlock(cloud) {
+    const block = el(
+      "div",
+      { class: "provider-capability" },
+      el("h4", { class: "provider-capability-title" }, "Cloud agent"),
+      cloud.element
+    );
+    if (opts.cloudAgentOptions) {
+      opts.cloudAgentOptions.hidden = false;
+      block.append(opts.cloudAgentOptions);
+    }
+    return block;
+  }
+  function keyOptions(id) {
+    const parts = [];
+    if (keysPanel.labelFor(id) !== null) {
+      keysPanel.select(id);
+      parts.push(keysPanel.root);
+    }
+    if (id === "openai") parts.push(tier.element());
+    const cloud = cloudByProvider.get(id);
+    if (cloud) parts.push(cloudBlock(cloud));
+    return parts;
+  }
+  async function removeKey(id) {
+    const label = keyLabel2(id);
+    const approved = await showConfirmDialog({
+      message: `Remove the ${label} API key from Copse?`,
+      detail: "Its models leave the model picker. If the key is also in your environment or shell startup files, Re-scan imports it again.",
+      confirmLabel: "Remove",
+      danger: true
+    });
+    if (!approved) return;
+    try {
+      await api2.settings.setKey(id, "");
+      if (openId === `key:${id}`) openId = "";
+      await refreshKeys();
+      opts.onKeysChanged?.();
+    } catch (err2) {
+      scanStatus.textContent = ipcErrorMessage(err2, `Could not remove the ${label} key.`);
+    }
+  }
+  function keyRow(id) {
+    const rowId = `key:${id}`;
+    const stored = hasStoredKey(id);
+    const atRest = encrypted.get(id);
+    const storage = !stored ? "Custom endpoint \xB7 no key saved" : atRest === void 0 ? "Pay per use" : atRest ? "Pay per use \xB7 encrypted by your system keychain" : "Pay per use \xB7 stored unencrypted on this machine";
+    const actions = [optionsButton(rowId)];
+    if (stored) {
+      const remove = el("button", { type: "button", class: "acp-link" }, "Remove");
+      remove.addEventListener("click", () => void removeKey(id));
+      actions.push(remove);
+    }
+    const r2 = row2(
+      rowId,
+      keyTile(),
+      `${keyLabel2(id)} API key`,
+      stored ? [chip2("Saved", "ok")] : [chip2("Custom", "")],
+      storage,
+      actions,
+      () => keyOptions(id)
+    );
+    r2.dataset["key"] = id;
+    return r2;
+  }
+  function serverRow(id) {
+    const rowId = `server:${id}`;
+    const label = serversPanel.labelFor(id) ?? id;
+    const target = localServerTargets().find((t2) => t2.id === id);
+    const r2 = row2(
+      rowId,
+      logoTile(id, label),
+      label,
+      running.has(id) ? [chip2("Running", "ok")] : [chip2("Added", "")],
+      target ? `Model server on this machine \xB7 ${target.baseUrl}` : "Model server you added.",
+      [optionsButton(rowId)],
+      () => {
+        serversPanel.select(id);
+        return [serversPanel.root];
+      }
+    );
+    r2.dataset["server"] = id;
+    return r2;
+  }
+  function menuGroup(text2) {
+    return el("div", { class: "connections-menu-group" }, text2);
+  }
+  function menuRow(id, tile, title, desc, actions, body) {
+    return el(
+      "div",
+      { class: "acp-row acp-add-row", "data-add": id },
+      el(
+        "div",
+        { class: "acp-row-head" },
+        tile,
+        el(
+          "div",
+          { class: "acp-row-text" },
+          el("div", { class: "acp-row-name" }, el("strong", {}, title)),
+          el("div", { class: "acp-row-desc" }, desc)
+        ),
+        ...actions
+      ),
+      ...body ? [el("div", { class: "acp-row-options" }, body)] : []
+    );
+  }
+  function addFormButton(form, label) {
+    if (addForm === form) {
+      const cancel = el("button", { type: "button", class: "acp-link" }, "Cancel");
+      cancel.addEventListener("click", () => {
+        addForm = "";
+        agentSetupId = "";
+        render2();
+      });
+      return [cancel];
+    }
+    const b5 = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, label);
+    b5.addEventListener("click", () => {
+      addForm = form;
+      agentSetupId = form === "agent" ? "other" : "";
+      if (form === "key") pasteKey.refreshChoices();
+      render2();
+    });
+    return [b5];
+  }
+  function agentAddRow(known) {
+    const actions = [];
+    if (known.install) {
+      actions.push(
+        commandButton(
+          opts.runInTerminal ? "Install" : "Copy install command",
+          "Installing in a terminal\u2026",
+          known.install,
+          "ui-btn ui-btn-secondary"
+        )
+      );
+    }
+    const setup = el("button", { type: "button", class: "acp-link" }, "Set up");
+    setup.addEventListener("click", () => {
+      addForm = "agent";
+      agentSetupId = known.id;
+      render2();
+    });
+    actions.push(setup);
+    const desc = known.install ? el(
+      "span",
+      {},
+      opts.runInTerminal ? "Installs in a terminal with " : "Run this in a terminal, then Re-scan: ",
+      el("code", {}, known.install)
+    ) : "Set it up by hand.";
+    const r2 = menuRow(
+      `agent:${known.id}`,
+      logoTile(known.id, known.title),
+      known.title,
+      desc,
+      actions,
+      addForm === "agent" && agentSetupId === known.id ? setupAgentBody(known.id) : void 0
+    );
+    r2.dataset["agent"] = known.id;
+    return r2;
+  }
+  function setupAgentBody(id) {
+    agentsPanel.select(id);
+    return agentsPanel.root;
+  }
+  function serverChoices(listed) {
+    return serversPanel.providerIds().filter((id) => !listed.has(id)).map((id) => ({ id, label: serversPanel.labelFor(id) ?? id }));
+  }
+  function serverAddBody(listed) {
+    const choices = serverChoices(listed);
+    const picker = el("select", { "data-testid": "connections-server-choice" });
+    for (const choice of choices) picker.append(el("option", { value: choice.id }, choice.label));
+    picker.append(el("option", { value: "other" }, "Other (custom URL)\u2026"));
+    if (![...choices.map((c3) => c3.id), "other"].includes(serverChoice)) {
+      serverChoice = choices[0]?.id ?? "other";
+    }
+    picker.value = serverChoice;
+    picker.addEventListener("change", () => {
+      serverChoice = picker.value;
+      render2();
+    });
+    serversPanel.select(serverChoice);
+    return el(
+      "div",
+      { class: "connections-add-form" },
+      el("label", {}, "Which server?", picker),
+      el(
+        "p",
+        { class: "field-hint" },
+        "Most need no key. Set its address, fetch its models, then save; they appear in the model picker."
+      ),
+      serversPanel.root
+    );
+  }
+  function renderMenu(listedServers) {
     clear(menu);
     menu.hidden = !menuOpen;
     addToggle.setAttribute("aria-expanded", String(menuOpen));
     if (!menuOpen) return;
-    if (setupId) {
-      panel.select(setupId);
-      menu.append(panel.root);
-      return;
+    const addable = addableAgents(KNOWN_ACP_AGENTS, detected, configured);
+    if (addable.length) {
+      menu.append(menuGroup("Coding agents on this machine"));
+      for (const known of addable) menu.append(agentAddRow(known));
     }
-    for (const known of addableAgents(KNOWN_ACP_AGENTS, detected, configured)) {
-      menu.append(addRow2(known));
-    }
-    const custom2 = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Set up");
-    custom2.addEventListener("click", () => {
-      setupId = "other";
-      render2();
-    });
+    menu.append(menuGroup("Other connections"));
     menu.append(
-      el(
-        "div",
-        { class: "acp-row acp-add-row", "data-agent": "other" },
-        el(
-          "div",
-          { class: "acp-row-head" },
-          logoTile("other", "+"),
-          el(
-            "div",
-            { class: "acp-row-text" },
-            el("div", { class: "acp-row-name" }, el("strong", {}, "Something else")),
-            el("div", { class: "acp-row-desc" }, "Any agent program on this machine.")
-          ),
-          custom2
-        )
+      menuRow(
+        "key",
+        keyTile(),
+        "API key",
+        "Pay per use, for any provider. Paste one and Copse suggests which.",
+        addFormButton("key", "Add key"),
+        addForm === "key" ? pasteKey.root : void 0
+      ),
+      menuRow(
+        "server",
+        logoTile("server", "S"),
+        "Model server on this machine",
+        "Ollama, LM Studio, llama.cpp, Jan, vLLM or any OpenAI-compatible URL. Running ones show up on their own.",
+        addFormButton("server", "Connect"),
+        addForm === "server" ? serverAddBody(listedServers) : void 0
+      ),
+      menuRow(
+        "agent",
+        logoTile("other", "+"),
+        "Custom agent",
+        "Any agent program on this machine, or one from the agent registry.",
+        addFormButton("agent", "Set up"),
+        addForm === "agent" && agentSetupId === "other" ? setupAgentBody("other") : void 0
       )
     );
+  }
+  function keyIds() {
+    return [
+      ...keysPanel.providerIds().filter((id) => keysPanel.isConfigured(id)),
+      ...OTHER_KEY_PROVIDERS.map((entry) => entry.id).filter((id) => storedKeys.has(id))
+    ];
+  }
+  function serverIds() {
+    return serversPanel.providerIds().filter((id) => running.has(id) || serversPanel.isConfigured(id));
+  }
+  function render2() {
+    park();
+    clear(list);
+    if (!loaded) {
+      list.append(el("div", { class: "acp-empty" }, "Looking for models and agents\u2026"));
+      renderMenu(/* @__PURE__ */ new Set());
+      return;
+    }
+    const agents = listedAgents(KNOWN_ACP_AGENTS, detected, configured, auth);
+    const agentById = new Map(agents.map((model) => [model.id, model]));
+    const servers = serverIds();
+    for (const entry of connectionRows(
+      agents.map((model) => model.id),
+      keyIds(),
+      servers
+    )) {
+      if (entry.kind === "plan") list.append(planRow());
+      else if (entry.kind === "key") list.append(keyRow(entry.id));
+      else if (entry.kind === "server") list.append(serverRow(entry.id));
+      else {
+        const model = agentById.get(entry.id);
+        if (model) list.append(agentRow(model));
+      }
+    }
+    renderMenu(new Set(servers));
   }
   async function scanDevice() {
     try {
@@ -56071,13 +56145,63 @@ function createAcpAgentsList(api2, opts = {}) {
       auth = /* @__PURE__ */ new Map();
     }
   }
-  function signature() {
-    return JSON.stringify([
-      [...detected.values()].map((d3) => [d3.id, d3.installed]),
-      [...auth.entries()]
-    ]);
+  async function readKeyStatus() {
+    const ids = [...keysPanel.providerIds(), ...OTHER_KEY_PROVIDERS.map((entry) => entry.id)];
+    const results = await Promise.all(
+      ids.map(async (id) => {
+        try {
+          const [stored, atRest] = await Promise.all([
+            api2.settings.getKey(id),
+            api2.settings.getKeyEncrypted(id)
+          ]);
+          return { id, stored, atRest };
+        } catch {
+          return { id, stored: false, atRest: null };
+        }
+      })
+    );
+    storedKeys.clear();
+    encrypted.clear();
+    for (const { id, stored, atRest } of results) {
+      if (!stored) continue;
+      storedKeys.add(id);
+      if (atRest !== null) encrypted.set(id, atRest);
+    }
   }
-  async function refresh(signal) {
+  async function readPlanStatus() {
+    try {
+      const status = await api2.chatGptPlan.status();
+      planReady = status.accounts.some((account) => account.planEnabled && account.connected);
+    } catch {
+      planReady = false;
+    }
+  }
+  async function refreshKeys() {
+    const mine = generation;
+    await keysPanel.refresh(void 0, activeSignal);
+    await readKeyStatus();
+    pasteKey.refreshChoices();
+    if (mine === generation) repaint();
+  }
+  async function probeServers() {
+    const mine = generation;
+    let lmStudioUrl = "";
+    try {
+      const saved = await api2.settings.get("localServerUrl");
+      lmStudioUrl = typeof saved === "string" ? saved.trim() : "";
+    } catch {
+    }
+    const targets = localServerTargets().map(
+      (target) => target.id === "lmstudio" && lmStudioUrl ? { ...target, baseUrl: lmStudioUrl } : target
+    );
+    const results = await detectLocalServers(api2, targets);
+    if (mine !== generation || activeSignal?.aborted) return;
+    const next = new Set(results.filter((r2) => r2.reachable).map((r2) => r2.id));
+    const changed = [...next].join() !== [...running].join();
+    running = next;
+    if (changed && !openId && !addForm) repaint();
+  }
+  async function refresh(snapshot, signal) {
     activeSignal = signal;
     const mine = ++generation;
     if (signal?.aborted) return;
@@ -56086,11 +56210,28 @@ function createAcpAgentsList(api2, opts = {}) {
     } catch {
       configured = [];
     }
-    await scanDevice();
+    await Promise.all([
+      scanDevice(),
+      keysPanel.refresh(snapshot, signal),
+      serversPanel.refresh(snapshot, signal),
+      tier.refresh(snapshot, signal),
+      readPlanStatus()
+    ]);
+    if (signal?.aborted || mine !== generation) return;
+    await readKeyStatus();
     if (signal?.aborted || mine !== generation) return;
     loaded = true;
-    await panel.reload(signal);
-    if (!signal?.aborted && mine === generation) render2();
+    await agentsPanel.reload(signal);
+    if (signal?.aborted || mine !== generation) return;
+    pasteKey.refreshChoices();
+    render2();
+    void probeServers();
+  }
+  function signature() {
+    return JSON.stringify([
+      [...detected.values()].map((d3) => [d3.id, d3.installed]),
+      [...auth.entries()]
+    ]);
   }
   let quietScanRunning = false;
   async function quietRescan() {
@@ -56130,35 +56271,68 @@ function createAcpAgentsList(api2, opts = {}) {
   window.addEventListener("focus", onFocus);
   function reset2() {
     generation += 1;
+    activeSignal = void 0;
     loaded = false;
     openId = "";
-    menuOpen = false;
-    setupId = "";
+    closeMenu();
+    serverChoice = "";
     autoSetupRun = false;
+    planOpened = false;
+    launched.clear();
     if (watchTimer) clearInterval(watchTimer);
     watchTimer = void 0;
-    panel.select("");
+    agentsPanel.select("");
+    pasteKey.reset();
+    keysPanel.reset();
+    serversPanel.reset();
+    tier.reset();
     scanStatus.textContent = "";
     render2();
   }
-  return { root, refresh, reset: reset2 };
+  render2();
+  return {
+    root,
+    refresh,
+    reset: reset2,
+    readUpdate: () => ({
+      ...keysPanel.readUpdate(),
+      ...serversPanel.readUpdate(),
+      ...tier.readUpdate()
+    }),
+    saveKeys: async () => {
+      const [keysSaved, serversSaved] = await Promise.all([
+        keysPanel.saveKeys(),
+        serversPanel.saveKeys()
+      ]);
+      return keysSaved && serversSaved;
+    }
+  };
 }
-var LOGO_KEY, WATCH_INTERVAL_MS, WATCH_MAX_TICKS;
-var init_acp_agents_list = __esm({
-  "src/renderer/views/setup/acp-agents-list.ts"() {
+var FAMILIES2, OTHER_KEY_PROVIDERS, WATCH_INTERVAL_MS, WATCH_MAX_TICKS;
+var init_models_agents_list = __esm({
+  "src/renderer/views/setup/models-agents-list.ts"() {
     init_acp();
     init_acp_known_agents();
     init_helpers();
+    init_ipc_error_message();
+    init_confirm_dialog();
+    init_acp_agents_list();
     init_acp_agents_section();
     init_agent_logos();
-    init_ipc_error_message();
-    LOGO_KEY = {
-      "claude-acp": "claude",
-      "claude-code-acp": "claude",
-      "codex-acp": "codex",
-      gemini: "gemini",
-      cursor: "cursor"
-    };
+    init_chatgpt_plan_section();
+    init_custom_providers_section();
+    init_local_detection();
+    init_openai_service_tier_field();
+    init_paste_key_form();
+    FAMILIES2 = [
+      { plan: "chatgpt", agents: ["codex-acp"], key: "openai" },
+      { agents: ["claude-acp", "claude-code-acp"], key: "anthropic" },
+      { agents: ["gemini"], key: "gemini" },
+      { agents: ["cursor"], key: "cursor" }
+    ];
+    OTHER_KEY_PROVIDERS = [
+      { id: "cursor", label: "Cursor" }
+    ];
     WATCH_INTERVAL_MS = 3e3;
     WATCH_MAX_TICKS = 40;
   }
@@ -56694,15 +56868,8 @@ var init_gh_cli_section = __esm({
 });
 
 // src/renderer/views/settings/providers-section.ts
-function createProvidersSection(overlay, api2) {
+function createProvidersSection(overlay, api2, opts = {}) {
   let activeSignal;
-  const agentsList = createAcpAgentsList(api2, {
-    onKeysImported: () => {
-      void cursorKeySection.refreshKeyStatus(activeSignal);
-      void providersPanel.refresh(void 0, activeSignal);
-    }
-  });
-  qsRequired(overlay, "#settings-agents-host").append(agentsList.root);
   const cursorKeySection = createApiKeysSection(api2, {
     legend: "Cursor authentication",
     providers: ["cursor"]
@@ -56724,7 +56891,7 @@ function createProvidersSection(overlay, api2) {
     showInstallGuide: false,
     loadOnMount: false
   });
-  const providersPanel = createProvidersPanel(api2, {
+  const modelsList = createModelsAgentsList(api2, {
     nativeLocalProviders: [
       {
         id: "lmstudio",
@@ -56733,24 +56900,18 @@ function createProvidersSection(overlay, api2) {
         refresh: () => lmStudioSection.refreshDetection(activeSignal)
       }
     ],
-    showOpenAiServiceTier: true,
-    deviceAgents: false,
-    deferOrdinaryWrites: true,
     cloudAgents: [
-      {
-        vendor: "cursor",
-        element: qsRequired(overlay, "#settings-cursor-panel"),
-        keySlugs: ["cursor"]
-      },
-      {
-        vendor: "anthropic",
-        element: qsRequired(overlay, "#settings-claude-panel"),
-        keySlugs: ["anthropic", "github"]
-      }
+      { provider: "cursor", element: qsRequired(overlay, "#settings-cursor-panel") },
+      { provider: "anthropic", element: qsRequired(overlay, "#settings-claude-panel") }
     ],
-    cloudAgentOptions: qsRequired(overlay, "#settings-cloud-agent-options")
+    cloudAgentOptions: qsRequired(overlay, "#settings-cloud-agent-options"),
+    ...opts.runInTerminal ? { runInTerminal: opts.runInTerminal } : {},
+    onKeysChanged: () => {
+      for (const section2 of [cursorKeySection, claudeAgentKeySection])
+        void section2.refreshKeyStatus(activeSignal);
+    }
   });
-  qsRequired(overlay, "#settings-providers-host").append(providersPanel.root);
+  qsRequired(overlay, "#settings-agents-host").append(modelsList.root);
   const ghCliSection = createGhCliSection(api2, { deferOrdinaryWrites: true });
   qsRequired(overlay, "#settings-gh-cli-host").append(ghCliSection.root);
   const dirty = /* @__PURE__ */ new Set();
@@ -56762,8 +56923,7 @@ function createProvidersSection(overlay, api2) {
         ...[cursorKeySection, claudeAgentKeySection].map(
           (section2) => section2.refreshKeyStatus(signal)
         ),
-        agentsList.refresh(signal),
-        providersPanel.refresh(snapshot, signal)
+        modelsList.refresh(snapshot, signal)
       ]);
     },
     refreshAgent: (signal) => ghCliSection.refreshStatus(signal),
@@ -56775,18 +56935,18 @@ function createProvidersSection(overlay, api2) {
     collect: (data, dirty2) => {
       const backend = data.get("githubBackend");
       return {
-        ...providersPanel.readUpdate(),
+        ...modelsList.readUpdate(),
         ...dirty2.has("githubBackend") && (backend === "auto" || backend === "cli" || backend === "api") ? { githubBackend: backend } : {}
       };
     },
     markDirty(target) {
-      for (const section2 of [...keySections, providersPanel, lmStudioSection])
+      for (const section2 of [...keySections, modelsList, lmStudioSection])
         if (section2.root.contains(target)) dirty.add(section2.root);
     },
     async saveKeys() {
       for (const section2 of keySections)
         if (dirty.has(section2.root) && !await section2.saveKeys()) return false;
-      if (dirty.has(providersPanel.root) && !await providersPanel.saveKeys()) return false;
+      if (dirty.has(modelsList.root) && !await modelsList.saveKeys()) return false;
       if (dirty.has(lmStudioSection.root)) await lmStudioSection.saveApiKey();
       return true;
     },
@@ -56794,8 +56954,7 @@ function createProvidersSection(overlay, api2) {
       activeSignal = void 0;
       dirty.clear();
       for (const section2 of keySections) section2.reset();
-      providersPanel.reset();
-      agentsList.reset();
+      modelsList.reset();
       for (const input2 of lmStudioSection.root.querySelectorAll(
         'input[type="password"]'
       ))
@@ -56804,12 +56963,11 @@ function createProvidersSection(overlay, api2) {
     getUrl: lmStudioSection.getUrl
   };
 }
-var init_providers_section2 = __esm({
+var init_providers_section = __esm({
   "src/renderer/views/settings/providers-section.ts"() {
     init_helpers();
     init_api_keys_section();
-    init_providers_section();
-    init_acp_agents_list();
+    init_models_agents_list();
     init_lm_studio_section();
     init_gh_cli_section();
   }
@@ -77324,8 +77482,7 @@ var init_general_markup = __esm({
           <section class="settings-section active" data-section="general">
             <h3>General</h3>
             <p class="settings-section-desc">
-              The coding agents on this machine, the API keys Copse can use, and the
-              models it picks by default.
+              The models and agents Copse can use, and the models it picks by default.
             </p>
 
             <!-- JS-mounted panels sit in a host <div>. Any such host that holds a
@@ -77333,8 +77490,6 @@ var init_general_markup = __esm({
                  fieldset gets the same inter-panel spacing as inline ones: see the
                  .settings-section > .settings-mount > fieldset rule in settings.css. -->
             <div id="settings-agents-host" class="settings-mount"></div>
-
-            <div id="settings-providers-host" class="settings-mount"></div>
 
             <fieldset id="settings-models-section" data-testid="settings-chat-model">
               <legend>Models</legend>
@@ -77351,7 +77506,8 @@ var init_general_markup = __esm({
                   the model that gives the most for what it costs on your plan, and sends the turn
                   to that provider. You can pin a specific model here instead, or from the picker
                   beside the chat box. Picking a cloud agent sends each turn to that provider's
-                  machines rather than running it here; set one up under API keys.
+                  machines rather than running it here; set one up under its API key\u2019s Options in
+                  Models &amp; agents.
                 </span>
               </label>
               <label>
@@ -77367,9 +77523,10 @@ var init_general_markup = __esm({
               <div id="settings-model-routing-host"></div>
             </fieldset>
 
-            <!-- Cloud-agent pieces the Providers panel relocates into whichever
-                 provider offers one. The shared run options move with them but stay
-                 inside this form either way, so their values always round-trip. -->
+            <!-- Cloud-agent pieces the Models & agents list relocates into the
+                 Options of the Anthropic or Cursor API key. The shared run options
+                 move with them but stay inside this form either way, so their
+                 values always round-trip. -->
             <div id="settings-cloud-agent-templates" hidden>
               <div id="settings-cursor-panel" class="remote-agent-panel">
                 <div id="settings-cursor-key-host"></div>
@@ -77433,6 +77590,20 @@ var init_classifiers_markup = __esm({
             </p>
             <div id="settings-classifiers-host" class="settings-mount"></div>
           </section>
+`;
+  }
+});
+
+// src/renderer/views/settings/web-search-markup.ts
+var webSearchMarkup;
+var init_web_search_markup = __esm({
+  "src/renderer/views/settings/web-search-markup.ts"() {
+    webSearchMarkup = `
+  <section class="settings-section" data-section="web-search">
+    <h3>Web search</h3>
+    <p class="settings-section-desc">Choose where agents send web searches. Search is available once a provider and API key are configured. Searches use your provider account and may be billable. There is no automatic fallback to another service.</p>
+    <div id="settings-web-search-host" class="settings-mount"></div>
+  </section>
 `;
   }
 });
@@ -78591,6 +78762,7 @@ var init_registry = __esm({
   "src/renderer/views/settings/registry.ts"() {
     init_general_markup();
     init_classifiers_markup();
+    init_web_search_markup();
     init_usage_markup();
     init_agent_markup();
     init_permissions_markup();
@@ -78604,6 +78776,7 @@ var init_registry = __esm({
     SETTINGS_SECTIONS = [
       { id: "general", label: "General", markup: generalMarkup, fields: generalFields },
       { id: "classifiers", label: "Classifiers", markup: classifiersMarkup, fields: [] },
+      { id: "web-search", label: "Web search", markup: webSearchMarkup, fields: [] },
       { id: "usage", label: "Usage", markup: usageMarkup, fields: [] },
       { id: "agent", label: "Agent", markup: agentMarkup, fields: agentFields },
       { id: "permissions", label: "Permissions", markup: permissionsMarkup, fields: permissionsFields },
@@ -78699,7 +78872,7 @@ var isSettingsSection, overlayEl, submitting, pendingSection, pendingPluginDetai
 var init_navigation = __esm({
   "src/renderer/views/settings/navigation.ts"() {
     init_automations_plugin();
-    isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental" || value === "about";
+    isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "web-search" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental" || value === "about";
     overlayEl = null;
     submitting = false;
     pendingSection = null;
@@ -78978,6 +79151,8 @@ function mountSettingsDialog(store2, api2) {
   qsRequired(overlay, "#settings-close").append(closeIcon("ui-icon"));
   const classifiersSection = createClassifiersSection(api2);
   qsRequired(overlay, "#settings-classifiers-host").append(classifiersSection.root);
+  const webSearchSection = createWebSearchSection(api2);
+  qsRequired(overlay, "#settings-web-search-host").append(webSearchSection.root);
   const sshWorkspaceSection = createSshWorkspaceSection(api2, {
     deferOrdinaryWrites: true,
     // Dedicated host edits wake project-menu listeners immediately.
@@ -78986,7 +79161,14 @@ function mountSettingsDialog(store2, api2) {
     }
   });
   qsRequired(overlay, "#settings-ssh-workspace-host").append(sshWorkspaceSection.root);
-  const providersSection = createProvidersSection(overlay, api2);
+  const providersSection = createProvidersSection(overlay, api2, {
+    // Agent installs and sign-ins are interactive programs: close Settings so
+    // the new shell is visible, as the Usage page's plan sign-in does.
+    runInTerminal: (command2) => {
+      closeSettingsDialog();
+      store2.emit("request_terminal_command", command2, { executionTarget: "local" });
+    }
+  });
   const toolPermissionsPanel = createToolPermissionsPanel(api2.toolPermissions);
   qsRequired(overlay, "#tool-permissions-host").append(toolPermissionsPanel.root);
   const modelsSection = createModelsSection(overlay, api2);
@@ -79078,6 +79260,10 @@ function mountSettingsDialog(store2, api2) {
       classifiers: {
         refresh: (_values, signal) => classifiersSection.refresh(signal)
       },
+      "web-search": {
+        retainDrafts: true,
+        refresh: (values, signal) => webSearchSection.refresh(values, signal)
+      },
       usage: {
         refresh: async (_values, signal) => {
           await Promise.all([usageSection.refresh(signal), providersSection.refreshUsage(signal)]);
@@ -79165,6 +79351,7 @@ function mountSettingsDialog(store2, api2) {
     dirty.clear();
     snapshot = null;
     providersSection.reset();
+    webSearchSection.reset();
     storage.reset();
     appearance.begin();
     status.hidden = true;
@@ -79242,7 +79429,8 @@ function mountSettingsDialog(store2, api2) {
         ...modelsSection.collect(data, savedDirty),
         ...providersSection.collect(data, savedDirty),
         ...appearance.collect(data, savedDirty),
-        ...sshWorkspaceSection.collect(data, savedDirty)
+        ...sshWorkspaceSection.collect(data, savedDirty),
+        ...webSearchSection.collect(savedDirty)
       };
       for (const section2 of SETTINGS_SECTIONS)
         Object.assign(changes, collectSimpleFields(section2.fields, data, savedDirty));
@@ -79259,6 +79447,12 @@ function mountSettingsDialog(store2, api2) {
       store2.emit("settings_changed");
       window.dispatchEvent(new Event("copse:skills-changed"));
       await security.save(data, savedDirty);
+      if (!await webSearchSection.saveKeys()) {
+        nav2.show("web-search");
+        status.textContent = "Preferences saved. Review the search API key before saving again.";
+        status.hidden = false;
+        return;
+      }
       if (!await providersSection.saveKeys()) {
         if (mine === openGeneration && isSettingsDialogOpen()) {
           nav2.show("general");
@@ -79294,6 +79488,7 @@ function mountSettingsDialog(store2, api2) {
     snapshot = null;
     appearance.rollback();
     providersSection.reset();
+    webSearchSection.reset();
     dirty.clear();
   });
   qsRequired(overlay, "#settings-cancel").addEventListener("click", closeSettingsDialog);
@@ -79306,13 +79501,14 @@ var init_settings_dialog = __esm({
     init_icons();
     init_ipc_error_message();
     init_classifiers_section();
+    init_web_search_section();
     init_ssh_workspace_section();
     init_tool_permissions_panel();
     init_usage_section();
     init_about_section();
     init_mobile_companion_section();
     init_models_section();
-    init_providers_section2();
+    init_providers_section();
     init_appearance_section();
     init_security_section();
     init_sources_section();
@@ -85758,6 +85954,30 @@ var init_demo_scenarios = __esm({
             body: "",
             files: [],
             checks: "success"
+          }
+        ]
+      },
+      {
+        id: "sidebar-background-project-running",
+        label: "Running agent in a collapsed project",
+        project: project("demo-running-project", "workbench", "/demo/workbench"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        threads: [
+          {
+            id: "demo-running-thread",
+            title: "Finish the migration",
+            status: "running",
+            messages: [],
+            messagesLoaded: false,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        otherProjects: [
+          {
+            project: project("demo-running-other", "docs-site", "/demo/docs-site"),
+            threads: []
           }
         ]
       },
@@ -96210,11 +96430,16 @@ function mountProjectsPane(root, store2, api2) {
     function renderProjectEntry(project2) {
       const entry = el("div", { class: "project-entry", "data-project-id": project2.id });
       const isExpanded = project2.id === expandedId;
+      const hasRunningThread = store2.getState().backgroundThreads.some(
+        ({ projectId, thread }) => projectId === project2.id && thread.status === "running"
+      );
+      const needsAttention = !project2.missing && !isExpanded && getSidebarThreads(store2, project2.id).some((t2) => isThreadAwaitingAttention(t2.id));
       const projectRow = el(
         "button",
         {
-          class: `project-row${isExpanded ? " active" : ""}${project2.missing ? " missing" : ""}`,
-          title: project2.missing ? `${project2.path} \u2014 folder missing` : project2.path
+          class: `project-row${isExpanded ? " active" : ""}${project2.missing ? " missing" : ""}${!isExpanded && hasRunningThread ? " is-running" : ""}`,
+          title: project2.missing ? `${project2.path} \u2014 folder missing` : project2.path,
+          "aria-label": !isExpanded && hasRunningThread ? `${projectDisplayName(project2)} \u2014 agent is working${needsAttention ? "; a thread needs your attention" : ""}` : void 0
         },
         el(
           "span",
@@ -96232,12 +96457,7 @@ function mountProjectsPane(root, store2, api2) {
       bindDropTarget(projectRow, entry, node2);
       if (project2.missing) {
         projectRow.append(warningIcon("ui-icon ui-icon-sm project-missing-icon"));
-      } else if (
-        // A collapsed project hides its thread rows, so surface any thread of its
-        // own that is waiting on the user right on the project row (expanded
-        // projects show the per-thread bells below instead).
-        !isExpanded && getSidebarThreads(store2, project2.id).some((t2) => isThreadAwaitingAttention(t2.id))
-      ) {
+      } else if (needsAttention) {
         projectRow.append(attentionBell("A thread in this project needs your attention"));
       }
       projectRow.addEventListener("click", () => {
@@ -150003,7 +150223,7 @@ function phaseLabel(phase) {
   if (phase === "unavailable") return "unavailable";
   return phase;
 }
-function describe3(status) {
+function describe4(status) {
   const parts = ["fileIndex", "semantic"].map((key) => {
     const component = status[key];
     const reason = component.reason ? ` \u2014 ${component.reason}` : "";
@@ -150064,7 +150284,7 @@ function mountFooterIndexStatus(host, api2) {
       chip2.hidden = false;
       chip2.textContent = buildingChipText(status, formatElapsed(elapsed));
       chip2.dataset["state"] = "building";
-      chip2.title = describe3(status);
+      chip2.title = describe4(status);
       return;
     }
     setTicking(false);
@@ -150072,7 +150292,7 @@ function mountFooterIndexStatus(host, api2) {
       chip2.hidden = false;
       chip2.textContent = "Indexing failed";
       chip2.dataset["state"] = "error";
-      chip2.title = describe3(status);
+      chip2.title = describe4(status);
       return;
     }
     const guarded = scaleGuardChip(status);
@@ -150080,7 +150300,7 @@ function mountFooterIndexStatus(host, api2) {
       chip2.hidden = false;
       chip2.textContent = guarded.text;
       chip2.dataset["state"] = guarded.state;
-      chip2.title = describe3(status);
+      chip2.title = describe4(status);
       return;
     }
     hide3();
@@ -193238,6 +193458,363 @@ var init_vnc_pane = __esm({
   }
 });
 
+// src/renderer/views/setup/providers-section.ts
+function createProvidersPanel(api2, opts = {}) {
+  const rebuild = () => {
+    renderChips();
+    renderForm();
+  };
+  const apiPanel = createCustomProvidersSection(api2, {
+    variant: "cloud",
+    embedded: true,
+    onChanged: rebuild
+  });
+  const chatGptPlan = createChatGptPlanSection(api2, () => {
+    renderChips();
+    if (selected === "openai") renderForm();
+  });
+  const localPanel = createCustomProvidersSection(api2, {
+    variant: "local",
+    embedded: true,
+    onChanged: rebuild,
+    onStatusChanged: renderChips,
+    ...opts.nativeLocalProviders ? { nativeProviders: opts.nativeLocalProviders } : {}
+  });
+  const agentsPanel = createAcpAgentsSection(api2, { embedded: true, onChanged: rebuild });
+  const pasteKey = createPasteKeyForm(api2, {
+    providers: () => apiPanel.providerIds().map((id) => ({ id, label: apiPanel.labelFor(id) ?? id })),
+    onSaved: () => {
+      void refresh();
+    },
+    renderOther: () => {
+      apiPanel.select(ADD_KEY);
+      return apiPanel.root;
+    }
+  });
+  const chipRow = el("div", { class: "provider-chips", role: "tablist" });
+  const formHost = el("div", { class: "provider-form-host" });
+  const fieldset = el(
+    "fieldset",
+    {},
+    el("legend", {}, "API keys"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Add a key and its models show up in the model picker. Pick a provider to add its key, set up its agent, or connect a model server you run yourself."
+    ),
+    chipRow,
+    formHost
+  );
+  let selected = "";
+  let selectedAgentId = "";
+  let selectedAddKind = "api";
+  const expandedConnections = /* @__PURE__ */ new Set();
+  let deviceScanned = false;
+  let providerPicked = false;
+  let autoSetupRun = false;
+  const deviceAutoSetup = opts.deviceAutoSetup ?? true;
+  function loadDeviceInfoOnce(agentId) {
+    const preset = KNOWN_ACP_AGENTS.some((agent2) => agent2.id === agentId && agent2.preset);
+    if (deviceAutoSetup && providerPicked && preset && !autoSetupRun) {
+      autoSetupRun = true;
+      deviceScanned = true;
+      void agentsPanel.refresh();
+      return;
+    }
+    if (!deviceScanned) {
+      deviceScanned = true;
+      void agentsPanel.scan();
+    }
+  }
+  function resolve(vendor) {
+    return {
+      api: (vendor.api ?? []).filter((id) => apiPanel.labelFor(id) !== null),
+      local: (vendor.local ?? []).filter((id) => localPanel.labelFor(id) !== null),
+      agents: (vendor.agents ?? []).filter((id) => agentsPanel.labelFor(id) !== null)
+    };
+  }
+  function hasAnything(vendor) {
+    const caps = resolve(vendor);
+    return Boolean(caps.api.length || caps.local.length || caps.agents.length);
+  }
+  function vendors() {
+    const list = [];
+    const claimed = /* @__PURE__ */ new Set();
+    for (const vendor of MERGED_VENDORS) {
+      if (!hasAnything(vendor)) continue;
+      list.push(vendor);
+      for (const id of [...vendor.api ?? [], ...vendor.local ?? [], ...vendor.agents ?? []]) {
+        claimed.add(id);
+      }
+    }
+    for (const id of apiPanel.providerIds()) {
+      if (claimed.has(id)) continue;
+      list.push({ id, label: apiPanel.labelFor(id) ?? id, api: [id] });
+    }
+    for (const id of agentsPanel.agentIds()) {
+      if (claimed.has(id)) continue;
+      list.push({ id, label: agentsPanel.labelFor(id) ?? id, agents: [id] });
+    }
+    for (const id of localPanel.providerIds()) {
+      if (claimed.has(id)) continue;
+      list.push({ id, label: localPanel.labelFor(id) ?? id, local: [id] });
+    }
+    return list;
+  }
+  function isConfigured(vendor) {
+    if (vendor.id === "openai" && chatGptPlan.configured()) return true;
+    const caps = resolve(vendor);
+    if (caps.api.some((id) => apiPanel.isConfigured(id))) return true;
+    if (caps.local.some((id) => localPanel.isConfigured(id))) return true;
+    return caps.agents.some((id) => agentsPanel.isConfigured(id));
+  }
+  function renderChips() {
+    clear(chipRow);
+    for (const vendor of [...vendors(), { id: ADD_KEY, label: "Add" }]) {
+      const chip2 = el(
+        "button",
+        { type: "button", class: "provider-chip", role: "tab" },
+        vendor.label
+      );
+      chip2.dataset["provider"] = vendor.id;
+      chip2.classList.toggle("active", vendor.id === selected);
+      if (vendor.id !== ADD_KEY && isConfigured(vendor)) {
+        chip2.append(el("span", { class: "provider-chip-dot", title: "Set up" }));
+      }
+      chip2.addEventListener("click", () => {
+        if (vendor.id === "openai" && selected !== "openai") void chatGptPlan.refresh();
+        selected = vendor.id;
+        selectedAgentId = "";
+        providerPicked = true;
+        renderChips();
+        renderForm();
+      });
+      chipRow.append(chip2);
+    }
+  }
+  function block(title, ...children) {
+    return el(
+      "div",
+      { class: "provider-capability" },
+      el("h4", { class: "provider-capability-title" }, title),
+      ...children
+    );
+  }
+  function agentBlock(agentIds) {
+    if (!agentIds.includes(selectedAgentId)) selectedAgentId = agentIds[0] ?? "";
+    const children = [];
+    if (agentIds.length > 1) {
+      const picker = el("select", {});
+      for (const id of agentIds) {
+        picker.append(el("option", { value: id }, agentsPanel.labelFor(id) ?? id));
+      }
+      picker.value = selectedAgentId;
+      picker.addEventListener("change", () => {
+        selectedAgentId = picker.value;
+        renderForm();
+      });
+      children.push(el("label", {}, "Version", picker));
+    }
+    agentsPanel.select(selectedAgentId);
+    children.push(agentsPanel.root);
+    loadDeviceInfoOnce(selectedAgentId);
+    return block("On this machine", ...children);
+  }
+  function addForm() {
+    const picker = el("select", {});
+    for (const entry of ADD_KINDS) {
+      picker.append(el("option", { value: entry.kind }, entry.label));
+    }
+    picker.value = selectedAddKind;
+    picker.addEventListener("change", () => {
+      const next = ADD_KINDS.find((entry) => entry.kind === picker.value);
+      selectedAddKind = next?.kind ?? "api";
+      renderForm();
+    });
+    const host = el("div", { class: "provider-add-host" });
+    if (selectedAddKind === "api") {
+      host.append(pasteKey.root);
+    } else if (selectedAddKind === "local") {
+      localPanel.select(ADD_KEY);
+      host.append(localPanel.root);
+    } else {
+      agentsPanel.select(ADD_KEY);
+      host.append(agentsPanel.root);
+      loadDeviceInfoOnce();
+    }
+    return el(
+      "div",
+      { class: "provider-vendor" },
+      el("label", {}, "What are you adding?", picker),
+      host
+    );
+  }
+  function connectionDetails(id, label, ...children) {
+    const details = el("details", { "data-testid": id }, el("summary", {}, label), ...children);
+    details.open = expandedConnections.has(id);
+    details.addEventListener("toggle", () => {
+      if (details.open) expandedConnections.add(id);
+      else expandedConnections.delete(id);
+    });
+    return details;
+  }
+  function openAiCards(agentIds) {
+    const cards = el("div", { class: "provider-vendor openai-connections" });
+    apiPanel.select("openai");
+    const apiDetails = connectionDetails(
+      "openai-api-details",
+      "Configure API access",
+      apiPanel.root
+    );
+    const entries2 = [
+      {
+        title: "ChatGPT plan",
+        configured: chatGptPlan.configured(),
+        description: "Copse\u2019s agent and tools, using your ChatGPT plan or available credits.",
+        content: chatGptPlan.root,
+        id: "chatgpt"
+      },
+      {
+        title: "OpenAI API",
+        configured: apiPanel.isConfigured("openai"),
+        description: "Copse\u2019s agent and tools, billed to your OpenAI API account.",
+        content: apiDetails,
+        id: "api"
+      }
+    ];
+    if (agentIds.length) {
+      entries2.push({
+        title: "Codex agent",
+        configured: agentIds.some((id) => agentsPanel.isConfigured(id)),
+        description: "Codex\u2019s agent, running on this machine.",
+        content: connectionDetails(
+          "openai-codex-details",
+          "Configure Codex agent",
+          agentBlock(agentIds)
+        ),
+        id: "codex"
+      });
+    }
+    entries2.sort((a3, b5) => Number(b5.configured) - Number(a3.configured));
+    for (const entry of entries2) {
+      cards.append(
+        el(
+          "section",
+          { class: "openai-connection-card", "data-connection": entry.id },
+          el(
+            "div",
+            { class: "openai-connection-heading" },
+            el("h4", {}, entry.title),
+            el("span", { class: "field-hint" }, entry.configured ? "Set up" : "Not set up")
+          ),
+          el("p", { class: "field-hint" }, entry.description),
+          entry.content
+        )
+      );
+    }
+    return cards;
+  }
+  function renderForm() {
+    clear(formHost);
+    if (!selected) return;
+    if (selected === ADD_KEY) {
+      formHost.append(addForm());
+      return;
+    }
+    const vendor = vendors().find((entry) => entry.id === selected);
+    if (!vendor) return;
+    const caps = resolve(vendor);
+    if (vendor.id === "openai") {
+      formHost.append(openAiCards(caps.agents));
+      return;
+    }
+    const body = el("div", { class: "provider-vendor" });
+    if (caps.api.length) {
+      const [first2] = caps.api;
+      if (first2 !== void 0) {
+        apiPanel.select(first2);
+        body.append(block("API key", apiPanel.root));
+      }
+    }
+    if (caps.agents.length) body.append(agentBlock(caps.agents));
+    if (caps.local.length) {
+      const [first2] = caps.local;
+      if (first2 !== void 0) {
+        localPanel.select(first2);
+        body.append(block("Model server on this machine", localPanel.root));
+      }
+    }
+    formHost.append(body);
+  }
+  let refreshGeneration = 0;
+  async function refresh(snapshot, signal) {
+    const mine = ++refreshGeneration;
+    if (signal?.aborted) return;
+    await apiPanel.refresh(snapshot, signal);
+    if (mine !== refreshGeneration || signal?.aborted) return;
+    await localPanel.refresh(snapshot, signal);
+    if (mine !== refreshGeneration || signal?.aborted) return;
+    await agentsPanel.reload(signal);
+    if (mine !== refreshGeneration || signal?.aborted) return;
+    if (selected === "openai") await chatGptPlan.refresh();
+    if (mine !== refreshGeneration || signal?.aborted) return;
+    if (selected !== ADD_KEY && !vendors().some((vendor) => vendor.id === selected)) {
+      selected = "";
+    }
+    pasteKey.refreshChoices();
+    rebuild();
+  }
+  async function saveKeys() {
+    const [apiSaved, localSaved] = await Promise.all([apiPanel.saveKeys(), localPanel.saveKeys()]);
+    return apiSaved && localSaved;
+  }
+  return {
+    root: fieldset,
+    refresh,
+    saveKeys,
+    reset: () => {
+      refreshGeneration += 1;
+      pasteKey.reset();
+      apiPanel.reset();
+      localPanel.reset();
+      selected = "";
+      rebuild();
+    },
+    readUpdate: () => ({
+      ...apiPanel.readUpdate(),
+      ...localPanel.readUpdate()
+    })
+  };
+}
+var MERGED_VENDORS, ADD_KEY, ADD_KINDS;
+var init_providers_section2 = __esm({
+  "src/renderer/views/setup/providers-section.ts"() {
+    init_helpers();
+    init_custom_providers_section();
+    init_acp_agents_section();
+    init_acp_known_agents();
+    init_chatgpt_plan_section();
+    init_paste_key_form();
+    MERGED_VENDORS = [
+      {
+        id: "anthropic",
+        label: "Anthropic",
+        api: ["anthropic"],
+        agents: ["claude-acp"]
+      },
+      { id: "openai", label: "OpenAI", api: ["openai"], agents: ["codex-acp"] },
+      { id: "cursor", label: "Cursor", agents: ["cursor"] },
+      { id: "gemini", label: "Google Gemini", api: ["gemini"], agents: ["gemini"] }
+    ];
+    ADD_KEY = "other";
+    ADD_KINDS = [
+      { kind: "api", label: "A provider with an API key" },
+      { kind: "local", label: "A model server on this machine" },
+      { kind: "agent", label: "An agent installed on this machine" }
+    ];
+  }
+});
+
 // src/renderer/views/setup/detected-item-row.ts
 function providerLabel(slug2) {
   return PROVIDER_LABELS2[slug2] ?? slug2;
@@ -193745,7 +194322,7 @@ var init_onboarding_dialog = __esm({
     init_icons();
     init_dialog_shell();
     init_lm_studio_section();
-    init_providers_section();
+    init_providers_section2();
     init_detected_item_row();
     init_onboarding_scan();
     shell2 = null;
@@ -195856,11 +196433,17 @@ function endsInsideMarkup(text2, incomingText) {
   let fence;
   let lastLineClosesFence = false;
   const inlineLines = [];
+  let inlineParagraphLines = [];
+  const pushInlineLine = (line) => {
+    inlineLines.push(line);
+    if (line.trim()) inlineParagraphLines.push(line);
+    else inlineParagraphLines = [];
+  };
   for (const line of text2.split("\n")) {
     lastLineClosesFence = false;
     const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
     if (!match) {
-      if (!fence) inlineLines.push(line);
+      if (!fence) pushInlineLine(line);
       continue;
     }
     const marker = match[1] ?? "";
@@ -195869,11 +196452,13 @@ function endsInsideMarkup(text2, incomingText) {
       if (marker[0] === fence.character && marker.length >= fence.length && !rest.trim()) {
         fence = void 0;
         lastLineClosesFence = true;
+        inlineParagraphLines = [];
       }
     } else if (marker[0] !== "`" || !rest.includes("`")) {
       fence = { character: marker[0] ?? "", length: marker.length };
+      inlineParagraphLines = [];
     } else {
-      inlineLines.push(line);
+      pushInlineLine(line);
     }
   }
   if (fence) return true;
@@ -195895,11 +196480,10 @@ function endsInsideMarkup(text2, incomingText) {
     break;
   }
   if (lastLine.startsWith("|") && !lastLine.endsWith("|")) return true;
-  const trailingMarker = /(\*+|_+|~{2,}|`+)$/.exec(lastLine)?.[1];
-  if (!trailingMarker) return false;
+  const trailingMarker = /(\*+|_+|~{2,})$/.exec(lastLine)?.[1];
   let unmatched = false;
   let inlineCodeLength;
-  const inlineText = inlineLines.join("\n");
+  const inlineText = inlineParagraphLines.join("\n");
   for (const match of inlineText.matchAll(/\*+|_+|~{2,}|`+/g)) {
     let precedingBackslashes = 0;
     for (let index = match.index - 1; index >= 0 && inlineText[index] === "\\"; index -= 1) {
@@ -195914,7 +196498,8 @@ function endsInsideMarkup(text2, incomingText) {
       unmatched = !unmatched;
     }
   }
-  if (trailingMarker.startsWith("`")) return inlineCodeLength !== void 0;
+  if (inlineCodeLength !== void 0) return true;
+  if (!trailingMarker) return false;
   return unmatched;
 }
 function planAgentTextChunk(state, text2) {
