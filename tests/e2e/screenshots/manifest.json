@@ -709,6 +709,14 @@
       "sha256": "f6192477669a73cab830ab8683870dddd6afa2f613d6076a5faf08333d2f7f13",
       "bytes": 26352
     },
+    "automation-timeout-retried.png": {
+      "sha256": "a88ed3a84b206697c019b6cfefd1f98817cf208d55289752b4b55719e44a6d75",
+      "bytes": 37924
+    },
+    "automation-timeout-retry.png": {
+      "sha256": "a4db87fdd2d8839b98f532e89cdc6b176839ab88b40f03d286a9dca4db452b50",
+      "bytes": 20528
+    },
     "automation-trigger-problem.png": {
       "sha256": "ce053c2ec32c024bda0c4f71bc8ea1c38dea4ecb2a49eb72883dfaf9dfb8aa77",
       "bytes": 267289

@@ -18,7 +18,7 @@ import { automationRunBlock } from '@shared/automation-run-state.ts'
 import { classifyAutomationFailureMessage } from '@shared/automation-failure.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
-import { createThread, loadProjectThreads } from '../thread-store.ts'
+import { createThread, loadProjectThreads, updateMetaOrThrow } from '../thread-store.ts'
 import {
   releaseCompletedAutomationWorktree,
   type AutomationWorktreeRelease,
@@ -38,6 +38,11 @@ import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
 const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
 const SCHEDULER_HANDLER = 'automation_scheduler_tick'
 const SCHEDULER_MAX_DURATION_MS = 120_000
+// Below SCHEDULER_MAX_DURATION_MS, so a hung trigger (a stuck git/worktree
+// operation) is isolated per schedule instead of blowing the whole tick's
+// duration budget — which fails every other due schedule too and gets this
+// task replaced, only for the replacement to hang on the same schedule again.
+const SCHEDULER_TRIGGER_TIMEOUT_MS = 90_000
 const SCHEDULER_RECOVERY_DELAY_MS = 5_000
 /** How late a wake may be and still run the minute it was armed for rather than the current one. */
 const MAX_WAKE_LATENESS_MS = 2 * 60_000
@@ -315,6 +320,7 @@ export function createAutomationService(
   let schedulerHealth: AutomationSchedulerHealth = { state: 'ok', since: null, message: null }
   const healthListeners = new Set<(health: AutomationSchedulerHealth) => void>()
   const inFlight = new Set<string>()
+  const triggerAttempts = new Map<string, AbortController>()
   const attemptedMinutes = new Map<string, number>()
 
   function setHealth(state: AutomationSchedulerHealth['state'], message: string | null): void {
@@ -330,9 +336,11 @@ export function createAutomationService(
   async function recordProblem(
     schedule: AutomationSchedule,
     problem: AutomationProblem,
+    signal?: AbortSignal,
   ): Promise<void> {
     try {
       await updateSchedules((schedules) => {
+        signal?.throwIfAborted()
         return schedules.map((candidate) =>
           candidate.projectId === schedule.projectId && candidate.id === schedule.id
             ? { ...candidate, lastProblem: problem }
@@ -368,8 +376,10 @@ export function createAutomationService(
     triggeredAt: number,
     attemptedLimit: number,
     blockedBy: AutomationRetainedWorktree[],
+    signal?: AbortSignal,
   ): Promise<void> {
     await updateSchedules((schedules) => {
+      signal?.throwIfAborted()
       return schedules.map((schedule) =>
         schedule.projectId === projectId &&
         schedule.id === scheduleId &&
@@ -414,8 +424,10 @@ export function createAutomationService(
     scheduleId: string,
     triggeredAt: number,
     threadId: string,
+    signal?: AbortSignal,
   ): Promise<void> {
     await updateSchedules((schedules) => {
+      signal?.throwIfAborted()
       return schedules.map((schedule) => {
         if (schedule.projectId !== projectId || schedule.id !== scheduleId) return schedule
         const updated = {
@@ -558,13 +570,17 @@ export function createAutomationService(
     schedule: AutomationSchedule,
     triggeredAt: number,
     source: 'schedule' | 'manual',
+    attempt = new AbortController(),
   ): Promise<AutomationTriggerEvent> {
     if (inFlight.has(schedule.id)) throw new Error('This automation is already creating a task')
     inFlight.add(schedule.id)
+    triggerAttempts.set(schedule.id, attempt)
+    const { signal } = attempt
     try {
       const scheduleThreads = (await dependencies.loadProjectThreads(schedule.projectId)).filter(
         (thread) => thread.automation?.scheduleId === schedule.id,
       )
+      signal.throwIfAborted()
       const previous = schedule.lastCreatedThreadId
         ? (scheduleThreads.find((thread) => thread.id === schedule.lastCreatedThreadId) ?? null)
         : null
@@ -572,13 +588,18 @@ export function createAutomationService(
 
       if (busy) {
         if (automationRunBlock(busy) === 'pending-start') {
-          await recordProblem(schedule, {
-            at: triggeredAt,
-            kind: 'pending-start',
-            message:
-              'An earlier run was created but never started, so this one was skipped. ' +
-              'Open the project to start it, or send or discard its draft.',
-          })
+          await recordProblem(
+            schedule,
+            {
+              at: triggeredAt,
+              kind: 'pending-start',
+              message:
+                'An earlier run was created but never started, so this one was skipped. ' +
+                'Open the project to start it, or send or discard its draft.',
+            },
+            signal,
+          )
+          signal.throwIfAborted()
         }
         return {
           projectId: schedule.projectId,
@@ -601,6 +622,7 @@ export function createAutomationService(
             console.warn(`[automations] Could not release the worktree of ${thread.id}:`, error)
             return { released: false, reason: 'in-use' }
           })
+        signal.throwIfAborted()
         if (release.released) continue
         if (
           !handOverClaimed &&
@@ -608,9 +630,11 @@ export function createAutomationService(
             .canReusePreviousRun?.(schedule.projectId, thread.id)
             .catch(() => false)) === true
         ) {
+          signal.throwIfAborted()
           handOverClaimed = true
           continue
         }
+        signal.throwIfAborted()
         retained.push({
           threadId: thread.id,
           title: thread.title,
@@ -620,6 +644,7 @@ export function createAutomationService(
       }
       // The cap stops an unattended schedule leaking checkouts. A person asking
       // for a run right now is not that, so a manual start is never refused for it.
+      signal.throwIfAborted()
       const maxLiveWorktrees = schedule.maxLiveWorktrees ?? 1
       if (source === 'schedule' && retained.length >= maxLiveWorktrees) {
         await recordWorktreeLimit(
@@ -628,7 +653,9 @@ export function createAutomationService(
           triggeredAt,
           maxLiveWorktrees,
           retained,
+          signal,
         )
+        signal.throwIfAborted()
         const event: AutomationTriggerEvent = {
           projectId: schedule.projectId,
           scheduleId: schedule.id,
@@ -661,10 +688,21 @@ export function createAutomationService(
         updatedAt: triggeredAt,
       }
       await dependencies.createProjectThread(schedule.projectId, thread)
+      if (signal.aborted) {
+        // A filesystem call cannot always be cancelled. Keep a late-created
+        // thread visible as a failed, unsent draft; it must never auto-start or
+        // hold every future schedule occurrence behind a pending draft.
+        await updateMetaOrThrow(schedule.projectId, threadId, {
+          status: 'error',
+          automation: { ...provenance, startFailedAt: dependencies.now() },
+        }).catch(() => {})
+        signal.throwIfAborted()
+      }
       // The user may edit or delete the schedule while the filesystem work
       // above is pending. Merge only the run metadata into the current row;
       // never restore the stale snapshot that started this run.
-      await recordScheduleRun(schedule.projectId, schedule.id, triggeredAt, threadId)
+      await recordScheduleRun(schedule.projectId, schedule.id, triggeredAt, threadId, signal)
+      signal.throwIfAborted()
       const event = {
         projectId: schedule.projectId,
         scheduleId: schedule.id,
@@ -675,7 +713,12 @@ export function createAutomationService(
       notify?.(event)
       return event
     } finally {
-      inFlight.delete(schedule.id)
+      // A timed-out attempt can settle after its replacement has acquired the
+      // schedule. Only the current owner may release that replacement's lock.
+      if (triggerAttempts.get(schedule.id) === attempt) {
+        triggerAttempts.delete(schedule.id)
+        inFlight.delete(schedule.id)
+      }
     }
   }
 
@@ -935,12 +978,31 @@ export function createAutomationService(
       // the scheduler task's duration budget and take the whole scheduler down.
       await Promise.all(
         due.map(async (schedule) => {
+          const attempt = new AbortController()
+          let timer: ReturnType<typeof setTimeout> | undefined
+          const timedOut = new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => {
+              const error = new Error(
+                `Trigger timed out after ${String(SCHEDULER_TRIGGER_TIMEOUT_MS)}ms; any unfinished creation will not start a turn`,
+              )
+              attempt.abort(error)
+              if (triggerAttempts.get(schedule.id) === attempt) {
+                triggerAttempts.delete(schedule.id)
+                inFlight.delete(schedule.id)
+              }
+              reject(error)
+            }, SCHEDULER_TRIGGER_TIMEOUT_MS)
+          })
           try {
-            await trigger(schedule, now, 'schedule')
+            await Promise.race([trigger(schedule, now, 'schedule', attempt), timedOut])
           } catch (error) {
-            // Isolate failures so one project cannot prevent other matching
-            // schedules from running. Do not retry repeatedly in the same minute.
+            // Isolate failures — including a hang, which would otherwise block this
+            // Promise.all and take the whole tick past its own duration budget — so
+            // one project cannot prevent other matching schedules from running.
+            // Do not retry repeatedly in the same minute.
             await logTriggerFailure(schedule, error)
+          } finally {
+            clearTimeout(timer)
           }
         }),
       )

@@ -1,5 +1,9 @@
 import { beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createThread, getThreadMeta } from '../thread-store.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import type {
   AutomationPermission,
@@ -18,6 +22,8 @@ import { createAutomationService, type AutomationTaskSupervisor } from './automa
 
 const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
 const SCHEDULER_HANDLER = 'automation_scheduler_tick'
+// Mirrors automation-service.ts's SCHEDULER_TRIGGER_TIMEOUT_MS.
+const SCHEDULER_TRIGGER_TIMEOUT_MS = 90_000
 
 /**
  * Durable tasks only become visible once `start()` has replayed them off disk,
@@ -1444,6 +1450,123 @@ describe('AutomationService', () => {
 
     assert.equal(outcome, 'done')
     assert.deepEqual(begun.sort(), ['a', 'b', 'c'])
+  })
+
+  it('isolates a trigger that hangs instead of letting it block the tick past its own timeout', async (context) => {
+    context.mock.method(console, 'error', () => {})
+    context.mock.timers.enable({ apis: ['setTimeout'] })
+    storageSet(STORAGE_KEY, [
+      {
+        id: 'stuck',
+        projectId: 'project-a',
+        name: 'stuck',
+        cron: '* * * * *',
+        prompt: 'p',
+        model: 'm',
+        enabled: true,
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    ])
+    let now = new Date(2026, 6, 27, 9, 0, 5).getTime()
+    let attempts = 0
+    const service = createAutomationService({
+      now: () => now,
+      isPluginEnabled: () => true,
+      // Only the first attempt is permanently stuck. Later cron occurrences
+      // must remain eligible without waiting for it to resolve.
+      createProjectThread: () => {
+        attempts += 1
+        return attempts === 1 ? new Promise<void>(() => {}) : Promise.resolve()
+      },
+      loadProjectThreads: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
+    })
+
+    const pending = service.tick()
+    // Let the hung trigger actually start before advancing past its timeout.
+    for (let i = 0; i < 5; i++) await Promise.resolve()
+    context.mock.timers.tick(SCHEDULER_TRIGGER_TIMEOUT_MS)
+    await pending
+
+    const problem = service.list('project-a')[0]?.lastProblem
+    assert.equal(problem?.kind, 'failed')
+    assert.match(problem.message, /timed out/)
+    now += 60_000
+    await service.tick()
+    assert.equal(attempts, 2)
+    assert.equal(service.list('project-a')[0]?.lastRunAt, now)
+  })
+
+  it('retries after timeout and fences a late creation from the replacement run', async (context) => {
+    context.mock.method(console, 'error', () => {})
+    context.mock.timers.enable({ apis: ['setTimeout'] })
+    const previousRoot = process.env['COPSE_WORKSPACE_DIR']
+    const root = mkdtempSync(join(tmpdir(), 'automation-timeout-'))
+    process.env['COPSE_WORKSPACE_DIR'] = root
+    context.after(() => {
+      if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+      rmSync(root, { recursive: true, force: true })
+    })
+    let oldThreadId = ''
+    let now = new Date(2026, 6, 27, 9, 0, 5).getTime()
+    let resolveOld: () => void = () => {}
+    let resolveNext: () => void = () => {}
+    let creations = 0
+    const events: AutomationTriggerEvent[] = []
+    const service = createAutomationService({
+      now: () => now,
+      isPluginEnabled: () => true,
+      createProjectThread: async (projectId, thread) => {
+        creations += 1
+        if (creations === 1) oldThreadId = thread.id
+        await new Promise<void>((resolve) => {
+          if (creations === 1) resolveOld = resolve
+          else resolveNext = resolve
+        })
+        await createThread(projectId, thread)
+      },
+      loadProjectThreads: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
+      supervisor: () => new FakeTaskSupervisor(),
+    })
+    service.start((event) => events.push(event))
+    const schedule = await service.upsert('project-a', {
+      name: 'retry',
+      cron: '* * * * *',
+      prompt: 'p',
+      model: 'm',
+      enabled: true,
+    })
+    const first = service.tick()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    assert.equal(creations, 1)
+    context.mock.timers.tick(SCHEDULER_TRIGGER_TIMEOUT_MS)
+    await first
+    now += 60_000
+    const replacement = service.runNow('project-a', schedule.id)
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    assert.equal(creations, 2)
+    resolveOld()
+    const deadline = Date.now() + 5_000
+    while (
+      (await getThreadMeta('project-a', oldThreadId))?.automation?.startFailedAt === undefined
+    ) {
+      if (Date.now() > deadline) throw new Error('Late thread was not marked failed')
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    }
+    assert.equal((await getThreadMeta('project-a', oldThreadId))?.draftPrompt, 'p')
+    // Let the old trigger's finally execute after its durable failure write.
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(events.length, 0)
+    assert.equal(service.list('project-a')[0]?.lastCreatedThreadId, undefined)
+    await assert.rejects(service.runNow('project-a', schedule.id), /already creating/)
+    resolveNext()
+    const event = await replacement
+    assert.equal(events.length, 1)
+    assert.equal(service.list('project-a')[0]?.lastCreatedThreadId, event.threadId)
+    service.stop()
   })
 
   describe('trigger problems the user can see', () => {
