@@ -16,6 +16,6 @@
     "@copse/std": "workspace:*",
     "@copse/store-kit": "workspace:*",
     "marked": "17.0.6",
-    "zod": "^4.6.5"
+    "zod": "^4.6.6"
   }
 }
