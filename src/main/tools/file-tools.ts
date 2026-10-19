@@ -16,6 +16,7 @@ import { buildReadFilePageMeta, formatReadFilePageFooter } from '@copse/agent/re
 import { getStagedDiffEntry } from '../services/diff-queue.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { isNonNull } from '@shared/nullish.ts'
+import { externalToolRead } from '../services/security/external-tool-read.ts'
 
 export const LIST_DIR_MAX_ENTRIES = 1000
 
@@ -54,19 +55,20 @@ export const readFileTool = defineTool({
     start_line: z.number().int().min(1).optional().describe('First line to read (1-indexed)'),
     end_line: z.number().int().min(1).optional().describe('Last line to read (inclusive)'),
   }),
-  async execute({ path, start_line, end_line }) {
+  async execute({ path, start_line, end_line }, signal) {
     if (start_line !== undefined && end_line !== undefined && end_line < start_line) {
       return `Invalid range: end_line (${String(end_line)}) must be >= start_line (${String(start_line)}).`
     }
     const { maxLines: READ_FILE_MAX_LINES, maxChars: READ_FILE_MAX_CHARS } =
       getAgentRunReadFileLimits()
     const root = requireAgentExecutionRoot()
-    const absPath = await resolveReadablePathWithinRoot(path, root)
+    const externalContent = await externalToolRead(path, root, 'read_file', { kind: 'read' }, signal)
+    const absPath = externalContent === null ? await resolveReadablePathWithinRoot(path, root) : path
 
     let result
     try {
       const fs = getActiveWorkspaceFs()
-      const content = await fs.readFile(absPath, 'utf-8')
+      const content = externalContent ?? await fs.readFile(absPath, 'utf-8')
       result = readTextLineRangeFromUtf8Content(content, {
         startLine: start_line ?? 1,
         endLine: end_line,
@@ -106,8 +108,10 @@ export const listDirTool = defineTool({
       .describe('Directory path relative to workspace root. Use "." for root.'),
     recursive: z.boolean().optional().default(false),
   }),
-  async execute({ path, recursive }) {
+  async execute({ path, recursive }, signal) {
     const root = requireAgentExecutionRoot()
+    const external = await externalToolRead(path || '.', root, 'list_dir', { kind: 'list', recursive }, signal)
+    if (external !== null) return external
     const absPath = await resolveReadablePathWithinRoot(path || '.', root)
     const absRoot = resolve(root)
 

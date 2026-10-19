@@ -7,6 +7,7 @@ import {
   toRelativePathWithinRoot,
 } from '../services/workspace.ts'
 import { getAgentExecutionRoot } from '../services/execution-root.ts'
+import { externalToolRead } from '../services/security/external-tool-read.ts'
 import { isActiveSshWorkspace } from '../services/ssh-workspace/execution-target.ts'
 import { isRgAvailableForTarget } from '../services/tool-availability.ts'
 import { formatCodeSearchResults, searchCodeContent } from '../services/search/indexed-grep.ts'
@@ -78,8 +79,16 @@ export const searchCodebaseTool = defineTool({
       return 'Provide a search query via `query` (its alias `pattern` also works).'
     }
 
+    if (path && mode !== 'semantic') {
+      const external = await externalToolRead(path, root, 'search_codebase', {
+        kind: 'search', pattern: searchText, fixed: fixed_string,
+        caseSensitive: case_sensitive, glob: file_glob, maxResults: max_results,
+        contextLines: 0,
+      }, signal)
+      if (external !== null) return '[regex search]\n' + external
+    }
     const resolvedMode = mode === 'auto' ? classifySearchQuery(searchText) : mode
-    const filterPath = path
+    const filterPath = path && resolvedMode === 'semantic'
       ? await toRelativePathWithinRoot(await resolvePathWithinRoot(path, root), root)
       : undefined
 

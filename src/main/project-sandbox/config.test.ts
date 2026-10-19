@@ -1004,16 +1004,15 @@ describe('fsWorkerOneShotSandboxOverlay', () => {
 describe('readAllowedSandboxOverlay', () => {
   const workspace = '/Users/me/project'
 
-  it('adds a granted file and the ancestors needed to walk to it', () => {
+  it('adds only the granted file, without ancestor read grants', () => {
     const dir = mkdtempSync(join(realpathSync.native(tmpdir()), 'read-grant-'))
     try {
       const file = join(dir, 'notes.md')
       execFileSync('/usr/bin/touch', [file])
       const allowRead = readAllowedSandboxOverlay(workspace, [file]).filesystem?.allowRead ?? []
       assert.ok(allowRead.includes(file))
-      // Seatbelt resolves component by component, so every ancestor must be
-      // traversable — but only as a literal path, never as a `/**` subtree.
-      assert.ok(allowRead.includes(dir))
+      const baseReads = workspaceSandboxOverlay(workspace).filesystem?.allowRead ?? []
+      assert.deepEqual(allowRead.filter((path) => !baseReads.includes(path)), [file])
       assert.ok(!allowRead.includes(`${file}/**`))
       const parentGlob = `${dirname(dir)}/**`
       assert.ok(!allowRead.includes(parentGlob))
