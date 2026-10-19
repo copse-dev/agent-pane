@@ -80,8 +80,10 @@ export async function executeExternalRead(
       const child = join(path, entry.name)
       if (!permitted(child) || entry.isSymbolicLink()) continue
       if (entry.isDirectory()) {
-        if (action.kind === 'list' && !action.recursive) paths.push({ path: child, directory: true })
-        else if (!['.git', 'node_modules', 'dist', 'vendor'].includes(entry.name)) await walk(child, depth + 1)
+        if (action.kind === 'list' && !action.recursive)
+          paths.push({ path: child, directory: true })
+        else if (!['.git', 'node_modules', 'dist', 'vendor'].includes(entry.name))
+          await walk(child, depth + 1)
       } else if (entry.isFile()) paths.push({ path: child, directory: false })
     }
   }
@@ -91,8 +93,14 @@ export async function executeExternalRead(
   else throw new Error('External listing requires a directory.')
   const truncated = paths.length >= 1000 || visited >= 10_000
   if (action.kind === 'list') {
-    return paths.map((entry) => `${action.recursive ? '' : entry.directory ? 'd ' : 'f '}${relative(root, entry.path)}`).join('\n') +
-      (truncated ? '\n[Truncated at the external directory scan limit.]' : '')
+    return (
+      paths
+        .map(
+          (entry) =>
+            `${action.recursive ? '' : entry.directory ? 'd ' : 'f '}${relative(root, entry.path)}`,
+        )
+        .join('\n') + (truncated ? '\n[Truncated at the external directory scan limit.]' : '')
+    )
   }
   const regex = action.fixed ? null : new RegExp(action.pattern, action.caseSensitive ? '' : 'i')
   const needle = action.caseSensitive ? action.pattern : action.pattern.toLowerCase()
@@ -101,26 +109,45 @@ export async function executeExternalRead(
   let skipped = false
   for (const entry of paths) {
     const label = relative(root, entry.path) || basename(entry.path)
-    if (action.glob && !micromatch.isMatch(label, action.glob, { matchBase: true, dot: true })) continue
+    if (action.glob && !micromatch.isMatch(label, action.glob, { matchBase: true, dot: true }))
+      continue
     let text: string
-    try { text = await read(entry.path) } catch { skipped = true; continue }
+    try {
+      text = await read(entry.path)
+    } catch {
+      skipped = true
+      continue
+    }
     if (text.includes('\0')) continue
     const lines = text.split('\n')
     const selected = new Map<number, boolean>()
     for (let i = 0; i < lines.length && matches < action.maxResults; i++) {
       const line = (lines[i] ?? '').slice(0, 8192)
-      if (!(regex ? regex.test(line) : (action.caseSensitive ? line : line.toLowerCase()).includes(needle))) continue
+      if (
+        !(regex
+          ? regex.test(line)
+          : (action.caseSensitive ? line : line.toLowerCase()).includes(needle))
+      )
+        continue
       matches++
-      for (let j = Math.max(0, i - action.contextLines); j <= Math.min(lines.length - 1, i + action.contextLines); j++) {
+      for (
+        let j = Math.max(0, i - action.contextLines);
+        j <= Math.min(lines.length - 1, i + action.contextLines);
+        j++
+      ) {
         selected.set(j, selected.get(j) === true || j === i)
       }
     }
     for (const [line, match] of selected) {
-      output.push(`${entry.path}${match ? ':' : '-'}${String(line + 1)}${match ? ': ' : '- '}${(lines[line] ?? '').slice(0, 8192)}`)
+      output.push(
+        `${entry.path}${match ? ':' : '-'}${String(line + 1)}${match ? ': ' : '- '}${(lines[line] ?? '').slice(0, 8192)}`,
+      )
     }
     if (matches >= action.maxResults) break
   }
-  return (output.join('\n') || 'No matches found.') +
+  return (
+    (output.join('\n') || 'No matches found.') +
     (truncated || matches >= action.maxResults ? '\n[Truncated. Narrow your search.]' : '') +
     (skipped ? '\n[Some files could not be read or exceeded the size limit.]' : '')
+  )
 }

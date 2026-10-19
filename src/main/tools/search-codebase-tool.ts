@@ -80,17 +80,28 @@ export const searchCodebaseTool = defineTool({
     }
 
     if (path && mode !== 'semantic') {
-      const external = await externalToolRead(path, root, 'search_codebase', {
-        kind: 'search', pattern: searchText, fixed: fixed_string,
-        caseSensitive: case_sensitive, glob: file_glob, maxResults: max_results,
-        contextLines: 0,
-      }, signal)
+      const external = await externalToolRead(
+        path,
+        root,
+        'search_codebase',
+        {
+          kind: 'search',
+          pattern: searchText,
+          fixed: fixed_string,
+          caseSensitive: case_sensitive,
+          glob: file_glob,
+          maxResults: max_results,
+          contextLines: 0,
+        },
+        signal,
+      )
       if (external !== null) return '[regex search]\n' + external
     }
     const resolvedMode = mode === 'auto' ? classifySearchQuery(searchText) : mode
-    const filterPath = path && resolvedMode === 'semantic'
-      ? await toRelativePathWithinRoot(await resolvePathWithinRoot(path, root), root)
-      : undefined
+    const filterPath =
+      path && resolvedMode === 'semantic'
+        ? await toRelativePathWithinRoot(await resolvePathWithinRoot(path, root), root)
+        : undefined
 
     let semanticFallback: 'building' | 'unavailable' | null = null
     if (resolvedMode === 'semantic') {

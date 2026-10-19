@@ -26,7 +26,13 @@ type WriteFileReq = { op: 'writeFile'; path: string; content: string; encoding: 
 type ReaddirReq = { op: 'readdir'; path: string }
 type StatEntryReq = { op: 'statDir'; path: string }
 
-type Request = ReadFileReq | ReadImageReq | WriteFileReq | ReaddirReq | StatEntryReq | z.infer<typeof externalReadRequestSchema>
+type Request =
+  | ReadFileReq
+  | ReadImageReq
+  | WriteFileReq
+  | ReaddirReq
+  | StatEntryReq
+  | z.infer<typeof externalReadRequestSchema>
 
 type ResponseBody =
   | { ok: true; data?: string; entries?: string[]; dirents?: { name: string; isDir: boolean }[] }

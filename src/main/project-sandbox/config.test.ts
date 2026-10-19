@@ -1012,7 +1012,10 @@ describe('readAllowedSandboxOverlay', () => {
       const allowRead = readAllowedSandboxOverlay(workspace, [file]).filesystem?.allowRead ?? []
       assert.ok(allowRead.includes(file))
       const baseReads = workspaceSandboxOverlay(workspace).filesystem?.allowRead ?? []
-      assert.deepEqual(allowRead.filter((path) => !baseReads.includes(path)), [file])
+      assert.deepEqual(
+        allowRead.filter((path) => !baseReads.includes(path)),
+        [file],
+      )
       assert.ok(!allowRead.includes(`${file}/**`))
       const parentGlob = `${dirname(dir)}/**`
       assert.ok(!allowRead.includes(parentGlob))

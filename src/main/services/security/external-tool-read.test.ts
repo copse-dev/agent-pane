@@ -6,7 +6,11 @@ import { afterEach, beforeEach, describe, it } from 'node:test'
 import { createExternalToolReader } from './external-tool-read.ts'
 import { runWithActiveRunIdentity } from '../active-run-identity.ts'
 import { setApprovalHandler } from '../approval.ts'
-import { clearReadOutsideProjectGrants, grantReadOutsideProject, hasReadOutsideProjectGrant } from './read-outside-grant.ts'
+import {
+  clearReadOutsideProjectGrants,
+  grantReadOutsideProject,
+  hasReadOutsideProjectGrant,
+} from './read-outside-grant.ts'
 import { setSetting } from '../storage/settings.test-shim.ts'
 import type { RunCommandOptions } from '../exec/command-runner.ts'
 import { resolveReadablePathWithinRoot } from '../workspace.ts'
@@ -27,11 +31,16 @@ describe('external file tool approval', () => {
     sandboxEnabled: () => enabled,
     run: async (_command, _args, options = {}) => {
       calls.push(options)
-      return { code: 0, stdout: JSON.stringify({ ok: true, data: 'fixture' }), stderr: '', stdoutTruncated: false }
+      return {
+        code: 0,
+        stdout: JSON.stringify({ ok: true, data: 'fixture' }),
+        stderr: '',
+        stdoutTruncated: false,
+      }
     },
   })
-  const read = (thread = 'reader', target = file) => runWithActiveRunIdentity(thread,
-    () => reader(target, root, 'read_file', { kind: 'read' }))
+  const read = (thread = 'reader', target = file) =>
+    runWithActiveRunIdentity(thread, () => reader(target, root, 'read_file', { kind: 'read' }))
   beforeEach(async () => {
     base = await realpath(await mkdtemp(join(tmpdir(), 'external-approval-')))
     root = join(base, 'project')
@@ -160,8 +169,10 @@ describe('external file tool approval', () => {
       return { approved: false, remember: false }
     })
     assert.equal(await read('reader', other), null)
-    await assert.rejects(runWithActiveRunIdentity('reader',
-      () => resolveReadablePathWithinRoot(other, root)), /declined/)
+    await assert.rejects(
+      runWithActiveRunIdentity('reader', () => resolveReadablePathWithinRoot(other, root)),
+      /declined/,
+    )
     assert.equal(prompts, 1)
     assert.equal(calls.length, 0)
   })

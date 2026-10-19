@@ -71,14 +71,24 @@ describe('read access outside the project approval', () => {
       { toolCalls: [{ name: 'read_file', args: { path: '/etc/hosts' } }] },
       {
         expectToolResults: [{ name: 'read_file', includes: 'localhost' }],
-        toolCalls: [{ name: 'search_code', args: { path: '/etc/hosts', pattern: 'localhost', fixed_string: true } }],
+        toolCalls: [
+          {
+            name: 'search_code',
+            args: { path: '/etc/hosts', pattern: 'localhost', fixed_string: true },
+          },
+        ],
       },
-      { text: 'The approved hosts file contains localhost.', expectToolResults: [{ name: 'search_code', includes: 'localhost' }] },
+      {
+        text: 'The approved hosts file contains localhost.',
+        expectToolResults: [{ name: 'search_code', includes: 'localhost' }],
+      },
     ])
     await submitComposer()
     const dialog = await $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
-    await expect(dialog.$('.approval-heading')).toHaveText('Allow read access outside of the project?')
+    await expect(dialog.$('.approval-heading')).toHaveText(
+      'Allow read access outside of the project?',
+    )
     expect(await dialog.$('.approval-advice').getText()).toContain('/etc/hosts')
     await dialog.$('.approval-details-toggle').click()
     await expect(dialog.$('.approval-approve-once')).toHaveText('Approve this read')

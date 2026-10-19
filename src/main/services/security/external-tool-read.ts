@@ -95,20 +95,23 @@ async function readExternalTool(
   if (policy === 'block') throw new Error('This tool is blocked.')
   let remember = false
   if (policy === 'ask' || !hasReadOutsideProjectGrant(thread, [canonical])) {
-    const answer = await requestApproval({
-      type: 'mcp',
-      title: READ_OUTSIDE_PROJECT_TITLE,
-      ...shellPromptToApprovalFields(
-        formatReadOutsideProjectPromptParts(`${toolName}: ${path}`, analysis),
-      ),
-      scope: 'external-read',
-      subject: toolName,
-      cause: 'mcp-tool',
-      reasons: [canonical],
-      collapseDetails: true,
-      approveLabel: 'Allow reads for this chat',
-      approveOnceLabel: 'Approve this read',
-    }, signal)
+    const answer = await requestApproval(
+      {
+        type: 'mcp',
+        title: READ_OUTSIDE_PROJECT_TITLE,
+        ...shellPromptToApprovalFields(
+          formatReadOutsideProjectPromptParts(`${toolName}: ${path}`, analysis),
+        ),
+        scope: 'external-read',
+        subject: toolName,
+        cause: 'mcp-tool',
+        reasons: [canonical],
+        collapseDetails: true,
+        approveLabel: 'Allow reads for this chat',
+        approveOnceLabel: 'Approve this read',
+      },
+      signal,
+    )
     if (!answer.approved) throw new Error('External read access was declined.')
     remember = answer.remember
   }
@@ -116,12 +119,15 @@ async function readExternalTool(
   if (resolveToolPermission(toolName)?.policy === 'block') throw new Error('This tool is blocked.')
   const after = await stat(canonical, { bigint: true })
   if ((await realpath(path)) !== canonical || before.dev !== after.dev || before.ino !== after.ino)
-    throw new Error('External read target changed while permission was being checked. Retry the read.')
+    throw new Error(
+      'External read target changed while permission was being checked. Retry the read.',
+    )
   if (remember) grantReadOutsideProject(thread, [canonical])
   const workerPath = dependencies.workerPath()
   const worker = fsWorkerOneShotSandboxOverlay(root, workerPath, 'read')
   const grant = readAllowedSandboxOverlay(root, [canonical])
-  if (!worker.filesystem || !grant.filesystem) throw new Error('Missing read sandbox configuration.')
+  if (!worker.filesystem || !grant.filesystem)
+    throw new Error('Missing read sandbox configuration.')
   const request = externalReadRequestSchema.parse({
     op: 'externalRead',
     path: canonical,
@@ -170,7 +176,9 @@ async function readExternalTool(
 }
 
 /** Inject the process boundary for focused tests; production always uses ASRT. */
-export function createExternalToolReader(dependencies: ExternalReadDependencies): (
+export function createExternalToolReader(
+  dependencies: ExternalReadDependencies,
+): (
   path: string,
   root: string,
   toolName: string,

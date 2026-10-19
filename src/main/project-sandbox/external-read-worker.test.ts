@@ -15,7 +15,9 @@ describe('external read worker', () => {
     await writeFile(join(root, 'note.txt'), 'before\nneedle\nafter\n')
     await writeFile(join(base, 'sibling.txt'), 'needle outside\n')
   })
-  afterEach(async () => { await rm(base, { recursive: true, force: true }) })
+  afterEach(async () => {
+    await rm(base, { recursive: true, force: true })
+  })
   const run = (action: ExternalReadAction, path = root, excludedRoots: string[] = []) =>
     executeExternalRead({ op: 'externalRead', path, excludedRoots, action })
 
@@ -27,31 +29,60 @@ describe('external read worker', () => {
     await symlink(join(root, '.env'), join(root, 'alias.txt'))
     await assert.rejects(run({ kind: 'read' }, join(root, '.env')), /protected/)
     await assert.rejects(run({ kind: 'read' }, join(root, 'alias.txt')), /protected/)
-    const result = await run({ kind: 'search', pattern: 'needle', fixed: true,
-      caseSensitive: true, maxResults: 10, contextLines: 0 })
+    const result = await run({
+      kind: 'search',
+      pattern: 'needle',
+      fixed: true,
+      caseSensitive: true,
+      maxResults: 10,
+      contextLines: 0,
+    })
     assert.match(result, /note\.txt:2: needle/)
     assert.doesNotMatch(result, /credential|alias|\.env/)
   })
   it('does not traverse directory or file symlinks', async () => {
     await symlink(base, join(root, 'escape'))
     await symlink(join(base, 'sibling.txt'), join(root, 'linked.txt'))
-    const result = await run({ kind: 'search', pattern: 'needle', fixed: true,
-      caseSensitive: true, maxResults: 10, contextLines: 0 })
+    const result = await run({
+      kind: 'search',
+      pattern: 'needle',
+      fixed: true,
+      caseSensitive: true,
+      maxResults: 10,
+      contextLines: 0,
+    })
     assert.doesNotMatch(result, /outside|escape|linked/)
   })
   it('excludes the chat store nested under a granted ancestor', async () => {
     const chat = join(root, 'workspace')
     await mkdir(chat)
     await writeFile(join(chat, 'events.jsonl'), 'needle other conversation')
-    const result = await run({ kind: 'search', pattern: 'needle', fixed: true,
-      caseSensitive: true, maxResults: 10, contextLines: 0 }, root, [chat])
+    const result = await run(
+      {
+        kind: 'search',
+        pattern: 'needle',
+        fixed: true,
+        caseSensitive: true,
+        maxResults: 10,
+        contextLines: 0,
+      },
+      root,
+      [chat],
+    )
     assert.doesNotMatch(result, /conversation|events/)
     await assert.rejects(run({ kind: 'read' }, join(chat, 'events.jsonl'), [chat]), /protected/)
   })
   it('supports bounded context and filename filters', async () => {
     await writeFile(join(root, 'other.md'), 'needle ignored')
-    const result = await run({ kind: 'search', pattern: 'NEEDLE', fixed: true,
-      caseSensitive: false, maxResults: 1, contextLines: 1, glob: '*.txt' })
+    const result = await run({
+      kind: 'search',
+      pattern: 'NEEDLE',
+      fixed: true,
+      caseSensitive: false,
+      maxResults: 1,
+      contextLines: 1,
+      glob: '*.txt',
+    })
     assert.match(result, /note\.txt-1- before/)
     assert.match(result, /note\.txt:2: needle/)
     assert.match(result, /note\.txt-3- after/)

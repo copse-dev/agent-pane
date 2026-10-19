@@ -47,11 +47,21 @@ export const searchCodeTool = defineTool({
       return 'Provide a search pattern via `pattern` (its alias `query` also works).'
     }
     if (path) {
-      const external = await externalToolRead(path, root, 'search_code', {
-        kind: 'search', pattern: searchPattern, fixed: fixed_string,
-        caseSensitive: case_sensitive, glob: file_glob, maxResults: max_results,
-        contextLines: context_lines,
-      }, signal)
+      const external = await externalToolRead(
+        path,
+        root,
+        'search_code',
+        {
+          kind: 'search',
+          pattern: searchPattern,
+          fixed: fixed_string,
+          caseSensitive: case_sensitive,
+          glob: file_glob,
+          maxResults: max_results,
+          contextLines: context_lines,
+        },
+        signal,
+      )
       if (external !== null) return external
     }
     const searchRoot = path ? await resolveReadablePathWithinRoot(path, root) : root

@@ -62,13 +62,20 @@ export const readFileTool = defineTool({
     const { maxLines: READ_FILE_MAX_LINES, maxChars: READ_FILE_MAX_CHARS } =
       getAgentRunReadFileLimits()
     const root = requireAgentExecutionRoot()
-    const externalContent = await externalToolRead(path, root, 'read_file', { kind: 'read' }, signal)
-    const absPath = externalContent === null ? await resolveReadablePathWithinRoot(path, root) : path
+    const externalContent = await externalToolRead(
+      path,
+      root,
+      'read_file',
+      { kind: 'read' },
+      signal,
+    )
+    const absPath =
+      externalContent === null ? await resolveReadablePathWithinRoot(path, root) : path
 
     let result
     try {
       const fs = getActiveWorkspaceFs()
-      const content = externalContent ?? await fs.readFile(absPath, 'utf-8')
+      const content = externalContent ?? (await fs.readFile(absPath, 'utf-8'))
       result = readTextLineRangeFromUtf8Content(content, {
         startLine: start_line ?? 1,
         endLine: end_line,
@@ -110,7 +117,13 @@ export const listDirTool = defineTool({
   }),
   async execute({ path, recursive }, signal) {
     const root = requireAgentExecutionRoot()
-    const external = await externalToolRead(path || '.', root, 'list_dir', { kind: 'list', recursive }, signal)
+    const external = await externalToolRead(
+      path || '.',
+      root,
+      'list_dir',
+      { kind: 'list', recursive },
+      signal,
+    )
     if (external !== null) return external
     const absPath = await resolveReadablePathWithinRoot(path || '.', root)
     const absRoot = resolve(root)
