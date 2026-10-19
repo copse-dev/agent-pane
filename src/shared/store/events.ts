@@ -107,8 +107,8 @@ export interface StoreEvents {
   // its findings was dismissed or restored.
   review_report_changed: [threadId: string, messageId: string | null]
   git_branch_changed: []
-  // A blank thread committed its checkout decision. Shells created before an
-  // isolated worktree existed use this to stop presenting the shared checkout
+  // A thread committed its checkout decision or restored its missing checkout.
+  // Shells created before an isolated worktree existed stop presenting the shared checkout
   // as though it were the thread's current execution root.
   thread_checkout_changed: [threadId: string]
   composer_draft_flush: []
@@ -128,6 +128,11 @@ export interface StoreEvents {
   // the composer stages as an @shell attachment on the originating thread.
   code_block_run_requested: [request: CodeBlockRunRequest]
   code_block_run_finished: [result: CodeBlockRunResult]
+  // A thread reference to attach to a thread's unsent composer as a chip.
+  thread_reference_attach: [
+    threadId: string,
+    ref: { threadId: string; title: string; updatedAt: number; spinePath: string },
+  ]
   // The set of non-focused threads awaiting user input (a pending approval or
   // ask_user question) changed. Drives the sidebar attention indicator.
   attention_changed: []

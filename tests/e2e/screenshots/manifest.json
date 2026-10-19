@@ -30,8 +30,8 @@
       "bytes": 51960
     },
     "accent-settings.png": {
-      "sha256": "0c52b28b0392a5340f5537b8612b670912615ec7deacf4ae2360a01259b22b35",
-      "bytes": 213087
+      "sha256": "be058a259c7284b88c3bdcfae76010afd4697816e436d9d6ca9c3e9043c37290",
+      "bytes": 219827
     },
     "accent-strong-green.png": {
       "sha256": "3e4a46fc824b313d03d88e3c8aee3c60c91fe1f5c356d0786c255a7deefd3ac5",
@@ -205,6 +205,10 @@
       "sha256": "47ddc54d823eec5f306f8a6dbe26deb17eee8d8ac071f9f1198618d08f3ac69e",
       "bytes": 108294
     },
+    "activity-answer-long-filled.png": {
+      "sha256": "dd57515d6311d59f50cf216d4ec8684ef1a21145cfdc64b2a716d27e0d42314f",
+      "bytes": 194372
+    },
     "activity-answer-panel-filled.png": {
       "sha256": "405a57a2192f1fd6f4f0b7a8a4b90112733755858f75ebf2bfa7726529dddd30",
       "bytes": 196042
@@ -232,6 +236,10 @@
     "activity-dialog-text-selection.png": {
       "sha256": "b57fea277f319232c81336407e98300a3c5f34fb1e92e6ed5d1552f99b0030a9",
       "bytes": 35006
+    },
+    "activity-final-response.png": {
+      "sha256": "967551819c1fade6126a54fb81a33760461d0f35d6c151658b6843059b97f3ad",
+      "bytes": 129929
     },
     "activity-home-bottom-panel-light.png": {
       "sha256": "2e14cba45ccab7cbb2de17012a2fee7fcd1c674437b592dd5538b3350275adff",
@@ -350,8 +358,8 @@
       "bytes": 381294
     },
     "agent-avatars-appearance.png": {
-      "sha256": "67d0ddb8be732fe2fd728034902b07170d8c48783c9ada52ea12152b8dfca879",
-      "bytes": 210314
+      "sha256": "bd3ec7f956e541273af08dc9db437087767f0547ebbe96234cda30ac0cb0ceea",
+      "bytes": 230677
     },
     "agent-avatars-dark.png": {
       "sha256": "c29b866636e0f2fdbc75ca5176adffb5f0114e63abeb42b138ddd4bd89fc3f6c",
@@ -388,6 +396,10 @@
     "agent-coordination-waiting.png": {
       "sha256": "a1e9fe300b1e4d9f289328c2fb64141f30fec85a63432353098726e21119db5b",
       "bytes": 312626
+    },
+    "agent-escape-retry-lease-approval.png": {
+      "sha256": "44178caa677916a6036ca22ec74465a3b89502f1c5a1d1cf916a2be184456113",
+      "bytes": 90097
     },
     "agent-execution-mode-active.png": {
       "sha256": "0839949aca2469eb211a14a79fff3503d1bda11256342b33e699dcfa9a94f17a",
@@ -617,6 +629,10 @@
       "sha256": "85c73f31b9220841115bad6f4aff944272a6c6bfa6103674e5c70d84640edbc9",
       "bytes": 240957
     },
+    "automation-deferred-context.png": {
+      "sha256": "8f27350a6c00524fc721b700ae37beee9eff6414f9e2c661ad539b2163ccd41a",
+      "bytes": 108537
+    },
     "automation-event-activity-failed-run.png": {
       "sha256": "f1a0f732dcb7ddd18892ed953c726c15bb2715babeb9dbb3cc90570f1d1091cb",
       "bytes": 222418
@@ -686,8 +702,8 @@
       "bytes": 10298
     },
     "automation-sidebar-run-now-context-menu.png": {
-      "sha256": "edbe3137d8e872b40a5f9e7ee87e6c781779cfb9d1c52c2deb21fb5f88eaf241",
-      "bytes": 278541
+      "sha256": "2bd8c001cc02f4793d90c871e49ce0d20584db85f9c5d22437eed6c644460a10",
+      "bytes": 278798
     },
     "automation-thread-group.png": {
       "sha256": "f6192477669a73cab830ab8683870dddd6afa2f613d6076a5faf08333d2f7f13",
@@ -702,12 +718,12 @@
       "bytes": 218453
     },
     "automation-trigger.png": {
-      "sha256": "1d8c4fb2f0ef88e944efd17e5f675434a416c149a23e0495f464e1d43ef43608",
-      "bytes": 304439
+      "sha256": "2654a26faaa6bbfd35276037d5f7916eeb4563546bc42323a916d148a2c04542",
+      "bytes": 445377
     },
     "automation-workspace-section.png": {
-      "sha256": "dad0e35a303e14bf2cb7fcabb0a8cb752029e38e4f5ae5f35ff06575f975b905",
-      "bytes": 14037
+      "sha256": "8d4ab6e06079af09eb9cf14532db6955551a148fe5c830ad8957c8a9fe506062",
+      "bytes": 14063
     },
     "automation-workspace-sidebar.png": {
       "sha256": "2018d675a6a26b00748eb83e52fce88def817116216ed31dee744a9ebf883eef",
@@ -1041,6 +1057,14 @@
       "sha256": "8073bb47a2370050cc537985ecaf623ac6586d73217c2fc0dd03b65c8ead9728",
       "bytes": 349465
     },
+    "classifier-tool-approval-collapsed.png": {
+      "sha256": "ea65388700b0dae64769ece999f83a0d85239ced932bf8ffb3c24612feff12d7",
+      "bytes": 204162
+    },
+    "classifier-tool-approval-expanded.png": {
+      "sha256": "67d972d1329ebc8f9448d1299e3cb78d37c4c448c64c20e7f71d06f68d8f45de",
+      "bytes": 233914
+    },
     "classifier-use-hover.png": {
       "sha256": "29470c124e210f995b3547304c084e0341be805daf23e769aee81b718fc6cf1c",
       "bytes": 324244
@@ -1130,8 +1154,8 @@
       "bytes": 449569
     },
     "composer-context-warning-over.png": {
-      "sha256": "e6d4fd1a3a81b879713035156b0596058f6e071131f98e8830483048079f1c33",
-      "bytes": 38877
+      "sha256": "967c12b2b9cad33d4f4b467d36793fb1d677fa866fa8a5ac4d1a29a8db75b4ad",
+      "bytes": 38909
     },
     "composer-dirty-checkout-warning.png": {
       "sha256": "1bf832e3b4790084d5bcd303b0c13a8955e6ed85531c91141ed4548681829358",
@@ -1414,8 +1438,8 @@
       "bytes": 96761
     },
     "debug-trace-composer.png": {
-      "sha256": "dad57d231833f8dd39e663cdf36fc086ae69674e8451f9c1dbe0668bfcf6f267",
-      "bytes": 402999
+      "sha256": "4db752d24abda7be14bedc39ac1de9aa500ae5cb9286e0e4bb5e36f54bdc0434",
+      "bytes": 412911
     },
     "deepseek-dsml-recovery.png": {
       "sha256": "91d0a05d49344fe63b3a2f9e68b567fe1b4cf2082ae9f29b65e40175daacba57",
@@ -1434,12 +1458,12 @@
       "bytes": 29689
     },
     "developer-mode-footer-menu-default.png": {
-      "sha256": "56445b889e122c8592698aef582b04e1774af2750038064658682665ee32b031",
-      "bytes": 29819
+      "sha256": "591de206a1c00b41e2807b457a55663837731744ceabbb831e63992a6de9e2dd",
+      "bytes": 31563
     },
     "developer-mode-footer-menu.png": {
-      "sha256": "56445b889e122c8592698aef582b04e1774af2750038064658682665ee32b031",
-      "bytes": 29819
+      "sha256": "591de206a1c00b41e2807b457a55663837731744ceabbb831e63992a6de9e2dd",
+      "bytes": 31563
     },
     "developer-mode-hooks-settings.png": {
       "sha256": "a3c4fbdda726495619297dc1dc36f148c0affbe0d46a078c6509ef8b7e079589",
@@ -1593,6 +1617,14 @@
       "sha256": "15eb3371b1ef72817fd2c77d4f33e0b708f317d8adb79c707f2ed4296344e169",
       "bytes": 280351
     },
+    "follow-up-thread-created.png": {
+      "sha256": "88c8050e53597a558898b9c964c6e116c8340a867882ba0503e29528bf93e09a",
+      "bytes": 97739
+    },
+    "follow-up-thread-menu.png": {
+      "sha256": "926569370902974df15536dd9bb2c20799d67e49a248e264974402ac89973acf",
+      "bytes": 100435
+    },
     "footer-branch-bisect-in-progress.png": {
       "sha256": "c8a061899e183369a5133db93a85c83ff4b50c03a7cbb796d0f2a83366f47e51",
       "bytes": 36486
@@ -1608,6 +1640,10 @@
     "footer-branch-mismatch.png": {
       "sha256": "d80b6c574fc7fe54fea0ef787aa8210ca1505f20b0ad60b2ff8ff52985a9b7cf",
       "bytes": 20440
+    },
+    "footer-branch-missing-worktree.png": {
+      "sha256": "69938d8c437036b682e1ec9289eb034f41e682bc95d627ceb799b411ccec2c22",
+      "bytes": 19180
     },
     "footer-branch-picker-compact-220.png": {
       "sha256": "ae9f9dd5bdd91d974862cef73fd551a3697fc21d13ea7c40cfffc5b453374f1c",
@@ -1653,6 +1689,14 @@
       "sha256": "41cceea4c342a49d4f6b11ee0c1e4dae79291221f0ed6452585cff5bfe9e19f3",
       "bytes": 244017
     },
+    "footer-branch-restored-composer.png": {
+      "sha256": "d702ad7d4545ded9e22a14900e0b2e42648c8c00009231cc8d0b6ee084511e0e",
+      "bytes": 384842
+    },
+    "footer-branch-restored-worktree.png": {
+      "sha256": "e0ddff6d22b15e1fe3a24f367d5728ce32764c9a094862b9ac3b23709c148777",
+      "bytes": 14788
+    },
     "footer-branch-uncommitted-pick.png": {
       "sha256": "90ee901da4870098dba128536f2f2fb351c6868a916e53ab6f2cd6ee5108b5e1",
       "bytes": 19400
@@ -1682,12 +1726,12 @@
       "bytes": 267519
     },
     "footer-overflow-bounded.png": {
-      "sha256": "69c63884998caa8f1164ed480a4b97572b075087c74cd4882f88d5b6b1fd9915",
-      "bytes": 213458
+      "sha256": "5b5df692135aba39563a3a7ca7b13e8333a674a986e393c98b544cb37fce166f",
+      "bytes": 219493
     },
     "footer-overflow-trigger-anchored.png": {
-      "sha256": "1b92127205c1ff2b23977d75659347825b854d3bc3d69fd4f2769daed0f5ef13",
-      "bytes": 285115
+      "sha256": "f3fa20541169f3618106d38d3e986ac61483a96741f46e3e17349caa68e698ab",
+      "bytes": 291191
     },
     "footer-reasoning-effort.png": {
       "sha256": "f093efef44cf84072fc567bf648348b2827016146e34cb65213023e55838346f",
@@ -2182,12 +2226,12 @@
       "bytes": 154571
     },
     "mermaid-diagram-agent-loop.png": {
-      "sha256": "71c538b2726becc3bc1384cf1e7331562a9067b1325962ec362154f09ed90668",
-      "bytes": 91368
+      "sha256": "fc5a0957ab9dbffbd58b19ac707310e84ec4c01aa746f420089188b58f3456f1",
+      "bytes": 93709
     },
     "mermaid-isolated-inline.png": {
-      "sha256": "7d70cbb662ba91cd4a62eccf6d93d6534094c9c78ee4ab2758f9ac00444b3ed6",
-      "bytes": 226363
+      "sha256": "7f22c9b131df511f1a2411902011e27aab1e1b75a33d07be24d7ae2f0fb4473f",
+      "bytes": 227161
     },
     "mermaid-parity-class.png": {
       "sha256": "5fa6ae74070e7af9332aa42ca1cc064ce79d0afa662d0733af3f96de3d24dd4d",
@@ -2224,6 +2268,14 @@
     "message-fork-resend-whole-thread-context.png": {
       "sha256": "cd808a11d361a752bf5ce49255c14215503c446b7e63e551a10ac488c919120b",
       "bytes": 168076
+    },
+    "mobile-auth-pairing-stopped.png": {
+      "sha256": "54c2bab9d9168e665ed978aefc675d7bf733a2ada2c04c96e7bd59ed53f178f5",
+      "bytes": 107371
+    },
+    "mobile-auth-pairing.png": {
+      "sha256": "faf4228b8367af89edd5b1dba8e6f046e6d5e29e48925a3e3a266d57dd5ced3f",
+      "bytes": 67299
     },
     "mobile-companion-activity-dark.png": {
       "sha256": "0b7dc9632e93f0861f7eefb767cf11797f52e4f9211c9ae14f1476b74171dc16",
@@ -2565,6 +2617,14 @@
       "sha256": "2bd9295151013e748f90c487ba9da154f2dc3cf418a742d8f91d2be99c076f72",
       "bytes": 214616
     },
+    "plugin-client-api-settings.png": {
+      "sha256": "c56c4328acb1b4849069f7c122cf417f671b2ab613d94205e74819a6869ccb8d",
+      "bytes": 42738
+    },
+    "plugin-client-pairing.png": {
+      "sha256": "baed287fe0efffbb2f32f0079d8439e197b6a889a20201cdea5c5d40c45d351d",
+      "bytes": 63569
+    },
     "plugin-hook-loading.png": {
       "sha256": "c104bb3b1c4a9a90a7441137b5d88a308a6ec8c932aeb568e96b4d7376ec00dd",
       "bytes": 68417
@@ -2886,6 +2946,10 @@
       "bytes": 28558
     },
     "projects-group-collapsed.png": {
+      "sha256": "80d7e638b758c7bf7221b5b3abc72943f381b1f759ccf79b7cb4de8256d3a548",
+      "bytes": 26805
+    },
+    "projects-group-drag-cancelled.png": {
       "sha256": "80d7e638b758c7bf7221b5b3abc72943f381b1f759ccf79b7cb4de8256d3a548",
       "bytes": 26805
     },
@@ -3349,6 +3413,10 @@
       "sha256": "d992f62537a642fd3061478caed6e600c7ed400d23657cec6d80f6bfcb0cfebb",
       "bytes": 221652
     },
+    "settings-acp-agents-list-codex-ready.png": {
+      "sha256": "5aa7dc74916f94e2f57c16119bf4b21f8ed7866a326cc3b246ae895247dd00b8",
+      "bytes": 244351
+    },
     "settings-acp-agents-list-page-2.png": {
       "sha256": "03c3d774b5c66141a8fba9ab02b3fad3bb4f9dd851e72dd091901aa68c498346",
       "bytes": 256079
@@ -3374,12 +3442,16 @@
       "bytes": 272758
     },
     "settings-alerts.png": {
-      "sha256": "f5f1da5c5726af7836470fd2cc89f09ad33b117411f4eecd092b00f11996e477",
-      "bytes": 192488
+      "sha256": "a49d0f9fe5bb39a5fb907503d2e1d381f92a005e91cfa2c834f95c399564531a",
+      "bytes": 198868
     },
     "settings-appearance-concise-threads.png": {
       "sha256": "29bc06d7ef2b03c54e011e578d5373a5ac54940001fffb987f20d09c18cba13c",
       "bytes": 28837
+    },
+    "settings-appearance-next-step.png": {
+      "sha256": "d7e36880620d87d4d3857ff3a04cb2611cb77445c80c95ab2a7ea434da9fd2e3",
+      "bytes": 20237
     },
     "settings-artifact-checkpoint-plugin.png": {
       "sha256": "43f4cd539100f7ccdfcb16efb3cdfa8f4b541ccbbafbdfb395b115c5914619e2",
@@ -3449,9 +3521,21 @@
       "sha256": "fad43a9aa056c36a560438137f72291ce84ff78a7cc1980d659b0eebf6c3e464",
       "bytes": 255214
     },
+    "settings-classifier-permission-failure-detail.png": {
+      "sha256": "f7112e559b2fd14dfa2222dc51af540a3ab3b503121130d1efba5d390275e28f",
+      "bytes": 52222
+    },
+    "settings-classifier-permission-failure.png": {
+      "sha256": "d1c02677497beab410ed83d5bc13ef8253f523f84b8b26a1dc61cd909e7aedb7",
+      "bytes": 106392
+    },
+    "settings-classifiers-agent-permission.png": {
+      "sha256": "89fb497733b2a1df0d7417444306770c8459d6c120f557f379efa71cd03d12bd",
+      "bytes": 235619
+    },
     "settings-classifiers-background.png": {
-      "sha256": "2ba5d28bba94ccf8493261c7c18da64d0610a34261c63f8f4b3bf5d3c52baadd",
-      "bytes": 241163
+      "sha256": "a81f465f2c0bb1b0847bbe3aba3e6dc2cbf4d2223aa3af82895c1ff44cc1d8ff",
+      "bytes": 267323
     },
     "settings-classifiers-destination.png": {
       "sha256": "76c27587658c319006447aa7edbc6f73ce83c60ba558307803eba4157f29252e",
@@ -3490,8 +3574,8 @@
       "bytes": 13571
     },
     "settings-classifiers-install-test.png": {
-      "sha256": "a34d1f4682ee7978dcad2c450467c75f952c9545af36bdb241d98baa0f35a139",
-      "bytes": 149568
+      "sha256": "76c858f32c16a0548fa830fa7070a6a56d8fdaa3be10a84f89e7980b1a4b0800",
+      "bytes": 158855
     },
     "settings-classifiers-install-uninstall-confirm.png": {
       "sha256": "68311d89602eb94a997b239f3f42a8f4d01318251ad1c6ddf3c6ece8951611c2",
@@ -3522,8 +3606,8 @@
       "bytes": 57973
     },
     "settings-classifiers-screening.png": {
-      "sha256": "8af6d547f1339418776557180a6ef11598dc92a717e2863477c34b3d359773a3",
-      "bytes": 255652
+      "sha256": "00ca8a75172355637308bdd93bc32c2228fffda61e8fe2d73431b001aa20ac18",
+      "bytes": 260949
     },
     "settings-classifiers.png": {
       "sha256": "3b3b78ed6ffdd12f2b19b3da040fecb8cd196a5b24644c01827767ad254989f2",
@@ -3534,16 +3618,16 @@
       "bytes": 211494
     },
     "settings-composition-invalid-save.png": {
-      "sha256": "0162a499f5fd5923ad09fe6ef527da3ef2d7bdbc7275f892b1f6c7248cdf16b4",
-      "bytes": 248973
+      "sha256": "37507e65656b96cf90f92be21c29f3244bf03451f2d4ce3190b86f03b43f2536",
+      "bytes": 246814
     },
     "settings-composition-models.png": {
       "sha256": "16cf66f2d8beea599988cecab2246da08ee2f17ec73fc450087440924d5f3be8",
       "bytes": 249049
     },
     "settings-composition-packs.png": {
-      "sha256": "b55ee55ed701a664be252971e52603a1fbcd3b1095c43d0e26b3a92a6e179e3d",
-      "bytes": 250502
+      "sha256": "e486d1e1a4088c0dd10eea318d4bf409abf55fa5c74889bdd0643ca9b42bfe5a",
+      "bytes": 227204
     },
     "settings-composition-source-folders.png": {
       "sha256": "2a162a97ddebfa1b6a0386d52511dde7567a8cea5d66108cd4ab8af2c8464004",
@@ -3554,8 +3638,8 @@
       "bytes": 249154
     },
     "settings-composition-sticky-footer.png": {
-      "sha256": "3670cb5bf00a63be4dd9219484d612252d9e8b335aa36af14a9a7de433729ed4",
-      "bytes": 186072
+      "sha256": "fa821dd4b4571f4b79239a50532ca3ca146f172466acd09dba6665de3e80c6bf",
+      "bytes": 193398
     },
     "settings-container-runs-egress-copy.png": {
       "sha256": "911feb807cca57d81bd25e315e29a599d2e12becbece9d1a9773a0c69481a31e",
@@ -3614,8 +3698,8 @@
       "bytes": 87711
     },
     "settings-experimental.png": {
-      "sha256": "86fe52b66a2d88db06ca343d36786110e23e3b94dfbc7a9672fc281336947f23",
-      "bytes": 233794
+      "sha256": "bc81df274d5effce11f1ba28a8258e360df04128c63c08cf46963b7ee2b09dc9",
+      "bytes": 231826
     },
     "settings-explainers-browse-recovery.png": {
       "sha256": "870633effa91d34bcb401b47c5f0d6a914df9ca8d132617f15d3eff4b014dc9d",
@@ -3646,8 +3730,8 @@
       "bytes": 226143
     },
     "settings-gui-app-permission.png": {
-      "sha256": "caa9ef3e719c182979c23e10fc66310e96658df22b94ca86d6a8c38b64d35ede",
-      "bytes": 320623
+      "sha256": "24358122ceaa303c766eb0f2b4ffab2215e53de53442fb47345684a24522c88f",
+      "bytes": 318320
     },
     "settings-load-failed.png": {
       "sha256": "cea5d5c94293d40fb101d6cc19edbc3afc07755cc40df2c47feba4aa4f88b010",
@@ -3676,6 +3760,10 @@
     "settings-mcp-server-row.png": {
       "sha256": "df4005aaf1170a73c10b96f7269ba867a8d11980e86042051926fb3833f3d95b",
       "bytes": 273538
+    },
+    "settings-mobile-companion-device-trust.png": {
+      "sha256": "a81ec30b44ca1d9cdc341aea65573c7a874eaf08ea77668be3c69134dd3f5105",
+      "bytes": 11261
     },
     "settings-mobile-companion-pairing.png": {
       "sha256": "e3aa0b122473fa3983025db79a9f7c59118d3002d74cfa5e4f06b2bbab9d79ca",
@@ -3966,20 +4054,20 @@
       "bytes": 250539
     },
     "settings-styling-appearance.png": {
-      "sha256": "52931c0804477f8476e18335adcab1342618f71ad5f4cec6872cbba6b8f2ee5d",
-      "bytes": 186644
+      "sha256": "46f10a4a8dc6842aa8c2a4cd646f5116a857b417d54bc8ecb1e90c1a8686afbf",
+      "bytes": 193208
     },
     "settings-styling-footer.png": {
-      "sha256": "2284e1fd50ef8cb63c7778446ae6bc7e3d4214354eadef2e170c008eeca8c6fb",
-      "bytes": 269592
+      "sha256": "42560474d553f5ad0b16d9aec25e32c7108a01078c98d59890c4c585d9fd68fc",
+      "bytes": 228782
     },
     "settings-styling-general.png": {
       "sha256": "c869a4b92e59c241474291058fc165f2c444c749cf041560f7fefa6a6ccb1187",
       "bytes": 213529
     },
     "settings-styling-nav-subheadings.png": {
-      "sha256": "00e4b62b1251e9a4f75994dd4de310ad35c82944e35e39055816a19b317236b6",
-      "bytes": 258866
+      "sha256": "e4483b8611c76740b1bbe4af1c0a30627c5d49be8e2f363243b45376fc9cc6b6",
+      "bytes": 266338
     },
     "settings-styling-plugin-settings-open.png": {
       "sha256": "7e83252ff2f25e09faa692d460fb665702946892d3015da70c18b9510af27fe2",
@@ -4209,6 +4297,10 @@
       "sha256": "1e5ea24de1e2a55d0e4eb71ad3d68eccf04ef7f6247b8a015dfd7443e4ad46c8",
       "bytes": 40317
     },
+    "side-chats-context-permissions-decisions.png": {
+      "sha256": "a6189cf00fb5b82dba2378a163d04cac7e5625b5e1ec1a195ee65212a7b5dbd2",
+      "bytes": 38820
+    },
     "sidebar-add-menu.png": {
       "sha256": "945b996a898ab56972b56fae70ad8643d69386850995f27406cb3c64c59868ed",
       "bytes": 92984
@@ -4250,8 +4342,8 @@
       "bytes": 76241
     },
     "sidebar-hidden-panel-maximized.png": {
-      "sha256": "75692382cbf3c110bb53468cb8fa6d7829720bc209641223679638ca0915459a",
-      "bytes": 126537
+      "sha256": "57006ee5a91f36ae53bbfcd19b31f7b8e6649ccc77f21cd7426f0a9e3bce4d35",
+      "bytes": 134753
     },
     "sidebar-hidden.png": {
       "sha256": "eec0f08c92e2199359cb0be856c27c3b5c737b5228d129331c3af516ec03ec20",
@@ -4569,10 +4661,6 @@
       "sha256": "6fa55e97db8fc9b18cb00806addbbfd4aa88e44892947d48a093ab43fc14cdb9",
       "bytes": 46662
     },
-    "thread-access-menu.png": {
-      "sha256": "1beaf634364c2cf7d87dcb69462d7e97db5bf721bd0b2cda61faaf236d26d538",
-      "bytes": 5409
-    },
     "thread-actions-menu.png": {
       "sha256": "a9f52549796204c421e845d88a6609d1058c5c2ae3969a177d8e04a4b44868d6",
       "bytes": 259732
@@ -4596,6 +4684,10 @@
     "thread-auto-retitled.png": {
       "sha256": "2d29a3a183f90f3fa71ac383c1c1d8d79eeff61aee7240ebe24c0be274d47c71",
       "bytes": 27467
+    },
+    "thread-checkout-preparing-send.png": {
+      "sha256": "f1bff95c14dba1d36def84ac3e5111ec9e968bf693ebbd7fcce1be4640572e7d",
+      "bytes": 295884
     },
     "thread-checkout-switch-background.png": {
       "sha256": "f6dc2b47853018d4b10149ee645263707f5747b1109c7df314e7f85170b781c0",
@@ -4756,6 +4848,14 @@
     "thread-sidebar-selection.png": {
       "sha256": "a9a9ac6f5612a578ef27479cf5c8b1716028fe92e006b5ab31b006c06b9d95e9",
       "bytes": 44407
+    },
+    "thread-submodule-worktree-composer.png": {
+      "sha256": "e18cb8034a3d8aa234b4e15bfb430a1ecef09b5f886700b959caffa6cc636da0",
+      "bytes": 285085
+    },
+    "thread-submodule-worktree-sent.png": {
+      "sha256": "01e829b7b02f1fb61f34909774d9d6dddfa95fcf2c01e13d09cd17de35c83b67",
+      "bytes": 266549
     },
     "thread-switch-isolated-worktrees.png": {
       "sha256": "a31a00554cd6b2e35f0563d0de68a004412b0b244683fff1638d9f4305c9e0df",
@@ -4982,8 +5082,8 @@
       "bytes": 310934
     },
     "ui-scale-settings.png": {
-      "sha256": "c8ba49aaf47c6081fbafe9a58281064b5d5e73faf064391dbfa647d827f1daa7",
-      "bytes": 191583
+      "sha256": "dd44f4a2511bd5e7805138a4603baec4281bc23847a6d331d06223b83a230120",
+      "bytes": 197755
     },
     "unicode-chat-fallbacks.png": {
       "sha256": "32a2175cf10125c65be73c2bdfc0d26ae922fe5d293fd97b2ff380e1ea621e9c",
@@ -5028,6 +5128,10 @@
     "user-prompt-narrow-chat.png": {
       "sha256": "64b4a725eb85ddbe2b700f4b1deb8c876d275be9b86d1c05b96c91bdab1160c0",
       "bytes": 353501
+    },
+    "user-prompt-previews-boundary.png": {
+      "sha256": "8e340b552ad32dd799952df29a6b162e06f96b08c8c6de67ea62d805d4c8267f",
+      "bytes": 487863
     },
     "user-prompt-previews-full.png": {
       "sha256": "9747f3a6fcc60ea7012e3679aa5b85b308f405a4f3225dfde803f13dbe30241f",

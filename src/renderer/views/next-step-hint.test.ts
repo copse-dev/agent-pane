@@ -12,7 +12,7 @@ interface Harness {
   fetches: string[]
 }
 
-function fakeApi(options: { enabled: boolean; hint: string | null }): Harness {
+function fakeApi(options: { enabled?: boolean; hint: string | null }): Harness {
   const base = createFakeApi()
   const fetches: string[] = []
   const api: ApiClient = {
@@ -70,7 +70,20 @@ describe('next-step hint controller', () => {
     mount.destroy()
   })
 
-  it('does not call the model when the experimental setting is off', async () => {
+  it('fetches a hint by default when no preference is saved', async () => {
+    const { store, threadId } = storeWithFinishedTurn()
+    const { api, fetches } = fakeApi({ hint: 'Run the tests' })
+    const mount = mountNextStepHint(store, api, () => {})
+
+    store.emit('thread_status_changed', threadId, 'idle')
+    await flush()
+
+    assert.equal(mount.current(), 'Run the tests')
+    assert.equal(fetches.length, 1)
+    mount.destroy()
+  })
+
+  it('does not call the model when the setting is off', async () => {
     const { store, threadId } = storeWithFinishedTurn()
     const { api, fetches } = fakeApi({ enabled: false, hint: 'Run the tests' })
     const mount = mountNextStepHint(store, api, () => {})

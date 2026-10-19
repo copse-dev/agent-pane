@@ -29,6 +29,7 @@ import {
 import { runShellTool } from '../tools/shell-tool.ts'
 import { preflightWorktreeTool, prepareWorktreeTool } from '../tools/worktree-preparation-tool.ts'
 import { requestWriteAccessTool } from '../tools/request-write-access-tool.ts'
+import { deferredApprovalStatusTool } from '../tools/deferred-approval-status-tool.ts'
 import { writeFileTool } from '../tools/write-file-tool.ts'
 import { strReplaceTool } from '../tools/str-replace-tool.ts'
 import { applyPatchTool } from '../tools/apply-patch-tool.ts'
@@ -83,6 +84,7 @@ import { readTerminalTool } from '../tools/read-terminal-tool.ts'
 import { runCheckupTool } from '../tools/checkup-tool.ts'
 import { videoFramesTool } from '../tools/video-frames-tool.ts'
 import { readArchiveTool } from '../tools/read-archive-tool.ts'
+import { initSubmodulesTool } from '../tools/init-submodules-tool.ts'
 import {
   PARALLEL_SEARCH_PLUGIN_ID,
   PARALLEL_SEARCH_TOOL_NAME,
@@ -128,6 +130,7 @@ export function createRegistry(): ToolRegistry {
   registry.register(prepareWorktreeTool)
   // Offered only while a deferred-worktree thread is still read-only (parentTools).
   registry.register(requestWriteAccessTool)
+  registry.register(deferredApprovalStatusTool)
   registry.register(exploreTool)
   // Experimental CI investigator subagent (off by default). Gated by the
   // `copse.ci-investigator` first-party plugin — the plugin toggle in Settings >
@@ -211,6 +214,8 @@ export function createRegistry(): ToolRegistry {
   // the schema is not free.
   registry.register(videoFramesTool)
   registry.register(readArchiveTool)
+  // Submodules in a thread worktree start empty; this fills them offline.
+  registry.register(initSubmodulesTool)
   registry.register(webSearchTool)
   registry.register(fetchUrlTool)
   // Always registered, offered per turn: `parentTools` withholds it until a

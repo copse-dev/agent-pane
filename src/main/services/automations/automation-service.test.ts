@@ -221,6 +221,16 @@ describe('AutomationService', () => {
     const run = await service.runNow('project-a', schedule.id)
     const automation = created[0]?.automation
     assert.ok(automation)
+    assert.equal(service.ownsRunThread('project-a', run.threadId, automation), true)
+    assert.equal(service.ownsRunThread('project-b', run.threadId, automation), false)
+    assert.equal(service.ownsRunThread('project-a', 'other-thread', automation), false)
+    assert.equal(
+      service.ownsRunThread('project-a', run.threadId, {
+        ...automation,
+        triggeredAt: automation.triggeredAt + 1,
+      }),
+      false,
+    )
     assert.deepEqual(
       service.permissionPreferenceForThread('project-a', run.threadId, automation, approve),
       {

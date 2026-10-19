@@ -65,6 +65,10 @@ describe('browser-hosted Experimental settings copy', () => {
     await expect($(`${EXPERIMENTAL} input[name="conciseThreadsEnabled"]`)).not.toBeExisting()
   })
 
+  it('no longer lists next-step tab complete as experimental', async () => {
+    await expect($(`${EXPERIMENTAL} input[name="nextStepSuggestionEnabled"]`)).not.toBeExisting()
+  })
+
   it('names the Developer Tools menu item that Developer mode adds', async () => {
     const fieldset = $(DEVELOPER_FIELDSET)
     await fieldset.scrollIntoView()
@@ -143,15 +147,21 @@ describe('browser-hosted Experimental settings copy', () => {
     }
     assert.equal(await $$('#advisorModel').length, 1)
   })
-  it('explains the native trust confirmation before granting a pairing control', async () => {
+  it('grants pairing control with one inline trust acknowledgement', async () => {
     await browser.url('/?scenario=settings-footer')
     await $('.prompt-input').waitForExist()
     await browser.execute(() => {
       const getState = window.api.mobile.getState
       window.api.mobile.getState = async () => ({
         ...(await getState()),
-        pairing: { label: 'My phone', code: '123456' },
+        pairing: { id: '8abde2d0-8c97-4a99-9ea8-a7518309ee52', label: 'My phone', code: '123456' },
       })
+      document.body.dataset.mobilePairingCalls = '[]'
+      window.api.mobile.respondPairing = async (decision, code, pairingId, rootTrusted) => {
+        document.body.dataset.mobilePairingCalls = JSON.stringify([
+          [decision, code, pairingId, rootTrusted],
+        ])
+      }
     })
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').$('button[data-section="experimental"]').click()
@@ -159,7 +169,9 @@ describe('browser-hosted Experimental settings copy', () => {
     await expect(banner).toBeDisplayed()
     await expect(banner.$('.mobile-companion-pairing-code')).toHaveText('123456')
     await expect(banner.$('.field-hint')).toHaveText(
-      expect.stringContaining('Allow control opens a desktop confirmation of certificate trust.'),
+      expect.stringContaining(
+        'Confirm below that the Copse Local Root is installed and trusted on this phone before allowing control.',
+      ),
     )
     const control = banner.$('button=Allow control')
     await expect(control).toBeDisabled()
@@ -169,6 +181,59 @@ describe('browser-hosted Experimental settings copy', () => {
     await saveElementScreenshot(
       `${MOBILE_FIELDSET} .mobile-companion-pairing-banner`,
       'settings-mobile-companion-pairing.png',
+    )
+    await control.click()
+    assert.equal(
+      await browser.execute(() => document.body.dataset.mobilePairingCalls),
+      JSON.stringify([['control', '123456', '8abde2d0-8c97-4a99-9ea8-a7518309ee52', true]]),
+    )
+    await expect($('#settings-dialog')).toBeDisplayed()
+  })
+})
+
+describe('browser-hosted Mobile Companion device control', () => {
+  it('acknowledges certificate trust inline when upgrading a read-only phone', async () => {
+    await browser.url('/?scenario=settings-footer')
+    await $('.prompt-input').waitForExist()
+    await browser.execute(() => {
+      const getState = window.api.mobile.getState
+      window.api.mobile.getState = async () => ({
+        ...(await getState()),
+        devices: [
+          {
+            id: '8abde2d0-8c97-4a99-9ea8-a7518309ee52',
+            label: 'My phone',
+            access: 'read',
+            createdAt: 0,
+          },
+        ],
+      })
+      document.body.dataset.mobileAccessCalls = '[]'
+      window.api.mobile.setDeviceAccess = async (id, access, rootTrusted) => {
+        document.body.dataset.mobileAccessCalls = JSON.stringify([[id, access, rootTrusted]])
+      }
+    })
+    await $('[aria-label="Settings"]').click()
+    await $('#settings-dialog').$('button[data-section="experimental"]').click()
+    const row = $(`${MOBILE_FIELDSET} .mobile-companion-device-row`)
+    const control = row.$('button=Allow control')
+    await expect(control).toBeDisabled()
+    await expect(row.$('label')).toHaveText(
+      expect.stringContaining('The Copse Local Root is installed and trusted on this phone'),
+    )
+    await row.$('input[type="checkbox"]').click()
+    await expect(control).toBeEnabled()
+    await row.scrollIntoView()
+    const fits = await row.execute((element) => element.scrollWidth <= element.clientWidth)
+    assert.equal(fits, true, 'device trust controls must fit inside their row')
+    await saveElementScreenshot(
+      `${MOBILE_FIELDSET} .mobile-companion-device-row`,
+      'settings-mobile-companion-device-trust.png',
+    )
+    await control.click()
+    assert.equal(
+      await browser.execute(() => document.body.dataset.mobileAccessCalls),
+      JSON.stringify([['8abde2d0-8c97-4a99-9ea8-a7518309ee52', 'control', true]]),
     )
   })
 })
@@ -193,5 +258,26 @@ describe('browser-hosted Concise threads setting', () => {
     assert.doesNotMatch(await fieldset.getText(), /experimental/i)
 
     await saveElementScreenshot(CONCISE_FIELDSET, 'settings-appearance-concise-threads.png')
+  })
+})
+
+describe('browser-hosted Next-step tab complete setting', () => {
+  it('is on by default under Appearance and can be turned off', async () => {
+    await browser.url('/?scenario=settings-footer')
+    await $('.prompt-input').waitForExist()
+    await $('[aria-label="Settings"]').click()
+    await $('#settings-dialog').$('button[data-section="appearance"]').click()
+
+    const selector = `${APPEARANCE} [data-testid="settings-next-step"]`
+    const fieldset = $(selector)
+    await fieldset.scrollIntoView()
+    await expect(fieldset).toBeDisplayed()
+    const checkbox = fieldset.$('input[name="nextStepSuggestionEnabled"]')
+    await expect(checkbox).toBeSelected()
+    assert.match(await fieldset.getText(), /press Tab to accept it/)
+    assert.doesNotMatch(await fieldset.getText(), /experimental/i)
+    await saveElementScreenshot(selector, 'settings-appearance-next-step.png')
+    await checkbox.click()
+    await expect(checkbox).not.toBeSelected()
   })
 })

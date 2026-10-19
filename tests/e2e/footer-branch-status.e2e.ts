@@ -10,7 +10,7 @@ import {
 } from './helpers/seed-config.ts'
 import { seedBranchWorkspace } from './helpers/branch-workspace.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
-import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { setComposerValue } from './helpers/composer.ts'
@@ -404,5 +404,47 @@ describe('footer branch status for a detached thread worktree', function () {
     await expectOnBranchLine(button)
 
     await saveElementScreenshot('#input-bar', 'footer-branch-bisect-in-progress.png')
+  })
+
+  it('restores an externally removed checkout inside the same thread', async function () {
+    this.timeout(90_000)
+    git(worktreeRoot, ['bisect', 'reset'])
+    git(worktreeRoot, ['checkout', detachedBranch])
+    const tip = git(worktreeRoot, ['rev-parse', 'HEAD'])
+    rmSync(worktreeRoot, { recursive: true, force: true })
+    git(projectRoot, ['worktree', 'prune', '--expire', 'now'])
+    await $(`[data-thread-id="${detachedThreadId}"]`).click()
+    const button = await $('.branch-reattach-button')
+    await expect(button).toHaveText('Restore worktree', { wait: 20_000 })
+    await expect(button).toBeEnabled()
+    await expect(button).toHaveAttribute('aria-label', `Restore worktree for ${detachedBranch}`)
+    await expectOnBranchLine(button)
+    await expect($('.toast-error')).not.toExist()
+    // The recovery controls live in the footer. History hydration and the
+    // optional Changes row above it must not change this focused frame.
+    await saveElementScreenshot('.input-footer', 'footer-branch-missing-worktree.png')
+
+    await setComposerValue('Keep this draft while restoring the checkout.')
+    // This send must fail and retain the draft; submitComposer waits for a
+    // successful send to empty it.
+    await $('.submit-btn').click()
+    await expect($('.composer-checkout-error')).toBeDisplayed()
+
+    await button.click()
+    await expect(button).not.toBeDisplayed({ wait: 20_000 })
+    await expect($(`[data-thread-id="${detachedThreadId}"]`)).toHaveElementClass('selected')
+    await expect($('.footer-branch-label')).toHaveText(detachedBranch)
+    expect(git(worktreeRoot, ['rev-parse', 'HEAD'])).toBe(tip)
+    await expect($('.toast-error')).not.toExist()
+    const restored = $(
+      `.toast=Restored worktree for ${detachedBranch}. You can continue this chat.`,
+    )
+    await expect(restored).toBeDisplayed()
+    await restored.waitForExist({ reverse: true, timeout: 10_000 })
+    await expect($('.toast-error')).not.toExist()
+    await saveElementScreenshot('.input-footer', 'footer-branch-restored-worktree.png')
+    await expect($('.composer-checkout-error')).not.toBeDisplayed()
+    await expect($('.prompt-input')).toHaveText('Keep this draft while restoring the checkout.')
+    await saveAppScreenshot('footer-branch-restored-composer.png')
   })
 })

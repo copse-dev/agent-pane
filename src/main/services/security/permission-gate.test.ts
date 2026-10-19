@@ -237,7 +237,7 @@ describe('package command approval scope', () => {
         true,
       )
       assert.equal(requests.length, 0)
-      await ensureShellCommandPermitted('rm -f probe.e2e.ts && npx wdio run wdio.conf.ts', {
+      await ensureShellCommandPermitted('rm -rf probe-output && npx wdio run wdio.conf.ts', {
         sandboxEnabled: true,
         autoRun: true,
         executionRoot: root,
@@ -281,6 +281,18 @@ describe('prepare_worktree permission', () => {
         true,
       )
       assert.equal(prompts, 1)
+      setApprovalHandler(async () => {
+        prompts += 1
+        return { approved: false, remember: false }
+      })
+      assert.equal(
+        await ensureToolPermitted(
+          { toolName: 'prepare_worktree', args: { offline: false, planFingerprint } },
+          new AbortController().signal,
+        ),
+        false,
+      )
+      assert.equal(prompts, 2)
       writeFileSync(join(root, 'package.json'), '{"packageManager":"npm@11.20.0"}')
       await assert.rejects(
         ensureToolPermitted(
@@ -289,7 +301,7 @@ describe('prepare_worktree permission', () => {
         ),
         /plan changed/,
       )
-      assert.equal(prompts, 1)
+      assert.equal(prompts, 2)
     } finally {
       setApprovalHandler(null)
       setWorkspaceRootForTest(null)
@@ -2081,6 +2093,77 @@ describe('turn-tree shell replay leases', () => {
         ),
       )
       assert.equal(prompts, 1)
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+  it('offers an agent-requested escape the outside replay lease and honours it', async () => {
+    shellReplayLeaseStore.clear()
+    // The shape of a real demo rerun: several setup constituents, so no single
+    // core can be isolated and the whole line is leased byte for byte.
+    const demo =
+      'C=.cache/demo; export DEMO_BINARY="$PWD/$C/chrome"; node scripts/run-demo.mts > $TMPDIR/demo.log 2>&1; echo exit=$?'
+    const requests: Array<{ lease?: boolean; label?: string; subject?: string }> = []
+    setApprovalHandler(async (request) => {
+      requests.push({
+        ...(request.allowTurnTreeLease === undefined ? {} : { lease: request.allowTurnTreeLease }),
+        ...(request.turnTreeLeaseLabel === undefined ? {} : { label: request.turnTreeLeaseLabel }),
+        ...(request.turnTreeLeaseSubject === undefined
+          ? {}
+          : { subject: request.turnTreeLeaseSubject }),
+      })
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    const ask = (command: string): Promise<boolean> =>
+      promptExpectedSandboxBlock(command, ['runs a local script'], undefined, {
+        executionRoot: root,
+      })
+    try {
+      await runInTree('tree-1', async () => {
+        assert.equal(await ask(demo), true)
+        assert.equal(await ask(demo), true)
+        assert.equal(await ask(demo), true)
+      })
+      assert.deepEqual(requests, [
+        {
+          lease: true,
+          label: 'Allow retries outside the sandbox (up to 10, for 2 hours)',
+          subject: demo,
+        },
+      ])
+      // A different turn tree, or a changed command, asks again.
+      await runInTree('tree-2', () => ask(demo))
+      await runInTree('tree-1', () => ask(`${demo} --headed`))
+      assert.equal(requests.length, 3)
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('never offers an agent-requested escape a lease for network, deletion or installs', async () => {
+    shellReplayLeaseStore.clear()
+    const offered: boolean[] = []
+    setApprovalHandler(async (request) => {
+      offered.push(request.allowTurnTreeLease === true)
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    try {
+      await runInTree('tree-1', async () => {
+        for (const command of [
+          'gh api repos/o/r',
+          'rm -rf build && node scripts/run-demo.mts',
+          'npm install && node scripts/run-demo.mts',
+        ]) {
+          await promptExpectedSandboxBlock(command, ['may reach'], undefined, {
+            executionRoot: root,
+          })
+        }
+        // Without an execution root there is no identity to bind a lease to.
+        await promptExpectedSandboxBlock('node scripts/run-demo.mts', ['runs a local script'])
+      })
+      assert.deepEqual(offered, [false, false, false, false])
     } finally {
       shellReplayLeaseStore.clear()
       setApprovalHandler(null)

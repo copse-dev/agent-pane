@@ -1,6 +1,6 @@
 import { describe, it, after, before } from 'node:test'
 import assert from 'node:assert/strict'
-import { cp, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -12,7 +12,12 @@ import {
   type BundledMcpServer,
 } from './bundled-mcp-server.ts'
 import { extractUiResources } from './mcp-schema.ts'
+import { rememberCanvasArtefact, readStoredCanvasArtefact } from '../canvas-store.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
+import {
+  runWithThreadExecutionContext,
+  type ThreadExecutionContext,
+} from '../thread-execution-context.ts'
 
 describe('bundled MCP servers', () => {
   let servers: BundledMcpServer[] = []
@@ -101,10 +106,79 @@ describe('bundled MCP servers', () => {
       // Provenance survives the round trip through the MCP transport, which is
       // what lets the canvas store reopen the living file rather than its
       // snapshot after a restart.
-      assert.equal(resource.sourcePath, 'merge-export-demo.html')
+      assert.equal(resource.sourcePath, await realpath(join(root, 'merge-export-demo.html')))
     } finally {
       restore()
       await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('renders a file from the thread worktree, not the shared checkout (#1724)', async () => {
+    const canvas = servers.find((s) => s.name === CANVAS_SERVER_NAME)
+    assert.ok(canvas, 'canvas server should be present')
+    const sharedRoot = await mkdtemp(join(tmpdir(), 'agent-pane-canvas-shared-'))
+    const worktreeRoot = await mkdtemp(join(tmpdir(), 'agent-pane-canvas-worktree-'))
+    const restoreWorkspace = setWorkspaceRootForTest(sharedRoot)
+    const context: ThreadExecutionContext = {
+      projectId: 'project-a',
+      threadId: 'thread-a',
+      projectRoot: sharedRoot,
+      root: worktreeRoot,
+      checkoutMode: 'worktree',
+      branch: 'agent/demo',
+    }
+    try {
+      // Only the worktree has the file; the shared checkout does not.
+      await writeFile(join(worktreeRoot, 'prototype.html'), '<!doctype html><h1>From Worktree</h1>')
+      const result = await runWithThreadExecutionContext(context, () =>
+        canvas.client.callTool({
+          name: 'render_html_artefact',
+          arguments: { path: 'prototype.html' },
+        }),
+      )
+      assert.notEqual(result.isError, true, JSON.stringify(result))
+      const [resource] = extractUiResources(result.content)
+      assert.ok(resource, 'expected one UI resource')
+      assert.match(resource.text, /<h1>From Worktree<\/h1>/)
+      assert.equal(resource.sourcePath, await realpath(join(worktreeRoot, 'prototype.html')))
+      const store = await mkdtemp(join(tmpdir(), 'agent-pane-canvas-store-'))
+      const oldStore = process.env['COPSE_WORKSPACE_DIR']
+      process.env['COPSE_WORKSPACE_DIR'] = store
+      try {
+        await writeFile(join(sharedRoot, 'prototype.html'), '<h1>Shared checkout</h1>')
+        await rememberCanvasArtefact(
+          'project-a',
+          'thread-a',
+          {
+            title: 'Prototype',
+            body: resource.text,
+            mimeType: resource.mimeType,
+            threadId: 'thread-a',
+            sourcePath: resource.sourcePath,
+          },
+          async () => worktreeRoot,
+        )
+        await writeFile(
+          join(worktreeRoot, 'prototype.html'),
+          '<h1>Worktree edited after render</h1>',
+        )
+        // Persistence and reopen happen after the execution context has ended.
+        const reopened = await readStoredCanvasArtefact(
+          'project-a',
+          'thread-a',
+          'Prototype',
+          async () => worktreeRoot,
+        )
+        assert.equal(reopened?.body, '<h1>Worktree edited after render</h1>')
+      } finally {
+        if (oldStore === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+        else process.env['COPSE_WORKSPACE_DIR'] = oldStore
+        await rm(store, { recursive: true, force: true })
+      }
+    } finally {
+      restoreWorkspace()
+      await rm(sharedRoot, { recursive: true, force: true })
+      await rm(worktreeRoot, { recursive: true, force: true })
     }
   })
 

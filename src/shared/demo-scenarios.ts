@@ -8,6 +8,9 @@ import type { DemoTrace } from './demo-traces.ts'
 import type { FollowUpSuggestion } from './follow-ups/types.ts'
 import type { ToolPermissionCatalog } from './types/tool-permissions.ts'
 import type { GhPrDetails } from './types/git.ts'
+import type { ContextPermissionSnapshot } from './types/context-permissions.ts'
+import type { GuardedYoloPhase } from './types/guarded-yolo.ts'
+import type { DecisionEvent } from './threads/decision-log.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
 import { SITE_TOUR_SCENARIOS } from './demo-site-tour.ts'
 import { CONCISE_SCREENSHOT, CONCISE_STATE_SCENARIOS } from './demo-concise-states.ts'
@@ -52,6 +55,9 @@ export interface DemoScenario {
    */
   otherProjects?: ReadonlyArray<{ project: Project; threads: Thread[] }>
   settings: Readonly<Record<string, unknown>>
+  contextPermissions?: ContextPermissionSnapshot
+  guardedYoloPhase?: GuardedYoloPhase
+  decisions?: DecisionEvent[]
   /** Optional read-only PR showcase data for the browser demo's PR panel. */
   pullRequests?: GhPrDetails[]
   /**
@@ -2312,6 +2318,10 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       uiTintStrength: 'off',
       sidebarThreadGroup: 'status',
     },
+    threadChanges: {
+      'demo-other-projects-active-chat': { dirty: true },
+      'demo-other-projects-docs-0': { dirty: false, unpushed: 2 },
+    },
     // The open project has one thread; two more projects hold threads that are only
     // read in the background after startup, so their titles must still be listed.
     threads: [
@@ -2321,6 +2331,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         status: 'idle',
         messages: [],
         messagesLoaded: false,
+        prRefs: [],
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME,
         updatedAt: FIXED_TIME,
@@ -2335,6 +2346,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
           status: 'idle' as const,
           messages: [],
           messagesLoaded: false,
+          prRefs: [],
           usage: { inputTokens: 0, outputTokens: 0 },
           createdAt: FIXED_TIME - 10 - index,
           updatedAt: FIXED_TIME - 10 - index,
@@ -2349,11 +2361,32 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
             status: 'idle' as const,
             messages: [],
             messagesLoaded: false,
+            prRefs: [
+              {
+                owner: 'acme',
+                repo: 'api-server',
+                number: 42,
+                url: 'https://github.com/acme/api-server/pull/42',
+              },
+            ],
             usage: { inputTokens: 0, outputTokens: 0 },
             createdAt: FIXED_TIME - 20,
             updatedAt: FIXED_TIME - 20,
           },
         ],
+      },
+    ],
+    pullRequests: [
+      {
+        owner: 'acme',
+        repo: 'api-server',
+        number: 42,
+        url: 'https://github.com/acme/api-server/pull/42',
+        title: 'Add pagination',
+        state: 'OPEN',
+        body: '',
+        files: [],
+        checks: 'success',
       },
     ],
   },
@@ -2911,6 +2944,80 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'activity-home-final-response',
+    label: 'Activity home showing the final response of finished threads',
+    project: project('demo-activity-final-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // Both settled threads are metadata-only, as threads that ended before launch
+    // are: the detail pane reads their last reply through threads.loadMessages.
+    threads: [
+      {
+        id: 'demo-activity-final-new',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      ...(
+        [
+          [
+            'review',
+            'Review open PRs',
+            'idle',
+            3_600_000,
+            [
+              'Reviewed the four open PRs.',
+              '',
+              '- **#3744** is ready to merge; CI is green.',
+              '- **#3728** needs a rebase onto `main` before review.',
+              '- **#3702** and **#3695** overlap; I left a comment suggesting #3695 lands first.',
+              '',
+              'Nothing else is waiting on you.',
+            ].join('\n'),
+          ],
+          [
+            'flaky',
+            'Fix the flaky sandbox test',
+            'error',
+            3_600_000 * 3,
+            'The retry wrapper is in place, but `pnpm test -- sandbox` still times out on the second run.',
+          ],
+        ] as const
+      ).map(([slug, title, status, ago, reply], index): Thread => ({
+        id: `demo-activity-final-${slug}`,
+        title,
+        status,
+        messages: [
+          {
+            id: `demo-activity-final-${slug}-user`,
+            role: 'user',
+            content: title,
+            toolCalls: [],
+            createdAt: Date.now() - ago - 30_000,
+          },
+          {
+            id: `demo-activity-final-${slug}-reply`,
+            role: 'assistant',
+            content: reply,
+            toolCalls: [],
+            createdAt: Date.now() - ago,
+          },
+        ],
+        messagesLoaded: false,
+        usage: { inputTokens: 1200, outputTokens: 300 },
+        createdAt: Date.now() - ago - 60_000,
+        updatedAt: Date.now() - ago,
+        lastPromptAt: Date.now() - ago - 30_000 - index,
+      })),
+    ],
+  },
+  {
     id: 'activity-home-empty',
     label: 'Activity home with nothing to list',
     project: project('demo-activity-home-empty-project'),
@@ -3056,12 +3163,50 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     changeStats: { additions: 42, deletions: 7 },
     label: 'The thread Context panel',
     project: project('demo-thread-context', 'Widgets', '/demo/widgets'),
+    guardedYoloPhase: 'active',
+    contextPermissions: {
+      outsideReadPaths: ['/demo/notes'],
+      browserOrigins: ['https://docs.example.com:443'],
+      portBindingAllowed: true,
+    },
+    decisions: [
+      {
+        v: 1,
+        type: 'decision',
+        id: 'context-decision-1',
+        at: FIXED_TIME - 60_000,
+        kind: 'shell',
+        actor: 'user',
+        verdict: 'approved',
+        subject: 'shell command (arguments omitted)',
+        scope: 'external',
+        remembered: true,
+        threadId: SIDE_CHATS_MAIN_ID,
+      },
+      {
+        v: 1,
+        type: 'decision',
+        id: 'context-decision-2',
+        at: FIXED_TIME,
+        kind: 'web',
+        actor: 'user',
+        verdict: 'denied',
+        subject: 'https://example.net:443',
+        scope: 'external',
+        remembered: false,
+        threadId: SIDE_CHATS_MAIN_ID,
+      },
+    ],
     settings: {
       onboardingCompleted: true,
       theme: 'dark',
       uiTintStrength: 'off',
       filesPaneOpen: true,
       rightPanelMode: 'context',
+      threadReadAccess: [SIDE_CHATS_MAIN_ID],
+      threadSendAccess: [SIDE_CHATS_MAIN_ID],
+      webAllowedOrigins: ['https://example.org:443'],
+      toolPermissionOverrides: { 'copse:run_shell': 'ask' },
       layout: {
         projectsPaneWidth: 240,
         filesPaneWidth: 680,
