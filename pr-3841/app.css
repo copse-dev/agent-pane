@@ -210,7 +210,7 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   --group-header-font-weight: 600;
 }
 
-/* node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/core.css */
+/* node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/styles/core.css */
 .streaming-markdown {
   & .stream-pending {
     white-space: pre-wrap;
@@ -286,7 +286,7 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   }
 }
 
-/* node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css */
+/* node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/styles/default.css */
 .streaming-markdown {
   line-height: var(--sm-line-height, 1.55);
   word-break: break-word;
@@ -1533,6 +1533,11 @@ copse-ui-field input[type=password],
 .chat-row:focus-within .chat-menu-btn {
   opacity: 1;
 }
+.chat-menu-btn-space {
+  flex-shrink: 0;
+  width: var(--projects-action-size);
+  height: var(--projects-action-size);
+}
 .chat-row:hover .automation-setup-btn {
   opacity: 1;
 }
@@ -1580,6 +1585,9 @@ copse-ui-field input[type=password],
   align-items: center;
   margin-left: var(--spacing-xs);
   color: var(--text-muted);
+}
+.chat-changes-status svg {
+  transform: scaleY(-1);
 }
 .chat-pr-status.is-open {
   color: var(--accent);
@@ -6343,6 +6351,21 @@ span.acp-resource-title {
   background: var(--accent);
 }
 
+/* src/renderer/markdown/pele-theme.css */
+.mermaid-diagram,
+.mermaid-expand-viewport {
+  --pele-bg: #111;
+  --pele-fg: #ddd;
+  --pele-muted: #aaa;
+  --pele-line: #aaa;
+  --pele-surface: #24332d;
+  --pele-surface-alt: #2d3d35;
+  --pele-border: #708078;
+  --pele-accent: #ff93d0;
+  --pele-font: "Pliant";
+  background: var(--pele-bg);
+}
+
 /* src/renderer/styles/global/markdown.css */
 .streaming-markdown {
   text-wrap: pretty;
@@ -6369,12 +6392,15 @@ span.acp-resource-title {
   overflow: auto;
   margin: var(--spacing-sm) 0;
 }
+.message-text .mermaid-diagram pre.mermaid {
+  background: var(--pele-bg);
+}
 .message-text .mermaid-diagram.mermaid-diagram--folded {
   cursor: zoom-in;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: var(--spacing-xs);
-  background: var(--bg-elevated);
+  background: var(--pele-bg);
 }
 .message-text .mermaid-diagram.mermaid-diagram--folded:focus-visible {
   outline: 2px solid var(--accent);
@@ -6416,7 +6442,7 @@ span.acp-resource-title {
   min-height: min(50vh, 320px);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--bg-base);
+  background: var(--pele-bg);
   cursor: grab;
   touch-action: none;
 }
@@ -15140,7 +15166,8 @@ dialog.activity-panel-overlay {
   flex-direction: column;
   gap: var(--spacing-sm);
 }
-.activity-question {
+.activity-question,
+.activity-final-reply {
   margin: 0;
   line-height: var(--line-height-base);
   overflow-wrap: anywhere;
