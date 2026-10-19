@@ -83454,7 +83454,7 @@ function threadAccessApproval(access) {
     title: access === "read" ? "Read your other threads?" : "Send prompts to your other threads?",
     body: "",
     bodyAdvice: access === "read" ? "Allow this thread to read all your other conversations." : "Allow this thread to send prompts that run in your other conversations.",
-    bodyFooter: "Applies only to this thread. Revoke it in the thread menu \u2192 Conversation access.",
+    bodyFooter: "Applies only to this thread. Revoke it in the thread\u2019s Context panel \u2192 Permissions.",
     approveLabel: access === "read" ? "Allow reading" : "Allow sending",
     allowRemember: false
   };
@@ -86395,12 +86395,50 @@ var init_demo_scenarios = __esm({
         changeStats: { additions: 42, deletions: 7 },
         label: "The thread Context panel",
         project: project("demo-thread-context", "Widgets", "/demo/widgets"),
+        guardedYoloPhase: "active",
+        contextPermissions: {
+          outsideReadPaths: ["/demo/notes"],
+          browserOrigins: ["https://docs.example.com:443"],
+          portBindingAllowed: true
+        },
+        decisions: [
+          {
+            v: 1,
+            type: "decision",
+            id: "context-decision-1",
+            at: FIXED_TIME - 6e4,
+            kind: "shell",
+            actor: "user",
+            verdict: "approved",
+            subject: "shell command (arguments omitted)",
+            scope: "external",
+            remembered: true,
+            threadId: SIDE_CHATS_MAIN_ID
+          },
+          {
+            v: 1,
+            type: "decision",
+            id: "context-decision-2",
+            at: FIXED_TIME,
+            kind: "web",
+            actor: "user",
+            verdict: "denied",
+            subject: "https://example.net:443",
+            scope: "external",
+            remembered: false,
+            threadId: SIDE_CHATS_MAIN_ID
+          }
+        ],
         settings: {
           onboardingCompleted: true,
           theme: "dark",
           uiTintStrength: "off",
           filesPaneOpen: true,
           rightPanelMode: "context",
+          threadReadAccess: [SIDE_CHATS_MAIN_ID],
+          threadSendAccess: [SIDE_CHATS_MAIN_ID],
+          webAllowedOrigins: ["https://example.org:443"],
+          toolPermissionOverrides: { "copse:run_shell": "ask" },
           layout: {
             projectsPaneWidth: 240,
             filesPaneWidth: 680,
@@ -86789,6 +86827,22 @@ function unsupported() {
 }
 function createDemoApi(scenario2, options = {}) {
   const settings = new Map(Object.entries(scenario2.settings));
+  const guardedYoloPhases = new Map(
+    scenario2.guardedYoloPhase && scenario2.threads[0] ? [[scenario2.threads[0].id, scenario2.guardedYoloPhase]] : []
+  );
+  const guardedYoloListeners = /* @__PURE__ */ new Set();
+  const demoGuardedYoloState = (threadId) => ({
+    threadId,
+    phase: guardedYoloPhases.get(threadId) ?? "off",
+    containment: "unsandboxed",
+    expiresAt: null
+  });
+  const updateGuardedYolo = (threadId, phase) => {
+    guardedYoloPhases.set(threadId, phase);
+    const state = demoGuardedYoloState(threadId);
+    for (const listener of guardedYoloListeners) listener(state);
+    return resolved2(state);
+  };
   let toolPermissionCatalog = structuredClone(scenario2.toolPermissions ?? DEMO_TOOL_PERMISSIONS);
   let mcpStatuses = scenario2.mcpServers ?? DEMO_MCP_STATUSES;
   const pendingMcpSignIns = /* @__PURE__ */ new Map();
@@ -86961,10 +87015,22 @@ function createDemoApi(scenario2, options = {}) {
       onPluginTabRequest: subscribe
     },
     security: {
-      getGuardedYolo: (threadId) => resolved2({ threadId, phase: "off", containment: "unsandboxed", expiresAt: null }),
-      enableGuardedYolo: (threadId) => resolved2({ threadId, phase: "off", containment: "unsandboxed", expiresAt: null }),
-      disableGuardedYolo: (threadId) => resolved2({ threadId, phase: "off", containment: "unsandboxed", expiresAt: null }),
-      onGuardedYoloChanged: subscribe
+      getGuardedYolo: (threadId) => resolved2(demoGuardedYoloState(threadId)),
+      getContextPermissions: () => resolved2(
+        scenario2.contextPermissions ?? {
+          outsideReadPaths: [],
+          browserOrigins: [],
+          portBindingAllowed: false
+        }
+      ),
+      enableGuardedYolo: (threadId) => updateGuardedYolo(threadId, "armed"),
+      disableGuardedYolo: (threadId) => updateGuardedYolo(threadId, "off"),
+      onGuardedYoloChanged: (listener) => {
+        guardedYoloListeners.add(listener);
+        return () => {
+          guardedYoloListeners.delete(listener);
+        };
+      }
     },
     container: {
       runThread: (request) => resolved2({
@@ -87737,7 +87803,8 @@ function createDemoApi(scenario2, options = {}) {
       rollback: unsupported
     },
     decisions: {
-      list: emptyArray,
+      list: () => resolved2(scenario2.decisions ?? []),
+      listThread: (_projectId, threadId) => resolved2((scenario2.decisions ?? []).filter((decision) => decision.threadId === threadId)),
       export: () => resolved2({ path: "", count: 0 })
     },
     automations: {
@@ -95439,25 +95506,6 @@ function mountProjectsPane(root, store2, api2) {
       });
       const openThreadMenu = (x3, y3) => {
         showContextMenu(x3, y3, [
-          {
-            label: "Conversation access\u2026",
-            onSelect: () => {
-              showContextMenu(x3, y3, [
-                {
-                  label: "Revoke reading other threads",
-                  onSelect: () => {
-                    void api2.threadPrompts.revokeAccess(thread.id, "read");
-                  }
-                },
-                {
-                  label: "Revoke sending to other threads",
-                  onSelect: () => {
-                    void api2.threadPrompts.revokeAccess(thread.id, "send");
-                  }
-                }
-              ]);
-            }
-          },
           ...canMutate ? [
             ...allowRename ? [
               {
@@ -95548,11 +95596,13 @@ function mountProjectsPane(root, store2, api2) {
           ] : []
         ]);
       };
-      chatRow.addEventListener("contextmenu", (e3) => {
-        e3.preventDefault();
-        e3.stopPropagation();
-        openThreadMenu(e3.clientX, e3.clientY);
-      });
+      if (canMutate || scheduleId) {
+        chatRow.addEventListener("contextmenu", (e3) => {
+          e3.preventDefault();
+          e3.stopPropagation();
+          openThreadMenu(e3.clientX, e3.clientY);
+        });
+      }
       if (thread.status === "running") {
         chatRow.classList.add("is-running");
         chatRow.insertBefore(runningStatus("Agent is working"), title);
@@ -169727,6 +169777,222 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
   let changesPending = false;
   let renderedKey = "";
   let disposed = false;
+  let accessToken = 0;
+  let accessFor = null;
+  let accessGrants = null;
+  let accessStatus = "Checking\u2026";
+  function permissionRow(label, value, detail) {
+    return el(
+      "div",
+      { class: "thread-context-row" },
+      el(
+        "span",
+        { class: "thread-context-main" },
+        el("span", { class: "thread-context-title" }, label),
+        ...detail ? [el("span", { class: "thread-context-sub", title: detail }, detail)] : []
+      ),
+      el("span", { class: "thread-context-chip" }, value)
+    );
+  }
+  function accessSection(threadId) {
+    const result = el(
+      "section",
+      { class: "thread-context-section", "data-context-section": "permissions" },
+      el("h5", {}, "Permissions")
+    );
+    if (accessFor !== threadId || !accessGrants) {
+      result.append(emptyNote(accessStatus));
+      return result;
+    }
+    const currentGrants = accessGrants;
+    result.append(el("p", { class: "thread-context-permission-label" }, "This thread"));
+    const grants = [
+      { access: "read", label: "Read other threads" },
+      { access: "send", label: "Send prompts to other threads" }
+    ].filter(({ access }) => currentGrants[access]);
+    if (grants.length === 0) {
+      result.append(emptyNote("No saved conversation access."));
+    }
+    for (const { access, label } of grants) {
+      const revoke = el(
+        "button",
+        {
+          type: "button",
+          class: "thread-context-action thread-context-row-action",
+          "data-action": `revoke-${access}-access`,
+          "aria-label": `Revoke permission to ${label.toLowerCase()}`
+        },
+        "Revoke"
+      );
+      revoke.addEventListener("click", () => {
+        revoke.disabled = true;
+        void api2.threadPrompts.revokeAccess(threadId, access).then(() => refreshAccess()).catch((error62) => {
+          revoke.disabled = false;
+          showErrorToast("Could not revoke thread permission", error62);
+        });
+      });
+      result.append(
+        el(
+          "div",
+          { class: "thread-context-row-wrap" },
+          el(
+            "div",
+            { class: "thread-context-row", "data-access": access },
+            el("span", { class: "thread-context-main" }, label),
+            el("span", { class: "thread-context-chip" }, "Granted")
+          ),
+          revoke
+        )
+      );
+    }
+    if (currentGrants.guardedYolo !== "off") {
+      const disable = el(
+        "button",
+        {
+          type: "button",
+          class: "thread-context-action thread-context-row-action",
+          "data-action": "disable-guarded-yolo"
+        },
+        "Disable"
+      );
+      disable.addEventListener("click", () => {
+        disable.disabled = true;
+        void api2.security.disableGuardedYolo(threadId).then(() => refreshAccess()).catch((error62) => {
+          disable.disabled = false;
+          showErrorToast("Could not disable Guarded YOLO", error62);
+        });
+      });
+      result.append(
+        el(
+          "div",
+          { class: "thread-context-row-wrap" },
+          permissionRow(
+            "Guarded YOLO",
+            currentGrants.guardedYolo === "armed" ? "Armed" : "Active",
+            "Until Copse closes"
+          ),
+          disable
+        )
+      );
+    }
+    const { outsideReadPaths, browserOrigins } = currentGrants.context;
+    if (outsideReadPaths.length) {
+      result.append(
+        permissionRow(
+          "Outside-project reads",
+          `${String(outsideReadPaths.length)} session`,
+          outsideReadPaths.join(", ")
+        )
+      );
+    }
+    if (browserOrigins.length) {
+      result.append(
+        permissionRow(
+          "Browser origins",
+          `${String(browserOrigins.length)} session`,
+          browserOrigins.join(", ")
+        )
+      );
+    }
+    result.append(el("p", { class: "thread-context-permission-label" }, "Project"));
+    result.append(
+      permissionRow("Workspace trust", currentGrants.workspaceTrusted ? "Trusted" : "Untrusted")
+    );
+    if (currentGrants.context.portBindingAllowed) {
+      result.append(permissionRow("Local port binding", "Granted", "Saved for this checkout"));
+    }
+    result.append(el("p", { class: "thread-context-permission-label" }, "App-wide"));
+    result.append(
+      permissionRow("Saved web origins", String(currentGrants.savedWebOrigins)),
+      permissionRow("Tool overrides", String(currentGrants.toolOverrides))
+    );
+    const settings = el(
+      "button",
+      { type: "button", class: "thread-context-action", "data-action": "open-permission-settings" },
+      "Manage app permissions"
+    );
+    settings.addEventListener("click", () => {
+      openSettingsDialog("permissions");
+    });
+    result.append(el("div", { class: "thread-context-section-actions" }, settings));
+    return result;
+  }
+  function decisionsSection(threadId) {
+    const result = el(
+      "section",
+      { class: "thread-context-section", "data-context-section": "decisions" },
+      el("h5", {}, "Recent decisions")
+    );
+    if (accessFor !== threadId || !accessGrants) {
+      result.append(emptyNote(accessStatus));
+      return result;
+    }
+    const recent = accessGrants.decisions.slice(-4).reverse();
+    if (!recent.length) {
+      result.append(emptyNote("No recorded decisions for this thread."));
+      return result;
+    }
+    for (const decision of recent) {
+      result.append(
+        permissionRow(
+          decision.subject,
+          decision.verdict,
+          [decision.kind, decision.remembered ? "remembered" : null].filter(Boolean).join(" \xB7 ")
+        )
+      );
+    }
+    result.append(
+      el(
+        "p",
+        { class: "thread-context-note" },
+        `Showing the latest ${String(recent.length)} of ${String(accessGrants.decisions.length)} recorded decisions. Current access is shown above.`
+      )
+    );
+    return result;
+  }
+  async function refreshAccess() {
+    const threadId = getActiveThread(store2)?.id;
+    const projectId = store2.getState().activeProjectId;
+    if (!threadId || !projectId) return;
+    const mine = ++accessToken;
+    if (accessFor !== threadId) {
+      accessFor = threadId;
+      accessGrants = null;
+      accessStatus = "Checking\u2026";
+    }
+    try {
+      const project2 = store2.getState().projects.find((candidate) => candidate.id === projectId);
+      const projectRoot = project2?.path;
+      if (!projectRoot) return;
+      const [read2, send, context, guardedYolo, trusted, savedOrigins, overrides, decisions] = await Promise.all([
+        api2.settings.get("threadReadAccess"),
+        api2.settings.get("threadSendAccess"),
+        api2.security.getContextPermissions(projectId, threadId, projectRoot),
+        api2.security.getGuardedYolo(threadId),
+        api2.workspace.isTrusted(),
+        api2.settings.get("webAllowedOrigins"),
+        api2.settings.get("toolPermissionOverrides"),
+        api2.decisions.listThread(projectId, threadId)
+      ]);
+      if (disposed || mine !== accessToken || getActiveThread(store2)?.id !== threadId) return;
+      accessGrants = {
+        read: Array.isArray(read2) && read2.includes(threadId),
+        send: Array.isArray(send) && send.includes(threadId),
+        context,
+        guardedYolo: guardedYolo.phase,
+        workspaceTrusted: trusted,
+        savedWebOrigins: Array.isArray(savedOrigins) ? savedOrigins.length : 0,
+        toolOverrides: typeof overrides === "object" && overrides !== null && !Array.isArray(overrides) ? Object.keys(overrides).length : 0,
+        decisions
+      };
+    } catch (error62) {
+      if (disposed || mine !== accessToken || getActiveThread(store2)?.id !== threadId) return;
+      console.error("[context] thread permission lookup failed:", error62);
+      accessGrants = null;
+      accessStatus = "Permissions unavailable.";
+    }
+    if (contextModeActive(store2)) render2();
+  }
   const STORAGE_FRESH_MS = 5 * 6e4;
   const CHANGES_FRESH_MS = 6e4;
   function activeStorageKey() {
@@ -169870,7 +170136,14 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
       threads: state.threads,
       mentionedIn: mentionedFor === thread.id ? mentionedIn : []
     });
-    const key = JSON.stringify([state.activeProjectId, model, thread.archivedAt]);
+    const key = JSON.stringify([
+      state.activeProjectId,
+      model,
+      thread.archivedAt,
+      accessFor,
+      accessGrants,
+      accessStatus
+    ]);
     if (key === renderedKey) return;
     renderedKey = key;
     clear(viewerRoot);
@@ -169889,6 +170162,8 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
       if (project2) store2.emit("thread_archive_requested", project2.id, thread.id);
     });
     content.querySelector('[data-context-section="repos"]')?.after(
+      accessSection(thread.id),
+      decisionsSection(thread.id),
       el(
         "section",
         { class: "thread-context-section", "data-context-section": "storage" },
@@ -169928,6 +170203,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
   }
   async function refreshMentions() {
     void refreshStorage();
+    void refreshAccess();
     const thread = getActiveThread(store2);
     const projectId = store2.getState().activeProjectId;
     if (!thread || !projectId) return;
@@ -169944,6 +170220,11 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     if (contextModeActive(store2)) render2();
   }
   const offs = [
+    api2.security.onGuardedYoloChanged((state) => {
+      if (contextModeActive(store2) && getActiveThread(store2)?.id === state.threadId) {
+        void refreshAccess();
+      }
+    }),
     store2.on("right_panel_mode_changed", () => {
       if (!contextModeActive(store2)) return;
       render2();
@@ -169971,6 +170252,9 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
       storageKey = "";
       changesKey = "";
       changesToken++;
+      accessToken++;
+      accessFor = null;
+      accessGrants = null;
       token++;
       storageToken++;
       if (contextModeActive(store2)) {
@@ -169988,6 +170272,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     token++;
     storageToken++;
     changesToken++;
+    accessToken++;
     for (const off of offs) off();
   };
 }
@@ -170003,6 +170288,8 @@ var init_thread_context_panel = __esm({
     init_pane_maximize_button();
     init_pane_popout_button();
     init_thread_context_model();
+    init_toast();
+    init_settings_dialog();
     SECTION_TITLES = {
       repos: "Access",
       "side-chats": "Side chats",
