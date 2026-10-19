@@ -11,7 +11,6 @@ import { copseCacheDir, copseManagedPreparationCacheDirs } from '../services/sto
 import { envForRendererChildProcess } from '../services/exec/child-process-env.ts'
 import { terminateProcessTree } from '../services/exec/subprocess-kill.ts'
 import {
-  resolveNodeToolchainAllowRead,
   electronRuntimeAllowReadPaths,
   sandboxRuntimeHelperAllowReadPaths,
   workspaceMandatoryWriteDenyPaths,
@@ -19,6 +18,10 @@ import {
 import { isProjectSandboxEnabled } from './enabled.ts'
 import { formatArgvForShell, withSandboxShellPath } from './sandbox-argv.ts'
 import { withSandboxTmpEnv } from './tmp-env.ts'
+import {
+  preparationNodeToolchainReadPaths,
+  preparationPathEnvironment,
+} from './preparation-node-toolchain.ts'
 
 export function requirePreparationSandbox(): void {
   if (!isProjectSandboxEnabled() || !['darwin', 'linux'].includes(process.platform)) {
@@ -293,7 +296,7 @@ async function runContainedPreparationProcess(
     }
   }
   const env = withSandboxShellPath(
-    withSandboxTmpEnv(envForRendererChildProcess(options.env), scratch),
+    preparationPathEnvironment(withSandboxTmpEnv(envForRendererChildProcess(options.env), scratch)),
   )
   // The outer wrapper shell starts before kernel confinement. Never let its
   // startup files execute ambient code before sandbox-exec/bwrap takes over.
@@ -320,10 +323,7 @@ async function runContainedPreparationProcess(
         root,
         scratch,
         ...caches,
-        // Do not let a ~/bin/node layout turn the whole home into a read grant.
-        ...resolveNodeToolchainAllowRead(env).filter(
-          (path) => path !== homedir() && path !== `${homedir()}/**`,
-        ),
+        ...preparationNodeToolchainReadPaths(env),
         ...electronRuntimeAllowReadPaths(),
         ...preparationExecutableReadPaths(command, env, options.cargoAdapter === true),
         ...(options.additionalExecutables ?? []).flatMap((executable) =>

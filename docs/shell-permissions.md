@@ -764,6 +764,10 @@ Later project-sandbox shell commands receive read-only cache access and matching
 cache variables without changing their install policy. Offline preparation blocks network for every
 subprocess using kernel isolation with no proxy ports or sockets; other agents' network grants
 cannot widen this boundary. Missing runtime versions or offline inputs fail with remediation.
+Node preparation resolves PATH directory aliases and grants the canonical executable files and recognized
+npm/Corepack/package-manager implementation trees. It does not grant a whole fnm registry, installation
+parent, or home directory. Preflight separately checks npm when managed Socket Firewall needs bootstrapping,
+even for pnpm, Yarn, and Bun projects.
 Runtime installation/version switching and Windows sandbox support remain separate capabilities.
 
 ## Guarded YOLO

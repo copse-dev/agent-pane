@@ -407,6 +407,21 @@ async function inspectPlan(
         detail: `found ${node || 'unavailable'}${requirements.length ? `; requires ${requirements.join(' and ')}` : '; no project version constraint'}`,
       })
     }
+    // Socket Firewall bootstrap uses npm even when the selected manager is pnpm,
+    // Yarn, or Bun. Probe it in the same confinement before offering preparation.
+    const firewall = join(copseCacheDir(env), 'socket-firewall', 'bin', 'sfw')
+    if ((await probe(firewall, ['--version'], env)) === null) {
+      probeFailures.length = 0
+      const npm = await probe('npm', ['--version'], env)
+      components.push({
+        name: 'Socket Firewall bootstrap',
+        ready: npm !== null && valid(npm) !== null,
+        detail:
+          npm !== null && valid(npm) !== null
+            ? `npm ${npm} available for managed Socket Firewall bootstrap`
+            : `npm is required to bootstrap Socket Firewall but is unavailable in preparation confinement${probeFailures.at(-1) ? `: ${probeFailures.at(-1)}` : '.'}`,
+      })
+    }
     const invocation = packageManagerCommand(plan)
     const version = invocation
       ? await probe(invocation.command, [...invocation.args, '--version'], env)
@@ -594,6 +609,7 @@ export async function prepareWorktree(
       const runtimeProblem = before.components.find(
         (component) =>
           (component.name === 'Node' ||
+            component.name === 'Socket Firewall bootstrap' ||
             (component.name === 'Package manager' &&
               (plan.manager?.name === 'npm' || plan.manager?.name === 'bun'))) &&
           !component.ready,
