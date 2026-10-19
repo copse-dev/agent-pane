@@ -71,7 +71,7 @@ export async function suggestNextStep(
   context: FollowUpContext,
   deps: NextStepDeps = DEFAULT_NEXT_STEP_DEPS,
 ): Promise<string | null> {
-  if (!getSetting<boolean>('nextStepSuggestionEnabled', false)) return null
+  if (!getSetting<boolean>('nextStepSuggestionEnabled', true)) return null
   if (process.env['COPSE_PANEL_MOCK_NEXT_STEP'] === '1') {
     return mockNextStepHint()
   }

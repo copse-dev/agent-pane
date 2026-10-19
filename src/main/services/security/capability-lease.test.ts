@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import {
   SHELL_REPLAY_LEASE_EXTERNAL_MAX_REPLAYS,
+  SHELL_REPLAY_LEASE_EXTERNAL_TTL_MS,
   SHELL_REPLAY_LEASE_SANDBOX_MAX_REPLAYS,
   SHELL_REPLAY_LEASE_TTL_MS,
   ShellReplayLeaseStore,
@@ -41,11 +42,23 @@ describe('ShellReplayLeaseStore', () => {
     )
   })
 
-  it('uses a lower replay bound outside the project sandbox', () => {
-    const store = new ShellReplayLeaseStore()
-    const lease = store.issue({ ...identity, containment: 'external' }, 'npm test')
+  it('gives an outside-sandbox lease its own replay bound and a longer window', () => {
+    let now = 1_000
+    const store = new ShellReplayLeaseStore({ now: (): number => now })
+    const external: ShellReplayLeaseIdentity = { ...identity, containment: 'external' }
+    const lease = store.issue(external, 'npm test')
 
     assert.equal(lease.remainingReplays, SHELL_REPLAY_LEASE_EXTERNAL_MAX_REPLAYS)
+    assert.equal(lease.expiresAt, 1_000 + SHELL_REPLAY_LEASE_EXTERNAL_TTL_MS)
+    assert.ok(SHELL_REPLAY_LEASE_EXTERNAL_TTL_MS > SHELL_REPLAY_LEASE_TTL_MS)
+    // Past the sandbox window, still inside its own.
+    now += SHELL_REPLAY_LEASE_TTL_MS + 60_000
+    assert.equal(store.consume(external, 'npm test', () => true).matched, true)
+    now = 1_000 + SHELL_REPLAY_LEASE_EXTERNAL_TTL_MS
+    assert.deepEqual(
+      store.consume(external, 'npm test', () => true),
+      { matched: false },
+    )
   })
 
   it('binds a lease to project, thread, turn tree, and execution root', () => {

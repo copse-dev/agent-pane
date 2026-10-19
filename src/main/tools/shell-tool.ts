@@ -416,6 +416,7 @@ export const runShellTool = defineTool({
           ) ||
           (await promptExpectedSandboxBlock(command, reasons, signal, {
             source: cachedAdvice === null ? 'agent' : 'prior-denial',
+            executionRoot: cwd,
           }))
         ) {
           outsideSandbox = true
