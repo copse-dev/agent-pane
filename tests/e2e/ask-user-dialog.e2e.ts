@@ -140,6 +140,7 @@ describe('ask_user dialog', () => {
     )
     await activity.$('.ask-user-option-recommended').click()
     await expect(activity.$('.activity-answer-input')).toHaveValue('Run claude auth login')
+    await expect(activity.$('.activity-answer')).toBeEnabled()
     await saveAppScreenshot('activity-recommended-question.png')
     await activity.$('.activity-panel-close').click()
 

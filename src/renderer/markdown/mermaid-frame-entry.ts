@@ -1,5 +1,5 @@
-import mermaid from 'mermaid'
 import { startMermaidFrame } from '@copse/streaming-markdown/diagrams/mermaid/frame'
+import { createPeleFrameBackend } from './pele-frame.ts'
 import regularFont from '../../../assets/fonts/Pliant-Variable.ttf'
 import italicFont from '../../../assets/fonts/Pliant-Italic-Variable.ttf'
 
@@ -19,4 +19,9 @@ async function loadPliant(): Promise<void> {
   )
 }
 
-startMermaidFrame({ mermaid, theme: 'dark', fontFamily: 'Pliant', prepare: loadPliant })
+startMermaidFrame({
+  mermaid: createPeleFrameBackend(),
+  theme: 'dark',
+  fontFamily: 'Pliant',
+  prepare: loadPliant,
+})

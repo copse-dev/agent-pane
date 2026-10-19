@@ -2938,6 +2938,80 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'activity-home-final-response',
+    label: 'Activity home showing the final response of finished threads',
+    project: project('demo-activity-final-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // Both settled threads are metadata-only, as threads that ended before launch
+    // are: the detail pane reads their last reply through threads.loadMessages.
+    threads: [
+      {
+        id: 'demo-activity-final-new',
+        title: 'New Thread',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+      ...(
+        [
+          [
+            'review',
+            'Review open PRs',
+            'idle',
+            3_600_000,
+            [
+              'Reviewed the four open PRs.',
+              '',
+              '- **#3744** is ready to merge; CI is green.',
+              '- **#3728** needs a rebase onto `main` before review.',
+              '- **#3702** and **#3695** overlap; I left a comment suggesting #3695 lands first.',
+              '',
+              'Nothing else is waiting on you.',
+            ].join('\n'),
+          ],
+          [
+            'flaky',
+            'Fix the flaky sandbox test',
+            'error',
+            3_600_000 * 3,
+            'The retry wrapper is in place, but `pnpm test -- sandbox` still times out on the second run.',
+          ],
+        ] as const
+      ).map(([slug, title, status, ago, reply], index): Thread => ({
+        id: `demo-activity-final-${slug}`,
+        title,
+        status,
+        messages: [
+          {
+            id: `demo-activity-final-${slug}-user`,
+            role: 'user',
+            content: title,
+            toolCalls: [],
+            createdAt: Date.now() - ago - 30_000,
+          },
+          {
+            id: `demo-activity-final-${slug}-reply`,
+            role: 'assistant',
+            content: reply,
+            toolCalls: [],
+            createdAt: Date.now() - ago,
+          },
+        ],
+        messagesLoaded: false,
+        usage: { inputTokens: 1200, outputTokens: 300 },
+        createdAt: Date.now() - ago - 60_000,
+        updatedAt: Date.now() - ago,
+        lastPromptAt: Date.now() - ago - 30_000 - index,
+      })),
+    ],
+  },
+  {
     id: 'activity-home-empty',
     label: 'Activity home with nothing to list',
     project: project('demo-activity-home-empty-project'),

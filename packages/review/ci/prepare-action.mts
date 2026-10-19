@@ -9,7 +9,9 @@ const request = decodeActionRequest(process.env['COPSE_REVIEW_REQUEST'] ?? '')
 const reviewerRoot = resolve(process.env['COPSE_REVIEWER_ROOT'] ?? '.')
 const runnerTemp = process.env['RUNNER_TEMP']
 const githubEnv = process.env['GITHUB_ENV']
-if (!runnerTemp || !githubEnv) throw new Error('Copse review requires GitHub Actions')
+const githubOutput = process.env['GITHUB_OUTPUT']
+if (!runnerTemp || !githubEnv || !githubOutput)
+  throw new Error('Copse review requires GitHub Actions')
 if (process.env['GITHUB_SERVER_URL'] !== 'https://github.com') {
   throw new Error('Copse Actions currently supports public github.com repositories only')
 }
@@ -56,7 +58,11 @@ git([
   request.base,
 ])
 if (git(['-C', repo, 'rev-parse', 'refs/remotes/copse/head']) !== request.head) {
-  throw new Error('The pull request changed before Copse could prepare it')
+  console.log(
+    '::notice::The pull request changed before Copse could prepare it; skipping superseded review',
+  )
+  await appendFile(githubOutput, 'ready=false\n')
+  process.exit(0)
 }
 const mergeBase = git(['-C', repo, 'merge-base', request.base, request.head])
 const revisions = new Set([mergeBase, request.head])
@@ -152,3 +158,4 @@ await appendFile(
   `COPSE_REVIEW_TARGET=${repo}\nCOPSE_REVIEW_STORE=${cache}\nCOPSE_REVIEW_CELL_IMAGE=${image}\n` +
     `COPSE_REVIEW_PREPARE=${join(reviewerRoot, profile === 'npm' ? 'packages/review/ci/prepare-npm-checkout.mts' : 'scripts/prepare-review-stage0.mts')}\n`,
 )
+await appendFile(githubOutput, 'ready=true\n')

@@ -369,6 +369,8 @@ export function mountThreadContextPane(
   let storageToken = 0
   let storageKey = ''
   let storageText = 'Calculating…'
+  let storageCheckedAt = 0
+  let storagePending = false
   let changesToken = 0
   let changesKey = ''
   let changesText = 'Calculating…'
@@ -377,7 +379,12 @@ export function mountThreadContextPane(
   let approvalsKey = ''
   let approvalsToken = 0
   let approvalsError = false
+  let changesCheckedAt = 0
+  let changesPending = false
+  let renderedKey = ''
   let disposed = false
+  const STORAGE_FRESH_MS = 5 * 60_000
+  const CHANGES_FRESH_MS = 60_000
 
   function activeStorageKey(): string {
     const state = store.getState()
@@ -404,24 +411,42 @@ export function mountThreadContextPane(
     const thread = getActiveThread(store)
     const projectId = store.getState().activeProjectId
     if (!thread || !projectId) return
-    const mine = ++changesToken
     const key = activeStorageKey()
-    changesKey = key
-    changesText = 'Calculating…'
-    changeStats = null
+    if (key !== changesKey) {
+      changesKey = key
+      changesText = 'Calculating…'
+      changeStats = null
+      changesCheckedAt = 0
+      changesPending = false
+    } else if (
+      changesPending ||
+      (changesCheckedAt && Date.now() - changesCheckedAt < CHANGES_FRESH_MS)
+    ) {
+      return
+    }
+    const mine = ++changesToken
+    changesPending = true
     const update = (): void => {
       const slot = viewerRoot.querySelector('[data-context-change-stats]')
       if (slot) slot.replaceChildren(...changesContent())
     }
-    update()
     try {
       const stats = await api.git.changeStats(projectId, thread.id)
       if (disposed || mine !== changesToken || key !== activeStorageKey()) return
-      changeStats = stats ?? { additions: 0, deletions: 0 }
+      const next = stats ?? { additions: 0, deletions: 0 }
+      changesCheckedAt = Date.now()
+      if (changeStats?.additions === next.additions && changeStats.deletions === next.deletions)
+        return
+      changeStats = next
     } catch (error) {
       if (disposed || mine !== changesToken || key !== activeStorageKey()) return
       console.error('[context] change totals lookup failed:', error)
+      changesCheckedAt = Date.now()
+      if (!changeStats && changesText === 'Unavailable') return
+      changeStats = null
       changesText = 'Unavailable'
+    } finally {
+      if (mine === changesToken) changesPending = false
     }
     update()
   }
@@ -431,15 +456,24 @@ export function mountThreadContextPane(
     const thread = getActiveThread(store)
     const projectId = store.getState().activeProjectId
     if (!thread || !projectId) return
-    const mine = ++storageToken
     const key = activeStorageKey()
-    storageKey = key
-    storageText = 'Calculating…'
+    if (key !== storageKey) {
+      storageKey = key
+      storageText = 'Calculating…'
+      storageCheckedAt = 0
+      storagePending = false
+    } else if (
+      storagePending ||
+      (storageCheckedAt && Date.now() - storageCheckedAt < STORAGE_FRESH_MS)
+    ) {
+      return
+    }
+    const mine = ++storageToken
+    storagePending = true
     const update = (): void => {
       const slot = viewerRoot.querySelector('[data-context-storage-size]')
-      if (slot) slot.textContent = storageText
+      if (slot && slot.textContent !== storageText) slot.textContent = storageText
     }
-    update()
     try {
       const [saved, checkout] = await Promise.all([
         api.threads.storageSize(projectId, thread.id),
@@ -448,11 +482,18 @@ export function mountThreadContextPane(
           : Promise.resolve({ bytes: 0, truncated: false }),
       ])
       if (disposed || mine !== storageToken || key !== activeStorageKey()) return
-      storageText = `${saved.truncated || checkout.truncated ? 'At least ' : ''}${formatByteSize(saved.bytes + checkout.bytes)}`
+      storageCheckedAt = Date.now()
+      const next = `${saved.truncated || checkout.truncated ? 'At least ' : ''}${formatByteSize(saved.bytes + checkout.bytes)}`
+      if (storageText === next) return
+      storageText = next
     } catch (error) {
       if (disposed || mine !== storageToken || key !== activeStorageKey()) return
       console.error('[context] storage lookup failed:', error)
+      storageCheckedAt = Date.now()
+      if (storageText === 'Unavailable') return
       storageText = 'Unavailable'
+    } finally {
+      if (mine === storageToken) storagePending = false
     }
     update()
   }
@@ -485,8 +526,10 @@ export function mountThreadContextPane(
   function render(): void {
     const state = store.getState()
     const thread = getActiveThread(store)
-    clear(viewerRoot)
     if (!thread) {
+      if (renderedKey === 'empty') return
+      renderedKey = 'empty'
+      clear(viewerRoot)
       viewerRoot.append(emptyNote('Open a thread to see its context.'))
       return
     }
@@ -497,6 +540,10 @@ export function mountThreadContextPane(
       threads: state.threads,
       mentionedIn: mentionedFor === thread.id ? mentionedIn : [],
     })
+    const key = JSON.stringify([state.activeProjectId, model, thread.archivedAt])
+    if (key === renderedKey) return
+    renderedKey = key
+    clear(viewerRoot)
     const content = renderThreadContext(model, handlers)
     const questions = reviewerInputRequests(thread).filter(
       (request) => !reviewerInputAnswer(thread.reviewerInputAnswers, request.id),
