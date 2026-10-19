@@ -88403,6 +88403,7 @@ var init_autoplay = __esm({
 // src/renderer/controller/mobile-chat.ts
 async function acceptMobileChat(store2, api2, command2) {
   let ownedThread = null;
+  const text2 = command2.text || "Please look at this image.";
   const checkCurrent = () => {
     if (Date.now() >= command2.expiresAt) throw new Error("This send expired. Try again.");
     if (store2.getState().activeProjectId !== command2.projectId)
@@ -88428,7 +88429,7 @@ async function acceptMobileChat(store2, api2, command2) {
       const prepared = await api2.agent.prepareCheckout(
         command2.projectId,
         threadId,
-        command2.text,
+        text2,
         "automatic",
         initial.model
       );
@@ -88438,8 +88439,19 @@ async function acceptMobileChat(store2, api2, command2) {
     const current = getThreadById(store2, threadId);
     if (!current || current.archivedAt !== void 0) throw new Error("Thread unavailable.");
     checkCurrent();
-    const payload = { content: command2.text };
-    const messageId = addMessage(store2, threadId, "user", command2.text);
+    const payload = {
+      content: command2.image ? [
+        { type: "image", dataUrl: command2.image },
+        { type: "text", text: text2 }
+      ] : text2
+    };
+    const messageId = addMessage(
+      store2,
+      threadId,
+      "user",
+      text2,
+      command2.image ? [command2.image] : void 0
+    );
     const queued = { messageId, payload, createdAt: Date.now() };
     const running = current.status === "running";
     if (running) enqueueUserMessage(store2, threadId, queued);
@@ -169668,11 +169680,18 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
   let storageToken = 0;
   let storageKey = "";
   let storageText = "Calculating\u2026";
+  let storageCheckedAt = 0;
+  let storagePending = false;
   let changesToken = 0;
   let changesKey = "";
   let changesText = "Calculating\u2026";
   let changeStats = null;
+  let changesCheckedAt = 0;
+  let changesPending = false;
+  let renderedKey = "";
   let disposed = false;
+  const STORAGE_FRESH_MS = 5 * 6e4;
+  const CHANGES_FRESH_MS = 6e4;
   function activeStorageKey() {
     const state = store2.getState();
     const thread = getActiveThread(store2);
@@ -169696,24 +169715,39 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     const thread = getActiveThread(store2);
     const projectId = store2.getState().activeProjectId;
     if (!thread || !projectId) return;
-    const mine = ++changesToken;
     const key = activeStorageKey();
-    changesKey = key;
-    changesText = "Calculating\u2026";
-    changeStats = null;
+    if (key !== changesKey) {
+      changesKey = key;
+      changesText = "Calculating\u2026";
+      changeStats = null;
+      changesCheckedAt = 0;
+      changesPending = false;
+    } else if (changesPending || changesCheckedAt && Date.now() - changesCheckedAt < CHANGES_FRESH_MS) {
+      return;
+    }
+    const mine = ++changesToken;
+    changesPending = true;
     const update = () => {
       const slot = viewerRoot.querySelector("[data-context-change-stats]");
       if (slot) slot.replaceChildren(...changesContent());
     };
-    update();
     try {
       const stats = await api2.git.changeStats(projectId, thread.id);
       if (disposed || mine !== changesToken || key !== activeStorageKey()) return;
-      changeStats = stats ?? { additions: 0, deletions: 0 };
+      const next = stats ?? { additions: 0, deletions: 0 };
+      changesCheckedAt = Date.now();
+      if (changeStats?.additions === next.additions && changeStats.deletions === next.deletions)
+        return;
+      changeStats = next;
     } catch (error62) {
       if (disposed || mine !== changesToken || key !== activeStorageKey()) return;
       console.error("[context] change totals lookup failed:", error62);
+      changesCheckedAt = Date.now();
+      if (!changeStats && changesText === "Unavailable") return;
+      changeStats = null;
       changesText = "Unavailable";
+    } finally {
+      if (mine === changesToken) changesPending = false;
     }
     update();
   }
@@ -169722,26 +169756,39 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     const thread = getActiveThread(store2);
     const projectId = store2.getState().activeProjectId;
     if (!thread || !projectId) return;
-    const mine = ++storageToken;
     const key = activeStorageKey();
-    storageKey = key;
-    storageText = "Calculating\u2026";
+    if (key !== storageKey) {
+      storageKey = key;
+      storageText = "Calculating\u2026";
+      storageCheckedAt = 0;
+      storagePending = false;
+    } else if (storagePending || storageCheckedAt && Date.now() - storageCheckedAt < STORAGE_FRESH_MS) {
+      return;
+    }
+    const mine = ++storageToken;
+    storagePending = true;
     const update = () => {
       const slot = viewerRoot.querySelector("[data-context-storage-size]");
-      if (slot) slot.textContent = storageText;
+      if (slot && slot.textContent !== storageText) slot.textContent = storageText;
     };
-    update();
     try {
       const [saved, checkout] = await Promise.all([
         api2.threads.storageSize(projectId, thread.id),
         thread.worktree && thread.worktree.retiredAt === void 0 ? api2.worktrees.size(projectId, thread.worktree.path) : Promise.resolve({ bytes: 0, truncated: false })
       ]);
       if (disposed || mine !== storageToken || key !== activeStorageKey()) return;
-      storageText = `${saved.truncated || checkout.truncated ? "At least " : ""}${formatByteSize(saved.bytes + checkout.bytes)}`;
+      storageCheckedAt = Date.now();
+      const next = `${saved.truncated || checkout.truncated ? "At least " : ""}${formatByteSize(saved.bytes + checkout.bytes)}`;
+      if (storageText === next) return;
+      storageText = next;
     } catch (error62) {
       if (disposed || mine !== storageToken || key !== activeStorageKey()) return;
       console.error("[context] storage lookup failed:", error62);
+      storageCheckedAt = Date.now();
+      if (storageText === "Unavailable") return;
       storageText = "Unavailable";
+    } finally {
+      if (mine === storageToken) storagePending = false;
     }
     update();
   }
@@ -169772,8 +169819,10 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
   function render2() {
     const state = store2.getState();
     const thread = getActiveThread(store2);
-    clear(viewerRoot);
     if (!thread) {
+      if (renderedKey === "empty") return;
+      renderedKey = "empty";
+      clear(viewerRoot);
       viewerRoot.append(emptyNote("Open a thread to see its context."));
       return;
     }
@@ -169784,6 +169833,10 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
       threads: state.threads,
       mentionedIn: mentionedFor === thread.id ? mentionedIn : []
     });
+    const key = JSON.stringify([state.activeProjectId, model, thread.archivedAt]);
+    if (key === renderedKey) return;
+    renderedKey = key;
+    clear(viewerRoot);
     const content = renderThreadContext(model, handlers4);
     const archive = el(
       "button",
