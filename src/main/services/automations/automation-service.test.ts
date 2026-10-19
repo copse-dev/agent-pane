@@ -2032,6 +2032,7 @@ describe('AutomationService', () => {
       assert.equal(dispatchCalls[0]?.projectId, 'project-a')
       assert.equal(dispatchCalls[0].threadId, event.threadId)
       assert.equal(dispatchCalls[0].payload.userContent, 'Check project health.')
+      assert.equal(dispatchCalls[0].payload.model, 'gpt-5.4')
 
       const meta = await getThreadMeta('project-a', event.threadId)
       assert.equal(meta?.status, 'idle')

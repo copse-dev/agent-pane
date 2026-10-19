@@ -4,6 +4,7 @@ import type { StreamChunk } from '@shared/types'
 import { createStore } from '@shared/store/store.ts'
 import {
   addMessage,
+  appendAcpContentBlock,
   appendReasoning,
   appendToken,
   addToolCall,
@@ -24,8 +25,8 @@ import { appendMessage } from '../thread-store.ts'
  * implementation drifting out of sync with it.
  *
  * Deliberately narrower than the renderer's `agent.ts`: handles the chunk
- * types that produce persisted transcript content (text, reasoning, tool
- * calls, done) and ignores the rest (usage, turn_outcome, subagent_*,
+ * types that produce persisted transcript content (text, reasoning, ACP
+ * content, tool calls, done) and ignores the rest (usage, turn_outcome, subagent_*,
  * panel_update, …), which are UI/metadata-only and not needed for a faithful
  * transcript once the project is next opened.
  */
@@ -71,37 +72,73 @@ export function createHeadlessAutomationRun(
   let msgId: string | null = null
   let toolSinceText = false
   let currentText = ''
+  let acpMessageId: string | null = null
+  let acpThoughtMessageId: string | null = null
 
   const startBubble = (): string => addMessage(store, threadId, 'assistant', '')
+
+  const appendText = (text: string): void => {
+    const { plan, state } = planAgentTextChunk({ msgId, toolSinceText, currentText }, text)
+    if (plan.action === 'ignore') return
+    if (plan.startNewMessage) {
+      if (plan.finalizeMsgId) persist(plan.finalizeMsgId)
+      msgId = startBubble()
+    }
+    toolSinceText = state.toolSinceText
+    currentText = state.currentText ?? ''
+    if (msgId === null) return
+    appendToken(store, msgId, plan.text)
+  }
+
+  /** Reasoning and non-text blocks after a tool call open the next step's bubble. */
+  const bubbleAfterTools = (): string => {
+    if (!msgId || toolSinceText) {
+      if (toolSinceText && msgId) persist(msgId)
+      msgId = startBubble()
+      toolSinceText = false
+      currentText = ''
+    }
+    return msgId
+  }
 
   const host: AgentHost<StreamChunk> = {
     emit(chunkThreadId, chunk): void {
       if (chunkThreadId !== threadId) return
       switch (chunk.type) {
         case 'text': {
-          const { plan, state } = planAgentTextChunk(
-            { msgId, toolSinceText, currentText },
-            chunk.text,
-          )
-          if (plan.action === 'ignore') return
-          if (plan.startNewMessage) {
-            if (plan.finalizeMsgId) persist(plan.finalizeMsgId)
-            msgId = startBubble()
-          }
-          toolSinceText = state.toolSinceText
-          currentText = state.currentText ?? ''
-          if (msgId === null) return
-          appendToken(store, msgId, plan.text)
+          appendText(chunk.text)
           return
         }
         case 'reasoning': {
-          if (!msgId || toolSinceText) {
-            if (toolSinceText && msgId) persist(msgId)
-            msgId = startBubble()
+          appendReasoning(store, bubbleAfterTools(), chunk.text)
+          return
+        }
+        case 'acp_content': {
+          // Mirrors the renderer's `agent.ts`: a new ACP message id on the same
+          // channel closes the current bubble before its content lands.
+          const previousId = chunk.channel === 'message' ? acpMessageId : acpThoughtMessageId
+          if (
+            chunk.messageId !== undefined &&
+            previousId !== null &&
+            chunk.messageId !== previousId &&
+            msgId
+          ) {
+            persist(msgId)
+            msgId = null
             toolSinceText = false
             currentText = ''
           }
-          appendReasoning(store, msgId, chunk.text)
+          if (chunk.messageId !== undefined) {
+            if (chunk.channel === 'message') acpMessageId = chunk.messageId
+            else acpThoughtMessageId = chunk.messageId
+          }
+          if (chunk.content.type !== 'text') {
+            appendAcpContentBlock(store, bubbleAfterTools(), chunk.channel, chunk.content)
+          } else if (chunk.channel === 'thought') {
+            appendReasoning(store, bubbleAfterTools(), chunk.content.text)
+          } else {
+            appendText(chunk.content.text)
+          }
           return
         }
         case 'tool_call': {

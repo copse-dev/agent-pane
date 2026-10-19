@@ -619,6 +619,7 @@ export function createAutomationService(
     projectId: string,
     threadId: string,
     prompt: string,
+    model: string,
     automation: NonNullable<Thread['automation']>,
   ): Promise<void> {
     if (!dispatchHeadlessTurn) {
@@ -675,7 +676,9 @@ export function createAutomationService(
           {
             projectId,
             threadId,
-            payload: { userContent: prompt, invokedSkills: [], priorTodos: [] },
+            // The dispatcher falls back to the app-wide default model, not the
+            // thread's, so pass the schedule's model as the renderer would.
+            payload: { userContent: prompt, invokedSkills: [], priorTodos: [], model },
           },
           run.host,
         )
@@ -918,7 +921,13 @@ export function createAutomationService(
       // would happen; `notify` below still fires either way so an open
       // renderer sees the thread appear.
       if (dependencies.getActiveProjectId() !== schedule.projectId) {
-        void runHeadlessAutomationTurn(schedule.projectId, threadId, schedule.prompt, provenance)
+        void runHeadlessAutomationTurn(
+          schedule.projectId,
+          threadId,
+          schedule.prompt,
+          schedule.model,
+          provenance,
+        )
       }
       notify?.(event)
       return event

@@ -89,4 +89,67 @@ describe('createHeadlessAutomationRun', () => {
     assert.equal(toolCall.status, 'done')
     assert.equal(toolCall.result, 'all tests passed')
   })
+
+  it('persists ACP agent content: thoughts, message text and non-text blocks', async () => {
+    const threadId = 'thread-4'
+    await createThread(PROJECT_ID, thread(threadId))
+    const run = createHeadlessAutomationRun(PROJECT_ID, threadId)
+
+    run.host.emit(threadId, {
+      type: 'acp_content',
+      channel: 'thought',
+      content: { type: 'text', text: 'Checking the build.' },
+      messageId: 'thought-1',
+    })
+    run.host.emit(threadId, {
+      type: 'acp_content',
+      channel: 'message',
+      content: { type: 'text', text: 'Build is green.' },
+      messageId: 'msg-1',
+    })
+    run.host.emit(threadId, {
+      type: 'acp_content',
+      channel: 'message',
+      content: { type: 'resource_link', uri: 'file:///tmp/report.md', name: 'report.md' },
+      messageId: 'msg-1',
+    })
+    run.host.emit(threadId, { type: 'done' })
+    await run.flush()
+
+    const persisted = await getProjectThread(PROJECT_ID, threadId)
+    assert.equal(persisted?.messages.length, 1)
+    const message = persisted.messages[0]
+    assert.equal(message?.role, 'assistant')
+    assert.equal(message.reasoning, 'Checking the build.')
+    assert.equal(message.content, 'Build is green.')
+    assert.deepEqual(message.contentBlocks, [
+      { type: 'resource_link', uri: 'file:///tmp/report.md', name: 'report.md' },
+    ])
+  })
+
+  it('starts a new assistant message when the ACP message id changes', async () => {
+    const threadId = 'thread-5'
+    await createThread(PROJECT_ID, thread(threadId))
+    const run = createHeadlessAutomationRun(PROJECT_ID, threadId)
+
+    for (const { messageId, text } of [
+      { messageId: 'msg-1', text: 'First answer.' },
+      { messageId: 'msg-2', text: 'Second answer.' },
+    ]) {
+      run.host.emit(threadId, {
+        type: 'acp_content',
+        channel: 'message',
+        content: { type: 'text', text },
+        messageId,
+      })
+    }
+    run.host.emit(threadId, { type: 'done' })
+    await run.flush()
+
+    const persisted = await getProjectThread(PROJECT_ID, threadId)
+    assert.deepEqual(
+      persisted?.messages.map((m) => m.content),
+      ['First answer.', 'Second answer.'],
+    )
+  })
 })
