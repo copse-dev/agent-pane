@@ -176,16 +176,17 @@ describe('switching threads during first-message checkout', () => {
     // The real checkout (`git worktree add`) is held open by the post-checkout
     // hook installed in `before()`, which blocks until `checkoutHoldSentinel`
     // exists. That makes every assertion below deterministic — Send stays
-    // "Preparing…" for as long as the test needs rather than for however long
-    // the real `git worktree add` happens to take on a given host.
+    // disabled for as long as the test needs rather than for however long the
+    // real `git worktree add` happens to take on a given host.
     console.info('[checkout-switch] submitting and holding the checkout open')
     await $('.submit-btn').click()
-    await browser.waitUntil(async () => (await $('.submit-btn').getText()) === 'Preparing…', {
-      timeout: 15_000,
-      timeoutMsg: 'Send never entered its preparing state',
-    })
+    await browser.waitUntil(
+      async () => (await $('.footer-checkout-btn').getText()) === 'Preparing checkout…',
+      { timeout: 15_000, timeoutMsg: 'Checkout never entered its preparing state' },
+    )
     console.info('[checkout-switch] Send is preparing; asserting state and capturing evidence')
     await expect($('.submit-btn')).toBeDisabled()
+    assert.equal(await $('.submit-btn').getText(), 'Send')
     assert.equal(await $('.submit-btn').getAttribute('aria-label'), 'Preparing checkout')
     await saveAppScreenshot('thread-checkout-preparing-send.png')
 

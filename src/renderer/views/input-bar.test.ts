@@ -959,7 +959,7 @@ describe('input bar first-message checkout', () => {
     assert.equal(prepares, 1)
   })
 
-  it('disables Send with a preparing label while the first-send checkout is in flight', async () => {
+  it('disables Send with a preparing aria-label while the first-send checkout is in flight', async () => {
     const checkout = deferred<PreparedThreadCheckout>()
     const other: Thread = { ...thread('main'), id: 'thread-2', worktreeChoice: 'shared' }
     const store = createStore({
@@ -985,7 +985,7 @@ describe('input bar first-message checkout', () => {
     assert.ok(composer)
     assert.ok(submit)
     assert.equal(submit.disabled, false)
-    assert.equal(submit.textContent, 'Send')
+    assert.equal(submit.getAttribute('aria-label'), 'Send message')
 
     composer.textContent = 'Start the first send'
     composer.dispatchEvent(new Event('input', { bubbles: true }))
@@ -996,8 +996,9 @@ describe('input bar first-message checkout', () => {
       true,
       'Send is explicitly disabled while preparing, not just coincidentally',
     )
-    assert.equal(submit.textContent, 'Preparing…')
+    assert.equal(submit.textContent, 'Send', 'the label stays Send, only the state changes')
     assert.equal(submit.getAttribute('aria-label'), 'Preparing checkout')
+    assert.equal(submit.getAttribute('data-tooltip'), 'Preparing the checkout for this thread…')
 
     switchThread(store, 'thread-2')
     assert.equal(
@@ -1005,19 +1006,16 @@ describe('input bar first-message checkout', () => {
       false,
       "switching threads must show the other thread's normal Send state",
     )
-    assert.equal(submit.textContent, 'Send')
+    assert.equal(submit.getAttribute('aria-label'), 'Send message')
 
     switchThread(store, 'thread-1')
     assert.equal(submit.disabled, true)
-    assert.equal(submit.textContent, 'Preparing…')
+    assert.equal(submit.getAttribute('aria-label'), 'Preparing checkout')
 
-    // Resolving starts the turn immediately, so Send becomes the unrelated
-    // "Queue" state rather than returning to "Send" — this test only cares
-    // that the preparing state cleared.
     checkout.resolve({ checkoutMode: 'shared', choice: 'shared', branch: 'main' })
     await flush()
     assert.equal(submit.disabled, false)
-    assert.equal(submit.textContent, 'Queue')
+    assert.equal(submit.getAttribute('data-tooltip'), null)
   })
 
   it('returns Send to its normal state after a failed checkout preparation', async () => {
@@ -1051,7 +1049,8 @@ describe('input bar first-message checkout', () => {
     composer.dispatchEvent(new Event('input', { bubbles: true }))
     submit.click()
     await flush()
-    assert.equal(submit.textContent, 'Preparing…')
+    assert.equal(submit.disabled, true)
+    assert.equal(submit.getAttribute('aria-label'), 'Preparing checkout')
 
     gate.resolve(true)
     await flush()

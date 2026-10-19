@@ -1419,7 +1419,7 @@ export function mountInputBar(
       (id !== null && isThreadSubmitting(store, id))
     stopBtn.hidden = !running
     updateTargetPicker()
-    submitBtn.textContent = preparingCheckout ? 'Preparing…' : running ? 'Queue' : 'Send'
+    submitBtn.textContent = running ? 'Queue' : 'Send'
     submitBtn.setAttribute(
       'aria-label',
       preparingCheckout ? 'Preparing checkout' : running ? 'Queue message' : 'Send message',
