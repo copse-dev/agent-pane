@@ -10,7 +10,7 @@ import {
   hasThreadAccess,
   needsOtherThreadRead,
   revokeThreadAccess,
-  threadChatReadRoot,
+  threadChatReadRoots,
 } from './thread-access.ts'
 
 describe('conversation access', () => {
@@ -201,13 +201,43 @@ describe('conversation access', () => {
       },
       () => {
         runWithActiveRunIdentity('source', () => {
-          assert.equal(threadChatReadRoot('/store'), '/store/project/source')
+          assert.deepEqual(threadChatReadRoots('/store'), ['/store/project/source'])
           assert.equal(needsOtherThreadRead('/store/project/source/messages/a.md', '/store'), false)
           assert.equal(needsOtherThreadRead('/store/project/other/messages/a.md', '/store'), true)
           assert.equal(needsOtherThreadRead('/store/project/catalog.jsonl', '/store'), true)
           assert.equal(needsOtherThreadRead('/elsewhere/a.md', '/store'), false)
           setSetting('threadReadAccess', ['source'])
-          assert.equal(threadChatReadRoot('/store'), '/store')
+          assert.deepEqual(threadChatReadRoots('/store'), ['/store'])
+        })
+      },
+    )
+  })
+
+  it('lets a follow-up read only its declared parent without consent', () => {
+    threadExecutionContextStorage.run(
+      {
+        projectId: 'project',
+        threadId: 'child',
+        projectRoot: '/repo',
+        root: '/repo',
+        checkoutMode: 'shared',
+        branch: null,
+        followUpParentThreadId: 'parent',
+      },
+      () => {
+        runWithActiveRunIdentity('child', () => {
+          assert.deepEqual(threadChatReadRoots('/store'), [
+            '/store/project/child',
+            '/store/project/parent',
+          ])
+          assert.equal(needsOtherThreadRead('/store/project/parent/messages/a.md', '/store'), false)
+          assert.equal(needsOtherThreadRead('/store/project/child/messages/a.md', '/store'), false)
+          assert.equal(needsOtherThreadRead('/store/project/grandparent/meta.json', '/store'), true)
+          assert.equal(
+            needsOtherThreadRead('/store/other-project/parent/meta.json', '/store'),
+            true,
+          )
+          assert.equal(needsOtherThreadRead('/store/project/catalog.jsonl', '/store'), true)
         })
       },
     )
