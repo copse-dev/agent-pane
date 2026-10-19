@@ -24,6 +24,13 @@ async function xtermText(): Promise<string> {
   )
 }
 
+async function focusTerminalInput(): Promise<void> {
+  // xterm deliberately places its keyboard textarea behind the canvas. Reach it
+  // through the visible terminal surface, just as a person focuses the shell.
+  await $('.terminals-tab-panel.is-active .xterm-screen').click()
+  await expect($('.terminals-tab-panel.is-active .xterm-helper-textarea')).toBeFocused()
+}
+
 // Regression for #1673. This was quarantined while the first-send policy silently
 // degraded to a shared checkout. Current main allocates the worktree again; keep
 // the scenario enabled so the shared-to-isolated terminal transition stays covered.
@@ -103,8 +110,7 @@ describe('terminal checkout transition', () => {
     await approveUnsandboxedTerminalIfPrompted()
     await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
 
-    const helper = await $('.xterm-helper-textarea').getElement()
-    await helper.click()
+    await focusTerminalInput()
     await browser.keys(['pwd', '\uE007'])
     await browser.waitUntil(async () => (await xtermText()).includes(projectRoot), {
       timeout: 30_000,
@@ -178,10 +184,7 @@ describe('terminal checkout transition', () => {
     await expect(sharedTab.$('.terminals-checkout-badge')).toHaveText('Shared checkout')
     await expect(worktreeTab).toHaveElementClass('is-active')
 
-    const activeHelper = await $(
-      '.terminals-tab-panel.is-active .xterm-helper-textarea',
-    ).getElement()
-    await activeHelper.click()
+    await focusTerminalInput()
     await browser.keys(['pwd', '\uE007'])
     await browser.waitUntil(async () => (await xtermText()).includes(worktreeRoot), {
       timeout: 30_000,

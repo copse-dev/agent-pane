@@ -89,7 +89,7 @@ describe('ACP authentication error presentation', () => {
   it('shows the dedicated Claude sign-in command in setup without adapter jargon', async () => {
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').waitForDisplayed({ timeout: 10_000 })
-    await $('[data-testid="acp-add-toggle"]').click()
+    await $('[data-testid="connections-add-toggle"]').click()
     await $('.acp-add-row[data-agent="claude-acp"]').$('button=Set up').click()
     // Provider discovery can find a host client outside PATH and offer its
     // adapter. Decline through the real UI before reviewing sign-in guidance.

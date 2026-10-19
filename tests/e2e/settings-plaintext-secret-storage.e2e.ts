@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedOpenRouterFixture } from './helpers/seed-config.ts'
 
 /**
  * Visual proof for the default-off plaintext secret policy. The e2e shell
@@ -18,7 +18,9 @@ describe('settings plaintext secret storage', () => {
       COPSE_E2E_SECRET_STORAGE: 'unavailable',
     })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-plaintext-storage-disabled')
+    // A key saved earlier, before secure storage went away, gives the list a
+    // key row whose Options take a replacement key on dialog Save.
+    seedOpenRouterFixture(process.cwd())
     await browser.reloadSession()
   })
 
@@ -40,29 +42,19 @@ describe('settings plaintext secret storage', () => {
     const dialog = $('#settings-dialog')
     await expect(dialog).toBeDisplayed()
 
-    const selected = await browser.execute(() => {
-      const chip = [...document.querySelectorAll<HTMLButtonElement>('.provider-chip')].find(
-        // OpenAI also owns the Codex device agent. On a fresh Linux runner,
-        // selecting it can legitimately open the ACP adapter-install approval
-        // over Settings; OpenRouter exercises the same key policy without that
-        // unrelated setup flow.
-        (candidate) => candidate.textContent.trim() === 'OpenRouter',
-      )
-      chip?.click()
-      return Boolean(chip)
-    })
-    assert.equal(selected, true, 'expected an OpenRouter provider chip')
+    const row = dialog.$('[data-testid="models-agents-list"] [data-row="key:openrouter"]')
+    await row.waitForExist({ timeout: 15_000 })
+    await row.$('button=Options').click()
 
-    const form = dialog.$('.provider-form')
+    const form = row.$('.provider-form')
     const keyInput = form.$('input[type="password"]')
     await keyInput.waitForDisplayed({ timeout: 10_000 })
     const key = 'sk-or-v1-e2e-plaintext-policy'
     const staged = await browser.execute((value) => {
-      const selectedProvider = document.querySelector<HTMLButtonElement>('.provider-chip.active')
       const input = document.querySelector<HTMLInputElement>(
-        '#settings-providers-host .provider-form input[type="password"]',
+        '[data-row="key:openrouter"] .provider-form input[type="password"]',
       )
-      if (selectedProvider?.dataset['provider'] !== 'openrouter' || !input) return null
+      if (!input) return null
       input.value = value
       input.dispatchEvent(new Event('input', { bubbles: true }))
       return input.value

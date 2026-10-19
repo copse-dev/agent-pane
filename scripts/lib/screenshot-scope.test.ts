@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { computeScreenshotGate } from '../test-oracle.mts'
 import {
   ownsScreenshot,
   screenshotName,
@@ -10,6 +11,14 @@ import {
 function scope(affected: string[], branchOwned: string[] = []): ScreenshotScope {
   return { enabled: true, affected: new Set(affected), branchOwned: new Set(branchOwned) }
 }
+
+describe('native helper screenshot ownership', () => {
+  it('owns audited Settings captures when their producing native spec changes', () => {
+    const gate = computeScreenshotGate(['tests/e2e/settings-acp-agents-list.e2e.ts'], false)
+    assert.ok(gate.affected.includes('settings-acp-agents-list-codex-ready.png'))
+    assert.ok(gate.affected.includes('settings-acp-agents-list-page-2.png'))
+  })
+})
 
 describe('screenshotName', () => {
   it('reduces a repo-relative path to its basename', () => {

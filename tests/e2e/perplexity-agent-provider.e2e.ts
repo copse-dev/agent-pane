@@ -2,13 +2,25 @@ import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import {
+  readSeededSettings,
+  resetUserData,
+  seedEmptyProject,
+  writeSettings,
+} from './helpers/seed-config.ts'
 
 describe('Perplexity provider', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-perplexity-agent-provider')
+    // A saved key lists Perplexity in Models & agents; its Options show the preset.
+    writeSettings({
+      ...readSeededSettings(),
+      apiKey: {
+        perplexity: { v: 1, enc: Buffer.from('pplx-e2e', 'utf8').toString('base64'), plain: true },
+      },
+    })
     await browser.reloadSession()
   })
 
@@ -21,14 +33,9 @@ describe('Perplexity provider', () => {
     await $('[aria-label="Settings"]').click()
     await $('.settings-section[data-section="general"]').waitForExist({ timeout: 15_000 })
 
-    const selected = await browser.execute(() => {
-      const chip = [...document.querySelectorAll<HTMLButtonElement>('.provider-chip')].find(
-        (element) => element.textContent.trim() === 'Perplexity',
-      )
-      chip?.click()
-      return !!chip
-    })
-    assert.equal(selected, true, 'expected the Perplexity provider chip')
+    const row = $('[data-testid="models-agents-list"] [data-row="key:perplexity"]')
+    await row.waitForExist({ timeout: 15_000 })
+    await row.$('button=Options').click()
 
     await $('.provider-form input[type="url"]').waitForExist({ timeout: 5_000 })
     const form = await browser.execute(() => {

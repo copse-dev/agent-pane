@@ -14,7 +14,7 @@ import { disclosureSummary } from '../../dom/disclosure-summary.ts'
 import { closeIcon, plusIcon } from '../../dom/icons.ts'
 import { setInlineStatus, setInlineStatusMarkdown } from '../../dom/inline-status.ts'
 import { PLAINTEXT_STORAGE_DISABLED_REASON } from './api-keys-section.ts'
-import { detectLocalServers } from './local-detection.ts'
+import { detectLocalServers, localServerTargets } from './local-detection.ts'
 import { showConfirmDialog } from '../../views/confirm-dialog.ts'
 import { expectRecord } from '@shared/unknown-value.ts'
 
@@ -1103,14 +1103,25 @@ export function createCustomProvidersSection(
     if (isLocal && (!embedded || selected)) void probeLocalServers()
   }
 
-  // Probe the default local endpoints without blocking the refresh (a dead port can
+  // Probe local endpoints without blocking the refresh (a dead port can
   // take a while to time out). Read-only: nothing is imported or saved. Repaints
   // the chips once results land.
   async function probeLocalServers(): Promise<void> {
     const mine = refreshGeneration
     const signal = activeSignal
     if (signal?.aborted) return
-    const results = await detectLocalServers(api)
+    let lmStudioUrl = ''
+    try {
+      const saved = await api.settings.get('localServerUrl')
+      lmStudioUrl = typeof saved === 'string' ? saved.trim() : ''
+    } catch {
+      /* Use the default address if settings are unavailable. */
+    }
+    if (mine !== refreshGeneration || signal?.aborted) return
+    const targets = localServerTargets().map((target) =>
+      target.id === 'lmstudio' && lmStudioUrl ? { ...target, baseUrl: lmStudioUrl } : target,
+    )
+    const results = await detectLocalServers(api, targets)
     if (mine !== refreshGeneration || signal?.aborted) return
     reachable.clear()
     for (const r of results) if (r.reachable) reachable.add(r.id)

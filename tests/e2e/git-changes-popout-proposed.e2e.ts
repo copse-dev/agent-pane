@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { waitForAgentIdle } from './helpers.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { withCaptureFrame } from './helpers/screenshot.ts'
 import {
   assertPopoutModesAllShown,
   assertPopoutModesOverflowAt,
@@ -204,7 +205,9 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
       timeout: 15_000,
       timeoutMsg: `force-opened embed is uncoloured: ${await describeViewer()}`,
     })
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-popout-proposed-forced.png'))
+    await withCaptureFrame(async () => {
+      await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-popout-proposed-forced.png'))
+    })
 
     await browser.switchToWindow(popoutHandle)
     await browser.waitUntil(hasDecorations, {

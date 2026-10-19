@@ -238,9 +238,13 @@ describe('settings model routing placement', function () {
     await scrollSettingsToLegend('Models')
     await saveElementScreenshot('#settings-dialog', 'settings-general-model-routing.png')
 
-    // LM Studio's server connection now lives under its chip in the one
-    // Providers panel, not in a settings section of its own.
-    await $('.provider-chip[data-provider="lmstudio"]').click()
+    // LM Studio's server connection lives in Models & agents: listed once it
+    // answers, and otherwise one choice under + Add → Model server.
+    const list = $('[data-testid="models-agents-fieldset"]')
+    const lmStudioRow = list.$('.acp-row[data-row="server:lmstudio"]')
+    await lmStudioRow.waitForDisplayed({ timeout: 30_000 })
+    await expect(lmStudioRow.$('.acp-row-chip')).toHaveText('Running')
+    await lmStudioRow.$('button=Options').click()
     await expect(settingsSection('general').$('legend=Server connection')).toBeDisplayed()
 
     await expect($('.key-status[data-key="lmstudio"]')).toHaveText('not set')

@@ -207,9 +207,6 @@ importers:
       c8:
         specifier: ^12.0.0
         version: 12.0.0
-      ddg-search:
-        specifier: ^2026.2.16
-        version: 2026.2.16
       diff:
         specifier: ^9.0.0
         version: 9.0.0
@@ -2939,11 +2936,6 @@ packages:
 
   dayjs@1.11.23:
     resolution: {integrity: sha512-QDTCU0M0MxR3hQfnlDJfwekQiaanm1ubOD231u73WBckQ/fsamwRLiE2GBz6D3a/xF1NgfiDLJjXBa1hYOYTtQ==}
-
-  ddg-search@2026.2.16:
-    resolution: {integrity: sha512-CJOmUZYeKdTB8bPJgX78FJu/E4NoXcnrV4AaS0x5ElllM4I8SeT6+MdO8uadVnNgl1sNbf286SDGNPj8hkHXxw==}
-    engines: {node: '>=22'}
-    hasBin: true
 
   debounce-fn@6.0.0:
     resolution: {integrity: sha512-rBMW+F2TXryBwB54Q0d8drNEI+TfoS9JpNTAoVpukbWEhjXQq4rySFYLaqXMFXwdv61Zb2OHtj5bviSoimqxRQ==}
@@ -8051,10 +8043,6 @@ snapshots:
 
   dayjs@1.11.23:
     optional: true
-
-  ddg-search@2026.2.16:
-    dependencies:
-      cheerio: 1.2.0
 
   debounce-fn@6.0.0:
     dependencies:

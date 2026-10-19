@@ -110,22 +110,25 @@ describe('settings styling', function () {
     // Adjacent groups introduce themselves in one voice (#3065): "Detected
     // settings" used a 12px muted field hint beside Providers' 14px blurb.
     const blurbs = await browser.execute(() =>
-      ['#settings-agents-host', '#settings-providers-host'].map((host) => {
-        const blurb = document.querySelector<HTMLElement>(`${host} > fieldset > legend + p`)
+      ['#settings-agents-host > fieldset', '#settings-models-section'].map((group) => {
+        const blurb = document.querySelector<HTMLElement>(`${group} > legend + p`)
         if (!blurb) return null
         const style = getComputedStyle(blurb)
         return { className: blurb.className, fontSize: style.fontSize, color: style.color }
       }),
     )
-    const [detectBlurb, providersBlurb] = blurbs
-    assert.ok(detectBlurb && providersBlurb, 'both General group blurbs must render')
-    assert.equal(detectBlurb.className, 'settings-fieldset-desc')
-    assert.deepEqual(detectBlurb, providersBlurb, 'adjacent group blurbs share one style')
+    const [listBlurb, modelsBlurb] = blurbs
+    assert.ok(listBlurb && modelsBlurb, 'both General group blurbs must render')
+    assert.equal(listBlurb.className, 'settings-fieldset-desc')
+    assert.deepEqual(listBlurb, modelsBlurb, 'adjacent group blurbs share one style')
 
-    // The cloud-agent auth cards are parked in a hidden template until a provider
-    // chip adopts them, so they are not General groups of their own.
+    // The cloud-agent auth cards are parked in a hidden template until a key's
+    // Options adopt them, so they are not General groups of their own.
     const generalSubheadings = await $$('.settings-nav-subheading').map((btn) => btn.getText())
-    assert.ok(generalSubheadings.includes('API keys'), 'General lists its API keys group')
+    assert.ok(
+      generalSubheadings.includes('Models & agents'),
+      'General lists its Models & agents group',
+    )
     for (const parked of ['Cursor authentication', 'Claude authentication']) {
       assert.ok(!generalSubheadings.includes(parked), `${parked} is not a General group`)
     }
