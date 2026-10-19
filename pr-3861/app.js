@@ -153404,7 +153404,7 @@ ${description}
     submitBtn.disabled = imageDescriptionInProgress || preparingCheckout || id !== null && isThreadSubmitting(store2, id);
     stopBtn.hidden = !running;
     updateTargetPicker();
-    submitBtn.textContent = preparingCheckout ? "Preparing\u2026" : running ? "Queue" : "Send";
+    submitBtn.textContent = running ? "Queue" : "Send";
     submitBtn.setAttribute(
       "aria-label",
       preparingCheckout ? "Preparing checkout" : running ? "Queue message" : "Send message"

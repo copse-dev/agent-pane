@@ -7646,6 +7646,10 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   border-radius: 999px;
   padding: 6px 16px;
 }
+.submit-btn:disabled {
+  cursor: wait;
+  opacity: 0.7 !important;
+}
 .footer-queue {
   font-size: var(--font-size-xs);
   color: var(--text-muted);
