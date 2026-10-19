@@ -2145,6 +2145,10 @@
       "sha256": "6ada3a23118330b6ec692a6c9c1d10e74b416fd486973d1ab29e0942a849125d",
       "bytes": 330219
     },
+    "markdown-tool-interruption-inline-code-span.png": {
+      "sha256": "0ba4c3aa3b1ec512d305050e0b310e139cc17a09d919c93abfdd014583fa5a9f",
+      "bytes": 341586
+    },
     "markdown-tool-interruption-malformed-fence.png": {
       "sha256": "b473809f7a9a6cdd95ccf0da330a7019a10ddc2237475936a1c65ad6d2040f63",
       "bytes": 308863
