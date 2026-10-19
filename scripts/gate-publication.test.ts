@@ -7,6 +7,50 @@ import { join, resolve } from 'node:path'
 import { z } from 'zod'
 const publisher = resolve('scripts/publish-gate-evidence.mts')
 const replay = resolve('scripts/replay-gate-evidence.mts')
+it('reports absent failed/cancelled evidence as unavailable and rejects successful or malformed evidence', () => {
+  const root = mkdtempSync(join(tmpdir(), 'gate-publication-missing-'))
+  try {
+    const env = {
+      ...process.env,
+      SOURCE_RUN_ID: '123',
+      SOURCE_RUN_ATTEMPT: '1',
+      SOURCE_HEAD_SHA: 'a'.repeat(40),
+    }
+    for (const directoryExists of [false, true]) {
+      if (directoryExists) mkdirSync(join(root, 'incoming'))
+      for (const conclusion of ['cancelled', 'failure', 'success']) {
+        rmSync(join(root, 'gate-publication.json'), { force: true })
+        const result = spawnSync(process.execPath, [publisher, 'incoming'], {
+          cwd: root,
+          env: { ...env, SOURCE_CONCLUSION: conclusion },
+          encoding: 'utf8',
+        })
+        if (conclusion === 'success') {
+          assert.notEqual(result.status, 0)
+          assert.match(result.stderr, /Missing selected CI plan/)
+        } else {
+          assert.equal(result.status, 0, result.stderr)
+          const publication = z
+            .object({ text: z.string(), count: z.number(), shadowAvailable: z.boolean() })
+            .parse(JSON.parse(readFileSync(join(root, 'gate-publication.json'), 'utf8')))
+          assert.equal(publication.shadowAvailable, false)
+          assert.equal(publication.count, 0)
+          assert.match(publication.text, /No successful replay is recorded/)
+          assert.match(publication.text, new RegExp(conclusion))
+        }
+      }
+    }
+    writeFileSync(join(root, 'incoming/plan.json'), '{}')
+    const malformed = spawnSync(process.execPath, [publisher, 'incoming'], {
+      cwd: root,
+      env: { ...env, SOURCE_CONCLUSION: 'cancelled' },
+      encoding: 'utf8',
+    })
+    assert.notEqual(malformed.status, 0)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
 it('publishes failed-run evidence immutably, verifies bytes, rejects tampering', () => {
   const root = mkdtempSync(join(tmpdir(), 'gate-publication-'))
   try {
