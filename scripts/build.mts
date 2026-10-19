@@ -10,6 +10,7 @@ import {
   accessSync,
   cpSync,
   copyFileSync,
+  existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -464,7 +465,10 @@ if (!removeMissingBuildArtifact(vaultHelper, 'dist/resources/profile-vault')) {
       architectures: PROFILE_VAULT_ARCHITECTURES,
       sourceHash: profileVaultSourceHash(process.cwd()),
     }) + '\n'
-  if (readFileSync('native/profile-vault/dist/build.json', 'utf8') !== expectedVaultBuild) {
+  // A helper left by an older or interrupted prepare may have no build record.
+  const vaultBuild = 'native/profile-vault/dist/build.json'
+  const actualVaultBuild = existsSync(vaultBuild) ? readFileSync(vaultBuild, 'utf8') : ''
+  if (actualVaultBuild !== expectedVaultBuild) {
     if (isRelease)
       throw new Error(
         'The native vault helper is stale. Prepare and sign it before release packaging.',
