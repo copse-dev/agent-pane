@@ -3462,8 +3462,8 @@
       "bytes": 230496
     },
     "settings-browser-tools.png": {
-      "sha256": "26db0896a6b56870fc457aafa972206e3a1debc2f9331365673f1eca5d6e187a",
-      "bytes": 258245
+      "sha256": "e2c7fd55e59ca48e9b7738d2d1954ed62945958b0289d198096d02d7a118be43",
+      "bytes": 262770
     },
     "settings-bundled-plugin-pstack-off.png": {
       "sha256": "2ed894e88eac51bbf10caadf345b0a23cc343c65903dd0e59ffe9c4e5c865eec",
@@ -3637,6 +3637,14 @@
       "sha256": "e99837b2724f8466b74a72c9e32144aa4b76afdade2329a7718dca4823d3f3ef",
       "bytes": 37808
     },
+    "settings-default-branch-fetch-off.png": {
+      "sha256": "5f88fb67e8edfd33de283413de28a887a6c34fcf37759fab5187d08e2715223c",
+      "bytes": 54147
+    },
+    "settings-default-branch-fetch-on.png": {
+      "sha256": "f5bfeaad3a19929a7c432a42248cdc2ede1d4f389e3ac2e23a1524786858de7a",
+      "bytes": 54509
+    },
     "settings-deferred-worktrees-off.png": {
       "sha256": "c7468cb27a62898836aa85b2774b861f13e5383bb3c9de46b3d48c2038cdaff7",
       "bytes": 48456
@@ -3702,8 +3710,8 @@
       "bytes": 226143
     },
     "settings-gui-app-permission.png": {
-      "sha256": "24358122ceaa303c766eb0f2b4ffab2215e53de53442fb47345684a24522c88f",
-      "bytes": 318320
+      "sha256": "968ec8e3ae5dafc915dc5a19a257f5d83648e75b69c5d684926b36d04aba389b",
+      "bytes": 323210
     },
     "settings-load-failed.png": {
       "sha256": "cea5d5c94293d40fb101d6cc19edbc3afc07755cc40df2c47feba4aa4f88b010",
@@ -3726,8 +3734,8 @@
       "bytes": 281462
     },
     "settings-mcp-permission-group-blocked.png": {
-      "sha256": "2b7f00f46214d60afa36ddaa52b1abdb759da108021474646f013b81c00aaaa9",
-      "bytes": 270238
+      "sha256": "ecdba5b42fb072fb2e86192f0389005f3b3ce63436b625956486f34ac7e74473",
+      "bytes": 274391
     },
     "settings-mcp-server-row.png": {
       "sha256": "df4005aaf1170a73c10b96f7269ba867a8d11980e86042051926fb3833f3d95b",
@@ -3854,8 +3862,8 @@
       "bytes": 212832
     },
     "settings-provider-host-approval.png": {
-      "sha256": "d57fbfd3292ee4f8c94291b561b6ee9fb151acb39b9703e23c564bcfe7b127d7",
-      "bytes": 267428
+      "sha256": "40c7691dc92a5e44e181b2db3fe72894f79d9f97db4e9d5d55e89446d38a458d",
+      "bytes": 271756
     },
     "settings-provider-hosts-page-2.png": {
       "sha256": "cc68716fb3d61e00d9d23e776b6a6742626feb507d2422c767f524b4b41dc6ce",
@@ -3870,8 +3878,8 @@
       "bytes": 236451
     },
     "settings-read-terminal.png": {
-      "sha256": "26db0896a6b56870fc457aafa972206e3a1debc2f9331365673f1eca5d6e187a",
-      "bytes": 258245
+      "sha256": "e2c7fd55e59ca48e9b7738d2d1954ed62945958b0289d198096d02d7a118be43",
+      "bytes": 262770
     },
     "settings-save-no-error.png": {
       "sha256": "765e4bcb7848be38dd06e238fe0daff545d5e332c4b62179a709f230554be3ec",
@@ -4214,8 +4222,8 @@
       "bytes": 53594
     },
     "settings-worktree-edits.png": {
-      "sha256": "eedb347645a652b86affcd3b0cf8840643951f1ecd2fef9c77f71743b39b4e57",
-      "bytes": 299063
+      "sha256": "37b39f9f871dfe302351455ad75b86a577c69736ad236ceeb2fbc76ec33f0cd1",
+      "bytes": 303726
     },
     "settings-zdr-provider-presets.png": {
       "sha256": "b2f537534c0a779b320db7f1de7aea6da1cd12bc21c36d47a4ccf0d0878dc1f5",

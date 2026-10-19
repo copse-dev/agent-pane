@@ -456,3 +456,34 @@ describe('network command activity', () => {
     },
   )
 })
+
+for (const gitConfig of ['internal', 'internal-network'] as const) {
+  it(`does not restore ambient Git config after ${gitConfig} preparation`, async () => {
+    const keys = ['GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0']
+    const saved = keys.map((key) => process.env[key])
+    const cwd = await mkdtemp(join(tmpdir(), 'copse-ambient-probe-'))
+    try {
+      process.env['GIT_CONFIG_COUNT'] = '1'
+      process.env['GIT_CONFIG_KEY_0'] = 'alias.copseAmbientProbe'
+      process.env['GIT_CONFIG_VALUE_0'] = 'ambient-should-not-reach-child'
+      const result = await runCommand('git', ['config', '--get', 'alias.copseAmbientProbe'], {
+        cwd,
+        unsandboxed: true,
+        gitConfig,
+      })
+      assert.equal(
+        result.stdout.trim(),
+        '',
+        'prepared Git environment must remain scrubbed at spawn',
+      )
+      assert.equal(result.code, 1)
+    } finally {
+      for (const [index, key] of keys.entries()) {
+        const value = saved[index]
+        if (value === undefined) Reflect.deleteProperty(process.env, key)
+        else process.env[key] = value
+      }
+      await rm(cwd, { recursive: true, force: true })
+    }
+  })
+}

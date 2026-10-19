@@ -136,6 +136,7 @@ export interface SettingsValues {
   acpAutoApproveEditsWithBackup: boolean
   acpAutoApproveNativeBridgeTools: boolean
   worktreeAutoApproveEdits: boolean
+  backgroundDefaultBranchFetch: boolean
   modelClassifierEnabled: boolean
   nextStepSuggestionEnabled: boolean
   conciseThreadsEnabled: boolean
