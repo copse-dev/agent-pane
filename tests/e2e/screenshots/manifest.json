@@ -3557,6 +3557,10 @@
       "sha256": "45926f3476024c7803db11fa6e2dde8334f660cf780e97729aa54cf34e410585",
       "bytes": 159587
     },
+    "settings-classifiers-glide.png": {
+      "sha256": "ff091b15c2c4f88045e80f7f7460cd3df89dc8bb69eb49fb6fe48e23824b957f",
+      "bytes": 210347
+    },
     "settings-classifiers-install-bad-revision.png": {
       "sha256": "6bd458a637b6a2089584723348cc53f8dc1745a0cda4dc5e7a2f041533f79689",
       "bytes": 68904
@@ -3598,8 +3602,8 @@
       "bytes": 156532
     },
     "settings-classifiers-liquid.png": {
-      "sha256": "edeb8efd4c5ef6acd9dfc6478b750c03a4b4bd6a4326acd3911d7ac360a1e5bf",
-      "bytes": 145747
+      "sha256": "f1dbb86cdd47403b1a78f923880f904ae10737efdb7c518605d54ba2df059649",
+      "bytes": 148887
     },
     "settings-classifiers-local-confirm.png": {
       "sha256": "682ae33a05b0beb8581892f4fa030520388b560c233f7b0abdd0fd00556cb0ac",
