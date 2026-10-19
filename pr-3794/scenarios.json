@@ -180,6 +180,10 @@
     "label": "Activity home listing threads that finished before launch"
   },
   {
+    "id": "activity-home-final-response",
+    "label": "Activity home showing the final response of finished threads"
+  },
+  {
     "id": "activity-home-empty",
     "label": "Activity home with nothing to list"
   },
@@ -294,6 +298,10 @@
   {
     "id": "concise-state-default-on",
     "label": "A capable model’s turn on a profile with no stored setting"
+  },
+  {
+    "id": "concise-state-recovery-layout",
+    "label": "Interrupted turn with a long fallback model name"
   },
   {
     "id": "concise-state-failed",
