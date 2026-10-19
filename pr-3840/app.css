@@ -3701,6 +3701,14 @@ button.thread-context-row:disabled {
   color: var(--text-muted);
   font-size: var(--font-size-sm);
 }
+.thread-context-permission-label {
+  margin: 8px 0 3px;
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 .thread-context-section-actions {
   display: flex;
   justify-content: flex-end;
@@ -7637,6 +7645,10 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   color: var(--text-on-accent);
   border-radius: 999px;
   padding: 6px 16px;
+}
+.submit-btn:disabled {
+  cursor: wait;
+  opacity: 0.7 !important;
 }
 .footer-queue {
   font-size: var(--font-size-xs);
