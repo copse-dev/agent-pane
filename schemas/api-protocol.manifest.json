@@ -2257,6 +2257,20 @@
           4
         ]
       },
+      "threads:archive-decision": {
+        "api": "threads.archiveDecision",
+        "args": [
+          3,
+          3
+        ]
+      },
+      "threads:archive-state": {
+        "api": "threads.archiveState",
+        "args": [
+          2,
+          2
+        ]
+      },
       "threads:backfill-pr-refs": {
         "api": "threads.backfillPrRefs",
         "args": [
@@ -3075,6 +3089,13 @@
       },
       "thread-prompts:prompt": {
         "api": "threadPrompts.onPrompt",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "threads:auto-archived": {
+        "api": "threads.onAutoArchived",
         "args": [
           1,
           1

@@ -277,6 +277,16 @@ function metaPatch(prev: ThreadMeta, next: ThreadMeta): Partial<ThreadMeta> {
 // never mistakes the other project's threads for deletions.
 const persistedMeta = new Map<string, Map<string, ThreadMeta>>()
 
+/** Register a thread loaded from main without resetting other pending metadata edits. */
+export function recordPersistedThread(projectId: string, thread: Thread): void {
+  let metas = persistedMeta.get(projectId)
+  if (!metas) {
+    metas = new Map<string, ThreadMeta>()
+    persistedMeta.set(projectId, metas)
+  }
+  metas.set(thread.id, metaOf(thread))
+}
+
 /**
  * Diff a project's threads against the last-persisted metadata baseline and emit
  * exactly `create` (new id), `updateMeta` (changed meta), or `delete` (removed
@@ -412,8 +422,26 @@ export function saveProjectGroups(api: ApiClient, groups: ProjectGroup[]): Promi
   return serializedSet(api, KEY_PROJECT_GROUPS, groups)
 }
 
+const threadLoadRevisions = new WeakMap<ApiClient, Map<string, number>>()
+
+/** Discard metadata responses that started before a main-process archive/restore. */
+export function invalidateProjectThreadLoads(api: ApiClient, projectId: string): void {
+  let revisions = threadLoadRevisions.get(api)
+  if (!revisions) {
+    revisions = new Map()
+    threadLoadRevisions.set(api, revisions)
+  }
+  revisions.set(projectId, (revisions.get(projectId) ?? 0) + 1)
+}
+
 export async function loadThreads(api: ApiClient, projectId: string): Promise<Thread[]> {
-  const threads = sortThreadsNewestFirst(await api.threads.loadProject(projectId)).map((thread) =>
+  let loaded: Thread[]
+  let revision: number
+  do {
+    revision = threadLoadRevisions.get(api)?.get(projectId) ?? 0
+    loaded = await api.threads.loadProject(projectId)
+  } while (revision !== (threadLoadRevisions.get(api)?.get(projectId) ?? 0))
+  const threads = sortThreadsNewestFirst(loaded).map((thread) =>
     thread.status !== 'running' && thread.lastSettledAt === undefined
       ? { ...thread, lastSettledAt: thread.updatedAt }
       : thread,

@@ -37,6 +37,26 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.thread-archive-review {
+  box-sizing: border-box;
+  width: min(var(--chat-content-max), calc(100% - 2 * var(--spacing-xl)));
+  margin: var(--spacing-md) auto;
+  padding: var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  font-size: var(--font-size-sm);
+}
+.thread-archive-review p {
+  margin: var(--spacing-sm) 0;
+  color: var(--text-secondary);
+}
+.thread-archive-review-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
 .messages-list {
   flex: 1;
   overflow-y: auto;
