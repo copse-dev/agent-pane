@@ -263,21 +263,27 @@ that earlier tool calls ran under Copse's sandbox or approval policy.
 `session/load` notifications arrive in replay mode before normal interaction.
 Buffer and normalize them before mutating the thread spine.
 
-1. Prefer stable ACP message/tool identifiers when the negotiated protocol
-   provides them — with v2's limits: only **user** message ids must stay stable
-   across replay; clients "MUST NOT rely on" agent or thought ids to deduplicate
-   replay. Deduplicate by user `messageId` and fold agent/tool updates as
-   upserts by id (idempotent under the spec), rather than treating a matching
-   agent id as proof of identity. A replay that follows live updates must go
-   through the upsert fold, never the append path.
-2. For v1 updates without durable IDs, use ordered content hashes plus role and
+1. Fold updates **within each delivered stream** by type and id before doing any
+   reconciliation. That applies ACP's agent/tool upsert semantics and makes a
+   repeated update in one live or replay stream idempotent; it does not make an
+   id stable between those streams.
+2. Across a v2 live stream and replay, use only the stable user `messageId`s as
+   anchors. Between two such anchors, suppress a replayed agent/thought/tool
+   segment only when its normalized, ordered event kinds and completed contents
+   exactly equal the live segment after unstable ids are removed. If the
+   segments differ, keep the replayed segment with import provenance and mark
+   the transcript diverged rather than guessing that merely similar events are
+   identical. The conservative result may contain both live and replayed agent
+   output; v2 explicitly says clients "MUST NOT rely on" agent or thought ids to
+   deduplicate replay.
+3. For v1 updates without durable IDs, use ordered content hashes plus role and
    event kind only to deduplicate an exact prefix; never merge merely similar
    messages.
-3. Append unmatched events with `source: acp-import` and agent/session
+4. Append unmatched events with `source: acp-import` and agent/session
    provenance. Keep the raw session ID only in the private sidecar.
-4. If replay is partial, reordered, or cannot represent prior tool activity,
+5. If replay is partial, reordered, or cannot represent prior tool activity,
    import what is unambiguous and retain the incomplete-transcript marker.
-5. If another client has written since Copse's last attach, require a reload or
+6. If another client has written since Copse's last attach, require a reload or
    explicit continue-with-gap choice before sending another prompt. ACP v1 has
    no portable multi-writer merge contract.
 
