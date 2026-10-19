@@ -107221,6 +107221,7 @@ function mountConversation(root, store2, api2) {
   let userScrolledUpAt = 0;
   let renderedThreadId = null;
   let stickyImagePrompt = null;
+  let stickyImageFullHeight = 0;
   let backfillGeneration = 0;
   const disclosurePreferences = /* @__PURE__ */ new Map();
   const liveRollupMessages = /* @__PURE__ */ new Set();
@@ -107343,12 +107344,13 @@ function mountConversation(root, store2, api2) {
   function updateScrollButton() {
     scrollToBottomBtn.hidden = isNearBottom();
   }
-  function syncStickyImagePreview() {
+  function syncStickyImagePreview(releaseOnScrollUp = false) {
     const prompt = stickyImagePrompt;
     if (!prompt?.isConnected) return;
     const promptStyle = window.getComputedStyle(prompt);
     if (promptStyle.position !== "sticky") {
       prompt.classList.remove("is-preview-compact");
+      stickyImageFullHeight = 0;
       return;
     }
     const listRect = list.getBoundingClientRect();
@@ -107356,7 +107358,13 @@ function mountConversation(root, store2, api2) {
     const previous = prompt.previousElementSibling;
     const naturalTop = previous ? previous.getBoundingClientRect().bottom + Number.parseFloat(listStyle.rowGap) : listRect.top + Number.parseFloat(listStyle.paddingTop) - list.scrollTop;
     const stickyTop = listRect.top + Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top);
-    prompt.classList.toggle("is-preview-compact", naturalTop < stickyTop - 1);
+    const compact = prompt.classList.contains("is-preview-compact");
+    const releaseOffset = compact ? Math.max(0, stickyImageFullHeight - prompt.getBoundingClientRect().height) : 0;
+    const shouldCompact = naturalTop < stickyTop + (releaseOnScrollUp ? 0 : releaseOffset) - 1;
+    if (shouldCompact === compact) return;
+    if (shouldCompact) stickyImageFullHeight = prompt.getBoundingClientRect().height;
+    else stickyImageFullHeight = 0;
+    prompt.classList.toggle("is-preview-compact", shouldCompact);
   }
   function refreshStickyImagePrompt() {
     const prompts = list.querySelectorAll(
@@ -107364,13 +107372,15 @@ function mountConversation(root, store2, api2) {
     );
     const latest = prompts[prompts.length - 1];
     const next = latest?.querySelector(".message-images") ? latest : null;
-    if (stickyImagePrompt !== next) stickyImagePrompt?.classList.remove("is-preview-compact");
+    if (stickyImagePrompt !== next) {
+      stickyImagePrompt?.classList.remove("is-preview-compact");
+      stickyImageFullHeight = 0;
+    }
     stickyImagePrompt = next;
     syncStickyImagePreview();
   }
   function handleUserScroll() {
     const scrollTop = list.scrollTop;
-    syncStickyImagePreview();
     if (scrollTop === lastProgrammaticScrollTop) {
       lastProgrammaticScrollTop = -1;
       lastScrollTop = scrollTop;
@@ -107378,6 +107388,7 @@ function mountConversation(root, store2, api2) {
     }
     const dropped = scrollTop < lastScrollTop - 1;
     const clamped = dropped && list.scrollHeight - scrollTop - list.clientHeight <= 1;
+    syncStickyImagePreview(dropped && !clamped);
     if (clamped) {
     } else if (dropped) {
       userScrolledUpAt = Date.now();
@@ -107391,7 +107402,9 @@ function mountConversation(root, store2, api2) {
     updateScrollButton();
   }
   list.addEventListener("scroll", handleUserScroll, { passive: true });
-  const listResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(syncStickyImagePreview);
+  const listResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
+    syncStickyImagePreview();
+  });
   listResizeObserver?.observe(list);
   const conciseFooterObserver = new MutationObserver(scheduleConciseTurnFooterSync);
   conciseFooterObserver.observe(list, { childList: true });
