@@ -2384,7 +2384,27 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     label: 'Empty unopened project in the sidebar',
     project: project('demo-empty-active'),
     settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
-    threads: [],
+    // Keep a populated conversation open: filtering a blank composer intentionally
+    // opens a new thread in the selected project, which would no longer be empty.
+    threads: [
+      {
+        id: 'demo-empty-active-chat',
+        title: 'Open project conversation',
+        status: 'idle',
+        messages: [
+          {
+            id: 'demo-empty-active-message',
+            role: 'user',
+            content: 'Keep this conversation open while browsing other projects.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
     otherProjects: [
       { project: project('demo-empty-other', 'empty-project', '/demo/empty'), threads: [] },
     ],

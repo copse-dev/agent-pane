@@ -2513,6 +2513,14 @@
       "sha256": "ea9473e5a71e5b49d1c4bb5186890ed147964b58759e6303814b87005e2d80f3",
       "bytes": 260392
     },
+    "new-thread-project-picker.png": {
+      "sha256": "6fbb3be8b229a3476e407d33ed2c558cef033122411a8e4e91a2daa7419ade74",
+      "bytes": 136394
+    },
+    "new-thread-selected-project.png": {
+      "sha256": "55252c18e7bb8c779da233bd9e14fdd2cb2b4f43880a79643b58ac2cfbc47169",
+      "bytes": 119670
+    },
     "next-step-hint-accepted.png": {
       "sha256": "3c10df7a415e4cdda819e181f770bbafc1e89834047b29234eb8a06fc396de9d",
       "bytes": 247492
