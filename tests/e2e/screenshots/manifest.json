@@ -3157,6 +3157,10 @@
       "sha256": "8568e7b112f4b71d39c0057de10a54bc5b3da3fe308b76cfe1669e709344a67b",
       "bytes": 327449
     },
+    "remote-acp-first-run-setup.png": {
+      "sha256": "23193e8a8e0964df9794351392c12f17fb67623bd56e283c8492a0a2b8458027",
+      "bytes": 21688
+    },
     "remote-agent-invalid-key-picker.png": {
       "sha256": "47f264b4aff6fd00ca0619966ba947b81e8c44a0205f6a5789c40e46eeae6f85",
       "bytes": 301250

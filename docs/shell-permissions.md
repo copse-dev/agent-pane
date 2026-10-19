@@ -410,7 +410,9 @@ stay hard-external; the SSH transport is injected below command routing, so clas
 reads the original command.
 
 - **Integrated terminals** targeting SSH always ask first (“Open remote terminal?”), and the
-  approval cannot be remembered. An explicit local console, such as the Usage panel’s sign-in
+  approval cannot be remembered. A shell Copse adds on its own (a new thread or worktree while the
+  Shells pane is open, or the pane restored at launch) waits for a click or keypress before it
+  spawns and asks, so the prompt only follows a user action. An explicit local console, such as the Usage panel’s sign-in
   action, runs at local home and follows the local terminal permission contract even while the
   active project targets SSH. Agent reauthentication still selects the agent’s host.
 - **Remote ACP agents** (`acpOverSshEnabled`, off by default; [plan](plans/acp-over-ssh.md)) are
