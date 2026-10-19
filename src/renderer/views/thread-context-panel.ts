@@ -540,17 +540,27 @@ export function mountThreadContextPane(
       threads: state.threads,
       mentionedIn: mentionedFor === thread.id ? mentionedIn : [],
     })
-    const key = JSON.stringify([state.activeProjectId, model, thread.archivedAt])
-    if (key === renderedKey) return
-    renderedKey = key
-    clear(viewerRoot)
-    const content = renderThreadContext(model, handlers)
     const questions = reviewerInputRequests(thread).filter(
       (request) => !reviewerInputAnswer(thread.reviewerInputAnswers, request.id),
     )
     const agentQuestions =
       liveQuestions?.pending().filter((request) => request.threadId === thread.id) ?? []
-    const pending = approvalsKey === activeStorageKey() ? approvals : []
+    const approvalsLoaded = approvalsKey === activeStorageKey()
+    const pending = approvalsLoaded ? approvals : []
+    const key = JSON.stringify([
+      state.activeProjectId,
+      model,
+      thread.archivedAt,
+      questions,
+      agentQuestions,
+      pending,
+      approvalsLoaded,
+      approvalsError,
+    ])
+    if (key === renderedKey) return
+    renderedKey = key
+    clear(viewerRoot)
+    const content = renderThreadContext(model, handlers)
     const requestRows: HTMLElement[] = agentQuestions.map((request) => {
       const button = rowButton(
         { 'data-agent-question-id': request.id },
@@ -612,9 +622,9 @@ export function mountThreadContextPane(
       requestRows.length
         ? el('div', { class: 'thread-context-rows' }, ...requestRows)
         : emptyNote(
-            approvalsError && approvalsKey === activeStorageKey()
+            approvalsError && approvalsLoaded
               ? 'Approval requests unavailable.'
-              : approvalsKey === activeStorageKey()
+              : approvalsLoaded
                 ? 'Nothing waiting.'
                 : 'Checking requests…',
           ),
@@ -698,12 +708,13 @@ export function mountThreadContextPane(
     if (!thread || !projectId) return
     const mine = ++approvalsToken
     const key = activeStorageKey()
-    approvalsKey = ''
-    approvalsError = false
+    // Keep showing this thread's last answer while the refresh is in flight, so
+    // a routine update does not re-render Context.
     try {
       const rows = await api.threads.pendingApprovals(projectId, thread.id)
       if (disposed || mine !== approvalsToken || key !== activeStorageKey()) return
       approvals = rows
+      approvalsError = false
     } catch (error) {
       if (disposed || mine !== approvalsToken || key !== activeStorageKey()) return
       console.error('[context] pending approvals lookup failed:', error)
