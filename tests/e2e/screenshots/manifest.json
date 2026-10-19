@@ -4185,6 +4185,10 @@
       "sha256": "bfd29089fa5e1f7b7cb4b81935efd2ca1cd8709af7e95590f6bec2362190d38c",
       "bytes": 145534
     },
+    "settings-web-search-tavily.png": {
+      "sha256": "e158d987e83591befe4c4fe4b6afaf8e3784ef86cb576915747e632613ca36d0",
+      "bytes": 74576
+    },
     "settings-worktree-actions.png": {
       "sha256": "180aa0d4bb25db894ab95577d50b53e15195ab809ba29cd1bccaf285e0082166",
       "bytes": 276157
