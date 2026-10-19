@@ -13,6 +13,8 @@ import type { DecisionEvent } from '@shared/threads/decision-log.ts'
 import type { ContextPermissionSnapshot } from '@shared/types/context-permissions.ts'
 import type { GuardedYoloPhase } from '@shared/types/guarded-yolo.ts'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
+import type { DeferredApproval } from '@shared/threads/deferred-approval.ts'
+import { reviewerInputAnswer, reviewerInputRequests } from '@shared/threads/reviewer-input.ts'
 import {
   archiveThread,
   getActiveThread,
@@ -28,6 +30,8 @@ import {
 import { startSideChat } from '../controller/side-chat.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
+import { openActivityPanel } from './activity-panel.ts'
+import type { AskUserRequests } from './ask-user-dialog.ts'
 import { deriveThreadContext, type ThreadContextModel } from './thread-context-model.ts'
 import { mountReviewerInput } from './reviewer-input.ts'
 import { showErrorToast } from './toast.ts'
@@ -48,6 +52,7 @@ export interface ThreadContextHandlers {
 }
 
 type ContextSection =
+  | 'requests'
   | 'repos'
   | 'side-chats'
   | 'links'
@@ -56,6 +61,7 @@ type ContextSection =
   | 'resolved-questions'
 
 const SECTION_TITLES: Record<ContextSection, string> = {
+  requests: 'Needs your input',
   repos: 'Access',
   'side-chats': 'Side chats',
   links: 'Links & references',
@@ -386,6 +392,7 @@ export function mountThreadContextPane(
   viewerRoot: HTMLElement,
   store: AppStore,
   api: ApiClient,
+  liveQuestions?: AskUserRequests,
 ): () => void {
   const reviewerInput = mountReviewerInput(store, api)
   const close = el(
@@ -419,6 +426,10 @@ export function mountThreadContextPane(
   let changesKey = ''
   let changesText = 'Calculating…'
   let changeStats: { additions: number; deletions: number } | null = null
+  let approvals: DeferredApproval[] = []
+  let approvalsKey = ''
+  let approvalsToken = 0
+  let approvalsError = false
   let changesCheckedAt = 0
   let changesPending = false
   let renderedKey = ''
@@ -823,10 +834,22 @@ export function mountThreadContextPane(
       threads: state.threads,
       mentionedIn: mentionedFor === thread.id ? mentionedIn : [],
     })
+    const questions = reviewerInputRequests(thread).filter(
+      (request) => !reviewerInputAnswer(thread.reviewerInputAnswers, request.id),
+    )
+    const agentQuestions =
+      liveQuestions?.pending().filter((request) => request.threadId === thread.id) ?? []
+    const approvalsLoaded = approvalsKey === activeStorageKey()
+    const pending = approvalsLoaded ? approvals : []
     const key = JSON.stringify([
       state.activeProjectId,
       model,
       thread.archivedAt,
+      questions,
+      agentQuestions,
+      pending,
+      approvalsLoaded,
+      approvalsError,
       accessFor,
       accessGrants,
       accessStatus,
@@ -836,10 +859,59 @@ export function mountThreadContextPane(
     clear(viewerRoot)
     const content = renderThreadContext(model, handlers)
     reviewerInput.sync()
-    const questionAnchor =
-      content.querySelector('[data-context-section="resolved-questions"]') ??
-      content.querySelector('[data-context-section="repos"]')
-    questionAnchor?.before(reviewerInput.toggle, reviewerInput.panel)
+    const requestRows: HTMLElement[] = agentQuestions.map((request) => {
+      const button = rowButton(
+        { 'data-agent-question-id': request.id },
+        el(
+          'span',
+          { class: 'thread-context-main' },
+          el(
+            'span',
+            { class: 'thread-context-title', title: request.questions.join(' · ') },
+            request.questions.join(' · '),
+          ),
+          el('span', { class: 'thread-context-sub' }, 'Agent question · Answer in Activity'),
+        ),
+      )
+      button.addEventListener('click', openActivityPanel)
+      return button
+    })
+    requestRows.push(
+      ...pending.map((request) =>
+        el(
+          'div',
+          { class: 'thread-context-row', 'data-deferred-approval-id': request.id },
+          el(
+            'span',
+            { class: 'thread-context-main' },
+            el('span', { class: 'thread-context-title', title: request.title }, request.title),
+            el(
+              'span',
+              { class: 'thread-context-sub' },
+              `Approval needed · Not run · ${request.subject}`,
+            ),
+          ),
+        ),
+      ),
+    )
+    const requestSection = section(
+      'requests',
+      ...(questions.length > 0 ? [reviewerInput.toggle, reviewerInput.panel] : []),
+      ...(requestRows.length > 0
+        ? [el('div', { class: 'thread-context-rows' }, ...requestRows)]
+        : questions.length > 0
+          ? []
+          : [
+              emptyNote(
+                approvalsError && approvalsLoaded
+                  ? 'Approval requests unavailable.'
+                  : approvalsLoaded
+                    ? 'Nothing waiting.'
+                    : 'Checking requests…',
+              ),
+            ]),
+    )
+    content.querySelector('[data-context-section="subagents"]')?.before(requestSection)
     const archive = el(
       'button',
       {
@@ -897,6 +969,7 @@ export function mountThreadContextPane(
   /** Backlinks come from the index; ignore an answer for a thread since closed. */
   async function refreshMentions(): Promise<void> {
     void refreshStorage()
+    void refreshApprovals()
     void refreshAccess()
     const thread = getActiveThread(store)
     const projectId = store.getState().activeProjectId
@@ -914,6 +987,29 @@ export function mountThreadContextPane(
     if (contextModeActive(store)) render()
   }
 
+  async function refreshApprovals(): Promise<void> {
+    const thread = getActiveThread(store)
+    const projectId = store.getState().activeProjectId
+    if (!thread || !projectId) return
+    const mine = ++approvalsToken
+    const key = activeStorageKey()
+    // Keep showing this thread's last answer while the refresh is in flight, so
+    // a routine update does not re-render Context.
+    try {
+      const rows = await api.threads.pendingApprovals(projectId, thread.id)
+      if (disposed || mine !== approvalsToken || key !== activeStorageKey()) return
+      approvals = rows
+      approvalsError = false
+    } catch (error) {
+      if (disposed || mine !== approvalsToken || key !== activeStorageKey()) return
+      console.error('[context] pending approvals lookup failed:', error)
+      approvals = []
+      approvalsError = true
+    }
+    approvalsKey = key
+    if (contextModeActive(store)) render()
+  }
+
   const offs = [
     store.on('reviewer_input_open', (requestId) => {
       openRightPanel(store, 'context')
@@ -925,6 +1021,13 @@ export function mountThreadContextPane(
     store.on('tool_call_updated', () => {
       if (contextModeActive(store)) reviewerInput.sync()
     }),
+    ...(liveQuestions
+      ? [
+          liveQuestions.onChange(() => {
+            if (contextModeActive(store)) render()
+          }),
+        ]
+      : []),
     api.security.onGuardedYoloChanged((state) => {
       if (contextModeActive(store) && getActiveThread(store)?.id === state.threadId) {
         void refreshAccess()
@@ -954,6 +1057,8 @@ export function mountThreadContextPane(
     }),
     store.on('workspace_changed', () => {
       mentionedFor = null
+      approvalsKey = ''
+      approvalsToken++
       storageKey = ''
       changesKey = ''
       changesToken++
@@ -977,6 +1082,7 @@ export function mountThreadContextPane(
     token++
     storageToken++
     changesToken++
+    approvalsToken++
     accessToken++
     for (const off of offs) off()
   }

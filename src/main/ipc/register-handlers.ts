@@ -97,6 +97,7 @@ import { browserSessionOrigins } from '../services/browser/browser-network-grant
 import { browserThreadScope } from '@shared/browser-session.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/plugins/background-tasks-plugin.ts'
+import { readPendingDeferrals } from '../services/security/deferred-approval-store.ts'
 import { getThreadClassifierUse } from '../services/security/classifier-use-report.ts'
 import { loadCanvasArtefactSummaries, readStoredCanvasArtefact } from '../services/canvas-store.ts'
 import { CANVAS_ARTEFACT_CHANNEL } from '../services/canvas-dispatch.ts'
@@ -2237,6 +2238,11 @@ export function registerAllHandlers(
       return lookupThreadBacklinks(pid, linkKind, linkTarget)
     },
   )
+  ipcMain.handle('threads:pending-approvals', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return readPendingDeferrals({ projectId: pid, threadId: tid })
+  })
   // Seed a freshly created fork's provider-format history from the thread it was
   // branched off. The renderer owns the visible transcript copy; this is the
   // half it cannot do, since `agent-history.json` never leaves the main process.

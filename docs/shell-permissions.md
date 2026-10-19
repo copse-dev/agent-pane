@@ -864,6 +864,14 @@ eligible. An eligible prompt raised inside an automation offers to add that exac
 tool to the owning schedule; ordinary threads retain their existing global MCP “always allow”
 behavior.
 
+The first turn of a verified schedule-created thread runs in deferral mode. A
+prompt without a schedule grant records a pending request and returns a
+non-execution error to the agent instead of waiting at a modal. The result
+includes a request id; `deferred_approval_status` reads only requests owned by
+the current thread. Later user turns use ordinary interactive approval.
+Resolving a queued request records the human decision; it does not prove that
+the original action ran.
+
 ## Implementation map
 
 Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, and zsh's
