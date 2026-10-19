@@ -1,14 +1,10 @@
 import { z } from 'zod'
+import { clientLabelSchema } from './client-auth.ts'
 
 const id = z.string().regex(/^[\w-]{1,128}$/)
 export const clientPairSchema = z.strictObject({
   version: z.literal(1),
-  label: z
-    .string()
-    .trim()
-    .min(1)
-    .max(64)
-    .regex(/^[^\u0000-\u001f\u007f]+$/),
+  label: clientLabelSchema,
 })
 export const clientDecisionSchema = z.strictObject({
   version: z.literal(1),

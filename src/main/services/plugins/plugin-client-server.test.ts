@@ -44,6 +44,63 @@ async function pair(origin: string, browserOrigin?: string): Promise<string> {
 }
 
 describe('interactive client approval transport', () => {
+  it('does not carry authenticated control across disable while a decision body is arriving', async () => {
+    let enabled = true
+    let watch = false
+    let observed: () => void = () => {}
+    const entered = new Promise<void>((resolve) => {
+      observed = resolve
+    })
+    const server = await startPluginClientServer({
+      decisions: new HumanDecisions(),
+      enabled: () => {
+        if (watch) observed()
+        return enabled
+      },
+      approvePair: async () => 'control',
+    })
+    try {
+      const token = await pair(server.origin)
+      watch = true
+      let finish: () => void = () => {}
+      const status = new Promise<number>((resolve, reject) => {
+        const req = request(
+          `${server.origin}/v1/decisions`,
+          {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          },
+          (res) => {
+            res.resume()
+            resolve(res.statusCode ?? 0)
+          },
+        )
+        req.on('error', reject)
+        req.flushHeaders()
+        finish = (): void => {
+          req.end(
+            JSON.stringify({
+              version: 1,
+              submissionId: randomUUID(),
+              sessionId: randomUUID(),
+              projectId: 'p',
+              threadId: 't',
+              requestId: randomUUID(),
+              revision: 1,
+              approved: true,
+            }),
+          )
+        }
+      })
+      await entered
+      enabled = false
+      finish()
+      assert.equal(await status, 403)
+    } finally {
+      await server.close()
+    }
+  })
+
   it('rechecks pairing authority and rate limits after overlapping request bodies arrive', async () => {
     for (const revoke of [false, true]) {
       let enabled = true

@@ -32,6 +32,19 @@ relaunch/re-enable requires pairing again. A disconnected client must disable de
 reconcile a fresh snapshot. A retained selection must never silently move to another request.
 The host limits clients, subscriptions, pairing requests, request size and decision identities.
 
+Mobile and plugin clients use the same `ClientCredentials` bearer implementation and
+`ClientPairings` consent lifecycle in `src/main/services/clients/`, with shared read/control and
+label schemas in `src/shared/client-auth.ts`. Both use 256-bit random tokens, stored hashes,
+two-minute pairing expiry, a one-second pairing cooldown, cancellation and one-time delivery.
+Uncollected tokens are revoked on expiry or stop; late desktop consent cannot issue a token.
+Authority is checked again after asynchronous request bodies. Each transport has its own
+credential store: mobile retains paired phones across restarts and binds pairing delivery to
+the requesting peer over same-origin private-LAN HTTPS; this API keeps origin-bound credentials
+only for its current enabled session over loopback HTTP. Neither credential works in the other
+store. The transport's approved operations remain its own scope, so a plugin control grant does
+not acquire mobile chat/run control. A future AHP adapter can reuse this core without replacing
+the transport protections or claiming AHP compliance today.
+
 This preview supplies only standard `run_shell` approvals with host-verified approve-once semantics. Other approval kinds, including persistent provider-host consent, remain on desktop/mobile and cannot be submitted through this API. Theme, activity, general provider registration,
 per-project grants, durable pairing and per-client management remain stages of
 [the generic capability plan](plans/plugin-capability-api.md). Questions stay on existing desktop

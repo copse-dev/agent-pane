@@ -1,4 +1,3 @@
-import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import {
@@ -7,21 +6,9 @@ import {
   type ClientSnapshot,
 } from '../../../shared/plugin-client-protocol.ts'
 import type { HumanDecisions } from '../human-decisions.ts'
-
-interface Pairing {
-  label: string
-  origin: string | undefined
-  controller: AbortController
-  expires: number
-  state: 'pending' | 'denied' | 'approved'
-  token?: string
-}
-interface Client {
-  id: string
-  label: string
-  origin: string | undefined
-  access: 'read' | 'control'
-}
+import { ClientCredentials, type ClientPrincipal } from '../clients/client-credentials.ts'
+import { ClientPairings } from '../clients/client-pairings.ts'
+import type { ClientAccess } from '../../../shared/client-auth.ts'
 
 /** Loopback browser clients must be local, and every paired token is bound to its origin. */
 function localOrigin(origin: string): boolean {
@@ -37,32 +24,32 @@ function localOrigin(origin: string): boolean {
     return false
   }
 }
-function tokenHash(token: string): string {
-  return createHash('sha256').update(token).digest('hex')
-}
 
 /** Session-only, interactive-client transport. No renderer IPC or agent-runtime entry point. */
 export async function startPluginClientServer(options: {
   decisions: HumanDecisions
   enabled: () => boolean
-  approvePair: (
-    label: string,
-    code: string,
-    signal: AbortSignal,
-  ) => Promise<'read' | 'control' | null>
+  approvePair: (label: string, code: string, signal: AbortSignal) => Promise<ClientAccess | null>
 }): Promise<{ origin: string; close: () => Promise<void> }> {
   let authority = ''
   let stopped = false
   const active = (): boolean => !stopped && options.enabled()
-  const pairings = new Map<string, Pairing>()
-  const clients = new Map<string, Client>()
+  const clients = new ClientCredentials()
+  const pairings = new ClientPairings({
+    maxPending: 4,
+    canIssue: (): boolean => active() && clients.list().length < 16,
+    issue: (label, access, binding): { id: string; token: string } =>
+      clients.issue(label, access, binding),
+    revoke: (id): void => {
+      clients.revoke(id)
+    },
+    approve: options.approvePair,
+  })
   const streams = new Set<ServerResponse>()
-  const timers = new Set<ReturnType<typeof setTimeout>>()
   const deliveries = new Map<
     string,
     { fingerprint: string; result: { ok: boolean; reason: string } }
   >()
-  let lastPair = 0
 
   function json(res: ServerResponse, status: number, value: unknown): void {
     res.writeHead(status, {
@@ -72,7 +59,7 @@ export async function startPluginClientServer(options: {
     })
     res.end(JSON.stringify(value))
   }
-  function snapshot(client: Client): ClientSnapshot {
+  function snapshot(client: ClientPrincipal): ClientSnapshot {
     const state = options.decisions.snapshot()
     return {
       version: 1,
@@ -98,7 +85,7 @@ export async function startPluginClientServer(options: {
       ),
     }
   }
-  function publish(res: ServerResponse, client: Client): void {
+  function publish(res: ServerResponse, client: ClientPrincipal): void {
     if (!active()) {
       res.end()
       return
@@ -151,11 +138,6 @@ export async function startPluginClientServer(options: {
     }
     const path = req.url
     if (req.method === 'POST' && path === '/v1/pair') {
-      for (const [id, pairing] of pairings)
-        if (pairing.expires < Date.now()) {
-          pairing.controller.abort()
-          pairings.delete(id)
-        }
       const input = safeJsonParse(await body(req), decodeWithSchema(clientPairSchema))
       if (!input) {
         json(res, 400, { error: 'Invalid pairing request' })
@@ -167,74 +149,25 @@ export async function startPluginClientServer(options: {
         json(res, 403, { error: 'Client API disabled' })
         return
       }
-      if (pairings.size >= 4 || Date.now() - lastPair < 1000 || clients.size >= 16) {
+      const pairing = pairings.request(input.label, origin)
+      if (!pairing) {
         json(res, 429, { error: 'Too many clients or pairing requests' })
         return
       }
-      lastPair = Date.now()
-      const id = randomUUID(),
-        code = String(randomInt(100000, 1000000))
-      const pairing: Pairing = {
-        label: input.label,
-        origin,
-        controller: new AbortController(),
-        expires: Date.now() + 120_000,
-        state: 'pending',
-      }
-      pairings.set(id, pairing)
-      json(res, 202, { version: 1, id, code })
-      const timeout = setTimeout(() => {
-        pairing.controller.abort()
-        pairings.delete(id)
-      }, 120_000)
-      timeout.unref()
-      timers.add(timeout)
-      void options
-        .approvePair(input.label, code, pairing.controller.signal)
-        .then((access) => {
-          if (
-            stopped ||
-            !options.enabled() ||
-            pairing.controller.signal.aborted ||
-            pairings.get(id) !== pairing
-          )
-            return
-          if (access === null) {
-            pairing.state = 'denied'
-            return
-          }
-          const token = randomBytes(32).toString('hex')
-          clients.set(tokenHash(token), { id: randomUUID(), label: input.label, origin, access })
-          pairing.token = token
-          pairing.state = 'approved'
-        })
-        .catch(() => {
-          pairing.state = 'denied'
-        })
-        .finally(() => {
-          clearTimeout(timeout)
-          timers.delete(timeout)
-        })
+      json(res, 202, { version: 1, ...pairing })
       return
     }
     if (req.method === 'GET' && path?.startsWith('/v1/pair/')) {
-      const pairing = pairings.get(path.slice('/v1/pair/'.length))
-      if (!pairing || pairing.origin !== origin || pairing.expires < Date.now()) {
+      const pairing = pairings.poll(path.slice('/v1/pair/'.length), origin)
+      if (!pairing) {
         json(res, 404, { error: 'Pairing expired' })
         return
       }
-      json(res, 200, {
-        version: 1,
-        state: pairing.state,
-        ...(pairing.token ? { token: pairing.token } : {}),
-      })
-      if (pairing.state !== 'pending') pairings.delete(path.slice('/v1/pair/'.length))
+      json(res, 200, { version: 1, ...pairing })
       return
     }
-    const authorization = req.headers.authorization
-    const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : ''
-    const client = /^[a-f0-9]{64}$/.test(token) ? clients.get(tokenHash(token)) : undefined
-    if (!client || client.origin !== origin) {
+    const client = clients.principal(req.headers.authorization, origin)
+    if (!client) {
       json(res, 401, { error: 'Pair in Copse first' })
       return
     }
@@ -275,7 +208,7 @@ export async function startPluginClientServer(options: {
         return
       }
       // An awaited request body must never carry authority across a disable.
-      if (!active()) {
+      if (!active() || !clients.principal(req.headers.authorization, origin, 'control')) {
         json(res, 403, { error: 'Client API disabled' })
         return
       }
@@ -334,11 +267,8 @@ export async function startPluginClientServer(options: {
     origin: `http://${authority}`,
     close: async (): Promise<void> => {
       stopped = true
+      pairings.close()
       clients.clear()
-      for (const timer of timers) clearTimeout(timer)
-      timers.clear()
-      for (const pairing of pairings.values()) pairing.controller.abort()
-      pairings.clear()
       for (const stream of streams) stream.destroy()
       server.closeAllConnections()
       await new Promise<void>((resolve) => {

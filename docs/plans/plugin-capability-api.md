@@ -38,6 +38,45 @@ a foundation stage does not establish a supported external API.
 - Different client/host versions negotiate explicitly. Malformed, oversized, expired,
   wrong-scope and unauthorized messages fail closed with documented errors.
 
+## Shared client authentication follow-up
+
+Base: `b8f2014b521629701abb9eb43e3f4b929f0ebba5`. Mobile and interactive plugin clients
+must use the same bearer credential implementation and desktop-consent pairing lifecycle.
+Preserve existing mobile token hashes, device IDs and read/control grants on disk; plugin
+credentials remain session-only and origin-bound. Preserve each transport's Host, Origin,
+peer and TLS guards and its existing operation scope. This does not implement AHP.
+
+Acceptance: both adapters reject unpaired and read-only writes; expiry, denial, shutdown and
+late consent cannot create usable credentials; pairing results are delivered once to the
+requesting binding; revoked or downgraded authority is rechecked after awaited bodies. Mobile
+pairing UI clears on timeout/stop. Tests cover shared mechanics, persisted mobile compatibility,
+and the existing fresh-profile native approval flow. Authentication is high risk: run the full
+check gate, focused auth/mobile tests and the relevant Electron specs.
+
+Completion evidence (19 October 2026): both adapters now use `ClientCredentials` and
+`ClientPairings`, with shared label/access schemas. Mobile records remain compatible; no
+credential store or operation scope crosses transports. Pending mobile consent is cancelled on
+timeout/stop, and approved but uncollected credentials are revoked. Failed storage writes cannot
+create new in-memory authority or prevent in-memory restriction and pairing shutdown.
+
+The final focused auth/registry run passed **35 tests**. The two native specs passed **4 cases**
+across fresh profiles, including verified LAN HTTPS, existing mobile chat/run control, real
+pairing, read-only enforcement, restart, revocation and stop. The external client adapter also
+passed against the refactored real registry/server without protocol changes. `make build` and
+all static gates passed. Full `pnpm run check`: **15,138 passed, 18 failed, 3 skipped** (15,159).
+Seventeen failing titles match the previously established baseline-related set; the eighteenth
+is the already reproduced dirty-working-tree small-gate assumption. Logs are
+`/private/tmp/copse-shared-auth-complete-check.log`, `copse-shared-auth-unit-final.log`,
+`copse-shared-auth-runtime-verified.log` and `copse-shared-auth-demo-interop.log`.
+
+Local consent and stopped-state images were inspected: grants are explicit, control is initially
+unchecked/disabled, cancelled pairing disappears, and existing saved devices remain manageable.
+The LAN eval selected an unused real interface to avoid the daily app's fixed listener.
+No local image replaced a Linux baseline. Canonical CI passed on the preceding `b8f2014b5216`
+head; the shared-auth update still needs its own CI and complete screenshot review. The prior
+review packet has 2 of 8 images inspected and cannot authorize the new head. No independent
+review or AHP compatibility is claimed.
+
 ## Architecture and binding decisions
 
 ### Host services and plugin contributions
