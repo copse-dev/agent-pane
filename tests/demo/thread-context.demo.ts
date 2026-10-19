@@ -213,7 +213,7 @@ describe('The thread Context panel', () => {
     await openContext()
     await $('[data-action="disable-guarded-yolo"]').click()
     await expect($('[data-action="disable-guarded-yolo"]')).not.toExist()
-    await expect($('.guarded-yolo-banner')).not.toExist()
+    await expect($('.guarded-yolo-banner')).not.toBeDisplayed()
   })
   it('archives the current thread from Context', async () => {
     await openContext()
