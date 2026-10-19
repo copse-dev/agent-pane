@@ -83,6 +83,9 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   font-display: swap;
 }
 :root {
+  --brand-chatgpt-background: #000;
+  --credential-logo-background: #d9a441;
+  --credential-logo-foreground: #2a1c00;
   --browser-page-background: #ffffff;
   --tint-hue: #244c25;
   --tint-amount: 4%;
@@ -11867,6 +11870,14 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .acp-logo[data-brand=gemini] {
   background: #fff;
 }
+.acp-logo[data-brand=chatgpt] {
+  background: var(--brand-chatgpt-background);
+}
+.acp-logo[data-brand=key] {
+  background: var(--credential-logo-background);
+  border-color: transparent;
+  color: var(--credential-logo-foreground);
+}
 .acp-logo[data-brand=codex] {
   border: 0;
 }
@@ -11903,6 +11914,21 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 .acp-add-menu[hidden] {
   display: none;
+}
+.connections-menu-group {
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+.connections-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.acp-row-head > .acp-link {
+  flex: none;
 }
 .acp-add-menu .provider-panel-embedded {
   padding: var(--spacing-md);
