@@ -169962,12 +169962,12 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     }
     try {
       const project2 = store2.getState().projects.find((candidate) => candidate.id === projectId);
-      const checkoutRoot = getActiveThread(store2)?.worktree?.path ?? project2?.path;
-      if (!checkoutRoot) return;
+      const projectRoot = project2?.path;
+      if (!projectRoot) return;
       const [read2, send, context, guardedYolo, trusted, savedOrigins, overrides, decisions] = await Promise.all([
         api2.settings.get("threadReadAccess"),
         api2.settings.get("threadSendAccess"),
-        api2.security.getContextPermissions(projectId, threadId, checkoutRoot),
+        api2.security.getContextPermissions(projectId, threadId, projectRoot),
         api2.security.getGuardedYolo(threadId),
         api2.workspace.isTrusted(),
         api2.settings.get("webAllowedOrigins"),
