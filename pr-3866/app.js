@@ -194289,11 +194289,17 @@ function endsInsideMarkup(text2, incomingText) {
   let fence;
   let lastLineClosesFence = false;
   const inlineLines = [];
+  let inlineParagraphLines = [];
+  const pushInlineLine = (line) => {
+    inlineLines.push(line);
+    if (line.trim()) inlineParagraphLines.push(line);
+    else inlineParagraphLines = [];
+  };
   for (const line of text2.split("\n")) {
     lastLineClosesFence = false;
     const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
     if (!match) {
-      if (!fence) inlineLines.push(line);
+      if (!fence) pushInlineLine(line);
       continue;
     }
     const marker = match[1] ?? "";
@@ -194302,11 +194308,13 @@ function endsInsideMarkup(text2, incomingText) {
       if (marker[0] === fence.character && marker.length >= fence.length && !rest.trim()) {
         fence = void 0;
         lastLineClosesFence = true;
+        inlineParagraphLines = [];
       }
     } else if (marker[0] !== "`" || !rest.includes("`")) {
       fence = { character: marker[0] ?? "", length: marker.length };
+      inlineParagraphLines = [];
     } else {
-      inlineLines.push(line);
+      pushInlineLine(line);
     }
   }
   if (fence) return true;
@@ -194331,7 +194339,7 @@ function endsInsideMarkup(text2, incomingText) {
   const trailingMarker = /(\*+|_+|~{2,})$/.exec(lastLine)?.[1];
   let unmatched = false;
   let inlineCodeLength;
-  const inlineText = inlineLines.join("\n");
+  const inlineText = inlineParagraphLines.join("\n");
   for (const match of inlineText.matchAll(/\*+|_+|~{2,}|`+/g)) {
     let precedingBackslashes = 0;
     for (let index = match.index - 1; index >= 0 && inlineText[index] === "\\"; index -= 1) {
