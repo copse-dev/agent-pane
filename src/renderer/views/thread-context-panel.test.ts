@@ -4,6 +4,9 @@ import { test } from 'node:test'
 import { createStore } from '@shared/store/store.ts'
 import type { ForkedHistoryResult } from '@shared/types'
 import type { ThreadBacklink } from '@shared/threads/thread-links.ts'
+import type { DecisionEvent } from '@shared/threads/decision-log.ts'
+import type { ContextPermissionSnapshot } from '@shared/types/context-permissions.ts'
+import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
 import { addMessage, createThread, setReviewerInputAnswer } from '@shared/store/thread-helpers.ts'
 import type { ThreadContextModel } from './thread-context-model.ts'
 import {
@@ -321,6 +324,7 @@ test('storage combines saved files with the owned checkout and archive uses the 
     })),
   })
   const base = createFakeApi()
+  const permissionRoots: string[] = []
   const api = {
     ...base,
     threads: {
@@ -346,6 +350,17 @@ test('storage combines saved files with the owned checkout and archive uses the 
         truncated: true,
       }),
     },
+    security: {
+      ...base.security,
+      getContextPermissions: async (
+        _projectId: string,
+        _threadId: string,
+        projectRoot: string,
+      ): Promise<ContextPermissionSnapshot> => {
+        permissionRoots.push(projectRoot)
+        return { outsideReadPaths: [], browserOrigins: [], portBindingAllowed: false }
+      },
+    },
   }
   const viewer = document.createElement('div')
   const requests: string[][] = []
@@ -367,9 +382,243 @@ test('storage combines saved files with the owned checkout and archive uses the 
     viewer.querySelector('[data-context-change-stats] .git-change-status-deleted')?.textContent,
     '−7',
   )
+  // Port-binding grants are saved under the project root, not the worktree.
+  assert.deepEqual(permissionRoots, ['/work'])
   viewer.querySelector<HTMLElement>('[data-action="archive-thread"]')?.click()
   assert.deepEqual(requests, [['p', id]])
   assert.equal(store.getState().threads[0]?.archivedAt, undefined)
+  dispose()
+})
+
+test('Context shows this thread’s saved read and send grants and revokes each separately', async () => {
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'p',
+    projects: [{ id: 'p', path: '/work', name: 'Work' }],
+    filesPaneOpen: true,
+    rightPanelMode: 'context',
+  })
+  const threadId = createThread(store)
+  const grants = new Map<string, string[]>([
+    ['threadReadAccess', [threadId]],
+    ['threadSendAccess', [threadId]],
+    ['webAllowedOrigins', ['https://saved.example:443']],
+  ])
+  const revoked: string[] = []
+  let guardedYoloPhase: GuardedYoloState['phase'] = 'active'
+  const base = createFakeApi()
+  const api = {
+    ...base,
+    settings: {
+      ...base.settings,
+      get: async (key: string): Promise<unknown> =>
+        key === 'toolPermissionOverrides' ? { 'copse:run_shell': 'ask' } : grants.get(key),
+    },
+    security: {
+      ...base.security,
+      getGuardedYolo: async (id: string): Promise<GuardedYoloState> => ({
+        threadId: id,
+        phase: guardedYoloPhase,
+        containment: 'project-sandbox',
+        expiresAt: null,
+      }),
+      disableGuardedYolo: async (id: string): Promise<GuardedYoloState> => {
+        guardedYoloPhase = 'off'
+        return {
+          threadId: id,
+          phase: guardedYoloPhase,
+          containment: 'project-sandbox',
+          expiresAt: null,
+        }
+      },
+      getContextPermissions: async (): Promise<ContextPermissionSnapshot> => ({
+        outsideReadPaths: ['/outside/notes'],
+        browserOrigins: ['https://session.example:443'],
+        portBindingAllowed: true,
+      }),
+    },
+    decisions: {
+      ...base.decisions,
+      listThread: async (_projectId: string, id: string): Promise<DecisionEvent[]> => [
+        {
+          v: 1,
+          type: 'decision',
+          id: 'd1',
+          at: 1,
+          kind: 'web',
+          actor: 'user',
+          verdict: 'denied',
+          subject: 'https://denied.example:443',
+          threadId: id,
+        },
+      ],
+    },
+    threadPrompts: {
+      ...base.threadPrompts,
+      revokeAccess: async (id: string, access: 'read' | 'send'): Promise<void> => {
+        revoked.push(access)
+        const key = access === 'read' ? 'threadReadAccess' : 'threadSendAccess'
+        grants.set(
+          key,
+          (grants.get(key) ?? []).filter((value) => value !== id),
+        )
+      },
+    },
+  }
+  const viewer = document.createElement('div')
+  const dispose = mountThreadContextPane(document.createElement('div'), viewer, store, api)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(
+    viewer.querySelectorAll('[data-context-section="permissions"] [data-access]').length,
+    2,
+  )
+  const permissions =
+    viewer.querySelector('[data-context-section="permissions"]')?.textContent ?? ''
+  assert.match(permissions, /Guarded YOLO/)
+  assert.match(permissions, /Outside-project reads/)
+  assert.match(permissions, /\/outside\/notes/)
+  assert.match(permissions, /Browser origins/)
+  assert.match(permissions, /Local port binding/)
+  assert.match(permissions, /Saved web origins1/)
+  assert.match(permissions, /Tool overrides1/)
+  assert.match(
+    viewer.querySelector('[data-context-section="decisions"]')?.textContent ?? '',
+    /https:\/\/denied.example:443webdenied/,
+  )
+  viewer.querySelector<HTMLButtonElement>('[data-action="disable-guarded-yolo"]')?.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(viewer.querySelector('[data-action="disable-guarded-yolo"]'), null)
+  viewer.querySelector<HTMLButtonElement>('[data-action="revoke-read-access"]')?.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(revoked, ['read'])
+  assert.equal(viewer.querySelector('[data-access="read"]'), null)
+  assert.ok(viewer.querySelector('[data-access="send"]'))
+  viewer.querySelector<HTMLButtonElement>('[data-action="revoke-send-access"]')?.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(revoked, ['read', 'send'])
+  assert.match(
+    viewer.querySelector('[data-context-section="permissions"]')?.textContent ?? '',
+    /No saved conversation access/,
+  )
+  dispose()
+})
+
+test('Context discards permissions returned for a thread that is no longer active', async () => {
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'p',
+    projects: [{ id: 'p', path: '/work', name: 'Work' }],
+    filesPaneOpen: true,
+    rightPanelMode: 'context',
+  })
+  const first = createThread(store)
+  let resolveFirst: (value: ContextPermissionSnapshot) => void = () => {}
+  const firstPermissions = new Promise<ContextPermissionSnapshot>((resolve) => {
+    resolveFirst = resolve
+  })
+  const base = createFakeApi()
+  const api = {
+    ...base,
+    settings: {
+      ...base.settings,
+      get: async (key: string): Promise<unknown> =>
+        key === 'threadReadAccess' ? [first] : undefined,
+    },
+    security: {
+      ...base.security,
+      getContextPermissions: (
+        _projectId: string,
+        id: string,
+      ): Promise<ContextPermissionSnapshot> =>
+        id === first
+          ? firstPermissions
+          : Promise.resolve({
+              outsideReadPaths: [],
+              browserOrigins: [],
+              portBindingAllowed: false,
+            }),
+    },
+  }
+  const viewer = document.createElement('div')
+  const dispose = mountThreadContextPane(document.createElement('div'), viewer, store, api)
+  createThread(store)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  resolveFirst({
+    outsideReadPaths: ['/outside/old-thread'],
+    browserOrigins: ['https://old.example:443'],
+    portBindingAllowed: true,
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(viewer.querySelector('[data-access="read"]'), null)
+  assert.doesNotMatch(
+    viewer.querySelector('[data-context-section="permissions"]')?.textContent ?? '',
+    /old-thread|old.example|Local port binding/,
+  )
+  dispose()
+})
+
+test('Context keeps recent storage results and its DOM stable across repeated updates', async (t) => {
+  let now = Date.now()
+  t.mock.method(Date, 'now', () => now)
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'p',
+    projects: [{ id: 'p', path: '/work', name: 'Work' }],
+    filesPaneOpen: true,
+    rightPanelMode: 'context',
+  })
+  createThread(store)
+  const base = createFakeApi()
+  let storageCalls = 0
+  let changeCalls = 0
+  let bytes = 1024
+  const api = {
+    ...base,
+    threads: {
+      ...base.threads,
+      storageSize: async (): ReturnType<typeof base.threads.storageSize> => {
+        storageCalls++
+        return { bytes, truncated: false }
+      },
+    },
+    git: {
+      ...base.git,
+      changeStats: async (): ReturnType<typeof base.git.changeStats> => {
+        changeCalls++
+        return { additions: 2, deletions: 1 }
+      },
+    },
+  }
+  const viewer = document.createElement('div')
+  const dispose = mountThreadContextPane(document.createElement('div'), viewer, store, api)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const section = viewer.querySelector('[data-context-section="storage"]')
+  const size = viewer.querySelector('[data-context-storage-size]')
+  assert.ok(size)
+  const sizeText = size.firstChild
+  assert.equal(size.textContent, '1.0 KB')
+
+  for (let i = 0; i < 3; i++) store.emit('message_done', `message-${String(i)}`)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(storageCalls, 1)
+  assert.equal(changeCalls, 1)
+  assert.equal(viewer.querySelector('[data-context-section="storage"]'), section)
+  assert.equal(size.firstChild, sizeText)
+
+  now += 61_000
+  store.emit('message_done', 'later-message')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(storageCalls, 1)
+  assert.equal(changeCalls, 2)
+  assert.equal(viewer.querySelector('[data-context-section="storage"]'), section)
+
+  now += 5 * 60_000
+  bytes = 2048
+  store.emit('message_done', 'much-later-message')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(storageCalls, 2)
+  assert.equal(size.textContent, '2.0 KB')
+  assert.equal(viewer.querySelector('[data-context-section="storage"]'), section)
   dispose()
 })
 
@@ -411,7 +660,9 @@ test('storage ignores a previous thread response and reports lookup failure', as
   dispose()
 })
 
-test('Storage line totals reject stale thread replies, handle clean checkouts and stop while hidden', async () => {
+test('Storage line totals reject stale thread replies, handle clean checkouts and stop while hidden', async (t) => {
+  let now = Date.now()
+  t.mock.method(Date, 'now', () => now)
   const store = createStore()
   store.setState({
     activeProjectId: 'p',
@@ -442,6 +693,7 @@ test('Storage line totals reject stale thread replies, handle clean checkouts an
   replies[0]?.resolve({ additions: 100, deletions: 20 })
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.equal(viewer.querySelector('[data-context-change-stats]')?.textContent, '+0 −0')
+  now += 61_000
   store.emit('message_done', 'completed-message')
   replies[2]?.reject(new Error('Git unavailable'))
   await new Promise((resolve) => setTimeout(resolve, 0))

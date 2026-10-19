@@ -80,6 +80,7 @@ import {
   listWorktreeChangesSince,
   stageDiff,
 } from '../diff-queue.ts'
+import type { WorktreeBaseline } from '../diff-queue.ts'
 import { beginWorktreeWriter } from '../worktree-writers.ts'
 import { networkDenialMarker, networkDenialsSince } from '../../project-sandbox/network-scope.ts'
 import { perfMark, perfSpan } from '../diagnostics/perf-trace.ts'
@@ -1361,7 +1362,7 @@ export function sliceLines(content: string, line?: number | null, limit?: number
  * a non-git workspace audits to silence.
  */
 async function emitBypassedWriteAudit(
-  baseline: Map<string, string>,
+  baseline: WorktreeBaseline,
   queueWrites: ReadonlySet<string>,
   onChunk: (chunk: StreamChunk) => void,
 ): Promise<void> {

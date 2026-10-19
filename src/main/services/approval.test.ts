@@ -1,7 +1,10 @@
 import { describe, it, afterEach, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { runWithApprovalToolCallId } from './approval-tool-call-context.ts'
+import {
+  runWithApprovalToolCallId,
+  runWithBridgeExecutionId,
+} from './approval-tool-call-context.ts'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -296,6 +299,102 @@ describe('requestApproval pluggable transport', () => {
     )
     assert.ok(detail.includes(JSON.stringify(shellContext)))
     assert.ok(!detail.includes(req.body))
+  })
+
+  it('keeps every bridge execution linked when identical prompts coalesce', async () => {
+    let answer: (response: ApprovalResponse) => void = () => {}
+    const prompts: ApprovalRequest[] = []
+    setApprovalHandler((request) => {
+      prompts.push(request)
+      return new Promise<ApprovalResponse>((resolve) => {
+        answer = resolve
+      })
+    })
+    const first = runWithBridgeExecutionId('bridge-first', () => requestUnderThread(req))
+    const second = runWithBridgeExecutionId('bridge-second', () => requestUnderThread(req))
+    assert.equal(prompts.length, 1)
+    assert.equal(prompts[0]?.bridgeExecutionId, 'bridge-first')
+    answer({ approved: true, remember: false })
+    await Promise.all([first, second])
+    const event = (await readDecisionLog(PROJECT)).at(-1)
+    assert.ok(event)
+    assert.equal(event.bridgeExecutionId, undefined)
+    assert.equal(event.toolCallId, undefined)
+    const detail = readFileSync(
+      join(auditRoot, PROJECT, THREAD, 'blobs', `decision-${event.id}.detail.json`),
+      'utf8',
+    )
+    assert.ok(detail.includes('"bridgeExecutionIds":["bridge-first","bridge-second"]'))
+  })
+
+  it('preserves bridge identity on cancellation outside the originating async context', async () => {
+    const abort = new AbortController()
+    setApprovalHandler(() => new Promise(() => {}))
+    const pending = runWithBridgeExecutionId('bridge-cancelled', () =>
+      requestUnderThread(req, abort.signal),
+    )
+    abort.abort()
+    await pending
+    const event = (await readDecisionLog(PROJECT)).at(-1)
+    assert.equal(event?.bridgeExecutionId, 'bridge-cancelled')
+    assert.equal(event.source, 'aborted')
+    assert.equal(event.toolCallId, undefined)
+  })
+
+  it('does not attribute a shared approval to the caller that cancelled', async () => {
+    let answer: (response: ApprovalResponse) => void = () => {}
+    setApprovalHandler(
+      () =>
+        new Promise<ApprovalResponse>((resolve) => {
+          answer = resolve
+        }),
+    )
+    const abort = new AbortController()
+    const first = runWithBridgeExecutionId('cancelled-owner', () =>
+      requestUnderThread(req, abort.signal),
+    )
+    const second = runWithBridgeExecutionId('remaining-owner', () => requestUnderThread(req))
+    abort.abort()
+    await first
+    answer({ approved: true, remember: false })
+    await second
+    const events = await readDecisionLog(PROJECT)
+    assert.ok(
+      events.some(
+        (event) => event.bridgeExecutionId === 'cancelled-owner' && event.verdict === 'cancelled',
+      ),
+    )
+    assert.equal(events.at(-1)?.bridgeExecutionId, 'remaining-owner')
+    assert.equal(events.at(-1)?.verdict, 'approved')
+  })
+
+  it('records the new bridge execution when an abandoned verdict is replayed', async () => {
+    let answer: (response: ApprovalResponse) => void = () => {}
+    setApprovalHandler(
+      () =>
+        new Promise<ApprovalResponse>((resolve) => {
+          answer = resolve
+        }),
+    )
+    const abort = new AbortController()
+    const first = runWithBridgeExecutionId('bridge-abandoned', () =>
+      requestUnderThread(req, abort.signal),
+    )
+    abort.abort(new AbandonedCallAbort('client timeout'))
+    await assert.rejects(first, ApprovalPendingError)
+    answer({ approved: true, remember: false })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    const result = await runWithBridgeExecutionId('bridge-retry', () => requestUnderThread(req))
+    assert.equal(result.approved, true)
+    const events = await readDecisionLog(PROJECT)
+    assert.ok(
+      events.some(
+        (event) => event.bridgeExecutionId === 'bridge-abandoned' && event.verdict === 'approved',
+      ),
+    )
+    const replay = events.at(-1)
+    assert.equal(replay?.bridgeExecutionId, 'bridge-retry')
+    assert.equal(replay.source, 'abandoned-call-replay')
   })
 
   it('records explicit identity on unavailable and cancelled approvals', async () => {

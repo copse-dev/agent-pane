@@ -1,94 +1,72 @@
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
-import type { MobilePrincipal } from './mobile-decisions.ts'
+import {
+  ClientCredentials,
+  clientCredentialSchema,
+  type ClientCredential,
+  type ClientPrincipal,
+} from '../clients/client-credentials.ts'
+import type { ClientAccess } from '../../../shared/client-auth.ts'
 import { copseDataRoot } from '../storage/copse-paths.ts'
-
-const deviceSchema = z.object({
-  id: z.uuid(),
-  label: z.string().min(1).max(64),
-  tokenHash: z.string().regex(/^[0-9a-f]{64}$/),
-  createdAt: z.number().int().nonnegative(),
-  access: z.enum(['read', 'control']).default('read'),
-})
-type Device = z.infer<typeof deviceSchema>
 
 export class MobileDevices {
   private readonly path: string
-  private devices: Device[]
+  private readonly credentials: ClientCredentials
 
   constructor(directory = join(copseDataRoot(), 'lan')) {
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     this.path = join(directory, 'devices.json')
+    let records: ClientCredential[]
     try {
       const parsed = safeJsonParse(
         readFileSync(this.path, 'utf8'),
-        decodeWithSchema(z.array(deviceSchema)),
+        decodeWithSchema(z.array(clientCredentialSchema.omit({ binding: true }))),
       )
       if (parsed === null) throw new Error('Invalid Copse LAN device store')
-      this.devices = parsed
+      records = parsed
       chmodSync(this.path, 0o600)
     } catch (error) {
-      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') this.devices = []
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') records = []
       else throw error
     }
-  }
-
-  list(): Array<MobilePrincipal & { createdAt: number; access: 'read' | 'control' }> {
-    return this.devices.map(({ id, label, createdAt, access }) => ({
-      id,
-      label,
-      createdAt,
-      access,
-    }))
-  }
-
-  issue(label: string, access: 'read' | 'control' = 'read'): { id: string; token: string } {
-    const token = randomBytes(32).toString('hex')
-    const id = randomUUID()
-    this.devices.push({
-      id,
-      label,
-      tokenHash: createHash('sha256').update(token).digest('hex'),
-      createdAt: Date.now(),
-      access,
+    this.credentials = new ClientCredentials(records, (devices) => {
+      this.save(devices)
     })
-    this.save()
-    return { id, token }
+  }
+
+  list(): Array<ClientPrincipal & { createdAt: number }> {
+    return this.credentials.list()
+  }
+
+  issue(label: string, access: ClientAccess = 'read'): { id: string; token: string } {
+    return this.credentials.issue(label, access)
   }
 
   authenticate(header: string | undefined): boolean {
     return this.principal(header) !== null
   }
 
-  principal(header: string | undefined): (MobilePrincipal & { access: 'read' | 'control' }) | null {
-    if (!header?.startsWith('Bearer ')) return null
-    const token = header.slice(7)
-    if (!/^[0-9a-f]{64}$/.test(token)) return null
-    const candidate = createHash('sha256').update(token).digest()
-    const device = this.devices.find((device) =>
-      timingSafeEqual(candidate, Buffer.from(device.tokenHash, 'hex')),
-    )
-    return device ? { id: device.id, label: device.label, access: device.access } : null
+  principal(
+    header: string | undefined,
+    requiredAccess: ClientAccess = 'read',
+  ): ClientPrincipal | null {
+    return this.credentials.principal(header, undefined, requiredAccess)
   }
 
-  setAccess(id: string, access: 'read' | 'control'): void {
-    const device = this.devices.find((item) => item.id === id)
-    if (!device) return
-    device.access = access
-    this.save()
+  setAccess(id: string, access: ClientAccess): void {
+    this.credentials.setAccess(id, access)
   }
 
   revoke(id: string): void {
-    this.devices = this.devices.filter((device) => device.id !== id)
-    this.save()
+    this.credentials.revoke(id)
   }
 
-  private save(): void {
+  private save(devices: ClientCredential[]): void {
     const temporary = `${this.path}.${randomUUID()}.tmp`
-    writeFileSync(temporary, `${JSON.stringify(this.devices, null, 2)}\n`, {
+    writeFileSync(temporary, `${JSON.stringify(devices, null, 2)}\n`, {
       mode: 0o600,
       flag: 'wx',
     })

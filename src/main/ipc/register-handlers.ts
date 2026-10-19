@@ -1,4 +1,4 @@
-import { confirmMobileControl } from '../services/mobile/mobile-control-confirmation.ts'
+import { mobileDeviceAccessArgsSchema, mobilePairingArgsSchema } from './mobile-companion-args.ts'
 import { networkActivity } from '../services/diagnostics/network-activity.ts'
 import { inspectStorageMaintenance, saveStorageRetention } from '../services/storage-maintenance.ts'
 import { readOpenAiArtifact } from '../services/remote/openai-agents-client.ts'
@@ -24,6 +24,8 @@ import { homedir } from 'node:os'
 import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 import { skillRootsSchema } from '../services/skills/skill-roots-schema.ts'
 import { z } from 'zod'
+import { syncPluginClientApi } from '../services/plugins/plugin-client-service.ts'
+import { PLUGIN_CLIENT_API_ID } from '@copse/agent/plugins/plugin-client-api-plugin.ts'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
 import {
   backgroundClassifierId,
@@ -85,7 +87,16 @@ import {
   setWorkspaceRoot,
   type WorkspaceProjectRef,
 } from '../services/workspace.ts'
-import { exportDecisionLog, readDecisionLog } from '../services/security/decision-log-store.ts'
+import {
+  exportDecisionLog,
+  readDecisionLog,
+  readThreadDecisionLog,
+} from '../services/security/decision-log-store.ts'
+import { listReadOutsideProjectGrants } from '../services/security/read-outside-grant.ts'
+import { browserSessionOrigins } from '../services/browser/browser-network-grants.ts'
+import { browserThreadScope } from '@shared/browser-session.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { getThreadClassifierUse } from '../services/security/classifier-use-report.ts'
 import { loadCanvasArtefactSummaries, readStoredCanvasArtefact } from '../services/canvas-store.ts'
 import { CANVAS_ARTEFACT_CHANNEL } from '../services/canvas-dispatch.ts'
@@ -119,6 +130,7 @@ import {
   inspectThreadCheckoutAttachment,
   inspectThreadCheckoutRoot,
   reattachThreadCheckout,
+  restoreThreadCheckout,
   resolveThreadExecutionContext,
 } from '../services/thread-execution-context.ts'
 import { expectedThreadWorktreePath, repositoryLocation } from '../services/worktree-manager.ts'
@@ -619,9 +631,7 @@ export function registerAllHandlers(
   threadArchivingRuntime: ThreadArchivingRuntime,
 ): void {
   const mobileAddressSchema = z.string().regex(/^(?:\d{1,3}\.){3}\d{1,3}$/)
-  const mobileDeviceAccessPairSchema = z.tuple([z.uuid(), z.enum(['read', 'control'])])
   const mobileDeviceIdSchema = z.uuid()
-  const mobilePairingDecisionSchema = z.enum(['read', 'control', 'deny'])
 
   ipcMain.handle('mobile:get-state', (event) => {
     assertMainFrameSender(event, win)
@@ -636,24 +646,20 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     await disableMobileCompanion()
   })
-  ipcMain.handle('mobile:set-device-access', async (event, ...args) => {
+  ipcMain.handle('mobile:set-device-access', (event, ...args) => {
     assertMainFrameSender(event, win)
-    const [id, access] = parseIpcArgs(mobileDeviceAccessPairSchema, args)
-    await setMobileDeviceAccess(id, access, (label) =>
-      confirmMobileControl((options) => dialog.showMessageBox(win, options), label),
-    )
+    const [id, access] = parseIpcArgs(mobileDeviceAccessArgsSchema, args)
+    setMobileDeviceAccess(id, access)
   })
   ipcMain.handle('mobile:revoke-device', (event, rawId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(mobileDeviceIdSchema, [rawId])
     revokeMobileDevice(id)
   })
-  ipcMain.handle('mobile:respond-pairing', async (event, rawDecision: unknown) => {
+  ipcMain.handle('mobile:respond-pairing', (event, ...args) => {
     assertMainFrameSender(event, win)
-    const decision = parseIpcArgs(mobilePairingDecisionSchema, [rawDecision])
-    await respondToMobilePairing(decision, (label, code) =>
-      confirmMobileControl((options) => dialog.showMessageBox(win, options), label, code),
-    )
+    const [decision, code, pairingId] = parseIpcArgs(mobilePairingArgsSchema, args)
+    respondToMobilePairing(decision, code, pairingId)
   })
   ipcMain.handle('mobile:reveal-certificate', (event) => {
     assertMainFrameSender(event, win)
@@ -1037,9 +1043,15 @@ export function registerAllHandlers(
   ipcMain.handle('fs:read-image', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
-    const abs = await resolvePathWithinRoot(relPath, root)
-    return gatewayReadImage(abs, root, relPath)
+    // Missing or oversized previews are routine (a thread can outlive its worktree
+    // files), so report them as data; a rejected handler makes Electron log a stack.
+    try {
+      const { root } = await resolveThreadExecutionContext(projectId, threadId)
+      const abs = await resolvePathWithinRoot(relPath, root)
+      return { ok: true, data: await gatewayReadImage(abs, root, relPath) }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
   })
 
   ipcMain.handle('fs:write-file', async (event, ...rawArgs) => {
@@ -1898,6 +1910,11 @@ export function registerAllHandlers(
     if (!resolved) return []
     return readDecisionLog(resolved)
   })
+  ipcMain.handle('decisions:list-thread', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return readThreadDecisionLog(pid, tid)
+  })
   ipcMain.handle('decisions:export', (event, rawProjectId: unknown) => {
     assertMainFrameSender(event, win)
     const projectId = parseIpcArgs(zProjectId.optional(), [rawProjectId])
@@ -1936,6 +1953,23 @@ export function registerAllHandlers(
     const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
     return getGuardedYoloState(id)
   })
+  ipcMain.handle(
+    'security:get-context-permissions',
+    (event, projectId: unknown, threadId: unknown, projectRoot: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, root] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, zNonEmptyString.max(4096)]),
+        [projectId, threadId, projectRoot],
+      )
+      return {
+        outsideReadPaths: listReadOutsideProjectGrants(tid),
+        browserOrigins: browserSessionOrigins(browserThreadScope(pid, tid)),
+        portBindingAllowed:
+          getDefaultPluginRegistry().isPermissionDeclared(LOOPBACK_BIND_PERMISSION) &&
+          getSetting<string[]>('portBindingAllowedRoots', []).includes(root),
+      }
+    },
+  )
   ipcMain.handle('security:enable-guarded-yolo', async (event, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
@@ -2662,6 +2696,7 @@ export function registerAllHandlers(
     if (refusal) throw new IpcValidationError(refusal)
     const pluginService = getPluginService()
     await pluginService.setEnabled(id, enabled)
+    if (id === PLUGIN_CLIENT_API_ID) await syncPluginClientApi()
     if (pluginService.hasUserPlugin(id)) {
       // The plugin toggle is the portable component consent boundary. Refresh
       // both registries immediately so skills and MCP disappear atomically on
@@ -3257,6 +3292,11 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
     return reattachThreadCheckout(projectId, threadId, threadCheckoutBusy)
+  })
+  ipcMain.handle('git:restore-worktree', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    return restoreThreadCheckout(projectId, threadId, threadCheckoutBusy)
   })
   ipcMain.handle('git:prompt-state', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)

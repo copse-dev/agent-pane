@@ -9,6 +9,9 @@ import {
 } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import type { DecisionEvent } from '@shared/threads/decision-log.ts'
+import type { ContextPermissionSnapshot } from '@shared/types/context-permissions.ts'
+import type { GuardedYoloPhase } from '@shared/types/guarded-yolo.ts'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import {
   archiveThread,
@@ -27,6 +30,8 @@ import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { deriveThreadContext, type ThreadContextModel } from './thread-context-model.ts'
 import { mountReviewerInput } from './reviewer-input.ts'
+import { showErrorToast } from './toast.ts'
+import { openSettingsDialog } from './settings-dialog.ts'
 
 /** A compact, single-column overview of the active thread. */
 
@@ -408,11 +413,258 @@ export function mountThreadContextPane(
   let storageToken = 0
   let storageKey = ''
   let storageText = 'Calculating…'
+  let storageCheckedAt = 0
+  let storagePending = false
   let changesToken = 0
   let changesKey = ''
   let changesText = 'Calculating…'
   let changeStats: { additions: number; deletions: number } | null = null
+  let changesCheckedAt = 0
+  let changesPending = false
+  let renderedKey = ''
   let disposed = false
+  let accessToken = 0
+  let accessFor: string | null = null
+  let accessGrants: {
+    read: boolean
+    send: boolean
+    context: ContextPermissionSnapshot
+    guardedYolo: GuardedYoloPhase
+    workspaceTrusted: boolean
+    savedWebOrigins: number
+    toolOverrides: number
+    decisions: DecisionEvent[]
+  } | null = null
+  let accessStatus = 'Checking…'
+
+  function permissionRow(label: string, value: string, detail?: string): HTMLElement {
+    return el(
+      'div',
+      { class: 'thread-context-row' },
+      el(
+        'span',
+        { class: 'thread-context-main' },
+        el('span', { class: 'thread-context-title' }, label),
+        ...(detail ? [el('span', { class: 'thread-context-sub', title: detail }, detail)] : []),
+      ),
+      el('span', { class: 'thread-context-chip' }, value),
+    )
+  }
+
+  function accessSection(threadId: string): HTMLElement {
+    const result = el(
+      'section',
+      { class: 'thread-context-section', 'data-context-section': 'permissions' },
+      el('h5', {}, 'Permissions'),
+    )
+    if (accessFor !== threadId || !accessGrants) {
+      result.append(emptyNote(accessStatus))
+      return result
+    }
+    const currentGrants = accessGrants
+    result.append(el('p', { class: 'thread-context-permission-label' }, 'This thread'))
+    const grants = [
+      { access: 'read' as const, label: 'Read other threads' },
+      { access: 'send' as const, label: 'Send prompts to other threads' },
+    ].filter(({ access }) => currentGrants[access])
+    if (grants.length === 0) {
+      result.append(emptyNote('No saved conversation access.'))
+    }
+    for (const { access, label } of grants) {
+      const revoke = el(
+        'button',
+        {
+          type: 'button',
+          class: 'thread-context-action thread-context-row-action',
+          'data-action': `revoke-${access}-access`,
+          'aria-label': `Revoke permission to ${label.toLowerCase()}`,
+        },
+        'Revoke',
+      )
+      revoke.addEventListener('click', () => {
+        revoke.disabled = true
+        void api.threadPrompts
+          .revokeAccess(threadId, access)
+          .then(() => refreshAccess())
+          .catch((error: unknown) => {
+            revoke.disabled = false
+            showErrorToast('Could not revoke thread permission', error)
+          })
+      })
+      result.append(
+        el(
+          'div',
+          { class: 'thread-context-row-wrap' },
+          el(
+            'div',
+            { class: 'thread-context-row', 'data-access': access },
+            el('span', { class: 'thread-context-main' }, label),
+            el('span', { class: 'thread-context-chip' }, 'Granted'),
+          ),
+          revoke,
+        ),
+      )
+    }
+    if (currentGrants.guardedYolo !== 'off') {
+      const disable = el(
+        'button',
+        {
+          type: 'button',
+          class: 'thread-context-action thread-context-row-action',
+          'data-action': 'disable-guarded-yolo',
+        },
+        'Disable',
+      )
+      disable.addEventListener('click', () => {
+        disable.disabled = true
+        void api.security
+          .disableGuardedYolo(threadId)
+          .then(() => refreshAccess())
+          .catch((error: unknown) => {
+            disable.disabled = false
+            showErrorToast('Could not disable Guarded YOLO', error)
+          })
+      })
+      result.append(
+        el(
+          'div',
+          { class: 'thread-context-row-wrap' },
+          permissionRow(
+            'Guarded YOLO',
+            currentGrants.guardedYolo === 'armed' ? 'Armed' : 'Active',
+            'Until Copse closes',
+          ),
+          disable,
+        ),
+      )
+    }
+    const { outsideReadPaths, browserOrigins } = currentGrants.context
+    if (outsideReadPaths.length) {
+      result.append(
+        permissionRow(
+          'Outside-project reads',
+          `${String(outsideReadPaths.length)} session`,
+          outsideReadPaths.join(', '),
+        ),
+      )
+    }
+    if (browserOrigins.length) {
+      result.append(
+        permissionRow(
+          'Browser origins',
+          `${String(browserOrigins.length)} session`,
+          browserOrigins.join(', '),
+        ),
+      )
+    }
+    result.append(el('p', { class: 'thread-context-permission-label' }, 'Project'))
+    result.append(
+      permissionRow('Workspace trust', currentGrants.workspaceTrusted ? 'Trusted' : 'Untrusted'),
+    )
+    if (currentGrants.context.portBindingAllowed) {
+      result.append(permissionRow('Local port binding', 'Granted', 'Saved for this checkout'))
+    }
+    result.append(el('p', { class: 'thread-context-permission-label' }, 'App-wide'))
+    result.append(
+      permissionRow('Saved web origins', String(currentGrants.savedWebOrigins)),
+      permissionRow('Tool overrides', String(currentGrants.toolOverrides)),
+    )
+    const settings = el(
+      'button',
+      { type: 'button', class: 'thread-context-action', 'data-action': 'open-permission-settings' },
+      'Manage app permissions',
+    )
+    settings.addEventListener('click', () => {
+      openSettingsDialog('permissions')
+    })
+    result.append(el('div', { class: 'thread-context-section-actions' }, settings))
+    return result
+  }
+
+  function decisionsSection(threadId: string): HTMLElement {
+    const result = el(
+      'section',
+      { class: 'thread-context-section', 'data-context-section': 'decisions' },
+      el('h5', {}, 'Recent decisions'),
+    )
+    if (accessFor !== threadId || !accessGrants) {
+      result.append(emptyNote(accessStatus))
+      return result
+    }
+    const recent = accessGrants.decisions.slice(-4).reverse()
+    if (!recent.length) {
+      result.append(emptyNote('No recorded decisions for this thread.'))
+      return result
+    }
+    for (const decision of recent) {
+      result.append(
+        permissionRow(
+          decision.subject,
+          decision.verdict,
+          [decision.kind, decision.remembered ? 'remembered' : null].filter(Boolean).join(' · '),
+        ),
+      )
+    }
+    result.append(
+      el(
+        'p',
+        { class: 'thread-context-note' },
+        `Showing the latest ${String(recent.length)} of ${String(accessGrants.decisions.length)} recorded decisions. Current access is shown above.`,
+      ),
+    )
+    return result
+  }
+
+  async function refreshAccess(): Promise<void> {
+    const threadId = getActiveThread(store)?.id
+    const projectId = store.getState().activeProjectId
+    if (!threadId || !projectId) return
+    const mine = ++accessToken
+    if (accessFor !== threadId) {
+      accessFor = threadId
+      accessGrants = null
+      accessStatus = 'Checking…'
+    }
+    try {
+      const project = store.getState().projects.find((candidate) => candidate.id === projectId)
+      // Port-binding grants are saved per project, even for a worktree thread.
+      const projectRoot = project?.path
+      if (!projectRoot) return
+      const [read, send, context, guardedYolo, trusted, savedOrigins, overrides, decisions] =
+        await Promise.all([
+          api.settings.get('threadReadAccess'),
+          api.settings.get('threadSendAccess'),
+          api.security.getContextPermissions(projectId, threadId, projectRoot),
+          api.security.getGuardedYolo(threadId),
+          api.workspace.isTrusted(),
+          api.settings.get('webAllowedOrigins'),
+          api.settings.get('toolPermissionOverrides'),
+          api.decisions.listThread(projectId, threadId),
+        ])
+      if (disposed || mine !== accessToken || getActiveThread(store)?.id !== threadId) return
+      accessGrants = {
+        read: Array.isArray(read) && read.includes(threadId),
+        send: Array.isArray(send) && send.includes(threadId),
+        context,
+        guardedYolo: guardedYolo.phase,
+        workspaceTrusted: trusted,
+        savedWebOrigins: Array.isArray(savedOrigins) ? savedOrigins.length : 0,
+        toolOverrides:
+          typeof overrides === 'object' && overrides !== null && !Array.isArray(overrides)
+            ? Object.keys(overrides).length
+            : 0,
+        decisions,
+      }
+    } catch (error) {
+      if (disposed || mine !== accessToken || getActiveThread(store)?.id !== threadId) return
+      console.error('[context] thread permission lookup failed:', error)
+      accessGrants = null
+      accessStatus = 'Permissions unavailable.'
+    }
+    if (contextModeActive(store)) render()
+  }
+  const STORAGE_FRESH_MS = 5 * 60_000
+  const CHANGES_FRESH_MS = 60_000
 
   function activeStorageKey(): string {
     const state = store.getState()
@@ -439,24 +691,42 @@ export function mountThreadContextPane(
     const thread = getActiveThread(store)
     const projectId = store.getState().activeProjectId
     if (!thread || !projectId) return
-    const mine = ++changesToken
     const key = activeStorageKey()
-    changesKey = key
-    changesText = 'Calculating…'
-    changeStats = null
+    if (key !== changesKey) {
+      changesKey = key
+      changesText = 'Calculating…'
+      changeStats = null
+      changesCheckedAt = 0
+      changesPending = false
+    } else if (
+      changesPending ||
+      (changesCheckedAt && Date.now() - changesCheckedAt < CHANGES_FRESH_MS)
+    ) {
+      return
+    }
+    const mine = ++changesToken
+    changesPending = true
     const update = (): void => {
       const slot = viewerRoot.querySelector('[data-context-change-stats]')
       if (slot) slot.replaceChildren(...changesContent())
     }
-    update()
     try {
       const stats = await api.git.changeStats(projectId, thread.id)
       if (disposed || mine !== changesToken || key !== activeStorageKey()) return
-      changeStats = stats ?? { additions: 0, deletions: 0 }
+      const next = stats ?? { additions: 0, deletions: 0 }
+      changesCheckedAt = Date.now()
+      if (changeStats?.additions === next.additions && changeStats.deletions === next.deletions)
+        return
+      changeStats = next
     } catch (error) {
       if (disposed || mine !== changesToken || key !== activeStorageKey()) return
       console.error('[context] change totals lookup failed:', error)
+      changesCheckedAt = Date.now()
+      if (!changeStats && changesText === 'Unavailable') return
+      changeStats = null
       changesText = 'Unavailable'
+    } finally {
+      if (mine === changesToken) changesPending = false
     }
     update()
   }
@@ -466,15 +736,24 @@ export function mountThreadContextPane(
     const thread = getActiveThread(store)
     const projectId = store.getState().activeProjectId
     if (!thread || !projectId) return
-    const mine = ++storageToken
     const key = activeStorageKey()
-    storageKey = key
-    storageText = 'Calculating…'
+    if (key !== storageKey) {
+      storageKey = key
+      storageText = 'Calculating…'
+      storageCheckedAt = 0
+      storagePending = false
+    } else if (
+      storagePending ||
+      (storageCheckedAt && Date.now() - storageCheckedAt < STORAGE_FRESH_MS)
+    ) {
+      return
+    }
+    const mine = ++storageToken
+    storagePending = true
     const update = (): void => {
       const slot = viewerRoot.querySelector('[data-context-storage-size]')
-      if (slot) slot.textContent = storageText
+      if (slot && slot.textContent !== storageText) slot.textContent = storageText
     }
-    update()
     try {
       const [saved, checkout] = await Promise.all([
         api.threads.storageSize(projectId, thread.id),
@@ -483,11 +762,18 @@ export function mountThreadContextPane(
           : Promise.resolve({ bytes: 0, truncated: false }),
       ])
       if (disposed || mine !== storageToken || key !== activeStorageKey()) return
-      storageText = `${saved.truncated || checkout.truncated ? 'At least ' : ''}${formatByteSize(saved.bytes + checkout.bytes)}`
+      storageCheckedAt = Date.now()
+      const next = `${saved.truncated || checkout.truncated ? 'At least ' : ''}${formatByteSize(saved.bytes + checkout.bytes)}`
+      if (storageText === next) return
+      storageText = next
     } catch (error) {
       if (disposed || mine !== storageToken || key !== activeStorageKey()) return
       console.error('[context] storage lookup failed:', error)
+      storageCheckedAt = Date.now()
+      if (storageText === 'Unavailable') return
       storageText = 'Unavailable'
+    } finally {
+      if (mine === storageToken) storagePending = false
     }
     update()
   }
@@ -523,8 +809,10 @@ export function mountThreadContextPane(
   function render(): void {
     const state = store.getState()
     const thread = getActiveThread(store)
-    clear(viewerRoot)
     if (!thread) {
+      if (renderedKey === 'empty') return
+      renderedKey = 'empty'
+      clear(viewerRoot)
       viewerRoot.append(emptyNote('Open a thread to see its context.'))
       return
     }
@@ -535,6 +823,17 @@ export function mountThreadContextPane(
       threads: state.threads,
       mentionedIn: mentionedFor === thread.id ? mentionedIn : [],
     })
+    const key = JSON.stringify([
+      state.activeProjectId,
+      model,
+      thread.archivedAt,
+      accessFor,
+      accessGrants,
+      accessStatus,
+    ])
+    if (key === renderedKey) return
+    renderedKey = key
+    clear(viewerRoot)
     const content = renderThreadContext(model, handlers)
     reviewerInput.sync()
     const questionAnchor =
@@ -555,6 +854,8 @@ export function mountThreadContextPane(
       if (project) store.emit('thread_archive_requested', project.id, thread.id)
     })
     content.querySelector('[data-context-section="repos"]')?.after(
+      accessSection(thread.id),
+      decisionsSection(thread.id),
       el(
         'section',
         { class: 'thread-context-section', 'data-context-section': 'storage' },
@@ -596,6 +897,7 @@ export function mountThreadContextPane(
   /** Backlinks come from the index; ignore an answer for a thread since closed. */
   async function refreshMentions(): Promise<void> {
     void refreshStorage()
+    void refreshAccess()
     const thread = getActiveThread(store)
     const projectId = store.getState().activeProjectId
     if (!thread || !projectId) return
@@ -622,6 +924,11 @@ export function mountThreadContextPane(
     }),
     store.on('tool_call_updated', () => {
       if (contextModeActive(store)) reviewerInput.sync()
+    }),
+    api.security.onGuardedYoloChanged((state) => {
+      if (contextModeActive(store) && getActiveThread(store)?.id === state.threadId) {
+        void refreshAccess()
+      }
     }),
     store.on('right_panel_mode_changed', () => {
       if (!contextModeActive(store)) return
@@ -650,6 +957,9 @@ export function mountThreadContextPane(
       storageKey = ''
       changesKey = ''
       changesToken++
+      accessToken++
+      accessFor = null
+      accessGrants = null
       token++
       storageToken++
       if (contextModeActive(store)) {
@@ -667,6 +977,7 @@ export function mountThreadContextPane(
     token++
     storageToken++
     changesToken++
+    accessToken++
     for (const off of offs) off()
   }
 }

@@ -83,8 +83,9 @@ export type ActionBarClickSession = {
     clearancePx: number,
   ) => Promise<unknown>
   /**
-   * WDIO's supported command override. The third argument attaches the override
-   * to the *element* scope, which is where `click` lives. Assigning through the
+   * WDIO's supported command override. `{ attachToElement: true }` attaches the
+   * override to the *element* scope, which is where `click` lives. WDIO v10
+   * throws on the old boolean third argument. Assigning through the
    * `@wdio/globals` Proxy would not reach the real browser — see
    * `after-test-safety.ts` for the same constraint on `deleteSession`.
    */
@@ -96,7 +97,7 @@ export type ActionBarClickSession = {
       origCommand: (...args: unknown[]) => unknown,
       ...args: unknown[]
     ) => unknown,
-    attachToElement?: boolean,
+    options?: { attachToElement?: boolean },
   ) => void
 }
 
@@ -183,6 +184,6 @@ export function installSettingsActionBarClickSafety(session: ActionBarClickSessi
         return await origClick.apply(this, args)
       }
     },
-    true,
+    { attachToElement: true },
   )
 }

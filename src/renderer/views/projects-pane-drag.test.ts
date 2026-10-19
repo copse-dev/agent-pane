@@ -289,6 +289,34 @@ describe('projects pane — drag to reorder (component)', () => {
     assert.equal(document.querySelectorAll('.is-dragging').length, 0)
   })
 
+  it('clears a list highlight when a redraw removes the dragged row', () => {
+    mount([project('a', 'Alpha'), project('b', 'Beta')])
+    const dataTransfer = new FakeDataTransfer()
+    const alpha = projectRow('Alpha')
+    const list = document.querySelector<HTMLElement>('.projects-list')
+    assert.ok(list)
+    alpha.dispatchEvent(dragEvent('dragstart', dataTransfer))
+    list.dispatchEvent(dragEvent('dragover', dataTransfer, 400))
+    assert.equal(list.classList.contains('drop-into'), true)
+
+    store.emit('threads_changed')
+    assert.equal(document.querySelectorAll('.drop-before, .drop-after, .drop-into').length, 0)
+    assert.equal(document.querySelectorAll('.is-dragging').length, 0)
+  })
+
+  it('does not highlight the whole list when hovering a thread', () => {
+    mount([project('a', 'Alpha'), project('b', 'Beta')])
+    const dataTransfer = new FakeDataTransfer()
+    projectRow('Alpha').dispatchEvent(dragEvent('dragstart', dataTransfer))
+    const list = document.querySelector<HTMLElement>('.projects-list')
+    const chat = document.querySelector<HTMLElement>('.chat-row')
+    assert.ok(list)
+    assert.ok(chat)
+    list.dispatchEvent(dragEvent('dragover', dataTransfer, 400))
+    chat.dispatchEvent(dragEvent('dragover', dataTransfer, 400))
+    assert.equal(list.classList.contains('drop-into'), false)
+  })
+
   it('ignores a drag that is not a sidebar drag', () => {
     // A folder dragged in from Finder reaches the same listeners.
     mount([project('a', 'Alpha'), project('b', 'Beta')])

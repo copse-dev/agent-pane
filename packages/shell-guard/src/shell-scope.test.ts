@@ -30,6 +30,53 @@ describe('analyzeShellCommand', () => {
     assert.equal(r.verdict, 'external')
   })
 
+  it('runs package exec inside an active sandbox unless another hard signal is present', () => {
+    for (const command of ['npm exec tsc --noEmit', 'yarn exec eslint .', 'bun exec tsc']) {
+      const result = analyzeShellCommand(command, root)
+      assert.equal(result.verdict, 'ambiguous', command)
+      assert.deepEqual(result.reasons, [
+        'package command runner (exec may install missing dependencies)',
+      ])
+    }
+    // Local `pnpm exec` is treated like `pnpm run` (see the next test), so it is
+    // contained without the package-runner ambiguity.
+    const formatter =
+      'pnpm exec oxfmt --check src/main/services/thread-execution-context.ts src/renderer/views/footer-branch-status.ts tests/e2e/footer-branch-status.e2e.ts'
+    assert.equal(analyzeShellCommand(formatter, root).verdict, 'sandbox')
+    for (const command of [
+      'pnpm exec oxfmt --check . && pnpm install',
+      'pnpm exec oxfmt --check /Users/me/other/file.ts',
+      'npm exec tsc && npm install',
+      'npm exec tsc -- /Users/me/other/file.ts',
+    ]) {
+      assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
+    }
+    // An opaque local script keeps the interpreter's own ambiguity under either runner.
+    for (const command of ['pnpm exec node ./script.js', 'npm exec node ./script.js']) {
+      const result = analyzeShellCommand(command, root)
+      assert.equal(result.verdict, 'ambiguous', command)
+      assert.ok(
+        result.reasons.includes(
+          'runs a local script via an interpreter (contents opaque to analysis)',
+        ),
+        command,
+      )
+    }
+  })
+
+  it('keeps other exec forms hard-external', () => {
+    for (const command of [
+      'exec ./script',
+      'echo ok && exec ./script',
+      "find . -name '*.tmp' -type f -exec cat {} +",
+      'podman exec app pwd',
+    ]) {
+      const result = analyzeShellCommand(command, root)
+      assert.equal(result.verdict, 'external', command)
+      assert.ok(result.reasons.includes('dynamic execution / encoding'), command)
+    }
+  })
+
   it('keeps local pnpm exec commands contained without hiding their payload', () => {
     for (const command of [
       'pnpm exec tsc --noEmit',
@@ -40,7 +87,6 @@ describe('analyzeShellCommand', () => {
     }
     for (const command of [
       'pnpm install',
-      'npm exec tsc',
       'corepack pnpm exec tsc',
       'pnpm exec curl https://example.com',
       'pnpm exec node -e "process.exit()"',
@@ -51,7 +97,128 @@ describe('analyzeShellCommand', () => {
     ]) {
       assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
     }
+    // Other package managers' `exec` is not masked as a local run: it stays a
+    // package runner tried inside the sandbox rather than a contained command.
+    assert.equal(analyzeShellCommand('npm exec tsc', root).verdict, 'ambiguous')
     assert.equal(analyzeShellCommand('pnpm dlx tsc', root).verdict, 'ambiguous')
+  })
+
+  it('sees package-manager global options before the subcommand', () => {
+    // An install behind an option scored `sandbox`, with no reason at all.
+    for (const command of [
+      'pnpm -s install',
+      'pnpm -r install',
+      'npm --prefix web install left-pad',
+      'pnpm --filter app add left-pad',
+      'yarn --cwd web add left-pad',
+      'bun --silent add left-pad',
+    ]) {
+      const result = analyzeShellCommand(command, root)
+      assert.equal(result.verdict, 'external', command)
+      assert.ok(
+        result.reasons.includes('package install/update (may fetch + run code from network)'),
+        command,
+      )
+    }
+    // `pnpm -s exec` is a local run, not the shell's `exec` builtin.
+    for (const command of ['pnpm -s exec tsc --noEmit -p .', 'pnpm --filter app exec vitest']) {
+      assert.equal(analyzeShellCommand(command, root).verdict, 'sandbox', command)
+    }
+    assert.deepEqual(analyzeShellCommand('npm --prefix web exec tsc', root).reasons, [
+      'package command runner (exec may install missing dependencies)',
+    ])
+    // Options never run on into the next line: that `exec` is the builtin.
+    assert.equal(analyzeShellCommand('pnpm -s\nexec curl https://x.test', root).verdict, 'external')
+    assert.equal(analyzeShellCommand('pnpm -s\nexec ./script', root).verdict, 'external')
+  })
+
+  it('treats a program named only as text in a read-only command as ambiguous', () => {
+    // From a real thread: each of these asked "Run outside sandbox?" because a
+    // grep pattern or file name contained `ssh`, `exec`, or `pnpm install`.
+    for (const command of [
+      'grep -n -i -E "remote terminal|terminal-remote|ssh|acp-remote-env" docs/shell-permissions.md | head -60; echo ---; grep -n -i -E "approv|install" docs/plans/acp-over-ssh.md | head -60',
+      'sed -n 1,80p src/main/services/exec/shell-output-context.ts; grep -rn "runWithShellOutput\\|withShellOutput" src/main --include=*.ts | grep -v test | head',
+      `grep -rn "isSshProject\\|kind === 'ssh'" src/renderer src/shared --include=*.ts | grep -v "test.ts" | head -30`,
+      'grep -rn -i "ssh" src/shared/store/*.ts src/shared/types/project*.ts 2>/dev/null | grep -v test | head -20',
+      'sed -n 1,80p src/renderer/controller/ssh-workspace-ui.ts; grep -n -i "ssh" src/renderer/views/footer-model-picker.ts | head',
+      'ls tests/e2e | grep -i -E "terminal|ssh|acp" | head -30; sed -n 584,660p src/main/services/acp/acp-ssh-transport.test.ts',
+      'grep -n -A12 -i "^## Environment\\|pnpm install\\|make setup" docs/agent-development.md | head -40',
+      'ls src/main/services/acp/ | grep -E "env-gate|ssh-transport"; grep -n "describe(\\|it(" src/main/services/acp/acp-remote-env-gate.test.ts | head -30',
+      'git log --oneline -3 -- src/main/services/acp/acp-ssh-transport.ts',
+      'echo "next: curl the endpoint"',
+      'rg -n "kubectl|docker run" docs',
+      // Handed to a project script as a test filter or flag value.
+      'pnpm test -- acp-remote-env-gate acp-ssh-transport > $TMPDIR/t.log 2>&1',
+      'npm run lint -- --rule no-eval',
+      'pnpm -s run test -- remote-ssh',
+      // A variable as an operand or redirect target names no program.
+      'grep -n ssh $FILE',
+      'grep -c ssh docs/a.md > $TMPDIR/count.txt; echo exit=$?',
+    ]) {
+      const result = analyzeShellCommand(command, root)
+      assert.equal(result.verdict, 'ambiguous', command)
+      assert.deepEqual(
+        result.reasons,
+        ['names a network or code-running command only as an argument, never as the command run'],
+        command,
+      )
+    }
+    // A heredoc'd interpreter keeps its own ambiguity alongside the text mention.
+    const heredoc = [
+      "python3 - <<'EOF'",
+      "p='src/main/services/acp/acp-ssh-transport.ts'",
+      'EOF',
+      'grep -n "label" src/main/services/ssh-workspace/hosts.ts | head -5',
+    ].join('\n')
+    assert.deepEqual(analyzeShellCommand(heredoc, root).reasons, [
+      'heredoc script fed to an interpreter',
+      'names a network or code-running command only as an argument, never as the command run',
+    ])
+  })
+
+  it('keeps a program word hard wherever something could run it', () => {
+    for (const command of [
+      // In command position, however it is spelled or wrapped.
+      'grep x f; ssh host true',
+      'grep x f && (ssh host true)',
+      '{ ssh host; }',
+      'if ssh host true; then :; fi',
+      'env FOO=1 nice ssh host',
+      'timeout 5 ssh host',
+      '/usr/bin/ssh host',
+      's\\sh host',
+      '"ss""h" host',
+      // Handed to something that runs it.
+      'bash -c "ssh host uptime"',
+      'ls | xargs scp -t host:',
+      'find . -name a -exec curl https://x.test \\;',
+      'echo ssh host | sh',
+      'echo ssh host | xargs -I{} sh -c {}',
+      'grep -h ssh notes.txt | bash',
+      'bash <(echo ssh host)',
+      'cat notes.txt > >(ssh host)',
+      // Read-only tools whose options run a program.
+      'rg --pre ssh pattern src',
+      'sort --compress-program=ssh notes.txt',
+      'fd -x ssh host',
+      // The parser cannot say what runs.
+      'grep "$(ssh host)" notes.txt',
+      'echo ssh host | $SHELL',
+      'x=ssh; $x host',
+      'grep "ssh notes.txt',
+      // A runner whose arguments are themselves a command, or a script name
+      // that is the program word (`yarn ssh` runs the `ssh` script — or binary).
+      'pnpm exec ssh host',
+      'npx ssh host',
+      'npm x -- ssh host',
+      'pnpm dlx ssh host',
+      'yarn ssh host',
+      'pnpm test; ssh host',
+    ]) {
+      assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
+    }
+    // Destructive and privileged commands are not program-word matchers.
+    assert.equal(analyzeShellCommand('grep -rn sudo docs', root).verdict, 'external')
   })
 
   it('flags git push', () => {
@@ -830,6 +997,48 @@ describe('dangerousInSandboxReasons', () => {
     assert.ok(dangerousInSandboxReasons('r\\m -rf build').length > 0)
   })
 
+  it('treats only a recursive rm as a recursive delete', () => {
+    for (const command of [
+      'rm -rf build',
+      'rm -fr build',
+      'rm -R build',
+      'rm -f -r build',
+      'rm --recursive build',
+      'rm -v --recursive build',
+    ]) {
+      assert.deepEqual(
+        dangerousInSandboxReasons(command),
+        ['recursive/forced delete (rm -rf)'],
+        command,
+      )
+    }
+    // Forced deletes keep the prompt where `-f` was the only thing catching them.
+    for (const command of [
+      'rm -f /Users/me/other/scratch.txt',
+      'rm --force /Users/me/other/scratch.txt',
+      'find build -type f -mtime +2 -print0 | xargs -0 rm -f',
+      'rm -f *.log',
+      'rm -f ../sibling/x',
+      'rm -f $FILE',
+    ]) {
+      assert.deepEqual(
+        dangerousInSandboxReasons(command),
+        ['recursive/forced delete (rm -rf)'],
+        command,
+      )
+    }
+    // `-f` alone deletes what plain `rm` does, which already runs contained.
+    for (const command of [
+      'rm -f e2e-failure-artifacts/demo-failure.png; node scripts/run-demo.mts',
+      'rm -f e2e-failure-artifacts/demo-failure.png',
+      'rm -fv out.log',
+      'rm --force out.log',
+      'rm out.log',
+    ]) {
+      assert.deepEqual(dangerousInSandboxReasons(command), [], command)
+    }
+  })
+
   it('sees through quote-splitting obfuscation', () => {
     assert.ok(dangerousInSandboxReasons('r""m -rf .').length > 0)
     assert.ok(dangerousInSandboxReasons(`r''m -rf build`).length > 0)
@@ -870,6 +1079,13 @@ describe('describeShellScopeReasons', () => {
     assert.ok(reasons.includes('dynamic execution / encoding'))
     assert.deepEqual(describeShellScopeReasons(reasons), [
       "Runs code written or built inside the command itself, so Copse can't tell what it does",
+    ])
+  })
+
+  it('says a program was only mentioned, not that it connects anywhere', () => {
+    const reasons = analyzeShellCommand('grep -rn "ssh\\|curl" src | head', root).reasons
+    assert.deepEqual(describeShellScopeReasons(reasons), [
+      'Mentions a network or code-running command only as an argument, such as a search pattern, file name or test filter',
     ])
   })
 

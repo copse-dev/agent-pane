@@ -37,6 +37,7 @@ import {
   startHumanTurnTree,
 } from '../controller/message-queue.ts'
 import { sendCodeBlockRunResult } from '../controller/code-block-runs.ts'
+import { createFollowUpThread } from '../controller/follow-up-thread.ts'
 import { nextWorkingBrief } from '@copse/agent/working-brief.ts'
 import {
   buildTextWithAttachments,
@@ -497,6 +498,16 @@ export function mountInputBar(
         store.getState().activeProjectId === null ||
         !threadHasExportableContent(getActiveThread(store)),
       onClick: debugTrace,
+    },
+    {
+      label: 'Create follow-up thread',
+      hidden: (): boolean =>
+        store.getState().activeProjectId === null ||
+        !threadHasExportableContent(getActiveThread(store)),
+      onClick: (): void => {
+        const threadId = getActiveThreadId()
+        if (threadId) createFollowUpThread(store, api, threadId)
+      },
     },
     {
       label: 'Share trace',
@@ -1332,6 +1343,17 @@ export function mountInputBar(
     const snapshot = draftAttachmentsByThread.get(threadId) ?? emptyDraftAttachments()
     if (snapshot.shells.some((shell) => shell.tabId === ref.tabId)) return
     snapshot.shells.push({ ...ref })
+    draftAttachmentsByThread.set(threadId, snapshot)
+  }
+
+  function placeStoredThread(threadId: string, ref: AttachedThreadRef): void {
+    if (activeComposerThreadId === threadId) {
+      addThreadChip(ref)
+      return
+    }
+    const snapshot = draftAttachmentsByThread.get(threadId) ?? emptyDraftAttachments()
+    if (snapshot.threads.some((thread) => thread.threadId === ref.threadId)) return
+    snapshot.threads.push({ ...ref })
     draftAttachmentsByThread.set(threadId, snapshot)
   }
 
@@ -2813,6 +2835,7 @@ export function mountInputBar(
           showToast('Command finished — result attached to your next message.')
         })
     }),
+    store.on('thread_reference_attach', placeStoredThread),
     store.on('new_thread_opened', () => {
       // Refresh provider-reported context windows for the new chat, then re-estimate
       // once the caches are cleared so the footer reflects the current model limit.
@@ -2883,6 +2906,10 @@ export function mountInputBar(
     }),
     store.on('git_branch_changed', () => {
       void refreshAutomaticCheckoutPreview()
+    }),
+    store.on('thread_checkout_changed', (threadId) => {
+      checkoutErrors.delete(threadId)
+      updateCheckoutControl()
     }),
   ]
 

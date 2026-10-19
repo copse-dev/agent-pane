@@ -1,3 +1,4 @@
+import { MobilePairing } from './mobile-pairing.ts'
 import QRCode from 'qrcode'
 import type {
   MobileCompanionAccess,
@@ -17,11 +18,7 @@ let quitting = false
 let generation = 0
 let lastError: string | null = null
 let qrCache: { url: string; svg: string } | null = null
-let pendingPairing: {
-  label: string
-  code: string
-  resolve: (decision: MobileCompanionAccess | null) => void
-} | null = null
+const pairingRequests = new MobilePairing()
 const RETRY_MS = 15_000
 
 function savedPreference(): MobilePreference {
@@ -69,7 +66,7 @@ export function getMobileCompanionState(): MobileCompanionState {
     rootCertificatePath: running ? (active?.rootPath ?? null) : null,
     addresses: mobileLanAddresses(),
     devices: devices().list(),
-    pairing: pendingPairing ? { label: pendingPairing.label, code: pendingPairing.code } : null,
+    pairing: pairingRequests.current(),
     lastError,
   }
 }
@@ -89,29 +86,23 @@ function scheduleRetry(): void {
 }
 
 /** The one in-flight pairing a phone can have; Settings shows and resolves it. */
-function approvePair(label: string, code: string): Promise<MobileCompanionAccess | null> {
-  return new Promise((resolve) => {
-    pendingPairing = { label, code, resolve }
-    publish()
-  })
+function approvePair(
+  label: string,
+  code: string,
+  signal: AbortSignal,
+): Promise<MobileCompanionAccess | null> {
+  const result = pairingRequests.request(label, code, signal)
+  publish()
+  return result.finally(publish)
 }
 
-export async function respondToMobilePairing(
+export function respondToMobilePairing(
   decision: MobileCompanionAccess | 'deny',
-  confirmControl: (label: string, code: string) => Promise<boolean>,
-): Promise<void> {
-  const pairing = pendingPairing
-  const pairingGeneration = generation
-  if (!pairing) return
-  if (decision === 'control') {
-    if (!(await confirmControl(pairing.label, pairing.code))) return
-    // A denial, replacement pairing, or shutdown can settle it while the native dialog is open.
-    if (pendingPairing !== pairing || quitting || generation !== pairingGeneration) return
-  }
-  const { resolve } = pairing
-  pendingPairing = null
-  resolve(decision === 'deny' ? null : decision)
-  publish()
+  code: string,
+  id: string,
+): void {
+  if (quitting) return
+  if (pairingRequests.respond(decision, code, id)) publish()
 }
 
 function launch(address: string): Promise<MobileServer> {
@@ -121,6 +112,7 @@ function launch(address: string): Promise<MobileServer> {
     address,
     devices: devices(),
     approvePair,
+    onDevicesChanged: publish,
     onStop: () => {
       active = null
       scheduleRetry()
@@ -191,26 +183,12 @@ export async function disableMobileCompanion(): Promise<void> {
   publish()
 }
 
-export async function setMobileDeviceAccess(
-  id: string,
-  access: MobileCompanionAccess,
-  confirmControl: (label: string) => Promise<boolean>,
-): Promise<void> {
+export function setMobileDeviceAccess(id: string, access: MobileCompanionAccess): void {
   const device = devices()
     .list()
     .find((item) => item.id === id)
-  if (!device) return
-  if (access === 'control') {
-    if (!(await confirmControl(device.label))) return
-    // A revoked phone cannot regain access after its confirmation returns.
-    if (
-      quitting ||
-      !devices()
-        .list()
-        .some((item) => item.id === id)
-    )
-      return
-  }
+  // This synchronous path cannot interleave a grant with device revocation.
+  if (!device || quitting) return
   devices().setAccess(id, access)
   publish()
 }

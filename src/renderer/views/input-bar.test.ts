@@ -1102,6 +1102,13 @@ describe('input bar first-message checkout', () => {
     assert.match(error.textContent, /worktree allocation failed/)
     assert.doesNotMatch(error.textContent, /invoking remote method/)
     assert.match(error.textContent, /Retry/)
+    store.emit('thread_checkout_changed', 'other-thread')
+    assert.equal(error.hidden, false)
+    store.emit('thread_checkout_changed', 'thread-1')
+    assert.equal(error.hidden, true)
+    assert.equal(error.textContent.trim(), 'Retry')
+    assert.equal(composer.textContent, 'Keep this prompt')
+    assert.equal(runs, 0)
   })
 
   it('persists checkout state before recording and dispatching the first prompt', async () => {
@@ -1838,7 +1845,13 @@ describe('input bar developer diagnostics', () => {
       Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
         item.textContent.trim(),
       ),
-      ['Enable Guarded YOLO', 'Run unattended in a container…', 'Debug trace', 'Share trace'],
+      [
+        'Enable Guarded YOLO',
+        'Run unattended in a container…',
+        'Debug trace',
+        'Create follow-up thread',
+        'Share trace',
+      ],
     )
 
     store.setState({ developerMode: true })
@@ -1856,6 +1869,7 @@ describe('input bar developer diagnostics', () => {
         'Export conversation (JSONL)',
         'Export thread folder (ZIP)',
         'Debug trace',
+        'Create follow-up thread',
         'Share trace',
       ],
     )
@@ -1868,7 +1882,13 @@ describe('input bar developer diagnostics', () => {
       Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
         item.textContent.trim(),
       ),
-      ['Enable Guarded YOLO', 'Run unattended in a container…', 'Debug trace', 'Share trace'],
+      [
+        'Enable Guarded YOLO',
+        'Run unattended in a container…',
+        'Debug trace',
+        'Create follow-up thread',
+        'Share trace',
+      ],
     )
   })
 })

@@ -78,6 +78,7 @@ import {
 } from '../controller/automation-held-runs.ts'
 import { describeRetainedWorktree } from './automation-retained-worktrees.ts'
 import { forkThread } from '../controller/fork-thread.ts'
+import { createFollowUpThread } from '../controller/follow-up-thread.ts'
 import {
   createThreadFilter,
   filterText,
@@ -865,6 +866,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     })
   }
 
+  function followUpProjectThread(projectId: string, threadId: string): void {
+    if (projectId !== store.getState().activeProjectId) return
+    if (!createFollowUpThread(store, api, threadId))
+      showToast('Could not start a follow-up thread.', { variant: 'error' })
+  }
+
   const archivingThreads = new Set<string>()
 
   async function archiveProjectThread(projectId: string, threadId: string): Promise<void> {
@@ -1280,6 +1287,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   function endDrag(): void {
     activeDrag = null
     clearDropIndicators()
+    list.classList.remove(...DROP_CLASSES)
     for (const dragging of list.querySelectorAll('.is-dragging')) {
       dragging.classList.remove('is-dragging')
     }
@@ -1381,6 +1389,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   list.addEventListener('dragover', (e) => {
     if (!isSidebarDrag(e.dataTransfer?.types)) return
     if (activeDrag?.kind !== 'project') return
+    // Child rows bubble here too. Only the list's empty space means "move
+    // out of a group"; hovering a thread must not highlight the whole pane.
+    if (e.target !== list) {
+      list.classList.remove(...DROP_CLASSES)
+      return
+    }
     e.preventDefault()
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
     clearDropIndicators()
@@ -1391,6 +1405,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   })
   list.addEventListener('drop', (e) => {
     if (!isSidebarDrag(e.dataTransfer?.types)) return
+    if (e.target !== list) return
     e.preventDefault()
     const payload = parseSidebarDrag(e.dataTransfer?.getData(SIDEBAR_DRAG_MIME) ?? '') ?? activeDrag
     list.classList.remove(...DROP_CLASSES)
@@ -1540,6 +1555,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function render(preserveScroll = false): void {
+    // A redraw removes the source row, so Chromium may have nowhere to send
+    // its eventual dragend. Clear the gesture before replacing its DOM.
+    endDrag()
     // Rebuilding the list removes its children synchronously. In Chromium that
     // clamps the scroll container to the top while the content is empty, so the
     // dismiss action opts into keeping the reader's position.
@@ -1656,25 +1674,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       })
       const openThreadMenu = (x: number, y: number): void => {
         showContextMenu(x, y, [
-          {
-            label: 'Conversation access…',
-            onSelect: (): void => {
-              showContextMenu(x, y, [
-                {
-                  label: 'Revoke reading other threads',
-                  onSelect: (): void => {
-                    void api.threadPrompts.revokeAccess(thread.id, 'read')
-                  },
-                },
-                {
-                  label: 'Revoke sending to other threads',
-                  onSelect: (): void => {
-                    void api.threadPrompts.revokeAccess(thread.id, 'send')
-                  },
-                },
-              ])
-            },
-          },
           ...(canMutate
             ? [
                 ...(allowRename
@@ -1708,6 +1707,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                         },
                       },
                     ])
+                  },
+                },
+                {
+                  label: 'Create follow-up thread',
+                  onSelect: (): void => {
+                    followUpProjectThread(project.id, thread.id)
                   },
                 },
                 {
@@ -1778,11 +1783,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             : []),
         ])
       }
-      chatRow.addEventListener('contextmenu', (e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        openThreadMenu(e.clientX, e.clientY)
-      })
+      if (canMutate || scheduleId) {
+        chatRow.addEventListener('contextmenu', (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          openThreadMenu(e.clientX, e.clientY)
+        })
+      }
 
       if (thread.status === 'running') {
         chatRow.classList.add('is-running')
@@ -1864,6 +1871,15 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           openThreadMenu(rect.left, rect.bottom)
         })
         chatRow.append(menuButton)
+      } else {
+        // A thread from a project other than the active one has no menu button — it
+        // can only be read here, not mutated (see `canMutate` above). Reserve the
+        // button's footprint anyway so the trailing status icon lands in the same
+        // column as an active-project row's; otherwise it drifts right by exactly
+        // --projects-action-size on every row that happens to belong to a project
+        // the sidebar hasn't switched to. See docs/ui-taste.md -> "Align trailing
+        // row icons".
+        chatRow.append(el('span', { class: 'chat-menu-btn-space', 'aria-hidden': 'true' }))
       }
       return chatRow
     }

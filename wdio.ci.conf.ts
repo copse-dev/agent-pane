@@ -1,3 +1,4 @@
+import { outcomeHooks } from './scripts/lib/e2e-outcomes.mts'
 import type { Options } from '@wdio/types'
 import { config as baseConfig } from './wdio.conf.ts'
 
@@ -27,8 +28,19 @@ const ciExclude = [
   // crashes the runner on its first launch even in a 4-spec shard.
 ]
 
+const outcomes = outcomeHooks(
+  process.env['COPSE_E2E_OUTCOMES_DIR'],
+  Number(process.env['COPSE_E2E_ATTEMPT'] ?? '1'),
+)
+
 export const config: Options.Testrunner = {
   ...baseConfig,
+  onWorkerStart(cid, _caps, specs) {
+    outcomes.start(cid, specs)
+  },
+  onWorkerEnd(cid, exitCode, specs) {
+    outcomes.end(cid, exitCode, specs)
+  },
   exclude: [...(baseConfig.exclude ?? []), ...ciExclude],
   // A dead Electron session cannot recover inside the same wdio process, and
   // an in-process retry leaves its orphaned children competing with the retry.

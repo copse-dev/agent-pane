@@ -26,7 +26,7 @@ describe('conversation access approvals', () => {
         expect.stringContaining(fixture.explanation),
       )
       await expect(dialog.$('.approval-footer')).toHaveText(
-        expect.stringContaining('Applies only to this thread'),
+        expect.stringContaining('Context panel → Permissions'),
       )
       await expect(dialog.$('.approval-approve')).toHaveText(fixture.action)
       await expect(dialog.$('.approval-body')).not.toBeDisplayed()
@@ -34,16 +34,4 @@ describe('conversation access approvals', () => {
       await saveElementScreenshot('#approval-dialog', `approval-thread-${fixture.access}.png`)
     })
   }
-
-  it('offers independent revocation from the thread menu', async () => {
-    await browser.url('/?scenario=approval-thread-read')
-    await $('#approval-dialog').waitForDisplayed()
-    await $('#approval-dialog .approval-reject').click()
-    await $('.chat-row button[aria-label^="Thread menu"]').click()
-    await $('.context-menu-item=Conversation access…').click()
-    const menu = $('.context-menu')
-    await expect(menu).toHaveText(expect.stringContaining('Revoke reading other threads'))
-    await expect(menu).toHaveText(expect.stringContaining('Revoke sending to other threads'))
-    await saveElementScreenshot('.context-menu', 'thread-access-menu.png')
-  })
 })

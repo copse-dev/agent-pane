@@ -2,6 +2,7 @@ import type { PlanUsageSnapshot } from '@copse/plan-usage'
 import type { ExtraProvider } from '@copse/llm/extra-providers.ts'
 import { extraProviderSlugFromModel } from '@copse/llm/extra-providers.ts'
 import { resolveAgentModelIdentity } from '@copse/llm/agent-model-identity.ts'
+import { parseChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
 import { acpModelVersionName, acpPlanProvider, parseAcpModelSelection } from '@shared/acp.ts'
 import { canonicalAcpAgentId } from '@shared/acp-known-agents.ts'
 import { resolvePlanInclusion } from '@shared/plan-inclusion.ts'
@@ -20,6 +21,7 @@ export function modelCoverage(value: string, context: CoverageContext): ModelCov
   // Automatic selectors and placeholder rows have no concrete billing route.
   if (!value || value.startsWith('auto:')) return undefined
   if (value.startsWith('lmstudio:')) return 'local'
+  if (parseChatGptPlanModel(value)) return 'plan'
   const providerId = extraProviderSlugFromModel(value)
   if (context.extraProviders.some((provider) => provider.id === providerId && provider.local)) {
     return 'local'

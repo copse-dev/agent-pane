@@ -17,6 +17,7 @@ import {
 } from '@copse/agent/plugins/advisor-strategy-plugin.ts'
 import { workingBriefFromUserContent } from '@copse/agent/working-brief.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import type { GuardedYoloPhase } from '@shared/types/guarded-yolo.ts'
 import type { DemoScenario } from './scenarios.ts'
 import { playTrace, type TracePlayerOptions } from './trace-player.ts'
 import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
@@ -64,7 +65,8 @@ const DEMO_TOOL_PERMISSIONS: ToolPermissionCatalog = {
           id: 'copse:run-shell',
           executionName: 'run_shell',
           name: 'Run shell command',
-          description: 'Run a command in the project sandbox.',
+          description:
+            'Run a command in the project sandbox.\n\nUse `run_shell` for tests and builds; use the dedicated file tools for inspection and edits.\n\n- Commands run in the active workspace.\n- Commands that need external access may require approval.\n\n```sh\npnpm test\n```',
           policy: 'ask',
           defaultPolicy: 'ask',
           overridden: true,
@@ -420,6 +422,31 @@ function unsupported(): Promise<never> {
 
 export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = {}): ApiClient {
   const settings = new Map(Object.entries(scenario.settings))
+  const guardedYoloPhases = new Map<string, GuardedYoloPhase>(
+    scenario.guardedYoloPhase && scenario.threads[0]
+      ? [[scenario.threads[0].id, scenario.guardedYoloPhase]]
+      : [],
+  )
+  const guardedYoloListeners = new Set<
+    Parameters<ApiClient['security']['onGuardedYoloChanged']>[0]
+  >()
+  const demoGuardedYoloState = (
+    threadId: string,
+  ): Awaited<ReturnType<ApiClient['security']['getGuardedYolo']>> => ({
+    threadId,
+    phase: guardedYoloPhases.get(threadId) ?? 'off',
+    containment: 'unsandboxed',
+    expiresAt: null,
+  })
+  const updateGuardedYolo = (
+    threadId: string,
+    phase: GuardedYoloPhase,
+  ): ReturnType<ApiClient['security']['getGuardedYolo']> => {
+    guardedYoloPhases.set(threadId, phase)
+    const state = demoGuardedYoloState(threadId)
+    for (const listener of guardedYoloListeners) listener(state)
+    return resolved(state)
+  }
   let toolPermissionCatalog = structuredClone(scenario.toolPermissions ?? DEMO_TOOL_PERMISSIONS)
   let mcpStatuses: readonly McpServerStatus[] = scenario.mcpServers ?? DEMO_MCP_STATUSES
   const pendingMcpSignIns = new Map<string, () => void>()
@@ -623,13 +650,23 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onPluginTabRequest: subscribe,
     },
     security: {
-      getGuardedYolo: (threadId) =>
-        resolved({ threadId, phase: 'off', containment: 'unsandboxed', expiresAt: null }),
-      enableGuardedYolo: (threadId) =>
-        resolved({ threadId, phase: 'off', containment: 'unsandboxed', expiresAt: null }),
-      disableGuardedYolo: (threadId) =>
-        resolved({ threadId, phase: 'off', containment: 'unsandboxed', expiresAt: null }),
-      onGuardedYoloChanged: subscribe,
+      getGuardedYolo: (threadId) => resolved(demoGuardedYoloState(threadId)),
+      getContextPermissions: () =>
+        resolved(
+          scenario.contextPermissions ?? {
+            outsideReadPaths: [],
+            browserOrigins: [],
+            portBindingAllowed: false,
+          },
+        ),
+      enableGuardedYolo: (threadId) => updateGuardedYolo(threadId, 'armed'),
+      disableGuardedYolo: (threadId) => updateGuardedYolo(threadId, 'off'),
+      onGuardedYoloChanged: (listener) => {
+        guardedYoloListeners.add(listener)
+        return () => {
+          guardedYoloListeners.delete(listener)
+        }
+      },
     },
     container: {
       runThread: (request) =>
@@ -1466,7 +1503,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       rollback: unsupported,
     },
     decisions: {
-      list: emptyArray,
+      list: () => resolved(scenario.decisions ?? []),
+      listThread: (_projectId, threadId) =>
+        resolved((scenario.decisions ?? []).filter((decision) => decision.threadId === threadId)),
       export: () => resolved({ path: '', count: 0 }),
     },
     automations: {
@@ -1585,6 +1624,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       // The demo has no linked worktrees, so there is never a detached one.
       worktreeAttachment: () => resolved({ state: 'attached' }),
       reattachWorktree: () => Promise.reject(new Error('The demo has no thread worktrees')),
+      restoreWorktree: () => Promise.reject(new Error('The demo has no thread worktrees')),
       promptState: () => resolved({ startingCommit: null, dirty: false }),
       checkoutBranch: (_projectId: string, _threadId: string, branch: string) => {
         currentBranch = branch

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { join } from 'node:path'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { PNG } from 'pngjs'
 import { E2E_SCREENSHOT_DIR } from '../e2e/helpers/screenshot.ts'
 import { withFrozenAnimations } from '../e2e/helpers/frozen-animations.ts'
@@ -28,9 +30,11 @@ async function screenshot(name: string): Promise<void> {
       }
     })
     const [red, green, blue] = viewport.background
+    let idleCapture: Buffer | undefined
     await browser.waitUntil(
       async () => {
-        const image = PNG.sync.read(Buffer.from(await browser.takeScreenshot(), 'base64'))
+        const capture = Buffer.from(await browser.takeScreenshot(), 'base64')
+        const image = PNG.sync.read(capture)
         const scale = image.width / viewport.width
         for (let y = Math.ceil(viewport.top * scale); y < image.height; y++) {
           for (let x = Math.floor((viewport.width - 4) * scale); x < image.width; x++) {
@@ -43,6 +47,7 @@ async function screenshot(name: string): Promise<void> {
               return false
           }
         }
+        idleCapture = capture
         return true
       },
       {
@@ -51,7 +56,10 @@ async function screenshot(name: string): Promise<void> {
         timeoutMsg: 'Mobile overlay scrollbar did not reach idle paint',
       },
     )
-    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, name))
+    // Save the frame whose native paint passed the check. A second capture can
+    // repaint the overlay between the readiness probe and the saved evidence.
+    assert.ok(idleCapture, 'Expected a verified idle mobile screenshot')
+    await writeFile(join(E2E_SCREENSHOT_DIR, name), idleCapture)
   })
 }
 
@@ -78,6 +86,132 @@ async function expectComposerVisible(id: 'message' | 'new-message'): Promise<voi
 }
 
 describe('Mobile Companion at phone width', () => {
+  it('previews, removes and sends an image from the phone composer', async () => {
+    await browser.setWindowSize(390, 844)
+    await browser.sendCommand('Emulation.setDeviceMetricsOverride', {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+    })
+    await browser.url('/mobile/')
+    await browser.execute(async () => {
+      await fetch('/mobile-fixture/reset')
+      localStorage.setItem('copse-mobile-token', 'visual-test-token')
+    })
+    await browser.refresh()
+    await expect($('.group .row')).toBeDisplayed()
+    await browser.execute(() => {
+      const originalFetch = window.fetch.bind(window)
+      window.fetch = async (input, init) => {
+        if (
+          input === '/api/action' &&
+          typeof init?.body === 'string' &&
+          init.body.includes('"image":"data:image/png;base64,')
+        ) {
+          const root = document.documentElement
+          root.dataset.mobileImageActions = String(Number(root.dataset.mobileImageActions || 0) + 1)
+        }
+        return originalFetch(input, init)
+      }
+    })
+    const directory = await mkdtemp(join(tmpdir(), 'copse-mobile-image-'))
+    const file = join(directory, 'photo.png')
+    const png = new PNG({ width: 16, height: 16 })
+    png.data.fill(180)
+    await writeFile(file, PNG.sync.write(png))
+    try {
+      await $('#new-chat').click()
+      assert.equal(await $('#new-chat-form .image-picker').getAttribute('aria-label'), 'Add image')
+      assert.equal(await $('#new-chat-form .image-picker').getText(), '')
+      await $('#new-image').setValue(file)
+      await expect($('#new-image-preview')).toBeDisplayed()
+      assert.equal(
+        await $('#new-image-preview .image-remove').getAttribute('aria-label'),
+        'Remove image',
+      )
+      await screenshot('mobile-companion-new-chat-image-preview.png')
+      await $('#new-image-preview button').click()
+      await expect($('#new-image-preview')).not.toBeDisplayed()
+      await $('#new-chat-form').$('button[type="submit"]').click()
+      await expect($('#new-chat-form')).toBeDisplayed()
+      await $('#new-image').setValue(file)
+      await $('#new-chat-form').$('button[type="submit"]').click()
+      await expect($('#thread')).toBeDisplayed()
+      await expect($('#action-status')).toHaveText(expect.stringContaining('Chat started'))
+      await expect($('#composer')).toBeDisplayed()
+      await $('#message-image').setValue(file)
+      await expect($('#message-image-preview img')).toBeDisplayed()
+      assert.equal(
+        await browser.execute(() => {
+          const image = document
+            .querySelector('#message-image-preview img')
+            ?.getBoundingClientRect()
+          const remove = document
+            .querySelector('#message-image-preview .image-remove')
+            ?.getBoundingClientRect()
+          const glyph = document
+            .querySelector('#message-image-preview .image-remove-glyph')
+            ?.getBoundingClientRect()
+          const card = document.querySelector('#composer .message-compose')?.getBoundingClientRect()
+          const picker = document.querySelector('#composer .image-picker')?.getBoundingClientRect()
+          const send = document.querySelector('#send')?.getBoundingClientRect()
+          return (
+            !!image &&
+            !!remove &&
+            !!glyph &&
+            !!card &&
+            !!picker &&
+            !!send &&
+            image.left >= card.left &&
+            image.right <= card.right &&
+            picker.left >= card.left &&
+            send.right <= card.right &&
+            remove.width >= 44 &&
+            remove.height >= 44 &&
+            glyph.width <= 20 &&
+            glyph.height <= 20 &&
+            glyph.left >= image.left &&
+            glyph.top >= image.top + 4 &&
+            glyph.right >= image.right + 9 &&
+            glyph.right <= image.right + 11 &&
+            glyph.bottom <= image.bottom &&
+            remove.left < image.right &&
+            remove.top < image.bottom &&
+            remove.right > image.left &&
+            remove.bottom > image.top
+          )
+        }),
+        true,
+      )
+      await browser.execute(async () => {
+        await document.fonts.ready
+      })
+      await screenshot('mobile-companion-image-preview.png')
+      await $('#message').setValue('What is in this image?')
+      await $('#send').click()
+      await expect($('#message-image-preview')).not.toBeDisplayed()
+      await expect($('#action-status')).toHaveText(expect.stringContaining('Message queued'))
+      assert.equal(await $('html').getAttribute('data-mobile-image-actions'), '2')
+      await $('#messages .message:last-child').scrollIntoView()
+      await expect($('#messages .message:last-child .message-image')).toBeDisplayed()
+      await browser.waitUntil(
+        () =>
+          browser.execute(() => {
+            const image = document.querySelector('#messages .message:last-child .message-image')
+            return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0
+          }),
+        { timeoutMsg: 'Assistant image response should load on the phone' },
+      )
+      await withFrozenAnimations(async () => {
+        const capture = Buffer.from(await browser.takeScreenshot(), 'base64')
+        await writeFile(join(E2E_SCREENSHOT_DIR, 'mobile-companion-image-response.png'), capture)
+      })
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   it('keeps desktop-only prompts readable inline with a route to the full thread', async () => {
     await browser.setWindowSize(390, 844)
     await browser.sendCommand('Emulation.setDeviceMetricsOverride', {
@@ -277,9 +411,11 @@ describe('Mobile Companion at phone width', () => {
       })
       await expect($('#groups')).toHaveText(expect.stringContaining('NEEDS YOU'))
       await expect($('#groups')).toHaveText(expect.stringContaining('WORKING'))
+      await expect($('#groups')).toHaveText(expect.stringContaining('HAS CHANGES'))
       await expect($('#groups')).toHaveText(expect.stringContaining('RECENT'))
       await expect($('.state.needs-approval')).toHaveText('needs approval')
       await expect($('.state.finished')).toHaveText('finished')
+      await expect($('#groups')).toHaveText(expect.stringContaining('Polish the onboarding copy'))
       await screenshot(`mobile-companion-activity-${theme}.png`)
 
       // A needs-you row answers in place: tapping it selects the row and
@@ -300,6 +436,12 @@ describe('Mobile Companion at phone width', () => {
         expect.stringContaining('</p><img src=x onerror=alert(1)>'),
       )
       expect(await browser.execute(() => document.querySelectorAll('#messages img').length)).toBe(0)
+      await expect($('#messages .message:nth-child(2) .message-summary')).toHaveText(
+        'Read RELEASE_NOTES.md',
+      )
+      await expect($('#messages .message:nth-child(2) .message-content')).not.toExist()
+      await expect($('#messages')).not.toHaveText(expect.stringContaining('Tool activity'))
+      await expect($('#messages')).not.toHaveText(expect.stringContaining('No saved text'))
       await expect($('.topbar #back svg')).toExist()
       await browser.waitUntil(
         () =>
@@ -370,7 +512,7 @@ describe('Mobile Companion at phone width', () => {
       await expectComposerVisible('new-message')
       await $('#new-message').setValue('Start a fresh release review.')
       await screenshot(`mobile-companion-new-chat-${theme}.png`)
-      await $('#new-chat-form button').click()
+      await $('#new-chat-form button[type="submit"]').click()
       await expect($('#thread')).toBeDisplayed()
       await expect($('#messages')).toHaveText(
         expect.stringContaining('Start a fresh release review.'),
