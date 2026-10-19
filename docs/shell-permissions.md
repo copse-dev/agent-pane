@@ -456,6 +456,14 @@ to need network or outside-workspace access. This only advances the same unsandb
 - a sandbox-contained command ignores the hint and must earn escalation through a verified block;
 - declining the advanced prompt runs the command in the sandbox without prompting again on failure.
 
+When the command is bounded opaque local execution — its only reasons are a project script or
+executable, with no network, outside-path, destructive or install signal — the advanced prompt
+also offers “Allow retries outside the sandbox (up to 10, for 2 hours)”. Ticking it leases that
+exact command line, byte for byte, to the current human turn tree in this thread and execution
+root, so an agent rerunning the same browser demo or harness after each fix is not asked again.
+Any other command, a changed command, another turn tree or another thread asks again. The same
+outside-sandbox lease, with the same bounds, is offered when a verified sandbox block escalates.
+
 The prompt is titled “Agent requests sandbox escape” and describes this as the agent's
 expectation, not a confirmed sandbox failure. A cached denial instead retains “Run outside
 sandbox?” and states that a previous denial was recorded, without attributing a new request
