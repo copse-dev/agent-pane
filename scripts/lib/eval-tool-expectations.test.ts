@@ -210,11 +210,15 @@ describe('shellCommandDisplacements', () => {
     }
   })
 
+  it('flags gh api, which gh_api_read displaces', () => {
+    assert.deepEqual(ids('gh api repos/copse-dev/agent-pane/commits'), ['gh-api'])
+    assert.deepEqual(ids('gh api graphql -f query="{ viewer { login } }"'), ['gh-api'])
+  })
+
   it('leaves gh subcommands with no first-class equivalent alone', () => {
     // The "when a dedicated tool could have done the same job" qualifier: these
     // are unavoidable shell, and flagging them would make the eval flaky.
     for (const command of [
-      'gh api repos/copse-dev/agent-pane/commits',
       'gh issue create --title x',
       'gh workflow list',
       'gh release view',

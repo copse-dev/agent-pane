@@ -45,24 +45,39 @@ function failed(message: string): CommandResult {
   return { stdout: '', stderr: message, code: 1, stdoutTruncated: false }
 }
 
+/** One ref to fetch: `source` on the remote, written to `destination` here. */
+export interface ScratchFetchRef {
+  source: string
+  destination: string
+}
+
+/** `refs/heads/<branch>` on origin into `refs/remotes/origin/<branch>`. */
+export function originBranchRef(branch: string): ScratchFetchRef {
+  return { source: `refs/heads/${branch}`, destination: `refs/remotes/origin/${branch}` }
+}
+
 /**
- * Fetch `branch` from `url` through a fresh scratch repository at `scratch`
- * and copy the tip into the project's `refs/remotes/origin/<branch>`.
+ * Fetch `refs` from `url` through a fresh scratch repository at `scratch` and
+ * copy them into the project. Callers choose sources and destinations from
+ * validated names; this never derives a refspec from Git configuration.
  * Resolves with the first failing command's result, or the final copy's.
  */
 export async function fetchThroughScratchRepository(input: {
   projectRoot: string
   url: string
-  branch: string
+  refs: readonly ScratchFetchRef[]
   scratch: string
   projectGit: ProjectGit
 }): Promise<CommandResult> {
-  const { projectRoot, url, branch, scratch, projectGit } = input
-  const ref = `refs/remotes/origin/${branch}`
-  const [commonDir, seed] = await Promise.all([
+  const { projectRoot, url, refs, scratch, projectGit } = input
+  if (refs.length === 0) return failed('No refs to fetch')
+  const [commonDir, ...seeds] = await Promise.all([
     projectGit(projectRoot, ['rev-parse', '--git-common-dir']),
-    projectGit(projectRoot, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]),
+    ...refs.map(({ destination }) =>
+      projectGit(projectRoot, ['rev-parse', '--verify', '--quiet', `${destination}^{commit}`]),
+    ),
   ])
+  if (!commonDir) return failed('Project Git directory lookup failed')
   if (commonDir.code !== 0) return commonDir
   const objects = join(resolve(projectRoot, commonDir.stdout.trim()), 'objects')
   // `alternates` is one path per line.
@@ -84,11 +99,13 @@ export async function fetchThroughScratchRepository(input: {
     const init = await host(['init', '--bare', '--quiet', '--template=', scratch])
     if (init.code !== 0) return init
     await writeFile(join(scratch, 'objects', 'info', 'alternates'), `${objects}\n`)
-    // The project's last fetched tip gives the negotiation a starting point, so
+    // The project's last fetched tips give the negotiation a starting point, so
     // only commits since then are downloaded.
-    const seedCommit = seed.code === 0 ? seed.stdout.trim() : ''
-    if (seedCommit) {
-      const update = await host(['update-ref', ref, seedCommit])
+    for (const [index, { destination }] of refs.entries()) {
+      const seed = seeds[index]
+      const seedCommit = seed?.code === 0 ? seed.stdout.trim() : ''
+      if (!seedCommit) continue
+      const update = await host(['update-ref', destination, seedCommit])
       if (update.code !== 0) return update
     }
     const fetched = await host([
@@ -99,7 +116,7 @@ export async function fetchThroughScratchRepository(input: {
       '--no-recurse-submodules',
       '--end-of-options',
       url,
-      `+refs/heads/${branch}:${ref}`,
+      ...refs.map(({ source, destination }) => `+${source}:${destination}`),
     ])
     if (fetched.code !== 0) return fetched
 
@@ -114,7 +131,7 @@ export async function fetchThroughScratchRepository(input: {
         '--no-recurse-submodules',
         '--end-of-options',
         scratch,
-        `+${ref}:${ref}`,
+        ...refs.map(({ destination }) => `+${destination}:${destination}`),
       ],
       undefined,
       [scratch],
@@ -125,16 +142,15 @@ export async function fetchThroughScratchRepository(input: {
 }
 
 /**
- * Host-side fetch of `origin/<branch>` for `projectRoot`, or `null` when the
- * origin is not a network remote and the caller should keep its sandboxed fetch.
+ * The project's `remote.origin.url` when it is a network remote the host may
+ * fetch, else `null`. The raw configured URL: the project's own `insteadOf`
+ * rewrites do not apply here; the user's global ones do, inside the scratch
+ * repository.
  */
-export async function fetchDefaultBranchFromHost(
+export async function networkOriginUrl(
   projectRoot: string,
-  branch: string,
   projectGit: ProjectGit,
-): Promise<CommandResult | null> {
-  // The raw configured URL: the project's own `insteadOf` rewrites do not
-  // apply here; the user's global ones do, inside the scratch repository.
+): Promise<string | null> {
   const configured = await projectGit(projectRoot, [
     'config',
     '--local',
@@ -142,11 +158,38 @@ export async function fetchDefaultBranchFromHost(
     'remote.origin.url',
   ])
   const url = configured.code === 0 ? configured.stdout.trim() : ''
-  if (!isNetworkRemoteUrl(url)) return null
+  return isNetworkRemoteUrl(url) ? url : null
+}
+
+/**
+ * Host-side fetch of `refs` from the project's network origin, or `null` when
+ * the origin is not a network remote. `scratchSuffix` separates concurrent
+ * callers that may fetch for one project at the same time.
+ */
+export async function fetchFromOriginOnHost(
+  projectRoot: string,
+  refs: readonly ScratchFetchRef[],
+  projectGit: ProjectGit,
+  scratchSuffix = '',
+): Promise<CommandResult | null> {
+  const url = await networkOriginUrl(projectRoot, projectGit)
+  if (url === null) return null
   const parent = join(copseCacheDir(), 'default-branch-fetch')
   await mkdir(parent, { recursive: true })
   // The sandbox rejects redirected grants, so name the scratch by its real path.
   const id = createHash('sha256').update(projectRoot).digest('hex').slice(0, 16)
-  const scratch = join(await realpath(parent), `${id}.git`)
-  return fetchThroughScratchRepository({ projectRoot, url, branch, scratch, projectGit })
+  const scratch = join(await realpath(parent), `${id}${scratchSuffix}.git`)
+  return fetchThroughScratchRepository({ projectRoot, url, refs, scratch, projectGit })
+}
+
+/**
+ * Host-side fetch of `origin/<branch>` for `projectRoot`, or `null` when the
+ * origin is not a network remote and the caller should keep its sandboxed fetch.
+ */
+export function fetchDefaultBranchFromHost(
+  projectRoot: string,
+  branch: string,
+  projectGit: ProjectGit,
+): Promise<CommandResult | null> {
+  return fetchFromOriginOnHost(projectRoot, [originBranchRef(branch)], projectGit)
 }
