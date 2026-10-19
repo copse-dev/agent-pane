@@ -16,11 +16,17 @@ import {
   restoreThread,
   switchThread,
 } from '@shared/store/thread-helpers.ts'
-import { openBrowserUrl, openPullRequest, toggleFilesPane } from '../controller/panels.ts'
+import {
+  openBrowserUrl,
+  openPullRequest,
+  openRightPanel,
+  toggleFilesPane,
+} from '../controller/panels.ts'
 import { startSideChat } from '../controller/side-chat.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { deriveThreadContext, type ThreadContextModel } from './thread-context-model.ts'
+import { mountReviewerInput } from './reviewer-input.ts'
 
 /** A compact, single-column overview of the active thread. */
 
@@ -33,9 +39,16 @@ export interface ThreadContextHandlers {
   startSideChat: () => void
   archiveSideChat: (threadId: string) => void
   restoreSideChat: (threadId: string) => void
+  jumpToReviewerInput: (messageId: string, requestId: string) => void
 }
 
-type ContextSection = 'repos' | 'side-chats' | 'links' | 'subagents' | 'sources'
+type ContextSection =
+  | 'repos'
+  | 'side-chats'
+  | 'links'
+  | 'subagents'
+  | 'sources'
+  | 'resolved-questions'
 
 const SECTION_TITLES: Record<ContextSection, string> = {
   repos: 'Access',
@@ -43,6 +56,7 @@ const SECTION_TITLES: Record<ContextSection, string> = {
   links: 'Links & references',
   subagents: 'Subagents',
   sources: 'Sources',
+  'resolved-questions': 'Resolved questions',
 }
 
 function section(kind: ContextSection, ...children: Array<Node | string>): HTMLElement {
@@ -283,6 +297,34 @@ function sourcesSection(model: ThreadContextModel, handlers: ThreadContextHandle
   )
 }
 
+function resolvedQuestionsSection(
+  model: ThreadContextModel,
+  handlers: ThreadContextHandlers,
+): HTMLElement | null {
+  if (model.resolvedQuestions.length === 0) return null
+  return section(
+    'resolved-questions',
+    ...model.resolvedQuestions.map(({ request, answer }) => {
+      const jump = el(
+        'button',
+        { type: 'button', class: 'reviewer-input-origin' },
+        'Show in conversation',
+      )
+      jump.addEventListener('click', () => {
+        handlers.jumpToReviewerInput(request.messageId, request.id)
+      })
+      return el(
+        'details',
+        { class: 'thread-context-question', 'data-reviewer-input-id': request.id },
+        el('summary', {}, request.question),
+        el('p', { class: 'reviewer-input-context' }, request.context),
+        el('p', { class: 'reviewer-input-answer' }, `Your answer: ${answer.text}`),
+        jump,
+      )
+    }),
+  )
+}
+
 /** Pure render of one thread's context. */
 export function renderThreadContext(
   model: ThreadContextModel,
@@ -316,8 +358,10 @@ export function renderThreadContext(
       ),
     )
   }
+  const resolvedQuestions = resolvedQuestionsSection(model, handlers)
   host.append(
     subagentsSection(model),
+    ...(resolvedQuestions ? [resolvedQuestions] : []),
     reposSection(model),
     linksSection(model, handlers),
     sourcesSection(model, handlers),
@@ -338,6 +382,7 @@ export function mountThreadContextPane(
   store: AppStore,
   api: ApiClient,
 ): () => void {
+  const reviewerInput = mountReviewerInput(store, api)
   const close = el(
     'button',
     { type: 'button', class: 'thread-context-close', 'aria-label': 'Close context' },
@@ -470,6 +515,9 @@ export function mountThreadContextPane(
     restoreSideChat: (threadId) => {
       restoreThread(store, threadId)
     },
+    jumpToReviewerInput: (messageId, requestId) => {
+      store.emit('reviewer_input_jump', messageId, requestId)
+    },
   }
 
   function render(): void {
@@ -488,6 +536,11 @@ export function mountThreadContextPane(
       mentionedIn: mentionedFor === thread.id ? mentionedIn : [],
     })
     const content = renderThreadContext(model, handlers)
+    reviewerInput.sync()
+    const questionAnchor =
+      content.querySelector('[data-context-section="resolved-questions"]') ??
+      content.querySelector('[data-context-section="repos"]')
+    questionAnchor?.before(reviewerInput.toggle, reviewerInput.panel)
     const archive = el(
       'button',
       {
@@ -560,6 +613,16 @@ export function mountThreadContextPane(
   }
 
   const offs = [
+    store.on('reviewer_input_open', (requestId) => {
+      openRightPanel(store, 'context')
+      reviewerInput.open(requestId)
+    }),
+    store.on('tool_call_started', () => {
+      if (contextModeActive(store)) reviewerInput.sync()
+    }),
+    store.on('tool_call_updated', () => {
+      if (contextModeActive(store)) reviewerInput.sync()
+    }),
     store.on('right_panel_mode_changed', () => {
       if (!contextModeActive(store)) return
       render()

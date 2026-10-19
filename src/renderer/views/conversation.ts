@@ -165,7 +165,7 @@ import {
   isThreadProposalCall,
   threadProposalCardSignature,
 } from './thread-proposal-tool-card.ts'
-import { createReviewerInputToolCard, mountReviewerInput } from './reviewer-input.ts'
+import { createReviewerInputToolCard } from './reviewer-input.ts'
 import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
 import { renderSignature } from './render-signature.ts'
 import {
@@ -2722,14 +2722,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // streaming response inside the scrollable message list.
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
   const roadmapOrigin = mountThreadRoadmapOrigin(store, api)
-  const reviewerInput = mountReviewerInput(store, api)
-  const transcriptAndInput = el(
-    'div',
-    { class: 'conversation-reviewer-body' },
-    scrollArea,
-    reviewerInput.panel,
-  )
-  root.append(roadmapOrigin.element, reviewerInput.toggle, transcriptAndInput, queuedHost)
+  root.append(roadmapOrigin.element, scrollArea, queuedHost)
 
   const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
     const { activeProjectId: projectId, activeThreadId: threadId } = store.getState()
@@ -5031,9 +5024,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   const unsubs = [
-    store.on('reviewer_input_open', (requestId) => {
-      reviewerInput.open(requestId)
-    }),
     store.on('reviewer_input_jump', jumpToReviewerInput),
     store.on('code_block_run_finished', (result) => {
       setCodeBlockRunOutcome(list, result.id, {
@@ -5183,16 +5173,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }),
     store.on('tool_call_started', (mid) => {
       refreshToolCards(mid)
-      reviewerInput.sync()
     }),
     store.on('tool_call_updated', (mid) => {
       refreshToolCards(mid)
-      reviewerInput.sync()
     }),
     store.on('threads_changed', () => {
       rebuildForThread()
       syncFromStore()
-      reviewerInput.sync()
       scheduleConciseTurnFooterSync()
       syncSideChatChips()
     }),
@@ -5274,7 +5261,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const unbindBrowserLinks = bindBrowserLinkClicks(root, store, api)
   rebuildForThread()
   syncFromStore()
-  reviewerInput.sync()
   return () => {
     disposed = true
     selectionQuote.destroy()
