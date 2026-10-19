@@ -65,6 +65,10 @@ describe('browser-hosted Experimental settings copy', () => {
     await expect($(`${EXPERIMENTAL} input[name="conciseThreadsEnabled"]`)).not.toBeExisting()
   })
 
+  it('no longer lists next-step tab complete as experimental', async () => {
+    await expect($(`${EXPERIMENTAL} input[name="nextStepSuggestionEnabled"]`)).not.toBeExisting()
+  })
+
   it('names the Developer Tools menu item that Developer mode adds', async () => {
     const fieldset = $(DEVELOPER_FIELDSET)
     await fieldset.scrollIntoView()
@@ -254,5 +258,26 @@ describe('browser-hosted Concise threads setting', () => {
     assert.doesNotMatch(await fieldset.getText(), /experimental/i)
 
     await saveElementScreenshot(CONCISE_FIELDSET, 'settings-appearance-concise-threads.png')
+  })
+})
+
+describe('browser-hosted Next-step tab complete setting', () => {
+  it('is on by default under Appearance and can be turned off', async () => {
+    await browser.url('/?scenario=settings-footer')
+    await $('.prompt-input').waitForExist()
+    await $('[aria-label="Settings"]').click()
+    await $('#settings-dialog').$('button[data-section="appearance"]').click()
+
+    const selector = `${APPEARANCE} [data-testid="settings-next-step"]`
+    const fieldset = $(selector)
+    await fieldset.scrollIntoView()
+    await expect(fieldset).toBeDisplayed()
+    const checkbox = fieldset.$('input[name="nextStepSuggestionEnabled"]')
+    await expect(checkbox).toBeSelected()
+    assert.match(await fieldset.getText(), /press Tab to accept it/)
+    assert.doesNotMatch(await fieldset.getText(), /experimental/i)
+    await saveElementScreenshot(selector, 'settings-appearance-next-step.png')
+    await checkbox.click()
+    await expect(checkbox).not.toBeSelected()
   })
 })

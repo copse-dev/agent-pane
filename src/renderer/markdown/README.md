@@ -24,7 +24,9 @@ This directory keeps the app-side integration only:
   and the inert source fallback. `mermaid-frame-entry.ts` supplies Copse fonts/theme to the package’s optional
   `diagrams/mermaid/frame` runtime. The package owns the protocol, lifecycle and
   hash-pinned CSP document builder; `scripts/write-mermaid-frame.mts` supplies
-  Copse CSS and writes the generated `mermaid-frame.html`. Electron navigation
+  Copse CSS and writes the generated `mermaid-frame.html`. `pele-frame.ts` adapts
+  the package's Pele backend to this isolated runtime and sanitizes its SVG inside
+  the frame. Electron navigation
   enforcement remains in `src/main/windows/web-contents-lockdown.ts`.
   See [the isolation prototype](../../../docs/spikes/mermaid-isolation.md) for
   the protocol, security boundaries, and remaining production work.

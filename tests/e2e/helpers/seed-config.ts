@@ -2949,7 +2949,7 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
     '',
     '**To continue**',
     '',
-    '1. Run `codex login` in a terminal.',
+    '1. Run `codex-acp cli login` in a terminal.',
     '2. Finish signing in, then re-send your message.',
     '',
     '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself, or set `CODEX_API_KEY` or `OPENAI_API_KEY` for Codex in Settings → General → Coding agents.',

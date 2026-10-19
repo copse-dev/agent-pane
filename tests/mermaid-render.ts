@@ -3,8 +3,9 @@ import {
   type FrameMermaid,
 } from '@copse/streaming-markdown/diagrams/mermaid/frame'
 import { renderMermaidFallback } from '../src/renderer/markdown/mermaid-fallback.ts'
+import { createPeleFrameBackend } from '../src/renderer/markdown/pele-frame.ts'
 
-const defaultLoader = (): Promise<FrameMermaid> => import('mermaid').then((mod) => mod.default)
+const defaultLoader = (): Promise<FrameMermaid> => Promise.resolve(createPeleFrameBackend())
 let loader = defaultLoader
 let runner: Promise<(root: ParentNode) => Promise<void>> | undefined
 
