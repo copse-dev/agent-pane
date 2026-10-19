@@ -2297,9 +2297,21 @@
       "sha256": "965794f9ed3188167661d14cdd3b03c0be8824b1ee989204e48e287029ebb494",
       "bytes": 48504
     },
+    "mobile-companion-image-preview.png": {
+      "sha256": "c3680bdb9aa55874011016ee1e957708131b15481e274d3dfd0a2b0093f47cad",
+      "bytes": 31139
+    },
+    "mobile-companion-image-response.png": {
+      "sha256": "1a11526f6cd192cb7a9637f179cbf541bfd5f7586c9131a00e00a63fb6854270",
+      "bytes": 34352
+    },
     "mobile-companion-new-chat-dark.png": {
       "sha256": "3025bde4818a4aa9201d19e0eba9cf2bc294d66f87fae1b44559981a26611fc4",
       "bytes": 37218
+    },
+    "mobile-companion-new-chat-image-preview.png": {
+      "sha256": "0aed042b4e485588028e007a9cc11e1d54491b05324005cd98081e3757ffdf4d",
+      "bytes": 35220
     },
     "mobile-companion-new-chat-light.png": {
       "sha256": "a6b6e375255d876c093e13b1ecaa590abbda7eff834b91bf62172f76822de440",
