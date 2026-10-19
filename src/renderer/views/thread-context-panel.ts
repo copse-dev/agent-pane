@@ -774,7 +774,14 @@ export function mountThreadContextPane(
       threads: state.threads,
       mentionedIn: mentionedFor === thread.id ? mentionedIn : [],
     })
-    const key = JSON.stringify([state.activeProjectId, model, thread.archivedAt])
+    const key = JSON.stringify([
+      state.activeProjectId,
+      model,
+      thread.archivedAt,
+      accessFor,
+      accessGrants,
+      accessStatus,
+    ])
     if (key === renderedKey) return
     renderedKey = key
     clear(viewerRoot)
