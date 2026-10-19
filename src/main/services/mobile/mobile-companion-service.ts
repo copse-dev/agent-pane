@@ -86,10 +86,14 @@ function scheduleRetry(): void {
 }
 
 /** The one in-flight pairing a phone can have; Settings shows and resolves it. */
-function approvePair(label: string, code: string): Promise<MobileCompanionAccess | null> {
-  const result = pairingRequests.request(label, code)
+function approvePair(
+  label: string,
+  code: string,
+  signal: AbortSignal,
+): Promise<MobileCompanionAccess | null> {
+  const result = pairingRequests.request(label, code, signal)
   publish()
-  return result
+  return result.finally(publish)
 }
 
 export function respondToMobilePairing(
@@ -108,6 +112,7 @@ function launch(address: string): Promise<MobileServer> {
     address,
     devices: devices(),
     approvePair,
+    onDevicesChanged: publish,
     onStop: () => {
       active = null
       scheduleRetry()
