@@ -24,6 +24,8 @@ import { homedir } from 'node:os'
 import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 import { skillRootsSchema } from '../services/skills/skill-roots-schema.ts'
 import { z } from 'zod'
+import { syncPluginClientApi } from '../services/plugins/plugin-client-service.ts'
+import { PLUGIN_CLIENT_API_ID } from '@copse/agent/plugins/plugin-client-api-plugin.ts'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
 import {
   backgroundClassifierId,
@@ -2694,6 +2696,7 @@ export function registerAllHandlers(
     if (refusal) throw new IpcValidationError(refusal)
     const pluginService = getPluginService()
     await pluginService.setEnabled(id, enabled)
+    if (id === PLUGIN_CLIENT_API_ID) await syncPluginClientApi()
     if (pluginService.hasUserPlugin(id)) {
       // The plugin toggle is the portable component consent boundary. Refresh
       // both registries immediately so skills and MCP disappear atomically on

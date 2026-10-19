@@ -1,4 +1,4 @@
-import { randomInt, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { type IncomingMessage, type ServerResponse } from 'node:http'
 import { createServer, type Server } from 'node:https'
@@ -17,6 +17,8 @@ import {
 } from './mobile-activity.ts'
 import { mobileCertificate } from './mobile-certificate.ts'
 import { MobileDevices } from './mobile-devices.ts'
+import { ClientPairings } from '../clients/client-pairings.ts'
+import { clientLabelSchema, type ClientAccess } from '../../../shared/client-auth.ts'
 
 /** The complete data surface available to a paired phone. */
 export const MOBILE_READ_DISPATCH = Object.freeze({
@@ -25,10 +27,9 @@ export const MOBILE_READ_DISPATCH = Object.freeze({
   threadImage: mobileThreadImage,
 })
 
-const PAIR_TIMEOUT_MS = 120_000
 /** A stable origin preserves the phone's paired token across Copse restarts. */
 export const MOBILE_PORT = 42773
-const pairSchema = z.object({ label: z.string().trim().min(1).max(64) })
+const pairSchema = z.strictObject({ label: clientLabelSchema })
 const idPattern = /^[\w-]{1,128}$/
 
 export interface MobileLanAddress {
@@ -105,13 +106,6 @@ async function readBody(req: IncomingMessage, maxBytes: number): Promise<string 
   return Buffer.concat(chunks).toString('utf8')
 }
 
-interface Pairing {
-  peer: string
-  createdAt: number
-  token?: string
-  denied?: boolean
-}
-
 export interface MobileServer {
   url: string
   rootPath: string
@@ -123,8 +117,9 @@ export interface MobileServer {
 export async function startMobileServer(options: {
   address: string
   devices: MobileDevices
-  approvePair: (label: string, code: string) => Promise<'read' | 'control' | null>
+  approvePair: (label: string, code: string, signal: AbortSignal) => Promise<ClientAccess | null>
   assetsDir?: string
+  onDevicesChanged?: () => void
   onStop?: () => void
 }): Promise<MobileServer> {
   if (!mobileLanAddresses().some((candidate) => candidate.address === options.address))
@@ -147,17 +142,31 @@ export async function startMobileServer(options: {
       },
     ]),
   )
-  const pairings = new Map<string, Pairing>()
   const actions = new MobileActionRequests(randomUUID())
   const failedAuth = new Map<string, { attempts: number; blockedUntil: number }>()
   let stopped = false
+  const active = (): boolean => !stopped
+  const pairings = new ClientPairings({
+    maxPending: 1,
+    canIssue: (): boolean => !stopped,
+    issue: (label, access): { id: string; token: string } => {
+      const issued = options.devices.issue(label, access)
+      options.onDevicesChanged?.()
+      return issued
+    },
+    revoke: (id): void => {
+      options.devices.revoke(id)
+      options.onDevicesChanged?.()
+    },
+    approve: options.approvePair,
+  })
   let authority = ''
   let origin = ''
   const server: Server = createServer(
     { key: identity.key, cert: identity.cert, minVersion: 'TLSv1.2' },
     (req, res) => {
       void (async (): Promise<void> => {
-        if (!mobileRequestAllowed(req, authority, origin)) {
+        if (!active() || !mobileRequestAllowed(req, authority, origin)) {
           send(res, 403, { error: 'Forbidden' })
           return
         }
@@ -171,54 +180,32 @@ export async function startMobileServer(options: {
           }
         }
         if (req.method === 'POST' && path.pathname === '/api/pair/request') {
-          for (const [id, pairing] of pairings) {
-            if (Date.now() - pairing.createdAt > PAIR_TIMEOUT_MS) pairings.delete(id)
-          }
-          if (pairings.size >= 1) {
-            send(res, 429, { error: 'Pairing already in progress' })
-            return
-          }
           const raw = await readBody(req, 1024)
           const body = raw === null ? null : safeJsonParse(raw, decodeWithSchema(pairSchema))
           if (!body) {
             send(res, 400, { error: 'Invalid pairing request' })
             return
           }
-          const id = randomUUID()
-          const code = String(randomInt(0, 1_000_000)).padStart(6, '0')
-          const pairing: Pairing = { peer: req.socket.remoteAddress ?? '', createdAt: Date.now() }
-          pairings.set(id, pairing)
-          send(res, 200, { id, code })
-          void options
-            .approvePair(body.label, code)
-            .then((approved) => {
-              if (pairings.get(id) !== pairing) return
-              if (approved) pairing.token = options.devices.issue(body.label, approved).token
-              else pairing.denied = true
-            })
-            .catch(() => {
-              pairing.denied = true
-            })
+          if (!active()) {
+            send(res, 403, { error: 'Mobile Companion stopped' })
+            return
+          }
+          const pairing = pairings.request(body.label, req.socket.remoteAddress)
+          if (!pairing) {
+            send(res, 429, { error: 'Pairing already in progress' })
+            return
+          }
+          send(res, 200, pairing)
           return
         }
         if (req.method === 'GET' && path.pathname === '/api/pair/result') {
           const id = path.searchParams.get('id') ?? ''
-          const pairing = pairings.get(id)
-          if (
-            !pairing ||
-            pairing.peer !== req.socket.remoteAddress ||
-            Date.now() - pairing.createdAt > PAIR_TIMEOUT_MS
-          ) {
+          const pairing = pairings.poll(id, req.socket.remoteAddress)
+          if (!pairing) {
             send(res, 404, { error: 'Pairing expired' })
             return
           }
-          if (pairing.token) {
-            pairings.delete(id)
-            send(res, 200, { state: 'approved', token: pairing.token })
-          } else if (pairing.denied) {
-            pairings.delete(id)
-            send(res, 200, { state: 'denied' })
-          } else send(res, 200, { state: 'waiting' })
+          send(res, 200, pairing.state === 'pending' ? { state: 'waiting' } : pairing)
           return
         }
         // The bearer check precedes every protected body read and store access.
@@ -256,7 +243,7 @@ export async function startMobileServer(options: {
             return
           }
           const stillAuthorized = (): boolean =>
-            !stopped && options.devices.principal(req.headers.authorization)?.access === 'control'
+            !stopped && options.devices.principal(req.headers.authorization, 'control') !== null
           if (!stillAuthorized()) {
             send(res, 403, { error: 'Phone control was disabled.' })
             return
@@ -332,7 +319,7 @@ export async function startMobileServer(options: {
   const stop = async (): Promise<void> => {
     if (stopped) return
     stopped = true
-    pairings.clear()
+    pairings.close()
     server.closeAllConnections()
     await new Promise<void>((resolve) =>
       server.close(() => {
