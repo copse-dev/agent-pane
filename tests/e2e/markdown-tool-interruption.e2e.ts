@@ -98,6 +98,40 @@ describe('markdown interrupted by real tool rounds', () => {
     await saveAppScreenshot('markdown-tool-interruption-malformed-fence.png')
   })
 
+  it('keeps an inline code span together when a tool call cuts it mid-content', async function () {
+    this.timeout(60_000)
+    const previousReplies = (await $$('.msg-assistant .message-text')).length
+    const prompt = 'Point to the plans doc after inspecting the workspace.'
+    const scenario = await installMockScenario({
+      title: 'Interrupted inline code span',
+      turns: [
+        {
+          user: prompt,
+          responses: [
+            {
+              text: 'Updates to `docs/plans',
+              toolCalls: [{ name: 'list_dir', args: { path: '.' } }],
+            },
+            {
+              text: '/thread-in-container.md` and `docs/threat-model.md`.',
+              expectToolResults: [{ name: 'list_dir', includes: 'src' }],
+            },
+          ],
+        },
+      ],
+    })
+    await setComposerValue(prompt)
+    await submitComposer()
+    await waitForAgentIdle()
+    await scenario.assertComplete()
+    await expect($$('.msg-assistant .message-text')).toBeElementsArrayOfSize(previousReplies + 1)
+    const codeSpans = await $$('.msg-assistant .message-text code')
+    await expect(codeSpans).toBeElementsArrayOfSize(2)
+    await expect(codeSpans[0]).toHaveText('docs/plans/thread-in-container.md')
+    await expect(codeSpans[1]).toHaveText('docs/threat-model.md')
+    await saveAppScreenshot('markdown-tool-interruption-inline-code-span.png')
+  })
+
   it('starts a separate reply after a completed bold span', async function () {
     this.timeout(60_000)
     const previousReplies = (await $$('.msg-assistant .message-text')).length
