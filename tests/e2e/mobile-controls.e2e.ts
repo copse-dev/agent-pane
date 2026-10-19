@@ -405,7 +405,8 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     let enabled = $('input[name="mobileCompanionEnabled"]')
     await enabled.scrollIntoView({ block: 'center' })
     const pairing = request('/api/pair/request', { label: 'Shared auth phone' })
-    assert.ok(pairing.id)
+    const pairingId = pairing.id
+    assert.ok(pairingId)
     assert.ok(pairing.code)
     let banner = $('.mobile-companion-pairing-banner')
     await banner.waitForDisplayed()
@@ -423,11 +424,11 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     await banner.waitForDisplayed({ reverse: true })
     let pairedToken = ''
     await browser.waitUntil(() => {
-      const result = request(`/api/pair/result?id=${pairing.id}`)
+      const result = request(`/api/pair/result?id=${pairingId}`)
       pairedToken = result.token ?? ''
       return result.state === 'approved' && Boolean(pairedToken)
     })
-    assert.match(request(`/api/pair/result?id=${pairing.id}`).error ?? '', /expired/)
+    assert.match(request(`/api/pair/result?id=${pairingId}`).error ?? '', /expired/)
     assert.equal(request('/api/activity', undefined, pairedToken).access, 'read')
     assert.match(request('/api/action', {}, pairedToken).error ?? '', /Enable control/)
     // The real service publishes the newly issued credential after durable storage.
