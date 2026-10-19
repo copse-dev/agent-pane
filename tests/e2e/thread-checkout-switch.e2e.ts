@@ -21,29 +21,43 @@ function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`
+}
+
 /**
- * `git worktree add -b <branch> …` runs a real checkout under the hood, which
- * fires `post-checkout` the same as `git checkout`/`git switch`. Blocking that
- * hook on a sentinel file holds the real `agent:prepare-checkout` IPC call
- * open for as long as the test needs — no timer race against however fast the
- * fixture's `git worktree add` happens to run on a given host. The 20s loop
- * bound is a safety net, not the mechanism: the test always deletes the
- * sentinel itself once it is done observing the preparing state.
+ * Internal Git commands intentionally disable repository hooks. A tracked
+ * fixture file with a repository-local smudge filter still runs as part of the
+ * real checkout, inside the worktree-manager sandbox. The filter records that
+ * checkout reached it, then waits for the test-owned release file before
+ * copying stdin to stdout. This holds the actual `agent:prepare-checkout` IPC
+ * call without racing the host's `git worktree add` speed.
  */
-function writeCheckoutHoldHook(root: string, sentinel: string): void {
-  const hooksDir = join(root, '.git', 'hooks')
-  mkdirSync(hooksDir, { recursive: true })
+function writeCheckoutHoldFilter(root: string, entered: string, release: string): void {
+  const scriptPath = join(root, '.e2e-hold-checkout.sh')
   const script = [
     '#!/bin/sh',
+    'entered=$1',
+    'release=$2',
+    ': > "$entered"',
     'i=0',
-    `while [ ! -f "${sentinel}" ] && [ "$i" -lt 200 ]; do`,
+    'while [ ! -f "$release" ] && [ "$i" -lt 500 ]; do',
     '  sleep 0.1',
     '  i=$((i + 1))',
     'done',
-    'exit 0',
+    'cat',
     '',
   ].join('\n')
-  writeFileSync(join(hooksDir, 'post-checkout'), script, { mode: 0o755 })
+  writeFileSync(scriptPath, script, { mode: 0o755 })
+  writeFileSync(join(root, '.gitattributes'), 'checkout-hold.txt filter=e2e-checkout-hold\n')
+  writeFileSync(join(root, 'checkout-hold.txt'), 'checkout filter fixture\n')
+  git(root, ['config', 'filter.e2e-checkout-hold.clean', 'cat'])
+  git(root, [
+    'config',
+    'filter.e2e-checkout-hold.smudge',
+    `${shellQuote(scriptPath)} ${shellQuote(entered)} ${shellQuote(release)}`,
+  ])
+  git(root, ['config', 'filter.e2e-checkout-hold.required', 'true'])
 }
 
 describe('switching threads during first-message checkout', () => {
@@ -51,6 +65,7 @@ describe('switching threads during first-message checkout', () => {
   let projectParent = ''
   let worktreeRoot = ''
   let checkoutHoldSentinel = ''
+  let checkoutHoldEntered = ''
 
   before(async function () {
     this.timeout(120_000)
@@ -72,15 +87,22 @@ describe('switching threads during first-message checkout', () => {
     git(projectRoot, ['config', 'user.name', 'Copse E2E'])
     git(projectRoot, ['config', 'init.defaultBranch', 'main'])
     git(projectRoot, ['config', 'commit.gpgsign', 'false'])
+    checkoutHoldSentinel = join(projectRoot, '.git', 'e2e-release-checkout')
+    checkoutHoldEntered = join(projectRoot, '.git', 'e2e-checkout-entered')
     writeFileSync(join(projectRoot, 'README.md'), 'Checkout switching fixture\n')
-    git(projectRoot, ['add', 'README.md'])
+    writeCheckoutHoldFilter(projectRoot, checkoutHoldEntered, checkoutHoldSentinel)
+    git(projectRoot, [
+      'add',
+      'README.md',
+      '.gitattributes',
+      '.e2e-hold-checkout.sh',
+      'checkout-hold.txt',
+    ])
     git(projectRoot, ['commit', '-qm', 'seed'])
     assert.equal(
       realpathSync(git(projectRoot, ['rev-parse', '--show-toplevel'])),
       realpathSync(projectRoot),
     )
-    checkoutHoldSentinel = join(projectParent, '.e2e-hold-checkout')
-    writeCheckoutHoldHook(projectRoot, checkoutHoldSentinel)
     const now = Date.now()
     writeSeedConfig({
       projects: [{ id: PROJECT, path: projectRoot, name: 'Checkout switching' }],
@@ -173,13 +195,15 @@ describe('switching threads during first-message checkout', () => {
     await $('[data-checkout-choice="worktree"]').click()
     await setComposerValue(PROMPT)
 
-    // The real checkout (`git worktree add`) is held open by the post-checkout
-    // hook installed in `before()`, which blocks until `checkoutHoldSentinel`
-    // exists. That makes every assertion below deterministic — Send stays
-    // disabled for as long as the test needs rather than for however long the
-    // real `git worktree add` happens to take on a given host.
+    // The real checkout (`git worktree add`) is held open by the tracked
+    // smudge-filter fixture installed in `before()`. Wait for its entry marker
+    // so these assertions prove the actual checkout is still pending.
     console.info('[checkout-switch] submitting and holding the checkout open')
     await $('.submit-btn').click()
+    await browser.waitUntil(() => existsSync(checkoutHoldEntered), {
+      timeout: 15_000,
+      timeoutMsg: 'Checkout never entered its hold filter',
+    })
     await browser.waitUntil(
       async () => (await $('.footer-checkout-btn').getText()) === 'Preparing checkout…',
       { timeout: 15_000, timeoutMsg: 'Checkout never entered its preparing state' },

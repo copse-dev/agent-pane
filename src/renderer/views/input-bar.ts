@@ -5,6 +5,7 @@ import { outlineIcon } from '../dom/outline-icon.ts'
 import { closeIcon } from '../dom/icons.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
+import { setTooltip } from '../dom/tooltip.ts'
 import { formatMarkdownQuote } from '../dom/markdown-quote.ts'
 import { attachImageExpand } from '../attachments/image-expand.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
@@ -1424,11 +1425,7 @@ export function mountInputBar(
       'aria-label',
       preparingCheckout ? 'Preparing checkout' : running ? 'Queue message' : 'Send message',
     )
-    if (preparingCheckout) {
-      submitBtn.setAttribute('data-tooltip', 'Preparing the checkout for this thread…')
-    } else {
-      submitBtn.removeAttribute('data-tooltip')
-    }
+    setTooltip(submitBtn, preparingCheckout ? 'Preparing the checkout for this thread…' : null)
     // Not styling — the demo autoplay driver and the e2e specs read this class
     // off `.submit-btn` to tell a run in flight from a finished one.
     submitBtn.classList.toggle('with-stop', running)

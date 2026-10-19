@@ -25,6 +25,7 @@ import { createFakeApi } from '../fake-api.test-support.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { patchPreviewDialog } from '../attachments/preview-dialog.test-support.ts'
 import { registerShellCatalog } from '../terminal/shell-catalog.ts'
+import { installTooltips } from '../dom/tooltip.ts'
 
 class TestResizeObserver {
   observe(): void {}
@@ -959,7 +960,9 @@ describe('input bar first-message checkout', () => {
     assert.equal(prepares, 1)
   })
 
-  it('disables Send with a preparing aria-label while the first-send checkout is in flight', async () => {
+  it('disables Send and clears its visible preparing tooltip after checkout', async (t) => {
+    const uninstallTooltips = installTooltips()
+    t.after(uninstallTooltips)
     const checkout = deferred<PreparedThreadCheckout>()
     const other: Thread = { ...thread('main'), id: 'thread-2', worktreeChoice: 'shared' }
     const store = createStore({
@@ -1011,11 +1014,17 @@ describe('input bar first-message checkout', () => {
     switchThread(store, 'thread-1')
     assert.equal(submit.disabled, true)
     assert.equal(submit.getAttribute('aria-label'), 'Preparing checkout')
+    submit.dispatchEvent(new window.FocusEvent('focusin', { bubbles: true }))
+    const tooltip = document.querySelector<HTMLElement>('.app-tooltip')
+    assert.ok(tooltip)
+    assert.equal(tooltip.textContent, 'Preparing the checkout for this thread…')
+    assert.equal(tooltip.hidden, false)
 
     checkout.resolve({ checkoutMode: 'shared', choice: 'shared', branch: 'main' })
     await flush()
     assert.equal(submit.disabled, false)
     assert.equal(submit.getAttribute('data-tooltip'), null)
+    assert.equal(tooltip.hidden, true)
   })
 
   it('returns Send to its normal state after a failed checkout preparation', async () => {
