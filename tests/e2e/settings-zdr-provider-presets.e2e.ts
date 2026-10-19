@@ -8,13 +8,25 @@ import {
   signalColours,
 } from './helpers/badge-style.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import {
+  readSeededSettings,
+  resetUserData,
+  seedEmptyProject,
+  writeSettings,
+} from './helpers/seed-config.ts'
 
 describe('ZDR provider presets', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-settings-zdr-provider-presets')
+    // A saved Groq key puts Groq in Models & agents; its Options show the preset.
+    writeSettings({
+      ...readSeededSettings(),
+      apiKey: {
+        groq: { v: 1, enc: Buffer.from('gsk_e2e', 'utf8').toString('base64'), plain: true },
+      },
+    })
     await browser.reloadSession()
   })
 
@@ -26,18 +38,27 @@ describe('ZDR provider presets', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
 
-    const providers = $('#settings-providers-host fieldset')
-    await expect(providers).toBeDisplayed()
-    await providers.$('button=Groq').waitForExist({ timeout: 15_000 })
+    const list = $('[data-testid="models-agents-fieldset"]')
+    await expect(list).toBeDisplayed()
+    await list.$('[data-row="key:groq"]').waitForExist({ timeout: 15_000 })
 
-    const chipLabels = await providers.$$('.provider-chip').map((chip) => chip.getText())
+    // Pasting a key offers every built-in provider by name.
+    await list.$('[data-testid="connections-add-toggle"]').click()
+    await list.$('.acp-add-row[data-add="key"]').$('button=Add key').click()
+    await list.$('[data-testid="paste-key-input"]').setValue('Zq81mXk93LpTt20abCdEf')
+    await expect(list.$('[data-testid="paste-key-ask"]')).toBeDisplayed()
+    const providerLabels = await list
+      .$$('[data-testid="paste-key-provider"] option')
+      .map((option) => option.getText())
     for (const label of ['Groq', 'Together AI', 'Fireworks AI']) {
-      assert.ok(chipLabels.includes(label), `expected a ${label} provider chip`)
+      assert.ok(providerLabels.includes(label), `expected ${label} as a key provider`)
     }
 
-    await providers.$('button=Add').click()
-    const knownEndpointLabels = await providers
-      .$$(`select option`)
+    // "Other" opens the custom endpoint form, whose known endpoints no longer
+    // duplicate the promoted presets.
+    await list.$('[data-testid="paste-key-provider"]').selectByAttribute('value', '__other')
+    const knownEndpointLabels = await list
+      .$$('[data-testid="paste-key-other"] select option')
       .map((option) => option.getText())
     for (const promoted of ['Groq', 'Together AI', 'Fireworks AI']) {
       assert.ok(
@@ -46,12 +67,13 @@ describe('ZDR provider presets', () => {
       )
     }
 
-    await providers.$('button=Groq').click()
+    const providers = list.$('[data-row="key:groq"]')
+    await providers.$('button=Options').click()
     const form = providers.$('.provider-form')
     await expect(form).toBeDisplayed()
 
     const details = await browser.execute(() => {
-      const host = document.querySelector('#settings-providers-host')
+      const host = document.querySelector('[data-row="key:groq"]')
       const title = host?.querySelector('.provider-form-title')
       const badge = title?.querySelector('.provider-privacy-badge')
       const policyHint = host?.querySelector('.provider-privacy-hint')
@@ -73,8 +95,8 @@ describe('ZDR provider presets', () => {
 
     // The built-in tag and the data-policy badge beside it share one badge
     // recipe (sentence case, --radius corner, one size); the tag is a neutral label.
-    const [tag] = await readBadgeStyles('#settings-providers-host .provider-form-tag')
-    const [policyBadge] = await readBadgeStyles('#settings-providers-host .provider-privacy-badge')
+    const [tag] = await readBadgeStyles('[data-row="key:groq"] .provider-form-tag')
+    const [policyBadge] = await readBadgeStyles('[data-row="key:groq"] .provider-privacy-badge')
     assert.ok(tag, 'built-in tag rendered')
     assert.ok(policyBadge, 'data-policy badge rendered')
     assertBadgeRecipe(tag)
