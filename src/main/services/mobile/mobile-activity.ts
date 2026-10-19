@@ -82,8 +82,15 @@ export async function mobileActivity(
               : thread.status === 'error'
                 ? 'failed'
                 : 'finished'
+      const checkoutKey = thread.worktree
+        ? JSON.stringify([
+            thread.worktree.path,
+            thread.worktree.retiredAt ?? null,
+            thread.worktree.pullRequestUrl ?? null,
+          ])
+        : 'shared'
       const hasChanges = settled
-        ? changes.read(project.id, thread.id, thread.updatedAt, projectRoot)
+        ? changes.read(project.id, thread.id, thread.updatedAt, projectRoot, checkoutKey)
         : false
       groups.push({
         projectId: project.id,

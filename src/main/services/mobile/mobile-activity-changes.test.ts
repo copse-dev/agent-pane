@@ -36,8 +36,9 @@ function read(
   threadId: string,
   updatedAt: number,
   projectRoot = `/${projectId}`,
+  checkoutKey = 'shared',
 ): boolean {
-  return changes.read(projectId, threadId, updatedAt, projectRoot)
+  return changes.read(projectId, threadId, updatedAt, projectRoot, checkoutKey)
 }
 
 it('returns cold rows immediately while slow checks are deduplicated and bounded', async () => {
@@ -138,6 +139,26 @@ it('refreshes immediately when a project checkout root changes', async () => {
   result(checks, 1).resolve(false)
   await setImmediate()
   assert.equal(read(changes, 'p', 't', 1, '/projects/new'), false)
+})
+
+it('refreshes immediately when the effective thread checkout changes', async () => {
+  const { changes, checks } = fixture()
+  read(changes, 'p', 't', 1, '/projects/p', 'worktree:/old')
+  await setImmediate()
+  result(checks, 0).resolve(true)
+  await setImmediate()
+  assert.equal(read(changes, 'p', 't', 1, '/projects/p', 'worktree:/old'), true)
+
+  assert.equal(
+    read(changes, 'p', 't', 1, '/projects/p', 'retired:/old'),
+    true,
+    'the last known group remains visible while the changed checkout is inspected',
+  )
+  await setImmediate()
+  assert.equal(checks.length, 2)
+  result(checks, 1).resolve(false)
+  await setImmediate()
+  assert.equal(read(changes, 'p', 't', 1, '/projects/p', 'retired:/old'), false)
 })
 
 it('handles failed checks without blocking the queue or retrying on every poll', async () => {

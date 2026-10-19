@@ -1,6 +1,7 @@
 interface Entry {
   updatedAt: number
   projectRoot: string | null
+  checkoutKey: string
   hasChanges: boolean
   checkedAt: number
 }
@@ -10,6 +11,7 @@ interface Check {
   threadId: string
   updatedAt: number
   projectRoot: string | null
+  checkoutKey: string
 }
 
 /** Activity never waits for checkout inspection or Git, including on a cold cache. */
@@ -35,6 +37,7 @@ export class MobileActivityChanges {
     threadId: string,
     updatedAt: number,
     projectRoot: string | null,
+    checkoutKey: string,
   ): boolean {
     const key = `${projectId}\0${threadId}`
     const cached = this.cache.get(key)
@@ -43,10 +46,11 @@ export class MobileActivityChanges {
       (!cached ||
         cached.updatedAt !== updatedAt ||
         cached.projectRoot !== projectRoot ||
+        cached.checkoutKey !== checkoutKey ||
         Date.now() - cached.checkedAt >= 30_000)
     ) {
       this.pending.add(key)
-      this.queue.set(key, { projectId, threadId, updatedAt, projectRoot })
+      this.queue.set(key, { projectId, threadId, updatedAt, projectRoot, checkoutKey })
       this.drain()
     }
     // Keep the last known group while refreshing; unseen threads start in Recent.
@@ -64,13 +68,14 @@ export class MobileActivityChanges {
       void Promise.resolve()
         .then(() => this.inspect(check.projectId, check.threadId, check.updatedAt))
         .then((hasChanges) => {
-          this.remember(key, check.updatedAt, check.projectRoot, hasChanges)
+          this.remember(key, check.updatedAt, check.projectRoot, check.checkoutKey, hasChanges)
         })
         .catch(() => {
           this.remember(
             key,
             check.updatedAt,
             check.projectRoot,
+            check.checkoutKey,
             this.cache.get(key)?.hasChanges ?? false,
           )
         })
@@ -86,8 +91,15 @@ export class MobileActivityChanges {
     key: string,
     updatedAt: number,
     projectRoot: string | null,
+    checkoutKey: string,
     hasChanges: boolean,
   ): void {
-    this.cache.set(key, { updatedAt, projectRoot, hasChanges, checkedAt: Date.now() })
+    this.cache.set(key, {
+      updatedAt,
+      projectRoot,
+      checkoutKey,
+      hasChanges,
+      checkedAt: Date.now(),
+    })
   }
 }
