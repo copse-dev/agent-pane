@@ -12,6 +12,7 @@ import {
 import { readPendingDeferrals } from './security/deferred-approval-store.ts'
 import { isDeferredApprovalError } from '@shared/threads/deferred-approval.ts'
 import { runWithActiveRunIdentity } from './thread-models.ts'
+import { runWithThreadExecutionContext } from './thread-execution-context.ts'
 
 /**
  * The interception itself: with a thread in deferral mode, a gate that would
@@ -97,6 +98,27 @@ describe('deferral interception at the approval seam', () => {
     assert.equal(pending.length, 1)
     assert.equal(pending[0]?.cause, 'shell-sandbox-escalation')
     assert.equal(pending[0].title, 'Run outside sandbox?')
+  })
+
+  it("queues under the run's own project, not the active one", async () => {
+    setApprovalHandler(async () => ({ approved: true, remember: false }))
+    beginDeferralMode(THREAD)
+    const projectId = 'background-project'
+
+    await runWithThreadExecutionContext(
+      {
+        projectId,
+        threadId: THREAD,
+        projectRoot: process.cwd(),
+        root: process.cwd(),
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () => asRun(() => requestApproval(request).catch(() => undefined)),
+    )
+
+    assert.equal((await readPendingDeferrals({ projectId, threadId: THREAD })).length, 1)
+    assert.equal((await readPendingDeferrals({ threadId: THREAD })).length, 0)
   })
 
   it('collapses a repeated ask onto the one queue entry', async () => {
