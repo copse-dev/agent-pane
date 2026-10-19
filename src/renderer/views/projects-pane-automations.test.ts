@@ -506,12 +506,19 @@ describe('projects pane automation setup links', () => {
     assert.deepEqual(labelsFor(automationRow), [
       'Rename',
       'Fork',
+      'Create follow-up thread',
       'Archive',
       'Run now',
       'Automation setup…',
       'Delete',
     ])
-    assert.deepEqual(labelsFor(conversationRow), ['Rename', 'Fork', 'Archive', 'Delete'])
+    assert.deepEqual(labelsFor(conversationRow), [
+      'Rename',
+      'Fork',
+      'Create follow-up thread',
+      'Archive',
+      'Delete',
+    ])
   })
 })
 

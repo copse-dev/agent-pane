@@ -2362,6 +2362,13 @@
           1
         ]
       },
+      "threads:pending-approvals": {
+        "api": "threads.pendingApprovals",
+        "args": [
+          2,
+          2
+        ]
+      },
       "threads:record-model-selection": {
         "api": "threads.recordModelSelection",
         "args": [

@@ -644,7 +644,7 @@ async function deferInsteadOfPrompting(
   recordApprovalDecision(req, DENIED, 'deferred')
   throw new DeferredApprovalError(
     entryId,
-    deferredApprovalMessage({ title: req.title, reasons: req.reasons }),
+    deferredApprovalMessage({ id: entryId, title: req.title, reasons: req.reasons }),
   )
 }
 

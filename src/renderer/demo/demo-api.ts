@@ -1117,6 +1117,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       fork: () => resolved({ source: 'empty' as const, messageCount: 0 }),
       backlinks: (_projectId: string, kind: 'url' | 'thread', target: string) =>
         resolved(backlinksFor(threads, kind, target)),
+      pendingApprovals: () => resolved([]),
       historySnapshot: unsupported,
       editHistory: unsupported,
       undoHistoryEdit: unsupported,

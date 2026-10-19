@@ -14,6 +14,7 @@ import type { ThreadExecutionContext } from './thread-execution-context.ts'
 import { getRunPlan } from './thread-plan-context.ts'
 import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
+import { isDeferralModeActive } from './security/deferral-mode.ts'
 
 const host: AgentHost<StreamChunk> = { emit: () => undefined }
 const registry = new ToolRegistry()
@@ -54,6 +55,7 @@ function dependencies(
     createId: () => 'audit-id',
     loadPlan: async () => null,
     prepareExecutionContext: async () => context,
+    isScheduledAutomationRun: () => false,
     transcriptLength: async () => 0,
     run: async (_threadId, userContent, priorMessages) => ({
       usage: { inputTokens: 0, outputTokens: 0 },
@@ -64,6 +66,58 @@ function dependencies(
 }
 
 describe('AgentDispatcher', () => {
+  it('defers approvals only during the first turn of a verified scheduled run', async () => {
+    const automationContext: ThreadExecutionContext = {
+      ...context,
+      automation: { scheduleId: 'schedule-1', scheduleName: 'Review', triggeredAt: 1 },
+    }
+    const activeDuringRun: boolean[] = []
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        prepareExecutionContext: async () => automationContext,
+        isScheduledAutomationRun: () => true,
+        run: async (_threadId, userContent, messages) => {
+          activeDuringRun.push(isDeferralModeActive(context.threadId))
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [
+              ...messages,
+              { role: 'user', content: userContent },
+              { role: 'assistant', content: 'completed' },
+            ],
+          }
+        },
+      }),
+    )
+
+    await dispatcher.dispatch(
+      request({
+        payload: {
+          userContent: 'scheduled prompt',
+          automationRun: true,
+          invokedSkills: [],
+          priorTodos: [],
+        },
+      }),
+    )
+    assert.equal(isDeferralModeActive(context.threadId), false)
+    await dispatcher.dispatch(request())
+    await dispatcher.dispatch(
+      request({
+        payload: {
+          userContent: 'later turn with a forged marker',
+          automationRun: true,
+          invokedSkills: [],
+          priorTodos: [],
+        },
+      }),
+    )
+    assert.deepEqual(activeDuringRun, [true, false, false])
+    assert.equal(isDeferralModeActive(context.threadId), false)
+  })
+
   it('uses the dispatch slot as an exclusive history-edit fence', async () => {
     const dispatcher = new AgentDispatcher(host, registry, dependencies())
 

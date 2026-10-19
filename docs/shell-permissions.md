@@ -43,7 +43,10 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 
 An agent's first read of another thread asks **Read your other threads?** Once approved,
 that thread can read every other conversation in the local chat store without another
-conversation-access prompt. Its own transcript remains readable. File read guards,
+conversation-access prompt. Its own transcript remains readable, and so is the one parent thread a
+thread was explicitly started from with **Create follow-up thread** (recorded at creation as
+`followUpOf`; read-only, direct parent only, never inherited by forks or by a follow-up of the
+follow-up). File read guards,
 the shell classifier and the sandbox read mount use the same thread-scoped permission;
 the chat store is never writable through these grants.
 
@@ -860,6 +863,14 @@ sensitive-data reveals, ACP agent permission kinds, and model-spend approvals ar
 eligible. An eligible prompt raised inside an automation offers to add that exact action or MCP
 tool to the owning schedule; ordinary threads retain their existing global MCP “always allow”
 behavior.
+
+The first turn of a verified schedule-created thread runs in deferral mode. A
+prompt without a schedule grant records a pending request and returns a
+non-execution error to the agent instead of waiting at a modal. The result
+includes a request id; `deferred_approval_status` reads only requests owned by
+the current thread. Later user turns use ordinary interactive approval.
+Resolving a queued request records the human decision; it does not prove that
+the original action ran.
 
 ## Implementation map
 
