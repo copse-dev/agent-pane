@@ -1974,7 +1974,10 @@ describe('AutomationService', () => {
     function harness(
       activeProjectId: string | null,
       checkoutError?: Error,
-      beforeDone?: (request: AgentDispatchRequest) => Promise<void>,
+      beforeDone?: (
+        request: AgentDispatchRequest,
+        host: Parameters<DispatchHeadlessTurn>[1],
+      ) => Promise<void>,
     ): {
       service: ReturnType<typeof createAutomationService>
       dispatchCalls: AgentDispatchRequest[]
@@ -1984,7 +1987,7 @@ describe('AutomationService', () => {
       const events: AutomationTriggerEvent[] = []
       const dispatch: DispatchHeadlessTurn = async (request, host) => {
         dispatchCalls.push(request)
-        await beforeDone?.(request)
+        await beforeDone?.(request, host)
         host.emit(request.threadId, { type: 'done' } satisfies StreamChunk)
       }
       // `createProjectThread` is the real on-disk writer here (the same
@@ -2039,6 +2042,39 @@ describe('AutomationService', () => {
       assert.equal(events.length, 2)
       assert.equal(events[0]?.headlessSettled, undefined)
       assert.equal(events[1]?.headlessSettled, true)
+    })
+
+    it('records a provider failure from a headless turn that produced no text', async () => {
+      const { service, dispatchCalls } = harness('project-b', undefined, async (request, host) => {
+        host.emit(request.threadId, {
+          type: 'turn_outcome',
+          outcome: {
+            status: 'failed',
+            stopReason: 'error',
+            source: 'provider',
+            executor: 'local',
+            provider: 'openai',
+            model: 'gpt-5.4',
+            error: { message: '401 Unauthorized' },
+            endedAt: 1,
+          },
+        })
+      })
+      const schedule = await service.upsert('project-a', {
+        name: 'Project health',
+        cron: '* * * * *',
+        prompt: 'Check project health.',
+        model: 'gpt-5.4',
+        enabled: true,
+      })
+
+      const event = await service.runNow('project-a', schedule.id)
+      await waitForHeadlessTurn(dispatchCalls, 'project-a', event.threadId)
+
+      const meta = await getThreadMeta('project-a', event.threadId)
+      assert.equal(meta?.status, 'idle')
+      assert.equal(meta.automation?.failure?.code, 'auth-expired')
+      assert.equal(meta.automation.failure.message, '401 Unauthorized')
     })
 
     it('does not finalize or notify a headless run after a newer root takes ownership', async () => {

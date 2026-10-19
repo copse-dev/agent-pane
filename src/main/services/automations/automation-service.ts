@@ -691,7 +691,20 @@ export function createAutomationService(
           current.automation.triggeredAt !== automation.triggeredAt
         )
           return
-        await updateMetaOrThrow(projectId, threadId, { status: 'idle' })
+        const failure = run.failure()
+        await updateMetaOrThrow(projectId, threadId, {
+          status: 'idle',
+          // What Activity and the manager read to say why an unattended run died,
+          // as the renderer records it for runs it owns.
+          ...(failure
+            ? {
+                automation: {
+                  ...current.automation,
+                  failure: { ...failure, at: dependencies.now() },
+                },
+              }
+            : {}),
+        })
         // The renderer normally names the allocator's anonymous branch once
         // the first turn settles. Preserve that lifecycle for main-owned runs.
         const settled = await getThreadMeta(projectId, threadId)

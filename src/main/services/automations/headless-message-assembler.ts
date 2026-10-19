@@ -1,6 +1,7 @@
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import { planAgentTextChunk } from '@copse/agent/agent-text-chunk.ts'
 import type { StreamChunk } from '@shared/types'
+import { classifyAutomationFailureMessage } from '@shared/automation-failure.ts'
 import { createStore } from '@shared/store/store.ts'
 import {
   addMessage,
@@ -10,6 +11,7 @@ import {
   addToolCall,
   findToolCallOwner,
   getThreadById,
+  setMessageTurnOutcome,
   updateToolCall,
 } from '@shared/store/thread-helpers.ts'
 import { appendMessage } from '../thread-store.ts'
@@ -26,7 +28,7 @@ import { appendMessage } from '../thread-store.ts'
  *
  * Deliberately narrower than the renderer's `agent.ts`: handles the chunk
  * types that produce persisted transcript content (text, reasoning, ACP
- * content, tool calls, done) and ignores the rest (usage, turn_outcome, subagent_*,
+ * content, tool calls, turn outcome, done) and ignores the rest (usage, subagent_*,
  * panel_update, …), which are UI/metadata-only and not needed for a faithful
  * transcript once the project is next opened.
  */
@@ -36,6 +38,8 @@ export interface HeadlessAutomationRun {
   appendUserMessage(prompt: string): Promise<void>
   /** Resolve once every `appendMessage` call queued by the run has settled. */
   flush(): Promise<void>
+  /** Why the turn failed, from its `turn_outcome`; null when it did not fail. */
+  failure(): { code: string; message: string } | null
 }
 
 export function createHeadlessAutomationRun(
@@ -74,6 +78,7 @@ export function createHeadlessAutomationRun(
   let currentText = ''
   let acpMessageId: string | null = null
   let acpThoughtMessageId: string | null = null
+  let failure: { code: string; message: string } | null = null
 
   const startBubble = (): string => addMessage(store, threadId, 'assistant', '')
 
@@ -194,6 +199,22 @@ export function createHeadlessAutomationRun(
           })
           return
         }
+        case 'turn_outcome': {
+          // As in the renderer's `agent.ts`: a provider can fail before its first
+          // token, so give the outcome an otherwise-empty bubble to persist on.
+          msgId ??= startBubble()
+          setMessageTurnOutcome(store, threadId, msgId, chunk.outcome)
+          const error = chunk.outcome.status === 'failed' ? chunk.outcome.error : undefined
+          if (error) {
+            failure = {
+              code: classifyAutomationFailureMessage(
+                `${error.message} ${error.code === undefined ? '' : String(error.code)}`,
+              ),
+              message: error.message.slice(0, 500),
+            }
+          }
+          return
+        }
         case 'done': {
           if (msgId) persist(msgId)
           msgId = null
@@ -216,6 +237,9 @@ export function createHeadlessAutomationRun(
     },
     async flush(): Promise<void> {
       await pending
+    },
+    failure(): { code: string; message: string } | null {
+      return failure
     },
   }
 }

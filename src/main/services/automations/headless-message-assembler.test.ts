@@ -127,6 +127,34 @@ describe('createHeadlessAutomationRun', () => {
     ])
   })
 
+  it('persists a failed turn outcome even when the turn produced no text', async () => {
+    const threadId = 'thread-6'
+    await createThread(PROJECT_ID, thread(threadId))
+    const run = createHeadlessAutomationRun(PROJECT_ID, threadId)
+
+    run.host.emit(threadId, {
+      type: 'turn_outcome',
+      outcome: {
+        status: 'failed',
+        stopReason: 'error',
+        source: 'provider',
+        executor: 'local',
+        provider: 'openai',
+        model: 'gpt-5.4',
+        error: { message: 'Provider unavailable', code: 503 },
+        endedAt: 1,
+      },
+    })
+    run.host.emit(threadId, { type: 'done' })
+    await run.flush()
+
+    const persisted = await getProjectThread(PROJECT_ID, threadId)
+    assert.equal(persisted?.messages.length, 1)
+    assert.equal(persisted.messages[0]?.role, 'assistant')
+    assert.equal(persisted.messages[0].turnOutcome?.status, 'failed')
+    assert.equal(run.failure()?.message, 'Provider unavailable')
+  })
+
   it('starts a new assistant message when the ACP message id changes', async () => {
     const threadId = 'thread-5'
     await createThread(PROJECT_ID, thread(threadId))
