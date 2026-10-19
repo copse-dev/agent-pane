@@ -238,7 +238,7 @@ export async function classifyHttpValidated(
       Accept: 'application/json',
     }
     if (connection.auth === 'bearer') headers['Authorization'] = `Bearer ${apiKey ?? ''}`
-    const endpoint = `${connection.baseUrl.replace(/\/+$/, '')}/${connection.protocol === 'systemone' ? 'systemone' : 'classifier'}`
+    const endpoint = `${connection.baseUrl.replace(/\/+$/, '')}/${connection.protocol === 'featherless' ? 'classifier' : connection.protocol}`
     const response = await (options.fetchImpl ?? fetch)(endpoint, {
       method: 'POST',
       headers,

@@ -56,7 +56,7 @@ const connection = z
   .discriminatedUnion('type', [
     z.strictObject({
       type: z.literal('http'),
-      protocol: z.enum(['systemone', 'featherless']),
+      protocol: z.enum(['systemone', 'featherless', 'decisions']),
       baseUrl: z
         .string()
         .trim()

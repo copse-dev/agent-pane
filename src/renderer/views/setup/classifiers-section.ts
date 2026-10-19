@@ -56,6 +56,7 @@ interface SelectChoice {
 // The stored values are wire enums; the labels are what a person reads.
 const PROTOCOL_CHOICES: readonly SelectChoice[] = [
   { value: 'systemone', label: 'SystemOne' },
+  { value: 'decisions', label: 'Decisions API' },
   { value: 'featherless', label: 'Featherless classifier' },
 ]
 const AUTH_CHOICES: readonly SelectChoice[] = [
