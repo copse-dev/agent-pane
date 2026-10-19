@@ -2289,6 +2289,10 @@
       "sha256": "faf4228b8367af89edd5b1dba8e6f046e6d5e29e48925a3e3a266d57dd5ced3f",
       "bytes": 67299
     },
+    "mobile-companion-activity-cold-cache.png": {
+      "sha256": "7704f79dff780b999d17175767bffde74658022858ebb36450d61558645b4de1",
+      "bytes": 44793
+    },
     "mobile-companion-activity-dark.png": {
       "sha256": "0b7dc9632e93f0861f7eefb767cf11797f52e4f9211c9ae14f1476b74171dc16",
       "bytes": 42040
@@ -2300,6 +2304,10 @@
     "mobile-companion-activity-decision-light.png": {
       "sha256": "b2061574a62544e6a754327427c8abe832d124e62ddfc4615c3356d7c7eae62d",
       "bytes": 47369
+    },
+    "mobile-companion-activity-dirty-refreshed.png": {
+      "sha256": "4fb15985935f53da2ef5e4ecd114780aecf8deefe2cbf663cd43e2ca3f0e02ef",
+      "bytes": 44122
     },
     "mobile-companion-activity-light.png": {
       "sha256": "6228ee5b18f7ed3918ffbcc4884a57d38c7028860c37079f7b618f1eb5eadb27",
@@ -2329,9 +2337,21 @@
       "sha256": "965794f9ed3188167661d14cdd3b03c0be8824b1ee989204e48e287029ebb494",
       "bytes": 48504
     },
+    "mobile-companion-image-preview.png": {
+      "sha256": "109d9fd690b95fbe14893e824b5d47250128dddf5a89c86fbe64e477f5aec95c",
+      "bytes": 31436
+    },
+    "mobile-companion-image-response.png": {
+      "sha256": "8d21860acaab891bfe1958bc16d748110185b6385e35a4280d2137dfda4aaa8c",
+      "bytes": 34286
+    },
     "mobile-companion-new-chat-dark.png": {
       "sha256": "3025bde4818a4aa9201d19e0eba9cf2bc294d66f87fae1b44559981a26611fc4",
       "bytes": 37218
+    },
+    "mobile-companion-new-chat-image-preview.png": {
+      "sha256": "f2aa0f4c1c503d2fa5bc81540953e0e885e1ab2e5989b9f011ddcae7758f0866",
+      "bytes": 35228
     },
     "mobile-companion-new-chat-light.png": {
       "sha256": "a6b6e375255d876c093e13b1ecaa590abbda7eff834b91bf62172f76822de440",
