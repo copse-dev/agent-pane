@@ -21,8 +21,17 @@ describe('ChatGPT plan connection onboarding', () => {
 
     const welcome = $('#confirm-dialog')
     await expect(welcome).not.toBeDisplayed()
-    const openAi = $('#settings-providers-host .provider-chip[data-provider="openai"]')
-    await openAi.click()
+    // The plan's one-time welcome waits until the ChatGPT row is opened.
+    const plan = $('[data-testid="models-agents-list"] [data-row="plan:chatgpt"]')
+    await plan.waitForExist({ timeout: 15_000 })
+    await expect(plan.$('.acp-row-chip')).toHaveText('Ready')
+    await expect(welcome).not.toBeDisplayed()
+    const openPlan = async (): Promise<void> => {
+      await $('[data-testid="models-agents-list"] [data-row="plan:chatgpt"]')
+        .$('button=Options')
+        .click()
+    }
+    await openPlan()
     await expect(welcome).toBeDisplayed()
     await expect(welcome).toHaveText('You’re using your ChatGPT plan', { containing: true })
     await expect(welcome).toHaveText('available credits', { containing: true })
@@ -47,7 +56,7 @@ describe('ChatGPT plan connection onboarding', () => {
     await $('#settings-dialog .settings-nav-btn[data-section="general"]').click()
     await $('[aria-label="Close settings"]').click()
     await $('[aria-label="Settings"]').click()
-    await openAi.click()
+    await openPlan()
     await expect(section).toHaveText('Using ChatGPT plan', { containing: true })
     await expect(welcome).not.toBeDisplayed()
   })
