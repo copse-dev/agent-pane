@@ -509,7 +509,7 @@ export function syncReadTerminalTools(registry: ToolRegistry): void {
 /** Offer search only while the selected provider has a readable credential. */
 export function syncWebSearchTools(registry: ToolRegistry): void {
   const provider = resolveWebSearchProvider(getSetting('webSearchProvider', 'none'))
-  if (provider !== 'none' && resolveApiKey(provider) !== null) {
+  if (provider !== 'none' && resolveApiKeyIfUnlocked(provider) !== null) {
     if (!registry.has('web_search')) registry.register(webSearchTool)
   } else {
     registry.unregister('web_search')
