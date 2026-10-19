@@ -88935,6 +88935,7 @@ function createStore(initial) {
     request_terminal_command: /* @__PURE__ */ new Set(),
     code_block_run_requested: /* @__PURE__ */ new Set(),
     code_block_run_finished: /* @__PURE__ */ new Set(),
+    thread_reference_attach: /* @__PURE__ */ new Set(),
     attention_changed: /* @__PURE__ */ new Set(),
     sidebar_threads_loaded: /* @__PURE__ */ new Set(),
     automation_schedules_loaded: /* @__PURE__ */ new Set()
@@ -91263,6 +91264,77 @@ var init_fork_thread3 = __esm({
     init_fork_thread2();
     init_thread_helpers();
     init_message_queue();
+  }
+});
+
+// packages/thread-store/src/follow-up-thread.ts
+function buildFollowUpThread(parent, model) {
+  const now = Date.now();
+  return {
+    id: globalThis.crypto.randomUUID(),
+    title: `Follow-up: ${parent.title}`,
+    status: "idle",
+    messages: [],
+    prRefs: [],
+    links: [],
+    usage: { inputTokens: 0, outputTokens: 0 },
+    ...model !== void 0 ? { model } : parent.model !== void 0 ? { model: parent.model } : {},
+    followUpOf: { parentThreadId: parent.id },
+    createdAt: now,
+    updatedAt: now
+  };
+}
+var init_follow_up_thread = __esm({
+  "packages/thread-store/src/follow-up-thread.ts"() {
+  }
+});
+
+// src/shared/store/follow-up-thread.ts
+var init_follow_up_thread2 = __esm({
+  "src/shared/store/follow-up-thread.ts"() {
+    init_follow_up_thread();
+  }
+});
+
+// src/renderer/controller/follow-up-thread.ts
+function createFollowUpThread(store2, api2, sourceThreadId) {
+  const source = getThreadById(store2, sourceThreadId);
+  const projectId = store2.getState().activeProjectId;
+  if (!source || !projectId) return null;
+  const thread = buildFollowUpThread(source, store2.getState().settings?.model ?? source.model);
+  store2.emit("composer_draft_flush");
+  store2.setState({
+    threads: [thread, ...store2.getState().threads],
+    activeThreadId: thread.id,
+    openFile: null,
+    activeDiff: null,
+    stagedDiffs: []
+  });
+  store2.emit("threads_changed");
+  store2.emit("panel_changed");
+  store2.emit("new_thread_opened");
+  void attachSourceReference(store2, api2, projectId, source, thread.id);
+  return thread.id;
+}
+async function attachSourceReference(store2, api2, projectId, source, followUpId) {
+  try {
+    const hits = await api2.threads.catalog(projectId, source.title);
+    const hit = hits.find((candidate) => candidate.id === source.id);
+    if (hit)
+      store2.emit("thread_reference_attach", followUpId, {
+        threadId: hit.id,
+        title: hit.title,
+        updatedAt: hit.updatedAt,
+        spinePath: hit.spinePath
+      });
+  } catch (error62) {
+    console.error("[follow-up] could not reference the original thread:", error62);
+  }
+}
+var init_follow_up_thread3 = __esm({
+  "src/renderer/controller/follow-up-thread.ts"() {
+    init_follow_up_thread2();
+    init_thread_helpers();
   }
 });
 
@@ -95126,6 +95198,11 @@ function mountProjectsPane(root, store2, api2) {
       showToast("Forked into a new thread.");
     });
   }
+  function followUpProjectThread(projectId, threadId) {
+    if (projectId !== store2.getState().activeProjectId) return;
+    if (!createFollowUpThread(store2, api2, threadId))
+      showToast("Could not start a follow-up thread.", { variant: "error" });
+  }
   const archivingThreads = /* @__PURE__ */ new Set();
   async function archiveProjectThread(projectId, threadId) {
     if (projectId !== store2.getState().activeProjectId || archivingThreads.has(threadId)) return;
@@ -95797,6 +95874,12 @@ function mountProjectsPane(root, store2, api2) {
                     }
                   }
                 ]);
+              }
+            },
+            {
+              label: "Create follow-up thread",
+              onSelect: () => {
+                followUpProjectThread(project2.id, thread.id);
               }
             },
             {
@@ -96750,6 +96833,7 @@ var init_projects_pane = __esm({
     init_automation_held_runs();
     init_automation_retained_worktrees();
     init_fork_thread3();
+    init_follow_up_thread3();
     init_thread_filter();
     init_thread_sort();
     init_thread_order();
@@ -154515,6 +154599,14 @@ ${context}` : text2;
       onClick: debugTrace
     },
     {
+      label: "Create follow-up thread",
+      hidden: () => store2.getState().activeProjectId === null || !threadHasExportableContent(getActiveThread(store2)),
+      onClick: () => {
+        const threadId = getActiveThreadId();
+        if (threadId) createFollowUpThread(store2, api2, threadId);
+      }
+    },
+    {
       label: "Share trace",
       hidden: () => !threadHasExportableContent(getActiveThread(store2)),
       onClick: shareTrace
@@ -155120,6 +155212,16 @@ ${description}
     const snapshot = draftAttachmentsByThread.get(threadId) ?? emptyDraftAttachments();
     if (snapshot.shells.some((shell4) => shell4.tabId === ref.tabId)) return;
     snapshot.shells.push({ ...ref });
+    draftAttachmentsByThread.set(threadId, snapshot);
+  }
+  function placeStoredThread(threadId, ref) {
+    if (activeComposerThreadId === threadId) {
+      addThreadChip(ref);
+      return;
+    }
+    const snapshot = draftAttachmentsByThread.get(threadId) ?? emptyDraftAttachments();
+    if (snapshot.threads.some((thread) => thread.threadId === ref.threadId)) return;
+    snapshot.threads.push({ ...ref });
     draftAttachmentsByThread.set(threadId, snapshot);
   }
   function syncComposerThread() {
@@ -156251,6 +156353,7 @@ ${reply}`);
         showToast("Command finished \u2014 result attached to your next message.");
       });
     }),
+    store2.on("thread_reference_attach", placeStoredThread),
     store2.on("new_thread_opened", () => {
       void api2.agent.refreshModelContext().finally(() => {
         scheduleContextEstimate(0);
@@ -156410,6 +156513,7 @@ var init_input_bar = __esm({
     init_thread_helpers();
     init_message_queue();
     init_code_block_runs();
+    init_follow_up_thread3();
     init_working_brief();
     init_build_text_with_attachments();
     init_composer_editor();
