@@ -629,6 +629,10 @@
       "sha256": "85c73f31b9220841115bad6f4aff944272a6c6bfa6103674e5c70d84640edbc9",
       "bytes": 240957
     },
+    "automation-deferred-context.png": {
+      "sha256": "8f27350a6c00524fc721b700ae37beee9eff6414f9e2c661ad539b2163ccd41a",
+      "bytes": 108537
+    },
     "automation-event-activity-failed-run.png": {
       "sha256": "f1a0f732dcb7ddd18892ed953c726c15bb2715babeb9dbb3cc90570f1d1091cb",
       "bytes": 222418
@@ -714,8 +718,8 @@
       "bytes": 218453
     },
     "automation-trigger.png": {
-      "sha256": "1d8c4fb2f0ef88e944efd17e5f675434a416c149a23e0495f464e1d43ef43608",
-      "bytes": 304439
+      "sha256": "2654a26faaa6bbfd35276037d5f7916eeb4563546bc42323a916d148a2c04542",
+      "bytes": 445377
     },
     "automation-workspace-section.png": {
       "sha256": "8d4ab6e06079af09eb9cf14532db6955551a148fe5c830ad8957c8a9fe506062",
@@ -4310,8 +4314,8 @@
       "bytes": 76241
     },
     "sidebar-hidden-panel-maximized.png": {
-      "sha256": "75692382cbf3c110bb53468cb8fa6d7829720bc209641223679638ca0915459a",
-      "bytes": 126537
+      "sha256": "60e261b775999f95d1396c1410a18d21ea12308c8d924911b85f52bb5aa1948c",
+      "bytes": 133356
     },
     "sidebar-hidden.png": {
       "sha256": "eec0f08c92e2199359cb0be856c27c3b5c737b5228d129331c3af516ec03ec20",
