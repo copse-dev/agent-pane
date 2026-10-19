@@ -3425,6 +3425,14 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .acp-logo[data-brand='gemini'] {
   background: #fff;
 }
+.acp-logo[data-brand='chatgpt'] {
+  background: var(--brand-chatgpt-background);
+}
+.acp-logo[data-brand='key'] {
+  background: var(--credential-logo-background);
+  border-color: transparent;
+  color: var(--credential-logo-foreground);
+}
 .acp-logo[data-brand='codex'] {
   border: 0;
 }
@@ -3461,6 +3469,22 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 .acp-add-menu[hidden] {
   display: none;
+}
+/* Models & agents Add menu: group labels between rows, and inline add forms. */
+.connections-menu-group {
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+.connections-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.acp-row-head > .acp-link {
+  flex: none;
 }
 /* The list has its own Re-scan, and the custom-agent form needs breathing room. */
 .acp-add-menu .provider-panel-embedded {
