@@ -127,7 +127,7 @@ export function guestGitHubConfig(options: {
     ghFiles: {
       'config.yml': [
         '# Written by Copse for this container run. Every gh request goes to the',
-        "# host's GitHub read capability over this socket; the token lives on the host.",
+        '# desktop over this socket, which reads GitHub for it; the token stays there.',
         `http_unix_socket: ${yamlString(options.socketPath)}`,
         'git_protocol: https',
         'prompt: disabled',
