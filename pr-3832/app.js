@@ -21281,7 +21281,7 @@ var init_disclosure_summary = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/config.js
 function activeConfig() {
   return active;
 }
@@ -21305,14 +21305,14 @@ function withConfig(config2, fn2) {
 }
 var baseDefaults, active, scopeDepth;
 var init_config = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/config.js"() {
     baseDefaults = {};
     active = baseDefaults;
     scopeDepth = 0;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
 function replaceCodePoint(codePoint) {
   if (codePoint >= 55296 && codePoint <= 57343 || codePoint > 1114111)
     return 65533;
@@ -21352,7 +21352,7 @@ function decodeHtmlEntities(text2) {
 }
 var BUILTIN_NAMED_ENTITIES, C1_REMAP, ENTITY_TOKEN_RE, cachedNamedSource, cachedEffective;
 var init_entity_decoder = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
     init_config();
     BUILTIN_NAMED_ENTITIES = Object.freeze({
       aacute: "\xE1",
@@ -21643,7 +21643,7 @@ var init_entity_decoder = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
 function nextCodeSpan(s16, from2) {
   let i3 = from2;
   while (i3 < s16.length && s16[i3] !== "`")
@@ -21724,12 +21724,12 @@ function renderInlineCode(text2) {
 }
 var ANGLE_AUTOLINK_VERBATIM_RE;
 var init_inline_code_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
     ANGLE_AUTOLINK_VERBATIM_RE = /^<(?:[a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<>\s]*|[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[^<>\s@.]+(?:\.[^<>\s@.]+)+)>/;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
 function isEscapablePunctuation(ch) {
   return /^[!-/:-@[-`{-~]$/.test(ch);
 }
@@ -21805,7 +21805,7 @@ function canonicalizeEscapedPunctuation(text2) {
 }
 var ESCAPED_BASE, ANGLE_AUTOLINK_RE, TAG_NAME, TAG_ATTR, RAW_TAG_LIKE_RE, ENTITY_CANDIDATE_RE, INCOMPLETE_ENTITY_RE, ENCODED_PUNCT_RE, DECODE_HTML_ESCAPES;
 var init_backslash_escapes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
     init_entity_decoder();
     init_inline_code_spans();
     ESCAPED_BASE = 57344;
@@ -21826,7 +21826,7 @@ var init_backslash_escapes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/link-references.js
 function isLinkReferencesEnabled() {
   return activeConfig().linkReferences !== false;
 }
@@ -22104,7 +22104,7 @@ function parseReferenceLabel(source, openBracketIndex, fallbackLabel) {
 }
 var TITLE_TOKEN_RES, BLANK_LINE_RE;
 var init_link_references = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
     init_entity_decoder();
     init_backslash_escapes();
     init_config();
@@ -22113,7 +22113,7 @@ var init_link_references = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/block-patterns.js
 function leadingIndentWidth(line) {
   let col = 0;
   for (let i3 = 0; i3 < line.length; i3++) {
@@ -22263,7 +22263,7 @@ function parseOpenFenceContent(source) {
 }
 var FENCE_OPEN_RE, FENCE_CLOSE_RE, ATX_HEADING_DETECT_RE, ATX_HEADING_CAPTURE_RE, BLOCKQUOTE_DETECT_RE, FENCE_INFO_BACKSLASH_RE;
 var init_block_patterns = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
     init_entity_decoder();
     FENCE_OPEN_RE = /^ {0,3}(?:(`{3,})([^\n`]*)|(~{3,})([^\n]*?))\s*$/;
     FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/;
@@ -22274,17 +22274,17 @@ var init_block_patterns = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/html-policy.js
 function getHtmlPolicy() {
   return activeConfig().htmlPolicy ?? "passthrough";
 }
 var init_html_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/escape.js
 function escapeHtml(text2) {
   return text2.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch] ?? ch);
 }
@@ -22380,7 +22380,7 @@ function decodeSafeMarkdownEntities(text2) {
 }
 var HTML_ESCAPES, SAFE_OUTER_TAG_RE, BENIGN_RAW_INLINE_TAG_RE, BR_TAG_RE, EVENT_HANDLER_ATTR_RE, URL_ATTR_RE, DANGEROUS_HREF_SCHEME_RE, PASSTHROUGH_TAG_RE, SAFE_ANCHOR_ATTR_NAME_RE, TAG_ATTR_RE, ANCHOR_OPEN_TAG_RE, QUOTED_HREF_RE, SAFE_MARKDOWN_ENTITY_SOURCE, SAFE_MARKDOWN_ENTITY_RE, COMPLETE_SAFE_MARKDOWN_ENTITY_RE, KNOWN_SAFE_ENTITIES;
 var init_escape = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/escape.js"() {
     init_backslash_escapes();
     init_html_policy();
     init_link_references();
@@ -22416,7 +22416,7 @@ var init_escape = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/math-block.js
 function onelineMathBody(trimmed2, delimiter) {
   const [open2, close2] = delimiter === "dollar" ? ["$$", "$$"] : ["\\[", "\\]"];
   if (!trimmed2.startsWith(open2) || !trimmed2.endsWith(close2))
@@ -22511,7 +22511,7 @@ function syncFormingMathBlockDom(container, source, formingClass) {
 }
 var MATH_DOLLAR_LINE_RE, MATH_BRACKET_OPEN_LINE_RE, MATH_BRACKET_CLOSE_LINE_RE, MATH_OPEN_PREFIX_RE, PARTIAL_DOLLAR_CLOSER_RE, PARTIAL_BRACKET_CLOSER_RE, PARTIAL_DOLLAR_CLOSER_LINE_RE, PARTIAL_BRACKET_CLOSER_LINE_RE;
 var init_math_block = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
     init_block_patterns();
     init_escape();
     MATH_DOLLAR_LINE_RE = /^ {0,3}\$\$\s*$/;
@@ -22525,7 +22525,7 @@ var init_math_block = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/footnotes.js
 function isFootnotesEnabled() {
   return activeConfig().footnotes !== false;
 }
@@ -22661,7 +22661,7 @@ function isPendingFootnoteDefLine(pending) {
 }
 var FOOTNOTE_DEF_LINE_RE, FOOTNOTE_REF_RE, activeFootnotes;
 var init_footnotes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
     init_block_patterns();
     init_escape();
     init_link_references();
@@ -22672,17 +22672,17 @@ var init_footnotes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/math-syntax.js
 function isMathSyntaxEnabled() {
   return activeConfig().mathSyntax ?? false;
 }
 var init_math_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
 function parseOrderedListMarker(line) {
   const m3 = line.match(ORDERED_LIST_MARKER_RE);
   if (!m3?.[1])
@@ -23449,7 +23449,7 @@ function isAmbiguousBlockLine(line) {
 }
 var THEMATIC_BREAK_RE, UNORDERED_LIST_ITEM_RE, ORDERED_LIST_MARKER_RE, LIST_ITEM_RE, EMPTY_LIST_ITEM_RE, BLOCKQUOTE_RE, SETEXT_UNDERLINE_RE, TABLE_SEP_RE;
 var init_block_tokenizer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
     init_link_references();
     init_block_patterns();
     init_math_block();
@@ -23466,7 +23466,7 @@ var init_block_tokenizer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/alerts.js
 function alertTypeFromMarker(bodyLine) {
   const word = ALERT_MARKER_RE.exec(bodyLine.trim())?.[1]?.toLowerCase();
   if (word !== void 0 && word in ALERT_TITLES)
@@ -23487,7 +23487,7 @@ function pendingBlockquoteAlertType(pendingLine) {
 }
 var ALERT_TITLES, ALERT_MARKER_RE;
 var init_alerts = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
     init_block_patterns();
     ALERT_TITLES = {
       note: "Note",
@@ -23500,7 +23500,7 @@ var init_alerts = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
 function normalizeFenceLang(lang) {
   return lang.trim().toLowerCase();
 }
@@ -23526,7 +23526,7 @@ function getFenceHandler(lang) {
 }
 var FORMING_FENCE_PRE_CLASS, mermaidFenceHandler, mathFenceHandler, BUILTIN_FENCE_HANDLERS, cachedOverrideSource, cachedOverrideMap;
 var init_fence_handlers = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
     init_config();
     init_escape();
     init_math_block();
@@ -23578,7 +23578,7 @@ var init_fence_handlers = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/highlight.js
 function lookup(table, key) {
   return Object.hasOwn(table, key) ? table[key] : void 0;
 }
@@ -23616,7 +23616,7 @@ function fenceCodeClass(lang) {
 }
 var KNOWN_LANGUAGES, LANG_SYNONYMS, LANG_FALLBACKS;
 var init_highlight = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
     init_config();
     init_escape();
     KNOWN_LANGUAGES = /* @__PURE__ */ new Set([
@@ -23657,7 +23657,7 @@ var init_highlight = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/indented-html.js
 function leadingSpaces(line) {
   return line.match(/^ */)?.[0].length ?? 0;
 }
@@ -23679,13 +23679,13 @@ function isIndentedHtmlBlock(content) {
 }
 var HTML_BLOCK_TAGS, HTML_BLOCK_START_RE;
 var init_indented_html = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
     HTML_BLOCK_TAGS = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
     HTML_BLOCK_START_RE = new RegExp(`^</?(?:${HTML_BLOCK_TAGS})(?:[\\s/>]|$)`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/raw-images.js
 function parseHtmlAttributes(tag) {
   const attrs = {};
   const decodedTag = decodeEscapedHref(tag);
@@ -23718,7 +23718,7 @@ function restoreRawImages(text2, images) {
 }
 var RAW_IMAGE_RE, PLACEHOLDER_OPEN, PLACEHOLDER_CLOSE, PLACEHOLDER_RE;
 var init_raw_images = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
     init_config();
     init_escape();
     RAW_IMAGE_RE = /(?:<img\b[\s\S]*?\/?>|&lt;img\b[\s\S]*?\/?&gt;)/gi;
@@ -23728,17 +23728,17 @@ var init_raw_images = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
 function isEmailAutolinksEnabled() {
   return activeConfig().emailAutolinks ?? true;
 }
 var init_autolink_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
 function workspaceLinkTargetFromHref(raw) {
   let pathPart = raw.trim();
   if (pathPart === "" || pathPart.startsWith("#") || pathPart.startsWith("//"))
@@ -23791,13 +23791,13 @@ function isWorkspaceMarkdownLinkHref(raw) {
 }
 var URL_SCHEME_RE, COMMONMARK_FIXTURE_SINGLE_SEGMENTS;
 var init_workspace_link_href = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
     URL_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
     COMMONMARK_FIXTURE_SINGLE_SEGMENTS = /* @__PURE__ */ new Set(["uri", "url"]);
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/inline-links.js
 function lookupWithRenderedLabels(refs, label, renderForMatch) {
   const direct = lookupLinkReference(refs, label);
   if (direct || !renderForMatch || !label.includes("<") || !isValidReferenceLabel(label)) {
@@ -24000,7 +24000,7 @@ function rangeAt(index, ranges) {
 }
 var renderedLabelIndexCache, DEFAULT_SAFE_HREF_SCHEMES, HREF_SCHEME_RE, DEFAULT_SAFE_HREF_SCHEMES_SET, cachedSchemesSource, cachedSchemes, neutralLinkDecorator, appLinkDecorator, RENDERED_ANCHOR_RE, INLINE_SHIELD_RE;
 var init_inline_links = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -24029,7 +24029,7 @@ var init_inline_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/inline-passes.js
 function getInlinePasses(stage) {
   const passes = activeConfig().inlinePasses ?? NO_PASSES;
   if (stage === void 0)
@@ -24048,7 +24048,7 @@ function restoreInlinePassHtml(text2) {
 }
 var NO_PASSES, TOKEN_OPEN, TOKEN_CLOSE, TOKEN_RE, TOKEN_CHAR_RE, emitted, nextEmitId, inlinePassContext;
 var init_inline_passes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
     init_config();
     NO_PASSES = [];
     TOKEN_OPEN = "\uE100";
@@ -24067,7 +24067,7 @@ var init_inline_passes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/inline-math.js
 function inlineHtmlMask(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -24265,7 +24265,7 @@ function mathHoldStart(s16, mask) {
 }
 var ESCAPED_LPAREN, ESCAPED_RPAREN;
 var init_inline_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
     init_backslash_escapes();
     init_escape();
     init_inline_emphasis();
@@ -24276,7 +24276,7 @@ var init_inline_math = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
 function inlineHtmlMask2(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -24371,12 +24371,12 @@ function strikethroughHoldStart(s16, mask) {
   return cut2;
 }
 var init_inline_strikethrough = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
 function isFlankingWhitespace(ch) {
   return ch === "" || ch === HARD_BREAK_SENTINEL || /\s/.test(ch);
 }
@@ -24673,7 +24673,7 @@ function renderEmphasisOutsideInlineHtml(text2, linkRefs = /* @__PURE__ */ new M
 }
 var UNICODE_PUNCTUATION_RE, HARD_BREAK_SENTINEL, INLINE_HTML_SHIELD_RE;
 var init_inline_emphasis = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -24690,7 +24690,7 @@ var init_inline_emphasis = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
 function autolinkHref(raw) {
   if (!isAllowedHref(raw))
     return null;
@@ -24740,7 +24740,7 @@ function renderAngleAutolinks(text2) {
 }
 var URI_AUTOLINK_RE, EMAIL_AUTOLINK_RE;
 var init_inline_autolinks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
     init_escape();
     init_inline_emphasis();
     init_inline_links();
@@ -24750,7 +24750,7 @@ var init_inline_autolinks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/inline-spans.js
 function applyInlinePasses(t2, stage) {
   const passes = getInlinePasses(stage);
   if (passes.length === 0)
@@ -24969,7 +24969,7 @@ function linkifyEmailAutolinks(segment) {
 }
 var URL_SCHEME_RE2, WWW_DOMAIN_RE, AUTOLINK_TRAILING_PUNCTUATION, EMAIL_LOCAL_CHAR_RE;
 var init_inline_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
     init_autolink_syntax();
     init_backslash_escapes();
     init_config();
@@ -24989,7 +24989,7 @@ var init_inline_spans = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
 function stripHtmlComments(text2) {
   return text2.replace(/<!--[\s\S]*?-->/g, "");
 }
@@ -25085,7 +25085,7 @@ function renderProseBlock(text2, linkRefs, softBreak = "newline") {
 }
 var HARD_BREAK;
 var init_render_prose_inline = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
     init_backslash_escapes();
     init_escape();
     init_raw_images();
@@ -25095,7 +25095,7 @@ var init_render_prose_inline = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/table-wrapper.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/table-wrapper.js
 function resolveTableWrapper() {
   const value = activeConfig().tableWrapper;
   if (!value)
@@ -25140,13 +25140,13 @@ function withTableWrapperGate(config2, hostAttr = []) {
   };
 }
 var init_table_wrapper = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/table-wrapper.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/table-wrapper.js"() {
     init_config();
     init_escape();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/render-blocks.js
 function renderFencedBlock(lang, code2, forming = false) {
   const handler = getFenceHandler(lang);
   if (handler) {
@@ -25613,7 +25613,7 @@ function renderFootnoteSectionItems(ctx, linkRefs, startIndex = 0) {
 }
 var MAX_BLOCK_NESTING_DEPTH, blockNestingDepth, stripBlockquoteLine, TASK_LIST_MARKER_RE, SETEXT_UNDERLINE_SLICE_RE;
 var init_render_blocks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -25632,7 +25632,7 @@ var init_render_blocks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
 function resolvedPolicy() {
   const source = activeConfig().linkImagePolicy ?? null;
   if (source !== cachedPolicySource) {
@@ -25732,7 +25732,7 @@ function applyLinkImagePolicy(node2, tagName) {
 }
 var DEFAULT_BLOCKED_LINK_CLASS, DEFAULT_BLOCKED_IMAGE_CLASS, cachedPolicySource, cachedResolved;
 var init_link_image_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
     init_config();
     DEFAULT_BLOCKED_LINK_CLASS = "blocked-link";
     DEFAULT_BLOCKED_IMAGE_CLASS = "blocked-image";
@@ -25740,16 +25740,16 @@ var init_link_image_policy = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/data-attributes.js
 var DATA_ATTR_NAME_SOURCE, DATA_ATTR_NAME_RE;
 var init_data_attributes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
     DATA_ATTR_NAME_SOURCE = "data-[a-z0-9-]+";
     DATA_ATTR_NAME_RE = /* @__PURE__ */ new RegExp(`^${DATA_ATTR_NAME_SOURCE}$`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
 function isBrowserSanitizerSupported() {
   return typeof document !== "undefined" && typeof Element.prototype.setHTML === "function";
 }
@@ -25796,7 +25796,7 @@ function sanitizeIntoElement(target, html2, config2) {
 }
 var DROP_CONTENT_TAGS, browserSanitizerBackend;
 var init_sanitize_browser = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
     init_data_attributes();
     DROP_CONTENT_TAGS = /* @__PURE__ */ new Set(["script", "style", "noscript", "template", "title"]);
     browserSanitizerBackend = {
@@ -25820,7 +25820,7 @@ var init_sanitize_browser = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/sanitize.js
 function getSanitizerBackend() {
   return activeConfig().sanitizerBackend ?? null;
 }
@@ -25889,7 +25889,7 @@ function sanitizeRenderedMarkdownInto(target, html2) {
 }
 var ALLOWED_TAGS, ALLOWED_ATTR, FOOTNOTE_ID_RE, DOUBLE_ENCODED_NBSP_RE, DOUBLE_ENCODED_NBSP_DATA_RE, SHOW_TEXT;
 var init_sanitize = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
     init_config();
     init_link_image_policy();
     init_sanitize_browser();
@@ -25972,7 +25972,7 @@ var init_sanitize = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/renderer.js
 function topLevelRenderOpts() {
   return { htmlFromIndent: true, indentedCode: activeConfig().indentedCode !== false };
 }
@@ -26011,7 +26011,7 @@ ${section2}`;
   }
 }
 var init_renderer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
     init_block_tokenizer();
     init_footnotes();
     init_config();
@@ -26020,7 +26020,7 @@ var init_renderer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
 function revealFormingLink(text2) {
   if (!text2.includes("["))
     return text2;
@@ -26194,7 +26194,7 @@ function renderPendingLine(pending, options = {}) {
 }
 var COMPLETE_LINK_AT_START_RE, TOP_LEVEL_LIST_MARKER_RE;
 var init_render_pending_line = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -26208,7 +26208,7 @@ var init_render_pending_line = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/streaming-split.js
 function splitAtLastNewline(content) {
   const lastNl = content.lastIndexOf("\n");
   if (lastNl === -1)
@@ -26339,14 +26339,14 @@ function committedTailContinues(complete, blocks) {
   return continues;
 }
 var init_streaming_split = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
     init_block_tokenizer();
     init_inline_code_spans();
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
 function canExtendAcrossBlank(kind) {
   return kind === "list_item" || kind === "indented_code" || kind === "blockquote" || kind === "footnote_def";
 }
@@ -26398,7 +26398,7 @@ function advanceSafeBoundary(source, tokens, fromIdx, fromOffset, lastNonBlankKi
 }
 var IncrementalSourceScanner;
 var init_incremental_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
     init_block_tokenizer();
     IncrementalSourceScanner = class {
       tokens = [];
@@ -26583,7 +26583,7 @@ var init_incremental_scan = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/dom-scan.js
 function childMatches(el3, tagName, cls) {
   return (tagName === null || el3.tagName === tagName) && (cls === null || el3.classList.contains(cls));
 }
@@ -26612,11 +26612,11 @@ function findDescendantByClass(root, cls, tagName) {
   return null;
 }
 var init_dom_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/html-sink.js
 function resolvePolicy() {
   const hostPolicy = activeConfig().trustedTypesPolicy;
   if (hostPolicy)
@@ -26665,13 +26665,13 @@ function setHostTrustedHtml(el3, html2) {
 }
 var defaultPolicy, defaultPolicyFactory;
 var init_html_sink = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
     init_config();
     init_sanitize();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/math.js
 function readMathSource(el3) {
   return (el3.querySelector("pre.math") ?? el3).textContent ?? "";
 }
@@ -26715,13 +26715,13 @@ async function hydratePendingMath(root, options = {}) {
 }
 var PENDING_MATH_SELECTOR;
 var init_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/math.js"() {
     init_html_sink();
     PENDING_MATH_SELECTOR = ".math-block.math-block--pending, .math-inline.math-inline--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
 function decodeMermaidHtmlEntities(text2) {
   return text2.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 }
@@ -26762,11 +26762,11 @@ function mermaidSourceCandidates(raw) {
   return [...new Set([gentle, aggressive].filter(Boolean))];
 }
 var init_mermaid_source = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/mermaid.js
 function readDiagramSource(container) {
   return container.querySelector("pre.mermaid")?.textContent ?? "";
 }
@@ -26816,14 +26816,14 @@ async function hydratePendingDiagrams(root, options = {}) {
 }
 var PENDING_DIAGRAM_SELECTOR;
 var init_mermaid = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
     init_mermaid_source();
     init_html_sink();
     PENDING_DIAGRAM_SELECTOR = ".mermaid-diagram.mermaid-diagram--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
 function tableLines(source) {
   const trimmed2 = dropTrailingNewline(source);
   if (trimmed2 === "")
@@ -26941,7 +26941,7 @@ function removePendingTableRow(table) {
 }
 var FORMING_TABLE_CLASS, PENDING_ROW_CLASS, SEPARATOR_ROW_CLASS;
 var init_streaming_table_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
     init_dom_scan();
     init_block_tokenizer();
     init_block_patterns();
@@ -26955,7 +26955,7 @@ var init_streaming_table_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
 function syncFormingFenceDom(container, source) {
   const parsed2 = parseOpenFenceContent(source);
   if (!parsed2) {
@@ -26992,7 +26992,7 @@ function clearFormingFenceDom(container) {
   container.replaceChildren();
 }
 var init_streaming_fence_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
     init_block_patterns();
     init_fence_handlers();
     init_dom_scan();
@@ -27002,18 +27002,18 @@ var init_streaming_fence_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
 function syncFormingMathDom(container, source) {
   syncFormingMathBlockDom(container, parseOpenMathBlock(source), FORMING_FENCE_PRE_CLASS);
 }
 var init_streaming_math_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
     init_fence_handlers();
     init_math_block();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
 function attributesEqual(a3, b5) {
   const aAttrs = a3.attributes;
   const bAttrs = b5.attributes;
@@ -27131,7 +27131,7 @@ function syncAttributes(el3, template) {
 }
 var TEXT_NODE, ELEMENT_NODE, COMMENT_NODE;
 var init_streaming_dom_morph = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
     init_fence_handlers();
     init_html_sink();
     TEXT_NODE = 3;
@@ -27140,7 +27140,7 @@ var init_streaming_dom_morph = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
 function settleClassOf(kind) {
   switch (kind) {
     case "fence":
@@ -27327,7 +27327,7 @@ function detailsBalance(html2) {
 }
 var INTRA_LIST_MIN_ITEMS, MAX_LINK_REF_PATCH_PARTS, MAY_HOLD_FENCE_RE, BENIGN_BALANCED_TAGS, VOID_HTML_TAGS, HTML_TAG_SCAN_RE, SAFE_REROOT_TAGS, PROBE_TAG, PROBE_HTML, DETAILS_OPEN_RE, DETAILS_CLOSE_RE, FrozenTailRenderer;
 var init_streaming_frozen_tail = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
     init_block_tokenizer();
     init_render_blocks();
     init_footnotes();
@@ -28598,7 +28598,7 @@ ${section2}`;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/streaming.js
 function trailingFootnotesSection(completedEl) {
   const last = completedEl.lastElementChild;
   return last && last.tagName === "SECTION" && last.classList.contains("footnotes") ? last : null;
@@ -29040,7 +29040,7 @@ function clearFormingDom(container) {
 }
 var BLOCK_PENDING_CLASS, LIST_CONTINUATION_CLASS, PARAGRAPH_CONTINUATION_CLASS, PENDING_FAST_PATH_INERT_RE, StreamingMarkdownRenderer;
 var init_streaming = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
     init_alerts();
     init_block_tokenizer();
     init_render_pending_line();
@@ -29412,9 +29412,9 @@ var init_streaming = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/index.js
 var init_dist = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/index.js"() {
     init_renderer();
     init_config();
     init_streaming();
@@ -29678,6 +29678,7 @@ function createClassifiersSection(api2) {
   const status = el("p", { class: "classifier-status", role: "status", "aria-live": "polite" });
   const screening = el("select", { name: "classifierScreening" });
   const background = el("select", { name: "classifierBackground" });
+  const askBeforeHosted = el("input", { type: "checkbox", name: "classifierToolPrompt" });
   const localHost = el("div", {
     class: "classifier-local",
     "aria-label": "Local classifier servers"
@@ -29713,6 +29714,17 @@ function createClassifiersSection(api2) {
         "Which classifier rates roadmap items when you save them, gives the verdict for fit checks and roadmap reviews, checks which open issues the roadmap already covers, and picks follow-ups after each turn. If it fails, the small-tasks model answers instead. A hosted classifier receives that text, including issues, commit history and each finished turn's messages, with saved keys redacted."
       )
     ),
+    el(
+      "label",
+      { class: "checkbox-label classifier-tool-prompt" },
+      askBeforeHosted,
+      "Ask before agent classifier questions"
+    ),
+    el(
+      "span",
+      { class: "field-hint" },
+      "Off by default. Turn on to review each agent question before it reaches a classifier. Hosted classifiers receive the question and supplied content. Safety screening and background questions use their own settings above."
+    ),
     localHost,
     chips,
     formHost,
@@ -29722,10 +29734,26 @@ function createClassifiersSection(api2) {
   let screeningId = null;
   let backgroundId = null;
   let selectedId = null;
+  let classifierToolPermissionId = null;
   const drafts = /* @__PURE__ */ new Map();
   let captureDraft;
   const pending = /* @__PURE__ */ new Map();
   let busy = false;
+  askBeforeHosted.addEventListener("change", () => {
+    const id = classifierToolPermissionId;
+    if (id === null) return;
+    askBeforeHosted.disabled = true;
+    const request = askBeforeHosted.checked ? api2.toolPermissions.set({ toolIds: [id], policy: "ask" }) : api2.toolPermissions.reset({ toolIds: [id] });
+    void request.then((catalog) => {
+      const tool = catalog.groups.flatMap((group) => group.tools).find((item) => item.id === id);
+      askBeforeHosted.checked = tool?.policy === "ask";
+      askBeforeHosted.disabled = tool === void 0 || tool.policy === "block";
+    }).catch((error62) => {
+      askBeforeHosted.checked = !askBeforeHosted.checked;
+      askBeforeHosted.disabled = false;
+      setInlineStatus(status, "error", classifierErrorMessage(error62));
+    });
+  });
   function renderChips() {
     clear(chips);
     const items = [...profiles.map((item) => item.profile), ...drafts.values()].filter(
@@ -30386,15 +30414,25 @@ function createClassifiersSection(api2) {
       const loaded = await Promise.all([
         api2.classifiers.list(),
         api2.classifiers.screening(),
-        api2.classifiers.background()
+        api2.classifiers.background(),
+        api2.toolPermissions.list().then(
+          (catalog) => ({ catalog, error: null }),
+          (error62) => ({ catalog: null, error: classifierErrorMessage(error62) })
+        )
       ]);
       if (signal?.aborted || request !== refreshGeneration) return;
       [profiles, screeningId, backgroundId] = loaded;
+      const permissionResult = loaded[3];
+      const classifierTool = permissionResult.catalog?.groups.flatMap((group) => group.tools).find((tool) => tool.executionName === "ask_classifier");
+      classifierToolPermissionId = classifierTool?.id ?? null;
+      askBeforeHosted.checked = classifierTool?.policy === "ask";
+      askBeforeHosted.disabled = classifierTool === void 0 || classifierTool.policy === "block";
       selectedId ??= profiles[0]?.profile.id ?? null;
       void refreshLocal(signal);
       if (selectedId !== null && !drafts.has(selectedId) && !profiles.some((item) => item.profile.id === selectedId))
         selectedId = null;
       render2();
+      if (permissionResult.error !== null) setInlineStatus(status, "error", permissionResult.error);
     } catch (error62) {
       if (signal?.aborted || request !== refreshGeneration) return;
       setInlineStatus(status, "error", classifierErrorMessage(error62));
@@ -32903,7 +32941,7 @@ var init_purify_es = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
 var sanitize_dompurify_exports = {};
 __export(sanitize_dompurify_exports, {
   dompurifyBackend: () => dompurifyBackend,
@@ -32934,7 +32972,7 @@ function sanitizeDiagramSvg(svg2) {
 }
 var hookInstalled, activeOnElement, dompurifyBackend;
 var init_sanitize_dompurify = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
     init_purify_es();
     hookInstalled = false;
     dompurifyBackend = {
@@ -45557,11 +45595,11 @@ var init_acp_known_agents = __esm({
           // even allowlisted ChatGPT workspace-routing requests fail before a turn.
           allowMacOsTrustd: true
         },
-        setup: "codex login",
-        // ChatGPT sign-in; set NO_BROWSER=1 for headless, or use CODEX_API_KEY
-        reauth: "codex login",
+        setup: "codex-acp cli login",
+        // Use the adapter's bundled CLI; no standalone codex required.
+        reauth: "codex-acp cli login",
         docsUrl: "https://www.npmjs.com/package/@agentclientprotocol/codex-acp",
-        note: "Runs OpenAI Codex. Sign in with `codex login` (ChatGPT), or set `CODEX_API_KEY`."
+        note: "Runs OpenAI Codex. Sign in with `codex-acp cli login` (ChatGPT), or set `CODEX_API_KEY`."
       },
       {
         id: "github-copilot-cli",
@@ -78067,6 +78105,19 @@ var init_appearance_markup = __esm({
               </p>
             </fieldset>
 
+            <fieldset data-testid="settings-next-step">
+              <legend>Next-step tab complete</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="nextStepSuggestionEnabled" />
+                Offer an obvious next step in the message box after each turn
+              </label>
+              <p class="field-hint">
+                When a turn ends with one clearly valuable next move, it appears as placeholder
+                text in the message box \u2014 press Tab to accept it, or just type to ignore it.
+                Uses the small-tasks model; most turns show nothing.
+              </p>
+            </fieldset>
+
             <fieldset>
               <legend>Display</legend>
               <label>
@@ -78191,6 +78242,7 @@ var init_appearance_markup = __esm({
       { name: "openLinksInBuiltInBrowser", kind: "checkbox", default: true, save: true },
       { name: "animateAgentAvatars", kind: "checkbox", default: true, save: true },
       { name: "conciseThreadsEnabled", kind: "checkbox", default: true, save: true },
+      { name: "nextStepSuggestionEnabled", kind: "checkbox", default: true, save: true },
       { name: "alertOnInteraction", kind: "checkbox", default: true, save: true },
       { name: "alertOnThreadFinished", kind: "checkbox", default: true, save: true },
       { name: "alertSystemNotification", kind: "checkbox", default: true, save: true },
@@ -78284,19 +78336,6 @@ var init_experimental_markup = __esm({
                 network, plus booted iOS Simulators and Android emulators. Connections start
                 view-only; turn on control to send keyboard and pointer input. Clipboard is not
                 shared.
-              </p>
-            </fieldset>
-
-            <fieldset>
-              <legend>Next-step tab complete</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="nextStepSuggestionEnabled" />
-                Offer an obvious next step in the message box after each turn
-              </label>
-              <p class="field-hint">
-                When a turn ends with one clearly valuable next move, it appears as placeholder
-                text in the message box \u2014 press Tab to accept it, or just type to ignore it.
-                Uses the small-tasks model; most turns show nothing.
               </p>
             </fieldset>
 
@@ -78395,7 +78434,6 @@ var init_experimental_markup = __esm({
     experimentalFields = [
       { name: "vncEnabled", kind: "checkbox", default: false, save: true },
       { name: "modelClassifierEnabled", kind: "checkbox", default: false, save: true },
-      { name: "nextStepSuggestionEnabled", kind: "checkbox", default: false, save: true },
       { name: "deferredWorktreesEnabled", kind: "checkbox", default: false, save: true },
       { name: "containerRunsEnabled", kind: "checkbox", default: false, save: true },
       { name: "orchestrationStrategyEnabled", kind: "checkbox", default: false, save: true },
@@ -86165,6 +86203,78 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "activity-home-final-response",
+        label: "Activity home showing the final response of finished threads",
+        project: project("demo-activity-final-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        // Both settled threads are metadata-only, as threads that ended before launch
+        // are: the detail pane reads their last reply through threads.loadMessages.
+        threads: [
+          {
+            id: "demo-activity-final-new",
+            title: "New Thread",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          },
+          ...[
+            [
+              "review",
+              "Review open PRs",
+              "idle",
+              36e5,
+              [
+                "Reviewed the four open PRs.",
+                "",
+                "- **#3744** is ready to merge; CI is green.",
+                "- **#3728** needs a rebase onto `main` before review.",
+                "- **#3702** and **#3695** overlap; I left a comment suggesting #3695 lands first.",
+                "",
+                "Nothing else is waiting on you."
+              ].join("\n")
+            ],
+            [
+              "flaky",
+              "Fix the flaky sandbox test",
+              "error",
+              36e5 * 3,
+              "The retry wrapper is in place, but `pnpm test -- sandbox` still times out on the second run."
+            ]
+          ].map(([slug2, title, status, ago, reply], index) => ({
+            id: `demo-activity-final-${slug2}`,
+            title,
+            status,
+            messages: [
+              {
+                id: `demo-activity-final-${slug2}-user`,
+                role: "user",
+                content: title,
+                toolCalls: [],
+                createdAt: Date.now() - ago - 3e4
+              },
+              {
+                id: `demo-activity-final-${slug2}-reply`,
+                role: "assistant",
+                content: reply,
+                toolCalls: [],
+                createdAt: Date.now() - ago
+              }
+            ],
+            messagesLoaded: false,
+            usage: { inputTokens: 1200, outputTokens: 300 },
+            createdAt: Date.now() - ago - 6e4,
+            updatedAt: Date.now() - ago,
+            lastPromptAt: Date.now() - ago - 3e4 - index
+          }))
+        ]
+      },
+      {
         id: "activity-home-empty",
         label: "Activity home with nothing to list",
         project: project("demo-activity-home-empty-project"),
@@ -87760,6 +87870,7 @@ function createDemoApi(scenario2, options = {}) {
       // The demo has no linked worktrees, so there is never a detached one.
       worktreeAttachment: () => resolved2({ state: "attached" }),
       reattachWorktree: () => Promise.reject(new Error("The demo has no thread worktrees")),
+      restoreWorktree: () => Promise.reject(new Error("The demo has no thread worktrees")),
       promptState: () => resolved2({ startingCommit: null, dirty: false }),
       checkoutBranch: (_projectId, _threadId, branch) => {
         currentBranch = branch;
@@ -88317,6 +88428,7 @@ var init_autoplay = __esm({
 // src/renderer/controller/mobile-chat.ts
 async function acceptMobileChat(store2, api2, command2) {
   let ownedThread = null;
+  const text2 = command2.text || "Please look at this image.";
   const checkCurrent = () => {
     if (Date.now() >= command2.expiresAt) throw new Error("This send expired. Try again.");
     if (store2.getState().activeProjectId !== command2.projectId)
@@ -88342,7 +88454,7 @@ async function acceptMobileChat(store2, api2, command2) {
       const prepared = await api2.agent.prepareCheckout(
         command2.projectId,
         threadId,
-        command2.text,
+        text2,
         "automatic",
         initial.model
       );
@@ -88352,8 +88464,19 @@ async function acceptMobileChat(store2, api2, command2) {
     const current = getThreadById(store2, threadId);
     if (!current || current.archivedAt !== void 0) throw new Error("Thread unavailable.");
     checkCurrent();
-    const payload = { content: command2.text };
-    const messageId = addMessage(store2, threadId, "user", command2.text);
+    const payload = {
+      content: command2.image ? [
+        { type: "image", dataUrl: command2.image },
+        { type: "text", text: text2 }
+      ] : text2
+    };
+    const messageId = addMessage(
+      store2,
+      threadId,
+      "user",
+      text2,
+      command2.image ? [command2.image] : void 0
+    );
     const queued = { messageId, payload, createdAt: Date.now() };
     const running = current.status === "running";
     if (running) enqueueUserMessage(store2, threadId, queued);
@@ -88393,9 +88516,9 @@ var init_tokens = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/styles/default.css
 var init_default = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/styles/default.css"() {
   }
 });
 
@@ -91080,6 +91203,60 @@ var init_patch_children = __esm({
   }
 });
 
+// src/renderer/controller/activity-final-reply.ts
+function finalReplyText(messages) {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message2 = messages[index];
+    if (!message2 || message2.role === "user") return null;
+    if (message2.role !== "assistant") continue;
+    const text2 = message2.content.trim();
+    if (text2 === "") continue;
+    return text2.length <= FINAL_REPLY_MAX_CHARS ? text2 : `${text2.slice(0, FINAL_REPLY_MAX_CHARS).trimEnd()}\u2026`;
+  }
+  return null;
+}
+function createFinalReplyCache(load, onLoaded) {
+  const entries2 = /* @__PURE__ */ new Map();
+  const remember = (key, reply) => {
+    entries2.delete(key);
+    entries2.set(key, reply);
+    while (entries2.size > FINAL_REPLY_CACHE_SIZE) {
+      const oldest = entries2.keys().next().value;
+      if (oldest === void 0) break;
+      entries2.delete(oldest);
+    }
+  };
+  return (request) => {
+    if (request.messages) {
+      const reply = { state: "ready", text: finalReplyText(request.messages) };
+      remember(request.key, reply);
+      return reply;
+    }
+    const known = entries2.get(request.key);
+    if (known) return known;
+    const loading = { state: "loading" };
+    remember(request.key, loading);
+    load(request.projectId, request.threadId).then(
+      (messages) => {
+        remember(request.key, { state: "ready", text: finalReplyText(messages) });
+        onLoaded();
+      },
+      () => {
+        remember(request.key, { state: "ready", text: null });
+        onLoaded();
+      }
+    );
+    return loading;
+  };
+}
+var FINAL_REPLY_MAX_CHARS, FINAL_REPLY_CACHE_SIZE;
+var init_activity_final_reply = __esm({
+  "src/renderer/controller/activity-final-reply.ts"() {
+    FINAL_REPLY_MAX_CHARS = 2e4;
+    FINAL_REPLY_CACHE_SIZE = 20;
+  }
+});
+
 // src/renderer/controller/activity-model.ts
 function truncateText(text2, max = WANT_MAX_CHARS) {
   const flat = text2.replace(/\s+/g, " ").trim();
@@ -92093,6 +92270,36 @@ var init_approval_dialog = __esm({
   }
 });
 
+// packages/agent/src/ask-user-format.ts
+var askUserQuestionSchema, askUserParamsSchema, ASK_USER_ANSWER_MAX_LENGTH;
+var init_ask_user_format = __esm({
+  "packages/agent/src/ask-user-format.ts"() {
+    init_zod();
+    askUserQuestionSchema = external_exports.object({
+      question: external_exports.string().min(1).describe("The clarifying question to ask the user."),
+      options: external_exports.array(external_exports.string().min(1)).max(8).optional().describe("Optional suggested answers the user can pick from instead of typing."),
+      recommendedOption: external_exports.string().min(1).optional().describe("The exact option the agent recommends, when one is supported by the evidence."),
+      recommendationReason: external_exports.string().min(1).optional().describe("A brief reason for the recommendation, shown to the user.")
+    }).refine(
+      (question) => !question.recommendedOption || question.options?.includes(question.recommendedOption),
+      {
+        message: "recommendedOption must be one of options",
+        path: ["recommendedOption"]
+      }
+    ).refine(
+      (question) => Boolean(question.recommendedOption) === Boolean(question.recommendationReason),
+      {
+        message: "A recommendation needs both an option and a reason",
+        path: ["recommendationReason"]
+      }
+    );
+    askUserParamsSchema = external_exports.object({
+      questions: external_exports.array(askUserQuestionSchema).min(1).max(10).describe("One or more clarifying questions to ask the user before continuing.")
+    });
+    ASK_USER_ANSWER_MAX_LENGTH = 8192;
+  }
+});
+
 // src/renderer/views/activity-view.ts
 function stateGlyph(state) {
   const className = "ui-icon ui-icon-sm activity-glyph";
@@ -92113,6 +92320,12 @@ function createActivityView(api2, store2, sources3, deps, host) {
   const now = deps.now ?? Date.now;
   const setTimer = deps.setTimer ?? defaultTimer2;
   const timings = trackRunTimings(store2, now);
+  const finalReply = createFinalReplyCache(
+    (projectId, threadId) => api2.threads.loadMessages(projectId, threadId),
+    () => {
+      scheduleRender();
+    }
+  );
   const summary = el("p", { id: `${host.idPrefix}-summary`, class: "activity-panel-summary" });
   const list = el("nav", { class: "activity-list", "aria-label": "Threads" });
   const detail = el("section", {
@@ -92238,6 +92451,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
       class: "activity-answer-input",
       rows: "2",
       placeholder: "Or type an answer\u2026",
+      maxlength: String(ASK_USER_ANSWER_MAX_LENGTH),
       "data-control": `answer-${String(index)}`,
       "aria-labelledby": questionId
     });
@@ -92247,7 +92461,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
       next[index] = input2.value;
       drafts.set(requestId, next);
       const send = detail.querySelector(".activity-answer");
-      if (send) send.disabled = !hasAnswer(requestId);
+      if (send) send.disabled = settling || !hasAnswer(requestId);
     };
     input2.addEventListener("input", sync);
     input2.addEventListener("keydown", (event) => {
@@ -92389,7 +92603,26 @@ function createActivityView(api2, store2, sources3, deps, host) {
       ];
     }
     if (row2.issue) return issueBlock(row2);
-    return [el("p", { class: "activity-detail-text" }, row2.want)];
+    return finalReplyContent(row2) ?? [el("p", { class: "activity-detail-text" }, row2.want)];
+  }
+  function finalReplyContent(row2) {
+    if (row2.state !== "finished" && row2.state !== "failed") return null;
+    if (row2.fold || !row2.threadId || !row2.projectId) return null;
+    const thread = getThreadById(store2, row2.threadId);
+    const reply = finalReply({
+      key: `${row2.threadId}:${String(row2.since)}`,
+      projectId: row2.projectId,
+      threadId: row2.threadId,
+      messages: thread && thread.messagesLoaded !== false ? thread.messages : null
+    });
+    if (reply.state === "loading") {
+      return [el("p", { class: "activity-detail-note" }, "Loading the final response\u2026")];
+    }
+    if (reply.text === null) return null;
+    const text2 = el("div", { class: "activity-final-reply streaming-markdown" });
+    text2.innerHTML = renderMarkdown(reply.text);
+    const label = row2.state === "failed" ? "Last response" : "Final response";
+    return [el("p", { class: "activity-detail-label" }, label), text2];
   }
   function detailActions(row2) {
     const actions = [openThreadButton(row2)];
@@ -93104,8 +93337,11 @@ var init_activity_view = __esm({
     init_patch_children();
     init_icons();
     init_projects();
+    init_activity_final_reply();
+    init_thread_helpers();
     init_activity_model();
     init_approval_dialog();
+    init_ask_user_format();
     ACTIVITY_RENDER_INTERVAL_MS = 250;
     ACTIVITY_AGE_REFRESH_MS = 3e4;
     STATE_SHORT = {
@@ -98920,7 +99156,7 @@ var init_table_copy = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js
 function parseDiagramSize(value) {
   if (typeof value !== "object" || value === null)
     return null;
@@ -98939,14 +99175,14 @@ function parseDiagramSize(value) {
 }
 var MAX_DIAGRAM_SOURCE_LENGTH, MAX_DIAGRAM_DIMENSION, MAX_FONT_BYTES;
 var init_mermaid_frame_protocol = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js"() {
     MAX_DIAGRAM_SOURCE_LENGTH = 5e4;
     MAX_DIAGRAM_DIMENSION = 4096;
     MAX_FONT_BYTES = 4 * 1024 * 1024;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js
 function copyBytes(data) {
   if (data instanceof ArrayBuffer)
     return data.slice(0);
@@ -99031,7 +99267,7 @@ function createMermaidFrame(source, options) {
 }
 var ISOLATED_DIAGRAM_ATTRIBUTE, MOUNTABLE_SELECTOR;
 var init_mermaid_isolated = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js"() {
     init_mermaid_frame_protocol();
     ISOLATED_DIAGRAM_ATTRIBUTE = "data-isolated-diagram";
     MOUNTABLE_SELECTOR = `.mermaid-diagram.mermaid-diagram--pending:not(.stream-fence-forming):not([${ISOLATED_DIAGRAM_ATTRIBUTE}])`;
@@ -99333,7 +99569,7 @@ var init_mermaid2 = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/smoothing.js
 function defaultNow() {
   const perf = globalThis.performance;
   return typeof perf?.now === "function" ? perf.now() : Date.now();
@@ -99517,7 +99753,7 @@ function createInputSmoother(options) {
 }
 var DEFAULT_CHARS_PER_SECOND3, DEFAULT_LAG_MS, VELOCITY_SMOOTHING_MS, MIN_CHARS_PER_MS, MAX_FRAME_GAP_MS, DRAIN_LAG_MS, MAX_BOUNDARY_EXTENSION, REDUCED_MOTION_QUERY, SYNTAX_CHARS;
 var init_smoothing = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
     DEFAULT_CHARS_PER_SECOND3 = 600;
     DEFAULT_LAG_MS = 120;
     VELOCITY_SMOOTHING_MS = 180;
@@ -100081,9 +100317,9 @@ var init_browser_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/host-workspace.js
 var init_host_workspace = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
     init_inline_links();
     init_workspace_link_href();
   }
@@ -107009,6 +107245,7 @@ function mountConversation(root, store2, api2) {
   let userScrolledUpAt = 0;
   let renderedThreadId = null;
   let stickyImagePrompt = null;
+  let stickyImageFullHeight = 0;
   let backfillGeneration = 0;
   const disclosurePreferences = /* @__PURE__ */ new Map();
   const liveRollupMessages = /* @__PURE__ */ new Set();
@@ -107131,12 +107368,13 @@ function mountConversation(root, store2, api2) {
   function updateScrollButton() {
     scrollToBottomBtn.hidden = isNearBottom();
   }
-  function syncStickyImagePreview() {
+  function syncStickyImagePreview(releaseOnScrollUp = false) {
     const prompt = stickyImagePrompt;
     if (!prompt?.isConnected) return;
     const promptStyle = window.getComputedStyle(prompt);
     if (promptStyle.position !== "sticky") {
       prompt.classList.remove("is-preview-compact");
+      stickyImageFullHeight = 0;
       return;
     }
     const listRect = list.getBoundingClientRect();
@@ -107144,7 +107382,13 @@ function mountConversation(root, store2, api2) {
     const previous = prompt.previousElementSibling;
     const naturalTop = previous ? previous.getBoundingClientRect().bottom + Number.parseFloat(listStyle.rowGap) : listRect.top + Number.parseFloat(listStyle.paddingTop) - list.scrollTop;
     const stickyTop = listRect.top + Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top);
-    prompt.classList.toggle("is-preview-compact", naturalTop < stickyTop - 1);
+    const compact = prompt.classList.contains("is-preview-compact");
+    const releaseOffset = compact ? Math.max(0, stickyImageFullHeight - prompt.getBoundingClientRect().height) : 0;
+    const shouldCompact = naturalTop < stickyTop + (releaseOnScrollUp ? 0 : releaseOffset) - 1;
+    if (shouldCompact === compact) return;
+    if (shouldCompact) stickyImageFullHeight = prompt.getBoundingClientRect().height;
+    else stickyImageFullHeight = 0;
+    prompt.classList.toggle("is-preview-compact", shouldCompact);
   }
   function refreshStickyImagePrompt() {
     const prompts = list.querySelectorAll(
@@ -107152,13 +107396,15 @@ function mountConversation(root, store2, api2) {
     );
     const latest = prompts[prompts.length - 1];
     const next = latest?.querySelector(".message-images") ? latest : null;
-    if (stickyImagePrompt !== next) stickyImagePrompt?.classList.remove("is-preview-compact");
+    if (stickyImagePrompt !== next) {
+      stickyImagePrompt?.classList.remove("is-preview-compact");
+      stickyImageFullHeight = 0;
+    }
     stickyImagePrompt = next;
     syncStickyImagePreview();
   }
   function handleUserScroll() {
     const scrollTop = list.scrollTop;
-    syncStickyImagePreview();
     if (scrollTop === lastProgrammaticScrollTop) {
       lastProgrammaticScrollTop = -1;
       lastScrollTop = scrollTop;
@@ -107166,6 +107412,7 @@ function mountConversation(root, store2, api2) {
     }
     const dropped = scrollTop < lastScrollTop - 1;
     const clamped = dropped && list.scrollHeight - scrollTop - list.clientHeight <= 1;
+    syncStickyImagePreview(dropped && !clamped);
     if (clamped) {
     } else if (dropped) {
       userScrolledUpAt = Date.now();
@@ -107179,7 +107426,9 @@ function mountConversation(root, store2, api2) {
     updateScrollButton();
   }
   list.addEventListener("scroll", handleUserScroll, { passive: true });
-  const listResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(syncStickyImagePreview);
+  const listResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
+    syncStickyImagePreview();
+  });
   listResizeObserver?.observe(list);
   const conciseFooterObserver = new MutationObserver(scheduleConciseTurnFooterSync);
   conciseFooterObserver.observe(list, { childList: true });
@@ -148821,7 +149070,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     return thread ? isBlankThread(thread) : false;
   }
   function getDisplayBranch() {
-    return activeBaseBranch() ?? getActiveThreadBranch() ?? status?.currentBranch ?? null;
+    return activeBaseBranch() ?? getActiveThreadBranch() ?? getActiveThread2()?.worktree?.branch ?? status?.currentBranch ?? null;
   }
   function getVisiblePr() {
     const pr2 = status?.pr;
@@ -148915,6 +149164,15 @@ function mountFooterBranchStatus(host, store2, api2) {
       trigger.title = `This checkout is detached from ${current.branch}. Recovery is offered once the agent stops working in it.`;
     }
     if (!shown) return;
+    if (current.state === "missing") {
+      const title2 = current.reason ?? "Worktree removed. Restore committed files from the retained branch to continue this chat. Dependencies and local-only files are not restored.";
+      trigger.title = title2;
+      reattachButton.title = title2;
+      reattachButton.disabled = reattaching || current.reason !== null;
+      reattachButton.setAttribute("aria-label", `Restore worktree for ${current.branch}`);
+      reattachButton.textContent = reattaching ? "Restoring\u2026" : "Restore worktree";
+      return;
+    }
     const title = detachedTitle(current);
     trigger.title = title;
     reattachButton.title = title;
@@ -148948,7 +149206,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     reattachButton.textContent = reattaching ? "Reattaching\u2026" : "Reattach";
   }
   function agentCanTouchCheckout(current) {
-    return getActiveThread2()?.status === "running" || current?.agentBusy === true;
+    return getActiveThread2()?.status === "running" || current?.state === "detached" && current.agentBusy === true;
   }
   function activeDetached() {
     return detached?.threadId === store2.getState().activeThreadId ? detached : null;
@@ -148963,7 +149221,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   async function readDetachedAttachment(owner) {
     try {
       const attachment = await api2.git.worktreeAttachment(owner.projectId, owner.threadId);
-      return attachment.state === "detached" ? attachment : null;
+      return attachment.state !== "attached" ? attachment : null;
     } catch (error62) {
       reportBranchFailure("inspect worktree attachment", error62);
       return null;
@@ -148974,7 +149232,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     const current = activeDetached();
     if (!owner || !current || agentCanTouchCheckout(current) || reattaching || activeRecoveryRunId() !== null)
       return;
-    if (current.recovery) {
+    if (current.state === "detached" && current.recovery) {
       const runId = globalThis.crypto.randomUUID();
       recoveryRuns.set(recoveryKey(owner.projectId, owner.threadId), runId);
       renderReattach();
@@ -148995,13 +149253,23 @@ function mountFooterBranchStatus(host, store2, api2) {
     reattaching = true;
     renderReattach();
     try {
+      if (current.state === "missing") {
+        await api2.git.restoreWorktree(owner.projectId, owner.threadId);
+        store2.emit("thread_checkout_changed", owner.threadId);
+        showToast(`Restored worktree for ${current.branch}. You can continue this chat.`);
+        store2.emit("git_branch_changed");
+        return;
+      }
       const result = await api2.git.reattachWorktree(owner.projectId, owner.threadId);
       showToast(
         result.backupBranch ? `Reattached to ${result.branch}. Its previous tip is saved as ${result.backupBranch}.` : `Reattached to ${result.branch}`
       );
       store2.emit("git_branch_changed");
     } catch (error62) {
-      showErrorToast("Could not reattach the checkout", error62);
+      showErrorToast(
+        current.state === "missing" ? "Could not restore the worktree" : "Could not reattach the checkout",
+        error62
+      );
     } finally {
       reattaching = false;
       refreshNow();
@@ -150853,7 +151121,7 @@ function mountNextStepHint(store2, api2, onChanged) {
       refreshDisplayed();
       return;
     }
-    if (await api2.settings.get("nextStepSuggestionEnabled") !== true) {
+    if (await api2.settings.get("nextStepSuggestionEnabled") === false) {
       refreshDisplayed();
       return;
     }
@@ -154235,6 +154503,10 @@ ${reply}`);
     }),
     store2.on("git_branch_changed", () => {
       void refreshAutomaticCheckoutPreview();
+    }),
+    store2.on("thread_checkout_changed", (threadId) => {
+      checkoutErrors.delete(threadId);
+      updateCheckoutControl();
     })
   ];
   const observer = new MutationObserver(() => {
@@ -169469,11 +169741,18 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
   let storageToken = 0;
   let storageKey = "";
   let storageText = "Calculating\u2026";
+  let storageCheckedAt = 0;
+  let storagePending = false;
   let changesToken = 0;
   let changesKey = "";
   let changesText = "Calculating\u2026";
   let changeStats = null;
+  let changesCheckedAt = 0;
+  let changesPending = false;
+  let renderedKey = "";
   let disposed = false;
+  const STORAGE_FRESH_MS = 5 * 6e4;
+  const CHANGES_FRESH_MS = 6e4;
   function activeStorageKey() {
     const state = store2.getState();
     const thread = getActiveThread(store2);
@@ -169497,24 +169776,39 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     const thread = getActiveThread(store2);
     const projectId = store2.getState().activeProjectId;
     if (!thread || !projectId) return;
-    const mine = ++changesToken;
     const key = activeStorageKey();
-    changesKey = key;
-    changesText = "Calculating\u2026";
-    changeStats = null;
+    if (key !== changesKey) {
+      changesKey = key;
+      changesText = "Calculating\u2026";
+      changeStats = null;
+      changesCheckedAt = 0;
+      changesPending = false;
+    } else if (changesPending || changesCheckedAt && Date.now() - changesCheckedAt < CHANGES_FRESH_MS) {
+      return;
+    }
+    const mine = ++changesToken;
+    changesPending = true;
     const update = () => {
       const slot = viewerRoot.querySelector("[data-context-change-stats]");
       if (slot) slot.replaceChildren(...changesContent());
     };
-    update();
     try {
       const stats = await api2.git.changeStats(projectId, thread.id);
       if (disposed || mine !== changesToken || key !== activeStorageKey()) return;
-      changeStats = stats ?? { additions: 0, deletions: 0 };
+      const next = stats ?? { additions: 0, deletions: 0 };
+      changesCheckedAt = Date.now();
+      if (changeStats?.additions === next.additions && changeStats.deletions === next.deletions)
+        return;
+      changeStats = next;
     } catch (error62) {
       if (disposed || mine !== changesToken || key !== activeStorageKey()) return;
       console.error("[context] change totals lookup failed:", error62);
+      changesCheckedAt = Date.now();
+      if (!changeStats && changesText === "Unavailable") return;
+      changeStats = null;
       changesText = "Unavailable";
+    } finally {
+      if (mine === changesToken) changesPending = false;
     }
     update();
   }
@@ -169523,26 +169817,39 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     const thread = getActiveThread(store2);
     const projectId = store2.getState().activeProjectId;
     if (!thread || !projectId) return;
-    const mine = ++storageToken;
     const key = activeStorageKey();
-    storageKey = key;
-    storageText = "Calculating\u2026";
+    if (key !== storageKey) {
+      storageKey = key;
+      storageText = "Calculating\u2026";
+      storageCheckedAt = 0;
+      storagePending = false;
+    } else if (storagePending || storageCheckedAt && Date.now() - storageCheckedAt < STORAGE_FRESH_MS) {
+      return;
+    }
+    const mine = ++storageToken;
+    storagePending = true;
     const update = () => {
       const slot = viewerRoot.querySelector("[data-context-storage-size]");
-      if (slot) slot.textContent = storageText;
+      if (slot && slot.textContent !== storageText) slot.textContent = storageText;
     };
-    update();
     try {
       const [saved, checkout] = await Promise.all([
         api2.threads.storageSize(projectId, thread.id),
         thread.worktree && thread.worktree.retiredAt === void 0 ? api2.worktrees.size(projectId, thread.worktree.path) : Promise.resolve({ bytes: 0, truncated: false })
       ]);
       if (disposed || mine !== storageToken || key !== activeStorageKey()) return;
-      storageText = `${saved.truncated || checkout.truncated ? "At least " : ""}${formatByteSize(saved.bytes + checkout.bytes)}`;
+      storageCheckedAt = Date.now();
+      const next = `${saved.truncated || checkout.truncated ? "At least " : ""}${formatByteSize(saved.bytes + checkout.bytes)}`;
+      if (storageText === next) return;
+      storageText = next;
     } catch (error62) {
       if (disposed || mine !== storageToken || key !== activeStorageKey()) return;
       console.error("[context] storage lookup failed:", error62);
+      storageCheckedAt = Date.now();
+      if (storageText === "Unavailable") return;
       storageText = "Unavailable";
+    } finally {
+      if (mine === storageToken) storagePending = false;
     }
     update();
   }
@@ -169573,8 +169880,10 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
   function render2() {
     const state = store2.getState();
     const thread = getActiveThread(store2);
-    clear(viewerRoot);
     if (!thread) {
+      if (renderedKey === "empty") return;
+      renderedKey = "empty";
+      clear(viewerRoot);
       viewerRoot.append(emptyNote("Open a thread to see its context."));
       return;
     }
@@ -169585,6 +169894,10 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
       threads: state.threads,
       mentionedIn: mentionedFor === thread.id ? mentionedIn : []
     });
+    const key = JSON.stringify([state.activeProjectId, model, thread.archivedAt]);
+    if (key === renderedKey) return;
+    renderedKey = key;
+    clear(viewerRoot);
     const content = renderThreadContext(model, handlers4);
     const archive = el(
       "button",
@@ -191760,6 +192073,7 @@ function mountAskUserDialog(api2, store2) {
       const input2 = el("textarea", {
         class: "ask-user-input",
         rows: "2",
+        maxlength: String(ASK_USER_ANSWER_MAX_LENGTH),
         "data-question-index": String(i3),
         "aria-labelledby": questionId
       });
@@ -191882,7 +192196,10 @@ function mountAskUserDialog(api2, store2) {
       if (idx === -1) return;
       queue.splice(idx, 1);
     }
-    void api2.ask.respond(request.id, answers);
+    void api2.ask.respond(
+      request.id,
+      answers.map((answer) => answer.slice(0, ASK_USER_ANSWER_MAX_LENGTH))
+    );
     showNext();
     syncAttention();
   }
@@ -191977,6 +192294,7 @@ var init_ask_user_dialog = __esm({
     init_projects();
     init_side_chat3();
     init_dialog_shell();
+    init_ask_user_format();
   }
 });
 
@@ -202790,7 +203108,7 @@ var init_yaml = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
 var highlight_hljs_exports = {};
 __export(highlight_hljs_exports, {
   highlightjsHighlighter: () => highlightjsHighlighter,
@@ -202801,7 +203119,7 @@ function loadHighlightjs() {
 }
 var highlightjsHighlighter;
 var init_highlight_hljs = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.16_entities@8.1.0_highlight.js@11.12.0_ka_864bbc2a8f63d21ef6a0082403b4f95c/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
     init_core3();
     init_bash();
     init_css();

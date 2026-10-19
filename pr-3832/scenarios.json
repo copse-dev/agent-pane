@@ -184,6 +184,10 @@
     "label": "Activity home listing threads that finished before launch"
   },
   {
+    "id": "activity-home-final-response",
+    "label": "Activity home showing the final response of finished threads"
+  },
+  {
     "id": "activity-home-empty",
     "label": "Activity home with nothing to list"
   },
