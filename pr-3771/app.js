@@ -78116,6 +78116,19 @@ var init_appearance_markup = __esm({
               </p>
             </fieldset>
 
+            <fieldset data-testid="settings-next-step">
+              <legend>Next-step tab complete</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="nextStepSuggestionEnabled" />
+                Offer an obvious next step in the message box after each turn
+              </label>
+              <p class="field-hint">
+                When a turn ends with one clearly valuable next move, it appears as placeholder
+                text in the message box \u2014 press Tab to accept it, or just type to ignore it.
+                Uses the small-tasks model; most turns show nothing.
+              </p>
+            </fieldset>
+
             <fieldset>
               <legend>Display</legend>
               <label>
@@ -78240,6 +78253,7 @@ var init_appearance_markup = __esm({
       { name: "openLinksInBuiltInBrowser", kind: "checkbox", default: true, save: true },
       { name: "animateAgentAvatars", kind: "checkbox", default: true, save: true },
       { name: "conciseThreadsEnabled", kind: "checkbox", default: true, save: true },
+      { name: "nextStepSuggestionEnabled", kind: "checkbox", default: true, save: true },
       { name: "alertOnInteraction", kind: "checkbox", default: true, save: true },
       { name: "alertOnThreadFinished", kind: "checkbox", default: true, save: true },
       { name: "alertSystemNotification", kind: "checkbox", default: true, save: true },
@@ -78333,19 +78347,6 @@ var init_experimental_markup = __esm({
                 network, plus booted iOS Simulators and Android emulators. Connections start
                 view-only; turn on control to send keyboard and pointer input. Clipboard is not
                 shared.
-              </p>
-            </fieldset>
-
-            <fieldset>
-              <legend>Next-step tab complete</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="nextStepSuggestionEnabled" />
-                Offer an obvious next step in the message box after each turn
-              </label>
-              <p class="field-hint">
-                When a turn ends with one clearly valuable next move, it appears as placeholder
-                text in the message box \u2014 press Tab to accept it, or just type to ignore it.
-                Uses the small-tasks model; most turns show nothing.
               </p>
             </fieldset>
 
@@ -78444,7 +78445,6 @@ var init_experimental_markup = __esm({
     experimentalFields = [
       { name: "vncEnabled", kind: "checkbox", default: false, save: true },
       { name: "modelClassifierEnabled", kind: "checkbox", default: false, save: true },
-      { name: "nextStepSuggestionEnabled", kind: "checkbox", default: false, save: true },
       { name: "deferredWorktreesEnabled", kind: "checkbox", default: false, save: true },
       { name: "containerRunsEnabled", kind: "checkbox", default: false, save: true },
       { name: "orchestrationStrategyEnabled", kind: "checkbox", default: false, save: true },
@@ -87877,6 +87877,7 @@ function createDemoApi(scenario2, options = {}) {
       // The demo has no linked worktrees, so there is never a detached one.
       worktreeAttachment: () => resolved2({ state: "attached" }),
       reattachWorktree: () => Promise.reject(new Error("The demo has no thread worktrees")),
+      restoreWorktree: () => Promise.reject(new Error("The demo has no thread worktrees")),
       promptState: () => resolved2({ startingCommit: null, dirty: false }),
       checkoutBranch: (_projectId, _threadId, branch) => {
         currentBranch = branch;
@@ -107251,6 +107252,7 @@ function mountConversation(root, store2, api2) {
   let userScrolledUpAt = 0;
   let renderedThreadId = null;
   let stickyImagePrompt = null;
+  let stickyImageFullHeight = 0;
   let backfillGeneration = 0;
   const disclosurePreferences = /* @__PURE__ */ new Map();
   const liveRollupMessages = /* @__PURE__ */ new Set();
@@ -107373,12 +107375,13 @@ function mountConversation(root, store2, api2) {
   function updateScrollButton() {
     scrollToBottomBtn.hidden = isNearBottom();
   }
-  function syncStickyImagePreview() {
+  function syncStickyImagePreview(releaseOnScrollUp = false) {
     const prompt = stickyImagePrompt;
     if (!prompt?.isConnected) return;
     const promptStyle = window.getComputedStyle(prompt);
     if (promptStyle.position !== "sticky") {
       prompt.classList.remove("is-preview-compact");
+      stickyImageFullHeight = 0;
       return;
     }
     const listRect = list.getBoundingClientRect();
@@ -107386,7 +107389,13 @@ function mountConversation(root, store2, api2) {
     const previous = prompt.previousElementSibling;
     const naturalTop = previous ? previous.getBoundingClientRect().bottom + Number.parseFloat(listStyle.rowGap) : listRect.top + Number.parseFloat(listStyle.paddingTop) - list.scrollTop;
     const stickyTop = listRect.top + Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top);
-    prompt.classList.toggle("is-preview-compact", naturalTop < stickyTop - 1);
+    const compact = prompt.classList.contains("is-preview-compact");
+    const releaseOffset = compact ? Math.max(0, stickyImageFullHeight - prompt.getBoundingClientRect().height) : 0;
+    const shouldCompact = naturalTop < stickyTop + (releaseOnScrollUp ? 0 : releaseOffset) - 1;
+    if (shouldCompact === compact) return;
+    if (shouldCompact) stickyImageFullHeight = prompt.getBoundingClientRect().height;
+    else stickyImageFullHeight = 0;
+    prompt.classList.toggle("is-preview-compact", shouldCompact);
   }
   function refreshStickyImagePrompt() {
     const prompts = list.querySelectorAll(
@@ -107394,13 +107403,15 @@ function mountConversation(root, store2, api2) {
     );
     const latest = prompts[prompts.length - 1];
     const next = latest?.querySelector(".message-images") ? latest : null;
-    if (stickyImagePrompt !== next) stickyImagePrompt?.classList.remove("is-preview-compact");
+    if (stickyImagePrompt !== next) {
+      stickyImagePrompt?.classList.remove("is-preview-compact");
+      stickyImageFullHeight = 0;
+    }
     stickyImagePrompt = next;
     syncStickyImagePreview();
   }
   function handleUserScroll() {
     const scrollTop = list.scrollTop;
-    syncStickyImagePreview();
     if (scrollTop === lastProgrammaticScrollTop) {
       lastProgrammaticScrollTop = -1;
       lastScrollTop = scrollTop;
@@ -107408,6 +107419,7 @@ function mountConversation(root, store2, api2) {
     }
     const dropped = scrollTop < lastScrollTop - 1;
     const clamped = dropped && list.scrollHeight - scrollTop - list.clientHeight <= 1;
+    syncStickyImagePreview(dropped && !clamped);
     if (clamped) {
     } else if (dropped) {
       userScrolledUpAt = Date.now();
@@ -107421,7 +107433,9 @@ function mountConversation(root, store2, api2) {
     updateScrollButton();
   }
   list.addEventListener("scroll", handleUserScroll, { passive: true });
-  const listResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(syncStickyImagePreview);
+  const listResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
+    syncStickyImagePreview();
+  });
   listResizeObserver?.observe(list);
   const conciseFooterObserver = new MutationObserver(scheduleConciseTurnFooterSync);
   conciseFooterObserver.observe(list, { childList: true });
@@ -149063,7 +149077,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     return thread ? isBlankThread(thread) : false;
   }
   function getDisplayBranch() {
-    return activeBaseBranch() ?? getActiveThreadBranch() ?? status?.currentBranch ?? null;
+    return activeBaseBranch() ?? getActiveThreadBranch() ?? getActiveThread2()?.worktree?.branch ?? status?.currentBranch ?? null;
   }
   function getVisiblePr() {
     const pr2 = status?.pr;
@@ -149157,6 +149171,15 @@ function mountFooterBranchStatus(host, store2, api2) {
       trigger.title = `This checkout is detached from ${current.branch}. Recovery is offered once the agent stops working in it.`;
     }
     if (!shown) return;
+    if (current.state === "missing") {
+      const title2 = current.reason ?? "Worktree removed. Restore committed files from the retained branch to continue this chat. Dependencies and local-only files are not restored.";
+      trigger.title = title2;
+      reattachButton.title = title2;
+      reattachButton.disabled = reattaching || current.reason !== null;
+      reattachButton.setAttribute("aria-label", `Restore worktree for ${current.branch}`);
+      reattachButton.textContent = reattaching ? "Restoring\u2026" : "Restore worktree";
+      return;
+    }
     const title = detachedTitle(current);
     trigger.title = title;
     reattachButton.title = title;
@@ -149190,7 +149213,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     reattachButton.textContent = reattaching ? "Reattaching\u2026" : "Reattach";
   }
   function agentCanTouchCheckout(current) {
-    return getActiveThread2()?.status === "running" || current?.agentBusy === true;
+    return getActiveThread2()?.status === "running" || current?.state === "detached" && current.agentBusy === true;
   }
   function activeDetached() {
     return detached?.threadId === store2.getState().activeThreadId ? detached : null;
@@ -149205,7 +149228,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   async function readDetachedAttachment(owner) {
     try {
       const attachment = await api2.git.worktreeAttachment(owner.projectId, owner.threadId);
-      return attachment.state === "detached" ? attachment : null;
+      return attachment.state !== "attached" ? attachment : null;
     } catch (error62) {
       reportBranchFailure("inspect worktree attachment", error62);
       return null;
@@ -149216,7 +149239,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     const current = activeDetached();
     if (!owner || !current || agentCanTouchCheckout(current) || reattaching || activeRecoveryRunId() !== null)
       return;
-    if (current.recovery) {
+    if (current.state === "detached" && current.recovery) {
       const runId = globalThis.crypto.randomUUID();
       recoveryRuns.set(recoveryKey(owner.projectId, owner.threadId), runId);
       renderReattach();
@@ -149237,13 +149260,23 @@ function mountFooterBranchStatus(host, store2, api2) {
     reattaching = true;
     renderReattach();
     try {
+      if (current.state === "missing") {
+        await api2.git.restoreWorktree(owner.projectId, owner.threadId);
+        store2.emit("thread_checkout_changed", owner.threadId);
+        showToast(`Restored worktree for ${current.branch}. You can continue this chat.`);
+        store2.emit("git_branch_changed");
+        return;
+      }
       const result = await api2.git.reattachWorktree(owner.projectId, owner.threadId);
       showToast(
         result.backupBranch ? `Reattached to ${result.branch}. Its previous tip is saved as ${result.backupBranch}.` : `Reattached to ${result.branch}`
       );
       store2.emit("git_branch_changed");
     } catch (error62) {
-      showErrorToast("Could not reattach the checkout", error62);
+      showErrorToast(
+        current.state === "missing" ? "Could not restore the worktree" : "Could not reattach the checkout",
+        error62
+      );
     } finally {
       reattaching = false;
       refreshNow();
@@ -151095,7 +151128,7 @@ function mountNextStepHint(store2, api2, onChanged) {
       refreshDisplayed();
       return;
     }
-    if (await api2.settings.get("nextStepSuggestionEnabled") !== true) {
+    if (await api2.settings.get("nextStepSuggestionEnabled") === false) {
       refreshDisplayed();
       return;
     }
@@ -154477,6 +154510,10 @@ ${reply}`);
     }),
     store2.on("git_branch_changed", () => {
       void refreshAutomaticCheckoutPreview();
+    }),
+    store2.on("thread_checkout_changed", (threadId) => {
+      checkoutErrors.delete(threadId);
+      updateCheckoutControl();
     })
   ];
   const observer = new MutationObserver(() => {
@@ -169711,11 +169748,18 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
   let storageToken = 0;
   let storageKey = "";
   let storageText = "Calculating\u2026";
+  let storageCheckedAt = 0;
+  let storagePending = false;
   let changesToken = 0;
   let changesKey = "";
   let changesText = "Calculating\u2026";
   let changeStats = null;
+  let changesCheckedAt = 0;
+  let changesPending = false;
+  let renderedKey = "";
   let disposed = false;
+  const STORAGE_FRESH_MS = 5 * 6e4;
+  const CHANGES_FRESH_MS = 6e4;
   function activeStorageKey() {
     const state = store2.getState();
     const thread = getActiveThread(store2);
@@ -169739,24 +169783,39 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     const thread = getActiveThread(store2);
     const projectId = store2.getState().activeProjectId;
     if (!thread || !projectId) return;
-    const mine = ++changesToken;
     const key = activeStorageKey();
-    changesKey = key;
-    changesText = "Calculating\u2026";
-    changeStats = null;
+    if (key !== changesKey) {
+      changesKey = key;
+      changesText = "Calculating\u2026";
+      changeStats = null;
+      changesCheckedAt = 0;
+      changesPending = false;
+    } else if (changesPending || changesCheckedAt && Date.now() - changesCheckedAt < CHANGES_FRESH_MS) {
+      return;
+    }
+    const mine = ++changesToken;
+    changesPending = true;
     const update = () => {
       const slot = viewerRoot.querySelector("[data-context-change-stats]");
       if (slot) slot.replaceChildren(...changesContent());
     };
-    update();
     try {
       const stats = await api2.git.changeStats(projectId, thread.id);
       if (disposed || mine !== changesToken || key !== activeStorageKey()) return;
-      changeStats = stats ?? { additions: 0, deletions: 0 };
+      const next = stats ?? { additions: 0, deletions: 0 };
+      changesCheckedAt = Date.now();
+      if (changeStats?.additions === next.additions && changeStats.deletions === next.deletions)
+        return;
+      changeStats = next;
     } catch (error62) {
       if (disposed || mine !== changesToken || key !== activeStorageKey()) return;
       console.error("[context] change totals lookup failed:", error62);
+      changesCheckedAt = Date.now();
+      if (!changeStats && changesText === "Unavailable") return;
+      changeStats = null;
       changesText = "Unavailable";
+    } finally {
+      if (mine === changesToken) changesPending = false;
     }
     update();
   }
@@ -169765,26 +169824,39 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
     const thread = getActiveThread(store2);
     const projectId = store2.getState().activeProjectId;
     if (!thread || !projectId) return;
-    const mine = ++storageToken;
     const key = activeStorageKey();
-    storageKey = key;
-    storageText = "Calculating\u2026";
+    if (key !== storageKey) {
+      storageKey = key;
+      storageText = "Calculating\u2026";
+      storageCheckedAt = 0;
+      storagePending = false;
+    } else if (storagePending || storageCheckedAt && Date.now() - storageCheckedAt < STORAGE_FRESH_MS) {
+      return;
+    }
+    const mine = ++storageToken;
+    storagePending = true;
     const update = () => {
       const slot = viewerRoot.querySelector("[data-context-storage-size]");
-      if (slot) slot.textContent = storageText;
+      if (slot && slot.textContent !== storageText) slot.textContent = storageText;
     };
-    update();
     try {
       const [saved, checkout] = await Promise.all([
         api2.threads.storageSize(projectId, thread.id),
         thread.worktree && thread.worktree.retiredAt === void 0 ? api2.worktrees.size(projectId, thread.worktree.path) : Promise.resolve({ bytes: 0, truncated: false })
       ]);
       if (disposed || mine !== storageToken || key !== activeStorageKey()) return;
-      storageText = `${saved.truncated || checkout.truncated ? "At least " : ""}${formatByteSize(saved.bytes + checkout.bytes)}`;
+      storageCheckedAt = Date.now();
+      const next = `${saved.truncated || checkout.truncated ? "At least " : ""}${formatByteSize(saved.bytes + checkout.bytes)}`;
+      if (storageText === next) return;
+      storageText = next;
     } catch (error62) {
       if (disposed || mine !== storageToken || key !== activeStorageKey()) return;
       console.error("[context] storage lookup failed:", error62);
+      storageCheckedAt = Date.now();
+      if (storageText === "Unavailable") return;
       storageText = "Unavailable";
+    } finally {
+      if (mine === storageToken) storagePending = false;
     }
     update();
   }
@@ -169815,8 +169887,10 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
   function render2() {
     const state = store2.getState();
     const thread = getActiveThread(store2);
-    clear(viewerRoot);
     if (!thread) {
+      if (renderedKey === "empty") return;
+      renderedKey = "empty";
+      clear(viewerRoot);
       viewerRoot.append(emptyNote("Open a thread to see its context."));
       return;
     }
@@ -169827,6 +169901,10 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2) {
       threads: state.threads,
       mentionedIn: mentionedFor === thread.id ? mentionedIn : []
     });
+    const key = JSON.stringify([state.activeProjectId, model, thread.archivedAt]);
+    if (key === renderedKey) return;
+    renderedKey = key;
+    clear(viewerRoot);
     const content = renderThreadContext(model, handlers4);
     const archive = el(
       "button",
