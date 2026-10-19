@@ -32,6 +32,7 @@
 // bagged per plugin to keep the top-level key namespace clean and let the P4
 // todos plugin lift/shift its config into a single record.
 import type { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
+import { PLUGIN_CLIENT_API_ID } from '@copse/agent/plugins/plugin-client-api-plugin.ts'
 import {
   createFirstPartyPluginRegistry,
   EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS,
@@ -899,6 +900,14 @@ export function getPluginService(): PluginService {
   migratePackKeysToPlugin()
   const existingPluginProfile = storageGet(PLUGIN_DISABLED_KEY) !== undefined
   seedDefaultDisabledPlugins()
+  // Existing profiles also start with this listening capability disabled. The marker
+  // is written once; subsequent enablement remains the user's explicit choice.
+  if (storageGet('pluginMigration.pluginClientApi') !== true) {
+    const disabled = readDisabledIds()
+    disabled.add(PLUGIN_CLIENT_API_ID)
+    storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
+    storageSet('pluginMigration.pluginClientApi', true)
+  }
   migrateAgentsMdInstructionFiles(existingPluginProfile)
   migrateBackgroundTasksStable()
   migratePluginModelSettings()
