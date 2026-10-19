@@ -128,7 +128,9 @@ describe('markdown interrupted by real tool rounds', () => {
     await scenario.assertComplete()
     const replies = await $$('.msg-assistant .message-text')
     expect(replies.length).toBe(previousReplies + 1)
-    const codeSpans = await replies[previousReplies].$$('code')
+    const reply = replies[previousReplies]
+    if (!reply) throw new Error('expected the new assistant reply')
+    const codeSpans = await reply.$$('code')
     await expect(codeSpans).toBeElementsArrayOfSize(2)
     await expect(codeSpans[0]).toHaveText('docs/plans/thread-in-container.md')
     await expect(codeSpans[1]).toHaveText('docs/threat-model.md')
