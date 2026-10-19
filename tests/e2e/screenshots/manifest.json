@@ -2257,6 +2257,14 @@
       "sha256": "cd808a11d361a752bf5ce49255c14215503c446b7e63e551a10ac488c919120b",
       "bytes": 168076
     },
+    "mobile-auth-pairing-stopped.png": {
+      "sha256": "54c2bab9d9168e665ed978aefc675d7bf733a2ada2c04c96e7bd59ed53f178f5",
+      "bytes": 107371
+    },
+    "mobile-auth-pairing.png": {
+      "sha256": "faf4228b8367af89edd5b1dba8e6f046e6d5e29e48925a3e3a266d57dd5ced3f",
+      "bytes": 67299
+    },
     "mobile-companion-activity-dark.png": {
       "sha256": "0b7dc9632e93f0861f7eefb767cf11797f52e4f9211c9ae14f1476b74171dc16",
       "bytes": 42040
@@ -2596,6 +2604,14 @@
     "plain-language-settings-codex-agent.png": {
       "sha256": "2bd9295151013e748f90c487ba9da154f2dc3cf418a742d8f91d2be99c076f72",
       "bytes": 214616
+    },
+    "plugin-client-api-settings.png": {
+      "sha256": "c56c4328acb1b4849069f7c122cf417f671b2ab613d94205e74819a6869ccb8d",
+      "bytes": 42738
+    },
+    "plugin-client-pairing.png": {
+      "sha256": "baed287fe0efffbb2f32f0079d8439e197b6a889a20201cdea5c5d40c45d351d",
+      "bytes": 63569
     },
     "plugin-hook-loading.png": {
       "sha256": "c104bb3b1c4a9a90a7441137b5d88a308a6ec8c932aeb568e96b4d7376ec00dd",
@@ -3598,8 +3614,8 @@
       "bytes": 249049
     },
     "settings-composition-packs.png": {
-      "sha256": "b55ee55ed701a664be252971e52603a1fbcd3b1095c43d0e26b3a92a6e179e3d",
-      "bytes": 250502
+      "sha256": "e486d1e1a4088c0dd10eea318d4bf409abf55fa5c74889bdd0643ca9b42bfe5a",
+      "bytes": 227204
     },
     "settings-composition-source-folders.png": {
       "sha256": "2a162a97ddebfa1b6a0386d52511dde7567a8cea5d66108cd4ab8af2c8464004",
