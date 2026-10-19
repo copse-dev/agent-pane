@@ -4277,6 +4277,14 @@
       "sha256": "534cbde293982db0823e6c1d2bc943d36dee9637664786af0b28ef2d672ed6bb",
       "bytes": 139240
     },
+    "sidebar-background-project-chevron.png": {
+      "sha256": "7165a866044b9051c829d1213ac279560460665e7cc4b39945b34ed9991e0e83",
+      "bytes": 85611
+    },
+    "sidebar-background-project-name.png": {
+      "sha256": "4c0c51880b93d34fc036a67b823829075c38b7a27c58d4cab1a62be6fc2c1b0c",
+      "bytes": 85675
+    },
     "sidebar-cleanup-after-pr.png": {
       "sha256": "44c19a8b58c5759d9bfe46193010189b460d9db45046e48e6414e35b869af324",
       "bytes": 106321

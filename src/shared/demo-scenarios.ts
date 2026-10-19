@@ -2385,6 +2385,30 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'sidebar-background-project-running',
+    label: 'Running agent in a collapsed project',
+    project: project('demo-running-project', 'workbench', '/demo/workbench'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threads: [
+      {
+        id: 'demo-running-thread',
+        title: 'Finish the migration',
+        status: 'running',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    otherProjects: [
+      {
+        project: project('demo-running-other', 'docs-site', '/demo/docs-site'),
+        threads: [],
+      },
+    ],
+  },
+  {
     id: 'sidebar-thread-sort',
     label: 'Sidebar thread sort',
     project: project('demo-sidebar-sort-project'),
