@@ -21,10 +21,36 @@ function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 }
 
+/**
+ * `git worktree add -b <branch> …` runs a real checkout under the hood, which
+ * fires `post-checkout` the same as `git checkout`/`git switch`. Blocking that
+ * hook on a sentinel file holds the real `agent:prepare-checkout` IPC call
+ * open for as long as the test needs — no timer race against however fast the
+ * fixture's `git worktree add` happens to run on a given host. The 20s loop
+ * bound is a safety net, not the mechanism: the test always deletes the
+ * sentinel itself once it is done observing the preparing state.
+ */
+function writeCheckoutHoldHook(root: string, sentinel: string): void {
+  const hooksDir = join(root, '.git', 'hooks')
+  mkdirSync(hooksDir, { recursive: true })
+  const script = [
+    '#!/bin/sh',
+    'i=0',
+    `while [ ! -f "${sentinel}" ] && [ "$i" -lt 200 ]; do`,
+    '  sleep 0.1',
+    '  i=$((i + 1))',
+    'done',
+    'exit 0',
+    '',
+  ].join('\n')
+  writeFileSync(join(hooksDir, 'post-checkout'), script, { mode: 0o755 })
+}
+
 describe('switching threads during first-message checkout', () => {
   let projectRoot = ''
   let projectParent = ''
   let worktreeRoot = ''
+  let checkoutHoldSentinel = ''
 
   before(async function () {
     this.timeout(120_000)
@@ -53,6 +79,8 @@ describe('switching threads during first-message checkout', () => {
       realpathSync(git(projectRoot, ['rev-parse', '--show-toplevel'])),
       realpathSync(projectRoot),
     )
+    checkoutHoldSentinel = join(projectParent, '.e2e-hold-checkout')
+    writeCheckoutHoldHook(projectRoot, checkoutHoldSentinel)
     const now = Date.now()
     writeSeedConfig({
       projects: [{ id: PROJECT, path: projectRoot, name: 'Checkout switching' }],
@@ -145,42 +173,31 @@ describe('switching threads during first-message checkout', () => {
     await $('[data-checkout-choice="worktree"]').click()
     await setComposerValue(PROMPT)
 
-    // Observe the real preparation UI and switch in the same renderer turn.
-    // The checkout IPC is still pending here: this proves the transition without
-    // timing sleeps, replacing the checkout API, or seeding a completed worktree.
-    console.info('[checkout-switch] submitting and switching')
-    const switched = await browser.execute(
-      (other, otherPrompt) =>
-        new Promise<string>((done) => {
-          const checkout = document.querySelector<HTMLElement>('.footer-checkout-btn')
-          const send = document.querySelector<HTMLButtonElement>('.submit-btn')
-          if (!checkout || !send) return done('Missing composer controls')
-          const timer = window.setTimeout(() => {
-            observer.disconnect()
-            done('Checkout never entered its preparing state')
-          }, 10_000)
-          const observer = new MutationObserver(() => {
-            if (checkout.textContent !== 'Preparing checkout…') return
-            observer.disconnect()
-            document.querySelector<HTMLElement>(`.chat-row[data-thread-id="${other}"]`)?.click()
-            const otherSend = document.querySelector<HTMLButtonElement>('.submit-btn')
-            window.clearTimeout(timer)
-            if (!otherSend || otherSend.disabled) return done('Other thread Send is blocked')
-            const composer = document.querySelector<HTMLElement>('.prompt-input')
-            if (!composer) return done('Other composer is missing')
-            composer.textContent = otherPrompt
-            composer.dispatchEvent(new Event('input', { bubbles: true }))
-            otherSend.click()
-            done('Switched and sent')
-          })
-          observer.observe(checkout, { childList: true, characterData: true, subtree: true })
-          send.click()
-        }),
-      OTHER,
-      OTHER_PROMPT,
-    )
-    console.info('[checkout-switch] switch result', switched)
-    assert.equal(switched, 'Switched and sent')
+    // The real checkout (`git worktree add`) is held open by the post-checkout
+    // hook installed in `before()`, which blocks until `checkoutHoldSentinel`
+    // exists. That makes every assertion below deterministic — Send stays
+    // "Preparing…" for as long as the test needs rather than for however long
+    // the real `git worktree add` happens to take on a given host.
+    console.info('[checkout-switch] submitting and holding the checkout open')
+    await $('.submit-btn').click()
+    await browser.waitUntil(async () => (await $('.submit-btn').getText()) === 'Preparing…', {
+      timeout: 15_000,
+      timeoutMsg: 'Send never entered its preparing state',
+    })
+    console.info('[checkout-switch] Send is preparing; asserting state and capturing evidence')
+    await expect($('.submit-btn')).toBeDisabled()
+    assert.equal(await $('.submit-btn').getAttribute('aria-label'), 'Preparing checkout')
+    await saveAppScreenshot('thread-checkout-preparing-send.png')
+
+    console.info('[checkout-switch] switching to the other thread while checkout is held open')
+    await $(`.chat-row[data-thread-id="${OTHER}"]`).click()
+    await expect($('.submit-btn')).toBeEnabled()
+    assert.equal(await $('.submit-btn').getText(), 'Send')
+    await setComposerValue(OTHER_PROMPT)
+    await $('.submit-btn').click()
+
+    console.info('[checkout-switch] releasing the held checkout')
+    writeFileSync(checkoutHoldSentinel, '')
     await browser.waitUntil(
       async () =>
         browser.execute(

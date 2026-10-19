@@ -959,6 +959,106 @@ describe('input bar first-message checkout', () => {
     assert.equal(prepares, 1)
   })
 
+  it('disables Send with a preparing label while the first-send checkout is in flight', async () => {
+    const checkout = deferred<PreparedThreadCheckout>()
+    const other: Thread = { ...thread('main'), id: 'thread-2', worktreeChoice: 'shared' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread(), other],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onPrepareCheckout: () => checkout.promise,
+      }),
+    )
+    await flush()
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    assert.equal(submit.disabled, false)
+    assert.equal(submit.textContent, 'Send')
+
+    composer.textContent = 'Start the first send'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    submit.click()
+    await flush()
+    assert.equal(
+      submit.disabled,
+      true,
+      'Send is explicitly disabled while preparing, not just coincidentally',
+    )
+    assert.equal(submit.textContent, 'Preparing…')
+    assert.equal(submit.getAttribute('aria-label'), 'Preparing checkout')
+
+    switchThread(store, 'thread-2')
+    assert.equal(
+      submit.disabled,
+      false,
+      "switching threads must show the other thread's normal Send state",
+    )
+    assert.equal(submit.textContent, 'Send')
+
+    switchThread(store, 'thread-1')
+    assert.equal(submit.disabled, true)
+    assert.equal(submit.textContent, 'Preparing…')
+
+    // Resolving starts the turn immediately, so Send becomes the unrelated
+    // "Queue" state rather than returning to "Send" — this test only cares
+    // that the preparing state cleared.
+    checkout.resolve({ checkoutMode: 'shared', choice: 'shared', branch: 'main' })
+    await flush()
+    assert.equal(submit.disabled, false)
+    assert.equal(submit.textContent, 'Queue')
+  })
+
+  it('returns Send to its normal state after a failed checkout preparation', async () => {
+    const gate = deferred<boolean>()
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onPrepareCheckout: async () => {
+          await gate.promise
+          throw new Error('checkout unavailable')
+        },
+      }),
+    )
+    await flush()
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Retry after failure'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    submit.click()
+    await flush()
+    assert.equal(submit.textContent, 'Preparing…')
+
+    gate.resolve(true)
+    await flush()
+    assert.equal(submit.disabled, false)
+    assert.equal(submit.textContent, 'Send')
+  })
+
   it('shows the shared default and lets the user opt into an isolated worktree', async () => {
     const store = createStore({
       workspaceRoot: '/repo',
