@@ -68,6 +68,16 @@ these external functions yet, and their results cannot alter agent behavior.
 See the [SDK contract](../packages/plugin-sdk/README.md#external-function-hook-registration)
 for declaration matching, cancellation, and the deliberately narrow handler context.
 
+The planned [plugin capability API](plans/plugin-capability-api.md) provides bounded access to
+human approvals, activity, appearance and thread navigation. Its shared human-decision registry
+is host infrastructure beneath the existing mobile adapter. The experimental first-party
+`copse.plugin-client-api` plugin now provides a [session-only interactive-client approval
+transport](plugin-client-api.md): enable it, verify a client pairing code on the desktop, and grant
+viewing or viewing plus decisions. It starts disabled on new and upgraded profiles; disabling
+revokes all sessions. This does not grant agent-invoked plugin runtimes approval access, a listening
+socket, or arbitrary host calls. General provider registration, durable scoped grants, activity
+and appearance projections remain separate implementation stages.
+
 `pluginManifestFromCursorJson()` maps a Cursor-shaped `plugin.json` into a
 `PluginManifest` (a user plugin): the existing top-level `skills` / `mcpServers`
 fields fold into the plugin slots (`mcpServers` → `tools.mcpServers`). The
