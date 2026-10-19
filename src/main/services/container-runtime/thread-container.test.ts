@@ -51,6 +51,8 @@ import {
   type ContainerRunInput,
 } from './thread-container.ts'
 import { containerAttestationShortfall } from '../security/runtime-containment.ts'
+import { HOST_INFERENCE_TARGET } from './host-inference-wire.ts'
+import { HOST_GITHUB_TARGET } from './github-capability-wire.ts'
 
 function input(overrides: Partial<ContainerRunInput> = {}): ContainerRunInput {
   return {
@@ -1466,6 +1468,50 @@ describe('secretCanaryCheck', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('secretCanaryCheck and host-held GitHub tokens (A24)', () => {
+  it('flags a GitHub token the run used, naming the kind and never the value', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'copse-tc-canary-'))
+    const token = 'ghp_RealTokenValue0123456789'
+    try {
+      mkdirSync(join(dir, 'out'))
+      writeFileSync(join(dir, 'out', 'messages.json'), '[{"content":"clean"}]')
+      assert.equal(secretCanaryCheck(dir, 'canary-123', [token]).present, false)
+      writeFileSync(join(dir, 'out', 'messages.json'), `[{"content":"${token}"}]`)
+      const verdict = secretCanaryCheck(dir, 'canary-123', [token])
+      assert.equal(verdict.present, true)
+      assert.match(verdict.detail, /GitHub token found in out\/messages\.json/)
+      assert.equal(verdict.detail.includes(token), false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('runThreadInContainer and the GitHub capability (A24)', () => {
+  const run = (egressAllowlist: string[], github: boolean): Promise<unknown> =>
+    runThreadInContainer({
+      workspace: '/nonexistent/checkout',
+      runtimesDir: join(tmpdir(), 'copse-tc-github-never-created'),
+      prompt: 'hello',
+      model: 'm',
+      hostInference: () => Promise.reject(new Error('not called')),
+      budgets: { wallClockMs: 60_000, tokenCeiling: 1000 },
+      egressAllowlist,
+      ...(github ? { github: { token: (): Promise<string | null> => Promise.resolve(null) } } : {}),
+    })
+
+  it('refuses a capability the allowlist does not name, and an entry with no capability', async () => {
+    await assert.rejects(
+      run([HOST_INFERENCE_TARGET], true),
+      /GitHub reads are not in the egress allowlist/,
+    )
+    await assert.rejects(
+      run([HOST_INFERENCE_TARGET, HOST_GITHUB_TARGET], false),
+      /names GitHub reads, but the run has none/,
+    )
   })
 })
 
