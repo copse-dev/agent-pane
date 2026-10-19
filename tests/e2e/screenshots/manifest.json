@@ -397,6 +397,10 @@
       "sha256": "a1e9fe300b1e4d9f289328c2fb64141f30fec85a63432353098726e21119db5b",
       "bytes": 312626
     },
+    "agent-escape-retry-lease-approval.png": {
+      "sha256": "44178caa677916a6036ca22ec74465a3b89502f1c5a1d1cf916a2be184456113",
+      "bytes": 90097
+    },
     "agent-execution-mode-active.png": {
       "sha256": "0839949aca2469eb211a14a79fff3503d1bda11256342b33e699dcfa9a94f17a",
       "bytes": 251065
