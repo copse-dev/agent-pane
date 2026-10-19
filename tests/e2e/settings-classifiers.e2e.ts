@@ -148,6 +148,27 @@ describe('classifier connections settings', () => {
     )
   }
 
+  it('offers one settings switch for agent classifier prompts', async () => {
+    await openClassifiers()
+    const prompt = $('#settings-classifiers-host [name="classifierToolPrompt"]')
+    await expect(prompt).not.toBeSelected()
+    await prompt.scrollIntoView({ block: 'center' })
+    await prompt.click()
+    await expect(prompt).toBeSelected()
+    const policy = await browser.execute(async () => {
+      const catalog = await window.api.toolPermissions.list()
+      return catalog.groups
+        .flatMap((group) => group.tools)
+        .find((tool) => tool.executionName === 'ask_classifier')?.policy
+    })
+    assert.equal(policy, 'ask')
+    await saveClassifierScreenshot('#settings-dialog', 'settings-classifiers-agent-permission.png')
+    await prompt.click()
+    await expect(prompt).not.toBeSelected()
+    await $('#settings-close').click()
+    await $('#settings-dialog').waitForDisplayed({ reverse: true })
+  })
+
   it('offers Liquid’s native decision preset and tests an edited connection only explicitly', async () => {
     await openClassifiers()
     const host = $('#settings-classifiers-host')

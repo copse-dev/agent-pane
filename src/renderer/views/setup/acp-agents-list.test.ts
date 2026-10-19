@@ -45,6 +45,18 @@ describe('listedAgents', () => {
     assert.equal(rows[1].signInCommand, null)
   })
 
+  it('offers the bundled CLI command for a signed-out default Codex adapter', () => {
+    const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex-acp')
+    assert.ok(codex)
+    const rows = listedAgents(
+      [codex],
+      new Map([seen(codex, true)]),
+      [],
+      new Map([['codex-acp', 'signed-out']]),
+    )
+    assert.equal(rows[0]?.chip, 'needs-sign-in')
+    assert.equal(rows[0].signInCommand, 'codex-acp cli login')
+  })
   it('keeps an added agent listed even when it is not on PATH', () => {
     const added: AcpAgentConfig = {
       id: 'cursor',

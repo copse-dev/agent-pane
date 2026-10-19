@@ -83,6 +83,19 @@ describe('tool permissions', () => {
     assert.equal(tool.overridden, true)
   })
 
+  it('defaults ask_classifier to allow and permits an explicit ask override', async () => {
+    const registry = new ToolRegistry()
+    registerTool(registry, 'ask_classifier')
+    const id = copseToolPermissionId('ask_classifier')
+    const original = listToolPermissionCatalog(registry, []).groups[0]?.tools[0]
+    assert.equal(original?.policy, 'allow')
+    assert.equal(original.defaultPolicy, 'allow')
+    await updateToolPermissions(registry, [], { toolIds: [id], policy: 'ask' })
+    const updated = listToolPermissionCatalog(registry, []).groups[0]?.tools[0]
+    assert.equal(updated?.policy, 'ask')
+    assert.equal(updated.overridden, true)
+  })
+
   it('keeps saved classify_text permissions for ask_classifier', async () => {
     const registry = new ToolRegistry()
     registerTool(registry, 'ask_classifier')
