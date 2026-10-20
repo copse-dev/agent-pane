@@ -76,6 +76,20 @@ describe('parseFetchTargets', () => {
     }
   })
 
+  it('refuses a branch pr/<n> and refs/pull/<n>/head in one call, in either order', () => {
+    assert.deepEqual(parseFetchTargets(['pr/42', 'refs/pull/42/head']), {
+      ok: false,
+      error:
+        'refs/heads/pr/42 and refs/pull/42/head would both update refs/remotes/origin/pr/42; fetch them in separate calls.',
+    })
+    assert.deepEqual(parseFetchTargets(['refs/pull/42/head', 'pr/42']), {
+      ok: false,
+      error:
+        'refs/pull/42/head and refs/heads/pr/42 would both update refs/remotes/origin/pr/42; fetch them in separate calls.',
+    })
+    assert.equal(parseFetchTargets(['refs/pull/42/head', 'refs/pull/42/head']).ok, true)
+  })
+
   it('bounds the number of refs', () => {
     assert.equal(parseFetchTargets([]).ok, false)
     assert.equal(parseFetchTargets(Array.from({ length: 21 }, (_, i) => `b${String(i)}`)).ok, false)

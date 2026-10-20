@@ -50,19 +50,25 @@ export function parseFetchTargets(
   const refs = new Map<string, ScratchFetchRef>()
   for (const name of names) {
     const pull = PULL_REF.exec(name)
+    let ref: ScratchFetchRef
     if (pull?.[1]) {
-      refs.set(`refs/remotes/origin/pr/${pull[1]}`, {
-        source: name,
-        destination: `refs/remotes/origin/pr/${pull[1]}`,
-      })
-      continue
-    }
-    if (!isFetchableBranchName(name))
+      ref = { source: name, destination: `refs/remotes/origin/pr/${pull[1]}` }
+    } else if (isFetchableBranchName(name)) {
+      ref = originBranchRef(name)
+    } else {
       return {
         ok: false,
         error: `"${name}" is not a branch name. Pass branch names (e.g. "main") or refs/pull/<n>/head; remotes, URLs, refspecs and options are not accepted.`,
       }
-    const ref = originBranchRef(name)
+    }
+    // A branch named `pr/<n>` and `refs/pull/<n>/head` share a destination.
+    // Refuse rather than let argument order decide which source lands there.
+    const existing = refs.get(ref.destination)
+    if (existing && existing.source !== ref.source)
+      return {
+        ok: false,
+        error: `${existing.source} and ${ref.source} would both update ${ref.destination}; fetch them in separate calls.`,
+      }
     refs.set(ref.destination, ref)
   }
   return { ok: true, refs: [...refs.values()] }

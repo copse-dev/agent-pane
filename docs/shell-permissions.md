@@ -553,7 +553,7 @@ and/or `refs/pull/<n>/head` (at most 20). Copse validates each as a plain branch
 refspec, `refs/` path, remote, URL, option, `..`, `@{`, `~^:?*[\`, whitespace or control
 characters) and maps it to a fixed destination: `refs/heads/<b>` → `refs/remotes/origin/<b>`, and
 `refs/pull/<n>/head` → `refs/remotes/origin/pr/<n>`. A branch that is literally named `pr/<n>` shares
-that destination. The fetch reuses the background default-branch fetch
+that destination: a call naming both is refused, and separate calls overwrite each other. The fetch reuses the background default-branch fetch
 ([threat model](threat-model.md#background-default-branch-fetch)): only an `http(s)://`, `ssh://` or
 `user@host:` `remote.origin.url` is accepted; the network step runs on the host in a fresh,
 per-call Copse scratch repository that never reads the project's `.git/config`; and a sandboxed,
