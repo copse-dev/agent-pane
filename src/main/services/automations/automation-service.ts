@@ -11,14 +11,29 @@ import type {
   AutomationSchedule,
   AutomationScheduleInput,
   AutomationTriggerEvent,
+  StreamChunk,
   Thread,
 } from '@shared/types'
 import { AUTOMATION_RETAINED_REASONS, automationPermissionKey } from '@shared/types'
 import { automationRunBlock } from '@shared/automation-run-state.ts'
 import { classifyAutomationFailureMessage } from '@shared/automation-failure.ts'
+import type { AgentHost } from '@copse/agent/agent-host.ts'
+import type { AgentDispatchRequest } from '../agent-dispatcher.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
-import { createThread, loadProjectThreads } from '../thread-store.ts'
+import {
+  createThread,
+  deleteProjectThread,
+  getThreadMeta,
+  loadProjectThreads,
+  updateMetaOrThrow,
+} from '../thread-store.ts'
+import { getActiveProjectId } from '../workspace.ts'
+import {
+  prepareThreadCheckout,
+  renameThreadWorktreeBranchAfterTitle,
+} from '../thread-checkout-transaction.ts'
+import { createHeadlessAutomationRun } from './headless-message-assembler.ts'
 import {
   releaseCompletedAutomationWorktree,
   type AutomationWorktreeRelease,
@@ -38,6 +53,11 @@ import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
 const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
 const SCHEDULER_HANDLER = 'automation_scheduler_tick'
 const SCHEDULER_MAX_DURATION_MS = 120_000
+// Below SCHEDULER_MAX_DURATION_MS, so a hung trigger (a stuck git/worktree
+// operation) is isolated per schedule instead of blowing the whole tick's
+// duration budget — which fails every other due schedule too and gets this
+// task replaced, only for the replacement to hang on the same schedule again.
+const SCHEDULER_TRIGGER_TIMEOUT_MS = 90_000
 const SCHEDULER_RECOVERY_DELAY_MS = 5_000
 /** How late a wake may be and still run the minute it was armed for rather than the current one. */
 const MAX_WAKE_LATENESS_MS = 2 * 60_000
@@ -263,7 +283,7 @@ export interface AutomationService {
   ): Promise<boolean>
   health(): AutomationSchedulerHealth
   onHealthChange(listener: (health: AutomationSchedulerHealth) => void): () => void
-  start(notify: (event: AutomationTriggerEvent) => void): void
+  start(notify: (event: AutomationTriggerEvent) => void, dispatch: DispatchHeadlessTurn): void
   sync(): Promise<void>
   stop(): void
   /**
@@ -291,6 +311,14 @@ export interface AutomationTaskSupervisor {
 export interface AutomationServiceDependencies {
   now(): number
   createProjectThread(projectId: string, thread: Thread): Promise<void>
+  /** Thread-store metadata patch; defaults to the native store. */
+  updateProjectThreadMeta?: (
+    projectId: string,
+    threadId: string,
+    patch: Pick<Thread, 'status' | 'automation'>,
+  ) => Promise<void>
+  /** Thread-store removal; defaults to the native store. */
+  deleteProjectThread?: (projectId: string, threadId: string) => Promise<void>
   loadProjectThreads(projectId: string): Promise<Thread[]>
   releasePreviousRun(projectId: string, threadId: string): Promise<AutomationWorktreeRelease>
   /**
@@ -302,12 +330,29 @@ export interface AutomationServiceDependencies {
   supervisor?: () => AutomationTaskSupervisor
   /** Pause before replacing a scheduler task that died, so a task that dies instantly cannot spin. */
   recoveryDelayMs?: number
+  /** Project currently focused in the renderer, or none/unknown. */
+  getActiveProjectId(): string | null
+  prepareCheckout?: typeof prepareThreadCheckout
 }
+
+/**
+ * Run a turn to completion without any renderer involvement — used when the
+ * schedule's project is not the active one, so the normal `notify` →
+ * renderer `startThread` path (gated on active-project focus) would otherwise
+ * leave the draft unsent. See docs/plans/automations.md. Supplied through
+ * `start()` rather than the constructor dependencies, like `notify`: the
+ * real dispatcher is only constructed partway through app boot.
+ */
+export type DispatchHeadlessTurn = (
+  request: AgentDispatchRequest,
+  host: AgentHost<StreamChunk>,
+) => Promise<void>
 
 export function createAutomationService(
   dependencies: AutomationServiceDependencies,
 ): AutomationService {
   let notify: ((event: AutomationTriggerEvent) => void) | null = null
+  let dispatchHeadlessTurn: DispatchHeadlessTurn | null = null
   let disposeSupervisorHandler: (() => void) | null = null
   let disposeSupervisorSubscription: (() => void) | null = null
   let recoveryTimer: ReturnType<typeof setTimeout> | null = null
@@ -315,7 +360,38 @@ export function createAutomationService(
   let schedulerHealth: AutomationSchedulerHealth = { state: 'ok', since: null, message: null }
   const healthListeners = new Set<(health: AutomationSchedulerHealth) => void>()
   const inFlight = new Set<string>()
+  const triggerAttempts = new Map<string, AbortController>()
   const attemptedMinutes = new Map<string, number>()
+  const updateThreadMeta = dependencies.updateProjectThreadMeta ?? updateMetaOrThrow
+  const removeThread = dependencies.deleteProjectThread ?? deleteProjectThread
+
+  /**
+   * A filesystem call cannot always be cancelled, so a thread can appear after
+   * its trigger timed out. Keep it visible as a failed, unsent draft: it must
+   * never auto-start or hold every later occurrence behind a pending draft. If
+   * that marker cannot be written, the thread would still look like a pending
+   * run the renderer starts on project open, so remove it instead.
+   */
+  async function abandonLateRun(
+    projectId: string,
+    threadId: string,
+    provenance: NonNullable<Thread['automation']>,
+  ): Promise<void> {
+    try {
+      await updateThreadMeta(projectId, threadId, {
+        status: 'error',
+        automation: { ...provenance, startFailedAt: dependencies.now() },
+      })
+      return
+    } catch (error) {
+      console.warn(`[automations] Could not mark late run ${threadId} as failed:`, error)
+    }
+    try {
+      await removeThread(projectId, threadId)
+    } catch (error) {
+      console.error(`[automations] Could not remove unmarked late run ${threadId}:`, error)
+    }
+  }
 
   function setHealth(state: AutomationSchedulerHealth['state'], message: string | null): void {
     if (schedulerHealth.state === state && schedulerHealth.message === message) return
@@ -330,9 +406,11 @@ export function createAutomationService(
   async function recordProblem(
     schedule: AutomationSchedule,
     problem: AutomationProblem,
+    signal?: AbortSignal,
   ): Promise<void> {
     try {
       await updateSchedules((schedules) => {
+        signal?.throwIfAborted()
         return schedules.map((candidate) =>
           candidate.projectId === schedule.projectId && candidate.id === schedule.id
             ? { ...candidate, lastProblem: problem }
@@ -368,8 +446,10 @@ export function createAutomationService(
     triggeredAt: number,
     attemptedLimit: number,
     blockedBy: AutomationRetainedWorktree[],
+    signal?: AbortSignal,
   ): Promise<void> {
     await updateSchedules((schedules) => {
+      signal?.throwIfAborted()
       return schedules.map((schedule) =>
         schedule.projectId === projectId &&
         schedule.id === scheduleId &&
@@ -414,8 +494,10 @@ export function createAutomationService(
     scheduleId: string,
     triggeredAt: number,
     threadId: string,
+    signal?: AbortSignal,
   ): Promise<void> {
     await updateSchedules((schedules) => {
+      signal?.throwIfAborted()
       return schedules.map((schedule) => {
         if (schedule.projectId !== projectId || schedule.id !== scheduleId) return schedule
         const updated = {
@@ -525,6 +607,167 @@ export function createAutomationService(
     return next
   }
 
+  /**
+   * Run a just-created automation thread's first turn to completion from main,
+   * with no renderer in the loop: persists the prompt, dispatches it through
+   * the shared `AgentDispatcher`, and persists the response itself via a
+   * headless chunk assembler. Fire-and-forget from `trigger()` — a failure here
+   * leaves the thread's `status` as `'error'` rather than throwing back into
+   * the scheduler tick that created it.
+   */
+  async function runHeadlessAutomationTurn(
+    projectId: string,
+    threadId: string,
+    prompt: string,
+    model: string,
+    automation: NonNullable<Thread['automation']>,
+  ): Promise<void> {
+    if (!dispatchHeadlessTurn) {
+      console.error(
+        `[automations] Dropped headless turn for thread ${threadId}: service not started yet`,
+      )
+      return
+    }
+    const dispatch = dispatchHeadlessTurn
+    const run = createHeadlessAutomationRun(projectId, threadId)
+    try {
+      try {
+        // Use the same first-message transaction as the renderer. Automation
+        // turns explicitly require an isolated checkout before any agent tools
+        // or transcript writes can run, even if this project is not focused.
+        await (dependencies.prepareCheckout ?? prepareThreadCheckout)({
+          projectId,
+          threadId,
+          prompt,
+          choice: 'worktree',
+        })
+      } catch (error) {
+        const current = await getThreadMeta(projectId, threadId)
+        if (
+          !current ||
+          current.currentEpoch !== undefined ||
+          current.automation?.scheduleId !== automation.scheduleId ||
+          current.automation.triggeredAt !== automation.triggeredAt
+        )
+          return
+        const message = error instanceof Error ? error.message : String(error)
+        await updateMetaOrThrow(projectId, threadId, {
+          automation: { ...automation, startFailedAt: dependencies.now() },
+        })
+        await service.reportStartFailure(projectId, threadId, {
+          code: 'worktree-failed',
+          message,
+        })
+        console.error(`[automations] Headless checkout failed for thread ${threadId}:`, error)
+        return
+      }
+      try {
+        const pending = await getThreadMeta(projectId, threadId)
+        if (
+          !pending ||
+          pending.currentEpoch !== undefined ||
+          pending.automation?.scheduleId !== automation.scheduleId ||
+          pending.automation.triggeredAt !== automation.triggeredAt
+        )
+          return
+        await run.appendUserMessage(prompt)
+        await updateMetaOrThrow(projectId, threadId, { status: 'running', draftPrompt: '' })
+        await dispatch(
+          {
+            projectId,
+            threadId,
+            // The dispatcher falls back to the app-wide default model, not the
+            // thread's, so pass the schedule's model as the renderer would.
+            // Main's own schedule-run proof: lets the dispatcher defer approvals
+            // for this unattended first turn exactly as it does for the renderer's.
+            payload: {
+              userContent: prompt,
+              automationRun: true,
+              invokedSkills: [],
+              priorTodos: [],
+              model,
+            },
+          },
+          run.host,
+        )
+        await run.flush()
+        const current = await getThreadMeta(projectId, threadId)
+        if (
+          !current ||
+          current.currentEpoch !== undefined ||
+          current.automation?.scheduleId !== automation.scheduleId ||
+          current.automation.triggeredAt !== automation.triggeredAt
+        )
+          return
+        const failure = run.failure()
+        await updateMetaOrThrow(projectId, threadId, {
+          status: 'idle',
+          // What Activity and the manager read to say why an unattended run died,
+          // as the renderer records it for runs it owns.
+          ...(failure
+            ? {
+                automation: {
+                  ...current.automation,
+                  failure: { ...failure, at: dependencies.now() },
+                },
+              }
+            : {}),
+        })
+        // The renderer normally names the allocator's anonymous branch once
+        // the first turn settles. Preserve that lifecycle for main-owned runs.
+        const settled = await getThreadMeta(projectId, threadId)
+        if (
+          settled?.status === 'idle' &&
+          settled.currentEpoch === undefined &&
+          settled.automation?.scheduleId === automation.scheduleId &&
+          settled.automation.triggeredAt === automation.triggeredAt
+        ) {
+          await renameThreadWorktreeBranchAfterTitle(projectId, threadId, settled.title).catch(
+            (error: unknown) => {
+              console.warn(
+                `[automations] Could not rename headless checkout for ${threadId}:`,
+                error,
+              )
+            },
+          )
+        }
+      } catch (error) {
+        await run.flush().catch(() => {})
+        const current = await getThreadMeta(projectId, threadId)
+        if (
+          !current ||
+          current.currentEpoch !== undefined ||
+          current.automation?.scheduleId !== automation.scheduleId ||
+          current.automation.triggeredAt !== automation.triggeredAt
+        )
+          return
+        await updateMetaOrThrow(projectId, threadId, { status: 'error' }).catch(() => {})
+        console.error(`[automations] Headless turn failed for thread ${threadId}:`, error)
+      }
+    } finally {
+      // Main remains the sole transcript writer for this turn. A renderer
+      // opened midway through it must read the settled transcript rather than
+      // remain stuck on its earlier running snapshot or assemble duplicate chunks.
+      const settled = await getThreadMeta(projectId, threadId)
+      if (
+        settled &&
+        settled.status !== 'running' &&
+        settled.currentEpoch === undefined &&
+        settled.automation?.scheduleId === automation.scheduleId &&
+        settled.automation.triggeredAt === automation.triggeredAt
+      ) {
+        notify?.({
+          projectId,
+          threadId,
+          scheduleId: automation.scheduleId,
+          triggeredAt: automation.triggeredAt,
+          disposition: 'started',
+          headlessSettled: true,
+        })
+      }
+    }
+  }
+
   /** Release each finished run's checkout that is safe to remove; report what must stay. */
   async function releaseFinishedRuns(
     projectId: string,
@@ -558,13 +801,17 @@ export function createAutomationService(
     schedule: AutomationSchedule,
     triggeredAt: number,
     source: 'schedule' | 'manual',
+    attempt = new AbortController(),
   ): Promise<AutomationTriggerEvent> {
     if (inFlight.has(schedule.id)) throw new Error('This automation is already creating a task')
     inFlight.add(schedule.id)
+    triggerAttempts.set(schedule.id, attempt)
+    const { signal } = attempt
     try {
       const scheduleThreads = (await dependencies.loadProjectThreads(schedule.projectId)).filter(
         (thread) => thread.automation?.scheduleId === schedule.id,
       )
+      signal.throwIfAborted()
       const previous = schedule.lastCreatedThreadId
         ? (scheduleThreads.find((thread) => thread.id === schedule.lastCreatedThreadId) ?? null)
         : null
@@ -572,13 +819,18 @@ export function createAutomationService(
 
       if (busy) {
         if (automationRunBlock(busy) === 'pending-start') {
-          await recordProblem(schedule, {
-            at: triggeredAt,
-            kind: 'pending-start',
-            message:
-              'An earlier run was created but never started, so this one was skipped. ' +
-              'Open the project to start it, or send or discard its draft.',
-          })
+          await recordProblem(
+            schedule,
+            {
+              at: triggeredAt,
+              kind: 'pending-start',
+              message:
+                'An earlier run was created but never started, so this one was skipped. ' +
+                'Open the project to start it, or send or discard its draft.',
+            },
+            signal,
+          )
+          signal.throwIfAborted()
         }
         return {
           projectId: schedule.projectId,
@@ -601,6 +853,7 @@ export function createAutomationService(
             console.warn(`[automations] Could not release the worktree of ${thread.id}:`, error)
             return { released: false, reason: 'in-use' }
           })
+        signal.throwIfAborted()
         if (release.released) continue
         if (
           !handOverClaimed &&
@@ -608,9 +861,11 @@ export function createAutomationService(
             .canReusePreviousRun?.(schedule.projectId, thread.id)
             .catch(() => false)) === true
         ) {
+          signal.throwIfAborted()
           handOverClaimed = true
           continue
         }
+        signal.throwIfAborted()
         retained.push({
           threadId: thread.id,
           title: thread.title,
@@ -620,6 +875,7 @@ export function createAutomationService(
       }
       // The cap stops an unattended schedule leaking checkouts. A person asking
       // for a run right now is not that, so a manual start is never refused for it.
+      signal.throwIfAborted()
       const maxLiveWorktrees = schedule.maxLiveWorktrees ?? 1
       if (source === 'schedule' && retained.length >= maxLiveWorktrees) {
         await recordWorktreeLimit(
@@ -628,7 +884,9 @@ export function createAutomationService(
           triggeredAt,
           maxLiveWorktrees,
           retained,
+          signal,
         )
+        signal.throwIfAborted()
         const event: AutomationTriggerEvent = {
           projectId: schedule.projectId,
           scheduleId: schedule.id,
@@ -661,10 +919,15 @@ export function createAutomationService(
         updatedAt: triggeredAt,
       }
       await dependencies.createProjectThread(schedule.projectId, thread)
+      if (signal.aborted) {
+        await abandonLateRun(schedule.projectId, threadId, provenance)
+        signal.throwIfAborted()
+      }
       // The user may edit or delete the schedule while the filesystem work
       // above is pending. Merge only the run metadata into the current row;
       // never restore the stale snapshot that started this run.
-      await recordScheduleRun(schedule.projectId, schedule.id, triggeredAt, threadId)
+      await recordScheduleRun(schedule.projectId, schedule.id, triggeredAt, threadId, signal)
+      signal.throwIfAborted()
       const event = {
         projectId: schedule.projectId,
         scheduleId: schedule.id,
@@ -672,10 +935,30 @@ export function createAutomationService(
         triggeredAt,
         disposition: 'started' as const,
       }
+      // The renderer only starts a draft thread when its project is the one
+      // focused right now (`isPendingAutomation`/`startThread`), so a schedule
+      // firing against any other project would otherwise sit unsent until the
+      // user happens to reopen it. Drive the turn from here instead when that
+      // would happen; `notify` below still fires either way so an open
+      // renderer sees the thread appear.
+      if (dependencies.getActiveProjectId() !== schedule.projectId) {
+        void runHeadlessAutomationTurn(
+          schedule.projectId,
+          threadId,
+          schedule.prompt,
+          schedule.model,
+          provenance,
+        )
+      }
       notify?.(event)
       return event
     } finally {
-      inFlight.delete(schedule.id)
+      // A timed-out attempt can settle after its replacement has acquired the
+      // schedule. Only the current owner may release that replacement's lock.
+      if (triggerAttempts.get(schedule.id) === attempt) {
+        triggerAttempts.delete(schedule.id)
+        inFlight.delete(schedule.id)
+      }
     }
   }
 
@@ -857,8 +1140,9 @@ export function createAutomationService(
         inFlight.delete(schedule.id)
       }
     },
-    start(sender) {
+    start(sender, dispatch) {
       notify = sender
+      dispatchHeadlessTurn = dispatch
       disposeSupervisorHandler ??= (dependencies.supervisor ?? getTaskSupervisor)().registerHandler(
         SCHEDULER_HANDLER,
         async (task) => {
@@ -935,12 +1219,31 @@ export function createAutomationService(
       // the scheduler task's duration budget and take the whole scheduler down.
       await Promise.all(
         due.map(async (schedule) => {
+          const attempt = new AbortController()
+          let timer: ReturnType<typeof setTimeout> | undefined
+          const timedOut = new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => {
+              const error = new Error(
+                `Trigger timed out after ${String(SCHEDULER_TRIGGER_TIMEOUT_MS)}ms; any unfinished creation will not start a turn`,
+              )
+              attempt.abort(error)
+              if (triggerAttempts.get(schedule.id) === attempt) {
+                triggerAttempts.delete(schedule.id)
+                inFlight.delete(schedule.id)
+              }
+              reject(error)
+            }, SCHEDULER_TRIGGER_TIMEOUT_MS)
+          })
           try {
-            await trigger(schedule, now, 'schedule')
+            await Promise.race([trigger(schedule, now, 'schedule', attempt), timedOut])
           } catch (error) {
-            // Isolate failures so one project cannot prevent other matching
-            // schedules from running. Do not retry repeatedly in the same minute.
+            // Isolate failures — including a hang, which would otherwise block this
+            // Promise.all and take the whole tick past its own duration budget — so
+            // one project cannot prevent other matching schedules from running.
+            // Do not retry repeatedly in the same minute.
             await logTriggerFailure(schedule, error)
+          } finally {
+            clearTimeout(timer)
           }
         }),
       )
@@ -960,6 +1263,7 @@ export function getAutomationService(): AutomationService {
     canReusePreviousRun: (projectId, threadId) =>
       getAutomationWorktreeReuse().canReusePreviousRun(projectId, threadId),
     isPluginEnabled: () => getPluginService().registry.isEnabled(AUTOMATIONS_PLUGIN_ID),
+    getActiveProjectId,
   })
   return singleton
 }

@@ -1,16 +1,17 @@
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { readWorktreePreparationPlan } from '../../src/main/services/worktree-preparation-plan.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const root = join(tmpdir(), 'copse-e2e', 'go-preparation-approval')
 describe('automatic Go preparation approval', () => {
   before(async () => {
-    rmSync(root, { recursive: true, force: true })
+    removeE2eTree(root)
     mkdirSync(root, { recursive: true })
     writeFileSync(join(root, 'go.mod'), 'module example.test/ordinary\n\ngo 1.24\n')
     writeFileSync(join(root, 'main.go'), 'package main\nfunc main() {}\n')
@@ -24,7 +25,7 @@ describe('automatic Go preparation approval', () => {
   })
   after(() => {
     resetUserData()
-    rmSync(root, { recursive: true, force: true })
+    removeE2eTree(root)
   })
   it('shows the readonly Go package-loading boundary without claiming build success', async () => {
     const planFingerprint = readWorktreePreparationPlan(root).fingerprint

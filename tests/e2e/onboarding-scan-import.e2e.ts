@@ -1,12 +1,13 @@
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { readSeededSettings, resetUserData, seedOnboardingFixture } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // The happy path with real detections, made deterministic by injecting them:
 // two provider keys through the electron-shell env file (bootstrap.cjs applies
@@ -78,7 +79,7 @@ describe('onboarding: scan finds keys and local servers', () => {
     writeE2eEnv({ PATH: originalPath })
     await new Promise((resolve) => janServer.close(resolve))
     await new Promise((resolve) => lmServer.close(resolve))
-    rmSync(agentBinDir, { recursive: true, force: true })
+    removeE2eTree(agentBinDir)
     resetUserData()
   })
 

@@ -26,3 +26,6 @@
 .toast-error {
   border-color: var(--error);
 }
+.toast-action {
+  margin-inline-start: var(--spacing-sm);
+}
