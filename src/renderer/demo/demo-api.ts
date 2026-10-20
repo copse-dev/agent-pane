@@ -1009,6 +1009,17 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     },
     plans: { get: () => resolved(null), revision: () => resolved(null), change: unsupported },
     threads: {
+      archiveState: () =>
+        resolved({ archived: threads.filter((thread) => thread.archivedAt != null), review: [] }),
+      archiveDecision: (_projectId, threadId, decision) => {
+        const thread = threads.find((candidate) => candidate.id === threadId)
+        if (!thread) return resolved(false)
+        if (decision === 'archive') thread.archivedAt = Date.now()
+        if (decision === 'restore') delete thread.archivedAt
+        thread.updatedAt = Date.now()
+        return resolved(true)
+      },
+      onAutoArchived: () => () => {},
       storageSize: () => resolved({ bytes: 24_576, truncated: false }),
       archive: (_projectId, threadId) => {
         const archivedAt = Date.now()

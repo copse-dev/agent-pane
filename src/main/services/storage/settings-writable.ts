@@ -184,6 +184,7 @@ export const trustedSshHostsSchema = z.array(z.string().min(1).max(253)).max(200
 export const autoApprovalLevelSchema = z.enum(AUTO_APPROVAL_LEVELS)
 
 export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
+  autoArchiveAfterDays: z.union([z.literal(0), z.number().int().min(3).max(3650)]),
   acknowledgedProductAnnouncements: announcementHistorySchema,
   model: z.string().max(256),
   // Acknowledgement of the one-time ChatGPT plan onboarding notice.

@@ -1,10 +1,11 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig, writeSettings } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { pinTextForCapture, saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT = 'e2e-base-branch-project'
 const THREAD = 'e2e-base-branch-thread'
@@ -22,7 +23,10 @@ describe('a thread checkout accidentally on its base branch', () => {
     writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: '' })
     const root = process.env['COPSE_WORKTREES_DIR']
     if (!root) throw new Error('Missing isolated e2e worktrees root')
-    projectRoot = join(dirname(root), 'workspace')
+    // A sibling of the thread store (`<profile>/workspace`), never the store
+    // itself: the after hook deletes this checkout while the app still writes
+    // the thread it just ran into the store.
+    projectRoot = join(dirname(root), 'base-branch-project')
     worktreeRoot = join(root, PROJECT, THREAD)
     mkdirSync(projectRoot, { recursive: true })
     mkdirSync(dirname(worktreeRoot), { recursive: true })
@@ -82,8 +86,8 @@ describe('a thread checkout accidentally on its base branch', () => {
   after(() => {
     writeE2eEnv({})
     resetUserData()
-    if (worktreeRoot) rmSync(worktreeRoot, { recursive: true, force: true })
-    if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
+    if (worktreeRoot) removeE2eTree(worktreeRoot)
+    if (projectRoot) removeE2eTree(projectRoot)
   })
 
   it('refuses the agent run and explains how to return to the thread branch', async () => {

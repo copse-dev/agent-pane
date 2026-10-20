@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json'
 import { $, browser, expect } from '@wdio/globals'
 import { e2eWorkspaceDir, resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-thread-archive-worktree'
 const CLEAN_ID = 'archive-clean'
@@ -37,8 +38,8 @@ describe('archive chat and remove its worktree', function () {
     cleanRoot = join(worktreesRoot, PROJECT_ID, CLEAN_ID)
     dirtyRoot = join(worktreesRoot, PROJECT_ID, DIRTY_ID)
     busyRoot = join(worktreesRoot, PROJECT_ID, BUSY_ID)
-    rmSync(projectRoot, { recursive: true, force: true })
-    rmSync(join(worktreesRoot, PROJECT_ID), { recursive: true, force: true })
+    removeE2eTree(projectRoot)
+    removeE2eTree(join(worktreesRoot, PROJECT_ID))
     mkdirSync(projectRoot, { recursive: true })
     git(projectRoot, ['init', '-q', '-b', 'main'])
     git(projectRoot, ['config', 'user.name', 'Copse E2E'])
@@ -118,10 +119,10 @@ describe('archive chat and remove its worktree', function () {
       try {
         git(projectRoot, ['worktree', 'remove', '--force', path])
       } catch {
-        rmSync(path, { recursive: true, force: true })
+        removeE2eTree(path)
       }
     }
-    if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
+    if (projectRoot) removeE2eTree(projectRoot)
   })
 
   async function archiveFromSidebar(threadId: string): Promise<void> {

@@ -351,6 +351,7 @@
     "tests/e2e/terminal-shared-history.e2e.ts": 26.5,
     "tests/e2e/theme-boot.e2e.ts": 6.2,
     "tests/e2e/thread-archive-worktree.e2e.ts": 13.4,
+    "tests/e2e/thread-auto-archive.e2e.ts": 7.5,
     "tests/e2e/thread-auto-retitle.e2e.ts": 17,
     "tests/e2e/thread-checkout-switch.e2e.ts": 11.1,
     "tests/e2e/thread-content-filter.e2e.ts": 9.2,

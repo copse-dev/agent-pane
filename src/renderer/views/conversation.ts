@@ -1,4 +1,5 @@
 import { el, clear } from '../dom/helpers.ts'
+import { createThreadArchiveReview } from './thread-archive-review.ts'
 import { createAgentAvatar, createAgentAvatarMotion } from '../dom/agent-avatar.ts'
 import {
   agentRouteModel,
@@ -2628,6 +2629,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   showAcpTransportNoiseDisclosure = (): boolean => store.getState().developerMode
   const scrollArea = el('div', { class: 'conversation-scroll' })
   const todoHost = el('div', { class: 'conversation-todos-host' })
+  const archiveReview = createThreadArchiveReview(store, api)
   const appleDevelopmentHost = createAppleDevelopmentPanel(store, api, { allowEnrollment: false })
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
   let agentNames: ReadonlyMap<string, string> = new Map()
@@ -2655,6 +2657,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     appleDevelopmentHost,
     todoHost,
     list,
+    archiveReview.element,
     scrollToBottomBtn,
   )
 
@@ -5288,6 +5291,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   syncFromStore()
   return () => {
     disposed = true
+    archiveReview.dispose()
     selectionQuote.destroy()
     avatarMotion.dispose()
     // Invalidate any backfillOlderMessages step still queued via

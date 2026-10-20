@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -20,7 +21,7 @@ describe('titlebar workspace name', () => {
 
   after(() => {
     resetUserData()
-    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
+    removeE2eTree(dirname(workspaceRoot))
   })
 
   it('shows the active project folder name after restoring on launch', async () => {

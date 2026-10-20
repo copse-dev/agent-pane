@@ -1,11 +1,12 @@
 import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-thread-switch-isolated-project'
 const THREAD_A = 'e2e-thread-switch-isolated-a'
@@ -74,7 +75,7 @@ describe('switching between isolated running threads', () => {
     projectRoot = mkdtempSync(join(tmpdir(), 'copse-thread-switch-'))
     threadAWorktree = join(worktreesRoot, PROJECT_ID, THREAD_A)
     threadBWorktree = join(worktreesRoot, PROJECT_ID, THREAD_B)
-    rmSync(join(worktreesRoot, PROJECT_ID), { recursive: true, force: true })
+    removeE2eTree(join(worktreesRoot, PROJECT_ID))
 
     git(projectRoot, ['init', '-q', '-b', 'main'])
     git(projectRoot, ['config', 'user.email', 'e2e@example.invalid'])
@@ -134,7 +135,7 @@ describe('switching between isolated running threads', () => {
         }
       }
     }
-    if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
+    if (projectRoot) removeE2eTree(projectRoot)
     delete process.env['COPSE_PANEL_MOCK_LLM']
     delete process.env['ANTHROPIC_API_KEY']
     delete process.env['OPENAI_API_KEY']
