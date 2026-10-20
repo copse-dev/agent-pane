@@ -6,11 +6,12 @@ import { $, browser, expect } from '@wdio/globals'
 import { readWorktreePreparationPlan } from '../../src/main/services/worktree-preparation-plan.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const root = join(tmpdir(), 'copse-e2e', 'python-preparation-approval')
 describe('automatic Python preparation approval', () => {
   before(async () => {
-    rmSync(root, { recursive: true, force: true })
+    removeE2eTree(root)
     mkdirSync(root, { recursive: true })
     writeFileSync(
       join(root, 'pyproject.toml'),
@@ -27,7 +28,7 @@ describe('automatic Python preparation approval', () => {
   })
   after(() => {
     resetUserData()
-    rmSync(root, { recursive: true, force: true })
+    removeE2eTree(root)
   })
   it('shows the locked uv command and repository-code warning without a declaration', async () => {
     const planFingerprint = readWorktreePreparationPlan(root).fingerprint

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
@@ -10,6 +10,7 @@ import {
   approveUnsandboxedTerminalIfPrompted,
 } from './helpers/terminal-approval.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-worktree-terminal-transition-project'
 const THREAD_ID = 'e2e-worktree-terminal-transition-thread'
@@ -22,6 +23,13 @@ async function xtermText(): Promise<string> {
   return browser.execute(
     () => document.querySelector('.terminals-tab-panel.is-active .xterm-rows')?.textContent ?? '',
   )
+}
+
+async function focusTerminalInput(): Promise<void> {
+  // xterm deliberately places its keyboard textarea behind the canvas. Reach it
+  // through the visible terminal surface, just as a person focuses the shell.
+  await $('.terminals-tab-panel.is-active .xterm-screen').click()
+  await expect($('.terminals-tab-panel.is-active .xterm-helper-textarea')).toBeFocused()
 }
 
 // Regression for #1673. This was quarantined while the first-send policy silently
@@ -52,7 +60,7 @@ describe('terminal checkout transition', () => {
     // CI retries reuse COPSE_WORKTREES_DIR. Start from a genuinely new repo so
     // a prior attempt's worktree registration or fixture files cannot change
     // the checkout policy inspected by this attempt.
-    rmSync(worktreeRoot, { recursive: true, force: true })
+    removeE2eTree(worktreeRoot)
     git(projectRoot, ['init', '-q', '-b', 'main'])
     git(projectRoot, ['config', 'user.email', 'e2e@example.invalid'])
     git(projectRoot, ['config', 'user.name', 'Copse E2E'])
@@ -90,8 +98,8 @@ describe('terminal checkout transition', () => {
 
   after(() => {
     resetUserData()
-    if (worktreeRoot) rmSync(worktreeRoot, { recursive: true, force: true })
-    if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
+    if (worktreeRoot) removeE2eTree(worktreeRoot)
+    if (projectRoot) removeE2eTree(projectRoot)
     delete process.env['COPSE_PANEL_MOCK_LLM']
     delete process.env['ANTHROPIC_API_KEY']
     delete process.env['OPENAI_API_KEY']
@@ -103,8 +111,7 @@ describe('terminal checkout transition', () => {
     await approveUnsandboxedTerminalIfPrompted()
     await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
 
-    const helper = await $('.xterm-helper-textarea')
-    await helper.click()
+    await focusTerminalInput()
     await browser.keys(['pwd', '\uE007'])
     await browser.waitUntil(async () => (await xtermText()).includes(projectRoot), {
       timeout: 30_000,
@@ -178,8 +185,7 @@ describe('terminal checkout transition', () => {
     await expect(sharedTab.$('.terminals-checkout-badge')).toHaveText('Shared checkout')
     await expect(worktreeTab).toHaveElementClass('is-active')
 
-    const activeHelper = await $('.terminals-tab-panel.is-active .xterm-helper-textarea')
-    await activeHelper.click()
+    await focusTerminalInput()
     await browser.keys(['pwd', '\uE007'])
     await browser.waitUntil(async () => (await xtermText()).includes(worktreeRoot), {
       timeout: 30_000,

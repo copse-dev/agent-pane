@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { mobileDecisions, type MobileDecision } from './mobile-decisions.ts'
 import { mobileRunId } from '../agent-service.ts'
 import { listRunningThreadIds } from '../agent-service.ts'
 import { pendingApprovalCountForThread, pendingApprovalRequestsForThread } from '../approval.ts'
@@ -8,8 +7,11 @@ import { storageGet } from '../storage/storage.ts'
 import { loadProjectThreadMetas, loadThreadMessages } from '../thread-store.ts'
 import { inspectThreadCheckoutRoot } from '../thread-execution-context.ts'
 import { threadHasUncommittedChanges } from '../thread-dirty-status.ts'
+import { getProjectRoot } from '../workspace.ts'
+import { mobileDecisions, type MobileDecision } from './mobile-decisions.ts'
 import { mobileMessageImages } from './mobile-message-images.ts'
 import { mobileTranscriptMessages, type MobileMessage } from './mobile-transcript.ts'
+import { MobileActivityChanges } from './mobile-activity-changes.ts'
 
 const projectSchema = z.array(
   z.object({
@@ -55,10 +57,15 @@ async function settledThreadHasChanges(
   }
 }
 
-export async function mobileActivity(): Promise<MobileActivityRow[]> {
+const activityChanges = new MobileActivityChanges(settledThreadHasChanges)
+
+export async function mobileActivity(
+  changes: Pick<MobileActivityChanges, 'read'> = activityChanges,
+): Promise<MobileActivityRow[]> {
   const running = new Set(listRunningThreadIds())
   const groups: MobileActivityRow[] = []
   for (const project of mobileProjects()) {
+    const projectRoot = getProjectRoot(project.id)
     const threads = await loadProjectThreadMetas(project.id)
     for (const thread of threads) {
       if (thread.archivedAt !== undefined) continue
@@ -75,8 +82,15 @@ export async function mobileActivity(): Promise<MobileActivityRow[]> {
               : thread.status === 'error'
                 ? 'failed'
                 : 'finished'
+      const checkoutKey = thread.worktree
+        ? JSON.stringify([
+            thread.worktree.path,
+            thread.worktree.retiredAt ?? null,
+            thread.worktree.pullRequestUrl ?? null,
+          ])
+        : 'shared'
       const hasChanges = settled
-        ? await settledThreadHasChanges(project.id, thread.id, thread.updatedAt)
+        ? changes.read(project.id, thread.id, thread.updatedAt, projectRoot, checkoutKey)
         : false
       groups.push({
         projectId: project.id,

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, rmSync, symlinkSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { $, browser, expect } from '@wdio/globals'
@@ -7,6 +7,7 @@ import { resetUserData, seedE2eViewport, writeSeedConfig } from './helpers/seed-
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const projectId = 'image-link-project'
 const threadId = 'image-link-thread'
@@ -60,7 +61,7 @@ describe('transcript workspace image links', () => {
 
   after(() => {
     resetUserData()
-    if (parent) rmSync(parent, { recursive: true, force: true })
+    if (parent) removeE2eTree(parent)
   })
 
   it('copies an image opened from a chat file link', async function () {

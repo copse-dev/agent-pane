@@ -19,6 +19,7 @@ import { getActiveRunThread } from './thread-models.ts'
 import { getApprovalToolCallId, getBridgeExecutionId } from './approval-tool-call-context.ts'
 import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
 import { recordDecision } from './security/decision-log-store.ts'
+import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
 import type { PromptCause } from '@shared/threads/prompt-cause.ts'
 import {
   DeferredApprovalError,
@@ -30,10 +31,11 @@ import type { UserAlertSender } from './user-alerts.ts'
 import { resolveRendererPromptTarget } from './renderer-prompt-target.ts'
 import { getAgentExecutionRoot } from './execution-root.ts'
 import {
-  mobileDecisions,
-  mobileDecisionSource,
-  type MobilePrincipal,
-} from './mobile/mobile-decisions.ts'
+  humanDecisions,
+  humanDecisionActor,
+  humanDecisionSource,
+  type HumanDecisionPrincipal,
+} from './human-decisions.ts'
 import { getActiveProjectId } from './workspace.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -185,8 +187,8 @@ export interface ApprovalRequest {
 }
 
 export interface ApprovalResponse {
-  /** Set only by the authenticated mobile decision transport. */
-  device?: MobilePrincipal
+  /** Set only by an authenticated interactive decision transport. */
+  device?: HumanDecisionPrincipal
   approved: boolean
   remember: boolean
   /** Scope selected for this approval; absent is the backwards-compatible one-shot grant. */
@@ -362,7 +364,7 @@ function recordReplayedDecision(req: ApprovalRequest, response: ApprovalResponse
     kind: req.type,
     ...(projectId ? { projectId } : {}),
     ...approvalAuditIdentities.get(req),
-    actor: response.device ? 'mobile-device' : 'user',
+    actor: response.device ? humanDecisionActor(response.device) : 'user',
     verdict: response.approved ? 'approved' : 'denied',
     subject: req.subject ?? req.title,
     ...(req.scope ? { scope: req.scope } : {}),
@@ -373,7 +375,7 @@ function recordReplayedDecision(req: ApprovalRequest, response: ApprovalResponse
     ...(req.shellContext ? { detail: { shellContext: req.shellContext } } : {}),
     remembered: response.remember,
     source: response.device
-      ? `${mobileDecisionSource(response.device)}; abandoned-call-replay`
+      ? `${humanDecisionSource(response.device)}; abandoned-call-replay`
       : 'abandoned-call-replay',
   })
 }
@@ -402,7 +404,12 @@ function recordApprovalDecision(
     kind: req.type,
     ...(projectId ? { projectId } : {}),
     ...approvalAuditIdentities.get(req),
-    actor: resolution === 'user' ? (response.device ? 'mobile-device' : 'user') : 'system',
+    actor:
+      resolution === 'user'
+        ? response.device
+          ? humanDecisionActor(response.device)
+          : 'user'
+        : 'system',
     verdict:
       resolution === 'user'
         ? response.approved
@@ -431,7 +438,7 @@ function recordApprovalDecision(
     remembered: response.remember,
     ...(resolution === 'user'
       ? response.device
-        ? { source: mobileDecisionSource(response.device) }
+        ? { source: humanDecisionSource(response.device) }
         : {}
       : { source: resolution }),
   })
@@ -637,7 +644,7 @@ async function deferInsteadOfPrompting(
   recordApprovalDecision(req, DENIED, 'deferred')
   throw new DeferredApprovalError(
     entryId,
-    deferredApprovalMessage({ title: req.title, reasons: req.reasons }),
+    deferredApprovalMessage({ id: entryId, title: req.title, reasons: req.reasons }),
   )
 }
 
@@ -977,9 +984,9 @@ export function initApproval(
         }
         signal?.addEventListener('abort', onAbort, { once: true })
         const projectId = getThreadExecutionContext()?.projectId ?? getActiveProjectId()
-        const removeMobile =
+        const removeDecision =
           projectId && threadId
-            ? mobileDecisions.register(
+            ? humanDecisions.register(
                 projectId,
                 threadId,
                 {
@@ -1000,10 +1007,17 @@ export function initApproval(
                       device,
                     })
                 },
+                {
+                  // Other prompts can grant persistent authority on approved alone
+                  // (for example provider-host consent). Keep them desktop/mobile-only
+                  // until their semantics have a complete interactive-client projection.
+                  interactiveClientSupported:
+                    req.type === 'shell' && req.subject === SHELL_DECISION_SUBJECT,
+                },
               )
             : (): void => {}
         pending.set(id, (response) => {
-          removeMobile()
+          removeDecision()
           if (!dest.isDestroyed()) dest.send('agent:approval-cancelled', { id })
           signal?.removeEventListener('abort', onAbort)
           stopAlert()

@@ -4,7 +4,11 @@ import { test } from 'node:test'
 import { createStore } from '@shared/store/store.ts'
 import type { ForkedHistoryResult } from '@shared/types'
 import type { ThreadBacklink } from '@shared/threads/thread-links.ts'
-import { addMessage, createThread } from '@shared/store/thread-helpers.ts'
+import type { DecisionEvent } from '@shared/threads/decision-log.ts'
+import type { ContextPermissionSnapshot } from '@shared/types/context-permissions.ts'
+import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
+import type { DeferredApproval } from '@shared/threads/deferred-approval.ts'
+import { addMessage, createThread, setReviewerInputAnswer } from '@shared/store/thread-helpers.ts'
 import type { ThreadContextModel } from './thread-context-model.ts'
 import {
   mountThreadContextPane,
@@ -12,6 +16,7 @@ import {
   type ThreadContextHandlers,
 } from './thread-context-panel.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import type { AskUserRequests, PendingQuestionSummary } from './ask-user-dialog.ts'
 
 const pr = {
   owner: 'acme',
@@ -59,6 +64,7 @@ function model(fields: Partial<ThreadContextModel> = {}): ThreadContextModel {
       },
     ],
     subagents: [{ id: 'a', kind: 'explore', status: 'done', prompt: 'Find it' }],
+    resolvedQuestions: [],
     ...fields,
   }
 }
@@ -75,6 +81,7 @@ function recorder(): { handlers: ThreadContextHandlers; calls: string[] } {
       startSideChat: () => calls.push('start'),
       archiveSideChat: (id) => calls.push(`archive:${id}`),
       restoreSideChat: (id) => calls.push(`restore:${id}`),
+      jumpToReviewerInput: (messageId, requestId) => calls.push(`jump:${messageId}:${requestId}`),
     },
   }
 }
@@ -164,6 +171,86 @@ test('empty sections say so', () => {
   assert.equal(host.querySelectorAll('.thread-context-empty').length, 5)
 })
 
+test('resolved questions live in collapsed Context disclosures and can jump to their origin', () => {
+  const { handlers, calls } = recorder()
+  const host = renderThreadContext(
+    model({
+      resolvedQuestions: [
+        {
+          request: {
+            id: 'request-1',
+            messageId: 'message-1',
+            question: 'Fix the spacing too?',
+            context: 'The footer overlaps content.',
+            options: ['Yes'],
+          },
+          answer: { id: 'request-1', text: 'Yes', answeredAt: 2, messageId: 'answer-1' },
+        },
+      ],
+    }),
+    handlers,
+  )
+  const resolved = host.querySelector<HTMLDetailsElement>('[data-reviewer-input-id="request-1"]')
+  assert.ok(resolved)
+  assert.equal(resolved.open, false)
+  assert.equal(resolved.querySelector('summary')?.textContent, 'Fix the spacing too?')
+  assert.match(resolved.textContent, /Your answer: Yes/)
+  resolved.querySelector<HTMLButtonElement>('.reviewer-input-origin')?.click()
+  assert.deepEqual(calls, ['jump:message-1:request-1'])
+})
+
+test('Context moves an answered question out of the pending list', () => {
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'p',
+    projects: [{ id: 'p', path: '/work', name: 'Work' }],
+    filesPaneOpen: true,
+    rightPanelMode: 'context',
+  })
+  const threadId = createThread(store)
+  store.setState({
+    threads: store.getState().threads.map((thread) => ({
+      ...thread,
+      messages: [
+        {
+          id: 'origin',
+          role: 'assistant',
+          content: '',
+          createdAt: 1,
+          toolCalls: [
+            {
+              id: 'request-1',
+              name: 'request_review_input',
+              status: 'done',
+              result: 'Saved',
+              args: { question: 'Fix spacing?', context: 'Footer overlap.', options: ['Yes'] },
+            },
+          ],
+        },
+      ],
+    })),
+  })
+  const viewer = document.createElement('div')
+  const dispose = mountThreadContextPane(
+    document.createElement('div'),
+    viewer,
+    store,
+    createFakeApi(),
+  )
+  assert.equal(viewer.querySelector('.reviewer-input-toggle')?.textContent, '1 question')
+  assert.ok(viewer.querySelector('.reviewer-input-item'))
+  setReviewerInputAnswer(store, threadId, {
+    id: 'request-1',
+    text: 'Yes',
+    answeredAt: 2,
+    messageId: 'answer-1',
+  })
+  assert.equal(viewer.querySelector('.reviewer-input-item'), null)
+  assert.equal(viewer.querySelector('.reviewer-input-toggle'), null)
+  assert.equal(viewer.querySelector<HTMLDetailsElement>('.thread-context-question')?.open, false)
+  dispose()
+})
+
 test('the mounted pane renders the active thread, uses one header, and starts a side chat', async () => {
   const store = createStore()
   store.setState({
@@ -216,6 +303,104 @@ test('the mounted pane renders the active thread, uses one header, and starts a 
   dispose()
 })
 
+test('Context shows saved questions and deferred actions without implying approval', async () => {
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'p',
+    projects: [{ id: 'p', path: '/work', name: 'Work' }],
+    filesPaneOpen: true,
+    rightPanelMode: 'context',
+  })
+  const threadId = createThread(store)
+  store.setState({
+    threads: store.getState().threads.map((thread) =>
+      thread.id === threadId
+        ? {
+            ...thread,
+            messages: [
+              {
+                id: 'message-1',
+                role: 'assistant',
+                content: '',
+                createdAt: 1,
+                toolCalls: [
+                  {
+                    id: 'question-1',
+                    name: 'request_review_input',
+                    status: 'done',
+                    result: 'Saved',
+                    args: { question: 'Which branch?', context: 'Pick a branch.' },
+                  },
+                ],
+              },
+            ],
+          }
+        : thread,
+    ),
+  })
+  const deferred: DeferredApproval = {
+    v: 1,
+    id: 'approval-1',
+    at: 1,
+    status: 'pending',
+    threadId,
+    kind: 'shell',
+    title: 'Run git fetch',
+    subject: 'git fetch',
+  }
+  const base = createFakeApi()
+  const api = {
+    ...base,
+    threads: {
+      ...base.threads,
+      pendingApprovals: async (): Promise<DeferredApproval[]> => [deferred],
+    },
+  }
+  let live: PendingQuestionSummary[] = [
+    {
+      id: 'live-1',
+      threadId,
+      questions: ['Continue with the release?'],
+      options: [['Yes', 'No']],
+      receivedAt: 1,
+    },
+  ]
+  let changed: (() => void) | undefined
+  const liveQuestions: AskUserRequests = {
+    pending: () => live,
+    answer: () => false,
+    onChange: (listener) => {
+      changed = listener
+      return () => {
+        changed = undefined
+      }
+    },
+  }
+  const viewer = document.createElement('div')
+  const dispose = mountThreadContextPane(
+    document.createElement('div'),
+    viewer,
+    store,
+    api,
+    liveQuestions,
+  )
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const requests = viewer.querySelector('[data-context-section="requests"]')
+  assert.ok(requests)
+  assert.match(requests.textContent, /Which branch\?/)
+  assert.match(requests.textContent, /Continue with the release\?/)
+  assert.match(requests.textContent, /Run git fetch/)
+  assert.match(requests.textContent, /Not run/)
+  assert.equal(requests.querySelectorAll('.thread-context-rows > button').length, 1)
+  assert.equal(requests.querySelector('.reviewer-input-toggle')?.textContent, '1 question')
+  requests.querySelector<HTMLButtonElement>('.reviewer-input-question')?.click()
+  assert.ok(requests.querySelector('.reviewer-input-text'))
+  live = []
+  changed?.()
+  assert.equal(viewer.querySelector('[data-agent-question-id="live-1"]'), null)
+  dispose()
+})
+
 test('storage combines saved files with the owned checkout and archive uses the guarded flow', async () => {
   const store = createStore()
   store.setState({
@@ -239,6 +424,7 @@ test('storage combines saved files with the owned checkout and archive uses the 
     })),
   })
   const base = createFakeApi()
+  const permissionRoots: string[] = []
   const api = {
     ...base,
     threads: {
@@ -264,6 +450,17 @@ test('storage combines saved files with the owned checkout and archive uses the 
         truncated: true,
       }),
     },
+    security: {
+      ...base.security,
+      getContextPermissions: async (
+        _projectId: string,
+        _threadId: string,
+        projectRoot: string,
+      ): Promise<ContextPermissionSnapshot> => {
+        permissionRoots.push(projectRoot)
+        return { outsideReadPaths: [], browserOrigins: [], portBindingAllowed: false }
+      },
+    },
   }
   const viewer = document.createElement('div')
   const requests: string[][] = []
@@ -285,9 +482,178 @@ test('storage combines saved files with the owned checkout and archive uses the 
     viewer.querySelector('[data-context-change-stats] .git-change-status-deleted')?.textContent,
     '−7',
   )
+  // Port-binding grants are saved under the project root, not the worktree.
+  assert.deepEqual(permissionRoots, ['/work'])
   viewer.querySelector<HTMLElement>('[data-action="archive-thread"]')?.click()
   assert.deepEqual(requests, [['p', id]])
   assert.equal(store.getState().threads[0]?.archivedAt, undefined)
+  dispose()
+})
+
+test('Context shows this thread’s saved read and send grants and revokes each separately', async () => {
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'p',
+    projects: [{ id: 'p', path: '/work', name: 'Work' }],
+    filesPaneOpen: true,
+    rightPanelMode: 'context',
+  })
+  const threadId = createThread(store)
+  const grants = new Map<string, string[]>([
+    ['threadReadAccess', [threadId]],
+    ['threadSendAccess', [threadId]],
+    ['webAllowedOrigins', ['https://saved.example:443']],
+  ])
+  const revoked: string[] = []
+  let guardedYoloPhase: GuardedYoloState['phase'] = 'active'
+  const base = createFakeApi()
+  const api = {
+    ...base,
+    settings: {
+      ...base.settings,
+      get: async (key: string): Promise<unknown> =>
+        key === 'toolPermissionOverrides' ? { 'copse:run_shell': 'ask' } : grants.get(key),
+    },
+    security: {
+      ...base.security,
+      getGuardedYolo: async (id: string): Promise<GuardedYoloState> => ({
+        threadId: id,
+        phase: guardedYoloPhase,
+        containment: 'project-sandbox',
+        expiresAt: null,
+      }),
+      disableGuardedYolo: async (id: string): Promise<GuardedYoloState> => {
+        guardedYoloPhase = 'off'
+        return {
+          threadId: id,
+          phase: guardedYoloPhase,
+          containment: 'project-sandbox',
+          expiresAt: null,
+        }
+      },
+      getContextPermissions: async (): Promise<ContextPermissionSnapshot> => ({
+        outsideReadPaths: ['/outside/notes'],
+        browserOrigins: ['https://session.example:443'],
+        portBindingAllowed: true,
+      }),
+    },
+    decisions: {
+      ...base.decisions,
+      listThread: async (_projectId: string, id: string): Promise<DecisionEvent[]> => [
+        {
+          v: 1,
+          type: 'decision',
+          id: 'd1',
+          at: 1,
+          kind: 'web',
+          actor: 'user',
+          verdict: 'denied',
+          subject: 'https://denied.example:443',
+          threadId: id,
+        },
+      ],
+    },
+    threadPrompts: {
+      ...base.threadPrompts,
+      revokeAccess: async (id: string, access: 'read' | 'send'): Promise<void> => {
+        revoked.push(access)
+        const key = access === 'read' ? 'threadReadAccess' : 'threadSendAccess'
+        grants.set(
+          key,
+          (grants.get(key) ?? []).filter((value) => value !== id),
+        )
+      },
+    },
+  }
+  const viewer = document.createElement('div')
+  const dispose = mountThreadContextPane(document.createElement('div'), viewer, store, api)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(
+    viewer.querySelectorAll('[data-context-section="permissions"] [data-access]').length,
+    2,
+  )
+  const permissions =
+    viewer.querySelector('[data-context-section="permissions"]')?.textContent ?? ''
+  assert.match(permissions, /Guarded YOLO/)
+  assert.match(permissions, /Outside-project reads/)
+  assert.match(permissions, /\/outside\/notes/)
+  assert.match(permissions, /Browser origins/)
+  assert.match(permissions, /Local port binding/)
+  assert.match(permissions, /Saved web origins1/)
+  assert.match(permissions, /Tool overrides1/)
+  assert.match(
+    viewer.querySelector('[data-context-section="decisions"]')?.textContent ?? '',
+    /https:\/\/denied.example:443webdenied/,
+  )
+  viewer.querySelector<HTMLButtonElement>('[data-action="disable-guarded-yolo"]')?.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(viewer.querySelector('[data-action="disable-guarded-yolo"]'), null)
+  viewer.querySelector<HTMLButtonElement>('[data-action="revoke-read-access"]')?.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(revoked, ['read'])
+  assert.equal(viewer.querySelector('[data-access="read"]'), null)
+  assert.ok(viewer.querySelector('[data-access="send"]'))
+  viewer.querySelector<HTMLButtonElement>('[data-action="revoke-send-access"]')?.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(revoked, ['read', 'send'])
+  assert.match(
+    viewer.querySelector('[data-context-section="permissions"]')?.textContent ?? '',
+    /No saved conversation access/,
+  )
+  dispose()
+})
+
+test('Context discards permissions returned for a thread that is no longer active', async () => {
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'p',
+    projects: [{ id: 'p', path: '/work', name: 'Work' }],
+    filesPaneOpen: true,
+    rightPanelMode: 'context',
+  })
+  const first = createThread(store)
+  let resolveFirst: (value: ContextPermissionSnapshot) => void = () => {}
+  const firstPermissions = new Promise<ContextPermissionSnapshot>((resolve) => {
+    resolveFirst = resolve
+  })
+  const base = createFakeApi()
+  const api = {
+    ...base,
+    settings: {
+      ...base.settings,
+      get: async (key: string): Promise<unknown> =>
+        key === 'threadReadAccess' ? [first] : undefined,
+    },
+    security: {
+      ...base.security,
+      getContextPermissions: (
+        _projectId: string,
+        id: string,
+      ): Promise<ContextPermissionSnapshot> =>
+        id === first
+          ? firstPermissions
+          : Promise.resolve({
+              outsideReadPaths: [],
+              browserOrigins: [],
+              portBindingAllowed: false,
+            }),
+    },
+  }
+  const viewer = document.createElement('div')
+  const dispose = mountThreadContextPane(document.createElement('div'), viewer, store, api)
+  createThread(store)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  resolveFirst({
+    outsideReadPaths: ['/outside/old-thread'],
+    browserOrigins: ['https://old.example:443'],
+    portBindingAllowed: true,
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(viewer.querySelector('[data-access="read"]'), null)
+  assert.doesNotMatch(
+    viewer.querySelector('[data-context-section="permissions"]')?.textContent ?? '',
+    /old-thread|old.example|Local port binding/,
+  )
   dispose()
 })
 

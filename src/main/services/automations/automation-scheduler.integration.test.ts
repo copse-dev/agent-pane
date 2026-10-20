@@ -154,6 +154,7 @@ describe('automation scheduler on the real supervisor', () => {
       releasePreviousRun: () => Promise.resolve({ released: true }),
       supervisor: () => supervisor,
       recoveryDelayMs: 0,
+      getActiveProjectId: () => 'project-a',
     })
     stoppers.push(() => {
       service.stop()
@@ -170,7 +171,10 @@ describe('automation scheduler on the real supervisor', () => {
   it('keeps ticking after a tick overruns its duration budget', { timeout: 20_000 }, async () => {
     hang.add('slow')
     const { supervisor, service } = boot()
-    service.start(() => {})
+    service.start(
+      () => {},
+      async () => {},
+    )
     await service.sync()
     const [original] = liveSchedulerTasks(supervisor)
     assert.ok(original)
@@ -207,7 +211,10 @@ describe('automation scheduler on the real supervisor', () => {
     async () => {
       hang.add('slow')
       const first = boot()
-      first.service.start(() => {})
+      first.service.start(
+        () => {},
+        async () => {},
+      )
       await first.service.sync()
       await minute()
       await until(() => triggered.includes('quick'), 'the interrupted tick to be underway')
@@ -218,7 +225,10 @@ describe('automation scheduler on the real supervisor', () => {
       hang.clear()
 
       const second = boot()
-      second.service.start(() => {})
+      second.service.start(
+        () => {},
+        async () => {},
+      )
       await second.service.sync()
 
       await until(() => triggered.length > before, 'the interrupted tick to run again on relaunch')
@@ -267,7 +277,10 @@ describe('automation scheduler on the real supervisor', () => {
       clock.advanceBy(0)
 
       const { supervisor, service } = boot()
-      service.start(() => {})
+      service.start(
+        () => {},
+        async () => {},
+      )
       await service.sync()
       assert.equal(supervisor.get(task.projectId, task.taskId)?.state, 'cancelled')
       assert.equal(liveSchedulerTasks(supervisor).length, 1)

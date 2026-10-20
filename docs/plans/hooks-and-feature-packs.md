@@ -122,7 +122,13 @@ revisiting this document, not silently diverging in an implementation PR.
    observed from renderer dispatches. A stale or exhausted wake never runs; its
    completed process state and logs remain available for explicit human inspection.
    The background operation id deduplicates delivery, so recovery cannot execute the
-   same machine turn twice. Each in-run grant carries its bounded mechanism reason
+   same machine turn twice. ACP native-tool bridges snapshot the owning human
+   turn-tree epoch when binding a turn's execution context and rebind that epoch
+   for HTTP tool calls. Clearing the context clears the snapshot; a legacy run
+   without an explicit human epoch cannot synthesize one from its thread id.
+   Bounded background tasks launched through ACP therefore use the same wake
+   budget and stale-epoch checks as native launches.
+   Each in-run grant carries its bounded mechanism reason
    (`todo-closeout`, `pre-review-todo`, or `post-review-remediation`) for reporting;
    the reason does not change first-come ordering or the shared count. When the limit
    is reached and todos remain open, the host emits and persists one deterministic
@@ -244,6 +250,18 @@ revisiting this document, not silently diverging in an implementation PR.
     tabs and durable session remain.
     Direct network, arbitrary IPC/Electron access, generic host calls, and unused renderer
     contribution placeholders remain unavailable.
+    **Plugin capability API foundation:** the host's shared human-decision registry underlies
+    the mobile adapter and future capability consumers. It grants no new runtime access or
+    network authority. Provider contributions, explicit consumer grants and bounded SDK/transport
+    operations must follow the separate stages in [plugin-capability-api.md](plugin-capability-api.md);
+    they do not weaken this selected-runtime boundary.
+    **Interactive-client preview:** the experimental first-party `copse.plugin-client-api`
+    capability may start a host-owned loopback approval transport only after explicit plugin
+    enablement. Each client additionally needs desktop consent for session-only viewing or
+    decision submission. Pairing prompts have no agent/thread identity and never enter the
+    remote feed; no tool or selected runtime receives this write authority. Disabling closes
+    the service and revokes every token. This preview does not add generic provider registration,
+    durable grants, or a user-runtime host gateway. See [the client protocol](../plugin-client-api.md).
     **External function-hook registration (SDK stage 1):** a selected user plugin may
     declare `runtime.hooks: [{ id, event }]`, including a hook-only runtime. Events
     use the canonical catalogue; IDs are unique per plugin. API v1 adds

@@ -167,6 +167,67 @@ an unsigned commit or an automatic unsandboxed retry. Custom fsmonitor, hooks an
 signers work within this boundary; external diff/textconv remain available through
 explicit shell commands while automatic previews need raw Git output.
 
+### Background default-branch fetch
+
+Copse keeps each local project's `refs/remotes/origin/<default>` current, hourly and when
+a thread allocates a worktree, so new threads start from upstream code. The project
+sandbox has no network or `~/.ssh`, so this fetch runs on the host, controlled by the
+`backgroundDefaultBranchFetch` setting (Settings → Permissions → Upstream updates; on by
+default). The host process never reads the project's Git configuration. Copse reads
+`remote.origin.url` from `.git/config` without includes, admits only `http(s)://`,
+`ssh://` and `user@host:path` URLs (no leading `-`, no `::` remote-helper syntax), and
+fetches it into a fresh, Copse-owned bare repository under `~/.copse/cache/`. That
+repository borrows the project's objects through `alternates`. With no project config
+in scope, the user's global and system Git configuration (credential helpers,
+`insteadOf`) apply as they would in a terminal. The internal execution overrides,
+network-only transport allowlist and Copse's `GIT_SSH_COMMAND` apply as well. Global
+URL rewrites to local paths or `file://` are refused by the host fetch at execution
+time; only HTTP(S) and SSH may cross this boundary. A second fetch,
+local-only and inside the project sandbox, copies the tip into the project with a read
+grant for that scratch repository. The scratch is deleted afterwards. Only the
+remote-tracking ref moves; the checkout, index and local branches are never touched.
+With the setting enabled, other origins (local paths, `file://`) keep the contained
+fetch, which leaves the ref unchanged on macOS. Turning the setting off skips all
+background fetches on every platform, including the contained fallback; it cannot
+contact origin or request authentication. Failures are logged once per distinct
+error and again on recovery.
+
+Internal Git execution explicitly unsets inherited Git configuration, executable and
+SSH injection variables in the final spawn environment. These removals survive the
+spawn layer's environment overlay; Copse installs its own trusted SSH bridge afterwards.
+
+The residual trust is in `remote.origin.url` itself. Whoever can write `.git/config`
+chooses which network host Copse fetches from, and therefore which commits new threads
+start from. That requires write access to the project's Git metadata, which contained
+commands do not have.
+
+### Host-side read tools without a prompt
+
+Two agent tools reach the network from the host without an approval prompt
+([shell permissions](shell-permissions.md#host-side-read-tools)). Neither uses a new or narrowed
+credential; the read-only property comes from Copse building the request itself.
+
+- `gh_api_read` runs `gh api` with the user's existing `gh` login. **Any GitHub data that login
+  can read** — public and private repositories, organisations, users, issues, pull requests,
+  Actions logs, and the authenticated user's own profile — can flow into the agent's context
+  without a prompt, as `<external_content>`. It cannot write: the argv is Copse-built (GET only for
+  REST; exactly one GraphQL `query`, parsed with the reference `graphql` parser; no agent flags,
+  headers, hosts or full URLs), and `jq` access to the `gh` process environment is refused so a
+  forwarded token cannot be echoed back. The residual risk is disclosure: data the agent reads can
+  leave through any other egress the session already has (a later approved command, a web fetch,
+  a model provider), and a prompt-injected agent can choose what to read. Output is bounded at
+  256 KiB, 10 pages and 60 s per call.
+- `git_fetch` fetches named branches and PR heads from the project's network `origin` only,
+  through the same host-side scratch repository as the background default-branch fetch above,
+  and moves only `refs/remotes/origin/*`. It never reads the project's Git configuration on the
+  networked side, accepts no remote, URL, refspec or option, and never touches local branches,
+  HEAD or the working tree. Fetched commits are code the agent may then read or check out; the
+  remote is the one the user already trusts as origin.
+
+Both remain subject to per-tool Ask/Block overrides, are absent from unattended container guests,
+and are hidden or refused where their preconditions fail (`gh` unavailable or unauthenticated; SSH
+workspace or non-network origin).
+
 ### Scoped SSH signing
 
 On macOS, the opt-in signing setting enables a separate broker for the system

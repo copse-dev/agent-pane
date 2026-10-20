@@ -53,14 +53,19 @@ export async function ensureThreadAccess(
   )
 }
 
-export function threadChatReadRoot(chatRoot: string): string | null {
+/** Chat-store roots the active run may read. A follow-up also reads its declared parent. */
+export function threadChatReadRoots(chatRoot: string): string[] {
   const threadId = getActiveRunThread()
-  if (!threadId || hasThreadAccess(threadId, 'read')) return chatRoot
+  if (!threadId || hasThreadAccess(threadId, 'read')) return [chatRoot]
   const context = currentThreadExecutionContext()
-  return context?.threadId === threadId ? join(chatRoot, context.projectId, context.threadId) : null
+  if (context?.threadId !== threadId) return []
+  const own = join(chatRoot, context.projectId, context.threadId)
+  return context.followUpParentThreadId
+    ? [own, join(chatRoot, context.projectId, context.followUpParentThreadId)]
+    : [own]
 }
 
-/** Own transcript remains readable; browsing the store or another thread needs consent. */
+/** Own transcript and a declared follow-up parent remain readable; anything else needs consent. */
 export function needsOtherThreadRead(path: string, chatRoot: string): boolean {
   const parts = relative(chatRoot, path).split(sep)
   if (parts[0] === '..' || isAbsolute(relative(chatRoot, path))) return false
@@ -69,7 +74,8 @@ export function needsOtherThreadRead(path: string, chatRoot: string): boolean {
     context &&
     context.threadId === getActiveRunThread() &&
     parts[0] === context.projectId &&
-    parts[1] === context.threadId
+    (parts[1] === context.threadId ||
+      (context.followUpParentThreadId !== undefined && parts[1] === context.followUpParentThreadId))
   )
 }
 

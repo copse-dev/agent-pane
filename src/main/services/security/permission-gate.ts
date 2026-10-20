@@ -54,14 +54,13 @@ import { detectCheckoutDetachingCommand } from '@copse/shell-guard/checkout-deta
 import { isInsideManagedThreadWorktree } from '../worktree-manager.ts'
 import { requestApproval, type ApprovalRequest } from '../approval.ts'
 import { recordDecision } from './decision-log-store.ts'
-import { getSetting, updateSetting } from '../storage/settings.ts'
+import { getSetting, updateSetting, resolveApiKey } from '../storage/settings.ts'
 import {
   SANDBOX_TOOLS,
   decideShellPermission,
   decideTerminalPermission,
   decideMcpPermission,
   decideWebFetchPermission,
-  decideWebSearchPermission,
   describeMcpAnnotations,
   fetchUrlFromArgs,
   shellCommandFromArgs,
@@ -79,6 +78,7 @@ import {
   mcpToolLabel,
   formatGithubWritePrompt,
   GITHUB_NONMUTATING_CI_TOOLS,
+  HOST_NETWORK_READ_TOOLS,
   GITHUB_WRITE_TOOLS,
   isReadOnlySimpleCommand,
   isStructurallyReadOnlyShellCommand,
@@ -901,8 +901,16 @@ async function checkWebSearchPermission(
   signal?: AbortSignal,
   explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
 ): Promise<boolean> {
+  const { getWebSearchProvider } = await import('../web-search/provider.ts')
+  const { WEB_SEARCH_ENDPOINTS, WEB_SEARCH_LABELS } = await import('@shared/web-search.ts')
+  const provider = getWebSearchProvider()
+  // Let the tool return setup guidance without asking for an unrelated origin.
+  if (provider === 'none' || !resolveApiKey(provider)) {
+    return explicitPolicy === 'ask' ? promptExplicitToolAsk('web_search', {}, signal) : true
+  }
   const saved = getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)
-  const decision = decideWebSearchPermission({
+  const decision = decideWebFetchPermission({
+    url: WEB_SEARCH_ENDPOINTS[provider],
     allowedOrigins: webAllowedOriginsWithDefaults(saved),
     allowUserApproval: getSetting<boolean>(WEB_ALLOW_USER_APPROVAL_SETTING, true),
   })
@@ -921,7 +929,7 @@ async function checkWebSearchPermission(
     decision.origin,
     signal,
     explicitPolicy !== 'ask',
-    'Search queries will be sent to DuckDuckGo.',
+    `Search queries will be sent to ${WEB_SEARCH_LABELS[provider]} and may consume paid API credits.`,
   )
 }
 
@@ -2222,7 +2230,7 @@ export async function ensureToolPermitted(
     // fall through the default-allow tail by accident.
     permitted =
       explicitPolicy === 'ask' ? await promptExplicitToolAsk(toolName, args, signal) : true
-  } else if (GITHUB_NONMUTATING_CI_TOOLS.has(toolName)) {
+  } else if (GITHUB_NONMUTATING_CI_TOOLS.has(toolName) || HOST_NETWORK_READ_TOOLS.has(toolName)) {
     permitted =
       explicitPolicy === 'ask' ? await promptExplicitToolAsk(toolName, args, signal) : true
   } else if (toolName === 'prepare_worktree') {

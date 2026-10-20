@@ -83,7 +83,7 @@ describe('deferral interception at the approval seam', () => {
     const error = await asRun(() => requestApproval(request).catch((err: unknown) => err))
     const message = error instanceof Error ? error.message : ''
     assert.match(message, /NOT run/)
-    assert.match(message, /continue with the other parts/i)
+    assert.match(message, /Continue independent work/i)
     assert.doesNotMatch(message, /try again/i)
   })
 

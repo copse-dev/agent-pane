@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
@@ -9,6 +9,7 @@ import { setComposerValue } from './helpers/composer.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT = 'e2e-checkout-switch'
 const ORIGINAL = 'e2e-checkout-original'
@@ -21,10 +22,51 @@ function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`
+}
+
+/**
+ * Internal Git commands intentionally disable repository hooks. A tracked
+ * fixture file with a repository-local smudge filter still runs as part of the
+ * real checkout, inside the worktree-manager sandbox. The filter records that
+ * checkout reached it, then waits for the test-owned release file before
+ * copying stdin to stdout. This holds the actual `agent:prepare-checkout` IPC
+ * call without racing the host's `git worktree add` speed.
+ */
+function writeCheckoutHoldFilter(root: string, entered: string, release: string): void {
+  const scriptPath = join(root, '.e2e-hold-checkout.sh')
+  const script = [
+    '#!/bin/sh',
+    'entered=$1',
+    'release=$2',
+    ': > "$entered"',
+    'i=0',
+    'while [ ! -f "$release" ] && [ "$i" -lt 500 ]; do',
+    '  sleep 0.1',
+    '  i=$((i + 1))',
+    'done',
+    'cat',
+    '',
+  ].join('\n')
+  writeFileSync(scriptPath, script, { mode: 0o755 })
+  writeFileSync(join(root, '.gitattributes'), 'checkout-hold.txt filter=e2e-checkout-hold\n')
+  writeFileSync(join(root, 'checkout-hold.txt'), 'checkout filter fixture\n')
+  git(root, ['config', 'filter.e2e-checkout-hold.clean', 'cat'])
+  git(root, [
+    'config',
+    'filter.e2e-checkout-hold.smudge',
+    `${shellQuote(scriptPath)} ${shellQuote(entered)} ${shellQuote(release)}`,
+  ])
+  git(root, ['config', 'filter.e2e-checkout-hold.required', 'true'])
+}
+
 describe('switching threads during first-message checkout', () => {
   let projectRoot = ''
   let projectParent = ''
   let worktreeRoot = ''
+  let checkoutHoldSentinel = ''
+  let checkoutHoldEntered = ''
 
   before(async function () {
     this.timeout(120_000)
@@ -40,14 +82,23 @@ describe('switching threads during first-message checkout', () => {
     projectRoot = join(projectParent, 'checkout-switching')
     mkdirSync(projectRoot)
     worktreeRoot = join(worktreesRoot, PROJECT, ORIGINAL)
-    rmSync(worktreeRoot, { recursive: true, force: true })
+    removeE2eTree(worktreeRoot)
     git(projectRoot, ['init', '-q', '-b', 'main'])
     git(projectRoot, ['config', 'user.email', 'e2e@example.invalid'])
     git(projectRoot, ['config', 'user.name', 'Copse E2E'])
     git(projectRoot, ['config', 'init.defaultBranch', 'main'])
     git(projectRoot, ['config', 'commit.gpgsign', 'false'])
+    checkoutHoldSentinel = join(projectRoot, '.git', 'e2e-release-checkout')
+    checkoutHoldEntered = join(projectRoot, '.git', 'e2e-checkout-entered')
     writeFileSync(join(projectRoot, 'README.md'), 'Checkout switching fixture\n')
-    git(projectRoot, ['add', 'README.md'])
+    writeCheckoutHoldFilter(projectRoot, checkoutHoldEntered, checkoutHoldSentinel)
+    git(projectRoot, [
+      'add',
+      'README.md',
+      '.gitattributes',
+      '.e2e-hold-checkout.sh',
+      'checkout-hold.txt',
+    ])
     git(projectRoot, ['commit', '-qm', 'seed'])
     assert.equal(
       realpathSync(git(projectRoot, ['rev-parse', '--show-toplevel'])),
@@ -107,7 +158,7 @@ describe('switching threads during first-message checkout', () => {
     // The app is still running: a sandboxed command can briefly materialize
     // mount points in the checkout while it is being removed (ENOTEMPTY).
     if (projectRoot) {
-      rmSync(projectParent, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+      removeE2eTree(projectParent)
     }
     delete process.env['COPSE_PANEL_MOCK_LLM']
     delete process.env['ANTHROPIC_API_KEY']
@@ -145,42 +196,34 @@ describe('switching threads during first-message checkout', () => {
     await $('[data-checkout-choice="worktree"]').click()
     await setComposerValue(PROMPT)
 
-    // Observe the real preparation UI and switch in the same renderer turn.
-    // The checkout IPC is still pending here: this proves the transition without
-    // timing sleeps, replacing the checkout API, or seeding a completed worktree.
-    console.info('[checkout-switch] submitting and switching')
-    const switched = await browser.execute(
-      (other, otherPrompt) =>
-        new Promise<string>((done) => {
-          const checkout = document.querySelector<HTMLElement>('.footer-checkout-btn')
-          const send = document.querySelector<HTMLButtonElement>('.submit-btn')
-          if (!checkout || !send) return done('Missing composer controls')
-          const timer = window.setTimeout(() => {
-            observer.disconnect()
-            done('Checkout never entered its preparing state')
-          }, 10_000)
-          const observer = new MutationObserver(() => {
-            if (checkout.textContent !== 'Preparing checkout…') return
-            observer.disconnect()
-            document.querySelector<HTMLElement>(`.chat-row[data-thread-id="${other}"]`)?.click()
-            const otherSend = document.querySelector<HTMLButtonElement>('.submit-btn')
-            window.clearTimeout(timer)
-            if (!otherSend || otherSend.disabled) return done('Other thread Send is blocked')
-            const composer = document.querySelector<HTMLElement>('.prompt-input')
-            if (!composer) return done('Other composer is missing')
-            composer.textContent = otherPrompt
-            composer.dispatchEvent(new Event('input', { bubbles: true }))
-            otherSend.click()
-            done('Switched and sent')
-          })
-          observer.observe(checkout, { childList: true, characterData: true, subtree: true })
-          send.click()
-        }),
-      OTHER,
-      OTHER_PROMPT,
+    // The real checkout (`git worktree add`) is held open by the tracked
+    // smudge-filter fixture installed in `before()`. Wait for its entry marker
+    // so these assertions prove the actual checkout is still pending.
+    console.info('[checkout-switch] submitting and holding the checkout open')
+    await $('.submit-btn').click()
+    await browser.waitUntil(() => existsSync(checkoutHoldEntered), {
+      timeout: 15_000,
+      timeoutMsg: 'Checkout never entered its hold filter',
+    })
+    await browser.waitUntil(
+      async () => (await $('.footer-checkout-btn').getText()) === 'Preparing checkout…',
+      { timeout: 15_000, timeoutMsg: 'Checkout never entered its preparing state' },
     )
-    console.info('[checkout-switch] switch result', switched)
-    assert.equal(switched, 'Switched and sent')
+    console.info('[checkout-switch] Send is preparing; asserting state and capturing evidence')
+    await expect($('.submit-btn')).toBeDisabled()
+    assert.equal(await $('.submit-btn').getText(), 'Send')
+    assert.equal(await $('.submit-btn').getAttribute('aria-label'), 'Preparing checkout')
+    await saveAppScreenshot('thread-checkout-preparing-send.png')
+
+    console.info('[checkout-switch] switching to the other thread while checkout is held open')
+    await $(`.chat-row[data-thread-id="${OTHER}"]`).click()
+    await expect($('.submit-btn')).toBeEnabled()
+    assert.equal(await $('.submit-btn').getText(), 'Send')
+    await setComposerValue(OTHER_PROMPT)
+    await $('.submit-btn').click()
+
+    console.info('[checkout-switch] releasing the held checkout')
+    writeFileSync(checkoutHoldSentinel, '')
     await browser.waitUntil(
       async () =>
         browser.execute(

@@ -79,6 +79,7 @@ export function formatSandboxNetworkDenialAudit(denied: readonly DeniedDestinati
   if (denied.some((denial) => isGithubDenialHost(denial.host))) {
     lines.push(
       '- GitHub pull requests, Actions and CI: the "copse" MCP server\'s gh_pr_*, gh_run_* and CI tools use Copse\'s gh auth, so prefer them to running `gh` or curl against github.com in here.',
+      '- Any other GitHub read (`gh api`, `gh api graphql`): its gh_api_read tool. Fetching a branch or PR head from origin (`git fetch origin <branch>`): its git_fetch tool. Neither needs approval.',
     )
   }
 
@@ -103,6 +104,8 @@ export function formatSandboxNetworkDenialAudit(denied: readonly DeniedDestinati
 export const ACP_SANDBOX_GITHUB_STEER =
   'For GitHub work (pull requests, issues, Actions, `gh`), use the "copse" MCP ' +
   "server's GitHub and CI tools when available: they run on Copse's host gh/API " +
-  "path and need no github.com entry in this agent's sandbox.allowedDomains. Do " +
+  "path and need no github.com entry in this agent's sandbox.allowedDomains. " +
+  'Use gh_api_read for other GitHub reads (instead of `gh api`/`gh api graphql`) ' +
+  'and git_fetch to fetch branches or PR heads from origin. Do ' +
   'not call github.com or api.github.com from this process unless the user has ' +
   'widened that allowlist.'

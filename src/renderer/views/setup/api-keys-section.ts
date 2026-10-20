@@ -23,6 +23,7 @@ export type ApiKeyProvider =
   | 'github'
   | 'artificial-analysis'
   | 'parallel'
+  | 'tavily'
 
 export interface ApiKeysSection {
   root: HTMLFieldSetElement
@@ -40,6 +41,13 @@ interface ApiKeyProviderConfig {
 }
 
 const API_KEY_PROVIDER_CONFIGS: Record<ApiKeyProvider, ApiKeyProviderConfig> = {
+  tavily: {
+    provider: 'tavily',
+    name: 'tavilyKey',
+    label: 'Tavily API key',
+    placeholder: 'tvly-…',
+    hint: 'Basic search uses one API credit per request. Generated answers are disabled.',
+  },
   anthropic: {
     provider: 'anthropic',
     name: 'anthropicKey',

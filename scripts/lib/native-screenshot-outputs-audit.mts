@@ -6,7 +6,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
   Record<string, { readonly sourceSha256: string; readonly filenames: readonly string[] }>
 > = {
   'tests/e2e/acp-auth-error.e2e.ts': {
-    sourceSha256: 'f5db6aab3b78e3f7d5a9c9e6434d8fe39dfa2af3e5f2fe9f568e64b5250874bc',
+    sourceSha256: 'd2ec97ab214a576fb4349a0d06c308e8ebb0ec476a10e1d58dfc3d48efbebd1f',
     filenames: [
       'acp-auth-error.png',
       'codex-workspace-routing-auth-error.png',
@@ -31,7 +31,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['context-wheel-classifier-configured.png', 'context-wheel-classifier-none.png'],
   },
   'tests/e2e/file-viewer-changes.e2e.ts': {
-    sourceSha256: '0dfcfe4f4ac25cb6213c4b39afd0b3e173e06bb6d6911b3b4507235c9824a15f',
+    sourceSha256: 'f0f5617dda022b6b475494f99bdc3afdae3f43ede793740fbf04c9e946b20013',
     filenames: ['file-viewer-copse-strong-dark.png', 'file-viewer-copse-strong-light.png'],
   },
   'tests/e2e/footer-branch-picker.e2e.ts': {
@@ -43,7 +43,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['git-changes-thread-retention.png'],
   },
   'tests/e2e/light-contrast-controls.e2e.ts': {
-    sourceSha256: '474715322bfb62fbc8de184deef4f5e25a928c44f8a03096506404f56645231e',
+    sourceSha256: 'f4172ac25d11f393a74f083c65c7fff499b448abcd9d0912f9243d14cfbe5eea',
     filenames: [
       'light-contrast-changes-badge-dark.png',
       'light-contrast-changes-badge-light.png',
@@ -70,7 +70,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/new-thread-default-branch.e2e.ts': {
-    sourceSha256: '16dd7f51b59f8369af6db241f68cf980aabd900019e6bb5c5fbd118bda031247',
+    sourceSha256: '186346b0bb5d8249fea1532826d040d8959269b5692d86d56e74f831deb26653',
     filenames: [
       'new-thread-default-branch-explicit-sent.png',
       'new-thread-default-branch-shared-picker.png',
@@ -100,7 +100,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/pr-provenance.e2e.ts': {
-    sourceSha256: '3ee689f87f77b859b8129b7841cf5d8bc33ff2e4effd165da96c1fbecb0c3293',
+    sourceSha256: '9e2dd8acb6ab7c3e1c5a138318ae2f7e388c77bf9afbb086aaf4a54d4a490295',
     filenames: ['pr-native-provenance-offline-restart.png', 'pr-native-provenance.png'],
   },
   'tests/e2e/queued-held.e2e.ts': {
@@ -116,7 +116,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['scroll-to-bottom-dark.png', 'scroll-to-bottom-light.png'],
   },
   'tests/e2e/settings-acp-agents-list.e2e.ts': {
-    sourceSha256: '32dfcaecfc30192db1983b21df000d67fe6c27ba6819de0231c334a9f7703ebf',
+    sourceSha256: '0aa1aa75cb0bf520a0d274168a2649871523cb21534283c0346252df4fe8ffe9',
     filenames: [
       'settings-acp-agents-list-codex-ready.png',
       'settings-acp-agents-list-page-2.png',
@@ -128,7 +128,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['settings-automation-form-page-2.png', 'settings-automation-form.png'],
   },
   'tests/e2e/settings-classifiers-install.e2e.ts': {
-    sourceSha256: '6ab02e50965805faeeb9ed5b9e2ea0571c94492756ef81bf57c5a24392616086',
+    sourceSha256: 'fb24527287815a63c8b292ba0caa1146c6e518ff48a6ee24d25d7b77ee59ce6b',
     filenames: [
       'settings-classifiers-install-bad-revision.png',
       'settings-classifiers-install-no-space.png',
@@ -160,7 +160,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['settings-sources-hooks-page-2.png', 'settings-sources-hooks.png'],
   },
   'tests/e2e/settings-sources-hook-test.e2e.ts': {
-    sourceSha256: 'baa912d3538364655e7096596d0dda6607e3bfa501fce6a63e557ae29ebb3acc',
+    sourceSha256: 'f38a4290cf4d96fe5652380255184514411b4fbdff145a465076914cbe7ce8d5',
     filenames: ['settings-sources-hook-test-page-2.png', 'settings-sources-hook-test.png'],
   },
   'tests/e2e/settings-terminal-history-toggle.e2e.ts': {
@@ -173,7 +173,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/sidebar-other-projects-activity.e2e.ts': {
-    sourceSha256: '2ba9a41def10e16207728a1f81db8e4e1f64fb67c7a34539e171f7878ebc321b',
+    sourceSha256: '752fa506ac2c57977cc59637b9732e7dacc64f7a1f47f8827f76018862bf4355',
     filenames: ['sidebar-unopened-activity-1600.png', 'sidebar-unopened-activity-800.png'],
   },
   'tests/e2e/terminal-display.e2e.ts': {

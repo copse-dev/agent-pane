@@ -109,6 +109,46 @@ describe('projects pane running status (component)', () => {
     assert.equal(rowByTitle('One')?.classList.contains('is-running'), false)
   })
 
+  it('marks the collapsed project chevron while its carried agent works', () => {
+    const carried = thread('carried', 'Background work', 'running')
+    const store = createStore({
+      projects: [
+        { id: 'p1', path: '/current', name: 'Current' },
+        { id: 'p2', path: '/other', name: 'Other' },
+      ],
+      activeProjectId: 'p1',
+      expandedProjectId: 'p1',
+      workspaceRoot: '/current',
+      threads: [thread('active', 'Current thread')],
+      backgroundThreads: [{ projectId: 'p2', thread: carried }],
+      activeThreadId: 'active',
+    })
+    const host = mount(store)
+    const projectRow = (): HTMLElement | null =>
+      host.querySelector('.project-entry[data-project-id="p2"] .project-row')
+
+    assert.equal(
+      host.querySelector('.project-entry[data-project-id="p1"] .project-row.is-running'),
+      null,
+    )
+    assert.equal(projectRow()?.classList.contains('is-running'), true)
+    assert.equal(projectRow()?.getAttribute('aria-label'), 'Other — agent is working')
+    assert.equal(projectRow()?.querySelector('.chat-running-status'), null)
+    assert.equal(
+      projectRow()?.querySelector('.project-twisty svg')?.getAttribute('data-icon'),
+      'chevron-right',
+    )
+    assert.equal(
+      projectRow()?.querySelector('.project-name')?.previousElementSibling?.className,
+      'project-twisty',
+    )
+
+    setThreadStatus(store, 'carried', 'idle')
+    assert.equal(projectRow()?.querySelector('.chat-running-status'), null)
+    assert.equal(projectRow()?.classList.contains('is-running'), false)
+    assert.equal(projectRow()?.getAttribute('aria-label'), null)
+  })
+
   it('shows an unread dot on a background completion and clears it when opened', () => {
     const unread = { ...thread('unread', 'Finished'), unreadAt: 123 }
     const store = createStore({

@@ -1,4 +1,5 @@
 import { el, clear } from '../dom/helpers.ts'
+import { createThreadArchiveReview } from './thread-archive-review.ts'
 import { createAgentAvatar, createAgentAvatarMotion } from '../dom/agent-avatar.ts'
 import {
   agentRouteModel,
@@ -165,7 +166,7 @@ import {
   isThreadProposalCall,
   threadProposalCardSignature,
 } from './thread-proposal-tool-card.ts'
-import { createReviewerInputToolCard, mountReviewerInput } from './reviewer-input.ts'
+import { createReviewerInputToolCard } from './reviewer-input.ts'
 import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
 import { renderSignature } from './render-signature.ts'
 import {
@@ -2628,6 +2629,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   showAcpTransportNoiseDisclosure = (): boolean => store.getState().developerMode
   const scrollArea = el('div', { class: 'conversation-scroll' })
   const todoHost = el('div', { class: 'conversation-todos-host' })
+  const archiveReview = createThreadArchiveReview(store, api)
   const appleDevelopmentHost = createAppleDevelopmentPanel(store, api, { allowEnrollment: false })
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
   let agentNames: ReadonlyMap<string, string> = new Map()
@@ -2655,6 +2657,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     appleDevelopmentHost,
     todoHost,
     list,
+    archiveReview.element,
     scrollToBottomBtn,
   )
 
@@ -2722,14 +2725,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // streaming response inside the scrollable message list.
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
   const roadmapOrigin = mountThreadRoadmapOrigin(store, api)
-  const reviewerInput = mountReviewerInput(store, api)
-  const transcriptAndInput = el(
-    'div',
-    { class: 'conversation-reviewer-body' },
-    scrollArea,
-    reviewerInput.panel,
-  )
-  root.append(roadmapOrigin.element, reviewerInput.toggle, transcriptAndInput, queuedHost)
+  root.append(roadmapOrigin.element, scrollArea, queuedHost)
 
   const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
     const { activeProjectId: projectId, activeThreadId: threadId } = store.getState()
@@ -5056,9 +5052,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   const unsubs = [
-    store.on('reviewer_input_open', (requestId) => {
-      reviewerInput.open(requestId)
-    }),
     store.on('reviewer_input_jump', jumpToReviewerInput),
     store.on('code_block_run_finished', (result) => {
       setCodeBlockRunOutcome(list, result.id, {
@@ -5208,16 +5201,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }),
     store.on('tool_call_started', (mid) => {
       refreshToolCards(mid)
-      reviewerInput.sync()
     }),
     store.on('tool_call_updated', (mid) => {
       refreshToolCards(mid)
-      reviewerInput.sync()
     }),
     store.on('threads_changed', () => {
       rebuildForThread()
       syncFromStore()
-      reviewerInput.sync()
       scheduleConciseTurnFooterSync()
       syncSideChatChips()
     }),
@@ -5299,9 +5289,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const unbindBrowserLinks = bindBrowserLinkClicks(root, store, api)
   rebuildForThread()
   syncFromStore()
-  reviewerInput.sync()
   return () => {
     disposed = true
+    archiveReview.dispose()
     selectionQuote.destroy()
     avatarMotion.dispose()
     // Invalidate any backfillOlderMessages step still queued via

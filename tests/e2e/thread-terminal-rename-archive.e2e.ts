@@ -45,7 +45,7 @@ describe('thread + terminal rename / archive', () => {
     const labels = await browser.execute(() =>
       Array.from(document.querySelectorAll('.context-menu-item')).map((i) => i.textContent ?? ''),
     )
-    expect(labels).toEqual(['Conversation access…', 'Rename', 'Fork', 'Archive', 'Delete'])
+    expect(labels).toEqual(['Rename', 'Fork', 'Create follow-up thread', 'Archive', 'Delete'])
     await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', selectedThreadId)
     await expect(archiveRow).toBeExisting()
     await saveAppScreenshot('thread-actions-menu.png')

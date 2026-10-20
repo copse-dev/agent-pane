@@ -39,11 +39,26 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 
 ## Per-tool permission settings
 
+### Web search providers
+
+Settings → Web search selects Tavily, Parallel, or Not configured. `web_search` is offered only
+when a provider is selected and its API key resolves; provider and key changes update availability
+without restarting. `fetch_url` remains available independently. A stale call after configuration
+changes returns setup guidance without making a network request. Searches never fall back to DuckDuckGo or a
+different provider. Selecting a provider does not bypass web-origin permissions: `web_search`
+checks that provider's fixed API origin, respects disabled approvals and per-tool overrides, and
+names the provider and potential API-credit charge in the approval prompt. API keys use the
+existing secret store. Tavily also supports `TAVILY_API_KEY`; Parallel supports `PARALLEL_API_KEY`.
+Tavily uses Basic search with generated answers and automatic parameter selection disabled.
+
 ### Access to other conversations
 
 An agent's first read of another thread asks **Read your other threads?** Once approved,
 that thread can read every other conversation in the local chat store without another
-conversation-access prompt. Its own transcript remains readable. File read guards,
+conversation-access prompt. Its own transcript remains readable, and so is the one parent thread a
+thread was explicitly started from with **Create follow-up thread** (recorded at creation as
+`followUpOf`; read-only, direct parent only, never inherited by forks or by a follow-up of the
+follow-up). File read guards,
 the shell classifier and the sandbox read mount use the same thread-scoped permission;
 the chat store is never writable through these grants.
 
@@ -55,10 +70,18 @@ conversation-read consent; revoking that consent leaves the outside-path grant i
 read tools. `send_thread_prompt` asks a separate **Send prompts to your other threads?**
 approval. Reading never grants sending. Both grants are persisted in main-owned settings,
 keyed by the requesting thread; they are not inherited by destination or forked threads.
-Either permission can be revoked through the thread menu → Conversation access.
+Either permission can be revoked in the thread’s Context panel → Permissions.
 Destination prompts enter the normal queue with machine provenance, consume the existing
 continuation budget and respect held/paused queues. They do not interrupt active work or
 switch the visible thread. An unavailable or archived destination is rejected.
+
+The experimental interactive-client API requires its default-off plugin and desktop pairing.
+Viewing and submitting decisions are separate session-only grants across all projects. A client
+may approve once or deny an exact pending standard shell-command session/request/revision; it cannot create remembered
+grants or task leases. Pairing is desktop-only, and agent-invoked plugin runtimes have no decision
+write API. Disable or quit revokes every client. Audit events identify the paired client as the
+human-response source. Authentication trusts the paired software; it does not attest a physical
+gesture. See [the client protocol](plugin-client-api.md).
 
 Settings → Permissions lists registered Copse, custom, and connected MCP tools. Each tool can keep
 its inherited default or receive one explicit override:
@@ -130,6 +153,8 @@ in that mode. Always allow does not bypass the restrictions below.
 | `preflight_worktree`                                                                                    | Enforcing OS sandbox required; network blocked, project/caches read-only, private disposable scratch. No unsandboxed fallback.                                                      | Yes         |
 | `prepare_worktree`                                                                                      | Fresh approval of exact plan/fingerprint; scoped project/cache writes and setup network policy. No reusable arbitrary-command grant or unsandboxed fallback.                        | No          |
 | `gh_pr_list`, `gh_pr_view`, `gh_pr_files`, `gh_run_list`, `gh_run_view`                                 | GitHub read authority and tool availability; explicitly excluded from unattended guests.                                                                                            | No          |
+| `gh_api_read`                                                                                           | Copse-built `gh api` argv: REST GET or one GraphQL `query`; no flags, headers, hosts or URLs; 256 KiB output, 10 pages, 60 s. See [Host-side read tools](#host-side-read-tools).    | No          |
+| `git_fetch`                                                                                             | Origin-only fetch of named branches / `refs/pull/<n>/head` into `refs/remotes/origin/*` through the host scratch repository. See [Host-side read tools](#host-side-read-tools).     | No          |
 | `get_ci_status`, `get_ci_failure_logs`, `wait_for_ci_checks`                                            | GitHub reads; bounded supervisor wait. Explicitly excluded from unattended guests.                                                                                                  | No          |
 | `gh_pr_create`, `gh_pr_approve`, `gh_pr_mark_ready`, `gh_pr_enable_auto_merge`, `gh_pr_rerun_failed_ci` | Fresh approval unless an exact owning schedule/project grant applies. Ordinary Always allow unavailable; excluded from unattended guests.                                           | No          |
 | `web_search`, `fetch_url`                                                                               | Web-origin policy, approval settings and hard URL/network denials, including across redirects.                                                                                      | No          |
@@ -487,6 +512,60 @@ in forgeable command output, Guarded YOLO and deterministic shell auto-approval 
 question; only an unattended container may advance it without a person while staying inside the same
 guest.
 
+## Host-side read tools
+
+`gh` through `run_shell` is an ambiguous “may reach” command: it starts in the network-less project
+sandbox, fails, and then asks for an unsandboxed retry. `gh api graphql` and `gh api -f …` always
+prompt via the harm gate, and the exact-operation denial cache means each differently-worded query
+prompts again. `git fetch origin <branch>` fails in the sandbox the same way. Two registered tools
+cover these reads without a prompt. Both are in `HOST_NETWORK_READ_TOOLS`
+(`permission-policy.ts`): they auto-run, an explicit per-tool **Ask** still prompts and **Block**
+still blocks. They are not in the read-only run allowlist, are excluded from unattended container
+guests, and are bridged to ACP agents. Their read-only guarantee comes from Copse constructing the
+request, not from a reduced credential; no new token is introduced.
+
+**`gh_api_read`** is registered with the other `gh` read tools and hidden whenever `gh` is
+unavailable or unauthenticated. It runs `gh` on the host without a shell, using the user's
+existing `gh` login exactly as `gh_pr_view` does, so it can read **any repository, organisation or
+user data that login can read**, not only the current project. The agent supplies an `endpoint` or
+a `graphql` document, optional `variables`, `jq` and `paginate`; nothing else (the schema is
+strict, so `method`, `headers`, `hostname` or flags are rejected).
+
+- REST: Copse runs `gh api --method GET --include [--jq=…] -- <endpoint>`. The endpoint must be a
+  relative API path with an optional query string: no scheme, host, `//`, leading `-`, `.`/`..`
+  segments (also percent-encoded), whitespace, control characters, `\` or `#`, and not `graphql`.
+- GraphQL: the document is parsed with the reference `graphql` package and must hold exactly one
+  operation, of type `query`, plus any fragments. Mutations and subscriptions (named, anonymous or
+  aliased), several operations, schema definitions and unparsable documents are refused before
+  anything is sent. Copse sends `{query, variables}` as the request body on stdin
+  (`gh api graphql --input -`), so variable values cannot become flags.
+- `jq` is passed as one `--jq=` argument. `gh` evaluates it with gojq, whose `env`/`$ENV` expose
+  the `gh` process environment (including a forwarded `GH_TOKEN`), so those and module
+  `import`/`include` are refused.
+- Output after `jq` is capped at `GH_API_READ_MAX_OUTPUT_BYTES` (256 KiB), truncated on a UTF-8
+  boundary with a notice to narrow the query. `paginate` follows REST `Link: rel="next"` headers
+  (keeping only the link's path, never its host) or the first GraphQL `pageInfo` (the query must
+  declare `$endCursor`), and stops after 10 pages with a notice naming where to resume. The whole
+  call has a 60 s budget.
+
+**`git_fetch`** is a core tool, unavailable in SSH workspaces. The agent names branches on origin
+and/or `refs/pull/<n>/head` (at most 20). Copse validates each as a plain branch name (no
+refspec, `refs/` path, remote, URL, option, `..`, `@{`, `~^:?*[\`, whitespace or control
+characters) and maps it to a fixed destination: `refs/heads/<b>` → `refs/remotes/origin/<b>`, and
+`refs/pull/<n>/head` → `refs/remotes/origin/pr/<n>`. A branch that is literally named `pr/<n>` shares
+that destination: a call naming both is refused, and separate calls overwrite each other. The fetch reuses the background default-branch fetch
+([threat model](threat-model.md#background-default-branch-fetch)): only an `http(s)://`, `ssh://` or
+`user@host:` `remote.origin.url` is accepted; the network step runs on the host in a fresh,
+per-call Copse scratch repository that never reads the project's `.git/config`; and a sandboxed,
+local-only fetch copies the tips into the project. Local branches, HEAD, the index and the working
+tree never change. The result lists each destination ref with its SHA. Any other origin returns a
+message pointing at `run_shell git fetch`.
+
+`backgroundDefaultBranchFetch` (Settings → Permissions → Upstream updates) does **not** govern
+`git_fetch`. That setting controls Copse's own unattended hourly/allocation fetches; `git_fetch` is
+an agent-requested action, governed like any tool by its per-tool permission (set it to Ask or
+Block to require approval or disable it).
+
 ## Read access outside the project
 
 A command that only reads fully-accounted-for paths outside the project receives the narrower
@@ -705,7 +784,8 @@ While active:
   seatbelt rather than a full sandbox escape. Credential targets and paths as broad as `~` or `/`
   remain hard-denied by the harm gate.
 - Writing or opaque GitHub CLI forms (`gh pr create`, `gh api -X POST`, `gh api -f …`,
-  `gh api graphql`, …) prompt via the harm gate. A `gh api` call is a read only as a plain GET:
+  `gh api graphql`, …) prompt via the harm gate. Agents should use `gh_api_read` and `git_fetch`
+  ([Host-side read tools](#host-side-read-tools)) for GitHub reads and branch fetches instead. A `gh api` call is a read only as a plain GET:
   one REST endpoint (no full URL), no method other than `GET`, no field, `--input`, header or
   `--hostname` flag.
   `gh run download` may run inside the project sandbox, which contains its local writes.
@@ -853,6 +933,14 @@ eligible. An eligible prompt raised inside an automation offers to add that exac
 tool to the owning schedule; ordinary threads retain their existing global MCP “always allow”
 behavior.
 
+The first turn of a verified schedule-created thread runs in deferral mode. A
+prompt without a schedule grant records a pending request and returns a
+non-execution error to the agent instead of waiting at a modal. The result
+includes a request id; `deferred_approval_status` reads only requests owned by
+the current thread. Later user turns use ordinary interactive approval.
+Resolving a queued request records the human decision; it does not prove that
+the original action ran.
+
 ## Implementation map
 
 Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, and zsh's
@@ -889,6 +977,9 @@ the registry still fails contained and offers to run outside.
   the scratch directories configured ACP agents declare. Docker run/pull/push and Apple
   container run/image pull/image push are hard-external; read-only list/inspect/status commands
   remain sandbox-scoped.
+- `github/gh-api-read.ts` and `git-fetch-origin.ts`: validation and argv construction for the
+  host-side read tools `gh_api_read` and `git_fetch`; `default-branch-fetch.ts` owns the shared
+  host scratch-repository fetch.
 - `read-outside-grant.ts`: the thread-scoped read grant; the approval-prompt copy for it stays in
   `read-outside-project.ts` beside the other prompt formatters.
 - `safety-classifier.ts`: optional model classifier used only when the OS sandbox is unavailable.

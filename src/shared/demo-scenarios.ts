@@ -8,6 +8,9 @@ import type { DemoTrace } from './demo-traces.ts'
 import type { FollowUpSuggestion } from './follow-ups/types.ts'
 import type { ToolPermissionCatalog } from './types/tool-permissions.ts'
 import type { GhPrDetails } from './types/git.ts'
+import type { ContextPermissionSnapshot } from './types/context-permissions.ts'
+import type { GuardedYoloPhase } from './types/guarded-yolo.ts'
+import type { DecisionEvent } from './threads/decision-log.ts'
 import { LANDING_TRACE } from './demo-traces/landing.ts'
 import { SITE_TOUR_SCENARIOS } from './demo-site-tour.ts'
 import { CONCISE_SCREENSHOT, CONCISE_STATE_SCENARIOS } from './demo-concise-states.ts'
@@ -52,6 +55,9 @@ export interface DemoScenario {
    */
   otherProjects?: ReadonlyArray<{ project: Project; threads: Thread[] }>
   settings: Readonly<Record<string, unknown>>
+  contextPermissions?: ContextPermissionSnapshot
+  guardedYoloPhase?: GuardedYoloPhase
+  decisions?: DecisionEvent[]
   /** Optional read-only PR showcase data for the browser demo's PR panel. */
   pullRequests?: GhPrDetails[]
   /**
@@ -1613,6 +1619,87 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'approval-long-code',
+    label: 'Long code command approval',
+    project: project('demo-approval-long-code-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threads: [
+      {
+        id: 'demo-approval-long-code-thread',
+        title: 'Review the generated script',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    approvalRequests: [
+      {
+        id: 'demo-approval-long-code-request',
+        title: 'Run outside sandbox?',
+        body: [
+          "node <<'SCRIPT'",
+          ...Array.from(
+            { length: 40 },
+            (_, index) => `console.log('Checking generated source line ${String(index + 1)}')`,
+          ),
+          'SCRIPT',
+        ].join('\n'),
+        bodyAdvice:
+          'The project sandbox would block this command:\n• Runs generated code from standard input, so Copse cannot inspect the resulting file accesses\n\nThis runs with your user account’s access to files and the network, beyond the project sandbox.',
+        bodyFooter: 'Allow running this code once outside the sandbox?',
+        type: 'shell',
+      },
+    ],
+  },
+  {
+    id: 'approval-mixed-prose-code',
+    label: 'Approval with paragraphs and code blocks',
+    project: project('demo-approval-mixed-prose-code-project'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threads: [
+      {
+        id: 'demo-approval-mixed-prose-code-thread',
+        title: 'Review the project setup',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    approvalRequests: [
+      {
+        id: 'demo-approval-mixed-prose-code-setup',
+        title: 'Run setup script?',
+        body: "node <<'SCRIPT'\nconst packages = ['core', 'ui']\nconsole.log(packages.join(', '))\nSCRIPT",
+        bodyAdvice:
+          'The setup script checks local dependencies.\n\nIt runs generated JavaScript, so Copse cannot determine every file it may access.',
+        bodyFooter: 'Allow the setup script to run once?',
+        type: 'shell',
+      },
+      {
+        id: 'demo-approval-mixed-prose-code-preview',
+        title: 'Preview migration?',
+        body: "node <<'SCRIPT'\nconst changes = ['add index', 'copy rows']\nconsole.log(changes.join('\\n'))\nSCRIPT",
+        bodyAdvice:
+          'The migration preview reads project data and prints the planned changes.\n\nIt opens a local resource outside the project sandbox.',
+        bodyFooter: 'Allow the migration preview to run once?',
+        type: 'shell',
+      },
+      {
+        id: 'demo-approval-mixed-prose-code-apply',
+        title: 'Apply generated patch?',
+        body: "node <<'SCRIPT'\nconst target = 'src/generated/index.ts'\nconsole.log('Writing', target)\nSCRIPT",
+        bodyAdvice:
+          'The final step writes the generated patch into the project.\n\nReview the target before allowing this command to run.',
+        bodyFooter: 'Allow the patch command to run once?',
+        type: 'shell',
+      },
+    ],
+  },
+  {
     id: 'product-announcements-fresh',
     label: 'Product announcements — fresh',
     project: project('demo-announcements-project'),
@@ -2381,6 +2468,30 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         body: '',
         files: [],
         checks: 'success',
+      },
+    ],
+  },
+  {
+    id: 'sidebar-background-project-running',
+    label: 'Running agent in a collapsed project',
+    project: project('demo-running-project', 'workbench', '/demo/workbench'),
+    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
+    threads: [
+      {
+        id: 'demo-running-thread',
+        title: 'Finish the migration',
+        status: 'running',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    otherProjects: [
+      {
+        project: project('demo-running-other', 'docs-site', '/demo/docs-site'),
+        threads: [],
       },
     ],
   },
@@ -3157,12 +3268,50 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     changeStats: { additions: 42, deletions: 7 },
     label: 'The thread Context panel',
     project: project('demo-thread-context', 'Widgets', '/demo/widgets'),
+    guardedYoloPhase: 'active',
+    contextPermissions: {
+      outsideReadPaths: ['/demo/notes'],
+      browserOrigins: ['https://docs.example.com:443'],
+      portBindingAllowed: true,
+    },
+    decisions: [
+      {
+        v: 1,
+        type: 'decision',
+        id: 'context-decision-1',
+        at: FIXED_TIME - 60_000,
+        kind: 'shell',
+        actor: 'user',
+        verdict: 'approved',
+        subject: 'shell command (arguments omitted)',
+        scope: 'external',
+        remembered: true,
+        threadId: SIDE_CHATS_MAIN_ID,
+      },
+      {
+        v: 1,
+        type: 'decision',
+        id: 'context-decision-2',
+        at: FIXED_TIME,
+        kind: 'web',
+        actor: 'user',
+        verdict: 'denied',
+        subject: 'https://example.net:443',
+        scope: 'external',
+        remembered: false,
+        threadId: SIDE_CHATS_MAIN_ID,
+      },
+    ],
     settings: {
       onboardingCompleted: true,
       theme: 'dark',
       uiTintStrength: 'off',
       filesPaneOpen: true,
       rightPanelMode: 'context',
+      threadReadAccess: [SIDE_CHATS_MAIN_ID],
+      threadSendAccess: [SIDE_CHATS_MAIN_ID],
+      webAllowedOrigins: ['https://example.org:443'],
+      toolPermissionOverrides: { 'copse:run_shell': 'ask' },
       layout: {
         projectsPaneWidth: 240,
         filesPaneWidth: 680,

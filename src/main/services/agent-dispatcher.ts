@@ -43,9 +43,13 @@ import {
 } from './thread-store.ts'
 import type { ToolRegistry } from './tool-registry.ts'
 import { perfMark } from './diagnostics/perf-trace.ts'
+import { getAutomationService } from './automations/automation-service.ts'
+import { beginDeferralMode, endDeferralMode } from './security/deferral-mode.ts'
 
 export interface AgentDispatchPayload {
   userContent: UserContent
+  /** Renderer claim, corroborated against the main-owned schedule run record. */
+  automationRun?: true
   executionMode?: 'agent'
   invokedSkills: string[]
   /** Subagent the user invoked with `/name` this turn. */
@@ -116,6 +120,7 @@ export interface AgentDispatcherDependencies {
     registry: ToolRegistry,
     options: RunAgentOptions,
   ) => ReturnType<typeof runAgent>
+  isScheduledAutomationRun: (context: ThreadExecutionContext) => boolean
 }
 
 async function threadTranscriptLength(projectId: string, threadId: string): Promise<number> {
@@ -148,6 +153,9 @@ const defaultDependencies: AgentDispatcherDependencies = {
   now: Date.now,
   createId: randomUUID,
   prepareExecutionContext: prepareThreadExecutionContext,
+  isScheduledAutomationRun: (context) =>
+    context.automation !== undefined &&
+    getAutomationService().ownsRunThread(context.projectId, context.threadId, context.automation),
   transcriptLength: threadTranscriptLength,
   run: runAgent,
 }
@@ -234,14 +242,20 @@ export class AgentDispatcher {
     this.dependencies = dependencies
   }
 
-  async dispatch(request: AgentDispatchRequest): Promise<void> {
+  async dispatch(
+    request: AgentDispatchRequest,
+    host: AgentHost<StreamChunk> = this.host,
+  ): Promise<void> {
     perfMark('ttft:main-dispatch')
     const key = dispatchKey(request.projectId, request.threadId)
     // Claim the thread before the renderer epoch sidecar is written. That
     // write can await disk, but an accepted local dispatch already owns the
     // conversation and must block an imported cloud snapshot from committing.
-    await this.dispatchExclusively(request, key, (host) =>
-      this.dispatchAccepted(request, key, host),
+    await this.dispatchExclusively(
+      request,
+      key,
+      (deferringHost) => this.dispatchAccepted(request, key, deferringHost),
+      host,
     )
   }
 
@@ -445,8 +459,11 @@ export class AgentDispatcher {
         // Claim before loading or persisting machine bookkeeping. Otherwise a
         // foreground dispatch can take the thread during either await, after
         // the continuation has already consumed budget and recorded a start.
-        return this.dispatchExclusively(request, key, (host) =>
-          this.executeClaimedMachine(request, key, host),
+        return this.dispatchExclusively(
+          request,
+          key,
+          (host) => this.executeClaimedMachine(request, key, host),
+          this.host,
         )
       }
       try {
@@ -569,6 +586,7 @@ export class AgentDispatcher {
     request: AgentDispatchRequest,
     key: string,
     run: (host: AgentHost<StreamChunk>) => Promise<T>,
+    targetHost: AgentHost<StreamChunk>,
   ): Promise<T> {
     this.assertDispatchable(request.projectId, request.threadId)
     const existing = this.active.get(key)
@@ -588,7 +606,7 @@ export class AgentDispatcher {
           terminalDone ??= chunk
           return
         }
-        this.host.emit(threadId, chunk)
+        targetHost.emit(threadId, chunk)
       },
     }
     const running = run(terminalDeferringHost)
@@ -605,8 +623,8 @@ export class AgentDispatcher {
       // final commit failed; a retry must start from the still-authoritative
       // persisted history instead.
       if (committed && terminalDone !== undefined) {
-        if (terminalOutcome !== undefined) this.host.emit(request.threadId, terminalOutcome)
-        this.host.emit(request.threadId, terminalDone)
+        if (terminalOutcome !== undefined) targetHost.emit(request.threadId, terminalOutcome)
+        targetHost.emit(request.threadId, terminalDone)
       }
     }
   }
@@ -640,6 +658,7 @@ export class AgentDispatcher {
     projectId: string,
     threadId: string,
     historyLength: number,
+    host: AgentHost<StreamChunk>,
   ): Promise<void> {
     if (historyLength > 0) return
     let transcriptMessages: number
@@ -649,7 +668,7 @@ export class AgentDispatcher {
       return
     }
     if (!contextWasLost(historyLength, transcriptMessages)) return
-    this.host.emit(threadId, { type: 'text', text: contextLossNotice(transcriptMessages) })
+    host.emit(threadId, { type: 'text', text: contextLossNotice(transcriptMessages) })
   }
 
   private async execute(
@@ -670,7 +689,7 @@ export class AgentDispatcher {
 
     // Reports on the pre-turn state, so it runs before the checkpoint writer
     // starts moving that state on.
-    await this.warnIfContextWasLost(projectId, threadId, priorMessages.length)
+    await this.warnIfContextWasLost(projectId, threadId, priorMessages.length, host)
 
     // Keep the in-memory history in step with each persisted checkpoint. A run
     // that throws outright never reaches the commit below, and leaving the cache
@@ -706,6 +725,14 @@ export class AgentDispatcher {
           host.emit(threadId, { type: 'thread_checkout', prepared })
         })
       : null
+    // The first turn of a schedule-created thread runs without a person waiting
+    // at the approval dialog. Keep the normal interactive path for later turns
+    // the user sends to that same thread.
+    const deferApprovals =
+      payload.automationRun === true &&
+      !priorMessages.some((message) => message.role === 'assistant' || message.role === 'tool') &&
+      this.dependencies.isScheduledAutomationRun(executionContext)
+    if (deferApprovals) beginDeferralMode(threadId)
     try {
       result = await runWithThreadExecutionContext(executionContext, () =>
         runWithThreadPlan(plan, () =>
@@ -722,6 +749,7 @@ export class AgentDispatcher {
         ),
       )
     } finally {
+      if (deferApprovals) endDeferralMode(threadId)
       stopCheckoutForwarding?.()
       if (executionContext.deferredWorktree) releaseUpgradedThreadExecutionContext(executionContext)
       // Drain before the commit below so no checkpoint can land on top of the

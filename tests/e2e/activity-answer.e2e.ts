@@ -168,8 +168,8 @@ describe('answering a background question from Activity', function () {
     )
     // The field stops at the limit `ask:respond` accepts (ASK_USER_ANSWER_MAX_LENGTH).
     expect((await input.getValue()).length).toBe(8_192)
-    await saveAppScreenshot('activity-answer-long-filled.png')
     await detail.$('.activity-answer').waitForEnabled({ timeout: 5_000 })
+    await saveAppScreenshot('activity-answer-long-filled.png')
     await detail.$('.activity-answer').click()
     await expect($('#activity-panel .activity-row[data-state="needs-answer"]')).not.toExist()
     await browser.keys('Escape')

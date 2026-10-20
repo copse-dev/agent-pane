@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -6,6 +6,7 @@ import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 /**
  * A video dropped into the chat must NOT become model content. It is stored
@@ -74,7 +75,7 @@ describe('Attaching a video to the chat', () => {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(dirname(workspaceRoot), { recursive: true, force: true })
+    if (workspaceRoot) removeE2eTree(dirname(workspaceRoot))
   })
 
   it('shows a dropped video as a film chip with its size, not an image thumbnail', async () => {

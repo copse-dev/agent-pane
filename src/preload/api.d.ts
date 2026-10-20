@@ -281,6 +281,11 @@ export interface ApiClient {
   }
   security: {
     getGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
+    getContextPermissions: (
+      projectId: string,
+      threadId: string,
+      projectRoot: string,
+    ) => Promise<import('@shared/types/context-permissions.ts').ContextPermissionSnapshot>
     enableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
     disableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
     onGuardedYoloChanged: (handler: (state: GuardedYoloState) => void) => () => void
@@ -630,6 +635,18 @@ export interface ApiClient {
     ) => Promise<import('@copse/thread-store/plan-schema.ts').StoredThreadPlan | null>
   }
   threads: {
+    archiveState: (
+      projectId: string,
+      view: 'review' | 'archived',
+    ) => Promise<import('@shared/threads/auto-archive.ts').ThreadArchiveState>
+    archiveDecision: (
+      projectId: string,
+      threadId: string,
+      decision: import('@shared/threads/auto-archive.ts').ThreadArchiveDecision,
+    ) => Promise<boolean>
+    onAutoArchived: (
+      handler: (event: import('@shared/threads/auto-archive.ts').ThreadAutoArchived) => void,
+    ) => () => void
     storageSize: (
       projectId: string,
       threadId: string,
@@ -714,6 +731,10 @@ export interface ApiClient {
       kind: 'url' | 'thread',
       target: string,
     ) => Promise<import('@shared/threads/thread-links.ts').ThreadBacklink[]>
+    pendingApprovals: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/threads/deferred-approval.ts').DeferredApproval[]>
     historySnapshot: (
       projectId: string,
       threadId: string,
@@ -1068,6 +1089,10 @@ export interface ApiClient {
   }
   decisions: {
     list: (projectId?: string) => Promise<import('@shared/threads/decision-log.ts').DecisionEvent[]>
+    listThread: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/threads/decision-log.ts').DecisionEvent[]>
     export: (projectId?: string) => Promise<{ path: string; count: number }>
   }
   index: {
