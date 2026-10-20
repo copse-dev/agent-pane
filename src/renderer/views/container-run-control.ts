@@ -167,6 +167,22 @@ export async function loadRunModelOptions(
 }
 
 /**
+ * The row to switch the arming form to when its preselected model — the
+ * thread's own, named before anything was known about it — turns out to be
+ * one nothing can start. `null` means keep the current selection: either it
+ * can run, the resolver has not answered yet, or nothing on the roster can
+ * run either. A default the Start button can only refuse is worse than one
+ * it will not, so the first row the roster did not disable takes its place.
+ */
+export function fallbackModel(
+  roster: readonly ModelOption[],
+  verdict: ContainerModelVerdict | undefined,
+): string | null {
+  if (verdict === undefined || verdict.reason === null) return null
+  return roster.find((option) => option.disabled !== true)?.value ?? null
+}
+
+/**
  * Why the Start button is disabled, or null when the run may start. An agent
  * model is startable only once the resolver has answered for it: the roster
  * loads after the dialog opens, and a click in that window would reach the
@@ -428,6 +444,9 @@ export function mountContainerRunControl(
     // The resolver's verdict per agent row, kept so choosing a row that runs
     // only on the user's sign-in can reveal the opt-in for it.
     const verdicts = new Map<string, ContainerModelVerdict>()
+    // The latest roster, kept so a preselected row the resolver refuses can be
+    // swapped for one it doesn't (see the refresh chain below).
+    let lastRoster: readonly ModelOption[] = []
     // The field has to exist before the picker mounts: `mountModelSelectPicker`
     // inserts its trigger with `select.after(...)`, which is a no-op while the
     // select still has no parent.
@@ -451,6 +470,7 @@ export function mountContainerRunControl(
           (option) => option.disabled === true || parseAcpModel(option.value) !== null,
         )
         renderLoginOptIn()
+        lastRoster = options
         return options
       },
       ariaLabel: 'Model for the unattended run',
@@ -459,6 +479,19 @@ export function mountContainerRunControl(
     let rosterLoaded = false
     void modelPicker
       .refresh(chosenModel)
+      .then(async () => {
+        const preselected = chosenModel
+        const fallback = fallbackModel(lastRoster, verdicts.get(preselected))
+        if (fallback === null) return
+        // The picker had nothing to select from until this very refresh, so a
+        // user pick racing ahead of it is not realistic — checked anyway
+        // because silently overriding one would be worse than skipping a rare one.
+        if (chosenModel !== preselected) return
+        chosenModel = fallback
+        modelSelect.value = fallback
+        renderEgressHint()
+        await modelPicker?.refresh(fallback)
+      })
       .catch(async (error: unknown) => {
         console.error('[container-run] could not list models:', error)
         // The roster failed, but the thread's own model can still be asked
