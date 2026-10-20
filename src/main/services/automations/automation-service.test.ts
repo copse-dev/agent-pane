@@ -1551,6 +1551,7 @@ describe('AutomationService', () => {
       },
       loadProjectThreads: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
+      getActiveProjectId: () => 'project-a',
     })
 
     const pending = service.tick()
@@ -1599,9 +1600,13 @@ describe('AutomationService', () => {
       },
       loadProjectThreads: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
+      getActiveProjectId: () => 'project-a',
       supervisor: () => new FakeTaskSupervisor(),
     })
-    service.start((event) => events.push(event))
+    service.start(
+      (event) => events.push(event),
+      async () => {},
+    )
     const schedule = await service.upsert('project-a', {
       name: 'retry',
       cron: '* * * * *',
@@ -1665,9 +1670,13 @@ describe('AutomationService', () => {
       },
       loadProjectThreads: () => Promise.resolve([...threads.values()]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
+      getActiveProjectId: () => 'project-a',
       supervisor: () => new FakeTaskSupervisor(),
     })
-    service.start((event) => events.push(event))
+    service.start(
+      (event) => events.push(event),
+      async () => {},
+    )
     await service.upsert('project-a', {
       name: 'late',
       cron: '* * * * *',
