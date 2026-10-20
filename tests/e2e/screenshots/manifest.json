@@ -1965,6 +1965,10 @@
       "sha256": "53edd0ef14b650b9b317c524714f5da24f1ac364731245256a8bc07ad29b7fff",
       "bytes": 344051
     },
+    "host-read-tool-cards.png": {
+      "sha256": "8ba85cdde69b4786adabb98d021857a87a0bca2b876e6192fa9e1765ebd6fb1b",
+      "bytes": 297199
+    },
     "image-description-draft.png": {
       "sha256": "428ffa6b827028c7efed94e601728d79156ad986a3a9083ecfee65532b178880",
       "bytes": 279119
