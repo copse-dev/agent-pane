@@ -61542,6 +61542,14 @@ function metaPatch(prev, next) {
   }
   return patch;
 }
+function recordPersistedThread(projectId, thread) {
+  let metas = persistedMeta.get(projectId);
+  if (!metas) {
+    metas = /* @__PURE__ */ new Map();
+    persistedMeta.set(projectId, metas);
+  }
+  metas.set(thread.id, metaOf(thread));
+}
 function reconcileThreads(api2, projectId, threads) {
   const prev = persistedMeta.get(projectId) ?? /* @__PURE__ */ new Map();
   const next = /* @__PURE__ */ new Map();
@@ -61614,8 +61622,22 @@ function saveNavigation(api2, activeProjectId, activeThreadId) {
 function saveProjectGroups(api2, groups) {
   return serializedSet(api2, KEY_PROJECT_GROUPS, groups);
 }
+function invalidateProjectThreadLoads(api2, projectId) {
+  let revisions = threadLoadRevisions.get(api2);
+  if (!revisions) {
+    revisions = /* @__PURE__ */ new Map();
+    threadLoadRevisions.set(api2, revisions);
+  }
+  revisions.set(projectId, (revisions.get(projectId) ?? 0) + 1);
+}
 async function loadThreads(api2, projectId) {
-  const threads = sortThreadsNewestFirst(await api2.threads.loadProject(projectId)).map(
+  let loaded;
+  let revision;
+  do {
+    revision = threadLoadRevisions.get(api2)?.get(projectId) ?? 0;
+    loaded = await api2.threads.loadProject(projectId);
+  } while (revision !== (threadLoadRevisions.get(api2)?.get(projectId) ?? 0));
+  const threads = sortThreadsNewestFirst(loaded).map(
     (thread) => thread.status !== "running" && thread.lastSettledAt === void 0 ? { ...thread, lastSettledAt: thread.updatedAt } : thread
   );
   const metas = /* @__PURE__ */ new Map();
@@ -61822,7 +61844,7 @@ function attachAutosave(store2, api2) {
   activeAutosave = autosave;
   return autosave;
 }
-var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, navigationHeldFor, threadWriteKey, persistedMeta, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
+var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, navigationHeldFor, threadWriteKey, persistedMeta, threadLoadRevisions, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
 var init_persistence = __esm({
   "src/renderer/controller/persistence.ts"() {
     init_thread_helpers();
@@ -61838,6 +61860,7 @@ var init_persistence = __esm({
     navigationHeldFor = null;
     threadWriteKey = (projectId, threadId) => `thread:${projectId}:${threadId}`;
     persistedMeta = /* @__PURE__ */ new Map();
+    threadLoadRevisions = /* @__PURE__ */ new WeakMap();
     AUTOSAVE_DEBOUNCE_MS = 250;
     activeAutosave = null;
   }
@@ -63411,7 +63434,7 @@ function showToast(message2, opts = {}) {
   const host = ensureHost();
   const variant = opts.variant ?? "info";
   const duration3 = opts.durationMs ?? DEFAULT_DURATION_MS;
-  const existing = findVisibleToast(message2, variant);
+  const existing = opts.action ? null : findVisibleToast(message2, variant);
   if (existing) {
     existing.refresh(duration3);
     return existing.dismiss;
@@ -63435,6 +63458,19 @@ function showToast(message2, opts = {}) {
   };
   toastControls.set(toast, { dismiss, refresh });
   toast.addEventListener("click", dismiss);
+  if (opts.action) {
+    const action = opts.action;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ui-btn toast-action";
+    button.textContent = action.label;
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      dismiss();
+      action.onClick();
+    });
+    toast.append(button);
+  }
   return dismiss;
 }
 function findVisibleToast(message2, variant) {
@@ -64997,6 +65033,13 @@ var init_projects = __esm({
 // src/renderer/views/settings/storage-section.ts
 function createStorageSection(overlay, api2, store2, closeSettingsDialog2) {
   const maintenance = createStorageMaintenancePanel(api2);
+  const archiveDays = qsRequired(overlay, '[name="autoArchiveAfterDays"]');
+  archiveDays.addEventListener("input", () => {
+    const days = archiveDays.valueAsNumber;
+    archiveDays.setCustomValidity(
+      days === 0 || Number.isInteger(days) && days >= 3 && days <= 3650 ? "" : "Enter 0 to disable, or a whole number from 3 to 3650."
+    );
+  });
   qsRequired(overlay, '.settings-section[data-section="storage"]').append(maintenance.element);
   function fillSourceList(selector, rows, emptyText) {
     const list = qsRequired(overlay, selector);
@@ -78519,16 +78562,30 @@ var init_customise_markup = __esm({
 });
 
 // src/renderer/views/settings/storage-markup.ts
-var storageMarkup;
+var storageFields, storageMarkup;
 var init_storage_markup = __esm({
   "src/renderer/views/settings/storage-markup.ts"() {
+    storageFields = [
+      { name: "autoArchiveAfterDays", kind: "number", default: 3, save: true }
+    ];
     storageMarkup = `<section class="settings-section" data-section="storage">
             <h3>Storage</h3>
             <p class="settings-section-desc">
-              What Copse keeps on disk for each local project, and what it costs. Nothing here
-              changes how the agent behaves \u2014 it is where you go to see what has accumulated and
-              reclaim space.
+              Manage finished threads and see what Copse keeps on disk.
             </p>
+
+            <fieldset>
+              <legend>Finished threads \xB7 all projects</legend>
+              <label>
+                Auto-archive after inactive days
+                <input type="number" name="autoArchiveAfterDays" min="0" max="3650" step="1" aria-describedby="auto-archive-hint" />
+              </label>
+              <p class="field-hint" id="auto-archive-hint">
+                Defaults to 3 days. Enter 0 to disable, or 3 or more for a longer delay.
+                Only verified finished work is archived automatically; Copse asks when completion is unclear.
+                Conversations and files are kept, and archived threads can be restored.
+              </p>
+            </fieldset>
 
             <label class="storage-project-field">
               <span>Project</span>
@@ -79012,7 +79069,7 @@ var init_registry = __esm({
       { id: "permissions", label: "Permissions", markup: permissionsMarkup, fields: permissionsFields },
       { id: "mcp", label: "MCP servers", markup: mcpMarkup, fields: mcpFields },
       { id: "customise", label: "Customise", markup: customiseMarkup, fields: customiseFields },
-      { id: "storage", label: "Storage", markup: storageMarkup, fields: [] },
+      { id: "storage", label: "Storage", markup: storageMarkup, fields: storageFields },
       { id: "appearance", label: "Appearance", markup: appearanceMarkup, fields: appearanceFields },
       { id: "ssh", label: "SSH", markup: sshMarkup, fields: sshFields },
       {
@@ -88003,6 +88060,17 @@ function createDemoApi(scenario2, options = {}) {
     },
     plans: { get: () => resolved2(null), revision: () => resolved2(null), change: unsupported },
     threads: {
+      archiveState: () => resolved2({ archived: threads.filter((thread) => thread.archivedAt != null), review: [] }),
+      archiveDecision: (_projectId, threadId, decision) => {
+        const thread = threads.find((candidate) => candidate.id === threadId);
+        if (!thread) return resolved2(false);
+        if (decision === "archive") thread.archivedAt = Date.now();
+        if (decision === "restore") delete thread.archivedAt;
+        thread.updatedAt = Date.now();
+        return resolved2(true);
+      },
+      onAutoArchived: () => () => {
+      },
       storageSize: () => resolved2({ bytes: 24576, truncated: false }),
       archive: (_projectId, threadId) => {
         const archivedAt = Date.now();
@@ -91317,6 +91385,151 @@ var init_titlebar = __esm({
     init_panels();
     init_keyboard_shortcuts_dialog();
     PROJECTS_COLLAPSED_CLASS = "is-projects-collapsed";
+  }
+});
+
+// src/renderer/controller/thread-archive.ts
+async function restoreArchivedThread(store2, api2, projectId, threadId) {
+  if (!await api2.threads.archiveDecision(projectId, threadId, "restore"))
+    throw new Error("The thread is busy or changed. Try restoring it again.");
+  invalidateProjectThreadLoads(api2, projectId);
+  if (store2.getState().activeProjectId === projectId) {
+    const metadata = (await api2.threads.loadProject(projectId)).find(
+      (thread) => thread.id === threadId
+    );
+    if (!metadata) throw new Error("The restored thread could not be loaded.");
+    if (store2.getState().activeProjectId === projectId) {
+      const threads = store2.getState().threads;
+      const previous = threads.find((thread) => thread.id === threadId);
+      const restored = previous?.messagesLoaded !== false && previous ? { ...metadata, messages: previous.messages, messagesLoaded: true } : metadata;
+      recordPersistedThread(projectId, metadata);
+      store2.setState({ threads: [...threads.filter((thread) => thread.id !== threadId), restored] });
+      store2.emit("threads_changed");
+    }
+  }
+  switchProjectThread(store2, api2, projectId, threadId);
+}
+var init_thread_archive = __esm({
+  "src/renderer/controller/thread-archive.ts"() {
+    init_projects();
+    init_persistence();
+  }
+});
+
+// src/renderer/views/archived-threads.ts
+function createArchivedThreads(store2, api2, onRestored) {
+  const element = el("section", { class: "archived-threads", "aria-label": "Archived threads" });
+  let generation = 0;
+  let selection2 = "";
+  async function load(projects, query, current) {
+    element.replaceChildren(
+      el("div", { class: "sidebar-empty", role: "status" }, "Loading archives\u2026")
+    );
+    try {
+      const groups = await Promise.all(
+        projects.map(async (project2) => ({
+          project: project2,
+          state: await api2.threads.archiveState(project2.id, "archived")
+        }))
+      );
+      if (current !== generation) return;
+      const rows = groups.flatMap(
+        ({ project: project2, state }) => state.archived.filter(
+          (thread) => !thread.sideChat && thread.title.toLocaleLowerCase().includes(query.toLocaleLowerCase())
+        ).map((thread) => ({ project: project2, thread }))
+      ).sort((a5, b5) => (b5.thread.archivedAt ?? 0) - (a5.thread.archivedAt ?? 0));
+      element.replaceChildren(
+        el("p", { class: "sidebar-empty" }, "Archived threads stay here until you restore them.")
+      );
+      if (rows.length === 0) {
+        element.append(
+          el("div", { class: "sidebar-empty", role: "status" }, "No archived threads.")
+        );
+      }
+      for (const { project: project2, thread } of rows) {
+        const restore = el(
+          "button",
+          { type: "button", class: "ui-btn", "aria-label": `Restore ${thread.title}` },
+          "Restore"
+        );
+        const row2 = el(
+          "div",
+          { class: "archived-thread-row", "data-thread-id": thread.id },
+          el(
+            "div",
+            { class: "archived-thread-description" },
+            el("span", { class: "archived-thread-title" }, thread.title || "New thread"),
+            el("span", { class: "archived-thread-project" }, project2.name)
+          ),
+          restore
+        );
+        restore.addEventListener("click", () => {
+          restore.disabled = true;
+          void restoreArchivedThread(store2, api2, project2.id, thread.id).then(() => {
+            selection2 = "";
+            onRestored();
+          }).catch((error62) => {
+            restore.disabled = false;
+            showErrorToast("Could not restore thread", error62);
+          });
+        });
+        element.append(row2);
+      }
+    } catch (error62) {
+      if (current !== generation) return;
+      selection2 = "";
+      element.replaceChildren(
+        el(
+          "div",
+          { class: "sidebar-empty", role: "status" },
+          "Could not load archived threads. Reopen the Archived filter to retry."
+        )
+      );
+      showErrorToast("Could not load archived threads", error62);
+    }
+  }
+  const invalidate = () => {
+    selection2 = "";
+    generation++;
+  };
+  return {
+    element,
+    show(projects, query) {
+      const next = JSON.stringify([projects.map((project2) => [project2.id, project2.name]), query]);
+      if (selection2 === next) return;
+      selection2 = next;
+      void load(projects, query, ++generation);
+    },
+    invalidate,
+    hide: invalidate
+  };
+}
+var init_archived_threads = __esm({
+  "src/renderer/views/archived-threads.ts"() {
+    init_thread_archive();
+    init_helpers();
+    init_toast();
+  }
+});
+
+// src/renderer/views/thread-archive-toast.ts
+function showThreadArchiveToast(store2, api2, projectId, threadId, title) {
+  showToast(`Archived \u201C${title}\u201D. Find it in the Archived filter.`, {
+    durationMs: 15e3,
+    action: {
+      label: "Undo",
+      onClick: () => {
+        void restoreArchivedThread(store2, api2, projectId, threadId).catch((error62) => {
+          showErrorToast("Could not restore thread", error62);
+        });
+      }
+    }
+  });
+}
+var init_thread_archive_toast = __esm({
+  "src/renderer/views/thread-archive-toast.ts"() {
+    init_thread_archive();
+    init_toast();
   }
 });
 
@@ -95276,6 +95489,12 @@ function mountProjectsPane(root, store2, api2) {
   let compactRows = false;
   let projectFilterId = null;
   let needsCleanupOnly = false;
+  let archivedOnly = false;
+  const archivedThreads = createArchivedThreads(store2, api2, () => {
+    archivedOnly = false;
+    closeThreadFilter();
+    render2();
+  });
   const filterLabel = el("span", { class: "projects-filter-label" }, "All projects");
   const projectFilterBtn = el(
     "button",
@@ -95301,7 +95520,7 @@ function mountProjectsPane(root, store2, api2) {
   searchInput.addEventListener("input", () => {
     threadFilter = filterText(searchInput.value.trim());
     filteredProjectId = store2.getState().activeProjectId;
-    contentFilter.search(threadFilter);
+    if (!archivedOnly) contentFilter.search(threadFilter);
     render2();
   });
   searchInput.addEventListener("keydown", (e3) => {
@@ -95347,11 +95566,15 @@ function mountProjectsPane(root, store2, api2) {
     const chosen = projects.find((project2) => project2.id === projectFilterId);
     if (!chosen) projectFilterId = null;
     const projectName = chosen ? projectDisplayName(chosen) : "All projects";
-    filterLabel.textContent = needsCleanupOnly ? `${projectName} \xB7 Needs cleanup` : projectName;
-    projectFilterBtn.classList.toggle("is-filtering", chosen !== void 0 || needsCleanupOnly);
+    const suffix = archivedOnly ? " \xB7 Archived" : needsCleanupOnly ? " \xB7 Needs cleanup" : "";
+    filterLabel.textContent = `${projectName}${suffix}`;
+    projectFilterBtn.classList.toggle(
+      "is-filtering",
+      chosen !== void 0 || needsCleanupOnly || archivedOnly
+    );
     projectFilterBtn.setAttribute(
       "aria-label",
-      needsCleanupOnly ? `Show: ${projectName}, needs cleanup only` : `Show: ${projectName}`
+      archivedOnly ? `Show: ${projectName}, archived` : needsCleanupOnly ? `Show: ${projectName}, needs cleanup only` : `Show: ${projectName}`
     );
     sortLabel.textContent = SORT_LABELS[sidebarThreadSort];
     sortDir.textContent = sidebarThreadSortReverse ? "\u2191" : "\u2193";
@@ -95391,6 +95614,19 @@ function mountProjectsPane(root, store2, api2) {
         checked: needsCleanupOnly,
         onSelect: () => {
           needsCleanupOnly = !needsCleanupOnly;
+          archivedOnly = false;
+          render2();
+        }
+      },
+      {
+        label: "Archived",
+        toggle: true,
+        checked: archivedOnly,
+        onSelect: () => {
+          archivedOnly = !archivedOnly;
+          needsCleanupOnly = false;
+          closeThreadFilter();
+          archivedThreads.invalidate();
           render2();
         }
       }
@@ -96172,6 +96408,12 @@ function mountProjectsPane(root, store2, api2) {
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } = store2.getState();
     const visibleProjects = projectFilterId === null ? projects : projects.filter((project2) => project2.id === projectFilterId);
     const expandedId = expandedProjectId ?? activeProjectId;
+    if (archivedOnly) {
+      archivedThreads.show(visibleProjects, searchInput.value.trim());
+      list.append(archivedThreads.element);
+      return;
+    }
+    archivedThreads.hide();
     if (projects.length === 0 && projectGroups.length === 0 && orphans.length === 0) {
       list.append(el("div", { class: "sidebar-empty" }, 'No projects yet. Click "+".'));
       if (preserveScroll) list.scrollTop = scrollTop;
@@ -97148,6 +97390,22 @@ function mountProjectsPane(root, store2, api2) {
   window.addEventListener("focus", recheckStaleThreadChanges);
   document.addEventListener("visibilitychange", recheckStaleThreadChanges);
   const unsubs = [
+    api2.threads.onAutoArchived((event) => {
+      archivedThreads.invalidate();
+      invalidateProjectThreadLoads(api2, event.projectId);
+      if (event.projectId === store2.getState().activeProjectId) {
+        const thread = store2.getState().threads.find((item) => item.id === event.threadId);
+        archiveThread(store2, event.threadId, {
+          status: "archived",
+          archivedAt: event.archivedAt,
+          worktree: thread?.worktree
+        });
+      } else {
+        archiveCachedSidebarThread(event.projectId, event.threadId, event.archivedAt);
+        render2();
+      }
+      showThreadArchiveToast(store2, api2, event.projectId, event.threadId, event.title);
+    }),
     store2.on("thread_archive_requested", (projectId, threadId) => {
       void archiveProjectThread(projectId, threadId);
     }),
@@ -97155,7 +97413,10 @@ function mountProjectsPane(root, store2, api2) {
     store2.on("projects_changed", render2),
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
-    store2.on("threads_changed", render2),
+    store2.on("threads_changed", () => {
+      archivedThreads.invalidate();
+      render2();
+    }),
     store2.on("sidebar_threads_loaded", render2),
     store2.on("automation_schedules_loaded", render2),
     // Status flips on its own event (not threads_changed) so the sidebar can
@@ -97180,6 +97441,7 @@ function mountProjectsPane(root, store2, api2) {
   render2();
   refreshOrphans();
   return () => {
+    archivedThreads.hide();
     contentFilter.cancel();
     for (const timer of prBackfillRetryTimers) clearTimeout(timer);
     prBackfillRetryTimers.clear();
@@ -97208,6 +97470,8 @@ var PR_STATUS_CACHE_TTL_MS, ICON_SIZE2, SVG_NS4, GROUP_MENU_ORDER;
 var init_projects_pane = __esm({
   "src/renderer/views/projects-pane.ts"() {
     init_app_run_dialog();
+    init_archived_threads();
+    init_thread_archive_toast();
     init_side_chat2();
     init_helpers();
     init_context_menu();
@@ -97248,6 +97512,142 @@ var init_projects_pane = __esm({
     ICON_SIZE2 = "16";
     SVG_NS4 = "http://www.w3.org/2000/svg";
     GROUP_MENU_ORDER = ["status", "project", "none"];
+  }
+});
+
+// src/shared/threads/auto-archive.ts
+function threadIsInactive(thread, now, days) {
+  return days >= 3 && thread.archivedAt == null && thread.sideChat === void 0 && thread.automation === void 0 && thread.status !== "running" && thread.unreadAt == null && !thread.draftPrompt?.trim() && !thread.pendingMessages?.length && Number.isFinite(thread.updatedAt) && now - thread.updatedAt >= days * ARCHIVE_DAY_MS;
+}
+var ARCHIVE_DAY_MS;
+var init_auto_archive = __esm({
+  "src/shared/threads/auto-archive.ts"() {
+    ARCHIVE_DAY_MS = 24 * 60 * 60 * 1e3;
+  }
+});
+
+// src/renderer/views/thread-archive-review.ts
+function createThreadArchiveReview(store2, api2) {
+  const element = el("section", {
+    class: "thread-archive-review",
+    hidden: true,
+    "aria-label": "Review inactive thread"
+  });
+  const reason = el("p");
+  const keep = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact" },
+    "Keep active"
+  );
+  const archive = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact" },
+    "Archive"
+  );
+  element.append(
+    el("strong", {}, "Finished with this thread?"),
+    reason,
+    el("div", { class: "thread-archive-review-actions" }, keep, archive)
+  );
+  let generation = 0;
+  let selected = "";
+  let disposed = false;
+  async function refresh(force = false) {
+    const state = store2.getState();
+    const thread = getActiveThread(store2);
+    if (!state.activeProjectId || !thread || !threadIsInactive(thread, Date.now(), 3)) {
+      selected = "";
+      generation++;
+      element.hidden = true;
+      return;
+    }
+    const key = `${state.activeProjectId}/${thread.id}/${String(thread.updatedAt)}`;
+    if (!force && selected === key) return;
+    selected = key;
+    const current = ++generation;
+    element.hidden = true;
+    const projectId = state.activeProjectId;
+    try {
+      const result = await api2.threads.archiveState(projectId, "review");
+      if (disposed || current !== generation) return;
+      const review = result.review.find((item) => item.threadId === thread.id);
+      if (!review) return;
+      reason.textContent = `${review.reason} Archive keeps the conversation and files. You can restore it later.`;
+      element.hidden = false;
+      keep.onclick = () => {
+        void decide("keep", projectId, thread.id);
+      };
+      archive.onclick = () => {
+        void decide("archive", projectId, thread.id);
+      };
+    } catch (error62) {
+      console.warn("Could not check thread archive readiness", error62);
+    }
+  }
+  async function decide(action, projectId, threadId) {
+    const current = generation;
+    const title = store2.getState().threads.find((thread) => thread.id === threadId)?.title ?? "Thread";
+    keep.disabled = true;
+    archive.disabled = true;
+    try {
+      if (!await api2.threads.archiveDecision(projectId, threadId, action))
+        throw new Error("The thread changed or has pending work. Review it before archiving.");
+      invalidateProjectThreadLoads(api2, projectId);
+      if (store2.getState().activeProjectId === projectId) {
+        if (action === "archive") archiveThread(store2, threadId);
+        else {
+          const threads = store2.getState().threads.map(
+            (thread) => thread.id === threadId ? { ...thread, updatedAt: Date.now() } : thread
+          );
+          store2.setState({ threads });
+          store2.emit("threads_changed");
+        }
+      }
+      if (action === "archive") showThreadArchiveToast(store2, api2, projectId, threadId, title);
+      if (generation === current) element.hidden = true;
+    } catch (error62) {
+      showErrorToast("Could not update thread", error62);
+    } finally {
+      keep.disabled = false;
+      archive.disabled = false;
+    }
+  }
+  const sync = () => {
+    void refresh();
+  };
+  const unsubs = [
+    store2.on("threads_changed", sync),
+    store2.on("thread_status_changed", sync),
+    store2.on("workspace_changed", sync),
+    store2.on("settings_changed", () => {
+      void refresh(true);
+    })
+  ];
+  const onFocus = () => {
+    void refresh(true);
+  };
+  window.addEventListener("focus", onFocus);
+  sync();
+  return {
+    element,
+    dispose: () => {
+      disposed = true;
+      generation++;
+      window.removeEventListener("focus", onFocus);
+      unsubs.forEach((unsubscribe) => {
+        unsubscribe();
+      });
+    }
+  };
+}
+var init_thread_archive_review = __esm({
+  "src/renderer/views/thread-archive-review.ts"() {
+    init_thread_helpers();
+    init_auto_archive();
+    init_persistence();
+    init_helpers();
+    init_toast();
+    init_thread_archive_toast();
   }
 });
 
@@ -107586,6 +107986,7 @@ function mountConversation(root, store2, api2) {
   showAcpTransportNoiseDisclosure = () => store2.getState().developerMode;
   const scrollArea = el("div", { class: "conversation-scroll" });
   const todoHost = el("div", { class: "conversation-todos-host" });
+  const archiveReview = createThreadArchiveReview(store2, api2);
   const appleDevelopmentHost = createAppleDevelopmentPanel(store2, api2, { allowEnrollment: false });
   const list = el("div", { class: "messages-list", role: "log", "aria-live": "polite" });
   let agentNames = /* @__PURE__ */ new Map();
@@ -107615,6 +108016,7 @@ function mountConversation(root, store2, api2) {
     appleDevelopmentHost,
     todoHost,
     list,
+    archiveReview.element,
     scrollToBottomBtn
   );
   const expandedConciseTurns = /* @__PURE__ */ new Set();
@@ -109515,6 +109917,7 @@ function mountConversation(root, store2, api2) {
   syncFromStore();
   return () => {
     disposed = true;
+    archiveReview.dispose();
     selectionQuote.destroy();
     avatarMotion.dispose();
     backfillGeneration++;
@@ -109575,6 +109978,7 @@ var userInterruptedCalls, markedTranscripts, PATCH_OP_LABEL, lazyToolCardBodies,
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
+    init_thread_archive_review();
     init_agent_avatar();
     init_chat_agent_identity();
     init_reasoning_activity_icon();
