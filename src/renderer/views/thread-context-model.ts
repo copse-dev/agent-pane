@@ -1,4 +1,9 @@
-import type { Project, Thread } from '@shared/types'
+import type { Project, ReviewerInputAnswer, Thread } from '@shared/types'
+import {
+  reviewerInputAnswer,
+  reviewerInputRequests,
+  type ReviewerInputRequest,
+} from '@shared/threads/reviewer-input.ts'
 import { githubPrKey, type GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { sideChatsOf, type SideChatRow } from '@shared/threads/side-chat.ts'
 import {
@@ -60,6 +65,7 @@ export interface ThreadContextModel {
   /** Active side chats first, archived after; oldest first within each. */
   sideChats: SideChatRow[]
   subagents: ContextSubagent[]
+  resolvedQuestions: Array<{ request: ReviewerInputRequest; answer: ReviewerInputAnswer }>
 }
 
 export interface ThreadContextInput {
@@ -161,6 +167,12 @@ export function deriveThreadContext(input: ThreadContextInput): ThreadContextMod
   const sideChats = sideChatsOf(threads, thread.id, true).sort(
     (a, b) => Number(a.archived) - Number(b.archived),
   )
+  const resolvedQuestions = loaded
+    ? reviewerInputRequests(thread).flatMap((request) => {
+        const answer = reviewerInputAnswer(thread.reviewerInputAnswers, request.id)
+        return answer ? [{ request, answer }] : []
+      })
+    : []
 
   let sideOf: ContextSideOf | undefined
   if (thread.sideChat) {
@@ -182,5 +194,6 @@ export function deriveThreadContext(input: ThreadContextInput): ThreadContextMod
     mentionedIn: [...(input.mentionedIn ?? [])],
     sideChats,
     subagents,
+    resolvedQuestions,
   }
 }

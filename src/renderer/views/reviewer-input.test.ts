@@ -2,7 +2,7 @@ import '../../../tests/setup-dom.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { createThread } from '@shared/store/thread-helpers.ts'
+import { createThread, setReviewerInputAnswer } from '@shared/store/thread-helpers.ts'
 import type { Message } from '@shared/types'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { mountReviewerInput } from './reviewer-input.ts'
@@ -52,6 +52,16 @@ test('compact requests expand and jump to their owning transcript message', () =
   view.panel.querySelector<HTMLButtonElement>('.reviewer-input-question')?.click()
   assert.match(view.panel.textContent, /Footer overlap and blank space/)
   assert.equal(view.panel.querySelectorAll('.reviewer-input-option').length, 2)
+  setReviewerInputAnswer(store, threadId, {
+    id: 'request-3',
+    text: 'Both',
+    answeredAt: 2,
+    messageId: 'answer-3',
+  })
+  view.sync()
+  assert.equal(view.toggle.hidden, true)
+  assert.equal(view.panel.hidden, true)
+  assert.equal(view.panel.querySelector('.reviewer-input-item'), null)
   unsubscribe()
   view.toggle.remove()
   view.panel.remove()

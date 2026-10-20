@@ -168,7 +168,12 @@ features do not each open GitHub pollers.
 - Completions/blocks can notify the desktop (toast / attention) and/or append a thread
   event so the next turn sees the result.
 - Headless/ACP resume uses #1079's contract; the supervisor does not invent a parallel
-  "background chat" protocol.
+  "background chat" protocol. _(Proposed 2026-10-16: session resume is ACP
+  `session/resume` + `replayFrom`; #1079 narrows to the execution contract —
+  dedupe key, policy, budgets, ownership, delivery — and the supervisor's task
+  state is that contract's level-3 outcome. ACP has no task concept: its `idle`
+  ends foreground work only. See
+  [`headless-automation-contract.md`](headless-automation-contract.md).)_
 
 ## First delivery slice (this PR's scope)
 
