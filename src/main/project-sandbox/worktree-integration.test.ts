@@ -25,8 +25,10 @@ import {
   inspectThreadWorktreeAttachment,
   reattachThreadWorktree,
   retireThreadWorktree,
+  runWorktreeGit,
   validateThreadWorktree,
 } from '../services/worktree-manager.ts'
+import { fetchThroughScratchRepository } from '../services/default-branch-fetch.ts'
 import { gitBackupSandboxOverlay, workspaceTmpDir } from './config.ts'
 
 interface CommandResult {
@@ -497,6 +499,59 @@ describe('linked-worktree sandbox integration', () => {
     }
     assert.equal(git(root, ['status', '--porcelain=v1']), statusBefore)
     assert.deepEqual(await readFile(join(root, '.git', 'index')), indexBefore)
+  })
+
+  it('refreshes origin/<default> through a host scratch fetch the project sandbox cannot make', async (t) => {
+    if (process.platform === 'win32') {
+      t.skip('project sandbox integration is not enabled on Windows')
+      return
+    }
+    // Home-contained, like a real project: the sandbox denies the rest of home,
+    // which here stands in for the network and `~/.ssh` a real origin needs.
+    const root = await realpath(await mkdtemp(join(homedir(), 'copse-default-fetch-')))
+    cleanups.push(root)
+    const remote = join(root, 'remote.git')
+    const project = join(root, 'project')
+    git(root, ['init', '-q', '--bare', '-b', 'main', remote])
+    git(root, ['clone', '-q', remote, project])
+    git(project, ['checkout', '-q', '-b', 'main'])
+    await writeFile(join(project, 'README.md'), 'base\n')
+    git(project, ['add', '.'])
+    git(project, ['commit', '-q', '-m', 'initial'])
+    git(project, ['push', '-q', 'origin', 'main'])
+    const elsewhere = join(root, 'elsewhere')
+    git(root, ['clone', '-q', remote, elsewhere])
+    await writeFile(join(elsewhere, 'upstream.txt'), 'newer\n')
+    git(elsewhere, ['add', '.'])
+    git(elsewhere, ['commit', '-q', '-m', 'upstream'])
+    git(elsewhere, ['push', '-q', 'origin', 'main'])
+    const remoteTip = git(remote, ['rev-parse', 'main']).trim()
+    const localTip = git(project, ['rev-parse', 'main']).trim()
+    setGitAvailableForTest(true)
+    await initProjectSandbox()
+    if (!isProjectSandboxEnabled()) {
+      t.skip('ASRT sandbox unavailable')
+      return
+    }
+
+    // The old path: a fetch inside the project sandbox cannot reach origin.
+    const contained = await runWorktreeGit(project, ['fetch', '--quiet', 'origin', 'main'])
+    assert.notEqual(contained.code, 0, 'the project sandbox must not reach outside origins')
+    assert.equal(git(project, ['rev-parse', 'refs/remotes/origin/main']).trim(), localTip)
+
+    const scratch = join(root, 'scratch.git')
+    const result = await fetchThroughScratchRepository({
+      projectRoot: project,
+      url: remote,
+      branch: 'main',
+      scratch,
+      projectGit: runWorktreeGit,
+    })
+    assert.equal(result.code, 0, result.stderr)
+    assert.equal(git(project, ['rev-parse', 'refs/remotes/origin/main']).trim(), remoteTip)
+    assert.equal(git(project, ['rev-parse', 'main']).trim(), localTip)
+    assert.equal(git(project, ['status', '--porcelain=v1']).trim(), '')
+    assert.equal(existsSync(scratch), false)
   })
 
   it('reattaches a home-contained thread checkout while Git IPC keeps validating it', async (t) => {

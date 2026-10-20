@@ -1,7 +1,13 @@
 import { execFileSync } from 'node:child_process'
 import { submitComposer } from './helpers/composer.ts'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
+import {
+  readSeededSettings,
+  resetUserData,
+  seedEmptyProject,
+  seedStableWorkspace,
+  writeSettings,
+} from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
@@ -66,6 +72,8 @@ describe('create PR dialog', function () {
       model: 'claude-sonnet-4-6',
       mockFollowUps: true,
     })
+    // GitHub is mocked and origin is deliberately fake; keep this fixture offline.
+    writeSettings({ ...readSeededSettings(), backgroundDefaultBranchFetch: false })
     await browser.reloadSession()
   })
 

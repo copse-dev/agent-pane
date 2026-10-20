@@ -167,6 +167,40 @@ an unsigned commit or an automatic unsandboxed retry. Custom fsmonitor, hooks an
 signers work within this boundary; external diff/textconv remain available through
 explicit shell commands while automatic previews need raw Git output.
 
+### Background default-branch fetch
+
+Copse keeps each local project's `refs/remotes/origin/<default>` current, hourly and when
+a thread allocates a worktree, so new threads start from upstream code. The project
+sandbox has no network or `~/.ssh`, so this fetch runs on the host, controlled by the
+`backgroundDefaultBranchFetch` setting (Settings → Permissions → Upstream updates; on by
+default). The host process never reads the project's Git configuration. Copse reads
+`remote.origin.url` from `.git/config` without includes, admits only `http(s)://`,
+`ssh://` and `user@host:path` URLs (no leading `-`, no `::` remote-helper syntax), and
+fetches it into a fresh, Copse-owned bare repository under `~/.copse/cache/`. That
+repository borrows the project's objects through `alternates`. With no project config
+in scope, the user's global and system Git configuration (credential helpers,
+`insteadOf`) apply as they would in a terminal. The internal execution overrides,
+network-only transport allowlist and Copse's `GIT_SSH_COMMAND` apply as well. Global
+URL rewrites to local paths or `file://` are refused by the host fetch at execution
+time; only HTTP(S) and SSH may cross this boundary. A second fetch,
+local-only and inside the project sandbox, copies the tip into the project with a read
+grant for that scratch repository. The scratch is deleted afterwards. Only the
+remote-tracking ref moves; the checkout, index and local branches are never touched.
+With the setting enabled, other origins (local paths, `file://`) keep the contained
+fetch, which leaves the ref unchanged on macOS. Turning the setting off skips all
+background fetches on every platform, including the contained fallback; it cannot
+contact origin or request authentication. Failures are logged once per distinct
+error and again on recovery.
+
+Internal Git execution explicitly unsets inherited Git configuration, executable and
+SSH injection variables in the final spawn environment. These removals survive the
+spawn layer's environment overlay; Copse installs its own trusted SSH bridge afterwards.
+
+The residual trust is in `remote.origin.url` itself. Whoever can write `.git/config`
+chooses which network host Copse fetches from, and therefore which commits new threads
+start from. That requires write access to the project's Git metadata, which contained
+commands do not have.
+
 ### Scoped SSH signing
 
 On macOS, the opt-in signing setting enables a separate broker for the system

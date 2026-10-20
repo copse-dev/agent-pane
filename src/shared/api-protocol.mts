@@ -100,5 +100,5 @@
 // v60 adds living-plan reads and revision-checked changes.
 // v61 integrates Send now abort causes and cross-thread read/send permissions.
 // v62 integrates missing-worktree recovery.
-// v63 versions the configurable web-search settings update contract and integrates the device-bound vault wire changes.
+// v63 versions background default-branch fetch and configurable web-search settings updates, and integrates the device-bound vault wire changes.
 export const API_PROTOCOL_VERSION = 63 as const

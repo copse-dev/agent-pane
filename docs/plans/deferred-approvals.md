@@ -202,15 +202,15 @@ presents a review queue, instead of pausing the thread.
 
 ## Test plan
 
-| Area                | Tier       | What it must prove                                                             |
-| ------------------- | ---------- | ------------------------------------------------------------------------------ |
-| Cause taxonomy      | unit       | Every prompt site maps to a cause; the type predicate has its own test         |
-| Outcome mapping     | unit       | `defer` maps onto the headless contract; cannot soften `deny` or widen `allow` |
-| Queue durability    | unit       | Survives restart; ordering; no duplicate entry for a repeated request          |
-| Non-execution       | unit       | A deferred action provably did not run                                         |
-| Replay              | unit + e2e | Approval replays the exact request; stale context fails loudly                 |
-| Agent comprehension | bench      | Deferral wording does not read as success or trigger a retry loop              |
-| Review surface      | e2e        | Queue states, approve/reject/bulk, end-of-run summary                          |
+| Area                | Tier       | What it must prove                                                                                                                                                                                              |
+| ------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cause taxonomy      | unit       | Every prompt site maps to a cause; the type predicate has its own test                                                                                                                                          |
+| Outcome mapping     | unit       | `defer` maps onto the headless contract (it has no `defer` today; proposed home: the execution contract's `unattendedAsk`, surfaced to ACP clients as `requires_action`); cannot soften `deny` or widen `allow` |
+| Queue durability    | unit       | Survives restart; ordering; no duplicate entry for a repeated request                                                                                                                                           |
+| Non-execution       | unit       | A deferred action provably did not run                                                                                                                                                                          |
+| Replay              | unit + e2e | Approval replays the exact request; stale context fails loudly                                                                                                                                                  |
+| Agent comprehension | bench      | Deferral wording does not read as success or trigger a retry loop                                                                                                                                               |
+| Review surface      | e2e        | Queue states, approve/reject/bulk, end-of-run summary                                                                                                                                                           |
 
 ## Risks and open questions
 

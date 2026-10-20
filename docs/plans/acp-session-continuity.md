@@ -157,6 +157,11 @@ We should nevertheless adopt the SDK more consistently:
   persistence, and UI reconciliation remain Copse responsibilities.
 - Stay on ACP v1 while the TypeScript SDK is v1-only. When it publishes v2
   types, add a negotiated v2 adapter; do not hand-roll a parallel v2 schema.
+  _(2026-10-16: that trigger fired at SDK 1.3.0, but v2 is still experimental
+  and draft; the operative trigger is the one in
+  [`../acp-v2-readiness.md`](../acp-v2-readiness.md) — v2 leaving
+  `./experimental/` — plus per-agent opt-in for agents that already serve v2
+  behind a flag, such as `claude-agent-acp`.)_
 
 Adopting separate Codex, Claude, Gemini, and Cursor SDKs for continuation would
 fragment behavior and make custom ACP agents second-class. A provider-native
@@ -258,16 +263,27 @@ that earlier tool calls ran under Copse's sandbox or approval policy.
 `session/load` notifications arrive in replay mode before normal interaction.
 Buffer and normalize them before mutating the thread spine.
 
-1. Prefer stable ACP message/tool identifiers when the negotiated protocol
-   provides them.
-2. For v1 updates without durable IDs, use ordered content hashes plus role and
+1. Fold updates **within each delivered stream** by type and id before doing any
+   reconciliation. That applies ACP's agent/tool upsert semantics and makes a
+   repeated update in one live or replay stream idempotent; it does not make an
+   id stable between those streams.
+2. Across a v2 live stream and replay, use only the stable user `messageId`s as
+   anchors. Between two such anchors, suppress a replayed agent/thought/tool
+   segment only when its normalized, ordered event kinds and completed contents
+   exactly equal the live segment after unstable ids are removed. If the
+   segments differ, keep the replayed segment with import provenance and mark
+   the transcript diverged rather than guessing that merely similar events are
+   identical. The conservative result may contain both live and replayed agent
+   output; v2 explicitly says clients "MUST NOT rely on" agent or thought ids to
+   deduplicate replay.
+3. For v1 updates without durable IDs, use ordered content hashes plus role and
    event kind only to deduplicate an exact prefix; never merge merely similar
    messages.
-3. Append unmatched events with `source: acp-import` and agent/session
+4. Append unmatched events with `source: acp-import` and agent/session
    provenance. Keep the raw session ID only in the private sidecar.
-4. If replay is partial, reordered, or cannot represent prior tool activity,
+5. If replay is partial, reordered, or cannot represent prior tool activity,
    import what is unambiguous and retain the incomplete-transcript marker.
-5. If another client has written since Copse's last attach, require a reload or
+6. If another client has written since Copse's last attach, require a reload or
    explicit continue-with-gap choice before sending another prompt. ACP v1 has
    no portable multi-writer merge contract.
 
@@ -371,7 +387,9 @@ WebdriverIO visual eval and screenshot.
 
 ### Phase 5 — ACP v2
 
-- Upgrade when the official TypeScript SDK publishes v2 types.
+- Upgrade when v2 leaves `./experimental/`, or earlier per agent behind a flag
+  for agents that already serve v2 (`claude-agent-acp`); require SDK ≥ 1.9.0,
+  the first release with the insertion-receipt prompt lifecycle.
 - Add a versioned lifecycle implementation using resume plus `replayFrom`.
 - Keep v1 negotiation and tests for installed v1-only agents.
 - Follow the broader adapter and permission changes in
