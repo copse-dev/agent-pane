@@ -7,6 +7,45 @@ describe('browser-hosted compact titlebar geometry', () => {
     await $('#titlebar').waitForDisplayed({ timeout: 30_000 })
   })
 
+  it('keeps blank titlebar space native while controls remain clickable', async () => {
+    const regions = await browser.execute(() => {
+      const titlebar = document.getElementById('titlebar')!
+      const left = titlebar.querySelector<HTMLElement>('.titlebar-left')!
+      const controls = titlebar.querySelector<HTMLElement>('.titlebar-panel-controls')!
+      const buttons = [...titlebar.querySelectorAll('button')].filter(
+        (button) => button.getBoundingClientRect().width > 0,
+      )
+      const controlsRect = controls.getBoundingClientRect()
+      const firstButton = buttons.find((button) => controls.contains(button))!.getBoundingClientRect()
+      // Electron subtracts every no-drag box from the native region, including
+      // the flexible container's empty space. Chrome cannot exercise OS double
+      // clicks, but it can catch the geometry and computed-style regression.
+      return {
+        titlebar: getComputedStyle(titlebar).getPropertyValue('-webkit-app-region'),
+        left: getComputedStyle(left).getPropertyValue('-webkit-app-region'),
+        controls: getComputedStyle(controls).getPropertyValue('-webkit-app-region'),
+        buttons: buttons.map((button) =>
+          getComputedStyle(button).getPropertyValue('-webkit-app-region'),
+        ),
+        blankWidth: firstButton.left - controlsRect.left,
+      }
+    })
+    expect(regions.titlebar).toBe('drag')
+    expect(regions.left).not.toBe('no-drag')
+    expect(regions.controls).not.toBe('no-drag')
+    expect(regions.buttons.length).toBeGreaterThan(0)
+    expect(regions.buttons.every((region) => region === 'no-drag')).toBe(true)
+    expect(regions.blankWidth).toBeGreaterThan(16)
+
+    const sidebar = $('#titlebar [aria-label="Toggle sidebar"]')
+    const initiallyPressed = await sidebar.getAttribute('aria-pressed')
+    await sidebar.click()
+    await expect(sidebar).toHaveAttribute('aria-pressed', String(initiallyPressed !== 'true'))
+    await sidebar.click()
+    await expect(sidebar).toHaveAttribute('aria-pressed', initiallyPressed)
+    await saveElementScreenshot('#titlebar', 'titlebar-native-regions.png')
+  })
+
   it('compacts before controls overflow and preserves a draggable gap', async () => {
     await browser.execute(() => {
       const app = document.getElementById('app')
