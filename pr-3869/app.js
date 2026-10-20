@@ -104828,13 +104828,12 @@ function mountReviewerInput(store2, api2) {
     });
     if (nextSignature === signature) return;
     signature = nextSignature;
-    toggle.hidden = requests.length === 0;
+    toggle.hidden = pending.length === 0;
     toggle.textContent = `${String(pending.length)} ${pending.length === 1 ? "question" : "questions"}`;
-    toggle.setAttribute("aria-expanded", String(requests.length > 0 && !panel.hidden));
-    panel.hidden = !thread || requests.length === 0 || closedThreads.has(thread.id);
+    panel.hidden = !thread || pending.length === 0 || closedThreads.has(thread.id);
     toggle.setAttribute("aria-expanded", String(!panel.hidden));
     items.replaceChildren(
-      ...thread ? requests.map((request) => renderRow2(request, thread.id)) : []
+      ...thread ? pending.map((request) => renderRow2(request, thread.id)) : []
     );
   }
   toggle.addEventListener("click", () => {
@@ -107489,14 +107488,7 @@ function mountConversation(root, store2, api2) {
   });
   const queuedHost = el("div", { class: "conversation-queued", hidden: true });
   const roadmapOrigin = mountThreadRoadmapOrigin(store2, api2);
-  const reviewerInput = mountReviewerInput(store2, api2);
-  const transcriptAndInput = el(
-    "div",
-    { class: "conversation-reviewer-body" },
-    scrollArea,
-    reviewerInput.panel
-  );
-  root.append(roadmapOrigin.element, reviewerInput.toggle, transcriptAndInput, queuedHost);
+  root.append(roadmapOrigin.element, scrollArea, queuedHost);
   const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command: command2 }) => {
     const { activeProjectId: projectId, activeThreadId: threadId } = store2.getState();
     if (!projectId || !threadId) {
@@ -109142,9 +109134,6 @@ function mountConversation(root, store2, api2) {
     tryJump();
   }
   const unsubs = [
-    store2.on("reviewer_input_open", (requestId) => {
-      reviewerInput.open(requestId);
-    }),
     store2.on("reviewer_input_jump", jumpToReviewerInput),
     store2.on("code_block_run_finished", (result) => {
       setCodeBlockRunOutcome(list, result.id, {
@@ -109275,16 +109264,13 @@ function mountConversation(root, store2, api2) {
     }),
     store2.on("tool_call_started", (mid) => {
       refreshToolCards(mid);
-      reviewerInput.sync();
     }),
     store2.on("tool_call_updated", (mid) => {
       refreshToolCards(mid);
-      reviewerInput.sync();
     }),
     store2.on("threads_changed", () => {
       rebuildForThread();
       syncFromStore();
-      reviewerInput.sync();
       scheduleConciseTurnFooterSync();
       syncSideChatChips();
     }),
@@ -109355,7 +109341,6 @@ function mountConversation(root, store2, api2) {
   const unbindBrowserLinks = bindBrowserLinkClicks(root, store2, api2);
   rebuildForThread();
   syncFromStore();
-  reviewerInput.sync();
   return () => {
     disposed = true;
     selectionQuote.destroy();
@@ -171602,6 +171587,10 @@ function deriveThreadContext(input2) {
   const sideChats = sideChatsOf(threads, thread.id, true).sort(
     (a5, b5) => Number(a5.archived) - Number(b5.archived)
   );
+  const resolvedQuestions = loaded ? reviewerInputRequests(thread).flatMap((request) => {
+    const answer = reviewerInputAnswer(thread.reviewerInputAnswers, request.id);
+    return answer ? [{ request, answer }] : [];
+  }) : [];
   let sideOf;
   if (thread.sideChat) {
     const parent = threads.find((candidate) => candidate.id === thread.sideChat?.parentThreadId);
@@ -171620,11 +171609,13 @@ function deriveThreadContext(input2) {
     links,
     mentionedIn: [...input2.mentionedIn ?? []],
     sideChats,
-    subagents
+    subagents,
+    resolvedQuestions
   };
 }
 var init_thread_context_model = __esm({
   "src/renderer/views/thread-context-model.ts"() {
+    init_reviewer_input();
     init_github_pr_url2();
     init_side_chat2();
     init_thread_links2();
@@ -171842,6 +171833,30 @@ function sourcesSection(model, handlers4) {
     }) : [emptyNote("No sources yet.")]
   );
 }
+function resolvedQuestionsSection(model, handlers4) {
+  if (model.resolvedQuestions.length === 0) return null;
+  return section(
+    "resolved-questions",
+    ...model.resolvedQuestions.map(({ request, answer }) => {
+      const jump = el(
+        "button",
+        { type: "button", class: "reviewer-input-origin" },
+        "Show in conversation"
+      );
+      jump.addEventListener("click", () => {
+        handlers4.jumpToReviewerInput(request.messageId, request.id);
+      });
+      return el(
+        "details",
+        { class: "thread-context-question", "data-reviewer-input-id": request.id },
+        el("summary", {}, request.question),
+        el("p", { class: "reviewer-input-context" }, request.context),
+        el("p", { class: "reviewer-input-answer" }, `Your answer: ${answer.text}`),
+        jump
+      );
+    })
+  );
+}
 function renderThreadContext(model, handlers4) {
   const host = el("div", { class: "thread-context", "aria-label": "Thread context" });
   if (model.title) host.append(el("div", { class: "thread-context-thread-title" }, model.title));
@@ -171869,8 +171884,10 @@ function renderThreadContext(model, handlers4) {
       )
     );
   }
+  const resolvedQuestions = resolvedQuestionsSection(model, handlers4);
   host.append(
     subagentsSection(model),
+    ...resolvedQuestions ? [resolvedQuestions] : [],
     reposSection(model),
     linksSection(model, handlers4),
     sourcesSection(model, handlers4),
@@ -171883,6 +171900,7 @@ function contextModeActive(store2) {
   return filesPaneOpen && rightPanelMode === "context";
 }
 function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestions) {
+  const reviewerInput = mountReviewerInput(store2, api2);
   const close2 = el(
     "button",
     { type: "button", class: "thread-context-close", "aria-label": "Close context" },
@@ -172261,6 +172279,9 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
     },
     restoreSideChat: (threadId) => {
       restoreThread(store2, threadId);
+    },
+    jumpToReviewerInput: (messageId, requestId) => {
+      store2.emit("reviewer_input_jump", messageId, requestId);
     }
   };
   function render2() {
@@ -172303,6 +172324,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
     renderedKey = key;
     clear(viewerRoot);
     const content = renderThreadContext(model, handlers4);
+    reviewerInput.sync();
     const requestRows = agentQuestions.map((request) => {
       const button = rowButton(
         { "data-agent-question-id": request.id },
@@ -172320,27 +172342,6 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       button.addEventListener("click", openActivityPanel);
       return button;
     });
-    requestRows.push(
-      ...questions.map((request) => {
-        const button = rowButton(
-          { "data-reviewer-input-id": request.id },
-          el(
-            "span",
-            { class: "thread-context-main" },
-            el(
-              "span",
-              { class: "thread-context-title", title: request.question },
-              request.question
-            ),
-            el("span", { class: "thread-context-sub" }, "Question \xB7 Open to answer")
-          )
-        );
-        button.addEventListener("click", () => {
-          store2.emit("reviewer_input_open", request.id);
-        });
-        return button;
-      })
-    );
     requestRows.push(
       ...pending.map(
         (request) => el(
@@ -172361,9 +172362,12 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
     );
     const requestSection = section(
       "requests",
-      requestRows.length ? el("div", { class: "thread-context-rows" }, ...requestRows) : emptyNote(
-        approvalsError && approvalsLoaded ? "Approval requests unavailable." : approvalsLoaded ? "Nothing waiting." : "Checking requests\u2026"
-      )
+      ...questions.length > 0 ? [reviewerInput.toggle, reviewerInput.panel] : [],
+      ...requestRows.length > 0 ? [el("div", { class: "thread-context-rows" }, ...requestRows)] : questions.length > 0 ? [] : [
+        emptyNote(
+          approvalsError && approvalsLoaded ? "Approval requests unavailable." : approvalsLoaded ? "Nothing waiting." : "Checking requests\u2026"
+        )
+      ]
     );
     content.querySelector('[data-context-section="subagents"]')?.before(requestSection);
     const archive = el(
@@ -172459,6 +172463,16 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
     if (contextModeActive(store2)) render2();
   }
   const offs = [
+    store2.on("reviewer_input_open", (requestId) => {
+      openRightPanel(store2, "context");
+      reviewerInput.open(requestId);
+    }),
+    store2.on("tool_call_started", () => {
+      if (contextModeActive(store2)) reviewerInput.sync();
+    }),
+    store2.on("tool_call_updated", () => {
+      if (contextModeActive(store2)) reviewerInput.sync();
+    }),
     ...liveQuestions ? [
       liveQuestions.onChange(() => {
         if (contextModeActive(store2)) render2();
@@ -172537,6 +172551,7 @@ var init_thread_context_panel = __esm({
     init_pane_popout_button();
     init_activity_panel();
     init_thread_context_model();
+    init_reviewer_input3();
     init_toast();
     init_settings_dialog();
     SECTION_TITLES = {
@@ -172545,7 +172560,8 @@ var init_thread_context_panel = __esm({
       "side-chats": "Side chats",
       links: "Links & references",
       subagents: "Subagents",
-      sources: "Sources"
+      sources: "Sources",
+      "resolved-questions": "Resolved questions"
     };
   }
 });
