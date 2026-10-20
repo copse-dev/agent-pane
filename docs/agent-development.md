@@ -307,6 +307,11 @@ pre-baked image. Use local `test:e2e` for macOS-specific behavior, where no remo
 or when a skill requires an on-machine display. For native GUI behavior or authenticated real-agent
 runs, use the isolated workflow in [`remote-agent-demo-debugging.md`](remote-agent-demo-debugging.md).
 
+Use a spare macOS GUI machine when validation needs the real product and a real agent: authenticated
+ACP inference, native macOS UI, GUI-only reproduction, or real-model demo recording. Isolate the app
+profile and project workspace, keep at least one run visible, and pair it with focused WebdriverIO
+evidence.
+
 Inside a Copse agent session, send local Electron e2e through Copse's `run_shell` host path with the
 same wrapper used by `test:e2e`:
 

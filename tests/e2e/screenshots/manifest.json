@@ -1901,10 +1901,6 @@
       "sha256": "2aa0cb2eb58d7b239dcb14028c818644264029b3eab0f55405893517134d02b9",
       "bytes": 100563
     },
-    "git-signing-helper-approval.png": {
-      "sha256": "54aecdb2c369ad882a35e5fed7f0d041bf1a2992ff2dade08e734da1322d8d4d",
-      "bytes": 85692
-    },
     "github-write-approval-create-dialog.png": {
       "sha256": "26ee3505e8e143d7ec4514e51bca96f51239b4687946cf69988e6e24ca9457a0",
       "bytes": 76351
@@ -2456,6 +2452,10 @@
     "model-picker-retention-menu.png": {
       "sha256": "664f789098d0413bb4c02667b5a7a3e6407ba29818174aae255d2d4bd84519bc",
       "bytes": 21983
+    },
+    "model-version-suppression-acp-after.png": {
+      "sha256": "864ff5a07cdd0d76f7d3bbea1dbffff9ef31016032d5c1d2a3b0d9286752b998",
+      "bytes": 11485
     },
     "model-version-suppression-picker.png": {
       "sha256": "cf209e9f079201f0d67a75f94251d93cbb77bf4bb936adc6027f98ecec27fac0",

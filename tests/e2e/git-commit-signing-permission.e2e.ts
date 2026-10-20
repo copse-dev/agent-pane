@@ -23,31 +23,32 @@ describe('native git commit signing permission', function () {
     resetUserData()
   })
 
-  it('shows the commit-scoped grant off by default with its security boundary', async () => {
+  it('shows the commit-scoped grant on by default with its security boundary', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="permissions"]').click()
     await $(TOGGLE).waitForDisplayed({ timeout: 30_000 })
 
-    expect(await $(TOGGLE).isSelected()).toBe(false)
+    expect(await $(TOGGLE).isSelected()).toBe(true)
     const copy = await $(FIELDSET).getText()
     expect(copy).toContain('system SSH signer')
     expect(copy).toContain('Git hooks')
     expect(copy).toContain('no ssh-agent access')
-    expect(copy).toContain('until Copse restarts')
+    expect(copy).toContain('without asking')
     expect(copy).toContain('separate approval for each commit')
     expect(copy).toContain('never sent to the agent')
 
     await saveElementScreenshot(FIELDSET, 'git-commit-signing-permission.png')
   })
 
-  it('takes the grant only after an explicit click', async () => {
+  it('can be turned off to require a separate approval for each commit', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="permissions"]').click()
     await $(TOGGLE).waitForDisplayed({ timeout: 30_000 })
 
-    await $(TOGGLE).click()
     expect(await $(TOGGLE).isSelected()).toBe(true)
+    await $(TOGGLE).click()
+    expect(await $(TOGGLE).isSelected()).toBe(false)
   })
 })
