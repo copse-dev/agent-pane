@@ -5,17 +5,19 @@ import type {
   LocalClassifierOverview,
   LocalClassifierStatus,
 } from '@shared/local-classifiers.ts'
-import type {
-  ClassifierClient,
-  ClassifierProfile,
-  ClassifierProfileStatus,
-  ClassifierResult,
+import {
+  HTTP_CLASSIFIER_PROTOCOLS,
+  type ClassifierClient,
+  type ClassifierProfile,
+  type ClassifierProfileStatus,
+  type ClassifierResult,
 } from '@copse/llm/classifiers/types.ts'
 import {
   CLASSIFIER_PRESETS,
   classifierCredentialId,
   classifierEndpointKey,
 } from '@copse/llm/classifiers/presets.ts'
+import { memberOf } from '@shared/member-of.ts'
 import { el, clear } from '../../dom/helpers.ts'
 import { disclosureSummary } from '../../dom/disclosure-summary.ts'
 import { setInlineStatus } from '../../dom/inline-status.ts'
@@ -59,6 +61,7 @@ const PROTOCOL_CHOICES: readonly SelectChoice[] = [
   { value: 'decisions', label: 'Decisions API' },
   { value: 'featherless', label: 'Featherless classifier' },
 ]
+const isHttpClassifierProtocol = memberOf(HTTP_CLASSIFIER_PROTOCOLS)
 const AUTH_CHOICES: readonly SelectChoice[] = [
   { value: 'none', label: 'None' },
   { value: 'bearer', label: 'Bearer token (API key)' },
@@ -825,11 +828,12 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
     save.addEventListener('click', () => {
       void run(async () => {
         captureDraft?.()
+        const protocol = read('Protocol')
         const connection: ClassifierProfile['connection'] =
           profile.connection.type === 'http'
             ? {
                 type: 'http',
-                protocol: read('Protocol') === 'featherless' ? 'featherless' : 'systemone',
+                protocol: isHttpClassifierProtocol(protocol) ? protocol : 'systemone',
                 baseUrl: read('Url'),
                 auth: read('Auth') === 'none' ? 'none' : 'bearer',
                 ...(read('KeyEnv') ? { apiKeyEnv: read('KeyEnv') } : {}),

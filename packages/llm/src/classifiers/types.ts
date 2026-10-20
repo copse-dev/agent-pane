@@ -8,9 +8,13 @@ export type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue }
 
+/** The HTTP wire protocols a classifier connection can speak; each selects its own request path. */
+export const HTTP_CLASSIFIER_PROTOCOLS = ['systemone', 'featherless', 'decisions'] as const
+export type HttpClassifierProtocol = (typeof HTTP_CLASSIFIER_PROTOCOLS)[number]
+
 export interface HttpClassifierConnection {
   type: 'http'
-  protocol: 'systemone' | 'featherless' | 'decisions'
+  protocol: HttpClassifierProtocol
   baseUrl: string
   auth: 'none' | 'bearer'
   apiKeyEnv?: string
