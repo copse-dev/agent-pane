@@ -49256,10 +49256,6 @@ var init_model_coverage = __esm({
 function modelDisplayLabel(model) {
   return displayModelLabel2(model);
 }
-function agentModelIntellectHint(...forms) {
-  const id = resolveAgentModelIdentity(...forms);
-  return id === null ? null : modelIntellectHint(id);
-}
 async function pluginModelOptions(api2, includeAgentModels, current) {
   if (!includeAgentModels) return [];
   try {
@@ -49294,13 +49290,17 @@ function acpAgentOptions(agents) {
       for (const model of models) {
         const label = acpModelChoiceLabel(model, ": ");
         const versioned = acpModelVersionName(model.description);
-        const hint = agentModelIntellectHint(model.value, versioned, model.label, label);
+        const lineageId = resolveAgentModelIdentity(model.value, versioned, model.label, label);
+        const hint = lineageId === null ? null : modelIntellectHint(lineageId);
         options.push({
           retention: ACP_RETENTION_NOTICE,
           value: acpModelValue(agent2.id, model.value),
           label: hint ? `${label}: ${hint}` : label,
           shortLabel: label,
-          group
+          group,
+          // Scoped to this agent: a different agent's newer release never hides
+          // a model only this agent can actually run.
+          ...lineageId ? { lineageId, lineageScope: `acp:${agent2.id}` } : {}
         });
       }
     } else {
@@ -49422,7 +49422,9 @@ async function remoteAgentOptions(api2, isAvailable, current, preferAcpForClaude
         label,
         group: OPENAI_AGENT_GROUP,
         retention: OPENAI_AGENT_RETENTION_NOTICE,
-        supportsImages: true
+        supportsImages: true,
+        lineageId: id,
+        lineageScope: "remote-agent:openai"
       });
     }
     const selected = parseRemoteAgentModelSelection(current);
@@ -49444,19 +49446,28 @@ async function remoteAgentOptions(api2, isAvailable, current, preferAcpForClaude
     } catch {
     }
     const seen = /* @__PURE__ */ new Set();
-    const add2 = (value, label) => {
+    const add2 = (value, label, lineageId) => {
       if (seen.has(value)) return;
       seen.add(value);
-      options.push({ value, label, group });
+      options.push({
+        value,
+        label,
+        group,
+        // Scoped to Cursor: an unrelated agent/provider's newer release never
+        // hides a model only Cursor's catalog actually offers.
+        ...lineageId ? { lineageId, lineageScope: `remote-agent:${REMOTE_AGENT_PROVIDER_CURSOR}` } : {}
+      });
     };
     add2(remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR), "Default");
     for (const model of liveModels) {
       const vendorLabel = model.label || model.id;
       const label = canonicalModelLabel(vendorLabel);
-      const hint = agentModelIntellectHint(model.id, vendorLabel, label);
+      const lineageId = resolveAgentModelIdentity(model.id, vendorLabel, label);
+      const hint = lineageId === null ? null : modelIntellectHint(lineageId);
       add2(
         remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR, model.id),
-        hint ? `${label}: ${hint}` : label
+        hint ? `${label}: ${hint}` : label,
+        lineageId ?? void 0
       );
     }
     const currentSelection = parseRemoteAgentModelSelection(current);
@@ -49468,17 +49479,26 @@ async function remoteAgentOptions(api2, isAvailable, current, preferAcpForClaude
     const baseGroup = remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_ANTHROPIC);
     const group = preferAcpForClaude ? `${baseGroup} (billed to your API key)` : baseGroup;
     const seen = /* @__PURE__ */ new Set();
-    const add2 = (value, label) => {
+    const add2 = (value, label, lineageId) => {
       if (seen.has(value)) return;
       seen.add(value);
-      options.push({ value, label, group });
+      options.push({
+        value,
+        label,
+        group,
+        // Scoped to the managed Anthropic agent, separately from the direct-key
+        // "Cloud models" group: the two are different billing routes, each with
+        // its own availability.
+        ...lineageId ? { lineageId, lineageScope: `remote-agent:${REMOTE_AGENT_PROVIDER_ANTHROPIC}` } : {}
+      });
     };
     for (const id of MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT) {
       const label = cloudModelDisplayLabel(id);
       const hint = modelIntellectHint(id);
       add2(
         remoteAgentModelValue(REMOTE_AGENT_PROVIDER_ANTHROPIC, id),
-        hint ? `${label}: ${hint}` : label
+        hint ? `${label}: ${hint}` : label,
+        id
       );
     }
     const currentSelection = parseRemoteAgentModelSelection(current);
@@ -49664,9 +49684,18 @@ async function fetchModelOptions(api2, current, opts = {}) {
     if (option.value !== current) return [];
     return [{ ...option, label: `${option.label} (blocked in Settings)`, disabled: true }];
   });
-  const offered = unblockedOptions.map((option) => option.value);
+  const lineageIdsByScope = /* @__PURE__ */ new Map();
+  for (const option of unblockedOptions) {
+    const scope = option.lineageScope ?? "";
+    const id = option.lineageId ?? option.value;
+    const bucket = lineageIdsByScope.get(scope);
+    if (bucket) bucket.push(id);
+    else lineageIdsByScope.set(scope, [id]);
+  }
   const visibleOptions = unblockedOptions.flatMap((option) => {
-    const successor = supersedingModel(option.value, offered);
+    const id = option.lineageId ?? option.value;
+    const offered = lineageIdsByScope.get(option.lineageScope ?? "") ?? [];
+    const successor = supersedingModel(id, offered);
     if (successor === null) return [option];
     if (option.value !== current) return [];
     return [
