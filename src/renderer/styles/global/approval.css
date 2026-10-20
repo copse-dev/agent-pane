@@ -13,7 +13,6 @@
   width: min(calc(100% - 2 * var(--spacing-xl)), 560px);
   min-width: 0;
   max-height: calc(100% - 2 * var(--spacing-xl));
-  box-sizing: border-box;
   margin: 0;
   transform: translate(-50%, -50%);
   box-shadow: var(--shadow-lg);
@@ -151,6 +150,12 @@
 /* Button look lives on `.ui-btn*`; this host keeps layout + the once-button rail. */
 .approval-buttons {
   margin-top: var(--spacing-sm);
+}
+/* Flex items do not collapse margins. Every row above the buttons (request list,
+ * remember and lease labels) already ends in a bottom margin at least this
+ * large, so drop it in the open flex layout to keep the block-layout gap. */
+#approval-dialog[open] > .approval-buttons {
+  margin-top: 0;
 }
 .approval-approve:disabled,
 .approval-approve-once:disabled {

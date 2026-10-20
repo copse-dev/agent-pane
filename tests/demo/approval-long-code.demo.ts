@@ -41,6 +41,7 @@ describe('long code approval in a short window', () => {
         bodyScrollHeight: body.scrollHeight,
         actionsTop: actionsRect.top,
         actionsBottom: actionsRect.bottom,
+        itemsMarginBottom: Number.parseFloat(getComputedStyle(items).marginBottom),
       }
     })
     assert.ok(layout, 'approval layout exists')
@@ -51,6 +52,12 @@ describe('long code approval in a short window', () => {
     assert.ok(layout.itemsScrollHeight > layout.itemsClientHeight, 'request details scroll')
     assert.ok(layout.itemsTop >= layout.dialogTop, 'request list starts inside the dialog')
     assert.ok(layout.itemsBottom <= layout.actionsTop, 'request list clears the actions')
+    // Flex layout must keep the block-layout gap: the list margin alone, not
+    // the list margin plus the action row margin.
+    assert.ok(
+      Math.abs(layout.actionsTop - layout.itemsBottom - layout.itemsMarginBottom) <= 1,
+      `actions sit one list margin below the requests (gap ${String(layout.actionsTop - layout.itemsBottom)})`,
+    )
     assert.ok(
       layout.actionsBottom <= layout.dialogBottom,
       'decision controls stay inside the dialog',
