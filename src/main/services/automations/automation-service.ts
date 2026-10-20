@@ -18,7 +18,12 @@ import { automationRunBlock } from '@shared/automation-run-state.ts'
 import { classifyAutomationFailureMessage } from '@shared/automation-failure.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
-import { createThread, loadProjectThreads, updateMetaOrThrow } from '../thread-store.ts'
+import {
+  createThread,
+  deleteProjectThread,
+  loadProjectThreads,
+  updateMetaOrThrow,
+} from '../thread-store.ts'
 import {
   releaseCompletedAutomationWorktree,
   type AutomationWorktreeRelease,
@@ -296,6 +301,14 @@ export interface AutomationTaskSupervisor {
 export interface AutomationServiceDependencies {
   now(): number
   createProjectThread(projectId: string, thread: Thread): Promise<void>
+  /** Thread-store metadata patch; defaults to the native store. */
+  updateProjectThreadMeta?: (
+    projectId: string,
+    threadId: string,
+    patch: Pick<Thread, 'status' | 'automation'>,
+  ) => Promise<void>
+  /** Thread-store removal; defaults to the native store. */
+  deleteProjectThread?: (projectId: string, threadId: string) => Promise<void>
   loadProjectThreads(projectId: string): Promise<Thread[]>
   releasePreviousRun(projectId: string, threadId: string): Promise<AutomationWorktreeRelease>
   /**
@@ -322,6 +335,36 @@ export function createAutomationService(
   const inFlight = new Set<string>()
   const triggerAttempts = new Map<string, AbortController>()
   const attemptedMinutes = new Map<string, number>()
+  const updateThreadMeta = dependencies.updateProjectThreadMeta ?? updateMetaOrThrow
+  const removeThread = dependencies.deleteProjectThread ?? deleteProjectThread
+
+  /**
+   * A filesystem call cannot always be cancelled, so a thread can appear after
+   * its trigger timed out. Keep it visible as a failed, unsent draft: it must
+   * never auto-start or hold every later occurrence behind a pending draft. If
+   * that marker cannot be written, the thread would still look like a pending
+   * run the renderer starts on project open, so remove it instead.
+   */
+  async function abandonLateRun(
+    projectId: string,
+    threadId: string,
+    provenance: NonNullable<Thread['automation']>,
+  ): Promise<void> {
+    try {
+      await updateThreadMeta(projectId, threadId, {
+        status: 'error',
+        automation: { ...provenance, startFailedAt: dependencies.now() },
+      })
+      return
+    } catch (error) {
+      console.warn(`[automations] Could not mark late run ${threadId} as failed:`, error)
+    }
+    try {
+      await removeThread(projectId, threadId)
+    } catch (error) {
+      console.error(`[automations] Could not remove unmarked late run ${threadId}:`, error)
+    }
+  }
 
   function setHealth(state: AutomationSchedulerHealth['state'], message: string | null): void {
     if (schedulerHealth.state === state && schedulerHealth.message === message) return
@@ -689,13 +732,7 @@ export function createAutomationService(
       }
       await dependencies.createProjectThread(schedule.projectId, thread)
       if (signal.aborted) {
-        // A filesystem call cannot always be cancelled. Keep a late-created
-        // thread visible as a failed, unsent draft; it must never auto-start or
-        // hold every future schedule occurrence behind a pending draft.
-        await updateMetaOrThrow(schedule.projectId, threadId, {
-          status: 'error',
-          automation: { ...provenance, startFailedAt: dependencies.now() },
-        }).catch(() => {})
+        await abandonLateRun(schedule.projectId, threadId, provenance)
         signal.throwIfAborted()
       }
       // The user may edit or delete the schedule while the filesystem work

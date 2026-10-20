@@ -1569,6 +1569,63 @@ describe('AutomationService', () => {
     service.stop()
   })
 
+  it('removes a late-created run whose failed-start marker cannot be written', async (context) => {
+    context.mock.method(console, 'error', () => {})
+    const warnings = context.mock.method(console, 'warn', () => {})
+    context.mock.timers.enable({ apis: ['setTimeout'] })
+    const now = new Date(2026, 6, 27, 9, 0, 5).getTime()
+    let resolveCreate: () => void = () => {}
+    const threads = new Map<string, Thread>()
+    const deleted: string[] = []
+    const events: AutomationTriggerEvent[] = []
+    const service = createAutomationService({
+      now: () => now,
+      isPluginEnabled: () => true,
+      createProjectThread: async (_projectId, thread) => {
+        await new Promise<void>((resolve) => {
+          resolveCreate = resolve
+        })
+        threads.set(thread.id, thread)
+      },
+      updateProjectThreadMeta: () => Promise.reject(new Error('disk full')),
+      deleteProjectThread: (_projectId, threadId) => {
+        deleted.push(threadId)
+        threads.delete(threadId)
+        return Promise.resolve()
+      },
+      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
+      supervisor: () => new FakeTaskSupervisor(),
+    })
+    service.start((event) => events.push(event))
+    await service.upsert('project-a', {
+      name: 'late',
+      cron: '* * * * *',
+      prompt: 'p',
+      model: 'm',
+      enabled: true,
+    })
+    const tick = service.tick()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    context.mock.timers.tick(SCHEDULER_TRIGGER_TIMEOUT_MS)
+    await tick
+
+    // The filesystem work finishes after the deadline, then the marker write fails.
+    resolveCreate()
+    const deadline = Date.now() + 5_000
+    while (deleted.length === 0) {
+      if (Date.now() > deadline) throw new Error('Unmarked late run was not removed')
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    }
+
+    assert.equal(deleted.length, 1)
+    assert.equal(threads.size, 0, 'no idle draft is left for the renderer to auto-start')
+    assert.equal(warnings.mock.callCount(), 1)
+    assert.equal(events.length, 0)
+    assert.equal(service.list('project-a')[0]?.lastCreatedThreadId, undefined)
+    service.stop()
+  })
+
   describe('trigger problems the user can see', () => {
     function harness(): {
       threads: Map<string, Thread>

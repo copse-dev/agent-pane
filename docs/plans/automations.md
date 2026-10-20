@@ -97,6 +97,8 @@ supervisor tick budget. A deadline releases only that attempt's schedule lock, s
 later minute or manual run may retry. Filesystem work that cannot be cancelled may
 finish late, but the expired attempt cannot publish run metadata or notify the renderer;
 a late-created thread remains an unsent failed-start draft rather than starting a turn.
+If that failed-start marker cannot be written, the late thread is removed so it can never
+look like a pending run the renderer would start.
 Its completion cannot release a newer attempt's lock.
 
 The minute clock is now a durable recurring task owned by #1081's shared supervisor;
