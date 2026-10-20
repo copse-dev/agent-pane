@@ -53790,10 +53790,10 @@ function createAcpAgentsSection(api2, opts = {}) {
         detectedModels = selectorChoicesAfterProbe(detectedModels, probe.models);
         detectedModes = selectorChoicesAfterProbe(detectedModes, probe.modes);
         if (probe.models) {
-          void modelPicker.refresh(modelSelect.value || probe.models.currentValue);
+          void modelPicker.refresh(modelSelect.value);
         }
         if (probe.modes) {
-          setModeOptions(probe.modes.choices, modeSelect.value || probe.modes.currentValue);
+          setModeOptions(probe.modes.choices, modeSelect.value);
         }
         detectedModelsAt = Date.now();
         const saved = agents.find((candidate) => candidate.id === id);
@@ -53810,8 +53810,8 @@ function createAcpAgentsSection(api2, opts = {}) {
           void api2.settings.set("registeredAcpAgents", agents);
         }
         const bits = [
-          probe.models ? `${String(probe.models.choices.length)} models (default: ${probe.models.currentValue})` : "no selectable models",
-          probe.modes ? `${String(probe.modes.choices.length)} permission modes` : ""
+          probe.models ? `${String(probe.models.choices.length)} models (agent default: ${probe.models.currentValue})` : "no selectable models",
+          probe.modes ? `${String(probe.modes.choices.length)} permission modes (agent default: ${probe.modes.currentValue})` : ""
         ].filter(Boolean);
         setInlineStatus(modelStatus, "ok", `Detected ${bits.join(", ")}.`);
       }).catch((err2) => {
