@@ -4385,6 +4385,10 @@
       "sha256": "5c51137b020d7ee9765f243d216a28f74a85ee1e967bbfbbb9d3c2532c41bbae",
       "bytes": 48358
     },
+    "side-chat-restored-after-restart.png": {
+      "sha256": "5585dc7baca3db1c63dd298c4c481f31efcae451b8165e914fd720117334818a",
+      "bytes": 147557
+    },
     "side-chat-unread-rollup-sidebar.png": {
       "sha256": "553b60e50166cbf9da89690597ea3614f2a04b27f0162bb24d1e850a135d29a1",
       "bytes": 12058
