@@ -36224,6 +36224,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "deepseek-v4-1-flash-1017": [
+        {
+          value: 45.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-1-flash-1017', fetched 2026-10-20",
+          asOf: "2026-10-20"
+        }
+      ],
       "deepseek-v4-1-flash-non-reasoning": [
         {
           value: 24.7,
@@ -40762,10 +40770,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 10,
+          value: 9.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-4-maverick', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'llama-4-maverick', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "llama-4-scout": [
@@ -40776,10 +40784,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.1,
+          value: 6.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-4-scout', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'llama-4-scout', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "llama-65b": [
@@ -40916,10 +40924,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 13.8,
+          value: 10.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mercury-2', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'mercury-2', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "mercury-2-5": [
@@ -40980,10 +40988,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 25.2,
+          value: 21.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-0424', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-0424', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "mimo-v2-5-pro": [
@@ -41234,6 +41242,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         }
       ],
+      "minimax-m3-1-flash": [
+        {
+          value: 42.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'minimax-m3-1-flash', fetched 2026-10-20",
+          asOf: "2026-10-20"
+        }
+      ],
       "ministral-3-14b": [
         {
           value: 11.2,
@@ -41474,10 +41490,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.2,
+          value: 7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3-2', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3-2', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "mistral-small-4": [
@@ -41518,8 +41534,8 @@ var init_model_intellect_generated = __esm({
         {
           value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-13",
-          asOf: "2026-10-13"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "mixtral-8x7b-instruct": [
@@ -41712,6 +41728,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         }
       ],
+      "muse-spark-open": [
+        {
+          value: 38.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'muse-spark-open', fetched 2026-10-20",
+          asOf: "2026-10-20"
+        }
+      ],
       "muse-wonder": [
         {
           value: 52.4,
@@ -41742,6 +41766,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "nemotron-3-5-bolt-74b-a9b": [
+        {
+          value: 21.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nemotron-3-5-bolt-74b-a9b', fetched 2026-10-20",
+          asOf: "2026-10-20"
+        }
+      ],
       "nemotron-3-5-lightning": [
         {
           value: 23.6,
@@ -41754,6 +41786,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'nemotron-3-5-lightning', fetched 2026-09-22",
           asOf: "2026-09-22"
+        }
+      ],
+      "nemotron-3-5-super-vl": [
+        {
+          value: 26.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nemotron-3-5-super-vl', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "nemotron-3-nano-omni-30b-a3b": [
@@ -42682,10 +42722,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.2,
+          value: 6.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-14b-instruct-reasoning', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-14b-instruct-reasoning', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "qwen3-235b-a22b-instruct": [
@@ -42822,10 +42862,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.6,
+          value: 7.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-32b-instruct-reasoning', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-32b-instruct-reasoning', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "qwen3-4b-2507-instruct": [
@@ -43362,10 +43402,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7.3,
+          value: 5.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-8b-instruct-reasoning', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8b-instruct-reasoning', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "qwen3-coder-30b-a3b-instruct": [
@@ -43690,6 +43730,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "reflection-beam": [
+        {
+          value: 30.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'reflection-beam', fetched 2026-10-20",
+          asOf: "2026-10-20"
+        }
+      ],
       "reka-flash": [
         {
           value: 6,
@@ -43944,10 +43992,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 28.2,
+          value: 26.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'solar-pro4', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'solar-pro4', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       sonar: [
@@ -49256,10 +49304,6 @@ var init_model_coverage = __esm({
 function modelDisplayLabel(model) {
   return displayModelLabel2(model);
 }
-function agentModelIntellectHint(...forms) {
-  const id = resolveAgentModelIdentity(...forms);
-  return id === null ? null : modelIntellectHint(id);
-}
 async function pluginModelOptions(api2, includeAgentModels, current) {
   if (!includeAgentModels) return [];
   try {
@@ -49294,13 +49338,17 @@ function acpAgentOptions(agents) {
       for (const model of models) {
         const label = acpModelChoiceLabel(model, ": ");
         const versioned = acpModelVersionName(model.description);
-        const hint = agentModelIntellectHint(model.value, versioned, model.label, label);
+        const lineageId = resolveAgentModelIdentity(model.value, versioned, model.label, label);
+        const hint = lineageId === null ? null : modelIntellectHint(lineageId);
         options.push({
           retention: ACP_RETENTION_NOTICE,
           value: acpModelValue(agent2.id, model.value),
           label: hint ? `${label}: ${hint}` : label,
           shortLabel: label,
-          group
+          group,
+          // Scoped to this agent: a different agent's newer release never hides
+          // a model only this agent can actually run.
+          ...lineageId ? { lineageId, lineageScope: `acp:${agent2.id}` } : {}
         });
       }
     } else {
@@ -49422,7 +49470,9 @@ async function remoteAgentOptions(api2, isAvailable, current, preferAcpForClaude
         label,
         group: OPENAI_AGENT_GROUP,
         retention: OPENAI_AGENT_RETENTION_NOTICE,
-        supportsImages: true
+        supportsImages: true,
+        lineageId: id,
+        lineageScope: "remote-agent:openai"
       });
     }
     const selected = parseRemoteAgentModelSelection(current);
@@ -49444,19 +49494,28 @@ async function remoteAgentOptions(api2, isAvailable, current, preferAcpForClaude
     } catch {
     }
     const seen = /* @__PURE__ */ new Set();
-    const add2 = (value, label) => {
+    const add2 = (value, label, lineageId) => {
       if (seen.has(value)) return;
       seen.add(value);
-      options.push({ value, label, group });
+      options.push({
+        value,
+        label,
+        group,
+        // Scoped to Cursor: an unrelated agent/provider's newer release never
+        // hides a model only Cursor's catalog actually offers.
+        ...lineageId ? { lineageId, lineageScope: `remote-agent:${REMOTE_AGENT_PROVIDER_CURSOR}` } : {}
+      });
     };
     add2(remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR), "Default");
     for (const model of liveModels) {
       const vendorLabel = model.label || model.id;
       const label = canonicalModelLabel(vendorLabel);
-      const hint = agentModelIntellectHint(model.id, vendorLabel, label);
+      const lineageId = resolveAgentModelIdentity(model.id, vendorLabel, label);
+      const hint = lineageId === null ? null : modelIntellectHint(lineageId);
       add2(
         remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR, model.id),
-        hint ? `${label}: ${hint}` : label
+        hint ? `${label}: ${hint}` : label,
+        lineageId ?? void 0
       );
     }
     const currentSelection = parseRemoteAgentModelSelection(current);
@@ -49468,17 +49527,26 @@ async function remoteAgentOptions(api2, isAvailable, current, preferAcpForClaude
     const baseGroup = remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_ANTHROPIC);
     const group = preferAcpForClaude ? `${baseGroup} (billed to your API key)` : baseGroup;
     const seen = /* @__PURE__ */ new Set();
-    const add2 = (value, label) => {
+    const add2 = (value, label, lineageId) => {
       if (seen.has(value)) return;
       seen.add(value);
-      options.push({ value, label, group });
+      options.push({
+        value,
+        label,
+        group,
+        // Scoped to the managed Anthropic agent, separately from the direct-key
+        // "Cloud models" group: the two are different billing routes, each with
+        // its own availability.
+        ...lineageId ? { lineageId, lineageScope: `remote-agent:${REMOTE_AGENT_PROVIDER_ANTHROPIC}` } : {}
+      });
     };
     for (const id of MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT) {
       const label = cloudModelDisplayLabel(id);
       const hint = modelIntellectHint(id);
       add2(
         remoteAgentModelValue(REMOTE_AGENT_PROVIDER_ANTHROPIC, id),
-        hint ? `${label}: ${hint}` : label
+        hint ? `${label}: ${hint}` : label,
+        id
       );
     }
     const currentSelection = parseRemoteAgentModelSelection(current);
@@ -49664,9 +49732,18 @@ async function fetchModelOptions(api2, current, opts = {}) {
     if (option.value !== current) return [];
     return [{ ...option, label: `${option.label} (blocked in Settings)`, disabled: true }];
   });
-  const offered = unblockedOptions.map((option) => option.value);
+  const lineageIdsByScope = /* @__PURE__ */ new Map();
+  for (const option of unblockedOptions) {
+    const scope = option.lineageScope ?? "";
+    const id = option.lineageId ?? option.value;
+    const bucket = lineageIdsByScope.get(scope);
+    if (bucket) bucket.push(id);
+    else lineageIdsByScope.set(scope, [id]);
+  }
   const visibleOptions = unblockedOptions.flatMap((option) => {
-    const successor = supersedingModel(option.value, offered);
+    const id = option.lineageId ?? option.value;
+    const offered = lineageIdsByScope.get(option.lineageScope ?? "") ?? [];
+    const successor = supersedingModel(id, offered);
     if (successor === null) return [option];
     if (option.value !== current) return [];
     return [
@@ -62796,17 +62873,22 @@ function hydrationFailed(threadId) {
 function ensureThreadMessages(projectId, threadId) {
   return activeHydrator?.ensure(projectId, threadId) ?? Promise.resolve();
 }
+function showSideChatTranscript(threadId) {
+  activeHydrator?.showSideChat(threadId);
+}
 function needsHydration(thread) {
   return thread.messagesLoaded === false;
 }
-function isPinned(thread, activeThreadId) {
+function isPinned(thread, activeThreadId, visibleSideChatId) {
   if (thread.id === activeThreadId) return true;
+  if (thread.id === visibleSideChatId) return true;
   if (thread.status === "running") return true;
   return (thread.pendingMessages?.length ?? 0) > 0;
 }
 function attachThreadHydration(store2, api2) {
   const inFlight4 = /* @__PURE__ */ new Map();
   let recency = [];
+  let visibleSideChatId = null;
   const touch = (threadId) => {
     recency = [...recency.filter((id) => id !== threadId), threadId];
   };
@@ -62815,7 +62897,7 @@ function attachThreadHydration(store2, api2) {
     const byId = new Map(threads.map((t2) => [t2.id, t2]));
     const evictable = recency.filter((id) => {
       const thread = byId.get(id);
-      return thread !== void 0 && !isPinned(thread, activeThreadId);
+      return thread !== void 0 && !isPinned(thread, activeThreadId, visibleSideChatId);
     });
     const overBudget = evictable.length - HYDRATED_THREAD_BUDGET;
     if (overBudget <= 0) return;
@@ -62869,6 +62951,12 @@ function attachThreadHydration(store2, api2) {
     return request;
   };
   activeHydrator = {
+    showSideChat: (threadId) => {
+      if (visibleSideChatId === threadId) return;
+      visibleSideChatId = threadId;
+      if (threadId !== null) touch(threadId);
+      evict();
+    },
     ensure: (projectId, threadId) => {
       const state = store2.getState();
       const thread = state.threads.find((t2) => t2.id === threadId);
@@ -78357,13 +78445,14 @@ var init_permissions_markup = __esm({
               <legend>Commit signing</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="gitCommitSshAgentSocketAccess" />
-                Enable scoped SSH signing approvals (macOS)
+                Allow signed commits (macOS)
               </label>
               <p class="field-hint">
-                Off by default. Copse asks before its system SSH signer uses your configured key
-                through ssh-agent. You can remember the signer, key and socket for this project
-                until Copse restarts. Changed configuration requires approval again. Git hooks
-                keep their project sandbox; they receive no ssh-agent access. Turning this off
+                On by default. Copse's system SSH signer uses your configured key through
+                ssh-agent to sign commits without asking each time. A changed key, signer or
+                socket is re-verified before it's used again. Git hooks keep their project
+                sandbox; they receive no ssh-agent access. Set the git_commit tool to Always ask
+                in Tool Permissions to confirm every signing helper use. Turning this off
                 prevents further ssh-agent signing. With this off, a configured private key file
                 can be read and used only after a separate approval for each commit. Key contents
                 are never sent to the agent. Custom signing programs run with ordinary project
@@ -78389,7 +78478,7 @@ var init_permissions_markup = __esm({
           </section>
 `;
     permissionsFields = [
-      { name: "gitCommitSshAgentSocketAccess", kind: "checkbox", default: false, save: true },
+      { name: "gitCommitSshAgentSocketAccess", kind: "checkbox", default: true, save: true },
       { name: "browserToolsEnabled", kind: "checkbox", default: true, save: true },
       { name: "readTerminalEnabled", kind: "checkbox", default: true, save: true },
       {
@@ -87188,6 +87277,24 @@ var init_demo_scenarios = __esm({
         threads: SIDE_CHATS_THREADS
       },
       {
+        id: "side-chats-restored",
+        label: "Side chats after an app restart",
+        project: project("demo-side-chats-restored", "Widgets", "/demo/widgets"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          layout: {
+            projectsPaneWidth: 240,
+            filesPaneWidth: 680,
+            filesPaneHeight: 360,
+            fileTreeWidth: 180
+          }
+        },
+        deferSideChatTranscripts: true,
+        threads: SIDE_CHATS_THREADS
+      },
+      {
         id: "thread-context",
         changeStats: { additions: 42, deletions: 7 },
         label: "The thread Context panel",
@@ -88165,7 +88272,9 @@ function createDemoApi(scenario2, options = {}) {
         return resolved2({ status: "archived", archivedAt, worktree: thread?.worktree });
       },
       loadProject: (projectId) => resolved2(
-        projectId === scenario2.project.id ? structuredClone(threads) : structuredClone(
+        projectId === scenario2.project.id ? structuredClone(threads).map(
+          (thread) => scenario2.deferSideChatTranscripts === true && thread.sideChat !== void 0 ? { ...thread, messages: [], messagesLoaded: false } : thread
+        ) : structuredClone(
           scenario2.otherProjects?.find((other) => other.project.id === projectId)?.threads ?? []
         )
       ),
@@ -173335,7 +173444,19 @@ function renderSideChat(input2) {
     if (!archiveBlocked) input2.onArchive(archived);
   });
   const body = el("div", { class: "side-chat-body" });
-  if (side.messages.length === 0) {
+  if (needsHydration(side)) {
+    body.append(
+      el(
+        "div",
+        { class: "side-chat-empty", "data-side-chat-loading": "" },
+        el(
+          "p",
+          { role: "status" },
+          input2.loadFailed === true ? "Couldn\u2019t load this side chat." : "Loading conversation\u2026"
+        )
+      )
+    );
+  } else if (side.messages.length === 0) {
     body.append(
       el(
         "div",
@@ -173425,14 +173546,27 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
   }
   function ask(text2) {
     if (selectedId === null) return;
+    const side = store2.getState().threads.find((thread) => thread.id === selectedId);
+    if (!side || needsHydration(side)) return;
     sendSideChatMessage(store2, api2, selectedId, text2);
+  }
+  function hydrate(threadId) {
+    const { activeProjectId, threads } = store2.getState();
+    const thread = threads.find((t2) => t2.id === threadId);
+    if (activeProjectId && thread && needsHydration(thread)) {
+      void ensureThreadMessages(activeProjectId, threadId);
+    }
   }
   function render2() {
     frame = 0;
-    if (!paneVisible()) return;
+    if (!paneVisible()) {
+      showSideChatTranscript(null);
+      return;
+    }
     const { threads, activeThreadId } = store2.getState();
     const selection2 = resolveSideChatSelection(threads, activeThreadId, remembered);
     selectedId = selection2.selectedId;
+    showSideChatTranscript(selectedId);
     if (selection2.mainId !== null && selectedId !== null)
       remembered.set(selection2.mainId, selectedId);
     clear(list);
@@ -173458,6 +173592,8 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
       );
       item.addEventListener("click", () => {
         if (selection2.mainId !== null) remembered.set(selection2.mainId, row2.id);
+        showSideChatTranscript(row2.id);
+        hydrate(row2.id);
         render2();
       });
       list.append(item);
@@ -173479,9 +173615,12 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
       return;
     }
     const parent = threads.find((thread) => thread.id === side.sideChat?.parentThreadId);
+    const loadFailed = needsHydration(side) && hydrationFailed(side.id);
+    if (needsHydration(side) && !loadFailed) hydrate(side.id);
     const view = renderSideChat({
       side,
       parent,
+      loadFailed,
       onSuggestion: ask,
       onArchive: (archived) => {
         if (archived) restoreThread(store2, side.id);
@@ -173491,14 +173630,19 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
     headerHost.append(view.header);
     bodyHost.append(...Array.from(view.body.childNodes));
     if (atBottom) bodyHost.scrollTop = bodyHost.scrollHeight;
-    input2.disabled = side.archivedAt != null;
-    send.disabled = side.archivedAt != null || side.status === "running";
+    const unloaded = needsHydration(side);
+    input2.disabled = side.archivedAt != null || unloaded;
+    send.disabled = side.archivedAt != null || side.status === "running" || unloaded;
     promote.disabled = side.status === "running";
     promote.title = promote.disabled ? "Wait for the side chat to finish before promoting" : "";
     if (side.unreadAt !== void 0) markThreadRead(store2, side.id);
   }
   function schedule() {
-    if (!paneVisible() || frame !== 0) return;
+    if (!paneVisible()) {
+      showSideChatTranscript(null);
+      return;
+    }
+    if (frame !== 0) return;
     frame = requestAnimationFrame(render2);
   }
   form.addEventListener("submit", (event) => {
@@ -173538,6 +173682,7 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
   ];
   schedule();
   return () => {
+    showSideChatTranscript(null);
     for (const off of offs) off();
     if (frame !== 0) cancelAnimationFrame(frame);
   };
@@ -173552,6 +173697,7 @@ var init_side_chat_panel = __esm({
     init_side_chat2();
     init_panels();
     init_side_chat3();
+    init_thread_hydration();
     init_pane_maximize_button();
     init_pane_popout_button();
     init_toast();
