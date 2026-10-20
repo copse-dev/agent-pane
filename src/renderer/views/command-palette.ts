@@ -3,7 +3,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
 import { el, clear } from '../dom/helpers.ts'
 import { searchIcon } from '../dom/icons.ts'
-import { openNewThread } from '@shared/store/thread-helpers.ts'
+import { openNewProjectThread } from '../controller/projects.ts'
 import { projectDisplayName, switchProject, switchProjectThread } from '../controller/projects.ts'
 import { createNewProject } from '../controller/projects.ts'
 import { openRightPanelWithWorkspace } from '../controller/panels.ts'
@@ -166,7 +166,13 @@ export function mountCommandPalette(store: AppStore, api: ApiClient): void {
       },
     })
     if (hasWorkspace) {
-      commands.push({ kind: 'command', label: 'New thread', run: () => openNewThread(store) })
+      commands.push({
+        kind: 'command',
+        label: 'New thread',
+        run: () => {
+          openNewProjectThread(store, api)
+        },
+      })
       commands.push({
         kind: 'command',
         label: 'Quick open files',

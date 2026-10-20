@@ -109,7 +109,7 @@ export function mountFooterBranchStatus(
   const chevron = el(
     'span',
     { class: 'branch-picker-chevron', 'aria-hidden': 'true' },
-    chevronDownIcon('ui-icon ui-icon-sm'),
+    chevronDownIcon('ui-icon ui-icon-sm ui-picker-chevron'),
   )
   trigger.append(label, chevron)
   const reattachButton = el(

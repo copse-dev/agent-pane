@@ -1027,7 +1027,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       loadProject: (projectId: string) =>
         resolved(
           projectId === scenario.project.id
-            ? structuredClone(threads)
+            ? structuredClone(threads).map((thread) =>
+                scenario.deferSideChatTranscripts === true && thread.sideChat !== undefined
+                  ? { ...thread, messages: [], messagesLoaded: false }
+                  : thread,
+              )
             : structuredClone(
                 scenario.otherProjects?.find((other) => other.project.id === projectId)?.threads ??
                   [],

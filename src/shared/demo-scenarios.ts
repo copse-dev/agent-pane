@@ -102,6 +102,12 @@ export interface DemoScenario {
    */
   failThreadHydration?: boolean
   /**
+   * Hand side chats back from `threads:load-project` as metadata only, the way an
+   * app restart does, so their transcripts must be read from "disk" (the scenario's
+   * threads) before the Side chat panel can show them.
+   */
+  deferSideChatTranscripts?: boolean
+  /**
    * Answer `vnc:discover` with these ports instead of scanning a host the browser
    * demo does not have. The discovered-port list only renders when a machine
    * exposes more than one port, and the first is selected on arrival — which is
@@ -2425,7 +2431,27 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     label: 'Empty unopened project in the sidebar',
     project: project('demo-empty-active'),
     settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off' },
-    threads: [],
+    // Keep a populated conversation open: filtering a blank composer intentionally
+    // opens a new thread in the selected project, which would no longer be empty.
+    threads: [
+      {
+        id: 'demo-empty-active-chat',
+        title: 'Open project conversation',
+        status: 'idle',
+        messages: [
+          {
+            id: 'demo-empty-active-message',
+            role: 'user',
+            content: 'Keep this conversation open while browsing other projects.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
     otherProjects: [
       { project: project('demo-empty-other', 'empty-project', '/demo/empty'), threads: [] },
     ],
@@ -3302,6 +3328,24 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         fileTreeWidth: 180,
       },
     },
+    threads: SIDE_CHATS_THREADS,
+  },
+  {
+    id: 'side-chats-restored',
+    label: 'Side chats after an app restart',
+    project: project('demo-side-chats-restored', 'Widgets', '/demo/widgets'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      layout: {
+        projectsPaneWidth: 240,
+        filesPaneWidth: 680,
+        filesPaneHeight: 360,
+        fileTreeWidth: 180,
+      },
+    },
+    deferSideChatTranscripts: true,
     threads: SIDE_CHATS_THREADS,
   },
   {
