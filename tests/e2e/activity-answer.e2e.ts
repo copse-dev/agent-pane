@@ -115,6 +115,7 @@ describe('answering a background question from Activity', function () {
     await detail.$('.activity-answer').click()
     await expect($('#activity-panel .activity-row[data-state="needs-answer"]')).not.toExist()
     await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', FOREGROUND_THREAD)
+    await expect(detail.$('.activity-final-reply')).toHaveText(REPLY)
     await saveAppScreenshot('activity-answer-panel-sent.png')
     await browser.keys('Escape')
     await $(`.chat-row[data-thread-id="${QUESTION_THREAD}"]`).click()

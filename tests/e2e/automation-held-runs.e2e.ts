@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
-import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  prepareE2eScreenshot,
+  saveAppScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import { resetUserData, seedStableWorkspace, writeSeedConfig } from './helpers/seed-config.ts'
 import { assertScheduleHeadingKeepsTitle } from './helpers/text-fit.ts'
 
@@ -134,6 +138,34 @@ describe('held automation worktrees in the sidebar', function () {
       Array.from(document.querySelectorAll('.context-menu-item')).map((item) => item.textContent),
     )
     assert.deepEqual(labels, ['Run now', 'Clean up finished runs…', 'Automation setup…'])
+    await prepareE2eScreenshot()
+    const titlebarLayouts = await browser.execute(async () => {
+      const layouts: string[] = []
+      for (let resize = 0; resize < 5; resize++) {
+        window.dispatchEvent(new Event('resize'))
+        for (let frame = 0; frame < 4; frame++) {
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+        }
+        const titlebar = document.getElementById('titlebar')
+        if (titlebar) {
+          layouts.push(
+            JSON.stringify({
+              compact: titlebar.classList.contains('is-titlebar-compact'),
+              overflowed: [...titlebar.querySelectorAll('[data-portrait-overflow]')].map((button) =>
+                button.getAttribute('data-panel-control'),
+              ),
+            }),
+          )
+        }
+      }
+      return layouts
+    })
+    assert.equal(titlebarLayouts.length, 5)
+    assert.equal(
+      new Set(titlebarLayouts).size,
+      1,
+      'same-size resizes must keep titlebar layout stable',
+    )
     await saveAppScreenshot('automation-held-runs-menu.png')
     await browser.keys('Escape')
     await expect(contextMenu).not.toBeExisting()
