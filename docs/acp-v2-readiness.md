@@ -18,7 +18,7 @@ The section below dates from 2026-07 and is kept as history. Since then:
   insertion as `idle` + `stopReason: "error"` (#2281), per-type entity ids (#2332),
   `_meta` patching on upserts (#2372). v2 as a whole is still labelled draft:
   "Don't ship it by default in production."
-- **SDK:** `main` locks **1.7.0**; npm `latest` is **1.9.0**, still only at
+- **SDK:** `main` locks **1.8.0**; npm `latest` is **1.9.0**, still only at
   `./experimental/v2`. 1.9.0 changed the v2 client lifecycle ("decouple session
   updates from prompt completion", typescript-sdk #280; negotiation #286), so
   behaviour observed on ≤ 1.8 is not a guide.
@@ -71,7 +71,7 @@ import change. So **v2 stays a watch item**, with the trigger sharpened: not
 tracking is automated rather than a periodic manual re-check of npm; see
 [The watch](#the-watch-how-well-find-out) below.
 
-> `package.json` depends on `@agentclientprotocol/sdk@^1.7.0` (locked `1.7.0`; 1.9.0 is the first release with the v2 insertion-receipt lifecycle).
+> `package.json` depends on `@agentclientprotocol/sdk@^1.8.0` (locked `1.8.0`; 1.9.0 is the first release with the v2 insertion-receipt lifecycle).
 > The unit gate pins both halves of what that version means
 > (`scripts/acp-v2-watch.test.ts`): the main entry is `PROTOCOL_VERSION === 1`,
 > and `./experimental/v2` is `PROTOCOL_VERSION === 2`.
