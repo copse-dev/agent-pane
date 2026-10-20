@@ -42,7 +42,11 @@ async function screenshot(name: string): Promise<void> {
           focused.focus({ preventScroll: true })
         }
         await new Promise<void>((resolve) => {
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              resolve()
+            })
+          })
         })
       })
       // Mobile emulation paints a transient native scrollbar after taps and
@@ -154,7 +158,7 @@ describe('Mobile Companion at phone width', () => {
     })
     // Model cold and completed cache responses at the API boundary. Unit tests
     // hold the actual background inspector to prove that reads never await it.
-    const { identifier } = await browser.sendCommandAndGetResult(
+    const added: unknown = await browser.sendCommandAndGetResult(
       'Page.addScriptToEvaluateOnNewDocument',
       {
         source: `
@@ -175,6 +179,9 @@ describe('Mobile Companion at phone width', () => {
         `,
       },
     )
+    const identifier = isRecord(added) ? added['identifier'] : undefined
+    if (typeof identifier !== 'string')
+      throw new Error('Chromium did not return a script identifier')
     try {
       await browser.refresh()
       await expect($('.row-title=Polish the onboarding copy')).toBeDisplayed()
@@ -186,7 +193,7 @@ describe('Mobile Companion at phone width', () => {
       })
       await screenshot('mobile-companion-activity-cold-cache.png')
       await browser.execute(() => {
-        document.documentElement.dataset.dirtyCheckComplete = 'true'
+        document.documentElement.dataset['dirtyCheckComplete'] = 'true'
       })
       await browser.waitUntil(
         async () => {
