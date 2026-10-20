@@ -211,6 +211,9 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     )
     assert.equal(queued.queued, true, queued.error ?? 'Mobile message queue failed')
     await expect($('.footer-queue')).toHaveText('1 queued')
+    // The queue count renders while the phone's submission still owns the
+    // thread; the composer re-enables Queue on the next thread update.
+    await $('.submit-btn').waitForEnabled()
     await saveAppScreenshot('mobile-controls-queued-desktop.png')
     assert.equal(
       request(
