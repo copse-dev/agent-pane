@@ -678,7 +678,15 @@ export function createAutomationService(
             threadId,
             // The dispatcher falls back to the app-wide default model, not the
             // thread's, so pass the schedule's model as the renderer would.
-            payload: { userContent: prompt, invokedSkills: [], priorTodos: [], model },
+            // Main's own schedule-run proof: lets the dispatcher defer approvals
+            // for this unattended first turn exactly as it does for the renderer's.
+            payload: {
+              userContent: prompt,
+              automationRun: true,
+              invokedSkills: [],
+              priorTodos: [],
+              model,
+            },
           },
           run.host,
         )
