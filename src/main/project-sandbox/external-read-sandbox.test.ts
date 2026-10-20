@@ -39,7 +39,10 @@ it(
     const quote = (value: string): string => "'" + value.replaceAll("'", "'\\''") + "'"
     try {
       await SandboxManager.initialize(baseSandboxConfig(), undefined, false)
-      const run = async (command: string, targets: string[] = []) => {
+      const run = async (
+        command: string,
+        targets: string[] = [],
+      ): Promise<{ status: number | null; output: string }> => {
         const config = targets.length
           ? readAllowedSandboxOverlay(workspace, targets)
           : workspaceSandboxOverlay(workspace)
@@ -54,12 +57,12 @@ it(
         assert.ifError(result.error)
         return { status: result.status, output: `${result.stdout}${result.stderr}` }
       }
-      const denied = async (command: string, targets: string[] = []) => {
+      const denied = async (command: string, targets: string[] = []): Promise<void> => {
         const result = await run(command, targets)
         assert.notEqual(result.status, 0, `unexpected access: ${command}\n${result.output}`)
         assert.match(result.output, /Operation not permitted|Permission denied|EPERM|EACCES/i)
       }
-      const readable = async (path: string, targets: string[]) => {
+      const readable = async (path: string, targets: string[]): Promise<void> => {
         const result = await run(`/bin/cat ${quote(path)}`, targets)
         assert.equal(result.status, 0, result.output)
         assert.equal(result.output, 'approved fixture\n')

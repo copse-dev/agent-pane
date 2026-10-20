@@ -29,8 +29,8 @@ describe('external file tool approval', () => {
   const reader = createExternalToolReader({
     workerPath: () => join(root, 'worker.js'),
     sandboxEnabled: () => enabled,
-    run: async (_command, _args, options = {}) => {
-      calls.push(options)
+    run: async (_command: string, _args: string[], options?: RunCommandOptions) => {
+      calls.push(options ?? {})
       return {
         code: 0,
         stdout: JSON.stringify({ ok: true, data: 'fixture' }),
@@ -39,7 +39,7 @@ describe('external file tool approval', () => {
       }
     },
   })
-  const read = (thread = 'reader', target = file) =>
+  const read = (thread = 'reader', target = file): Promise<string | null> =>
     runWithActiveRunIdentity(thread, () => reader(target, root, 'read_file', { kind: 'read' }))
   beforeEach(async () => {
     base = await realpath(await mkdtemp(join(tmpdir(), 'external-approval-')))
@@ -77,11 +77,15 @@ describe('external file tool approval', () => {
   it('approves the exact target and uses a read-only sandbox with network denied', async () => {
     assert.equal(await read(), 'fixture')
     assert.equal(prompts, 1)
-    assert.equal(calls[0]?.requireSandbox, true)
-    assert.notEqual(calls[0]?.unsandboxed, true)
-    assert.deepEqual(calls[0]?.sandboxConfig?.filesystem?.allowWrite, [])
-    assert.ok(calls[0]?.sandboxConfig?.filesystem?.allowRead?.includes(file))
-    assert.deepEqual(calls[0]?.sandboxConfig?.network?.allowedDomains, [])
+    const [call] = calls
+    assert.ok(call)
+    assert.equal(call.requireSandbox, true)
+    assert.notEqual(call.unsandboxed, true)
+    const sandbox = call.sandboxConfig
+    assert.ok(sandbox?.filesystem && sandbox.network)
+    assert.deepEqual(sandbox.filesystem.allowWrite, [])
+    assert.ok(sandbox.filesystem.allowRead?.includes(file))
+    assert.deepEqual(sandbox.network.allowedDomains, [])
     assert.equal(await read(), 'fixture')
     assert.equal(prompts, 1)
     assert.equal(await read('another-thread'), 'fixture')

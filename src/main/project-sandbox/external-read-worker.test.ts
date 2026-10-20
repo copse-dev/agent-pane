@@ -18,8 +18,11 @@ describe('external read worker', () => {
   afterEach(async () => {
     await rm(base, { recursive: true, force: true })
   })
-  const run = (action: ExternalReadAction, path = root, excludedRoots: string[] = []) =>
-    executeExternalRead({ op: 'externalRead', path, excludedRoots, action })
+  const run = (
+    action: ExternalReadAction,
+    path = root,
+    excludedRoots: string[] = [],
+  ): Promise<string> => executeExternalRead({ op: 'externalRead', path, excludedRoots, action })
 
   it('reads a regular file', async () => {
     assert.equal(await run({ kind: 'read' }, join(root, 'note.txt')), 'before\nneedle\nafter\n')
