@@ -21,6 +21,7 @@ import type { TurnOutcome } from '@shared/types/turn-outcome.ts'
 import { AgentTurnBusyError } from '@shared/agent-turn-busy.ts'
 import type { AgentInitiatedTurnClaim } from './acp/agent-initiated-turn.ts'
 import { runAgent, type RunAgentOptions } from './agent-service.ts'
+import type { TurnTranscript } from './turn-transcript-writer.ts'
 import { contextLossNotice, contextWasLost } from './context-loss-notice.ts'
 import { recoverAgentHistory } from './history-recovery.ts'
 import {
@@ -65,6 +66,11 @@ export interface AgentDispatchPayload {
   reviewContext?: string
 }
 
+/** Opens the main-owned transcript of one dispatched turn. */
+export interface TurnTranscriptSink {
+  begin(projectId: string, threadId: string): TurnTranscript
+}
+
 export interface AgentDispatchRequest {
   projectId: string
   threadId: string
@@ -75,6 +81,11 @@ export interface MachineAgentDispatchRequest extends AgentDispatchRequest {
   operationId: string
   turnTreeId: string
   display?: MachineTurnDisplay
+  /**
+   * Checked once the thread is claimed: true when the agent already saw what
+   * this wake would report, so it is recorded without a turn or budget charge.
+   */
+  alreadyObserved?: () => boolean
 }
 
 type MachineOperationRef = Pick<
@@ -232,14 +243,22 @@ export class AgentDispatcher {
   private readonly registry: ToolRegistry
   private readonly dependencies: AgentDispatcherDependencies
 
+  /**
+   * Where each dispatched turn's chunks are reduced and persisted before they
+   * reach the window. Absent, the window keeps writing the transcript itself.
+   */
+  private readonly transcripts: TurnTranscriptSink | undefined
+
   constructor(
     host: AgentHost<StreamChunk>,
     registry: ToolRegistry,
     dependencies: AgentDispatcherDependencies = defaultDependencies,
+    transcripts?: TurnTranscriptSink,
   ) {
     this.host = host
     this.registry = registry
     this.dependencies = dependencies
+    this.transcripts = transcripts
   }
 
   async dispatch(
@@ -499,6 +518,10 @@ export class AgentDispatcher {
       await this.recordMachineFinish(request, 'stale', epoch?.continuationUsed)
       return 'stale'
     }
+    if (request.alreadyObserved?.() === true) {
+      await this.recordMachineFinish(request, 'observed', epoch.continuationUsed)
+      return 'observed'
+    }
     if (!canContinue(epoch.continuationUsed)) {
       await this.recordMachineFinish(request, 'budget-exhausted', epoch.continuationUsed)
       return 'budget-exhausted'
@@ -594,6 +617,18 @@ export class AgentDispatcher {
       throw new AgentTurnBusyError(request.threadId)
     }
 
+    // This turn's own chunks go through its transcript, which main writes; any
+    // other thread's pass straight to the target host as before. A caller-supplied
+    // host (an unfocused automation's headless run) assembles and persists its own
+    // messages, so it bypasses the window transcript.
+    const transcript =
+      targetHost === this.host
+        ? this.transcripts?.begin(request.projectId, request.threadId)
+        : undefined
+    const deliver = (threadId: string, chunk: StreamChunk): void => {
+      if (transcript && threadId === request.threadId) transcript.emit(chunk)
+      else targetHost.emit(threadId, chunk)
+    }
     let terminalOutcome: Extract<StreamChunk, { type: 'turn_outcome' }> | undefined
     let terminalDone: Extract<StreamChunk, { type: 'done' }> | undefined
     const terminalDeferringHost: AgentHost<StreamChunk> = {
@@ -606,7 +641,7 @@ export class AgentDispatcher {
           terminalDone ??= chunk
           return
         }
-        targetHost.emit(threadId, chunk)
+        deliver(threadId, chunk)
       },
     }
     const running = run(terminalDeferringHost)
@@ -623,9 +658,10 @@ export class AgentDispatcher {
       // final commit failed; a retry must start from the still-authoritative
       // persisted history instead.
       if (committed && terminalDone !== undefined) {
-        if (terminalOutcome !== undefined) targetHost.emit(request.threadId, terminalOutcome)
-        targetHost.emit(request.threadId, terminalDone)
+        if (terminalOutcome !== undefined) deliver(request.threadId, terminalOutcome)
+        deliver(request.threadId, terminalDone)
       }
+      transcript?.end()
     }
   }
 
@@ -677,6 +713,10 @@ export class AgentDispatcher {
     host: AgentHost<StreamChunk>,
   ): Promise<TurnOutcome | undefined> {
     const { projectId, threadId, payload } = request
+    // Context estimates can cache an empty history before the outgoing prompt
+    // is saved. Rebuild against the now-persisted transcript at dispatch, rather
+    // than treating that earlier empty projection as authoritative forever.
+    if (this.histories.get(key)?.length === 0) this.histories.delete(key)
     const priorMessages = await this.history(projectId, threadId)
     const executionContext = await this.dependencies.prepareExecutionContext(
       projectId,

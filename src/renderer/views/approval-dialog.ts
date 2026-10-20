@@ -762,6 +762,8 @@ export function mountApprovalDialog(
       turnTreeLeaseDefault,
       turnTreeLeaseSubject,
     }) => {
+      if (queue.some((request) => request.id === id) || batch.some((request) => request.id === id))
+        return
       const pending: PendingApproval = {
         id,
         threadId,

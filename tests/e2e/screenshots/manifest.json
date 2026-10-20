@@ -422,8 +422,8 @@
       "bytes": 359598
     },
     "agent-tasks-over-cap-output.png": {
-      "sha256": "1e9325a0faabd9ea7a3dc8bc475c2cb9757c392a9804549044c1c8a98051cea9",
-      "bytes": 343076
+      "sha256": "dc3fcb20dd0f862c202902fe645096f45d2b8dfe8fdac48b5ae920332a5b2b0a",
+      "bytes": 358917
     },
     "agent-tasks-shell-approval.png": {
       "sha256": "c0bc8c5d79aeca73e486e11eb18b20ad0c17aace7560e7f8d2fab3f0c0c5ce52",
@@ -1714,8 +1714,8 @@
       "bytes": 24867
     },
     "footer-branch-rebase-agent-running.png": {
-      "sha256": "875cec36b3066926814b456dd2e40ac4075e8225375bdbe94bfaeb3e41b32788",
-      "bytes": 28219
+      "sha256": "99a28099edfae0d6b819328a2253f6a77810c45be183d642b268ff85db98dc00",
+      "bytes": 35378
     },
     "footer-branch-rebase-in-progress.png": {
       "sha256": "b4bfa6c560218d75fbb76b7804fb0dcde22ef640648e7805a2d651c22283b4cc",
@@ -2452,6 +2452,10 @@
     "model-picker-retention-menu.png": {
       "sha256": "664f789098d0413bb4c02667b5a7a3e6407ba29818174aae255d2d4bd84519bc",
       "bytes": 21983
+    },
+    "model-version-suppression-acp-after.png": {
+      "sha256": "864ff5a07cdd0d76f7d3bbea1dbffff9ef31016032d5c1d2a3b0d9286752b998",
+      "bytes": 11485
     },
     "model-version-suppression-picker.png": {
       "sha256": "cf209e9f079201f0d67a75f94251d93cbb77bf4bb936adc6027f98ecec27fac0",
