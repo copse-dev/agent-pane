@@ -66,6 +66,12 @@ export interface TerminalSession {
   listeners?: PtyListeners
   /** Capped PTY output for agent `read_terminal` snapshots. */
   output: CappedOutputAccumulator
+  /**
+   * True once anything has ever been written to the pty. `output` alone can't
+   * tell a freshly spawned, never-touched shell from one with real content —
+   * the shell's own startup prompt already appears in it.
+   */
+  hasActivity: boolean
   label: string
   threadId: string | null
   projectId: string | null
@@ -318,6 +324,7 @@ async function spawnShell(
     pty: ptyProcess,
     owner,
     output: new CappedOutputAccumulator(COMMAND_OUTPUT_MAX_BYTES, { evidence: true }),
+    hasActivity: false,
     label: nonEmptyStringOr(meta?.label?.trim(), 'Terminal'),
     threadId: meta?.threadId ?? null,
     projectId: meta?.projectId ?? null,
@@ -358,6 +365,7 @@ export function destroyTerminalSessionsForOwner(ownerId: number): void {
 export function writeTerminalSession(sessionId: string, ownerId: number, data: string): void {
   const session = ownedSession(sessionId, ownerId)
   if (!session) throw new Error(`Unknown terminal session: ${sessionId}`)
+  session.hasActivity = true
   session.pty.write(data)
 }
 
@@ -482,6 +490,21 @@ export function destroyTerminalSessionsForThread(threadId: string): Promise<stri
 }
 
 /**
+ * Dispose only the terminals for one thread that nobody has ever typed or
+ * written into — a freshly opened Shells tab with nothing in it. Archiving
+ * should neither warn about, nor leave behind, a shell like that.
+ */
+export function destroyEmptyTerminalSessionsForThread(threadId: string): Promise<string[]> {
+  const idle = [...sessions.values()].filter(
+    (session) =>
+      (session.threadId === threadId || session.executionThreadId === threadId) &&
+      !session.hasActivity,
+  )
+  for (const session of idle) disposeSession(session, session.id)
+  return Promise.resolve(idle.map((session) => session.id))
+}
+
+/**
  * Test-only: insert a session without spawning a PTY. Not used by production code.
  */
 export function __testInjectTerminalSession(opts: {
@@ -489,6 +512,7 @@ export function __testInjectTerminalSession(opts: {
   label: string
   threadId: string | null
   outputText: string
+  hasActivity?: boolean
 }): string {
   const id = randomUUID()
   const output = new CappedOutputAccumulator(COMMAND_OUTPUT_MAX_BYTES, { evidence: true })
@@ -511,6 +535,7 @@ export function __testInjectTerminalSession(opts: {
     },
     owner: { id: opts.ownerId, isDestroyed: () => false, send(): void {} },
     output,
+    hasActivity: opts.hasActivity ?? true,
     label: opts.label,
     threadId: opts.threadId,
     projectId: null,
