@@ -4137,7 +4137,6 @@ html.is-popout .thread-context-close {
   align-items: center;
   gap: var(--spacing-sm);
   flex-shrink: 0;
-  -webkit-app-region: no-drag;
 }
 .titlebar-sidebar-btn {
   display: inline-flex;
@@ -4207,7 +4206,6 @@ html.is-popout .thread-context-close {
   align-items: center;
   gap: var(--spacing-sm);
   flex-shrink: 0;
-  -webkit-app-region: no-drag;
 }
 #titlebar .titlebar-panel-controls {
   flex: 1 1 0;
