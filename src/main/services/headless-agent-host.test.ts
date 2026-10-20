@@ -74,7 +74,9 @@ class BackgroundWakeProvider implements LLMProvider {
           name: 'run_background',
           args: {
             action: 'start',
-            command: 'node -e "setTimeout(() => process.exit(0), 20)"',
+            // Outlive run_background's 1.5s start settle: a task that exits
+            // inside it is reported in the start result, so its wake is skipped.
+            command: 'node -e "setTimeout(() => process.exit(0), 2000)"',
             wake_on_completion: true,
             timeout_ms: 5_000,
           },

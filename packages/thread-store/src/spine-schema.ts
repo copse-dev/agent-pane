@@ -355,6 +355,7 @@ export const MACHINE_CONTINUATION_RESULTS = [
   'stale',
   'budget-exhausted',
   'failed',
+  'observed',
 ] as const
 export type MachineContinuationResult = (typeof MACHINE_CONTINUATION_RESULTS)[number]
 
@@ -698,7 +699,8 @@ const isMachineContinuationResult: (value: unknown) => value is MachineContinuat
   value === 'duplicate' ||
   value === 'stale' ||
   value === 'budget-exhausted' ||
-  value === 'failed'
+  value === 'failed' ||
+  value === 'observed'
 
 const TURN_OUTCOME_FIELDS: RequiredFieldChecks<TurnOutcome, 'stopReason'> = {
   status: (value) => value === 'completed' || value === 'failed' || value === 'cancelled',
