@@ -483,6 +483,7 @@ describe('classifier connections settings', () => {
       )
     assert.deepEqual(choices('Protocol'), [
       ['systemone', 'SystemOne'],
+      ['decisions', 'Decisions API'],
       ['featherless', 'Featherless classifier'],
     ])
     assert.deepEqual(choices('Auth'), [
@@ -492,6 +493,31 @@ describe('classifier connections settings', () => {
     assert.equal(field(section.root, 'Protocol').value, 'systemone')
     assert.equal(field(section.root, 'Auth').value, 'bearer')
   })
+
+  for (const protocol of ['decisions', 'featherless', 'systemone'] as const) {
+    it(`saves the ${protocol} protocol the person selected`, async () => {
+      const { section, state } = setup([
+        {
+          ...HTTP_PROFILE,
+          connection: {
+            type: 'http',
+            protocol: protocol === 'systemone' ? 'decisions' : 'systemone',
+            baseUrl: 'http://127.0.0.1:8009/v1',
+            auth: 'bearer',
+          },
+        },
+      ])
+      await section.refresh()
+      const select = field(section.root, 'Protocol')
+      select.value = protocol
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+      button(section.root, 'save').click()
+      await setImmediate()
+      const saved = state.saves[0]?.connection
+      assert.ok(saved?.type === 'http')
+      assert.equal(saved.protocol, protocol)
+    })
+  }
 
   it('explains key removal when editing a saved destination, but ignores equivalent trailing slashes', async () => {
     const { section, state } = setup()
