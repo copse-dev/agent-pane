@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import {
   E2E_SCREENSHOT_DIR,
@@ -7,6 +7,7 @@ import {
 } from './helpers/screenshot.ts'
 import { resetUserData, seedE2eThreePaneLayout } from './helpers/seed-config.ts'
 import { createTodoWorkspace, seedTodoPlanFixtures } from './todo-plan-fixtures.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 async function openRightPanel(): Promise<void> {
   const pane = await $('#pane-files')
@@ -40,7 +41,7 @@ describe('todo plan display', () => {
 
   after(() => {
     resetUserData()
-    if (workspaceParent) rmSync(workspaceParent, { recursive: true, force: true })
+    if (workspaceParent) removeE2eTree(workspaceParent)
   })
 
   it('shows inline todo panel with statuses (rendered as the copse.todos plugin panel)', async () => {

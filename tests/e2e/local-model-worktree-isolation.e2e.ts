@@ -6,7 +6,6 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
-  rmSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -23,6 +22,7 @@ import { setComposerValue } from './helpers/composer.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-local-model-worktree-isolation'
 const MODEL_ID = 'scripted-local'
@@ -95,7 +95,7 @@ describe('local provider default worktree isolation', () => {
       }
     }
     if (model) await model.stop()
-    if (projectRoot) rmSync(dirname(projectRoot), { recursive: true, force: true })
+    if (projectRoot) removeE2eTree(dirname(projectRoot))
   })
 
   it('routes a real local-provider tool write into a default isolated worktree', async function () {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser } from '@wdio/globals'
@@ -12,6 +12,7 @@ import {
   writeSettings,
 } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 async function assertPickerFits(): Promise<void> {
   const layout = await browser.execute(() => {
@@ -50,7 +51,7 @@ describe('roadmap import picker', () => {
     // a linked worktree whose external gitdir is correctly hidden by the app's
     // project sandbox, which would make origin detection environment-dependent.
     workspaceRoot = join(tmpdir(), 'copse-roadmap-import-workspace')
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    removeE2eTree(workspaceRoot)
     mkdirSync(workspaceRoot, { recursive: true })
     execFileSync('git', ['init', '-q'], { cwd: workspaceRoot, stdio: 'pipe' })
     execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/copse-mock/demo.git'], {
@@ -68,7 +69,7 @@ describe('roadmap import picker', () => {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
+    if (workspaceRoot) removeE2eTree(workspaceRoot)
   })
 
   it('lists open issues with inline checkboxes', async function () {
