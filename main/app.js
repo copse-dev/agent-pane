@@ -75037,10 +75037,41 @@ Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause 
   }
   async function receiveTrigger(event) {
     if (store2.getState().activeProjectId !== event.projectId) return;
+    const observedEpoch = getThreadById(store2, event.threadId)?.currentEpoch;
     const loaded = await api2.threads.loadProject(event.projectId);
     if (store2.getState().activeProjectId !== event.projectId) return;
     const created = loaded.find((thread) => thread.id === event.threadId);
     if (!created) return;
+    if (event.headlessSettled) {
+      if (created.status === "running" || created.currentEpoch !== observedEpoch) return;
+      if (getThreadById(store2, event.threadId)?.currentEpoch !== observedEpoch) return;
+      const messages = await api2.threads.loadMessages(event.projectId, event.threadId);
+      if (store2.getState().activeProjectId !== event.projectId) return;
+      if (created.automation?.triggeredAt !== event.triggeredAt) return;
+      const current = getThreadById(store2, event.threadId);
+      if (current?.currentEpoch !== observedEpoch) return;
+      if (current && current.automation?.triggeredAt !== event.triggeredAt) return;
+      const persistedIds = new Set(messages.map((message2) => message2.id));
+      if (current?.messages.some(
+        (message2) => message2.role === "user" && !persistedIds.has(message2.id)
+      )) {
+        return;
+      }
+      store2.setState({
+        threads: sortThreadsNewestFirst([
+          {
+            ...created,
+            draftPrompt: current?.draftPrompt ?? created.draftPrompt ?? "",
+            messages,
+            messagesLoaded: true
+          },
+          ...store2.getState().threads.filter((thread) => thread.id !== created.id)
+        ])
+      });
+      store2.emit("thread_status_changed", created.id, created.status);
+      store2.emit("threads_changed");
+      return;
+    }
     if (!store2.getState().threads.some((thread) => thread.id === created.id)) {
       store2.setState({
         threads: sortThreadsNewestFirst([created, ...store2.getState().threads])
