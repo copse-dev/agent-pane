@@ -75,6 +75,11 @@ export interface MachineAgentDispatchRequest extends AgentDispatchRequest {
   operationId: string
   turnTreeId: string
   display?: MachineTurnDisplay
+  /**
+   * Checked once the thread is claimed: true when the agent already saw what
+   * this wake would report, so it is recorded without a turn or budget charge.
+   */
+  alreadyObserved?: () => boolean
 }
 
 type MachineOperationRef = Pick<
@@ -498,6 +503,10 @@ export class AgentDispatcher {
     if (epoch?.turnTreeId !== request.turnTreeId) {
       await this.recordMachineFinish(request, 'stale', epoch?.continuationUsed)
       return 'stale'
+    }
+    if (request.alreadyObserved?.() === true) {
+      await this.recordMachineFinish(request, 'observed', epoch.continuationUsed)
+      return 'observed'
     }
     if (!canContinue(epoch.continuationUsed)) {
       await this.recordMachineFinish(request, 'budget-exhausted', epoch.continuationUsed)

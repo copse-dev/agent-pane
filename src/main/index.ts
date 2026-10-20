@@ -736,6 +736,7 @@ app
         threadId: completion.owner.threadId,
         operationId: completion.operationId,
         turnTreeId: completion.turnTreeId,
+        ...(completion.alreadyObserved ? { alreadyObserved: completion.alreadyObserved } : {}),
         payload: {
           userContent: backgroundCompletionPrompt(completion),
           invokedSkills: [],

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import type { SpineMachineContinuationLine } from '@shared/threads/spine-schema.ts'
+import type { MachineDispatchResult } from '@shared/types/machine-dispatch.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import { ToolRegistry } from './tool-registry.ts'
 import {
@@ -1400,6 +1401,60 @@ describe('AgentDispatcher', () => {
       'budget-exhausted',
     )
     assert.equal(runCount, 1)
+  })
+
+  it('records an already-observed wake without running a turn or spending budget', async () => {
+    const prompts: UserContent[] = []
+    const audit: { result?: string; budgetUsed?: number }[] = []
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        appendMachineContinuation: async (_projectId, _threadId, line) => {
+          if (line.phase === 'finished') {
+            audit.push({
+              result: line.result,
+              ...(line.budgetUsed !== undefined ? { budgetUsed: line.budgetUsed } : {}),
+            })
+          }
+        },
+        run: async (_threadId, userContent, priorMessages) => {
+          prompts.push(userContent)
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+    await dispatcher.dispatch(
+      request({
+        payload: {
+          userContent: 'root',
+          invokedSkills: [],
+          priorTodos: [],
+          turnTreeId: 'tree-1',
+          continuationBudgetUsed: 0,
+        },
+      }),
+    )
+
+    const wake = (operationId: string, observed: boolean): Promise<MachineDispatchResult> =>
+      dispatcher.dispatchMachine({
+        ...request(),
+        operationId,
+        turnTreeId: 'tree-1',
+        alreadyObserved: () => observed,
+        payload: { userContent: operationId, invokedSkills: [], priorTodos: [] },
+      })
+
+    assert.equal(await wake('seen', true), 'observed')
+    assert.equal(await wake('unseen', false), 'completed')
+    assert.deepEqual(prompts, ['root', 'unseen'])
+    assert.deepEqual(audit, [
+      { result: 'observed', budgetUsed: 0 },
+      { result: 'completed', budgetUsed: 1 },
+    ])
   })
 
   it('charges an agent-started turn to the continuation budget and holds it once exhausted', async () => {
