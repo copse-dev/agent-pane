@@ -1,6 +1,11 @@
 import { z } from 'zod'
 import { isSafeCredentialBaseUrl } from '../credential-url.ts'
-import type { ClassifierProfile, ClassifierQuestion, ClassifierRequest } from './types.ts'
+import {
+  HTTP_CLASSIFIER_PROTOCOLS,
+  type ClassifierProfile,
+  type ClassifierQuestion,
+  type ClassifierRequest,
+} from './types.ts'
 
 const text = z.string().max(65_536)
 const identifier = z
@@ -56,7 +61,7 @@ const connection = z
   .discriminatedUnion('type', [
     z.strictObject({
       type: z.literal('http'),
-      protocol: z.enum(['systemone', 'featherless']),
+      protocol: z.enum(HTTP_CLASSIFIER_PROTOCOLS),
       baseUrl: z
         .string()
         .trim()

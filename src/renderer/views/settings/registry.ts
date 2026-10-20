@@ -1,5 +1,6 @@
 import { generalMarkup, generalFields } from './general-markup.ts'
 import { classifiersMarkup } from './classifiers-markup.ts'
+import { webSearchMarkup } from './web-search-markup.ts'
 import { usageMarkup } from './usage-markup.ts'
 import { agentMarkup, agentFields } from './agent-markup.ts'
 import { permissionsMarkup, permissionsFields } from './permissions-markup.ts'
@@ -24,6 +25,7 @@ export interface SettingsSectionDefinition {
 export const SETTINGS_SECTIONS: readonly SettingsSectionDefinition[] = [
   { id: 'general', label: 'General', markup: generalMarkup, fields: generalFields },
   { id: 'classifiers', label: 'Classifiers', markup: classifiersMarkup, fields: [] },
+  { id: 'web-search', label: 'Web search', markup: webSearchMarkup, fields: [] },
   { id: 'usage', label: 'Usage', markup: usageMarkup, fields: [] },
   { id: 'agent', label: 'Agent', markup: agentMarkup, fields: agentFields },
   { id: 'permissions', label: 'Permissions', markup: permissionsMarkup, fields: permissionsFields },

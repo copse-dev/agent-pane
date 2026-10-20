@@ -6,7 +6,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
   Record<string, { readonly sourceSha256: string; readonly filenames: readonly string[] }>
 > = {
   'tests/e2e/acp-auth-error.e2e.ts': {
-    sourceSha256: 'f5db6aab3b78e3f7d5a9c9e6434d8fe39dfa2af3e5f2fe9f568e64b5250874bc',
+    sourceSha256: 'd2ec97ab214a576fb4349a0d06c308e8ebb0ec476a10e1d58dfc3d48efbebd1f',
     filenames: [
       'acp-auth-error.png',
       'codex-workspace-routing-auth-error.png',
@@ -100,7 +100,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/pr-provenance.e2e.ts': {
-    sourceSha256: '3ee689f87f77b859b8129b7841cf5d8bc33ff2e4effd165da96c1fbecb0c3293',
+    sourceSha256: '205e11e9d4fa35a87208c8f35512ef87188b6ab9ae38f950b6c21a88fa00c14d',
     filenames: ['pr-native-provenance-offline-restart.png', 'pr-native-provenance.png'],
   },
   'tests/e2e/queued-held.e2e.ts': {
@@ -116,7 +116,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['scroll-to-bottom-dark.png', 'scroll-to-bottom-light.png'],
   },
   'tests/e2e/settings-acp-agents-list.e2e.ts': {
-    sourceSha256: '32dfcaecfc30192db1983b21df000d67fe6c27ba6819de0231c334a9f7703ebf',
+    sourceSha256: '8f35f7d2253aa2d10842cd93734719a524633672a67e62442eb12894a1e2c15c',
     filenames: [
       'settings-acp-agents-list-codex-ready.png',
       'settings-acp-agents-list-page-2.png',

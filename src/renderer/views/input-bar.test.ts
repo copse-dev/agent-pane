@@ -25,6 +25,7 @@ import { createFakeApi } from '../fake-api.test-support.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { patchPreviewDialog } from '../attachments/preview-dialog.test-support.ts'
 import { registerShellCatalog } from '../terminal/shell-catalog.ts'
+import { installTooltips } from '../dom/tooltip.ts'
 
 class TestResizeObserver {
   observe(): void {}
@@ -959,6 +960,113 @@ describe('input bar first-message checkout', () => {
     assert.equal(prepares, 1)
   })
 
+  it('disables Send and clears its visible preparing tooltip after checkout', async (t) => {
+    const uninstallTooltips = installTooltips()
+    t.after(uninstallTooltips)
+    const checkout = deferred<PreparedThreadCheckout>()
+    const other: Thread = { ...thread('main'), id: 'thread-2', worktreeChoice: 'shared' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread(), other],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onPrepareCheckout: () => checkout.promise,
+      }),
+    )
+    await flush()
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    assert.equal(submit.disabled, false)
+    assert.equal(submit.getAttribute('aria-label'), 'Send message')
+
+    composer.textContent = 'Start the first send'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    submit.click()
+    await flush()
+    assert.equal(
+      submit.disabled,
+      true,
+      'Send is explicitly disabled while preparing, not just coincidentally',
+    )
+    assert.equal(submit.textContent, 'Send', 'the label stays Send, only the state changes')
+    assert.equal(submit.getAttribute('aria-label'), 'Preparing checkout')
+    assert.equal(submit.getAttribute('data-tooltip'), 'Preparing the checkout for this thread…')
+
+    switchThread(store, 'thread-2')
+    assert.equal(
+      submit.disabled,
+      false,
+      "switching threads must show the other thread's normal Send state",
+    )
+    assert.equal(submit.getAttribute('aria-label'), 'Send message')
+
+    switchThread(store, 'thread-1')
+    assert.equal(submit.disabled, true)
+    assert.equal(submit.getAttribute('aria-label'), 'Preparing checkout')
+    submit.dispatchEvent(new window.FocusEvent('focusin', { bubbles: true }))
+    const tooltip = document.querySelector<HTMLElement>('.app-tooltip')
+    assert.ok(tooltip)
+    assert.equal(tooltip.textContent, 'Preparing the checkout for this thread…')
+    assert.equal(tooltip.hidden, false)
+
+    checkout.resolve({ checkoutMode: 'shared', choice: 'shared', branch: 'main' })
+    await flush()
+    assert.equal(submit.disabled, false)
+    assert.equal(submit.getAttribute('data-tooltip'), null)
+    assert.equal(tooltip.hidden, true)
+  })
+
+  it('returns Send to its normal state after a failed checkout preparation', async () => {
+    const gate = deferred<boolean>()
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onPrepareCheckout: async () => {
+          await gate.promise
+          throw new Error('checkout unavailable')
+        },
+      }),
+    )
+    await flush()
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Retry after failure'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    submit.click()
+    await flush()
+    assert.equal(submit.disabled, true)
+    assert.equal(submit.getAttribute('aria-label'), 'Preparing checkout')
+
+    gate.resolve(true)
+    await flush()
+    assert.equal(submit.disabled, false)
+    assert.equal(submit.textContent, 'Send')
+  })
+
   it('shows the shared default and lets the user opt into an isolated worktree', async () => {
     const store = createStore({
       workspaceRoot: '/repo',
@@ -1845,7 +1953,13 @@ describe('input bar developer diagnostics', () => {
       Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
         item.textContent.trim(),
       ),
-      ['Enable Guarded YOLO', 'Run unattended in a container…', 'Debug trace', 'Share trace'],
+      [
+        'Enable Guarded YOLO',
+        'Run unattended in a container…',
+        'Debug trace',
+        'Create follow-up thread',
+        'Share trace',
+      ],
     )
 
     store.setState({ developerMode: true })
@@ -1863,6 +1977,7 @@ describe('input bar developer diagnostics', () => {
         'Export conversation (JSONL)',
         'Export thread folder (ZIP)',
         'Debug trace',
+        'Create follow-up thread',
         'Share trace',
       ],
     )
@@ -1875,7 +1990,13 @@ describe('input bar developer diagnostics', () => {
       Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
         item.textContent.trim(),
       ),
-      ['Enable Guarded YOLO', 'Run unattended in a container…', 'Debug trace', 'Share trace'],
+      [
+        'Enable Guarded YOLO',
+        'Run unattended in a container…',
+        'Debug trace',
+        'Create follow-up thread',
+        'Share trace',
+      ],
     )
   })
 })

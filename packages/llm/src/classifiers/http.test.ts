@@ -28,6 +28,61 @@ function success(): object {
 }
 
 describe('classifier HTTP adapters', () => {
+  for (const { id, endpoint, model } of [
+    {
+      id: 'fastino-glide',
+      endpoint: 'https://api.fastino.ai/v1/systemone',
+      model: 'fastino/glide',
+    },
+    {
+      id: 'celeris',
+      endpoint: 'https://inference.celeris.ai/celeris-1-decision/v1/systemone',
+      model: 'celeris-1-decision',
+    },
+    {
+      id: 'microsoft-decision',
+      endpoint: 'https://openrouter.ai/api/alpha/decisions',
+      model: 'microsoft/microsoft-decision-1',
+    },
+    {
+      id: 'perplexity-decider',
+      endpoint: 'https://openrouter.ai/api/alpha/decisions',
+      model: 'perplexity/pplx-decider-v1.1-27b',
+    },
+    {
+      id: 'mercury-decide',
+      endpoint: 'https://openrouter.ai/api/alpha/decisions',
+      model: 'inception/mercury-decide',
+    },
+  ]) {
+    it(`calls the ${id} preset with its documented model and endpoint`, async () => {
+      const result = await classifyHttp(profile(id), CLASSIFIER_TEST_REQUEST, {
+        apiKey: 'preset-fixture-key',
+        fetchImpl: async (url, init) => {
+          assert.equal(url, endpoint)
+          assert.ok(init)
+          assert.equal(new Headers(init.headers).get('Authorization'), 'Bearer preset-fixture-key')
+          assert.equal(init.redirect, 'manual')
+          assert.equal(typeof init.body, 'string')
+          if (typeof init.body !== 'string') assert.fail('expected JSON body')
+          const body = safeJsonParse(init.body)
+          assert.equal(
+            body && typeof body === 'object' && 'model' in body ? body.model : null,
+            model,
+          )
+          return Response.json(success())
+        },
+      })
+      assert.equal(result.requestedModel, model)
+      assert.deepEqual(result.answers['color'], {
+        type: 'choice',
+        choice: 'red',
+        confidence: 0.78,
+        probabilities: { red: 0.85, blue: 0.15 },
+      })
+    })
+  }
+
   it('uses Liquid’s native decision endpoint and preserves all three answer types', async () => {
     const request: ClassifierRequest = {
       state: 'The bicycle is red and needs an urgent repair.',

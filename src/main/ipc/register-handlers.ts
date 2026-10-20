@@ -97,6 +97,7 @@ import { browserSessionOrigins } from '../services/browser/browser-network-grant
 import { browserThreadScope } from '@shared/browser-session.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/plugins/background-tasks-plugin.ts'
+import { readPendingDeferrals } from '../services/security/deferred-approval-store.ts'
 import { getThreadClassifierUse } from '../services/security/classifier-use-report.ts'
 import { loadCanvasArtefactSummaries, readStoredCanvasArtefact } from '../services/canvas-store.ts'
 import { CANVAS_ARTEFACT_CHANNEL } from '../services/canvas-dispatch.ts'
@@ -312,6 +313,7 @@ import {
   syncBackgroundTasksTools,
   syncOkfMemoryTools,
   syncParallelSearchTools,
+  syncWebSearchTools,
   syncPiiTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
@@ -1613,6 +1615,7 @@ export function registerAllHandlers(
       registerSkillTools(registry)
     }
     if (changedKeys.has(READ_TERMINAL_ENABLED_SETTING)) syncReadTerminalTools(registry)
+    if (changedKeys.has('webSearchProvider')) syncWebSearchTools(registry)
     if (changedKeys.has(MODEL_CLASSIFIER_ENABLED_SETTING)) syncModelClassifierTools(registry)
     if (changedKeys.has(ORCHESTRATION_STRATEGY_ENABLED_SETTING))
       syncOrchestrationStrategyTools(registry)
@@ -1713,6 +1716,7 @@ export function registerAllHandlers(
     // key.
     if (p === 'artificial-analysis') invalidateLiveIntellectCache()
     if (p === 'parallel') syncParallelSearchTools(registry)
+    if (p === 'parallel' || p === 'tavily') syncWebSearchTools(registry)
     // Saving an HF token auto-populates its priced, provider-pinned model list so
     // the picker and cost estimate work without a manual fetch (fire-and-forget).
     if (p === HUGGINGFACE_SLUG && apiKey.trim()) {
@@ -2237,6 +2241,11 @@ export function registerAllHandlers(
       return lookupThreadBacklinks(pid, linkKind, linkTarget)
     },
   )
+  ipcMain.handle('threads:pending-approvals', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return readPendingDeferrals({ projectId: pid, threadId: tid })
+  })
   // Seed a freshly created fork's provider-format history from the thread it was
   // branched off. The renderer owns the visible transcript copy; this is the
   // half it cannot do, since `agent-history.json` never leaves the main process.

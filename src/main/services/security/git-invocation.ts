@@ -62,7 +62,7 @@ const INTERNAL_GIT_CONFIG = [
   'format.pretty=medium',
 ] as const
 
-export type GitConfigPolicy = 'internal' | 'user-command'
+export type GitConfigPolicy = 'internal' | 'internal-network' | 'user-command'
 
 /** Host-created signer bridge, never model-supplied configuration. */
 export interface GitSigningBridge {
@@ -171,7 +171,7 @@ export function internalGitTransport(command: string | undefined): 'remote' | 'l
 /** Strip inherited Git execution/config injection; preserve explicit index/identity env. */
 export function internalGitEnv(
   base: NodeJS.ProcessEnv,
-  transport: ReturnType<typeof internalGitTransport> = 'none',
+  transport: ReturnType<typeof internalGitTransport> | 'network' = 'none',
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {}
   for (const [key, value] of Object.entries(base)) {
@@ -193,6 +193,9 @@ export function internalGitEnv(
         'GIT_WORK_TREE',
       ].includes(key)
     ) {
+      // Spawn merges this overlay over its inherited base. An explicit unset
+      // must survive that merge; omitting the key would restore ambient config.
+      env[key] = undefined
       continue
     }
     env[key] = value
@@ -202,7 +205,13 @@ export function internalGitEnv(
   return {
     ...env,
     GIT_ALLOW_PROTOCOL:
-      transport === 'remote' ? 'https:http:ssh:file' : transport === 'local' ? 'file' : '',
+      transport === 'network'
+        ? 'https:http:ssh'
+        : transport === 'remote'
+          ? 'https:http:ssh:file'
+          : transport === 'local'
+            ? 'file'
+            : '',
     GIT_NO_LAZY_FETCH: '1',
     GIT_OPTIONAL_LOCKS: '0',
     GIT_PAGER: 'cat',

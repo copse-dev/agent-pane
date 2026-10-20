@@ -100,4 +100,6 @@
 // v60 adds living-plan reads and revision-checked changes.
 // v61 integrates Send now abort causes and cross-thread read/send permissions.
 // v62 integrates missing-worktree recovery.
-export const API_PROTOCOL_VERSION = 62 as const
+// v63 versions background default-branch fetch and configurable web-search settings updates.
+// v64 versions Decision Index classifier connection variants.
+export const API_PROTOCOL_VERSION = 64 as const

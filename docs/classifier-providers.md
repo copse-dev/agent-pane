@@ -1,7 +1,7 @@
 # Classifier providers and evals
 
 Copse stores classifier connections separately from chat providers. Open **Settings → Classifiers**
-to add a Liquid/d1, TypeSafe/Jev, Kev, SemIf, Featherless/Simple Jev, or compatible custom connection. Saving a
+to add a Decision Index model, Kev, SemIf, Featherless/Simple Jev, or a compatible custom connection. Saving a
 profile or its key makes no inference request. **Test** submits a small sample and displays the
 answer and duration. These profiles are available for safety screening, background questions, the
 `ask_classifier` tool and
@@ -62,11 +62,34 @@ Changing an existing profile's HTTP destination, protocol, or authentication mod
 key before applying the change. Save a replacement key or select a named environment variable for
 the new destination. Classifier credential IDs are reserved from custom chat-provider IDs.
 
-Saved Copse profiles can use a hosted preset's variable (`LIQUID_API_KEY`, `TYPESAFE_API_KEY`, `FEATHERLESS_API_KEY`)
+Saved Copse profiles can use a hosted preset's variable (`LIQUID_API_KEY`, `TYPESAFE_API_KEY`,
+`FASTINO_API_KEY`, `CELERIS_API_KEY`, `OPENROUTER_API_KEY`, `FEATHERLESS_API_KEY`)
 only with that preset's own endpoint; the rule is derived from `CLASSIFIER_PRESETS`. Custom saved profiles use a
 dedicated `COPSE_CLASSIFIER_*` environment variable or a saved key. Other app/cloud credentials
 cannot be selected as classifier tokens. The explicit headless `--config` mode can name any
 environment variable supplied by the caller.
+
+## Decision Index connections
+
+The [Artificial Analysis Decision Index](https://artificialanalysis.ai/articles/artificial-analysis-decision-index)
+models have these ready-to-edit presets. The three OpenRouter presets share its
+[Decisions API](https://openrouter.ai/blog/insights/what-is-jev/) and require an OpenRouter key;
+the other presets use the model provider's endpoint. A preset supplies a model ID and destination,
+not an API key. Saving and selecting one makes no inference request; **Test classifier** sends one.
+
+| Model                         | Connection                                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| TypeSafe / Jev                | [TypeSafe SystemOne](https://docs.typesafe.ai/introduction/quickstart)                           |
+| Liquid / d1                   | [Liquid Decisions](https://docs.liquid.ai/)                                                      |
+| Fastino / GLiDE               | [Fastino SystemOne](https://fastino.ai/blog/introducing-glide-the-first-thinking-decision-model) |
+| Celeris-1 Decision            | [Celeris SystemOne](https://docs.celeris.ai/decisions)                                           |
+| Microsoft-Decision-1          | [OpenRouter Decisions](https://openrouter.ai/microsoft/microsoft-decision-1)                     |
+| Perplexity / Decider v1.1 27B | [OpenRouter Decisions](https://openrouter.ai/perplexity/pplx-decider-v1.1-27b)                   |
+| Inception / Mercury Decide    | [OpenRouter Decisions](https://openrouter.ai/inception/mercury-decide)                           |
+
+Microsoft Foundry also exposes [a native SystemOne endpoint](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-microsoft-decision).
+It is deployment-specific and uses a different API-key header, so the ready-made
+Microsoft connection uses OpenRouter instead.
 
 ## Background questions
 

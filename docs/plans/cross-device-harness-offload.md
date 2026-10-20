@@ -94,7 +94,9 @@ turn. A desktop that must be reachable for the run to proceed has not offloaded 
 ## Binding decisions
 
 1. **The worker is a Copse process, not a foreign agent.** It runs the same
-   `runHeadlessAgent` stack over the headless contract. This is what separates the plan from
+   `runHeadlessAgent` stack over the headless contract (_2026-10-16: `runHeadlessAgent` speaks
+   no contract today; proposed: attach over ACP — as `thread-in-container.md` T2 already says —
+   with the execution contract carrying budgets, policy and the lease_). This is what separates the plan from
    `acp-over-ssh.md` (someone else's loop) and `managed-agent-environments.md` (someone
    else's runtime).
 2. **Ownership is a fenced, per-thread writer lease** with an owner id, a monotonic epoch, and

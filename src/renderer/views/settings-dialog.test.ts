@@ -455,15 +455,15 @@ describe('settings search (cross-section block filter)', () => {
   })
 
   it('ranks a heading (legend) match above a body-only match', () => {
-    // "Models" names the block via its legend; other blocks (Providers, Helpers)
-    // only mention models in body copy, so they sort after it.
+    // "Models" and "Models & agents" name their blocks via their legends; other
+    // blocks (Helpers, …) only mention models in body copy, so they sort after.
     search('models')
     const legends = resultLegends()
     assert.ok(
-      legends.length >= 2,
-      `expected multiple model matches, got ${JSON.stringify(legends)}`,
+      legends.length >= 3,
+      `expected heading and body model matches, got ${JSON.stringify(legends)}`,
     )
-    assert.equal(legends[0], 'Models')
+    assert.deepEqual(legends.slice(0, 2).sort(), ['Models', 'Models & agents'])
   })
 
   it('shows an empty-state message and no results for an unknown term', () => {
