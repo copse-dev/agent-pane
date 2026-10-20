@@ -62796,17 +62796,22 @@ function hydrationFailed(threadId) {
 function ensureThreadMessages(projectId, threadId) {
   return activeHydrator?.ensure(projectId, threadId) ?? Promise.resolve();
 }
+function showSideChatTranscript(threadId) {
+  activeHydrator?.showSideChat(threadId);
+}
 function needsHydration(thread) {
   return thread.messagesLoaded === false;
 }
-function isPinned(thread, activeThreadId) {
+function isPinned(thread, activeThreadId, visibleSideChatId) {
   if (thread.id === activeThreadId) return true;
+  if (thread.id === visibleSideChatId) return true;
   if (thread.status === "running") return true;
   return (thread.pendingMessages?.length ?? 0) > 0;
 }
 function attachThreadHydration(store2, api2) {
   const inFlight4 = /* @__PURE__ */ new Map();
   let recency = [];
+  let visibleSideChatId = null;
   const touch = (threadId) => {
     recency = [...recency.filter((id) => id !== threadId), threadId];
   };
@@ -62815,7 +62820,7 @@ function attachThreadHydration(store2, api2) {
     const byId = new Map(threads.map((t2) => [t2.id, t2]));
     const evictable = recency.filter((id) => {
       const thread = byId.get(id);
-      return thread !== void 0 && !isPinned(thread, activeThreadId);
+      return thread !== void 0 && !isPinned(thread, activeThreadId, visibleSideChatId);
     });
     const overBudget = evictable.length - HYDRATED_THREAD_BUDGET;
     if (overBudget <= 0) return;
@@ -62869,6 +62874,12 @@ function attachThreadHydration(store2, api2) {
     return request;
   };
   activeHydrator = {
+    showSideChat: (threadId) => {
+      if (visibleSideChatId === threadId) return;
+      visibleSideChatId = threadId;
+      if (threadId !== null) touch(threadId);
+      evict();
+    },
     ensure: (projectId, threadId) => {
       const state = store2.getState();
       const thread = state.threads.find((t2) => t2.id === threadId);
@@ -87188,6 +87199,24 @@ var init_demo_scenarios = __esm({
         threads: SIDE_CHATS_THREADS
       },
       {
+        id: "side-chats-restored",
+        label: "Side chats after an app restart",
+        project: project("demo-side-chats-restored", "Widgets", "/demo/widgets"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          layout: {
+            projectsPaneWidth: 240,
+            filesPaneWidth: 680,
+            filesPaneHeight: 360,
+            fileTreeWidth: 180
+          }
+        },
+        deferSideChatTranscripts: true,
+        threads: SIDE_CHATS_THREADS
+      },
+      {
         id: "thread-context",
         changeStats: { additions: 42, deletions: 7 },
         label: "The thread Context panel",
@@ -88165,7 +88194,9 @@ function createDemoApi(scenario2, options = {}) {
         return resolved2({ status: "archived", archivedAt, worktree: thread?.worktree });
       },
       loadProject: (projectId) => resolved2(
-        projectId === scenario2.project.id ? structuredClone(threads) : structuredClone(
+        projectId === scenario2.project.id ? structuredClone(threads).map(
+          (thread) => scenario2.deferSideChatTranscripts === true && thread.sideChat !== void 0 ? { ...thread, messages: [], messagesLoaded: false } : thread
+        ) : structuredClone(
           scenario2.otherProjects?.find((other) => other.project.id === projectId)?.threads ?? []
         )
       ),
@@ -173335,7 +173366,19 @@ function renderSideChat(input2) {
     if (!archiveBlocked) input2.onArchive(archived);
   });
   const body = el("div", { class: "side-chat-body" });
-  if (side.messages.length === 0) {
+  if (needsHydration(side)) {
+    body.append(
+      el(
+        "div",
+        { class: "side-chat-empty", "data-side-chat-loading": "" },
+        el(
+          "p",
+          { role: "status" },
+          input2.loadFailed === true ? "Couldn\u2019t load this side chat." : "Loading conversation\u2026"
+        )
+      )
+    );
+  } else if (side.messages.length === 0) {
     body.append(
       el(
         "div",
@@ -173425,14 +173468,27 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
   }
   function ask(text2) {
     if (selectedId === null) return;
+    const side = store2.getState().threads.find((thread) => thread.id === selectedId);
+    if (!side || needsHydration(side)) return;
     sendSideChatMessage(store2, api2, selectedId, text2);
+  }
+  function hydrate(threadId) {
+    const { activeProjectId, threads } = store2.getState();
+    const thread = threads.find((t2) => t2.id === threadId);
+    if (activeProjectId && thread && needsHydration(thread)) {
+      void ensureThreadMessages(activeProjectId, threadId);
+    }
   }
   function render2() {
     frame = 0;
-    if (!paneVisible()) return;
+    if (!paneVisible()) {
+      showSideChatTranscript(null);
+      return;
+    }
     const { threads, activeThreadId } = store2.getState();
     const selection2 = resolveSideChatSelection(threads, activeThreadId, remembered);
     selectedId = selection2.selectedId;
+    showSideChatTranscript(selectedId);
     if (selection2.mainId !== null && selectedId !== null)
       remembered.set(selection2.mainId, selectedId);
     clear(list);
@@ -173458,6 +173514,8 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
       );
       item.addEventListener("click", () => {
         if (selection2.mainId !== null) remembered.set(selection2.mainId, row2.id);
+        showSideChatTranscript(row2.id);
+        hydrate(row2.id);
         render2();
       });
       list.append(item);
@@ -173479,9 +173537,12 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
       return;
     }
     const parent = threads.find((thread) => thread.id === side.sideChat?.parentThreadId);
+    const loadFailed = needsHydration(side) && hydrationFailed(side.id);
+    if (needsHydration(side) && !loadFailed) hydrate(side.id);
     const view = renderSideChat({
       side,
       parent,
+      loadFailed,
       onSuggestion: ask,
       onArchive: (archived) => {
         if (archived) restoreThread(store2, side.id);
@@ -173491,14 +173552,19 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
     headerHost.append(view.header);
     bodyHost.append(...Array.from(view.body.childNodes));
     if (atBottom) bodyHost.scrollTop = bodyHost.scrollHeight;
-    input2.disabled = side.archivedAt != null;
-    send.disabled = side.archivedAt != null || side.status === "running";
+    const unloaded = needsHydration(side);
+    input2.disabled = side.archivedAt != null || unloaded;
+    send.disabled = side.archivedAt != null || side.status === "running" || unloaded;
     promote.disabled = side.status === "running";
     promote.title = promote.disabled ? "Wait for the side chat to finish before promoting" : "";
     if (side.unreadAt !== void 0) markThreadRead(store2, side.id);
   }
   function schedule() {
-    if (!paneVisible() || frame !== 0) return;
+    if (!paneVisible()) {
+      showSideChatTranscript(null);
+      return;
+    }
+    if (frame !== 0) return;
     frame = requestAnimationFrame(render2);
   }
   form.addEventListener("submit", (event) => {
@@ -173538,6 +173604,7 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
   ];
   schedule();
   return () => {
+    showSideChatTranscript(null);
     for (const off of offs) off();
     if (frame !== 0) cancelAnimationFrame(frame);
   };
@@ -173552,6 +173619,7 @@ var init_side_chat_panel = __esm({
     init_side_chat2();
     init_panels();
     init_side_chat3();
+    init_thread_hydration();
     init_pane_maximize_button();
     init_pane_popout_button();
     init_toast();
