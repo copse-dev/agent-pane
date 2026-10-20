@@ -20,7 +20,7 @@ describe('OpenAI cloud agent prototype picker', () => {
     await expect(option.$('.model-picker-retention svg')).toExist()
     await expect(
       $$('.model-picker-option[data-value^="remote-agent:openai#"]'),
-    ).toBeElementsArrayOfSize(11)
+    ).toBeElementsArrayOfSize(9)
     await expect(
       picker.$('.model-picker-option[data-value="remote-agent:openai#gpt-6-astra"]'),
     ).toExist()
