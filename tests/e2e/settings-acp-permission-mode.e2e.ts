@@ -96,7 +96,7 @@ describe('ACP permission-mode settings', () => {
     await dialog.waitForDisplayed({ timeout: 10_000 })
     await $('.settings-nav-btn[data-section="general"]').click()
 
-    // Device agents live in the Coding agents list: open the row's Options.
+    // Device agents live in the Models & agents list: open the row's Options.
     const options = await $('.acp-row[data-agent="fixture-agent"] button[aria-expanded]')
     await options.waitForExist({ timeout: 15_000 })
     await options.click()
@@ -106,7 +106,7 @@ describe('ACP permission-mode settings', () => {
     await browser.execute(() => {
       const content = document.querySelector<HTMLElement>('.settings-content')
       const fieldset = [...document.querySelectorAll<HTMLFieldSetElement>('fieldset')].find(
-        (candidate) => candidate.querySelector('legend')?.textContent?.trim() === 'Coding agents',
+        (candidate) => candidate.querySelector('legend')?.textContent?.trim() === 'Models & agents',
       )
       if (content && fieldset) content.scrollTop = Math.max(0, fieldset.offsetTop - 24)
     })

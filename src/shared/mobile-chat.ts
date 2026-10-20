@@ -4,6 +4,7 @@ export interface MobileChatCommand {
   projectId: string
   threadId: string | null
   text: string
+  image?: string
   expiresAt: number
 }
 

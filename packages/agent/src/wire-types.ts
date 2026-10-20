@@ -97,6 +97,8 @@ export interface TodoUpdateInput {
  */
 export interface AgentRunPayload {
   content: UserContent
+  /** Set only for the initial prompt dispatched by the automation controller. */
+  automationRun?: true
   /** Thread-scoped external agent execution choice. */
   executionMode?: 'agent'
   invokedSkills?: string[]

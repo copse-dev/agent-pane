@@ -4,6 +4,7 @@ import {
   MAX_FOLLOW_UP_OPEN_TODO_CHARS,
   MAX_FOLLOW_UP_OPEN_TODOS,
 } from '@shared/follow-ups/types.ts'
+import { ASK_USER_ANSWER_MAX_LENGTH } from '@copse/agent/ask-user-format.ts'
 import { isTrustedAppFrame } from '../windows/app-frames.ts'
 import { RENDERER_STORAGE_KEYS } from '@shared/storage-keys.ts'
 import type { MachineAgentRunRequest } from '@shared/types/machine-dispatch.ts'
@@ -301,7 +302,10 @@ export const approvalRespondSchema = z.tuple([
 // Answer payload for a pending ask_user question: the request id plus one answer
 // string per question, in order. Answers are bounded so a runaway/hostile
 // renderer can't feed an unbounded blob back into the agent's context.
-export const askRespondSchema = z.tuple([z.uuid(), z.array(z.string().max(8192)).max(10)])
+export const askRespondSchema = z.tuple([
+  z.uuid(),
+  z.array(z.string().max(ASK_USER_ANSWER_MAX_LENGTH)).max(10),
+])
 
 // Third element: remember the secret (OS-keyring-backed for a configured host,
 // session-only otherwise). Always sent by preload so the tuple stays fixed-arity.

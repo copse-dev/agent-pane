@@ -276,6 +276,7 @@ export async function runHeadlessAgent(
                           createId: randomUUID,
                           prepareExecutionContext: (): Promise<typeof executionContext> =>
                             Promise.resolve(executionContext),
+                          isScheduledAutomationRun: (): boolean => false,
                           run: async (
                             dispatchThreadId,
                             userContent,

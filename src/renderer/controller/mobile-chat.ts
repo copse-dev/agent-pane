@@ -21,6 +21,7 @@ export async function acceptMobileChat(
   command: MobileChatCommand,
 ): Promise<MobileChatResult> {
   let ownedThread: string | null = null
+  const text = command.text || 'Please look at this image.'
   const checkCurrent = (): void => {
     if (Date.now() >= command.expiresAt) throw new Error('This send expired. Try again.')
     if (store.getState().activeProjectId !== command.projectId)
@@ -46,7 +47,7 @@ export async function acceptMobileChat(
       const prepared = await api.agent.prepareCheckout(
         command.projectId,
         threadId,
-        command.text,
+        text,
         'automatic',
         initial.model,
       )
@@ -56,8 +57,21 @@ export async function acceptMobileChat(
     const current = getThreadById(store, threadId)
     if (!current || current.archivedAt !== undefined) throw new Error('Thread unavailable.')
     checkCurrent()
-    const payload = { content: command.text }
-    const messageId = addMessage(store, threadId, 'user', command.text)
+    const payload = {
+      content: command.image
+        ? [
+            { type: 'image' as const, dataUrl: command.image },
+            { type: 'text' as const, text },
+          ]
+        : text,
+    }
+    const messageId = addMessage(
+      store,
+      threadId,
+      'user',
+      text,
+      command.image ? [command.image] : undefined,
+    )
     const queued = { messageId, payload, createdAt: Date.now() }
     const running = current.status === 'running'
     if (running) enqueueUserMessage(store, threadId, queued)

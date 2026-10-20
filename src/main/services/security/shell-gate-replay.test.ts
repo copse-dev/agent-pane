@@ -257,4 +257,33 @@ describe('shell gate replay', () => {
       'The gate decides differently from the pinned replay. Review the diff, then run with UPDATE_GATE_REPLAY=1.',
     )
   })
+
+  it('runs a program named only as text contained, and still asks without a sandbox', async () => {
+    const outcomes = async (command: string): Promise<Record<string, Outcome>> => {
+      const testCase = { id: command, command, tier: 'read', trustedSshHosts: [], hasFiles: false }
+      const result: Record<string, Outcome> = {}
+      for (const situation of SITUATIONS) result[situation.name] = await replay(situation, testCase)
+      return result
+    }
+    // Before: every one of these asked "Run outside sandbox?" in every situation.
+    for (const command of [
+      'grep -rn -i "ssh" src --include=*.ts | grep -v test | head -30; echo ---',
+      'sed -n 1,80p src/main/services/exec/shell-output-context.ts',
+      'grep -n "pnpm install" docs/agent-development.md | head -40',
+    ]) {
+      const result = await outcomes(command)
+      assert.equal(result['sandbox'], 'allow:contained', command)
+      assert.equal(result['sandbox-remote-write'], 'allow:contained', command)
+      // Never approved to run outside, and never unasked without containment.
+      for (const name of ['no-sandbox', 'auto-run-off']) {
+        assert.match(result[name] ?? '', /^prompt:/, `${command} [${name}]`)
+      }
+    }
+    // A real program run, or an install behind a global option, still asks first.
+    for (const command of ['grep -rn ssh src; ssh build-host uptime', 'pnpm -s install']) {
+      const result = await outcomes(command)
+      assert.equal(result['sandbox'], 'prompt:shell-sandbox-escalation', command)
+      assert.match(result['no-sandbox'] ?? '', /^prompt:/, command)
+    }
+  })
 })

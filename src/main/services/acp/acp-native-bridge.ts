@@ -104,6 +104,9 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // approval, then runs in its bounded OS sandbox, just as for native agents.
   'preflight_worktree',
   'prepare_worktree',
+  // A deferred request is thread-owned; the bridge restores the same thread
+  // execution context before invoking this read-only status tool.
+  'deferred_approval_status',
   'suggest_model',
   // Saved decision classifiers run through Copse's permission and provider gates.
   'ask_classifier',

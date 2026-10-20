@@ -17,6 +17,8 @@ export interface ThreadExecutionContext {
    * must corroborate it against main-owned automation state before trusting it.
    */
   readonly automation?: NonNullable<Thread['automation']>
+  /** Parent thread the user declared this thread a follow-up of; readable without consent. */
+  readonly followUpParentThreadId?: string
   /**
    * Present while an `on-write` thread has not allocated its worktree yet. The
    * context is then a read-only view of the project checkout (`checkoutMode`

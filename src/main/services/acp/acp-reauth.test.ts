@@ -36,6 +36,29 @@ describe('offerAcpReauth', () => {
     assert.deepEqual(launched, ['claude auth login'])
   })
 
+  it('offers the adapter-bundled Codex command and only launches it after acceptance', async () => {
+    let asked = ''
+    assert.equal(
+      await withAnswer(
+        (question) => {
+          asked = question
+          return 'Not now'
+        },
+        () => offerAcpReauth({ agentId: 'codex-acp', kind: 'expired' }),
+      ),
+      null,
+    )
+    assert.match(asked, /codex-acp cli login/)
+    assert.deepEqual(launched, [])
+    assert.equal(
+      await withAnswer(
+        () => 'yes',
+        () => offerAcpReauth({ agentId: 'codex-acp', kind: 'expired' }),
+      ),
+      'codex-acp cli login',
+    )
+    assert.deepEqual(launched, ['codex-acp cli login'])
+  })
   it('says which agent expired and that the sign-in finishes in the terminal', async () => {
     let asked = ''
     await withAnswer(

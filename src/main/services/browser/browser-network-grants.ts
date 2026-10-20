@@ -19,6 +19,11 @@ export function browserAllowedOrigins(scope: string): string[] {
   return [...(saved ?? webAllowedOriginsWithDefaults(null)), ...(grants.get(scope) ?? [])]
 }
 
+/** Explicit origins approved for this browser scope during the current app session. */
+export function browserSessionOrigins(scope: string): string[] {
+  return [...(grants.get(scope) ?? [])].sort()
+}
+
 export function grantBrowserOrigin(scope: string, origin: string): void {
   let origins = grants.get(scope)
   if (!origins) {

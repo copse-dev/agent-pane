@@ -55,39 +55,32 @@ describe('native ChatGPT plan connection settings', () => {
     resetUserData()
   })
 
-  it('offers browser sign-in alongside OpenAI API keys and explains the billing path', async () => {
+  it('offers browser sign-in from the ChatGPT row and explains the billing path', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
-    await $('#settings-providers-host .provider-chip[data-provider="openai"]').click()
-    await expect($('.openai-connection-card[data-connection="chatgpt"] h4')).toHaveText(
-      'ChatGPT plan',
-    )
-    await expect($('.openai-connection-card[data-connection="api"] h4')).toHaveText('OpenAI API')
-    // Codex lives in the Coding agents list now, not in the provider form.
-    await expect($('.openai-connection-card[data-connection="codex"]')).not.toExist()
-    const section = $('[data-testid="chatgpt-plan-section"]')
-    await $('#settings-providers-host').scrollIntoView()
+    const row = $('[data-testid="models-agents-list"] [data-row="plan:chatgpt"]')
+    await row.waitForExist({ timeout: 15_000 })
+    await expect(row.$('.acp-row-name strong')).toHaveText('ChatGPT')
+    await expect(row.$('.acp-row-desc')).toHaveText('plan or available credits', {
+      containing: true,
+    })
+    // Not signed in: no Ready chip, and the row's action is Sign in.
+    await expect(row.$('.acp-row-chip')).not.toExist()
+    // The ChatGPT plan, Codex and an OpenAI key are separate connections, so the
+    // plan row never carries Codex or API-key controls.
+    await expect(row.$('[name="openAiServiceTier"]')).not.toExist()
+    await row.$('button=Sign in').click()
+    const section = row.$('[data-testid="chatgpt-plan-section"]')
     await expect(section).toBeDisplayed()
-    await expect(section.parentElement()).toHaveText('Copse’s agent and tools', {
-      containing: true,
-    })
-    await expect(section.parentElement()).toHaveText('plan or available credits', {
-      containing: true,
-    })
     await expect(section.$('[data-testid="chatgpt-plan-connect"]')).toHaveText(
       'Continue with ChatGPT',
     )
     await expect(section.$('[data-testid="chatgpt-plan-connect"]')).toBeEnabled()
     await expect(section.$('select')).not.toExist()
     await expect(section).toHaveText('Manage usage', { containing: true })
-    const apiDetails = $('[data-testid="openai-api-details"]')
-    await expect(apiDetails).not.toHaveAttribute('open')
-    await expect(apiDetails.$('input')).not.toBeDisplayed()
+    await row.scrollIntoView({ block: 'center' })
     await saveAppScreenshot('settings-chatgpt-plan.png')
-    await apiDetails.$('summary').click()
-    await expect(apiDetails.$('input')).toBeDisplayed()
-    await expect(apiDetails.$('[data-testid="openai-service-tier-block"]')).toBeDisplayed()
-    await apiDetails.$('summary').click()
+    await row.$('button=Hide options').click()
   })
   it('shows a readable plan model label in Usage without its client ID', async () => {
     await $('.settings-nav-btn[data-section="usage"]').click()

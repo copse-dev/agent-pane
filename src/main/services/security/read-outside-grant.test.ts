@@ -7,6 +7,7 @@ import {
   clearReadOutsideProjectGrants,
   grantReadOutsideProject,
   hasReadOutsideProjectGrant,
+  listReadOutsideProjectGrants,
 } from './read-outside-grant.ts'
 
 describe('read-outside grant coverage', () => {
@@ -32,6 +33,7 @@ describe('read-outside grant coverage', () => {
   const covered = (target: string): boolean => hasReadOutsideProjectGrant(thread, [target])
 
   it('covers the directory itself and ordinary descendants', () => {
+    assert.deepEqual(listReadOutsideProjectGrants(thread), [granted])
     assert.equal(covered(granted), true)
     assert.equal(covered(join(granted, 'sub', 'x')), true)
     assert.equal(covered(join(granted, 'not-yet-created', 'file.txt')), true)
@@ -98,6 +100,7 @@ describe('read-outside grant coverage', () => {
     symlinkSync(destination, granted, 'dir')
 
     assert.equal(covered(join(granted, 'secret.txt')), false)
+    assert.deepEqual(listReadOutsideProjectGrants(thread), [])
   })
 
   it('revokes a file grant when the approved path is replaced by a symlink', () => {

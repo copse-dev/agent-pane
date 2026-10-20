@@ -78,6 +78,7 @@ import {
 } from '../controller/automation-held-runs.ts'
 import { describeRetainedWorktree } from './automation-retained-worktrees.ts'
 import { forkThread } from '../controller/fork-thread.ts'
+import { createFollowUpThread } from '../controller/follow-up-thread.ts'
 import {
   createThreadFilter,
   filterText,
@@ -863,6 +864,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       }
       showToast('Forked into a new thread.')
     })
+  }
+
+  function followUpProjectThread(projectId: string, threadId: string): void {
+    if (projectId !== store.getState().activeProjectId) return
+    if (!createFollowUpThread(store, api, threadId))
+      showToast('Could not start a follow-up thread.', { variant: 'error' })
   }
 
   const archivingThreads = new Set<string>()
@@ -1667,25 +1674,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       })
       const openThreadMenu = (x: number, y: number): void => {
         showContextMenu(x, y, [
-          {
-            label: 'Conversation access…',
-            onSelect: (): void => {
-              showContextMenu(x, y, [
-                {
-                  label: 'Revoke reading other threads',
-                  onSelect: (): void => {
-                    void api.threadPrompts.revokeAccess(thread.id, 'read')
-                  },
-                },
-                {
-                  label: 'Revoke sending to other threads',
-                  onSelect: (): void => {
-                    void api.threadPrompts.revokeAccess(thread.id, 'send')
-                  },
-                },
-              ])
-            },
-          },
           ...(canMutate
             ? [
                 ...(allowRename
@@ -1719,6 +1707,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                         },
                       },
                     ])
+                  },
+                },
+                {
+                  label: 'Create follow-up thread',
+                  onSelect: (): void => {
+                    followUpProjectThread(project.id, thread.id)
                   },
                 },
                 {
@@ -1789,11 +1783,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             : []),
         ])
       }
-      chatRow.addEventListener('contextmenu', (e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        openThreadMenu(e.clientX, e.clientY)
-      })
+      if (canMutate || scheduleId) {
+        chatRow.addEventListener('contextmenu', (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          openThreadMenu(e.clientX, e.clientY)
+        })
+      }
 
       if (thread.status === 'running') {
         chatRow.classList.add('is-running')
@@ -2269,11 +2265,24 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     function renderProjectEntry(project: Project): HTMLElement {
       const entry = el('div', { class: 'project-entry', 'data-project-id': project.id })
       const isExpanded = project.id === expandedId
+      const hasRunningThread = store
+        .getState()
+        .backgroundThreads.some(
+          ({ projectId, thread }) => projectId === project.id && thread.status === 'running',
+        )
+      const needsAttention =
+        !project.missing &&
+        !isExpanded &&
+        getSidebarThreads(store, project.id).some((t) => isThreadAwaitingAttention(t.id))
       const projectRow = el(
         'button',
         {
-          class: `project-row${isExpanded ? ' active' : ''}${project.missing ? ' missing' : ''}`,
+          class: `project-row${isExpanded ? ' active' : ''}${project.missing ? ' missing' : ''}${!isExpanded && hasRunningThread ? ' is-running' : ''}`,
           title: project.missing ? `${project.path} — folder missing` : project.path,
+          'aria-label':
+            !isExpanded && hasRunningThread
+              ? `${projectDisplayName(project)} — agent is working${needsAttention ? '; a thread needs your attention' : ''}`
+              : undefined,
         },
         el(
           'span',
@@ -2293,13 +2302,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       // threads are preserved on disk and recoverable via the notice below.
       if (project.missing) {
         projectRow.append(warningIcon('ui-icon ui-icon-sm project-missing-icon'))
-      } else if (
-        // A collapsed project hides its thread rows, so surface any thread of its
-        // own that is waiting on the user right on the project row (expanded
-        // projects show the per-thread bells below instead).
-        !isExpanded &&
-        getSidebarThreads(store, project.id).some((t) => isThreadAwaitingAttention(t.id))
-      ) {
+      } else if (needsAttention) {
+        // Collapsed projects surface requests hidden with their thread rows.
         projectRow.append(attentionBell('A thread in this project needs your attention'))
       }
       projectRow.addEventListener('click', () => {
