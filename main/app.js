@@ -176794,7 +176794,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       return;
     }
     const url2 = nonEmptyStringOr(
-      firstNonEmptyString(webviewUrl(tab), tab.pendingUrl),
+      firstNonEmptyString(tab.pendingUrl, webviewUrl(tab)),
       "about:blank"
     );
     const title = webviewTitle(tab);
@@ -176994,11 +176994,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     if (!tab) return;
     if (browserModeActive(store2)) {
       ensureWebview(tab);
-      if (tab.pendingUrl) {
-        const url2 = tab.pendingUrl;
-        tab.pendingUrl = null;
-        navigateWebview(tab, url2);
-      }
+      if (tab.pendingUrl) navigateWebview(tab, tab.pendingUrl);
       syncAddressBar(tab);
       revealActiveTab(tab);
     }
@@ -177527,11 +177523,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       const tab = activeTabId ? tabs.get(activeTabId) : null;
       if (tab) {
         ensureWebview(tab);
-        if (tab.pendingUrl) {
-          const url2 = tab.pendingUrl;
-          tab.pendingUrl = null;
-          navigateWebview(tab, url2);
-        }
+        if (tab.pendingUrl) navigateWebview(tab, tab.pendingUrl);
         syncAddressBar(tab);
         ensureBrowserResizeObserver();
         revealActiveTab(tab);
