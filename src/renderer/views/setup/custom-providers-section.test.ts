@@ -181,6 +181,38 @@ describe('custom providers: plaintext storage policy', () => {
 })
 
 describe('local providers: running-server detection', () => {
+  it('probes the saved LM Studio address instead of another service on its default port', async () => {
+    const base = stubApi([], [])
+    const calls: string[] = []
+    const savedUrl = 'http://127.0.0.1:41234/v1'
+    const section = createCustomProvidersSection(
+      {
+        ...base,
+        settings: {
+          ...base.settings,
+          get: async (key) => (key === 'localServerUrl' ? savedUrl : null),
+        },
+        lmStudio: {
+          ...base.lmStudio,
+          test: async (url) => {
+            calls.push(url)
+            return { ok: url === savedUrl, models: [] }
+          },
+        },
+      },
+      { variant: 'local', embedded: true },
+    )
+    await section.refresh()
+    section.select('ollama')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.ok(calls.includes(savedUrl), 'LM Studio detection must use the saved endpoint')
+    assert.equal(
+      calls.some((url) => url.includes(':1234/')),
+      false,
+    )
+    assert.equal(section.isConfigured('lmstudio'), true)
+  })
+
   it('retries a selected local provider and ignores an aborted earlier probe', async () => {
     const base = stubApi([], [])
     const firstProbe = deferred<Awaited<ReturnType<ApiClient['lmStudio']['test']>>>()

@@ -112,25 +112,22 @@ describe('copse.dev feature tour screenshots', () => {
     await $('[aria-label="Settings"]').click()
     const dialog = $('#settings-dialog')
     await dialog.waitForDisplayed()
-    await dialog.$('button.settings-nav-subheading=API keys').click()
-    await dialog.$('.provider-chip=Anthropic').click()
-    // Chips re-render on selection, so look the active one up afresh.
-    await expect(dialog.$('.provider-chip.active')).toHaveText('Anthropic')
-    // Selecting the chip can interrupt the first smooth scroll. Navigate again
-    // after the provider panel has rendered, and require the actual destination
-    // before capturing rather than sampling whichever animation frame arrived.
-    await dialog.$('button.settings-nav-subheading=API keys').click()
+    await dialog.$('[data-testid="models-agents-list"] .acp-row').waitForExist()
+    await dialog.$('button.settings-nav-subheading=Models & agents').click()
     await browser.waitUntil(
       async () =>
         browser.execute(() => {
-          const panel = document.querySelector('#settings-providers-host > fieldset')
+          const panel = document.querySelector('#settings-agents-host > fieldset')
           const content = document.querySelector('#settings-dialog .settings-content')
           if (!panel || !content) return false
           return (
             Math.abs(panel.getBoundingClientRect().top - content.getBoundingClientRect().top) < 1
           )
         }),
-      { timeoutMsg: 'expected API keys navigation to reach the top of the settings scrollport' },
+      {
+        timeoutMsg:
+          'expected Models & agents navigation to reach the top of the settings scrollport',
+      },
     )
     await waitForSettledLayout('#settings-dialog .settings-content')
     await settleCapture()

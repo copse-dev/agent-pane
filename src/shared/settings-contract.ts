@@ -80,6 +80,7 @@ export interface SettingsValues {
   subagentsEnabled: boolean
   externalApiSafety: boolean
   githubBackend: 'auto' | 'cli' | 'api'
+  webSearchProvider: import('./web-search.ts').WebSearchProvider
   gitAttributionEnabled: boolean
   gitThreadLinksEnabled: boolean
   remoteAgentBaseUrl: string

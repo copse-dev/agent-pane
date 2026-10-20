@@ -526,15 +526,10 @@ describe('OpenRouter model picker', () => {
     await $('.settings-section[data-section="general"]').waitForExist({ timeout: 15_000 })
 
     // The key and custom-model fields live inside the OpenRouter provider form,
-    // shown only once its chip is selected in the Providers panel.
-    const selected = await browser.execute(() => {
-      const chip = [...document.querySelectorAll<HTMLButtonElement>('.provider-chip')].find(
-        (el) => el.textContent?.trim() === 'OpenRouter',
-      )
-      chip?.click()
-      return !!chip
-    })
-    assert.equal(selected, true, 'expected an OpenRouter provider chip')
+    // shown once its saved key's Options are opened in Models & agents.
+    const row = $('[data-testid="models-agents-list"] [data-row="key:openrouter"]')
+    await row.waitForExist({ timeout: 15_000 })
+    await row.$('button=Options').click()
 
     await $('.provider-form input[name="openRouterModel"]').waitForExist({ timeout: 5_000 })
     await $('.provider-form input[name="openRouterFreeMode"]').waitForExist({ timeout: 5_000 })
