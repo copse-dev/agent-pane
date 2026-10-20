@@ -17,8 +17,8 @@ export function scopedSshCommitSigningAdvice(
   return (
     'Copse advice: SSH signing failed and Settings → Permissions → Commit signing is off. ' +
     'Ask the user to check that the configured public key exists and its matching key is ' +
-    'loaded in ssh-agent. If they use ssh-agent for signing, they can enable scoped SSH ' +
-    'signing approvals there and retry git_commit. Do not request a password, disable ' +
+    'loaded in ssh-agent. If they use ssh-agent for signing, they can turn on "Allow ' +
+    'signed commits" there and retry git_commit. Do not request a password, disable ' +
     'signing, or retry outside the sandbox.'
   )
 }

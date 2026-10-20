@@ -51,7 +51,7 @@ describe('isolated SSH commit signing', { skip: process.platform !== 'darwin' },
     await shutdownProjectSandbox()
     setApprovalHandler(null)
     setGitAvailableForTest(null)
-    await setSetting('gitCommitSshAgentSocketAccess', false)
+    await setSetting('gitCommitSshAgentSocketAccess', true)
     await setSetting('autoRunSandboxCommands', true)
     await setSetting('toolPermissionOverrides', {})
     if (agent) {
@@ -152,7 +152,7 @@ describe('isolated SSH commit signing', { skip: process.platform !== 'darwin' },
     return { repo, secrets, git, commit }
   }
 
-  it('signs with the approved key while hooks cannot access the agent or private key', async (t) => {
+  it('signs without asking by default while hooks cannot access the agent or private key', async (t) => {
     const setup = await fixture(t)
     if (!setup) return
     const { repo, secrets, git, commit } = setup
@@ -165,15 +165,12 @@ describe('isolated SSH commit signing', { skip: process.platform !== 'darwin' },
     )
     git('config', 'core.hooksPath', hooks)
     let prompts = 0
-    setApprovalHandler(async (request) => {
+    setApprovalHandler(async () => {
       prompts++
-      assert.equal(request.title, 'Allow this Git signing helper?')
-      assert.match(request.body, /Key: SHA256:/)
-      assert.match(request.body, /ssh-keygen -Y sign -n git -U/)
-      return { approved: true, remember: true }
+      return { approved: false, remember: false }
     })
     await commit()
-    assert.equal(prompts, 1)
+    assert.equal(prompts, 0, 'the default-on setting signs without asking')
     assert.notEqual((await readFile(join(repo, 'hook-status'), 'utf8')).trim(), '0')
     assert.equal((await readFile(join(repo, 'leaked-key'))).length, 0)
     assert.match(git('cat-file', 'commit', 'HEAD'), /gpgsig -----BEGIN SSH SIGNATURE-----/)
@@ -184,30 +181,38 @@ describe('isolated SSH commit signing', { skip: process.platform !== 'darwin' },
     await writeFile(join(repo, 'change.txt'), 'second\n')
     git('add', 'change.txt')
     await commit()
-    assert.equal(prompts, 1, 'unchanged project/helper/key/socket uses the exact grant')
+    assert.equal(prompts, 0, 'unchanged project/helper/key/socket reuses the cached grant')
     const copiedKey = join(secrets, 'different-config')
     await writeFile(`${copiedKey}.pub`, publicKey)
     git('config', 'user.signingKey', copiedKey)
     await writeFile(join(repo, 'change.txt'), 'third\n')
     git('add', 'change.txt')
     await commit()
-    assert.equal(prompts, 2, 'changed configuration needs fresh approval')
+    assert.equal(prompts, 0, 'changed configuration is re-granted without asking')
     await setSetting('toolPermissionOverrides', { 'copse:git_commit': 'ask' })
     setApprovalHandler(async (request) => {
       prompts++
+      assert.equal(request.title, 'Allow this Git signing helper?')
+      assert.match(request.body, /Key: SHA256:/)
+      assert.match(request.body, /ssh-keygen -Y sign -n git -U/)
       assert.equal(request.allowRemember, false)
       return { approved: true, remember: true }
     })
     await writeFile(join(repo, 'change.txt'), 'fourth\n')
     git('add', 'change.txt')
     await commit()
-    assert.equal(prompts, 3, 'Always ask ignores a remembered helper grant')
+    assert.equal(prompts, 1, 'Always ask forces a fresh prompt and ignores the cached grant')
+    await writeFile(join(repo, 'change.txt'), 'fifth\n')
+    git('add', 'change.txt')
+    await commit()
+    assert.equal(prompts, 2, 'Always ask never remembers the helper grant')
   })
 
-  it('declines before hooks or a signed/unsigned commit and does not remember rejection', async (t) => {
+  it('declines before hooks or a signed/unsigned commit when Always ask is set, and does not remember rejection', async (t) => {
     const setup = await fixture(t)
     if (!setup) return
     const { repo, git, commit } = setup
+    await setSetting('toolPermissionOverrides', { 'copse:git_commit': 'ask' })
     const hooks = join(repo, 'hooks')
     await mkdir(hooks)
     await writeFile(join(hooks, 'pre-commit'), '#!/bin/sh\ntouch hook-ran\n', { mode: 0o700 })
@@ -224,10 +229,11 @@ describe('isolated SSH commit signing', { skip: process.platform !== 'darwin' },
     assert.equal(git('rev-list', '--count', 'HEAD').trim(), '1')
   })
 
-  it('pins approved signing configuration against changes while the prompt is open', async (t) => {
+  it('pins approved signing configuration against changes made during an Always ask prompt', async (t) => {
     const setup = await fixture(t)
     if (!setup) return
     const { repo, git, commit } = setup
+    await setSetting('toolPermissionOverrides', { 'copse:git_commit': 'ask' })
     const evil = join(repo, 'replacement-signer')
     await writeFile(evil, '#!/bin/sh\ntouch replacement-ran\nexit 1\n', { mode: 0o700 })
     setApprovalHandler(async () => {

@@ -153,7 +153,7 @@ export const gitCommitTool = defineTool({
               ? scopedSshCommitSigningAdvice(failure, {
                   macOS: process.platform === 'darwin',
                   sandboxed: sandboxEnabled,
-                  permissionEnabled: getSetting<boolean>('gitCommitSshAgentSocketAccess', false),
+                  permissionEnabled: getSetting<boolean>('gitCommitSshAgentSocketAccess', true),
                 })
               : null
           throw new Error(advice ? `${failure}\n\n${advice}` : failure)
