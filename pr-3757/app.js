@@ -36342,6 +36342,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "deepseek-v4-1-flash-1017": [
+        {
+          value: 45.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-1-flash-1017', fetched 2026-10-20",
+          asOf: "2026-10-20"
+        }
+      ],
       "deepseek-v4-1-flash-non-reasoning": [
         {
           value: 24.7,
@@ -40880,10 +40888,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 10,
+          value: 9.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-4-maverick', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'llama-4-maverick', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "llama-4-scout": [
@@ -40894,10 +40902,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.1,
+          value: 6.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-4-scout', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'llama-4-scout', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "llama-65b": [
@@ -41034,10 +41042,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 13.8,
+          value: 10.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mercury-2', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'mercury-2', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "mercury-2-5": [
@@ -41098,10 +41106,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 25.2,
+          value: 21.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-0424', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-0424', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "mimo-v2-5-pro": [
@@ -41352,6 +41360,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         }
       ],
+      "minimax-m3-1-flash": [
+        {
+          value: 42.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'minimax-m3-1-flash', fetched 2026-10-20",
+          asOf: "2026-10-20"
+        }
+      ],
       "ministral-3-14b": [
         {
           value: 11.2,
@@ -41592,10 +41608,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.2,
+          value: 7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3-2', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3-2', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "mistral-small-4": [
@@ -41636,8 +41652,8 @@ var init_model_intellect_generated = __esm({
         {
           value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-13",
-          asOf: "2026-10-13"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "mixtral-8x7b-instruct": [
@@ -41830,6 +41846,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         }
       ],
+      "muse-spark-open": [
+        {
+          value: 38.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'muse-spark-open', fetched 2026-10-20",
+          asOf: "2026-10-20"
+        }
+      ],
       "muse-wonder": [
         {
           value: 52.4,
@@ -41860,6 +41884,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "nemotron-3-5-bolt-74b-a9b": [
+        {
+          value: 21.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nemotron-3-5-bolt-74b-a9b', fetched 2026-10-20",
+          asOf: "2026-10-20"
+        }
+      ],
       "nemotron-3-5-lightning": [
         {
           value: 23.6,
@@ -41872,6 +41904,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'nemotron-3-5-lightning', fetched 2026-09-22",
           asOf: "2026-09-22"
+        }
+      ],
+      "nemotron-3-5-super-vl": [
+        {
+          value: 26.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nemotron-3-5-super-vl', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "nemotron-3-nano-omni-30b-a3b": [
@@ -42800,10 +42840,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.2,
+          value: 6.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-14b-instruct-reasoning', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-14b-instruct-reasoning', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "qwen3-235b-a22b-instruct": [
@@ -42940,10 +42980,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.6,
+          value: 7.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-32b-instruct-reasoning', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-32b-instruct-reasoning', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "qwen3-4b-2507-instruct": [
@@ -43480,10 +43520,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7.3,
+          value: 5.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-8b-instruct-reasoning', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8b-instruct-reasoning', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "qwen3-coder-30b-a3b-instruct": [
@@ -43808,6 +43848,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "reflection-beam": [
+        {
+          value: 30.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'reflection-beam', fetched 2026-10-20",
+          asOf: "2026-10-20"
+        }
+      ],
       "reka-flash": [
         {
           value: 6,
@@ -44062,10 +44110,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 28.2,
+          value: 26.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'solar-pro4', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'solar-pro4', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       sonar: [
@@ -49374,10 +49422,6 @@ var init_model_coverage = __esm({
 function modelDisplayLabel(model) {
   return displayModelLabel2(model);
 }
-function agentModelIntellectHint(...forms) {
-  const id = resolveAgentModelIdentity(...forms);
-  return id === null ? null : modelIntellectHint(id);
-}
 async function pluginModelOptions(api2, includeAgentModels, current) {
   if (!includeAgentModels) return [];
   try {
@@ -49412,13 +49456,17 @@ function acpAgentOptions(agents) {
       for (const model of models) {
         const label = acpModelChoiceLabel(model, ": ");
         const versioned = acpModelVersionName(model.description);
-        const hint = agentModelIntellectHint(model.value, versioned, model.label, label);
+        const lineageId = resolveAgentModelIdentity(model.value, versioned, model.label, label);
+        const hint = lineageId === null ? null : modelIntellectHint(lineageId);
         options.push({
           retention: ACP_RETENTION_NOTICE,
           value: acpModelValue(agent2.id, model.value),
           label: hint ? `${label}: ${hint}` : label,
           shortLabel: label,
-          group
+          group,
+          // Scoped to this agent: a different agent's newer release never hides
+          // a model only this agent can actually run.
+          ...lineageId ? { lineageId, lineageScope: `acp:${agent2.id}` } : {}
         });
       }
     } else {
@@ -49540,7 +49588,9 @@ async function remoteAgentOptions(api2, isAvailable, current, preferAcpForClaude
         label,
         group: OPENAI_AGENT_GROUP,
         retention: OPENAI_AGENT_RETENTION_NOTICE,
-        supportsImages: true
+        supportsImages: true,
+        lineageId: id,
+        lineageScope: "remote-agent:openai"
       });
     }
     const selected = parseRemoteAgentModelSelection(current);
@@ -49562,19 +49612,28 @@ async function remoteAgentOptions(api2, isAvailable, current, preferAcpForClaude
     } catch {
     }
     const seen = /* @__PURE__ */ new Set();
-    const add2 = (value, label) => {
+    const add2 = (value, label, lineageId) => {
       if (seen.has(value)) return;
       seen.add(value);
-      options.push({ value, label, group });
+      options.push({
+        value,
+        label,
+        group,
+        // Scoped to Cursor: an unrelated agent/provider's newer release never
+        // hides a model only Cursor's catalog actually offers.
+        ...lineageId ? { lineageId, lineageScope: `remote-agent:${REMOTE_AGENT_PROVIDER_CURSOR}` } : {}
+      });
     };
     add2(remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR), "Default");
     for (const model of liveModels) {
       const vendorLabel = model.label || model.id;
       const label = canonicalModelLabel(vendorLabel);
-      const hint = agentModelIntellectHint(model.id, vendorLabel, label);
+      const lineageId = resolveAgentModelIdentity(model.id, vendorLabel, label);
+      const hint = lineageId === null ? null : modelIntellectHint(lineageId);
       add2(
         remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR, model.id),
-        hint ? `${label}: ${hint}` : label
+        hint ? `${label}: ${hint}` : label,
+        lineageId ?? void 0
       );
     }
     const currentSelection = parseRemoteAgentModelSelection(current);
@@ -49586,17 +49645,26 @@ async function remoteAgentOptions(api2, isAvailable, current, preferAcpForClaude
     const baseGroup = remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_ANTHROPIC);
     const group = preferAcpForClaude ? `${baseGroup} (billed to your API key)` : baseGroup;
     const seen = /* @__PURE__ */ new Set();
-    const add2 = (value, label) => {
+    const add2 = (value, label, lineageId) => {
       if (seen.has(value)) return;
       seen.add(value);
-      options.push({ value, label, group });
+      options.push({
+        value,
+        label,
+        group,
+        // Scoped to the managed Anthropic agent, separately from the direct-key
+        // "Cloud models" group: the two are different billing routes, each with
+        // its own availability.
+        ...lineageId ? { lineageId, lineageScope: `remote-agent:${REMOTE_AGENT_PROVIDER_ANTHROPIC}` } : {}
+      });
     };
     for (const id of MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT) {
       const label = cloudModelDisplayLabel(id);
       const hint = modelIntellectHint(id);
       add2(
         remoteAgentModelValue(REMOTE_AGENT_PROVIDER_ANTHROPIC, id),
-        hint ? `${label}: ${hint}` : label
+        hint ? `${label}: ${hint}` : label,
+        id
       );
     }
     const currentSelection = parseRemoteAgentModelSelection(current);
@@ -49782,9 +49850,18 @@ async function fetchModelOptions(api2, current, opts = {}) {
     if (option.value !== current) return [];
     return [{ ...option, label: `${option.label} (blocked in Settings)`, disabled: true }];
   });
-  const offered = unblockedOptions.map((option) => option.value);
+  const lineageIdsByScope = /* @__PURE__ */ new Map();
+  for (const option of unblockedOptions) {
+    const scope = option.lineageScope ?? "";
+    const id = option.lineageId ?? option.value;
+    const bucket = lineageIdsByScope.get(scope);
+    if (bucket) bucket.push(id);
+    else lineageIdsByScope.set(scope, [id]);
+  }
   const visibleOptions = unblockedOptions.flatMap((option) => {
-    const successor = supersedingModel(option.value, offered);
+    const id = option.lineageId ?? option.value;
+    const offered = lineageIdsByScope.get(option.lineageScope ?? "") ?? [];
+    const successor = supersedingModel(id, offered);
     if (successor === null) return [option];
     if (option.value !== current) return [];
     return [
@@ -51425,7 +51502,7 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
   const chevron = el(
     "span",
     { class: "model-picker-chevron", "aria-hidden": "true" },
-    chevronDownIcon("ui-icon ui-icon-sm")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   const triggerCost = el(
     "span",
@@ -62914,17 +62991,22 @@ function hydrationFailed(threadId) {
 function ensureThreadMessages(projectId, threadId) {
   return activeHydrator?.ensure(projectId, threadId) ?? Promise.resolve();
 }
+function showSideChatTranscript(threadId) {
+  activeHydrator?.showSideChat(threadId);
+}
 function needsHydration(thread) {
   return thread.messagesLoaded === false;
 }
-function isPinned(thread, activeThreadId) {
+function isPinned(thread, activeThreadId, visibleSideChatId) {
   if (thread.id === activeThreadId) return true;
+  if (thread.id === visibleSideChatId) return true;
   if (thread.status === "running") return true;
   return (thread.pendingMessages?.length ?? 0) > 0;
 }
 function attachThreadHydration(store2, api2) {
   const inFlight4 = /* @__PURE__ */ new Map();
   let recency = [];
+  let visibleSideChatId = null;
   const touch = (threadId) => {
     recency = [...recency.filter((id) => id !== threadId), threadId];
   };
@@ -62933,7 +63015,7 @@ function attachThreadHydration(store2, api2) {
     const byId = new Map(threads.map((t2) => [t2.id, t2]));
     const evictable = recency.filter((id) => {
       const thread = byId.get(id);
-      return thread !== void 0 && !isPinned(thread, activeThreadId);
+      return thread !== void 0 && !isPinned(thread, activeThreadId, visibleSideChatId);
     });
     const overBudget = evictable.length - HYDRATED_THREAD_BUDGET;
     if (overBudget <= 0) return;
@@ -62987,6 +63069,12 @@ function attachThreadHydration(store2, api2) {
     return request;
   };
   activeHydrator = {
+    showSideChat: (threadId) => {
+      if (visibleSideChatId === threadId) return;
+      visibleSideChatId = threadId;
+      if (threadId !== null) touch(threadId);
+      evict();
+    },
     ensure: (projectId, threadId) => {
       const state = store2.getState();
       const thread = state.threads.find((t2) => t2.id === threadId);
@@ -64868,6 +64956,37 @@ function activate(store2, api2, id, path, sshHost, pendingThreadId) {
     }
     console.warn("[projects] project activation failed:", failure2);
   });
+}
+function openNewProjectThread(store2, api2, projectId = store2.getState().sidebarProjectFilterId ?? store2.getState().activeProjectId) {
+  const state = store2.getState();
+  const project2 = state.projects.find((item) => item.id === projectId) ?? state.projects.find((item) => item.id === state.activeProjectId);
+  if (!project2) return;
+  if (project2.id === state.activeProjectId) {
+    switchProject(store2, api2, project2.id);
+    openNewThread(store2);
+    return;
+  }
+  store2.emit("composer_draft_flush");
+  void activateAndWait(store2, api2, project2.id, project2.path, project2.sshHost).then(() => {
+    if (store2.getState().activeProjectId === project2.id) openNewThread(store2);
+  }).catch((error62) => {
+    showErrorToast("Could not open a new thread in this project", error62);
+  });
+}
+function setSidebarProjectFilter(store2, api2, projectId) {
+  store2.setState({ sidebarProjectFilterId: projectId });
+  store2.emit("sidebar_project_filter_changed");
+  const thread = getActiveThread(store2);
+  const activeProjectId = store2.getState().activeProjectId;
+  if (thread && !isBlankThread(thread)) {
+    if (pendingSwitch && activeProjectId) switchProject(store2, api2, activeProjectId);
+    return;
+  }
+  if (projectId && projectId !== activeProjectId) {
+    openNewProjectThread(store2, api2, projectId);
+  } else if (activeProjectId) {
+    switchProject(store2, api2, activeProjectId);
+  }
 }
 function switchProject(store2, api2, id, pendingThreadId = null) {
   const proj = store2.getState().projects.find((p2) => p2.id === id);
@@ -78444,13 +78563,14 @@ var init_permissions_markup = __esm({
               <legend>Commit signing</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="gitCommitSshAgentSocketAccess" />
-                Enable scoped SSH signing approvals (macOS)
+                Allow signed commits (macOS)
               </label>
               <p class="field-hint">
-                Off by default. Copse asks before its system SSH signer uses your configured key
-                through ssh-agent. You can remember the signer, key and socket for this project
-                until Copse restarts. Changed configuration requires approval again. Git hooks
-                keep their project sandbox; they receive no ssh-agent access. Turning this off
+                On by default. Copse's system SSH signer uses your configured key through
+                ssh-agent to sign commits without asking each time. A changed key, signer or
+                socket is re-verified before it's used again. Git hooks keep their project
+                sandbox; they receive no ssh-agent access. Set the git_commit tool to Always ask
+                in Tool Permissions to confirm every signing helper use. Turning this off
                 prevents further ssh-agent signing. With this off, a configured private key file
                 can be read and used only after a separate approval for each commit. Key contents
                 are never sent to the agent. Custom signing programs run with ordinary project
@@ -78476,7 +78596,7 @@ var init_permissions_markup = __esm({
           </section>
 `;
     permissionsFields = [
-      { name: "gitCommitSshAgentSocketAccess", kind: "checkbox", default: false, save: true },
+      { name: "gitCommitSshAgentSocketAccess", kind: "checkbox", default: true, save: true },
       { name: "browserToolsEnabled", kind: "checkbox", default: true, save: true },
       { name: "readTerminalEnabled", kind: "checkbox", default: true, save: true },
       {
@@ -86431,7 +86551,27 @@ var init_demo_scenarios = __esm({
         label: "Empty unopened project in the sidebar",
         project: project("demo-empty-active"),
         settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
-        threads: [],
+        // Keep a populated conversation open: filtering a blank composer intentionally
+        // opens a new thread in the selected project, which would no longer be empty.
+        threads: [
+          {
+            id: "demo-empty-active-chat",
+            title: "Open project conversation",
+            status: "idle",
+            messages: [
+              {
+                id: "demo-empty-active-message",
+                role: "user",
+                content: "Keep this conversation open while browsing other projects.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
         otherProjects: [
           { project: project("demo-empty-other", "empty-project", "/demo/empty"), threads: [] }
         ]
@@ -87296,6 +87436,24 @@ var init_demo_scenarios = __esm({
             fileTreeWidth: 180
           }
         },
+        threads: SIDE_CHATS_THREADS
+      },
+      {
+        id: "side-chats-restored",
+        label: "Side chats after an app restart",
+        project: project("demo-side-chats-restored", "Widgets", "/demo/widgets"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          layout: {
+            projectsPaneWidth: 240,
+            filesPaneWidth: 680,
+            filesPaneHeight: 360,
+            fileTreeWidth: 180
+          }
+        },
+        deferSideChatTranscripts: true,
         threads: SIDE_CHATS_THREADS
       },
       {
@@ -88276,7 +88434,9 @@ function createDemoApi(scenario2, options = {}) {
         return resolved2({ status: "archived", archivedAt, worktree: thread?.worktree });
       },
       loadProject: (projectId) => resolved2(
-        projectId === scenario2.project.id ? structuredClone(threads) : structuredClone(
+        projectId === scenario2.project.id ? structuredClone(threads).map(
+          (thread) => scenario2.deferSideChatTranscripts === true && thread.sideChat !== void 0 ? { ...thread, messages: [], messagesLoaded: false } : thread
+        ) : structuredClone(
           scenario2.otherProjects?.find((other) => other.project.id === projectId)?.threads ?? []
         )
       ),
@@ -89546,6 +89706,7 @@ function createStore(initial) {
     conciseThreadsEnabled: true,
     autoPortraitRightPanel: true,
     rightPanelPosition: "auto",
+    sidebarProjectFilterId: null,
     sidebarThreadSort: "activity",
     sidebarThreadSortReverse: false,
     sidebarThreadGroup: "project",
@@ -89580,6 +89741,7 @@ function createStore(initial) {
     right_panel_mode_changed: /* @__PURE__ */ new Set(),
     right_panel_maximized_changed: /* @__PURE__ */ new Set(),
     projects_pane_changed: /* @__PURE__ */ new Set(),
+    sidebar_project_filter_changed: /* @__PURE__ */ new Set(),
     git_change_navigate: /* @__PURE__ */ new Set(),
     roadmap_reveal: /* @__PURE__ */ new Set(),
     thread_plan_open: /* @__PURE__ */ new Set(),
@@ -90533,7 +90695,7 @@ function mountOpenInEditor(root, store2, api2) {
       "aria-haspopup": "menu",
       "aria-expanded": "false"
     },
-    chevronDownIcon("ui-icon ui-icon-sm")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   const menu = el("div", { class: "open-in-editor-menu", role: "menu", hidden: "" });
   const backdrop = el("div", { class: "open-in-editor-backdrop", hidden: "" });
@@ -91244,16 +91406,24 @@ function titlebarNeedsCompact(titlebar) {
   const wasCompact = titlebar.classList.contains(TITLEBAR_COMPACT_CLASS);
   const overflowed = [...titlebar.querySelectorAll("[data-portrait-overflow]")];
   const controls = titlebar.querySelector(".titlebar-panel-controls");
+  const overflowMenus = [...titlebar.querySelectorAll(".portrait-panel-overflow")];
+  const menuVisibility = overflowMenus.map((menu) => menu.hidden);
   const alignment = controls?.style.justifyContent ?? "";
   if (controls) controls.style.justifyContent = "flex-start";
   overflowed.forEach((button) => {
     button.removeAttribute("data-portrait-overflow");
+  });
+  overflowMenus.forEach((menu) => {
+    menu.hidden = true;
   });
   titlebar.classList.remove(TITLEBAR_COMPACT_CLASS);
   const needsCompact = titlebar.scrollWidth > titlebar.clientWidth;
   titlebar.classList.toggle(TITLEBAR_COMPACT_CLASS, wasCompact);
   overflowed.forEach((button) => {
     button.setAttribute("data-portrait-overflow", "");
+  });
+  overflowMenus.forEach((menu, index) => {
+    menu.hidden = menuVisibility[index] ?? true;
   });
   if (controls) controls.style.justifyContent = alignment;
   return needsCompact;
@@ -91412,7 +91582,33 @@ function basename2(p2) {
 function mountTitlebar(root, store2, api2) {
   root.classList.add("titlebar");
   const leftCluster = el("div", { class: "titlebar-left" });
-  const workspaceName = el("span", { class: "workspace-name" }, "No folder");
+  const workspaceLabel = el("span", { class: "workspace-name-label" }, "No folder");
+  const workspaceName = el(
+    "button",
+    { type: "button", class: "workspace-name", "aria-haspopup": "menu" },
+    workspaceLabel,
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron workspace-name-chevron")
+  );
+  workspaceName.addEventListener("click", (event) => {
+    if (workspaceName.disabled || contextMenuClosedByPressOn(workspaceName)) return;
+    const rect = workspaceName.getBoundingClientRect();
+    const { projects, activeProjectId } = store2.getState();
+    showContextMenu(
+      rect.left,
+      rect.bottom + 4,
+      projects.map((project2) => ({
+        label: projectDisplayName(project2),
+        checked: project2.id === activeProjectId,
+        disabled: project2.missing === true,
+        onSelect: () => {
+          setSidebarProjectFilter(store2, api2, project2.id);
+        }
+      }))
+    );
+    if (event.detail === 0) {
+      document.querySelector(".context-menu-item.is-checked")?.focus();
+    }
+  });
   const sshTarget = el("span", { class: "workspace-ssh-target", hidden: true });
   const workspaceBranch = el("span", { class: "workspace-branch", hidden: true });
   const sidebarBtn = el(
@@ -91482,10 +91678,19 @@ function mountTitlebar(root, store2, api2) {
   syncRunApp();
   root.append(leftCluster, dragRegion, panelControls.element);
   const destroyCompactLayout = bindTitlebarCompactLayout(root, [leftCluster, panelControls.element]);
+  function syncProjectPicker() {
+    const thread = getActiveThread(store2);
+    workspaceName.disabled = store2.getState().projects.length === 0 || thread !== void 0 && !isBlankThread(thread);
+    workspaceName.setAttribute(
+      "aria-label",
+      workspaceName.disabled ? workspaceName.textContent : `Project for new thread: ${workspaceName.textContent}`
+    );
+  }
   function syncName() {
     const { workspaceRoot, activeProjectId, projects } = store2.getState();
     const project2 = projects.find((p2) => p2.id === activeProjectId);
-    workspaceName.textContent = workspaceRoot ? basename2(workspaceRoot) : "No folder";
+    workspaceLabel.textContent = project2 ? projectDisplayName(project2) : workspaceRoot ? basename2(workspaceRoot) : "No folder";
+    syncProjectPicker();
     setTooltip(workspaceName, workspaceRoot);
     if (project2?.sshHost) {
       void api2.sshWorkspace.listHosts().then((hosts) => {
@@ -91555,7 +91760,10 @@ function mountTitlebar(root, store2, api2) {
       syncRunApp();
     }),
     store2.on("projects_changed", syncName),
+    store2.on("message_added", syncProjectPicker),
+    store2.on("thread_status_changed", syncProjectPicker),
     store2.on("threads_changed", () => {
+      syncProjectPicker();
       if (store2.getState().activeThreadId !== syncedThreadId) {
         syncBranchNow();
         return;
@@ -91587,6 +91795,9 @@ var init_titlebar = __esm({
   "src/renderer/views/titlebar.ts"() {
     init_app_run_dialog();
     init_icons();
+    init_thread_helpers();
+    init_projects();
+    init_context_menu();
     init_helpers();
     init_outline_icon();
     init_tooltip();
@@ -95699,7 +95910,6 @@ function mountProjectsPane(root, store2, api2) {
     threadFilter = "";
   };
   let compactRows = false;
-  let projectFilterId = null;
   let needsCleanupOnly = false;
   let archivedOnly = false;
   const archivedThreads = createArchivedThreads(store2, api2, () => {
@@ -95712,7 +95922,7 @@ function mountProjectsPane(root, store2, api2) {
     "button",
     { type: "button", class: "projects-filter-btn", "aria-haspopup": "menu" },
     filterLabel,
-    chevronDownIcon("ui-icon ui-icon-sm")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   const sortDir = el("span", { class: "projects-sort-dir" }, "\u2193");
   const sortLabel = el("span", { class: "projects-filter-label" }, "Activity order");
@@ -95726,7 +95936,7 @@ function mountProjectsPane(root, store2, api2) {
     },
     sortDir,
     sortLabel,
-    chevronDownIcon("ui-icon ui-icon-sm")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   const filtersRow = el("div", { class: "projects-filters" }, projectFilterBtn, sortBtn);
   searchInput.addEventListener("input", () => {
@@ -95774,9 +95984,9 @@ function mountProjectsPane(root, store2, api2) {
     });
   };
   function syncFilterControls() {
-    const { projects, sidebarThreadSort, sidebarThreadSortReverse } = store2.getState();
-    const chosen = projects.find((project2) => project2.id === projectFilterId);
-    if (!chosen) projectFilterId = null;
+    const { projects, sidebarThreadSort, sidebarThreadSortReverse, sidebarProjectFilterId } = store2.getState();
+    const chosen = projects.find((project2) => project2.id === sidebarProjectFilterId);
+    if (!chosen) store2.setState({ sidebarProjectFilterId: null });
     const projectName = chosen ? projectDisplayName(chosen) : "All projects";
     const suffix = archivedOnly ? " \xB7 Archived" : needsCleanupOnly ? " \xB7 Needs cleanup" : "";
     filterLabel.textContent = `${projectName}${suffix}`;
@@ -95804,19 +96014,17 @@ function mountProjectsPane(root, store2, api2) {
       {
         label: "All projects",
         detail: String(total2),
-        checked: projectFilterId === null,
+        checked: store2.getState().sidebarProjectFilterId === null,
         onSelect: () => {
-          projectFilterId = null;
-          render2();
+          setSidebarProjectFilter(store2, api2, null);
         }
       },
       ...projects.map((project2) => ({
         label: projectDisplayName(project2),
         detail: String(counts.get(project2.id) ?? 0),
-        checked: project2.id === projectFilterId,
+        checked: project2.id === store2.getState().sidebarProjectFilterId,
         onSelect: () => {
-          projectFilterId = project2.id;
-          render2();
+          setSidebarProjectFilter(store2, api2, project2.id);
         }
       })),
       { separator: true },
@@ -95902,7 +96110,7 @@ function mountProjectsPane(root, store2, api2) {
             void addProject(store2, api2);
             return;
           }
-          openNewThread(store2);
+          openNewProjectThread(store2, api2);
         }
       },
       { separator: true },
@@ -96618,7 +96826,7 @@ function mountProjectsPane(root, store2, api2) {
     };
     syncFilterControls();
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } = store2.getState();
-    const visibleProjects = projectFilterId === null ? projects : projects.filter((project2) => project2.id === projectFilterId);
+    const visibleProjects = store2.getState().sidebarProjectFilterId === null ? projects : projects.filter((project2) => project2.id === store2.getState().sidebarProjectFilterId);
     const expandedId = expandedProjectId ?? activeProjectId;
     if (archivedOnly) {
       archivedThreads.show(visibleProjects, searchInput.value.trim());
@@ -97176,15 +97384,7 @@ function mountProjectsPane(root, store2, api2) {
       );
       newThreadBtn.addEventListener("click", (e3) => {
         e3.stopPropagation();
-        if (project2.id !== store2.getState().activeProjectId) {
-          switchProject(store2, api2, project2.id);
-          return;
-        }
-        if (!store2.getState().workspaceRoot) {
-          void addProject(store2, api2);
-          return;
-        }
-        openNewThread(store2);
+        openNewProjectThread(store2, api2, project2.id);
       });
       return newThreadBtn;
     }
@@ -97512,7 +97712,7 @@ function mountProjectsPane(root, store2, api2) {
       list.append(...renderThreadSections(groupMode));
     } else {
       for (const node2 of buildProjectTree(visibleProjects, projectGroups)) {
-        if (node2.kind === "group" && projectFilterId !== null && node2.projects.length === 0)
+        if (node2.kind === "group" && store2.getState().sidebarProjectFilterId !== null && node2.projects.length === 0)
           continue;
         if (node2.kind === "group") list.append(renderGroupEntry(node2.group, node2.projects));
         else list.append(renderProjectEntry(node2.project));
@@ -97623,6 +97823,7 @@ function mountProjectsPane(root, store2, api2) {
     }),
     unsubWorkingTree,
     store2.on("projects_changed", render2),
+    store2.on("sidebar_project_filter_changed", render2),
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
     store2.on("threads_changed", () => {
@@ -151879,7 +152080,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   const chevron = el(
     "span",
     { class: "branch-picker-chevron", "aria-hidden": "true" },
-    chevronDownIcon("ui-icon ui-icon-sm")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   trigger.append(label, chevron);
   const reattachButton = el(
@@ -155299,7 +155500,7 @@ function registerPanelKeyboardShortcuts(store2, api2) {
     if (matchNewThreadShortcut(e3)) {
       if (!store2.getState().workspaceRoot) return;
       e3.preventDefault();
-      openNewThread(store2);
+      openNewProjectThread(store2, api2);
       return;
     }
     if (isTypingTarget(e3.target)) return;
@@ -155311,7 +155512,7 @@ function registerPanelKeyboardShortcuts(store2, api2) {
 }
 var init_keyboard_shortcuts = __esm({
   "src/renderer/keyboard-shortcuts.ts"() {
-    init_thread_helpers();
+    init_projects();
     init_panels();
     init_dialog_shell();
   }
@@ -173420,7 +173621,19 @@ function renderSideChat(input2) {
     if (!archiveBlocked) input2.onArchive(archived);
   });
   const body = el("div", { class: "side-chat-body" });
-  if (side.messages.length === 0) {
+  if (needsHydration(side)) {
+    body.append(
+      el(
+        "div",
+        { class: "side-chat-empty", "data-side-chat-loading": "" },
+        el(
+          "p",
+          { role: "status" },
+          input2.loadFailed === true ? "Couldn\u2019t load this side chat." : "Loading conversation\u2026"
+        )
+      )
+    );
+  } else if (side.messages.length === 0) {
     body.append(
       el(
         "div",
@@ -173510,14 +173723,27 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
   }
   function ask(text2) {
     if (selectedId === null) return;
+    const side = store2.getState().threads.find((thread) => thread.id === selectedId);
+    if (!side || needsHydration(side)) return;
     sendSideChatMessage(store2, api2, selectedId, text2);
+  }
+  function hydrate(threadId) {
+    const { activeProjectId, threads } = store2.getState();
+    const thread = threads.find((t2) => t2.id === threadId);
+    if (activeProjectId && thread && needsHydration(thread)) {
+      void ensureThreadMessages(activeProjectId, threadId);
+    }
   }
   function render2() {
     frame = 0;
-    if (!paneVisible()) return;
+    if (!paneVisible()) {
+      showSideChatTranscript(null);
+      return;
+    }
     const { threads, activeThreadId } = store2.getState();
     const selection2 = resolveSideChatSelection(threads, activeThreadId, remembered);
     selectedId = selection2.selectedId;
+    showSideChatTranscript(selectedId);
     if (selection2.mainId !== null && selectedId !== null)
       remembered.set(selection2.mainId, selectedId);
     clear(list);
@@ -173543,6 +173769,8 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
       );
       item.addEventListener("click", () => {
         if (selection2.mainId !== null) remembered.set(selection2.mainId, row2.id);
+        showSideChatTranscript(row2.id);
+        hydrate(row2.id);
         render2();
       });
       list.append(item);
@@ -173564,9 +173792,12 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
       return;
     }
     const parent = threads.find((thread) => thread.id === side.sideChat?.parentThreadId);
+    const loadFailed = needsHydration(side) && hydrationFailed(side.id);
+    if (needsHydration(side) && !loadFailed) hydrate(side.id);
     const view = renderSideChat({
       side,
       parent,
+      loadFailed,
       onSuggestion: ask,
       onArchive: (archived) => {
         if (archived) restoreThread(store2, side.id);
@@ -173576,14 +173807,19 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
     headerHost.append(view.header);
     bodyHost.append(...Array.from(view.body.childNodes));
     if (atBottom) bodyHost.scrollTop = bodyHost.scrollHeight;
-    input2.disabled = side.archivedAt != null;
-    send.disabled = side.archivedAt != null || side.status === "running";
+    const unloaded = needsHydration(side);
+    input2.disabled = side.archivedAt != null || unloaded;
+    send.disabled = side.archivedAt != null || side.status === "running" || unloaded;
     promote.disabled = side.status === "running";
     promote.title = promote.disabled ? "Wait for the side chat to finish before promoting" : "";
     if (side.unreadAt !== void 0) markThreadRead(store2, side.id);
   }
   function schedule() {
-    if (!paneVisible() || frame !== 0) return;
+    if (!paneVisible()) {
+      showSideChatTranscript(null);
+      return;
+    }
+    if (frame !== 0) return;
     frame = requestAnimationFrame(render2);
   }
   form.addEventListener("submit", (event) => {
@@ -173623,6 +173859,7 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
   ];
   schedule();
   return () => {
+    showSideChatTranscript(null);
     for (const off of offs) off();
     if (frame !== 0) cancelAnimationFrame(frame);
   };
@@ -173637,6 +173874,7 @@ var init_side_chat_panel = __esm({
     init_side_chat2();
     init_panels();
     init_side_chat3();
+    init_thread_hydration();
     init_pane_maximize_button();
     init_pane_popout_button();
     init_toast();
@@ -176971,7 +177209,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       return;
     }
     const url2 = nonEmptyStringOr(
-      firstNonEmptyString(webviewUrl(tab), tab.pendingUrl),
+      firstNonEmptyString(tab.pendingUrl, webviewUrl(tab)),
       "about:blank"
     );
     const title = webviewTitle(tab);
@@ -177171,11 +177409,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     if (!tab) return;
     if (browserModeActive(store2)) {
       ensureWebview(tab);
-      if (tab.pendingUrl) {
-        const url2 = tab.pendingUrl;
-        tab.pendingUrl = null;
-        navigateWebview(tab, url2);
-      }
+      if (tab.pendingUrl) navigateWebview(tab, tab.pendingUrl);
       syncAddressBar(tab);
       revealActiveTab(tab);
     }
@@ -177704,11 +177938,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       const tab = activeTabId ? tabs.get(activeTabId) : null;
       if (tab) {
         ensureWebview(tab);
-        if (tab.pendingUrl) {
-          const url2 = tab.pendingUrl;
-          tab.pendingUrl = null;
-          navigateWebview(tab, url2);
-        }
+        if (tab.pendingUrl) navigateWebview(tab, tab.pendingUrl);
         syncAddressBar(tab);
         ensureBrowserResizeObserver();
         revealActiveTab(tab);
@@ -196557,7 +196787,13 @@ function mountCommandPalette(store2, api2) {
       }
     });
     if (hasWorkspace) {
-      commands.push({ kind: "command", label: "New thread", run: () => openNewThread(store2) });
+      commands.push({
+        kind: "command",
+        label: "New thread",
+        run: () => {
+          openNewProjectThread(store2, api2);
+        }
+      });
       commands.push({
         kind: "command",
         label: "Quick open files",
@@ -196765,7 +197001,7 @@ var init_command_palette = __esm({
   "src/renderer/views/command-palette.ts"() {
     init_helpers();
     init_icons();
-    init_thread_helpers();
+    init_projects();
     init_projects();
     init_projects();
     init_panels();
@@ -206997,7 +207233,7 @@ async function boot() {
   api.menu.onNewThread(() => {
     if (!store.getState().workspaceRoot) return;
     ensureLayout();
-    openNewThread(store);
+    openNewProjectThread(store, api);
   });
   api.menu.onToggleSidebar(() => {
     ensureLayout();
@@ -207238,7 +207474,7 @@ function registerKeyboardShortcuts() {
     if (isAnyDialogOpen()) return;
     if (meta3 && e3.key === "t") {
       e3.preventDefault();
-      openNewThread(store);
+      openNewProjectThread(store, api);
     }
     if (meta3 && e3.shiftKey && e3.key.toLowerCase() === "p") {
       e3.preventDefault();
@@ -207350,6 +207586,7 @@ var init_main = __esm({
     init_themes();
     init_popout();
     init_store();
+    init_projects();
     init_thread_helpers();
     init_welcome();
     init_titlebar();
