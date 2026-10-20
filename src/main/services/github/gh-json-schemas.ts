@@ -45,6 +45,7 @@ export const ghPrViewSchema = z.object({
   baseRefName: optionalString,
   baseRefOid: optionalString,
   headRefOid: optionalString,
+  mergedAt: optionalString,
   author: optionalAuthorSchema,
   mergeable: optionalString,
   mergeStateStatus: optionalString,

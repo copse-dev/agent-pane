@@ -1,4 +1,6 @@
 import { openAppRunDialog } from './app-run-dialog.ts'
+import { createArchivedThreads } from './archived-threads.ts'
+import { showThreadArchiveToast } from './thread-archive-toast.ts'
 import { withoutSideChats } from '@shared/threads/side-chat.ts'
 import type { ThreadLiveResources } from '@shared/threads/archive-thread.ts'
 import { el, clear } from '../dom/helpers.ts'
@@ -107,7 +109,7 @@ import {
 } from '../controller/automations.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
 import { maybeRenameThreadBranch } from '../controller/thread-naming.ts'
-import { flushProjectThreads } from '../controller/persistence.ts'
+import { flushProjectThreads, invalidateProjectThreadLoads } from '../controller/persistence.ts'
 import {
   buildProjectTree,
   projectGroupId,
@@ -476,6 +478,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // state hasn't been fetched yet counts as matching so it isn't hidden before
   // its data has loaded (see `threadNeedsCleanup`).
   let needsCleanupOnly = false
+  let archivedOnly = false
+  const archivedThreads = createArchivedThreads(store, api, () => {
+    archivedOnly = false
+    closeThreadFilter()
+    render()
+  })
   const filterLabel = el('span', { class: 'projects-filter-label' }, 'All projects')
   const projectFilterBtn = el(
     'button',
@@ -504,7 +512,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   searchInput.addEventListener('input', () => {
     threadFilter = filterText(searchInput.value.trim())
     filteredProjectId = store.getState().activeProjectId
-    contentFilter.search(threadFilter)
+    if (!archivedOnly) contentFilter.search(threadFilter)
     render()
   })
   searchInput.addEventListener('keydown', (e) => {
@@ -559,11 +567,19 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     const chosen = projects.find((project) => project.id === projectFilterId)
     if (!chosen) projectFilterId = null
     const projectName = chosen ? projectDisplayName(chosen) : 'All projects'
-    filterLabel.textContent = needsCleanupOnly ? `${projectName} · Needs cleanup` : projectName
-    projectFilterBtn.classList.toggle('is-filtering', chosen !== undefined || needsCleanupOnly)
+    const suffix = archivedOnly ? ' · Archived' : needsCleanupOnly ? ' · Needs cleanup' : ''
+    filterLabel.textContent = `${projectName}${suffix}`
+    projectFilterBtn.classList.toggle(
+      'is-filtering',
+      chosen !== undefined || needsCleanupOnly || archivedOnly,
+    )
     projectFilterBtn.setAttribute(
       'aria-label',
-      needsCleanupOnly ? `Show: ${projectName}, needs cleanup only` : `Show: ${projectName}`,
+      archivedOnly
+        ? `Show: ${projectName}, archived`
+        : needsCleanupOnly
+          ? `Show: ${projectName}, needs cleanup only`
+          : `Show: ${projectName}`,
     )
     sortLabel.textContent = SORT_LABELS[sidebarThreadSort]
     // The arrow points the way the list runs: newest, or A first, is down.
@@ -604,6 +620,19 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         checked: needsCleanupOnly,
         onSelect: (): void => {
           needsCleanupOnly = !needsCleanupOnly
+          archivedOnly = false
+          render()
+        },
+      },
+      {
+        label: 'Archived',
+        toggle: true,
+        checked: archivedOnly,
+        onSelect: (): void => {
+          archivedOnly = !archivedOnly
+          needsCleanupOnly = false
+          closeThreadFilter()
+          archivedThreads.invalidate()
           render()
         },
       },
@@ -1594,6 +1623,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         ? projects
         : projects.filter((project) => project.id === projectFilterId)
     const expandedId = expandedProjectId ?? activeProjectId
+
+    if (archivedOnly) {
+      archivedThreads.show(visibleProjects, searchInput.value.trim())
+      list.append(archivedThreads.element)
+      return
+    }
+    archivedThreads.hide()
 
     if (projects.length === 0 && projectGroups.length === 0 && orphans.length === 0) {
       list.append(el('div', { class: 'sidebar-empty' }, 'No projects yet. Click "+".'))
@@ -2768,6 +2804,22 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   document.addEventListener('visibilitychange', recheckStaleThreadChanges)
 
   const unsubs = [
+    api.threads.onAutoArchived((event) => {
+      archivedThreads.invalidate()
+      invalidateProjectThreadLoads(api, event.projectId)
+      if (event.projectId === store.getState().activeProjectId) {
+        const thread = store.getState().threads.find((item) => item.id === event.threadId)
+        archiveThread(store, event.threadId, {
+          status: 'archived',
+          archivedAt: event.archivedAt,
+          worktree: thread?.worktree,
+        })
+      } else {
+        archiveCachedSidebarThread(event.projectId, event.threadId, event.archivedAt)
+        render()
+      }
+      showThreadArchiveToast(store, api, event.projectId, event.threadId, event.title)
+    }),
     store.on('thread_archive_requested', (projectId, threadId) => {
       void archiveProjectThread(projectId, threadId)
     }),
@@ -2775,7 +2827,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     store.on('projects_changed', render),
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
-    store.on('threads_changed', render),
+    store.on('threads_changed', () => {
+      archivedThreads.invalidate()
+      render()
+    }),
     store.on('sidebar_threads_loaded', render),
     store.on('automation_schedules_loaded', render),
     // Status flips on its own event (not threads_changed) so the sidebar can
@@ -2805,6 +2860,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   render()
   refreshOrphans()
   return () => {
+    archivedThreads.hide()
     contentFilter.cancel()
     for (const timer of prBackfillRetryTimers) clearTimeout(timer)
     prBackfillRetryTimers.clear()

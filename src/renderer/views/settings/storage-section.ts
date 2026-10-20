@@ -21,6 +21,15 @@ export function createStorageSection(
   closeSettingsDialog: () => void,
 ): StorageSection {
   const maintenance = createStorageMaintenancePanel(api)
+  const archiveDays = qsRequired<HTMLInputElement>(overlay, '[name="autoArchiveAfterDays"]')
+  archiveDays.addEventListener('input', () => {
+    const days = archiveDays.valueAsNumber
+    archiveDays.setCustomValidity(
+      days === 0 || (Number.isInteger(days) && days >= 3 && days <= 3650)
+        ? ''
+        : 'Enter 0 to disable, or a whole number from 3 to 3650.',
+    )
+  })
   qsRequired(overlay, '.settings-section[data-section="storage"]').append(maintenance.element)
 
   function fillSourceList(selector: string, rows: HTMLElement[], emptyText: string): void {

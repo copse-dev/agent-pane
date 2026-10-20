@@ -1,10 +1,11 @@
 import { prepareMockTurn } from './helpers/mock-scenario.ts'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('LM Studio prompt processing progress', () => {
   let workspaceRoot: string
@@ -21,7 +22,7 @@ describe('LM Studio prompt processing progress', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    removeE2eTree(workspaceRoot)
   })
 
   it('shows provider prefill percentage until the first output chunk', async function () {

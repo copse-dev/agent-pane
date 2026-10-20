@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -11,6 +11,7 @@ import {
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('ACP permission-mode settings', () => {
   const originalPath = process.env['PATH']
@@ -86,7 +87,7 @@ describe('ACP permission-mode settings', () => {
   after(() => {
     writeE2eEnv({ COPSE_PRESERVE_PATH: originalPreservePath, PATH: originalPath })
     resetUserData()
-    if (fixtureBin) rmSync(fixtureBin, { recursive: true, force: true })
+    if (fixtureBin) removeE2eTree(fixtureBin)
   })
 
   it('shows the saved ACP session mode and its discovered choices', async function () {

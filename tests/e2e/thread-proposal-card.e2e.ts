@@ -1,6 +1,6 @@
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -10,6 +10,7 @@ import {
 } from './helpers/seed-config.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // Visual eval for the model-proposed-thread card (`propose_thread`). The card's
 // DOM, its three states and the start/dismiss wiring are covered at component
@@ -132,7 +133,7 @@ describe('a proposed thread without an isolated checkout', () => {
 
   after(() => {
     resetUserData()
-    if (workspace) rmSync(workspace, { recursive: true, force: true })
+    if (workspace) removeE2eTree(workspace)
   })
 
   it('reports unavailable isolation without dispatching or consuming the offer', async () => {

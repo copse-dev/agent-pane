@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -8,6 +8,7 @@ import { setComposerValue } from './helpers/composer.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('shared UI polish', () => {
   let fixtureRoot = ''
@@ -28,7 +29,7 @@ describe('shared UI polish', () => {
 
   after(() => {
     resetUserData()
-    rmSync(fixtureRoot, { recursive: true, force: true })
+    removeE2eTree(fixtureRoot)
   })
 
   it('integrates status, selections, pane rules, and roadmap field spacing', async () => {

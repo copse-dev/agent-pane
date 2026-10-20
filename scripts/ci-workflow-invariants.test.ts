@@ -90,6 +90,12 @@ describe('ci.yml workflow invariants', () => {
       Math.max(...loads) - Math.min(...loads) < 30,
       `recorded shard durations should be within 30s: ${loads.map(Math.round).join(', ')}`,
     )
+    // Spec work cannot consume the whole 720s watchdog. Reserve two minutes
+    // for Electron startup, per-spec teardown and the process's final cleanup.
+    assert.ok(
+      Math.max(...loads) <= 600,
+      `recorded spec work must leave 120s of watchdog headroom: ${loads.map(Math.round).join(', ')}`,
+    )
   })
 
   it('records a duration for every spec the full suite runs', () => {

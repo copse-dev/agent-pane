@@ -186,6 +186,10 @@ export interface GhPrSummary {
 
 export interface GhPrDetails extends GhPrSummary {
   body: string
+  /** Exact source commit retained by GitHub even after a squash merge deletes the branch. */
+  headRefOid?: string
+  /** Actual merge time; updatedAt can change after completion. */
+  mergedAt?: string
   baseRefName?: string
   mergeable?: string
   mergeStateStatus?: string
