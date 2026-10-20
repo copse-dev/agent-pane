@@ -3,7 +3,7 @@
 // cross-version equating maps. Source of truth: scripts/data/intellect-scores.json.
 // Absent models mean "no sourced measurement yet", not zero.
 // Intelligence Index data from Artificial Analysis (https://artificialanalysis.ai)
-// Last synced: 2026-10-13
+// Last synced: 2026-10-20
 
 import type { EquatingMap } from './intellect-equating.ts'
 
@@ -1499,6 +1499,15 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       source:
         "Artificial Analysis API (index v4.3), model 'deepseek-v4-1-flash', fetched 2026-09-11",
       asOf: '2026-09-11',
+    },
+  ],
+  'deepseek-v4-1-flash-1017': [
+    {
+      value: 45.1,
+      indexVersion: 'v4.3',
+      source:
+        "Artificial Analysis API (index v4.3), model 'deepseek-v4-1-flash-1017', fetched 2026-10-20",
+      asOf: '2026-10-20',
     },
   ],
   'deepseek-v4-1-flash-non-reasoning': [
@@ -6299,10 +6308,10 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-08-13',
     },
     {
-      value: 10,
+      value: 9.3,
       indexVersion: 'v4.3',
-      source: "Artificial Analysis API (index v4.3), model 'llama-4-maverick', fetched 2026-09-22",
-      asOf: '2026-09-22',
+      source: "Artificial Analysis API (index v4.3), model 'llama-4-maverick', fetched 2026-10-20",
+      asOf: '2026-10-20',
     },
   ],
   'llama-4-scout': [
@@ -6313,10 +6322,10 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-08-13',
     },
     {
-      value: 8.1,
+      value: 6.5,
       indexVersion: 'v4.3',
-      source: "Artificial Analysis API (index v4.3), model 'llama-4-scout', fetched 2026-09-22",
-      asOf: '2026-09-22',
+      source: "Artificial Analysis API (index v4.3), model 'llama-4-scout', fetched 2026-10-20",
+      asOf: '2026-10-20',
     },
   ],
   'llama-65b': [
@@ -6463,10 +6472,10 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-08-13',
     },
     {
-      value: 13.8,
+      value: 10.8,
       indexVersion: 'v4.3',
-      source: "Artificial Analysis API (index v4.3), model 'mercury-2', fetched 2026-09-22",
-      asOf: '2026-09-22',
+      source: "Artificial Analysis API (index v4.3), model 'mercury-2', fetched 2026-10-20",
+      asOf: '2026-10-20',
     },
   ],
   'mercury-2-5': [
@@ -6529,10 +6538,10 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-08-13',
     },
     {
-      value: 25.2,
+      value: 21.8,
       indexVersion: 'v4.3',
-      source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-0424', fetched 2026-09-22",
-      asOf: '2026-09-22',
+      source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-0424', fetched 2026-10-20",
+      asOf: '2026-10-20',
     },
   ],
   'mimo-v2-5-pro': [
@@ -6789,6 +6798,15 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-09-22',
     },
   ],
+  'minimax-m3-1-flash': [
+    {
+      value: 42.7,
+      indexVersion: 'v4.3',
+      source:
+        "Artificial Analysis API (index v4.3), model 'minimax-m3-1-flash', fetched 2026-10-20",
+      asOf: '2026-10-20',
+    },
+  ],
   'ministral-3-14b': [
     {
       value: 11.2,
@@ -7041,10 +7059,10 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-08-13',
     },
     {
-      value: 8.2,
+      value: 7,
       indexVersion: 'v4.3',
-      source: "Artificial Analysis API (index v4.3), model 'mistral-small-3-2', fetched 2026-09-22",
-      asOf: '2026-09-22',
+      source: "Artificial Analysis API (index v4.3), model 'mistral-small-3-2', fetched 2026-10-20",
+      asOf: '2026-10-20',
     },
   ],
   'mistral-small-4': [
@@ -7087,8 +7105,8 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
     {
       value: 6.7,
       indexVersion: 'v4.3',
-      source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-13",
-      asOf: '2026-10-13',
+      source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-20",
+      asOf: '2026-10-20',
     },
   ],
   'mixtral-8x7b-instruct': [
@@ -7285,6 +7303,14 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-09-22',
     },
   ],
+  'muse-spark-open': [
+    {
+      value: 38.9,
+      indexVersion: 'v4.3',
+      source: "Artificial Analysis API (index v4.3), model 'muse-spark-open', fetched 2026-10-20",
+      asOf: '2026-10-20',
+    },
+  ],
   'muse-wonder': [
     {
       value: 52.4,
@@ -7315,6 +7341,15 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-09-11',
     },
   ],
+  'nemotron-3-5-bolt-74b-a9b': [
+    {
+      value: 21.4,
+      indexVersion: 'v4.3',
+      source:
+        "Artificial Analysis API (index v4.3), model 'nemotron-3-5-bolt-74b-a9b', fetched 2026-10-20",
+      asOf: '2026-10-20',
+    },
+  ],
   'nemotron-3-5-lightning': [
     {
       value: 23.6,
@@ -7329,6 +7364,15 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       source:
         "Artificial Analysis API (index v4.3), model 'nemotron-3-5-lightning', fetched 2026-09-22",
       asOf: '2026-09-22',
+    },
+  ],
+  'nemotron-3-5-super-vl': [
+    {
+      value: 26.5,
+      indexVersion: 'v4.3',
+      source:
+        "Artificial Analysis API (index v4.3), model 'nemotron-3-5-super-vl', fetched 2026-10-20",
+      asOf: '2026-10-20',
     },
   ],
   'nemotron-3-nano-omni-30b-a3b': [
@@ -8322,11 +8366,11 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-08-13',
     },
     {
-      value: 8.2,
+      value: 6.4,
       indexVersion: 'v4.3',
       source:
-        "Artificial Analysis API (index v4.3), model 'qwen3-14b-instruct-reasoning', fetched 2026-09-22",
-      asOf: '2026-09-22',
+        "Artificial Analysis API (index v4.3), model 'qwen3-14b-instruct-reasoning', fetched 2026-10-20",
+      asOf: '2026-10-20',
     },
   ],
   'qwen3-235b-a22b-instruct': [
@@ -8482,11 +8526,11 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-08-13',
     },
     {
-      value: 8.6,
+      value: 7.2,
       indexVersion: 'v4.3',
       source:
-        "Artificial Analysis API (index v4.3), model 'qwen3-32b-instruct-reasoning', fetched 2026-09-22",
-      asOf: '2026-09-22',
+        "Artificial Analysis API (index v4.3), model 'qwen3-32b-instruct-reasoning', fetched 2026-10-20",
+      asOf: '2026-10-20',
     },
   ],
   'qwen3-4b-2507-instruct': [
@@ -9058,11 +9102,11 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-08-13',
     },
     {
-      value: 7.3,
+      value: 5.2,
       indexVersion: 'v4.3',
       source:
-        "Artificial Analysis API (index v4.3), model 'qwen3-8b-instruct-reasoning', fetched 2026-09-22",
-      asOf: '2026-09-22',
+        "Artificial Analysis API (index v4.3), model 'qwen3-8b-instruct-reasoning', fetched 2026-10-20",
+      asOf: '2026-10-20',
     },
   ],
   'qwen3-coder-30b-a3b-instruct': [
@@ -9423,6 +9467,14 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-09-11',
     },
   ],
+  'reflection-beam': [
+    {
+      value: 30.3,
+      indexVersion: 'v4.3',
+      source: "Artificial Analysis API (index v4.3), model 'reflection-beam', fetched 2026-10-20",
+      asOf: '2026-10-20',
+    },
+  ],
   'reka-flash': [
     {
       value: 6,
@@ -9689,10 +9741,10 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-08-13',
     },
     {
-      value: 28.2,
+      value: 26.6,
       indexVersion: 'v4.3',
-      source: "Artificial Analysis API (index v4.3), model 'solar-pro4', fetched 2026-09-11",
-      asOf: '2026-09-11',
+      source: "Artificial Analysis API (index v4.3), model 'solar-pro4', fetched 2026-10-20",
+      asOf: '2026-10-20',
     },
   ],
   sonar: [

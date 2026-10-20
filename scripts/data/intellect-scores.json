@@ -4411,10 +4411,10 @@
     },
     {
       "modelId": "mercury-2",
-      "value": 13.8,
+      "value": 10.8,
       "indexVersion": "v4.3",
-      "source": "Artificial Analysis API (index v4.3), model 'mercury-2', fetched 2026-09-22",
-      "asOf": "2026-09-22"
+      "source": "Artificial Analysis API (index v4.3), model 'mercury-2', fetched 2026-10-20",
+      "asOf": "2026-10-20"
     },
     {
       "modelId": "qwen3-5-omni-plus",
@@ -4875,10 +4875,10 @@
     },
     {
       "modelId": "solar-pro4",
-      "value": 28.2,
+      "value": 26.6,
       "indexVersion": "v4.3",
-      "source": "Artificial Analysis API (index v4.3), model 'solar-pro4', fetched 2026-09-11",
-      "asOf": "2026-09-11"
+      "source": "Artificial Analysis API (index v4.3), model 'solar-pro4', fetched 2026-10-20",
+      "asOf": "2026-10-20"
     },
     {
       "modelId": "dbrx",
@@ -5022,10 +5022,10 @@
     },
     {
       "modelId": "mimo-v2-5-0424",
-      "value": 25.2,
+      "value": 21.8,
       "indexVersion": "v4.3",
-      "source": "Artificial Analysis API (index v4.3), model 'mimo-v2-5-0424', fetched 2026-09-22",
-      "asOf": "2026-09-22"
+      "source": "Artificial Analysis API (index v4.3), model 'mimo-v2-5-0424', fetched 2026-10-20",
+      "asOf": "2026-10-20"
     },
     {
       "modelId": "grok-4-1-fast-reasoning",
@@ -5079,8 +5079,8 @@
       "modelId": "mistralai/mistral-small-24b",
       "value": 6.7,
       "indexVersion": "v4.3",
-      "source": "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-13",
-      "asOf": "2026-10-13",
+      "source": "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-20",
+      "asOf": "2026-10-20",
       "aliases": ["mistral-small-3", "mistral-small-24b", "mistral-small-3-1", "Mistral Small 24B"]
     },
     {
@@ -5629,10 +5629,10 @@
     },
     {
       "modelId": "mistral-small-3-2",
-      "value": 8.2,
+      "value": 7,
       "indexVersion": "v4.3",
-      "source": "Artificial Analysis API (index v4.3), model 'mistral-small-3-2', fetched 2026-09-22",
-      "asOf": "2026-09-22"
+      "source": "Artificial Analysis API (index v4.3), model 'mistral-small-3-2', fetched 2026-10-20",
+      "asOf": "2026-10-20"
     },
     {
       "modelId": "deepseek-v3",
@@ -5671,10 +5671,10 @@
     },
     {
       "modelId": "qwen3-14b-instruct-reasoning",
-      "value": 8.2,
+      "value": 6.4,
       "indexVersion": "v4.3",
-      "source": "Artificial Analysis API (index v4.3), model 'qwen3-14b-instruct-reasoning', fetched 2026-09-22",
-      "asOf": "2026-09-22"
+      "source": "Artificial Analysis API (index v4.3), model 'qwen3-14b-instruct-reasoning', fetched 2026-10-20",
+      "asOf": "2026-10-20"
     },
     {
       "modelId": "sarvam-105b",
@@ -7082,10 +7082,10 @@
     },
     {
       "modelId": "llama-4-maverick",
-      "value": 10,
+      "value": 9.3,
       "indexVersion": "v4.3",
-      "source": "Artificial Analysis API (index v4.3), model 'llama-4-maverick', fetched 2026-09-22",
-      "asOf": "2026-09-22"
+      "source": "Artificial Analysis API (index v4.3), model 'llama-4-maverick', fetched 2026-10-20",
+      "asOf": "2026-10-20"
     },
     {
       "modelId": "jamba-1-6-large",
@@ -7223,10 +7223,10 @@
     },
     {
       "modelId": "qwen3-8b-instruct-reasoning",
-      "value": 7.3,
+      "value": 5.2,
       "indexVersion": "v4.3",
-      "source": "Artificial Analysis API (index v4.3), model 'qwen3-8b-instruct-reasoning', fetched 2026-09-22",
-      "asOf": "2026-09-22"
+      "source": "Artificial Analysis API (index v4.3), model 'qwen3-8b-instruct-reasoning', fetched 2026-10-20",
+      "asOf": "2026-10-20"
     },
     {
       "modelId": "claude-21",
@@ -7503,10 +7503,10 @@
     },
     {
       "modelId": "llama-4-scout",
-      "value": 8.1,
+      "value": 6.5,
       "indexVersion": "v4.3",
-      "source": "Artificial Analysis API (index v4.3), model 'llama-4-scout', fetched 2026-09-22",
-      "asOf": "2026-09-22"
+      "source": "Artificial Analysis API (index v4.3), model 'llama-4-scout', fetched 2026-10-20",
+      "asOf": "2026-10-20"
     },
     {
       "modelId": "granite-4-2-8b",
@@ -7545,10 +7545,10 @@
     },
     {
       "modelId": "qwen3-32b-instruct-reasoning",
-      "value": 8.6,
+      "value": 7.2,
       "indexVersion": "v4.3",
-      "source": "Artificial Analysis API (index v4.3), model 'qwen3-32b-instruct-reasoning', fetched 2026-09-22",
-      "asOf": "2026-09-22"
+      "source": "Artificial Analysis API (index v4.3), model 'qwen3-32b-instruct-reasoning', fetched 2026-10-20",
+      "asOf": "2026-10-20"
     },
     {
       "modelId": "qwen3-8-27b",
@@ -9308,6 +9308,48 @@
       "indexVersion": "v4.3",
       "source": "Artificial Analysis API (index v4.3), model 'muse-wonder', fetched 2026-10-13",
       "asOf": "2026-10-13"
+    },
+    {
+      "modelId": "muse-spark-open",
+      "value": 38.9,
+      "indexVersion": "v4.3",
+      "source": "Artificial Analysis API (index v4.3), model 'muse-spark-open', fetched 2026-10-20",
+      "asOf": "2026-10-20"
+    },
+    {
+      "modelId": "reflection-beam",
+      "value": 30.3,
+      "indexVersion": "v4.3",
+      "source": "Artificial Analysis API (index v4.3), model 'reflection-beam', fetched 2026-10-20",
+      "asOf": "2026-10-20"
+    },
+    {
+      "modelId": "nemotron-3-5-bolt-74b-a9b",
+      "value": 21.4,
+      "indexVersion": "v4.3",
+      "source": "Artificial Analysis API (index v4.3), model 'nemotron-3-5-bolt-74b-a9b', fetched 2026-10-20",
+      "asOf": "2026-10-20"
+    },
+    {
+      "modelId": "minimax-m3-1-flash",
+      "value": 42.7,
+      "indexVersion": "v4.3",
+      "source": "Artificial Analysis API (index v4.3), model 'minimax-m3-1-flash', fetched 2026-10-20",
+      "asOf": "2026-10-20"
+    },
+    {
+      "modelId": "nemotron-3-5-super-vl",
+      "value": 26.5,
+      "indexVersion": "v4.3",
+      "source": "Artificial Analysis API (index v4.3), model 'nemotron-3-5-super-vl', fetched 2026-10-20",
+      "asOf": "2026-10-20"
+    },
+    {
+      "modelId": "deepseek-v4-1-flash-1017",
+      "value": 45.1,
+      "indexVersion": "v4.3",
+      "source": "Artificial Analysis API (index v4.3), model 'deepseek-v4-1-flash-1017', fetched 2026-10-20",
+      "asOf": "2026-10-20"
     }
   ],
   "wanted": [
