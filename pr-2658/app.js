@@ -21218,6 +21218,14 @@ var init_ipc_error_message = __esm({
   }
 });
 
+// packages/llm/src/classifiers/types.ts
+var HTTP_CLASSIFIER_PROTOCOLS;
+var init_types = __esm({
+  "packages/llm/src/classifiers/types.ts"() {
+    HTTP_CLASSIFIER_PROTOCOLS = ["systemone", "featherless", "decisions"];
+  }
+});
+
 // packages/llm/src/classifiers/presets.ts
 function classifierCredentialId(id) {
   if (!/^[a-z0-9-]{1,53}$/.test(id)) throw new Error("Invalid classifier profile ID");
@@ -21254,6 +21262,71 @@ var init_presets = __esm({
           baseUrl: "https://api.liquid.ai/decisions/v1",
           auth: "bearer",
           apiKeyEnv: "LIQUID_API_KEY"
+        }
+      },
+      {
+        id: "fastino-glide",
+        label: "Fastino / GLiDE",
+        model: "fastino/glide",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "https://api.fastino.ai/v1",
+          auth: "bearer",
+          apiKeyEnv: "FASTINO_API_KEY"
+        }
+      },
+      {
+        id: "celeris",
+        label: "Celeris-1 Decision",
+        model: "celeris-1-decision",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "https://inference.celeris.ai/celeris-1-decision/v1",
+          auth: "bearer",
+          apiKeyEnv: "CELERIS_API_KEY"
+        }
+      },
+      {
+        id: "microsoft-decision",
+        label: "Microsoft-Decision-1 (OpenRouter)",
+        model: "microsoft/microsoft-decision-1",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "decisions",
+          baseUrl: "https://openrouter.ai/api/alpha",
+          auth: "bearer",
+          apiKeyEnv: "OPENROUTER_API_KEY"
+        }
+      },
+      {
+        id: "perplexity-decider",
+        label: "Perplexity / Decider v1.1 (OpenRouter)",
+        model: "perplexity/pplx-decider-v1.1-27b",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "decisions",
+          baseUrl: "https://openrouter.ai/api/alpha",
+          auth: "bearer",
+          apiKeyEnv: "OPENROUTER_API_KEY"
+        }
+      },
+      {
+        id: "mercury-decide",
+        label: "Inception / Mercury Decide (OpenRouter)",
+        model: "inception/mercury-decide",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "decisions",
+          baseUrl: "https://openrouter.ai/api/alpha",
+          auth: "bearer",
+          apiKeyEnv: "OPENROUTER_API_KEY"
         }
       },
       {
@@ -21309,6 +21382,23 @@ var init_presets = __esm({
       }
     ];
     CLASSIFIER_CREDENTIAL_PREFIX = "classifier-";
+  }
+});
+
+// packages/std/src/member-of.ts
+function memberOf(members2) {
+  const set2 = new Set(members2);
+  return (value) => set2.has(value);
+}
+var init_member_of = __esm({
+  "packages/std/src/member-of.ts"() {
+  }
+});
+
+// src/shared/member-of.ts
+var init_member_of2 = __esm({
+  "src/shared/member-of.ts"() {
+    init_member_of();
   }
 });
 
@@ -30348,9 +30438,10 @@ function createClassifiersSection(api2) {
     save.addEventListener("click", () => {
       void run4(async () => {
         captureDraft?.();
+        const protocol = read2("Protocol");
         const connection = profile.connection.type === "http" ? {
           type: "http",
-          protocol: read2("Protocol") === "featherless" ? "featherless" : "systemone",
+          protocol: isHttpClassifierProtocol(protocol) ? protocol : "systemone",
           baseUrl: read2("Url"),
           auth: read2("Auth") === "none" ? "none" : "bearer",
           ...read2("KeyEnv") ? { apiKeyEnv: read2("KeyEnv") } : {}
@@ -30491,10 +30582,12 @@ function createClassifiersSection(api2) {
   renderLocal();
   return { root, refresh };
 }
-var PROTOCOL_CHOICES, AUTH_CHOICES, BACKEND_CHOICES, MODE_CHOICES;
+var PROTOCOL_CHOICES, isHttpClassifierProtocol, AUTH_CHOICES, BACKEND_CHOICES, MODE_CHOICES;
 var init_classifiers_section = __esm({
   "src/renderer/views/setup/classifiers-section.ts"() {
+    init_types();
     init_presets();
+    init_member_of2();
     init_helpers();
     init_disclosure_summary();
     init_inline_status();
@@ -30503,8 +30596,10 @@ var init_classifiers_section = __esm({
     init_ipc_error_message();
     PROTOCOL_CHOICES = [
       { value: "systemone", label: "SystemOne" },
+      { value: "decisions", label: "Decisions API" },
       { value: "featherless", label: "Featherless classifier" }
     ];
+    isHttpClassifierProtocol = memberOf(HTTP_CLASSIFIER_PROTOCOLS);
     AUTH_CHOICES = [
       { value: "none", label: "None" },
       { value: "bearer", label: "Bearer token (API key)" }
@@ -33438,23 +33533,6 @@ var init_sanitize_dompurify = __esm({
         target.replaceChildren(fragment.ownerDocument === doc3 ? fragment : doc3.importNode(fragment, true));
       }
     };
-  }
-});
-
-// packages/std/src/member-of.ts
-function memberOf(members2) {
-  const set2 = new Set(members2);
-  return (value) => set2.has(value);
-}
-var init_member_of = __esm({
-  "packages/std/src/member-of.ts"() {
-  }
-});
-
-// src/shared/member-of.ts
-var init_member_of2 = __esm({
-  "src/shared/member-of.ts"() {
-    init_member_of();
   }
 });
 
@@ -53790,10 +53868,10 @@ function createAcpAgentsSection(api2, opts = {}) {
         detectedModels = selectorChoicesAfterProbe(detectedModels, probe.models);
         detectedModes = selectorChoicesAfterProbe(detectedModes, probe.modes);
         if (probe.models) {
-          void modelPicker.refresh(modelSelect.value || probe.models.currentValue);
+          void modelPicker.refresh(modelSelect.value);
         }
         if (probe.modes) {
-          setModeOptions(probe.modes.choices, modeSelect.value || probe.modes.currentValue);
+          setModeOptions(probe.modes.choices, modeSelect.value);
         }
         detectedModelsAt = Date.now();
         const saved = agents.find((candidate) => candidate.id === id);
@@ -53810,8 +53888,8 @@ function createAcpAgentsSection(api2, opts = {}) {
           void api2.settings.set("registeredAcpAgents", agents);
         }
         const bits = [
-          probe.models ? `${String(probe.models.choices.length)} models (default: ${probe.models.currentValue})` : "no selectable models",
-          probe.modes ? `${String(probe.modes.choices.length)} permission modes` : ""
+          probe.models ? `${String(probe.models.choices.length)} models (agent default: ${probe.models.currentValue})` : "no selectable models",
+          probe.modes ? `${String(probe.modes.choices.length)} permission modes (agent default: ${probe.modes.currentValue})` : ""
         ].filter(Boolean);
         setInlineStatus(modelStatus, "ok", `Detected ${bits.join(", ")}.`);
       }).catch((err2) => {
@@ -74223,7 +74301,7 @@ var init_machine_dispatch = __esm({
 });
 
 // src/shared/types/index.ts
-var init_types = __esm({
+var init_types2 = __esm({
   "src/shared/types/index.ts"() {
     init_todo();
     init_thread();
@@ -75923,7 +76001,7 @@ var WEEKDAYS;
 var init_automation_plugin_settings = __esm({
   "src/renderer/views/automation-plugin-settings.ts"() {
     init_automations_plugin();
-    init_types();
+    init_types2();
     init_lm_studio_defaults();
     init_helpers();
     init_model_options();
@@ -89372,7 +89450,7 @@ function createStore(initial) {
 }
 var init_store = __esm({
   "src/shared/store/store.ts"() {
-    init_types();
+    init_types2();
     init_layout();
   }
 });
@@ -92333,7 +92411,7 @@ function formatAgeLong(elapsedMs) {
 var RECENT_ROW_LIMIT, RECENT_WINDOW_MS, FUTURE_SKEW_MS, SCHEDULE_FOLD_AT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
 var init_activity_model = __esm({
   "src/renderer/controller/activity-model.ts"() {
-    init_types();
+    init_types2();
     init_automation_failure();
     init_projects();
     init_sidebar_thread();
@@ -153068,7 +153146,7 @@ function normalizeFollowUpOpenTodos(contents) {
   return normalized;
 }
 var MAX_FOLLOW_UP_OPEN_TODOS, MAX_FOLLOW_UP_OPEN_TODO_CHARS;
-var init_types2 = __esm({
+var init_types3 = __esm({
   "src/shared/follow-ups/types.ts"() {
     MAX_FOLLOW_UP_OPEN_TODOS = 20;
     MAX_FOLLOW_UP_OPEN_TODO_CHARS = 500;
@@ -153100,7 +153178,7 @@ function lastExchange(store2, threadId) {
 }
 var init_last_exchange = __esm({
   "src/renderer/views/last-exchange.ts"() {
-    init_types2();
+    init_types3();
     init_thread_helpers();
   }
 });
