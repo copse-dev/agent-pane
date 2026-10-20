@@ -310,6 +310,14 @@ Define the common Thread/Turn/Item-equivalent protocol, generate types and schem
 adapt Electron IPC and ACP to it. Include approvals, cancellation, user input, tool
 streaming, capabilities, and bounded queues.
 
+_Proposed revision (2026-10-16): narrowed. ACP v2 already standardises the
+session/message/tool/permission/replay half of this, and a measured round trip
+([results](acp-v2-execution-boundary.md#evidence-so-far)) found no Copse concept it could not carry. Define
+only the execution contract (dedupe, policy, budgets, ownership, delivery,
+artifacts, task outcome) and conform adapters by round trip to the thread store.
+Reopen the full protocol only if a consumer needs a concept with no ACP or
+`_meta` home._
+
 Exit gate: one protocol conformance suite drives both an Electron transport adapter and
 an ACP/headless adapter through the same lifecycle.
 
