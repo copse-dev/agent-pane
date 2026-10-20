@@ -222,6 +222,8 @@ interface Page {
   body: string
   /** Next REST endpoint or GraphQL cursor, when more pages exist. */
   next: string | null
+  /** Why pagination could not continue, when that is not because the data ended. */
+  notice?: string
 }
 
 /** Split `gh api --include` output into status, headers and body. */
@@ -326,9 +328,20 @@ async function fetchPage(
   // the cap below truncate it, rather than discarding the page.
   if (!envelope) return { body: result.stdout, next: null }
   const pageInfo = envelope.copsePageInfo
+  const body = formatJqOutputs(envelope.copseOutput)
+  // Without a pageInfo there is no cursor to follow: say so rather than let
+  // one page pass for the whole result.
+  if (!pageInfo)
+    return {
+      body,
+      next: null,
+      notice:
+        '\n\n[gh_api_read: paginate was requested but the response has no pageInfo, so only this page was read. ' +
+        'Select `pageInfo { hasNextPage endCursor }` on the connection that takes `after: $endCursor`.]',
+    }
   return {
-    body: formatJqOutputs(envelope.copseOutput),
-    next: pageInfo?.hasNextPage && pageInfo.endCursor ? pageInfo.endCursor : null,
+    body,
+    next: pageInfo.hasNextPage && pageInfo.endCursor ? pageInfo.endCursor : null,
   }
 }
 
@@ -394,7 +407,10 @@ export async function runGhApiRead(
     pieces.push(piece)
     bytes += pieceBytes
     next = result.next
-    if (next === null) break
+    if (next === null) {
+      if (result.notice !== undefined) pieces.push(result.notice)
+      break
+    }
     if (page >= GH_API_READ_MAX_PAGES) {
       pieces.push(pageLimitNotice(input, next))
       break

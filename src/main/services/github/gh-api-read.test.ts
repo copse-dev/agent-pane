@@ -243,6 +243,26 @@ describe('runGhApiRead', () => {
     assert.match(gh.calls[0]?.args.at(-1) ?? '', /^--jq=.*\n\.data\.viewer\.repositories/s)
   })
 
+  it('says so when paginate is asked for but the GraphQL response has no pageInfo', async () => {
+    const gh = recordingGh(() => ({
+      stdout: JSON.stringify({ copsePageInfo: null, copseOutput: ['only-first-page'] }),
+    }))
+    const text = await runGhApiRead(
+      input({
+        graphql:
+          'query($endCursor: String) { viewer { repositories(first: 1, after: $endCursor) { nodes { name } } } }',
+        jq: '.data.viewer.repositories.nodes[].name',
+        paginate: true,
+      }),
+      gh.run,
+    )
+    assert.equal(gh.calls.length, 1)
+    assert.match(
+      text,
+      /^only-first-page\n\n\[gh_api_read: paginate was requested but the response has no pageInfo/,
+    )
+  })
+
   it('reports a failure with gh stderr and the response body', async () => {
     const gh = recordingGh(() => ({ stdout: included('{"message":"Not Found"}'), code: 1 }))
     const text = await runGhApiRead(input({ endpoint: 'repos/o/missing' }), gh.run)
