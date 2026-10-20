@@ -61,7 +61,9 @@ describe('finished thread review and settings', function () {
         },
       ],
     })
-    seedE2eViewport({ width: 1280, height: 800 })
+    // The e2e baseline turns auto-archive off so other fixtures do not depend on
+    // the wall clock; this spec exercises the product default (three days).
+    seedE2eViewport({ width: 1280, height: 800 }, { autoArchiveAfterDays: undefined })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })
