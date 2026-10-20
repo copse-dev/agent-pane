@@ -76,6 +76,39 @@ describe('threadHasUncommittedChanges', { skip: !gitOk && 'git not installed' },
     assert.equal(await threadHasUncommittedChanges('thread-1', dir, 6), false)
   })
 
+  for (const cleanUpdatedAt of [10, 11]) {
+    it(`isolates concurrent and cached checkout roots with matching thread ids (timestamp ${String(cleanUpdatedAt)})`, async () => {
+      const clean = await mkdtemp(join(tmpdir(), 'copse-thread-dirty-other-project-'))
+      try {
+        const cleanGit = (...args: string[]): void => {
+          assert.equal(spawnSync('git', args, { cwd: clean }).status, 0)
+        }
+        cleanGit('init', '-q')
+        cleanGit('config', 'user.email', 'test@example.com')
+        cleanGit('config', 'user.name', 'Test')
+        await writeFile(join(clean, 'README.md'), 'clean checkout\n')
+        cleanGit('add', '-A')
+        cleanGit('commit', '-q', '-m', 'initial')
+        await writeFile(join(dir, 'README.md'), 'dirty checkout\n')
+
+        // Both calls are pending together, as Activity's two background workers
+        // inspect identically named threads from separate projects.
+        const results = await Promise.all([
+          threadHasUncommittedChanges('shared-thread', dir, 10),
+          threadHasUncommittedChanges('shared-thread', clean, cleanUpdatedAt),
+        ])
+        assert.deepEqual(results, [true, false])
+        assert.equal(await threadHasUncommittedChanges('shared-thread', dir, 10), true)
+        assert.equal(
+          await threadHasUncommittedChanges('shared-thread', clean, cleanUpdatedAt),
+          false,
+        )
+      } finally {
+        await rm(clean, { recursive: true, force: true })
+      }
+    })
+  }
+
   it("keys the cache by thread id, so one thread never serves another one's cached answer", async () => {
     await writeFile(join(dir, 'README.md'), 'hello again\n')
     assert.equal(await threadHasUncommittedChanges('thread-1', dir, 5), true)
