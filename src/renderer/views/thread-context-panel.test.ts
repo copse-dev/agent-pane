@@ -8,7 +8,7 @@ import type { DecisionEvent } from '@shared/threads/decision-log.ts'
 import type { ContextPermissionSnapshot } from '@shared/types/context-permissions.ts'
 import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
 import type { DeferredApproval } from '@shared/threads/deferred-approval.ts'
-import { addMessage, createThread } from '@shared/store/thread-helpers.ts'
+import { addMessage, createThread, setReviewerInputAnswer } from '@shared/store/thread-helpers.ts'
 import type { ThreadContextModel } from './thread-context-model.ts'
 import {
   mountThreadContextPane,
@@ -64,6 +64,7 @@ function model(fields: Partial<ThreadContextModel> = {}): ThreadContextModel {
       },
     ],
     subagents: [{ id: 'a', kind: 'explore', status: 'done', prompt: 'Find it' }],
+    resolvedQuestions: [],
     ...fields,
   }
 }
@@ -80,6 +81,7 @@ function recorder(): { handlers: ThreadContextHandlers; calls: string[] } {
       startSideChat: () => calls.push('start'),
       archiveSideChat: (id) => calls.push(`archive:${id}`),
       restoreSideChat: (id) => calls.push(`restore:${id}`),
+      jumpToReviewerInput: (messageId, requestId) => calls.push(`jump:${messageId}:${requestId}`),
     },
   }
 }
@@ -167,6 +169,86 @@ test('empty sections say so', () => {
     recorder().handlers,
   )
   assert.equal(host.querySelectorAll('.thread-context-empty').length, 5)
+})
+
+test('resolved questions live in collapsed Context disclosures and can jump to their origin', () => {
+  const { handlers, calls } = recorder()
+  const host = renderThreadContext(
+    model({
+      resolvedQuestions: [
+        {
+          request: {
+            id: 'request-1',
+            messageId: 'message-1',
+            question: 'Fix the spacing too?',
+            context: 'The footer overlaps content.',
+            options: ['Yes'],
+          },
+          answer: { id: 'request-1', text: 'Yes', answeredAt: 2, messageId: 'answer-1' },
+        },
+      ],
+    }),
+    handlers,
+  )
+  const resolved = host.querySelector<HTMLDetailsElement>('[data-reviewer-input-id="request-1"]')
+  assert.ok(resolved)
+  assert.equal(resolved.open, false)
+  assert.equal(resolved.querySelector('summary')?.textContent, 'Fix the spacing too?')
+  assert.match(resolved.textContent, /Your answer: Yes/)
+  resolved.querySelector<HTMLButtonElement>('.reviewer-input-origin')?.click()
+  assert.deepEqual(calls, ['jump:message-1:request-1'])
+})
+
+test('Context moves an answered question out of the pending list', () => {
+  const store = createStore()
+  store.setState({
+    activeProjectId: 'p',
+    projects: [{ id: 'p', path: '/work', name: 'Work' }],
+    filesPaneOpen: true,
+    rightPanelMode: 'context',
+  })
+  const threadId = createThread(store)
+  store.setState({
+    threads: store.getState().threads.map((thread) => ({
+      ...thread,
+      messages: [
+        {
+          id: 'origin',
+          role: 'assistant',
+          content: '',
+          createdAt: 1,
+          toolCalls: [
+            {
+              id: 'request-1',
+              name: 'request_review_input',
+              status: 'done',
+              result: 'Saved',
+              args: { question: 'Fix spacing?', context: 'Footer overlap.', options: ['Yes'] },
+            },
+          ],
+        },
+      ],
+    })),
+  })
+  const viewer = document.createElement('div')
+  const dispose = mountThreadContextPane(
+    document.createElement('div'),
+    viewer,
+    store,
+    createFakeApi(),
+  )
+  assert.equal(viewer.querySelector('.reviewer-input-toggle')?.textContent, '1 question')
+  assert.ok(viewer.querySelector('.reviewer-input-item'))
+  setReviewerInputAnswer(store, threadId, {
+    id: 'request-1',
+    text: 'Yes',
+    answeredAt: 2,
+    messageId: 'answer-1',
+  })
+  assert.equal(viewer.querySelector('.reviewer-input-item'), null)
+  assert.equal(viewer.querySelector('.reviewer-input-toggle'), null)
+  assert.equal(viewer.querySelector<HTMLDetailsElement>('.thread-context-question')?.open, false)
+  dispose()
 })
 
 test('the mounted pane renders the active thread, uses one header, and starts a side chat', async () => {
@@ -274,8 +356,6 @@ test('Context shows saved questions and deferred actions without implying approv
       pendingApprovals: async (): Promise<DeferredApproval[]> => [deferred],
     },
   }
-  const opened: string[] = []
-  store.on('reviewer_input_open', (id) => opened.push(id))
   let live: PendingQuestionSummary[] = [
     {
       id: 'live-1',
@@ -311,9 +391,10 @@ test('Context shows saved questions and deferred actions without implying approv
   assert.match(requests.textContent, /Continue with the release\?/)
   assert.match(requests.textContent, /Run git fetch/)
   assert.match(requests.textContent, /Not run/)
-  assert.equal(requests.querySelectorAll('button').length, 2)
-  requests.querySelector<HTMLElement>('[data-reviewer-input-id="question-1"]')?.click()
-  assert.deepEqual(opened, ['question-1'])
+  assert.equal(requests.querySelectorAll('.thread-context-rows > button').length, 1)
+  assert.equal(requests.querySelector('.reviewer-input-toggle')?.textContent, '1 question')
+  requests.querySelector<HTMLButtonElement>('.reviewer-input-question')?.click()
+  assert.ok(requests.querySelector('.reviewer-input-text'))
   live = []
   changed?.()
   assert.equal(viewer.querySelector('[data-agent-question-id="live-1"]'), null)

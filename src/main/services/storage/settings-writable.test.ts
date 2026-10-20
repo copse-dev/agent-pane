@@ -44,6 +44,16 @@ describe('settings-writable', () => {
     }
   })
 
+  it('validates the background default-branch fetch opt-out as a boolean', () => {
+    assert.equal(isRendererWritableSettingKey('backgroundDefaultBranchFetch'), true)
+    for (const value of [false, true]) {
+      assert.equal(parseRendererWritableSetting('backgroundDefaultBranchFetch', value), value)
+    }
+    for (const value of ['true', 1, null]) {
+      assert.throws(() => parseRendererWritableSetting('backgroundDefaultBranchFetch', value))
+    }
+  })
+
   it('rejects security keys on the renderer allowlist', () => {
     assert.equal(isRendererWritableSettingKey('autoRunSandboxCommands'), false)
     assert.equal(isRendererWritableSettingKey('localServerUrl'), false)
