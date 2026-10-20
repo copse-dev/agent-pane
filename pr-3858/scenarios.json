@@ -60,6 +60,14 @@
     "label": "Grouped outside-sandbox command approval"
   },
   {
+    "id": "approval-long-code",
+    "label": "Long code command approval"
+  },
+  {
+    "id": "approval-mixed-prose-code",
+    "label": "Approval with paragraphs and code blocks"
+  },
+  {
     "id": "product-announcements-fresh",
     "label": "Product announcements — fresh"
   },
@@ -138,6 +146,10 @@
   {
     "id": "sidebar-other-projects",
     "label": "Sidebar listing threads of projects not opened yet"
+  },
+  {
+    "id": "sidebar-background-project-running",
+    "label": "Running agent in a collapsed project"
   },
   {
     "id": "sidebar-thread-sort",
