@@ -128,7 +128,7 @@ export async function leaseGitSigningBroker(
   )
     return null
   const project = await realpath(getAgentProjectRoot() ?? root)
-  const useAgent = getSetting<boolean>('gitCommitSshAgentSocketAccess', false)
+  const useAgent = getSetting<boolean>('gitCommitSshAgentSocketAccess', true)
   if (!useAgent) grants.delete(project)
   const enabled = await runCommand('git', ['config', '--bool', '--get', 'commit.gpgSign'], {
     cwd: root,
@@ -234,8 +234,8 @@ export async function leaseGitSigningBroker(
       ...base,
       filesystem: isolatedFilesystem,
     }
-    const rememberAllowed = resolveToolPermission('git_commit')?.policy !== 'ask'
-    if (!privateKey && (!rememberAllowed || grants.get(project) !== identity)) {
+    const alwaysAsk = resolveToolPermission('git_commit')?.policy === 'ask'
+    if (!privateKey && (alwaysAsk || grants.get(project) !== identity)) {
       const probe = await runCommand(nodeWorkerExecutable(), ['-e', SOCKET_PROBE, socketPath], {
         cwd: directory,
         env: helperEnv(directory),
@@ -248,27 +248,35 @@ export async function leaseGitSigningBroker(
         throw new Error(
           `Cannot verify a sandbox denial for the SSH signing socket; no extra access was granted. Probe exited ${String(probe.code)}: ${probe.stderr.trim().slice(0, 2000)}`,
         )
-      const answer = await requestApproval(
-        {
-          type: 'shell',
-          title: 'Allow this Git signing helper?',
-          body: `${SIGNER} -Y sign -n git -U\nKey: ${fingerprint}\nSocket: ${socketPath}\nProject: ${project}`,
-          bodyAdvice:
-            'A sandboxed connection probe was denied. Allow the system SSH signer to use this key for Git commits through this socket? Git hooks keep their existing sandbox access.',
-          allowRemember: rememberAllowed,
-          rememberLabel:
-            'Remember this signer, key and socket for this project until Copse restarts',
-          subject: 'git_commit SSH signing',
-          scope: 'git-signing-helper',
-          cause: 'shell-sandbox-retry',
-          reasons: [fingerprint, 'sandboxed socket probe denied'],
-        },
-        signal,
-      )
-      if (!answer.approved) throw new Error('User rejected SSH commit signing.')
-      if (answer.remember && rememberAllowed) {
+      if (alwaysAsk) {
+        const answer = await requestApproval(
+          {
+            type: 'shell',
+            title: 'Allow this Git signing helper?',
+            body: `${SIGNER} -Y sign -n git -U\nKey: ${fingerprint}\nSocket: ${socketPath}\nProject: ${project}`,
+            bodyAdvice:
+              'A sandboxed connection probe was denied. Allow the system SSH signer to use this key for Git commits through this socket? Git hooks keep their existing sandbox access.',
+            allowRemember: false,
+            subject: 'git_commit SSH signing',
+            scope: 'git-signing-helper',
+            cause: 'shell-sandbox-retry',
+            reasons: [fingerprint, 'sandboxed socket probe denied'],
+          },
+          signal,
+        )
+        if (!answer.approved) throw new Error('User rejected SSH commit signing.')
+      } else {
         if (grants.size >= 64) grants.clear()
         grants.set(project, identity)
+        recordDecision({
+          kind: 'shell',
+          actor: 'system',
+          verdict: 'allowed',
+          subject: 'git_commit SSH signing',
+          scope: 'git-signing-helper',
+          reasons: [fingerprint, 'allowed by default (Settings → Permissions → Commit signing)'],
+          source: 'git-signing-helper-default-grant',
+        })
       }
     } else if (!privateKey) {
       recordDecision({
@@ -286,7 +294,7 @@ export async function leaseGitSigningBroker(
     if (
       signal?.aborted ||
       !isProjectSandboxEnabled() ||
-      (!privateKey && !getSetting<boolean>('gitCommitSshAgentSocketAccess', false)) ||
+      (!privateKey && !getSetting<boolean>('gitCommitSshAgentSocketAccess', true)) ||
       resolveToolPermission('git_commit')?.policy === 'block' ||
       currentSocket?.dev !== socketInfo?.dev ||
       currentSocket?.ino !== socketInfo?.ino ||
@@ -351,7 +359,7 @@ export async function leaseGitSigningBroker(
             }
             const current = await stat(socketPath)
             if (
-              !getSetting<boolean>('gitCommitSshAgentSocketAccess', false) ||
+              !getSetting<boolean>('gitCommitSshAgentSocketAccess', true) ||
               resolveToolPermission('git_commit')?.policy === 'block' ||
               current.dev !== socketInfo?.dev ||
               current.ino !== socketInfo.ino

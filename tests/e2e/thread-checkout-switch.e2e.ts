@@ -7,7 +7,7 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
-import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
@@ -273,6 +273,14 @@ describe('switching threads during first-message checkout', () => {
     assert.equal(await $('.prompt-input').getText(), '')
     assert.equal(existsSync(join(worktreeRoot, '.git')), true, 'the real checkout must exist')
     assert.equal(git(projectRoot, ['branch', '--show-current']), 'main')
+    const originalRow = $(`.chat-row[data-thread-id="${ORIGINAL}"]`)
+    await originalRow.moveTo()
+    await expect(originalRow.$('.chat-menu-btn')).toHaveStyle({ opacity: '1' })
+    // A replaced sidebar row can lose hover/focus after the click. Exercise the
+    // real menu, then capture a deliberate non-hover state rather than that race.
+    await $('.prompt-input').click()
+    await parkPointer()
+    await expect(originalRow.$('.chat-menu-btn')).toHaveStyle({ opacity: '0' })
     await saveAppScreenshot('thread-checkout-switch-sent.png')
 
     await $(`.chat-row[data-thread-id="${OTHER}"]`).click()

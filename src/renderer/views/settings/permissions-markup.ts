@@ -215,13 +215,14 @@ export const permissionsMarkup = `
               <legend>Commit signing</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="gitCommitSshAgentSocketAccess" />
-                Enable scoped SSH signing approvals (macOS)
+                Allow signed commits (macOS)
               </label>
               <p class="field-hint">
-                Off by default. Copse asks before its system SSH signer uses your configured key
-                through ssh-agent. You can remember the signer, key and socket for this project
-                until Copse restarts. Changed configuration requires approval again. Git hooks
-                keep their project sandbox; they receive no ssh-agent access. Turning this off
+                On by default. Copse's system SSH signer uses your configured key through
+                ssh-agent to sign commits without asking each time. A changed key, signer or
+                socket is re-verified before it's used again. Git hooks keep their project
+                sandbox; they receive no ssh-agent access. Set the git_commit tool to Always ask
+                in Tool Permissions to confirm every signing helper use. Turning this off
                 prevents further ssh-agent signing. With this off, a configured private key file
                 can be read and used only after a separate approval for each commit. Key contents
                 are never sent to the agent. Custom signing programs run with ordinary project
@@ -248,7 +249,7 @@ export const permissionsMarkup = `
 `
 
 export const permissionsFields: readonly SettingField[] = [
-  { name: 'gitCommitSshAgentSocketAccess', kind: 'checkbox', default: false, save: true },
+  { name: 'gitCommitSshAgentSocketAccess', kind: 'checkbox', default: true, save: true },
   { name: 'browserToolsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'readTerminalEnabled', kind: 'checkbox', default: true, save: true },
   {

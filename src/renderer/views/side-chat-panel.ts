@@ -13,6 +13,12 @@ import {
 import { excerptText, sideChatsOf, type SideChatRow } from '@shared/threads/side-chat.ts'
 import { openRightPanel } from '../controller/panels.ts'
 import { promoteSideChat, sendSideChatMessage, startSideChat } from '../controller/side-chat.ts'
+import {
+  ensureThreadMessages,
+  hydrationFailed,
+  showSideChatTranscript,
+  needsHydration,
+} from '../controller/thread-hydration.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { showToast } from './toast.ts'
@@ -89,6 +95,8 @@ export function renderSideChat(input: {
   parent: Thread | undefined
   onSuggestion: (text: string) => void
   onArchive: (archived: boolean) => void
+  /** The transcript read failed; shown instead of a loading line that would never finish. */
+  loadFailed?: boolean
 }): { header: HTMLElement; body: HTMLElement } {
   const { side, parent } = input
   const archived = side.archivedAt != null
@@ -131,7 +139,21 @@ export function renderSideChat(input: {
   })
 
   const body = el('div', { class: 'side-chat-body' })
-  if (side.messages.length === 0) {
+  if (needsHydration(side)) {
+    // After a restart the transcript is still on disk, so an empty `messages` here
+    // means "not read yet", not "nothing was said"; suggestions would mislead.
+    body.append(
+      el(
+        'div',
+        { class: 'side-chat-empty', 'data-side-chat-loading': '' },
+        el(
+          'p',
+          { role: 'status' },
+          input.loadFailed === true ? 'Couldn’t load this side chat.' : 'Loading conversation…',
+        ),
+      ),
+    )
+  } else if (side.messages.length === 0) {
     // An archived side chat takes no new questions until it is restored, so it
     // offers no suggestions either (the composer is disabled for the same reason).
     body.append(
@@ -238,15 +260,29 @@ export function mountSideChatPane(
 
   function ask(text: string): void {
     if (selectedId === null) return
+    const side = store.getState().threads.find((thread) => thread.id === selectedId)
+    if (!side || needsHydration(side)) return
     sendSideChatMessage(store, api, selectedId, text)
+  }
+
+  function hydrate(threadId: string): void {
+    const { activeProjectId, threads } = store.getState()
+    const thread = threads.find((t) => t.id === threadId)
+    if (activeProjectId && thread && needsHydration(thread)) {
+      void ensureThreadMessages(activeProjectId, threadId)
+    }
   }
 
   function render(): void {
     frame = 0
-    if (!paneVisible()) return
+    if (!paneVisible()) {
+      showSideChatTranscript(null)
+      return
+    }
     const { threads, activeThreadId } = store.getState()
     const selection = resolveSideChatSelection(threads, activeThreadId, remembered)
     selectedId = selection.selectedId
+    showSideChatTranscript(selectedId)
     if (selection.mainId !== null && selectedId !== null)
       remembered.set(selection.mainId, selectedId)
 
@@ -275,6 +311,10 @@ export function mountSideChatPane(
       )
       item.addEventListener('click', () => {
         if (selection.mainId !== null) remembered.set(selection.mainId, row.id)
+        // A failed read is not retried by render() (it would loop on its own
+        // failure announcement); choosing the chat again is the retry.
+        showSideChatTranscript(row.id)
+        hydrate(row.id)
         render()
       })
       list.append(item)
@@ -302,9 +342,12 @@ export function mountSideChatPane(
       return
     }
     const parent = threads.find((thread) => thread.id === side.sideChat?.parentThreadId)
+    const loadFailed = needsHydration(side) && hydrationFailed(side.id)
+    if (needsHydration(side) && !loadFailed) hydrate(side.id)
     const view = renderSideChat({
       side,
       parent,
+      loadFailed,
       onSuggestion: ask,
       onArchive: (archived) => {
         if (archived) restoreThread(store, side.id)
@@ -314,8 +357,9 @@ export function mountSideChatPane(
     headerHost.append(view.header)
     bodyHost.append(...Array.from(view.body.childNodes))
     if (atBottom) bodyHost.scrollTop = bodyHost.scrollHeight
-    input.disabled = side.archivedAt != null
-    send.disabled = side.archivedAt != null || side.status === 'running'
+    const unloaded = needsHydration(side)
+    input.disabled = side.archivedAt != null || unloaded
+    send.disabled = side.archivedAt != null || side.status === 'running' || unloaded
     // A run's later output lands on the side chat's own id, so promote once it settles.
     promote.disabled = side.status === 'running'
     promote.title = promote.disabled ? 'Wait for the side chat to finish before promoting' : ''
@@ -325,7 +369,11 @@ export function mountSideChatPane(
 
   /** Token streams arrive per chunk; coalesce redraws to one per frame. */
   function schedule(): void {
-    if (!paneVisible() || frame !== 0) return
+    if (!paneVisible()) {
+      showSideChatTranscript(null)
+      return
+    }
+    if (frame !== 0) return
     frame = requestAnimationFrame(render)
   }
 
@@ -367,6 +415,7 @@ export function mountSideChatPane(
   ]
   schedule()
   return () => {
+    showSideChatTranscript(null)
     for (const off of offs) off()
     if (frame !== 0) cancelAnimationFrame(frame)
   }

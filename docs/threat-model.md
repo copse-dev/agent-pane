@@ -230,13 +230,14 @@ workspace or non-network origin).
 
 ### Scoped SSH signing
 
-On macOS, the opt-in signing setting enables a separate broker for the system
-`/usr/bin/ssh-keygen`. A trusted sandboxed socket probe must receive EPERM/EACCES
-before Copse offers additional access. Git stderr and model hints are not evidence.
-Approval identifies the project, helper, public-key fingerprint and socket. Optional
-remembering lasts until app restart and is bound to the project path, signing config,
-public key, executable hash and socket inode. A changed identity requires approval;
-Always ask bypasses remembered grants. Disabling the setting prevents further ssh-agent signing.
+On macOS, a separate broker for the system `/usr/bin/ssh-keygen` is on by default. A
+trusted sandboxed socket probe must receive EPERM/EACCES before Copse offers
+additional access. Git stderr and model hints are not evidence. The grant is bound
+to the project path, signing config, public key, executable hash and socket inode,
+and is cached until app restart; a changed identity re-runs the probe and re-grants
+without asking. Setting the git_commit tool to Always ask forces approval for every
+use and bypasses the cached grant. Disabling the setting prevents further ssh-agent
+signing.
 
 Only the separately sandboxed system signer gets the agent socket. Its fixed argv
 forces agent use, selects the approved public key and signs in the `git` namespace.
