@@ -176,7 +176,7 @@ describe('coverage in the real composer model picker', () => {
     await $(TRIGGER).click()
     await $(MENU + ' .model-picker-browse').click()
     await chooseCoverage('paid')
-    await $(FILTER).setValue('Sonnet 4.6')
+    await $(FILTER).setValue('Sonnet 5.5')
     await $(MENU + ' .model-picker-option').click()
     await expect($(TRIGGER + ' .model-picker-cost')).toBeDisplayed()
     await $(TRIGGER).click()
