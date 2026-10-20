@@ -1,5 +1,6 @@
 import { OPENAI_AGENT_RETENTION_NOTICE } from '@shared/openai-cloud-agent.ts'
 import { CLOUD_MODELS } from '@copse/llm/model-catalog.ts'
+import { supersedingModel } from '@copse/llm/model-version-suppression.ts'
 import { ACP_RETENTION_NOTICE } from '@shared/acp-retention.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
@@ -416,19 +417,22 @@ describe('fetchModelOptions visibility', () => {
     assert.ok(!none.some((o) => o.value.startsWith('remote-agent:cursor')))
     assert.ok(!none.some((o) => o.value.startsWith('remote-agent:anthropic')))
 
-    // An Anthropic key surfaces Claude Cloud Agent models (same ids as Cloud models).
+    // An Anthropic key surfaces Claude Cloud Agent models (same ids as Cloud
+    // models). Opus 4.8 and Sonnet 4.6 are superseded within this group by Opus
+    // 5.5 and Sonnet 5.5 (see the suppression tests below), so assert against
+    // frontier ids here.
     const anthropicOnly = await fetchModelOptions(
       mockApi({ available: { anthropic: true } }),
-      'claude-sonnet-4-6',
+      'claude-sonnet-5-5',
     )
     const claudeRemote = anthropicOnly.filter((o) => o.group === 'Claude Cloud Agent')
-    assert.ok(claudeRemote.some((o) => o.value === 'remote-agent:anthropic#claude-opus-4-8'))
-    assert.ok(claudeRemote.some((o) => o.value === 'remote-agent:anthropic#claude-sonnet-4-6'))
+    assert.ok(claudeRemote.some((o) => o.value === 'remote-agent:anthropic#claude-opus-5-5'))
+    assert.ok(claudeRemote.some((o) => o.value === 'remote-agent:anthropic#claude-sonnet-5-5'))
     const sonnetRemote = claudeRemote.find(
-      (o) => o.value === 'remote-agent:anthropic#claude-sonnet-4-6',
+      (o) => o.value === 'remote-agent:anthropic#claude-sonnet-5-5',
     )
     assert.ok(sonnetRemote)
-    assert.match(sonnetRemote.label, /^Claude Sonnet 4\.6: intellect /)
+    assert.match(sonnetRemote.label, /^Claude Sonnet 5\.5: intellect /)
     assert.ok(!anthropicOnly.some((o) => o.value.startsWith('remote-agent:cursor')))
 
     // A Cursor key surfaces Default + live catalog under its own heading.
@@ -469,7 +473,9 @@ describe('fetchModelOptions visibility', () => {
     const claudeCloud = options.filter(
       (o) => o.group === 'Claude Cloud Agent (billed to your API key)',
     )
-    assert.ok(claudeCloud.some((o) => o.value === 'remote-agent:anthropic#claude-opus-4-8'))
+    // Opus 4.8 is superseded within this group by Opus 5.5 (see the suppression
+    // tests below), so assert against the frontier id.
+    assert.ok(claudeCloud.some((o) => o.value === 'remote-agent:anthropic#claude-opus-5-5'))
     // No un-annotated Claude Cloud Agent heading remains.
     assert.ok(!options.some((o) => o.group === 'Claude Cloud Agent'))
 
@@ -717,6 +723,67 @@ describe('fetchModelOptions visibility', () => {
         `Claude Sonnet 5${intellectSuffix('claude-sonnet-5')}`,
       ],
     )
+  })
+
+  it('suppresses an older ACP release only within its own agent, and only while unselected', async () => {
+    // Regression: an ACP agent (a Claude Code subscription route) offering both
+    // Sonnet 5 and Sonnet 5.5 must suppress the older release exactly like the
+    // Cloud models group does — but never across a *different* agent, since
+    // availability and billing differ per agent.
+    const agents: AcpAgentConfig[] = [
+      {
+        id: 'claude-acp',
+        title: 'Claude Code',
+        command: 'claude-agent-acp',
+        enabled: true,
+        availableModels: [
+          {
+            value: 'sonnet',
+            label: 'Sonnet',
+            description: 'Sonnet 5 · Efficient for routine tasks',
+          },
+          {
+            value: 'sonnet[1m]',
+            label: 'Sonnet (1M context)',
+            description: 'Sonnet 5.5 with 1M context · Efficient for routine tasks',
+          },
+        ],
+      },
+      {
+        id: 'other-acp',
+        title: 'Other Agent',
+        command: 'other-agent-acp',
+        enabled: true,
+        availableModels: [
+          {
+            value: 'sonnet',
+            label: 'Sonnet',
+            description: 'Sonnet 5 · Efficient for routine tasks',
+          },
+        ],
+      },
+    ]
+
+    const unselected = await fetchModelOptions(mockApi({ acpAgents: agents }), '')
+    assert.deepEqual(
+      unselected.filter((o) => o.group === 'Claude Code on this device').map((o) => o.value),
+      ['acp:claude-acp#sonnet[1m]'],
+    )
+    // A different agent offering only the older release keeps it: no other
+    // agent's release can hide a model only this one actually runs.
+    assert.deepEqual(
+      unselected.filter((o) => o.group === 'Other Agent on this device').map((o) => o.value),
+      ['acp:other-acp#sonnet'],
+    )
+
+    const selected = await fetchModelOptions(
+      mockApi({ acpAgents: agents }),
+      'acp:claude-acp#sonnet',
+    )
+    const stale = selected.find((o) => o.value === 'acp:claude-acp#sonnet')
+    assert.ok(stale)
+    assert.equal(stale.disabled, true)
+    assert.match(stale.label, /superseded by Claude Sonnet 5\.5/)
   })
 
   it('offers the latest Sonnet version and suppresses older cloud options', async () => {
@@ -1222,12 +1289,17 @@ describe('OpenAI cloud agent prototype picker', () => {
     assert.equal(cloud.retention, OPENAI_AGENT_RETENTION_NOTICE)
     const rows = options.filter((option) => option.value.startsWith('remote-agent:openai#'))
     assert.equal(rows[0]?.value, cloud.value)
+    // Same same-tier suppression as the Cloud models group (gpt-5 → gpt-5.5,
+    // gpt-5.6-sol → gpt-6.1-sol): a superseded tier id is absent here too.
+    const openaiIds = CLOUD_MODELS.filter(([, , provider]) => provider === 'openai').map(
+      ([id]) => id,
+    )
     assert.deepEqual(
       new Set(rows.map((row) => row.value)),
       new Set(
-        CLOUD_MODELS.filter(([, , provider]) => provider === 'openai').map(
-          ([id]) => `remote-agent:openai#${id}`,
-        ),
+        openaiIds
+          .filter((id) => supersedingModel(id, openaiIds) === null)
+          .map((id) => `remote-agent:openai#${id}`),
       ),
     )
     assert.ok(
