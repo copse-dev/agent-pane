@@ -10,12 +10,8 @@ import './styles/themes.css'
 import './styles/global/popout.css'
 
 import { createStore } from '@shared/store/store.ts'
-import {
-  nextThreadId,
-  openNewThread,
-  prevThreadId,
-  switchThread,
-} from '@shared/store/thread-helpers.ts'
+import { openNewProjectThread } from './controller/projects.ts'
+import { nextThreadId, prevThreadId, switchThread } from '@shared/store/thread-helpers.ts'
 import { mountWelcome } from './views/welcome.ts'
 import { mountTitlebar } from './views/titlebar.ts'
 import { mountProjectsPane } from './views/projects-pane.ts'
@@ -434,7 +430,7 @@ async function boot(): Promise<void> {
   api.menu.onNewThread(() => {
     if (!store.getState().workspaceRoot) return
     ensureLayout()
-    openNewThread(store)
+    openNewProjectThread(store, api)
   })
 
   api.menu.onToggleSidebar(() => {
@@ -768,7 +764,7 @@ function registerKeyboardShortcuts(): void {
     if (isAnyDialogOpen()) return
     if (meta && e.key === 't') {
       e.preventDefault()
-      openNewThread(store)
+      openNewProjectThread(store, api)
     }
     // Also handle the shortcut in the renderer when a native menu accelerator
     // is unavailable (for example, a headless Electron window).

@@ -1,5 +1,5 @@
 {
-  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-19; plugin-client-approvals provisional at the median (8s) until its first CI run is measured, 2026-10-19; detached-turn-transcript is macOS-only and skips on the Linux CI shards, recorded at 1s, 2026-10-16",
+  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-19; plugin-client-approvals provisional at the median (8s) until its first CI run is measured, 2026-10-19; host-read-tool-cards provisional at the median (8s) until its first CI run is measured, 2026-10-20; detached-turn-transcript is macOS-only and skips on the Linux CI shards, recorded at 1s, 2026-10-16",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15.7,
     "tests/e2e/acp-auth-error.e2e.ts": 37.5,
@@ -128,6 +128,7 @@
     "tests/e2e/grok-model-picker.e2e.ts": 7.8,
     "tests/e2e/guarded-yolo.e2e.ts": 18.8,
     "tests/e2e/hook-cards.e2e.ts": 13.6,
+    "tests/e2e/host-read-tool-cards.e2e.ts": 8,
     "tests/e2e/image-expand.e2e.ts": 23.3,
     "tests/e2e/imported-cursor-agent-refresh.e2e.ts": 12.1,
     "tests/e2e/innerhtml-tool-args.e2e.ts": 6.4,

@@ -201,15 +201,43 @@ chooses which network host Copse fetches from, and therefore which commits new t
 start from. That requires write access to the project's Git metadata, which contained
 commands do not have.
 
+### Host-side read tools without a prompt
+
+Two agent tools reach the network from the host without an approval prompt
+([shell permissions](shell-permissions.md#host-side-read-tools)). Neither uses a new or narrowed
+credential; the read-only property comes from Copse building the request itself.
+
+- `gh_api_read` runs `gh api` with the user's existing `gh` login. **Any GitHub data that login
+  can read** — public and private repositories, organisations, users, issues, pull requests,
+  Actions logs, and the authenticated user's own profile — can flow into the agent's context
+  without a prompt, as `<external_content>`. It cannot write: the argv is Copse-built (GET only for
+  REST; exactly one GraphQL `query`, parsed with the reference `graphql` parser; no agent flags,
+  headers, hosts or full URLs), and `jq` access to the `gh` process environment is refused so a
+  forwarded token cannot be echoed back. The residual risk is disclosure: data the agent reads can
+  leave through any other egress the session already has (a later approved command, a web fetch,
+  a model provider), and a prompt-injected agent can choose what to read. Output is bounded at
+  256 KiB, 10 pages and 60 s per call.
+- `git_fetch` fetches named branches and PR heads from the project's network `origin` only,
+  through the same host-side scratch repository as the background default-branch fetch above,
+  and moves only `refs/remotes/origin/*`. It never reads the project's Git configuration on the
+  networked side, accepts no remote, URL, refspec or option, and never touches local branches,
+  HEAD or the working tree. Fetched commits are code the agent may then read or check out; the
+  remote is the one the user already trusts as origin.
+
+Both remain subject to per-tool Ask/Block overrides, are absent from unattended container guests,
+and are hidden or refused where their preconditions fail (`gh` unavailable or unauthenticated; SSH
+workspace or non-network origin).
+
 ### Scoped SSH signing
 
-On macOS, the opt-in signing setting enables a separate broker for the system
-`/usr/bin/ssh-keygen`. A trusted sandboxed socket probe must receive EPERM/EACCES
-before Copse offers additional access. Git stderr and model hints are not evidence.
-Approval identifies the project, helper, public-key fingerprint and socket. Optional
-remembering lasts until app restart and is bound to the project path, signing config,
-public key, executable hash and socket inode. A changed identity requires approval;
-Always ask bypasses remembered grants. Disabling the setting prevents further ssh-agent signing.
+On macOS, a separate broker for the system `/usr/bin/ssh-keygen` is on by default. A
+trusted sandboxed socket probe must receive EPERM/EACCES before Copse offers
+additional access. Git stderr and model hints are not evidence. The grant is bound
+to the project path, signing config, public key, executable hash and socket inode,
+and is cached until app restart; a changed identity re-runs the probe and re-grants
+without asking. Setting the git_commit tool to Always ask forces approval for every
+use and bypasses the cached grant. Disabling the setting prevents further ssh-agent
+signing.
 
 Only the separately sandboxed system signer gets the agent socket. Its fixed argv
 forces agent use, selects the approved public key and signs in the `git` namespace.

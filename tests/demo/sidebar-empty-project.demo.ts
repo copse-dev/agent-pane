@@ -18,12 +18,15 @@ describe('an empty unopened project in the sidebar', () => {
       await browser.url('about:blank')
       await browser.url('/?scenario=sidebar-empty-project')
       await $('.projects-filter-btn').waitForDisplayed({ timeout: 30_000 })
+      await expect($('.chat-title')).toHaveText('Open project conversation')
       await $('.projects-sort-btn').click()
       await $('.context-menu').waitForDisplayed()
       await choose(group)
       await $('.projects-filter-btn').click()
       await $('.context-menu').waitForDisplayed()
       await choose('empty-project')
+      // Filtering an existing conversation must not open a thread in this empty project.
+      await expect($('.workspace-name')).toHaveText('copse-demo')
       const entry = $('.project-entry[data-project-id="demo-empty-other"]')
       await expect(entry.$('.project-name')).toHaveText('empty-project')
       if (group !== 'Project') {

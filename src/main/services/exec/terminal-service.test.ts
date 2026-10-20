@@ -9,6 +9,7 @@ import {
   terminalHistoryEnv,
   __testInjectTerminalSession,
   destroyAllTerminalSessions,
+  destroyEmptyTerminalSessionsForThread,
   destroyTerminalSessionsForThread,
   destroyTerminalSessionsForOwner,
   destroyTerminalSession,
@@ -331,6 +332,60 @@ describe('terminal-service', () => {
       [second],
     )
     assert.equal(listTerminalSessions(null).length, 1)
+  })
+
+  it('closes out only sessions nobody has ever written to, leaving touched ones alone', async () => {
+    const untouched = __testInjectTerminalSession({
+      ownerId: OWNER,
+      label: 'Untouched',
+      threadId: 'thread-a',
+      outputText: '',
+      hasActivity: false,
+    })
+    const touched = __testInjectTerminalSession({
+      ownerId: OWNER,
+      label: 'Touched',
+      threadId: 'thread-a',
+      outputText: '',
+      hasActivity: true,
+    })
+    __testInjectTerminalSession({
+      ownerId: OWNER,
+      label: 'Untouched elsewhere',
+      threadId: 'thread-b',
+      outputText: '',
+      hasActivity: false,
+    })
+
+    assert.deepEqual(await destroyEmptyTerminalSessionsForThread('thread-a'), [untouched])
+    assert.deepEqual(
+      listTerminalSessions('thread-a').map((session) => session.id),
+      [touched],
+    )
+    assert.equal(listTerminalSessions('thread-b').length, 1)
+  })
+
+  it('marks a session as having activity once anything is written to it', async () => {
+    const sessionId = __testInjectTerminalSession({
+      ownerId: OWNER,
+      label: 'Fresh',
+      threadId: 'thread-a',
+      outputText: '',
+      hasActivity: false,
+    })
+
+    assert.deepEqual(await destroyEmptyTerminalSessionsForThread('thread-a'), [sessionId])
+
+    const secondId = __testInjectTerminalSession({
+      ownerId: OWNER,
+      label: 'Fresh again',
+      threadId: 'thread-a',
+      outputText: '',
+      hasActivity: false,
+    })
+    writeTerminalSession(secondId, OWNER, 'echo hi\r')
+    assert.deepEqual(await destroyEmptyTerminalSessionsForThread('thread-a'), [])
+    assert.equal(listTerminalSessions('thread-a').length, 1)
   })
 
   it('sends output only to the renderer that opened the session', async (t) => {

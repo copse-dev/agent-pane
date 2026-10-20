@@ -71,6 +71,7 @@ export interface StoreEvents {
   right_panel_maximized_changed: []
   // The projects sidebar was hidden or shown.
   projects_pane_changed: []
+  sidebar_project_filter_changed: []
   // Request the Changes panel to reveal a specific workspace-relative file diff.
   git_change_navigate: [path: string]
   // Request the Roadmap pane to select a specific item (quick-open palette hit).
