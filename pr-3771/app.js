@@ -51307,7 +51307,7 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
   const chevron = el(
     "span",
     { class: "model-picker-chevron", "aria-hidden": "true" },
-    chevronDownIcon("ui-icon ui-icon-sm")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   const triggerCost = el(
     "span",
@@ -64761,6 +64761,37 @@ function activate(store2, api2, id, path, sshHost, pendingThreadId) {
     }
     console.warn("[projects] project activation failed:", failure2);
   });
+}
+function openNewProjectThread(store2, api2, projectId = store2.getState().sidebarProjectFilterId ?? store2.getState().activeProjectId) {
+  const state = store2.getState();
+  const project2 = state.projects.find((item) => item.id === projectId) ?? state.projects.find((item) => item.id === state.activeProjectId);
+  if (!project2) return;
+  if (project2.id === state.activeProjectId) {
+    switchProject(store2, api2, project2.id);
+    openNewThread(store2);
+    return;
+  }
+  store2.emit("composer_draft_flush");
+  void activateAndWait(store2, api2, project2.id, project2.path, project2.sshHost).then(() => {
+    if (store2.getState().activeProjectId === project2.id) openNewThread(store2);
+  }).catch((error62) => {
+    showErrorToast("Could not open a new thread in this project", error62);
+  });
+}
+function setSidebarProjectFilter(store2, api2, projectId) {
+  store2.setState({ sidebarProjectFilterId: projectId });
+  store2.emit("sidebar_project_filter_changed");
+  const thread = getActiveThread(store2);
+  const activeProjectId = store2.getState().activeProjectId;
+  if (thread && !isBlankThread(thread)) {
+    if (pendingSwitch && activeProjectId) switchProject(store2, api2, activeProjectId);
+    return;
+  }
+  if (projectId && projectId !== activeProjectId) {
+    openNewProjectThread(store2, api2, projectId);
+  } else if (activeProjectId) {
+    switchProject(store2, api2, activeProjectId);
+  }
 }
 function switchProject(store2, api2, id, pendingThreadId = null) {
   const proj = store2.getState().projects.find((p2) => p2.id === id);
@@ -86280,7 +86311,27 @@ var init_demo_scenarios = __esm({
         label: "Empty unopened project in the sidebar",
         project: project("demo-empty-active"),
         settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
-        threads: [],
+        // Keep a populated conversation open: filtering a blank composer intentionally
+        // opens a new thread in the selected project, which would no longer be empty.
+        threads: [
+          {
+            id: "demo-empty-active-chat",
+            title: "Open project conversation",
+            status: "idle",
+            messages: [
+              {
+                id: "demo-empty-active-message",
+                role: "user",
+                content: "Keep this conversation open while browsing other projects.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
         otherProjects: [
           { project: project("demo-empty-other", "empty-project", "/demo/empty"), threads: [] }
         ]
@@ -89400,6 +89451,7 @@ function createStore(initial) {
     conciseThreadsEnabled: true,
     autoPortraitRightPanel: true,
     rightPanelPosition: "auto",
+    sidebarProjectFilterId: null,
     sidebarThreadSort: "activity",
     sidebarThreadSortReverse: false,
     sidebarThreadGroup: "project",
@@ -89434,6 +89486,7 @@ function createStore(initial) {
     right_panel_mode_changed: /* @__PURE__ */ new Set(),
     right_panel_maximized_changed: /* @__PURE__ */ new Set(),
     projects_pane_changed: /* @__PURE__ */ new Set(),
+    sidebar_project_filter_changed: /* @__PURE__ */ new Set(),
     git_change_navigate: /* @__PURE__ */ new Set(),
     roadmap_reveal: /* @__PURE__ */ new Set(),
     thread_plan_open: /* @__PURE__ */ new Set(),
@@ -90387,7 +90440,7 @@ function mountOpenInEditor(root, store2, api2) {
       "aria-haspopup": "menu",
       "aria-expanded": "false"
     },
-    chevronDownIcon("ui-icon ui-icon-sm")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   const menu = el("div", { class: "open-in-editor-menu", role: "menu", hidden: "" });
   const backdrop = el("div", { class: "open-in-editor-backdrop", hidden: "" });
@@ -91098,16 +91151,24 @@ function titlebarNeedsCompact(titlebar) {
   const wasCompact = titlebar.classList.contains(TITLEBAR_COMPACT_CLASS);
   const overflowed = [...titlebar.querySelectorAll("[data-portrait-overflow]")];
   const controls = titlebar.querySelector(".titlebar-panel-controls");
+  const overflowMenus = [...titlebar.querySelectorAll(".portrait-panel-overflow")];
+  const menuVisibility = overflowMenus.map((menu) => menu.hidden);
   const alignment = controls?.style.justifyContent ?? "";
   if (controls) controls.style.justifyContent = "flex-start";
   overflowed.forEach((button) => {
     button.removeAttribute("data-portrait-overflow");
+  });
+  overflowMenus.forEach((menu) => {
+    menu.hidden = true;
   });
   titlebar.classList.remove(TITLEBAR_COMPACT_CLASS);
   const needsCompact = titlebar.scrollWidth > titlebar.clientWidth;
   titlebar.classList.toggle(TITLEBAR_COMPACT_CLASS, wasCompact);
   overflowed.forEach((button) => {
     button.setAttribute("data-portrait-overflow", "");
+  });
+  overflowMenus.forEach((menu, index) => {
+    menu.hidden = menuVisibility[index] ?? true;
   });
   if (controls) controls.style.justifyContent = alignment;
   return needsCompact;
@@ -91266,7 +91327,33 @@ function basename2(p2) {
 function mountTitlebar(root, store2, api2) {
   root.classList.add("titlebar");
   const leftCluster = el("div", { class: "titlebar-left" });
-  const workspaceName = el("span", { class: "workspace-name" }, "No folder");
+  const workspaceLabel = el("span", { class: "workspace-name-label" }, "No folder");
+  const workspaceName = el(
+    "button",
+    { type: "button", class: "workspace-name", "aria-haspopup": "menu" },
+    workspaceLabel,
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron workspace-name-chevron")
+  );
+  workspaceName.addEventListener("click", (event) => {
+    if (workspaceName.disabled || contextMenuClosedByPressOn(workspaceName)) return;
+    const rect = workspaceName.getBoundingClientRect();
+    const { projects, activeProjectId } = store2.getState();
+    showContextMenu(
+      rect.left,
+      rect.bottom + 4,
+      projects.map((project2) => ({
+        label: projectDisplayName(project2),
+        checked: project2.id === activeProjectId,
+        disabled: project2.missing === true,
+        onSelect: () => {
+          setSidebarProjectFilter(store2, api2, project2.id);
+        }
+      }))
+    );
+    if (event.detail === 0) {
+      document.querySelector(".context-menu-item.is-checked")?.focus();
+    }
+  });
   const sshTarget = el("span", { class: "workspace-ssh-target", hidden: true });
   const workspaceBranch = el("span", { class: "workspace-branch", hidden: true });
   const sidebarBtn = el(
@@ -91336,10 +91423,19 @@ function mountTitlebar(root, store2, api2) {
   syncRunApp();
   root.append(leftCluster, dragRegion, panelControls.element);
   const destroyCompactLayout = bindTitlebarCompactLayout(root, [leftCluster, panelControls.element]);
+  function syncProjectPicker() {
+    const thread = getActiveThread(store2);
+    workspaceName.disabled = store2.getState().projects.length === 0 || thread !== void 0 && !isBlankThread(thread);
+    workspaceName.setAttribute(
+      "aria-label",
+      workspaceName.disabled ? workspaceName.textContent : `Project for new thread: ${workspaceName.textContent}`
+    );
+  }
   function syncName() {
     const { workspaceRoot, activeProjectId, projects } = store2.getState();
     const project2 = projects.find((p2) => p2.id === activeProjectId);
-    workspaceName.textContent = workspaceRoot ? basename2(workspaceRoot) : "No folder";
+    workspaceLabel.textContent = project2 ? projectDisplayName(project2) : workspaceRoot ? basename2(workspaceRoot) : "No folder";
+    syncProjectPicker();
     setTooltip(workspaceName, workspaceRoot);
     if (project2?.sshHost) {
       void api2.sshWorkspace.listHosts().then((hosts) => {
@@ -91409,7 +91505,10 @@ function mountTitlebar(root, store2, api2) {
       syncRunApp();
     }),
     store2.on("projects_changed", syncName),
+    store2.on("message_added", syncProjectPicker),
+    store2.on("thread_status_changed", syncProjectPicker),
     store2.on("threads_changed", () => {
+      syncProjectPicker();
       if (store2.getState().activeThreadId !== syncedThreadId) {
         syncBranchNow();
         return;
@@ -91441,6 +91540,9 @@ var init_titlebar = __esm({
   "src/renderer/views/titlebar.ts"() {
     init_app_run_dialog();
     init_icons();
+    init_thread_helpers();
+    init_projects();
+    init_context_menu();
     init_helpers();
     init_outline_icon();
     init_tooltip();
@@ -95553,7 +95655,6 @@ function mountProjectsPane(root, store2, api2) {
     threadFilter = "";
   };
   let compactRows = false;
-  let projectFilterId = null;
   let needsCleanupOnly = false;
   let archivedOnly = false;
   const archivedThreads = createArchivedThreads(store2, api2, () => {
@@ -95566,7 +95667,7 @@ function mountProjectsPane(root, store2, api2) {
     "button",
     { type: "button", class: "projects-filter-btn", "aria-haspopup": "menu" },
     filterLabel,
-    chevronDownIcon("ui-icon ui-icon-sm")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   const sortDir = el("span", { class: "projects-sort-dir" }, "\u2193");
   const sortLabel = el("span", { class: "projects-filter-label" }, "Activity order");
@@ -95580,7 +95681,7 @@ function mountProjectsPane(root, store2, api2) {
     },
     sortDir,
     sortLabel,
-    chevronDownIcon("ui-icon ui-icon-sm")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   const filtersRow = el("div", { class: "projects-filters" }, projectFilterBtn, sortBtn);
   searchInput.addEventListener("input", () => {
@@ -95628,9 +95729,9 @@ function mountProjectsPane(root, store2, api2) {
     });
   };
   function syncFilterControls() {
-    const { projects, sidebarThreadSort, sidebarThreadSortReverse } = store2.getState();
-    const chosen = projects.find((project2) => project2.id === projectFilterId);
-    if (!chosen) projectFilterId = null;
+    const { projects, sidebarThreadSort, sidebarThreadSortReverse, sidebarProjectFilterId } = store2.getState();
+    const chosen = projects.find((project2) => project2.id === sidebarProjectFilterId);
+    if (!chosen) store2.setState({ sidebarProjectFilterId: null });
     const projectName = chosen ? projectDisplayName(chosen) : "All projects";
     const suffix = archivedOnly ? " \xB7 Archived" : needsCleanupOnly ? " \xB7 Needs cleanup" : "";
     filterLabel.textContent = `${projectName}${suffix}`;
@@ -95658,19 +95759,17 @@ function mountProjectsPane(root, store2, api2) {
       {
         label: "All projects",
         detail: String(total2),
-        checked: projectFilterId === null,
+        checked: store2.getState().sidebarProjectFilterId === null,
         onSelect: () => {
-          projectFilterId = null;
-          render2();
+          setSidebarProjectFilter(store2, api2, null);
         }
       },
       ...projects.map((project2) => ({
         label: projectDisplayName(project2),
         detail: String(counts.get(project2.id) ?? 0),
-        checked: project2.id === projectFilterId,
+        checked: project2.id === store2.getState().sidebarProjectFilterId,
         onSelect: () => {
-          projectFilterId = project2.id;
-          render2();
+          setSidebarProjectFilter(store2, api2, project2.id);
         }
       })),
       { separator: true },
@@ -95756,7 +95855,7 @@ function mountProjectsPane(root, store2, api2) {
             void addProject(store2, api2);
             return;
           }
-          openNewThread(store2);
+          openNewProjectThread(store2, api2);
         }
       },
       { separator: true },
@@ -96472,7 +96571,7 @@ function mountProjectsPane(root, store2, api2) {
     };
     syncFilterControls();
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } = store2.getState();
-    const visibleProjects = projectFilterId === null ? projects : projects.filter((project2) => project2.id === projectFilterId);
+    const visibleProjects = store2.getState().sidebarProjectFilterId === null ? projects : projects.filter((project2) => project2.id === store2.getState().sidebarProjectFilterId);
     const expandedId = expandedProjectId ?? activeProjectId;
     if (archivedOnly) {
       archivedThreads.show(visibleProjects, searchInput.value.trim());
@@ -97030,15 +97129,7 @@ function mountProjectsPane(root, store2, api2) {
       );
       newThreadBtn.addEventListener("click", (e3) => {
         e3.stopPropagation();
-        if (project2.id !== store2.getState().activeProjectId) {
-          switchProject(store2, api2, project2.id);
-          return;
-        }
-        if (!store2.getState().workspaceRoot) {
-          void addProject(store2, api2);
-          return;
-        }
-        openNewThread(store2);
+        openNewProjectThread(store2, api2, project2.id);
       });
       return newThreadBtn;
     }
@@ -97366,7 +97457,7 @@ function mountProjectsPane(root, store2, api2) {
       list.append(...renderThreadSections(groupMode));
     } else {
       for (const node2 of buildProjectTree(visibleProjects, projectGroups)) {
-        if (node2.kind === "group" && projectFilterId !== null && node2.projects.length === 0)
+        if (node2.kind === "group" && store2.getState().sidebarProjectFilterId !== null && node2.projects.length === 0)
           continue;
         if (node2.kind === "group") list.append(renderGroupEntry(node2.group, node2.projects));
         else list.append(renderProjectEntry(node2.project));
@@ -97477,6 +97568,7 @@ function mountProjectsPane(root, store2, api2) {
     }),
     unsubWorkingTree,
     store2.on("projects_changed", render2),
+    store2.on("sidebar_project_filter_changed", render2),
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
     store2.on("threads_changed", () => {
@@ -151733,7 +151825,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   const chevron = el(
     "span",
     { class: "branch-picker-chevron", "aria-hidden": "true" },
-    chevronDownIcon("ui-icon ui-icon-sm")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   trigger.append(label, chevron);
   const reattachButton = el(
@@ -155153,7 +155245,7 @@ function registerPanelKeyboardShortcuts(store2, api2) {
     if (matchNewThreadShortcut(e3)) {
       if (!store2.getState().workspaceRoot) return;
       e3.preventDefault();
-      openNewThread(store2);
+      openNewProjectThread(store2, api2);
       return;
     }
     if (isTypingTarget(e3.target)) return;
@@ -155165,7 +155257,7 @@ function registerPanelKeyboardShortcuts(store2, api2) {
 }
 var init_keyboard_shortcuts = __esm({
   "src/renderer/keyboard-shortcuts.ts"() {
-    init_thread_helpers();
+    init_projects();
     init_panels();
     init_dialog_shell();
   }
@@ -176862,7 +176954,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       return;
     }
     const url2 = nonEmptyStringOr(
-      firstNonEmptyString(webviewUrl(tab), tab.pendingUrl),
+      firstNonEmptyString(tab.pendingUrl, webviewUrl(tab)),
       "about:blank"
     );
     const title = webviewTitle(tab);
@@ -177062,11 +177154,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     if (!tab) return;
     if (browserModeActive(store2)) {
       ensureWebview(tab);
-      if (tab.pendingUrl) {
-        const url2 = tab.pendingUrl;
-        tab.pendingUrl = null;
-        navigateWebview(tab, url2);
-      }
+      if (tab.pendingUrl) navigateWebview(tab, tab.pendingUrl);
       syncAddressBar(tab);
       revealActiveTab(tab);
     }
@@ -177595,11 +177683,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       const tab = activeTabId ? tabs.get(activeTabId) : null;
       if (tab) {
         ensureWebview(tab);
-        if (tab.pendingUrl) {
-          const url2 = tab.pendingUrl;
-          tab.pendingUrl = null;
-          navigateWebview(tab, url2);
-        }
+        if (tab.pendingUrl) navigateWebview(tab, tab.pendingUrl);
         syncAddressBar(tab);
         ensureBrowserResizeObserver();
         revealActiveTab(tab);
@@ -196448,7 +196532,13 @@ function mountCommandPalette(store2, api2) {
       }
     });
     if (hasWorkspace) {
-      commands.push({ kind: "command", label: "New thread", run: () => openNewThread(store2) });
+      commands.push({
+        kind: "command",
+        label: "New thread",
+        run: () => {
+          openNewProjectThread(store2, api2);
+        }
+      });
       commands.push({
         kind: "command",
         label: "Quick open files",
@@ -196656,7 +196746,7 @@ var init_command_palette = __esm({
   "src/renderer/views/command-palette.ts"() {
     init_helpers();
     init_icons();
-    init_thread_helpers();
+    init_projects();
     init_projects();
     init_projects();
     init_panels();
@@ -206888,7 +206978,7 @@ async function boot() {
   api.menu.onNewThread(() => {
     if (!store.getState().workspaceRoot) return;
     ensureLayout();
-    openNewThread(store);
+    openNewProjectThread(store, api);
   });
   api.menu.onToggleSidebar(() => {
     ensureLayout();
@@ -207129,7 +207219,7 @@ function registerKeyboardShortcuts() {
     if (isAnyDialogOpen()) return;
     if (meta3 && e3.key === "t") {
       e3.preventDefault();
-      openNewThread(store);
+      openNewProjectThread(store, api);
     }
     if (meta3 && e3.shiftKey && e3.key.toLowerCase() === "p") {
       e3.preventDefault();
@@ -207241,6 +207331,7 @@ var init_main = __esm({
     init_themes();
     init_popout();
     init_store();
+    init_projects();
     init_thread_helpers();
     init_welcome();
     init_titlebar();
