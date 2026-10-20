@@ -933,6 +933,14 @@ function canonicalizeReadTarget(target: string): string {
   }
 }
 
+function isSymlinkPath(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink()
+  } catch {
+    return false
+  }
+}
+
 function isDirectoryPath(path: string): boolean {
   try {
     return statSync(path).isDirectory()
@@ -982,6 +990,11 @@ export function readAllowedSandboxOverlay(
     const canonical = canonicalizeReadTarget(target)
     grantedRead.push(canonical)
     if (isDirectoryPath(canonical)) grantedRead.push(`${canonical}/**`)
+    // Seatbelt checks the link itself before following it, so a grant named
+    // through a symlink also needs that one link path. Only the link: its
+    // children resolve through the canonical target already granted above.
+    const named = resolve(target)
+    if (named !== canonical && isSymlinkPath(named)) grantedRead.push(named)
   }
   if (grantedRead.length === 0) return base
 

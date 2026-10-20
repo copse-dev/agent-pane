@@ -544,7 +544,10 @@ symlink inside an approved directory reaches whatever it points to. The approved
 identity-pinned while it exists: replacing a granted file or directory, or retargeting a granted
 symlink, revokes that grant and asks again. The sandbox does not close the nested-symlink case:
 `readAllowedSandboxOverlay` canonicalizes each target with `realpath` before widening `allowRead`,
-so it widens to the link's destination. Without an OS sandbox the command reads it on the host. An
+so it widens to the link's destination. When the approved root is itself a symlink, the link path
+is also granted (never as a `/**` subtree): seatbelt reads the link before following it, and the
+runtime's traversal allowance covers directory metadata only. Without an OS sandbox the command
+reads it on the host. An
 expanded “Approve this command” action approves one invocation without a grant.
 
 Reads under macOS's per-user temp directory (`getconf DARWIN_USER_TEMP_DIR`, `/var/folders/…/T`)
