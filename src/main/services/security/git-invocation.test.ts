@@ -104,6 +104,11 @@ describe('internal Git policy', () => {
     assert.equal(internalGitTransport('push'), 'remote')
     assert.equal(internalGitTransport('status'), 'none')
     assert.equal(internalGitTransport('-c'), 'none')
+    assert.equal(internalGitEnv({}, 'network')['GIT_ALLOW_PROTOCOL'], 'https:http:ssh')
+    assert.deepEqual(
+      withGitInvocationArgs(['fetch', 'https://example.invalid/repo'], 'internal-network'),
+      withGitInvocationArgs(['fetch', 'https://example.invalid/repo'], 'internal'),
+    )
   })
 
   it('strips config/executable injection while retaining backup index and identity', () => {

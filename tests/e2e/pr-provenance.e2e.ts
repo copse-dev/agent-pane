@@ -10,7 +10,6 @@ import {
   seedEmptyProject,
   writeSeedConfig,
   seedE2eViewport,
-  seedE2eThreePaneLayout,
 } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { submitComposer } from './helpers/composer.ts'
@@ -70,10 +69,21 @@ describe('native PR and commit provenance', function () {
       projects: [{ id: PROJECT, path: root, name: 'Native provenance', worktreeMode: 'never' }],
       activeProjectId: PROJECT,
     })
-    seedE2eViewport()
-    seedE2eThreePaneLayout()
+    // Viewport/layout helpers replace settings, so seed the offline opt-out and
+    // all appearance options together rather than erasing it with a later helper.
+    seedE2eViewport(undefined, {
+      subagentsEnabled: false,
+      model: 'claude-sonnet-4-6',
+      backgroundDefaultBranchFetch: false,
+      layout: { projectsPaneWidth: 260, filesPaneWidth: 480, fileTreeWidth: 200 },
+    })
     await browser.reloadSession()
     await $('.chat-row.selected').waitForExist({ timeout: 30_000 })
+    assert.equal(
+      await browser.execute(() => window.api.settings.get('backgroundDefaultBranchFetch')),
+      false,
+      'offline fixture must not contact its fake upstream',
+    )
     producer = await $('.chat-row.selected').getAttribute('data-thread-id')
   })
 
@@ -226,6 +236,10 @@ describe('native PR and commit provenance', function () {
     writeE2eEnv({ COPSE_PANEL_MOCK_GH_STATUS: 'unavailable' })
     await browser.reloadSession()
     await $('.chat-row.selected').waitForExist({ timeout: 30_000 })
+    assert.equal(
+      await browser.execute(() => window.api.settings.get('backgroundDefaultBranchFetch')),
+      false,
+    )
     await assertRelations()
     await showRelationships('pr-native-provenance-offline-restart.png')
     await expect($('#pane-files')).toHaveText('Install GitHub CLI', { containing: true })

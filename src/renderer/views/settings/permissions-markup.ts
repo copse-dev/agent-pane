@@ -228,6 +228,22 @@ export const permissionsMarkup = `
                 access. Scoped signing is macOS only.
               </p>
             </fieldset>
+
+            <fieldset>
+              <legend>Upstream updates</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="backgroundDefaultBranchFetch" />
+                Fetch each project's default branch in the background
+              </label>
+              <p class="field-hint">
+                Copse fetches the latest default branch from origin hourly and when a thread
+                starts, so new threads begin from current upstream code. It updates only the
+                stored copy of origin's branch; your checkout and branches are never changed. The
+                fetch uses your own Git credentials but ignores the project's Git configuration.
+                Turn off to keep Copse from contacting origin; threads then start from whatever
+                you last fetched yourself.
+              </p>
+            </fieldset>
           </section>
 `
 
@@ -244,6 +260,7 @@ export const permissionsFields: readonly SettingField[] = [
   { name: 'acpAutoApproveEditsWithBackup', kind: 'checkbox', default: true, save: true },
   { name: 'acpAutoApproveNativeBridgeTools', kind: 'checkbox', default: true, save: true },
   { name: 'worktreeAutoApproveEdits', kind: 'checkbox', default: true, save: true },
+  { name: 'backgroundDefaultBranchFetch', kind: 'checkbox', default: true, save: true },
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
   { name: 'webAllowUserApproval', kind: 'checkbox', default: true, save: false },
