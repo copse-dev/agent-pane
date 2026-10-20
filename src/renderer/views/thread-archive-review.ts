@@ -18,8 +18,16 @@ export function createThreadArchiveReview(
     'aria-label': 'Review inactive thread',
   })
   const reason = el('p')
-  const keep = el('button', { type: 'button', class: 'ui-btn' }, 'Keep active')
-  const archive = el('button', { type: 'button', class: 'ui-btn' }, 'Archive')
+  const keep = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary ui-btn-compact' },
+    'Keep active',
+  )
+  const archive = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary ui-btn-compact' },
+    'Archive',
+  )
   element.append(
     el('strong', {}, 'Finished with this thread?'),
     reason,
