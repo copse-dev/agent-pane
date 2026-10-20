@@ -97,6 +97,10 @@
       "smoke": null
     },
     {
+      "prefix": "src/main/services/clients/",
+      "smoke": null
+    },
+    {
       "prefix": "src/main/services/container-runtime/",
       "smoke": null
     },

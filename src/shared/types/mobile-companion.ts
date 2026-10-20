@@ -1,3 +1,5 @@
+import type { ClientAccess } from '../client-auth.ts'
+
 /**
  * Mobile Companion is managed entirely from Settings > Experimental, including
  * pairing approval and the local-root trust acknowledgement for control grants.
@@ -8,7 +10,7 @@ export interface MobileCompanionAddress {
   interfaceName: string
 }
 
-export type MobileCompanionAccess = 'read' | 'control'
+export type MobileCompanionAccess = ClientAccess
 
 export interface MobileCompanionDevice {
   id: string

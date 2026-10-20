@@ -24,6 +24,8 @@ import { homedir } from 'node:os'
 import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 import { skillRootsSchema } from '../services/skills/skill-roots-schema.ts'
 import { z } from 'zod'
+import { syncPluginClientApi } from '../services/plugins/plugin-client-service.ts'
+import { PLUGIN_CLIENT_API_ID } from '@copse/agent/plugins/plugin-client-api-plugin.ts'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
 import {
   backgroundClassifierId,
@@ -85,7 +87,17 @@ import {
   setWorkspaceRoot,
   type WorkspaceProjectRef,
 } from '../services/workspace.ts'
-import { exportDecisionLog, readDecisionLog } from '../services/security/decision-log-store.ts'
+import {
+  exportDecisionLog,
+  readDecisionLog,
+  readThreadDecisionLog,
+} from '../services/security/decision-log-store.ts'
+import { listReadOutsideProjectGrants } from '../services/security/read-outside-grant.ts'
+import { browserSessionOrigins } from '../services/browser/browser-network-grants.ts'
+import { browserThreadScope } from '@shared/browser-session.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/plugins/background-tasks-plugin.ts'
+import { readPendingDeferrals } from '../services/security/deferred-approval-store.ts'
 import { getThreadClassifierUse } from '../services/security/classifier-use-report.ts'
 import { loadCanvasArtefactSummaries, readStoredCanvasArtefact } from '../services/canvas-store.ts'
 import { CANVAS_ARTEFACT_CHANNEL } from '../services/canvas-dispatch.ts'
@@ -301,6 +313,7 @@ import {
   syncBackgroundTasksTools,
   syncOkfMemoryTools,
   syncParallelSearchTools,
+  syncWebSearchTools,
   syncPiiTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
@@ -1602,6 +1615,7 @@ export function registerAllHandlers(
       registerSkillTools(registry)
     }
     if (changedKeys.has(READ_TERMINAL_ENABLED_SETTING)) syncReadTerminalTools(registry)
+    if (changedKeys.has('webSearchProvider')) syncWebSearchTools(registry)
     if (changedKeys.has(MODEL_CLASSIFIER_ENABLED_SETTING)) syncModelClassifierTools(registry)
     if (changedKeys.has(ORCHESTRATION_STRATEGY_ENABLED_SETTING))
       syncOrchestrationStrategyTools(registry)
@@ -1702,6 +1716,7 @@ export function registerAllHandlers(
     // key.
     if (p === 'artificial-analysis') invalidateLiveIntellectCache()
     if (p === 'parallel') syncParallelSearchTools(registry)
+    if (p === 'parallel' || p === 'tavily') syncWebSearchTools(registry)
     // Saving an HF token auto-populates its priced, provider-pinned model list so
     // the picker and cost estimate work without a manual fetch (fire-and-forget).
     if (p === HUGGINGFACE_SLUG && apiKey.trim()) {
@@ -1899,6 +1914,11 @@ export function registerAllHandlers(
     if (!resolved) return []
     return readDecisionLog(resolved)
   })
+  ipcMain.handle('decisions:list-thread', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return readThreadDecisionLog(pid, tid)
+  })
   ipcMain.handle('decisions:export', (event, rawProjectId: unknown) => {
     assertMainFrameSender(event, win)
     const projectId = parseIpcArgs(zProjectId.optional(), [rawProjectId])
@@ -1937,6 +1957,23 @@ export function registerAllHandlers(
     const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
     return getGuardedYoloState(id)
   })
+  ipcMain.handle(
+    'security:get-context-permissions',
+    (event, projectId: unknown, threadId: unknown, projectRoot: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, root] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, zNonEmptyString.max(4096)]),
+        [projectId, threadId, projectRoot],
+      )
+      return {
+        outsideReadPaths: listReadOutsideProjectGrants(tid),
+        browserOrigins: browserSessionOrigins(browserThreadScope(pid, tid)),
+        portBindingAllowed:
+          getDefaultPluginRegistry().isPermissionDeclared(LOOPBACK_BIND_PERMISSION) &&
+          getSetting<string[]>('portBindingAllowedRoots', []).includes(root),
+      }
+    },
+  )
   ipcMain.handle('security:enable-guarded-yolo', async (event, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
@@ -2204,6 +2241,11 @@ export function registerAllHandlers(
       return lookupThreadBacklinks(pid, linkKind, linkTarget)
     },
   )
+  ipcMain.handle('threads:pending-approvals', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return readPendingDeferrals({ projectId: pid, threadId: tid })
+  })
   // Seed a freshly created fork's provider-format history from the thread it was
   // branched off. The renderer owns the visible transcript copy; this is the
   // half it cannot do, since `agent-history.json` never leaves the main process.
@@ -2663,6 +2705,7 @@ export function registerAllHandlers(
     if (refusal) throw new IpcValidationError(refusal)
     const pluginService = getPluginService()
     await pluginService.setEnabled(id, enabled)
+    if (id === PLUGIN_CLIENT_API_ID) await syncPluginClientApi()
     if (pluginService.hasUserPlugin(id)) {
       // The plugin toggle is the portable component consent boundary. Refresh
       // both registries immediately so skills and MCP disappear atomically on

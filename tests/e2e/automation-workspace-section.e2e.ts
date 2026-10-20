@@ -296,9 +296,8 @@ describe('workspace-level automations section', function () {
     const opsRow = (await rows)[1]
     assert.ok(opsRow)
 
-    // The background project's row exposes conversation access alongside its
-    // schedule actions. Capture the transient surface itself: a screenshot of
-    // the closed sidebar would not prove that Run now is actually exposed.
+    // Capture the transient menu: a screenshot of the closed sidebar would not
+    // prove that Run now is actually exposed.
     await opsRow.click({ button: 'right' })
     const contextMenu = $('.context-menu')
     await contextMenu.waitForDisplayed({ timeout: 5_000 })
@@ -307,7 +306,7 @@ describe('workspace-level automations section', function () {
         (item) => item.textContent ?? '',
       ),
     )
-    assert.deepEqual(contextMenuLabels, ['Conversation access…', 'Run now', 'Automation setup…'])
+    assert.deepEqual(contextMenuLabels, ['Run now', 'Automation setup…'])
     await saveAppScreenshot('automation-sidebar-run-now-context-menu.png')
     await browser.keys('Escape')
     await expect(contextMenu).not.toBeExisting()

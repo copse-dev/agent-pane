@@ -841,17 +841,6 @@ export function decideWebFetchPermission(input: {
   return { action: 'prompt', origin, reasons: ['web origin requires approval'] }
 }
 
-export function decideWebSearchPermission(input: {
-  allowedOrigins: readonly string[]
-  allowUserApproval: boolean
-}): WebPermissionDecision {
-  return decideWebFetchPermission({
-    url: 'https://duckduckgo.com/',
-    allowedOrigins: input.allowedOrigins,
-    allowUserApproval: input.allowUserApproval,
-  })
-}
-
 export function fetchUrlFromArgs(args: unknown): string | null {
   if (typeof args !== 'object' || args === null || !('url' in args)) return null
   const url = (args as { url?: unknown }).url

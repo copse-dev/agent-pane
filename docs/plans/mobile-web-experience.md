@@ -227,6 +227,16 @@ expensive is an axis this version simply does not have.
     what makes revocation and "which device answered" possible at all, and
     retrofitting it after users have paired is a migration nobody will do.
 
+    Mobile and interactive plugin clients now share the bearer and desktop-consent pairing
+    implementation in `src/main/services/clients/`. Existing mobile records retain their IDs,
+    hashes and grants, including the read-only default for older records. Pairing expires after
+    two minutes, has a one-second cooldown and one pending phone request, and delivers its token
+    once to the requesting peer. Timeout or server stop cancels the Settings prompt; late consent
+    cannot issue a token. An approved but uncollected token is revoked on expiry or stop. Delivered
+    mobile credentials remain persistent, while plugin credentials remain session-only and
+    origin-bound. Transport guards and each adapter's operation scope remain distinct; sharing
+    auth never gives a plugin mobile chat/run authority. See [the client API](../plugin-client-api.md).
+
 11. **Control requires an explicit desktop grant after local-root installation.**
     Existing device records default to read-only. Pairing or Manage paired phones
     can grant control only after a desktop checkbox confirms that this phone has

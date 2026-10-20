@@ -33,6 +33,7 @@ import { PII_REDACTION_PLUGIN_ID } from '@copse/agent/plugins/pii-redaction-plug
 import { FORCED_PLANNING_PLUGIN_ID } from '@copse/agent/plugins/forced-planning-plugin.ts'
 import { MCP_UI_CANVAS_PLUGIN_ID } from '@copse/agent/plugins/mcp-ui-canvas-plugin.ts'
 import { DEVTOOLS_SHORTCUT_PLUGIN_ID } from '@copse/agent/plugins/devtools-shortcut-plugin.ts'
+import { PLUGIN_CLIENT_API_ID } from '@copse/agent/plugins/plugin-client-api-plugin.ts'
 import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
@@ -146,6 +147,7 @@ function clearStorage(): void {
   storageSet(APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(DARK_FACTORY_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(AGENTS_MD_MODE_MIGRATION_KEY, true)
+  storageSet('pluginMigration.pluginClientApi', true)
   storageSet(PLUGIN_SOURCES_KEY, [])
   storageSet(pluginSettingsKey('demo.plugin'), {})
   storageSet(pluginSettingsKey('copse.other'), {})
@@ -392,6 +394,7 @@ describe('PluginService', () => {
       // Capability-only experiments replace retired opt-in booleans and remain off.
       MCP_UI_CANVAS_PLUGIN_ID,
       DEVTOOLS_SHORTCUT_PLUGIN_ID,
+      PLUGIN_CLIENT_API_ID,
       AUTOMATIONS_PLUGIN_ID,
       DARK_FACTORY_PLUGIN_ID,
       PARALLEL_SEARCH_PLUGIN_ID,
@@ -414,6 +417,7 @@ describe('PluginService', () => {
         FORCED_PLANNING_PLUGIN_ID,
         MCP_UI_CANVAS_PLUGIN_ID,
         DEVTOOLS_SHORTCUT_PLUGIN_ID,
+        PLUGIN_CLIENT_API_ID,
         AUTOMATIONS_PLUGIN_ID,
         DARK_FACTORY_PLUGIN_ID,
         PARALLEL_SEARCH_PLUGIN_ID,
@@ -502,6 +506,15 @@ describe('PluginService', () => {
     __resetPluginServiceForTests()
     const later = getPluginService()
     assert.equal(later.registry.isEnabled(REVIEWER_INPUT_PLUGIN_ID), true)
+  })
+
+  it('seeds interactive client access off on upgrade and preserves a later opt-in', async () => {
+    storageDelete('pluginMigration.pluginClientApi')
+    const service = getPluginService()
+    assert.equal(service.registry.isEnabled(PLUGIN_CLIENT_API_ID), false)
+    await service.setEnabled(PLUGIN_CLIENT_API_ID, true)
+    __resetPluginServiceForTests()
+    assert.equal(getPluginService().registry.isEnabled(PLUGIN_CLIENT_API_ID), true)
   })
 
   it('seeds the dark-factory sensor off once for existing profiles without erasing later choices', async () => {

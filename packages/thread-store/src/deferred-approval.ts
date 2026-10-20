@@ -98,17 +98,18 @@ export function deferredRequestKey(input: DeferredApprovalInput): string {
  * do).
  */
 export function deferredApprovalMessage(input: {
+  id: string
   title: string
   reasons?: string[] | undefined
 }): string {
   const detail = input.reasons?.length ? ` (${input.reasons.join('; ')})` : ''
   return (
-    `Queued for review, not run: ${input.title}${detail}. ` +
+    `Queued for review as request ${input.id}, not run: ${input.title}${detail}. ` +
     'Nobody is available to approve this right now, so it has been added to a ' +
     'review queue for the user. This action has NOT run and will not run unless ' +
-    'they approve it. Do not retry it or work around it — continue with the ' +
-    'other parts of the task that do not depend on it, and say at the end what ' +
-    'is still waiting on approval.'
+    'they approve it. Do not retry it or use another route to perform the same ' +
+    'action. Continue independent work, or choose a different approach that ' +
+    'stays within existing permissions. Report what is waiting on approval.'
   )
 }
 

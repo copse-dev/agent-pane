@@ -39,11 +39,26 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 
 ## Per-tool permission settings
 
+### Web search providers
+
+Settings → Web search selects Tavily, Parallel, or Not configured. `web_search` is offered only
+when a provider is selected and its API key resolves; provider and key changes update availability
+without restarting. `fetch_url` remains available independently. A stale call after configuration
+changes returns setup guidance without making a network request. Searches never fall back to DuckDuckGo or a
+different provider. Selecting a provider does not bypass web-origin permissions: `web_search`
+checks that provider's fixed API origin, respects disabled approvals and per-tool overrides, and
+names the provider and potential API-credit charge in the approval prompt. API keys use the
+existing secret store. Tavily also supports `TAVILY_API_KEY`; Parallel supports `PARALLEL_API_KEY`.
+Tavily uses Basic search with generated answers and automatic parameter selection disabled.
+
 ### Access to other conversations
 
 An agent's first read of another thread asks **Read your other threads?** Once approved,
 that thread can read every other conversation in the local chat store without another
-conversation-access prompt. Its own transcript remains readable. File read guards,
+conversation-access prompt. Its own transcript remains readable, and so is the one parent thread a
+thread was explicitly started from with **Create follow-up thread** (recorded at creation as
+`followUpOf`; read-only, direct parent only, never inherited by forks or by a follow-up of the
+follow-up). File read guards,
 the shell classifier and the sandbox read mount use the same thread-scoped permission;
 the chat store is never writable through these grants.
 
@@ -55,10 +70,18 @@ conversation-read consent; revoking that consent leaves the outside-path grant i
 read tools. `send_thread_prompt` asks a separate **Send prompts to your other threads?**
 approval. Reading never grants sending. Both grants are persisted in main-owned settings,
 keyed by the requesting thread; they are not inherited by destination or forked threads.
-Either permission can be revoked through the thread menu → Conversation access.
+Either permission can be revoked in the thread’s Context panel → Permissions.
 Destination prompts enter the normal queue with machine provenance, consume the existing
 continuation budget and respect held/paused queues. They do not interrupt active work or
 switch the visible thread. An unavailable or archived destination is rejected.
+
+The experimental interactive-client API requires its default-off plugin and desktop pairing.
+Viewing and submitting decisions are separate session-only grants across all projects. A client
+may approve once or deny an exact pending standard shell-command session/request/revision; it cannot create remembered
+grants or task leases. Pairing is desktop-only, and agent-invoked plugin runtimes have no decision
+write API. Disable or quit revokes every client. Audit events identify the paired client as the
+human-response source. Authentication trusts the paired software; it does not attest a physical
+gesture. See [the client protocol](plugin-client-api.md).
 
 Settings → Permissions lists registered Copse, custom, and connected MCP tools. Each tool can keep
 its inherited default or receive one explicit override:
@@ -852,6 +875,14 @@ sensitive-data reveals, ACP agent permission kinds, and model-spend approvals ar
 eligible. An eligible prompt raised inside an automation offers to add that exact action or MCP
 tool to the owning schedule; ordinary threads retain their existing global MCP “always allow”
 behavior.
+
+The first turn of a verified schedule-created thread runs in deferral mode. A
+prompt without a schedule grant records a pending request and returns a
+non-execution error to the agent instead of waiting at a modal. The result
+includes a request id; `deferred_approval_status` reads only requests owned by
+the current thread. Later user turns use ordinary interactive approval.
+Resolving a queued request records the human decision; it does not prove that
+the original action ran.
 
 ## Implementation map
 

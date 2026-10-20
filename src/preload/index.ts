@@ -225,6 +225,8 @@ const api: ApiClient = {
   },
   security: {
     getGuardedYolo: (threadId: string) => ipcRenderer.invoke('security:get-guarded-yolo', threadId),
+    getContextPermissions: (projectId: string, threadId: string, projectRoot: string) =>
+      ipcRenderer.invoke('security:get-context-permissions', projectId, threadId, projectRoot),
     enableGuardedYolo: (threadId: string) =>
       ipcRenderer.invoke('security:enable-guarded-yolo', threadId),
     disableGuardedYolo: (threadId: string) =>
@@ -925,6 +927,8 @@ const api: ApiClient = {
       ),
     backlinks: (projectId: string, kind: 'url' | 'thread', target: string) =>
       ipcRenderer.invoke('threads:backlinks', projectId, kind, target),
+    pendingApprovals: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('threads:pending-approvals', projectId, threadId),
     historySnapshot: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:history-snapshot', projectId, threadId),
     editHistory: (
@@ -1226,6 +1230,8 @@ const api: ApiClient = {
   },
   decisions: {
     list: (projectId?: string) => ipcRenderer.invoke('decisions:list', projectId),
+    listThread: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('decisions:list-thread', projectId, threadId),
     export: (projectId?: string) => ipcRenderer.invoke('decisions:export', projectId),
   },
   index: {

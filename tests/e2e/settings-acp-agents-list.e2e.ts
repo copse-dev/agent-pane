@@ -108,7 +108,7 @@ describe('Coding agents list in Settings', () => {
     await $('#settings-dialog').waitForDisplayed({ timeout: 10_000 })
     await $('.settings-nav-btn[data-section="general"]').click()
 
-    const list = $('[data-testid="acp-agents-list"]')
+    const list = $('[data-testid="models-agents-list"]')
     await list.waitForExist({ timeout: 15_000 })
     const codex = list.$('.acp-row[data-agent="codex-acp"]')
     await codex.waitForExist({ timeout: 15_000 })
@@ -179,7 +179,7 @@ describe('Coding agents list in Settings', () => {
     })
     assert.deepEqual(collisions, [], 'row parts must not overlap or overflow')
 
-    await $('[data-testid="acp-add-toggle"]').click()
+    await $('[data-testid="connections-add-toggle"]').click()
     for (const id of ['claude-acp', 'gemini', 'cursor']) {
       await expect($(`.acp-add-row[data-agent="${id}"]`)).toBeDisplayed()
     }
@@ -190,9 +190,12 @@ describe('Coding agents list in Settings', () => {
         .map((svg) => svg.closest('.acp-add-row')?.getAttribute('data-agent') ?? '?'),
     )
     assert.deepEqual(unpainted, [], 'logos in the Add menu must render')
-    await $('[data-testid="acp-agents-fieldset"]').scrollIntoView({ block: 'center' })
-    await saveSettingsSection('[data-testid="acp-agents-fieldset"]', 'settings-acp-agents-list.png')
-    await $('[data-testid="acp-add-toggle"]').click()
+    await $('[data-testid="models-agents-fieldset"]').scrollIntoView({ block: 'center' })
+    await saveSettingsSection(
+      '[data-testid="models-agents-fieldset"]',
+      'settings-acp-agents-list.png',
+    )
+    await $('[data-testid="connections-add-toggle"]').click()
   })
 
   it('shows Ready after Re-scan when only the adapter-bundled Codex CLI is signed in', async function () {
@@ -202,32 +205,32 @@ describe('Coding agents list in Settings', () => {
     rmSync(statusExecutable)
     writeFileSync(adapterStatus, 'Logged in using ChatGPT\n')
 
-    const fieldset = $('[data-testid="acp-agents-fieldset"]')
+    const fieldset = $('[data-testid="models-agents-fieldset"]')
     await fieldset.$('button=Re-scan').click()
-    const codex = $('[data-testid="acp-agents-list"] .acp-row[data-agent="codex-acp"]')
+    const codex = $('[data-testid="models-agents-list"] .acp-row[data-agent="codex-acp"]')
     await expect(codex.$('.acp-row-chip')).toHaveText('Ready', { wait: 15_000 })
-    await expect(codex.$('button=Copy sign-in command')).not.toExist()
-    await expect(fieldset.$('[data-testid="acp-scan-status"]')).toHaveText('Nothing new found', {
-      containing: true,
-    })
+    await expect(codex.$('button=Sign in')).not.toExist()
+    await expect(fieldset.$('[data-testid="connections-scan-status"]')).toHaveText(
+      'Nothing new found',
+      {
+        containing: true,
+      },
+    )
 
     await fieldset.scrollIntoView({ block: 'center' })
     await saveSettingsSection(
-      '[data-testid="acp-agents-fieldset"]',
+      '[data-testid="models-agents-fieldset"]',
       'settings-acp-agents-list-codex-ready.png',
     )
   })
   it('offers the bundled sign-in command when the adapter alone reports signed out', async function () {
     this.timeout(60_000)
     writeFileSync(adapterStatus, 'Not logged in\n')
-    const fieldset = $('[data-testid="acp-agents-fieldset"]')
+    const fieldset = $('[data-testid="models-agents-fieldset"]')
     await fieldset.$('button=Re-scan').click()
-    const codex = $('[data-testid="acp-agents-list"] .acp-row[data-agent="codex-acp"]')
+    const codex = $('[data-testid="models-agents-list"] .acp-row[data-agent="codex-acp"]')
     await expect(codex.$('.acp-row-chip')).toHaveText('Needs sign-in', { wait: 15_000 })
-    await expect(codex.$('button=Copy sign-in command')).toHaveAttribute(
-      'title',
-      'codex-acp cli login',
-    )
+    await expect(codex.$('button=Sign in')).toHaveAttribute('title', 'codex-acp cli login')
     // Inspect the offered command without launching login or touching credentials.
   })
 })

@@ -13,6 +13,7 @@ import { keyOf } from '@shared/member-of.ts'
 import { RELEASE_CHANNELS } from '@shared/release-channel.mts'
 import { GIT_ATTRIBUTION_SETTING } from '@shared/git/commit-attribution.ts'
 import { GIT_THREAD_LINK_SETTING } from '@shared/git/thread-link.ts'
+import { WEB_SEARCH_PROVIDERS } from '@shared/web-search.ts'
 
 // Empty string means "use the provider default"; any non-empty value must be a
 // safe base URL since it carries the Cursor API key as an Authorization header.
@@ -313,6 +314,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // the `gh` CLI and falls back to the REST/GraphQL API, or force one. See
   // services/github/backend/backend.ts.
   githubBackend: z.enum(['auto', 'cli', 'api']),
+  webSearchProvider: z.enum(WEB_SEARCH_PROVIDERS),
   [GIT_ATTRIBUTION_SETTING]: z.boolean(),
   [GIT_THREAD_LINK_SETTING]: z.boolean(),
   remoteAgentBaseUrl: remoteAgentBaseUrlSchema,

@@ -23,6 +23,19 @@ describe('parseAgentRunPayload', () => {
     })
   })
 
+  it('accepts only an explicit scheduled-run marker', () => {
+    const scheduled = parseAgentRunPayload(
+      JSON.stringify({ content: 'review', automationRun: true }),
+    )
+    assert.equal(scheduled.automationRun, true)
+    for (const value of [false, 'true', 1]) {
+      const ordinary = parseAgentRunPayload(
+        JSON.stringify({ content: 'review', automationRun: value }),
+      )
+      assert.equal(Object.hasOwn(ordinary, 'automationRun'), false)
+    }
+  })
+
   it('parses prior todos from payload', () => {
     const payload = {
       content: 'continue',
