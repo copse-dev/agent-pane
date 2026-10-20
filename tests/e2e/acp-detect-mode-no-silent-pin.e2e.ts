@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { z } from 'zod'
 import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { buildSync } from 'esbuild'
@@ -52,7 +52,11 @@ describe('ACP Detect models does not pin the agent default mode', function () {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     const workspace = seedStableWorkspace()
-    scratch = mkdtempSync(join(workspace, 'acp-mode-default-e2e-'))
+    // A fixed path keeps the Command field identical between captures; a
+    // random mkdtemp suffix would change the screenshot on every run.
+    scratch = join(workspace, 'acp-mode-default-e2e')
+    rmSync(scratch, { recursive: true, force: true })
+    mkdirSync(scratch, { recursive: true })
     const fixture = join(scratch, 'mode-default-acp-agent.mjs')
     buildSync({
       stdin: {
