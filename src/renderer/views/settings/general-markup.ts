@@ -5,8 +5,7 @@ export const generalMarkup = `
           <section class="settings-section active" data-section="general">
             <h3>General</h3>
             <p class="settings-section-desc">
-              The coding agents on this machine, the API keys Copse can use, and the
-              models it picks by default.
+              The models and agents Copse can use, and the models it picks by default.
             </p>
 
             <!-- JS-mounted panels sit in a host <div>. Any such host that holds a
@@ -14,8 +13,6 @@ export const generalMarkup = `
                  fieldset gets the same inter-panel spacing as inline ones: see the
                  .settings-section > .settings-mount > fieldset rule in settings.css. -->
             <div id="settings-agents-host" class="settings-mount"></div>
-
-            <div id="settings-providers-host" class="settings-mount"></div>
 
             <fieldset id="settings-models-section" data-testid="settings-chat-model">
               <legend>Models</legend>
@@ -32,7 +29,8 @@ export const generalMarkup = `
                   the model that gives the most for what it costs on your plan, and sends the turn
                   to that provider. You can pin a specific model here instead, or from the picker
                   beside the chat box. Picking a cloud agent sends each turn to that provider's
-                  machines rather than running it here; set one up under API keys.
+                  machines rather than running it here; set one up under its API key’s Options in
+                  Models &amp; agents.
                 </span>
               </label>
               <label>
@@ -48,9 +46,10 @@ export const generalMarkup = `
               <div id="settings-model-routing-host"></div>
             </fieldset>
 
-            <!-- Cloud-agent pieces the Providers panel relocates into whichever
-                 provider offers one. The shared run options move with them but stay
-                 inside this form either way, so their values always round-trip. -->
+            <!-- Cloud-agent pieces the Models & agents list relocates into the
+                 Options of the Anthropic or Cursor API key. The shared run options
+                 move with them but stay inside this form either way, so their
+                 values always round-trip. -->
             <div id="settings-cloud-agent-templates" hidden>
               <div id="settings-cursor-panel" class="remote-agent-panel">
                 <div id="settings-cursor-key-host"></div>

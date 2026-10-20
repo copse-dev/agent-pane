@@ -9,6 +9,16 @@ import {
 } from './settings-writable.ts'
 
 describe('settings-writable', () => {
+  it('accepts supported search providers and rejects arbitrary endpoints or legacy scraping providers', () => {
+    assert.equal(isRendererWritableSettingKey('webSearchProvider'), true)
+    for (const provider of ['none', 'tavily', 'parallel']) {
+      assert.equal(parseRendererWritableSetting('webSearchProvider', provider), provider)
+    }
+    for (const provider of ['duckduckgo', 'https://example.com', '', null]) {
+      assert.throws(() => parseRendererWritableSetting('webSearchProvider', provider))
+    }
+  })
+
   it('round-trips ACP trustd opt-in and opt-out without coercing other values', () => {
     const agent = { id: 'codex', title: 'Codex', command: 'codex-acp', enabled: true }
     for (const allowMacOsTrustd of [true, false]) {

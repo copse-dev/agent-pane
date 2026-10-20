@@ -64,6 +64,7 @@ const FIXED_PROVIDER_ENV_VARS: Record<string, string> = {
   cursor: 'CURSOR_API_KEY',
   openrouter: 'OPENROUTER_API_KEY',
   parallel: 'PARALLEL_API_KEY',
+  tavily: 'TAVILY_API_KEY',
   // GitHub token for the Claude Cloud Agent's github_repository resource (clone +
   // push + PR). Not a model provider — stored like an API key, env fallback below.
   github: 'GITHUB_TOKEN',

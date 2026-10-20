@@ -4,33 +4,17 @@ import { el, clear } from '../../dom/helpers.ts'
 import { createCustomProvidersSection, type NativeProvider } from './custom-providers-section.ts'
 import { createAcpAgentsSection } from './acp-agents-section.ts'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
-import { SERVICE_TIER_CHOICES, isServiceTier } from '@copse/llm/service-tier.ts'
-import { uiField } from '../../ui/index.ts'
 import { createChatGptPlanSection } from './chatgpt-plan-section.ts'
 import { createPasteKeyForm } from './paste-key-form.ts'
 
-// The one "Providers" panel in Settings > General. A provider is a company, not
-// a wiring mechanism: picking Cursor shows everything Cursor can do here (its
-// cloud agent and the Cursor agent installed on this device), picking Anthropic
-// shows its API key, its cloud agent, and the Claude agent on this device.
+// The onboarding fallback's "Providers" panel. A provider is a company, not a
+// wiring mechanism: picking Anthropic shows its API key and the Claude agent on
+// this device. Settings uses the combined Models & agents list instead
+// (models-agents-list.ts).
 //
-// Under the hood that is four separate panels — cloud API keys, local servers,
-// device agents, and cloud agents — which used to be four separate settings
-// sections. This module owns a single chip row across all of them and shows only
-// the blocks the selected provider actually offers.
-
-/**
- * A cloud agent (a provider that runs whole turns on its own machines) supplied
- * by the host, which owns the API-key sections it needs.
- */
-export interface CloudAgentPanel {
-  /** Provider chip this cloud agent belongs to. */
-  vendor: string
-  /** Authentication + guidance element, built by the host. */
-  element: HTMLElement
-  /** Key slugs whose presence marks this provider as set up. */
-  keySlugs: readonly string[]
-}
+// Under the hood that is three separate panels — cloud API keys, local servers
+// and device agents. This module owns a single chip row across all of them and
+// shows only the blocks the selected provider actually offers.
 
 /** A provider chip and the capabilities folded under it. */
 interface VendorSpec {
@@ -83,12 +67,6 @@ export function createProvidersPanel(
   opts: {
     /** LM Studio and any other provider with its own bespoke local form. */
     nativeLocalProviders?: readonly NativeProvider[]
-    cloudAgents?: readonly CloudAgentPanel[]
-    /** Options that apply to whichever cloud agent runs, shown with them. */
-    cloudAgentOptions?: HTMLElement
-    /** Settings-only global request tier for first-party OpenAI API models. */
-    showOpenAiServiceTier?: boolean
-    deferOrdinaryWrites?: boolean
     /**
      * Whether picking a curated preset may run ACP auto-setup (which can install
      * adapter packages). Defaults to true (Settings). Onboarding mounts with
@@ -96,19 +74,8 @@ export function createProvidersPanel(
      * cheap PATH scan, installs wait for first use.
      */
     deviceAutoSetup?: boolean
-    /**
-     * Whether agents installed on this machine appear under their providers.
-     * Defaults to true (onboarding). Settings turns it off because its own
-     * Coding agents list owns them.
-     */
-    deviceAgents?: boolean
   } = {},
 ): ProvidersPanel {
-  const cloudAgents = opts.cloudAgents ?? []
-  const cloudAgentByVendor = new Map(cloudAgents.map((entry) => [entry.vendor, entry]))
-  // Key slugs behind a cloud agent, so its chip can show a configured dot.
-  const cloudAgentKeys = new Set<string>()
-
   const rebuild = (): void => {
     renderChips()
     renderForm()
@@ -116,7 +83,6 @@ export function createProvidersPanel(
 
   const apiPanel = createCustomProvidersSection(api, {
     variant: 'cloud',
-    deferOrdinaryWrites: opts.deferOrdinaryWrites,
     embedded: true,
     onChanged: rebuild,
   })
@@ -126,7 +92,6 @@ export function createProvidersPanel(
   })
   const localPanel = createCustomProvidersSection(api, {
     variant: 'local',
-    deferOrdinaryWrites: opts.deferOrdinaryWrites,
     embedded: true,
     onChanged: rebuild,
     onStatusChanged: renderChips,
@@ -148,13 +113,6 @@ export function createProvidersPanel(
 
   const chipRow = el('div', { class: 'provider-chips', role: 'tablist' })
   const formHost = el('div', { class: 'provider-form-host' })
-  // The cloud-agent run options carry named form controls, so they stay parented
-  // here for the life of the dialog and are only hidden when the selected
-  // provider has no cloud agent. Re-parenting them per selection would drop them
-  // out of the form and silently lose their values on save.
-  const cloudAgentOptions = opts.cloudAgentOptions
-  if (cloudAgentOptions) cloudAgentOptions.hidden = true
-
   const fieldset = el(
     'fieldset',
     {},
@@ -163,12 +121,10 @@ export function createProvidersPanel(
       'p',
       { class: 'settings-fieldset-desc' },
       'Add a key and its models show up in the model picker. Pick a provider to ' +
-        'add its key, set up its cloud agent, or connect a model server you run ' +
-        'yourself.',
+        'add its key, set up its agent, or connect a model server you run yourself.',
     ),
     chipRow,
     formHost,
-    ...(cloudAgentOptions ? [cloudAgentOptions] : []),
   )
 
   // Nothing is open until the user picks a chip: opening Settings should show
@@ -188,96 +144,7 @@ export function createProvidersPanel(
   let providerPicked = false
   let autoSetupRun = false
 
-  // The picker presents semantic choices while preserving the stored bytes
-  // until the user actually changes one. In particular, an old blank value is
-  // equivalent to `auto`, and `priority` is the legacy spelling of Fast mode.
-  let initialOpenAiTierChoice = 'auto'
-  let pendingOpenAiTierChoice = 'auto'
-  let openAiTierDirty = false
-
   const deviceAutoSetup = opts.deviceAutoSetup ?? true
-  const deviceAgents = opts.deviceAgents ?? true
-
-  const offeredOpenAiTier = new Set<string>(SERVICE_TIER_CHOICES.map((choice) => choice.value))
-
-  function openAiTierChoiceForStored(value: string): string {
-    if (value === '') return 'auto'
-    if (value === 'priority') return 'fast'
-    return value
-  }
-
-  function retainedOpenAiTierLabel(value: string): string {
-    if (value === 'scale') return 'Scale (current advanced value)'
-    const visible = value.length > 80 ? `${value.slice(0, 79)}…` : value
-    return `Current advanced value: ${visible || '(empty)'}`
-  }
-
-  function openAiTierDescription(value: string): string {
-    const choice = SERVICE_TIER_CHOICES.find((entry) => entry.value === value)
-    if (choice) return choice.description
-    if (value === 'scale') {
-      return 'Uses committed Scale Tier capacity. It remains selected until you choose another tier.'
-    }
-    return 'This value is not offered by this version. It remains selected until you choose another tier.'
-  }
-
-  function hasOpenAiTierDraft(): boolean {
-    return openAiTierDirty
-  }
-  async function refreshOpenAiTier(
-    snapshot: SettingsSnapshot | undefined,
-    generation: number,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    if (!opts.showOpenAiServiceTier || hasOpenAiTierDraft()) return
-    const raw = snapshot ? snapshot.openAiServiceTier : await api.settings.get('openAiServiceTier')
-    if (hasOpenAiTierDraft() || generation !== refreshGeneration || signal?.aborted) return
-    const stored = typeof raw === 'string' ? raw : ''
-    initialOpenAiTierChoice = openAiTierChoiceForStored(stored)
-    pendingOpenAiTierChoice = initialOpenAiTierChoice
-    openAiTierDirty = false
-  }
-
-  function openAiTierBlock(): HTMLElement {
-    const picker = el('select', {
-      name: 'openAiServiceTier',
-      'data-testid': 'openai-service-tier',
-    })
-    for (const choice of SERVICE_TIER_CHOICES) {
-      picker.append(el('option', { value: choice.value }, choice.label))
-    }
-    if (!offeredOpenAiTier.has(pendingOpenAiTierChoice)) {
-      picker.append(
-        el(
-          'option',
-          { value: pendingOpenAiTierChoice },
-          retainedOpenAiTierLabel(pendingOpenAiTierChoice),
-        ),
-      )
-    }
-    picker.value = pendingOpenAiTierChoice
-    const field = uiField({
-      label: 'Global OpenAI service tier',
-      control: picker,
-      hint: openAiTierDescription(pendingOpenAiTierChoice),
-    })
-    picker.addEventListener('change', () => {
-      pendingOpenAiTierChoice = picker.value
-      openAiTierDirty = pendingOpenAiTierChoice !== initialOpenAiTierChoice
-      field.setAttribute('hint', openAiTierDescription(pendingOpenAiTierChoice))
-    })
-    const tierBlock = block(
-      'Request processing',
-      field,
-      el(
-        'p',
-        { class: 'field-hint openai-service-tier-scope' },
-        'Applies to OpenAI API-key requests. ChatGPT plan and the Codex agent use their own processing settings. Copse records the tier OpenAI reports for each response, including a downgrade to Standard, and uses it when estimating cost.',
-      ),
-    )
-    tierBlock.dataset['testid'] = 'openai-service-tier-block'
-    return tierBlock
-  }
 
   function loadDeviceInfoOnce(agentId?: string): void {
     const preset = KNOWN_ACP_AGENTS.some((agent) => agent.id === agentId && agent.preset)
@@ -298,21 +165,17 @@ export function createProvidersPanel(
     api: string[]
     local: string[]
     agents: string[]
-    cloud: CloudAgentPanel | undefined
   } {
     return {
       api: (vendor.api ?? []).filter((id) => apiPanel.labelFor(id) !== null),
       local: (vendor.local ?? []).filter((id) => localPanel.labelFor(id) !== null),
-      agents: deviceAgents
-        ? (vendor.agents ?? []).filter((id) => agentsPanel.labelFor(id) !== null)
-        : [],
-      cloud: cloudAgentByVendor.get(vendor.id),
+      agents: (vendor.agents ?? []).filter((id) => agentsPanel.labelFor(id) !== null),
     }
   }
 
   function hasAnything(vendor: VendorSpec): boolean {
     const caps = resolve(vendor)
-    return Boolean(caps.api.length || caps.local.length || caps.agents.length || caps.cloud)
+    return Boolean(caps.api.length || caps.local.length || caps.agents.length)
   }
 
   /**
@@ -333,7 +196,7 @@ export function createProvidersPanel(
       if (claimed.has(id)) continue
       list.push({ id, label: apiPanel.labelFor(id) ?? id, api: [id] })
     }
-    for (const id of deviceAgents ? agentsPanel.agentIds() : []) {
+    for (const id of agentsPanel.agentIds()) {
       if (claimed.has(id)) continue
       list.push({ id, label: agentsPanel.labelFor(id) ?? id, agents: [id] })
     }
@@ -349,8 +212,7 @@ export function createProvidersPanel(
     const caps = resolve(vendor)
     if (caps.api.some((id) => apiPanel.isConfigured(id))) return true
     if (caps.local.some((id) => localPanel.isConfigured(id))) return true
-    if (caps.agents.some((id) => agentsPanel.isConfigured(id))) return true
-    return caps.cloud ? caps.cloud.keySlugs.some((slug) => cloudAgentKeys.has(slug)) : false
+    return caps.agents.some((id) => agentsPanel.isConfigured(id))
   }
 
   function renderChips(): void {
@@ -414,7 +276,7 @@ export function createProvidersPanel(
 
   function addForm(): HTMLElement {
     const picker = el('select', {})
-    for (const entry of ADD_KINDS.filter((e) => deviceAgents || e.kind !== 'agent')) {
+    for (const entry of ADD_KINDS) {
       picker.append(el('option', { value: entry.kind }, entry.label))
     }
     picker.value = selectedAddKind
@@ -465,7 +327,6 @@ export function createProvidersPanel(
       'openai-api-details',
       'Configure API access',
       apiPanel.root,
-      ...(opts.showOpenAiServiceTier ? [openAiTierBlock()] : []),
     )
     const entries = [
       {
@@ -518,7 +379,6 @@ export function createProvidersPanel(
 
   function renderForm(): void {
     clear(formHost)
-    if (cloudAgentOptions) cloudAgentOptions.hidden = true
     if (!selected) return
     if (selected === ADD_KEY) {
       formHost.append(addForm())
@@ -539,10 +399,6 @@ export function createProvidersPanel(
         body.append(block('API key', apiPanel.root))
       }
     }
-    if (caps.cloud) {
-      body.append(block('Cloud agent', caps.cloud.element))
-      if (cloudAgentOptions) cloudAgentOptions.hidden = false
-    }
     if (caps.agents.length) body.append(agentBlock(caps.agents))
     if (caps.local.length) {
       const [first] = caps.local
@@ -554,26 +410,10 @@ export function createProvidersPanel(
     formHost.append(body)
   }
 
-  async function refreshCloudAgentKeys(): Promise<void> {
-    cloudAgentKeys.clear()
-    const slugs = [...new Set(cloudAgents.flatMap((entry) => [...entry.keySlugs]))]
-    await Promise.all(
-      slugs.map(async (slug) => {
-        try {
-          if (await api.settings.getKey(slug)) cloudAgentKeys.add(slug)
-        } catch {
-          /* a key we can't read just leaves the chip undotted */
-        }
-      }),
-    )
-  }
-
   let refreshGeneration = 0
   async function refresh(snapshot?: SettingsSnapshot, signal?: AbortSignal): Promise<void> {
     const mine = ++refreshGeneration
     if (signal?.aborted) return
-    await refreshOpenAiTier(snapshot, mine, signal)
-    if (mine !== refreshGeneration || signal?.aborted) return
     // Each panel's own refresh fires `onChanged`, which repaints the chip row as
     // its data lands; the final rebuild below settles the selection once all
     // three have reported in.
@@ -582,8 +422,6 @@ export function createProvidersPanel(
     await localPanel.refresh(snapshot, signal)
     if (mine !== refreshGeneration || signal?.aborted) return
     await agentsPanel.reload(signal)
-    if (mine !== refreshGeneration || signal?.aborted) return
-    await refreshCloudAgentKeys()
     if (mine !== refreshGeneration || signal?.aborted) return
     if (selected === 'openai') await chatGptPlan.refresh()
     if (mine !== refreshGeneration || signal?.aborted) return
@@ -598,13 +436,7 @@ export function createProvidersPanel(
 
   async function saveKeys(): Promise<boolean> {
     const [apiSaved, localSaved] = await Promise.all([apiPanel.saveKeys(), localPanel.saveKeys()])
-    if (!apiSaved || !localSaved) return false
-    if (openAiTierDirty && !opts.deferOrdinaryWrites) {
-      await api.settings.set('openAiServiceTier', pendingOpenAiTierChoice)
-      initialOpenAiTierChoice = pendingOpenAiTierChoice
-      openAiTierDirty = false
-    }
-    return true
+    return apiSaved && localSaved
   }
 
   return {
@@ -616,16 +448,12 @@ export function createProvidersPanel(
       pasteKey.reset()
       apiPanel.reset()
       localPanel.reset()
-      openAiTierDirty = false
       selected = ''
       rebuild()
     },
     readUpdate: () => ({
       ...apiPanel.readUpdate(),
       ...localPanel.readUpdate(),
-      ...(openAiTierDirty && isServiceTier(pendingOpenAiTierChoice)
-        ? { openAiServiceTier: pendingOpenAiTierChoice }
-        : {}),
     }),
   }
 }

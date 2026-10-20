@@ -89,7 +89,7 @@ describe('manual ACP catalog entry', function () {
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').waitForDisplayed()
     await $('.settings-nav-btn[data-section="general"]').click()
-    await $('[data-testid="acp-add-toggle"]').click()
+    await $('[data-testid="connections-add-toggle"]').click()
     const chip = await $('.acp-add-row[data-agent="github-copilot-cli"]').$('button=Set up')
     await chip.waitForDisplayed()
     await chip.click()
