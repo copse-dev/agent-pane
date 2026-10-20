@@ -91,8 +91,8 @@ describe('ACP Detect models does not pin the agent default mode', function () {
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').waitForDisplayed()
     await $('.settings-nav-btn[data-section="general"]').click()
-    await $('[data-testid="acp-add-toggle"]').click()
-    await $('.acp-add-row[data-agent="other"]').$('button=Set up').click()
+    await $('[data-testid="connections-add-toggle"]').click()
+    await $('.acp-add-row[data-add="agent"]').$('button=Set up').click()
 
     const form = await $('.acp-add-menu .acp-agent-form')
     await form.$('label*=Id').$('input').setValue('mode-default-fixture')
