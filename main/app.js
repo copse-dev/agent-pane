@@ -85420,6 +85420,83 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "approval-long-code",
+        label: "Long code command approval",
+        project: project("demo-approval-long-code-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        threads: [
+          {
+            id: "demo-approval-long-code-thread",
+            title: "Review the generated script",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        approvalRequests: [
+          {
+            id: "demo-approval-long-code-request",
+            title: "Run outside sandbox?",
+            body: [
+              "node <<'SCRIPT'",
+              ...Array.from(
+                { length: 40 },
+                (_5, index) => `console.log('Checking generated source line ${String(index + 1)}')`
+              ),
+              "SCRIPT"
+            ].join("\n"),
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Runs generated code from standard input, so Copse cannot inspect the resulting file accesses\n\nThis runs with your user account\u2019s access to files and the network, beyond the project sandbox.",
+            bodyFooter: "Allow running this code once outside the sandbox?",
+            type: "shell"
+          }
+        ]
+      },
+      {
+        id: "approval-mixed-prose-code",
+        label: "Approval with paragraphs and code blocks",
+        project: project("demo-approval-mixed-prose-code-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        threads: [
+          {
+            id: "demo-approval-mixed-prose-code-thread",
+            title: "Review the project setup",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        approvalRequests: [
+          {
+            id: "demo-approval-mixed-prose-code-setup",
+            title: "Run setup script?",
+            body: "node <<'SCRIPT'\nconst packages = ['core', 'ui']\nconsole.log(packages.join(', '))\nSCRIPT",
+            bodyAdvice: "The setup script checks local dependencies.\n\nIt runs generated JavaScript, so Copse cannot determine every file it may access.",
+            bodyFooter: "Allow the setup script to run once?",
+            type: "shell"
+          },
+          {
+            id: "demo-approval-mixed-prose-code-preview",
+            title: "Preview migration?",
+            body: "node <<'SCRIPT'\nconst changes = ['add index', 'copy rows']\nconsole.log(changes.join('\\n'))\nSCRIPT",
+            bodyAdvice: "The migration preview reads project data and prints the planned changes.\n\nIt opens a local resource outside the project sandbox.",
+            bodyFooter: "Allow the migration preview to run once?",
+            type: "shell"
+          },
+          {
+            id: "demo-approval-mixed-prose-code-apply",
+            title: "Apply generated patch?",
+            body: "node <<'SCRIPT'\nconst target = 'src/generated/index.ts'\nconsole.log('Writing', target)\nSCRIPT",
+            bodyAdvice: "The final step writes the generated patch into the project.\n\nReview the target before allowing this command to run.",
+            bodyFooter: "Allow the patch command to run once?",
+            type: "shell"
+          }
+        ]
+      },
+      {
         id: "product-announcements-fresh",
         label: "Product announcements \u2014 fresh",
         project: project("demo-announcements-project"),

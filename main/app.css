@@ -12212,6 +12212,11 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   transform: translate(-50%, -50%);
   box-shadow: var(--shadow-lg);
 }
+#approval-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+}
 #approval-dialog:modal {
   position: fixed;
   max-height: calc(100vh - 2 * var(--spacing-xl));
@@ -12254,6 +12259,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
+  min-height: 0;
   max-height: 55vh;
   overflow-y: auto;
   margin-bottom: var(--spacing-md);
@@ -12320,6 +12326,9 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 .approval-buttons {
   margin-top: var(--spacing-sm);
+}
+#approval-dialog[open] > .approval-buttons {
+  margin-top: 0;
 }
 .approval-approve:disabled,
 .approval-approve-once:disabled {
