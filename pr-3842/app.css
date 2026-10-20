@@ -3666,6 +3666,20 @@ summary.pr-check-group-heading::-webkit-details-marker {
   font-size: var(--font-size-sm);
   font-weight: 600;
 }
+.thread-context-question {
+  padding: 4px 6px;
+  font-size: var(--font-size-sm);
+}
+.thread-context-question + .thread-context-question {
+  border-top: 1px solid var(--border-subtle);
+}
+.thread-context-question > summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.thread-context-question > .reviewer-input-answer {
+  overflow-wrap: anywhere;
+}
 .thread-context-group + .thread-context-group {
   margin-top: var(--spacing-sm);
 }
@@ -4130,7 +4144,6 @@ html.is-popout .thread-context-close {
   align-items: center;
   gap: var(--spacing-sm);
   flex-shrink: 0;
-  -webkit-app-region: no-drag;
 }
 .titlebar-sidebar-btn {
   display: inline-flex;
@@ -4200,7 +4213,6 @@ html.is-popout .thread-context-close {
   align-items: center;
   gap: var(--spacing-sm);
   flex-shrink: 0;
-  -webkit-app-region: no-drag;
 }
 #titlebar .titlebar-panel-controls {
   flex: 1 1 0;
@@ -17008,12 +17020,10 @@ dialog.activity-panel-overlay {
 
 /* src/renderer/styles/global/reviewer-input.css */
 .reviewer-input-toggle {
-  align-self: flex-end;
-  flex: none;
-  margin: var(--spacing-xs) var(--spacing-md) 0;
-  padding: var(--spacing-xs) var(--spacing-sm);
+  width: 100%;
+  padding: 10px 16px;
   border: 0;
-  border-radius: var(--radius);
+  border-bottom: 1px solid var(--border);
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
@@ -17026,23 +17036,12 @@ dialog.activity-panel-overlay {
   color: var(--text-primary);
   background: var(--bg-hover);
 }
-.conversation-reviewer-body {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-}
-.conversation-reviewer-body > .conversation-scroll {
-  min-width: 0;
-}
 .reviewer-input-panel {
-  width: 284px;
-  flex: none;
+  box-sizing: border-box;
+  width: 100%;
   min-width: 0;
-  overflow-y: auto;
-  box-shadow: -1px 0 var(--border-subtle);
-  background: var(--bg-base);
-  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 16px;
   color: var(--text-primary);
 }
 .reviewer-input-panel[hidden] {
@@ -17156,17 +17155,6 @@ dialog.activity-panel-overlay {
 }
 .reviewer-input-highlight {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
-}
-@container chat-pane (max-width: 660px) {
-  .reviewer-input-panel {
-    position: absolute;
-    z-index: 5;
-    top: 36px;
-    right: 0;
-    bottom: 0;
-    width: min(100%, 320px);
-    box-shadow: var(--shadow-lg);
-  }
 }
 
 /* src/renderer/styles/global/toasts.css */
