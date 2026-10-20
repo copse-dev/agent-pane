@@ -412,7 +412,7 @@ describe('footer branch status for a detached thread worktree', function () {
     git(worktreeRoot, ['bisect', 'reset'])
     git(worktreeRoot, ['checkout', detachedBranch])
     const tip = git(worktreeRoot, ['rev-parse', 'HEAD'])
-    rmSync(worktreeRoot, { recursive: true, force: true })
+    removeE2eTree(worktreeRoot)
     git(projectRoot, ['worktree', 'prune', '--expire', 'now'])
     await $(`[data-thread-id="${detachedThreadId}"]`).click()
     const button = await $('.branch-reattach-button')
