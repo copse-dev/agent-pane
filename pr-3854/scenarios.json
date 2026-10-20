@@ -140,6 +140,10 @@
     "label": "Sidebar listing threads of projects not opened yet"
   },
   {
+    "id": "sidebar-background-project-running",
+    "label": "Running agent in a collapsed project"
+  },
+  {
     "id": "sidebar-thread-sort",
     "label": "Sidebar thread sort"
   },
