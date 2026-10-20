@@ -100,7 +100,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/pr-provenance.e2e.ts': {
-    sourceSha256: 'a227a185037728a7857ab38088a4aabf0c04addbf7ed1ff575ac26a473bfe13e',
+    sourceSha256: '3e7b25fde1b7cf04c559dd7e1acb836ea174766dc4ad2e32ee87d2f76c5ccd5f',
     filenames: ['pr-native-provenance-offline-restart.png', 'pr-native-provenance.png'],
   },
   'tests/e2e/queued-held.e2e.ts': {

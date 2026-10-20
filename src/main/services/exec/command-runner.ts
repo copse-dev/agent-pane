@@ -100,11 +100,11 @@ function prepareGitInvocation(
   signing?: GitSigningBridge,
 ): { args: string[]; env: NodeJS.ProcessEnv; releaseGitSsh?: () => void } {
   const preparedArgs = withGitInvocationArgs(args, policy, signing)
-  const transport = internalGitTransport(args[0])
+  const transport = policy === 'internal-network' ? 'network' : internalGitTransport(args[0])
   // Remove ambient Git/SSH executable injection before installing Copse's own
   // askpass and host-key policy. Scrubbing after the lease would also delete
   // those trusted bridge variables and break authenticated fetch/push.
-  const preparedEnv = policy === 'internal' ? internalGitEnv(env, transport) : env
+  const preparedEnv = policy === 'user-command' ? env : internalGitEnv(env, transport)
   const gitSsh = leaseGitSshEnv(preparedEnv)
   return {
     args: preparedArgs,

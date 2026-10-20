@@ -133,6 +133,7 @@ describe('saved reviewer input', () => {
   })
 
   it('lists compact questions and jumps to the exact saved tool call', async () => {
+    await $('[aria-label="Open thread context"]').click()
     const panel = $('.reviewer-input-panel')
     await panel.waitForDisplayed({ timeout: 30_000 })
     await expect($('.reviewer-input-toggle')).toHaveText('3 questions')
@@ -161,20 +162,33 @@ describe('saved reviewer input', () => {
     await expectAssistantReply(ANSWER_REPLY)
     await scenario.assertComplete()
     await expect($('.reviewer-input-toggle')).toHaveText('2 questions')
-    await panel.$('[data-reviewer-input-id="request-tokens"] .reviewer-input-question').click()
+    await expect(panel.$('[data-reviewer-input-id="request-tokens"]')).not.toExist()
+    await expect(panel.$$('.reviewer-input-item')).toBeElementsArrayOfSize(2)
     await expect(
-      panel.$('[data-reviewer-input-id="request-tokens"] .reviewer-input-answer'),
-    ).toHaveText('Answered: Fix first')
+      $('.reviewer-input-card[data-tool-id="request-tokens"] .tool-card-header'),
+    ).toHaveText('Answered · Block on the token over-count?')
+    const resolved = $(
+      '[data-context-section="resolved-questions"] [data-reviewer-input-id="request-tokens"]',
+    )
+    await resolved.waitForDisplayed()
+    await expect(resolved).not.toHaveAttribute('open')
+    await expect(resolved.$('summary')).toHaveText('Block on the token over-count?')
     await saveAppScreenshot('reviewer-input-answered.png')
+    await resolved.$('summary').click()
+    await expect(resolved.$('.reviewer-input-answer')).toHaveText('Your answer: Fix first')
+    await saveAppScreenshot('reviewer-input-resolved-open.png')
 
     await browser.reloadSession()
+    if (!(await $('.reviewer-input-panel').isDisplayed())) {
+      await $('[aria-label="Open thread context"]').click()
+    }
     await $('.reviewer-input-panel').waitForDisplayed({ timeout: 30_000 })
     await expect($('.reviewer-input-toggle')).toHaveText('2 questions')
-    await $(
-      '.reviewer-input-panel [data-reviewer-input-id="request-tokens"] .reviewer-input-question',
-    ).click()
-    await expect(
-      $('.reviewer-input-panel [data-reviewer-input-id="request-tokens"] .reviewer-input-answer'),
-    ).toHaveText('Answered: Fix first')
+    await expect($('.reviewer-input-panel [data-reviewer-input-id="request-tokens"]')).not.toExist()
+    const reloaded = $(
+      '[data-context-section="resolved-questions"] [data-reviewer-input-id="request-tokens"]',
+    )
+    await reloaded.waitForDisplayed()
+    await expect(reloaded).not.toHaveAttribute('open')
   })
 })
