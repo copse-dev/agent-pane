@@ -372,6 +372,14 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // stages when git is unreadable, when unowned work could not be backed up, or
   // when the target changed on disk since Copse last touched it.
   worktreeAutoApproveEdits: z.boolean(),
+  // Keep each local project's `origin/<default>` ref current in the background
+  // so new threads start from the latest upstream code. Only the remote-tracking
+  // ref moves; the user's checkout and branches never do. The networked fetch
+  // runs outside the project sandbox in a Copse-owned scratch repository, so it
+  // uses the user's global Git credentials but never the project's own config
+  // (see default-branch-fetch.ts). Default on. Off skips background fetches,
+  // including the contained fallback, on every platform.
+  backgroundDefaultBranchFetch: z.boolean(),
   // Experimental features, opt-in and off by default. See the experimental
   // section in Settings.
   //

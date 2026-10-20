@@ -254,9 +254,9 @@
     },
     {
       "prefix": "src/renderer/views/git-changes-pane.ts",
-      "smoke": ["tests/e2e/git-changes.e2e.ts"],
+      "smoke": ["tests/e2e/git-changes-pending-committed.e2e.ts"],
       "evidence": {
-        "tests/e2e/git-changes.e2e.ts": "selector cls:git-changes-refresh-btn, txt:Refresh changes, cls:git-change-row, cls:git-changes-section-title, cls:git-change-status-untracked, cls:git-change-row-committed, cls:git-change-path in src/renderer/views/git-changes-pane.ts"
+        "tests/e2e/git-changes-pending-committed.e2e.ts": "selector cls:git-change-row in src/renderer/views/git-changes-pane.ts"
       }
     },
     {
@@ -283,9 +283,9 @@
     },
     {
       "prefix": "src/renderer/views/pr-pane.ts",
-      "smoke": ["tests/e2e/pr-panel.e2e.ts"],
+      "smoke": ["tests/e2e/pr-panel-activity.e2e.ts"],
       "evidence": {
-        "tests/e2e/pr-panel.e2e.ts": "selector txt:Open pull requests, cls:pr-list-row, cls:git-changes-section-title, cls:pr-list-title, txt:linked, cls:pr-pane-filter, cls:pr-list-body, cls:pr-list-status, cls:has-ci-failure, cls:pr-other-toggle, cls:pr-viewer-title, txt:viewing, cls:is-selected, cls:pr-viewer-description-fill, cls:panel-empty, cls:git-changes-empty, cls:pr-viewer-description, cls:pr-viewer-files, cls:pr-detail-section, txt:files, cls:pr-files-header, cls:pr-file-row, cls:git-diff-editor-wrap, cls:git-image-diff, cls:message-text, txt:agent in src/renderer/views/pr-pane.ts"
+        "tests/e2e/pr-panel-activity.e2e.ts": "selector txt:Open pull requests, cls:pr-detail-section, txt:comments, cls:pr-viewer-title, cls:pr-open-external-btn, cls:pr-activity, cls:code-block-copy, cls:pr-section-count, cls:pr-viewer-description, cls:pr-viewer-files, txt:checks, cls:pr-list-title, cls:pr-pane-refresh-btn in src/renderer/views/pr-pane.ts"
       }
     },
     {
