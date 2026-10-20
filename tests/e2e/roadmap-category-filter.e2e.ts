@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, $$, browser } from '@wdio/globals'
 import { assertNeutralBadge, readBadgeStyles, signalColours } from './helpers/badge-style.ts'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('roadmap category grouping and filters', () => {
   let workspaceRoot: string
@@ -61,8 +62,8 @@ describe('roadmap category grouping and filters', () => {
 
   after(() => {
     resetUserData()
-    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
-    rmSync(knowledgeDir, { recursive: true, force: true })
+    removeE2eTree(dirname(workspaceRoot))
+    removeE2eTree(knowledgeDir)
   })
 
   it('shows category accordions and filters category and complexity', async () => {

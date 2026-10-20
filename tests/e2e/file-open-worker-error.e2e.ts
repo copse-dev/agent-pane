@@ -1,10 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
 import { collectErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-file-open-worker-project'
 const SAMPLE_FILE = 'worker-sample.ts'
@@ -54,7 +55,7 @@ describe('Opening a code file does not surface worker error toasts', () => {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(dirname(workspaceRoot), { recursive: true, force: true })
+    if (workspaceRoot) removeE2eTree(dirname(workspaceRoot))
   })
 
   it('shows the file in Monaco with its language worker and no error toast', async () => {

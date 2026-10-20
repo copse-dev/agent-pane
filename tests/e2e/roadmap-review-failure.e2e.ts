@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, browser } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppViewportScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // A deep resolution check that fails has no verdict to show, so the result box
 // carries the reason instead: a short label on the lowercase-styled meta line
@@ -45,8 +46,8 @@ describe('roadmap resolution check failure', () => {
 
   after(() => {
     resetUserData()
-    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
-    rmSync(knowledgeDir, { recursive: true, force: true })
+    removeE2eTree(dirname(workspaceRoot))
+    removeE2eTree(knowledgeDir)
   })
 
   it('reports a failed deep check without dumping it into the status line', async () => {

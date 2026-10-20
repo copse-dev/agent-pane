@@ -1,10 +1,29 @@
+import type { SettingField } from './fields.ts'
+
+export const storageFields: readonly SettingField[] = [
+  { name: 'autoArchiveAfterDays', kind: 'number', default: 3, save: true },
+]
+
 export const storageMarkup = `<section class="settings-section" data-section="storage">
             <h3>Storage</h3>
             <p class="settings-section-desc">
-              Protect saved credentials, inspect what Copse keeps on disk, and reclaim project storage.
+              Protect saved credentials, manage finished threads, inspect what Copse keeps on disk, and reclaim project storage.
             </p>
 
             <div id="settings-profile-vault-host" class="settings-mount"></div>
+
+            <fieldset>
+              <legend>Finished threads · all projects</legend>
+              <label>
+                Auto-archive after inactive days
+                <input type="number" name="autoArchiveAfterDays" min="0" max="3650" step="1" aria-describedby="auto-archive-hint" />
+              </label>
+              <p class="field-hint" id="auto-archive-hint">
+                Defaults to 3 days. Enter 0 to disable, or 3 or more for a longer delay.
+                Only verified finished work is archived automatically; Copse asks when completion is unclear.
+                Conversations and files are kept, and archived threads can be restored.
+              </p>
+            </fieldset>
 
             <label class="storage-project-field">
               <span>Project</span>

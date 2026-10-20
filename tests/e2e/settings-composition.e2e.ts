@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
@@ -10,6 +10,7 @@ import {
   withCaptureFrame,
 } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const SKILL = 'settings-navigation-fixture'
 const INSTRUCTIONS = 'Prefer readable names and focused changes.'
@@ -29,7 +30,7 @@ describe('Settings section composition, validation and sticky actions', () => {
   })
   after(() => {
     resetUserData()
-    rmSync(workspace, { recursive: true, force: true })
+    removeE2eTree(workspace)
   })
 
   it('shows the two General groups with every connection row closed', async () => {

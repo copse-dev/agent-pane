@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { assertKitButtonRow, measureKitButtonRow } from './helpers/kit-buttons.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // Roadmap editor action buttons stay content-sized (not equal-width grid columns).
 describe('roadmap form buttons', () => {
@@ -25,7 +26,7 @@ describe('roadmap form buttons', () => {
 
   after(() => {
     resetUserData()
-    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
+    removeE2eTree(dirname(workspaceRoot))
   })
 
   it('keeps action buttons compact instead of stretching across the panel', async () => {

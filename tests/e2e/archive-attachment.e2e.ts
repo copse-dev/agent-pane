@@ -1,11 +1,12 @@
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 /**
  * A zip dropped into the chat must NOT become model content. Before archives
@@ -84,7 +85,7 @@ describe('Attaching an archive to the chat', () => {
 
   after(() => {
     resetUserData()
-    if (temporaryRoot) rmSync(temporaryRoot, { recursive: true, force: true })
+    if (temporaryRoot) removeE2eTree(temporaryRoot)
   })
 
   it('shows a dropped zip as an archive chip with its size, never as inlined text', async () => {

@@ -8,6 +8,7 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
 import { saveSettingsSection } from './helpers/settings-scroll-capture.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('Coding agents list in Settings', () => {
   const originalPath = process.env['PATH']
@@ -99,7 +100,7 @@ describe('Coding agents list in Settings', () => {
       HOME: originalHome,
     })
     resetUserData()
-    if (fixtureBin) rmSync(fixtureBin, { recursive: true, force: true })
+    if (fixtureBin) removeE2eTree(fixtureBin)
   })
 
   it('lists installed agents with the chip on the name row and buries the rest under Add', async function () {

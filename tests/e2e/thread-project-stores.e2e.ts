@@ -6,7 +6,6 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
-  rmSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -20,6 +19,7 @@ import {
   seedStableWorkspace,
   seedTwoProjectStoresFixture,
 } from './helpers/seed-config.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 /**
  * A turn keeps writing to its own project's stores after the window switches
@@ -70,7 +70,7 @@ describe('project stores follow the turn, not the window', function () {
     writeFileSync(join(projectB, 'README.md'), '# Project B\n')
 
     const knowledge = e2eKnowledgeDir()
-    rmSync(knowledge, { recursive: true, force: true })
+    removeE2eTree(knowledge)
     // A still has its data under the old path-hash name; B is already id-keyed.
     mkdirSync(join(knowledge, legacyName(projectA)), { recursive: true })
     writeFileSync(join(knowledge, legacyName(projectA), 'legacy-marker.md'), 'project A legacy\n')
@@ -87,7 +87,7 @@ describe('project stores follow the turn, not the window', function () {
   })
 
   after(() => {
-    rmSync(projectB, { recursive: true, force: true })
+    removeE2eTree(projectB)
     resetUserData()
   })
 
