@@ -3910,12 +3910,12 @@
       "bytes": 271756
     },
     "settings-provider-hosts-page-2.png": {
-      "sha256": "cc68716fb3d61e00d9d23e776b6a6742626feb507d2422c767f524b4b41dc6ce",
-      "bytes": 237204
+      "sha256": "2fe3b4a38fbdeaabb052b021710811d4fa36e5ad6f303d29af39b7b8308e13ca",
+      "bytes": 301381
     },
     "settings-provider-hosts.png": {
-      "sha256": "496dadc580a395496ac63e72a034eda73e03448e40bd275370ef5f09859d2757",
-      "bytes": 259111
+      "sha256": "15034eb849194d90d8a2122c8de7948895df76e255a503e9146cce7e6820d133",
+      "bytes": 287431
     },
     "settings-qwen-code.png": {
       "sha256": "cdc367323d1f3116baf09c4a897ea06ce1b2af9d8b146da7c1c5039bb58835c3",
@@ -4102,20 +4102,20 @@
       "bytes": 262309
     },
     "settings-terminal-history-toggle-off-page-2.png": {
-      "sha256": "cc68716fb3d61e00d9d23e776b6a6742626feb507d2422c767f524b4b41dc6ce",
-      "bytes": 237204
+      "sha256": "2fe3b4a38fbdeaabb052b021710811d4fa36e5ad6f303d29af39b7b8308e13ca",
+      "bytes": 301381
     },
     "settings-terminal-history-toggle-off.png": {
-      "sha256": "ada3e6facbe58d32a272696e759240da02c960df4df13f702add36ad05e1f53c",
-      "bytes": 258619
+      "sha256": "5efca136e3896872de9f0c54d86f3fa76bf09f035c67d776830adb194dc64822",
+      "bytes": 286989
     },
     "settings-terminal-history-toggle-page-2.png": {
-      "sha256": "cc68716fb3d61e00d9d23e776b6a6742626feb507d2422c767f524b4b41dc6ce",
-      "bytes": 237204
+      "sha256": "2fe3b4a38fbdeaabb052b021710811d4fa36e5ad6f303d29af39b7b8308e13ca",
+      "bytes": 301381
     },
     "settings-terminal-history-toggle.png": {
-      "sha256": "496dadc580a395496ac63e72a034eda73e03448e40bd275370ef5f09859d2757",
-      "bytes": 259111
+      "sha256": "15034eb849194d90d8a2122c8de7948895df76e255a503e9146cce7e6820d133",
+      "bytes": 287431
     },
     "settings-thread-style-selection.png": {
       "sha256": "ef5c47fd8c3ee14ebe9297afe26d2c99117679f83e392202116e99fe3a937427",
