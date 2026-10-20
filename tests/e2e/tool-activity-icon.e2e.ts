@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
@@ -13,6 +13,8 @@ import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { approveShellCommandIfPrompted } from './helpers/shell-approval.ts'
 import { startConversationServer, type ConversationServer } from './helpers/conversation-server.ts'
+import { waitForAgentIdle } from './helpers.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 async function submitToolPrompt(): Promise<void> {
   await $('.submit-btn').click()
@@ -45,7 +47,7 @@ describe('tool activity icon', function () {
       'e2e-tool-activity-icon-project',
       'e2e-tool-activity-icon-nested-project',
     ]) {
-      rmSync(join(e2eWorkspaceDir(), projectId), { recursive: true, force: true })
+      removeE2eTree(join(e2eWorkspaceDir(), projectId))
     }
     // A shallow source checkout need not have local main. Use real fixture
     // refs for both footer discovery and first-send checkout, never fake names.
@@ -176,6 +178,10 @@ describe('tool activity icon', function () {
     expect(settledGeometry.settledSlotWidth).toBe(runningGeometry.runningSlotWidth)
     // The header is the hover target/pill — it hugs the label in both states.
     expect(settledGeometry.settledHeaderLeft).toBe(runningGeometry.runningHeaderLeft)
+
+    // The follow-up model turn is still writing this project's thread store.
+    // Let the run finish so the next suite's cleanup does not race its writes.
+    await waitForAgentIdle(30_000)
   })
 })
 
@@ -195,7 +201,7 @@ describe('tool activity icon — nested rollup row', function () {
       'e2e-tool-activity-icon-project',
       'e2e-tool-activity-icon-nested-project',
     ]) {
-      rmSync(join(e2eWorkspaceDir(), projectId), { recursive: true, force: true })
+      removeE2eTree(join(e2eWorkspaceDir(), projectId))
     }
     // A shallow source checkout need not have local main. Use real fixture
     // refs for both footer discovery and first-send checkout, never fake names.

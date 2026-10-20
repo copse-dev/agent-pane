@@ -5,13 +5,14 @@ import {
 } from './helpers/chrome-options.ts'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolveElectronExecutable } from './helpers/electron-executable.ts'
 import { $, browser, expect } from '@wdio/globals'
 import type { Thread } from '@shared/types'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const electronBinary = resolveElectronExecutable()
 
@@ -72,7 +73,7 @@ describe('native thread deep links', () => {
 
   after(() => {
     resetUserData()
-    if (launcherDir) rmSync(launcherDir, { recursive: true, force: true })
+    if (launcherDir) removeE2eTree(launcherDir)
   })
 
   it('restores and selects a cold-launch destination before accepting a second-instance link', async () => {

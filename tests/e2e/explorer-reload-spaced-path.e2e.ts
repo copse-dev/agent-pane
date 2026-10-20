@@ -1,9 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // This guards #268: on macOS with ASRT active, `fs:list-dir` routes through the
 // seatbelt-wrapped `sandbox-fs-worker`, whose spawn broke when the workspace
@@ -35,7 +36,7 @@ describeSpacedExplorer('explorer reload with spaced workspace path', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceParent, { recursive: true, force: true })
+    removeE2eTree(workspaceParent)
   })
 
   it('reloads the file tree without fs:list-dir errors', async () => {

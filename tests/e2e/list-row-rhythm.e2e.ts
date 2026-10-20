@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { $, $$, browser } from '@wdio/globals'
 import {
   resetUserData,
@@ -8,6 +8,7 @@ import {
   writeSeedConfig,
 } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 /**
  * Visual eval for the shared list rhythm: sidebar thread, project and project
@@ -106,7 +107,7 @@ describe('list row rhythm', () => {
 
   after(() => {
     resetUserData()
-    rmSync(knowledgeDir, { recursive: true, force: true })
+    removeE2eTree(knowledgeDir)
   })
 
   it('gives thread, project and project group rows the same block padding', async () => {

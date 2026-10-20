@@ -1,6 +1,6 @@
 import { at } from '@copse/std/array-utils.ts'
 import { expectAssistantReply, prepareMockToolTurn } from './helpers/mock-scenario.ts'
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
@@ -11,6 +11,7 @@ import {
   assertPopoutModesAllShown,
   assertPopoutModesOverflowAt,
 } from './helpers/popout-panel-bar.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const PROJECT_ID = 'e2e-popout-proposed-project'
@@ -85,7 +86,7 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
       // session already gone
     }
     resetUserData()
-    rmSync(WORKSPACE, { recursive: true, force: true })
+    removeE2eTree(WORKSPACE)
   })
 
   it('keeps the embed coloured through proposals and pop-out approvals', async () => {

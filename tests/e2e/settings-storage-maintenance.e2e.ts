@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { copseDataRoot, copseWorkspaceTmpDir } from '../../src/main/services/storage/copse-paths.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const run = join(copseDataRoot(), 'runtimes/run-abc-abcdef')
 const build = join(copseWorkspaceTmpDir(), 'apple-development/storage-e2e')
@@ -27,7 +28,7 @@ describe('Storage cleanup controls', function () {
     await browser.reloadSession()
   })
   after(() => {
-    for (const path of [run, build, scratch]) rmSync(path, { recursive: true, force: true })
+    for (const path of [run, build, scratch]) removeE2eTree(path)
     resetUserData()
   })
   it('shows both areas, saves retention and cleans only the confirmed target', async () => {

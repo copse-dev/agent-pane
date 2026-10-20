@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
@@ -14,6 +14,7 @@ import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.t
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -108,7 +109,7 @@ describe('footer branch status for a detached thread worktree', function () {
     const worktreesRoot = process.env['COPSE_WORKTREES_DIR']
     if (!worktreesRoot) throw new Error('COPSE_WORKTREES_DIR is not configured for e2e')
     projectRoot = join(dirname(worktreesRoot), 'footer-detached-project-checkout')
-    rmSync(projectRoot, { recursive: true, force: true })
+    removeE2eTree(projectRoot)
     mkdirSync(projectRoot, { recursive: true })
     git(projectRoot, ['init', '-q'])
     git(projectRoot, ['config', 'user.email', 'e2e@example.invalid'])
@@ -188,8 +189,8 @@ describe('footer branch status for a detached thread worktree', function () {
     resetUserData()
     // Reclaim the checkout *and* its worktree: e2e containers are reused, and a
     // worktree orphaned by deleting its repository outlives the spec otherwise.
-    if (worktreeRoot) rmSync(worktreeRoot, { recursive: true, force: true })
-    if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
+    if (worktreeRoot) removeE2eTree(worktreeRoot)
+    if (projectRoot) removeE2eTree(projectRoot)
   })
 
   it('switches threads without showing an unexpected-error toast', async () => {
@@ -411,7 +412,7 @@ describe('footer branch status for a detached thread worktree', function () {
     git(worktreeRoot, ['bisect', 'reset'])
     git(worktreeRoot, ['checkout', detachedBranch])
     const tip = git(worktreeRoot, ['rev-parse', 'HEAD'])
-    rmSync(worktreeRoot, { recursive: true, force: true })
+    removeE2eTree(worktreeRoot)
     git(projectRoot, ['worktree', 'prune', '--expire', 'now'])
     await $(`[data-thread-id="${detachedThreadId}"]`).click()
     const button = await $('.branch-reattach-button')

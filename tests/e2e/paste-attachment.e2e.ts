@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
@@ -8,6 +8,7 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { setComposerValue, composerText } from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-paste-attachment-project'
 const SCREENSHOT = 'paste-attachment-chip.png'
@@ -67,7 +68,7 @@ describe('Pasting text into the composer', () => {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(dirname(workspaceRoot), { recursive: true, force: true })
+    if (workspaceRoot) removeE2eTree(dirname(workspaceRoot))
   })
 
   it('keeps a short multi-line paste inline instead of folding it into a chip', async () => {

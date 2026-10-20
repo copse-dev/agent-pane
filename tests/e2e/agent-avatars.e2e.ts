@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { setComposerValue } from './helpers/composer.ts'
@@ -12,6 +12,7 @@ import {
   saveAppScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // Real Electron eval: the generated SVG must decode under the app's CSP, retain
 // its identity after the filesystem thread store reloads, and fit chat chrome.
@@ -193,7 +194,7 @@ describe('riso avatars in agent chat', () => {
 
   after(() => {
     resetUserData()
-    rmSync(framesDir, { recursive: true, force: true })
+    removeE2eTree(framesDir)
   })
 
   it('uses distinct styles only at remote and named-agent boundaries', async () => {

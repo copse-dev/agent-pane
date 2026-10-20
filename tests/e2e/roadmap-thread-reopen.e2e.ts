@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -7,6 +7,7 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 import { pinRoadmapDisplayTimestamp } from './helpers/roadmap-capture.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROMPT = 'Ship the roadmap reopen feature'
 
@@ -26,7 +27,7 @@ describe('roadmap start-thread tracking and reopen', () => {
 
   after(() => {
     resetUserData()
-    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
+    removeE2eTree(dirname(workspaceRoot))
   })
 
   it('tracks the started thread on the item and reopens it later', async () => {

@@ -1,9 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // Exercises the Cmd/Ctrl+P quick-open palette end to end: open it, type a query,
 // see the matching file(s) from the workspace index, and choose one — which
@@ -26,7 +27,7 @@ describe('file search palette (Cmd/Ctrl+P quick open)', () => {
 
   after(() => {
     resetUserData()
-    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
+    removeE2eTree(dirname(workspaceRoot))
   })
 
   it('opens on Cmd/Ctrl+P, lists matches while typing, and opens the chosen file', async () => {

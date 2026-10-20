@@ -1,11 +1,12 @@
 import type { Message } from '../../src/shared/types/index.ts'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { e2eWorkspaceDir, resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { TOOL_RESULT_UNAVAILABLE } from '../../src/shared/threads/fold.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-tool-blob-integrity-project'
 const THREAD_ID = 'e2e-tool-blob-integrity-thread'
@@ -42,7 +43,7 @@ function damageLikeLegacyIdReuse(): void {
       .replace(`blobs/${FIRST_MESSAGE_ID}.tool-0.result.txt`, legacyRef)
       .replace(`blobs/${SECOND_MESSAGE_ID}.tool-0.result.txt`, legacyRef),
   )
-  rmSync(join(dir, 'blobs'), { recursive: true, force: true })
+  removeE2eTree(join(dir, 'blobs'))
   mkdirSync(join(dir, 'blobs'))
   writeFileSync(join(dir, legacyRef), 'export const second = 2\n')
 }

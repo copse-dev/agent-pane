@@ -1,9 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { join } from 'node:path'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('titlebar panel icons', () => {
   let workspaceParent: string
@@ -23,7 +24,7 @@ describe('titlebar panel icons', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceParent, { recursive: true, force: true })
+    removeE2eTree(workspaceParent)
   })
 
   it('shows consistent outline icons on the panel controls', async () => {

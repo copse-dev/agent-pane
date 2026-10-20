@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser } from '@wdio/globals'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT = 'e2e-native-legacy-provenance'
 
@@ -79,7 +80,7 @@ describe('native legacy PR lookup', function () {
   after(() => {
     writeE2eEnv({})
     resetUserData()
-    if (root) rmSync(root, { recursive: true, force: true })
+    if (root) removeE2eTree(root)
   })
 
   it('completes an offscreen legacy lookup while the Electron renderer keeps drawing', async () => {

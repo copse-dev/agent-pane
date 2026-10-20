@@ -21,6 +21,7 @@ import {
 } from './src/shared/lm-studio-defaults.ts'
 import { parseAcpModelSelection } from './src/shared/acp.ts'
 import { KNOWN_ACP_AGENTS, canonicalAcpAgentId } from './src/shared/acp-known-agents.ts'
+import { removeE2eTree } from './tests/e2e/helpers/remove-tree.ts'
 
 const EVAL_ENV_FILE = join(process.cwd(), 'tests/e2e/electron-shell/.eval-env.json')
 const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.example.json')
@@ -56,11 +57,11 @@ let cleanupEvalProject: (() => void) | null = null
 function cleanupEvalRunDirs(): void {
   if (KEEP_EVAL_WDIO) return
   if (evalUserDataDir) {
-    rmSync(evalUserDataDir, { recursive: true, force: true })
+    removeE2eTree(evalUserDataDir)
     evalUserDataDir = null
   }
   if (evalChromeProfileDir) {
-    rmSync(evalChromeProfileDir, { recursive: true, force: true })
+    removeE2eTree(evalChromeProfileDir)
     evalChromeProfileDir = null
   }
 }

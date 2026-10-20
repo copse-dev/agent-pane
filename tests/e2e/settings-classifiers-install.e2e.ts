@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
@@ -7,6 +7,7 @@ import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { FAKE_WINNOW_PIN, writeFakeClassifierTools } from '../helpers/fake-classifier-tools.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 /**
  * "Download and run" in the real app: real IPC, the real manager, the real
@@ -58,7 +59,7 @@ describe('Download and run a local classifier', function () {
 
   before(() => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    rmSync(CACHE, { recursive: true, force: true })
+    removeE2eTree(CACHE)
     writeFakeClassifierTools(BIN)
     writeFileSync(LOG, '')
   })
@@ -71,8 +72,8 @@ describe('Download and run a local classifier', function () {
       else process.env[key] = original
     }
     resetUserData()
-    rmSync(CACHE, { recursive: true, force: true })
-    rmSync(WORK, { recursive: true, force: true })
+    removeE2eTree(CACHE)
+    removeE2eTree(WORK)
   })
 
   async function open(env: Record<string, string | undefined>): Promise<void> {
@@ -258,7 +259,7 @@ describe('Download and run a local classifier', function () {
 
   for (const failure of failures) {
     it(`shows ${failure.name} on the row and offers to try again`, async () => {
-      rmSync(CACHE, { recursive: true, force: true })
+      removeE2eTree(CACHE)
       await open(failure.env)
       await downloadAndConfirm()
       const row = $('[data-local-id="winnow"]')

@@ -1,9 +1,10 @@
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig, writeSettings } from './helpers/seed-config.ts'
 import { prepareE2eScreenshot, savePreparedAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const activeProject = 'e2e-activity-open'
 const unopenedProject = 'e2e-activity-unopened'
@@ -78,7 +79,7 @@ describe('unopened-project metadata redraws Activity at startup', () => {
 
   after(() => {
     resetUserData()
-    if (root) rmSync(root, { recursive: true, force: true })
+    if (root) removeE2eTree(root)
   })
 
   for (const width of [800, 1600]) {

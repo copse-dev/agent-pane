@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -10,6 +10,7 @@ import {
 } from '../../src/main/services/storage/knowledge-store.ts'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('memory recall metadata', () => {
   let result: string
@@ -65,7 +66,7 @@ describe('memory recall metadata', () => {
       assert.match(result, /Next cursor: m:1/)
     } finally {
       setKnowledgeRootForTest(null)
-      rmSync(root, { recursive: true, force: true })
+      removeE2eTree(root)
     }
     resetUserData()
     const projectId = 'memory-visual-project'

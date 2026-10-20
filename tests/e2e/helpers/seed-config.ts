@@ -35,6 +35,7 @@ import { copseDataRoot, copseUserDataDir } from '../../../src/main/services/stor
 import { ACP_CANCELLED_TOOL_CALL_RESULT } from '../../../src/main/services/acp/acp-turn-recovery.ts'
 import { isMandatoryWriteDenyMountPath } from '../../../src/main/project-sandbox/mandatory-write-deny.ts'
 import { EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS } from '../../../packages/agent/src/plugins/first-party-plugins.ts'
+import { removeE2eTree } from './remove-tree.ts'
 
 const USER_DATA = copseUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
@@ -130,7 +131,7 @@ export function seedAgentPlugin(
 
 /** Clear the discovery root so one spec's fixtures cannot leak into another. */
 export function resetAgentPlugins(): void {
-  rmSync(e2ePluginsDir(), { recursive: true, force: true })
+  removeE2eTree(e2ePluginsDir())
 }
 
 // Fixtures embed loose thread JSON where messages/tool-calls may omit fields the
@@ -188,7 +189,7 @@ function seedThreadDir(projectId: string, thread: unknown): void {
   const messageValues: unknown[] = Array.isArray(messages) ? messages : []
   const normalized = messageValues.map(normalizeMessage)
   const dir = join(e2eWorkspaceDir(), projectId, thread['id'])
-  rmSync(dir, { recursive: true, force: true })
+  removeE2eTree(dir)
   mkdirSync(dir, { recursive: true })
   const { spine, files } = explodeThread(normalized, sha256)
   for (const file of files) {
@@ -268,7 +269,7 @@ export function resetUserData(): void {
   rmSync(PENDING_SETTINGS_PATH, { force: true })
   rmSync(CONFIG_PATH, { force: true })
   rmSync(SETTINGS_PATH, { force: true })
-  rmSync(USAGE_EVENTS_PATH, { force: true, recursive: true })
+  removeE2eTree(USAGE_EVENTS_PATH)
   writeSettings({})
 }
 
@@ -347,11 +348,19 @@ export function readSeededSettings(): Record<string, unknown> {
  * the concise view passes `conciseThreadsEnabled: true`. Every seeded profile is
  * an existing user, so the shipped announcements' modal is acknowledged to keep
  * it off screens that are about something else.
+ *
+ * Auto-archive is off (`0`, the user's own "disable" choice in Settings →
+ * Storage). Fixture threads carry fixed timestamps, so under the three-day
+ * default whether a seeded thread shows the "Finished with this thread?" review
+ * would depend on the wall clock on the day the suite runs, not on the fixture.
+ * A spec exercising archival passes `autoArchiveAfterDays: undefined` to get the
+ * product default, or an explicit delay.
  */
 export const E2E_SETTINGS_BASELINE = {
   conciseThreadsEnabled: false,
   conciseThreadsDefaultMigrated: true,
   acknowledgedProductAnnouncements: PRODUCT_ANNOUNCEMENTS.map((entry) => entry.id),
+  autoArchiveAfterDays: 0,
 } as const
 
 export function writeSettings(settings: Record<string, unknown>): void {
@@ -415,7 +424,7 @@ const E2E_WORKSPACE_COMMIT_DATE = '2026-01-01T00:00:00Z'
 
 export function seedStableWorkspace(options: { files?: Record<string, string> } = {}): string {
   const root = E2E_WORKSPACE_ROOT
-  rmSync(root, { recursive: true, force: true })
+  removeE2eTree(root)
   mkdirSync(root, { recursive: true })
   for (const [relative, content] of Object.entries({ ...E2E_WORKSPACE_FILES, ...options.files })) {
     const target = join(root, relative)
@@ -863,7 +872,7 @@ export function seedRoadmapNotes(
 ): string {
   const knowledgeDir = join(copseDataRoot(), 'knowledge', projectId)
   const roadmapDir = join(knowledgeDir, 'roadmap')
-  rmSync(knowledgeDir, { recursive: true, force: true })
+  removeE2eTree(knowledgeDir)
   mkdirSync(roadmapDir, { recursive: true })
   // Fixed, not `new Date()`: the pane prints "Updated <date>", so a live clock
   // changed the reference shot every day.
@@ -907,7 +916,7 @@ export function seedMemoryNotes(
 ): string {
   const knowledgeDir = join(copseDataRoot(), 'knowledge', projectId)
   const memoryDir = join(knowledgeDir, 'memory')
-  rmSync(knowledgeDir, { recursive: true, force: true })
+  removeE2eTree(knowledgeDir)
   mkdirSync(memoryDir, { recursive: true })
   const iso = '2026-10-01T12:00:00.000Z'
   for (const note of notes) {
@@ -2477,7 +2486,7 @@ export function seedHookCardsFixture(
   }
 
   const dir = join(e2eWorkspaceDir(), projectId, threadId)
-  rmSync(dir, { recursive: true, force: true })
+  removeE2eTree(dir)
   mkdirSync(dir, { recursive: true })
   for (const file of [...files, ...blobs]) {
     const full = join(dir, file.ref)
@@ -3822,7 +3831,7 @@ export function cleanupGitChangesFixture(repoRoot: string): void {
     resetGitChangesFixtureState()
     return
   }
-  rmSync(repoRoot, { recursive: true, force: true })
+  removeE2eTree(repoRoot)
 }
 
 const COMPOSER_DIRTY_WARNING_FIXTURE_ROOT = join(
@@ -5758,7 +5767,7 @@ export function seedForkResendFixture(workspaceRoot: string): {
   const threadId = 'e2e-fork-resend-thread'
   const title = 'Fork and resend'
   const now = Date.now()
-  rmSync(join(e2eWorkspaceDir(), projectId), { recursive: true, force: true })
+  removeE2eTree(join(e2eWorkspaceDir(), projectId))
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],

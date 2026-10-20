@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync, existsSync, readFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -7,6 +7,7 @@ import { resetUserData, writeSeedConfig, writeSettings } from './helpers/seed-co
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { e2eWorkspaceDir } from './helpers/seed-config.ts'
 import type { Thread, ThreadChangeSummary } from '../../src/shared/types/index.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const projectId = 'e2e-changes-project'
 const threadId = 'e2e-changes-thread'
@@ -45,7 +46,7 @@ describe('native sidebar thread changes', () => {
     if (!managedRoot) throw new Error('Missing isolated e2e worktrees root')
     isolatedRoot = join(managedRoot, projectId, isolatedId)
     retiredRoot = join(managedRoot, projectId, retiredId)
-    rmSync(join(managedRoot, projectId), { recursive: true, force: true })
+    removeE2eTree(join(managedRoot, projectId))
     mkdirSync(join(managedRoot, projectId), { recursive: true })
     git('worktree', 'add', '-q', '-b', 'changes-isolated', isolatedRoot)
     git('worktree', 'add', '-q', '-b', 'changes-retired', retiredRoot)
@@ -138,7 +139,7 @@ describe('native sidebar thread changes', () => {
     resetUserData()
     if (root) {
       git('worktree', 'remove', '--force', isolatedRoot)
-      rmSync(fixtureDir, { recursive: true, force: true })
+      removeE2eTree(fixtureDir)
     }
   })
 

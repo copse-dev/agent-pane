@@ -1,5 +1,5 @@
 import { $, $$, browser, expect } from '@wdio/globals'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -11,6 +11,7 @@ import {
 import { waitForAgentIdle } from './helpers.ts'
 import { completeMockTurn } from './helpers/follow-up-suggestions.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('follow-up suggestion bubbles', () => {
   describe('mock demo (Debug CI + Compare models + Continue Plan)', () => {
@@ -30,7 +31,7 @@ describe('follow-up suggestion bubbles', () => {
 
     after(() => {
       resetUserData()
-      if (workspace) rmSync(workspace, { recursive: true, force: true })
+      if (workspace) removeE2eTree(workspace)
     })
 
     it('shows demo bubbles after a turn completes', async () => {

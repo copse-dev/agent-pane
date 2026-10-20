@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
+import { removeE2eTree } from './remove-tree.ts'
 
 const promptAttachmentSchema = z.object({
   path: z.string(),
@@ -174,7 +175,7 @@ export function createEvalProject(scenario: EvalScenario): {
     root,
     cleanup: (): void => {
       if (process.env['COPSE_EVAL_KEEP_WORKSPACE'] === '1') return
-      rmSync(root, { recursive: true, force: true })
+      removeE2eTree(root)
     },
   }
 }

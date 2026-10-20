@@ -5,7 +5,7 @@ import {
   prepareMockTurn,
   prepareMockToolTurn,
 } from './helpers/mock-scenario.ts'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
@@ -13,6 +13,7 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-guarded-yolo-project'
 let workspaceRoot = ''
@@ -69,7 +70,7 @@ describe('Guarded YOLO shell mode', function () {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
+    if (workspaceRoot) removeE2eTree(workspaceRoot)
   })
 
   it('requires explicit opt-in and stays active for the thread across turns', async () => {

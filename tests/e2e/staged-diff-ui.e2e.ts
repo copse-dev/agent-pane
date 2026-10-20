@@ -1,5 +1,5 @@
 import { findAsync } from './helpers/find-async.ts'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -9,6 +9,7 @@ import { setComposerValue } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-staged-diff-project'
 // Without git, file writes take the supported proposed-diff path. Keep this
@@ -54,7 +55,7 @@ describe('staged diff approval UI', () => {
   })
 
   after(() => {
-    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
+    if (workspaceRoot) removeE2eTree(workspaceRoot)
     resetUserData()
   })
 
