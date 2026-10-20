@@ -1,3 +1,4 @@
+import { emptyContainerStorage } from '@shared/types/storage-cleanup.ts'
 import '../../../tests/setup-dom.ts'
 import assert from 'node:assert/strict'
 import { beforeEach, test } from 'node:test'
@@ -20,6 +21,7 @@ beforeEach(() => {
 })
 function state(busy = false): StorageMaintenanceState {
   return {
+    containers: emptyContainerStorage(),
     retention: { enabled: true, days: 30 },
     areas: [
       { area: 'runs', bytes: 1024, entries: 1, busy },
@@ -96,4 +98,65 @@ test('busy categories are disabled; retention persists independently of the sett
   input.dispatchEvent(new Event('change'))
   await settle()
   assert.deepEqual(policies, [{ enabled: false, days: 30 }])
+})
+
+test('Apple storage shows all categories and image names as text; shared cleanup requires confirmation', async () => {
+  const base = createFakeApi()
+  const calls: string[] = []
+  const next = state()
+  next.containers = {
+    ...emptyContainerStorage(),
+    available: true,
+    builderRunning: true,
+    totalBytes: 70 * 1024 ** 3,
+    snapshotsBytes: 53 * 1024 ** 3,
+    containersBytes: 15 * 1024 ** 3,
+    blobsBytes: 1024 ** 3,
+    volumesBytes: 100,
+    snapshotCount: 22,
+    unmatchedSnapshots: 15,
+    images: [
+      {
+        name: '<img src=x onerror=alert(1)>',
+        bytes: 598000000,
+        snapshotBytes: 3 * 1024 ** 3,
+        eligible: true,
+      },
+    ],
+  }
+  const panel = createStorageMaintenancePanel({
+    ...base,
+    storage: {
+      ...base.storage,
+      maintenance: async () => next,
+      containerCleanup: async (action) => {
+        calls.push(action)
+        return { removed: 1, bytes: 0, skipped: 0 }
+      },
+    },
+  })
+  document.body.append(panel.element)
+  await panel.refresh()
+  assert.match(
+    panel.element.querySelector('#storage-container-breakdown')?.textContent ?? '',
+    /22; 15 not matched to listed images/,
+  )
+  assert.equal(panel.element.querySelectorAll('#storage-container-breakdown dt').length, 9)
+  assert.equal(panel.element.querySelector('#storage-container-images img'), null)
+  assert.match(
+    panel.element.querySelector('#storage-container-images')?.textContent ?? '',
+    /<img src=x/,
+  )
+  const button = panel.element.querySelector<HTMLButtonElement>('#storage-apple-images-clean')
+  assert.ok(button)
+  button.click()
+  await settle()
+  assert.deepEqual(calls, [])
+  assert.match(document.querySelector('#confirm-dialog')?.textContent ?? '', /other applications/)
+  clickActiveConfirmDialogConfirm()
+  await settle()
+  assert.deepEqual(calls, ['apple-images'])
+  next.containers.busy = true
+  await panel.refresh()
+  assert.equal(button.disabled, true)
 })
