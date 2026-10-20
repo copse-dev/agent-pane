@@ -5,7 +5,11 @@ import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fetchThroughScratchRepository, isNetworkRemoteUrl } from './default-branch-fetch.ts'
+import {
+  fetchThroughScratchRepository,
+  isNetworkRemoteUrl,
+  originBranchRef,
+} from './default-branch-fetch.ts'
 import { runWorktreeGit } from './worktree-manager.ts'
 
 function git(cwd: string, args: string[]): string {
@@ -94,7 +98,7 @@ describe('fetchThroughScratchRepository', () => {
     const result = await fetchThroughScratchRepository({
       projectRoot: project,
       url: remote,
-      branch: 'main',
+      refs: [originBranchRef('main')],
       scratch,
       projectGit: runWorktreeGit,
     })
@@ -114,7 +118,7 @@ describe('fetchThroughScratchRepository', () => {
     const result = await fetchThroughScratchRepository({
       projectRoot: project,
       url: remote,
-      branch: 'main',
+      refs: [originBranchRef('main')],
       scratch: join(temp, 'scratch.git'),
       projectGit: runWorktreeGit,
     })
@@ -131,7 +135,7 @@ describe('fetchThroughScratchRepository', () => {
     const result = await fetchThroughScratchRepository({
       projectRoot: project,
       url: join(temp, 'missing.git'),
-      branch: 'main',
+      refs: [originBranchRef('main')],
       scratch,
       projectGit: runWorktreeGit,
     })
@@ -160,7 +164,7 @@ describe('fetchThroughScratchRepository', () => {
       const result = await fetchThroughScratchRepository({
         projectRoot: project,
         url,
-        branch: 'main',
+        refs: [originBranchRef('main')],
         scratch,
         projectGit: runWorktreeGit,
       })
