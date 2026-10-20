@@ -32,7 +32,7 @@ describe('new-thread project selection', () => {
     // go through the product UI. The browser demo supplies the model response.
     await browser.execute(() => {
       const run = window.api.agent.run
-      window.api.agent.run = (projectId, threadId, payload) => {
+      window.api.agent.run = (projectId, threadId, payload): ReturnType<typeof run> => {
         document.documentElement.dataset['submittedProject'] = projectId
         document.documentElement.dataset['submittedThread'] = threadId
         return run(projectId, threadId, payload)

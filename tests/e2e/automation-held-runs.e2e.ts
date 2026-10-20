@@ -144,7 +144,11 @@ describe('held automation worktrees in the sidebar', function () {
       for (let resize = 0; resize < 5; resize++) {
         window.dispatchEvent(new Event('resize'))
         for (let frame = 0; frame < 4; frame++) {
-          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => {
+              resolve()
+            })
+          })
         }
         const titlebar = document.getElementById('titlebar')
         if (titlebar) {
