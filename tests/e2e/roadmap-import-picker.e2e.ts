@@ -5,7 +5,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import {
+  readSeededSettings,
+  resetUserData,
+  seedEmptyProject,
+  writeSettings,
+} from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 async function assertPickerFits(): Promise<void> {
@@ -56,6 +61,8 @@ describe('roadmap import picker', () => {
       model: 'claude-sonnet-4-6',
       roadmapPlansEnabled: true,
     })
+    // Import uses mock GitHub data, never the deliberately fake upstream.
+    writeSettings({ ...readSeededSettings(), backgroundDefaultBranchFetch: false })
     await browser.reloadSession()
   })
 
@@ -128,6 +135,8 @@ describe('roadmap import picker', () => {
       model: 'claude-sonnet-4-6',
       roadmapPlansEnabled: true,
     })
+    // resetUserData also removed the first case's fake-upstream fetch opt-out.
+    writeSettings({ ...readSeededSettings(), backgroundDefaultBranchFetch: false })
     await browser.reloadSession()
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })

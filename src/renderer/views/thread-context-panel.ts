@@ -21,13 +21,19 @@ import {
   restoreThread,
   switchThread,
 } from '@shared/store/thread-helpers.ts'
-import { openBrowserUrl, openPullRequest, toggleFilesPane } from '../controller/panels.ts'
+import {
+  openBrowserUrl,
+  openPullRequest,
+  openRightPanel,
+  toggleFilesPane,
+} from '../controller/panels.ts'
 import { startSideChat } from '../controller/side-chat.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { openActivityPanel } from './activity-panel.ts'
 import type { AskUserRequests } from './ask-user-dialog.ts'
 import { deriveThreadContext, type ThreadContextModel } from './thread-context-model.ts'
+import { mountReviewerInput } from './reviewer-input.ts'
 import { showErrorToast } from './toast.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
 
@@ -42,9 +48,17 @@ export interface ThreadContextHandlers {
   startSideChat: () => void
   archiveSideChat: (threadId: string) => void
   restoreSideChat: (threadId: string) => void
+  jumpToReviewerInput: (messageId: string, requestId: string) => void
 }
 
-type ContextSection = 'requests' | 'repos' | 'side-chats' | 'links' | 'subagents' | 'sources'
+type ContextSection =
+  | 'requests'
+  | 'repos'
+  | 'side-chats'
+  | 'links'
+  | 'subagents'
+  | 'sources'
+  | 'resolved-questions'
 
 const SECTION_TITLES: Record<ContextSection, string> = {
   requests: 'Needs your input',
@@ -53,6 +67,7 @@ const SECTION_TITLES: Record<ContextSection, string> = {
   links: 'Links & references',
   subagents: 'Subagents',
   sources: 'Sources',
+  'resolved-questions': 'Resolved questions',
 }
 
 function section(kind: ContextSection, ...children: Array<Node | string>): HTMLElement {
@@ -293,6 +308,34 @@ function sourcesSection(model: ThreadContextModel, handlers: ThreadContextHandle
   )
 }
 
+function resolvedQuestionsSection(
+  model: ThreadContextModel,
+  handlers: ThreadContextHandlers,
+): HTMLElement | null {
+  if (model.resolvedQuestions.length === 0) return null
+  return section(
+    'resolved-questions',
+    ...model.resolvedQuestions.map(({ request, answer }) => {
+      const jump = el(
+        'button',
+        { type: 'button', class: 'reviewer-input-origin' },
+        'Show in conversation',
+      )
+      jump.addEventListener('click', () => {
+        handlers.jumpToReviewerInput(request.messageId, request.id)
+      })
+      return el(
+        'details',
+        { class: 'thread-context-question', 'data-reviewer-input-id': request.id },
+        el('summary', {}, request.question),
+        el('p', { class: 'reviewer-input-context' }, request.context),
+        el('p', { class: 'reviewer-input-answer' }, `Your answer: ${answer.text}`),
+        jump,
+      )
+    }),
+  )
+}
+
 /** Pure render of one thread's context. */
 export function renderThreadContext(
   model: ThreadContextModel,
@@ -326,8 +369,10 @@ export function renderThreadContext(
       ),
     )
   }
+  const resolvedQuestions = resolvedQuestionsSection(model, handlers)
   host.append(
     subagentsSection(model),
+    ...(resolvedQuestions ? [resolvedQuestions] : []),
     reposSection(model),
     linksSection(model, handlers),
     sourcesSection(model, handlers),
@@ -349,6 +394,7 @@ export function mountThreadContextPane(
   api: ApiClient,
   liveQuestions?: AskUserRequests,
 ): () => void {
+  const reviewerInput = mountReviewerInput(store, api)
   const close = el(
     'button',
     { type: 'button', class: 'thread-context-close', 'aria-label': 'Close context' },
@@ -766,6 +812,9 @@ export function mountThreadContextPane(
     restoreSideChat: (threadId) => {
       restoreThread(store, threadId)
     },
+    jumpToReviewerInput: (messageId, requestId) => {
+      store.emit('reviewer_input_jump', messageId, requestId)
+    },
   }
 
   function render(): void {
@@ -809,6 +858,7 @@ export function mountThreadContextPane(
     renderedKey = key
     clear(viewerRoot)
     const content = renderThreadContext(model, handlers)
+    reviewerInput.sync()
     const requestRows: HTMLElement[] = agentQuestions.map((request) => {
       const button = rowButton(
         { 'data-agent-question-id': request.id },
@@ -826,27 +876,6 @@ export function mountThreadContextPane(
       button.addEventListener('click', openActivityPanel)
       return button
     })
-    requestRows.push(
-      ...questions.map((request) => {
-        const button = rowButton(
-          { 'data-reviewer-input-id': request.id },
-          el(
-            'span',
-            { class: 'thread-context-main' },
-            el(
-              'span',
-              { class: 'thread-context-title', title: request.question },
-              request.question,
-            ),
-            el('span', { class: 'thread-context-sub' }, 'Question · Open to answer'),
-          ),
-        )
-        button.addEventListener('click', () => {
-          store.emit('reviewer_input_open', request.id)
-        })
-        return button
-      }),
-    )
     requestRows.push(
       ...pending.map((request) =>
         el(
@@ -867,15 +896,20 @@ export function mountThreadContextPane(
     )
     const requestSection = section(
       'requests',
-      requestRows.length
-        ? el('div', { class: 'thread-context-rows' }, ...requestRows)
-        : emptyNote(
-            approvalsError && approvalsLoaded
-              ? 'Approval requests unavailable.'
-              : approvalsLoaded
-                ? 'Nothing waiting.'
-                : 'Checking requests…',
-          ),
+      ...(questions.length > 0 ? [reviewerInput.toggle, reviewerInput.panel] : []),
+      ...(requestRows.length > 0
+        ? [el('div', { class: 'thread-context-rows' }, ...requestRows)]
+        : questions.length > 0
+          ? []
+          : [
+              emptyNote(
+                approvalsError && approvalsLoaded
+                  ? 'Approval requests unavailable.'
+                  : approvalsLoaded
+                    ? 'Nothing waiting.'
+                    : 'Checking requests…',
+              ),
+            ]),
     )
     content.querySelector('[data-context-section="subagents"]')?.before(requestSection)
     const archive = el(
@@ -977,6 +1011,16 @@ export function mountThreadContextPane(
   }
 
   const offs = [
+    store.on('reviewer_input_open', (requestId) => {
+      openRightPanel(store, 'context')
+      reviewerInput.open(requestId)
+    }),
+    store.on('tool_call_started', () => {
+      if (contextModeActive(store)) reviewerInput.sync()
+    }),
+    store.on('tool_call_updated', () => {
+      if (contextModeActive(store)) reviewerInput.sync()
+    }),
     ...(liveQuestions
       ? [
           liveQuestions.onChange(() => {

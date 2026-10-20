@@ -15,7 +15,7 @@ function answerText(choice: string, detail: string): string {
   return [choice, detail.trim()].filter(Boolean).join(' — ')
 }
 
-/** Compact list of saved agent questions beside the transcript. */
+/** Compact list of pending agent questions in the thread Context pane. */
 export function mountReviewerInput(
   store: AppStore,
   api: ApiClient,
@@ -176,13 +176,12 @@ export function mountReviewerInput(
     })
     if (nextSignature === signature) return
     signature = nextSignature
-    toggle.hidden = requests.length === 0
+    toggle.hidden = pending.length === 0
     toggle.textContent = `${String(pending.length)} ${pending.length === 1 ? 'question' : 'questions'}`
-    toggle.setAttribute('aria-expanded', String(requests.length > 0 && !panel.hidden))
-    panel.hidden = !thread || requests.length === 0 || closedThreads.has(thread.id)
+    panel.hidden = !thread || pending.length === 0 || closedThreads.has(thread.id)
     toggle.setAttribute('aria-expanded', String(!panel.hidden))
     items.replaceChildren(
-      ...(thread ? requests.map((request) => renderRow(request, thread.id)) : []),
+      ...(thread ? pending.map((request) => renderRow(request, thread.id)) : []),
     )
   }
 
