@@ -126,7 +126,7 @@ async function readExternalTool(
   const workerPath = dependencies.workerPath()
   const worker = fsWorkerOneShotSandboxOverlay(root, workerPath, 'read')
   const grant = readAllowedSandboxOverlay(root, [canonical])
-  if (!worker.filesystem || !grant.filesystem)
+  if (!worker.filesystem || !grant.filesystem || !grant.network)
     throw new Error('Missing read sandbox configuration.')
   const request = externalReadRequestSchema.parse({
     op: 'externalRead',
@@ -136,7 +136,7 @@ async function readExternalTool(
   })
   const result = await dependencies.run(process.execPath, [workerPath], {
     cwd: root,
-    signal,
+    ...(signal ? { signal } : {}),
     requireSandbox: true,
     timeout_ms: 10_000,
     env: {
