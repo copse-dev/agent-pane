@@ -9,6 +9,8 @@ import {
   type AutomationControllerApi,
 } from './automations.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { addMessage, getThreadById, setThreadStatus } from '@shared/store/thread-helpers.ts'
+import { startHumanTurnTree } from './message-queue.ts'
 
 function tick(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0))
@@ -83,6 +85,7 @@ function controllerApi(loaded: Thread[]): {
       },
     },
     threads: {
+      loadMessages: () => Promise.resolve([]),
       loadProject: () => Promise.resolve(loaded),
     },
   }
@@ -252,6 +255,7 @@ test('a checkout failure preserves the scheduled prompt as a draft', async (cont
       reportStartFailure: () => Promise.resolve(true),
     },
     threads: {
+      loadMessages: () => Promise.resolve([]),
       loadProject: () => Promise.resolve([]),
     },
   }
@@ -309,7 +313,7 @@ test('the IPC wrapper is stripped from the failure note', async (context) => {
       canStart: () => Promise.resolve({ allowed: true }),
       reportStartFailure: () => Promise.resolve(true),
     },
-    threads: { loadProject: () => Promise.resolve([]) },
+    threads: { loadProject: () => Promise.resolve([]), loadMessages: () => Promise.resolve([]) },
   }
   const detach = attachAutomationController(store, api)
 
@@ -347,7 +351,7 @@ test('a checkout failure is recorded on the run and reported to main as a worktr
         return Promise.resolve(true)
       },
     },
-    threads: { loadProject: () => Promise.resolve([]) },
+    threads: { loadProject: () => Promise.resolve([]), loadMessages: () => Promise.resolve([]) },
   }
   const detach = attachAutomationController(store, api)
   await tick()
@@ -423,6 +427,7 @@ test('a run whose start failed is not started again when the workspace reloads',
       reportStartFailure: () => Promise.resolve(true),
     },
     threads: {
+      loadMessages: () => Promise.resolve([]),
       loadProject: () => Promise.resolve([]),
     },
   }
@@ -437,3 +442,159 @@ test('a run whose start failed is not started again when the workspace reloads',
   assert.equal(store.getState().threads[0]?.draftPrompt, 'Review CI and report any failures.')
   detach()
 })
+
+test('a main-owned turn opened mid-run refreshes its final transcript without redispatch', async () => {
+  const created = automationThread()
+  created.draftPrompt = 'Followup draft'
+  created.status = 'running'
+  const store = createStore({
+    activeProjectId: 'project-a',
+    activeThreadId: created.id,
+    threads: [created],
+  })
+  const settled: Thread = { ...created, status: 'idle', draftPrompt: '' }
+  const { api, emitTrigger, runs } = controllerApi([settled])
+  const messages: Thread['messages'] = [
+    {
+      id: 'headless-answer',
+      role: 'assistant',
+      content: 'Review complete.',
+      toolCalls: [],
+      createdAt: 200,
+    },
+  ]
+  api.threads.loadMessages = (): Promise<Thread['messages']> => Promise.resolve(messages)
+  const dispose = attachAutomationController(store, api)
+  emitTrigger({
+    projectId: 'project-a',
+    scheduleId: 'schedule-ci',
+    threadId: created.id,
+    triggeredAt: 100,
+    disposition: 'started',
+    headlessSettled: true,
+  })
+  await tick()
+  assert.equal(store.getState().threads[0]?.status, 'idle')
+  assert.deepEqual(store.getState().threads[0]?.messages, messages)
+  assert.equal(store.getState().threads[0]?.messagesLoaded, true)
+  assert.equal(store.getState().threads[0]?.draftPrompt, 'Followup draft')
+  assert.equal(runs.length, 0)
+  dispose()
+})
+
+test('a settled-headless read cannot overwrite the project selected during its fetch', async () => {
+  const created = automationThread()
+  created.draftPrompt = ''
+  created.status = 'running'
+  const store = createStore({ activeProjectId: 'project-a', threads: [created] })
+  const { api, emitTrigger } = controllerApi([{ ...created, status: 'idle' }])
+  let finish: (messages: Thread['messages']) => void = () => {}
+  api.threads.loadMessages = (): Promise<Thread['messages']> =>
+    new Promise((resolve) => {
+      finish = resolve
+    })
+  const dispose = attachAutomationController(store, api)
+  emitTrigger({
+    projectId: 'project-a',
+    scheduleId: 'schedule-ci',
+    threadId: created.id,
+    triggeredAt: 100,
+    disposition: 'started',
+    headlessSettled: true,
+  })
+  await tick()
+  const other = { ...created, id: 'other-thread' }
+  store.setState({ activeProjectId: 'project-b', threads: [other] })
+  finish([])
+  await tick()
+  assert.deepEqual(store.getState().threads, [other])
+  dispose()
+})
+
+test('a settled-headless read cannot replace a newer interactive turn', async () => {
+  const created = automationThread()
+  created.draftPrompt = ''
+  created.status = 'running'
+  const store = createStore({ activeProjectId: 'project-a', threads: [created] })
+  const { api, emitTrigger } = controllerApi([{ ...created, status: 'idle' }])
+  let finish: (messages: Thread['messages']) => void = () => {}
+  api.threads.loadMessages = (): Promise<Thread['messages']> =>
+    new Promise((resolve) => {
+      finish = resolve
+    })
+  const dispose = attachAutomationController(store, api)
+  emitTrigger({
+    projectId: 'project-a',
+    scheduleId: 'schedule-ci',
+    threadId: created.id,
+    triggeredAt: 100,
+    disposition: 'started',
+    headlessSettled: true,
+  })
+  await tick()
+  const next: Thread = {
+    ...created,
+    messages: [
+      {
+        id: 'next-user-turn',
+        role: 'user',
+        content: 'Next request',
+        toolCalls: [],
+        createdAt: 300,
+      },
+    ],
+  }
+  store.setState({ threads: [next] })
+  finish([])
+  await tick()
+  assert.deepEqual(store.getState().threads, [next])
+  dispose()
+})
+
+for (const phase of ['metadata', 'messages']) {
+  test(`a headless completion cannot stop a persisted newer turn during its ${phase} read`, async () => {
+    const created = automationThread()
+    created.status = 'running'
+    created.draftPrompt = ''
+    const settled: Thread = { ...created, status: 'idle' }
+    const store = createStore({ activeProjectId: 'project-a', threads: [created] })
+    const { api, emitTrigger, runs } = controllerApi([settled])
+    let finishMetadata: (threads: Thread[]) => void = () => {}
+    let finishMessages: (messages: Thread['messages']) => void = () => {}
+    if (phase === 'metadata') {
+      api.threads.loadProject = (): Promise<Thread[]> =>
+        new Promise((resolve) => {
+          finishMetadata = resolve
+        })
+    }
+    api.threads.loadMessages = (): Promise<Thread['messages']> =>
+      new Promise((resolve) => {
+        finishMessages = resolve
+      })
+    const dispose = attachAutomationController(store, api)
+    emitTrigger({
+      projectId: 'project-a',
+      scheduleId: 'schedule-ci',
+      threadId: created.id,
+      triggeredAt: 100,
+      disposition: 'started',
+      headlessSettled: true,
+    })
+    await tick()
+    // Reach the actual interactive entry points, then emulate their completed
+    // persistence: the late transcript read includes this new user's ID.
+    startHumanTurnTree(store, created.id)
+    addMessage(store, created.id, 'user', 'A newer request that is already on disk')
+    setThreadStatus(store, created.id, 'running')
+    const newer = getThreadById(store, created.id)
+    assert.ok(newer)
+    finishMetadata([settled])
+    await tick()
+    finishMessages(newer.messages)
+    await tick()
+    assert.equal(getThreadById(store, created.id), newer)
+    assert.equal(getThreadById(store, created.id)?.status, 'running')
+    assert.equal(runs.length, 0)
+    dispose()
+  })
+}

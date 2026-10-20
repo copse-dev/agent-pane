@@ -6,7 +6,14 @@ import {
   getGhPrViewText,
   getGhRunListText,
   getGhRunLogText,
+  runGh,
 } from '../services/github/gh-service.ts'
+import {
+  GH_API_READ_MAX_OUTPUT_BYTES,
+  GH_API_READ_MAX_PAGES,
+  parseGhApiReadArgs,
+  runGhApiRead,
+} from '../services/github/gh-api-read.ts'
 
 export const ghPrListTool = defineTool({
   name: 'gh_pr_list',
@@ -119,4 +126,44 @@ export const ghRunViewTool = defineTool({
   }),
   execute: async ({ run_id, failed_only }) =>
     getGhRunLogText({ runId: run_id, failedOnly: failed_only }),
+})
+
+export const ghApiReadTool = defineTool({
+  name: 'gh_api_read',
+  provenance: 'external',
+  description:
+    "Read any GitHub data the user's gh login can read, without a shell approval: a REST GET (endpoint) or a single GraphQL query (graphql + variables). " +
+    'Use this instead of run_shell + `gh api` / `gh api graphql`, which runs in the network-less sandbox and prompts. ' +
+    'Copse builds the gh command itself: GET only, queries only (no mutations or subscriptions), no headers, flags, hosts or full URLs. ' +
+    `Optional jq filters the response (env/$ENV are refused). Output is capped at ${String(GH_API_READ_MAX_OUTPUT_BYTES / 1024)} KiB; ` +
+    `paginate follows up to ${String(GH_API_READ_MAX_PAGES)} pages (GraphQL pagination needs \`$endCursor: String\` and \`pageInfo { hasNextPage endCursor }\`).`,
+  parameters: z.strictObject({
+    endpoint: z
+      .string()
+      .optional()
+      .describe(
+        'REST path relative to the API root, with an optional query string, e.g. "repos/{owner}/{repo}/rules/branches/main" or "search/issues?q=repo:o/r+is:open". {owner}/{repo}/{branch} resolve from the current repository.',
+      ),
+    graphql: z
+      .string()
+      .optional()
+      .describe('A GraphQL document with exactly one query operation (fragments allowed).'),
+    variables: z
+      .record(z.string(), z.json())
+      .optional()
+      .describe('GraphQL variables as a JSON object. GraphQL only.'),
+    jq: z.string().optional().describe('jq filter applied to each response page, as gh --jq.'),
+    paginate: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe(
+        `Follow pagination (REST Link headers or GraphQL pageInfo), up to ${String(GH_API_READ_MAX_PAGES)} pages.`,
+      ),
+  }),
+  execute: async (args, signal) => {
+    const input = parseGhApiReadArgs(args)
+    if (!input.ok) return `gh_api_read refused: ${input.error}`
+    return runGhApiRead(input.value, runGh, signal)
+  },
 })

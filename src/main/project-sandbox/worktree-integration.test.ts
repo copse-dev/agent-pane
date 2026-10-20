@@ -28,7 +28,7 @@ import {
   runWorktreeGit,
   validateThreadWorktree,
 } from '../services/worktree-manager.ts'
-import { fetchThroughScratchRepository } from '../services/default-branch-fetch.ts'
+import { fetchThroughScratchRepository, originBranchRef } from '../services/default-branch-fetch.ts'
 import { gitBackupSandboxOverlay, workspaceTmpDir } from './config.ts'
 
 interface CommandResult {
@@ -543,7 +543,7 @@ describe('linked-worktree sandbox integration', () => {
     const result = await fetchThroughScratchRepository({
       projectRoot: project,
       url: remote,
-      branch: 'main',
+      refs: [originBranchRef('main')],
       scratch,
       projectGit: runWorktreeGit,
     })
