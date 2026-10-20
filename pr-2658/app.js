@@ -62430,10 +62430,12 @@ var init_tool_display = __esm({
       git_diff: { running: "Viewing git diff", done: "Viewed git diff" },
       git_log: { running: "Viewing git log", done: "Viewed git log" },
       git_show: { running: "Viewing git commit", done: "Viewed git commit" },
+      git_fetch: { running: "Fetching from origin", done: "Fetched from origin" },
       gh_pr_list: { running: "Listing pull requests", done: "Listed pull requests" },
       gh_pr_view: { running: "Viewing pull request", done: "Viewed pull request" },
       gh_run_list: { running: "Listing CI runs", done: "Listed CI runs" },
       gh_run_view: { running: "Viewing CI run logs", done: "Viewed CI run logs" },
+      gh_api_read: { running: "Reading GitHub API", done: "Read GitHub API" },
       investigate_ci: { running: "Investigating CI", done: "Investigated CI" },
       delegate_step: { running: "Delegating step", done: "Delegated step" },
       task: { running: "Running agent", done: "Ran agent" },
@@ -62500,10 +62502,12 @@ var init_tool_display = __esm({
           "git_diff",
           "git_log",
           "git_show",
+          "git_fetch",
           "gh_pr_list",
           "gh_pr_view",
           "gh_run_list",
           "gh_run_view",
+          "gh_api_read",
           "get_ci_status",
           "wait_for_ci_checks",
           "get_ci_failure_logs"
@@ -75155,10 +75159,41 @@ Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause 
   }
   async function receiveTrigger(event) {
     if (store2.getState().activeProjectId !== event.projectId) return;
+    const observedEpoch = getThreadById(store2, event.threadId)?.currentEpoch;
     const loaded = await api2.threads.loadProject(event.projectId);
     if (store2.getState().activeProjectId !== event.projectId) return;
     const created = loaded.find((thread) => thread.id === event.threadId);
     if (!created) return;
+    if (event.headlessSettled) {
+      if (created.status === "running" || created.currentEpoch !== observedEpoch) return;
+      if (getThreadById(store2, event.threadId)?.currentEpoch !== observedEpoch) return;
+      const messages = await api2.threads.loadMessages(event.projectId, event.threadId);
+      if (store2.getState().activeProjectId !== event.projectId) return;
+      if (created.automation?.triggeredAt !== event.triggeredAt) return;
+      const current = getThreadById(store2, event.threadId);
+      if (current?.currentEpoch !== observedEpoch) return;
+      if (current && current.automation?.triggeredAt !== event.triggeredAt) return;
+      const persistedIds = new Set(messages.map((message2) => message2.id));
+      if (current?.messages.some(
+        (message2) => message2.role === "user" && !persistedIds.has(message2.id)
+      )) {
+        return;
+      }
+      store2.setState({
+        threads: sortThreadsNewestFirst([
+          {
+            ...created,
+            draftPrompt: current?.draftPrompt ?? created.draftPrompt ?? "",
+            messages,
+            messagesLoaded: true
+          },
+          ...store2.getState().threads.filter((thread) => thread.id !== created.id)
+        ])
+      });
+      store2.emit("thread_status_changed", created.id, created.status);
+      store2.emit("threads_changed");
+      return;
+    }
     if (!store2.getState().threads.some((thread) => thread.id === created.id)) {
       store2.setState({
         threads: sortThreadsNewestFirst([created, ...store2.getState().threads])
