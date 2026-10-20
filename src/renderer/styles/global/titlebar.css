@@ -56,6 +56,9 @@
      and banners too instead of just the draft. */
   flex-shrink: 0;
 }
+/* Keep empty space and workspace labels in the native titlebar region.
+   Only interactive controls below opt out, so the full bar supports window
+   dragging and the system's double-click titlebar action. */
 .titlebar {
   -webkit-app-region: drag;
   height: var(--titlebar-height);
@@ -71,7 +74,6 @@
   align-items: center;
   gap: var(--spacing-sm);
   flex-shrink: 0;
-  -webkit-app-region: no-drag;
 }
 .titlebar-sidebar-btn {
   display: inline-flex;
@@ -141,7 +143,6 @@
   align-items: center;
   gap: var(--spacing-sm);
   flex-shrink: 0;
-  -webkit-app-region: no-drag;
 }
 #titlebar .titlebar-panel-controls {
   flex: 1 1 0;
