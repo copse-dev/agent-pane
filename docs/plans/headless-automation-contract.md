@@ -39,6 +39,25 @@ Neither should independently define Copse's canonical turn lifecycle. This plan
 defines and ships **one versioned headless automation contract** that the CLI,
 ACP agent server, benchmark runner, CI, and future remote-agent adapters share.
 
+> **Proposed boundary revision (2026-10-16, draft — needs a decision).** For
+> _session and message_ semantics — prompt acceptance, message and tool upserts,
+> foreground state, cancellation, permission prompts, resume and replay — ACP v2
+> is the external reference, and this contract stops growing its own event
+> vocabulary. The contract narrows to what ACP deliberately leaves out:
+> submission dedupe, policy profile and unattended `ask` resolution (`deny` or
+> `defer`), budgets, writer ownership, delivery target, expected artifacts, and
+> the three-level outcome (accepted → foreground stopped → task terminal). The
+> thread store stays authoritative; ACP wire types never become storage types.
+> Evidence ([`acp-v2-execution-boundary.md`](acp-v2-execution-boundary.md), which
+> holds the ownership matrix and staged migration): an exploration carried a
+> realistic Copse turn through v2
+> and back with zero transcript loss (two `_meta["copse.dev"]` keys), while the
+> losses it found were all in Copse's adapters, including the event projection
+> below. A draft of the narrowed schema is 25 request / 28 outcome properties
+> with no overlap with ACP. The v1 event envelope stays frozen for its existing
+> consumers (`copse-review --events`, bench `.headless.jsonl`). See
+> [`../acp-v2-readiness.md`](../acp-v2-readiness.md#status-update-2026-10-16).
+
 ## The fragmentation this closes
 
 An audit of the existing non-UI turn-driving code (the `@copse/agent` loop, the
@@ -163,21 +182,30 @@ source of truth, so they must agree on what a consumer may send or expect:
 - [ ] **Phase 2 — spine projection.** Show the persisted `SpineMessageLine` /
       `SpineToolCall` shapes derive from (or validate against) the canonical event
       vocabulary, so the replayable artifact and the live stream share one model.
+      _Proposed revision:_ the spine is the source and every projection (ACP v1/v2,
+      the frozen v1 event envelope) is checked by a round trip back to it.
+      Prerequisite fix: `projectStreamChunk` drops `text_replace`, so the envelope
+      can keep text the loop later stripped.
 - [ ] **Phase 3 — ACP adapter conformance.** Route the ACP agent server's
       `session/new | resume | prompt | cancel | request_permission` through the
       contract's request/event/permission types, keeping ACP as a transport adapter.
+      _Proposed revision (reverses the direction):_ the ACP server emits ACP
+      directly from the runtime; it consumes this contract only for policy,
+      budgets and ownership. Conformance is the round trip, not a type mapping.
 - [ ] **Phase 4 — CLI surface.** A documented `copse` headless entry point that
       consumes `headlessRunRequestSchema` on stdin and emits the event envelope, with
       the deny-by-default profile as its non-interactive default.
+      _Open under the revision:_ either keep the frozen v1 envelope for one-way CI
+      output or emit an ACP ndjson transcript; decide on consumer evidence.
 
 ## Acceptance-criteria mapping (from #1079)
 
-| Criterion                                                                     | Phase                        |
-| ----------------------------------------------------------------------------- | ---------------------------- |
-| One source of truth generates/validates the TS and JSON schemas               | 0 ✓                          |
-| Headless mode cannot silently broaden permissions without interactive input   | 0 ✓                          |
-| New/resume/fork/cancel/success/failure/approval flows have documented exits   | 0 ✓                          |
-| Same deterministic scenario passes through benchmark, CLI, and ACP adapters   | 1 ✓ (benchmark); CLI/ACP 3–4 |
-| Conformance runs retain the replayable artifact and measurement fields        | 1 ✓; 2                       |
-| Provider-specific history is a projection, not a second public contract       | 2                            |
-| Desktop renderer and external clients observe equivalent turn terminal states | 3                            |
+| Criterion                                                                     | Phase                                                                                  |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| One source of truth generates/validates the TS and JSON schemas               | 0 ✓                                                                                    |
+| Headless mode cannot silently broaden permissions without interactive input   | 0 ✓                                                                                    |
+| New/resume/fork/cancel/success/failure/approval flows have documented exits   | 0 ✓                                                                                    |
+| Same deterministic scenario passes through benchmark, CLI, and ACP adapters   | 1 ✓ (benchmark); CLI/ACP 3–4                                                           |
+| Conformance runs retain the replayable artifact and measurement fields        | 1 ✓; 2                                                                                 |
+| Provider-specific history is a projection, not a second public contract       | 2                                                                                      |
+| Desktop renderer and external clients observe equivalent turn terminal states | 3 (proposed: ACP `idle` stop reason + `_meta["copse.dev"].stopReason` ≡ `TurnOutcome`) |
