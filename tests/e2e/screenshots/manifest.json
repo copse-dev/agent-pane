@@ -2453,6 +2453,10 @@
       "sha256": "664f789098d0413bb4c02667b5a7a3e6407ba29818174aae255d2d4bd84519bc",
       "bytes": 21983
     },
+    "model-version-suppression-acp-after.png": {
+      "sha256": "864ff5a07cdd0d76f7d3bbea1dbffff9ef31016032d5c1d2a3b0d9286752b998",
+      "bytes": 11485
+    },
     "model-version-suppression-picker.png": {
       "sha256": "cf209e9f079201f0d67a75f94251d93cbb77bf4bb936adc6027f98ecec27fac0",
       "bytes": 28080
