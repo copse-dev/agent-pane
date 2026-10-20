@@ -513,6 +513,22 @@
       "sha256": "ec287909259325f83c2cf2da076b2f66e3f1915186d252c0b7040004515fdd60",
       "bytes": 18027
     },
+    "approval-long-code-short.png": {
+      "sha256": "ce89fbe8a6ee4061bed17a825be859906e29027f706beb6d0a6b65b2eb4ab4c9",
+      "bytes": 73545
+    },
+    "approval-mixed-prose-code-short-scrolled.png": {
+      "sha256": "bef8a4698c473ae1b308a601d47d6a44c1a7e2ccfd4e3a4559a399fd4ddad467",
+      "bytes": 65611
+    },
+    "approval-mixed-prose-code-short.png": {
+      "sha256": "6e7967cd52687abd86fe25ba6a12a8ba5797f9386cae6132055628db09907080",
+      "bytes": 68139
+    },
+    "approval-mixed-prose-code.png": {
+      "sha256": "fc4afb1e13464d8624c8b32dc2a7d5d64fa85d60a0f54d193e94fb419189db28",
+      "bytes": 55466
+    },
     "approval-provider-url.png": {
       "sha256": "4738a6429d3dcd2f381629aa7c50e2151cc208412e555df4ad49f910bcdbcacf",
       "bytes": 19589
