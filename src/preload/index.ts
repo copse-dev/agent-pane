@@ -832,6 +832,27 @@ const api: ApiClient = {
     ) => ipcRenderer.invoke('plans:change', projectId, threadId, change),
   },
   threads: {
+    archiveState: (projectId: string, view: 'review' | 'archived') =>
+      ipcRenderer.invoke('threads:archive-state', projectId, view),
+    archiveDecision: (
+      projectId: string,
+      threadId: string,
+      decision: import('@shared/threads/auto-archive.ts').ThreadArchiveDecision,
+    ) => ipcRenderer.invoke('threads:archive-decision', projectId, threadId, decision),
+    onAutoArchived: (
+      handler: (event: import('@shared/threads/auto-archive.ts').ThreadAutoArchived) => void,
+    ) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        event: import('@shared/threads/auto-archive.ts').ThreadAutoArchived,
+      ): void => {
+        handler(event)
+      }
+      ipcRenderer.on('threads:auto-archived', listener)
+      return () => {
+        ipcRenderer.removeListener('threads:auto-archived', listener)
+      }
+    },
     storageSize: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:storage-size', projectId, threadId),
     archive: (

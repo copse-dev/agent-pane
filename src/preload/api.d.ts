@@ -635,6 +635,18 @@ export interface ApiClient {
     ) => Promise<import('@copse/thread-store/plan-schema.ts').StoredThreadPlan | null>
   }
   threads: {
+    archiveState: (
+      projectId: string,
+      view: 'review' | 'archived',
+    ) => Promise<import('@shared/threads/auto-archive.ts').ThreadArchiveState>
+    archiveDecision: (
+      projectId: string,
+      threadId: string,
+      decision: import('@shared/threads/auto-archive.ts').ThreadArchiveDecision,
+    ) => Promise<boolean>
+    onAutoArchived: (
+      handler: (event: import('@shared/threads/auto-archive.ts').ThreadAutoArchived) => void,
+    ) => () => void
     storageSize: (
       projectId: string,
       threadId: string,

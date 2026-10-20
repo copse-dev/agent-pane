@@ -334,11 +334,19 @@ export function readSeededSettings(): Record<string, unknown> {
  * the concise view passes `conciseThreadsEnabled: true`. Every seeded profile is
  * an existing user, so the shipped announcements' modal is acknowledged to keep
  * it off screens that are about something else.
+ *
+ * Auto-archive is off (`0`, the user's own "disable" choice in Settings →
+ * Storage). Fixture threads carry fixed timestamps, so under the three-day
+ * default whether a seeded thread shows the "Finished with this thread?" review
+ * would depend on the wall clock on the day the suite runs, not on the fixture.
+ * A spec exercising archival passes `autoArchiveAfterDays: undefined` to get the
+ * product default, or an explicit delay.
  */
 export const E2E_SETTINGS_BASELINE = {
   conciseThreadsEnabled: false,
   conciseThreadsDefaultMigrated: true,
   acknowledgedProductAnnouncements: PRODUCT_ANNOUNCEMENTS.map((entry) => entry.id),
+  autoArchiveAfterDays: 0,
 } as const
 
 export function writeSettings(settings: Record<string, unknown>): void {

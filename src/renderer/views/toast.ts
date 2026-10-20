@@ -66,7 +66,11 @@ function formatSourceLocation(filename?: string, lineno?: number, colno?: number
 
 export function showToast(
   message: string,
-  opts: { variant?: 'error' | 'info'; durationMs?: number } = {},
+  opts: {
+    variant?: 'error' | 'info'
+    durationMs?: number
+    action?: { label: string; onClick(): void }
+  } = {},
 ): () => void {
   const host = ensureHost()
   const variant = opts.variant ?? 'info'
@@ -75,7 +79,7 @@ export function showToast(
   // Collapse identical bursts (e.g. several Monaco workers failing at once)
   // into a single toast so the user sees one clear message, not a stack of
   // duplicates. Refresh the existing toast's auto-dismiss timer instead.
-  const existing = findVisibleToast(message, variant)
+  const existing = opts.action ? null : findVisibleToast(message, variant)
   if (existing) {
     existing.refresh(duration)
     return existing.dismiss
@@ -102,6 +106,19 @@ export function showToast(
   }
   toastControls.set(toast, { dismiss, refresh })
   toast.addEventListener('click', dismiss)
+  if (opts.action) {
+    const action = opts.action
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'ui-btn toast-action'
+    button.textContent = action.label
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      dismiss()
+      action.onClick()
+    })
+    toast.append(button)
+  }
   return dismiss
 }
 
