@@ -12210,7 +12210,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   width: min(calc(100% - 2 * var(--spacing-xl)), 560px);
   min-width: 0;
   max-height: calc(100% - 2 * var(--spacing-xl));
-  box-sizing: border-box;
   margin: 0;
   transform: translate(-50%, -50%);
   box-shadow: var(--shadow-lg);
@@ -12329,6 +12328,9 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 .approval-buttons {
   margin-top: var(--spacing-sm);
+}
+#approval-dialog[open] > .approval-buttons {
+  margin-top: 0;
 }
 .approval-approve:disabled,
 .approval-approve-once:disabled {
