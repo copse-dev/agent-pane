@@ -271,6 +271,9 @@ async function boot(): Promise<void> {
   mountOnboardingDialog(store, api)
   const approvalRequests = mountApprovalDialog(api, store)
   const askUserRequests = mountAskUserDialog(api, store)
+  void api.agent.replayPendingDecisions().catch((error: unknown) => {
+    console.error('[agent] could not restore pending decisions:', error)
+  })
   // A clicked notification about a thread opens it here (main picks the window).
   mountAlertThreadNavigation(store, api)
   mountSshPromptDialog(api)

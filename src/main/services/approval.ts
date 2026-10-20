@@ -915,12 +915,14 @@ export function initApproval(
   win: BrowserWindow,
   ipcMain: IpcMain,
   alertUser: UserAlertSender,
-): void {
+): (target: object) => void {
   const pending = new Map<string, (response: ApprovalResponse) => void>()
+  const replay = new Map<string, { target: object; send: () => void }>()
   const settle = (id: string, response: ApprovalResponse): void => {
     const resolve = pending.get(id)
     if (!resolve) return
     pending.delete(id)
+    replay.delete(id)
     resolve(response)
   }
 
@@ -968,7 +970,11 @@ export function initApproval(
           resolve(DENIED)
           return
         }
-        dest.send('agent:approval-request', { id, threadId, ...req })
+        const send = (): void => {
+          if (!dest.isDestroyed()) dest.send('agent:approval-request', { id, threadId, ...req })
+        }
+        replay.set(id, { target: dest, send })
+        send()
         // Deliver the user's configured native alert channels. A repeating
         // Dock/taskbar animation stops on focus and also when this approval
         // settles for any reason. `dest` goes along so a notification click
@@ -1025,4 +1031,9 @@ export function initApproval(
         })
       }),
   )
+  return (target): void => {
+    for (const request of replay.values()) {
+      if (request.target === target) request.send()
+    }
+  }
 }

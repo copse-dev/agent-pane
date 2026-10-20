@@ -8,6 +8,7 @@ import { ToolRegistry } from './tool-registry.ts'
 import {
   AgentDispatcher,
   type AgentDispatcherDependencies,
+  type TurnTranscriptSink,
   type AgentDispatchRequest,
 } from './agent-dispatcher.ts'
 import type { ThreadExecutionContext } from './thread-execution-context.ts'
@@ -1512,6 +1513,70 @@ describe('AgentDispatcher', () => {
     assert.equal(claim.status, 'granted')
     assert.equal(dispatcher.isActive('project-1', 'thread-1'), false)
     await dispatcher.dispatch(request())
+  })
+
+  it('refreshes an empty estimate-time history from the transcript before dispatch', async () => {
+    const earlier: LLMMessage[] = [{ role: 'user', content: 'Earlier unanswered prompt' }]
+    let promptPersisted = false
+    let seen: LLMMessage[] = []
+    const emitted: StreamChunk[] = []
+    const dispatcher = new AgentDispatcher(
+      { emit: (_threadId, chunk): void => void emitted.push(chunk) },
+      registry,
+      dependencies({
+        loadHistory: async () => [],
+        recoverHistory: async () => (promptPersisted ? earlier : []),
+        transcriptLength: async () => 2,
+        run: async (_threadId, _input, messages) => {
+          seen = messages
+          return { usage: { inputTokens: 0, outputTokens: 0 }, messages }
+        },
+      }),
+    )
+    assert.deepEqual(await dispatcher.history('project-1', 'thread-1'), [])
+    promptPersisted = true
+    await dispatcher.dispatch(request())
+    assert.deepEqual(seen, earlier)
+    assert.equal(
+      emitted.some((chunk) => chunk.type === 'text'),
+      false,
+      'no false context-loss notice',
+    )
+  })
+
+  it('routes pre-turn notices through the same transcript sink as agent output', async () => {
+    const direct: StreamChunk[] = []
+    const owned: StreamChunk[] = []
+    let ended = false
+    const dispatcher = new AgentDispatcher(
+      { emit: (_threadId, chunk): void => void direct.push(chunk) },
+      registry,
+      dependencies({
+        loadHistory: async () => [],
+        transcriptLength: async () => 4,
+        run: async (threadId, _input, messages, turnHost) => {
+          turnHost.emit(threadId, { type: 'text', text: 'The answer.' })
+          turnHost.emit(threadId, { type: 'done' })
+          return { usage: { inputTokens: 0, outputTokens: 0 }, messages }
+        },
+      }),
+      {
+        begin: (): ReturnType<TurnTranscriptSink['begin']> => ({
+          emit: (chunk): void => void owned.push(chunk),
+          end: (): void => {
+            ended = true
+          },
+        }),
+      },
+    )
+    await dispatcher.dispatch(request())
+    assert.deepEqual(direct, [], 'no output bypasses runtime transcript ownership')
+    const notice = owned[0]
+    assert.ok(notice)
+    assert.equal(notice.type, 'text')
+    assert.match(notice.text, /Earlier context is missing/)
+    assert.deepEqual(owned.slice(1), [{ type: 'text', text: 'The answer.' }, { type: 'done' }])
+    assert.equal(ended, true)
   })
 
   it('warns when a turn starts with an empty history but a full transcript', async () => {
