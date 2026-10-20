@@ -38,7 +38,7 @@ export interface ScenarioBridge {
 
 export interface ScenarioHandle {
   release(hold: string): Promise<void>
-  waitForHold(hold: string): Promise<void>
+  waitForHold(hold: string, timeoutMs?: number): Promise<void>
   /** Wait for every scripted response to be consumed, whichever thread is selected. */
   waitForComplete(timeoutMs?: number): Promise<void>
   assertComplete(): Promise<void>
@@ -99,7 +99,7 @@ export async function installMockScenario(
         { scenarioId: id, name: hold },
       )
     },
-    async waitForHold(hold): Promise<void> {
+    async waitForHold(hold, timeoutMs = 30_000): Promise<void> {
       await browser.waitUntil(
         async () => {
           const status = await browser.execute(async (scenarioId) => {
@@ -110,7 +110,7 @@ export async function installMockScenario(
           if (status.errors.length > 0) throw new Error(status.errors.join('\n'))
           return status.waitingFor === hold
         },
-        { timeout: 30_000, interval: 50, timeoutMsg: `Scenario did not reach hold: ${hold}` },
+        { timeout: timeoutMs, interval: 50, timeoutMsg: `Scenario did not reach hold: ${hold}` },
       )
     },
     async waitForComplete(timeoutMs = 25_000): Promise<void> {

@@ -694,9 +694,12 @@ app
         },
       },
     )
-    getAutomationService().start((event) => {
-      if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
-    })
+    getAutomationService().start(
+      (event) => {
+        if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
+      },
+      (request, host) => agentDispatcher.dispatch(request, host),
+    )
     getAutomationService().onHealthChange((health) => {
       if (!win.isDestroyed()) win.webContents.send('automations:scheduler-health', health)
     })

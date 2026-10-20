@@ -10,12 +10,7 @@ import {
   saveAppScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
-import {
-  resetUserData,
-  seedEmptyProject,
-  writeSeedConfig,
-  writeSeedSupervisedTask,
-} from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 import {
   COPSE_TINT_COLOR,
   applyAppearanceViaSettings,
@@ -28,38 +23,14 @@ const OTHER_PROJECT_ID = 'e2e-automation-trigger-other'
 const PROMPT = 'Review CI and report any failures.'
 const SCHEDULE_ID = 'schedule-ci-review'
 
-// What paces the scheduler is not the schedule's own `* * * * *` but the
-// supervised `automation_scheduler_tick` task that `automation-service` keeps
-// for it: `TaskSupervisor.arm()` sets its timer to the persisted `nextWakeAt`,
-// or else to the next *minute boundary*. Left to that, the first tick lands a
-// uniformly random 0-60s after boot, which cost every run of this spec up to a
-// minute of real time and pushed its CI shard past the per-attempt timeout.
-//
-// Instead the profile holds the durable scheduler task as a previous session
-// left it — waiting on a minute boundary that passed while the app was closed.
-// The supervisor coalesces a missed cron occurrence into one run on restart
-// (`task-supervisor.test.ts`, "coalesces missed cron occurrences after
-// restart"), so the real tick fires as soon as the supervisor loads, matches
-// the schedule and creates the thread. `automation-service` retains this task
-// rather than enqueuing another, because it is owned by the enabled schedule.
-//
-// A tick at boot would outrun `installMockScenario`, which needs the renderer
-// up: the automation controller starts a pending scheduled run as soon as its
-// project is active. So the app opens on another project, where that run
-// waits, and the spec switches to the schedule's project once the scenario is
-// in place — the controller's `workspace_changed` pickup, or its trigger
-// listener if the tick lands after the switch, then starts it.
-//
-// The missed boundary is derived from the wall clock, never a fixed date: a
-// persisted `nextWakeAt` still in the future is armed as an ordinary wake, not
-// coalesced, so a hard-coded instant would only work on hosts whose clock is
-// already past it. One full minute back keeps it safely in the past.
-const MISSED_TICK_AT = Math.floor(Date.now() / 60_000) * 60_000 - 60_000
-const SCHEDULER_TICK_TIMEOUT_MS = 30_000
+// Start with a disabled schedule so installing the mock scenario cannot race
+// a headless boot run. Enable it through the real inactive-project editor and
+// wait for its actual next-minute cron occurrence.
+const SCHEDULER_TICK_TIMEOUT_MS = 90_000
 
 describe('cron automation trigger', function () {
   // A mock agent turn plus checkout preparation, with headroom for a loaded runner.
-  this.timeout(120_000)
+  this.timeout(180_000)
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
@@ -192,7 +163,7 @@ describe('cron automation trigger', function () {
                 cron: '* * * * *',
                 prompt: PROMPT,
                 model: 'claude-sonnet-4-6',
-                enabled: true,
+                enabled: false,
                 createdAt: 1_786_000_000_000,
                 updatedAt: 1_786_000_000_000,
                 lastCreatedThreadId: 'automation-history-latest',
@@ -201,29 +172,6 @@ describe('cron automation trigger', function () {
           },
         },
       },
-    })
-    writeSeedSupervisedTask({
-      taskId: 'automation-scheduler-tick',
-      projectId: PROJECT_ID,
-      threadId: SCHEDULE_ID,
-      handler: 'automation_scheduler_tick',
-      provenance: 'schedule',
-      state: 'waiting',
-      createdAt: 1_786_000_000_000,
-      updatedAt: 1_786_000_120_000,
-      trigger: { kind: 'cron', expression: '* * * * *' },
-      permissionSnapshot: {
-        capturedAt: 1_786_000_000_000,
-        autoRunSandboxCommands: false,
-        projectSandboxEnabled: false,
-      },
-      reapproveOnWake: false,
-      concurrencyClass: 'schedule',
-      resourceBudget: { maxDurationMs: 30_000 },
-      attempt: 0,
-      maxAttempts: 1,
-      contentHash: 'automation_scheduler_tick',
-      nextWakeAt: MISSED_TICK_AT,
     })
     await browser.reloadSession()
   })
@@ -265,8 +213,25 @@ describe('cron automation trigger', function () {
       tintStrength: 'strong',
     })
 
-    // Only now open the schedule's project, so its scheduled run starts
-    // against the scenario above rather than the mock's unscripted fallback.
+    const setScheduleEnabled = async (): Promise<void> => {
+      await $(`.project-entry[data-project-id="${PROJECT_ID}"] .project-menu-btn`).click()
+      await $('.context-menu-item=Automations').click()
+      const dialog = $('#automation-dialog')
+      await dialog.$('.automation-row-btn=Edit').click()
+      await dialog.$('.automation-enabled-input').click()
+      await dialog.$('.automation-save-btn').click()
+      await expect(dialog.$('.automation-form')).not.toBeDisplayed()
+      await browser.keys('Escape')
+      await expect(dialog).not.toBeDisplayed()
+    }
+    await setScheduleEnabled()
+    // This hold can only be reached by main's unfocused-project path. Do not
+    // open the target project until its isolated checkout and dispatch exist.
+    await scenario.waitForHold('review-ready', SCHEDULER_TICK_TIMEOUT_MS)
+    // Keep later minute boundaries from adding another run after we release
+    // this response for the final screenshots.
+    await setScheduleEnabled()
+
     const scheduleProject = $('.project-row*=workspace')
     await scheduleProject.waitForExist({ timeout: 10_000 })
     await scheduleProject.click()
@@ -306,7 +271,7 @@ describe('cron automation trigger', function () {
         timeout: SCHEDULER_TICK_TIMEOUT_MS,
         timeoutMsg:
           'the fresh scheduled task never joined its existing schedule group — the persisted ' +
-          'scheduler task should have fired its missed tick as soon as the supervisor loaded',
+          'scheduler task should have fired its next-minute tick',
       },
     )
     // Finish checkout/provider startup, then hold the response while opening
