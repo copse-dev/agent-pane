@@ -95,6 +95,50 @@ export const SANDBOX_DENIAL_SIGNATURES: readonly SandboxDenialSignature[] = [
     }),
   },
   {
+    // The experimental sandboxed GitHub read route (sandbox-github-reads.ts)
+    // refuses every write before forwarding it, and says so in the body: git
+    // prints it as `remote: Copse refused this request: pushing is not allowed
+    // from the project sandbox. Sandboxed GitHub access is read-only; …`, gh as
+    // `HTTP 403: Copse refused this request: GraphQL mutations are writes …`.
+    // The write never reached GitHub, so offering the normal outside-sandbox
+    // retry (which has the user's own gh login and SSH, not the route) is the
+    // same question an `expects_sandbox_block` hint would have asked.
+    id: 'sandbox-github-write-refused',
+    pattern: /Copse refused this request: [^\n]*Sandboxed GitHub access is read-only/,
+    classify: (command: string): SandboxDenialClassification => {
+      const operation = GIT_SUBCOMMAND.test(command)
+        ? `${gitNetworkOperation(command)} (GitHub write)`
+        : 'GitHub write'
+      return {
+        operation,
+        advice:
+          `${operation} was refused inside the project sandbox, where GitHub access is ` +
+          'read-only. Nothing was sent to GitHub. It can run outside the sandbox with your own ' +
+          'GitHub sign-in.',
+      }
+    },
+  },
+  {
+    // Reported: `git fetch origin` against an SSH remote inside the sandbox
+    // fails with "Received disconnect from <host> port 22: … client did not
+    // offer an authentication method" (OpenSSH also words it "No supported
+    // authentication methods available"). The sandbox hides ~/.ssh and the
+    // agent socket, so ssh offered no key, and no seatbelt violation need be
+    // recorded for that.
+    id: 'git-ssh-no-authentication',
+    pattern:
+      /Received disconnect from [^\n]*(?:did not offer an authentication method|No supported authentication methods available)/i,
+    classify: (command: string): SandboxDenialClassification => {
+      const operation = gitNetworkOperation(command)
+      return {
+        operation,
+        advice:
+          `${operation} over SSH could not authenticate: the sandbox hides ~/.ssh and the SSH ` +
+          'agent, so no key was offered. This is specific to SSH remotes, not a network outage.',
+      }
+    },
+  },
+  {
     // Observed (issue #1436): `npx prettier` failed with
     //   "[sfw] Failed to prepare firewall binary: EPERM"
     // Socket Firewall could not stage its own binary from inside the sandbox.
@@ -209,4 +253,17 @@ export function operationDescriptorForCommand(command: string): string | null {
   if (GIT_SUBCOMMAND.test(command)) return gitNetworkOperation(command)
   if (GH_INVOCATION.test(command)) return 'read ~/.config/gh'
   return null
+}
+
+/**
+ * Whether the command's shape is one the sandboxed GitHub read route serves:
+ * `gh`, or a `git fetch` / `git ls-remote`. Derived from the command alone.
+ * While that route is active the shell tool runs these contained first even
+ * when the agent expected a block: a read then succeeds without a prompt, and
+ * a write is refused before anything reaches GitHub and offers the same retry.
+ */
+export function sandboxGitHubReadShape(command: string): boolean {
+  if (GH_INVOCATION.test(command)) return true
+  const subcommand = GIT_SUBCOMMAND.exec(command)?.[1]
+  return subcommand === 'fetch' || subcommand === 'ls-remote'
 }

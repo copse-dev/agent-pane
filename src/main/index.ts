@@ -165,6 +165,7 @@ import { AgentDispatcher } from './services/agent-dispatcher.ts'
 import { setAgentInitiatedTurnAuthority } from './services/acp/agent-initiated-turn.ts'
 import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
+import { stopSandboxGitHubReads } from './services/github/sandbox-github-reads-runtime.ts'
 import { clearRemoteAgentSession } from './services/remote/remote-agent-client.ts'
 import {
   setBrowserSessionPlatform,
@@ -1290,7 +1291,12 @@ async function cleanupBeforeQuit(): Promise<void> {
   await drainWriteQueue()
   // Reap the detached gortex daemon too — left running it accumulates multi-GB
   // graphs across sessions and OOM-kills the app on a later launch.
-  await Promise.allSettled([shutdownMcpServers(), shutdownProjectSandbox(), stopGortexDaemon()])
+  await Promise.allSettled([
+    shutdownMcpServers(),
+    // Before the sandbox: its route points ASRT's proxy at these sockets.
+    stopSandboxGitHubReads().then(shutdownProjectSandbox),
+    stopGortexDaemon(),
+  ])
 }
 
 app.on('before-quit', (event) => {

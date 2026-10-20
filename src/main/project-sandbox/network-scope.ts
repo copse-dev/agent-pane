@@ -2,6 +2,10 @@ import { networkActivity } from '../services/diagnostics/network-activity.ts'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { containedSandboxNetworkConfig } from './config.ts'
+import {
+  SANDBOX_GITHUB_MITM_DOMAIN,
+  SANDBOX_GITHUB_PROXY_DOMAIN,
+} from '../services/github/sandbox-github-reads-config.ts'
 
 /**
  * Scoped widening of ASRT's **global** network allowlist.
@@ -50,8 +54,43 @@ export function activeSandboxNetworkScopeLabels(): string[] {
   return [...new Set([...activeScopes].map((scope) => scope.label))]
 }
 
+/**
+ * The sandboxed GitHub read route (`services/github/sandbox-github-reads.ts`),
+ * when the experimental setting has started it: the per-session git aliases,
+ * plain HTTP on port 80 only, routed by ASRT's proxy to Copse's own socket.
+ *
+ * Not a {@link SandboxNetworkScope}: it reaches no internet host, only a
+ * handler that refuses any request without the thread's secret and forwards
+ * GitHub reads alone. It therefore does not pause auto-run the way a widened
+ * scope does.
+ */
+export interface SandboxGitHubReadRoute {
+  socketPath: string
+}
+
+let githubReadRoute: SandboxGitHubReadRoute | null = null
+
+/** Install or remove the GitHub read route in ASRT's global network config. */
+export function setSandboxGitHubReadRoute(route: SandboxGitHubReadRoute | null): void {
+  githubReadRoute = route
+  applyScopes()
+}
+
 /** Union the active scopes into a network config; deny-all when none. Pure. */
 export function mergedScopeNetwork(
+  scopes: readonly SandboxNetworkScope[],
+  githubRoute: SandboxGitHubReadRoute | null = null,
+): NonNullable<SandboxRuntimeConfig['network']> {
+  const base = scopesNetwork(scopes)
+  if (githubRoute === null) return base
+  return {
+    ...base,
+    allowedDomains: [...base.allowedDomains, SANDBOX_GITHUB_PROXY_DOMAIN],
+    mitmProxy: { socketPath: githubRoute.socketPath, domains: [SANDBOX_GITHUB_MITM_DOMAIN] },
+  }
+}
+
+function scopesNetwork(
   scopes: readonly SandboxNetworkScope[],
 ): NonNullable<SandboxRuntimeConfig['network']> {
   if (scopes.length === 0) return containedSandboxNetworkConfig()
@@ -69,7 +108,10 @@ function applyScopes(): void {
   // proxy consulting the config, and nothing to widen.
   const config = SandboxManager.getConfig()
   if (!config) return
-  SandboxManager.updateConfig({ ...config, network: mergedScopeNetwork([...activeScopes]) })
+  SandboxManager.updateConfig({
+    ...config,
+    network: mergedScopeNetwork([...activeScopes], githubReadRoute),
+  })
 }
 
 /**

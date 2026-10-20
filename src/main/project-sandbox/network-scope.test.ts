@@ -13,6 +13,18 @@ describe('mergedScopeNetwork', () => {
     assert.deepEqual(mergedScopeNetwork([]), containedSandboxNetworkConfig())
   })
 
+  it('adds the sandboxed GitHub read route without widening anything else', () => {
+    const merged = mergedScopeNetwork([], { socketPath: '/private/tmp/cghr/git.sock' })
+    assert.deepEqual(merged.allowedDomains, ['*.github.copse.internal:80'])
+    assert.deepEqual(merged.mitmProxy, {
+      socketPath: '/private/tmp/cghr/git.sock',
+      domains: ['*.github.copse.internal'],
+    })
+    assert.equal(merged.allowLocalBinding, false)
+    assert.equal(merged.allowUnixSockets, undefined)
+    assert.equal(mergedScopeNetwork([]).mitmProxy, undefined)
+  })
+
   it('unions domains and ORs local binding across scopes', () => {
     const merged = mergedScopeNetwork([
       { domains: ['anthropic.com', '*.anthropic.com'], allowLocalBinding: false, label: 'first' },

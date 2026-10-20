@@ -33,6 +33,7 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 | Automation grants                | Exact schedule-owned MCP tools or eligible project-repository GitHub actions. No ambient shell, file, web-origin, ACP, sensitive-reveal or model-spend authority.                                                                                                                                                                                                                                        |
 | Guarded YOLO                     | Session-only, thread-scoped; routine shell scope prompts waived subject to the harm gate. Keeps containment where applicable, permits external routing and retains hard denials/one-time confirmations.                                                                                                                                                                                                  |
 | Deferral mode                    | Session-only, thread-scoped; approval requests queue instead of blocking. Changes prompt handling, not authorization.                                                                                                                                                                                                                                                                                    |
+| Sandboxed GitHub reads           | Experimental, off by default. Contained `git fetch`/`ls-remote` (macOS and Linux) and `gh` reads (macOS) reach a host handler that holds the user's GitHub token, admits reads only and needs a per-thread secret. Escalated and unsandboxed runs never receive the route.                                                                                                                               |
 | Unattended container             | Explicitly armed run on an attested disposable guest. Contained shell effects allow, outward effects defer or deny, host escapes deny; budgets required. Experimental, off by default, mutually exclusive with Guarded YOLO.                                                                                                                                                                             |
 | ACP permission mode              | Agent-specific session mode, additional to Copse's gate and sandbox. Sandboxed Claude presets may default to acceptEdits; unsandboxed/SSH presets do not receive that default.                                                                                                                                                                                                                           |
 | Agent managed thread mode        | Opt-in per thread for external coding agents. Copse does not apply its process sandbox and selects the agent-advertised Auto/Default session mode when available. The agent's permission requests are presented without Copse's shell classifier, remembered grants, or edit auto-approval. Copse's native-tool bridge remains available and every bridged call still uses the ordinary Copse tool gate. |
@@ -234,6 +235,14 @@ Guarded YOLO and attested unattended containers have the separate rules above.
 | **macOS ASRT / Linux bubblewrap active** | Auto-runs inside the project sandbox. The model classifier is not consulted. | Prompts first, then runs outside the sandbox. Recognised low-risk shapes (`git push origin`) may skip that prompt via auto-approval. | Auto-runs inside the sandbox. A verified block offers retry outside. This includes opaque interpreter heredocs, whose effects the sandbox contains. `expects_sandbox_block: true` can move that prompt before the first attempt. |
 | **Windows / sandbox init failure**       | Prompts because no OS sandbox can contain it. Auto-approval does not fire.   | Prompts, unless strict-mode hard-deny applies. Auto-approval does not fire.                                                          | Prompts and is treated as external. Auto-approval does not fire.                                                                                                                                                                 |
 | **Auto-run disabled**                    | Prompts.                                                                     | Prompts.                                                                                                                             | Prompts.                                                                                                                                                                                                                         |
+
+With **Settings → Experimental → GitHub reads in the sandbox** on, the first row also covers
+GitHub reads: a contained `git fetch` or `git ls-remote` from github.com (any remote form,
+including SSH) and, on macOS, a `gh` read succeed inside the sandbox instead of failing there.
+`expects_sandbox_block` and a remembered denial are not honoured for those command shapes while
+the route is active, because the contained attempt is the cheaper and narrower one. A GitHub write
+is refused before it leaves the host and then earns the ordinary retry outside the sandbox. See
+[GitHub reads in the sandbox](#github-reads-in-the-sandbox-experimental).
 
 The ambiguous tier exists because short command names also appear harmlessly as paths or arguments.
 Where a sandbox is active, the sandbox—not a fuzzy match—decides whether they escape. Without a
@@ -512,6 +521,67 @@ app restarts, or generalise from (for example) `git fetch` to `git push`. Becaus
 in forgeable command output, Guarded YOLO and deterministic shell auto-approval must still show that
 question; only an unattended container may advance it without a person while staying inside the same
 guest.
+
+## GitHub reads in the sandbox (experimental)
+
+Settings → Experimental → **GitHub reads in the sandbox** (`sandboxGitHubReadsEnabled`, default
+off) lets contained `run_shell` commands read GitHub without leaving the project sandbox. Without
+it, the sandbox hides `~/.ssh`, the SSH agent and `gh`'s keyring login and has no network, so
+`git fetch` over SSH fails ("client did not offer an authentication method") and `gh` cannot read
+its config; both then ask to escape. The setting reuses the container runtime's GitHub read
+handler and policy ([thread-in-container A24](plans/thread-in-container.md)) on the desktop:
+
+- **Policy.** Unchanged from A24: exact GitHub hosts only (`api.github.com`, `github.com`, and
+  credential-less `codeload.github.com` / `*.githubusercontent.com`); GET/HEAD, git's upload-pack
+  POST and a single GraphQL query; every other method, `receive-pack` and any GraphQL mutation is
+  refused before anything is forwarded. The user's token (`resolveGitHubApiToken`, the same
+  desktop sign-in A24 uses; unauthenticated when there is none) is added on the host and redacted
+  from responses. Redirects are returned, not followed.
+- **git (macOS and Linux).** `GIT_CONFIG_*` variables rewrite `https://github.com/`,
+  `git@github.com:` and `ssh://git@github.com/` to a per-thread plain-HTTP alias,
+  `s<id>.github.copse.internal`, and add `http.<alias>.extraHeader` carrying the thread's secret
+  (git sends no credential of its own) and an empty `credential.<alias>.helper`. The contained
+  command's HTTP already goes through ASRT's proxy. Copse adds `*.github.copse.internal:80` to the
+  proxy's allowlist and routes it with ASRT `mitmProxy` to a Copse-owned unix socket. No other
+  host, port or CONNECT tunnel is added, and the seatbelt and bubblewrap profiles are unchanged.
+- **gh (macOS only).** `GH_CONFIG_DIR` names a Copse-owned per-thread directory whose `config.yml`
+  sets `http_unix_socket` and whose `hosts.yml` holds the thread's secret as the token. The spawn's
+  Seatbelt profile allows connecting to that one socket (`allowUnixSockets`) and reading that
+  directory. `GH_TOKEN`, `GITHUB_TOKEN`, the enterprise variants and `GH_HOST` are unset for the
+  contained run. Linux bubblewrap blocks every `AF_UNIX` socket with seccomp, and allowing them
+  would disable that filter for all sandboxed commands, so `gh` keeps today's behaviour on Linux.
+- **Authentication.** Both sockets are reachable by any process of the same user, so every request
+  must present the thread's 32-byte random secret (`Authorization` from gh's hosts.yml, or the git
+  header). The secret is compared in constant time, never logged, and bound to the thread: another
+  thread's secret, a missing one, or a wrong one is answered 401 and nothing is forwarded. The
+  secret is also the handler's canary: found anywhere else in the request, the request is refused.
+  Requests carrying `Origin` or `Sec-Fetch-*` are refused. Sockets are 0600 in a 0700 directory
+  under the system temporary directory, removed on quit. Copse chose unix sockets over a loopback
+  TCP port: ASRT can admit loopback only as a whole (`allowLocalBinding`), bubblewrap's network
+  namespace cannot reach host loopback at all, and a browser cannot reach a socket.
+- **Only contained runs.** The variables and socket grant are attached by
+  `spawnShellInProjectSandbox` on its sandboxed path only. A hard-external command, an approved
+  `expects_sandbox_block` escalation, a trusted-command route, an outside-sandbox retry, an SSH
+  workspace, a deferred read-only checkout, an unattended container, or a host without an active
+  sandbox all run exactly as before, with the user's real `gh` login and SSH. The setting is read
+  per command; turning it off stops the handler at the next command and on quit.
+- **Writes keep today's flow.** A refused write answers with text git shows as `remote:` lines
+  and gh shows as its error message, ending "Sandboxed GitHub access is read-only". The
+  `sandbox-github-write-refused` denial signature recognises it, so the shell tool offers the
+  usual outside-sandbox retry. Like every signature it can open that prompt but not answer it:
+  Guarded YOLO and deterministic auto-approval do not skip it. `git push` is hard-external and
+  never reaches the route at all. The `git-ssh-no-authentication` signature also recognises an SSH
+  fetch that could not authenticate inside the sandbox when the route is off.
+- **Limits.** Reads are not limited to the project's repository. A user `insteadOf` rule of the
+  same length for `https://github.com/` (for example rewriting it to SSH) takes precedence over the
+  route for HTTPS remotes. `run_background`, terminals, hooks and ACP agents' own shells do not get
+  the route.
+
+This complements the explicit host tools `gh_api_read` and `git_fetch` proposed in
+[#3862](https://github.com/copse-dev/agent-pane/pull/3862): those construct a fixed request
+themselves and are auto-approved as tools, while this route makes the agent's own `gh` and `git`
+commands work unchanged inside the sandbox. #3862 validates GraphQL with the reference `graphql`
+parser and this route uses A24's lexer-level validator; the two should converge.
 
 ## Read access outside the project
 
@@ -923,6 +993,10 @@ the registry still fails contained and offers to run outside.
   the scratch directories configured ACP agents declare. Docker run/pull/push and Apple
   container run/image pull/image push are hard-external; read-only list/inspect/status commands
   remain sandbox-scoped.
+- `services/github/sandbox-github-reads*.ts`: the experimental sandboxed GitHub read route —
+  per-thread sessions, sockets and secrets, the `gh`/`git` environment, and the adapter onto the
+  container runtime's GitHub handler. `project-sandbox/network-scope.ts` installs its ASRT proxy
+  route; `spawnShellInProjectSandbox`'s `sandboxOnly` option attaches it to contained runs only.
 - `read-outside-grant.ts`: the thread-scoped read grant; the approval-prompt copy for it stays in
   `read-outside-project.ts` beside the other prompt formatters.
 - `safety-classifier.ts`: optional model classifier used only when the OS sandbox is unavailable.

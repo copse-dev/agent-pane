@@ -26,8 +26,13 @@ import {
   SANDBOX_DENIAL_RETRY_NOTE,
   sandboxDenialRetryClassification,
   sandboxForwardEscalationMaySkipApproval,
+  sandboxGitHubReadShape,
   sandboxRetryMaySkipApproval,
 } from '../services/security/sandbox-denial-signatures.ts'
+import {
+  sandboxGitHubAccessForThread,
+  sandboxGitHubReadsActive,
+} from '../services/github/sandbox-github-reads-runtime.ts'
 import {
   cachedDenialAdvice,
   recordApprovedDeniedOperation,
@@ -388,7 +393,21 @@ export const runShellTool = defineTool({
     // output (#104) — see operationDescriptorForCommand.
     const operationHint =
       expects_sandbox_block === true ? null : operationDescriptorForCommand(command)
-    const cachedAdvice = operationHint ? cachedDenialAdvice(threadId, operationHint) : null
+
+    // Experimental: GitHub reads served to contained commands through the host
+    // (sandbox-github-reads.ts). While that route is active, `gh` and `git
+    // fetch` run contained first even when the agent expected a block or the
+    // thread remembered one: a read then needs no prompt, and a write is
+    // refused before reaching GitHub and earns the same retry outside. Running
+    // contained never widens what the command may do.
+    const githubReadsActive =
+      !readonlyCheckout && !isRemote && !unattendedContainer && sandboxEnabled
+        ? sandboxGitHubReadsActive()
+        : false
+    const containedGitHubRead = githubReadsActive && sandboxGitHubReadShape(command)
+    const expectsBlock = expects_sandbox_block === true && !containedGitHubRead
+    const cachedAdvice =
+      operationHint && !containedGitHubRead ? cachedDenialAdvice(threadId, operationHint) : null
 
     // If the agent declared up front that it expects the sandbox to block this
     // command, pull the escalation prompt forward instead of running inside the
@@ -402,7 +421,7 @@ export const runShellTool = defineTool({
     let skippedProbeViaCache = false
     if (readonlyCheckout) {
       suppressUnsandboxedRetry = true
-    } else if (!outsideSandbox && (expects_sandbox_block === true || cachedAdvice !== null)) {
+    } else if (!outsideSandbox && (expectsBlock || cachedAdvice !== null)) {
       const escalation = shellExpectedBlockEscalation(command, cwd, sandboxEnabled)
       if (escalation.eligible) {
         const reasons =
@@ -446,6 +465,10 @@ export const runShellTool = defineTool({
     // can prompt for passphrases / host keys instead of failing in BatchMode.
     const gitSsh = leaseGitSshEnv(envForRendererChildProcess(env))
     const childEnv = worktreePreparationShellEnvironment(cwd, gitSsh.env)
+    // Only for a contained first attempt: the spawn drops it on any
+    // unsandboxed path, and the retry below never passes it at all.
+    const githubAccess =
+      githubReadsActive && !outsideSandbox ? await sandboxGitHubAccessForThread(threadId) : null
 
     // Bracket the run so any file this agent-triggered command changes (e.g. a
     // formatter rewriting a file Copse just edited) is adopted as Copse-owned —
@@ -488,6 +511,7 @@ export const runShellTool = defineTool({
         readGrantTargets ?? [],
         onDetach,
         readonlyCheckout,
+        githubAccess ?? undefined,
       )
 
       if (result.backgroundId) return backgroundResult(result.backgroundId)

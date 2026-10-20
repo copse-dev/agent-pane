@@ -74,6 +74,21 @@ export const experimentalMarkup = `
             </fieldset>
 
             <fieldset>
+              <legend>GitHub reads in the sandbox</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="sandboxGitHubReadsEnabled" />
+                Let sandboxed commands read GitHub through Copse
+              </label>
+              <p class="field-hint">
+                Agent commands such as <code>git fetch</code> and <code>gh pr view</code> run inside
+                the project sandbox without asking to leave it. Copse makes the request with your
+                desktop GitHub sign-in, which the command never sees, and refuses every write.
+                Pushes, comments and other writes still ask to run outside the sandbox. On Linux
+                this covers <code>git</code> only.
+              </p>
+            </fieldset>
+
+            <fieldset>
               <legend>Model classifier</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="modelClassifierEnabled" />
@@ -140,6 +155,7 @@ export const experimentalFields: readonly SettingField[] = [
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'deferredWorktreesEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'containerRunsEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'sandboxGitHubReadsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: DEVELOPER_MODE_SETTING, kind: 'checkbox', default: false, save: true },
 ]
