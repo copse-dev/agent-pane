@@ -16,7 +16,9 @@ describe('browser-hosted compact titlebar geometry', () => {
         (button) => button.getBoundingClientRect().width > 0,
       )
       const controlsRect = controls.getBoundingClientRect()
-      const firstButton = buttons.find((button) => controls.contains(button))!.getBoundingClientRect()
+      const firstButton = buttons
+        .find((button) => controls.contains(button))!
+        .getBoundingClientRect()
       // Electron subtracts every no-drag box from the native region, including
       // the flexible container's empty space. Chrome cannot exercise OS double
       // clicks, but it can catch the geometry and computed-style regression.
