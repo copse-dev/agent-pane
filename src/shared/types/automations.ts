@@ -210,6 +210,8 @@ export interface AutomationTriggerEvent {
   triggeredAt: number
   /** Whether this trigger started a turn or found the schedule's prior turn still active. */
   disposition: 'started' | 'coalesced'
+  /** Main finished persisting this headless turn; refresh its authoritative transcript. */
+  headlessSettled?: true
   /** Why a fresh task could not safely start. Present only when coalesced. */
   coalescedReason?: 'busy' | 'worktree-limit'
   /** The runs holding worktree slots. Present only when coalesced for `worktree-limit`. */

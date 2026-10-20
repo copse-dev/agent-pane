@@ -26,7 +26,7 @@ export interface AutomationControllerApi {
     ApiClient['automations'],
     'onTriggered' | 'canStart' | 'reportStartFailure' | 'list' | 'listBranchCi'
   >
-  threads: Pick<ApiClient['threads'], 'loadProject'>
+  threads: Pick<ApiClient['threads'], 'loadProject' | 'loadMessages'>
 }
 
 /**
@@ -277,10 +277,49 @@ export function attachAutomationController(
 
   async function receiveTrigger(event: AutomationTriggerEvent): Promise<void> {
     if (store.getState().activeProjectId !== event.projectId) return
+    // A human submission mints a fresh root-turn epoch even when its message
+    // reaches disk before these reads finish. Capture before either await;
+    // message membership alone cannot distinguish that newer execution.
+    const observedEpoch = getThreadById(store, event.threadId)?.currentEpoch
     const loaded = await api.threads.loadProject(event.projectId)
     if (store.getState().activeProjectId !== event.projectId) return
     const created = loaded.find((thread) => thread.id === event.threadId)
     if (!created) return
+    if (event.headlessSettled) {
+      if (created.status === 'running' || created.currentEpoch !== observedEpoch) return
+      if (getThreadById(store, event.threadId)?.currentEpoch !== observedEpoch) return
+      const messages = await api.threads.loadMessages(event.projectId, event.threadId)
+      if (store.getState().activeProjectId !== event.projectId) return
+      // Only this exact automation occurrence owns the persisted replacement.
+      // A delayed notification must not replace a different task's state.
+      if (created.automation?.triggeredAt !== event.triggeredAt) return
+      const current = getThreadById(store, event.threadId)
+      if (current?.currentEpoch !== observedEpoch) return
+      if (current && current.automation?.triggeredAt !== event.triggeredAt) return
+      const persistedIds = new Set(messages.map((message) => message.id))
+      if (
+        current?.messages.some(
+          (message) => message.role === 'user' && !persistedIds.has(message.id),
+        )
+      ) {
+        // A newer interactive turn began while this read was pending.
+        return
+      }
+      store.setState({
+        threads: sortThreadsNewestFirst([
+          {
+            ...created,
+            draftPrompt: current?.draftPrompt ?? created.draftPrompt ?? '',
+            messages,
+            messagesLoaded: true,
+          },
+          ...store.getState().threads.filter((thread) => thread.id !== created.id),
+        ]),
+      })
+      store.emit('thread_status_changed', created.id, created.status)
+      store.emit('threads_changed')
+      return
+    }
     if (!store.getState().threads.some((thread) => thread.id === created.id)) {
       store.setState({
         threads: sortThreadsNewestFirst([created, ...store.getState().threads]),

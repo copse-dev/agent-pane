@@ -120,6 +120,10 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'gh_pr_files',
   'gh_run_list',
   'gh_run_view',
+  // Host-side reads with Copse-built argv: GET/query-only GitHub API and
+  // origin-only fetch into refs/remotes/origin/*.
+  'gh_api_read',
+  'git_fetch',
   'get_ci_status',
   'wait_for_ci_checks',
   'get_ci_failure_logs',

@@ -12,6 +12,7 @@ import {
 } from '../tools/git-tools.ts'
 import {
   ghPrFilesTool,
+  ghApiReadTool,
   ghPrListTool,
   ghPrViewTool,
   ghRunListTool,
@@ -85,6 +86,7 @@ import { runCheckupTool } from '../tools/checkup-tool.ts'
 import { videoFramesTool } from '../tools/video-frames-tool.ts'
 import { readArchiveTool } from '../tools/read-archive-tool.ts'
 import { initSubmodulesTool } from '../tools/init-submodules-tool.ts'
+import { gitFetchTool } from '../tools/git-fetch-tool.ts'
 import {
   PARALLEL_SEARCH_PLUGIN_ID,
   PARALLEL_SEARCH_TOOL_NAME,
@@ -121,6 +123,7 @@ export function createRegistry(): ToolRegistry {
   registry.register(gitDiffTool)
   registry.register(gitLogTool)
   registry.register(gitShowTool)
+  registry.register(gitFetchTool)
   registry.register(gitCommitTool)
   syncGhTools(registry)
   registry.register(runShellTool)
@@ -399,6 +402,7 @@ export function syncGhTools(registry: ToolRegistry): void {
     if (!registry.has('gh_pr_list')) registry.register(ghPrListTool)
     if (!registry.has('gh_pr_view')) registry.register(ghPrViewTool)
     if (!registry.has('gh_pr_files')) registry.register(ghPrFilesTool)
+    if (!registry.has('gh_api_read')) registry.register(ghApiReadTool)
     if (!registry.has('get_ci_status')) registry.register(getCiStatusTool)
     if (!registry.has('wait_for_ci_checks')) registry.register(waitForCiChecksTool)
     if (!registry.has('get_ci_failure_logs')) registry.register(getCiFailureLogsTool)
@@ -406,6 +410,7 @@ export function syncGhTools(registry: ToolRegistry): void {
     registry.unregister('gh_pr_list')
     registry.unregister('gh_pr_view')
     registry.unregister('gh_pr_files')
+    registry.unregister('gh_api_read')
     registry.unregister('get_ci_status')
     registry.unregister('wait_for_ci_checks')
     registry.unregister('get_ci_failure_logs')

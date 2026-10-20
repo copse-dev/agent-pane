@@ -746,8 +746,8 @@
       "bytes": 218453
     },
     "automation-trigger.png": {
-      "sha256": "2654a26faaa6bbfd35276037d5f7916eeb4563546bc42323a916d148a2c04542",
-      "bytes": 445377
+      "sha256": "be55c0b16a47ec83c659355f889dc1dfe6fadf575a4bf2ef42f4d48f17a372e2",
+      "bytes": 443533
     },
     "automation-workspace-section.png": {
       "sha256": "8d4ab6e06079af09eb9cf14532db6955551a148fe5c830ad8957c8a9fe506062",
@@ -1964,6 +1964,10 @@
     "hook-cards.png": {
       "sha256": "53edd0ef14b650b9b317c524714f5da24f1ac364731245256a8bc07ad29b7fff",
       "bytes": 344051
+    },
+    "host-read-tool-cards.png": {
+      "sha256": "8ba85cdde69b4786adabb98d021857a87a0bca2b876e6192fa9e1765ebd6fb1b",
+      "bytes": 297199
     },
     "image-description-draft.png": {
       "sha256": "428ffa6b827028c7efed94e601728d79156ad986a3a9083ecfee65532b178880",
