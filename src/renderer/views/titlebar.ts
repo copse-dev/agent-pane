@@ -1,5 +1,8 @@
 import { openAppRunDialog } from './app-run-dialog.ts'
-import { playIcon } from '../dom/icons.ts'
+import { chevronDownIcon, playIcon } from '../dom/icons.ts'
+import { getActiveThread, isBlankThread } from '@shared/store/thread-helpers.ts'
+import { projectDisplayName, setSidebarProjectFilter } from '../controller/projects.ts'
+import { contextMenuClosedByPressOn, showContextMenu } from '../dom/context-menu.ts'
 import { el } from '../dom/helpers.ts'
 import { outlineIcon } from '../dom/outline-icon.ts'
 import { setTooltip } from '../dom/tooltip.ts'
@@ -25,7 +28,33 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   root.classList.add('titlebar')
 
   const leftCluster = el('div', { class: 'titlebar-left' })
-  const workspaceName = el('span', { class: 'workspace-name' }, 'No folder')
+  const workspaceLabel = el('span', { class: 'workspace-name-label' }, 'No folder')
+  const workspaceName = el(
+    'button',
+    { type: 'button', class: 'workspace-name', 'aria-haspopup': 'menu' },
+    workspaceLabel,
+    chevronDownIcon('ui-icon ui-icon-sm ui-picker-chevron workspace-name-chevron'),
+  )
+  workspaceName.addEventListener('click', (event) => {
+    if (workspaceName.disabled || contextMenuClosedByPressOn(workspaceName)) return
+    const rect = workspaceName.getBoundingClientRect()
+    const { projects, activeProjectId } = store.getState()
+    showContextMenu(
+      rect.left,
+      rect.bottom + 4,
+      projects.map((project) => ({
+        label: projectDisplayName(project),
+        checked: project.id === activeProjectId,
+        disabled: project.missing === true,
+        onSelect: (): void => {
+          setSidebarProjectFilter(store, api, project.id)
+        },
+      })),
+    )
+    if (event.detail === 0) {
+      document.querySelector<HTMLButtonElement>('.context-menu-item.is-checked')?.focus()
+    }
+  })
   const sshTarget = el('span', { class: 'workspace-ssh-target', hidden: true })
   const workspaceBranch = el('span', { class: 'workspace-branch', hidden: true })
   // Hides or shows the projects sidebar (Cmd/Ctrl+B). Sits right after the
@@ -109,12 +138,28 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
   root.append(leftCluster, dragRegion, panelControls.element)
   const destroyCompactLayout = bindTitlebarCompactLayout(root, [leftCluster, panelControls.element])
 
+  function syncProjectPicker(): void {
+    const thread = getActiveThread(store)
+    workspaceName.disabled =
+      store.getState().projects.length === 0 || (thread !== undefined && !isBlankThread(thread))
+    workspaceName.setAttribute(
+      'aria-label',
+      workspaceName.disabled
+        ? workspaceName.textContent
+        : `Project for new thread: ${workspaceName.textContent}`,
+    )
+  }
+
   function syncName(): void {
     const { workspaceRoot, activeProjectId, projects } = store.getState()
     const project = projects.find((p) => p.id === activeProjectId)
-    workspaceName.textContent = workspaceRoot ? basename(workspaceRoot) : 'No folder'
-    // The name is a basename and truncates further in narrow chrome; the
-    // tooltip is where the full path lives.
+    workspaceLabel.textContent = project
+      ? projectDisplayName(project)
+      : workspaceRoot
+        ? basename(workspaceRoot)
+        : 'No folder'
+    syncProjectPicker()
+    // The project name truncates in narrow chrome; the tooltip carries its full path.
     setTooltip(workspaceName, workspaceRoot)
     if (project?.sshHost) {
       void api.sshWorkspace.listHosts().then((hosts) => {
@@ -192,7 +237,10 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
       syncRunApp()
     }),
     store.on('projects_changed', syncName),
+    store.on('message_added', syncProjectPicker),
+    store.on('thread_status_changed', syncProjectPicker),
     store.on('threads_changed', () => {
+      syncProjectPicker()
       if (store.getState().activeThreadId !== syncedThreadId) {
         syncBranchNow()
         return

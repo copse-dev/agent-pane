@@ -38,7 +38,6 @@ import {
   archiveThread,
   deleteThread,
   isThreadArchived,
-  openNewThread,
   setThreadTitle,
 } from '@shared/store/thread-helpers.ts'
 import { githubPrKey, type GithubPrRef } from '@shared/git/github-pr-url.ts'
@@ -66,6 +65,8 @@ import {
   relocateProject,
   SIDEBAR_THREADS_PAGE_SIZE,
   switchProject,
+  openNewProjectThread,
+  setSidebarProjectFilter,
   switchProjectThread,
 } from '../controller/projects.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
@@ -471,8 +472,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
   // One line per thread: the owning project's name is dropped. Session-only, like the project filter.
   let compactRows = false
-  // Which project the list shows. Session-only: a fresh launch shows them all.
-  let projectFilterId: string | null = null
   // Narrow to threads with unlanded work (an open PR, or uncommitted/unpushed
   // changes). Session-only, like the project filter; a thread whose PR/change
   // state hasn't been fetched yet counts as matching so it isn't hidden before
@@ -489,7 +488,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     'button',
     { type: 'button', class: 'projects-filter-btn', 'aria-haspopup': 'menu' },
     filterLabel,
-    chevronDownIcon('ui-icon ui-icon-sm'),
+    chevronDownIcon('ui-icon ui-icon-sm ui-picker-chevron'),
   )
   // How the threads are ordered and grouped. Both persist per profile; the store
   // keeps its own newest-first order and this only re-sorts what is drawn.
@@ -505,7 +504,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     },
     sortDir,
     sortLabel,
-    chevronDownIcon('ui-icon ui-icon-sm'),
+    chevronDownIcon('ui-icon ui-icon-sm ui-picker-chevron'),
   )
   const filtersRow = el('div', { class: 'projects-filters' }, projectFilterBtn, sortBtn)
 
@@ -563,9 +562,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   }
   /** The two filter buttons say what they currently do: which project, and the sort. */
   function syncFilterControls(): void {
-    const { projects, sidebarThreadSort, sidebarThreadSortReverse } = store.getState()
-    const chosen = projects.find((project) => project.id === projectFilterId)
-    if (!chosen) projectFilterId = null
+    const { projects, sidebarThreadSort, sidebarThreadSortReverse, sidebarProjectFilterId } =
+      store.getState()
+    const chosen = projects.find((project) => project.id === sidebarProjectFilterId)
+    if (!chosen) store.setState({ sidebarProjectFilterId: null })
     const projectName = chosen ? projectDisplayName(chosen) : 'All projects'
     const suffix = archivedOnly ? ' · Archived' : needsCleanupOnly ? ' · Needs cleanup' : ''
     filterLabel.textContent = `${projectName}${suffix}`
@@ -598,19 +598,17 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       {
         label: 'All projects',
         detail: String(total),
-        checked: projectFilterId === null,
+        checked: store.getState().sidebarProjectFilterId === null,
         onSelect: (): void => {
-          projectFilterId = null
-          render()
+          setSidebarProjectFilter(store, api, null)
         },
       },
       ...projects.map((project): ContextMenuEntry => ({
         label: projectDisplayName(project),
         detail: String(counts.get(project.id) ?? 0),
-        checked: project.id === projectFilterId,
+        checked: project.id === store.getState().sidebarProjectFilterId,
         onSelect: (): void => {
-          projectFilterId = project.id
-          render()
+          setSidebarProjectFilter(store, api, project.id)
         },
       })),
       { separator: true },
@@ -697,7 +695,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             void addProject(store, api)
             return
           }
-          openNewThread(store)
+          openNewProjectThread(store, api)
         },
       },
       { separator: true },
@@ -1619,9 +1617,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     // The project filter narrows what is listed, not what exists: automations,
     // orphans and every other store read still see all of them.
     const visibleProjects =
-      projectFilterId === null
+      store.getState().sidebarProjectFilterId === null
         ? projects
-        : projects.filter((project) => project.id === projectFilterId)
+        : projects.filter((project) => project.id === store.getState().sidebarProjectFilterId)
     const expandedId = expandedProjectId ?? activeProjectId
 
     if (archivedOnly) {
@@ -2279,15 +2277,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       )
       newThreadBtn.addEventListener('click', (e) => {
         e.stopPropagation()
-        if (project.id !== store.getState().activeProjectId) {
-          switchProject(store, api, project.id)
-          return
-        }
-        if (!store.getState().workspaceRoot) {
-          void addProject(store, api)
-          return
-        }
-        openNewThread(store)
+        openNewProjectThread(store, api, project.id)
       })
       return newThreadBtn
     }
@@ -2706,7 +2696,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     } else {
       for (const node of buildProjectTree(visibleProjects, projectGroups)) {
         // A group with nothing of the chosen project in it has nothing to show.
-        if (node.kind === 'group' && projectFilterId !== null && node.projects.length === 0)
+        if (
+          node.kind === 'group' &&
+          store.getState().sidebarProjectFilterId !== null &&
+          node.projects.length === 0
+        )
           continue
         if (node.kind === 'group') list.append(renderGroupEntry(node.group, node.projects))
         else list.append(renderProjectEntry(node.project))
@@ -2825,6 +2819,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     }),
     unsubWorkingTree,
     store.on('projects_changed', render),
+    store.on('sidebar_project_filter_changed', render),
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
     store.on('threads_changed', () => {
