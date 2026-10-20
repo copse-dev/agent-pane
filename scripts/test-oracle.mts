@@ -49,6 +49,7 @@ import { isDirectExecution } from './lib/direct-execution.mts'
 import { execFileSync } from 'node:child_process'
 import { manifestChangedPaths } from './lib/screenshot-git.mts'
 import { SCREENSHOT_MANIFEST } from './lib/screenshot-manifest.mts'
+import { nativeScreenshotOutputs } from './lib/native-screenshot-outputs.mts'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { safeJsonParse } from './lib/safe-json.mts'
@@ -862,7 +863,14 @@ const E2E_SCREENSHOT_DIR = 'tests/e2e/screenshots'
 /** spec → the reference-screenshot filenames it (re)generates. */
 export function specScreenshots(): Map<string, string[]> {
   const m = new Map<string, string[]>()
-  for (const s of listSpecs()) m.set(s, extractSpecScreenshots(read(s)))
+  for (const s of listSpecs()) {
+    const source = read(s)
+    const screenshots = extractSpecScreenshots(source)
+    // Preserve existing helper discovery and add hash-audited native outputs.
+    // Helpers such as saveSettingsSection do not match save*Screenshot calls.
+    if (s.startsWith(`${E2E_DIR}/`)) screenshots.push(...nativeScreenshotOutputs(s, source))
+    m.set(s, [...new Set(screenshots)])
+  }
   return m
 }
 

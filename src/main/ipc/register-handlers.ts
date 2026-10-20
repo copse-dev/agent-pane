@@ -313,6 +313,7 @@ import {
   syncBackgroundTasksTools,
   syncOkfMemoryTools,
   syncParallelSearchTools,
+  syncWebSearchTools,
   syncPiiTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
@@ -1614,6 +1615,7 @@ export function registerAllHandlers(
       registerSkillTools(registry)
     }
     if (changedKeys.has(READ_TERMINAL_ENABLED_SETTING)) syncReadTerminalTools(registry)
+    if (changedKeys.has('webSearchProvider')) syncWebSearchTools(registry)
     if (changedKeys.has(MODEL_CLASSIFIER_ENABLED_SETTING)) syncModelClassifierTools(registry)
     if (changedKeys.has(ORCHESTRATION_STRATEGY_ENABLED_SETTING))
       syncOrchestrationStrategyTools(registry)
@@ -1714,6 +1716,7 @@ export function registerAllHandlers(
     // key.
     if (p === 'artificial-analysis') invalidateLiveIntellectCache()
     if (p === 'parallel') syncParallelSearchTools(registry)
+    if (p === 'parallel' || p === 'tavily') syncWebSearchTools(registry)
     // Saving an HF token auto-populates its priced, provider-pinned model list so
     // the picker and cost estimate work without a manual fetch (fire-and-forget).
     if (p === HUGGINGFACE_SLUG && apiKey.trim()) {

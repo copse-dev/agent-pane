@@ -4,7 +4,6 @@ import assert from 'node:assert/strict'
 import {
   decideShellPermission,
   decideWebFetchPermission,
-  decideWebSearchPermission,
   formatInstallPromptParts,
   formatGithubWritePrompt,
   formatGuardedYoloHarmPromptAdvice,
@@ -55,7 +54,7 @@ import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
-import { setSetting } from '../storage/settings.test-shim.ts'
+import { setSetting, setApiKey, deleteApiKey } from '../storage/settings.test-shim.ts'
 import { storageSet } from '../storage/storage.ts'
 import { drainWriteQueue } from '../storage/write-queue.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -852,6 +851,62 @@ describe('ensureToolPermitted', () => {
       setSetting('toolPermissionOverrides', {})
       clearMcpToolPermissionTargets()
       storageSet(AUTOMATIONS_STORAGE_KEY, [])
+    }
+  })
+
+  it('asks for the selected web search origin and explains API-credit usage', async () => {
+    setPermissionGateForTests(null)
+    await setSetting('webSearchProvider', 'tavily')
+    setApiKey('tavily', 'fixture-key')
+    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
+    await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+    setApprovalHandler(async (request) => {
+      assert.equal(request.subject, 'https://api.tavily.com:443')
+      assert.equal(request.cause, 'web-origin')
+      assert.match(request.bodyAdvice ?? '', /Tavily.*paid API credits/)
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted({ toolName: 'web_search', args: { query: 'docs' } }),
+        false,
+      )
+      await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, false)
+      await assert.rejects(
+        ensureToolPermitted({ toolName: 'web_search', args: { query: 'docs' } }),
+        /Web search denied/,
+      )
+    } finally {
+      await setSetting('webSearchProvider', 'none')
+      await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+      deleteApiKey('tavily')
+      setApprovalHandler(null)
+    }
+  })
+
+  it('returns setup guidance without a network prompt and still respects Always ask', async () => {
+    setPermissionGateForTests(null)
+    await setSetting('webSearchProvider', 'none')
+    let prompted = 0
+    setApprovalHandler(async () => {
+      prompted += 1
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted({ toolName: 'web_search', args: { query: 'docs' } }),
+        true,
+      )
+      assert.equal(prompted, 0)
+      await setSetting('toolPermissionOverrides', { [copseToolPermissionId('web_search')]: 'ask' })
+      assert.equal(
+        await ensureToolPermitted({ toolName: 'web_search', args: { query: 'docs' } }),
+        false,
+      )
+      assert.equal(prompted, 1)
+    } finally {
+      await setSetting('toolPermissionOverrides', {})
+      setApprovalHandler(null)
     }
   })
 
@@ -2754,12 +2809,14 @@ describe('decideMcpPermission', () => {
 })
 
 describe('web tool permission decisions', () => {
-  it('allows default DuckDuckGo web search', () => {
-    const d = decideWebSearchPermission({
+  it('prompts for the selected search API rather than allowing the old DuckDuckGo origin', () => {
+    const d = decideWebFetchPermission({
+      url: 'https://api.tavily.com/search',
       allowedOrigins: DEFAULT_WEB_ALLOWED_ORIGINS,
       allowUserApproval: true,
     })
-    assert.equal(d.action, 'allow')
+    assert.equal(d.action, 'prompt')
+    assert.equal(d.origin, 'https://api.tavily.com:443')
   })
 
   it('prompts for fetch_url to a new public origin', () => {
