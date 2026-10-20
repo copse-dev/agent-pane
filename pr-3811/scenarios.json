@@ -208,6 +208,10 @@
     "label": "Side chats beside the main thread"
   },
   {
+    "id": "side-chats-restored",
+    "label": "Side chats after an app restart"
+  },
+  {
     "id": "thread-context",
     "label": "The thread Context panel"
   },
