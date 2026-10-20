@@ -89,6 +89,10 @@
       "sha256": "26a1653f6a71a90151d8709de127d332af2138bc4acd9ec20db17ac5a556d4df",
       "bytes": 265681
     },
+    "acp-mode-default-detected.png": {
+      "sha256": "904d56e5258540e81943ddf821ac5fc46a819c0b5e2651140f0e70e5c6709fea",
+      "bytes": 180662
+    },
     "acp-network-scope-approval.png": {
       "sha256": "8bd357d05ba1c000e4b16380c9cf26fd1d1c3b71b1b98d1cfc0d66e7171513e1",
       "bytes": 50857
