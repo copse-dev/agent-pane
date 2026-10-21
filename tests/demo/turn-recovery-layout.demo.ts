@@ -3,14 +3,14 @@ import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
 describe('interrupted turn recovery layout', () => {
   for (const width of [720, 360]) {
-    it(`keeps the message and long model action readable at ${width}px`, async () => {
+    it(`keeps the message and long model action readable at ${String(width)}px`, async () => {
       await browser.url('/?scenario=concise-state-recovery-layout')
       await $('.turn-recovery-card').waitForDisplayed()
       await browser.execute(async (cardWidth) => {
         await document.fonts.ready
         const card = document.querySelector<HTMLElement>('.turn-recovery-card')
         if (!card) throw new Error('Missing recovery card')
-        card.style.width = `${cardWidth}px`
+        card.style.width = `${String(cardWidth)}px`
         card.style.maxWidth = '100%'
       }, width)
       await expect($('.turn-recovery-model-note')).toHaveText('claude-haiku-4-5-20251001', {
@@ -48,7 +48,10 @@ describe('interrupted turn recovery layout', () => {
         expect(button.right).toBeLessThanOrEqual(layout.width)
         expect(button.overflow).toBeLessThanOrEqual(1)
       }
-      await saveElementScreenshot('.turn-recovery-card', `turn-recovery-layout-${width}.png`)
+      await saveElementScreenshot(
+        '.turn-recovery-card',
+        `turn-recovery-layout-${String(width)}.png`,
+      )
     })
   }
 })

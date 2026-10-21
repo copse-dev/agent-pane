@@ -83,7 +83,7 @@ describe('unopened-project metadata redraws Activity at startup', () => {
   })
 
   for (const width of [800, 1600]) {
-    it(`shows the unopened completion without switching projects at ${width}px`, async function () {
+    it(`shows the unopened completion without switching projects at ${String(width)}px`, async function () {
       this.timeout(60_000)
       await prepareE2eScreenshot({ width, height: 900 })
       const row = $('#activity-home .activity-row[data-thread-id="e2e-activity-completed"]')
@@ -94,7 +94,7 @@ describe('unopened-project metadata redraws Activity at startup', () => {
         activeProject,
       )
       await expect($('.prompt-input')).toBeDisplayed()
-      await savePreparedAppScreenshot(`sidebar-unopened-activity-${width}.png`)
+      await savePreparedAppScreenshot(`sidebar-unopened-activity-${String(width)}.png`)
     })
   }
 })

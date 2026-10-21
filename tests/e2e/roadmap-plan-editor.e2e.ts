@@ -1,3 +1,4 @@
+import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
 import { $, browser, expect } from '@wdio/globals'
 import {
   resetUserData,
@@ -15,9 +16,9 @@ const BRIEF =
 const PLAN =
   '# Goal\nRecover expired sessions without losing work.\n\n# Constraints\nKeep existing sessions and the public API.\n\n# Scope\nSign-in form and session recovery tests.\n\n# Definition of done\n- Recovery preserves the current draft.\n- Expired-token regression tests pass.'
 
-async function currentPlan() {
+async function currentPlan(): Promise<StoredThreadPlan | null> {
   return browser.execute(async (projectId) => {
-    const threadId = document.querySelector<HTMLElement>('.chat-row.selected')?.dataset.threadId
+    const threadId = document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId']
     if (!threadId) throw new Error('Missing selected task')
     return window.api.plans.get(projectId, threadId)
   }, PROJECT)
@@ -92,10 +93,8 @@ describe('roadmap document and linked planning prototype', () => {
     const saved = await browser.execute(async () =>
       (await window.api.roadmap.list()).find((item) => item.id === 'session-recovery'),
     )
-    await expect(saved?.body).toBe(`${BRIEF}\n\nPreserve keyboard focus during recovery.`)
-    await expect(saved?.title).toBe(
-      'Let people recover an expired session without losing their work.',
-    )
+    expect(saved?.body).toBe(`${BRIEF}\n\nPreserve keyboard focus during recovery.`)
+    expect(saved?.title).toBe('Let people recover an expired session without losing their work.')
   })
 
   it('develops a real draft without starting implementation and reopens the same plan', async () => {
@@ -106,8 +105,8 @@ describe('roadmap document and linked planning prototype', () => {
       expect.stringContaining('Preserve keyboard focus during recovery.'),
     )
     const plan = await currentPlan()
-    await expect(plan?.approval).toBeNull()
-    await expect(plan?.completion).toBeNull()
+    expect(plan?.approval).toBeNull()
+    expect(plan?.completion).toBeNull()
     await expect($('.msg-assistant')).not.toExist()
     await $('#thread-plan-dialog').$('button=Close').click()
     // A roadmap draft is durable even if its prefilled composer is cleared.
@@ -121,7 +120,7 @@ describe('roadmap document and linked planning prototype', () => {
     await $('.roadmap-attempt').$('button=Open plan').waitForDisplayed()
     await $('.roadmap-attempt').$('button=Open plan').click()
     await expect($('[data-testid="plan-status"]')).toHaveText('draft · r1')
-    await expect((await currentPlan())?.meta.planId).toBe(plan?.meta.planId)
+    expect((await currentPlan())?.meta.planId).toBe(plan?.meta.planId)
     await $('#thread-plan-dialog').$('button=Markdown').click()
     await $('#plan-source').setValue(PLAN)
     await $('#thread-plan-dialog').$('button=Save revision').click()
@@ -137,7 +136,7 @@ describe('roadmap document and linked planning prototype', () => {
     await $('.roadmap-attempt').$('button=Open plan').waitForDisplayed()
     await $('.roadmap-attempt').$('button=Open plan').click()
     await expect($('[data-testid="plan-status"]')).toHaveText('draft · r2')
-    await expect((await currentPlan())?.meta.planId).toBe(plan?.meta.planId)
+    expect((await currentPlan())?.meta.planId).toBe(plan?.meta.planId)
   })
 
   it('shows reported evidence and preserves previous attempts and their origin links', async () => {

@@ -21,7 +21,7 @@ describe('SSH status chrome without lightning emoji', () => {
   it('shows the SSH disconnect banner without a lightning emoji', async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
 
-    const banner = await $('#ssh-status-banner')
+    const banner = await $('#ssh-status-banner').getElement()
     // A bare timeout here says only "no banner", which is the one thing already
     // known. The banner is gated on `activeSshHostId` — an `activeProjectId`
     // that resolves to a project carrying an `sshHost` — and rendered from an
@@ -38,7 +38,7 @@ describe('SSH status chrome without lightning emoji', () => {
           title: row.getAttribute('title') ?? '',
           active: row.classList.contains('active'),
         })),
-        titlebar: document.querySelector('.workspace-name')?.textContent?.trim() ?? null,
+        titlebar: document.querySelector('.workspace-name')?.textContent.trim() ?? null,
       }))
       const ssh = await browser.execute(() => window.api.sshWorkspace.getStates())
       throw new Error(

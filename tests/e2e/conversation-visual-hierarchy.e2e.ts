@@ -4,9 +4,9 @@ import { prepareE2eScreenshot, saveAppScreenshot } from './helpers/screenshot.ts
 
 describe('conversation visual hierarchy', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedConversationVisualHierarchyFixture(process.cwd())
     await browser.reloadSession()
@@ -31,7 +31,8 @@ describe('conversation visual hierarchy', () => {
     expect(initialDisclosureState.toolOpen).toBe(false)
 
     const layout = await browser.execute(() => {
-      const rect = (selector: string) => document.querySelector(selector)?.getBoundingClientRect()
+      const rect = (selector: string): DOMRect | undefined =>
+        document.querySelector(selector)?.getBoundingClientRect()
       const pane = rect('#pane-chat')
       const messagesList = document.querySelector<HTMLElement>('.messages-list')
       const conversationScroll = document.querySelector<HTMLElement>('.conversation-scroll')
@@ -77,7 +78,7 @@ describe('conversation visual hierarchy', () => {
         !secondaryTitlebarButton ||
         !selectedThread
       ) {
-        return { error: 'missing hierarchy fixture element' }
+        throw new Error('missing hierarchy fixture element')
       }
 
       const reasoningStyle = getComputedStyle(closedReasoning)
@@ -179,7 +180,7 @@ describe('conversation visual hierarchy', () => {
     expect(layout.comparisonLeftBorder).toBe('0px')
     expect(layout.comparisonBackground).toContain('repeating-linear-gradient')
     expect(layout.baseLineHeight).toBe('22px')
-    expect(parseFloat(layout.answerLineHeight ?? '')).toBeCloseTo(24, 1)
+    expect(parseFloat(layout.answerLineHeight)).toBeCloseTo(24, 1)
     expect(layout.reasoningLineHeight).toBe(layout.baseLineHeight)
     expect(layout.composerLineHeight).toBe(layout.baseLineHeight)
     expect(layout.sidebarLineHeight).toBe(layout.baseLineHeight)

@@ -16,7 +16,7 @@ const TRIGGER = HOST + ' .model-picker-trigger'
 async function installClaudeCodeFixture(): Promise<void> {
   await browser.execute(() => {
     const getSetting = window.api.settings.get
-    window.api.settings.get = async (key) =>
+    window.api.settings.get = async (key): ReturnType<typeof getSetting> =>
       key === 'registeredAcpAgents'
         ? [
             {
@@ -39,7 +39,9 @@ async function installClaudeCodeFixture(): Promise<void> {
             },
           ]
         : getSetting(key)
-    window.api.settings.availableProviders = async () => ({
+    window.api.settings.availableProviders = async (): ReturnType<
+      typeof window.api.settings.availableProviders
+    > => ({
       anthropic: false,
       openai: false,
       'openai:gpt-6-astra': false,
@@ -51,10 +53,12 @@ async function installClaudeCodeFixture(): Promise<void> {
       deepseek: false,
       huggingface: false,
     })
-    window.api.settings.extraProviders = async () => []
-    window.api.lmStudio.models = async () => []
+    window.api.settings.extraProviders = async (): ReturnType<
+      typeof window.api.settings.extraProviders
+    > => []
+    window.api.lmStudio.models = async (): ReturnType<typeof window.api.lmStudio.models> => []
     // Plan coverage for an ACP route needs a reported subscription plan.
-    window.api.usage.getPlanUsage = async () => ({
+    window.api.usage.getPlanUsage = async (): ReturnType<typeof window.api.usage.getPlanUsage> => ({
       checkedAt: '2026-10-01T00:00:00Z',
       providers: [
         {

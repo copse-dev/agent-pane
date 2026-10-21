@@ -4,7 +4,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
-function settingsSection(section: 'general' | 'experimental') {
+function settingsSection(section: 'general' | 'experimental'): ReturnType<typeof $> {
   return $(`.settings-section[data-section="${section}"]`)
 }
 
@@ -145,7 +145,10 @@ describe('experimental settings section', () => {
       'device agents must leave Settings > Experimental',
     )
 
-    const mobileCompanion = await experimental.$('legend=Mobile Companion').parentElement()
+    const mobileCompanion = await experimental
+      .$('legend=Mobile Companion')
+      .parentElement()
+      .getElement()
     await expect(mobileCompanion).toBeDisplayed()
     // Enabling, network choice, pairing approval, and device management all live
     // inline here now — no separate native-dialog management surface.
@@ -169,6 +172,7 @@ describe('experimental settings section', () => {
       .$('legend=Model classifier')
       .parentElement()
       .$('.field-hint')
+      .getElement()
     assert.match(await classifierHint.getText(), /how hard a task is/i)
 
     await saveElementScreenshot('#settings-dialog', 'settings-experimental.png')

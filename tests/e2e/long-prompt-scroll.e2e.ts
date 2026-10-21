@@ -149,7 +149,7 @@ describe('scroll the transcript to the prompt on submit', () => {
       async () =>
         (await browser.execute(() => {
           const replies = document.querySelectorAll<HTMLElement>('.msg-assistant .message-text')
-          return replies.item(replies.length - 1)?.innerText.trim() ?? ''
+          return replies.item(replies.length - 1).innerText.trim()
         })) === FINAL_REPLY,
       {
         timeout: 15_000,

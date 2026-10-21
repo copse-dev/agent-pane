@@ -45,14 +45,10 @@ async function probeHome(): Promise<HomeProbe | null> {
       groups[group.dataset['group'] ?? ''] = {
         collapsed: group.dataset['collapsed'] === 'true',
         count: group.querySelector('.activity-group-count')?.textContent ?? '',
-        rows: [...group.querySelectorAll('.activity-thread')].map(
-          (title) => title.textContent ?? '',
-        ),
+        rows: [...group.querySelectorAll('.activity-thread')].map((title) => title.textContent),
       }
     }
-    const strip = [...root.querySelectorAll('.activity-strip-card')].map(
-      (card) => card.textContent ?? '',
-    )
+    const strip = [...root.querySelectorAll('.activity-strip-card')].map((card) => card.textContent)
     const columns = getComputedStyle(body).gridTemplateColumns.split(' ').length
     return {
       groups,
@@ -142,9 +138,13 @@ describe('browser-hosted Activity home', () => {
       await browser.waitUntil(async () => (await probeHome())?.twoColumns === false)
       await browser.execute(
         () =>
-          new Promise<void>((resolve) =>
-            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-          ),
+          new Promise<void>((resolve) => {
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                resolve()
+              })
+            })
+          }),
       )
       const geometry = await browser.execute(() => {
         const list = document.querySelector('#activity-home .activity-list')
@@ -226,7 +226,9 @@ describe('browser-hosted Activity home', () => {
     const header = $('#activity-home [data-group-toggle="working"]')
     await header.click()
     await expect(header).toHaveAttribute('aria-expanded', 'true')
-    const titles = await $$('#activity-home .activity-group[data-group="working"] .activity-thread')
+    const titles = await $$(
+      '#activity-home .activity-group[data-group="working"] .activity-thread',
+    ).getElements()
     expect(titles).toHaveLength(2)
     await saveAppScreenshot('activity-home-working-open.png')
     await header.click()
@@ -243,11 +245,11 @@ describe('browser-hosted Activity home', () => {
 
   it('reads in the light theme', async () => {
     await browser.execute(() => {
-      document.documentElement.dataset.theme = 'light'
+      document.documentElement.dataset['theme'] = 'light'
     })
     await saveAppScreenshot('activity-home-light.png')
     await browser.execute(() => {
-      document.documentElement.dataset.theme = 'dark'
+      document.documentElement.dataset['theme'] = 'dark'
     })
   })
 
@@ -483,7 +485,8 @@ describe('browser-hosted Activity home with a cleared project filter', () => {
     await approve.click()
     await browser.waitUntil(
       async () =>
-        (await $$('#activity-home .activity-row[data-state="needs-approval"]')).length === 0,
+        (await $$('#activity-home .activity-row[data-state="needs-approval"]').getElements())
+          .length === 0,
     )
     await expect(selected).toBeDisplayed()
     await expect(selected).toHaveAttribute('aria-pressed', 'true')
@@ -510,7 +513,7 @@ describe('browser-hosted Activity home with many projects', () => {
   it('lists every project by attention and scrolls the selected card into view', async () => {
     const names = await browser.execute(() =>
       [...document.querySelectorAll('#activity-home .activity-strip-name')].map(
-        (node) => node.textContent ?? '',
+        (node) => node.textContent,
       ),
     )
     // All projects, the one that needs you, then the rest by name.

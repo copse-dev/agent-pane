@@ -1,3 +1,4 @@
+import { at } from '@copse/std/array-utils.ts'
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
@@ -10,7 +11,7 @@ import { assertCheckboxBesideLabel } from './helpers/checkbox-row.ts'
 import { resetUserData, seedEmptyProject, seedSshWorkspaceSettings } from './helpers/seed-config.ts'
 import { assertErrorColor, assertKitButtonChrome } from './helpers/ui-kit-style.ts'
 
-function settingsSection(section: 'ssh') {
+function settingsSection(section: 'ssh'): ReturnType<typeof $> {
   return $(`.settings-section[data-section="${section}"]`)
 }
 
@@ -51,11 +52,11 @@ describe('SSH settings section', () => {
     await expect(closeButton.$('svg[data-icon="close"]')).toExist()
     assert.equal(await closeButton.getText(), '')
 
-    const enabledToggle = await sshSection.$('input[name="sshWorkspaceEnabled"]')
+    const enabledToggle = await sshSection.$('input[name="sshWorkspaceEnabled"]').getElement()
     await expect(enabledToggle).toBeExisting()
     assert.equal(await enabledToggle.isSelected(), false)
 
-    const hostRow = await sshSection.$('.ssh-host-row')
+    const hostRow = await sshSection.$('.ssh-host-row').getElement()
     await expect(hostRow).toBeDisplayed()
     assert.match(await hostRow.getText(), /Dev Server/)
     await expect(hostRow.$('.ssh-host-auth')).toHaveText(
@@ -65,8 +66,8 @@ describe('SSH settings section', () => {
       expect.stringContaining('encrypted with the OS keychain'),
     )
 
-    const editBtn = await hostRow.$('.ssh-host-edit')
-    const removeBtn = await hostRow.$('.ssh-host-delete')
+    const editBtn = await hostRow.$('.ssh-host-edit').getElement()
+    const removeBtn = await hostRow.$('.ssh-host-delete').getElement()
     await expect(editBtn).toBeDisplayed()
     await expect(removeBtn).toBeDisplayed()
     // Guard the EditRemove jam: actions must be separate flex items with gap.
@@ -139,10 +140,10 @@ describe('SSH settings section', () => {
     assert.equal(fields.hostInvalid, null, 'fields that passed stay unmarked')
     assert.equal(fields.portBorder, fields.errorColor, 'the invalid port draws in --error')
     for (const width of fields.widths) {
-      assert.equal(width, fields.widths[0], 'host text fields share the narrower text width')
+      assert.equal(width, at(fields.widths, 0), 'host text fields share the narrower text width')
     }
     assert.ok(
-      fields.policyWidth > fields.widths[0],
+      fields.policyWidth > at(fields.widths, 0),
       'the host policy select stays wider than text fields',
     )
     await browser.execute(() => {

@@ -1,3 +1,4 @@
+import type { ProcessManagerSnapshot } from '@shared/types/process-manager.ts'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
 
@@ -7,7 +8,7 @@ describe('Process Manager network activity', () => {
     await $('.prompt-input').waitForExist()
     await browser.execute(() => {
       const now = 1_800_000_000_000
-      window.api.processManager.snapshot = async () => ({
+      window.api.processManager.snapshot = async (): Promise<ProcessManagerSnapshot> => ({
         sampledAt: now,
         processes: [],
         network: {
@@ -107,18 +108,17 @@ describe('Process Manager network activity', () => {
     await expect($$('.network-activity-table tbody tr')).toBeElementsArrayOfSize(1)
     await browser.execute(() => {
       const snapshot = window.api.processManager.snapshot
-      window.api.processManager.snapshot = async () => {
+      window.api.processManager.snapshot = async (): Promise<ProcessManagerSnapshot> => {
         const current = await snapshot()
+        if (!current.network) return current
         return {
           ...current,
-          network: current.network
-            ? {
-                ...current.network,
-                rows: current.network.rows.map((row) =>
-                  row.id === 3 ? { ...row, endedAt: current.sampledAt, status: 'closed' } : row,
-                ),
-              }
-            : undefined,
+          network: {
+            ...current.network,
+            rows: current.network.rows.map((row) =>
+              row.id === 3 ? { ...row, endedAt: current.sampledAt, status: 'closed' } : row,
+            ),
+          },
         }
       }
     })

@@ -1,3 +1,4 @@
+import { at } from '@copse/std/array-utils.ts'
 import { mkdirSync } from 'node:fs'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedCodeBlockCopyFixture } from './helpers/seed-config.ts'
@@ -19,21 +20,29 @@ describe('code block actions', () => {
 
   it('copies examples, and runs shell commands into inline output sent to the agent', async function () {
     this.timeout(90_000)
-    const message = await $('[data-message-id="msg-assistant-code-blocks"] .message-text')
+    const message = await $(
+      '[data-message-id="msg-assistant-code-blocks"] .message-text',
+    ).getElement()
     await message.waitForExist({ timeout: 30_000 })
 
-    const codeBlocks = await $$('[data-message-id="msg-assistant-code-blocks"] pre.code-block')
-    await expect(codeBlocks).toHaveLength(2)
+    const codeBlocks = await $$(
+      '[data-message-id="msg-assistant-code-blocks"] pre.code-block',
+    ).getElements()
+    expect(codeBlocks).toHaveLength(2)
     await expect($('[data-message-id="msg-assistant-code-blocks"] .hljs-keyword')).toExist()
 
-    const copyButtons = await $$('[data-message-id="msg-assistant-code-blocks"] .code-block-copy')
-    await expect(copyButtons).toHaveLength(2)
-    const runButtons = await $$('[data-message-id="msg-assistant-code-blocks"] .code-block-run')
-    await expect(runButtons).toHaveLength(1)
+    const copyButtons = await $$(
+      '[data-message-id="msg-assistant-code-blocks"] .code-block-copy',
+    ).getElements()
+    expect(copyButtons).toHaveLength(2)
+    const runButtons = await $$(
+      '[data-message-id="msg-assistant-code-blocks"] .code-block-run',
+    ).getElements()
+    expect(runButtons).toHaveLength(1)
 
-    const firstBlock = codeBlocks[0]
-    const firstCopy = copyButtons[0]
-    const runButton = runButtons[0]
+    const firstBlock = at([...codeBlocks], 0)
+    const firstCopy = at([...copyButtons], 0)
+    const runButton = at([...runButtons], 0)
     await firstBlock.moveTo()
     await expect(firstCopy).toHaveText('Copy')
 
@@ -43,7 +52,7 @@ describe('code block actions', () => {
     })
     expect(msgCopyOpacity).toBe('0')
 
-    await codeBlocks[1].moveTo()
+    await at([...codeBlocks], 1).moveTo()
     await expect(runButton).toHaveAttribute('aria-label', 'Run command')
     await expect(runButton.$('svg[data-icon="play"]')).toExist()
     await saveAppScreenshot('code-block-run-hover.png')
@@ -64,7 +73,7 @@ describe('code block actions', () => {
 
     const output = await $(
       '[data-message-id="msg-assistant-code-blocks"] .code-block-shell > .code-block-output',
-    )
+    ).getElement()
     await output.waitForDisplayed({ timeout: 30_000 })
     await browser.waitUntil(
       async () => (await output.getAttribute('data-run-state')) !== 'running',
@@ -79,7 +88,7 @@ describe('code block actions', () => {
 
     // The result goes to the agent as the next user message; nothing is left
     // waiting on the draft for a Send.
-    const sent = await $('.msg-user .transcript-attachment-shell')
+    const sent = await $('.msg-user .transcript-attachment-shell').getElement()
     await sent.waitForDisplayed({ timeout: 30_000 })
     await expect(sent.$('.transcript-attachment-label')).toHaveText(
       expect.stringContaining('exit 0'),
@@ -87,7 +96,7 @@ describe('code block actions', () => {
     await expect($('.attachment-chip.shell-chip')).not.toExist()
 
     await sent.click()
-    const preview = await $('dialog.attachment-preview-dialog[open]')
+    const preview = await $('dialog.attachment-preview-dialog[open]').getElement()
     await preview.waitForDisplayed({ timeout: 10_000 })
     await expect(preview.$('.attachment-preview-text')).toHaveText(
       expect.stringContaining('424242'),

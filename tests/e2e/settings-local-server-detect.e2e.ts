@@ -30,7 +30,13 @@ describe('local server detection (Settings → Models & agents)', () => {
 
   after(async () => {
     resetUserData()
-    await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()))
+    await new Promise<void>((resolve) => {
+      if (server)
+        server.close(() => {
+          resolve()
+        })
+      else resolve()
+    })
   })
 
   it('lists a running local server without a saved key', async () => {

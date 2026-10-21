@@ -11,7 +11,7 @@ import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approva
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 async function clickProject(name: string): Promise<void> {
-  const row = await $(`.project-row*=${name}`)
+  const row = await $(`.project-row*=${name}`).getElement()
   await row.waitForExist({ timeout: 10_000 })
   await row.click()
 }
@@ -19,7 +19,7 @@ async function clickProject(name: string): Promise<void> {
 async function openTerminalPane(): Promise<void> {
   // Scope to #titlebar — portrait chrome mounts a second Open-terminal control
   // under the composer with the same aria-label.
-  const terminalBtn = await $('#titlebar .titlebar-btn[aria-label="Open terminal"]')
+  const terminalBtn = await $('#titlebar .titlebar-btn[aria-label="Open terminal"]').getElement()
   await terminalBtn.click()
   await approveUnsandboxedTerminalIfPrompted()
   await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
@@ -32,17 +32,17 @@ async function createTerminal(): Promise<void> {
 }
 
 async function terminalModeActive(): Promise<boolean> {
-  const terminalBtn = await $('#titlebar .titlebar-btn[aria-label="Open terminal"]')
+  const terminalBtn = await $('#titlebar .titlebar-btn[aria-label="Open terminal"]').getElement()
   const cls = await terminalBtn.getAttribute('class')
   return cls?.includes('active') ?? false
 }
 
 async function visibleTerminalTabCount(): Promise<number> {
   return browser.execute(() => {
-    const tabs = document.querySelectorAll('.terminals-tab')
+    const tabs = document.querySelectorAll<HTMLElement>('.terminals-tab')
     let visible = 0
     for (const tab of tabs) {
-      if (!(tab as HTMLElement).hidden) visible += 1
+      if (!tab.hidden) visible += 1
     }
     return visible
   })

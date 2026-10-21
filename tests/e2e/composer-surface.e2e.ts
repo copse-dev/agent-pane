@@ -61,7 +61,7 @@ describe('composer surface', () => {
         const chevronRect = modelChevron.getBoundingClientRect()
         const cardStyle = getComputedStyle(card)
         return {
-          theme: document.documentElement.dataset.theme,
+          theme: document.documentElement.dataset['theme'],
           cardBackground: cardStyle.backgroundColor,
           borderWidth: cardStyle.borderTopWidth,
           shadow: cardStyle.boxShadow,
