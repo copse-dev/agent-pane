@@ -2,13 +2,20 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { realpath } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import type { SkillMetadata } from '@shared/types/skills.ts'
-import { getSkill, listSkillSources, readSkill } from './skills-registry.ts'
+import type { SkillExecutor } from '@shared/skills/skill-requirements.ts'
+import {
+  getSkill,
+  listSkillSources,
+  readSkill,
+  skillPreflightEnvironment,
+} from './skills-registry.ts'
 import {
   buildModelActivatedSkillBlock,
   modelInvocableSkillsForTools,
   skillHasRequiredTools,
 } from './skill-prompt.ts'
 import { isSkillDependencyInScope } from './skill-dependencies.ts'
+import { preflightSkill, skillPreflightNotice } from './skill-preflight.ts'
 import { decodeSkillDefinition } from './parse-skill-frontmatter.ts'
 
 export const MAX_MODEL_ACTIVATED_SKILLS = 4
@@ -19,14 +26,18 @@ export interface SkillActivationTurn {
   read(name: string, path: string | undefined, signal: AbortSignal): Promise<string>
 }
 
-/** State belongs to one native parent run, including its bounded parent continuations. */
+/** Run-owned state. An omitted executor fact stays untested rather than implying native. */
 export function createSkillActivationTurn(
   invokedSkills: readonly string[],
   availableToolNames: readonly string[],
   invokedSkillContextBytes = 0,
+  executor?: SkillExecutor,
 ): SkillActivationTurn {
   const eligible = new Map(
-    modelInvocableSkillsForTools(availableToolNames).map((skill) => [skill.name, skill.skillPath]),
+    modelInvocableSkillsForTools(availableToolNames, executor).map((skill) => [
+      skill.name,
+      skill.skillPath,
+    ]),
   )
   const manual = new Set(
     invokedSkills.flatMap((name) => {
@@ -126,6 +137,9 @@ export function createSkillActivationTurn(
       const meta = getSkill(name)
       // Preserve the registry's actionable unknown/plugin/off-switch diagnostics.
       if (!meta) return (await readSkill(name, path)).body
+      const environment = skillPreflightEnvironment(availableToolNames, executor)
+      if (preflightSkill(meta, environment).status === 'blocked')
+        throw new Error(skillPreflightNotice(meta, environment))
       const manuallyInvoked = manual.has(meta.skillPath)
       await initializeDependencies()
       signal.throwIfAborted()
@@ -216,12 +230,13 @@ export function createSkillActivationTurn(
           return `Skill "${meta.name}" instructions are already loaded in this turn. Do not load them again through a file alias.`
         }
         signal.throwIfAborted()
-        const block = buildModelActivatedSkillBlock(
+        const instructionsBlock = buildModelActivatedSkillBlock(
           file,
           meta,
           true,
           dependency ? parent.name : undefined,
         )
+        const block = `${skillPreflightNotice(meta, environment)}\n\n${instructionsBlock}`
         chargeContext(block)
         return block
       }
@@ -267,12 +282,17 @@ export function createSkillActivationTurn(
             `Skill "${meta.name}" is no longer eligible for model activation. Reload skill discovery after correcting its definition.`,
           )
         }
-        const block = buildModelActivatedSkillBlock(
+        const currentMeta = { ...meta, requirements: current.requirements ?? {} }
+        if (preflightSkill(currentMeta, environment).status === 'blocked') {
+          throw new Error(skillPreflightNotice(currentMeta, environment))
+        }
+        const instructionsBlock = buildModelActivatedSkillBlock(
           file,
           meta,
           false,
           dependency ? parent.name : undefined,
         )
+        const block = `${skillPreflightNotice(currentMeta, environment)}\n\n${instructionsBlock}`
         const bytes = chargeContext(block)
         if (dependency) declareDependencies(captured)
         return `${block}\n\nContext estimate: approximately ${String(Math.ceil(block.length / 4))} tokens (${String(bytes)} UTF-8 bytes); ${String(contextBytes)} skill-context bytes loaded this turn.`

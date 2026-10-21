@@ -13,6 +13,33 @@ import { adaptBundledSkill } from './bundled-skill-compatibility.ts'
 const header = (extra = ''): string => `name: demo-skill\ndescription: Demo\n${extra}`
 
 describe('Agent Skills frontmatter conformance', () => {
+  it('decodes bounded explicit requirements and rejects ambiguous/unknown declarations', () => {
+    const result = validateSkillFrontmatter(
+      header(
+        'copse-requirements:\n  tools: [read_skill, image_gen]\n  agents: [reviewer]\n  executors: [native, subagent]',
+      ),
+    )
+    assert.deepEqual(result.skill?.requirements, {
+      tools: ['read_skill', 'image_gen'],
+      agents: ['reviewer'],
+      executors: ['native', 'subagent'],
+    })
+    assert.deepEqual(result.warnings, [])
+    for (const value of [
+      '{tools: shell}',
+      '{tools: ["Bash(*)"]}',
+      '{executors: [cursor]}',
+      '{executors: []}',
+      '{permissions: [shell]}',
+      `{tools: [${Array.from({ length: 33 }, () => 'read_file').join(',')}]}`,
+    ]) {
+      assert.equal(
+        validateSkillFrontmatter(header(`copse-requirements: ${value}`)).skill,
+        null,
+        value,
+      )
+    }
+  })
   it('loads the standard metadata fixture and round-trips descriptive values', () => {
     const result = validateSkillFrontmatter(
       `name: pdf-processing\ndescription: Process PDF files.\nlicense: Apache-2.0\ncompatibility: Requires Python 3.11\nmetadata:\n  author: Example\n  version: "1.0"\nallowed-tools: Bash(python:*) Read\nuser-invocable: false\ndisable-model-invocation: false`,

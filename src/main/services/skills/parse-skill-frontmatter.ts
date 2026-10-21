@@ -4,6 +4,10 @@ import type { SkillMetadata, SkillSource } from '@shared/types/skills.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { splitMarkdownFrontmatter } from '../discovery/yaml-frontmatter.ts'
 import { adaptBundledSkill } from './bundled-skill-compatibility.ts'
+import {
+  skillRequirementsSchema,
+  type SkillRequirements,
+} from '@shared/skills/skill-requirements.ts'
 
 const stringMetadata = z.unknown().transform((value, ctx): Record<string, string> => {
   if (!isRecord(value)) {
@@ -44,6 +48,7 @@ const skillSchema = z.object({
     .optional(),
   metadata: stringMetadata.optional(),
   'allowed-tools': z.string().optional(),
+  'copse-requirements': skillRequirementsSchema.optional(),
   'user-invocable': z.boolean().default(true),
   'disable-model-invocation': z.boolean().default(false),
   'copse-dependencies': z
@@ -69,6 +74,7 @@ const skillSchema = z.object({
 })
 
 export interface ParsedSkillFile {
+  requirements?: SkillRequirements
   name: string
   description: string
   userInvocable: boolean
@@ -155,6 +161,9 @@ export function validateSkillFrontmatter(yaml: string): SkillFrontmatterResult {
       ...(fields.compatibility !== undefined ? { compatibility: fields.compatibility } : {}),
       ...(fields.metadata !== undefined ? { metadata: fields.metadata } : {}),
       ...(fields['allowed-tools'] !== undefined ? { allowedTools: fields['allowed-tools'] } : {}),
+      ...(fields['copse-requirements'] !== undefined
+        ? { requirements: fields['copse-requirements'] }
+        : {}),
     },
     reason: null,
     warnings,

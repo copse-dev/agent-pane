@@ -36,6 +36,14 @@ import { extractSkillFileReferences } from '@shared/skills/extract-skill-referen
 import { notifyRefreshContextEstimate } from '../context-estimate-notify.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
+import { getAgent } from '../agents/agents-registry.ts'
+import {
+  preflightSkill,
+  requiredSkillTools,
+  type SkillPreflightEnvironment,
+} from './skill-preflight.ts'
+import type { SkillCapabilityState, SkillExecutor } from '@shared/skills/skill-requirements.ts'
+import { isSkillDependencyInScope } from './skill-dependencies.ts'
 
 /** Max bytes read from a skill file (auto-approved, outside workspace). */
 export const SKILL_READ_MAX_BYTES = READ_FILE_LIMITS_CEILING.maxChars * 4
@@ -515,11 +523,70 @@ export function listSkills(): SkillSummary[] {
 }
 
 export function listSkillSources(): SkillsSourcesResult {
+  const preflightDiagnostics = activeSkills().flatMap((skill): SkillDiagnostic[] => {
+    if (
+      !skill.requirements &&
+      !requiredSkillTools(skill).length &&
+      !skill.dependencies?.length &&
+      !skill.missingReferences.length
+    )
+      return []
+    const result = preflightSkill(skill, skillPreflightEnvironment())
+    return [
+      ...result.checks
+        .filter((check) => check.state !== 'supported')
+        .map((check): SkillDiagnostic => ({
+          kind: check.state === 'supported' ? 'compatibility' : check.state,
+          name: skill.name,
+          skillPath: skill.skillPath,
+          source: skill.source,
+          reason: check.reason,
+        })),
+      {
+        kind: 'untested',
+        name: skill.name,
+        skillPath: skill.skillPath,
+        source: skill.source,
+        reason:
+          'Workflow/model compatibility is untested. Requirements are declarations, not verification or permissions.',
+      },
+    ]
+  })
   return {
     skills: [...activeSkills()],
-    diagnostics: [...(scopedSkills.getStore()?.diagnostics ?? cachedSkillDiagnostics)],
+    diagnostics: [
+      ...(scopedSkills.getStore()?.diagnostics ?? cachedSkillDiagnostics),
+      ...preflightDiagnostics,
+    ],
     extraRoots: getSetting<string[]>('skillPluginPaths', []),
     reload: 'manual',
+  }
+}
+
+/** Live facts for diagnostics only. This lookup neither loads nor authorizes dependencies. */
+export function skillPreflightEnvironment(
+  tools?: readonly string[],
+  executor?: SkillExecutor,
+): SkillPreflightEnvironment {
+  return {
+    ...(tools === undefined ? {} : { tools }),
+    ...(executor === undefined ? {} : { executor }),
+    agentState: (name): SkillCapabilityState => {
+      if (!getAgent(name)) return 'unavailable'
+      if (tools === undefined) return 'untested'
+      if (!tools.includes('task')) return 'disabled'
+      return 'supported'
+    },
+    dependencyState: (parent, name): SkillCapabilityState => {
+      const state = getSkillAvailability(name)
+      if (state !== 'supported') return state
+      const candidate = getSkill(name)
+      return candidate && isSkillDependencyInScope(parent, candidate) ? 'supported' : 'unavailable'
+    },
+    dependencySkill: (parent, name): SkillMetadata | null => {
+      const candidate = getSkill(name)
+      return candidate && isSkillDependencyInScope(parent, candidate) ? candidate : null
+    },
   }
 }
 

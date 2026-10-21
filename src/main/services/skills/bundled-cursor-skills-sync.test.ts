@@ -9,6 +9,8 @@ import {
   assertBundledCursorSkillsSnapshot,
   mentionedSkillFiles,
   syncBundledCursorSkills,
+  refreshBundledSkillReferences,
+  findDanglingSkillReferences,
 } from '../../../../scripts/bundled-cursor-skills-sync.mts'
 
 const SKILL_BODY =
@@ -130,6 +132,32 @@ describe('bundled-cursor-skills-sync', () => {
     await assert.rejects(assertBundledCursorSkillsSnapshot(cacheDir), /missing references changed/)
   })
 
+  it('refreshes generated diagnostics while keeping verified payload bytes immutable', async () => {
+    const original = await syncBundledCursorSkills(cacheDir)
+    const sourcePath = join(cacheDir, 'SOURCE.json')
+    await writeFile(
+      sourcePath,
+      JSON.stringify({
+        ...original,
+        danglingReferences: { 'demo-plugin/demo-skill': ['scripts/snapshot.sh'] },
+      }),
+    )
+    const updated = await refreshBundledSkillReferences(cacheDir)
+    assert.deepEqual(updated.danglingReferences, original.danglingReferences)
+    assert.equal(updated.contentSha256, original.contentSha256)
+    await writeFile(
+      join(cacheDir, 'plugins/demo-plugin/skills/demo-skill/SKILL.md'),
+      'changed payload',
+    )
+    await assert.rejects(refreshBundledSkillReferences(cacheDir), /content hash mismatch/)
+  })
+
+  it('does not classify the shipped illustrative snapshot log as a missing dependency', async () => {
+    const missing = await findDanglingSkillReferences('vendor/bundled-cursor-skills')
+    assert.equal(Object.hasOwn(missing, 'pstack/show-me-your-work'), false)
+    assert.deepEqual(missing['orchestrate/orchestrate'], ['scripts/cli.ts'])
+  })
+
   it('matches literal paths, globs and placeholders, but not unrelated names', () => {
     const candidates = ['references/a.md', 'references/sources/x.md', 'playbooks/b.md']
     assert.deepEqual(mentionedSkillFiles('see references/a.md', candidates), ['references/a.md'])
@@ -138,6 +166,20 @@ describe('bundled-cursor-skills-sync', () => {
     ])
     assert.deepEqual(mentionedSkillFiles('references/<name>.md', candidates), ['references/a.md'])
     assert.deepEqual(mentionedSkillFiles('playbooks/c.md and a.md', candidates), [])
+    const log =
+      '```tsv\nts\tphase\tevidence\tresult\n2026-05-24\tharness\tscripts/snapshot.sh\tsaved\n```'
+    assert.deepEqual(mentionedSkillFiles(log, ['scripts/snapshot.sh']), [])
+    assert.deepEqual(
+      mentionedSkillFiles(
+        '```tsv\nstep\tcommand\tresult\nsetup\tbash scripts/required.sh\tready\n```',
+        ['scripts/required.sh'],
+      ),
+      ['scripts/required.sh'],
+    )
+    assert.deepEqual(
+      mentionedSkillFiles(`${log}\nRun scripts/snapshot.sh`, ['scripts/snapshot.sh']),
+      ['scripts/snapshot.sh'],
+    )
   })
 
   it('rejects a modified vendored skill', async () => {

@@ -81,6 +81,66 @@ describe('model skill activation', () => {
     assert.deepEqual(threadReadRoots('thread-1'), [])
   })
 
+  it('runs preflight with the native prompt toolset before injecting manually invoked instructions', async () => {
+    await skill(
+      'blocked-workflow',
+      { requirements: { tools: ['missing_tool'], executors: ['acp'] } },
+      'DO NOT INJECT THIS BODY',
+    )
+    const built = await buildSystemPromptWithMetadata({
+      subagentsEnabled: false,
+      invokedSkills: ['blocked-workflow'],
+      availableToolNames: ['read_skill'],
+      threadId: 'blocked-native',
+    })
+    assert.match(built.prompt, /Required tool "missing_tool" is not offered/)
+    assert.match(built.prompt, /Executor "native" is excluded/)
+    assert.doesNotMatch(built.prompt, /DO NOT INJECT THIS BODY/)
+    assert.deepEqual(threadReadRoots('blocked-native'), [])
+  })
+
+  it('rechecks new requirement declarations before model activation', async () => {
+    const target = await skill('changed-requirements')
+    const turn = createSkillActivationTurn([], ['read_skill'])
+    await writeFile(
+      target.skillPath,
+      '---\nname: changed-requirements\ndescription: Changed\ncopse-requirements:\n  tools: [new_tool]\n---\nTask body',
+    )
+    await assert.rejects(
+      turn.read(target.name, undefined, signal),
+      /Required tool "new_tool" is not offered/,
+    )
+  })
+
+  it('checks explicit executor facts without treating an unknown host as native', async () => {
+    const target = await skill('native-workflow', { requirements: { executors: ['native'] } })
+    await writeFile(
+      target.skillPath,
+      '---\nname: native-workflow\ndescription: Native workflow\ncopse-requirements:\n  executors: [native]\n---\nWorkflow body',
+    )
+    const unknown = await createSkillActivationTurn([], ['read_skill']).read(
+      target.name,
+      undefined,
+      signal,
+    )
+    assert.match(unknown, /Executor restrictions not checked/)
+    assert.doesNotMatch(unknown, /Executor "native" is declared/)
+    await assert.rejects(
+      createSkillActivationTurn([], ['read_skill'], 0, 'subagent').read(
+        target.name,
+        undefined,
+        signal,
+      ),
+      /Executor "subagent" is excluded/,
+    )
+    const native = await createSkillActivationTurn([], ['read_skill'], 0, 'native').read(
+      target.name,
+      undefined,
+      signal,
+    )
+    assert.match(native, /Workflow\/model compatibility is untested/)
+  })
+
   it('cannot activate disabled skills even when guessed directly, but explicit invocation can read supporting files', async () => {
     const meta = await skill('manual-only', { disableModelInvocation: true })
     await writeFile(join(meta.skillRoot, 'reference.md'), 'reference')
@@ -242,7 +302,7 @@ describe('model skill activation', () => {
     await skill('imagegen')
     await assert.rejects(
       createSkillActivationTurn([], ['read_skill']).read('imagegen', undefined, signal),
-      /not eligible/,
+      /Required tool "image_gen" is not offered/,
     )
     const controller = new AbortController()
     controller.abort()
@@ -550,7 +610,10 @@ describe('model skill activation', () => {
     await symlink(escaped, leaf.skillRoot)
     const turn = createSkillActivationTurn(['workflow'], ['read_skill'])
     await assert.rejects(turn.read('leaf', undefined, signal), /outside the workflow/)
-    await assert.rejects(turn.read('imagegen', undefined, signal), /requires tools unavailable/)
+    await assert.rejects(
+      turn.read('imagegen', undefined, signal),
+      /Required tool "image_gen" is not offered/,
+    )
   })
 
   it('activates the genuine shipped cursor-sdk skill through discovery and fresh definition validation', async () => {

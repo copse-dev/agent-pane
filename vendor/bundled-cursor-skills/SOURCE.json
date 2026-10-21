@@ -8,9 +8,6 @@
   "danglingReferences": {
     "orchestrate/orchestrate": [
       "scripts/cli.ts"
-    ],
-    "pstack/show-me-your-work": [
-      "scripts/snapshot.sh"
     ]
   }
 }

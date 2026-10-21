@@ -10,6 +10,7 @@ export interface SkillSummary {
 }
 
 export interface SkillMetadata extends SkillSummary {
+  requirements?: import('../skills/skill-requirements.ts').SkillRequirements
   /** Absence in legacy snapshots means manually invocable. */
   userInvocable?: boolean
   license?: string
@@ -39,7 +40,14 @@ export interface SkillMetadata extends SkillSummary {
 }
 
 export interface SkillDiagnostic {
-  kind: 'invalid' | 'shadowed' | 'compatibility' | 'unsupported'
+  kind:
+    | 'invalid'
+    | 'shadowed'
+    | 'compatibility'
+    | 'unsupported'
+    | 'unavailable'
+    | 'disabled'
+    | 'untested'
   skillPath: string
   source: SkillSource
   name: string

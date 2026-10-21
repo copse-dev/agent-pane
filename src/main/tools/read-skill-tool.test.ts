@@ -68,31 +68,30 @@ describe('readSkillTool', () => {
     assert.match(result, /# Body/)
   })
 
-  it('appends a note when the skill references a missing bundle file', async () => {
+  it('reports a missing bundle file before loading instructions', async () => {
     await writeFile(
       join(tempRoot, 'SKILL.md'),
       '---\nname: linky-refs\ndescription: A test skill\n---\n# Body',
       'utf-8',
     )
     seedMetadata({ missingReferences: ['references/patterns.md'] })
-    const result = toolText(
-      await executeReadSkill({ name: 'linky-refs' }, new AbortController().signal),
+    await assert.rejects(
+      async () => executeReadSkill({ name: 'linky-refs' }, new AbortController().signal),
+      /Supporting file "references\/patterns\.md" is missing/,
     )
-    assert.match(result, /Missing bundled references: references\/patterns\.md/)
-    assert.match(result, /# Body/)
   })
 
-  it('pluralizes the note for more than one missing reference', async () => {
+  it('reports every missing supporting file in the preflight error', async () => {
     await writeFile(
       join(tempRoot, 'SKILL.md'),
       '---\nname: linky-refs\ndescription: A test skill\n---\n# Body',
       'utf-8',
     )
     seedMetadata({ missingReferences: ['references/patterns.md', 'scripts/setup.sh'] })
-    const result = toolText(
-      await executeReadSkill({ name: 'linky-refs' }, new AbortController().signal),
+    await assert.rejects(
+      async () => executeReadSkill({ name: 'linky-refs' }, new AbortController().signal),
+      /Supporting file "references\/patterns\.md" is missing[\s\S]*Supporting file "scripts\/setup\.sh" is missing/,
     )
-    assert.match(result, /Missing bundled references: references\/patterns\.md, scripts\/setup\.sh/)
   })
 
   it('surfaces the enhanced unknown-skill error for an unrecognized name', async () => {
