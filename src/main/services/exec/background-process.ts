@@ -53,6 +53,8 @@ interface BackgroundProcess {
   timedOut: boolean
   cancelled: boolean
   completionNotified: boolean
+  /** Set once the owning agent has read this task's state after it exited. */
+  exitObserved: boolean
   completionTimer: ReturnType<typeof setTimeout> | null
   onCompletion?: (completion: BackgroundProcessCompletion) => void | Promise<void>
   /** True when the process runs without the local project sandbox. */
@@ -230,6 +232,7 @@ export function adoptBackgroundProcess(opts: AdoptBackgroundProcessOptions): Bac
     timedOut: false,
     cancelled: false,
     completionNotified: false,
+    exitObserved: false,
     completionTimer: null,
     ...(opts.onCompletion ? { onCompletion: opts.onCompletion } : {}),
   }
@@ -332,6 +335,7 @@ export async function startBackgroundProcess(
       timedOut: false,
       cancelled: false,
       completionNotified: false,
+      exitObserved: false,
       completionTimer: null,
       ...(opts.onCompletion ? { onCompletion: opts.onCompletion } : {}),
       owner,
@@ -386,10 +390,29 @@ export async function startBackgroundProcess(
   return toInfo(entry)
 }
 
+function observe(entry: BackgroundProcess): BackgroundProcess {
+  if (entry.exited) entry.exitObserved = true
+  return entry
+}
+
+/** The owner's tasks. Reading an exited task here counts as observing its exit. */
 export function listBackgroundProcesses(
   owner: ThreadExecutionOwner = requireThreadExecutionOwner(),
 ): BackgroundProcessInfo[] {
-  return [...processes.values()].filter((entry) => sameOwner(entry.owner, owner)).map(toInfo)
+  return [...processes.values()]
+    .filter((entry) => sameOwner(entry.owner, owner))
+    .map((entry) => toInfo(observe(entry)))
+}
+
+/**
+ * Whether the owner already read this task after it exited (via list or logs),
+ * so a completion wake would only repeat what the agent has seen.
+ */
+export function isBackgroundExitObserved(
+  id: string,
+  owner: ThreadExecutionOwner = requireThreadExecutionOwner(),
+): boolean {
+  return ownedProcess(id, owner)?.exitObserved === true
 }
 
 /** A running task's pid, for attributing listening ports back to the task that bound them. */
@@ -423,13 +446,16 @@ export function listBackgroundProcessPids(): BackgroundProcessPid[] {
   return out
 }
 
-/** Recent output for a process (head + tail, capped), or null when unknown. */
+/**
+ * Recent output for a process (head + tail, capped), or null when unknown.
+ * Reading an exited task here counts as observing its exit.
+ */
 export function getBackgroundProcessLogs(
   id: string,
   owner: ThreadExecutionOwner = requireThreadExecutionOwner(),
 ): string | null {
   const entry = ownedProcess(id, owner)
-  return entry ? entry.output.toString() : null
+  return entry ? observe(entry).output.toString() : null
 }
 
 /** Kill a process and forget it. Returns false when the id is unknown. */

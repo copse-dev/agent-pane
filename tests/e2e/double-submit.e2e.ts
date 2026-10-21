@@ -93,6 +93,17 @@ describe('double submit guard', function () {
       'Cover malformed input, an empty payload, and valid input that still parses successfully.',
       { containing: true },
     )
+    const transcript = await browser.execute(() =>
+      Array.from(
+        document.querySelectorAll('.msg-user .message-text, .msg-assistant .message-text'),
+      ).map((element) => element.textContent?.trim()),
+    )
+    expect(transcript).toEqual([
+      firstPrompt,
+      'Extract the repeated parser error handling into one small helper so each branch can return a consistent error.',
+      queuedPrompt,
+      'Cover malformed input, an empty payload, and valid input that still parses successfully.',
+    ])
     await saveAppScreenshot('double-submit-drained.png')
   })
 })
