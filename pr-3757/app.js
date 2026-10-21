@@ -61080,7 +61080,7 @@ function recordContextTrim(store2, threadId, record2) {
   store2.emit("threads_changed");
 }
 function addMessage(store2, threadId, role, content = "", images, attachments, opts) {
-  const id = randomUUID();
+  const id = opts?.id ?? randomUUID();
   const message2 = {
     id,
     role,
@@ -61596,6 +61596,38 @@ var init_thread_helpers = __esm({
   }
 });
 
+// src/shared/store/transcript-state.ts
+function transcriptMeta(thread) {
+  const meta3 = {
+    status: thread.status,
+    usage: thread.usage,
+    updatedAt: thread.updatedAt
+  };
+  for (const key of TRANSCRIPT_META_KEYS) Object.assign(meta3, { [key]: thread[key] });
+  return meta3;
+}
+var TRANSCRIPT_META_KEYS;
+var init_transcript_state = __esm({
+  "src/shared/store/transcript-state.ts"() {
+    TRANSCRIPT_META_KEYS = [
+      "status",
+      "usage",
+      "updatedAt",
+      "todos",
+      "contextTrims",
+      "contextSnapshot",
+      "resolvedModel",
+      "model",
+      "automation",
+      "reviewReport",
+      "worktreeChoice",
+      "gitBranch",
+      "worktree",
+      "deferredWorktree"
+    ];
+  }
+});
+
 // src/renderer/controller/background-threads.ts
 function carryRunningThreads(store2, outgoingProjectId, outgoingThreads) {
   const running = outgoingThreads.filter(
@@ -61647,6 +61679,30 @@ function dropProjectBackgroundThreads(store2, projectId) {
 var init_background_threads = __esm({
   "src/renderer/controller/background-threads.ts"() {
     init_pending_submissions();
+  }
+});
+
+// src/renderer/controller/runtime-transcript.ts
+function applyRuntimeOwnedChunk(messageIds, apply4) {
+  for (const id of messageIds) runtimeOwnedMessages.add(id);
+  applyingDepth += 1;
+  try {
+    apply4();
+  } finally {
+    applyingDepth -= 1;
+  }
+}
+function isApplyingRuntimeOwnedChunk() {
+  return applyingDepth > 0;
+}
+function isRuntimeOwnedMessage(messageId) {
+  return runtimeOwnedMessages.has(messageId);
+}
+var applyingDepth, runtimeOwnedMessages;
+var init_runtime_transcript = __esm({
+  "src/renderer/controller/runtime-transcript.ts"() {
+    applyingDepth = 0;
+    runtimeOwnedMessages = /* @__PURE__ */ new Set();
   }
 });
 
@@ -61711,6 +61767,10 @@ function serializedNavigation(api2, navigation) {
   lastNavigation = navigation;
   return serializedWrite("mainWindow:navigation", () => api2.windowState.setNavigation(navigation));
 }
+function afterThreadWrites(projectId, threadId, start) {
+  const pending = writeChains.get(threadWriteKey(projectId, threadId));
+  return pending ? pending.catch(() => void 0).then(start) : start();
+}
 function metaOf(thread) {
   const {
     messages: _messages,
@@ -61736,6 +61796,16 @@ function metaPatch(prev, next) {
     if (!Object.hasOwn(after, key)) patch[key] = void 0;
   }
   return patch;
+}
+function acceptRuntimeThreadMeta(projectId, thread, before) {
+  const previous = persistedMeta.get(projectId)?.get(thread.id);
+  if (!previous) return;
+  const next = { ...previous };
+  for (const key of TRANSCRIPT_META_KEYS) {
+    if (before && JSON.stringify(before[key]) === JSON.stringify(thread[key])) continue;
+    Object.assign(next, { [key]: thread[key] });
+  }
+  persistedMeta.get(projectId)?.set(thread.id, next);
 }
 function recordPersistedThread(projectId, thread) {
   let metas = persistedMeta.get(projectId);
@@ -61950,6 +62020,7 @@ function attachAutosave(store2, api2) {
         schedule();
         return;
       }
+      if (isApplyingRuntimeOwnedChunk()) return;
       const message2 = getThreadById(store2, threadId)?.messages.find(
         (candidate) => candidate.id === messageId
       );
@@ -61970,6 +62041,10 @@ function attachAutosave(store2, api2) {
     }),
     store2.on("message_added", (threadId, messageId) => {
       const message2 = getThreadById(store2, threadId)?.messages.find((m3) => m3.id === messageId);
+      if (message2?.role === "user" && isApplyingRuntimeOwnedChunk()) {
+        schedule();
+        return;
+      }
       if (message2?.role === "user") {
         const backgroundProjectId = backgroundProjectOf(store2, threadId);
         if (backgroundProjectId) {
@@ -61983,6 +62058,7 @@ function attachAutosave(store2, api2) {
       else schedule();
     }),
     store2.on("message_done", (messageId) => {
+      if (isApplyingRuntimeOwnedChunk()) return;
       const threadId = threadIdOfMessage(messageId);
       if (!threadId) return;
       const backgroundProjectId = backgroundProjectOf(store2, threadId);
@@ -61999,6 +62075,8 @@ function attachAutosave(store2, api2) {
     // carry the latest args/response across an app restart. Do not persist a
     // running tool: the v1 spine deliberately has no running status.
     store2.on("tool_call_updated", (messageId, toolCallId) => {
+      if (isApplyingRuntimeOwnedChunk()) return;
+      if (!toolCallId && isRuntimeOwnedMessage(messageId)) return;
       const threadId = threadIdOfMessage(messageId);
       if (!threadId) return;
       const message2 = getThreadById(store2, threadId)?.messages.find(
@@ -62043,7 +62121,9 @@ var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNa
 var init_persistence = __esm({
   "src/renderer/controller/persistence.ts"() {
     init_thread_helpers();
+    init_transcript_state();
     init_background_threads();
+    init_runtime_transcript();
     init_unknown_value3();
     KEY_PROJECTS = "projects";
     KEY_PROJECT_GROUPS = "projectGroups";
@@ -63271,10 +63351,11 @@ function dispatchAgentRun(store2, api2, threadId, payload, queued) {
   syncAgentActivity(store2, threadId, false);
   mark("ttft:renderer-dispatch");
   if (queued) beginPendingDispatch(store2, threadId);
-  const run4 = api2.agent.run(
+  const runPayload = JSON.stringify(refreshAgentRunPayload(store2, threadId, payload, queued?.model));
+  const run4 = afterThreadWrites(
     projectId,
     threadId,
-    JSON.stringify(refreshAgentRunPayload(store2, threadId, payload, queued?.model))
+    () => api2.agent.run(projectId, threadId, runPayload)
   );
   if (!queued) {
     void run4;
@@ -63560,6 +63641,7 @@ var init_message_queue = __esm({
     init_perf();
     init_agent_turn_busy();
     init_send_now_aborts();
+    init_persistence();
     pendingDispatches = /* @__PURE__ */ new WeakMap();
   }
 });
@@ -88225,6 +88307,10 @@ function createDemoApi(scenario2, options = {}) {
       suggestFollowUps: () => resolved2(structuredClone([...scenario2.followUps ?? []])),
       suggestPrBody: () => resolved2(scenario2.prBody ?? null),
       suggestNextStep: () => resolved2(null),
+      replayPendingDecisions: () => resolvedVoid(),
+      attachTranscripts: () => resolvedVoid(),
+      onTranscriptSnapshot: () => () => {
+      },
       onChunk: (handler) => {
         chunkHandlers.add(handler);
         return () => {
@@ -88474,6 +88560,11 @@ function createDemoApi(scenario2, options = {}) {
         if (thread && !thread.messages.some((candidate) => candidate.id === message2.id)) {
           thread.messages.push(message2);
         }
+        return resolvedVoid();
+      },
+      annotateMessage: (_projectId, threadId, messageId, annotation) => {
+        const message2 = threads.find((candidate) => candidate.id === threadId)?.messages.find((candidate) => candidate.id === messageId);
+        if (message2) Object.assign(message2, annotation);
         return resolvedVoid();
       },
       updateMeta: (_projectId, threadId, patch) => {
@@ -93568,6 +93659,8 @@ function mountApprovalDialog(api2, store2, options = {}) {
       turnTreeLeaseDefault,
       turnTreeLeaseSubject
     }) => {
+      if (queue.some((request) => request.id === id) || batch.some((request) => request.id === id))
+        return;
       const pending = {
         id,
         threadId,
@@ -196143,6 +196236,7 @@ function mountAskUserDialog(api2, store2) {
     cancel();
   });
   api2.agent.onAskUserRequest((req) => {
+    if (active3?.id === req.id || queue.some((request) => request.id === req.id)) return;
     queue.push({
       id: req.id,
       threadId: req.threadId,
@@ -197750,151 +197844,6 @@ var init_thread_prompts = __esm({
   }
 });
 
-// src/renderer/controller/sync-thread-branch-after-shell.ts
-async function syncThreadGitBranchAfterShell(store2, api2, threadId) {
-  const projectId = store2.getState().activeProjectId;
-  if (!projectId) return;
-  let currentBranch;
-  try {
-    ;
-    ({ currentBranch } = await api2.git.branchStatus(projectId, threadId));
-  } catch (error62) {
-    if (!isUnavailableThreadCheckoutError(error62)) throw error62;
-    return;
-  }
-  if (syncThreadGitBranchIfChanged(store2, threadId, currentBranch)) {
-    store2.emit("git_branch_changed");
-  }
-}
-var init_sync_thread_branch_after_shell = __esm({
-  "src/renderer/controller/sync-thread-branch-after-shell.ts"() {
-    init_sync_thread_branch();
-    init_ipc_error_message();
-  }
-});
-
-// src/shared/store/subagent-helpers.ts
-function replaceToolCall(store2, messageId, toolCallId, update) {
-  const loc = locateMessage(store2, messageId);
-  if (!loc) return;
-  const toolCall = loc.message.toolCalls.find((tc2) => tc2.id === toolCallId);
-  if (!toolCall) return;
-  update(toolCall);
-  loc.thread.updatedAt = Date.now();
-  store2.emit("tool_call_updated", messageId, toolCallId);
-}
-function updateSubagentOnToolCall(store2, messageId, toolCallId, updater) {
-  replaceToolCall(store2, messageId, toolCallId, (tc2) => {
-    if (tc2.subagent) tc2.subagent = updater(tc2.subagent);
-  });
-}
-function initSubagent(store2, messageId, toolCallId, session) {
-  replaceToolCall(store2, messageId, toolCallId, (tc2) => {
-    tc2.subagent = session;
-  });
-}
-function appendSubagentText(store2, messageId, toolCallId, subMessageId, text2) {
-  updateSubagentOnToolCall(store2, messageId, toolCallId, (session) => {
-    const existing = session.messages.find((m3) => m3.id === subMessageId);
-    if (existing) {
-      return {
-        ...session,
-        messages: session.messages.map(
-          (m3) => m3.id !== subMessageId ? m3 : { ...m3, content: m3.content + text2 }
-        )
-      };
-    }
-    return {
-      ...session,
-      messages: [
-        ...session.messages,
-        {
-          id: subMessageId,
-          role: "assistant",
-          content: text2,
-          toolCalls: [],
-          createdAt: Date.now()
-        }
-      ]
-    };
-  });
-}
-function appendSubagentReasoning(store2, messageId, toolCallId, subMessageId, text2) {
-  updateSubagentOnToolCall(store2, messageId, toolCallId, (session) => {
-    const existing = session.messages.find((m3) => m3.id === subMessageId);
-    if (existing) {
-      return {
-        ...session,
-        messages: session.messages.map(
-          (m3) => m3.id !== subMessageId ? m3 : { ...m3, reasoning: (m3.reasoning ?? "") + text2 }
-        )
-      };
-    }
-    return {
-      ...session,
-      messages: [
-        ...session.messages,
-        {
-          id: subMessageId,
-          role: "assistant",
-          content: "",
-          toolCalls: [],
-          createdAt: Date.now(),
-          reasoning: text2
-        }
-      ]
-    };
-  });
-}
-function addSubagentToolCall(store2, messageId, toolCallId, subMessageId, toolCall) {
-  updateSubagentOnToolCall(store2, messageId, toolCallId, (session) => {
-    const existing = session.messages.find((m3) => m3.id === subMessageId);
-    if (existing) {
-      return {
-        ...session,
-        messages: session.messages.map(
-          (m3) => m3.id !== subMessageId ? m3 : { ...m3, toolCalls: [...m3.toolCalls, toolCall] }
-        )
-      };
-    }
-    return {
-      ...session,
-      messages: [
-        ...session.messages,
-        {
-          id: subMessageId,
-          role: "assistant",
-          content: "",
-          toolCalls: [toolCall],
-          createdAt: Date.now()
-        }
-      ]
-    };
-  });
-}
-function updateSubagentToolCall(store2, messageId, toolCallId, innerToolCallId, patch) {
-  updateSubagentOnToolCall(store2, messageId, toolCallId, (session) => ({
-    ...session,
-    messages: session.messages.map((m3) => ({
-      ...m3,
-      toolCalls: m3.toolCalls.map((tc2) => tc2.id !== innerToolCallId ? tc2 : { ...tc2, ...patch })
-    }))
-  }));
-}
-function finishSubagent(store2, messageId, toolCallId, summary, status, usage) {
-  updateSubagentOnToolCall(store2, messageId, toolCallId, (session) => ({
-    ...session,
-    status,
-    summary,
-    ...usage ? { usage } : {}
-  }));
-}
-var init_subagent_helpers = __esm({
-  "src/shared/store/subagent-helpers.ts"() {
-    init_thread_helpers();
-  }
-});
-
 // packages/agent/src/agent-text-chunk.ts
 function endsAtBoundary(text2) {
   const trailingWhitespace = text2.slice(text2.trimEnd().length);
@@ -198042,88 +197991,6 @@ var init_agent_text_chunk = __esm({
   }
 });
 
-// src/renderer/controller/diff-state.ts
-function queueKey(entries2) {
-  return JSON.stringify(entries2.map((entry) => [entry.path, entry.language]));
-}
-function attachDiffState(store2, api2, options) {
-  const queuesByOwner = /* @__PURE__ */ new Map();
-  const ownerKey = (projectId, threadId) => JSON.stringify([projectId, threadId]);
-  const isActiveOwner = (projectId, threadId) => {
-    const current = store2.getState();
-    return current.activeProjectId === projectId && current.activeThreadId === threadId;
-  };
-  const publishActiveQueue = (entries2) => {
-    const { activeDiff } = store2.getState();
-    const stillQueued = activeDiff && entries2.some((entry) => entry.path === activeDiff.path) ? activeDiff : null;
-    store2.setState({
-      stagedDiffs: entries2,
-      activeDiff: entries2.length === 0 ? null : stillQueued
-    });
-    store2.emit("staged_diffs_changed");
-    store2.emit("panel_changed");
-  };
-  const unsubShowDiff = api2.diff.onShowDiff(
-    (projectId, threadId, path, before, after, language) => {
-      if (!isActiveOwner(projectId, threadId)) return;
-      store2.setState({ activeDiff: { path, before, after, language } });
-      if (!options.revealOnShowDiff) return;
-      store2.setState({ rightPanelMode: "changes", filesPaneOpen: true });
-      syncFilesPaneDom(store2);
-      store2.emit("right_panel_mode_changed");
-      store2.emit("files_pane_changed");
-      store2.emit("panel_changed");
-    }
-  );
-  const unsubQueued = api2.diff.onQueued((projectId, threadId, entries2) => {
-    queuesByOwner.set(ownerKey(projectId, threadId), entries2);
-    if (isActiveOwner(projectId, threadId)) publishActiveQueue(entries2);
-  });
-  const hydrate = () => {
-    const { activeProjectId, activeThreadId } = store2.getState();
-    if (!activeProjectId || !activeThreadId) return;
-    void (async () => {
-      let entries2;
-      try {
-        entries2 = await api2.diff.queue(activeProjectId, activeThreadId);
-      } catch {
-        return;
-      }
-      if (!isActiveOwner(activeProjectId, activeThreadId)) return;
-      queuesByOwner.set(ownerKey(activeProjectId, activeThreadId), entries2);
-      if (queueKey(store2.getState().stagedDiffs) === queueKey(entries2)) return;
-      publishActiveQueue(entries2);
-    })();
-  };
-  let publishedOwnerKey = ownerKey(
-    store2.getState().activeProjectId ?? "",
-    store2.getState().activeThreadId ?? ""
-  );
-  const syncDiffOwner = () => {
-    const { activeProjectId, activeThreadId } = store2.getState();
-    const nextOwnerKey = ownerKey(activeProjectId ?? "", activeThreadId ?? "");
-    if (nextOwnerKey === publishedOwnerKey) return;
-    publishedOwnerKey = nextOwnerKey;
-    const entries2 = activeProjectId && activeThreadId ? queuesByOwner.get(ownerKey(activeProjectId, activeThreadId)) ?? [] : [];
-    publishActiveQueue(entries2);
-    hydrate();
-  };
-  const unsubWorkspace = store2.on("workspace_changed", syncDiffOwner);
-  const unsubThreads = store2.on("threads_changed", syncDiffOwner);
-  hydrate();
-  return () => {
-    unsubShowDiff();
-    unsubQueued();
-    unsubWorkspace();
-    unsubThreads();
-  };
-}
-var init_diff_state = __esm({
-  "src/renderer/controller/diff-state.ts"() {
-    init_panels();
-  }
-});
-
 // src/shared/remote-agent-stream.ts
 function userContentToText(content) {
   if (typeof content === "string") return content;
@@ -198136,61 +198003,193 @@ var init_remote_agent_stream = __esm({
   }
 });
 
-// src/renderer/controller/agent.ts
-function addAssistantMessage(store2, threadId) {
-  const held = pendingTurn.get(threadId);
-  const requested = held?.requestedModel ?? getThreadById(store2, threadId)?.model ?? store2.getState().settings?.model;
-  return addMessage(store2, threadId, "assistant", "", void 0, void 0, {
-    ...requested !== void 0 ? { requestedModel: requested } : {},
-    ...held?.model !== void 0 ? { model: held.model } : {},
-    ...held?.parameters !== void 0 ? { parameters: held.parameters } : {}
+// src/shared/store/subagent-helpers.ts
+function replaceToolCall(store2, messageId, toolCallId, update) {
+  const loc = locateMessage(store2, messageId);
+  if (!loc) return;
+  const toolCall = loc.message.toolCalls.find((tc2) => tc2.id === toolCallId);
+  if (!toolCall) return;
+  update(toolCall);
+  loc.thread.updatedAt = Date.now();
+  store2.emit("tool_call_updated", messageId, toolCallId);
+}
+function updateSubagentOnToolCall(store2, messageId, toolCallId, updater) {
+  replaceToolCall(store2, messageId, toolCallId, (tc2) => {
+    if (tc2.subagent) tc2.subagent = updater(tc2.subagent);
   });
 }
-function startAgentController(store2, api2) {
+function initSubagent(store2, messageId, toolCallId, session) {
+  replaceToolCall(store2, messageId, toolCallId, (tc2) => {
+    tc2.subagent = session;
+  });
+}
+function appendSubagentText(store2, messageId, toolCallId, subMessageId, text2) {
+  updateSubagentOnToolCall(store2, messageId, toolCallId, (session) => {
+    const existing = session.messages.find((m3) => m3.id === subMessageId);
+    if (existing) {
+      return {
+        ...session,
+        messages: session.messages.map(
+          (m3) => m3.id !== subMessageId ? m3 : { ...m3, content: m3.content + text2 }
+        )
+      };
+    }
+    return {
+      ...session,
+      messages: [
+        ...session.messages,
+        {
+          id: subMessageId,
+          role: "assistant",
+          content: text2,
+          toolCalls: [],
+          createdAt: Date.now()
+        }
+      ]
+    };
+  });
+}
+function appendSubagentReasoning(store2, messageId, toolCallId, subMessageId, text2) {
+  updateSubagentOnToolCall(store2, messageId, toolCallId, (session) => {
+    const existing = session.messages.find((m3) => m3.id === subMessageId);
+    if (existing) {
+      return {
+        ...session,
+        messages: session.messages.map(
+          (m3) => m3.id !== subMessageId ? m3 : { ...m3, reasoning: (m3.reasoning ?? "") + text2 }
+        )
+      };
+    }
+    return {
+      ...session,
+      messages: [
+        ...session.messages,
+        {
+          id: subMessageId,
+          role: "assistant",
+          content: "",
+          toolCalls: [],
+          createdAt: Date.now(),
+          reasoning: text2
+        }
+      ]
+    };
+  });
+}
+function addSubagentToolCall(store2, messageId, toolCallId, subMessageId, toolCall) {
+  updateSubagentOnToolCall(store2, messageId, toolCallId, (session) => {
+    const existing = session.messages.find((m3) => m3.id === subMessageId);
+    if (existing) {
+      return {
+        ...session,
+        messages: session.messages.map(
+          (m3) => m3.id !== subMessageId ? m3 : { ...m3, toolCalls: [...m3.toolCalls, toolCall] }
+        )
+      };
+    }
+    return {
+      ...session,
+      messages: [
+        ...session.messages,
+        {
+          id: subMessageId,
+          role: "assistant",
+          content: "",
+          toolCalls: [toolCall],
+          createdAt: Date.now()
+        }
+      ]
+    };
+  });
+}
+function updateSubagentToolCall(store2, messageId, toolCallId, innerToolCallId, patch) {
+  updateSubagentOnToolCall(store2, messageId, toolCallId, (session) => ({
+    ...session,
+    messages: session.messages.map((m3) => ({
+      ...m3,
+      toolCalls: m3.toolCalls.map((tc2) => tc2.id !== innerToolCallId ? tc2 : { ...tc2, ...patch })
+    }))
+  }));
+}
+function finishSubagent(store2, messageId, toolCallId, summary, status, usage) {
+  updateSubagentOnToolCall(store2, messageId, toolCallId, (session) => ({
+    ...session,
+    status,
+    summary,
+    ...usage ? { usage } : {}
+  }));
+}
+var init_subagent_helpers = __esm({
+  "src/shared/store/subagent-helpers.ts"() {
+    init_thread_helpers();
+  }
+});
+
+// src/shared/store/transcript-reducer.ts
+function createTranscriptReducer(store2, hooks = {}) {
   const state = /* @__PURE__ */ new Map();
-  const get2 = (tid) => {
-    let st3 = state.get(tid);
+  const pendingTurn = /* @__PURE__ */ new Map();
+  const get2 = (threadId) => {
+    let st3 = state.get(threadId);
     if (!st3) {
       st3 = {
         msgId: null,
         toolSinceText: false,
         currentText: "",
         writing: false,
-        summaryMsgId: null,
-        summaryCount: 0,
-        toolSummaryMsgId: null,
-        toolSummaryCount: 0,
-        runSummaryAnchorId: null,
-        runSummaryCount: 0,
-        lastActivityLabel: null,
-        firstActivityTraced: false,
         acpMessageId: null,
         acpThoughtMessageId: null
       };
-      state.set(tid, st3);
+      state.set(threadId, st3);
     }
     return st3;
   };
-  const emitActivity = (tid, label) => {
-    get2(tid).lastActivityLabel = label;
-    store2.emit("agent_activity", tid, label);
+  const activity = (threadId) => {
+    hooks.activity?.(threadId, get2(threadId).writing);
   };
-  const activity = (tid) => {
-    const st3 = get2(tid);
-    st3.lastActivityLabel = syncAgentActivity(store2, tid, st3.writing);
+  const addAssistantMessage = (threadId) => {
+    const held = pendingTurn.get(threadId);
+    const requested = held?.requestedModel ?? getThreadById(store2, threadId)?.model ?? (hooks.defaultModel ? hooks.defaultModel() : store2.getState().settings?.model);
+    const id = hooks.createMessageId?.(threadId);
+    return addMessage(store2, threadId, "assistant", "", void 0, void 0, {
+      ...requested !== void 0 ? { requestedModel: requested } : {},
+      ...held?.model !== void 0 ? { model: held.model } : {},
+      ...held?.parameters !== void 0 ? { parameters: held.parameters } : {},
+      ...id !== void 0 ? { id } : {}
+    });
   };
-  const detachDiffState = attachDiffState(store2, api2, { revealOnShowDiff: true });
-  const unsub = api2.agent.onChunk((threadId, chunk) => {
-    const st3 = get2(threadId);
-    const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "acp_content" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
-    if (firstVisibleActivity && !st3.firstActivityTraced) {
-      st3.firstActivityTraced = true;
-      mark("ttft:renderer-first-activity", { kind: chunk.type });
+  const ensureFreshAfterTools = (threadId, st3) => {
+    if (!st3.msgId || st3.toolSinceText) {
+      if (st3.toolSinceText && st3.msgId) store2.emit("message_done", st3.msgId);
+      st3.msgId = addAssistantMessage(threadId);
+      st3.toolSinceText = false;
+      st3.currentText = "";
     }
+    return st3.msgId;
+  };
+  const appendText = (threadId, st3, text2) => {
+    const { plan, state: nextState } = planAgentTextChunk(
+      { msgId: st3.msgId, toolSinceText: st3.toolSinceText, currentText: st3.currentText },
+      text2
+    );
+    if (plan.action === "ignore") return null;
+    if (plan.startNewMessage) {
+      if (plan.finalizeMsgId) store2.emit("message_done", plan.finalizeMsgId);
+      st3.msgId = addAssistantMessage(threadId);
+    }
+    st3.toolSinceText = nextState.toolSinceText;
+    st3.currentText = nextState.currentText ?? "";
+    if (st3.msgId === null) throw new Error("assistant message id missing for agent text");
+    appendToken(store2, st3.msgId, plan.text);
+    return plan.text;
+  };
+  const apply4 = (threadId, chunk) => {
+    const st3 = get2(threadId);
     switch (chunk.type) {
       case "machine_turn_start": {
-        st3.firstActivityTraced = false;
+        hooks.turnStarted?.(threadId);
         setThreadStatus(store2, threadId, "running");
+        const id = hooks.createMessageId?.(threadId);
         addMessage(
           store2,
           threadId,
@@ -198201,40 +198200,24 @@ function startAgentController(store2, api2) {
           {
             origin: chunk.origin,
             ...chunk.startingCommit !== void 0 ? { startingCommit: chunk.startingCommit } : {},
-            ...chunk.dirty !== void 0 ? { dirty: chunk.dirty } : {}
+            ...chunk.dirty !== void 0 ? { dirty: chunk.dirty } : {},
+            ...id !== void 0 ? { id } : {}
           }
         );
         break;
       }
       case "text": {
-        const { plan, state: nextState } = planAgentTextChunk(
-          { msgId: st3.msgId, toolSinceText: st3.toolSinceText, currentText: st3.currentText },
-          chunk.text
-        );
-        if (plan.action === "ignore") break;
-        if (plan.startNewMessage) {
-          if (plan.finalizeMsgId) store2.emit("message_done", plan.finalizeMsgId);
-          st3.msgId = addAssistantMessage(store2, threadId);
-        }
-        st3.toolSinceText = nextState.toolSinceText;
-        st3.currentText = nextState.currentText ?? "";
-        if (st3.msgId === null) throw new Error("assistant message id missing for text chunk");
-        appendToken(store2, st3.msgId, plan.text);
-        if (plan.text.trim()) {
+        const text2 = appendText(threadId, st3, chunk.text);
+        if (text2 === null) break;
+        if (text2.trim()) {
           st3.writing = true;
           activity(threadId);
-          maybeNameThread(store2, api2, threadId);
+          hooks.visibleOutput?.(threadId);
         }
         break;
       }
       case "reasoning": {
-        if (!st3.msgId || st3.toolSinceText) {
-          if (st3.toolSinceText && st3.msgId) store2.emit("message_done", st3.msgId);
-          st3.msgId = addAssistantMessage(store2, threadId);
-          st3.toolSinceText = false;
-          st3.currentText = "";
-        }
-        appendReasoning(store2, st3.msgId, chunk.text);
+        appendReasoning(store2, ensureFreshAfterTools(threadId, st3), chunk.text);
         st3.writing = false;
         activity(threadId);
         break;
@@ -198254,64 +198237,36 @@ function startAgentController(store2, api2) {
         }
         if (chunk.content.type === "text") {
           if (chunk.channel === "thought") {
-            if (!st3.msgId || st3.toolSinceText) {
-              if (st3.toolSinceText && st3.msgId) store2.emit("message_done", st3.msgId);
-              st3.msgId = addAssistantMessage(store2, threadId);
-              st3.toolSinceText = false;
-              st3.currentText = "";
-            }
-            appendReasoning(store2, st3.msgId, chunk.content.text);
+            appendReasoning(store2, ensureFreshAfterTools(threadId, st3), chunk.content.text);
             st3.writing = false;
           } else {
-            const { plan, state: nextState } = planAgentTextChunk(
-              { msgId: st3.msgId, toolSinceText: st3.toolSinceText, currentText: st3.currentText },
-              chunk.content.text
-            );
-            if (plan.action === "ignore") break;
-            if (plan.startNewMessage) {
-              if (plan.finalizeMsgId) store2.emit("message_done", plan.finalizeMsgId);
-              st3.msgId = addAssistantMessage(store2, threadId);
-            }
-            st3.toolSinceText = nextState.toolSinceText;
-            st3.currentText = nextState.currentText ?? "";
-            if (st3.msgId === null) throw new Error("assistant message id missing for agent text");
-            appendToken(store2, st3.msgId, plan.text);
-            st3.writing = plan.text.trim().length > 0;
-            if (st3.writing) maybeNameThread(store2, api2, threadId);
+            const text2 = appendText(threadId, st3, chunk.content.text);
+            if (text2 === null) break;
+            st3.writing = text2.trim().length > 0;
+            if (st3.writing) hooks.visibleOutput?.(threadId);
           }
         } else {
-          if (!st3.msgId || st3.toolSinceText) {
-            if (st3.toolSinceText && st3.msgId) store2.emit("message_done", st3.msgId);
-            st3.msgId = addAssistantMessage(store2, threadId);
-            st3.toolSinceText = false;
-            st3.currentText = "";
-          }
-          appendAcpContentBlock(store2, st3.msgId, chunk.channel, chunk.content);
+          const msgId = ensureFreshAfterTools(threadId, st3);
+          appendAcpContentBlock(store2, msgId, chunk.channel, chunk.content);
           st3.writing = false;
-          maybeNameThread(store2, api2, threadId);
+          hooks.visibleOutput?.(threadId);
         }
         activity(threadId);
         break;
       }
       case "text_replace": {
-        st3.msgId ??= addAssistantMessage(store2, threadId);
+        st3.msgId ??= addAssistantMessage(threadId);
         setMessageContent(store2, st3.msgId, chunk.text);
         st3.currentText = chunk.text;
         break;
       }
       case "canvas_artefact": {
-        if (!st3.msgId || st3.toolSinceText) {
-          if (st3.toolSinceText && st3.msgId) store2.emit("message_done", st3.msgId);
-          st3.msgId = addAssistantMessage(store2, threadId);
-          st3.toolSinceText = false;
-          st3.currentText = "";
-        }
-        addMessageCanvasArtefact(store2, st3.msgId, chunk.artefact);
+        addMessageCanvasArtefact(store2, ensureFreshAfterTools(threadId, st3), chunk.artefact);
         break;
       }
       case "tool_call": {
         if (findToolCallOwner(store2, threadId, chunk.toolCall.id)) break;
-        st3.msgId ??= addAssistantMessage(store2, threadId);
+        st3.msgId ??= addAssistantMessage(threadId);
         addToolCall(store2, st3.msgId, {
           id: chunk.toolCall.id,
           name: chunk.toolCall.name,
@@ -198325,7 +198280,7 @@ function startAgentController(store2, api2) {
         st3.toolSinceText = true;
         st3.writing = false;
         activity(threadId);
-        maybeNameThread(store2, api2, threadId);
+        hooks.visibleOutput?.(threadId);
         break;
       }
       case "tool_call_update": {
@@ -198367,16 +198322,7 @@ function startAgentController(store2, api2) {
             ...chunk.appendedReminderLengths ? { appendedReminderLengths: chunk.appendedReminderLengths } : {},
             ...chunk.images ? { images: chunk.images } : {}
           });
-          if (chunk.toolCallId && !chunk.isError) {
-            const toolCall = findToolCall(store2, ownerId, chunk.toolCallId);
-            if (toolCall?.name === "run_shell" && threadId === store2.getState().activeThreadId && shellCommandMayChangeBranch(toolCall.args)) {
-              void syncThreadGitBranchAfterShell(store2, api2, threadId);
-            }
-            tryOpenFileFromResult(store2, chunk.result);
-          }
-          maybeSummarizeCommands(store2, api2, threadId, st3);
-          maybeSummarizeToolTurn(store2, api2, threadId, st3);
-          maybeSummarizeToolRun(store2, api2, threadId, st3);
+          hooks.toolResult?.(threadId, ownerId, chunk);
         }
         st3.writing = false;
         activity(threadId);
@@ -198394,7 +198340,7 @@ function startAgentController(store2, api2) {
           conversationTokens: chunk.estimatedTokens,
           fillRatio: chunk.estimatedTokens / chunk.historyBudget
         });
-        emitActivity(threadId, CONTEXT_TRIM_ACTIVITY);
+        hooks.activityLabel?.(threadId, "context_trimmed");
         break;
       }
       case "turn_parameters": {
@@ -198428,8 +198374,7 @@ function startAgentController(store2, api2) {
         break;
       }
       case "prompt_progress": {
-        const label = promptProgressLabel(chunk.fraction);
-        if (label !== st3.lastActivityLabel) emitActivity(threadId, label);
+        hooks.promptProgress?.(threadId, chunk.fraction);
         break;
       }
       case "context_pressure": {
@@ -198444,7 +198389,7 @@ function startAgentController(store2, api2) {
         break;
       }
       case "subagent_start": {
-        st3.msgId ??= addAssistantMessage(store2, threadId);
+        st3.msgId ??= addAssistantMessage(threadId);
         initSubagent(store2, st3.msgId, chunk.parentToolCallId, chunk.session);
         st3.writing = false;
         activity(threadId);
@@ -198546,20 +198491,20 @@ function startAgentController(store2, api2) {
             ...chunk.followUpNote !== void 0 ? { followUpNote: chunk.followUpNote } : {}
           });
         }
-        if (chunk.status === "running") emitActivity(threadId, "Reviewing changes\u2026");
+        if (chunk.status === "running") hooks.activityLabel?.(threadId, "reviewing");
         break;
       }
       case "review_report": {
         const thread = getThreadById(store2, threadId);
-        const requestedAnchor = getReviewReportTarget(store2, threadId);
+        const requestedAnchor = hooks.reviewReportTarget?.(threadId);
         const anchorId = requestedAnchor !== void 0 ? requestedAnchor : st3.msgId ?? [...thread?.messages ?? []].reverse().find((message2) => message2.role === "assistant")?.id ?? null;
         if (anchorId === null) setThreadReviewReport(store2, threadId, chunk.report);
         else setMessageReviewReport(store2, threadId, anchorId, chunk.report);
         if (requestedAnchor !== void 0 && chunk.report.status !== "running") {
-          clearReviewReportTarget(store2, threadId);
+          hooks.reviewReportSettled?.(threadId);
         }
         if (chunk.report.status === "running") {
-          emitActivity(threadId, "Reviewing changes\u2026");
+          hooks.activityLabel?.(threadId, "reviewing");
         }
         break;
       }
@@ -198570,13 +198515,13 @@ function startAgentController(store2, api2) {
         break;
       }
       case "continuation_budget": {
-        foldBackContinuationUsed(store2, threadId, chunk.turnTreeId, chunk.used);
+        hooks.continuationBudget?.(threadId, chunk.turnTreeId, chunk.used);
         break;
       }
       case "turn_outcome": {
-        st3.msgId ??= addAssistantMessage(store2, threadId);
+        st3.msgId ??= addAssistantMessage(threadId);
         const userCancelled = chunk.outcome.status === "cancelled" && chunk.outcome.source === "user";
-        const outcome2 = userCancelled ? { ...chunk.outcome, userAbort: takeSendNowAbort(threadId) ? "send_now" : "stop" } : chunk.outcome;
+        const outcome2 = userCancelled && chunk.outcome.userAbort === void 0 ? { ...chunk.outcome, userAbort: hooks.userAbort?.(threadId) ?? "stop" } : chunk.outcome;
         setMessageTurnOutcome(store2, threadId, st3.msgId, outcome2);
         if (outcome2.status === "failed" && outcome2.error) {
           const detail = outcome2.error;
@@ -198593,56 +198538,330 @@ function startAgentController(store2, api2) {
         if (st3.msgId) store2.emit("message_done", st3.msgId);
         state.delete(threadId);
         pendingTurn.delete(threadId);
-        const reviewTarget = getReviewReportTarget(store2, threadId);
-        if (reviewTarget !== void 0) {
-          failRunningReviewReport(
-            store2,
-            threadId,
-            reviewTarget,
-            "The review ended before it produced a report."
-          );
-          clearReviewReportTarget(store2, threadId);
-        }
-        takeSendNowAbort(threadId);
+        hooks.beforeIdle?.(threadId);
         setThreadStatus(store2, threadId, "idle");
-        maybeRenameThreadBranch(store2, api2, threadId);
-        store2.emit("agent_activity", threadId, null);
-        if (threadId === store2.getState().activeThreadId) {
-          void syncThreadGitBranchAfterShell(store2, api2, threadId);
-        }
-        const backgroundProjectId = backgroundProjectOf(store2, threadId);
-        const backgroundProjectWasRemoved = backgroundProjectId !== void 0 && !store2.getState().projects.some((project2) => project2.id === backgroundProjectId);
-        if (backgroundProjectId) {
-          const finished = getThreadById(store2, threadId);
-          if (finished) {
-            void api2.threads.updateMeta(backgroundProjectId, threadId, {
-              status: finished.status,
-              usage: finished.usage,
-              updatedAt: finished.updatedAt,
-              title: finished.title,
-              pendingMessages: finished.pendingMessages ?? [],
-              continuationUsed: finished.continuationUsed ?? 0,
-              ...finished.currentEpoch !== void 0 ? { currentEpoch: finished.currentEpoch } : {},
-              ...finished.todos !== void 0 ? { todos: finished.todos } : {}
-            }).catch((err2) => {
-              console.error("[threads] could not persist a background run finish", err2);
-            });
-          }
-        }
-        if (!backgroundProjectWasRemoved) drainMessageQueue(store2, api2, threadId);
-        const finishedThread = getThreadById(store2, threadId);
-        const quiet = takeQuietRun(threadId);
-        if (finishedThread?.status === "idle") {
-          markThreadUnread(store2, threadId);
-          if (!quiet) {
-            void api2.alerts.threadFinished(threadId, finishedThread.title).catch((error62) => {
-              console.error("[alerts] failed to signal thread completion:", error62);
-            });
-          }
-        }
-        if (backgroundProjectWasRemoved) dropBackgroundThread(store2, threadId);
+        hooks.turnDone?.(threadId);
         break;
       }
+    }
+  };
+  return {
+    apply: apply4,
+    streamingMessageId: (threadId) => state.get(threadId)?.msgId ?? null,
+    checkpoint: (threadId) => structuredClone({
+      stream: state.get(threadId) ?? null,
+      pendingTurn: pendingTurn.get(threadId) ?? null
+    }),
+    restore: (threadId, checkpoint) => {
+      state.delete(threadId);
+      pendingTurn.delete(threadId);
+      if (checkpoint.stream) state.set(threadId, structuredClone(checkpoint.stream));
+      if (checkpoint.pendingTurn) pendingTurn.set(threadId, structuredClone(checkpoint.pendingTurn));
+    }
+  };
+}
+var init_transcript_reducer = __esm({
+  "src/shared/store/transcript-reducer.ts"() {
+    init_automation_failure();
+    init_dynamic_model();
+    init_agent_text_chunk();
+    init_remote_agent_stream();
+    init_thread_helpers();
+    init_subagent_helpers();
+  }
+});
+
+// src/renderer/controller/sync-thread-branch-after-shell.ts
+async function syncThreadGitBranchAfterShell(store2, api2, threadId) {
+  const projectId = store2.getState().activeProjectId;
+  if (!projectId) return;
+  let currentBranch;
+  try {
+    ;
+    ({ currentBranch } = await api2.git.branchStatus(projectId, threadId));
+  } catch (error62) {
+    if (!isUnavailableThreadCheckoutError(error62)) throw error62;
+    return;
+  }
+  if (syncThreadGitBranchIfChanged(store2, threadId, currentBranch)) {
+    store2.emit("git_branch_changed");
+  }
+}
+var init_sync_thread_branch_after_shell = __esm({
+  "src/renderer/controller/sync-thread-branch-after-shell.ts"() {
+    init_sync_thread_branch();
+    init_ipc_error_message();
+  }
+});
+
+// src/renderer/controller/diff-state.ts
+function queueKey(entries2) {
+  return JSON.stringify(entries2.map((entry) => [entry.path, entry.language]));
+}
+function attachDiffState(store2, api2, options) {
+  const queuesByOwner = /* @__PURE__ */ new Map();
+  const ownerKey = (projectId, threadId) => JSON.stringify([projectId, threadId]);
+  const isActiveOwner = (projectId, threadId) => {
+    const current = store2.getState();
+    return current.activeProjectId === projectId && current.activeThreadId === threadId;
+  };
+  const publishActiveQueue = (entries2) => {
+    const { activeDiff } = store2.getState();
+    const stillQueued = activeDiff && entries2.some((entry) => entry.path === activeDiff.path) ? activeDiff : null;
+    store2.setState({
+      stagedDiffs: entries2,
+      activeDiff: entries2.length === 0 ? null : stillQueued
+    });
+    store2.emit("staged_diffs_changed");
+    store2.emit("panel_changed");
+  };
+  const unsubShowDiff = api2.diff.onShowDiff(
+    (projectId, threadId, path, before, after, language) => {
+      if (!isActiveOwner(projectId, threadId)) return;
+      store2.setState({ activeDiff: { path, before, after, language } });
+      if (!options.revealOnShowDiff) return;
+      store2.setState({ rightPanelMode: "changes", filesPaneOpen: true });
+      syncFilesPaneDom(store2);
+      store2.emit("right_panel_mode_changed");
+      store2.emit("files_pane_changed");
+      store2.emit("panel_changed");
+    }
+  );
+  const unsubQueued = api2.diff.onQueued((projectId, threadId, entries2) => {
+    queuesByOwner.set(ownerKey(projectId, threadId), entries2);
+    if (isActiveOwner(projectId, threadId)) publishActiveQueue(entries2);
+  });
+  const hydrate = () => {
+    const { activeProjectId, activeThreadId } = store2.getState();
+    if (!activeProjectId || !activeThreadId) return;
+    void (async () => {
+      let entries2;
+      try {
+        entries2 = await api2.diff.queue(activeProjectId, activeThreadId);
+      } catch {
+        return;
+      }
+      if (!isActiveOwner(activeProjectId, activeThreadId)) return;
+      queuesByOwner.set(ownerKey(activeProjectId, activeThreadId), entries2);
+      if (queueKey(store2.getState().stagedDiffs) === queueKey(entries2)) return;
+      publishActiveQueue(entries2);
+    })();
+  };
+  let publishedOwnerKey = ownerKey(
+    store2.getState().activeProjectId ?? "",
+    store2.getState().activeThreadId ?? ""
+  );
+  const syncDiffOwner = () => {
+    const { activeProjectId, activeThreadId } = store2.getState();
+    const nextOwnerKey = ownerKey(activeProjectId ?? "", activeThreadId ?? "");
+    if (nextOwnerKey === publishedOwnerKey) return;
+    publishedOwnerKey = nextOwnerKey;
+    const entries2 = activeProjectId && activeThreadId ? queuesByOwner.get(ownerKey(activeProjectId, activeThreadId)) ?? [] : [];
+    publishActiveQueue(entries2);
+    hydrate();
+  };
+  const unsubWorkspace = store2.on("workspace_changed", syncDiffOwner);
+  const unsubThreads = store2.on("threads_changed", syncDiffOwner);
+  hydrate();
+  return () => {
+    unsubShowDiff();
+    unsubQueued();
+    unsubWorkspace();
+    unsubThreads();
+  };
+}
+var init_diff_state = __esm({
+  "src/renderer/controller/diff-state.ts"() {
+    init_panels();
+  }
+});
+
+// src/renderer/controller/agent.ts
+function startAgentController(store2, api2) {
+  const ui2 = /* @__PURE__ */ new Map();
+  const get2 = (tid) => {
+    let st3 = ui2.get(tid);
+    if (!st3) {
+      st3 = {
+        summaryMsgId: null,
+        summaryCount: 0,
+        toolSummaryMsgId: null,
+        toolSummaryCount: 0,
+        runSummaryAnchorId: null,
+        runSummaryCount: 0,
+        lastActivityLabel: null,
+        firstActivityTraced: false
+      };
+      ui2.set(tid, st3);
+    }
+    return st3;
+  };
+  const emitActivity = (tid, label) => {
+    get2(tid).lastActivityLabel = label;
+    store2.emit("agent_activity", tid, label);
+  };
+  let stampedIds = [];
+  const reducer = createTranscriptReducer(store2, {
+    createMessageId: () => stampedIds.shift(),
+    userAbort: (threadId) => takeSendNowAbort(threadId) ? "send_now" : "stop",
+    reviewReportTarget: (threadId) => getReviewReportTarget(store2, threadId),
+    reviewReportSettled: (threadId) => {
+      clearReviewReportTarget(store2, threadId);
+    },
+    turnStarted: (threadId) => {
+      get2(threadId).firstActivityTraced = false;
+    },
+    activity: (threadId, writing) => {
+      get2(threadId).lastActivityLabel = syncAgentActivity(store2, threadId, writing);
+    },
+    activityLabel: (threadId, phase) => {
+      emitActivity(
+        threadId,
+        phase === "context_trimmed" ? CONTEXT_TRIM_ACTIVITY : "Reviewing changes\u2026"
+      );
+    },
+    promptProgress: (threadId, fraction) => {
+      const label = promptProgressLabel(fraction);
+      if (label !== get2(threadId).lastActivityLabel) emitActivity(threadId, label);
+    },
+    visibleOutput: (threadId) => {
+      maybeNameThread(store2, api2, threadId);
+    },
+    toolResult: (threadId, ownerId, chunk) => {
+      if (chunk.toolCallId && !chunk.isError) {
+        const toolCall = findToolCall(store2, ownerId, chunk.toolCallId);
+        if (toolCall?.name === "run_shell" && threadId === store2.getState().activeThreadId && shellCommandMayChangeBranch(toolCall.args)) {
+          void syncThreadGitBranchAfterShell(store2, api2, threadId);
+        }
+      }
+      const msgId = reducer.streamingMessageId(threadId);
+      const st3 = get2(threadId);
+      maybeSummarizeCommands(store2, api2, threadId, msgId, st3);
+      maybeSummarizeToolTurn(store2, api2, threadId, msgId, st3);
+      maybeSummarizeToolRun(store2, api2, threadId, msgId, st3);
+    },
+    continuationBudget: (threadId, turnTreeId, used) => {
+      foldBackContinuationUsed(store2, threadId, turnTreeId, used);
+    },
+    beforeIdle: (threadId) => {
+      ui2.delete(threadId);
+      const reviewTarget = getReviewReportTarget(store2, threadId);
+      if (reviewTarget !== void 0) {
+        failRunningReviewReport(
+          store2,
+          threadId,
+          reviewTarget,
+          "The review ended before it produced a report."
+        );
+        clearReviewReportTarget(store2, threadId);
+      }
+      takeSendNowAbort(threadId);
+    },
+    turnDone: (threadId) => {
+      finishTurn(threadId);
+    }
+  });
+  const finishTurn = (threadId) => {
+    maybeRenameThreadBranch(store2, api2, threadId);
+    store2.emit("agent_activity", threadId, null);
+    if (threadId === store2.getState().activeThreadId) {
+      void syncThreadGitBranchAfterShell(store2, api2, threadId);
+    }
+    const backgroundProjectId = backgroundProjectOf(store2, threadId);
+    const backgroundProjectWasRemoved = backgroundProjectId !== void 0 && !store2.getState().projects.some((project2) => project2.id === backgroundProjectId);
+    if (backgroundProjectId) {
+      const finished = getThreadById(store2, threadId);
+      if (finished) {
+        void api2.threads.updateMeta(backgroundProjectId, threadId, {
+          status: finished.status,
+          usage: finished.usage,
+          updatedAt: finished.updatedAt,
+          title: finished.title,
+          pendingMessages: finished.pendingMessages ?? [],
+          continuationUsed: finished.continuationUsed ?? 0,
+          ...finished.currentEpoch !== void 0 ? { currentEpoch: finished.currentEpoch } : {},
+          ...finished.todos !== void 0 ? { todos: finished.todos } : {}
+        }).catch((err2) => {
+          console.error("[threads] could not persist a background run finish", err2);
+        });
+      }
+    }
+    if (!backgroundProjectWasRemoved) drainMessageQueue(store2, api2, threadId);
+    const finishedThread = getThreadById(store2, threadId);
+    const quiet = takeQuietRun(threadId);
+    if (finishedThread?.status === "idle") {
+      markThreadUnread(store2, threadId);
+      if (!quiet) {
+        void api2.alerts.threadFinished(threadId, finishedThread.title).catch((error62) => {
+          console.error("[alerts] failed to signal thread completion:", error62);
+        });
+      }
+    }
+    if (backgroundProjectWasRemoved) dropBackgroundThread(store2, threadId);
+  };
+  const detachDiffState = attachDiffState(store2, api2, { revealOnShowDiff: true });
+  const attached = /* @__PURE__ */ new Set();
+  const unsubSnapshot = api2.agent.onTranscriptSnapshot(({ projectId, thread, checkpoint }) => {
+    if (getThreadProjectId(store2, thread.id) !== projectId) return;
+    applyRuntimeOwnedChunk(
+      thread.messages.map((message2) => message2.id),
+      () => {
+        patchThreadAnywhere(store2, thread.id, (current2) => {
+          return {
+            ...current2,
+            ...transcriptMeta(thread),
+            // Queue recovery may already have proven the persisted run died.
+            // An idle attachment's disk snapshot must not resurrect that stale
+            // running flag after recovery has offered an explicit retry.
+            ...current2.interruptedTurnAt !== void 0 && checkpoint.stream === null && checkpoint.pendingTurn === null ? { status: current2.status } : {},
+            messages: mergeRuntimeMessages(current2.messages, thread.messages)
+          };
+        });
+        reducer.restore(thread.id, checkpoint);
+        attached.add(thread.id);
+        const current = getThreadById(store2, thread.id);
+        if (current) acceptRuntimeThreadMeta(projectId, current);
+        store2.emit("threads_changed");
+        syncAgentActivity(store2, thread.id, checkpoint.stream?.writing ?? false);
+      }
+    );
+  });
+  const attach = () => {
+    const { activeProjectId, threads } = store2.getState();
+    if (!activeProjectId) return;
+    void api2.agent.attachTranscripts(
+      activeProjectId,
+      threads.map((thread) => thread.id)
+    ).catch((error62) => {
+      console.error("[threads] could not attach transcripts:", error62);
+    });
+  };
+  const unsubWorkspace = store2.on("workspace_changed", attach);
+  attach();
+  const unsub = api2.agent.onChunk((threadId, chunk, stamp) => {
+    if (stamp && !attached.has(threadId)) return;
+    const st3 = get2(threadId);
+    const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "acp_content" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
+    if (firstVisibleActivity && !st3.firstActivityTraced) {
+      st3.firstActivityTraced = true;
+      mark("ttft:renderer-first-activity", { kind: chunk.type });
+    }
+    if (!stamp) {
+      reducer.apply(threadId, chunk);
+      return;
+    }
+    stampedIds = [...stamp.messageIds];
+    const previous = getThreadById(store2, threadId);
+    const beforeMeta = previous ? structuredClone(transcriptMeta(previous)) : void 0;
+    try {
+      applyRuntimeOwnedChunk(stamp.messageIds, () => {
+        reducer.apply(threadId, chunk);
+        const thread = getThreadById(store2, threadId);
+        const projectId = getThreadProjectId(store2, threadId);
+        if (thread && projectId) acceptRuntimeThreadMeta(projectId, thread, beforeMeta);
+      });
+    } finally {
+      stampedIds = [];
     }
   });
   const unsubHookQueue = api2.agent.onHookQueueMessage((payload) => {
@@ -198661,12 +198880,30 @@ function startAgentController(store2, api2) {
   return () => {
     unsub();
     unsubHookQueue();
+    unsubSnapshot();
+    unsubWorkspace();
     unsubThreadPrompts();
     detachDiffState();
   };
 }
-function maybeSummarizeCommands(store2, api2, threadId, st3) {
-  const msgId = st3.msgId;
+function applySummary(store2, api2, threadId, messageId, annotation) {
+  if (annotation.commandSummary !== void 0) {
+    setMessageCommandSummary(store2, messageId, annotation.commandSummary);
+  }
+  if (annotation.toolSummary !== void 0) {
+    setMessageToolSummary(store2, messageId, annotation.toolSummary);
+  }
+  if (annotation.runSummary !== void 0) {
+    setMessageRunSummary(store2, messageId, annotation.runSummary);
+  }
+  if (!isRuntimeOwnedMessage(messageId)) return;
+  const projectId = backgroundProjectOf(store2, threadId) ?? store2.getState().activeProjectId;
+  if (!projectId) return;
+  void api2.threads.annotateMessage(projectId, threadId, messageId, annotation).catch((err2) => {
+    console.error("[threads] could not save a summary label", err2);
+  });
+}
+function maybeSummarizeCommands(store2, api2, threadId, msgId, st3) {
   if (!msgId) return;
   const msg = getThreadById(store2, threadId)?.messages.find((m3) => m3.id === msgId);
   if (!msg) return;
@@ -198682,11 +198919,12 @@ function maybeSummarizeCommands(store2, api2, threadId, st3) {
     } catch {
       summary = null;
     }
-    if (summary?.trim()) setMessageCommandSummary(store2, msgId, summary.trim());
+    if (summary?.trim()) {
+      applySummary(store2, api2, threadId, msgId, { commandSummary: summary.trim() });
+    }
   })();
 }
-function maybeSummarizeToolTurn(store2, api2, threadId, st3) {
-  const msgId = st3.msgId;
+function maybeSummarizeToolTurn(store2, api2, threadId, msgId, st3) {
   if (!msgId) return;
   const msg = getThreadById(store2, threadId)?.messages.find((m3) => m3.id === msgId);
   if (!msg) return;
@@ -198703,11 +198941,12 @@ function maybeSummarizeToolTurn(store2, api2, threadId, st3) {
     } catch {
       summary = null;
     }
-    if (summary?.trim()) setMessageToolSummary(store2, msgId, summary.trim());
+    if (summary?.trim()) {
+      applySummary(store2, api2, threadId, msgId, { toolSummary: summary.trim() });
+    }
   })();
 }
-function maybeSummarizeToolRun(store2, api2, threadId, st3) {
-  const msgId = st3.msgId;
+function maybeSummarizeToolRun(store2, api2, threadId, msgId, st3) {
   if (!msgId) return;
   const thread = getThreadById(store2, threadId);
   if (!thread) return;
@@ -198726,24 +198965,41 @@ function maybeSummarizeToolRun(store2, api2, threadId, st3) {
       summary = null;
     }
     if (st3.runSummaryAnchorId === run4.anchorId && st3.runSummaryCount !== requestCount) return;
-    if (summary?.trim()) setMessageRunSummary(store2, run4.anchorId, summary.trim());
+    if (summary?.trim()) {
+      applySummary(store2, api2, threadId, run4.anchorId, { runSummary: summary.trim() });
+    }
   })();
 }
-function tryOpenFileFromResult(_store, _result) {
+function mergeRuntimeMessages(current, incoming) {
+  const messages = [...current];
+  let previous = -1;
+  for (const message2 of incoming) {
+    const index = messages.findIndex((candidate) => candidate.id === message2.id);
+    if (index < 0) {
+      previous += 1;
+      messages.splice(previous, 0, message2);
+      continue;
+    }
+    const local = messages[index];
+    messages[index] = {
+      ...local,
+      ...message2
+    };
+    previous = index;
+  }
+  return messages;
 }
-var pendingTurn;
 var init_agent = __esm({
   "src/renderer/controller/agent.ts"() {
-    init_automation_failure();
     init_thread_prompts();
-    init_dynamic_model();
     init_thread_helpers();
+    init_transcript_state();
+    init_persistence();
+    init_transcript_reducer();
     init_sync_thread_branch_after_shell();
     init_sync_thread_branch();
     init_tool_display();
     init_tool_runs();
-    init_subagent_helpers();
-    init_agent_text_chunk();
     init_agent_activity();
     init_message_queue();
     init_diff_state();
@@ -198752,9 +199008,8 @@ var init_agent = __esm({
     init_review_report_target();
     init_send_now_aborts();
     init_background_threads();
-    init_remote_agent_stream();
+    init_runtime_transcript();
     init_perf();
-    pendingTurn = /* @__PURE__ */ new Map();
   }
 });
 
@@ -207129,6 +207384,9 @@ async function boot() {
   mountOnboardingDialog(store, api);
   const approvalRequests = mountApprovalDialog(api, store);
   const askUserRequests = mountAskUserDialog(api, store);
+  void api.agent.replayPendingDecisions().catch((error62) => {
+    console.error("[agent] could not restore pending decisions:", error62);
+  });
   mountAlertThreadNavigation(store, api);
   mountSshPromptDialog(api);
   mountUpdatePromptDialog(api);
