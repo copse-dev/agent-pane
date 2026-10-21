@@ -52,8 +52,8 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
   content, so `video_frames` returns the stills themselves rather than a
   manifest describing pictures the agent never received. Tools that need the
   native loop's transcript or orchestration state (ask_user, explore subagents,
-  todos, memories) stay private; `advisor` is the exception, scoped to the whole
-  ACP turn by agent-service. Core and first-party plugin tools remain opt-in
+  todos, memories) stay private. `advisor` receives an explicit transcript context,
+  and `read_skill` receives an independent bounded activation context for the ACP run. Core and first-party plugin tools remain opt-in
   because a registered tool may depend on native turn state or have effects the
   bridge cannot represent. An inventory test fails when a new tool has no ACP
   exposure decision, so additions cannot be silently forgotten.
@@ -365,7 +365,15 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   sent (the agent receives the text blocks).
 - **Native-tool bridge is http-only.** Agents that support only stdio MCP
   servers don't get Copse's bridged tools this turn — a stdio shim is a
-  possible follow-up (#602). Skills and todo/plan tools are not bridged.
+  possible follow-up (#602). Todo/plan tools remain private. Copse-managed local
+  executors supporting HTTP MCP receive Copse's filtered skill catalog and
+  `read_skill` through the authenticated bridge. Each run has a fresh activation
+  allowance (four model-selected skills, 128 KiB of instructions/supporting text),
+  shared across transport retries and automatic checkout continuations. Explicit skill instructions spend the same byte
+  budget. Plugin enablement, trust framing, cancellation and skill-root containment
+  still apply; model selection adds no filesystem or shell grants. Invoked skills
+  fail clearly when the bridge is disabled, unavailable, remote, or the executor
+  cannot negotiate HTTP MCP. Agent-managed runs omit the automatic Copse catalog.
 - **Sandboxing is macOS-only and catalog-scoped.** Known presets (Claude,
   Gemini, Codex, Cursor) ship a catalog `sandbox` entry; custom agents spawn
   unsandboxed unless you add `sandbox` (`allowedDomains`, `homeDirs`) to their

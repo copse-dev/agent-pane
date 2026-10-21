@@ -53,6 +53,7 @@ import { requestUserAnswers } from '../ask-user.ts'
 import { runWithActiveRunIdentity } from '../active-run-identity.ts'
 import { acpSessionHandoverNotice } from './acp-session-reattach.ts'
 import { buildInvokedSkillsBlock } from '../skills/skill-prompt.ts'
+import { createAcpSkillRun } from './acp-skill-context.ts'
 import { listForwardableMcpServers } from '../mcp/mcp-registry.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
@@ -188,9 +189,8 @@ export interface RunAcpAgentOptions {
   /**
    * Skills the user invoked this turn via `/skill-name`. Their SKILL.md bodies
    * are resolved against Copse's local registry and inlined into the forwarded
-   * prompt: an external ACP agent keeps its own separate skill catalog and never
-   * sees Copse's, so the instructions must travel with the turn rather than
-   * relying on the agent to already know the skill.
+   * prompt. Supporting files and model-selected skills use the run-scoped
+   * read_skill bridge when the executor supports HTTP MCP.
    */
   invokedSkills?: string[]
   /**
@@ -503,8 +503,9 @@ function installAgentInitiatedTurnLease(
 }
 
 export function runAcpAgentFromSettings(options: RunAcpAgentOptions): Promise<RunAcpAgentResult> {
+  const prepareSkills = createAcpSkillRun()
   return runAcpTurnWithContinuation(options, {
-    runTurn: runAcpAgentTurn,
+    runTurn: (turnOptions) => runAcpAgentTurn(turnOptions, prepareSkills),
     isCheckoutDeferred: isThreadCheckoutDeferred,
     executionRoot: getAgentExecutionRoot,
     allocateCheckout: ensureWritableThreadCheckout,
@@ -597,6 +598,7 @@ export async function runAcpTurnWithContinuation(
 
 async function runAcpAgentTurn(
   options: RunAcpAgentOptions,
+  prepareSkills: ReturnType<typeof createAcpSkillRun>,
 ): Promise<RunAcpAgentResult & { startedReadonly: boolean }> {
   perfMark('ttft:acp-preflight-start')
   // On an SSH workspace, ACP is blocked unless the user opted into remote ACP
@@ -784,16 +786,15 @@ async function runAcpAgentTurn(
   // Resolve the invoked skills' full instructions here, in the GUI process,
   // against the same local registry the `/` picker used — so a skill the user
   // could pick is guaranteed to resolve — then inline it into the forwarded
-  // prompt. The external ACP agent has its own separate skill catalog and never
-  // receives Copse's, so shipping the SKILL.md body with the turn is the only
-  // way the agent gets the instructions. Sent every turn a skill is invoked
+  // prompt. The external agent has a separate catalog; explicit instructions
+  // travel with the turn, while the supported bridge enables progressive reads.
+  // Sent every turn a skill is invoked
   // (not gated on session freshness): the agent does not retain it across turns.
   const skillsBlock = await perfSpan('ttft:acp-skills', () =>
     buildInvokedSkillsBlock(options.invokedSkills ?? [], {
       sandboxActive: sandboxed,
       // Also grants this thread read-only run_shell access to the skill's
-      // directory: bridged run_shell is the ACP agent's only route into Copse's
-      // tools, and read_skill is not bridged.
+      // directory. Model-selected reads through the bridge never add grants.
       threadId: options.threadId,
     }),
   )
@@ -825,10 +826,17 @@ async function runAcpAgentTurn(
       // replayed into later turns nor counts as progress that blocks a retry.
       options.onChunk({ type: 'text', text: acpSessionHandoverNotice(handover, agent.title) })
     }
+    const skillContext = prepareSkills({
+      toolNames: entry.open.mcpCapabilities?.http === true ? (entry.bridge?.toolNames ?? []) : [],
+      invokedSkills: options.invokedSkills ?? [],
+      skillsBlock,
+      includeCatalog: options.executionMode !== 'agent',
+    })
     // A turn the agent started on its own ends here: this prompt binds its own
     // context below, and must not have it cleared by the earlier lease.
     entry.open.agentInitiated?.end()
     installAgentInitiatedTurnLease(entry, options.threadId, executionContext?.projectId, cwd)
+    entry.bridge?.setSkillActivationTurn(skillContext.activation)
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
     entry.bridge?.setExecutionContext(executionContext)
     entry.bridge?.setTurnSignal(options.bridgeTurnSignal ?? options.signal)
@@ -855,7 +863,7 @@ async function runAcpAgentTurn(
         ...(options.executionMode !== 'agent' && options.operatorInstructions
           ? { operatorInstructions: options.operatorInstructions }
           : {}),
-        ...(skillsBlock ? { skills: skillsBlock } : {}),
+        ...(skillContext.prompt ? { skills: skillContext.prompt } : {}),
       },
     )
     lastPrompt = promptBlocks.map((block) => (block.type === 'text' ? block.text : '')).join('')
@@ -868,6 +876,7 @@ async function runAcpAgentTurn(
       })
       throw err
     } finally {
+      entry.bridge?.setSkillActivationTurn(null)
       entry.bridge?.setAdvisorContext(null)
       entry.bridge?.setExecutionContext(null)
       entry.bridge?.setTurnSignal(null)
