@@ -36,17 +36,16 @@ export function syncPluginClientApi(): Promise<void> {
               title: 'Connect interactive client',
               body: `Client: ${label}\nPairing code: ${code}\nScope: shell-command approval requests across all projects`,
               bodyAdvice:
-                'Verify this code in the client you opened. Approval details may contain sensitive commands and arguments. Access ends when this plugin is disabled or Copse quits.',
+                'Verify this code in the client you opened. Connecting allows this client to view and answer shell-command approval requests across all projects. Details may contain sensitive commands and arguments. Access ends when this plugin is disabled or Copse quits.',
               type: 'mcp',
               subject: 'Pair interactive client',
-              allowRemember: true,
-              rememberLabel: 'Also allow submitting approval decisions for this session',
               approveLabel: 'Connect client',
               showWhileSettingsOpen: true,
+              standalone: true,
             },
             signal,
           )
-          return result.approved ? (result.remember ? 'control' : 'read') : null
+          return result.approved
         },
       })
       mkdirSync(copseDataRoot(), { recursive: true })

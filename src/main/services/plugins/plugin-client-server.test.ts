@@ -57,7 +57,7 @@ describe('interactive client approval transport', () => {
         if (watch) observed()
         return enabled
       },
-      approvePair: async () => 'control',
+      approvePair: async () => true,
     })
     try {
       const token = await pair(server.origin)
@@ -172,7 +172,7 @@ describe('interactive client approval transport', () => {
     const server = await startPluginClientServer({
       decisions,
       enabled: () => true,
-      approvePair: async () => 'control',
+      approvePair: async () => true,
     })
     const controller = new AbortController()
     try {
@@ -303,22 +303,17 @@ describe('interactive client approval transport', () => {
     }
   })
 
-  it('does not turn read-only pairing into decision authority and rejects disable after authentication', async () => {
+  it('rejects a previously paired client after disable', async () => {
     const decisions = new HumanDecisions()
     let enabled = true
     const server = await startPluginClientServer({
       decisions,
       enabled: () => enabled,
-      approvePair: async () => 'read',
+      approvePair: async () => true,
     })
     try {
       const token = await pair(server.origin)
       const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
-      assert.equal(
-        (await fetch(`${server.origin}/v1/decisions`, { method: 'POST', headers, body: '{}' }))
-          .status,
-        403,
-      )
       enabled = false
       assert.equal((await fetch(`${server.origin}/v1/events`, { headers })).status, 403)
     } finally {

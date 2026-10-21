@@ -6,9 +6,8 @@ import {
   type ClientSnapshot,
 } from '../../../shared/plugin-client-protocol.ts'
 import type { HumanDecisions } from '../human-decisions.ts'
-import { ClientCredentials, type ClientPrincipal } from '../clients/client-credentials.ts'
+import { ClientCredentials } from '../clients/client-credentials.ts'
 import { ClientPairings } from '../clients/client-pairings.ts'
-import type { ClientAccess } from '../../../shared/client-auth.ts'
 
 /** Loopback browser clients must be local, and every paired token is bound to its origin. */
 function localOrigin(origin: string): boolean {
@@ -29,7 +28,7 @@ function localOrigin(origin: string): boolean {
 export async function startPluginClientServer(options: {
   decisions: HumanDecisions
   enabled: () => boolean
-  approvePair: (label: string, code: string, signal: AbortSignal) => Promise<ClientAccess | null>
+  approvePair: (label: string, code: string, signal: AbortSignal) => Promise<boolean>
 }): Promise<{ origin: string; close: () => Promise<void> }> {
   let authority = ''
   let stopped = false
@@ -43,7 +42,8 @@ export async function startPluginClientServer(options: {
     revoke: (id): void => {
       clients.revoke(id)
     },
-    approve: options.approvePair,
+    approve: async (label, code, signal): Promise<'control' | null> =>
+      (await options.approvePair(label, code, signal)) ? 'control' : null,
   })
   const streams = new Set<ServerResponse>()
   const deliveries = new Map<
@@ -59,13 +59,13 @@ export async function startPluginClientServer(options: {
     })
     res.end(JSON.stringify(value))
   }
-  function snapshot(client: ClientPrincipal): ClientSnapshot {
+  function snapshot(): ClientSnapshot {
     const state = options.decisions.snapshot()
     return {
       version: 1,
       sessionId: state.sessionId,
       sequence: state.sequence,
-      canRespond: client.access === 'control',
+      canRespond: true,
       requests: state.requests.flatMap(
         ({ projectId, threadId, revision, decision, interactiveClientSupported }) =>
           decision.kind === 'approval' && interactiveClientSupported
@@ -85,12 +85,12 @@ export async function startPluginClientServer(options: {
       ),
     }
   }
-  function publish(res: ServerResponse, client: ClientPrincipal): void {
+  function publish(res: ServerResponse): void {
     if (!active()) {
       res.end()
       return
     }
-    const data = JSON.stringify(snapshot(client))
+    const data = JSON.stringify(snapshot())
     // Never silently truncate the meaning of an approval, or queue behind a slow reader.
     if (Buffer.byteLength(data) > 1024 * 1024 || !res.write(`data: ${data}\n\n`)) res.destroy()
   }
@@ -166,7 +166,7 @@ export async function startPluginClientServer(options: {
       json(res, 200, { version: 1, ...pairing })
       return
     }
-    const client = clients.principal(req.headers.authorization, origin)
+    const client = clients.principal(req.headers.authorization, origin, 'control')
     if (!client) {
       json(res, 401, { error: 'Pair in Copse first' })
       return
@@ -183,7 +183,7 @@ export async function startPluginClientServer(options: {
       })
       streams.add(res)
       const unsubscribe = options.decisions.subscribe(() => {
-        publish(res, client)
+        publish(res)
       })
       const heartbeat = setInterval(() => {
         if (options.enabled()) res.write(': heartbeat\n\n')
@@ -198,10 +198,6 @@ export async function startPluginClientServer(options: {
       return
     }
     if (req.method === 'POST' && path === '/v1/decisions') {
-      if (client.access !== 'control') {
-        json(res, 403, { error: 'Viewing permission only' })
-        return
-      }
       const input = safeJsonParse(await body(req), decodeWithSchema(clientDecisionSchema))
       if (!input) {
         json(res, 400, { error: 'Invalid decision' })
