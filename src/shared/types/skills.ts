@@ -20,6 +20,8 @@ export interface SkillMetadata extends SkillSummary {
   skillRoot: string
   disableModelInvocation: boolean
   paths: string[]
+  /** Explicit same-container dependencies; only user-invoked workflows grant access. */
+  dependencies?: string[]
   /**
    * Name of the plugin that ships this skill (a bundled or installed Cursor
    * plugin, or an Agent Plugins package). Absent for skills installed directly

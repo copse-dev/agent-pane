@@ -37,6 +37,35 @@ describe('Agent Skills frontmatter conformance', () => {
     assert.deepEqual(result.warnings, [])
   })
 
+  it('validates bounded explicit dependency names and deduplicates without interpreting body mentions', () => {
+    assert.deepEqual(
+      parseSkillFrontmatter(header('copse-dependencies: [leaf, helper, leaf]'))?.dependencies,
+      ['leaf', 'helper'],
+    )
+    assert.ok(
+      parseSkillFrontmatter(
+        header(
+          `copse-dependencies: [${Array.from({ length: 16 }, (_, i) => `leaf-${String(i)}`).join(', ')}]`,
+        ),
+      ),
+    )
+    for (const declaration of [
+      'leaf',
+      '[42]',
+      '[plugin/leaf]',
+      '[plugin:leaf]',
+      '[../leaf]',
+      '[Leaf]',
+      '[" leaf"]',
+      '[null]',
+      `[${Array(17).fill('leaf').join(',')}]`,
+    ]) {
+      const result = validateSkillFrontmatter(header(`copse-dependencies: ${declaration}`))
+      assert.equal(result.skill, null, declaration)
+    }
+    assert.equal(parseSkillFrontmatter(header())?.dependencies, undefined)
+  })
+
   it('decodes YAML comments, quoted strings, folded/literal blocks and flow maps', () => {
     assert.equal(
       parseSkillFrontmatter('name: demo-skill # comment\ndescription: "A # literal"')?.description,

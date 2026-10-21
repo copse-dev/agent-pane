@@ -7,6 +7,7 @@ export const readSkillTool = defineTool({
   name: 'read_skill',
   description:
     'Activate a relevant model-invocable skill by reading SKILL.md (omit path), before following its instructions. ' +
+    'A user-invoked workflow may also load its declared copse-dependencies within the same skill container, source and plugin. ' +
     'Then read supporting files under its directory (scripts/, references/, assets/). ' +
     'Reads from the skill install path outside the workspace sandbox and auto-runs without approval. ' +
     'Use name (e.g. "demo-skill") and optional path relative to the skill root — not an absolute filesystem path. ' +

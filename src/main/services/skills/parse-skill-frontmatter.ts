@@ -46,6 +46,15 @@ const skillSchema = z.object({
   'allowed-tools': z.string().optional(),
   'user-invocable': z.boolean().default(true),
   'disable-model-invocation': z.boolean().default(false),
+  'copse-dependencies': z
+    .array(
+      z
+        .string()
+        .max(64)
+        .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    )
+    .max(16)
+    .optional(),
   paths: z
     .union([
       z.array(z.string()),
@@ -65,6 +74,7 @@ export interface ParsedSkillFile {
   userInvocable: boolean
   disableModelInvocation: boolean
   paths: string[]
+  dependencies?: string[]
   license?: string
   compatibility?: string
   metadata?: Record<string, string>
@@ -138,6 +148,9 @@ export function validateSkillFrontmatter(yaml: string): SkillFrontmatterResult {
       userInvocable: fields['user-invocable'],
       disableModelInvocation: fields['disable-model-invocation'],
       paths: fields.paths,
+      ...(fields['copse-dependencies'] !== undefined
+        ? { dependencies: [...new Set(fields['copse-dependencies'])] }
+        : {}),
       ...(fields.license !== undefined ? { license: fields.license } : {}),
       ...(fields.compatibility !== undefined ? { compatibility: fields.compatibility } : {}),
       ...(fields.metadata !== undefined ? { metadata: fields.metadata } : {}),

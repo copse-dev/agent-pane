@@ -562,7 +562,7 @@ function splitQualifiedSkillName(name: string): { plugin: string; skill: string 
  * plugin skills under a `.../plugins/<plugin>/skills/<skill>/` path and
  * sometimes ask for them qualified that way.
  */
-export function getSkill(name: string): SkillMetadata | null {
+function findSkill(name: string): SkillMetadata | null {
   const skills = activeSkills()
   const exact = skills.find((skill) => skill.name === name)
   if (exact) return exact
@@ -572,6 +572,44 @@ export function getSkill(name: string): SkillMetadata | null {
     skills.find((skill) => skill.name === qualified.skill && skill.plugin === qualified.plugin) ??
     null
   )
+}
+
+/** Live off-switches also govern a run's otherwise frozen discovery snapshot. */
+function skillIsEnabled(skill: SkillMetadata): boolean {
+  if (!skillsEnabled()) return false
+  if (skill.source === 'bundled' && skill.plugin) {
+    return (
+      getSetting<boolean>(BUNDLED_CURSOR_SKILLS_SETTING, true) &&
+      isBundledSkillPluginEnabled(skill.plugin)
+    )
+  }
+  if (skill.source === 'plugin' && skill.plugin) {
+    const service = getPluginService()
+    if (service.hasUserPlugin(skill.plugin))
+      return service
+        .enabledUserPlugins()
+        .some((plugin) => plugin.skillFiles.includes(skill.skillPath))
+  }
+  return true
+}
+
+export function getSkill(name: string): SkillMetadata | null {
+  const skill = findSkill(name)
+  return skill && skillIsEnabled(skill) ? skill : null
+}
+
+/** Read-only availability for diagnostics, never a grant of invocation authority. */
+export function getSkillAvailability(name: string): 'supported' | 'disabled' | 'unavailable' {
+  if (!skillsEnabled()) return 'disabled'
+  const skill = findSkill(name)
+  if (skill) return skillIsEnabled(skill) ? 'supported' : 'disabled'
+  const plugin = splitQualifiedSkillName(name)?.plugin ?? name
+  if (
+    activeSwitchedOffPlugins().includes(plugin) ||
+    activeSkills().some((candidate) => candidate.plugin === plugin && !skillIsEnabled(candidate))
+  )
+    return 'disabled'
+  return 'unavailable'
 }
 
 /** How many available skill names `unknownSkillError` lists before summarizing the rest. */
@@ -692,6 +730,16 @@ function pluginNameError(name: string): Error | null {
 }
 
 function unknownSkillError(name: string): Error {
+  if (!skillsEnabled())
+    return new Error(
+      'Skills are switched off. Continue without skills, or ask the user to enable them in Settings → Agent → Skills.',
+    )
+  const installed = findSkill(name)
+  if (installed && getSkillAvailability(name) === 'disabled')
+    return new Error(
+      `Skill "${installed.name}" belongs to plugin "${installed.plugin ?? ''}" which is switched off. Continue without it; the user can enable the plugin in Settings → Customise → Plugins and reload skills.`,
+    )
+
   // A name that discovery found but could not load (bad frontmatter, or a
   // frontmatter name/folder mismatch) is a registry bug, not a missing
   // skill — say so distinctly rather than telling the model no such skill

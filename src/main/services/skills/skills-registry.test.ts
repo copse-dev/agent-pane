@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 import {
   refreshSkillsRegistry,
+  runWithDiscoveredSkills,
   listSkills,
   listSkillSources,
   listModelInvocableSkills,
@@ -395,7 +396,12 @@ description: Portable Agent Plugin skill
     assert.ok(portable)
     assert.equal(portable.source, 'plugin')
 
-    await service.setEnabled('acme.skills', false)
+    await runWithDiscoveredSkills(async () => {
+      assert.ok(getSkill('portable'))
+      await service.setEnabled('acme.skills', false)
+      assert.equal(getSkill('portable'), null)
+      await assert.rejects(readSkill('portable'), /switched off/)
+    })
     await refreshSkillsRegistry()
     assert.equal(
       listSkills().some((skill) => skill.name === 'portable'),
