@@ -101,6 +101,8 @@ describe('review service', () => {
     chunks: StreamChunk[]
     reports: ThreadReviewReport[]
     result: Awaited<ReturnType<typeof runThreadReview>>
+    providerCalls: string[]
+    spendRequests: number
   }
 
   async function run(options: {
@@ -110,10 +112,15 @@ describe('review service', () => {
     registryEnabled?: boolean
     reviewer?: LLMProvider
     signal?: AbortSignal
+    billable?: boolean
+    approve?: boolean
   }): Promise<Run> {
     const chunks: StreamChunk[] = []
+    const providerCalls: string[] = []
+    let spendRequests = 0
     const providers = new Map<string, LLMProvider>()
     const providerFor = (model: string): Promise<LLMProvider> => {
+      providerCalls.push(model)
       if (model === 'reviewer-model' && options.reviewer) return Promise.resolve(options.reviewer)
       const script =
         model === 'challenger-model'
@@ -128,10 +135,13 @@ describe('review service', () => {
     }
     const services: ReviewHostServices = {
       providerFor,
-      isBillable: () => false,
+      isBillable: () => options.billable ?? false,
       resolveDistinctModels: (values) => Promise.resolve([...values]),
       estimateCost: () => '~$0.00',
-      requestSpendApproval: () => Promise.resolve({ approved: true, remember: false }),
+      requestSpendApproval: () => {
+        spendRequests++
+        return Promise.resolve({ approved: options.approve ?? true, remember: false })
+      },
       containerBackend: () => Promise.resolve({ backend: null, reason: 'no docker in tests' }),
     }
     const registry = createFirstPartyPluginRegistry()
@@ -152,7 +162,7 @@ describe('review service', () => {
     const reports = chunks.flatMap((chunk) =>
       chunk.type === 'review_report' ? [chunk.report] : [],
     )
-    return { chunks, reports, result }
+    return { chunks, reports, result, providerCalls, spendRequests }
   }
 
   it('reviews a branch against its base read-only when there is no OS sandbox, and reports findings', async () => {
@@ -195,6 +205,16 @@ describe('review service', () => {
     assert.deepEqual([...new Set(usage)].sort(), ['challenger-model', 'reviewer-model'])
     // The ground is closed: no worktree is left behind.
     assert.equal(worktreeCount(repo), 1)
+  })
+
+  it('makes no provider calls when an agent-requested paid review is declined', async () => {
+    const denied = await run({ initiator: 'agent', billable: true, approve: false })
+    assert.equal(denied.spendRequests, 1)
+    assert.deepEqual(denied.providerCalls, [])
+    assert.equal(denied.result.report.error, 'Review declined.')
+    const local = await run({ initiator: 'agent', billable: false })
+    assert.equal(local.spendRequests, 0)
+    assert.ok(local.providerCalls.length > 0)
   })
 
   it('records who asked for the run on every report it emits (#2519)', async () => {
