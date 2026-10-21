@@ -12,7 +12,7 @@ loopback port. A client must not read private settings or assume a fixed port.
 POST `/v1/pair` with JSON `{version:1,label}`. Display the returned `{id,code}` and ask the user to
 verify it in Copse's **Connect interactive client** prompt. Poll GET `/v1/pair/<id>` until approved
 or denied. The approved reply contains a one-time-delivered bearer token; retain it only in memory.
-Pairing expires after two minutes. Each desktop pairing prompt is shown alone: it temporarily hides pending thread approvals, and restores the unanswered thread prompts when it completes, is rejected or expires. Pairings never share an approve/reject action with commands or other pairings. Connecting grants viewing, decision submission, recent chat titles and opening those chats together for this session. The prompt makes that authority explicit; there is no read-only pairing mode. Access covers approval requests across all projects and may reveal sensitive arguments. Pairing requests themselves never appear in the remote approval feed.
+Pairing expires after two minutes. Each desktop pairing prompt is shown alone: it temporarily hides pending thread approvals, and restores the unanswered thread prompts when it completes, is rejected or expires. Pairings never share an approve/reject action with commands or other pairings. Connecting grants viewing, decision submission, recent chat titles/text and opening those chats together for this session. The prompt makes that authority explicit; there is no read-only pairing mode. Access covers approval requests across all projects and may reveal sensitive chat text and command arguments. Pairing requests themselves never appear in the remote approval feed.
 
 GET `/v1/events` with `Authorization: Bearer <token>` streams complete snapshots over SSE. POST
 `/v1/decisions` carries `{version:1, submissionId, sessionId, projectId, threadId, requestId,
@@ -30,6 +30,18 @@ history. Legacy used chats fall back to their saved update time. The API reads m
 no messages, commands, paths, checkout inspection or transcript hydration. Clients may poll every
 two seconds; reads are shared and cached for that interval. Activity has its own session sequence,
 independent of the approval snapshot sequence. This is a bounded recent list, not a lifetime count.
+
+POST `/v1/threads/content` with `{version:1,projectId,threadId,settledAt}` reads the selected
+recent completion on demand. The response repeats that reference and includes `sessionId`,
+`messages` (`{role:"user"|"assistant",text}`) and `truncated`. Only the newest eight visible text
+messages are returned, with at most 24,000 characters combined. Reasoning, tool calls/results,
+attachments and internal error messages are excluded. Omitted text is explicitly marked.
+This operation hydrates only the requested chat, with at most four concurrent reads. It verifies
+fresh recent-list membership and the same completion time before and after reading, and
+rechecks authority after asynchronous work. Archived, running, waiting, removed or superseded
+completions fail. Chat text is included in desktop consent; older running sessions must restart
+and pair again before using a build with this expanded scope. Clients should read only the
+selected chat and discard late responses when selection, completion or session changes.
 
 POST `/v1/threads/open` with `{version:1,projectId,threadId}` asks this same Copse host to show the
 exact chat. Only a current recent row or supported pending approval is eligible. Recent metadata

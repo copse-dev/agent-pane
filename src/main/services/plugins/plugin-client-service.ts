@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { isPluginClientApiEnabled } from '@copse/agent/plugins/plugin-client-api-plugin.ts'
 import { copseDataRoot } from '../storage/copse-paths.ts'
-import { clientActivity } from '../clients/client-activity.ts'
+import { clientActivity, readClientThreadText } from '../clients/client-activity.ts'
 import { humanDecisions } from '../human-decisions.ts'
 import { requestApproval } from '../approval.ts'
 import { startPluginClientServer } from './plugin-client-server.ts'
@@ -39,6 +39,7 @@ export function syncPluginClientApi(): Promise<void> {
         decisions: humanDecisions,
         enabled,
         activity: clientActivity,
+        readThread: readClientThreadText,
         openThread: (projectId, threadId) => openClientThread(projectId, threadId),
         approvePair: async (label, code, signal) => {
           // This HTTP-owned prompt has no run/thread identity and is never registered in
@@ -46,9 +47,9 @@ export function syncPluginClientApi(): Promise<void> {
           const result = await requestApproval(
             {
               title: 'Connect interactive client',
-              body: `Client: ${label}\nPairing code: ${code}\nScope: shell-command approvals, recent chat titles and opening those chats across all projects`,
+              body: `Client: ${label}\nPairing code: ${code}\nScope: shell-command approvals, recent chat titles and text, and opening those chats across all projects`,
               bodyAdvice:
-                'Verify this code in the client you opened. Connecting allows this client to view and answer shell-command approval requests, read recent chat titles and open those chats across all projects. Chat content is not shared. Details may contain sensitive commands and arguments. Access ends when this plugin is disabled or Copse quits.',
+                'Verify this code in the client you opened. Connecting allows this client to view and answer shell-command approval requests, read recent chat titles and recent user/assistant message text, and open those chats across all projects. Chat text and approval details may contain sensitive information. Reasoning, tool output and attachments are not shared. Access ends when this plugin is disabled or Copse quits.',
               type: 'mcp',
               subject: 'Pair interactive client',
               approveLabel: 'Connect client',

@@ -1,10 +1,13 @@
 import { z } from 'zod'
-import type { Thread } from '@shared/types'
-import type { ClientActivityData } from '../../../shared/plugin-client-protocol.ts'
+import type { Thread, Message } from '@shared/types'
+import type {
+  ClientActivityData,
+  ClientThreadText,
+} from '../../../shared/plugin-client-protocol.ts'
 import { listRunningThreadIds } from '../agent-service.ts'
 import { humanDecisions } from '../human-decisions.ts'
 import { storageGet } from '../storage/storage.ts'
-import { loadProjectThreadMetas } from '../thread-store.ts'
+import { loadProjectThreadMetas, loadThreadMessages } from '../thread-store.ts'
 
 const projectsSchema = z.array(
   z.object({ id: z.string().regex(/^[\w-]{1,128}$/), name: z.string() }),
@@ -126,3 +129,33 @@ export const clientActivity = new ClientActivityReader(async () => {
     new Set(humanDecisions.snapshot().requests.map((row) => scopeKey(row.projectId, row.threadId))),
   )
 })
+
+/** Only visible user/assistant text, never reasoning, tools, images or attachment data. */
+export function projectClientThreadText(
+  messages: readonly Pick<Message, 'role' | 'content'>[],
+): ClientThreadText {
+  const result: ClientThreadText = { messages: [], truncated: false }
+  let remaining = 24000
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]
+    if (!message || (message.role !== 'user' && message.role !== 'assistant')) continue
+    const text = message.content.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '').trim()
+    if (!text) continue
+    if (result.messages.length === 8 || remaining === 0) {
+      result.truncated = true
+      break
+    }
+    // Preserve the start of an oversized message and explicitly report the omitted tail.
+    result.messages.unshift({ role: message.role, text: text.slice(0, remaining) })
+    if (text.length > remaining) result.truncated = true
+    remaining -= Math.min(text.length, remaining)
+  }
+  return result
+}
+
+export async function readClientThreadText(
+  projectId: string,
+  threadId: string,
+): Promise<ClientThreadText> {
+  return projectClientThreadText(await loadThreadMessages(projectId, threadId))
+}
