@@ -16,31 +16,6 @@ const PROJECT_ID = 'e2e-multi-window-ipc-project'
 const THREAD_ID = 'e2e-multi-window-ipc-thread'
 const WATCHED = 'watched.txt'
 
-interface MultiWindowApi {
-  fs: {
-    watch(projectId: string, threadId: string, path: string): Promise<void>
-    unwatch(projectId: string, threadId: string, path: string): Promise<void>
-    onChanged(
-      handler: (projectId: string, threadId: string, path: string, content: string | null) => void,
-    ): () => void
-  }
-  mcp: {
-    list(): Promise<unknown>
-    reload(): Promise<unknown>
-    onStatusChanged(handler: (statuses: unknown) => void): () => void
-  }
-  processManager: {
-    snapshot(): Promise<unknown>
-    stopBackground(id: string, projectId: string, threadId: string): Promise<boolean>
-  }
-}
-
-interface MultiWindowGlobals {
-  api: MultiWindowApi
-  __copseE2e?: { createMainWindow(): Promise<void> }
-  __multiWindowIpc?: { changes: string[]; statusPushes: number }
-}
-
 describe('main-process IPC across main windows', function () {
   this.timeout(120_000)
   let workspaceRoot = ''
@@ -73,7 +48,7 @@ describe('main-process IPC across main windows', function () {
     if (!first) throw new Error('Main window handle unavailable')
     primaryHandle = first
     await browser.execute(async () => {
-      const bridge = (window as unknown as MultiWindowGlobals).__copseE2e
+      const bridge = window.__copseE2e
       if (!bridge) throw new Error('__copseE2e.createMainWindow unavailable')
       await bridge.createMainWindow()
     })
@@ -87,8 +62,8 @@ describe('main-process IPC across main windows', function () {
     await browser.switchToWindow(secondaryHandle)
     await $('#app').waitForDisplayed({ timeout: 30_000 })
     await browser.execute(() => {
-      const globals = window as unknown as MultiWindowGlobals
-      const probe = { changes: [] as string[], statusPushes: 0 }
+      const globals = window
+      const probe: { changes: string[]; statusPushes: number } = { changes: [], statusPushes: 0 }
       globals.__multiWindowIpc = probe
       globals.api.fs.onChanged((_projectId, _threadId, path) => {
         probe.changes.push(path)
@@ -107,8 +82,7 @@ describe('main-process IPC across main windows', function () {
     for (const handle of [secondaryHandle, primaryHandle]) {
       await browser.switchToWindow(handle)
       await browser.execute(
-        (projectId, threadId, path) =>
-          (window as unknown as MultiWindowGlobals).api.fs.watch(projectId, threadId, path),
+        (projectId, threadId, path) => window.api.fs.watch(projectId, threadId, path),
         PROJECT_ID,
         THREAD_ID,
         WATCHED,
@@ -116,8 +90,7 @@ describe('main-process IPC across main windows', function () {
     }
     // The boot window stops watching; the second window still is.
     await browser.execute(
-      (projectId, threadId, path) =>
-        (window as unknown as MultiWindowGlobals).api.fs.unwatch(projectId, threadId, path),
+      (projectId, threadId, path) => window.api.fs.unwatch(projectId, threadId, path),
       PROJECT_ID,
       THREAD_ID,
       WATCHED,
@@ -127,11 +100,7 @@ describe('main-process IPC across main windows', function () {
     writeFileSync(join(workspaceRoot, WATCHED), 'two\n', 'utf8')
     await browser.waitUntil(
       async () =>
-        (
-          await browser.execute(
-            () => (window as unknown as MultiWindowGlobals).__multiWindowIpc?.changes ?? [],
-          )
-        ).includes(WATCHED),
+        (await browser.execute(() => window.__multiWindowIpc?.changes ?? [])).includes(WATCHED),
       { timeout: 10_000, timeoutMsg: 'Second window stopped receiving file changes' },
     )
   })
@@ -147,7 +116,7 @@ describe('main-process IPC across main windows', function () {
 
     const outcome = await browser.execute(
       async (projectId, threadId) => {
-        const { api, __multiWindowIpc: probe } = window as unknown as MultiWindowGlobals
+        const { api, __multiWindowIpc: probe } = window
         const settle = async (call: () => Promise<unknown>): Promise<string> => {
           try {
             await call()

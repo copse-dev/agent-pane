@@ -35,7 +35,12 @@ describe('shared Apple and Android Run app picker', () => {
     // Off-token before #3065: a 12px radius on --bg-base with 20px padding and
     // an 8px action gap, next to every other dialog's --radius-lg on
     // --bg-elevated with --spacing-xl and --spacing-md.
-    const read = () =>
+    const read = (): Promise<
+      | (Record<'radius' | 'background' | 'padding' | 'actionGap' | 'titleSize', string> & {
+          tokens: Record<'radius' | 'background' | 'padding' | 'actionGap' | 'titleSize', string>
+        })
+      | null
+    > =>
       browser.execute(() => {
         const dialog = document.querySelector<HTMLElement>('#app-run-dialog')
         const actions = document.querySelector<HTMLElement>('.app-run-panel .app-run-actions')

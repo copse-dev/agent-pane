@@ -1,6 +1,8 @@
+import { at } from '@copse/std/array-utils.ts'
+import { readFixtureJsonObject } from './helpers/fixture-json.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { e2eWorkspaceDir, resetUserData, seedForkResendFixture } from './helpers/seed-config.ts'
@@ -29,7 +31,7 @@ describe('fork a thread and resend the last message', function () {
     await browser.reloadSession()
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    const sourceRow = await $('.chat-row.selected')
+    const sourceRow = await $('.chat-row.selected').getElement()
     const sourceThreadId = await sourceRow.getAttribute('data-thread-id')
     await sourceRow.click({ button: 'right' })
     await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
@@ -48,14 +50,13 @@ describe('fork a thread and resend the last message', function () {
       timeout: 10_000,
       timeoutMsg: 'expected the fork to persist rebuilt provider history',
     })
-    const history = JSON.parse(readFileSync(historyPath, 'utf8')) as {
-      messages?: Array<{ role?: string; content?: unknown }>
-    }
-    expect(history.messages?.[0]).toEqual({
+    const history = readFixtureJsonObject(historyPath)
+    const messages: unknown[] = Array.isArray(history['messages']) ? history['messages'] : []
+    expect(messages[0]).toEqual({
       role: 'user',
       content: 'Where does the login redirect get decided?',
     })
-    await expect(await $$('.messages-list .msg-user')).toBeElementsArrayOfSize(2)
+    await expect(await $$('.messages-list .msg-user').getElements()).toBeElementsArrayOfSize(2)
 
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     await $('.messages-list').saveScreenshot(
@@ -69,16 +70,21 @@ describe('fork a thread and resend the last message', function () {
     await browser.reloadSession()
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await browser.waitUntil(async () => (await $$('.messages-list .msg-user')).length === 2, {
-      timeout: 10_000,
-      timeoutMsg: 'expected both seeded prompts in the transcript',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.messages-list .msg-user').getElements()).length === 2,
+      {
+        timeout: 10_000,
+        timeoutMsg: 'expected both seeded prompts in the transcript',
+      },
+    )
 
     // Every prompt can start a fork; only the latest offers Resend — the older
     // one carries the button hidden, since a resend always repeats the latest.
-    await expect(await $$('.messages-list .msg-user .msg-fork')).toBeElementsArrayOfSize(2)
-    const firstPrompt = await $('.messages-list .msg-user')
-    const latestPrompt = await $$('.messages-list .msg-user')[1]
+    await expect(
+      await $$('.messages-list .msg-user .msg-fork').getElements(),
+    ).toBeElementsArrayOfSize(2)
+    const firstPrompt = await $('.messages-list .msg-user').getElement()
+    const latestPrompt = at([...(await $$('.messages-list .msg-user').getElements())], 1)
     await expect(firstPrompt.$('.msg-resend')).toHaveAttribute('hidden')
     await expect(latestPrompt.$('.msg-resend')).not.toHaveAttribute('hidden')
 
@@ -91,9 +97,10 @@ describe('fork a thread and resend the last message', function () {
 
     const actionCenterOffset = await browser.execute(() => {
       const prompts = document.querySelectorAll<HTMLElement>('.messages-list .msg-user')
-      const bubble = prompts.item(prompts.length - 1)
-      const actions = bubble?.querySelector<HTMLElement>('.msg-actions')
-      if (!bubble || !actions) return null
+      const bubble = prompts[prompts.length - 1]
+      if (!bubble) return null
+      const actions = bubble.querySelector<HTMLElement>('.msg-actions')
+      if (!actions) return null
       const bubbleRect = bubble.getBoundingClientRect()
       const actionsRect = actions.getBoundingClientRect()
       return actionsRect.top + actionsRect.height / 2 - (bubbleRect.top + bubbleRect.height / 2)
@@ -124,14 +131,17 @@ describe('fork a thread and resend the last message', function () {
 
     // The fork is the active thread and carries the conversation up to the fork
     // point — that prompt and nothing after it; the rest stays on the original.
-    await browser.waitUntil(async () => (await $$('.messages-list .msg-user')).length === 1, {
-      timeout: 10_000,
-      timeoutMsg: 'expected the fork to carry only the messages up to the fork point',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.messages-list .msg-user').getElements()).length === 1,
+      {
+        timeout: 10_000,
+        timeoutMsg: 'expected the fork to carry only the messages up to the fork point',
+      },
+    )
     await expect($('.messages-list .msg-user')).toHaveText(
       expect.stringContaining('Where does the login redirect get decided?'),
     )
-    await expect(await $$('.messages-list .msg-assistant')).toBeElementsArrayOfSize(0)
+    await expect(await $$('.messages-list .msg-assistant').getElements()).toBeElementsArrayOfSize(0)
     await expect($('.chat-row.selected .chat-title')).toHaveText(forkedTitle)
     // The forked prompt is now the branch's latest, so Resend sits on it — one
     // click re-runs that question down the new branch.
@@ -146,12 +156,15 @@ describe('fork a thread and resend the last message', function () {
     await browser.reloadSession()
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await browser.waitUntil(async () => (await $$('.messages-list .msg-user')).length === 2, {
-      timeout: 10_000,
-      timeoutMsg: 'expected both seeded prompts in the transcript',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.messages-list .msg-user').getElements()).length === 2,
+      {
+        timeout: 10_000,
+        timeoutMsg: 'expected both seeded prompts in the transcript',
+      },
+    )
 
-    const latestPrompt = await $$('.messages-list .msg-user')[1]
+    const latestPrompt = at([...(await $$('.messages-list .msg-user').getElements())], 1)
     await latestPrompt.moveTo()
     await installMockScenario({
       title: 'Review the login redirect',
@@ -169,12 +182,15 @@ describe('fork a thread and resend the last message', function () {
     await latestPrompt.$('.msg-resend').click()
 
     // The prompt is appended again — history is added to, never rewritten.
-    await browser.waitUntil(async () => (await $$('.messages-list .msg-user')).length === 3, {
-      timeout: 15_000,
-      timeoutMsg: 'expected the resent prompt to be appended to the transcript',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.messages-list .msg-user').getElements()).length === 3,
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected the resent prompt to be appended to the transcript',
+      },
+    )
     const texts = await $$('.messages-list .msg-user').map((bubble) => bubble.getText())
-    await expect(texts[2]).toContain('Now make it fall back to the dashboard.')
+    expect(texts[2]).toContain('Now make it fall back to the dashboard.')
 
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     await expectAssistantReply('I’ll use the dashboard when no redirect target is available.')

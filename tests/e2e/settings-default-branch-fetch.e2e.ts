@@ -28,13 +28,15 @@ describe('background default-branch fetch setting', () => {
     await browser.reloadSession()
   })
 
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('defaults on under Upstream updates and persists opting out across restarts', async function () {
     this.timeout(120_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await openPermissions()
-    const toggle = () => $('input[name="backgroundDefaultBranchFetch"]')
+    const toggle = (): ReturnType<typeof $> => $('input[name="backgroundDefaultBranchFetch"]')
     await expect(toggle()).toBeSelected()
     assert.equal((await $(FIELDSET).$('legend').getText()).trim(), 'Upstream updates')
     const hint = (await $(FIELDSET).$('.field-hint').getText()).replace(/\s+/g, ' ')

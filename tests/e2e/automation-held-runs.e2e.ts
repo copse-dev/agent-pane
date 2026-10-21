@@ -135,9 +135,7 @@ describe('held automation worktrees in the sidebar', function () {
     const contextMenu = $('.context-menu')
     await contextMenu.waitForDisplayed({ timeout: 5_000 })
     const labels = await browser.execute(() =>
-      Array.from(document.querySelectorAll('.context-menu-item')).map(
-        (item) => item.textContent ?? '',
-      ),
+      Array.from(document.querySelectorAll('.context-menu-item')).map((item) => item.textContent),
     )
     assert.deepEqual(labels, ['Run now', 'Clean up finished runs…', 'Automation setup…'])
     await prepareE2eScreenshot()
@@ -146,7 +144,11 @@ describe('held automation worktrees in the sidebar', function () {
       for (let resize = 0; resize < 5; resize++) {
         window.dispatchEvent(new Event('resize'))
         for (let frame = 0; frame < 4; frame++) {
-          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => {
+              resolve()
+            })
+          })
         }
         const titlebar = document.getElementById('titlebar')
         if (titlebar) {

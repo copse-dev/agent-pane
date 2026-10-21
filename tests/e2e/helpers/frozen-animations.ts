@@ -38,10 +38,10 @@ export async function withFrozenAnimations(capture: () => Promise<void>): Promis
           playing: animation.playState === 'running',
         }
         animation.pause()
-        const timing = animation.effect?.getTiming()
+        const timing = animation.effect.getTiming()
         // The reasoning spiral is invisible at 0%; its middle frame is fully drawn.
         animation.currentTime =
-          (timing?.delay ?? 0) + (typeof timing?.duration === 'number' ? timing.duration / 2 : 0)
+          (timing.delay ?? 0) + (typeof timing.duration === 'number' ? timing.duration / 2 : 0)
         savedAnimations.push(saved)
       }
     }

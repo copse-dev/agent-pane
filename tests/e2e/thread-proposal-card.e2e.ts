@@ -161,7 +161,9 @@ describe('starting a proposed thread in an isolated checkout', () => {
     seedThreadProposalFixture(seedStableWorkspace())
     await browser.reloadSession()
   })
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('starts the mock agent only after creating the worktree', async () => {
     await $('.thread-proposal-start').waitForDisplayed({ timeout: 10_000 })
@@ -183,7 +185,7 @@ describe('starting a proposed thread in an isolated checkout', () => {
       async () =>
         browser.execute(() =>
           [...document.querySelectorAll('.msg-assistant .message-text')].some((message) =>
-            message.textContent?.includes('The config loader guard is ready for review.'),
+            message.textContent.includes('The config loader guard is ready for review.'),
           ),
         ),
       { timeout: 30_000, timeoutMsg: 'the isolated proposal did not reach the mock agent' },
@@ -225,7 +227,7 @@ describe('starting a proposed thread in an isolated checkout', () => {
     // persistent app shell, not a WebDriver reference to that replaceable node.
     const summary = await browser.execute(async () => {
       const row = [...document.querySelectorAll('.chat-row')].find((row) =>
-        row.textContent?.includes('Retire the legacy settings parser'),
+        row.textContent.includes('Retire the legacy settings parser'),
       )
       const threadId = row?.getAttribute('data-thread-id')
       if (!threadId) throw new Error('Missing proposed thread')

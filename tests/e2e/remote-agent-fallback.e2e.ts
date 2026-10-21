@@ -23,7 +23,7 @@ describe('remote agent model picker (invalid key)', () => {
   it('hides Cursor Cloud Agent without a valid key and labels the stale selection', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    const trigger = await $('.model-picker-trigger')
+    const trigger = await $('.model-picker-trigger').getElement()
     await expect(trigger).toHaveText(expect.stringContaining('no valid key'))
 
     await trigger.click()

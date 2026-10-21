@@ -150,7 +150,8 @@ describe('selected plugin browser behavior', function () {
     assert.match(address, /^http:\/\/127\.0\.0\.1:\d+\/reference$/)
 
     const surface = await browser.execute(() => {
-      const host = document.querySelector('.browser-tab-panel.is-active .browser-webview-host')!
+      const host = document.querySelector('.browser-tab-panel.is-active .browser-webview-host')
+      if (!host) throw new Error('Missing active browser webview host')
       return {
         background: getComputedStyle(host).backgroundColor,
         canvas: host.classList.contains('is-canvas'),

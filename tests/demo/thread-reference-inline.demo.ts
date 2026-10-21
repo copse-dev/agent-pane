@@ -8,14 +8,14 @@ describe('browser-hosted inline thread reference geometry', () => {
     await browser.url('/?scenario=inline-thread-reference')
     await $('.prompt-input').waitForExist()
     await setComposerValue('From @typesafe')
-    const item = await $('.mention-picker .mention-item-thread')
+    const item = await $('.mention-picker .mention-item-thread').getElement()
     await item.waitForDisplayed()
     await item.click()
     await browser.keys(' can you compare this?')
   })
 
   it('uses the transcript outline without shifting or losing the text baseline', async () => {
-    const chip = await $('.prompt-input .inline-thread-chip')
+    const chip = await $('.prompt-input .inline-thread-chip').getElement()
     await expect(chip).toHaveText(expect.stringContaining('TypeSafe inference'))
     await expect(chip.$('svg.thread-chip-icon[data-icon="thread"]')).toBeExisting()
     await expect(chip.$('svg[data-icon="close"]')).toBeExisting()
@@ -46,7 +46,7 @@ describe('browser-hosted inline thread reference geometry', () => {
       const labelRect = label.getBoundingClientRect()
       const threadRect = threadIcon.getBoundingClientRect()
       const closeRect = closeIcon.getBoundingClientRect()
-      const outline = (element: HTMLElement) => {
+      const outline = (element: HTMLElement): Record<string, string> => {
         const style = getComputedStyle(element)
         return {
           backgroundColor: style.backgroundColor,
@@ -91,7 +91,12 @@ describe('browser-hosted inline thread reference geometry', () => {
       'the close icon is centered with the label',
     )
 
-    const readChipRect = async () =>
+    const readChipRect = async (): Promise<{
+      x: number
+      y: number
+      width: number
+      height: number
+    } | null> =>
       browser.execute(() => {
         const rect = document.querySelector('.inline-thread-chip')?.getBoundingClientRect()
         return rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null

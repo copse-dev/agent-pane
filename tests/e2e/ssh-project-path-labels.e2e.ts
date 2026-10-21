@@ -47,13 +47,16 @@ describe('SSH project sidebar path labels', () => {
   it('shows full remote paths when two SSH projects share a basename', async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
 
-    const projectsPane = await $('#pane-projects')
+    const projectsPane = await $('#pane-projects').getElement()
     await expect(projectsPane).toBeDisplayed()
 
-    await browser.waitUntil(async () => (await $$('#pane-projects .project-name')).length >= 2, {
-      timeout: 15_000,
-      timeoutMsg: 'SSH project rows did not appear',
-    })
+    await browser.waitUntil(
+      async () => (await $$('#pane-projects .project-name').getElements()).length >= 2,
+      {
+        timeout: 15_000,
+        timeoutMsg: 'SSH project rows did not appear',
+      },
+    )
 
     const texts = (await $$('#pane-projects .project-name').map((el) => el.getText())).map((t) =>
       t.trim(),

@@ -61,7 +61,15 @@ describe('Add an API key from Models & agents', () => {
   after(async () => {
     writeE2eEnv({ COPSE_E2E_SECRET_STORAGE: undefined, COPSE_ALLOW_PLAINTEXT_SECRETS: undefined })
     resetUserData()
-    await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()))
+    await new Promise<void>((resolve) => {
+      if (server) {
+        server.close(() => {
+          resolve()
+        })
+      } else {
+        resolve()
+      }
+    })
   })
 
   it('detects, rejects, asks for consent, saves, then removes a key', async function () {

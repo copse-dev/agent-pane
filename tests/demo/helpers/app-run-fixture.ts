@@ -4,7 +4,7 @@ import { createFakeApi } from '../../../src/renderer/fake-api.test-support.ts'
 import type { AppRunOperation, AppRunPlatform } from '@shared/types/app-run.ts'
 
 // Keep this static fixture's elapsed label fixed while real timers drive polling/cancel.
-Date.now = () => Date.UTC(2026, 0, 1)
+Date.now = (): number => Date.UTC(2026, 0, 1)
 
 const mode = new URLSearchParams(location.search).get('mode') ?? 'android'
 const platform: AppRunPlatform = mode === 'apple' ? 'apple' : 'android'
@@ -18,8 +18,13 @@ const app = {
   variants: platform === 'apple' ? ['Fieldnotes'] : ['Debug', 'DemoDebug'],
 }
 let operation: AppRunOperation | undefined
-api.appRun.discover = async () => ({ apps: [app], devices: [], issues: [], preferred: null })
-api.appRun.devices = async () =>
+api.appRun.discover = async (): ReturnType<typeof api.appRun.discover> => ({
+  apps: [app],
+  devices: [],
+  issues: [],
+  preferred: null,
+})
+api.appRun.devices = async (): ReturnType<typeof api.appRun.devices> =>
   mode === 'setup'
     ? []
     : [
@@ -31,8 +36,9 @@ api.appRun.devices = async () =>
           state: 'stopped',
         },
       ]
-api.appRun.operations = async () => (operation ? [operation] : [])
-api.appRun.execute = async (_owner, _selection, action) => {
+api.appRun.operations = async (): ReturnType<typeof api.appRun.operations> =>
+  operation ? [operation] : []
+api.appRun.execute = async (_owner, _selection, action): ReturnType<typeof api.appRun.execute> => {
   operation = {
     id: 'fixture-operation',
     owner,
@@ -49,10 +55,10 @@ api.appRun.execute = async (_owner, _selection, action) => {
   }
   return operation
 }
-api.appRun.cancel = async () => {
+api.appRun.cancel = async (): ReturnType<typeof api.appRun.cancel> => {
   if (operation) operation = { ...operation, stage: 'cancelled' }
 }
-api.appRun.setupOptions = async () => ({
+api.appRun.setupOptions = async (): ReturnType<typeof api.appRun.setupOptions> => ({
   runtimes: [
     { id: 'android-35', name: 'Android 15 · Google APIs · arm64', installed: true },
     { id: 'android-36', name: 'Android 16 · Google APIs · arm64', installed: false },

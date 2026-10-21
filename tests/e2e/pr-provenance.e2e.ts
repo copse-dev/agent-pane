@@ -84,7 +84,9 @@ describe('native PR and commit provenance', function () {
       false,
       'offline fixture must not contact its fake upstream',
     )
-    producer = await $('.chat-row.selected').getAttribute('data-thread-id')
+    const producerId = await $('.chat-row.selected').getAttribute('data-thread-id')
+    assert.ok(producerId, 'the selected producer chat must have a thread id')
+    producer = producerId
   })
 
   after(() => {

@@ -1,4 +1,5 @@
 import { createServer, type Server } from 'node:http'
+import type { WebviewTag } from 'electron'
 import { $, browser, expect } from '@wdio/globals'
 import { navigateActiveBrowserTab } from './helpers/browser-address.ts'
 import { listenOnFixturePort } from './helpers/fixture-server.ts'
@@ -12,15 +13,6 @@ import {
 
 // The Browser pane's capture IPC must accept a tab hosted by the pane pop-out
 // window, not only one hosted by the boot main window.
-
-interface CaptureApi {
-  api: { browser: { captureScreenshot(webContentsId: number): Promise<{ dataUrl: string }> } }
-}
-
-interface GuestWebview {
-  getTitle(): string
-  getWebContentsId(): number
-}
 
 const FIXTURE_TITLE = 'Pop-out capture fixture'
 
@@ -61,7 +53,10 @@ describe('Browser pane capture from the pop-out window', function () {
     }
     resetUserData()
     await new Promise<void>((resolve) => {
-      if (server) server.close(() => resolve())
+      if (server)
+        server.close(() => {
+          resolve()
+        })
       else resolve()
     })
   })
@@ -81,17 +76,18 @@ describe('Browser pane capture from the pop-out window', function () {
     await browser.waitUntil(
       async () =>
         await browser.execute((title) => {
-          const view = document.querySelector('.browser-tab-panel.is-active webview')
-          return (view as unknown as GuestWebview | null)?.getTitle() === title
+          const view = document.querySelector<WebviewTag>('.browser-tab-panel.is-active webview')
+          return view?.getTitle() === title
         }, FIXTURE_TITLE),
       { timeout: 20_000, timeoutMsg: 'fixture page did not load in the pop-out Browser pane' },
     )
 
     const outcome = await browser.execute(async () => {
-      const view = document.querySelector('.browser-tab-panel.is-active webview')
-      const id = (view as unknown as GuestWebview).getWebContentsId()
+      const view = document.querySelector<WebviewTag>('.browser-tab-panel.is-active webview')
+      if (!view) throw new Error('Missing active pop-out webview')
+      const id = view.getWebContentsId()
       try {
-        const shot = await (window as unknown as CaptureApi).api.browser.captureScreenshot(id)
+        const shot = await window.api.browser.captureScreenshot(id)
         return shot.dataUrl.startsWith('data:image/') ? 'ok' : 'no image'
       } catch (err) {
         return err instanceof Error ? err.message : String(err)

@@ -25,7 +25,7 @@ const PASTE_PROMPT = `Summarize this feedback: \n\n\`\`\`\n// Editor feedback su
 async function waitForWorkspace(): Promise<void> {
   await browser.waitUntil(
     async () => {
-      const name = await $('.workspace-name')
+      const name = await $('.workspace-name').getElement()
       return (await name.isExisting()) && (await name.getText()) !== 'No folder'
     },
     { timeout: 30_000, timeoutMsg: 'expected workspace to be restored' },
@@ -34,7 +34,7 @@ async function waitForWorkspace(): Promise<void> {
 
 /** Real clipboard write + Ctrl+V so the composer's paste handler runs trusted. */
 async function pasteIntoComposer(text: string): Promise<void> {
-  const composer = await $('.prompt-input')
+  const composer = await $('.prompt-input').getElement()
   await composer.click()
   await browser.execute(async (t) => {
     await navigator.clipboard.writeText(t)
@@ -79,8 +79,8 @@ describe('Pasting text into the composer', () => {
       timeout: 5_000,
       timeoutMsg: 'expected short paste to land inline in the composer',
     })
-    await expect(await composerText()).toContain('- fix the typos')
-    await expect(await $('.inline-paste-chip').isExisting()).toBe(false)
+    expect(await composerText()).toContain('- fix the typos')
+    expect(await $('.inline-paste-chip').isExisting()).toBe(false)
   })
 
   it('folds a large paste into a chip inline at the caret, after the typed text', async () => {
@@ -89,9 +89,9 @@ describe('Pasting text into the composer', () => {
 
     // The chip lives inside the composer text flow (composer-editor.ts), not a
     // detached attachment row, and its label is the first non-blank line.
-    const chip = await $('.prompt-input .inline-paste-chip')
+    const chip = await $('.prompt-input .inline-paste-chip').getElement()
     await chip.waitForDisplayed({ timeout: 5_000 })
-    await expect(await chip.getText()).toContain('Editor feedback summary')
+    expect(await chip.getText()).toContain('Editor feedback summary')
 
     // The typed text stays, with the chip appended after it in the same line.
     const layout = await browser.execute(() => {
@@ -99,13 +99,13 @@ describe('Pasting text into the composer', () => {
       if (!(composer instanceof HTMLElement)) return null
       const chipEl = composer.querySelector('.inline-paste-chip')
       const prefix = chipEl?.previousSibling?.textContent ?? ''
-      return { prefix, raw: composer.textContent ?? '' }
+      return { prefix, raw: composer.textContent }
     })
-    await expect(layout?.prefix).toBe('Summarize this feedback: ')
+    expect(layout?.prefix).toBe('Summarize this feedback: ')
     // The paste's full body is chip-internal state, never raw composer text.
-    await expect(layout?.raw).not.toContain('The opening repeats')
+    expect(layout?.raw).not.toContain('The opening repeats')
     // Attachment chips take the kit radius rather than a one-off 10px pill.
-    await expect(await chipCorner('.prompt-input .inline-paste-chip')).toBe('6px')
+    expect(await chipCorner('.prompt-input .inline-paste-chip')).toBe('6px')
 
     await saveAppScreenshot(SCREENSHOT)
 
@@ -143,18 +143,18 @@ describe('Pasting text into the composer', () => {
           const row = chip.closest('.msg-user')
           return {
             hasIcon: chip.querySelector('svg[data-icon="paste"]') !== null,
-            text: chip.textContent ?? '',
+            text: chip.textContent,
             messageText: row?.querySelector('.message-text')?.textContent ?? '',
           }
         }, SENT_CHIP),
       { timeout: 10_000, timeoutMsg: 'expected the sent paste chip in the transcript' },
     )
-    await expect(sentChip.hasIcon).toBe(true)
-    await expect(sentChip.text).toContain('Editor feedback summary')
-    await expect(await chipCorner(SENT_CHIP)).toBe('6px')
+    expect(sentChip.hasIcon).toBe(true)
+    expect(sentChip.text).toContain('Editor feedback summary')
+    expect(await chipCorner(SENT_CHIP)).toBe('6px')
     // The object-replacement placeholder that marks the paste position never
     // shows as literal text.
-    await expect(sentChip.messageText).not.toContain('￼')
+    expect(sentChip.messageText).not.toContain('￼')
 
     await waitForAgentIdle()
     await expect($('.messages-list .msg-assistant .message-text')).toHaveText(
@@ -181,14 +181,14 @@ describe('Pasting text into the composer', () => {
     await setComposerValue('Please apply this feedback: ')
     await pasteIntoComposer(LONG_PASTE)
 
-    const chipLabel = await $('.prompt-input .inline-paste-chip-label.text-expandable')
+    const chipLabel = await $('.prompt-input .inline-paste-chip-label.text-expandable').getElement()
     await chipLabel.waitForDisplayed({ timeout: 5_000 })
-    await expect(await chipLabel.getAttribute('role')).toBe('button')
+    expect(await chipLabel.getAttribute('role')).toBe('button')
     await chipLabel.click()
 
-    const dialog = await $('dialog.attachment-preview-dialog[open]')
+    const dialog = await $('dialog.attachment-preview-dialog[open]').getElement()
     await dialog.waitForExist({ timeout: 5_000 })
-    await expect(await dialog.getAttribute('data-preview-kind')).toBe('text')
+    expect(await dialog.getAttribute('data-preview-kind')).toBe('text')
     // The chip's label is the first non-blank line; the modal is where the rest
     // of the body — never raw composer text — becomes readable.
     await expect($('.attachment-preview-text')).toHaveText(
@@ -202,7 +202,7 @@ describe('Pasting text into the composer', () => {
     // rather than the one left in the transcript by the previous test.
     const sentChips =
       '.messages-list .msg-user .transcript-attachment-chip.transcript-attachment-paste'
-    const before = (await $$(sentChips)).length
+    const before = (await $$(sentChips).getElements()).length
     await installMockScenario({
       title: 'Apply the editor feedback',
       turns: [
@@ -217,16 +217,16 @@ describe('Pasting text into the composer', () => {
       ],
     })
     await $('.submit-btn').click()
-    await browser.waitUntil(async () => (await $$(sentChips)).length > before, {
+    await browser.waitUntil(async () => (await $$(sentChips).getElements()).length > before, {
       timeout: 10_000,
       timeoutMsg: 'expected the sent paste to render a transcript chip',
     })
-    const sentChip = (await $$(sentChips)).at(-1)
+    const sentChip = (await $$(sentChips).getElements()).at(-1)
     if (!sentChip) throw new Error('no transcript paste chip after send')
-    await expect(await sentChip.getAttribute('role')).toBe('button')
+    expect(await sentChip.getAttribute('role')).toBe('button')
     await sentChip.click()
 
-    const sentDialog = await $('dialog.attachment-preview-dialog[open]')
+    const sentDialog = await $('dialog.attachment-preview-dialog[open]').getElement()
     await sentDialog.waitForExist({ timeout: 5_000 })
     await expect($('.attachment-preview-text')).toHaveText(
       expect.stringContaining('The opening repeats the product description twice.'),

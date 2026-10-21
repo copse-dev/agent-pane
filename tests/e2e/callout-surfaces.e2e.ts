@@ -108,9 +108,9 @@ async function switchTheme(theme: 'light' | 'dark'): Promise<void> {
 
 describe('callout surfaces', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedCalloutSurfacesFixture(process.cwd())
     seedE2eViewport({ width: 1280, height: 900 })
@@ -177,16 +177,21 @@ describe('callout surfaces', () => {
     // The selected row: fill and weight, and nothing on either inline edge.
     expect(found['selectedRow']).not.toBeNull()
     expect(found['selectedRow']?.borderLeftWidth).toBe('0px')
-    const rowShadow = await browser.execute(
-      () => getComputedStyle(document.querySelector('.chat-row.selected') as Element).boxShadow,
-    )
+    const rowShadow = await browser.execute(() => {
+      const row = document.querySelector('.chat-row.selected')
+      if (!row) throw new Error('Missing selected chat row')
+      return getComputedStyle(row).boxShadow
+    })
     expect(rowShadow).toBe('none')
-    const weights = await browser.execute(() => ({
-      selected: getComputedStyle(document.querySelector('.chat-row.selected') as Element)
-        .fontWeight,
-      plain: getComputedStyle(document.querySelector('.chat-row:not(.selected)') as Element)
-        .fontWeight,
-    }))
+    const weights = await browser.execute(() => {
+      const selected = document.querySelector('.chat-row.selected')
+      const plain = document.querySelector('.chat-row:not(.selected)')
+      if (!selected || !plain) throw new Error('Missing selected or unselected chat row')
+      return {
+        selected: getComputedStyle(selected).fontWeight,
+        plain: getComputedStyle(plain).fontWeight,
+      }
+    })
     expect(weights.selected).not.toBe(weights.plain)
   })
 

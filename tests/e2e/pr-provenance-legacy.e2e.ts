@@ -98,7 +98,7 @@ describe('native legacy PR lookup', function () {
       let frames = 0
       let previous = performance.now()
       let maxFrameGapMs = 0
-      let frame = 0
+      let frame: number
       const draw = (now: number): void => {
         frames++
         maxFrameGapMs = Math.max(maxFrameGapMs, now - previous)

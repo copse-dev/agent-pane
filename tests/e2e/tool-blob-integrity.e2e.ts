@@ -1,3 +1,4 @@
+import type { Message } from '../../src/shared/types/index.ts'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import assert from 'node:assert/strict'
@@ -15,7 +16,7 @@ const SECOND_MESSAGE_ID = 'assistant-second-read'
 const REUSED_TOOL_CALL_ID = 'lmstudio-0'
 const SCREENSHOT = 'tool-blob-integrity.png'
 
-function toolMessage(id: string, path: string, result: string, createdAt: number) {
+function toolMessage(id: string, path: string, result: string, createdAt: number): Message {
   return {
     id,
     role: 'assistant',
@@ -50,9 +51,9 @@ function damageLikeLegacyIdReuse(): void {
 describe('tool blob integrity', () => {
   before(async () => {
     const now = Date.now()
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     writeSeedConfig({
