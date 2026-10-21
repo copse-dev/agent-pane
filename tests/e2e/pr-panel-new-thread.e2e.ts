@@ -36,9 +36,10 @@ describe('PR panel new thread (mock gh)', () => {
   })
 
   async function openPrTab(): Promise<void> {
-    const pane = await $('#pane-files')
+    const pane = await $('#pane-files').getElement()
     if (!(await pane.isDisplayed())) {
       await $('.titlebar-panel-controls .titlebar-btn[aria-label="Toggle right panel"]').click()
+
       await pane.waitForDisplayed({ timeout: 10_000 })
     }
     await $('[aria-label="Open pull requests"]').click()
@@ -51,16 +52,16 @@ describe('PR panel new thread (mock gh)', () => {
     await openPrTab()
     await browser.waitUntil(
       async () => {
-        const el = await $('.pr-viewer-title')
+        const el = await $('.pr-viewer-title').getElement()
         return (await el.isDisplayed()) && (await el.getText()).includes('Add GitHub PR panel tab')
       },
       { timeout: 15_000, timeoutMsg: 'expected auto-selected mock PR viewer' },
     )
 
-    const newThreadBtn = await $('.pr-new-thread-btn')
+    const newThreadBtn = await $('.pr-new-thread-btn').getElement()
     // New thread is a primary action beside the relationship overview; only
     // the additional lifecycle actions require opening More.
-    await expect(await $('.pr-more-actions')).not.toHaveAttribute('open')
+    await expect(await $('.pr-more-actions').getElement()).not.toHaveAttribute('open')
     await newThreadBtn.waitForDisplayed({ timeout: 10_000 })
     await expect(newThreadBtn).toHaveText('New thread')
     await saveElementScreenshot('#pane-files', 'pr-panel-new-thread-action.png')
@@ -68,17 +69,17 @@ describe('PR panel new thread (mock gh)', () => {
     await newThreadBtn.click()
 
     // `.prompt-input` is contenteditable — assert via text, not input value.
-    await expect(await $('.prompt-input')).toHaveText(
+    await expect(await $('.prompt-input').getElement()).toHaveText(
       expect.stringMatching(/#42.*copse-dev\/copse-panel\/pull\/42/s),
       { wait: 10_000 },
     )
     // No checkout preference is forced by "New thread": the footer previews the
     // automatic policy, which resolves to an isolated worktree here. The label
     // starts as the shared default and flips once the preview IPC resolves.
-    await expect(await $('.footer-checkout-btn')).toHaveText('Isolated worktree', {
+    await expect(await $('.footer-checkout-btn').getElement()).toHaveText('Isolated worktree', {
       wait: 10_000,
     })
-    await expect(await $('.chat-row.selected .chat-title')).toHaveText(
+    await expect(await $('.chat-row.selected .chat-title').getElement()).toHaveText(
       expect.stringMatching(/^PR #42:/),
     )
 

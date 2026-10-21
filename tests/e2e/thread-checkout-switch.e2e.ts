@@ -229,7 +229,7 @@ describe('switching threads during first-message checkout', () => {
         browser.execute(
           (prompt) =>
             [...document.querySelectorAll<HTMLElement>('.msg-user')].some((message) =>
-              message.textContent?.includes(prompt),
+              message.textContent.includes(prompt),
             ),
           OTHER_PROMPT,
         ),

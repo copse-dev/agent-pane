@@ -16,7 +16,7 @@ const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 async function openChanges(): Promise<void> {
   await browser.waitUntil(
-    async () => (await (await $('.workspace-name')).getText()) !== 'No folder',
+    async () => (await (await $('.workspace-name').getElement()).getText()) !== 'No folder',
     { timeout: 60_000, timeoutMsg: 'expected a restored workspace before opening Changes' },
   )
   await $('.prompt-input').waitForExist({ timeout: 60_000 })
@@ -74,7 +74,7 @@ describe('Changes view "Review" gesture', function () {
         browser.execute(() => {
           const host = document.getElementById('git-changes-host')
           return (
-            Boolean(host && !host.textContent?.includes('Checking committed changes')) &&
+            Boolean(host && !host.textContent.includes('Checking committed changes')) &&
             [...document.querySelectorAll('#git-diff-viewer-host .scrollbar.horizontal')].every(
               (element) => getComputedStyle(element).opacity === '0',
             )

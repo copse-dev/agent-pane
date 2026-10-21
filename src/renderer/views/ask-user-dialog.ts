@@ -349,6 +349,7 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
   })
 
   api.agent.onAskUserRequest((req) => {
+    if (active?.id === req.id || queue.some((request) => request.id === req.id)) return
     queue.push({
       id: req.id,
       threadId: req.threadId,

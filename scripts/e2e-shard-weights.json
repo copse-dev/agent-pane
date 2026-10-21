@@ -1,5 +1,5 @@
 {
-  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-19; plugin-client-approvals provisional at the median (8s) until its first CI run is measured, 2026-10-19; host-read-tool-cards provisional at the median (8s) until its first CI run is measured, 2026-10-20",
+  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-19; plugin-client-approvals provisional at the median (8s) until its first CI run is measured, 2026-10-19; host-read-tool-cards provisional at the median (8s) until its first CI run is measured, 2026-10-20; detached-turn-transcript is macOS-only and skips on the Linux CI shards, recorded at 1s, 2026-10-16",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15.7,
     "tests/e2e/acp-auth-error.e2e.ts": 37.5,
@@ -97,6 +97,7 @@
     "tests/e2e/debug-trace.e2e.ts": 8.1,
     "tests/e2e/decision-spine-archive.e2e.ts": 7.1,
     "tests/e2e/deepseek-dsml-recovery.e2e.ts": 7,
+    "tests/e2e/detached-turn-transcript.e2e.ts": 1,
     "tests/e2e/developer-mode.e2e.ts": 12.7,
     "tests/e2e/dialog-shortcuts.e2e.ts": 7.6,
     "tests/e2e/double-submit.e2e.ts": 9.3,

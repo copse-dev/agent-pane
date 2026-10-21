@@ -1,3 +1,4 @@
+import { at } from '@copse/std/array-utils.ts'
 import assert from 'node:assert/strict'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
@@ -14,8 +15,10 @@ describe('browser-hosted update prompt changelog', () => {
     await expect(dialog.$('.update-prompt-changelog-title')).toHaveText("What's new in 3 releases")
     const versions = await dialog.$$('.update-prompt-version').map((heading) => heading.getText())
     assert.deepEqual(versions, ['0.1.0-beta.11', '0.1.0-beta.10', '0.1.0-beta.9'])
-    await expect(dialog.$$('.update-prompt-release')[0].$$('li')).toBeElementsArrayOfSize(3)
-    await expect(dialog.$$('.update-prompt-release')[2]).toHaveText(
+    await expect(
+      at([...(await dialog.$$('.update-prompt-release').getElements())], 0).$$('li'),
+    ).toBeElementsArrayOfSize(3)
+    await expect(at([...(await dialog.$$('.update-prompt-release').getElements())], 2)).toHaveText(
       expect.stringContaining('No notes for this release.'),
     )
     await expect(dialog.$('.update-prompt-all-notes')).toHaveAttribute(
@@ -46,7 +49,7 @@ describe('browser-hosted update prompt changelog', () => {
 
   it('renders release-note markup inert', async () => {
     // Notes are fetched from GitHub; the sanitizing renderer must drop active markup.
-    const notes = $$('.update-prompt-notes')[1]
+    const notes = at([...(await $$('.update-prompt-notes').getElements())], 1)
     await expect(notes).toHaveText(expect.stringContaining('Hardened update checks.'))
     await expect(notes.$$('script')).toBeElementsArrayOfSize(0)
     const imgHandlers = await browser.execute(

@@ -546,6 +546,9 @@ reconcile only the stacks whose screenshot evidence changed since that run
 started. Selection only reduces work: live heads, declarations and approval
 provenance are still verified before a stack status is written.
 
+Intermediate screenshot drift is accepted through the stack gate; do not individually decline
+unreviewed lower candidates to simulate a deferral.
+
 Ordinary PRs keep their existing per-PR review. GitHub's queue still admits one
 entry per build: this feature consolidates screenshot decisions without adding
 multi-PR queue batching or bypassing other checks. Intermediate versions can

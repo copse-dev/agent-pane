@@ -1,3 +1,4 @@
+import { isRecord } from '@copse/std/unknown-value.ts'
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { join } from 'node:path'
@@ -41,7 +42,11 @@ async function screenshot(name: string): Promise<void> {
           focused.focus({ preventScroll: true })
         }
         await new Promise<void>((resolve) => {
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              resolve()
+            })
+          })
         })
       })
       // Mobile emulation paints a transient native scrollbar after taps and
@@ -153,7 +158,7 @@ describe('Mobile Companion at phone width', () => {
     })
     // Model cold and completed cache responses at the API boundary. Unit tests
     // hold the actual background inspector to prove that reads never await it.
-    const { identifier } = await browser.sendCommandAndGetResult(
+    const added: unknown = await browser.sendCommandAndGetResult(
       'Page.addScriptToEvaluateOnNewDocument',
       {
         source: `
@@ -174,6 +179,9 @@ describe('Mobile Companion at phone width', () => {
         `,
       },
     )
+    const identifier = isRecord(added) ? added['identifier'] : undefined
+    if (typeof identifier !== 'string')
+      throw new Error('Chromium did not return a script identifier')
     try {
       await browser.refresh()
       await expect($('.row-title=Polish the onboarding copy')).toBeDisplayed()
@@ -185,7 +193,7 @@ describe('Mobile Companion at phone width', () => {
       })
       await screenshot('mobile-companion-activity-cold-cache.png')
       await browser.execute(() => {
-        document.documentElement.dataset.dirtyCheckComplete = 'true'
+        document.documentElement.dataset['dirtyCheckComplete'] = 'true'
       })
       await browser.waitUntil(
         async () => {
@@ -221,14 +229,16 @@ describe('Mobile Companion at phone width', () => {
     await expect($('.group .row')).toBeDisplayed()
     await browser.execute(() => {
       const originalFetch = window.fetch.bind(window)
-      window.fetch = async (input, init) => {
+      window.fetch = async (input, init): Promise<Response> => {
         if (
           input === '/api/action' &&
           typeof init?.body === 'string' &&
           init.body.includes('"image":"data:image/png;base64,')
         ) {
           const root = document.documentElement
-          root.dataset.mobileImageActions = String(Number(root.dataset.mobileImageActions || 0) + 1)
+          root.dataset['mobileImageActions'] = String(
+            Number(root.dataset['mobileImageActions'] ?? 0) + 1,
+          )
         }
         return originalFetch(input, init)
       }
@@ -354,7 +364,7 @@ describe('Mobile Companion at phone width', () => {
     // Model that API response at the browser boundary, using the real app bundle.
     await browser.execute(() => {
       const originalFetch = window.fetch.bind(window)
-      window.fetch = async (...args) => {
+      window.fetch = async (...args): Promise<Response> => {
         const response = await originalFetch(...args)
         if (args[0] !== '/api/thread/proj-1/thread-1') return response
         const data: unknown = await response.json()
@@ -401,12 +411,14 @@ describe('Mobile Companion at phone width', () => {
     })
     // Freeze recurring timers at the browser boundary: settlement must update
     // Activity through its own refresh, rather than the periodic poll.
-    const { identifier } = await browser.sendCommandAndGetResult(
+    const added: unknown = await browser.sendCommandAndGetResult(
       'Page.addScriptToEvaluateOnNewDocument',
       {
         source: 'window.setInterval = () => 0',
       },
     )
+    const identifier = isRecord(added) ? added['identifier'] : undefined
+    if (typeof identifier !== 'string') throw new Error('CDP did not return a script identifier')
     try {
       await browser.setWindowSize(390, 844)
       await browser.sendCommand('Emulation.setDeviceMetricsOverride', {
@@ -482,7 +494,10 @@ describe('Mobile Companion at phone width', () => {
               const scaled = value.startsWith('color(') ? channel : channel / 255
               return scaled <= 0.04045 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4
             })
-          return 0.2126 * rgb[0]! + 0.7152 * rgb[1]! + 0.0722 * rgb[2]!
+          const [red, green, blue] = rgb
+          if (red === undefined || green === undefined || blue === undefined)
+            throw new Error('Expected three RGB colour channels')
+          return 0.2126 * red + 0.7152 * green + 0.0722 * blue
         }
         const background = luminance(style.backgroundColor)
         const foreground = luminance(style.color)
@@ -514,7 +529,7 @@ describe('Mobile Companion at phone width', () => {
       expect(appearance.label).toBe('rgb(68, 68, 68)')
       assert.ok(
         appearance.contrast >= 4.5,
-        `${theme} primary label contrast: ${appearance.contrast}`,
+        `${theme} primary label contrast: ${String(appearance.contrast)}`,
       )
       assert.ok(appearance.height >= 44, 'Pairing must remain a phone-sized touch target')
       expect(appearance.surfaceLuminance > 0.5).toBe(theme === 'light')
@@ -522,7 +537,9 @@ describe('Mobile Companion at phone width', () => {
       expect(appearance.chromeMatches).toBe(true)
       await screenshot(`mobile-companion-pair-${theme}.png`)
 
-      await browser.execute(() => localStorage.setItem('copse-mobile-token', 'visual-test-token'))
+      await browser.execute(() => {
+        localStorage.setItem('copse-mobile-token', 'visual-test-token')
+      })
       await browser.refresh()
       await expect($('.group .row')).toBeDisplayed()
       await browser.execute(async () => {

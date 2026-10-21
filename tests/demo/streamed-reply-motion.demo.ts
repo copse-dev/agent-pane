@@ -81,9 +81,9 @@ const streamFramesSchema = z.array(
 async function recordedFrames(): Promise<StreamFrame[]> {
   const captured: unknown = await browser.execute(() => {
     const recording: unknown = Reflect.get(window, '__copseStreamMotionCapture')
-    return recording !== null && typeof recording === 'object'
-      ? Reflect.get(recording, 'frames')
-      : []
+    const frames: unknown =
+      recording !== null && typeof recording === 'object' ? Reflect.get(recording, 'frames') : []
+    return frames
   })
   return streamFramesSchema.parse(captured)
 }
@@ -220,16 +220,14 @@ describe('streamed reply motion in the real renderer', () => {
               return {
                 paragraphs: [...live.querySelectorAll('p')]
                   .filter((p) => !p.closest('li'))
-                  .map((p) => normalize(p.textContent ?? ''))
+                  .map((p) => normalize(p.textContent))
                   .slice(-2),
-                headings: [...live.querySelectorAll('h2,h3')].map((h) =>
-                  normalize(h.textContent ?? ''),
-                ),
+                headings: [...live.querySelectorAll('h2,h3')].map((h) => normalize(h.textContent)),
                 items: [...live.querySelectorAll('li')].map((li) => {
                   const copy = li.cloneNode(true)
                   if (!(copy instanceof HTMLElement)) throw new Error('Expected list item element')
                   for (const nested of copy.querySelectorAll('ul,ol')) nested.remove()
-                  return normalize(copy.textContent ?? '')
+                  return normalize(copy.textContent)
                 }),
                 codeBlocks: live.querySelectorAll('pre').length,
               }
@@ -282,7 +280,7 @@ describe('streamed reply motion in the real renderer', () => {
         const state: unknown = Reflect.get(window, '__copseStreamCheckpoint')
         if (state === null || typeof state !== 'object') return
         const release: unknown = Reflect.get(state, 'release')
-        if (typeof release === 'function') release()
+        if (typeof release === 'function') Reflect.apply(release, state, [])
       })
     }
     await browser.waitUntil(

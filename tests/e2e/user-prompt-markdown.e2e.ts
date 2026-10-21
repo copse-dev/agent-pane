@@ -8,9 +8,9 @@ describe('user prompt markdown in transcript', () => {
   before(async function () {
     this.timeout(90_000)
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedUserPromptMarkdownFixture(process.cwd())
     await browser.reloadSession()
@@ -24,7 +24,7 @@ describe('user prompt markdown in transcript', () => {
   })
 
   it('renders settled user prompts with markdown and preserved line breaks', async () => {
-    const textEl = await $('[data-message-id="msg-user-markdown"] .message-text')
+    const textEl = await $('[data-message-id="msg-user-markdown"] .message-text').getElement()
     await expect(textEl.$('strong')).toExist()
     await expect(textEl.$('br')).toExist()
     await expect(textEl).toHaveText(

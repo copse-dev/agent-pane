@@ -93,7 +93,7 @@ describe('ACP permission-mode settings', () => {
   it('shows the saved ACP session mode and its discovered choices', async function () {
     this.timeout(60_000)
     await $('[aria-label="Settings"]').click()
-    const dialog = await $('#settings-dialog')
+    const dialog = await $('#settings-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 10_000 })
     await $('.settings-nav-btn[data-section="general"]').click()
 
@@ -102,20 +102,24 @@ describe('ACP permission-mode settings', () => {
     await options.waitForExist({ timeout: 15_000 })
     await options.click()
 
-    const card = await $('.acp-agent-card')
+    const card = await $('.acp-agent-card').getElement()
     await card.waitForExist({ timeout: 15_000 })
     await browser.execute(() => {
       const content = document.querySelector<HTMLElement>('.settings-content')
       const fieldset = [...document.querySelectorAll<HTMLFieldSetElement>('fieldset')].find(
-        (candidate) => candidate.querySelector('legend')?.textContent?.trim() === 'Models & agents',
+        (candidate) => candidate.querySelector('legend')?.textContent.trim() === 'Models & agents',
       )
       if (content && fieldset) content.scrollTop = Math.max(0, fieldset.offsetTop - 24)
     })
 
-    await expect(await card.$('.acp-agent-card-head strong')).toHaveText('Fixture ACP Agent')
-    const modelPicker = await card.$('.model-picker-field')
+    await expect(await card.$('.acp-agent-card-head strong').getElement()).toHaveText(
+      'Fixture ACP Agent',
+    )
+    const modelPicker = await card.$('.model-picker-field').getElement()
     await expect(modelPicker).toBeDisplayed()
-    await expect(await modelPicker.$('.model-picker-label')).toHaveText('Fixture Sonnet')
+    await expect(await modelPicker.$('.model-picker-label').getElement()).toHaveText(
+      'Fixture Sonnet',
+    )
     await browser.execute(() => {
       document
         .querySelector<HTMLElement>('.acp-agent-card .model-picker-trigger')
@@ -123,7 +127,7 @@ describe('ACP permission-mode settings', () => {
     })
     await browser.pause(200)
     await modelPicker.$('.model-picker-trigger').click()
-    const modelFilter = await modelPicker.$('.model-picker-filter')
+    const modelFilter = await modelPicker.$('.model-picker-filter').getElement()
     await modelFilter.setValue('opus')
     await expect(await modelPicker.$$('.model-picker-option')).toBeElementsArrayOfSize(1)
     await expect(await modelPicker.$('.model-picker-option .model-picker-option-label')).toHaveText(
@@ -132,24 +136,24 @@ describe('ACP permission-mode settings', () => {
     await saveAppScreenshot('settings-acp-model-picker-search.png')
     await browser.keys('Escape')
 
-    const modeSelect = await card.$('.acp-permission-mode-field select')
+    const modeSelect = await card.$('.acp-permission-mode-field select').getElement()
     await expect(modeSelect).toBeDisplayed()
     await expect(modeSelect).toHaveValue('acceptEdits')
-    await expect(await modeSelect.$$('option')).toBeElementsArrayOfSize(4)
-    await expect(await modeSelect.$('option[value="acceptEdits"]')).toHaveAttribute(
+    await expect(await modeSelect.$$('option').getElements()).toBeElementsArrayOfSize(4)
+    await expect(await modeSelect.$('option[value="acceptEdits"]').getElement()).toHaveAttribute(
       'title',
       'Apply edits automatically.',
     )
     // #1448 rewrote this hint's copy along with the rest of Settings; the field
     // it explains is unchanged.
     await expect(
-      await card.$('.field-hint*=How much the agent asks before it acts'),
+      await card.$('.field-hint*=How much the agent asks before it acts').getElement(),
     ).toBeDisplayed()
 
     await browser.execute(() => {
       const cardElement = document.querySelector<HTMLElement>('.acp-agent-card')
       const mode = [...(cardElement?.querySelectorAll<HTMLLabelElement>('label') ?? [])].find(
-        (label) => label.textContent?.includes('Permission mode'),
+        (label) => label.textContent.includes('Permission mode'),
       )
       mode?.scrollIntoView({ block: 'center' })
     })

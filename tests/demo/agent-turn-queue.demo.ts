@@ -39,7 +39,11 @@ describe('primary turn queue notice', () => {
         animation.pause()
         animation.currentTime = 1250
       }
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          resolve()
+        })
+      })
     })
     await saveElementScreenshot('#fixture', 'agent-turn-queue.png', { frame: 'document' })
   })

@@ -89,7 +89,9 @@ describe('Copse Reviewer reports stay with their turns', () => {
     await browser.reloadSession()
   })
 
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('keeps both cards after their own assistant message, above later turns', async () => {
     await $('.messages-list [data-review-report-for="assistant-first"]').waitForExist({

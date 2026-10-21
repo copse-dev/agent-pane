@@ -1,3 +1,4 @@
+import { z } from 'zod'
 /** Requires real Electron: Chromium CSP and webRequest cannot be tested in happy-dom. */
 import { createServer, type Server } from 'node:http'
 import { browser, $, expect } from '@wdio/globals'
@@ -6,13 +7,6 @@ import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { securePreviewHtml } from '../../src/shared/preview-csp.ts'
-
-interface Guest extends HTMLElement {
-  getTitle(): string
-  loadURL(url: string): Promise<void>
-  capturePage(): Promise<{ toDataURL(): string }>
-  executeJavaScript<T>(script: string): Promise<T>
-}
 
 async function listen(server: Server, host = '127.0.0.1'): Promise<string> {
   await new Promise<void>((resolve) => server.listen(0, host, resolve))
@@ -23,7 +17,9 @@ async function listen(server: Server, host = '127.0.0.1'): Promise<string> {
 
 async function navigate(url: string, title: string): Promise<void> {
   await browser.execute(async (target) => {
-    const guest = document.querySelector<Guest>('.browser-tab-panel.is-active webview')
+    const guest = document.querySelector<Electron.WebviewTag>(
+      '.browser-tab-panel.is-active webview',
+    )
     if (!guest) throw new Error('missing browser guest')
     // Consecutive previews may share a title; finish navigation before editing the address bar.
     await guest.loadURL(target)
@@ -31,7 +27,9 @@ async function navigate(url: string, title: string): Promise<void> {
   await browser.waitUntil(
     async () =>
       browser.execute((expected) => {
-        const guest = document.querySelector<Guest>('.browser-tab-panel.is-active webview')
+        const guest = document.querySelector<Electron.WebviewTag>(
+          '.browser-tab-panel.is-active webview',
+        )
         return guest?.getTitle() === expected
       }, title),
     { timeout: 15_000, timeoutMsg: `expected preview ${title}` },
@@ -104,7 +102,7 @@ describe('browser network policy', () => {
     await $('.browser-webview').waitForExist()
     await browser.waitUntil(async () =>
       browser.execute(() => {
-        const guest = document.querySelector<Guest>('webview')
+        const guest = document.querySelector<Electron.WebviewTag>('webview')
         try {
           return guest?.getTitle() !== undefined
         } catch {
@@ -117,7 +115,12 @@ describe('browser network policy', () => {
   after(async () => {
     await Promise.all(
       [local, external].map(
-        (server) => new Promise<void>((resolve) => server.close(() => resolve())),
+        (server) =>
+          new Promise<void>((resolve) =>
+            server.close(() => {
+              resolve()
+            }),
+          ),
       ),
     )
     resetUserData()
@@ -128,19 +131,19 @@ describe('browser network policy', () => {
     const html = `<title>Data preview</title><img src="${otherOrigin}/data-image"><script>fetch('${otherOrigin}/data-fetch').catch(()=>{});</script>`
     await navigate(`data:text/html,${encodeURIComponent(html)}`, 'Data preview')
     await browser.execute(async () => {
-      const guest = document.querySelector<Guest>('webview')
+      const guest = document.querySelector<Electron.WebviewTag>('webview')
       await guest?.executeJavaScript('new Promise(resolve => setTimeout(resolve, 150))')
     })
     expect(externalRequests).toEqual([])
     await navigate(`data:text/html,${encodeURIComponent(securePreviewHtml(html))}`, 'Data preview')
 
-    const address = await $('.browser-tab-panel.is-active .browser-url-input')
+    const address = await $('.browser-tab-panel.is-active .browser-url-input').getElement()
     await address.setValue(origin)
     await browser.keys('Enter')
     await browser.waitUntil(
       async () =>
         browser.execute(() => {
-          const guest = document.querySelector<Guest>('webview')
+          const guest = document.querySelector<Electron.WebviewTag>('webview')
           return guest?.getTitle() === 'User server'
         }),
       { timeout: 15_000, timeoutMsg: 'expected the user-entered server to load' },
@@ -150,10 +153,11 @@ describe('browser network policy', () => {
     await browser.waitUntil(
       async () =>
         browser.execute(async () => {
-          const guest = document.querySelector<Guest>('webview')
-          return guest?.executeJavaScript<boolean>(
+          const guest = document.querySelector<Electron.WebviewTag>('webview')
+          const value: unknown = await guest?.executeJavaScript(
             'getComputedStyle(document.querySelector("#styled")).color === "rgb(143, 47, 65)"',
           )
+          return value === true
         }),
       {
         timeout: 10_000,
@@ -163,31 +167,36 @@ describe('browser network policy', () => {
     await browser.waitUntil(
       async () =>
         browser.execute(async () => {
-          const guest = document.querySelector<Guest>('webview')
-          return guest?.executeJavaScript<boolean>(
+          const guest = document.querySelector<Electron.WebviewTag>('webview')
+          const value: unknown = await guest?.executeJavaScript(
             'document.querySelector("#own").naturalWidth > 0',
           )
+          return value === true
         }),
       {
         timeout: 10_000,
         timeoutMsg: 'expected the same-origin image to load on the user-entered page',
       },
     )
-    const result = await browser.execute(async () => {
-      const guest = document.querySelector<Guest>('webview')
-      return guest?.executeJavaScript<{ own: number; color: string; background: string }>(
+    const rawResult: unknown = await browser.execute(async () => {
+      const guest = document.querySelector<Electron.WebviewTag>('webview')
+      const value: unknown = await guest?.executeJavaScript(
         '({own: document.querySelector("#own").naturalWidth, color: getComputedStyle(document.querySelector("#styled")).color, background: getComputedStyle(document.body).backgroundColor})',
       )
+      return value
     })
-    expect(result?.own).toBe(80)
-    expect(result?.color).toBe('rgb(143, 47, 65)')
-    expect(result?.background).toBe('rgb(255, 248, 237)')
+    const result = z
+      .object({ own: z.number(), color: z.string(), background: z.string() })
+      .parse(rawResult)
+    expect(result.own).toBe(80)
+    expect(result.color).toBe('rgb(143, 47, 65)')
+    expect(result.background).toBe('rgb(255, 248, 237)')
     expect(localRequests).toContain('/own.svg')
     expect(externalRequests).toContain('/user-style.css')
     // Native webview surfaces are blank in WebDriver's app screenshot on macOS.
     // Capture the guest compositor so the restored user stylesheet is reviewable.
     const screenshot = await browser.execute(async () => {
-      const guest = document.querySelector<Guest>('webview')
+      const guest = document.querySelector<Electron.WebviewTag>('webview')
       if (!guest) throw new Error('missing guest')
       guest.style.width = '720px'
       guest.style.height = '480px'
@@ -204,7 +213,7 @@ describe('browser network policy', () => {
 
     // A redirect in the user-controlled browser follows ordinary public web traffic.
     await browser.execute(async (url) => {
-      const guest = document.querySelector<Guest>('webview')
+      const guest = document.querySelector<Electron.WebviewTag>('webview')
       if (!guest) throw new Error('missing guest')
       await guest.loadURL(url)
     }, `${origin}/redirect`)
@@ -216,7 +225,7 @@ describe('browser network policy', () => {
     await navigate('data:text/html,<title>Navigation probe</title>', 'Navigation probe')
     const tabsBefore = await browser.execute(() => document.querySelectorAll('webview').length)
     await browser.execute(async (target) => {
-      const guest = document.querySelector<Guest>('webview')
+      const guest = document.querySelector<Electron.WebviewTag>('webview')
       await guest?.executeJavaScript(
         `window.open(${JSON.stringify(target + '/popup')}); location.href = ${JSON.stringify(target + '/navigation')}`,
       )
@@ -238,31 +247,39 @@ describe('browser network policy', () => {
       { timeoutMsg: 'expected a second browser tab' },
     )
 
-    const address = await $('.browser-tab-panel.is-active .browser-url-input')
+    const address = await $('.browser-tab-panel.is-active .browser-url-input').getElement()
     await address.setValue(`${otherOrigin}/new-tab`)
     await browser.keys('Enter')
     await browser.waitUntil(
       async () =>
         browser.execute(() => {
-          const guest = document.querySelector<Guest>('.browser-tab-panel.is-active webview')
+          const guest = document.querySelector<Electron.WebviewTag>(
+            '.browser-tab-panel.is-active webview',
+          )
           return guest?.getTitle() === 'Fresh user tab'
         }),
       { timeout: 15_000, timeoutMsg: 'expected the new user tab to load' },
     )
 
-    const result = await browser.execute(async () => {
-      const guest = document.querySelector<Guest>('.browser-tab-panel.is-active webview')
-      return guest?.executeJavaScript<{ heading: string; background: string }>(
+    const rawResult: unknown = await browser.execute(async () => {
+      const guest = document.querySelector<Electron.WebviewTag>(
+        '.browser-tab-panel.is-active webview',
+      )
+      const value: unknown = await guest?.executeJavaScript(
         '({heading: document.querySelector("#fresh").textContent, background: getComputedStyle(document.body).backgroundColor})',
       )
+      return value
     })
-    expect(result?.heading).toBe('Fresh tab loaded')
-    expect(result?.background).toBe('rgb(238, 247, 244)')
+    const result = z.object({ heading: z.string(), background: z.string() }).parse(rawResult)
+    expect(result.heading).toBe('Fresh tab loaded')
+    expect(result.background).toBe('rgb(238, 247, 244)')
     expect(externalRequests).toContain('/new-tab')
     expect(externalRequests).toContain('/new-tab.css')
 
     const screenshot = await browser.execute(async () => {
-      const guest = document.querySelector<Guest>('.browser-tab-panel.is-active webview')
+      const guest = document.querySelector<Electron.WebviewTag>(
+        '.browser-tab-panel.is-active webview',
+      )
       if (!guest) throw new Error('missing guest')
       guest.style.width = '720px'
       guest.style.height = '480px'
@@ -279,7 +296,7 @@ describe('browser network policy', () => {
   })
 
   it('explains a failed load and a network-policy block on the URL bar, then clears on success', async () => {
-    const address = await $('.browser-tab-panel.is-active .browser-url-input')
+    const address = await $('.browser-tab-panel.is-active .browser-url-input').getElement()
 
     // Port 1 is on Chromium's restricted-port list: a fast, deterministic
     // ERR_UNSAFE_PORT that needs no real network — an ordinary load failure,
@@ -351,7 +368,9 @@ describe('browser network policy', () => {
     await browser.waitUntil(
       async () =>
         browser.execute(() => {
-          const guest = document.querySelector<Guest>('.browser-tab-panel.is-active webview')
+          const guest = document.querySelector<Electron.WebviewTag>(
+            '.browser-tab-panel.is-active webview',
+          )
           return guest?.getTitle() === 'User server'
         }),
       { timeout: 15_000, timeoutMsg: 'expected the user-entered server to load' },

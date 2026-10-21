@@ -88,7 +88,7 @@ describe('Download and run a local classifier', function () {
   }
 
   async function phase(): Promise<string> {
-    return $('[data-local-id="winnow"]').getAttribute('data-phase')
+    return (await $('[data-local-id="winnow"]').getAttribute('data-phase')) ?? ''
   }
 
   async function waitForPhase(expected: string, timeout = 30_000): Promise<void> {

@@ -35,7 +35,6 @@ describe('settings plaintext secret storage', () => {
   it('keeps Settings open and explains the environment opt-in', async function () {
     if (process.platform !== 'linux') {
       this.skip()
-      return
     }
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })

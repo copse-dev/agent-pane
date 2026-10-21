@@ -10,10 +10,13 @@ describe('landing cupcake walkthrough', () => {
   })
 
   it('keeps the chat stable while edits are queued in the background', async () => {
-    await browser.waitUntil(async () => (await $$('.git-change-row-proposed')).length >= 1, {
-      timeout: 60_000,
-      timeoutMsg: 'expected the first cupcake file to enter the proposed changes queue',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.git-change-row-proposed').getElements()).length >= 1,
+      {
+        timeout: 60_000,
+        timeoutMsg: 'expected the first cupcake file to enter the proposed changes queue',
+      },
+    )
 
     await expect($('#pane-files')).not.toBeDisplayed()
     const visibleMonacoEditors = await browser.execute(
@@ -59,10 +62,13 @@ describe('landing cupcake walkthrough', () => {
     await expect($('.msg-user .message-text')).not.toHaveText(
       expect.stringContaining('workspace is intentionally empty'),
     )
-    await browser.waitUntil(async () => (await $$('.git-change-row-proposed')).length === 3, {
-      timeout: 20_000,
-      timeoutMsg: 'expected all three cupcake files in the proposed changes list',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.git-change-row-proposed').getElements()).length === 3,
+      {
+        timeout: 20_000,
+        timeoutMsg: 'expected all three cupcake files in the proposed changes list',
+      },
+    )
     await browser.waitUntil(
       () =>
         browser.execute(

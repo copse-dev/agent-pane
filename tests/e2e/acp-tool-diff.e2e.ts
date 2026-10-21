@@ -22,9 +22,9 @@ describe('ACP tool diff', () => {
   before(async () => {
     const now = Date.now()
     const workspace = process.cwd()
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedE2eViewport()
     writeSeedConfig({

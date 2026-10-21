@@ -74,14 +74,18 @@ async function openHome(): Promise<void> {
   await browser.execute(
     () =>
       new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            resolve()
+          }),
+        ),
       ),
   )
 }
 
 async function setTheme(theme: 'dark' | 'light'): Promise<void> {
   await browser.execute((value) => {
-    document.documentElement.dataset.theme = value
+    document.documentElement.dataset['theme'] = value
   }, theme)
 }
 

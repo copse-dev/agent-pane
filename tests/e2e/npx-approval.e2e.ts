@@ -11,7 +11,6 @@ describe('npx package command approval', () => {
     seedEmptyProject(seedStableWorkspace(), 'e2e-npx-approval-project', {
       subagentsEnabled: false,
       // Exercise the package-command approval before the optional firewall setup.
-      autoRunSandboxCommands: false,
       model: 'claude-sonnet-4-6',
       // `npx` is an *ambiguous* external matcher (shell-scope.ts, #500 option 1):
       // when an OS sandbox is the real boundary it deliberately auto-runs inside
@@ -52,7 +51,7 @@ describe('npx package command approval', () => {
     await setComposerValue('Run the TypeScript checks.')
     await submitComposer()
 
-    const dialog = await $('#approval-dialog')
+    const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
 
     await expect(dialog.$('.approval-heading')).toHaveText('Run package command?')

@@ -18,7 +18,7 @@ describe('trusted SSH hosts setting', () => {
 
   async function openPermissions(): Promise<WebdriverIO.Element> {
     await $('[aria-label="Settings"]').click()
-    const dialog = await $('#settings-dialog')
+    const dialog = await $('#settings-dialog').getElement()
     await expect(dialog).toBeDisplayed()
     await dialog.$('button[data-section="permissions"]').click()
     return dialog

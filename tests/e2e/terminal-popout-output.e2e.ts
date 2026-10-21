@@ -1,3 +1,4 @@
+import { at } from '@copse/std/array-utils.ts'
 import { mkdirSync } from 'node:fs'
 import { $, browser } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -25,7 +26,7 @@ async function tryApproveUnsandboxedTerminal(): Promise<boolean> {
     const dialog = document.getElementById('approval-dialog')
     if (!(dialog instanceof HTMLDialogElement) || !dialog.open) return false
     const heading = dialog.querySelector('.approval-heading')
-    if (heading?.textContent?.trim() !== 'Open unsandboxed terminal?') return false
+    if (heading?.textContent.trim() !== 'Open unsandboxed terminal?') return false
     const button = dialog.querySelector('.approval-approve')
     if (!(button instanceof HTMLButtonElement)) return false
     button.click()
@@ -89,7 +90,7 @@ describe('terminal pop-out output (#1705)', function () {
     seedEmptyProject(process.cwd(), PROJECT_ID)
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
-    mainHandle = (await browser.getWindowHandles())[0]
+    mainHandle = at([...(await browser.getWindowHandles())], 0)
   })
 
   after(async () => {
@@ -102,7 +103,7 @@ describe('terminal pop-out output (#1705)', function () {
   })
 
   it('shows shell output in the popped-out Terminal window', async function () {
-    const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]')
+    const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]').getElement()
     await terminalBtn.click()
     await $('#terminals-list-host').waitForDisplayed({ timeout: 10_000 })
     await approveUnsandboxedTerminalIfPrompted()
@@ -115,7 +116,7 @@ describe('terminal pop-out output (#1705)', function () {
       { timeout: 20_000, timeoutMsg: 'expected the docked terminal PTY to spawn' },
     )
 
-    const popoutBtn = await $('#terminals-list-host .pane-popout-btn')
+    const popoutBtn = await $('#terminals-list-host .pane-popout-btn').getElement()
     await popoutBtn.waitForClickable({ timeout: 10_000 })
     const before = await browser.getWindowHandles()
     await popoutBtn.click()
@@ -129,15 +130,15 @@ describe('terminal pop-out output (#1705)', function () {
     await browser.switchToWindow(popoutHandle)
     await browser.waitUntil(
       async () =>
-        (await browser.execute(
+        await browser.execute(
           () => document.documentElement.getAttribute('data-popout-mode') === 'terminal',
-        )) === true,
+        ),
       { timeout: 20_000, timeoutMsg: 'pop-out window did not boot in terminal mode' },
     )
     await $('.terminal-container .xterm').waitForExist({ timeout: 20_000 })
     await waitForPopoutShell(mainHandle, popoutHandle)
 
-    const helper = await $('.xterm-helper-textarea')
+    const helper = await $('.xterm-helper-textarea').getElement()
     await helper.click()
     await browser.keys(['echo', ' ', 'popout-only', '\uE007'])
 
