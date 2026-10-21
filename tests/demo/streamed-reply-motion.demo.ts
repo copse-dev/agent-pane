@@ -133,7 +133,7 @@ describe('streamed reply motion in the real renderer', () => {
       await browser.execute(() => {
         const recording: unknown = Reflect.get(window, '__copseStreamMotionCapture')
         return recording !== null && typeof recording === 'object'
-          ? Reflect.get(recording, 'done')
+          ? Reflect.get(recording, 'done') !== false
           : true
       }),
     ).toBe(false)
