@@ -27,7 +27,7 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 | Read-only agent mode             | Default-deny tool allowlist; MCP tools need read-only/non-destructive hints and retain their ordinary gate. Child calls inherit the run scope.                                                                                                                                                                                                                                                           |
 | Strict external denial           | Classifier confidence plus a deterministic destructive signal can hard-deny. The classifier cannot authorize execution.                                                                                                                                                                                                                                                                                  |
 | Outside-project reads            | Thread-scoped, in-memory grant; every command must prove an eligible plain read. Credential and whole-home/root targets are excluded.                                                                                                                                                                                                                                                                    |
-| Commit-signing grants            | macOS-only isolated system signer access to an approved key/socket. Socket consent can be remembered for the project/identity until restart; private-key-file consent is one commit only. Git, hooks and the agent receive no direct key/socket access.                                                                                                                                                  |
+| Commit-signing grants            | macOS-only isolated system signer access to an approved key/socket. Socket access is granted automatically by default and cached for the project/identity until restart; an Always ask override on git_commit asks every time and never remembers. Private-key-file consent is one commit only. Git, hooks and the agent receive no direct key/socket access.                                            |
 | Web/browser grants               | Named origins; temporary scoped or persistent remembered grants. Hard URL/network denials and preview CSP remain enforced.                                                                                                                                                                                                                                                                               |
 | MCP/custom grants                | Exact tools; MCP identity includes origin, source, server and name. Custom requiresApproval tools cannot remember consent. Neither grant establishes a project OS sandbox for the handler/server.                                                                                                                                                                                                        |
 | Automation grants                | Exact schedule-owned MCP tools or eligible project-repository GitHub actions. No ambient shell, file, web-origin, ACP, sensitive-reveal or model-spend authority.                                                                                                                                                                                                                                        |
@@ -629,13 +629,15 @@ stay inside the available project sandbox even when `git` has a remembered shell
 bypass. Without containment, each commit prompts before staging. Auto-run disabled
 also prompts. An unsuccessful helper never triggers an unsigned or unsandboxed retry.
 
-On macOS, Settings → Permissions → Commit signing enables **scoped SSH signing
-approvals**, off by default. After a trusted sandboxed socket probe receives an OS
-permission denial, Copse asks to use the system SSH signer, one configured public key
-and the exact agent socket. Remembering covers that project and identity until app
-restart. Changes to the config, key, signer binary or socket require new approval.
-Always ask suppresses remembering; turning off the setting blocks further brokered
-ssh-agent signing. Config supplied by the repository never grants authority on its own.
+On macOS, Settings → Permissions → Commit signing has an **Allow signed commits**
+toggle, on by default. After a trusted sandboxed socket probe receives an OS
+permission denial, Copse uses the system SSH signer, one configured public key and
+the exact agent socket, without asking. The grant for that project and identity is
+cached until app restart; a changed config, key, signer binary or socket re-runs the
+probe and re-grants, still without asking. Setting the git_commit tool to Always ask
+in Tool Permissions forces a fresh approval for every signing helper use instead, and
+never remembers it. Turning the setting off blocks further brokered ssh-agent
+signing. Config supplied by the repository never grants authority on its own.
 
 The socket is available only to a separately sandboxed `/usr/bin/ssh-keygen`, with
 fixed arguments selecting that public key and the `git` signing namespace. Git and

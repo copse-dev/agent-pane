@@ -1619,3 +1619,19 @@ before resolving. New human replies or changed threads remain open. GitHub has n
 expected-head condition on `resolveReviewThread`; a very small race remains after the last
 check. No merge or screenshot acceptance is performed. Conversation comments and historical
 review summaries are retained. Verification failure never rolls back an already-pushed fix.
+
+### October 20: instructions from the merge-base, and `REVIEW.md`
+
+Stage 1 read `AGENTS.md`, `CLAUDE.md` and `CONTRIBUTING.md` from the frozen head snapshot, so a
+pull request could rewrite the rules it was reviewed against. It now reads them, and a new
+`REVIEW.md`, from the merge-base commit in the object database, which executed code cannot rewrite.
+Only regular files count; a symlinked or submodule entry is skipped, as the checkout read refused
+it. `REVIEW.md` comes first, as the file a repository writes for its reviewer. The opening message
+says the files come from the merge-base, and that a change's edits to them are part of the diff
+under review, not instructions. The per-file cap stays 6,000 characters. This repository's
+`AGENTS.md` was 11,349 bytes and was cut around its "State and permissions" section; it is now a
+short rule list that points into the docs and fits in full. The same rule is Anthropic's Code
+Review's: `REVIEW.md` from the base branch, never from the pull request.
+
+A change to these files takes effect from the next pull request after it merges. Reviewing a
+pull request whose purpose is to change them uses the old version, by design.

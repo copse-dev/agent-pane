@@ -943,7 +943,6 @@
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  opacity: 0.7;
 }
 .branch-picker:not(.is-picker-mode) .branch-picker-chevron {
   display: none;

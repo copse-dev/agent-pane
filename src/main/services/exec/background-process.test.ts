@@ -15,6 +15,7 @@ import {
   listBackgroundProcesses,
   listBackgroundProcessPids,
   getBackgroundProcessLogs,
+  isBackgroundExitObserved,
   nextBackgroundOperationId,
   stopBackgroundProcess,
   stopBackgroundProcessesForThread,
@@ -189,6 +190,26 @@ describe('background process manager', () => {
     assert.deepEqual(completions, [`${info.id}:bounded-complete`])
     assert.equal(
       listBackgroundProcesses(OWNER).find((entry) => entry.id === info.id)?.timedOut,
+      false,
+    )
+  })
+
+  it('marks an exit observed only once the owner reads the exited task', async () => {
+    const info = await startBackgroundProcess({
+      command: `node -e "setTimeout(() => console.log('observed'), 100)"`,
+      cwd: process.cwd(),
+      waitMs: 10,
+      timeoutMs: 5_000,
+      owner: OWNER,
+    })
+
+    getBackgroundProcessLogs(info.id, OWNER)
+    assert.equal(isBackgroundExitObserved(info.id, OWNER), false)
+    // The helper lists the owner's tasks, which shows the exit status.
+    await waitForBackgroundExit(info.id)
+    assert.equal(isBackgroundExitObserved(info.id, OWNER), true)
+    assert.equal(
+      isBackgroundExitObserved(info.id, { projectId: 'other', threadId: 'other' }),
       false,
     )
   })

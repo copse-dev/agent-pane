@@ -8,6 +8,7 @@ import {
   parseIpcArgs,
 } from '../ipc/ipc-guards.ts'
 import { createCloseGate } from './close-gate.ts'
+import { isWindowDetached } from '../windows/window-detach.ts'
 
 /**
  * Guards closing the app while an agent is still working.
@@ -63,8 +64,14 @@ export function approveClose(): void {
  * it once confirmed. `before-quit` covers the quit routes; this covers the ones
  * that reach the window directly.
  */
-export function guardWindowClose(win: BrowserWindow): void {
+export function guardWindowClose(win: BrowserWindow, detachInstead?: () => boolean): void {
   win.on('close', (event) => {
+    // A running turn no longer needs the window (main writes its transcript),
+    // so on macOS the close detaches it and there is nothing to warn about.
+    if (detachInstead?.()) {
+      event.preventDefault()
+      return
+    }
     gate.defer(event, () => {
       if (!win.isDestroyed()) win.close()
     })
@@ -120,7 +127,8 @@ export function initCloseConfirm(win: BrowserWindow): void {
 
   requestConfirm = (): Promise<boolean> =>
     new Promise<boolean>((resolve) => {
-      if (win.isDestroyed()) {
+      // A detached window has no page to ask; the quit was the user's choice.
+      if (win.isDestroyed() || isWindowDetached(win)) {
         resolve(true)
         return
       }

@@ -5,6 +5,9 @@ import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { unreadSideChatParents, withoutSideChats } from '@shared/threads/side-chat.ts'
 import {
   createThread,
+  getActiveThread,
+  isBlankThread,
+  openNewThread,
   markThreadRead,
   normalizeBlankThreads,
   setThreadDraftPrompt,
@@ -796,6 +799,59 @@ function activate(
     // unhandled rejection. Awaiting callers receive the error through their waiter.
     console.warn('[projects] project activation failed:', failure)
   })
+}
+
+/** Open a fresh composer in the sidebar's chosen project (or the current one for All projects). */
+export function openNewProjectThread(
+  store: AppStore,
+  api: ApiClient,
+  projectId = store.getState().sidebarProjectFilterId ?? store.getState().activeProjectId,
+): void {
+  const state = store.getState()
+  const project =
+    state.projects.find((item) => item.id === projectId) ??
+    state.projects.find((item) => item.id === state.activeProjectId)
+  if (!project) return
+  if (project.id === state.activeProjectId) {
+    // Also cancel a switch still in flight to another project.
+    switchProject(store, api, project.id)
+    openNewThread(store)
+    return
+  }
+  store.emit('composer_draft_flush')
+  void activateAndWait(store, api, project.id, project.path, project.sshHost)
+    .then(() => {
+      // A cancelled/superseded activation must never open a thread in another project.
+      if (store.getState().activeProjectId === project.id) openNewThread(store)
+    })
+    .catch((error: unknown) => {
+      showErrorToast('Could not open a new thread in this project', error)
+    })
+}
+
+/** Filtering an empty composer also chooses its destination, as in the Activity prototype. */
+export function setSidebarProjectFilter(
+  store: AppStore,
+  api: ApiClient,
+  projectId: string | null,
+): void {
+  store.setState({ sidebarProjectFilterId: projectId })
+  store.emit('sidebar_project_filter_changed')
+  const thread = getActiveThread(store)
+  const activeProjectId = store.getState().activeProjectId
+  if (thread && !isBlankThread(thread)) {
+    // Filtering keeps this conversation in place, including when another
+    // project's activation has already reached the main process.
+    if (pendingSwitch && activeProjectId) switchProject(store, api, activeProjectId)
+    return
+  }
+  if (projectId && projectId !== activeProjectId) {
+    openNewProjectThread(store, api, projectId)
+  } else if (activeProjectId) {
+    // Staying on this project (including All projects) cancels a pending selection,
+    // without replacing an unsent draft with another blank thread.
+    switchProject(store, api, activeProjectId)
+  }
 }
 
 export function switchProject(

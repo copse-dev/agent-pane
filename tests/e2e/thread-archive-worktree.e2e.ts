@@ -134,7 +134,40 @@ describe('archive chat and remove its worktree', function () {
     await $('.context-menu-item=Archive').click()
   }
 
+  /**
+   * Open a Shells-tab terminal for a chat, optionally typing `input` into it.
+   * Creating a shell is gated by an approval prompt on hosts without an OS
+   * sandbox, so start it without awaiting and approve if the prompt appears.
+   */
+  async function openThreadShell(threadId: string, input?: string): Promise<void> {
+    await browser.execute(
+      (projectId: string, id: string, data: string | null) => {
+        delete document.body.dataset['e2eThreadShell']
+        void window.api.terminal
+          .create(80, 24, { projectId, threadId: id, label: 'Dev server' })
+          .then(async ({ sessionId }) => {
+            if (data !== null) await window.api.terminal.write(sessionId, data)
+            document.body.dataset['e2eThreadShell'] = sessionId
+          })
+      },
+      PROJECT_ID,
+      threadId,
+      input ?? null,
+    )
+    const approval = $('#approval-dialog')
+    await browser.waitUntil(
+      async () => {
+        if (await approval.isDisplayed()) await approval.$('.approval-approve').click()
+        return (await $('body').getAttribute('data-e2e-thread-shell')) !== null
+      },
+      { timeout: 30_000, timeoutMsg: 'expected the chat’s shell to start' },
+    )
+  }
+
   it('removes a clean checkout immediately and keeps its unmerged branch and history', async () => {
+    // An opened but never-used shell is not running work: it closes with the
+    // chat instead of asking first.
+    await openThreadShell(CLEAN_ID)
     await archiveFromSidebar(CLEAN_ID)
     await $(`.chat-row[data-thread-id="${CLEAN_ID}"]`).waitForExist({
       reverse: true,
@@ -224,27 +257,9 @@ describe('archive chat and remove its worktree', function () {
 
   it('asks before stopping a chat’s live shell, then stops it and archives', async () => {
     await $(`.chat-row[data-thread-id="${BUSY_ID}"]`).waitForDisplayed({ timeout: 30_000 })
-    // Creating a shell is gated by an approval prompt on hosts without an OS
-    // sandbox, so start it without awaiting and approve if the prompt appears.
-    await browser.execute(
-      (projectId: string, threadId: string) => {
-        void window.api.terminal
-          .create(80, 24, { projectId, threadId, label: 'Dev server' })
-          .then((id: string) => {
-            document.body.dataset['e2eBusyTerminal'] = id
-          })
-      },
-      PROJECT_ID,
-      BUSY_ID,
-    )
-    const approval = $('#approval-dialog')
-    await browser.waitUntil(
-      async () => {
-        if (await approval.isDisplayed()) await approval.$('.approval-approve').click()
-        return (await $('body').getAttribute('data-e2e-busy-terminal')) !== null
-      },
-      { timeout: 30_000, timeoutMsg: 'expected the chat’s shell to start' },
-    )
+    // A shell nobody has typed into is closed out silently on archive, so run
+    // a long-lived command in it: that is the live work the dialog must guard.
+    await openThreadShell(BUSY_ID, 'sleep 600\r')
     await archiveFromSidebar(BUSY_ID)
     const dialog = $('#confirm-dialog')
     await dialog.waitForDisplayed({ timeout: 10_000 })
