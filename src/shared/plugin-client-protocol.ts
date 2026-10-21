@@ -62,3 +62,28 @@ export const clientOpenThreadSchema = z.strictObject({
 })
 export type ClientActivityData = z.infer<typeof clientActivityDataSchema>
 export type ClientActivitySnapshot = z.infer<typeof clientActivitySnapshotSchema>
+
+/** On-demand text only; metadata polling never includes conversation content. */
+export const clientReadThreadSchema = clientOpenThreadSchema.extend({
+  settledAt: z.number().int().nonnegative(),
+})
+export const clientThreadTextSchema = z
+  .strictObject({
+    messages: z
+      .array(z.strictObject({ role: z.enum(['user', 'assistant']), text: z.string().max(24000) }))
+      .max(8),
+    truncated: z.boolean(),
+  })
+  .refine(
+    (value) => value.messages.reduce((size, message) => size + message.text.length, 0) <= 24000,
+  )
+export const clientThreadContentSchema = clientReadThreadSchema
+  .extend({
+    sessionId: z.uuid(),
+    messages: clientThreadTextSchema.shape.messages,
+    truncated: z.boolean(),
+  })
+  .refine(
+    (value) => value.messages.reduce((size, message) => size + message.text.length, 0) <= 24000,
+  )
+export type ClientThreadText = z.infer<typeof clientThreadTextSchema>

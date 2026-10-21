@@ -14,6 +14,7 @@ import { startPluginClientServer } from './plugin-client-server.ts'
 import {
   clientSnapshotSchema,
   clientActivitySnapshotSchema,
+  clientThreadContentSchema,
 } from '../../../shared/plugin-client-protocol.ts'
 
 const pairingSchema = z.object({ id: z.uuid(), code: z.string() })
@@ -495,4 +496,85 @@ describe('interactive client approval transport', () => {
       }
     }
   })
+})
+
+it('reads only exact recent completions and rechecks revocation and eligibility after hydration', async () => {
+  for (const outcome of ['success', 'disabled', 'removed', 'new-completion']) {
+    let enabled = true
+    const row = {
+      projectId: 'project',
+      projectName: 'Project',
+      threadId: randomUUID(),
+      title: 'Finished',
+      state: 'finished',
+      settledAt: 42,
+    } satisfies import('../../../shared/plugin-client-protocol.ts').ClientActivityData['recentThreads'][number]
+    let rows = [row]
+    let reads = 0
+    const entered = Promise.withResolvers<undefined>()
+    const gate =
+      Promise.withResolvers<import('../../../shared/plugin-client-protocol.ts').ClientThreadText>()
+    const server = await startPluginClientServer({
+      decisions: new HumanDecisions(),
+      enabled: () => enabled,
+      approvePair: async () => true,
+      activity: {
+        read: async (fresh) => {
+          assert.equal(fresh, true)
+          return { recentThreads: rows, runningCount: 0, waitingCount: 0 }
+        },
+      },
+      readThread: async (projectId, threadId) => {
+        assert.equal(projectId, row.projectId)
+        assert.equal(threadId, row.threadId)
+        reads++
+        entered.resolve(undefined)
+        return gate.promise
+      },
+    })
+    try {
+      const target = {
+        version: 1,
+        projectId: row.projectId,
+        threadId: row.threadId,
+        settledAt: row.settledAt,
+      }
+      const url = `${server.origin}/v1/threads/content`
+      assert.equal((await fetch(url, { method: 'POST' })).status, 401)
+      const token = await pair(server.origin)
+      const post = (value: unknown, origin?: string): Promise<Response> =>
+        fetch(url, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            ...(origin ? { Origin: origin } : {}),
+          },
+          body: JSON.stringify(value),
+        })
+      assert.equal((await post(target, 'http://127.0.0.1:9999')).status, 401)
+      assert.equal((await post({ ...target, path: '/private' })).status, 400)
+      assert.equal((await post({ ...target, projectId: 'other' })).status, 404)
+      assert.equal((await post({ ...target, settledAt: 1 })).status, 404)
+      assert.equal(reads, 0)
+      const pending = post(target)
+      await entered.promise
+      if (outcome === 'disabled') enabled = false
+      if (outcome === 'removed') rows = []
+      if (outcome === 'new-completion') rows = [{ ...row, settledAt: 43 }]
+      gate.resolve({ messages: [{ role: 'assistant', text: 'Visible answer' }], truncated: false })
+      const response = await pending
+      if (outcome === 'success') {
+        assert.equal(response.status, 200)
+        const content = await read(response, clientThreadContentSchema)
+        assert.deepEqual(content.messages, [{ role: 'assistant', text: 'Visible answer' }])
+      } else {
+        assert.equal(response.status, outcome === 'disabled' ? 403 : 404)
+        assert.equal((await response.text()).includes('Visible answer'), false)
+      }
+    } finally {
+      gate.resolve({ messages: [], truncated: false })
+      await server.close()
+    }
+  }
 })

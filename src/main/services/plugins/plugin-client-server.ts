@@ -5,6 +5,9 @@ import {
   clientDecisionSchema,
   clientActivityDataSchema,
   clientOpenThreadSchema,
+  clientReadThreadSchema,
+  clientThreadTextSchema,
+  type ClientThreadText,
   type ClientActivityData,
   type ClientSnapshot,
 } from '../../../shared/plugin-client-protocol.ts'
@@ -32,6 +35,7 @@ export async function startPluginClientServer(options: {
   decisions: HumanDecisions
   enabled: () => boolean
   activity?: { read: (fresh?: boolean) => Promise<ClientActivityData> }
+  readThread?: (projectId: string, threadId: string) => Promise<ClientThreadText>
   openThread?: (projectId: string, threadId: string) => boolean
   approvePair: (label: string, code: string, signal: AbortSignal) => Promise<boolean>
 }): Promise<{ origin: string; close: () => Promise<void> }> {
@@ -50,6 +54,7 @@ export async function startPluginClientServer(options: {
     approve: async (label, code, signal): Promise<'control' | null> =>
       (await options.approvePair(label, code, signal)) ? 'control' : null,
   })
+  let contentReads = 0
   let activitySequence = 0
   let activityFingerprint = ''
   const streams = new Set<ServerResponse>()
@@ -199,6 +204,66 @@ export async function startPluginClientServer(options: {
         sequence: activitySequence,
         ...data,
       })
+      return
+    }
+    if (req.method === 'POST' && path === '/v1/threads/content') {
+      const input = safeJsonParse(await body(req), decodeWithSchema(clientReadThreadSchema))
+      if (!input) {
+        json(res, 400, { error: 'Invalid thread reference' })
+        return
+      }
+      const authorized = (): boolean =>
+        active() && Boolean(clients.principal(req.headers.authorization, origin, 'control'))
+      if (!authorized()) {
+        json(res, 403, { error: 'Client API disabled' })
+        return
+      }
+      if (!options.activity || !options.readThread) {
+        json(res, 404, { error: 'Chat text unavailable' })
+        return
+      }
+      if (contentReads >= 4) {
+        json(res, 429, { error: 'Too many content reads' })
+        return
+      }
+      contentReads++
+      try {
+        const eligible = async (): Promise<boolean> => {
+          const activity = await options.activity?.read(true)
+          return (
+            activity?.recentThreads.some(
+              (row) =>
+                row.projectId === input.projectId &&
+                row.threadId === input.threadId &&
+                row.settledAt === input.settledAt,
+            ) ?? false
+          )
+        }
+        const known = await eligible()
+        if (!authorized()) {
+          json(res, 403, { error: 'Client API disabled' })
+          return
+        }
+        if (!known) {
+          json(res, 404, { error: 'Chat is no longer available' })
+          return
+        }
+        const text = clientThreadTextSchema.parse(
+          await options.readThread(input.projectId, input.threadId),
+        )
+        const stillKnown = await eligible()
+        if (!authorized()) {
+          json(res, 403, { error: 'Client API disabled' })
+          return
+        }
+        if (!stillKnown) {
+          json(res, 404, { error: 'Chat is no longer available' })
+          return
+        }
+        json(res, 200, { ...input, sessionId: options.decisions.snapshot().sessionId, ...text })
+      } finally {
+        contentReads--
+      }
       return
     }
     if (req.method === 'POST' && path === '/v1/threads/open') {

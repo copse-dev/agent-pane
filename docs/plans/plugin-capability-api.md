@@ -28,7 +28,7 @@ a foundation stage does not establish a supported external API.
   replacement, another client's answer, disconnect, revocation and restart invalidate stale answers.
   Repeated delivery cannot settle twice. Read permission alone cannot submit an answer.
 - Consumers can request bounded activity and resolved semantic theme state, subscribe to changes,
-  and open a thread through explicit capabilities. None grants general settings, transcript,
+  and open a thread through explicit capabilities. None grants general settings, unrestricted transcript,
   filesystem, shell, hook or arbitrary IPC access.
 - Unsupported or incompletely represented prompts are read-only and direct the user to Copse.
   Approval responses grant once; no remembered grants, task leases or automatic approvals.
@@ -51,8 +51,8 @@ within their supported approval scope. No existing persisted mobile grant is upg
 
 The first-party interactive-client transport adds generic `activity.read` and `threads.open`
 operations under the existing session-pairing consent. The desktop explicitly discloses recent
-chat titles and navigation across configured projects. Activity is a bounded metadata projection
-of settled chats, not transcript access. Completion ordering uses lastSettledAt with a documented
+chat titles, bounded selected-chat text and navigation across configured projects. Activity is a bounded metadata projection
+of settled chats. A separate on-demand `threads/content` operation reads at most eight visible user/assistant messages and 24,000 characters for an exact current completion. It excludes reasoning, tools and attachments, rechecks eligibility/authority after hydration and never exposes arbitrary history. Completion ordering uses lastSettledAt with a documented
 legacy used-chat fallback; running/waiting, archived, hidden and interrupted chats are excluded.
 The authenticated Open operation validates the exact project/thread against current activity or
 supported pending approvals and rechecks authority after asynchronous reads. It targets the same

@@ -9,6 +9,7 @@ import type { Thread } from '@shared/types'
 import {
   clientSnapshotSchema,
   clientActivitySnapshotSchema,
+  clientThreadContentSchema,
 } from '../../src/shared/plugin-client-protocol.ts'
 import { copseDataRoot } from '../../src/main/services/storage/copse-paths.ts'
 import {
@@ -333,7 +334,7 @@ describe('interactive client live approvals', function () {
     await restartedRow.$('label.plugin-toggle').click()
     await browser.waitUntil(() => !existsSync(discovery), { timeout: 15_000 })
   })
-  it('shows recent finished chat titles without transcripts and opens the selected chat in the same host', async () => {
+  it('keeps activity metadata-only, reads selected chat text on demand and opens it in the same host', async () => {
     const projectId = 'client-activity-project'
     const homeId = '11111111-1111-4111-8111-111111111111'
     const recentId = '22222222-2222-4222-8222-222222222222'
@@ -360,7 +361,7 @@ describe('interactive client live approvals', function () {
         {
           id: 'completed-message',
           role: 'assistant',
-          content: 'Private completed chat contents stay in Copse.',
+          content: 'The completed review is ready to read on your paired client.',
           toolCalls: [],
           createdAt: now,
         },
@@ -399,7 +400,7 @@ describe('interactive client live approvals', function () {
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed()
     await expect(dialog.$('.approval-advice')).toHaveText(
-      expect.stringContaining('recent chat titles'),
+      expect.stringContaining('recent user/assistant message text'),
     )
     await dialog.$('.approval-approve').waitForEnabled()
     await dialog.$('.approval-approve').click()
@@ -408,7 +409,7 @@ describe('interactive client live approvals', function () {
     const headers = { Authorization: `Bearer ${paired.token}`, 'Content-Type': 'application/json' }
     const activityResponse = await fetch(`${service.origin}/v1/activity`, { headers })
     const activityText = await activityResponse.text()
-    assert.equal(activityText.includes('Private completed chat contents'), false)
+    assert.equal(activityText.includes('The completed review'), false)
     const activity = safeJsonParse(activityText, decodeWithSchema(clientActivitySnapshotSchema))
     assert.ok(activity)
     assert.deepEqual(
@@ -417,6 +418,24 @@ describe('interactive client live approvals', function () {
     )
     const selected = activity.recentThreads[0]
     assert.ok(selected)
+    const content = await json(
+      await fetch(`${service.origin}/v1/threads/content`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          version: 1,
+          projectId: selected.projectId,
+          threadId: selected.threadId,
+          settledAt: selected.settledAt,
+        }),
+      }),
+      clientThreadContentSchema,
+    )
+    assert.deepEqual(content.messages, [
+      { role: 'assistant', text: 'The completed review is ready to read on your paired client.' },
+    ])
+    assert.equal(content.truncated, false)
+
     await browser.keys('Escape')
     await expect($(`.chat-row[data-thread-id="${homeId}"]`)).toHaveElementClass('selected')
     const open = await json(
@@ -434,7 +453,7 @@ describe('interactive client live approvals', function () {
     assert.equal(open.ok, true)
     await expect($(`.chat-row[data-thread-id="${recentId}"]`)).toHaveElementClass('selected')
     await expect($('.messages-list')).toHaveText(
-      expect.stringContaining('Private completed chat contents stay in Copse.'),
+      expect.stringContaining('The completed review is ready to read on your paired client.'),
     )
     // Earlier cases leave real fixture chats in their native store. Dismiss
     // their recovery rows through the product so this capture owns only its state.

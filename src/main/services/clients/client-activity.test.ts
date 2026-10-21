@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { Thread } from '@shared/types'
-import { ClientActivityReader, projectClientActivity } from './client-activity.ts'
+import {
+  ClientActivityReader,
+  projectClientActivity,
+  projectClientThreadText,
+} from './client-activity.ts'
 
 function thread(id: string, settledAt: number): Thread {
   return {
@@ -143,5 +147,43 @@ describe('interactive client activity projection', () => {
     assert.equal((await ordinary).recentThreads.length, 1)
     assert.equal((await validation).recentThreads.length, 0)
     assert.equal(calls, 2)
+  })
+})
+
+describe('interactive client text projection', () => {
+  it('returns only visible user/assistant text in order, with no reasoning or tool payloads', () => {
+    const messages: Thread['messages'] = [
+      { id: 'a', role: 'user', content: 'Question\twith tabs', createdAt: 1, toolCalls: [] },
+      {
+        id: 'b',
+        role: 'assistant',
+        content: 'Answer\nnext line',
+        reasoning: 'private thought',
+        createdAt: 2,
+        toolCalls: [],
+      },
+      { id: 'c', role: 'error', content: 'internal diagnostic', createdAt: 3, toolCalls: [] },
+      { id: 'd', role: 'assistant', content: ' ', createdAt: 4, toolCalls: [] },
+    ]
+    assert.deepEqual(projectClientThreadText(messages), {
+      messages: [
+        { role: 'user', text: 'Question\twith tabs' },
+        { role: 'assistant', text: 'Answer\nnext line' },
+      ],
+      truncated: false,
+    })
+  })
+  it('bounds the newest eight messages and combined text, reporting omissions', () => {
+    const messages = Array.from({ length: 10 }, (_, i) => ({
+      role: 'assistant',
+      content: String(i),
+    })) satisfies Array<Pick<Thread['messages'][number], 'role' | 'content'>>
+    const result = projectClientThreadText(messages)
+    assert.equal(result.messages.length, 8)
+    assert.equal(result.messages[0]?.text, '2')
+    assert.equal(result.truncated, true)
+    const long = projectClientThreadText([{ role: 'assistant', content: 'x'.repeat(30000) }])
+    assert.equal(long.messages[0]?.text.length, 24000)
+    assert.equal(long.truncated, true)
   })
 })
