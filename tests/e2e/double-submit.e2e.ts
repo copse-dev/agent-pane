@@ -96,7 +96,7 @@ describe('double submit guard', function () {
     const transcript = await browser.execute(() =>
       Array.from(
         document.querySelectorAll('.msg-user .message-text, .msg-assistant .message-text'),
-      ).map((element) => element.textContent?.trim()),
+      ).map((element) => element.textContent.trim()),
     )
     expect(transcript).toEqual([
       firstPrompt,
