@@ -5,13 +5,22 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { $, browser, expect } from '@wdio/globals'
 import { decodeWithSchema, safeJsonParse } from '../../packages/std/src/safe-json.ts'
-import { clientSnapshotSchema } from '../../src/shared/plugin-client-protocol.ts'
+import type { Thread } from '@shared/types'
+import {
+  clientSnapshotSchema,
+  clientActivitySnapshotSchema,
+} from '../../src/shared/plugin-client-protocol.ts'
 import { copseDataRoot } from '../../src/main/services/storage/copse-paths.ts'
-import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedEmptyProject,
+  seedStableWorkspace,
+  writeSeedConfig,
+} from './helpers/seed-config.ts'
 import { prepareMockToolTurn, expectAssistantReply } from './helpers/mock-scenario.ts'
 import { submitComposer } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { saveElementScreenshot, saveAppScreenshot } from './helpers/screenshot.ts'
 
 const discoverySchema = z.object({ version: z.literal(1), origin: z.string() })
 const pairSchema = z.object({ id: z.uuid(), code: z.string() })
@@ -131,6 +140,18 @@ describe('interactive client live approvals', function () {
     await waitForAgentIdle(30_000)
     await expectAssistantReply('Client approval completed.')
     await scenario.assertComplete()
+    await browser.waitUntil(
+      async () => {
+        const activity = await json(
+          await fetch(`${service.origin}/v1/activity`, { headers }),
+          clientActivitySnapshotSchema,
+        )
+        return activity.recentThreads.some(
+          (row) => row.threadId === request.threadId && row.state === 'finished',
+        )
+      },
+      { timeout: 15_000, timeoutMsg: 'The completed real turn did not enter recent activity' },
+    )
     assert.equal(
       (await json(await post({ ...decision, submissionId: randomUUID() }), resultSchema)).ok,
       false,
@@ -311,5 +332,135 @@ describe('interactive client live approvals', function () {
     await restartedRow.scrollIntoView({ block: 'center' })
     await restartedRow.$('label.plugin-toggle').click()
     await browser.waitUntil(() => !existsSync(discovery), { timeout: 15_000 })
+  })
+  it('shows recent finished chat titles without transcripts and opens the selected chat in the same host', async () => {
+    const projectId = 'client-activity-project'
+    const homeId = '11111111-1111-4111-8111-111111111111'
+    const recentId = '22222222-2222-4222-8222-222222222222'
+    const now = Date.UTC(2026, 9, 20)
+    const home: Thread = {
+      id: homeId,
+      title: 'Current chat',
+      status: 'idle',
+      createdAt: now,
+      updatedAt: now,
+      usage: { inputTokens: 0, outputTokens: 0 },
+      messages: [],
+    }
+    const recent: Thread = {
+      id: recentId,
+      title: 'Finished API review',
+      status: 'idle',
+      createdAt: now - 1000,
+      updatedAt: now,
+      lastSettledAt: now,
+      lastPromptAt: now - 1000,
+      usage: { inputTokens: 1, outputTokens: 1 },
+      messages: [
+        {
+          id: 'completed-message',
+          role: 'assistant',
+          content: 'Private completed chat contents stay in Copse.',
+          toolCalls: [],
+          createdAt: now,
+        },
+      ],
+    }
+    resetUserData()
+    writeSeedConfig({
+      projects: [{ id: projectId, name: 'Client activity workspace', path: seedStableWorkspace() }],
+      activeProjectId: projectId,
+      expandedProjectId: projectId,
+      activeThreadId: homeId,
+      [`threads:${projectId}`]: [home, recent],
+    })
+    await browser.reloadSession()
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await $('[aria-label="Settings"]').click()
+    await $('#settings-dialog button[data-section="customise"]').click()
+    const row = $('.plugin-row[data-plugin-id="copse.plugin-client-api"]')
+    await row.scrollIntoView({ block: 'center' })
+    await row.$('label.plugin-toggle').click()
+    const discovery = join(copseDataRoot(), 'plugin-client-api.json')
+    await browser.waitUntil(() => existsSync(discovery), { timeout: 15_000 })
+    const service = safeJsonParse(
+      readFileSync(discovery, 'utf8'),
+      decodeWithSchema(discoverySchema),
+    )
+    assert.ok(service)
+    const pairing = await json(
+      await fetch(`${service.origin}/v1/pair`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version: 1, label: 'Recent chats test' }),
+      }),
+      pairSchema,
+    )
+    const dialog = $('#approval-dialog')
+    await dialog.waitForDisplayed()
+    await expect(dialog.$('.approval-advice')).toHaveText(
+      expect.stringContaining('recent chat titles'),
+    )
+    await dialog.$('.approval-approve').waitForEnabled()
+    await dialog.$('.approval-approve').click()
+    const paired = await json(await fetch(`${service.origin}/v1/pair/${pairing.id}`), pairedSchema)
+    assert.ok(paired.token)
+    const headers = { Authorization: `Bearer ${paired.token}`, 'Content-Type': 'application/json' }
+    const activityResponse = await fetch(`${service.origin}/v1/activity`, { headers })
+    const activityText = await activityResponse.text()
+    assert.equal(activityText.includes('Private completed chat contents'), false)
+    const activity = safeJsonParse(activityText, decodeWithSchema(clientActivitySnapshotSchema))
+    assert.ok(activity)
+    assert.deepEqual(
+      activity.recentThreads.map((item) => item.title),
+      ['Finished API review'],
+    )
+    const selected = activity.recentThreads[0]
+    assert.ok(selected)
+    await browser.keys('Escape')
+    await expect($(`.chat-row[data-thread-id="${homeId}"]`)).toHaveElementClass('selected')
+    const open = await json(
+      await fetch(`${service.origin}/v1/threads/open`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          version: 1,
+          projectId: selected.projectId,
+          threadId: selected.threadId,
+        }),
+      }),
+      resultSchema,
+    )
+    assert.equal(open.ok, true)
+    await expect($(`.chat-row[data-thread-id="${recentId}"]`)).toHaveElementClass('selected')
+    await expect($('.messages-list')).toHaveText(
+      expect.stringContaining('Private completed chat contents stay in Copse.'),
+    )
+    // Earlier cases leave real fixture chats in their native store. Dismiss
+    // their recovery rows through the product so this capture owns only its state.
+    let remainingOrphans = (await browser.$$('.orphan-dismiss-btn')).length
+    while (remainingOrphans > 0) {
+      await $('.orphan-dismiss-btn').click()
+      await browser.waitUntil(
+        async () => (await browser.$$('.orphan-dismiss-btn')).length < remainingOrphans,
+      )
+      remainingOrphans = (await browser.$$('.orphan-dismiss-btn')).length
+    }
+    await $('.toast').waitForDisplayed({ reverse: true, timeout: 10_000 })
+    await saveAppScreenshot('plugin-client-recent-thread-open.png')
+    assert.equal(
+      (
+        await fetch(`${service.origin}/v1/threads/open`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            version: 1,
+            projectId: 'unavailable-project',
+            threadId: selected.threadId,
+          }),
+        })
+      ).status,
+      404,
+    )
   })
 })

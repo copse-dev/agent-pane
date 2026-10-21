@@ -35,3 +35,30 @@ export const clientSnapshotSchema = z.strictObject({
   ),
 })
 export type ClientSnapshot = z.infer<typeof clientSnapshotSchema>
+
+/** Metadata only; never includes messages, paths, tool arguments or provider state. */
+export const clientRecentThreadSchema = z.strictObject({
+  projectId: id,
+  projectName: z.string().max(200),
+  threadId: id,
+  title: z.string().max(200),
+  state: z.enum(['finished', 'failed']),
+  settledAt: z.number().int().nonnegative(),
+})
+export const clientActivityDataSchema = z.strictObject({
+  recentThreads: z.array(clientRecentThreadSchema).max(20),
+  runningCount: z.number().int().nonnegative(),
+  waitingCount: z.number().int().nonnegative(),
+})
+export const clientActivitySnapshotSchema = clientActivityDataSchema.extend({
+  version: z.literal(1),
+  sessionId: z.uuid(),
+  sequence: z.number().int().nonnegative(),
+})
+export const clientOpenThreadSchema = z.strictObject({
+  version: z.literal(1),
+  projectId: id,
+  threadId: id,
+})
+export type ClientActivityData = z.infer<typeof clientActivityDataSchema>
+export type ClientActivitySnapshot = z.infer<typeof clientActivitySnapshotSchema>
