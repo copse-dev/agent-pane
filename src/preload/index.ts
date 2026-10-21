@@ -419,6 +419,8 @@ const api: ApiClient = {
         collapseDetails?: boolean
         approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
+        /** Interrupt ordinary batches and require a separate decision. */
+        standalone?: boolean
         allowTurnTreeLease?: boolean
         turnTreeLeaseLabel?: string
         turnTreeLeaseSubject?: string
@@ -439,6 +441,8 @@ const api: ApiClient = {
           approveLabel?: string
           collapseDetails?: boolean
           approveOnceLabel?: string
+          showWhileSettingsOpen?: boolean
+          standalone?: boolean
           allowTurnTreeLease?: boolean
           turnTreeLeaseLabel?: string
           turnTreeLeaseDefault?: boolean

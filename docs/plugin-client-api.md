@@ -12,9 +12,7 @@ loopback port. A client must not read private settings or assume a fixed port.
 POST `/v1/pair` with JSON `{version:1,label}`. Display the returned `{id,code}` and ask the user to
 verify it in Copse's **Connect interactive client** prompt. Poll GET `/v1/pair/<id>` until approved
 or denied. The approved reply contains a one-time-delivered bearer token; retain it only in memory.
-Pairing expires after two minutes. The desktop checkbox grants decision submission separately
-from viewing. Access covers approval requests across all projects and may reveal sensitive
-arguments. Pairing requests themselves never appear in the remote approval feed.
+Pairing expires after two minutes. Each desktop pairing prompt is shown alone: it temporarily hides pending thread approvals, and restores the unanswered thread prompts when it completes, is rejected or expires. Pairings never share an approve/reject action with commands or other pairings. Connecting grants viewing and decision submission together for this session. The prompt makes that authority explicit; there is no read-only pairing mode. Access covers approval requests across all projects and may reveal sensitive arguments. Pairing requests themselves never appear in the remote approval feed.
 
 GET `/v1/events` with `Authorization: Bearer <token>` streams complete snapshots over SSE. POST
 `/v1/decisions` carries `{version:1, submissionId, sessionId, projectId, threadId, requestId,
@@ -33,7 +31,7 @@ reconcile a fresh snapshot. A retained selection must never silently move to ano
 The host limits clients, subscriptions, pairing requests, request size and decision identities.
 
 Mobile and plugin clients use the same `ClientCredentials` bearer implementation and
-`ClientPairings` consent lifecycle in `src/main/services/clients/`, with shared read/control and
+`ClientPairings` consent lifecycle in `src/main/services/clients/`, with shared credential and
 label schemas in `src/shared/client-auth.ts`. Both use 256-bit random tokens, stored hashes,
 two-minute pairing expiry, a one-second pairing cooldown, cancellation and one-time delivery.
 Uncollected tokens are revoked on expiry or stop; late desktop consent cannot issue a token.
@@ -41,7 +39,7 @@ Authority is checked again after asynchronous request bodies. Each transport has
 credential store: mobile retains paired phones across restarts and binds pairing delivery to
 the requesting peer over same-origin private-LAN HTTPS; this API keeps origin-bound credentials
 only for its current enabled session over loopback HTTP. Neither credential works in the other
-store. The transport's approved operations remain its own scope, so a plugin control grant does
+store. Mobile retains its existing device access levels. The transport's approved operations remain its own scope, so a plugin control grant does
 not acquire mobile chat/run control. A future AHP adapter can reuse this core without replacing
 the transport protections or claiming AHP compliance today.
 

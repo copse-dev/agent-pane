@@ -38,6 +38,15 @@ a foundation stage does not establish a supported external API.
 - Different client/host versions negotiate explicitly. Malformed, oversized, expired,
   wrong-scope and unauthorized messages fail closed with documented errors.
 
+## Interactive client consent update
+
+Interactive plugin clients pair for viewing and decision submission together. The desktop prompt
+states that scope explicitly and offers Connect client or Reject, with no read-only mode or extra
+checkbox. Each pairing interrupts and hides ordinary approval batches, is answered individually,
+and restores unanswered thread requests afterwards. The shared authentication core still preserves
+existing mobile read/control credentials; plugin clients always receive session-only control
+within their supported approval scope. No existing persisted mobile grant is upgraded.
+
 ## Shared client authentication follow-up
 
 Base: `b8f2014b521629701abb9eb43e3f4b929f0ebba5`. Mobile and interactive plugin clients
