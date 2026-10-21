@@ -2693,9 +2693,13 @@
       "sha256": "c56c4328acb1b4849069f7c122cf417f671b2ab613d94205e74819a6869ccb8d",
       "bytes": 42738
     },
+    "plugin-client-pairing-interrupt.png": {
+      "sha256": "60efc375349a62e047af3fd6fa938345e2736fdd59d169329b44d1ac8a33b624",
+      "bytes": 65894
+    },
     "plugin-client-pairing.png": {
-      "sha256": "baed287fe0efffbb2f32f0079d8439e197b6a889a20201cdea5c5d40c45d351d",
-      "bytes": 63569
+      "sha256": "c66b12d9a429a8a21bbcec49f458cf2274945939181354e82ff6fc4a8e35f6df",
+      "bytes": 65267
     },
     "plugin-hook-loading.png": {
       "sha256": "c104bb3b1c4a9a90a7441137b5d88a308a6ec8c932aeb568e96b4d7376ec00dd",
