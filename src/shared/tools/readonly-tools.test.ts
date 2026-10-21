@@ -25,6 +25,7 @@ describe('readonly-tools', () => {
       'read_skill',
       'preflight_worktree',
       'explore',
+      'run_readonly_workers',
       'ask_user',
       'read_terminal',
     ]) {

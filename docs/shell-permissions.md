@@ -173,6 +173,7 @@ in that mode. Always allow does not bypass the restrictions below.
 | `device_hub`                                                                                            | Enabled Apple plugin and enrolled local macOS project; host-device approval by default, explicit tool overrides supported.                                                          | No          |
 | `open_simulator_desktop`                                                                                | Apple plugin/enrollment, enabled Desktop viewer and booted simulator. Agent presentation starts view-only.                                                                          | No          |
 | `explore`, `task`                                                                                       | Read/search or user-authored subagent delegation; child tools retain run read-only scope and permission gates.                                                                      | Yes         |
+| `run_readonly_workers`                                                                                  | Explicit named read-only workers; supervisor admission, a two-worker turn cap, attempt deadline and owned cancellation. No writable isolation or recursive delegation.              | Yes         |
 | `delegate_step`                                                                                         | Enabled implementation-worker feature; delegated tool calls retain permission controls.                                                                                             | No          |
 | `review_changes`                                                                                        | Enabled review plugin; paid-model spend can ask separately. Test/build execution needs suitable review-cell isolation.                                                              | No          |
 | `investigate_ci`                                                                                        | Enabled CI investigator and GitHub CLI setup; investigation uses its configured subagent/tool surface.                                                                              | No          |
@@ -195,6 +196,10 @@ Sources of truth: [registry bootstrap](../src/main/services/registry-bootstrap.t
 Keep the table aligned when tools are registered or their handlers change. The general gate's
 unmatched-tool branch is default-allow: a new mutating or network-capable tool must use an explicit
 operation gate or the diff queue, not rely on that branch as authorization or confinement.
+
+Custom agents retain the ordinary tool gate and run read-only scope. They cannot
+call `update_thread_plan` or `report_plan_completion`: the parent owns the shared
+thread plan, and workers return their findings in attributable task results.
 
 ## Unattended container boundary
 

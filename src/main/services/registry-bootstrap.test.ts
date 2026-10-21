@@ -580,6 +580,7 @@ describe('ACP bridge exposure decisions', () => {
     // or a separate exposure review because they access user data or spend money.
     const nativeOnly = new Set([
       'ask_user',
+      'run_readonly_workers',
       'explore',
       'investigate_ci',
       'delegate_step',

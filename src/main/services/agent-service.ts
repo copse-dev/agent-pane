@@ -160,7 +160,15 @@ import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 import { formatReadFileLimitHint } from '@copse/agent/read-file-limits.ts'
 import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
 import { runCustomAgent } from './agents/custom-agent-runner.ts'
-import { getAgent } from './agents/agents-registry.ts'
+import { isProjectSandboxEnabled } from '../project-sandbox/index.ts'
+import { createReadonlyWorkerTurn } from './agents/readonly-worker-batch.ts'
+import { getTaskSupervisor } from './supervisor/task-supervisor.ts'
+import { runWithReadonlyWorkerRunner } from '../tools/readonly-workers-tool.ts'
+import {
+  getAgent,
+  collectDiscoveryRoots,
+  discoverAgentsFromRoots,
+} from './agents/agents-registry.ts'
 import { buildAgentReportBlock, customAgentInvocationTask } from './agents/custom-agent-strategy.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { hasTerminalSessions } from './exec/terminal-service.ts'
@@ -2257,6 +2265,7 @@ async function runAgentWithInlineCanvas(
         // The parent tool executor, shared by the main loop and any post-turn parent
         // continuation turns (pre-review todo gate, review remediation) so both route
         // subagents, advisor, review, and shell tagging identically.
+        const readonlyWorkerTurn = createReadonlyWorkerTurn(getTaskSupervisor())
         const runParentTool = async (
           name: string,
           args: unknown,
@@ -2340,6 +2349,105 @@ async function runAgentWithInlineCanvas(
                 onChunk: sendChunk,
                 usageModel: subagentUsageModel,
                 localFallback: subagentLocalFallback,
+              },
+              () => registry.execute(name, args, signal),
+            )
+          }
+          if (name === 'run_readonly_workers') {
+            return runWithReadonlyWorkerRunner(
+              async (requests, workerSignal) => {
+                const owner = getThreadExecutionContext()
+                if (!owner) throw new Error('Read-only workers require an owning thread checkout.')
+                // The Settings cache follows the active project; concurrent turns
+                // resolve their own trusted project definitions without changing it.
+                const definitions = await discoverAgentsFromRoots(
+                  await collectDiscoveryRoots(owner.projectRoot),
+                )
+                const agents = new Map(
+                  requests.map((request) => {
+                    const agent = definitions.agents.find(
+                      (candidate) => candidate.name === request.agent,
+                    )
+                    if (!agent) throw new Error(`Unknown custom agent: ${request.agent}`)
+                    if (agent.source === 'project' && !isWorkspaceTrusted(owner.projectRoot)) {
+                      throw new Error(`Workspace trust is required for agent "${request.agent}".`)
+                    }
+                    if (agent.unsupportedFields.some((field) => field.field === 'isolation')) {
+                      throw new Error(
+                        `Agent "${request.agent}" requests unavailable worktree isolation; no workers were started.`,
+                      )
+                    }
+                    return [request.agent, agent] as const
+                  }),
+                )
+                const started = new Set<string>()
+                const results = await readonlyWorkerTurn.run({
+                  owner,
+                  permissionSnapshot: {
+                    capturedAt: Date.now(),
+                    executionRoot: owner.root,
+                    autoRunSandboxCommands: false,
+                    projectSandboxEnabled: isProjectSandboxEnabled(),
+                  },
+                  requests,
+                  signal: workerSignal,
+                  execute: async (request, workerId, ownedSignal) => {
+                    const agent = agents.get(request.agent)
+                    if (!agent) throw new Error(`Unknown custom agent: ${request.agent}`)
+                    if (agent.source === 'project' && !isWorkspaceTrusted(owner.projectRoot)) {
+                      throw new Error(`Workspace trust was revoked for agent "${request.agent}".`)
+                    }
+                    started.add(workerId)
+                    sendChunk({
+                      type: 'tool_call',
+                      toolCall: {
+                        id: workerId,
+                        name: 'task',
+                        args: { subagent_type: request.agent, prompt: request.prompt },
+                      },
+                    })
+                    return runWithAgentRunReadonly(true, () =>
+                      runCustomAgent(
+                        {
+                          parentToolCallId: workerId,
+                          parentGoal,
+                          provider,
+                          parentModel: model,
+                          registry,
+                          contextWindow,
+                          toolSchemaReserve,
+                          onChunk: (chunk) => {
+                            if (!ownedSignal.aborted) {
+                              sendChunk(chunk)
+                            }
+                          },
+                        },
+                        agent,
+                        request.prompt,
+                        ownedSignal,
+                      ),
+                    )
+                  },
+                })
+                for (const result of results) {
+                  if (started.has(result.workerId)) {
+                    if (result.state !== 'completed') {
+                      const reason = result.error ?? result.state
+                      sendChunk({
+                        type: 'subagent_error',
+                        parentToolCallId: result.workerId,
+                        error: reason,
+                      })
+                    }
+                    sendChunk({
+                      type: 'tool_result',
+                      toolCallId: result.workerId,
+                      result: result.report ?? result.error ?? result.state,
+                      isError: result.state !== 'completed',
+                    })
+                  }
+                }
+                return results
               },
               () => registry.execute(name, args, signal),
             )

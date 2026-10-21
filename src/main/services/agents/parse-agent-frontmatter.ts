@@ -39,8 +39,8 @@ export type AgentParseResult =
  * Two of these are load-bearing for safety rather than convenience.
  * `permissionMode`'s permissive values are ignored *by design* — a file on disk
  * does not get to relax the permission gate — and `isolation: worktree` is
- * called out because an agent written to expect a throwaway checkout will edit
- * the real tree instead.
+ * called out and prevents execution: an agent expecting a throwaway checkout
+ * must never silently edit the parent tree.
  */
 const UNSUPPORTED_FIELD_REASONS: Record<string, string> = {
   mcpServers: 'per-agent MCP servers are not wired up yet; the agent uses this thread’s',
@@ -163,7 +163,7 @@ export function parseAgentFile(
   if (isolation !== undefined) {
     unsupportedFields.push({
       field: 'isolation',
-      reason: 'runs in your working tree, not an isolated worktree copy',
+      reason: 'cannot run: custom-agent worktree isolation is not available yet',
     })
   }
 

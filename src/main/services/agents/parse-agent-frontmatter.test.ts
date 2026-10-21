@@ -120,13 +120,13 @@ describe('parseAgentFile', () => {
     assert.equal(agent.readonly, true)
   })
 
-  it('flags isolation: worktree, because the agent will edit the real tree', () => {
+  it('flags isolation: worktree, because the agent cannot run without it', () => {
     const agent = parseOk(
       ['---', 'name: r', 'description: d', 'isolation: worktree', '---', 'b'].join('\n'),
     )
     const note = agent.unsupportedFields.find((f) => f.field === 'isolation')
     assert.ok(note)
-    assert.match(note.reason, /working tree/)
+    assert.match(note.reason, /cannot run.*isolation/)
   })
 
   it('strips Cursor model options and notes it', () => {

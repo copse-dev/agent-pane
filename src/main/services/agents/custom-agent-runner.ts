@@ -20,7 +20,7 @@ import {
 import { addSubagentUsage } from '../subagent-usage.ts'
 import { runWithAgentRunReadFileLimits } from '../agent-run-read-limits.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
-import { getWorkspaceRoot } from '../workspace.ts'
+import { agentWorkspaceLabel } from '../execution-root.ts'
 import { subagentHookCallbacks } from '../hooks/subagent.ts'
 import { isAgentRunReadonly } from '../agent-run-readonly.ts'
 import { isToolAllowedInReadonlyMode } from '@shared/tools/readonly-tools.ts'
@@ -72,7 +72,13 @@ export async function runCustomAgent(
   prompt: string,
   signal: AbortSignal,
 ): Promise<string> {
-  const workspace = getWorkspaceRoot() ?? '(none)'
+  signal.throwIfAborted()
+  if (agent.unsupportedFields.some((field) => field.field === 'isolation')) {
+    throw new Error(
+      `Agent "${agent.name}" requests isolation, but custom-agent worktree isolation is unavailable. The agent was not started.`,
+    )
+  }
+  const workspace = agentWorkspaceLabel()
   const model = resolveCustomAgentModel(agent.model, ctx.parentModel)
   const usesParentModel = model === ctx.parentModel
   const provider = usesParentModel ? ctx.provider : await buildProvider(model)
@@ -146,6 +152,8 @@ export async function runCustomAgent(
     })
 
     addSubagentUsage(session.usage ?? { inputTokens: 0, outputTokens: 0 })
+    signal.throwIfAborted()
+    if (session.status === 'error') throw new Error(summary)
     return summary
   }
 
