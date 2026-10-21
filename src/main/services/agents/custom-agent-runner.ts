@@ -115,8 +115,9 @@ export async function runCustomAgent(
   const tools = resolveCustomAgentTools(available, agent)
   const toolNames = tools.map((tool) => tool.name)
   // A child owns its allowance, even when launched inside a parent activation scope.
-  const skillTurn = createSkillActivationTurn([], toolNames)
-  const systemPrompt = buildCustomAgentSystemPrompt(agent) + buildSkillsCatalogBlock(toolNames)
+  const skillTurn = createSkillActivationTurn([], toolNames, 0, 'subagent')
+  const systemPrompt =
+    buildCustomAgentSystemPrompt(agent) + buildSkillsCatalogBlock(toolNames, 'subagent')
   const userTask = buildCustomAgentTask({ prompt, parentGoal: ctx.parentGoal, workspace })
 
   const subagentMessages: LLMMessage[] = [

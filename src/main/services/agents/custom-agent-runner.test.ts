@@ -8,7 +8,7 @@ import type { AgentMetadata } from '@shared/types/agents.ts'
 import { runCustomAgent } from './custom-agent-runner.ts'
 import { ToolRegistry } from '../tool-registry.ts'
 import { readSkillTool } from '../../tools/read-skill-tool.ts'
-import { setSkillsForTest } from '../skills/skills-registry.ts'
+import { getSkill, setSkillsForTest } from '../skills/skills-registry.ts'
 import {
   createSkillActivationTurn,
   getSkillActivationTurn,
@@ -34,7 +34,7 @@ describe('custom child skill execution', () => {
     await mkdir(skillRoot)
     await writeFile(
       join(skillRoot, 'SKILL.md'),
-      '---\nname: tiny\ndescription: Tiny workflow\n---\nRead reference.md for the result.',
+      '---\nname: tiny\ndescription: Tiny workflow\ncopse-requirements:\n  executors: [subagent]\n---\nRead reference.md for the result.',
     )
     await writeFile(join(skillRoot, 'reference.md'), 'TINY-WORKFLOW-RESULT')
     setSkillsForTest([
@@ -45,9 +45,28 @@ describe('custom child skill execution', () => {
         skillRoot,
         skillPath: join(skillRoot, 'SKILL.md'),
         disableModelInvocation: false,
+        requirements: { executors: ['subagent'] },
         paths: [],
         externalLinks: [],
         missingReferences: [],
+      },
+    ])
+    const nativeRoot = join(root, 'native-only')
+    await mkdir(nativeRoot)
+    await writeFile(
+      join(nativeRoot, 'SKILL.md'),
+      '---\nname: native-only\ndescription: Native only\ncopse-requirements:\n  executors: [native]\n---\nNATIVE_ONLY_BODY',
+    )
+    const tiny = getSkill('tiny')
+    assert.ok(tiny)
+    setSkillsForTest([
+      tiny,
+      {
+        ...tiny,
+        name: 'native-only',
+        skillRoot: nativeRoot,
+        skillPath: join(nativeRoot, 'SKILL.md'),
+        requirements: { executors: ['native'] },
       },
     ])
     const registry = new ToolRegistry()
@@ -77,6 +96,12 @@ describe('custom child skill execution', () => {
           assert.ok(turn)
           assert.notEqual(turn, parent)
           turns.add(turn)
+          const systemPrompt = messages.find((message) => message.role === 'system')?.content ?? ''
+          assert.doesNotMatch(systemPrompt, /<agent_skill name="native-only"/)
+          await assert.rejects(
+            turn.read('native-only', undefined, new AbortController().signal),
+            /blocked|not eligible/,
+          )
           assert.deepEqual(
             tools.map((tool) => tool.name),
             ['read_skill'],

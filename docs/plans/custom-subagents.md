@@ -359,8 +359,9 @@ string.
 
 A custom child can progressively read model-invocable skills with `read_skill` when
 its effective tool policy allows that tool. Its prompt receives the catalog filtered
-for its actual tools. It creates a fresh activation turn rather than inheriting the
-parent's AsyncLocalStorage state, and uses the same bounded count, byte budget,
+for its actual tools and the `subagent` executor fact, so native-only requirements
+are withheld and rejected on direct reads. It creates a fresh activation turn rather
+than inheriting the parent's AsyncLocalStorage state, and uses the same bounded count, byte budget,
 trust framing, plugin checks and path containment as the parent. Selection grants
 no shell or filesystem permissions. Definition `skills` preloading remains an
 explicit unsupported field; declaring it never authorizes a manual-only skill.

@@ -53,6 +53,7 @@ import { requestUserAnswers } from '../ask-user.ts'
 import { runWithActiveRunIdentity } from '../active-run-identity.ts'
 import { acpSessionHandoverNotice } from './acp-session-reattach.ts'
 import { buildInvokedSkillsBlock } from '../skills/skill-prompt.ts'
+import { skillPreflightEnvironment } from '../skills/skills-registry.ts'
 import { createAcpSkillRun } from './acp-skill-context.ts'
 import { listForwardableMcpServers } from '../mcp/mcp-registry.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
@@ -783,21 +784,9 @@ async function runAcpAgentTurn(
   const baseline = await perfSpan('ttft:acp-worktree-baseline', captureWorktreeBaseline)
   const denialMark = networkDenialMarker()
 
-  // Resolve the invoked skills' full instructions here, in the GUI process,
-  // against the same local registry the `/` picker used — so a skill the user
-  // could pick is guaranteed to resolve — then inline it into the forwarded
-  // prompt. The external agent has a separate catalog; explicit instructions
-  // travel with the turn, while the supported bridge enables progressive reads.
-  // Sent every turn a skill is invoked
-  // (not gated on session freshness): the agent does not retain it across turns.
-  const skillsBlock = await perfSpan('ttft:acp-skills', () =>
-    buildInvokedSkillsBlock(options.invokedSkills ?? [], {
-      sandboxActive: sandboxed,
-      // Also grants this thread read-only run_shell access to the skill's
-      // directory. Model-selected reads through the bridge never add grants.
-      threadId: options.threadId,
-    }),
-  )
+  // Snapshot explicit instructions only after negotiation supplies the actual
+  // bridge tools. Retries reuse the same bytes and authorization identities.
+  let invokedSkillsBlock: string | undefined
 
   // One attempt = acquire (reuse the thread's live session, or open a fresh
   // one), install this turn's handlers, prompt. History is replayed only into
@@ -826,8 +815,19 @@ async function runAcpAgentTurn(
       // replayed into later turns nor counts as progress that blocks a retry.
       options.onChunk({ type: 'text', text: acpSessionHandoverNotice(handover, agent.title) })
     }
+    const skillToolNames =
+      entry.open.mcpCapabilities?.http === true ? (entry.bridge?.toolNames ?? []) : []
+    const skillsBlock = (invokedSkillsBlock ??= await perfSpan('ttft:acp-skills', () =>
+      buildInvokedSkillsBlock(options.invokedSkills ?? [], {
+        sandboxActive: sandboxed,
+        // Explicit user invocation retains its existing thread read-only grants.
+        threadId: options.threadId,
+        preflight: skillPreflightEnvironment(skillToolNames, 'acp'),
+      }),
+    ))
     const skillContext = prepareSkills({
-      toolNames: entry.open.mcpCapabilities?.http === true ? (entry.bridge?.toolNames ?? []) : [],
+      toolNames: skillToolNames,
+      freshSession: fresh,
       invokedSkills: options.invokedSkills ?? [],
       skillsBlock,
       includeCatalog: options.executionMode !== 'agent',

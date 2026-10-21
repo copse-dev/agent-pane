@@ -632,8 +632,9 @@ function buildMcpServer(
             // must use that human epoch, never a guessed thread-id fallback.
             if (turnTreeId !== null) setActiveRunTurnTreeId(turnTreeId)
             return runWithThreadExecutionContext(executionContext, () =>
-              runWithSkillActivationTurn(skillTurn ?? createSkillActivationTurn([], []), () =>
-                runWithBridgeExecutionId(bridgeExecutionId, withPermissionContext),
+              runWithSkillActivationTurn(
+                skillTurn ?? createSkillActivationTurn([], [], 0, 'acp'),
+                () => runWithBridgeExecutionId(bridgeExecutionId, withPermissionContext),
               ),
             )
           }),

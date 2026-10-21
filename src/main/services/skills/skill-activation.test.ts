@@ -72,7 +72,7 @@ describe('model skill activation', () => {
     await skill('unrelated', {}, 'UNRELATED INSTRUCTIONS')
     const turn = createSkillActivationTurn([], ['read_skill'])
     const result = await turn.read('matching', undefined, signal)
-    assert.match(result, /Skill activated by the model: matching/)
+    assert.match(result, /^Skill activated by the model: matching/)
     assert.match(result, /UNTRUSTED SOURCE/)
     assert.match(result, /EXTERNAL LINKS: this skill references example.com/)
     assert.match(result, /Activation grants no permissions/)

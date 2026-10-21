@@ -20,7 +20,9 @@ describe('custom agent progressive skill access', () => {
         '.copse/agents/tiny-reader.md':
           '---\nname: tiny-reader\ndescription: Read a tiny workflow\ntools: read_skill\nreadonly: true\nmaxTurns: 6\n---\nRead the tiny-workflow skill, then its references/result.md file and report the result.',
         '.cursor/skills/tiny-workflow/SKILL.md':
-          '---\nname: tiny-workflow\ndescription: Explain a tiny workflow\n---\nRead references/result.md for the workflow result.',
+          '---\nname: tiny-workflow\ndescription: Explain a tiny workflow\ncopse-requirements:\n  executors: [subagent]\n---\nRead references/result.md for the workflow result.',
+        '.cursor/skills/native-only/SKILL.md':
+          '---\nname: native-only\ndescription: Native parent only\ncopse-requirements:\n  executors: [native]\n---\nNATIVE_ONLY_BODY',
         '.cursor/skills/tiny-workflow/references/result.md':
           'The tiny workflow result is a silver birch.',
       },
@@ -49,7 +51,11 @@ describe('custom agent progressive skill access', () => {
         {
           user: { includes: 'tiny workflow' },
           responses: [
-            { toolCalls: [{ name: 'read_skill', args: { name: 'tiny-workflow' } }] },
+            { toolCalls: [{ name: 'read_skill', args: { name: 'native-only' } }] },
+            {
+              expectToolResults: [{ name: 'read_skill', includes: 'blocked' }],
+              toolCalls: [{ name: 'read_skill', args: { name: 'tiny-workflow' } }],
+            },
             {
               expectToolResults: [{ name: 'read_skill', includes: 'Read references/result.md' }],
               toolCalls: [
@@ -80,7 +86,7 @@ describe('custom agent progressive skill access', () => {
     await expect(card).toHaveText('tiny-reader', { containing: true })
     if (!(await card.getProperty('open'))) await card.$('summary.tool-card-header').click()
     const reads = await $$('.subagent-inner-tool').getElements()
-    expect(reads.length).toBe(2)
+    expect(reads.length).toBe(3)
     for (const read of reads) {
       if (!(await read.getProperty('open'))) await read.$('summary').click()
     }
@@ -88,12 +94,17 @@ describe('custom agent progressive skill access', () => {
       containing: true,
     })
     await expect(card).toHaveText('UNTRUSTED SOURCE', { containing: true })
+    await expect(card).toHaveText('Skill preflight for "native-only": blocked.', {
+      containing: true,
+    })
+    await expect(card).not.toHaveText('NATIVE_ONLY_BODY', { containing: true })
+    await expect(card).toHaveText('Workflow/model compatibility is untested.', { containing: true })
     await expect(card).toHaveText(
       'Supporting file for skill "tiny-workflow": references/result.md',
       { containing: true },
     )
     await expect(card).toHaveText('silver birch', { containing: true })
-    // Keep both attributed reads and the child's report in the viewport. The
+    // Keep the rejected read and both successful reads and the child's report in the viewport. The
     // expanded trust text was asserted above and scrolls within each result.
     for (const read of reads) await read.$('summary').click()
     await saveElementScreenshot('.tool-card-subagent', 'custom-agent-skills.png')

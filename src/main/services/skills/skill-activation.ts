@@ -236,7 +236,7 @@ export function createSkillActivationTurn(
           true,
           dependency ? parent.name : undefined,
         )
-        const block = `${skillPreflightNotice(meta, environment)}\n\n${instructionsBlock}`
+        const block = `${instructionsBlock}\n\n${skillPreflightNotice(meta, environment)}`
         chargeContext(block)
         return block
       }
@@ -292,7 +292,7 @@ export function createSkillActivationTurn(
           false,
           dependency ? parent.name : undefined,
         )
-        const block = `${skillPreflightNotice(currentMeta, environment)}\n\n${instructionsBlock}`
+        const block = `${instructionsBlock}\n\n${skillPreflightNotice(currentMeta, environment)}`
         const bytes = chargeContext(block)
         if (dependency) declareDependencies(captured)
         return `${block}\n\nContext estimate: approximately ${String(Math.ceil(block.length / 4))} tokens (${String(bytes)} UTF-8 bytes); ${String(contextBytes)} skill-context bytes loaded this turn.`

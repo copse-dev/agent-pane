@@ -369,8 +369,13 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   executors supporting HTTP MCP receive Copse's filtered skill catalog and
   `read_skill` through the authenticated bridge. Each run has a fresh activation
   allowance (four model-selected skills, 128 KiB of instructions/supporting text),
-  shared across transport retries and automatic checkout continuations. Explicit skill instructions spend the same byte
-  budget. Plugin enablement, trust framing, cancellation and skill-root containment
+  shared across transport retries and automatic checkout continuations. A fresh
+  replacement session receives the already-charged instruction blocks it lost,
+  filtered against current skill availability; that replay never resets the budget.
+  Skill preflight uses the negotiated bridge tool list and the external executor
+  fact; explicit instructions are resolved after negotiation. Satisfying these
+  requirements still leaves workflow/model compatibility untested. Explicit skill
+  instructions spend the same byte budget. Plugin enablement, trust framing, cancellation and skill-root containment
   still apply; model selection adds no filesystem or shell grants. Invoked skills
   fail clearly when the bridge is disabled, unavailable, remote, or the executor
   cannot negotiate HTTP MCP. Agent-managed runs omit the automatic Copse catalog.
