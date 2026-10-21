@@ -3,6 +3,7 @@ import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
 import {
   syncPluginClientApi,
+  setPluginClientThreadOpener,
   stopPluginClientApi,
 } from './services/plugins/plugin-client-service.ts'
 import { initThreadPrompts } from './services/thread-prompts.ts'
@@ -476,6 +477,13 @@ const releaseSmokeTest = process.argv.includes('--release-smoke-test')
 // the single-instance lock (each client spawns its own) or open a window.
 const acpMode = process.argv.includes('--acp')
 const threadDeepLinks = new ThreadDeepLinks(getMainWindow, findThreadOwners)
+setPluginClientThreadOpener((projectId, threadId) => {
+  const win = getMainWindow()
+  if (!win || win.isDestroyed()) return false
+  // Match OS deep-link delivery, including a renderer detached during a turn.
+  bringBackMainWindow(win)
+  return threadDeepLinks.open({ projectId, threadId })
+})
 const gotSingleInstanceLock =
   agentEval || acpMode || releaseSmokeTest ? true : app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {

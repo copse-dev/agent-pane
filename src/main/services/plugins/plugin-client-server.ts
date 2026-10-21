@@ -3,6 +3,9 @@ import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import {
   clientPairSchema,
   clientDecisionSchema,
+  clientActivityDataSchema,
+  clientOpenThreadSchema,
+  type ClientActivityData,
   type ClientSnapshot,
 } from '../../../shared/plugin-client-protocol.ts'
 import type { HumanDecisions } from '../human-decisions.ts'
@@ -28,6 +31,8 @@ function localOrigin(origin: string): boolean {
 export async function startPluginClientServer(options: {
   decisions: HumanDecisions
   enabled: () => boolean
+  activity?: { read: (fresh?: boolean) => Promise<ClientActivityData> }
+  openThread?: (projectId: string, threadId: string) => boolean
   approvePair: (label: string, code: string, signal: AbortSignal) => Promise<boolean>
 }): Promise<{ origin: string; close: () => Promise<void> }> {
   let authority = ''
@@ -45,6 +50,8 @@ export async function startPluginClientServer(options: {
     approve: async (label, code, signal): Promise<'control' | null> =>
       (await options.approvePair(label, code, signal)) ? 'control' : null,
   })
+  let activitySequence = 0
+  let activityFingerprint = ''
   const streams = new Set<ServerResponse>()
   const deliveries = new Map<
     string,
@@ -169,6 +176,64 @@ export async function startPluginClientServer(options: {
     const client = clients.principal(req.headers.authorization, origin, 'control')
     if (!client) {
       json(res, 401, { error: 'Pair in Copse first' })
+      return
+    }
+    if (req.method === 'GET' && path === '/v1/activity') {
+      if (!options.activity) {
+        json(res, 404, { error: 'Activity unavailable' })
+        return
+      }
+      const data = clientActivityDataSchema.parse(await options.activity.read())
+      if (!active() || !clients.principal(req.headers.authorization, origin, 'control')) {
+        json(res, 403, { error: 'Client API disabled' })
+        return
+      }
+      const fingerprint = JSON.stringify(data)
+      if (fingerprint !== activityFingerprint) {
+        activityFingerprint = fingerprint
+        activitySequence++
+      }
+      json(res, 200, {
+        version: 1,
+        sessionId: options.decisions.snapshot().sessionId,
+        sequence: activitySequence,
+        ...data,
+      })
+      return
+    }
+    if (req.method === 'POST' && path === '/v1/threads/open') {
+      const input = safeJsonParse(await body(req), decodeWithSchema(clientOpenThreadSchema))
+      if (!input) {
+        json(res, 400, { error: 'Invalid thread reference' })
+        return
+      }
+      if (!active() || !clients.principal(req.headers.authorization, origin, 'control')) {
+        json(res, 403, { error: 'Client API disabled' })
+        return
+      }
+      const activity = options.activity ? await options.activity.read(true) : undefined
+      if (!active() || !clients.principal(req.headers.authorization, origin, 'control')) {
+        json(res, 403, { error: 'Client API disabled' })
+        return
+      }
+      const known =
+        (activity?.recentThreads.some(
+          (row) => row.projectId === input.projectId && row.threadId === input.threadId,
+        ) ??
+          false) ||
+        options.decisions
+          .snapshot()
+          .requests.some(
+            (row) =>
+              row.interactiveClientSupported &&
+              row.projectId === input.projectId &&
+              row.threadId === input.threadId,
+          )
+      if (!known || !options.openThread?.(input.projectId, input.threadId)) {
+        json(res, 404, { ok: false, reason: 'Thread is no longer available' })
+        return
+      }
+      json(res, 200, { ok: true, reason: 'Opening in Copse' })
       return
     }
     if (req.method === 'GET' && path === '/v1/events') {

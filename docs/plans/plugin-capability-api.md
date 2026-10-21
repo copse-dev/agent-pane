@@ -47,6 +47,18 @@ and restores unanswered thread requests afterwards. The shared authentication co
 existing mobile read/control credentials; plugin clients always receive session-only control
 within their supported approval scope. No existing persisted mobile grant is upgraded.
 
+## Recent activity and navigation preview
+
+The first-party interactive-client transport adds generic `activity.read` and `threads.open`
+operations under the existing session-pairing consent. The desktop explicitly discloses recent
+chat titles and navigation across configured projects. Activity is a bounded metadata projection
+of settled chats, not transcript access. Completion ordering uses lastSettledAt with a documented
+legacy used-chat fallback; running/waiting, archived, hidden and interrupted chats are excluded.
+The authenticated Open operation validates the exact project/thread against current activity or
+supported pending approvals and rechecks authority after asynchronous reads. It targets the same
+host's ready window, with no client-supplied executable, URI or path. This does not complete the
+provider/consumer registration framework, general activity subscriptions, theme or durable grants.
+
 ## Shared client authentication follow-up
 
 Base: `b8f2014b521629701abb9eb43e3f4b929f0ebba5`. Mobile and interactive plugin clients

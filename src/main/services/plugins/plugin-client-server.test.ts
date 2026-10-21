@@ -11,7 +11,10 @@ import {
   type HumanDecisionPrincipal,
 } from '../human-decisions.ts'
 import { startPluginClientServer } from './plugin-client-server.ts'
-import { clientSnapshotSchema } from '../../../shared/plugin-client-protocol.ts'
+import {
+  clientSnapshotSchema,
+  clientActivitySnapshotSchema,
+} from '../../../shared/plugin-client-protocol.ts'
 
 const pairingSchema = z.object({ id: z.uuid(), code: z.string() })
 const pairedSchema = z.object({ state: z.string(), token: z.string().optional() })
@@ -352,5 +355,144 @@ describe('interactive client approval transport', () => {
     assert.equal(humanDecisionActor(principal), 'user')
     assert.equal(humanDecisionSource(principal), 'plugin-client:client (Approval desk)')
     assert.equal(humanDecisionActor({ id: 'phone', label: 'Phone' }), 'mobile-device')
+  })
+  it('serves authenticated bounded activity and opens only an exact current project/thread', async () => {
+    const row = {
+      projectId: 'project',
+      projectName: 'Project',
+      threadId: randomUUID(),
+      title: 'Finished chat',
+      state: 'finished',
+      settledAt: 42,
+    } satisfies import('../../../shared/plugin-client-protocol.ts').ClientActivityData['recentThreads'][number]
+    let recent = [row]
+    const opened: string[] = []
+    const fresh: Array<boolean | undefined> = []
+    const server = await startPluginClientServer({
+      decisions: new HumanDecisions(),
+      enabled: () => true,
+      approvePair: async () => true,
+      activity: {
+        read: async (force) => {
+          fresh.push(force)
+          return { recentThreads: recent, runningCount: 0, waitingCount: 0 }
+        },
+      },
+      openThread: (projectId, threadId) => {
+        opened.push(`${projectId}/${threadId}`)
+        return true
+      },
+    })
+    try {
+      assert.equal((await fetch(`${server.origin}/v1/activity`)).status, 401)
+      const token = await pair(server.origin)
+      const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+      assert.equal(
+        (
+          await fetch(`${server.origin}/v1/activity`, {
+            headers: { ...headers, Origin: 'http://127.0.0.1:9999' },
+          })
+        ).status,
+        401,
+      )
+      const activity = await read(
+        await fetch(`${server.origin}/v1/activity`, { headers }),
+        clientActivitySnapshotSchema,
+      )
+      assert.deepEqual(activity.recentThreads, [row])
+      const post = (projectId: string, threadId: string): Promise<Response> =>
+        fetch(`${server.origin}/v1/threads/open`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ version: 1, projectId, threadId }),
+        })
+      assert.equal((await post('other', row.threadId)).status, 404)
+      assert.equal((await read(await post(row.projectId, row.threadId), resultSchema)).ok, true)
+      assert.deepEqual(opened, [`project/${row.threadId}`])
+      assert.equal(fresh.at(-1), true)
+      recent = []
+      assert.equal((await post(row.projectId, row.threadId)).status, 404)
+      assert.equal(opened.length, 1)
+      assert.equal(
+        (
+          await fetch(`${server.origin}/v1/threads/open`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              version: 1,
+              projectId: row.projectId,
+              threadId: row.threadId,
+              path: '/private',
+            }),
+          })
+        ).status,
+        400,
+      )
+    } finally {
+      await server.close()
+    }
+  })
+
+  it('rechecks authority after activity reads and never navigates after disable', async () => {
+    for (const operation of ['activity', 'threads/open']) {
+      let enabled = true
+      let entered = (): void => {}
+      const loading = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      const gate =
+        Promise.withResolvers<
+          import('../../../shared/plugin-client-protocol.ts').ClientActivityData
+        >()
+      let opened = false
+      const threadId = randomUUID()
+      const server = await startPluginClientServer({
+        decisions: new HumanDecisions(),
+        enabled: () => enabled,
+        approvePair: async () => true,
+        activity: {
+          read: () => {
+            entered()
+            return gate.promise
+          },
+        },
+        openThread: () => {
+          opened = true
+          return true
+        },
+      })
+      try {
+        const token = await pair(server.origin)
+        const response = fetch(`${server.origin}/v1/${operation}`, {
+          method: operation === 'activity' ? 'GET' : 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          ...(operation === 'activity'
+            ? {}
+            : { body: JSON.stringify({ version: 1, projectId: 'project', threadId }) }),
+        })
+        await loading
+        enabled = false
+        gate.resolve({
+          recentThreads: [
+            {
+              projectId: 'project',
+              projectName: 'Project',
+              threadId,
+              title: 'Private title',
+              state: 'finished',
+              settledAt: 1,
+            },
+          ],
+          runningCount: 0,
+          waitingCount: 0,
+        })
+        const result = await response
+        assert.equal(result.status, 403)
+        assert.equal((await result.text()).includes('Private title'), false)
+        assert.equal(opened, false)
+      } finally {
+        await server.close()
+      }
+    }
   })
 })
