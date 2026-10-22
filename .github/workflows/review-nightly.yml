@@ -38,7 +38,7 @@ jobs:
       github.workflow_ref == 'copse-dev/agent-pane/.github/workflows/review-nightly.yml@refs/heads/main' &&
       contains(fromJSON('["338988","41898282"]'), github.actor_id) &&
       contains(fromJSON('["jonathanKingston","github-actions[bot]"]'), github.triggering_actor) }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -118,7 +118,7 @@ jobs:
     name: Stage 0 on the selected pull request head
     needs: select
     if: needs.select.outputs.number != ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions: {}
     steps:
@@ -206,7 +206,7 @@ jobs:
       contains(fromJSON('["338988","41898282"]'), github.actor_id) &&
       contains(fromJSON('["jonathanKingston","github-actions[bot]"]'), github.triggering_actor) }}
     environment: copse-review-models
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
