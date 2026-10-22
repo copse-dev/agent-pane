@@ -648,8 +648,10 @@ Rules of thumb:
   hiding. A tall opaque slab makes a long page look like it has ended when it has only scrolled
   under the bar. Prefer a frosted panel: a gradient wash plus `backdrop-filter`, both carried on a
   masked `::before` so the effect ramps in rather than starting at a hard line, and no `border-top`
-  (a hairline across a see-through bar reads as the cut the fade exists to avoid). See
-  `.settings-buttons` in `settings.css`.
+  (a hairline across a see-through bar reads as the cut the fade exists to avoid). Run the ramp
+  _above_ the bar (extend the `::before` upward by the fade length) so the bar itself, buttons
+  included, sits on full-strength frost; a ramp inside the bar leaves the actions in its half-clear
+  part. See `.settings-buttons` in `settings.css`.
 - An absolutely positioned `::before` paints in the **positioned** layer, i.e. _above_ the bar's
   in-flow children. Give the buttons `position: relative; z-index: 1` or they come out blurred
   along with the backdrop.

@@ -208,6 +208,49 @@ describe('browser-hosted settings footer geometry', () => {
     await saveElementScreenshot('#settings-dialog', 'settings-footer-no-overlap.png')
   })
 
+  // The fade belongs above the bar, not inside it: when the masked frost ramped
+  // in from the bar's own top edge, Save and Cancel sat in its half-strength
+  // part and the content beside them read through almost unblurred.
+  it('frosts the whole action bar, with the fade ending above Save and Cancel', async () => {
+    await scrollSettingsContent(400)
+
+    const frost = await browser.execute(() => {
+      const footer = document.querySelector<HTMLElement>('.settings-buttons')
+      if (!footer) return null
+      const buttons = [...footer.querySelectorAll<HTMLElement>('button')].filter((button) =>
+        button.checkVisibility(),
+      )
+      if (buttons.length === 0) return null
+      const overlay = getComputedStyle(footer, '::before')
+      const stops = [...overlay.maskImage.matchAll(/(-?[\d.]+)px/g)].map((match) =>
+        Number.parseFloat(match[1] ?? ''),
+      )
+      const footerTop = footer.getBoundingClientRect().top
+      return {
+        mask: overlay.maskImage,
+        overlayTop: footerTop + Number.parseFloat(overlay.top),
+        opaqueFrom: footerTop + Number.parseFloat(overlay.top) + Math.max(...stops),
+        footerTop,
+        buttonsTop: Math.min(...buttons.map((button) => button.getBoundingClientRect().top)),
+      }
+    })
+
+    assert.ok(frost, 'settings footer with visible actions must exist')
+    assert.ok(
+      frost.overlayTop < frost.footerTop,
+      `frost must reach above the bar (overlay=${String(frost.overlayTop)}, bar=${String(frost.footerTop)})`,
+    )
+    assert.ok(
+      frost.opaqueFrom <= frost.footerTop + 0.5,
+      `fade must finish by the bar's top edge (opaque from ${String(frost.opaqueFrom)}, bar=${String(frost.footerTop)}, mask=${frost.mask})`,
+    )
+    assert.ok(
+      frost.opaqueFrom < frost.buttonsTop,
+      'Save and Cancel must sit on full-strength frost',
+    )
+    await saveElementScreenshot('#settings-dialog', 'settings-footer-frost-covers-actions.png')
+  })
+
   // The bar covering its scrollport edge (above) is the feature; a control
   // *parked* under it is the bug. `scroll-padding-bottom` is what separates the
   // two: it takes the bar's depth out of the landing space, so a scrolled-to

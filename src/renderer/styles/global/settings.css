@@ -369,9 +369,16 @@ dialog.settings-overlay::backdrop {
      where a full-strength filter starts. Buttons are children of the bar, not
      of the pseudo, so they stay perfectly sharp.
 
+     The ramp runs *above* the bar, not inside it: the pseudo reaches up by
+     `--settings-footer-fade` and is fully frosted from the bar's top edge
+     down. Ramping inside the bar left Save and Cancel sitting in the
+     half-strength part of the fade, with content showing clearly beside and
+     above them.
+
      No `border-top`: a hairline across a see-through bar reads as the cut the
      fade exists to avoid. */
   background: none;
+  --settings-footer-fade: calc(var(--spacing-xl) * 2);
 }
 /* Automation schedules persist through their own editor. While that editor is
    open, its Save schedule / Cancel pair is the relevant action boundary; the
@@ -383,17 +390,17 @@ dialog.settings-overlay::backdrop {
 .settings-buttons::before {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: calc(-1 * var(--settings-footer-fade)) 0 0;
   pointer-events: none;
   background: linear-gradient(
     to bottom,
-    transparent 0%,
-    color-mix(in srgb, var(--bg-base) 55%, transparent) 40%,
+    transparent 0,
+    color-mix(in srgb, var(--bg-base) 55%, transparent) var(--settings-footer-fade),
     color-mix(in srgb, var(--bg-base) 88%, transparent) 100%
   );
   backdrop-filter: blur(10px);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 45%);
-  mask-image: linear-gradient(to bottom, transparent 0%, #000 45%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--settings-footer-fade));
+  mask-image: linear-gradient(to bottom, transparent 0, #000 var(--settings-footer-fade));
 }
 .settings-buttons button,
 #settings-save-status {
