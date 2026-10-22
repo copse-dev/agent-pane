@@ -11,7 +11,7 @@ permissions: {}
 jobs:
   request:
     if: github.event.pull_request.head.repo.id == github.event.repository.id
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 1
     steps:
       - name: Request a review from the trusted default-branch workflow
