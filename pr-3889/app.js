@@ -84886,7 +84886,14 @@ var init_demo_scenarios = __esm({
           {
             id: "sc-side1-assistant",
             role: "assistant",
-            content: "`waitForExist` only checks that the node is in the DOM. `waitForDisplayed` also needs a non-zero size and no `display: none`. Mermaid inserts an empty svg first, so the first one passes too early.",
+            content: [
+              "They wait for different things:",
+              "",
+              "- **`waitForExist`** only checks that the node is in the DOM.",
+              "- **`waitForDisplayed`** also needs a non-zero size and no `display: none`.",
+              "",
+              "Mermaid inserts an empty svg first, so the first one passes too early."
+            ].join("\n"),
             toolCalls: [],
             createdAt: FIXED_TIME + 3900
           }
