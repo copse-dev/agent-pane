@@ -50,6 +50,28 @@ describe('classifySandboxDenial (issue #1436)', () => {
     assert.equal(classifySandboxDenial(output, 'git push origin HEAD')?.operation, 'git push')
     assert.equal(classifySandboxDenial(output, 'git fetch origin main')?.operation, 'git fetch')
   })
+
+  it('does not label a non-git CONNECT-tunnel denial as git network access', () => {
+    const output = 'curl: (56) CONNECT tunnel failed, response 403'
+    for (const command of [
+      'curl -sS https://example.com',
+      'grep -rn "then git fetch origin" docs && curl https://example.com',
+    ]) {
+      const match = classifySandboxDenial(output, command)
+      assert.ok(match)
+      assert.equal(match.operation, 'network access through the egress proxy')
+      assert.doesNotMatch(match.operation, /git/)
+      assert.doesNotMatch(match.advice, /\bgit\b/)
+    }
+  })
+
+  it('keeps the generic git label for a git command outside the named subcommands', () => {
+    const output = "fatal: unable to access '...': CONNECT tunnel failed, response 403"
+    assert.equal(
+      classifySandboxDenial(output, 'git remote update')?.operation,
+      'git network access',
+    )
+  })
 })
 
 describe('sandboxDenialRetryClassification (issue #1436 point 1)', () => {
@@ -114,6 +136,25 @@ describe('operationDescriptorForCommand', () => {
   it('derives the gh config-read operation from any gh invocation', () => {
     assert.equal(operationDescriptorForCommand('gh pr create --title x'), 'read ~/.config/gh')
     assert.equal(operationDescriptorForCommand('gh pr view 42'), 'read ~/.config/gh')
+  })
+
+  it('keeps the descriptor for git/gh in command position behind separators, wrappers and options', () => {
+    assert.equal(operationDescriptorForCommand('cd x && git fetch'), 'git fetch')
+    assert.equal(operationDescriptorForCommand('env FOO=1 git push'), 'git push')
+    assert.equal(operationDescriptorForCommand('git -C dir fetch'), 'git fetch')
+    assert.equal(operationDescriptorForCommand('git -c http.version=HTTP/1.1 push'), 'git push')
+    assert.equal(operationDescriptorForCommand('timeout 30 git ls-remote origin'), 'git ls-remote')
+    assert.equal(operationDescriptorForCommand("bash -c 'git fetch origin'"), 'git fetch')
+    assert.equal(operationDescriptorForCommand('pnpm build; gh pr view 42'), 'read ~/.config/gh')
+    assert.equal(operationDescriptorForCommand('env GH_PAGER= gh pr list'), 'read ~/.config/gh')
+  })
+
+  it('does not derive a git or gh operation from program names that are only data', () => {
+    assert.equal(operationDescriptorForCommand('grep -rn "git fetch" docs'), null)
+    assert.equal(operationDescriptorForCommand('grep -rn "then git fetch origin" docs'), null)
+    assert.equal(operationDescriptorForCommand("rg 'gh pr' src"), null)
+    assert.equal(operationDescriptorForCommand('echo git push'), null)
+    assert.equal(operationDescriptorForCommand('git log --grep fetch'), null)
   })
 
   it('returns null for a command shape with no predicted operation', () => {
