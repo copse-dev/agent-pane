@@ -46,20 +46,22 @@ describe('PR organization SAML authorization', () => {
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
   })
 
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('shows a safe authorization button for a SAML-protected PR', async () => {
-    const pane = await $('#pane-files')
+    const pane = await $('#pane-files').getElement()
     if (!(await pane.isDisplayed())) {
       await $('.titlebar-panel-controls .titlebar-btn[aria-label="Toggle right panel"]').click()
       await pane.waitForDisplayed({ timeout: 10_000 })
     }
     await $('[aria-label="Open pull requests"]').click()
-    const row = await $('.pr-list-row[data-pr-section="linked"]')
+    const row = await $('.pr-list-row[data-pr-section="linked"]').getElement()
     await row.waitForDisplayed({ timeout: 20_000 })
     await row.click()
 
-    const button = await $('#pr-viewer-host .pr-auth-button')
+    const button = await $('#pr-viewer-host .pr-auth-button').getElement()
     await button.waitForDisplayed({ timeout: 20_000 })
     await expect(button).toHaveText('Sign in with GitHub SSO')
     await expect($('#pr-viewer-host .pr-auth-error')).toHaveText(

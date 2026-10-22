@@ -16,9 +16,9 @@ const ANSWER_REPLY = 'I’ll fix the token count before proceeding.'
 describe('saved reviewer input', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     const now = Date.now()
     const requests = [
@@ -100,7 +100,9 @@ describe('saved reviewer input', () => {
     await browser.reloadSession()
   })
 
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('ships as a disabled experiment and can be enabled in Settings', async function () {
     this.timeout(90_000)

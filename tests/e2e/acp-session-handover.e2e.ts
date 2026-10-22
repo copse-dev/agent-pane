@@ -71,7 +71,7 @@ function seedAcpSessionHandoverFixture(workspaceRoot: string): void {
 
 describe('ACP session handover notice', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
     resetUserData()
     seedAcpSessionHandoverFixture(process.cwd())
     await browser.reloadSession()
@@ -85,8 +85,10 @@ describe('ACP session handover notice', () => {
   })
 
   it('says what the restarted agent kept and lost, ahead of its reply', async () => {
-    const message = await $('[data-message-id="msg-assistant-acp-handover-2"] .message-text')
-    const note = await message.$('p em')
+    const message = await $(
+      '[data-message-id="msg-assistant-acp-handover-2"] .message-text',
+    ).getElement()
+    const note = await message.$('p em').getElement()
     await expect(note.$('strong')).toHaveText('Local agent lost its earlier session.')
     await expect(note).toHaveText(
       expect.stringContaining('your messages and its replies carry over'),
@@ -102,7 +104,7 @@ describe('ACP session handover notice', () => {
       )
       const paragraphs = root ? [...root.querySelectorAll('p')] : []
       const [notePara, reply] = paragraphs
-      if (!root || !notePara || !reply) return { error: 'missing notice or reply paragraph' }
+      if (!root || !notePara || !reply) throw new Error('missing notice or reply paragraph')
       const rootRect = root.getBoundingClientRect()
       return {
         noteFirst: notePara.getBoundingClientRect().bottom <= reply.getBoundingClientRect().top,

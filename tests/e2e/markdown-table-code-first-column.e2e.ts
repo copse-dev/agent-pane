@@ -18,7 +18,7 @@ describe('markdown table with a code-span first column', () => {
 
     const metrics = await browser.execute(() => {
       const table = document.querySelector('.message-text table')
-      if (!table) return { error: 'no table' }
+      if (!table) throw new Error('no table')
 
       const firstCells = [...table.querySelectorAll('tbody tr')].map((row) => {
         const code = row.querySelector('td:first-child code')
@@ -28,7 +28,7 @@ describe('markdown table with a code-span first column', () => {
         const rects = [...range.getClientRects()]
         const box = code.getBoundingClientRect()
         return {
-          text: code.textContent ?? '',
+          text: code.textContent,
           lineCount: rects.length,
           whiteSpace: getComputedStyle(code).whiteSpace,
           width: box.width,

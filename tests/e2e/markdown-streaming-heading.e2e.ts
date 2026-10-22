@@ -27,7 +27,7 @@ describe('markdown streaming heading pending', () => {
       const text = document.querySelector(
         '[data-message-id="streaming-markdown-message"] .message-text',
       )
-      if (!text) return { error: 'no visible assistant message' }
+      if (!text) throw new Error('no visible assistant message')
       text.classList.add('streaming-markdown', 'is-streaming')
       text.innerHTML = [
         '<div class="stream-complete">',

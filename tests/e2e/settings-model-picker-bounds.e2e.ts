@@ -216,7 +216,7 @@ describe('settings model picker bounds', function () {
       const surfaceRight = surface.getBoundingClientRect().right
       const hostRect = host.getBoundingClientRect()
       const parentLeft = parent.getBoundingClientRect().left
-      host.style.marginLeft = `${hostRect.left - parentLeft + (surfaceRight - hostRect.right)}px`
+      host.style.marginLeft = `${String(hostRect.left - parentLeft + (surfaceRight - hostRect.right))}px`
     }, CHAT_MODEL_HOST)
 
     // Report the geometry on failure. `expected the menu to flip to right
@@ -227,21 +227,23 @@ describe('settings model picker bounds', function () {
     // thrown away. The CSS declares the fallback
     // (`position-try-fallbacks: --model-picker-clamp-right`, model-picker.css),
     // so which of the two is happening is the whole question.
-    let lastGeometry: Awaited<ReturnType<typeof readMenuGeometry>> = null
+    const lastGeometry: { current: Awaited<ReturnType<typeof readMenuGeometry>> } = {
+      current: null,
+    }
     try {
       await browser.waitUntil(async () => {
-        lastGeometry = await readMenuGeometry(CHAT_MODEL_HOST)
-        return (lastGeometry?.rightGap ?? 99) <= 1
+        lastGeometry.current = await readMenuGeometry(CHAT_MODEL_HOST)
+        return (lastGeometry.current?.rightGap ?? 99) <= 1
       })
     } catch {
       throw new Error(
         'expected the menu to flip to right alignment beside the surface edge — ' +
-          (lastGeometry
-            ? `trigger [${lastGeometry.triggerLeft}, ${lastGeometry.triggerRight}], ` +
-              `menu [${lastGeometry.menuLeft}, ${lastGeometry.menuRight}], ` +
-              `surface [${lastGeometry.surfaceLeft}, ${lastGeometry.surfaceRight}], ` +
-              `rightGap ${Math.round(lastGeometry.rightGap)}, ` +
-              `leftGap ${Math.round(lastGeometry.leftGap)}`
+          (lastGeometry.current
+            ? `trigger [${String(lastGeometry.current.triggerLeft)}, ${String(lastGeometry.current.triggerRight)}], ` +
+              `menu [${String(lastGeometry.current.menuLeft)}, ${String(lastGeometry.current.menuRight)}], ` +
+              `surface [${String(lastGeometry.current.surfaceLeft)}, ${String(lastGeometry.current.surfaceRight)}], ` +
+              `rightGap ${String(Math.round(lastGeometry.current.rightGap))}, ` +
+              `leftGap ${String(Math.round(lastGeometry.current.leftGap))}`
             : 'geometry could not be read at all (menu or trigger missing)'),
       )
     }
@@ -286,20 +288,20 @@ describe('settings model picker bounds', function () {
     await $(`${CHAT_MODEL_HOST} .model-picker-trigger`).click()
     await expect($(`${CHAT_MODEL_HOST} .model-picker-menu`)).toBeDisplayed()
 
-    let geometry: Awaited<ReturnType<typeof readMenuGeometry>> = null
+    const geometry: { current: Awaited<ReturnType<typeof readMenuGeometry>> } = { current: null }
     try {
       await browser.waitUntil(async () => {
-        geometry = await readMenuGeometry(CHAT_MODEL_HOST)
-        return geometry?.containedInSurface === true
+        geometry.current = await readMenuGeometry(CHAT_MODEL_HOST)
+        return geometry.current?.containedInSurface === true
       })
     } catch {
       throw new Error(
         'expected the menu to stay inside the shortened surface — ' +
-          (geometry
-            ? `menu ${geometry.menuHeight}px in a ${geometry.surfaceHeight}px surface, ` +
-              `bottomOverhang ${geometry.bottomOverhang}, topOverhang ${geometry.topOverhang}, ` +
-              `placement ${geometry.verticalPlacement}`
-            : 'geometry could not be read at all (menu or trigger missing)'),
+          (geometry.current
+            ? `menu ${String(geometry.current.menuHeight)}px in a ${String(geometry.current.surfaceHeight)}px surface, ` +
+              `bottomOverhang ${String(geometry.current.bottomOverhang)}, topOverhang ${String(geometry.current.topOverhang)}, ` +
+              `placement ${geometry.current.verticalPlacement}`
+            : 'geometry.current could not be read at all (menu or trigger missing)'),
       )
     }
     const contained = await readMenuGeometry(CHAT_MODEL_HOST)

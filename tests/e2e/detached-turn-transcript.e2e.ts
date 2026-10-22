@@ -4,12 +4,12 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import electronBinary from 'electron'
 import { $, $$, browser } from '@wdio/globals'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { shouldUseChromiumHeadless } from './helpers/display-mode.mts'
+import { resolveElectronExecutable } from './helpers/electron-executable.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
@@ -117,7 +117,7 @@ async function launchCopseAgain(): Promise<void> {
     '--no-sandbox',
     '--password-store=basic',
   ]
-  const child = spawn(String(electronBinary), args, { stdio: 'ignore' })
+  const child = spawn(resolveElectronExecutable(), args, { stdio: 'ignore' })
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => {
       child.kill()
@@ -213,7 +213,7 @@ describe('a turn outlives its window', function () {
     await setComposerValue(PROMPT)
     await submitComposer()
     const threadId = await browser.execute(
-      () => document.querySelector<HTMLElement>('.chat-row.selected')?.dataset.threadId ?? '',
+      () => document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId'] ?? '',
     )
     assert.ok(threadId, 'the sent thread is selected')
 
@@ -222,7 +222,7 @@ describe('a turn outlives its window', function () {
       async () =>
         browser.execute(() => {
           const replies = document.querySelectorAll<HTMLElement>('.msg-assistant .message-text')
-          const text = replies.item(replies.length - 1)?.innerText ?? ''
+          const text = replies[replies.length - 1]?.innerText ?? ''
           return text.startsWith('The plan') && text.length < 40
         }),
       { timeout: 30_000, interval: 25, timeoutMsg: 'the answer never started streaming' },
@@ -270,7 +270,7 @@ describe('a turn outlives its window', function () {
     // Each message exactly once, with the ids main wrote.
     const rendered = await browser.execute(() =>
       [...document.querySelectorAll<HTMLElement>('.msg[data-message-id]')].map(
-        (el) => el.dataset.messageId ?? '',
+        (el) => el.dataset['messageId'] ?? '',
       ),
     )
     assert.deepEqual(
@@ -320,6 +320,7 @@ describe('a turn outlives its window', function () {
       { timeout: 60_000 },
     )
     const threadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+    assert.ok(threadId, 'the reopened thread row has a thread id')
     await browser.waitUntil(() => threadStatus(threadId) === 'idle', { timeout: 10_000 })
     assert.deepEqual(
       spineMessages(threadId).map((message) => message.id),

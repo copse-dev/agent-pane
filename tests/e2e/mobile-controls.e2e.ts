@@ -90,7 +90,7 @@ function request(path: string, body?: object, bearer = token): z.infer<typeof re
   return parsed
 }
 
-function action(sessionId: string, payload: object) {
+function action(sessionId: string, payload: object): Record<string, unknown> {
   return { sessionId, issuedAt: Date.now(), requestId: randomUUID(), projectId, ...payload }
 }
 
@@ -192,7 +192,7 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     const start = action(sessionId, { action: 'message', threadId: null, text: first })
     assert.match(request('/api/action', start, readToken).error ?? '', /Enable control/)
     const started = request('/api/action', start)
-    assert.equal(started.ok, true, started.error)
+    assert.equal(started.ok, true, started.error ?? 'Mobile message start failed')
     assert.ok(started.threadId)
     const threadId = started.threadId
     assert.deepEqual(
@@ -209,8 +209,11 @@ describe('Mobile Companion control over verified local HTTPS', function () {
       '/api/action',
       action(sessionId, { action: 'message', threadId, text: followup }),
     )
-    assert.equal(queued.queued, true, queued.error)
+    assert.equal(queued.queued, true, queued.error ?? 'Mobile message queue failed')
     await expect($('.footer-queue')).toHaveText('1 queued')
+    // The queue count renders while the phone's submission still owns the
+    // thread; the composer re-enables Queue on the next thread update.
+    await $('.submit-btn').waitForEnabled()
     await saveAppScreenshot('mobile-controls-queued-desktop.png')
     assert.equal(
       request(
@@ -405,7 +408,8 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     let enabled = $('input[name="mobileCompanionEnabled"]')
     await enabled.scrollIntoView({ block: 'center' })
     const pairing = request('/api/pair/request', { label: 'Shared auth phone' })
-    assert.ok(pairing.id)
+    const pairingId = pairing.id
+    assert.ok(pairingId)
     assert.ok(pairing.code)
     let banner = $('.mobile-companion-pairing-banner')
     await banner.waitForDisplayed()
@@ -423,11 +427,11 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     await banner.waitForDisplayed({ reverse: true })
     let pairedToken = ''
     await browser.waitUntil(() => {
-      const result = request(`/api/pair/result?id=${pairing.id}`)
+      const result = request(`/api/pair/result?id=${pairingId}`)
       pairedToken = result.token ?? ''
       return result.state === 'approved' && Boolean(pairedToken)
     })
-    assert.match(request(`/api/pair/result?id=${pairing.id}`).error ?? '', /expired/)
+    assert.match(request(`/api/pair/result?id=${pairingId}`).error ?? '', /expired/)
     assert.equal(request('/api/activity', undefined, pairedToken).access, 'read')
     assert.match(request('/api/action', {}, pairedToken).error ?? '', /Enable control/)
     // The real service publishes the newly issued credential after durable storage.

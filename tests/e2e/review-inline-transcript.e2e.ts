@@ -43,7 +43,7 @@ describe('post-turn review inline in transcript', () => {
           (card.compareDocumentPosition(followup) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
         hasPinnedHost: !!document.querySelector('.conversation-review-host'),
         issuesFound: card?.getAttribute('data-issues-found') ?? null,
-        collapsedCleanReview: details !== null && details.open === false,
+        collapsedCleanReview: details !== null && !details.open,
         hasSummaryHeader: !!card?.querySelector('summary.review-panel-header'),
       }
     })

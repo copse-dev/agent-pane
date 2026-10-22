@@ -21,7 +21,7 @@ describe('approval with paragraphs and code blocks', () => {
     await expect(dialog.$('.approval-reject')).toHaveText('Reject all (3)')
     const advice = await browser.execute(() =>
       [...document.querySelectorAll('#approval-dialog .approval-advice')].map(
-        (element) => element.textContent ?? '',
+        (element) => element.textContent,
       ),
     )
     assert.equal(advice.length, 3)

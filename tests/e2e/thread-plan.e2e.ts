@@ -1,3 +1,4 @@
+import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { installMockScenario, expectAssistantReply } from './helpers/mock-scenario.ts'
@@ -11,9 +12,9 @@ const BODY =
 let firstBody = ''
 let secondBody = ''
 
-async function readPlan() {
+async function readPlan(): Promise<StoredThreadPlan | null> {
   return browser.execute(async (projectId) => {
-    const threadId = document.querySelector<HTMLElement>('.chat-row.selected')?.dataset.threadId
+    const threadId = document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId']
     if (!threadId) throw new Error('Missing selected thread')
     return window.api.plans.get(projectId, threadId)
   }, PROJECT)
@@ -86,10 +87,11 @@ describe('optional thread plan', () => {
     await dialog.$('button=Start planning').click()
     await expect(dialog.$('[data-testid="plan-status"]')).toHaveText('draft · r1')
     firstBody = (await readPlan())?.body ?? ''
-    await expect(firstBody).toContain('# **Goal**')
-    await expect(firstBody).toContain('without deleting existing sessions.')
+    expect(firstBody).toContain('# **Goal**')
+    expect(firstBody).toContain('without deleting existing sessions.')
     const blocked = await browser.execute(async (projectId) => {
-      const threadId = document.querySelector<HTMLElement>('.chat-row.selected')?.dataset.threadId
+      const threadId =
+        document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId']
       if (!threadId) throw new Error('Missing selected thread')
       const errors: string[] = []
       try {
@@ -110,8 +112,8 @@ describe('optional thread plan', () => {
       }
       return errors
     }, PROJECT)
-    await expect(blocked[0]).toContain('cannot enforce the plan workflow')
-    await expect(blocked[1]).toContain('Standalone review is unavailable during draft planning')
+    expect(blocked[0]).toContain('cannot enforce the plan workflow')
+    expect(blocked[1]).toContain('Standalone review is unavailable during draft planning')
 
     await selectPassage('session expires')
     await dialog.$('[aria-label="Bold"]').click()
@@ -172,8 +174,8 @@ describe('optional thread plan', () => {
     await $(rowSelector).click()
     await $('[data-testid="open-plan"]').click()
     await expect($('#thread-plan-dialog [data-testid="plan-status"]')).toHaveText('draft · r2')
-    await expect((await readPlan())?.meta.planId).toBe(saved.meta.planId)
-    await expect((await readPlan())?.body).toBe(saved.body)
+    expect((await readPlan())?.meta.planId).toBe(saved.meta.planId)
+    expect((await readPlan())?.body).toBe(saved.body)
     await expect($('.thread-plan-comment p')).toHaveText(
       'Include the expired-token regression case.',
     )
@@ -231,7 +233,8 @@ describe('optional thread plan', () => {
 
     // Read the identity through the normal product API; all mutations above use UI.
     const plan = await browser.execute(async (projectId) => {
-      const threadId = document.querySelector<HTMLElement>('.chat-row.selected')?.dataset.threadId
+      const threadId =
+        document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId']
       if (!threadId) throw new Error('Missing selected thread')
       return window.api.plans.get(projectId, threadId)
     }, PROJECT)

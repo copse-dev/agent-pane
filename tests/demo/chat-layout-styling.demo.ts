@@ -24,7 +24,9 @@ async function openRightPanel(): Promise<void> {
   await filesPane.waitForDisplayed()
 }
 
-async function measureDivider(probe: DividerProbe) {
+async function measureDivider(
+  probe: DividerProbe,
+): Promise<{ resizerWidth: number; leftGap: number; rightGap: number } | null> {
   return browser.execute(({ resizerId, leftPaneId, rightPaneId }) => {
     const resizer = document.getElementById(resizerId)
     const leftPane = document.getElementById(leftPaneId)

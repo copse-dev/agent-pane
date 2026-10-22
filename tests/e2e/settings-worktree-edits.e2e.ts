@@ -24,7 +24,7 @@ describe('worktree edit approval setting', () => {
     const permissions = $('.settings-section[data-section="permissions"]')
     await expect(permissions).toBeDisplayed()
 
-    const toggle = await permissions.$('input[name="worktreeAutoApproveEdits"]')
+    const toggle = await permissions.$('input[name="worktreeAutoApproveEdits"]').getElement()
     await expect(toggle).toBeExisting()
     assert.equal(await toggle.isSelected(), true)
 

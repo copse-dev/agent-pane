@@ -60,7 +60,7 @@ async function clickOverflowItem(label: string): Promise<void> {
   await $('.footer-overflow-menu').waitForDisplayed({ timeout: 10_000 })
   const clicked = await browser.execute((wanted: string) => {
     const item = Array.from(document.querySelectorAll<HTMLElement>('.footer-overflow-item')).find(
-      (candidate) => candidate.textContent?.trim() === wanted,
+      (candidate) => candidate.textContent.trim() === wanted,
     )
     item?.click()
     return item !== undefined
@@ -88,25 +88,25 @@ describe('Debug trace', function () {
 
     // The archive round-trips through the main process, so the chip is the
     // signal that the zip was built and stored under the new thread.
-    const chip = await $('.attachment-chips .archive-chip')
+    const chip = await $('.attachment-chips .archive-chip').getElement()
     await chip.waitForDisplayed({ timeout: 30_000 })
-    await expect(await chip.$('.attachment-chip-label').getText()).toMatch(/\.zip$/)
+    expect(await chip.$('.attachment-chip-label').getText()).toMatch(/\.zip$/)
 
     const drafted = await composerText()
-    await expect(drafted).toContain('Something went wrong in another Copse thread')
-    await expect(drafted).toContain(THREAD_ID)
-    await expect(drafted).toContain('Copse version:')
-    await expect(drafted).toContain('Build commit')
-    await expect(drafted).toContain('Evidence boundary:')
-    await expect(drafted).toContain('OBSERVED')
-    await expect(drafted).toContain('CODE-VERIFIED')
-    await expect(drafted).toContain('Timestamps establish order, not causation')
+    expect(drafted).toContain('Something went wrong in another Copse thread')
+    expect(drafted).toContain(THREAD_ID)
+    expect(drafted).toContain('Copse version:')
+    expect(drafted).toContain('Build commit')
+    expect(drafted).toContain('Evidence boundary:')
+    expect(drafted).toContain('OBSERVED')
+    expect(drafted).toContain('CODE-VERIFIED')
+    expect(drafted).toContain('Timestamps establish order, not causation')
     // The draft ends on an open line: the symptom is the one thing the trace
     // cannot hold, so the prompt asks the user for it before they send.
-    await expect(drafted).toContain('What I saw:')
+    expect(drafted).toContain('What I saw:')
 
     // Nothing was sent on the user's behalf — the new thread has no transcript.
-    await expect(await $$('.messages-list .msg-user')).toBeElementsArrayOfSize(0)
+    await expect(await $$('.messages-list .msg-user').getElements()).toBeElementsArrayOfSize(0)
 
     // The new thread is active and named after the one it is about, so it is
     // findable in the sidebar before it has ever been sent.

@@ -17,17 +17,21 @@ describe('browser-hosted roadmap side panel chat width', () => {
       roadmap?.removeAttribute('data-experimental-hidden')
     })
     await browser.execute(() =>
-      document
-        .querySelector<HTMLElement>('.titlebar-text-btn[aria-label=\"Open roadmap\"]')
-        ?.click(),
+      document.querySelector<HTMLElement>('.titlebar-text-btn[aria-label="Open roadmap"]')?.click(),
     )
     await $('#roadmap-host').waitForDisplayed({ timeout: 10_000 })
     await expect($('#body')).not.toHaveElementClass('is-right-panel-horizontal')
 
     const layout = await browser.execute(() => {
-      const projects = document.getElementById('pane-projects')!.getBoundingClientRect()
-      const chat = document.getElementById('pane-chat')!.getBoundingClientRect()
-      const panel = document.getElementById('pane-files')!.getBoundingClientRect()
+      const projectsElement = document.getElementById('pane-projects')
+      if (!projectsElement) throw new Error('Missing pane-projects fixture')
+      const projects = projectsElement.getBoundingClientRect()
+      const chatElement = document.getElementById('pane-chat')
+      if (!chatElement) throw new Error('Missing pane-chat fixture')
+      const chat = chatElement.getBoundingClientRect()
+      const panelElement = document.getElementById('pane-files')
+      if (!panelElement) throw new Error('Missing pane-files fixture')
+      const panel = panelElement.getBoundingClientRect()
       const sharedWidth = chat.width + panel.width
       return {
         chatWidth: chat.width,

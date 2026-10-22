@@ -4,9 +4,9 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('latest user prompt anchor', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedStickyUserPromptFixture(process.cwd())
     await browser.reloadSession()
@@ -36,7 +36,7 @@ describe('latest user prompt anchor', () => {
       const prompt = document.querySelector('.prompt-input')
       const footer = document.querySelector('.input-footer')
       if (!list || !first || !latest || !machine || !answer || !composer || !prompt || !footer) {
-        return { error: 'missing sticky fixture element' }
+        throw new Error('missing sticky fixture element')
       }
 
       const listRect = list.getBoundingClientRect()
@@ -189,7 +189,9 @@ describe('latest user prompt anchor', () => {
     await browser.waitUntil(
       async () => !(await latest.getAttribute('class'))?.includes('is-preview-compact'),
     )
-    await browser.waitUntil(async () => (await images[0]?.getSize('width')) > 100)
+    const firstImage = images[0]
+    if (!firstImage) throw new Error('Missing first prompt image')
+    await browser.waitUntil(async () => (await firstImage.getSize('width')) > 100)
   })
 
   it('keeps a preview compact when its own shrink clamps the scroll position', async () => {
@@ -203,7 +205,11 @@ describe('latest user prompt anchor', () => {
       if (!list || !prompt || !previous || !image) throw new Error('sticky fixture is missing')
 
       list.scrollTop = 0
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => {
+          resolve()
+        }),
+      )
       await Promise.all(
         prompt
           .getAnimations({ subtree: true })
@@ -224,8 +230,8 @@ describe('latest user prompt anchor', () => {
       // clamp scrollTop back across that threshold.
       const height = list.scrollHeight - thresholdScrollTop - 8
       if (height <= 0) throw new Error('sticky fixture cannot reach the boundary')
-      list.style.flex = `0 0 ${height}px`
-      list.style.height = `${height}px`
+      list.style.flex = `0 0 ${String(height)}px`
+      list.style.height = `${String(height)}px`
       const changes: boolean[] = []
       const observer = new MutationObserver(() => {
         changes.push(prompt.classList.contains('is-preview-compact'))
@@ -274,7 +280,7 @@ describe('latest user prompt anchor', () => {
       const answer = document.querySelector('[data-message-id="msg-assistant-sticky-result"]')
       const composer = document.getElementById('input-bar')
       if (!chat || !list || !latest || !answer || !composer) {
-        return { error: 'missing narrow sticky fixture element' }
+        throw new Error('missing narrow sticky fixture element')
       }
 
       const chatRect = chat.getBoundingClientRect()

@@ -44,7 +44,7 @@ describe('copse.todos plan panel (P4)', function () {
   it('renders the plan as a level-2 plugin panel tagged with the copse.todos ids', async () => {
     const panel = await $(
       `.conversation-todos-host .plugin-panel[data-plugin-id="copse.todos"][data-contribution-id="plan"]`,
-    )
+    ).getElement()
     await panel.waitForExist({ timeout: 30_000 })
 
     assert.equal(await panel.getAttribute('data-panel-kind'), 'list')
