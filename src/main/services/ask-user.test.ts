@@ -150,6 +150,18 @@ describe('window ask_user handler', () => {
     assert.deepEqual(window.sent, ['agent:ask-user-request', 'agent:ask-user-cancelled'])
   })
 
+  it('settles as timed out, not answered, once nobody answers within 30 minutes', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    const window = fakeWindowDeps()
+    setAskUserHandler(createWindowAskUserHandler(window.deps))
+    const pending = requestUserAnswers(req, new AbortController().signal)
+
+    t.mock.timers.tick(30 * 60 * 1000)
+
+    assert.deepEqual(await pending, { answers: ['', ''], timedOut: true })
+    assert.deepEqual(window.sent, ['agent:ask-user-request', 'agent:ask-user-cancelled'])
+  })
+
   it('shares desktop question registration and withdrawal with host consumers and mobile', async () => {
     const window = fakeWindowDeps()
     setAskUserHandler(createWindowAskUserHandler(window.deps))

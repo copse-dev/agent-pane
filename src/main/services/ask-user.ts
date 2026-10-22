@@ -1,7 +1,7 @@
 import type { BrowserWindow, IpcMain } from 'electron'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
-import type { AskUserQuestion } from '@copse/agent/ask-user-format.ts'
+import { ASK_USER_TIMEOUT_MS, type AskUserQuestion } from '@copse/agent/ask-user-format.ts'
 import {
   askRespondSchema,
   assertMainFrameSender,
@@ -29,12 +29,13 @@ export interface AskUserResult {
    * as answered.
    */
   cancelled?: true
+  /**
+   * No answer arrived within {@link ASK_USER_TIMEOUT_MS}. The answers are blank
+   * because the user is likely away, not because they chose to leave them blank,
+   * so a caller must not report them as answered.
+   */
+  timedOut?: true
 }
-
-// A pending ask never auto-resolves, so the agent loop would hang forever if the
-// window is closed before the user answers. Bound the wait and return blanks on
-// timeout so the loop unblocks and the agent can proceed without an answer.
-const ASK_USER_TIMEOUT_MS = 30 * 60 * 1000
 
 /**
  * Transport that actually asks the user. The GUI registers a BrowserWindow/IPC
@@ -77,6 +78,16 @@ function blankAnswers(req: AskUserRequest): AskUserResult {
 /** The run stopped while (or before) asking: blank answers, marked as withdrawn. */
 function cancelledAnswers(req: AskUserRequest): AskUserResult {
   return { ...blankAnswers(req), cancelled: true }
+}
+
+/**
+ * Nobody answered within {@link ASK_USER_TIMEOUT_MS}. A pending ask never
+ * auto-resolves, so without this bound the agent loop would hang forever if the
+ * window is closed before the user answers. The marker lets the tool tell the
+ * agent the user is away, so it proceeds instead of asking again.
+ */
+function timedOutAnswers(req: AskUserRequest): AskUserResult {
+  return { ...blankAnswers(req), timedOut: true }
 }
 
 export function requestUserAnswers(
@@ -209,8 +220,8 @@ export interface WindowAskUserDeps {
 
 /**
  * The handler that shows the question in the window and waits for `ask:respond`.
- * A stop withdraws the question as cancelled; the timeout withdraws it with
- * blank answers, which the tool reports as unanswered.
+ * A stop withdraws the question as cancelled; the timeout withdraws it as timed
+ * out, which the tool reports as "the user is away", not as blank answers.
  */
 export function createWindowAskUserHandler(deps: WindowAskUserDeps): AskUserHandler {
   return (req, signal) =>
@@ -235,7 +246,7 @@ export function createWindowAskUserHandler(deps: WindowAskUserDeps): AskUserHand
         withdraw(cancelledAnswers(req))
       }
       const timer = setTimeout(() => {
-        withdraw(blankAnswers(req))
+        withdraw(timedOutAnswers(req))
       }, ASK_USER_TIMEOUT_MS)
       if (typeof timer.unref === 'function') timer.unref()
       const projectId = getThreadExecutionContext()?.projectId ?? getActiveProjectId()
