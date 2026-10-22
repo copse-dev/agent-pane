@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   compact:
-    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }}
     steps:
       - env:
           GH_TOKEN: ${{ github.token }}
