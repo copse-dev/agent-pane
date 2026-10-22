@@ -31,8 +31,8 @@ describe('prepareAgentHistory', () => {
       { role: 'system', content: 'You are helpful.' },
       userMessage(400),
       ...Array.from({ length: 8 }, (_, i): LLMMessage[] => [
-        { role: 'assistant', content: [{ id: `tc${i}`, name: 'read_file', args: {} }] },
-        { role: 'tool', toolResults: [{ toolCallId: `tc${i}`, result: 'ok' }] },
+        { role: 'assistant', content: [{ id: `tc${String(i)}`, name: 'read_file', args: {} }] },
+        { role: 'tool', toolResults: [{ toolCallId: `tc${String(i)}`, result: 'ok' }] },
       ]).flat(),
     ]
     setLastMeasuredInputTokens(1_000_000)
