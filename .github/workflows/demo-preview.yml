@@ -66,7 +66,7 @@ jobs:
     # Skip forks entirely (their pushes don't trigger this anyway; explicit for
     # clarity). Prefer the self-hosted check fleet when configured.
     if: github.repository == 'copse-dev/agent-pane'
-    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }}
     outputs:
       found: ${{ steps.target.outputs.found }}
       pr: ${{ steps.target.outputs.pr }}
@@ -360,7 +360,7 @@ jobs:
   deploy:
     needs: publish
     if: needs.publish.outputs.published == 'true'
-    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }}
     permissions:
       actions: write
     steps:
@@ -435,7 +435,7 @@ jobs:
   comment:
     needs: publish
     if: needs.publish.outputs.published == 'true' && needs.publish.outputs.pr != ''
-    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }}
     permissions:
       pull-requests: write
       pages: read
