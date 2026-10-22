@@ -323,7 +323,9 @@ export function trimMessagesInPlace(
   // estimates on every drop. `estimates` stays index-aligned with `messages`; the
   // system prompt is never a drop target.
   const measured =
-    opts?.measuredInputTokens === undefined ? getLastMeasuredInputTokens() : opts.measuredInputTokens
+    opts?.measuredInputTokens === undefined
+      ? getLastMeasuredInputTokens()
+      : opts.measuredInputTokens
   const anchor = compactionReplayStart(messages, opts?.compaction)
   const estimates = messages.map((message, i) =>
     i < anchor && message.role !== 'system' && message.role !== 'developer'
