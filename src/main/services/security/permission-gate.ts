@@ -289,7 +289,7 @@ function shellApprovalAuditContext(): NonNullable<ApprovalRequest['shellContext'
   return {
     sandboxAvailable: commandRunsSandboxed(getAgentExecutionRoot()),
     autoRunEnabled: getSetting<boolean>('autoRunSandboxCommands', true),
-    workspaceTrusted: isWorkspaceTrusted(getWorkspaceRoot()),
+    workspaceTrusted: isWorkspaceTrusted(getAgentProjectRoot()),
     guardedYolo: currentRunUsesGuardedYolo(threadId),
     networkScopeActive: isSandboxNetworkScopeActive(),
   }
