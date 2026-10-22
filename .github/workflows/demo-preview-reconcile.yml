@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   reconcile:
-    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }}
     outputs:
       changed: ${{ steps.reconcile.outputs.changed }}
     steps:
