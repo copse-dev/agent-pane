@@ -1,12 +1,16 @@
 import { createFakeApi } from '../../../src/renderer/fake-api.test-support.ts'
 import { createStorageMaintenancePanel } from '../../../src/renderer/views/storage-maintenance-panel.ts'
 import { mountConfirmDialog } from '../../../src/renderer/views/confirm-dialog.ts'
-import { emptyContainerStorage } from '@shared/types/storage-cleanup.ts'
+import {
+  emptyContainerStorage,
+  type StorageCleanupResult,
+  type StorageMaintenanceState,
+} from '@shared/types/storage-cleanup.ts'
 import { el, qsRequired } from '../../../src/renderer/dom/helpers.ts'
 
 const api = createFakeApi()
 const busy = new URLSearchParams(location.search).has('busy')
-api.storage.maintenance = async () => ({
+api.storage.maintenance = async (): Promise<StorageMaintenanceState> => ({
   retention: { enabled: true, days: 30 },
   areas: [
     { area: 'runs', bytes: 0, entries: 0, busy: false },
@@ -43,7 +47,11 @@ api.storage.maintenance = async () => ({
     ],
   },
 })
-api.storage.containerCleanup = async () => ({ removed: 1, bytes: 1024 ** 3, skipped: 0 })
+api.storage.containerCleanup = async (): Promise<StorageCleanupResult> => ({
+  removed: 1,
+  bytes: 1024 ** 3,
+  skipped: 0,
+})
 mountConfirmDialog()
 const panel = createStorageMaintenancePanel(api)
 const app = qsRequired(document, '#app')
