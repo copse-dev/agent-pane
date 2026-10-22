@@ -241,6 +241,13 @@ export function worktreePreparationShellEnvironment(
     const plan = readWorktreePreparationPlan(root)
     if (plan.problems.length !== 0) return env
     const result = preparationCacheEnvironment(env)
+    // Only preparation fills Copse's Corepack cache. Until it has stamped this
+    // worktree, keep the user's own cache, which the sandbox re-allows read-only,
+    // so a pinned pnpm/yarn starts without trying to download.
+    if (!/^[a-f0-9]{64}$/.test(readStamp(root) ?? '')) {
+      if (env['COREPACK_HOME'] === undefined) delete result['COREPACK_HOME']
+      else result['COREPACK_HOME'] = env['COREPACK_HOME']
+    }
     return plan.ecosystem === 'cargo'
       ? { ...result, CARGO_HOME: join(copseCacheDir(env), 'cargo') }
       : result
