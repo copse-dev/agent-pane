@@ -42,7 +42,7 @@ jobs:
       github.event.sender.type == 'User' &&
       contains(github.event.comment.body, '<!-- copse-e2e-screenshot-review -->') &&
       contains(github.event.comment.body, '[x] **Commit the ticked screenshots**')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
