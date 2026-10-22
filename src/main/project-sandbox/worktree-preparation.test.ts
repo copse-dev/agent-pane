@@ -118,7 +118,16 @@ describe('real worktree preparation containment', { skip: process.platform === '
         `#!/usr/bin/env node
 const fs=require('node:fs'),assert=require('node:assert/strict');
 assert.throws(()=>fs.readFileSync(${JSON.stringify(unrelated)}),/EPERM|EACCES|ENOENT/);
-assert.throws(()=>fs.writeFileSync(${JSON.stringify(unrelated)},'escaped'),/EPERM|EACCES|ENOENT/);
+let wrote=false;
+try { fs.writeFileSync(${JSON.stringify(unrelated)},'escaped'); wrote=true }
+catch (error) { if (!['EPERM','EACCES','ENOENT','EROFS'].includes(error.code)) throw error }
+// Seatbelt must refuse the write. bwrap hides denied roots behind a disposable
+// tmpfs, so on Linux the write can land in that private layer instead; it must
+// still never reach the host file, which the test reads after both runs.
+if (wrote) {
+  assert.equal(process.platform,'linux','write outside the preparation grants succeeded');
+  assert.equal(fs.readFileSync(${JSON.stringify(unrelated)},'utf8'),'escaped');
+}
 console.log(require('../version.cjs'));
 `,
         true,

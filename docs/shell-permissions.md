@@ -766,7 +766,10 @@ subprocess using kernel isolation with no proxy ports or sockets; other agents' 
 cannot widen this boundary. Missing runtime versions or offline inputs fail with remediation.
 Node preparation resolves PATH directory aliases and grants the canonical executable files and recognized
 npm/Corepack/package-manager implementation trees. It does not grant a whole fnm registry, installation
-parent, or home directory. Preflight separately checks npm when managed Socket Firewall needs bootstrapping,
+parent, or home directory. bubblewrap bind-mounts a granted file through its symlink, which turns fnm's
+`bin/npm` into a copy whose relative requires break, so on Linux the contained process finds these
+commands first through private symlinks in its scratch directory that point at the canonical executables.
+Preflight separately checks npm when managed Socket Firewall needs bootstrapping,
 even for pnpm, Yarn, and Bun projects.
 Runtime installation/version switching and Windows sandbox support remain separate capabilities.
 
