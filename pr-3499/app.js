@@ -21218,6 +21218,14 @@ var init_ipc_error_message = __esm({
   }
 });
 
+// packages/llm/src/classifiers/types.ts
+var HTTP_CLASSIFIER_PROTOCOLS;
+var init_types = __esm({
+  "packages/llm/src/classifiers/types.ts"() {
+    HTTP_CLASSIFIER_PROTOCOLS = ["systemone", "featherless", "decisions"];
+  }
+});
+
 // packages/llm/src/classifiers/presets.ts
 function classifierCredentialId(id) {
   if (!/^[a-z0-9-]{1,53}$/.test(id)) throw new Error("Invalid classifier profile ID");
@@ -21254,6 +21262,71 @@ var init_presets = __esm({
           baseUrl: "https://api.liquid.ai/decisions/v1",
           auth: "bearer",
           apiKeyEnv: "LIQUID_API_KEY"
+        }
+      },
+      {
+        id: "fastino-glide",
+        label: "Fastino / GLiDE",
+        model: "fastino/glide",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "https://api.fastino.ai/v1",
+          auth: "bearer",
+          apiKeyEnv: "FASTINO_API_KEY"
+        }
+      },
+      {
+        id: "celeris",
+        label: "Celeris-1 Decision",
+        model: "celeris-1-decision",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          baseUrl: "https://inference.celeris.ai/celeris-1-decision/v1",
+          auth: "bearer",
+          apiKeyEnv: "CELERIS_API_KEY"
+        }
+      },
+      {
+        id: "microsoft-decision",
+        label: "Microsoft-Decision-1 (OpenRouter)",
+        model: "microsoft/microsoft-decision-1",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "decisions",
+          baseUrl: "https://openrouter.ai/api/alpha",
+          auth: "bearer",
+          apiKeyEnv: "OPENROUTER_API_KEY"
+        }
+      },
+      {
+        id: "perplexity-decider",
+        label: "Perplexity / Decider v1.1 (OpenRouter)",
+        model: "perplexity/pplx-decider-v1.1-27b",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "decisions",
+          baseUrl: "https://openrouter.ai/api/alpha",
+          auth: "bearer",
+          apiKeyEnv: "OPENROUTER_API_KEY"
+        }
+      },
+      {
+        id: "mercury-decide",
+        label: "Inception / Mercury Decide (OpenRouter)",
+        model: "inception/mercury-decide",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "decisions",
+          baseUrl: "https://openrouter.ai/api/alpha",
+          auth: "bearer",
+          apiKeyEnv: "OPENROUTER_API_KEY"
         }
       },
       {
@@ -21309,6 +21382,23 @@ var init_presets = __esm({
       }
     ];
     CLASSIFIER_CREDENTIAL_PREFIX = "classifier-";
+  }
+});
+
+// packages/std/src/member-of.ts
+function memberOf(members2) {
+  const set2 = new Set(members2);
+  return (value) => set2.has(value);
+}
+var init_member_of = __esm({
+  "packages/std/src/member-of.ts"() {
+  }
+});
+
+// src/shared/member-of.ts
+var init_member_of2 = __esm({
+  "src/shared/member-of.ts"() {
+    init_member_of();
   }
 });
 
@@ -30348,9 +30438,10 @@ function createClassifiersSection(api2) {
     save.addEventListener("click", () => {
       void run4(async () => {
         captureDraft?.();
+        const protocol = read2("Protocol");
         const connection = profile.connection.type === "http" ? {
           type: "http",
-          protocol: read2("Protocol") === "featherless" ? "featherless" : "systemone",
+          protocol: isHttpClassifierProtocol(protocol) ? protocol : "systemone",
           baseUrl: read2("Url"),
           auth: read2("Auth") === "none" ? "none" : "bearer",
           ...read2("KeyEnv") ? { apiKeyEnv: read2("KeyEnv") } : {}
@@ -30491,10 +30582,12 @@ function createClassifiersSection(api2) {
   renderLocal();
   return { root, refresh };
 }
-var PROTOCOL_CHOICES, AUTH_CHOICES, BACKEND_CHOICES, MODE_CHOICES;
+var PROTOCOL_CHOICES, isHttpClassifierProtocol, AUTH_CHOICES, BACKEND_CHOICES, MODE_CHOICES;
 var init_classifiers_section = __esm({
   "src/renderer/views/setup/classifiers-section.ts"() {
+    init_types();
     init_presets();
+    init_member_of2();
     init_helpers();
     init_disclosure_summary();
     init_inline_status();
@@ -30503,8 +30596,10 @@ var init_classifiers_section = __esm({
     init_ipc_error_message();
     PROTOCOL_CHOICES = [
       { value: "systemone", label: "SystemOne" },
+      { value: "decisions", label: "Decisions API" },
       { value: "featherless", label: "Featherless classifier" }
     ];
+    isHttpClassifierProtocol = memberOf(HTTP_CLASSIFIER_PROTOCOLS);
     AUTH_CHOICES = [
       { value: "none", label: "None" },
       { value: "bearer", label: "Bearer token (API key)" }
@@ -33441,23 +33536,6 @@ var init_sanitize_dompurify = __esm({
   }
 });
 
-// packages/std/src/member-of.ts
-function memberOf(members2) {
-  const set2 = new Set(members2);
-  return (value) => set2.has(value);
-}
-var init_member_of = __esm({
-  "packages/std/src/member-of.ts"() {
-  }
-});
-
-// src/shared/member-of.ts
-var init_member_of2 = __esm({
-  "src/shared/member-of.ts"() {
-    init_member_of();
-  }
-});
-
 // src/shared/types/tool-permissions.ts
 var TOOL_PERMISSION_POLICIES;
 var init_tool_permissions = __esm({
@@ -36144,6 +36222,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-1-flash', fetched 2026-09-11",
           asOf: "2026-09-11"
+        }
+      ],
+      "deepseek-v4-1-flash-1017": [
+        {
+          value: 45.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-1-flash-1017', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "deepseek-v4-1-flash-non-reasoning": [
@@ -40684,10 +40770,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 10,
+          value: 9.3,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-4-maverick', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'llama-4-maverick', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "llama-4-scout": [
@@ -40698,10 +40784,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.1,
+          value: 6.5,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'llama-4-scout', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'llama-4-scout', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "llama-65b": [
@@ -40838,10 +40924,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 13.8,
+          value: 10.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mercury-2', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'mercury-2', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "mercury-2-5": [
@@ -40902,10 +40988,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 25.2,
+          value: 21.8,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-0424', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'mimo-v2-5-0424', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "mimo-v2-5-pro": [
@@ -41156,6 +41242,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         }
       ],
+      "minimax-m3-1-flash": [
+        {
+          value: 42.7,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'minimax-m3-1-flash', fetched 2026-10-20",
+          asOf: "2026-10-20"
+        }
+      ],
       "ministral-3-14b": [
         {
           value: 11.2,
@@ -41396,10 +41490,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.2,
+          value: 7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3-2', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3-2', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "mistral-small-4": [
@@ -41440,8 +41534,8 @@ var init_model_intellect_generated = __esm({
         {
           value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-13",
-          asOf: "2026-10-13"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "mixtral-8x7b-instruct": [
@@ -41634,6 +41728,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         }
       ],
+      "muse-spark-open": [
+        {
+          value: 38.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'muse-spark-open', fetched 2026-10-20",
+          asOf: "2026-10-20"
+        }
+      ],
       "muse-wonder": [
         {
           value: 52.4,
@@ -41664,6 +41766,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "nemotron-3-5-bolt-74b-a9b": [
+        {
+          value: 21.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nemotron-3-5-bolt-74b-a9b', fetched 2026-10-20",
+          asOf: "2026-10-20"
+        }
+      ],
       "nemotron-3-5-lightning": [
         {
           value: 23.6,
@@ -41676,6 +41786,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'nemotron-3-5-lightning', fetched 2026-09-22",
           asOf: "2026-09-22"
+        }
+      ],
+      "nemotron-3-5-super-vl": [
+        {
+          value: 26.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'nemotron-3-5-super-vl', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "nemotron-3-nano-omni-30b-a3b": [
@@ -42604,10 +42722,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.2,
+          value: 6.4,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-14b-instruct-reasoning', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-14b-instruct-reasoning', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "qwen3-235b-a22b-instruct": [
@@ -42744,10 +42862,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 8.6,
+          value: 7.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-32b-instruct-reasoning', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-32b-instruct-reasoning', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "qwen3-4b-2507-instruct": [
@@ -43284,10 +43402,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 7.3,
+          value: 5.2,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'qwen3-8b-instruct-reasoning', fetched 2026-09-22",
-          asOf: "2026-09-22"
+          source: "Artificial Analysis API (index v4.3), model 'qwen3-8b-instruct-reasoning', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       "qwen3-coder-30b-a3b-instruct": [
@@ -43612,6 +43730,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "reflection-beam": [
+        {
+          value: 30.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'reflection-beam', fetched 2026-10-20",
+          asOf: "2026-10-20"
+        }
+      ],
       "reka-flash": [
         {
           value: 6,
@@ -43866,10 +43992,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         },
         {
-          value: 28.2,
+          value: 26.6,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'solar-pro4', fetched 2026-09-11",
-          asOf: "2026-09-11"
+          source: "Artificial Analysis API (index v4.3), model 'solar-pro4', fetched 2026-10-20",
+          asOf: "2026-10-20"
         }
       ],
       sonar: [
@@ -49178,10 +49304,6 @@ var init_model_coverage = __esm({
 function modelDisplayLabel(model) {
   return displayModelLabel2(model);
 }
-function agentModelIntellectHint(...forms) {
-  const id = resolveAgentModelIdentity(...forms);
-  return id === null ? null : modelIntellectHint(id);
-}
 async function pluginModelOptions(api2, includeAgentModels, current) {
   if (!includeAgentModels) return [];
   try {
@@ -49216,13 +49338,17 @@ function acpAgentOptions(agents) {
       for (const model of models) {
         const label = acpModelChoiceLabel(model, ": ");
         const versioned = acpModelVersionName(model.description);
-        const hint = agentModelIntellectHint(model.value, versioned, model.label, label);
+        const lineageId = resolveAgentModelIdentity(model.value, versioned, model.label, label);
+        const hint = lineageId === null ? null : modelIntellectHint(lineageId);
         options.push({
           retention: ACP_RETENTION_NOTICE,
           value: acpModelValue(agent2.id, model.value),
           label: hint ? `${label}: ${hint}` : label,
           shortLabel: label,
-          group
+          group,
+          // Scoped to this agent: a different agent's newer release never hides
+          // a model only this agent can actually run.
+          ...lineageId ? { lineageId, lineageScope: `acp:${agent2.id}` } : {}
         });
       }
     } else {
@@ -49344,7 +49470,9 @@ async function remoteAgentOptions(api2, isAvailable, current, preferAcpForClaude
         label,
         group: OPENAI_AGENT_GROUP,
         retention: OPENAI_AGENT_RETENTION_NOTICE,
-        supportsImages: true
+        supportsImages: true,
+        lineageId: id,
+        lineageScope: "remote-agent:openai"
       });
     }
     const selected = parseRemoteAgentModelSelection(current);
@@ -49366,19 +49494,28 @@ async function remoteAgentOptions(api2, isAvailable, current, preferAcpForClaude
     } catch {
     }
     const seen = /* @__PURE__ */ new Set();
-    const add2 = (value, label) => {
+    const add2 = (value, label, lineageId) => {
       if (seen.has(value)) return;
       seen.add(value);
-      options.push({ value, label, group });
+      options.push({
+        value,
+        label,
+        group,
+        // Scoped to Cursor: an unrelated agent/provider's newer release never
+        // hides a model only Cursor's catalog actually offers.
+        ...lineageId ? { lineageId, lineageScope: `remote-agent:${REMOTE_AGENT_PROVIDER_CURSOR}` } : {}
+      });
     };
     add2(remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR), "Default");
     for (const model of liveModels) {
       const vendorLabel = model.label || model.id;
       const label = canonicalModelLabel(vendorLabel);
-      const hint = agentModelIntellectHint(model.id, vendorLabel, label);
+      const lineageId = resolveAgentModelIdentity(model.id, vendorLabel, label);
+      const hint = lineageId === null ? null : modelIntellectHint(lineageId);
       add2(
         remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR, model.id),
-        hint ? `${label}: ${hint}` : label
+        hint ? `${label}: ${hint}` : label,
+        lineageId ?? void 0
       );
     }
     const currentSelection = parseRemoteAgentModelSelection(current);
@@ -49390,17 +49527,26 @@ async function remoteAgentOptions(api2, isAvailable, current, preferAcpForClaude
     const baseGroup = remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_ANTHROPIC);
     const group = preferAcpForClaude ? `${baseGroup} (billed to your API key)` : baseGroup;
     const seen = /* @__PURE__ */ new Set();
-    const add2 = (value, label) => {
+    const add2 = (value, label, lineageId) => {
       if (seen.has(value)) return;
       seen.add(value);
-      options.push({ value, label, group });
+      options.push({
+        value,
+        label,
+        group,
+        // Scoped to the managed Anthropic agent, separately from the direct-key
+        // "Cloud models" group: the two are different billing routes, each with
+        // its own availability.
+        ...lineageId ? { lineageId, lineageScope: `remote-agent:${REMOTE_AGENT_PROVIDER_ANTHROPIC}` } : {}
+      });
     };
     for (const id of MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT) {
       const label = cloudModelDisplayLabel(id);
       const hint = modelIntellectHint(id);
       add2(
         remoteAgentModelValue(REMOTE_AGENT_PROVIDER_ANTHROPIC, id),
-        hint ? `${label}: ${hint}` : label
+        hint ? `${label}: ${hint}` : label,
+        id
       );
     }
     const currentSelection = parseRemoteAgentModelSelection(current);
@@ -49586,9 +49732,18 @@ async function fetchModelOptions(api2, current, opts = {}) {
     if (option.value !== current) return [];
     return [{ ...option, label: `${option.label} (blocked in Settings)`, disabled: true }];
   });
-  const offered = unblockedOptions.map((option) => option.value);
+  const lineageIdsByScope = /* @__PURE__ */ new Map();
+  for (const option of unblockedOptions) {
+    const scope = option.lineageScope ?? "";
+    const id = option.lineageId ?? option.value;
+    const bucket = lineageIdsByScope.get(scope);
+    if (bucket) bucket.push(id);
+    else lineageIdsByScope.set(scope, [id]);
+  }
   const visibleOptions = unblockedOptions.flatMap((option) => {
-    const successor = supersedingModel(option.value, offered);
+    const id = option.lineageId ?? option.value;
+    const offered = lineageIdsByScope.get(option.lineageScope ?? "") ?? [];
+    const successor = supersedingModel(id, offered);
     if (successor === null) return [option];
     if (option.value !== current) return [];
     return [
@@ -51229,7 +51384,7 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
   const chevron = el(
     "span",
     { class: "model-picker-chevron", "aria-hidden": "true" },
-    chevronDownIcon("ui-icon ui-icon-sm")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   const triggerCost = el(
     "span",
@@ -53790,10 +53945,10 @@ function createAcpAgentsSection(api2, opts = {}) {
         detectedModels = selectorChoicesAfterProbe(detectedModels, probe.models);
         detectedModes = selectorChoicesAfterProbe(detectedModes, probe.modes);
         if (probe.models) {
-          void modelPicker.refresh(modelSelect.value || probe.models.currentValue);
+          void modelPicker.refresh(modelSelect.value);
         }
         if (probe.modes) {
-          setModeOptions(probe.modes.choices, modeSelect.value || probe.modes.currentValue);
+          setModeOptions(probe.modes.choices, modeSelect.value);
         }
         detectedModelsAt = Date.now();
         const saved = agents.find((candidate) => candidate.id === id);
@@ -53810,8 +53965,8 @@ function createAcpAgentsSection(api2, opts = {}) {
           void api2.settings.set("registeredAcpAgents", agents);
         }
         const bits = [
-          probe.models ? `${String(probe.models.choices.length)} models (default: ${probe.models.currentValue})` : "no selectable models",
-          probe.modes ? `${String(probe.modes.choices.length)} permission modes` : ""
+          probe.models ? `${String(probe.models.choices.length)} models (agent default: ${probe.models.currentValue})` : "no selectable models",
+          probe.modes ? `${String(probe.modes.choices.length)} permission modes (agent default: ${probe.modes.currentValue})` : ""
         ].filter(Boolean);
         setInlineStatus(modelStatus, "ok", `Detected ${bits.join(", ")}.`);
       }).catch((err2) => {
@@ -60933,7 +61088,7 @@ function recordContextTrim(store2, threadId, record2) {
   store2.emit("threads_changed");
 }
 function addMessage(store2, threadId, role, content = "", images, attachments, opts) {
-  const id = randomUUID();
+  const id = opts?.id ?? randomUUID();
   const message2 = {
     id,
     role,
@@ -61449,6 +61604,38 @@ var init_thread_helpers = __esm({
   }
 });
 
+// src/shared/store/transcript-state.ts
+function transcriptMeta(thread) {
+  const meta3 = {
+    status: thread.status,
+    usage: thread.usage,
+    updatedAt: thread.updatedAt
+  };
+  for (const key of TRANSCRIPT_META_KEYS) Object.assign(meta3, { [key]: thread[key] });
+  return meta3;
+}
+var TRANSCRIPT_META_KEYS;
+var init_transcript_state = __esm({
+  "src/shared/store/transcript-state.ts"() {
+    TRANSCRIPT_META_KEYS = [
+      "status",
+      "usage",
+      "updatedAt",
+      "todos",
+      "contextTrims",
+      "contextSnapshot",
+      "resolvedModel",
+      "model",
+      "automation",
+      "reviewReport",
+      "worktreeChoice",
+      "gitBranch",
+      "worktree",
+      "deferredWorktree"
+    ];
+  }
+});
+
 // src/renderer/controller/background-threads.ts
 function carryRunningThreads(store2, outgoingProjectId, outgoingThreads) {
   const running = outgoingThreads.filter(
@@ -61500,6 +61687,30 @@ function dropProjectBackgroundThreads(store2, projectId) {
 var init_background_threads = __esm({
   "src/renderer/controller/background-threads.ts"() {
     init_pending_submissions();
+  }
+});
+
+// src/renderer/controller/runtime-transcript.ts
+function applyRuntimeOwnedChunk(messageIds, apply4) {
+  for (const id of messageIds) runtimeOwnedMessages.add(id);
+  applyingDepth += 1;
+  try {
+    apply4();
+  } finally {
+    applyingDepth -= 1;
+  }
+}
+function isApplyingRuntimeOwnedChunk() {
+  return applyingDepth > 0;
+}
+function isRuntimeOwnedMessage(messageId) {
+  return runtimeOwnedMessages.has(messageId);
+}
+var applyingDepth, runtimeOwnedMessages;
+var init_runtime_transcript = __esm({
+  "src/renderer/controller/runtime-transcript.ts"() {
+    applyingDepth = 0;
+    runtimeOwnedMessages = /* @__PURE__ */ new Set();
   }
 });
 
@@ -61564,6 +61775,10 @@ function serializedNavigation(api2, navigation) {
   lastNavigation = navigation;
   return serializedWrite("mainWindow:navigation", () => api2.windowState.setNavigation(navigation));
 }
+function afterThreadWrites(projectId, threadId, start) {
+  const pending = writeChains.get(threadWriteKey(projectId, threadId));
+  return pending ? pending.catch(() => void 0).then(start) : start();
+}
 function metaOf(thread) {
   const {
     messages: _messages,
@@ -61589,6 +61804,24 @@ function metaPatch(prev, next) {
     if (!Object.hasOwn(after, key)) patch[key] = void 0;
   }
   return patch;
+}
+function acceptRuntimeThreadMeta(projectId, thread, before) {
+  const previous = persistedMeta.get(projectId)?.get(thread.id);
+  if (!previous) return;
+  const next = { ...previous };
+  for (const key of TRANSCRIPT_META_KEYS) {
+    if (before && JSON.stringify(before[key]) === JSON.stringify(thread[key])) continue;
+    Object.assign(next, { [key]: thread[key] });
+  }
+  persistedMeta.get(projectId)?.set(thread.id, next);
+}
+function recordPersistedThread(projectId, thread) {
+  let metas = persistedMeta.get(projectId);
+  if (!metas) {
+    metas = /* @__PURE__ */ new Map();
+    persistedMeta.set(projectId, metas);
+  }
+  metas.set(thread.id, metaOf(thread));
 }
 function reconcileThreads(api2, projectId, threads) {
   const prev = persistedMeta.get(projectId) ?? /* @__PURE__ */ new Map();
@@ -61662,8 +61895,22 @@ function saveNavigation(api2, activeProjectId, activeThreadId) {
 function saveProjectGroups(api2, groups) {
   return serializedSet(api2, KEY_PROJECT_GROUPS, groups);
 }
+function invalidateProjectThreadLoads(api2, projectId) {
+  let revisions = threadLoadRevisions.get(api2);
+  if (!revisions) {
+    revisions = /* @__PURE__ */ new Map();
+    threadLoadRevisions.set(api2, revisions);
+  }
+  revisions.set(projectId, (revisions.get(projectId) ?? 0) + 1);
+}
 async function loadThreads(api2, projectId) {
-  const threads = sortThreadsNewestFirst(await api2.threads.loadProject(projectId)).map(
+  let loaded;
+  let revision;
+  do {
+    revision = threadLoadRevisions.get(api2)?.get(projectId) ?? 0;
+    loaded = await api2.threads.loadProject(projectId);
+  } while (revision !== (threadLoadRevisions.get(api2)?.get(projectId) ?? 0));
+  const threads = sortThreadsNewestFirst(loaded).map(
     (thread) => thread.status !== "running" && thread.lastSettledAt === void 0 ? { ...thread, lastSettledAt: thread.updatedAt } : thread
   );
   const metas = /* @__PURE__ */ new Map();
@@ -61781,6 +62028,7 @@ function attachAutosave(store2, api2) {
         schedule();
         return;
       }
+      if (isApplyingRuntimeOwnedChunk()) return;
       const message2 = getThreadById(store2, threadId)?.messages.find(
         (candidate) => candidate.id === messageId
       );
@@ -61801,6 +62049,10 @@ function attachAutosave(store2, api2) {
     }),
     store2.on("message_added", (threadId, messageId) => {
       const message2 = getThreadById(store2, threadId)?.messages.find((m3) => m3.id === messageId);
+      if (message2?.role === "user" && isApplyingRuntimeOwnedChunk()) {
+        schedule();
+        return;
+      }
       if (message2?.role === "user") {
         const backgroundProjectId = backgroundProjectOf(store2, threadId);
         if (backgroundProjectId) {
@@ -61814,6 +62066,7 @@ function attachAutosave(store2, api2) {
       else schedule();
     }),
     store2.on("message_done", (messageId) => {
+      if (isApplyingRuntimeOwnedChunk()) return;
       const threadId = threadIdOfMessage(messageId);
       if (!threadId) return;
       const backgroundProjectId = backgroundProjectOf(store2, threadId);
@@ -61830,6 +62083,8 @@ function attachAutosave(store2, api2) {
     // carry the latest args/response across an app restart. Do not persist a
     // running tool: the v1 spine deliberately has no running status.
     store2.on("tool_call_updated", (messageId, toolCallId) => {
+      if (isApplyingRuntimeOwnedChunk()) return;
+      if (!toolCallId && isRuntimeOwnedMessage(messageId)) return;
       const threadId = threadIdOfMessage(messageId);
       if (!threadId) return;
       const message2 = getThreadById(store2, threadId)?.messages.find(
@@ -61870,11 +62125,13 @@ function attachAutosave(store2, api2) {
   activeAutosave = autosave;
   return autosave;
 }
-var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, navigationHeldFor, threadWriteKey, persistedMeta, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
+var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, navigationHeldFor, threadWriteKey, persistedMeta, threadLoadRevisions, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
 var init_persistence = __esm({
   "src/renderer/controller/persistence.ts"() {
     init_thread_helpers();
+    init_transcript_state();
     init_background_threads();
+    init_runtime_transcript();
     init_unknown_value3();
     KEY_PROJECTS = "projects";
     KEY_PROJECT_GROUPS = "projectGroups";
@@ -61886,6 +62143,7 @@ var init_persistence = __esm({
     navigationHeldFor = null;
     threadWriteKey = (projectId, threadId) => `thread:${projectId}:${threadId}`;
     persistedMeta = /* @__PURE__ */ new Map();
+    threadLoadRevisions = /* @__PURE__ */ new WeakMap();
     AUTOSAVE_DEBOUNCE_MS = 250;
     activeAutosave = null;
   }
@@ -62455,10 +62713,12 @@ var init_tool_display = __esm({
       git_diff: { running: "Viewing git diff", done: "Viewed git diff" },
       git_log: { running: "Viewing git log", done: "Viewed git log" },
       git_show: { running: "Viewing git commit", done: "Viewed git commit" },
+      git_fetch: { running: "Fetching from origin", done: "Fetched from origin" },
       gh_pr_list: { running: "Listing pull requests", done: "Listed pull requests" },
       gh_pr_view: { running: "Viewing pull request", done: "Viewed pull request" },
       gh_run_list: { running: "Listing CI runs", done: "Listed CI runs" },
       gh_run_view: { running: "Viewing CI run logs", done: "Viewed CI run logs" },
+      gh_api_read: { running: "Reading GitHub API", done: "Read GitHub API" },
       investigate_ci: { running: "Investigating CI", done: "Investigated CI" },
       delegate_step: { running: "Delegating step", done: "Delegated step" },
       task: { running: "Running agent", done: "Ran agent" },
@@ -62525,10 +62785,12 @@ var init_tool_display = __esm({
           "git_diff",
           "git_log",
           "git_show",
+          "git_fetch",
           "gh_pr_list",
           "gh_pr_view",
           "gh_run_list",
           "gh_run_view",
+          "gh_api_read",
           "get_ci_status",
           "wait_for_ci_checks",
           "get_ci_failure_logs"
@@ -62817,17 +63079,22 @@ function hydrationFailed(threadId) {
 function ensureThreadMessages(projectId, threadId) {
   return activeHydrator?.ensure(projectId, threadId) ?? Promise.resolve();
 }
+function showSideChatTranscript(threadId) {
+  activeHydrator?.showSideChat(threadId);
+}
 function needsHydration(thread) {
   return thread.messagesLoaded === false;
 }
-function isPinned(thread, activeThreadId) {
+function isPinned(thread, activeThreadId, visibleSideChatId) {
   if (thread.id === activeThreadId) return true;
+  if (thread.id === visibleSideChatId) return true;
   if (thread.status === "running") return true;
   return (thread.pendingMessages?.length ?? 0) > 0;
 }
 function attachThreadHydration(store2, api2) {
   const inFlight4 = /* @__PURE__ */ new Map();
   let recency = [];
+  let visibleSideChatId = null;
   const touch = (threadId) => {
     recency = [...recency.filter((id) => id !== threadId), threadId];
   };
@@ -62836,7 +63103,7 @@ function attachThreadHydration(store2, api2) {
     const byId = new Map(threads.map((t2) => [t2.id, t2]));
     const evictable = recency.filter((id) => {
       const thread = byId.get(id);
-      return thread !== void 0 && !isPinned(thread, activeThreadId);
+      return thread !== void 0 && !isPinned(thread, activeThreadId, visibleSideChatId);
     });
     const overBudget = evictable.length - HYDRATED_THREAD_BUDGET;
     if (overBudget <= 0) return;
@@ -62890,6 +63157,12 @@ function attachThreadHydration(store2, api2) {
     return request;
   };
   activeHydrator = {
+    showSideChat: (threadId) => {
+      if (visibleSideChatId === threadId) return;
+      visibleSideChatId = threadId;
+      if (threadId !== null) touch(threadId);
+      evict();
+    },
     ensure: (projectId, threadId) => {
       const state = store2.getState();
       const thread = state.threads.find((t2) => t2.id === threadId);
@@ -63086,10 +63359,11 @@ function dispatchAgentRun(store2, api2, threadId, payload, queued) {
   syncAgentActivity(store2, threadId, false);
   mark("ttft:renderer-dispatch");
   if (queued) beginPendingDispatch(store2, threadId);
-  const run4 = api2.agent.run(
+  const runPayload = JSON.stringify(refreshAgentRunPayload(store2, threadId, payload, queued?.model));
+  const run4 = afterThreadWrites(
     projectId,
     threadId,
-    JSON.stringify(refreshAgentRunPayload(store2, threadId, payload, queued?.model))
+    () => api2.agent.run(projectId, threadId, runPayload)
   );
   if (!queued) {
     void run4;
@@ -63375,6 +63649,7 @@ var init_message_queue = __esm({
     init_perf();
     init_agent_turn_busy();
     init_send_now_aborts();
+    init_persistence();
     pendingDispatches = /* @__PURE__ */ new WeakMap();
   }
 });
@@ -63459,7 +63734,7 @@ function showToast(message2, opts = {}) {
   const host = ensureHost();
   const variant = opts.variant ?? "info";
   const duration3 = opts.durationMs ?? DEFAULT_DURATION_MS;
-  const existing = findVisibleToast(message2, variant);
+  const existing = opts.action ? null : findVisibleToast(message2, variant);
   if (existing) {
     existing.refresh(duration3);
     return existing.dismiss;
@@ -63483,6 +63758,19 @@ function showToast(message2, opts = {}) {
   };
   toastControls.set(toast, { dismiss, refresh });
   toast.addEventListener("click", dismiss);
+  if (opts.action) {
+    const action = opts.action;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ui-btn toast-action";
+    button.textContent = action.label;
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      dismiss();
+      action.onClick();
+    });
+    toast.append(button);
+  }
   return dismiss;
 }
 function findVisibleToast(message2, variant) {
@@ -64759,6 +65047,37 @@ function activate(store2, api2, id, path, sshHost, pendingThreadId) {
     console.warn("[projects] project activation failed:", failure2);
   });
 }
+function openNewProjectThread(store2, api2, projectId = store2.getState().sidebarProjectFilterId ?? store2.getState().activeProjectId) {
+  const state = store2.getState();
+  const project2 = state.projects.find((item) => item.id === projectId) ?? state.projects.find((item) => item.id === state.activeProjectId);
+  if (!project2) return;
+  if (project2.id === state.activeProjectId) {
+    switchProject(store2, api2, project2.id);
+    openNewThread(store2);
+    return;
+  }
+  store2.emit("composer_draft_flush");
+  void activateAndWait(store2, api2, project2.id, project2.path, project2.sshHost).then(() => {
+    if (store2.getState().activeProjectId === project2.id) openNewThread(store2);
+  }).catch((error62) => {
+    showErrorToast("Could not open a new thread in this project", error62);
+  });
+}
+function setSidebarProjectFilter(store2, api2, projectId) {
+  store2.setState({ sidebarProjectFilterId: projectId });
+  store2.emit("sidebar_project_filter_changed");
+  const thread = getActiveThread(store2);
+  const activeProjectId = store2.getState().activeProjectId;
+  if (thread && !isBlankThread(thread)) {
+    if (pendingSwitch && activeProjectId) switchProject(store2, api2, activeProjectId);
+    return;
+  }
+  if (projectId && projectId !== activeProjectId) {
+    openNewProjectThread(store2, api2, projectId);
+  } else if (activeProjectId) {
+    switchProject(store2, api2, activeProjectId);
+  }
+}
 function switchProject(store2, api2, id, pendingThreadId = null) {
   const proj = store2.getState().projects.find((p2) => p2.id === id);
   if (!proj) return;
@@ -65045,6 +65364,13 @@ var init_projects = __esm({
 // src/renderer/views/settings/storage-section.ts
 function createStorageSection(overlay, api2, store2, closeSettingsDialog2) {
   const maintenance = createStorageMaintenancePanel(api2);
+  const archiveDays = qsRequired(overlay, '[name="autoArchiveAfterDays"]');
+  archiveDays.addEventListener("input", () => {
+    const days = archiveDays.valueAsNumber;
+    archiveDays.setCustomValidity(
+      days === 0 || Number.isInteger(days) && days >= 3 && days <= 3650 ? "" : "Enter 0 to disable, or a whole number from 3 to 3650."
+    );
+  });
   qsRequired(overlay, '.settings-section[data-section="storage"]').append(maintenance.element);
   function fillSourceList(selector, rows, emptyText) {
     const list = qsRequired(overlay, selector);
@@ -74231,7 +74557,7 @@ var init_machine_dispatch = __esm({
 });
 
 // src/shared/types/index.ts
-var init_types = __esm({
+var init_types2 = __esm({
   "src/shared/types/index.ts"() {
     init_todo();
     init_thread();
@@ -75042,10 +75368,41 @@ Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause 
   }
   async function receiveTrigger(event) {
     if (store2.getState().activeProjectId !== event.projectId) return;
+    const observedEpoch = getThreadById(store2, event.threadId)?.currentEpoch;
     const loaded = await api2.threads.loadProject(event.projectId);
     if (store2.getState().activeProjectId !== event.projectId) return;
     const created = loaded.find((thread) => thread.id === event.threadId);
     if (!created) return;
+    if (event.headlessSettled) {
+      if (created.status === "running" || created.currentEpoch !== observedEpoch) return;
+      if (getThreadById(store2, event.threadId)?.currentEpoch !== observedEpoch) return;
+      const messages = await api2.threads.loadMessages(event.projectId, event.threadId);
+      if (store2.getState().activeProjectId !== event.projectId) return;
+      if (created.automation?.triggeredAt !== event.triggeredAt) return;
+      const current = getThreadById(store2, event.threadId);
+      if (current?.currentEpoch !== observedEpoch) return;
+      if (current && current.automation?.triggeredAt !== event.triggeredAt) return;
+      const persistedIds = new Set(messages.map((message2) => message2.id));
+      if (current?.messages.some(
+        (message2) => message2.role === "user" && !persistedIds.has(message2.id)
+      )) {
+        return;
+      }
+      store2.setState({
+        threads: sortThreadsNewestFirst([
+          {
+            ...created,
+            draftPrompt: current?.draftPrompt ?? created.draftPrompt ?? "",
+            messages,
+            messagesLoaded: true
+          },
+          ...store2.getState().threads.filter((thread) => thread.id !== created.id)
+        ])
+      });
+      store2.emit("thread_status_changed", created.id, created.status);
+      store2.emit("threads_changed");
+      return;
+    }
     if (!store2.getState().threads.some((thread) => thread.id === created.id)) {
       store2.setState({
         threads: sortThreadsNewestFirst([created, ...store2.getState().threads])
@@ -75931,7 +76288,7 @@ var WEEKDAYS;
 var init_automation_plugin_settings = __esm({
   "src/renderer/views/automation-plugin-settings.ts"() {
     init_automations_plugin();
-    init_types();
+    init_types2();
     init_lm_studio_defaults();
     init_helpers();
     init_model_options();
@@ -78296,13 +78653,14 @@ var init_permissions_markup = __esm({
               <legend>Commit signing</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="gitCommitSshAgentSocketAccess" />
-                Enable scoped SSH signing approvals (macOS)
+                Allow signed commits (macOS)
               </label>
               <p class="field-hint">
-                Off by default. Copse asks before its system SSH signer uses your configured key
-                through ssh-agent. You can remember the signer, key and socket for this project
-                until Copse restarts. Changed configuration requires approval again. Git hooks
-                keep their project sandbox; they receive no ssh-agent access. Turning this off
+                On by default. Copse's system SSH signer uses your configured key through
+                ssh-agent to sign commits without asking each time. A changed key, signer or
+                socket is re-verified before it's used again. Git hooks keep their project
+                sandbox; they receive no ssh-agent access. Set the git_commit tool to Always ask
+                in Tool Permissions to confirm every signing helper use. Turning this off
                 prevents further ssh-agent signing. With this off, a configured private key file
                 can be read and used only after a separate approval for each commit. Key contents
                 are never sent to the agent. Custom signing programs run with ordinary project
@@ -78328,7 +78686,7 @@ var init_permissions_markup = __esm({
           </section>
 `;
     permissionsFields = [
-      { name: "gitCommitSshAgentSocketAccess", kind: "checkbox", default: false, save: true },
+      { name: "gitCommitSshAgentSocketAccess", kind: "checkbox", default: true, save: true },
       { name: "browserToolsEnabled", kind: "checkbox", default: true, save: true },
       { name: "readTerminalEnabled", kind: "checkbox", default: true, save: true },
       {
@@ -78567,16 +78925,30 @@ var init_customise_markup = __esm({
 });
 
 // src/renderer/views/settings/storage-markup.ts
-var storageMarkup;
+var storageFields, storageMarkup;
 var init_storage_markup = __esm({
   "src/renderer/views/settings/storage-markup.ts"() {
+    storageFields = [
+      { name: "autoArchiveAfterDays", kind: "number", default: 3, save: true }
+    ];
     storageMarkup = `<section class="settings-section" data-section="storage">
             <h3>Storage</h3>
             <p class="settings-section-desc">
-              What Copse keeps on disk for each local project, and what it costs. Nothing here
-              changes how the agent behaves \u2014 it is where you go to see what has accumulated and
-              reclaim space.
+              Manage finished threads and see what Copse keeps on disk.
             </p>
+
+            <fieldset>
+              <legend>Finished threads \xB7 all projects</legend>
+              <label>
+                Auto-archive after inactive days
+                <input type="number" name="autoArchiveAfterDays" min="0" max="3650" step="1" aria-describedby="auto-archive-hint" />
+              </label>
+              <p class="field-hint" id="auto-archive-hint">
+                Defaults to 3 days. Enter 0 to disable, or 3 or more for a longer delay.
+                Only verified finished work is archived automatically; Copse asks when completion is unclear.
+                Conversations and files are kept, and archived threads can be restored.
+              </p>
+            </fieldset>
 
             <label class="storage-project-field">
               <span>Project</span>
@@ -79060,7 +79432,7 @@ var init_registry = __esm({
       { id: "permissions", label: "Permissions", markup: permissionsMarkup, fields: permissionsFields },
       { id: "mcp", label: "MCP servers", markup: mcpMarkup, fields: mcpFields },
       { id: "customise", label: "Customise", markup: customiseMarkup, fields: customiseFields },
-      { id: "storage", label: "Storage", markup: storageMarkup, fields: [] },
+      { id: "storage", label: "Storage", markup: storageMarkup, fields: storageFields },
       { id: "appearance", label: "Appearance", markup: appearanceMarkup, fields: appearanceFields },
       { id: "ssh", label: "SSH", markup: sshMarkup, fields: sshFields },
       {
@@ -85468,6 +85840,83 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "approval-long-code",
+        label: "Long code command approval",
+        project: project("demo-approval-long-code-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        threads: [
+          {
+            id: "demo-approval-long-code-thread",
+            title: "Review the generated script",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        approvalRequests: [
+          {
+            id: "demo-approval-long-code-request",
+            title: "Run outside sandbox?",
+            body: [
+              "node <<'SCRIPT'",
+              ...Array.from(
+                { length: 40 },
+                (_5, index) => `console.log('Checking generated source line ${String(index + 1)}')`
+              ),
+              "SCRIPT"
+            ].join("\n"),
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Runs generated code from standard input, so Copse cannot inspect the resulting file accesses\n\nThis runs with your user account\u2019s access to files and the network, beyond the project sandbox.",
+            bodyFooter: "Allow running this code once outside the sandbox?",
+            type: "shell"
+          }
+        ]
+      },
+      {
+        id: "approval-mixed-prose-code",
+        label: "Approval with paragraphs and code blocks",
+        project: project("demo-approval-mixed-prose-code-project"),
+        settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
+        threads: [
+          {
+            id: "demo-approval-mixed-prose-code-thread",
+            title: "Review the project setup",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        approvalRequests: [
+          {
+            id: "demo-approval-mixed-prose-code-setup",
+            title: "Run setup script?",
+            body: "node <<'SCRIPT'\nconst packages = ['core', 'ui']\nconsole.log(packages.join(', '))\nSCRIPT",
+            bodyAdvice: "The setup script checks local dependencies.\n\nIt runs generated JavaScript, so Copse cannot determine every file it may access.",
+            bodyFooter: "Allow the setup script to run once?",
+            type: "shell"
+          },
+          {
+            id: "demo-approval-mixed-prose-code-preview",
+            title: "Preview migration?",
+            body: "node <<'SCRIPT'\nconst changes = ['add index', 'copy rows']\nconsole.log(changes.join('\\n'))\nSCRIPT",
+            bodyAdvice: "The migration preview reads project data and prints the planned changes.\n\nIt opens a local resource outside the project sandbox.",
+            bodyFooter: "Allow the migration preview to run once?",
+            type: "shell"
+          },
+          {
+            id: "demo-approval-mixed-prose-code-apply",
+            title: "Apply generated patch?",
+            body: "node <<'SCRIPT'\nconst target = 'src/generated/index.ts'\nconsole.log('Writing', target)\nSCRIPT",
+            bodyAdvice: "The final step writes the generated patch into the project.\n\nReview the target before allowing this command to run.",
+            bodyFooter: "Allow the patch command to run once?",
+            type: "shell"
+          }
+        ]
+      },
+      {
         id: "product-announcements-fresh",
         label: "Product announcements \u2014 fresh",
         project: project("demo-announcements-project"),
@@ -86148,7 +86597,27 @@ var init_demo_scenarios = __esm({
         label: "Empty unopened project in the sidebar",
         project: project("demo-empty-active"),
         settings: { onboardingCompleted: true, theme: "dark", uiTintStrength: "off" },
-        threads: [],
+        // Keep a populated conversation open: filtering a blank composer intentionally
+        // opens a new thread in the selected project, which would no longer be empty.
+        threads: [
+          {
+            id: "demo-empty-active-chat",
+            title: "Open project conversation",
+            status: "idle",
+            messages: [
+              {
+                id: "demo-empty-active-message",
+                role: "user",
+                content: "Keep this conversation open while browsing other projects.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
         otherProjects: [
           { project: project("demo-empty-other", "empty-project", "/demo/empty"), threads: [] }
         ]
@@ -87016,6 +87485,24 @@ var init_demo_scenarios = __esm({
         threads: SIDE_CHATS_THREADS
       },
       {
+        id: "side-chats-restored",
+        label: "Side chats after an app restart",
+        project: project("demo-side-chats-restored", "Widgets", "/demo/widgets"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          layout: {
+            projectsPaneWidth: 240,
+            filesPaneWidth: 680,
+            filesPaneHeight: 360,
+            fileTreeWidth: 180
+          }
+        },
+        deferSideChatTranscripts: true,
+        threads: SIDE_CHATS_THREADS
+      },
+      {
         id: "thread-context",
         changeStats: { additions: 42, deletions: 7 },
         label: "The thread Context panel",
@@ -87784,6 +88271,10 @@ function createDemoApi(scenario2, options = {}) {
       suggestFollowUps: () => resolved2(structuredClone([...scenario2.followUps ?? []])),
       suggestPrBody: () => resolved2(scenario2.prBody ?? null),
       suggestNextStep: () => resolved2(null),
+      replayPendingDecisions: () => resolvedVoid(),
+      attachTranscripts: () => resolvedVoid(),
+      onTranscriptSnapshot: () => () => {
+      },
       onChunk: (handler) => {
         chunkHandlers.add(handler);
         return () => {
@@ -87976,6 +88467,17 @@ function createDemoApi(scenario2, options = {}) {
     },
     plans: { get: () => resolved2(null), revision: () => resolved2(null), change: unsupported },
     threads: {
+      archiveState: () => resolved2({ archived: threads.filter((thread) => thread.archivedAt != null), review: [] }),
+      archiveDecision: (_projectId, threadId, decision) => {
+        const thread = threads.find((candidate) => candidate.id === threadId);
+        if (!thread) return resolved2(false);
+        if (decision === "archive") thread.archivedAt = Date.now();
+        if (decision === "restore") delete thread.archivedAt;
+        thread.updatedAt = Date.now();
+        return resolved2(true);
+      },
+      onAutoArchived: () => () => {
+      },
       storageSize: () => resolved2({ bytes: 24576, truncated: false }),
       archive: (_projectId, threadId) => {
         const archivedAt = Date.now();
@@ -87984,7 +88486,9 @@ function createDemoApi(scenario2, options = {}) {
         return resolved2({ status: "archived", archivedAt, worktree: thread?.worktree });
       },
       loadProject: (projectId) => resolved2(
-        projectId === scenario2.project.id ? structuredClone(threads) : structuredClone(
+        projectId === scenario2.project.id ? structuredClone(threads).map(
+          (thread) => scenario2.deferSideChatTranscripts === true && thread.sideChat !== void 0 ? { ...thread, messages: [], messagesLoaded: false } : thread
+        ) : structuredClone(
           scenario2.otherProjects?.find((other) => other.project.id === projectId)?.threads ?? []
         )
       ),
@@ -88022,6 +88526,11 @@ function createDemoApi(scenario2, options = {}) {
         if (thread && !thread.messages.some((candidate) => candidate.id === message2.id)) {
           thread.messages.push(message2);
         }
+        return resolvedVoid();
+      },
+      annotateMessage: (_projectId, threadId, messageId, annotation) => {
+        const message2 = threads.find((candidate) => candidate.id === threadId)?.messages.find((candidate) => candidate.id === messageId);
+        if (message2) Object.assign(message2, annotation);
         return resolvedVoid();
       },
       updateMeta: (_projectId, threadId, patch) => {
@@ -89240,6 +89749,7 @@ function createStore(initial) {
     conciseThreadsEnabled: true,
     autoPortraitRightPanel: true,
     rightPanelPosition: "auto",
+    sidebarProjectFilterId: null,
     sidebarThreadSort: "activity",
     sidebarThreadSortReverse: false,
     sidebarThreadGroup: "project",
@@ -89274,6 +89784,7 @@ function createStore(initial) {
     right_panel_mode_changed: /* @__PURE__ */ new Set(),
     right_panel_maximized_changed: /* @__PURE__ */ new Set(),
     projects_pane_changed: /* @__PURE__ */ new Set(),
+    sidebar_project_filter_changed: /* @__PURE__ */ new Set(),
     git_change_navigate: /* @__PURE__ */ new Set(),
     roadmap_reveal: /* @__PURE__ */ new Set(),
     thread_plan_open: /* @__PURE__ */ new Set(),
@@ -89326,7 +89837,7 @@ function createStore(initial) {
 }
 var init_store = __esm({
   "src/shared/store/store.ts"() {
-    init_types();
+    init_types2();
     init_layout();
   }
 });
@@ -90227,7 +90738,7 @@ function mountOpenInEditor(root, store2, api2) {
       "aria-haspopup": "menu",
       "aria-expanded": "false"
     },
-    chevronDownIcon("ui-icon ui-icon-sm")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   const menu = el("div", { class: "open-in-editor-menu", role: "menu", hidden: "" });
   const backdrop = el("div", { class: "open-in-editor-backdrop", hidden: "" });
@@ -90938,16 +91449,24 @@ function titlebarNeedsCompact(titlebar) {
   const wasCompact = titlebar.classList.contains(TITLEBAR_COMPACT_CLASS);
   const overflowed = [...titlebar.querySelectorAll("[data-portrait-overflow]")];
   const controls = titlebar.querySelector(".titlebar-panel-controls");
+  const overflowMenus = [...titlebar.querySelectorAll(".portrait-panel-overflow")];
+  const menuVisibility = overflowMenus.map((menu) => menu.hidden);
   const alignment = controls?.style.justifyContent ?? "";
   if (controls) controls.style.justifyContent = "flex-start";
   overflowed.forEach((button) => {
     button.removeAttribute("data-portrait-overflow");
+  });
+  overflowMenus.forEach((menu) => {
+    menu.hidden = true;
   });
   titlebar.classList.remove(TITLEBAR_COMPACT_CLASS);
   const needsCompact = titlebar.scrollWidth > titlebar.clientWidth;
   titlebar.classList.toggle(TITLEBAR_COMPACT_CLASS, wasCompact);
   overflowed.forEach((button) => {
     button.setAttribute("data-portrait-overflow", "");
+  });
+  overflowMenus.forEach((menu, index) => {
+    menu.hidden = menuVisibility[index] ?? true;
   });
   if (controls) controls.style.justifyContent = alignment;
   return needsCompact;
@@ -91106,7 +91625,33 @@ function basename2(p2) {
 function mountTitlebar(root, store2, api2) {
   root.classList.add("titlebar");
   const leftCluster = el("div", { class: "titlebar-left" });
-  const workspaceName = el("span", { class: "workspace-name" }, "No folder");
+  const workspaceLabel = el("span", { class: "workspace-name-label" }, "No folder");
+  const workspaceName = el(
+    "button",
+    { type: "button", class: "workspace-name", "aria-haspopup": "menu" },
+    workspaceLabel,
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron workspace-name-chevron")
+  );
+  workspaceName.addEventListener("click", (event) => {
+    if (workspaceName.disabled || contextMenuClosedByPressOn(workspaceName)) return;
+    const rect = workspaceName.getBoundingClientRect();
+    const { projects, activeProjectId } = store2.getState();
+    showContextMenu(
+      rect.left,
+      rect.bottom + 4,
+      projects.map((project2) => ({
+        label: projectDisplayName(project2),
+        checked: project2.id === activeProjectId,
+        disabled: project2.missing === true,
+        onSelect: () => {
+          setSidebarProjectFilter(store2, api2, project2.id);
+        }
+      }))
+    );
+    if (event.detail === 0) {
+      document.querySelector(".context-menu-item.is-checked")?.focus();
+    }
+  });
   const sshTarget = el("span", { class: "workspace-ssh-target", hidden: true });
   const workspaceBranch = el("span", { class: "workspace-branch", hidden: true });
   const sidebarBtn = el(
@@ -91176,10 +91721,19 @@ function mountTitlebar(root, store2, api2) {
   syncRunApp();
   root.append(leftCluster, dragRegion, panelControls.element);
   const destroyCompactLayout = bindTitlebarCompactLayout(root, [leftCluster, panelControls.element]);
+  function syncProjectPicker() {
+    const thread = getActiveThread(store2);
+    workspaceName.disabled = store2.getState().projects.length === 0 || thread !== void 0 && !isBlankThread(thread);
+    workspaceName.setAttribute(
+      "aria-label",
+      workspaceName.disabled ? workspaceName.textContent : `Project for new thread: ${workspaceName.textContent}`
+    );
+  }
   function syncName() {
     const { workspaceRoot, activeProjectId, projects } = store2.getState();
     const project2 = projects.find((p2) => p2.id === activeProjectId);
-    workspaceName.textContent = workspaceRoot ? basename2(workspaceRoot) : "No folder";
+    workspaceLabel.textContent = project2 ? projectDisplayName(project2) : workspaceRoot ? basename2(workspaceRoot) : "No folder";
+    syncProjectPicker();
     setTooltip(workspaceName, workspaceRoot);
     if (project2?.sshHost) {
       void api2.sshWorkspace.listHosts().then((hosts) => {
@@ -91249,7 +91803,10 @@ function mountTitlebar(root, store2, api2) {
       syncRunApp();
     }),
     store2.on("projects_changed", syncName),
+    store2.on("message_added", syncProjectPicker),
+    store2.on("thread_status_changed", syncProjectPicker),
     store2.on("threads_changed", () => {
+      syncProjectPicker();
       if (store2.getState().activeThreadId !== syncedThreadId) {
         syncBranchNow();
         return;
@@ -91281,6 +91838,9 @@ var init_titlebar = __esm({
   "src/renderer/views/titlebar.ts"() {
     init_app_run_dialog();
     init_icons();
+    init_thread_helpers();
+    init_projects();
+    init_context_menu();
     init_helpers();
     init_outline_icon();
     init_tooltip();
@@ -91291,6 +91851,151 @@ var init_titlebar = __esm({
     init_panels();
     init_keyboard_shortcuts_dialog();
     PROJECTS_COLLAPSED_CLASS = "is-projects-collapsed";
+  }
+});
+
+// src/renderer/controller/thread-archive.ts
+async function restoreArchivedThread(store2, api2, projectId, threadId) {
+  if (!await api2.threads.archiveDecision(projectId, threadId, "restore"))
+    throw new Error("The thread is busy or changed. Try restoring it again.");
+  invalidateProjectThreadLoads(api2, projectId);
+  if (store2.getState().activeProjectId === projectId) {
+    const metadata = (await api2.threads.loadProject(projectId)).find(
+      (thread) => thread.id === threadId
+    );
+    if (!metadata) throw new Error("The restored thread could not be loaded.");
+    if (store2.getState().activeProjectId === projectId) {
+      const threads = store2.getState().threads;
+      const previous = threads.find((thread) => thread.id === threadId);
+      const restored = previous?.messagesLoaded !== false && previous ? { ...metadata, messages: previous.messages, messagesLoaded: true } : metadata;
+      recordPersistedThread(projectId, metadata);
+      store2.setState({ threads: [...threads.filter((thread) => thread.id !== threadId), restored] });
+      store2.emit("threads_changed");
+    }
+  }
+  switchProjectThread(store2, api2, projectId, threadId);
+}
+var init_thread_archive = __esm({
+  "src/renderer/controller/thread-archive.ts"() {
+    init_projects();
+    init_persistence();
+  }
+});
+
+// src/renderer/views/archived-threads.ts
+function createArchivedThreads(store2, api2, onRestored) {
+  const element = el("section", { class: "archived-threads", "aria-label": "Archived threads" });
+  let generation = 0;
+  let selection2 = "";
+  async function load(projects, query, current) {
+    element.replaceChildren(
+      el("div", { class: "sidebar-empty", role: "status" }, "Loading archives\u2026")
+    );
+    try {
+      const groups = await Promise.all(
+        projects.map(async (project2) => ({
+          project: project2,
+          state: await api2.threads.archiveState(project2.id, "archived")
+        }))
+      );
+      if (current !== generation) return;
+      const rows = groups.flatMap(
+        ({ project: project2, state }) => state.archived.filter(
+          (thread) => !thread.sideChat && thread.title.toLocaleLowerCase().includes(query.toLocaleLowerCase())
+        ).map((thread) => ({ project: project2, thread }))
+      ).sort((a5, b5) => (b5.thread.archivedAt ?? 0) - (a5.thread.archivedAt ?? 0));
+      element.replaceChildren(
+        el("p", { class: "sidebar-empty" }, "Archived threads stay here until you restore them.")
+      );
+      if (rows.length === 0) {
+        element.append(
+          el("div", { class: "sidebar-empty", role: "status" }, "No archived threads.")
+        );
+      }
+      for (const { project: project2, thread } of rows) {
+        const restore = el(
+          "button",
+          { type: "button", class: "ui-btn", "aria-label": `Restore ${thread.title}` },
+          "Restore"
+        );
+        const row2 = el(
+          "div",
+          { class: "archived-thread-row", "data-thread-id": thread.id },
+          el(
+            "div",
+            { class: "archived-thread-description" },
+            el("span", { class: "archived-thread-title" }, thread.title || "New thread"),
+            el("span", { class: "archived-thread-project" }, project2.name)
+          ),
+          restore
+        );
+        restore.addEventListener("click", () => {
+          restore.disabled = true;
+          void restoreArchivedThread(store2, api2, project2.id, thread.id).then(() => {
+            selection2 = "";
+            onRestored();
+          }).catch((error62) => {
+            restore.disabled = false;
+            showErrorToast("Could not restore thread", error62);
+          });
+        });
+        element.append(row2);
+      }
+    } catch (error62) {
+      if (current !== generation) return;
+      selection2 = "";
+      element.replaceChildren(
+        el(
+          "div",
+          { class: "sidebar-empty", role: "status" },
+          "Could not load archived threads. Reopen the Archived filter to retry."
+        )
+      );
+      showErrorToast("Could not load archived threads", error62);
+    }
+  }
+  const invalidate = () => {
+    selection2 = "";
+    generation++;
+  };
+  return {
+    element,
+    show(projects, query) {
+      const next = JSON.stringify([projects.map((project2) => [project2.id, project2.name]), query]);
+      if (selection2 === next) return;
+      selection2 = next;
+      void load(projects, query, ++generation);
+    },
+    invalidate,
+    hide: invalidate
+  };
+}
+var init_archived_threads = __esm({
+  "src/renderer/views/archived-threads.ts"() {
+    init_thread_archive();
+    init_helpers();
+    init_toast();
+  }
+});
+
+// src/renderer/views/thread-archive-toast.ts
+function showThreadArchiveToast(store2, api2, projectId, threadId, title) {
+  showToast(`Archived \u201C${title}\u201D. Find it in the Archived filter.`, {
+    durationMs: 15e3,
+    action: {
+      label: "Undo",
+      onClick: () => {
+        void restoreArchivedThread(store2, api2, projectId, threadId).catch((error62) => {
+          showErrorToast("Could not restore thread", error62);
+        });
+      }
+    }
+  });
+}
+var init_thread_archive_toast = __esm({
+  "src/renderer/views/thread-archive-toast.ts"() {
+    init_thread_archive();
+    init_toast();
   }
 });
 
@@ -92287,7 +92992,7 @@ function formatAgeLong(elapsedMs) {
 var RECENT_ROW_LIMIT, RECENT_WINDOW_MS, FUTURE_SKEW_MS, SCHEDULE_FOLD_AT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
 var init_activity_model = __esm({
   "src/renderer/controller/activity-model.ts"() {
-    init_types();
+    init_types2();
     init_automation_failure();
     init_projects();
     init_sidebar_thread();
@@ -92906,6 +93611,8 @@ function mountApprovalDialog(api2, store2, options = {}) {
       turnTreeLeaseDefault,
       turnTreeLeaseSubject
     }) => {
+      if (queue.some((request) => request.id === id) || batch.some((request) => request.id === id))
+        return;
       const pending = {
         id,
         threadId,
@@ -95248,14 +95955,19 @@ function mountProjectsPane(root, store2, api2) {
     threadFilter = "";
   };
   let compactRows = false;
-  let projectFilterId = null;
   let needsCleanupOnly = false;
+  let archivedOnly = false;
+  const archivedThreads = createArchivedThreads(store2, api2, () => {
+    archivedOnly = false;
+    closeThreadFilter();
+    render2();
+  });
   const filterLabel = el("span", { class: "projects-filter-label" }, "All projects");
   const projectFilterBtn = el(
     "button",
     { type: "button", class: "projects-filter-btn", "aria-haspopup": "menu" },
     filterLabel,
-    chevronDownIcon("ui-icon ui-icon-sm")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   const sortDir = el("span", { class: "projects-sort-dir" }, "\u2193");
   const sortLabel = el("span", { class: "projects-filter-label" }, "Activity order");
@@ -95269,13 +95981,13 @@ function mountProjectsPane(root, store2, api2) {
     },
     sortDir,
     sortLabel,
-    chevronDownIcon("ui-icon ui-icon-sm")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   const filtersRow = el("div", { class: "projects-filters" }, projectFilterBtn, sortBtn);
   searchInput.addEventListener("input", () => {
     threadFilter = filterText(searchInput.value.trim());
     filteredProjectId = store2.getState().activeProjectId;
-    contentFilter.search(threadFilter);
+    if (!archivedOnly) contentFilter.search(threadFilter);
     render2();
   });
   searchInput.addEventListener("keydown", (e3) => {
@@ -95317,15 +96029,19 @@ function mountProjectsPane(root, store2, api2) {
     });
   };
   function syncFilterControls() {
-    const { projects, sidebarThreadSort, sidebarThreadSortReverse } = store2.getState();
-    const chosen = projects.find((project2) => project2.id === projectFilterId);
-    if (!chosen) projectFilterId = null;
+    const { projects, sidebarThreadSort, sidebarThreadSortReverse, sidebarProjectFilterId } = store2.getState();
+    const chosen = projects.find((project2) => project2.id === sidebarProjectFilterId);
+    if (!chosen) store2.setState({ sidebarProjectFilterId: null });
     const projectName = chosen ? projectDisplayName(chosen) : "All projects";
-    filterLabel.textContent = needsCleanupOnly ? `${projectName} \xB7 Needs cleanup` : projectName;
-    projectFilterBtn.classList.toggle("is-filtering", chosen !== void 0 || needsCleanupOnly);
+    const suffix = archivedOnly ? " \xB7 Archived" : needsCleanupOnly ? " \xB7 Needs cleanup" : "";
+    filterLabel.textContent = `${projectName}${suffix}`;
+    projectFilterBtn.classList.toggle(
+      "is-filtering",
+      chosen !== void 0 || needsCleanupOnly || archivedOnly
+    );
     projectFilterBtn.setAttribute(
       "aria-label",
-      needsCleanupOnly ? `Show: ${projectName}, needs cleanup only` : `Show: ${projectName}`
+      archivedOnly ? `Show: ${projectName}, archived` : needsCleanupOnly ? `Show: ${projectName}, needs cleanup only` : `Show: ${projectName}`
     );
     sortLabel.textContent = SORT_LABELS[sidebarThreadSort];
     sortDir.textContent = sidebarThreadSortReverse ? "\u2191" : "\u2193";
@@ -95343,19 +96059,17 @@ function mountProjectsPane(root, store2, api2) {
       {
         label: "All projects",
         detail: String(total2),
-        checked: projectFilterId === null,
+        checked: store2.getState().sidebarProjectFilterId === null,
         onSelect: () => {
-          projectFilterId = null;
-          render2();
+          setSidebarProjectFilter(store2, api2, null);
         }
       },
       ...projects.map((project2) => ({
         label: projectDisplayName(project2),
         detail: String(counts.get(project2.id) ?? 0),
-        checked: project2.id === projectFilterId,
+        checked: project2.id === store2.getState().sidebarProjectFilterId,
         onSelect: () => {
-          projectFilterId = project2.id;
-          render2();
+          setSidebarProjectFilter(store2, api2, project2.id);
         }
       })),
       { separator: true },
@@ -95365,6 +96079,19 @@ function mountProjectsPane(root, store2, api2) {
         checked: needsCleanupOnly,
         onSelect: () => {
           needsCleanupOnly = !needsCleanupOnly;
+          archivedOnly = false;
+          render2();
+        }
+      },
+      {
+        label: "Archived",
+        toggle: true,
+        checked: archivedOnly,
+        onSelect: () => {
+          archivedOnly = !archivedOnly;
+          needsCleanupOnly = false;
+          closeThreadFilter();
+          archivedThreads.invalidate();
           render2();
         }
       }
@@ -95428,7 +96155,7 @@ function mountProjectsPane(root, store2, api2) {
             void addProject(store2, api2);
             return;
           }
-          openNewThread(store2);
+          openNewProjectThread(store2, api2);
         }
       },
       { separator: true },
@@ -96144,8 +96871,14 @@ function mountProjectsPane(root, store2, api2) {
     };
     syncFilterControls();
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } = store2.getState();
-    const visibleProjects = projectFilterId === null ? projects : projects.filter((project2) => project2.id === projectFilterId);
+    const visibleProjects = store2.getState().sidebarProjectFilterId === null ? projects : projects.filter((project2) => project2.id === store2.getState().sidebarProjectFilterId);
     const expandedId = expandedProjectId ?? activeProjectId;
+    if (archivedOnly) {
+      archivedThreads.show(visibleProjects, searchInput.value.trim());
+      list.append(archivedThreads.element);
+      return;
+    }
+    archivedThreads.hide();
     if (projects.length === 0 && projectGroups.length === 0 && orphans.length === 0) {
       list.append(el("div", { class: "sidebar-empty" }, 'No projects yet. Click "+".'));
       if (preserveScroll) list.scrollTop = scrollTop;
@@ -96696,15 +97429,7 @@ function mountProjectsPane(root, store2, api2) {
       );
       newThreadBtn.addEventListener("click", (e3) => {
         e3.stopPropagation();
-        if (project2.id !== store2.getState().activeProjectId) {
-          switchProject(store2, api2, project2.id);
-          return;
-        }
-        if (!store2.getState().workspaceRoot) {
-          void addProject(store2, api2);
-          return;
-        }
-        openNewThread(store2);
+        openNewProjectThread(store2, api2, project2.id);
       });
       return newThreadBtn;
     }
@@ -97032,7 +97757,7 @@ function mountProjectsPane(root, store2, api2) {
       list.append(...renderThreadSections(groupMode));
     } else {
       for (const node2 of buildProjectTree(visibleProjects, projectGroups)) {
-        if (node2.kind === "group" && projectFilterId !== null && node2.projects.length === 0)
+        if (node2.kind === "group" && store2.getState().sidebarProjectFilterId !== null && node2.projects.length === 0)
           continue;
         if (node2.kind === "group") list.append(renderGroupEntry(node2.group, node2.projects));
         else list.append(renderProjectEntry(node2.project));
@@ -97122,14 +97847,34 @@ function mountProjectsPane(root, store2, api2) {
   window.addEventListener("focus", recheckStaleThreadChanges);
   document.addEventListener("visibilitychange", recheckStaleThreadChanges);
   const unsubs = [
+    api2.threads.onAutoArchived((event) => {
+      archivedThreads.invalidate();
+      invalidateProjectThreadLoads(api2, event.projectId);
+      if (event.projectId === store2.getState().activeProjectId) {
+        const thread = store2.getState().threads.find((item) => item.id === event.threadId);
+        archiveThread(store2, event.threadId, {
+          status: "archived",
+          archivedAt: event.archivedAt,
+          worktree: thread?.worktree
+        });
+      } else {
+        archiveCachedSidebarThread(event.projectId, event.threadId, event.archivedAt);
+        render2();
+      }
+      showThreadArchiveToast(store2, api2, event.projectId, event.threadId, event.title);
+    }),
     store2.on("thread_archive_requested", (projectId, threadId) => {
       void archiveProjectThread(projectId, threadId);
     }),
     unsubWorkingTree,
     store2.on("projects_changed", render2),
+    store2.on("sidebar_project_filter_changed", render2),
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
-    store2.on("threads_changed", render2),
+    store2.on("threads_changed", () => {
+      archivedThreads.invalidate();
+      render2();
+    }),
     store2.on("sidebar_threads_loaded", render2),
     store2.on("automation_schedules_loaded", render2),
     // Status flips on its own event (not threads_changed) so the sidebar can
@@ -97154,6 +97899,7 @@ function mountProjectsPane(root, store2, api2) {
   render2();
   refreshOrphans();
   return () => {
+    archivedThreads.hide();
     contentFilter.cancel();
     for (const timer of prBackfillRetryTimers) clearTimeout(timer);
     prBackfillRetryTimers.clear();
@@ -97182,6 +97928,8 @@ var PR_STATUS_CACHE_TTL_MS, ICON_SIZE2, SVG_NS4, GROUP_MENU_ORDER;
 var init_projects_pane = __esm({
   "src/renderer/views/projects-pane.ts"() {
     init_app_run_dialog();
+    init_archived_threads();
+    init_thread_archive_toast();
     init_side_chat2();
     init_helpers();
     init_context_menu();
@@ -97222,6 +97970,142 @@ var init_projects_pane = __esm({
     ICON_SIZE2 = "16";
     SVG_NS4 = "http://www.w3.org/2000/svg";
     GROUP_MENU_ORDER = ["status", "project", "none"];
+  }
+});
+
+// src/shared/threads/auto-archive.ts
+function threadIsInactive(thread, now, days) {
+  return days >= 3 && thread.archivedAt == null && thread.sideChat === void 0 && thread.automation === void 0 && thread.status !== "running" && thread.unreadAt == null && !thread.draftPrompt?.trim() && !thread.pendingMessages?.length && Number.isFinite(thread.updatedAt) && now - thread.updatedAt >= days * ARCHIVE_DAY_MS;
+}
+var ARCHIVE_DAY_MS;
+var init_auto_archive = __esm({
+  "src/shared/threads/auto-archive.ts"() {
+    ARCHIVE_DAY_MS = 24 * 60 * 60 * 1e3;
+  }
+});
+
+// src/renderer/views/thread-archive-review.ts
+function createThreadArchiveReview(store2, api2) {
+  const element = el("section", {
+    class: "thread-archive-review",
+    hidden: true,
+    "aria-label": "Review inactive thread"
+  });
+  const reason = el("p");
+  const keep = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact" },
+    "Keep active"
+  );
+  const archive = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact" },
+    "Archive"
+  );
+  element.append(
+    el("strong", {}, "Finished with this thread?"),
+    reason,
+    el("div", { class: "thread-archive-review-actions" }, keep, archive)
+  );
+  let generation = 0;
+  let selected = "";
+  let disposed = false;
+  async function refresh(force = false) {
+    const state = store2.getState();
+    const thread = getActiveThread(store2);
+    if (!state.activeProjectId || !thread || !threadIsInactive(thread, Date.now(), 3)) {
+      selected = "";
+      generation++;
+      element.hidden = true;
+      return;
+    }
+    const key = `${state.activeProjectId}/${thread.id}/${String(thread.updatedAt)}`;
+    if (!force && selected === key) return;
+    selected = key;
+    const current = ++generation;
+    element.hidden = true;
+    const projectId = state.activeProjectId;
+    try {
+      const result = await api2.threads.archiveState(projectId, "review");
+      if (disposed || current !== generation) return;
+      const review = result.review.find((item) => item.threadId === thread.id);
+      if (!review) return;
+      reason.textContent = `${review.reason} Archive keeps the conversation and files. You can restore it later.`;
+      element.hidden = false;
+      keep.onclick = () => {
+        void decide("keep", projectId, thread.id);
+      };
+      archive.onclick = () => {
+        void decide("archive", projectId, thread.id);
+      };
+    } catch (error62) {
+      console.warn("Could not check thread archive readiness", error62);
+    }
+  }
+  async function decide(action, projectId, threadId) {
+    const current = generation;
+    const title = store2.getState().threads.find((thread) => thread.id === threadId)?.title ?? "Thread";
+    keep.disabled = true;
+    archive.disabled = true;
+    try {
+      if (!await api2.threads.archiveDecision(projectId, threadId, action))
+        throw new Error("The thread changed or has pending work. Review it before archiving.");
+      invalidateProjectThreadLoads(api2, projectId);
+      if (store2.getState().activeProjectId === projectId) {
+        if (action === "archive") archiveThread(store2, threadId);
+        else {
+          const threads = store2.getState().threads.map(
+            (thread) => thread.id === threadId ? { ...thread, updatedAt: Date.now() } : thread
+          );
+          store2.setState({ threads });
+          store2.emit("threads_changed");
+        }
+      }
+      if (action === "archive") showThreadArchiveToast(store2, api2, projectId, threadId, title);
+      if (generation === current) element.hidden = true;
+    } catch (error62) {
+      showErrorToast("Could not update thread", error62);
+    } finally {
+      keep.disabled = false;
+      archive.disabled = false;
+    }
+  }
+  const sync = () => {
+    void refresh();
+  };
+  const unsubs = [
+    store2.on("threads_changed", sync),
+    store2.on("thread_status_changed", sync),
+    store2.on("workspace_changed", sync),
+    store2.on("settings_changed", () => {
+      void refresh(true);
+    })
+  ];
+  const onFocus = () => {
+    void refresh(true);
+  };
+  window.addEventListener("focus", onFocus);
+  sync();
+  return {
+    element,
+    dispose: () => {
+      disposed = true;
+      generation++;
+      window.removeEventListener("focus", onFocus);
+      unsubs.forEach((unsubscribe) => {
+        unsubscribe();
+      });
+    }
+  };
+}
+var init_thread_archive_review = __esm({
+  "src/renderer/views/thread-archive-review.ts"() {
+    init_thread_helpers();
+    init_auto_archive();
+    init_persistence();
+    init_helpers();
+    init_toast();
+    init_thread_archive_toast();
   }
 });
 
@@ -107560,6 +108444,7 @@ function mountConversation(root, store2, api2) {
   showAcpTransportNoiseDisclosure = () => store2.getState().developerMode;
   const scrollArea = el("div", { class: "conversation-scroll" });
   const todoHost = el("div", { class: "conversation-todos-host" });
+  const archiveReview = createThreadArchiveReview(store2, api2);
   const appleDevelopmentHost = createAppleDevelopmentPanel(store2, api2, { allowEnrollment: false });
   const list = el("div", { class: "messages-list", role: "log", "aria-live": "polite" });
   let agentNames = /* @__PURE__ */ new Map();
@@ -107589,6 +108474,7 @@ function mountConversation(root, store2, api2) {
     appleDevelopmentHost,
     todoHost,
     list,
+    archiveReview.element,
     scrollToBottomBtn
   );
   const expandedConciseTurns = /* @__PURE__ */ new Set();
@@ -109489,6 +110375,7 @@ function mountConversation(root, store2, api2) {
   syncFromStore();
   return () => {
     disposed = true;
+    archiveReview.dispose();
     selectionQuote.destroy();
     avatarMotion.dispose();
     backfillGeneration++;
@@ -109549,6 +110436,7 @@ var userInterruptedCalls, markedTranscripts, PATCH_OP_LABEL, lazyToolCardBodies,
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
+    init_thread_archive_review();
     init_agent_avatar();
     init_chat_agent_identity();
     init_reasoning_activity_icon();
@@ -151237,7 +152125,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   const chevron = el(
     "span",
     { class: "branch-picker-chevron", "aria-hidden": "true" },
-    chevronDownIcon("ui-icon ui-icon-sm")
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   trigger.append(label, chevron);
   const reattachButton = el(
@@ -153022,7 +153910,7 @@ function normalizeFollowUpOpenTodos(contents) {
   return normalized;
 }
 var MAX_FOLLOW_UP_OPEN_TODOS, MAX_FOLLOW_UP_OPEN_TODO_CHARS;
-var init_types2 = __esm({
+var init_types3 = __esm({
   "src/shared/follow-ups/types.ts"() {
     MAX_FOLLOW_UP_OPEN_TODOS = 20;
     MAX_FOLLOW_UP_OPEN_TODO_CHARS = 500;
@@ -153054,7 +153942,7 @@ function lastExchange(store2, threadId) {
 }
 var init_last_exchange = __esm({
   "src/renderer/views/last-exchange.ts"() {
-    init_types2();
+    init_types3();
     init_thread_helpers();
   }
 });
@@ -154657,7 +155545,7 @@ function registerPanelKeyboardShortcuts(store2, api2) {
     if (matchNewThreadShortcut(e3)) {
       if (!store2.getState().workspaceRoot) return;
       e3.preventDefault();
-      openNewThread(store2);
+      openNewProjectThread(store2, api2);
       return;
     }
     if (isTypingTarget(e3.target)) return;
@@ -154669,7 +155557,7 @@ function registerPanelKeyboardShortcuts(store2, api2) {
 }
 var init_keyboard_shortcuts = __esm({
   "src/renderer/keyboard-shortcuts.ts"() {
-    init_thread_helpers();
+    init_projects();
     init_panels();
     init_dialog_shell();
   }
@@ -172778,7 +173666,19 @@ function renderSideChat(input2) {
     if (!archiveBlocked) input2.onArchive(archived);
   });
   const body = el("div", { class: "side-chat-body" });
-  if (side.messages.length === 0) {
+  if (needsHydration(side)) {
+    body.append(
+      el(
+        "div",
+        { class: "side-chat-empty", "data-side-chat-loading": "" },
+        el(
+          "p",
+          { role: "status" },
+          input2.loadFailed === true ? "Couldn\u2019t load this side chat." : "Loading conversation\u2026"
+        )
+      )
+    );
+  } else if (side.messages.length === 0) {
     body.append(
       el(
         "div",
@@ -172868,14 +173768,27 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
   }
   function ask(text2) {
     if (selectedId === null) return;
+    const side = store2.getState().threads.find((thread) => thread.id === selectedId);
+    if (!side || needsHydration(side)) return;
     sendSideChatMessage(store2, api2, selectedId, text2);
+  }
+  function hydrate(threadId) {
+    const { activeProjectId, threads } = store2.getState();
+    const thread = threads.find((t2) => t2.id === threadId);
+    if (activeProjectId && thread && needsHydration(thread)) {
+      void ensureThreadMessages(activeProjectId, threadId);
+    }
   }
   function render2() {
     frame = 0;
-    if (!paneVisible()) return;
+    if (!paneVisible()) {
+      showSideChatTranscript(null);
+      return;
+    }
     const { threads, activeThreadId } = store2.getState();
     const selection2 = resolveSideChatSelection(threads, activeThreadId, remembered);
     selectedId = selection2.selectedId;
+    showSideChatTranscript(selectedId);
     if (selection2.mainId !== null && selectedId !== null)
       remembered.set(selection2.mainId, selectedId);
     clear(list);
@@ -172901,6 +173814,8 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
       );
       item.addEventListener("click", () => {
         if (selection2.mainId !== null) remembered.set(selection2.mainId, row2.id);
+        showSideChatTranscript(row2.id);
+        hydrate(row2.id);
         render2();
       });
       list.append(item);
@@ -172922,9 +173837,12 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
       return;
     }
     const parent = threads.find((thread) => thread.id === side.sideChat?.parentThreadId);
+    const loadFailed = needsHydration(side) && hydrationFailed(side.id);
+    if (needsHydration(side) && !loadFailed) hydrate(side.id);
     const view = renderSideChat({
       side,
       parent,
+      loadFailed,
       onSuggestion: ask,
       onArchive: (archived) => {
         if (archived) restoreThread(store2, side.id);
@@ -172934,14 +173852,19 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
     headerHost.append(view.header);
     bodyHost.append(...Array.from(view.body.childNodes));
     if (atBottom) bodyHost.scrollTop = bodyHost.scrollHeight;
-    input2.disabled = side.archivedAt != null;
-    send.disabled = side.archivedAt != null || side.status === "running";
+    const unloaded = needsHydration(side);
+    input2.disabled = side.archivedAt != null || unloaded;
+    send.disabled = side.archivedAt != null || side.status === "running" || unloaded;
     promote.disabled = side.status === "running";
     promote.title = promote.disabled ? "Wait for the side chat to finish before promoting" : "";
     if (side.unreadAt !== void 0) markThreadRead(store2, side.id);
   }
   function schedule() {
-    if (!paneVisible() || frame !== 0) return;
+    if (!paneVisible()) {
+      showSideChatTranscript(null);
+      return;
+    }
+    if (frame !== 0) return;
     frame = requestAnimationFrame(render2);
   }
   form.addEventListener("submit", (event) => {
@@ -172981,6 +173904,7 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
   ];
   schedule();
   return () => {
+    showSideChatTranscript(null);
     for (const off of offs) off();
     if (frame !== 0) cancelAnimationFrame(frame);
   };
@@ -172995,6 +173919,7 @@ var init_side_chat_panel = __esm({
     init_side_chat2();
     init_panels();
     init_side_chat3();
+    init_thread_hydration();
     init_pane_maximize_button();
     init_pane_popout_button();
     init_toast();
@@ -176329,7 +177254,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       return;
     }
     const url2 = nonEmptyStringOr(
-      firstNonEmptyString(webviewUrl(tab), tab.pendingUrl),
+      firstNonEmptyString(tab.pendingUrl, webviewUrl(tab)),
       "about:blank"
     );
     const title = webviewTitle(tab);
@@ -176529,11 +177454,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     if (!tab) return;
     if (browserModeActive(store2)) {
       ensureWebview(tab);
-      if (tab.pendingUrl) {
-        const url2 = tab.pendingUrl;
-        tab.pendingUrl = null;
-        navigateWebview(tab, url2);
-      }
+      if (tab.pendingUrl) navigateWebview(tab, tab.pendingUrl);
       syncAddressBar(tab);
       revealActiveTab(tab);
     }
@@ -177062,11 +177983,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       const tab = activeTabId ? tabs.get(activeTabId) : null;
       if (tab) {
         ensureWebview(tab);
-        if (tab.pendingUrl) {
-          const url2 = tab.pendingUrl;
-          tab.pendingUrl = null;
-          navigateWebview(tab, url2);
-        }
+        if (tab.pendingUrl) navigateWebview(tab, tab.pendingUrl);
         syncAddressBar(tab);
         ensureBrowserResizeObserver();
         revealActiveTab(tab);
@@ -195271,6 +196188,7 @@ function mountAskUserDialog(api2, store2) {
     cancel();
   });
   api2.agent.onAskUserRequest((req) => {
+    if (active3?.id === req.id || queue.some((request) => request.id === req.id)) return;
     queue.push({
       id: req.id,
       threadId: req.threadId,
@@ -195915,7 +196833,13 @@ function mountCommandPalette(store2, api2) {
       }
     });
     if (hasWorkspace) {
-      commands.push({ kind: "command", label: "New thread", run: () => openNewThread(store2) });
+      commands.push({
+        kind: "command",
+        label: "New thread",
+        run: () => {
+          openNewProjectThread(store2, api2);
+        }
+      });
       commands.push({
         kind: "command",
         label: "Quick open files",
@@ -196123,7 +197047,7 @@ var init_command_palette = __esm({
   "src/renderer/views/command-palette.ts"() {
     init_helpers();
     init_icons();
-    init_thread_helpers();
+    init_projects();
     init_projects();
     init_projects();
     init_panels();
@@ -196872,151 +197796,6 @@ var init_thread_prompts = __esm({
   }
 });
 
-// src/renderer/controller/sync-thread-branch-after-shell.ts
-async function syncThreadGitBranchAfterShell(store2, api2, threadId) {
-  const projectId = store2.getState().activeProjectId;
-  if (!projectId) return;
-  let currentBranch;
-  try {
-    ;
-    ({ currentBranch } = await api2.git.branchStatus(projectId, threadId));
-  } catch (error62) {
-    if (!isUnavailableThreadCheckoutError(error62)) throw error62;
-    return;
-  }
-  if (syncThreadGitBranchIfChanged(store2, threadId, currentBranch)) {
-    store2.emit("git_branch_changed");
-  }
-}
-var init_sync_thread_branch_after_shell = __esm({
-  "src/renderer/controller/sync-thread-branch-after-shell.ts"() {
-    init_sync_thread_branch();
-    init_ipc_error_message();
-  }
-});
-
-// src/shared/store/subagent-helpers.ts
-function replaceToolCall(store2, messageId, toolCallId, update) {
-  const loc = locateMessage(store2, messageId);
-  if (!loc) return;
-  const toolCall = loc.message.toolCalls.find((tc2) => tc2.id === toolCallId);
-  if (!toolCall) return;
-  update(toolCall);
-  loc.thread.updatedAt = Date.now();
-  store2.emit("tool_call_updated", messageId, toolCallId);
-}
-function updateSubagentOnToolCall(store2, messageId, toolCallId, updater) {
-  replaceToolCall(store2, messageId, toolCallId, (tc2) => {
-    if (tc2.subagent) tc2.subagent = updater(tc2.subagent);
-  });
-}
-function initSubagent(store2, messageId, toolCallId, session) {
-  replaceToolCall(store2, messageId, toolCallId, (tc2) => {
-    tc2.subagent = session;
-  });
-}
-function appendSubagentText(store2, messageId, toolCallId, subMessageId, text2) {
-  updateSubagentOnToolCall(store2, messageId, toolCallId, (session) => {
-    const existing = session.messages.find((m3) => m3.id === subMessageId);
-    if (existing) {
-      return {
-        ...session,
-        messages: session.messages.map(
-          (m3) => m3.id !== subMessageId ? m3 : { ...m3, content: m3.content + text2 }
-        )
-      };
-    }
-    return {
-      ...session,
-      messages: [
-        ...session.messages,
-        {
-          id: subMessageId,
-          role: "assistant",
-          content: text2,
-          toolCalls: [],
-          createdAt: Date.now()
-        }
-      ]
-    };
-  });
-}
-function appendSubagentReasoning(store2, messageId, toolCallId, subMessageId, text2) {
-  updateSubagentOnToolCall(store2, messageId, toolCallId, (session) => {
-    const existing = session.messages.find((m3) => m3.id === subMessageId);
-    if (existing) {
-      return {
-        ...session,
-        messages: session.messages.map(
-          (m3) => m3.id !== subMessageId ? m3 : { ...m3, reasoning: (m3.reasoning ?? "") + text2 }
-        )
-      };
-    }
-    return {
-      ...session,
-      messages: [
-        ...session.messages,
-        {
-          id: subMessageId,
-          role: "assistant",
-          content: "",
-          toolCalls: [],
-          createdAt: Date.now(),
-          reasoning: text2
-        }
-      ]
-    };
-  });
-}
-function addSubagentToolCall(store2, messageId, toolCallId, subMessageId, toolCall) {
-  updateSubagentOnToolCall(store2, messageId, toolCallId, (session) => {
-    const existing = session.messages.find((m3) => m3.id === subMessageId);
-    if (existing) {
-      return {
-        ...session,
-        messages: session.messages.map(
-          (m3) => m3.id !== subMessageId ? m3 : { ...m3, toolCalls: [...m3.toolCalls, toolCall] }
-        )
-      };
-    }
-    return {
-      ...session,
-      messages: [
-        ...session.messages,
-        {
-          id: subMessageId,
-          role: "assistant",
-          content: "",
-          toolCalls: [toolCall],
-          createdAt: Date.now()
-        }
-      ]
-    };
-  });
-}
-function updateSubagentToolCall(store2, messageId, toolCallId, innerToolCallId, patch) {
-  updateSubagentOnToolCall(store2, messageId, toolCallId, (session) => ({
-    ...session,
-    messages: session.messages.map((m3) => ({
-      ...m3,
-      toolCalls: m3.toolCalls.map((tc2) => tc2.id !== innerToolCallId ? tc2 : { ...tc2, ...patch })
-    }))
-  }));
-}
-function finishSubagent(store2, messageId, toolCallId, summary, status, usage) {
-  updateSubagentOnToolCall(store2, messageId, toolCallId, (session) => ({
-    ...session,
-    status,
-    summary,
-    ...usage ? { usage } : {}
-  }));
-}
-var init_subagent_helpers = __esm({
-  "src/shared/store/subagent-helpers.ts"() {
-    init_thread_helpers();
-  }
-});
-
 // packages/agent/src/agent-text-chunk.ts
 function endsAtBoundary(text2) {
   const trailingWhitespace = text2.slice(text2.trimEnd().length);
@@ -197164,88 +197943,6 @@ var init_agent_text_chunk = __esm({
   }
 });
 
-// src/renderer/controller/diff-state.ts
-function queueKey(entries2) {
-  return JSON.stringify(entries2.map((entry) => [entry.path, entry.language]));
-}
-function attachDiffState(store2, api2, options) {
-  const queuesByOwner = /* @__PURE__ */ new Map();
-  const ownerKey = (projectId, threadId) => JSON.stringify([projectId, threadId]);
-  const isActiveOwner = (projectId, threadId) => {
-    const current = store2.getState();
-    return current.activeProjectId === projectId && current.activeThreadId === threadId;
-  };
-  const publishActiveQueue = (entries2) => {
-    const { activeDiff } = store2.getState();
-    const stillQueued = activeDiff && entries2.some((entry) => entry.path === activeDiff.path) ? activeDiff : null;
-    store2.setState({
-      stagedDiffs: entries2,
-      activeDiff: entries2.length === 0 ? null : stillQueued
-    });
-    store2.emit("staged_diffs_changed");
-    store2.emit("panel_changed");
-  };
-  const unsubShowDiff = api2.diff.onShowDiff(
-    (projectId, threadId, path, before, after, language) => {
-      if (!isActiveOwner(projectId, threadId)) return;
-      store2.setState({ activeDiff: { path, before, after, language } });
-      if (!options.revealOnShowDiff) return;
-      store2.setState({ rightPanelMode: "changes", filesPaneOpen: true });
-      syncFilesPaneDom(store2);
-      store2.emit("right_panel_mode_changed");
-      store2.emit("files_pane_changed");
-      store2.emit("panel_changed");
-    }
-  );
-  const unsubQueued = api2.diff.onQueued((projectId, threadId, entries2) => {
-    queuesByOwner.set(ownerKey(projectId, threadId), entries2);
-    if (isActiveOwner(projectId, threadId)) publishActiveQueue(entries2);
-  });
-  const hydrate = () => {
-    const { activeProjectId, activeThreadId } = store2.getState();
-    if (!activeProjectId || !activeThreadId) return;
-    void (async () => {
-      let entries2;
-      try {
-        entries2 = await api2.diff.queue(activeProjectId, activeThreadId);
-      } catch {
-        return;
-      }
-      if (!isActiveOwner(activeProjectId, activeThreadId)) return;
-      queuesByOwner.set(ownerKey(activeProjectId, activeThreadId), entries2);
-      if (queueKey(store2.getState().stagedDiffs) === queueKey(entries2)) return;
-      publishActiveQueue(entries2);
-    })();
-  };
-  let publishedOwnerKey = ownerKey(
-    store2.getState().activeProjectId ?? "",
-    store2.getState().activeThreadId ?? ""
-  );
-  const syncDiffOwner = () => {
-    const { activeProjectId, activeThreadId } = store2.getState();
-    const nextOwnerKey = ownerKey(activeProjectId ?? "", activeThreadId ?? "");
-    if (nextOwnerKey === publishedOwnerKey) return;
-    publishedOwnerKey = nextOwnerKey;
-    const entries2 = activeProjectId && activeThreadId ? queuesByOwner.get(ownerKey(activeProjectId, activeThreadId)) ?? [] : [];
-    publishActiveQueue(entries2);
-    hydrate();
-  };
-  const unsubWorkspace = store2.on("workspace_changed", syncDiffOwner);
-  const unsubThreads = store2.on("threads_changed", syncDiffOwner);
-  hydrate();
-  return () => {
-    unsubShowDiff();
-    unsubQueued();
-    unsubWorkspace();
-    unsubThreads();
-  };
-}
-var init_diff_state = __esm({
-  "src/renderer/controller/diff-state.ts"() {
-    init_panels();
-  }
-});
-
 // src/shared/remote-agent-stream.ts
 function userContentToText(content) {
   if (typeof content === "string") return content;
@@ -197258,61 +197955,193 @@ var init_remote_agent_stream = __esm({
   }
 });
 
-// src/renderer/controller/agent.ts
-function addAssistantMessage(store2, threadId) {
-  const held = pendingTurn.get(threadId);
-  const requested = held?.requestedModel ?? getThreadById(store2, threadId)?.model ?? store2.getState().settings?.model;
-  return addMessage(store2, threadId, "assistant", "", void 0, void 0, {
-    ...requested !== void 0 ? { requestedModel: requested } : {},
-    ...held?.model !== void 0 ? { model: held.model } : {},
-    ...held?.parameters !== void 0 ? { parameters: held.parameters } : {}
+// src/shared/store/subagent-helpers.ts
+function replaceToolCall(store2, messageId, toolCallId, update) {
+  const loc = locateMessage(store2, messageId);
+  if (!loc) return;
+  const toolCall = loc.message.toolCalls.find((tc2) => tc2.id === toolCallId);
+  if (!toolCall) return;
+  update(toolCall);
+  loc.thread.updatedAt = Date.now();
+  store2.emit("tool_call_updated", messageId, toolCallId);
+}
+function updateSubagentOnToolCall(store2, messageId, toolCallId, updater) {
+  replaceToolCall(store2, messageId, toolCallId, (tc2) => {
+    if (tc2.subagent) tc2.subagent = updater(tc2.subagent);
   });
 }
-function startAgentController(store2, api2) {
+function initSubagent(store2, messageId, toolCallId, session) {
+  replaceToolCall(store2, messageId, toolCallId, (tc2) => {
+    tc2.subagent = session;
+  });
+}
+function appendSubagentText(store2, messageId, toolCallId, subMessageId, text2) {
+  updateSubagentOnToolCall(store2, messageId, toolCallId, (session) => {
+    const existing = session.messages.find((m3) => m3.id === subMessageId);
+    if (existing) {
+      return {
+        ...session,
+        messages: session.messages.map(
+          (m3) => m3.id !== subMessageId ? m3 : { ...m3, content: m3.content + text2 }
+        )
+      };
+    }
+    return {
+      ...session,
+      messages: [
+        ...session.messages,
+        {
+          id: subMessageId,
+          role: "assistant",
+          content: text2,
+          toolCalls: [],
+          createdAt: Date.now()
+        }
+      ]
+    };
+  });
+}
+function appendSubagentReasoning(store2, messageId, toolCallId, subMessageId, text2) {
+  updateSubagentOnToolCall(store2, messageId, toolCallId, (session) => {
+    const existing = session.messages.find((m3) => m3.id === subMessageId);
+    if (existing) {
+      return {
+        ...session,
+        messages: session.messages.map(
+          (m3) => m3.id !== subMessageId ? m3 : { ...m3, reasoning: (m3.reasoning ?? "") + text2 }
+        )
+      };
+    }
+    return {
+      ...session,
+      messages: [
+        ...session.messages,
+        {
+          id: subMessageId,
+          role: "assistant",
+          content: "",
+          toolCalls: [],
+          createdAt: Date.now(),
+          reasoning: text2
+        }
+      ]
+    };
+  });
+}
+function addSubagentToolCall(store2, messageId, toolCallId, subMessageId, toolCall) {
+  updateSubagentOnToolCall(store2, messageId, toolCallId, (session) => {
+    const existing = session.messages.find((m3) => m3.id === subMessageId);
+    if (existing) {
+      return {
+        ...session,
+        messages: session.messages.map(
+          (m3) => m3.id !== subMessageId ? m3 : { ...m3, toolCalls: [...m3.toolCalls, toolCall] }
+        )
+      };
+    }
+    return {
+      ...session,
+      messages: [
+        ...session.messages,
+        {
+          id: subMessageId,
+          role: "assistant",
+          content: "",
+          toolCalls: [toolCall],
+          createdAt: Date.now()
+        }
+      ]
+    };
+  });
+}
+function updateSubagentToolCall(store2, messageId, toolCallId, innerToolCallId, patch) {
+  updateSubagentOnToolCall(store2, messageId, toolCallId, (session) => ({
+    ...session,
+    messages: session.messages.map((m3) => ({
+      ...m3,
+      toolCalls: m3.toolCalls.map((tc2) => tc2.id !== innerToolCallId ? tc2 : { ...tc2, ...patch })
+    }))
+  }));
+}
+function finishSubagent(store2, messageId, toolCallId, summary, status, usage) {
+  updateSubagentOnToolCall(store2, messageId, toolCallId, (session) => ({
+    ...session,
+    status,
+    summary,
+    ...usage ? { usage } : {}
+  }));
+}
+var init_subagent_helpers = __esm({
+  "src/shared/store/subagent-helpers.ts"() {
+    init_thread_helpers();
+  }
+});
+
+// src/shared/store/transcript-reducer.ts
+function createTranscriptReducer(store2, hooks = {}) {
   const state = /* @__PURE__ */ new Map();
-  const get2 = (tid) => {
-    let st3 = state.get(tid);
+  const pendingTurn = /* @__PURE__ */ new Map();
+  const get2 = (threadId) => {
+    let st3 = state.get(threadId);
     if (!st3) {
       st3 = {
         msgId: null,
         toolSinceText: false,
         currentText: "",
         writing: false,
-        summaryMsgId: null,
-        summaryCount: 0,
-        toolSummaryMsgId: null,
-        toolSummaryCount: 0,
-        runSummaryAnchorId: null,
-        runSummaryCount: 0,
-        lastActivityLabel: null,
-        firstActivityTraced: false,
         acpMessageId: null,
         acpThoughtMessageId: null
       };
-      state.set(tid, st3);
+      state.set(threadId, st3);
     }
     return st3;
   };
-  const emitActivity = (tid, label) => {
-    get2(tid).lastActivityLabel = label;
-    store2.emit("agent_activity", tid, label);
+  const activity = (threadId) => {
+    hooks.activity?.(threadId, get2(threadId).writing);
   };
-  const activity = (tid) => {
-    const st3 = get2(tid);
-    st3.lastActivityLabel = syncAgentActivity(store2, tid, st3.writing);
+  const addAssistantMessage = (threadId) => {
+    const held = pendingTurn.get(threadId);
+    const requested = held?.requestedModel ?? getThreadById(store2, threadId)?.model ?? (hooks.defaultModel ? hooks.defaultModel() : store2.getState().settings?.model);
+    const id = hooks.createMessageId?.(threadId);
+    return addMessage(store2, threadId, "assistant", "", void 0, void 0, {
+      ...requested !== void 0 ? { requestedModel: requested } : {},
+      ...held?.model !== void 0 ? { model: held.model } : {},
+      ...held?.parameters !== void 0 ? { parameters: held.parameters } : {},
+      ...id !== void 0 ? { id } : {}
+    });
   };
-  const detachDiffState = attachDiffState(store2, api2, { revealOnShowDiff: true });
-  const unsub = api2.agent.onChunk((threadId, chunk) => {
-    const st3 = get2(threadId);
-    const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "acp_content" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
-    if (firstVisibleActivity && !st3.firstActivityTraced) {
-      st3.firstActivityTraced = true;
-      mark("ttft:renderer-first-activity", { kind: chunk.type });
+  const ensureFreshAfterTools = (threadId, st3) => {
+    if (!st3.msgId || st3.toolSinceText) {
+      if (st3.toolSinceText && st3.msgId) store2.emit("message_done", st3.msgId);
+      st3.msgId = addAssistantMessage(threadId);
+      st3.toolSinceText = false;
+      st3.currentText = "";
     }
+    return st3.msgId;
+  };
+  const appendText = (threadId, st3, text2) => {
+    const { plan, state: nextState } = planAgentTextChunk(
+      { msgId: st3.msgId, toolSinceText: st3.toolSinceText, currentText: st3.currentText },
+      text2
+    );
+    if (plan.action === "ignore") return null;
+    if (plan.startNewMessage) {
+      if (plan.finalizeMsgId) store2.emit("message_done", plan.finalizeMsgId);
+      st3.msgId = addAssistantMessage(threadId);
+    }
+    st3.toolSinceText = nextState.toolSinceText;
+    st3.currentText = nextState.currentText ?? "";
+    if (st3.msgId === null) throw new Error("assistant message id missing for agent text");
+    appendToken(store2, st3.msgId, plan.text);
+    return plan.text;
+  };
+  const apply4 = (threadId, chunk) => {
+    const st3 = get2(threadId);
     switch (chunk.type) {
       case "machine_turn_start": {
-        st3.firstActivityTraced = false;
+        hooks.turnStarted?.(threadId);
         setThreadStatus(store2, threadId, "running");
+        const id = hooks.createMessageId?.(threadId);
         addMessage(
           store2,
           threadId,
@@ -197323,40 +198152,24 @@ function startAgentController(store2, api2) {
           {
             origin: chunk.origin,
             ...chunk.startingCommit !== void 0 ? { startingCommit: chunk.startingCommit } : {},
-            ...chunk.dirty !== void 0 ? { dirty: chunk.dirty } : {}
+            ...chunk.dirty !== void 0 ? { dirty: chunk.dirty } : {},
+            ...id !== void 0 ? { id } : {}
           }
         );
         break;
       }
       case "text": {
-        const { plan, state: nextState } = planAgentTextChunk(
-          { msgId: st3.msgId, toolSinceText: st3.toolSinceText, currentText: st3.currentText },
-          chunk.text
-        );
-        if (plan.action === "ignore") break;
-        if (plan.startNewMessage) {
-          if (plan.finalizeMsgId) store2.emit("message_done", plan.finalizeMsgId);
-          st3.msgId = addAssistantMessage(store2, threadId);
-        }
-        st3.toolSinceText = nextState.toolSinceText;
-        st3.currentText = nextState.currentText ?? "";
-        if (st3.msgId === null) throw new Error("assistant message id missing for text chunk");
-        appendToken(store2, st3.msgId, plan.text);
-        if (plan.text.trim()) {
+        const text2 = appendText(threadId, st3, chunk.text);
+        if (text2 === null) break;
+        if (text2.trim()) {
           st3.writing = true;
           activity(threadId);
-          maybeNameThread(store2, api2, threadId);
+          hooks.visibleOutput?.(threadId);
         }
         break;
       }
       case "reasoning": {
-        if (!st3.msgId || st3.toolSinceText) {
-          if (st3.toolSinceText && st3.msgId) store2.emit("message_done", st3.msgId);
-          st3.msgId = addAssistantMessage(store2, threadId);
-          st3.toolSinceText = false;
-          st3.currentText = "";
-        }
-        appendReasoning(store2, st3.msgId, chunk.text);
+        appendReasoning(store2, ensureFreshAfterTools(threadId, st3), chunk.text);
         st3.writing = false;
         activity(threadId);
         break;
@@ -197376,64 +198189,36 @@ function startAgentController(store2, api2) {
         }
         if (chunk.content.type === "text") {
           if (chunk.channel === "thought") {
-            if (!st3.msgId || st3.toolSinceText) {
-              if (st3.toolSinceText && st3.msgId) store2.emit("message_done", st3.msgId);
-              st3.msgId = addAssistantMessage(store2, threadId);
-              st3.toolSinceText = false;
-              st3.currentText = "";
-            }
-            appendReasoning(store2, st3.msgId, chunk.content.text);
+            appendReasoning(store2, ensureFreshAfterTools(threadId, st3), chunk.content.text);
             st3.writing = false;
           } else {
-            const { plan, state: nextState } = planAgentTextChunk(
-              { msgId: st3.msgId, toolSinceText: st3.toolSinceText, currentText: st3.currentText },
-              chunk.content.text
-            );
-            if (plan.action === "ignore") break;
-            if (plan.startNewMessage) {
-              if (plan.finalizeMsgId) store2.emit("message_done", plan.finalizeMsgId);
-              st3.msgId = addAssistantMessage(store2, threadId);
-            }
-            st3.toolSinceText = nextState.toolSinceText;
-            st3.currentText = nextState.currentText ?? "";
-            if (st3.msgId === null) throw new Error("assistant message id missing for agent text");
-            appendToken(store2, st3.msgId, plan.text);
-            st3.writing = plan.text.trim().length > 0;
-            if (st3.writing) maybeNameThread(store2, api2, threadId);
+            const text2 = appendText(threadId, st3, chunk.content.text);
+            if (text2 === null) break;
+            st3.writing = text2.trim().length > 0;
+            if (st3.writing) hooks.visibleOutput?.(threadId);
           }
         } else {
-          if (!st3.msgId || st3.toolSinceText) {
-            if (st3.toolSinceText && st3.msgId) store2.emit("message_done", st3.msgId);
-            st3.msgId = addAssistantMessage(store2, threadId);
-            st3.toolSinceText = false;
-            st3.currentText = "";
-          }
-          appendAcpContentBlock(store2, st3.msgId, chunk.channel, chunk.content);
+          const msgId = ensureFreshAfterTools(threadId, st3);
+          appendAcpContentBlock(store2, msgId, chunk.channel, chunk.content);
           st3.writing = false;
-          maybeNameThread(store2, api2, threadId);
+          hooks.visibleOutput?.(threadId);
         }
         activity(threadId);
         break;
       }
       case "text_replace": {
-        st3.msgId ??= addAssistantMessage(store2, threadId);
+        st3.msgId ??= addAssistantMessage(threadId);
         setMessageContent(store2, st3.msgId, chunk.text);
         st3.currentText = chunk.text;
         break;
       }
       case "canvas_artefact": {
-        if (!st3.msgId || st3.toolSinceText) {
-          if (st3.toolSinceText && st3.msgId) store2.emit("message_done", st3.msgId);
-          st3.msgId = addAssistantMessage(store2, threadId);
-          st3.toolSinceText = false;
-          st3.currentText = "";
-        }
-        addMessageCanvasArtefact(store2, st3.msgId, chunk.artefact);
+        addMessageCanvasArtefact(store2, ensureFreshAfterTools(threadId, st3), chunk.artefact);
         break;
       }
       case "tool_call": {
         if (findToolCallOwner(store2, threadId, chunk.toolCall.id)) break;
-        st3.msgId ??= addAssistantMessage(store2, threadId);
+        st3.msgId ??= addAssistantMessage(threadId);
         addToolCall(store2, st3.msgId, {
           id: chunk.toolCall.id,
           name: chunk.toolCall.name,
@@ -197447,7 +198232,7 @@ function startAgentController(store2, api2) {
         st3.toolSinceText = true;
         st3.writing = false;
         activity(threadId);
-        maybeNameThread(store2, api2, threadId);
+        hooks.visibleOutput?.(threadId);
         break;
       }
       case "tool_call_update": {
@@ -197489,16 +198274,7 @@ function startAgentController(store2, api2) {
             ...chunk.appendedReminderLengths ? { appendedReminderLengths: chunk.appendedReminderLengths } : {},
             ...chunk.images ? { images: chunk.images } : {}
           });
-          if (chunk.toolCallId && !chunk.isError) {
-            const toolCall = findToolCall(store2, ownerId, chunk.toolCallId);
-            if (toolCall?.name === "run_shell" && threadId === store2.getState().activeThreadId && shellCommandMayChangeBranch(toolCall.args)) {
-              void syncThreadGitBranchAfterShell(store2, api2, threadId);
-            }
-            tryOpenFileFromResult(store2, chunk.result);
-          }
-          maybeSummarizeCommands(store2, api2, threadId, st3);
-          maybeSummarizeToolTurn(store2, api2, threadId, st3);
-          maybeSummarizeToolRun(store2, api2, threadId, st3);
+          hooks.toolResult?.(threadId, ownerId, chunk);
         }
         st3.writing = false;
         activity(threadId);
@@ -197516,7 +198292,7 @@ function startAgentController(store2, api2) {
           conversationTokens: chunk.estimatedTokens,
           fillRatio: chunk.estimatedTokens / chunk.historyBudget
         });
-        emitActivity(threadId, CONTEXT_TRIM_ACTIVITY);
+        hooks.activityLabel?.(threadId, "context_trimmed");
         break;
       }
       case "turn_parameters": {
@@ -197550,8 +198326,7 @@ function startAgentController(store2, api2) {
         break;
       }
       case "prompt_progress": {
-        const label = promptProgressLabel(chunk.fraction);
-        if (label !== st3.lastActivityLabel) emitActivity(threadId, label);
+        hooks.promptProgress?.(threadId, chunk.fraction);
         break;
       }
       case "context_pressure": {
@@ -197566,7 +198341,7 @@ function startAgentController(store2, api2) {
         break;
       }
       case "subagent_start": {
-        st3.msgId ??= addAssistantMessage(store2, threadId);
+        st3.msgId ??= addAssistantMessage(threadId);
         initSubagent(store2, st3.msgId, chunk.parentToolCallId, chunk.session);
         st3.writing = false;
         activity(threadId);
@@ -197668,20 +198443,20 @@ function startAgentController(store2, api2) {
             ...chunk.followUpNote !== void 0 ? { followUpNote: chunk.followUpNote } : {}
           });
         }
-        if (chunk.status === "running") emitActivity(threadId, "Reviewing changes\u2026");
+        if (chunk.status === "running") hooks.activityLabel?.(threadId, "reviewing");
         break;
       }
       case "review_report": {
         const thread = getThreadById(store2, threadId);
-        const requestedAnchor = getReviewReportTarget(store2, threadId);
+        const requestedAnchor = hooks.reviewReportTarget?.(threadId);
         const anchorId = requestedAnchor !== void 0 ? requestedAnchor : st3.msgId ?? [...thread?.messages ?? []].reverse().find((message2) => message2.role === "assistant")?.id ?? null;
         if (anchorId === null) setThreadReviewReport(store2, threadId, chunk.report);
         else setMessageReviewReport(store2, threadId, anchorId, chunk.report);
         if (requestedAnchor !== void 0 && chunk.report.status !== "running") {
-          clearReviewReportTarget(store2, threadId);
+          hooks.reviewReportSettled?.(threadId);
         }
         if (chunk.report.status === "running") {
-          emitActivity(threadId, "Reviewing changes\u2026");
+          hooks.activityLabel?.(threadId, "reviewing");
         }
         break;
       }
@@ -197692,13 +198467,13 @@ function startAgentController(store2, api2) {
         break;
       }
       case "continuation_budget": {
-        foldBackContinuationUsed(store2, threadId, chunk.turnTreeId, chunk.used);
+        hooks.continuationBudget?.(threadId, chunk.turnTreeId, chunk.used);
         break;
       }
       case "turn_outcome": {
-        st3.msgId ??= addAssistantMessage(store2, threadId);
+        st3.msgId ??= addAssistantMessage(threadId);
         const userCancelled = chunk.outcome.status === "cancelled" && chunk.outcome.source === "user";
-        const outcome2 = userCancelled ? { ...chunk.outcome, userAbort: takeSendNowAbort(threadId) ? "send_now" : "stop" } : chunk.outcome;
+        const outcome2 = userCancelled && chunk.outcome.userAbort === void 0 ? { ...chunk.outcome, userAbort: hooks.userAbort?.(threadId) ?? "stop" } : chunk.outcome;
         setMessageTurnOutcome(store2, threadId, st3.msgId, outcome2);
         if (outcome2.status === "failed" && outcome2.error) {
           const detail = outcome2.error;
@@ -197715,56 +198490,330 @@ function startAgentController(store2, api2) {
         if (st3.msgId) store2.emit("message_done", st3.msgId);
         state.delete(threadId);
         pendingTurn.delete(threadId);
-        const reviewTarget = getReviewReportTarget(store2, threadId);
-        if (reviewTarget !== void 0) {
-          failRunningReviewReport(
-            store2,
-            threadId,
-            reviewTarget,
-            "The review ended before it produced a report."
-          );
-          clearReviewReportTarget(store2, threadId);
-        }
-        takeSendNowAbort(threadId);
+        hooks.beforeIdle?.(threadId);
         setThreadStatus(store2, threadId, "idle");
-        maybeRenameThreadBranch(store2, api2, threadId);
-        store2.emit("agent_activity", threadId, null);
-        if (threadId === store2.getState().activeThreadId) {
-          void syncThreadGitBranchAfterShell(store2, api2, threadId);
-        }
-        const backgroundProjectId = backgroundProjectOf(store2, threadId);
-        const backgroundProjectWasRemoved = backgroundProjectId !== void 0 && !store2.getState().projects.some((project2) => project2.id === backgroundProjectId);
-        if (backgroundProjectId) {
-          const finished = getThreadById(store2, threadId);
-          if (finished) {
-            void api2.threads.updateMeta(backgroundProjectId, threadId, {
-              status: finished.status,
-              usage: finished.usage,
-              updatedAt: finished.updatedAt,
-              title: finished.title,
-              pendingMessages: finished.pendingMessages ?? [],
-              continuationUsed: finished.continuationUsed ?? 0,
-              ...finished.currentEpoch !== void 0 ? { currentEpoch: finished.currentEpoch } : {},
-              ...finished.todos !== void 0 ? { todos: finished.todos } : {}
-            }).catch((err2) => {
-              console.error("[threads] could not persist a background run finish", err2);
-            });
-          }
-        }
-        if (!backgroundProjectWasRemoved) drainMessageQueue(store2, api2, threadId);
-        const finishedThread = getThreadById(store2, threadId);
-        const quiet = takeQuietRun(threadId);
-        if (finishedThread?.status === "idle") {
-          markThreadUnread(store2, threadId);
-          if (!quiet) {
-            void api2.alerts.threadFinished(threadId, finishedThread.title).catch((error62) => {
-              console.error("[alerts] failed to signal thread completion:", error62);
-            });
-          }
-        }
-        if (backgroundProjectWasRemoved) dropBackgroundThread(store2, threadId);
+        hooks.turnDone?.(threadId);
         break;
       }
+    }
+  };
+  return {
+    apply: apply4,
+    streamingMessageId: (threadId) => state.get(threadId)?.msgId ?? null,
+    checkpoint: (threadId) => structuredClone({
+      stream: state.get(threadId) ?? null,
+      pendingTurn: pendingTurn.get(threadId) ?? null
+    }),
+    restore: (threadId, checkpoint) => {
+      state.delete(threadId);
+      pendingTurn.delete(threadId);
+      if (checkpoint.stream) state.set(threadId, structuredClone(checkpoint.stream));
+      if (checkpoint.pendingTurn) pendingTurn.set(threadId, structuredClone(checkpoint.pendingTurn));
+    }
+  };
+}
+var init_transcript_reducer = __esm({
+  "src/shared/store/transcript-reducer.ts"() {
+    init_automation_failure();
+    init_dynamic_model();
+    init_agent_text_chunk();
+    init_remote_agent_stream();
+    init_thread_helpers();
+    init_subagent_helpers();
+  }
+});
+
+// src/renderer/controller/sync-thread-branch-after-shell.ts
+async function syncThreadGitBranchAfterShell(store2, api2, threadId) {
+  const projectId = store2.getState().activeProjectId;
+  if (!projectId) return;
+  let currentBranch;
+  try {
+    ;
+    ({ currentBranch } = await api2.git.branchStatus(projectId, threadId));
+  } catch (error62) {
+    if (!isUnavailableThreadCheckoutError(error62)) throw error62;
+    return;
+  }
+  if (syncThreadGitBranchIfChanged(store2, threadId, currentBranch)) {
+    store2.emit("git_branch_changed");
+  }
+}
+var init_sync_thread_branch_after_shell = __esm({
+  "src/renderer/controller/sync-thread-branch-after-shell.ts"() {
+    init_sync_thread_branch();
+    init_ipc_error_message();
+  }
+});
+
+// src/renderer/controller/diff-state.ts
+function queueKey(entries2) {
+  return JSON.stringify(entries2.map((entry) => [entry.path, entry.language]));
+}
+function attachDiffState(store2, api2, options) {
+  const queuesByOwner = /* @__PURE__ */ new Map();
+  const ownerKey = (projectId, threadId) => JSON.stringify([projectId, threadId]);
+  const isActiveOwner = (projectId, threadId) => {
+    const current = store2.getState();
+    return current.activeProjectId === projectId && current.activeThreadId === threadId;
+  };
+  const publishActiveQueue = (entries2) => {
+    const { activeDiff } = store2.getState();
+    const stillQueued = activeDiff && entries2.some((entry) => entry.path === activeDiff.path) ? activeDiff : null;
+    store2.setState({
+      stagedDiffs: entries2,
+      activeDiff: entries2.length === 0 ? null : stillQueued
+    });
+    store2.emit("staged_diffs_changed");
+    store2.emit("panel_changed");
+  };
+  const unsubShowDiff = api2.diff.onShowDiff(
+    (projectId, threadId, path, before, after, language) => {
+      if (!isActiveOwner(projectId, threadId)) return;
+      store2.setState({ activeDiff: { path, before, after, language } });
+      if (!options.revealOnShowDiff) return;
+      store2.setState({ rightPanelMode: "changes", filesPaneOpen: true });
+      syncFilesPaneDom(store2);
+      store2.emit("right_panel_mode_changed");
+      store2.emit("files_pane_changed");
+      store2.emit("panel_changed");
+    }
+  );
+  const unsubQueued = api2.diff.onQueued((projectId, threadId, entries2) => {
+    queuesByOwner.set(ownerKey(projectId, threadId), entries2);
+    if (isActiveOwner(projectId, threadId)) publishActiveQueue(entries2);
+  });
+  const hydrate = () => {
+    const { activeProjectId, activeThreadId } = store2.getState();
+    if (!activeProjectId || !activeThreadId) return;
+    void (async () => {
+      let entries2;
+      try {
+        entries2 = await api2.diff.queue(activeProjectId, activeThreadId);
+      } catch {
+        return;
+      }
+      if (!isActiveOwner(activeProjectId, activeThreadId)) return;
+      queuesByOwner.set(ownerKey(activeProjectId, activeThreadId), entries2);
+      if (queueKey(store2.getState().stagedDiffs) === queueKey(entries2)) return;
+      publishActiveQueue(entries2);
+    })();
+  };
+  let publishedOwnerKey = ownerKey(
+    store2.getState().activeProjectId ?? "",
+    store2.getState().activeThreadId ?? ""
+  );
+  const syncDiffOwner = () => {
+    const { activeProjectId, activeThreadId } = store2.getState();
+    const nextOwnerKey = ownerKey(activeProjectId ?? "", activeThreadId ?? "");
+    if (nextOwnerKey === publishedOwnerKey) return;
+    publishedOwnerKey = nextOwnerKey;
+    const entries2 = activeProjectId && activeThreadId ? queuesByOwner.get(ownerKey(activeProjectId, activeThreadId)) ?? [] : [];
+    publishActiveQueue(entries2);
+    hydrate();
+  };
+  const unsubWorkspace = store2.on("workspace_changed", syncDiffOwner);
+  const unsubThreads = store2.on("threads_changed", syncDiffOwner);
+  hydrate();
+  return () => {
+    unsubShowDiff();
+    unsubQueued();
+    unsubWorkspace();
+    unsubThreads();
+  };
+}
+var init_diff_state = __esm({
+  "src/renderer/controller/diff-state.ts"() {
+    init_panels();
+  }
+});
+
+// src/renderer/controller/agent.ts
+function startAgentController(store2, api2) {
+  const ui2 = /* @__PURE__ */ new Map();
+  const get2 = (tid) => {
+    let st3 = ui2.get(tid);
+    if (!st3) {
+      st3 = {
+        summaryMsgId: null,
+        summaryCount: 0,
+        toolSummaryMsgId: null,
+        toolSummaryCount: 0,
+        runSummaryAnchorId: null,
+        runSummaryCount: 0,
+        lastActivityLabel: null,
+        firstActivityTraced: false
+      };
+      ui2.set(tid, st3);
+    }
+    return st3;
+  };
+  const emitActivity = (tid, label) => {
+    get2(tid).lastActivityLabel = label;
+    store2.emit("agent_activity", tid, label);
+  };
+  let stampedIds = [];
+  const reducer = createTranscriptReducer(store2, {
+    createMessageId: () => stampedIds.shift(),
+    userAbort: (threadId) => takeSendNowAbort(threadId) ? "send_now" : "stop",
+    reviewReportTarget: (threadId) => getReviewReportTarget(store2, threadId),
+    reviewReportSettled: (threadId) => {
+      clearReviewReportTarget(store2, threadId);
+    },
+    turnStarted: (threadId) => {
+      get2(threadId).firstActivityTraced = false;
+    },
+    activity: (threadId, writing) => {
+      get2(threadId).lastActivityLabel = syncAgentActivity(store2, threadId, writing);
+    },
+    activityLabel: (threadId, phase) => {
+      emitActivity(
+        threadId,
+        phase === "context_trimmed" ? CONTEXT_TRIM_ACTIVITY : "Reviewing changes\u2026"
+      );
+    },
+    promptProgress: (threadId, fraction) => {
+      const label = promptProgressLabel(fraction);
+      if (label !== get2(threadId).lastActivityLabel) emitActivity(threadId, label);
+    },
+    visibleOutput: (threadId) => {
+      maybeNameThread(store2, api2, threadId);
+    },
+    toolResult: (threadId, ownerId, chunk) => {
+      if (chunk.toolCallId && !chunk.isError) {
+        const toolCall = findToolCall(store2, ownerId, chunk.toolCallId);
+        if (toolCall?.name === "run_shell" && threadId === store2.getState().activeThreadId && shellCommandMayChangeBranch(toolCall.args)) {
+          void syncThreadGitBranchAfterShell(store2, api2, threadId);
+        }
+      }
+      const msgId = reducer.streamingMessageId(threadId);
+      const st3 = get2(threadId);
+      maybeSummarizeCommands(store2, api2, threadId, msgId, st3);
+      maybeSummarizeToolTurn(store2, api2, threadId, msgId, st3);
+      maybeSummarizeToolRun(store2, api2, threadId, msgId, st3);
+    },
+    continuationBudget: (threadId, turnTreeId, used) => {
+      foldBackContinuationUsed(store2, threadId, turnTreeId, used);
+    },
+    beforeIdle: (threadId) => {
+      ui2.delete(threadId);
+      const reviewTarget = getReviewReportTarget(store2, threadId);
+      if (reviewTarget !== void 0) {
+        failRunningReviewReport(
+          store2,
+          threadId,
+          reviewTarget,
+          "The review ended before it produced a report."
+        );
+        clearReviewReportTarget(store2, threadId);
+      }
+      takeSendNowAbort(threadId);
+    },
+    turnDone: (threadId) => {
+      finishTurn(threadId);
+    }
+  });
+  const finishTurn = (threadId) => {
+    maybeRenameThreadBranch(store2, api2, threadId);
+    store2.emit("agent_activity", threadId, null);
+    if (threadId === store2.getState().activeThreadId) {
+      void syncThreadGitBranchAfterShell(store2, api2, threadId);
+    }
+    const backgroundProjectId = backgroundProjectOf(store2, threadId);
+    const backgroundProjectWasRemoved = backgroundProjectId !== void 0 && !store2.getState().projects.some((project2) => project2.id === backgroundProjectId);
+    if (backgroundProjectId) {
+      const finished = getThreadById(store2, threadId);
+      if (finished) {
+        void api2.threads.updateMeta(backgroundProjectId, threadId, {
+          status: finished.status,
+          usage: finished.usage,
+          updatedAt: finished.updatedAt,
+          title: finished.title,
+          pendingMessages: finished.pendingMessages ?? [],
+          continuationUsed: finished.continuationUsed ?? 0,
+          ...finished.currentEpoch !== void 0 ? { currentEpoch: finished.currentEpoch } : {},
+          ...finished.todos !== void 0 ? { todos: finished.todos } : {}
+        }).catch((err2) => {
+          console.error("[threads] could not persist a background run finish", err2);
+        });
+      }
+    }
+    if (!backgroundProjectWasRemoved) drainMessageQueue(store2, api2, threadId);
+    const finishedThread = getThreadById(store2, threadId);
+    const quiet = takeQuietRun(threadId);
+    if (finishedThread?.status === "idle") {
+      markThreadUnread(store2, threadId);
+      if (!quiet) {
+        void api2.alerts.threadFinished(threadId, finishedThread.title).catch((error62) => {
+          console.error("[alerts] failed to signal thread completion:", error62);
+        });
+      }
+    }
+    if (backgroundProjectWasRemoved) dropBackgroundThread(store2, threadId);
+  };
+  const detachDiffState = attachDiffState(store2, api2, { revealOnShowDiff: true });
+  const attached = /* @__PURE__ */ new Set();
+  const unsubSnapshot = api2.agent.onTranscriptSnapshot(({ projectId, thread, checkpoint }) => {
+    if (getThreadProjectId(store2, thread.id) !== projectId) return;
+    applyRuntimeOwnedChunk(
+      thread.messages.map((message2) => message2.id),
+      () => {
+        patchThreadAnywhere(store2, thread.id, (current2) => {
+          return {
+            ...current2,
+            ...transcriptMeta(thread),
+            // Queue recovery may already have proven the persisted run died.
+            // An idle attachment's disk snapshot must not resurrect that stale
+            // running flag after recovery has offered an explicit retry.
+            ...current2.interruptedTurnAt !== void 0 && checkpoint.stream === null && checkpoint.pendingTurn === null ? { status: current2.status } : {},
+            messages: mergeRuntimeMessages(current2.messages, thread.messages)
+          };
+        });
+        reducer.restore(thread.id, checkpoint);
+        attached.add(thread.id);
+        const current = getThreadById(store2, thread.id);
+        if (current) acceptRuntimeThreadMeta(projectId, current);
+        store2.emit("threads_changed");
+        syncAgentActivity(store2, thread.id, checkpoint.stream?.writing ?? false);
+      }
+    );
+  });
+  const attach = () => {
+    const { activeProjectId, threads } = store2.getState();
+    if (!activeProjectId) return;
+    void api2.agent.attachTranscripts(
+      activeProjectId,
+      threads.map((thread) => thread.id)
+    ).catch((error62) => {
+      console.error("[threads] could not attach transcripts:", error62);
+    });
+  };
+  const unsubWorkspace = store2.on("workspace_changed", attach);
+  attach();
+  const unsub = api2.agent.onChunk((threadId, chunk, stamp) => {
+    if (stamp && !attached.has(threadId)) return;
+    const st3 = get2(threadId);
+    const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "acp_content" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
+    if (firstVisibleActivity && !st3.firstActivityTraced) {
+      st3.firstActivityTraced = true;
+      mark("ttft:renderer-first-activity", { kind: chunk.type });
+    }
+    if (!stamp) {
+      reducer.apply(threadId, chunk);
+      return;
+    }
+    stampedIds = [...stamp.messageIds];
+    const previous = getThreadById(store2, threadId);
+    const beforeMeta = previous ? structuredClone(transcriptMeta(previous)) : void 0;
+    try {
+      applyRuntimeOwnedChunk(stamp.messageIds, () => {
+        reducer.apply(threadId, chunk);
+        const thread = getThreadById(store2, threadId);
+        const projectId = getThreadProjectId(store2, threadId);
+        if (thread && projectId) acceptRuntimeThreadMeta(projectId, thread, beforeMeta);
+      });
+    } finally {
+      stampedIds = [];
     }
   });
   const unsubHookQueue = api2.agent.onHookQueueMessage((payload) => {
@@ -197783,12 +198832,30 @@ function startAgentController(store2, api2) {
   return () => {
     unsub();
     unsubHookQueue();
+    unsubSnapshot();
+    unsubWorkspace();
     unsubThreadPrompts();
     detachDiffState();
   };
 }
-function maybeSummarizeCommands(store2, api2, threadId, st3) {
-  const msgId = st3.msgId;
+function applySummary(store2, api2, threadId, messageId, annotation) {
+  if (annotation.commandSummary !== void 0) {
+    setMessageCommandSummary(store2, messageId, annotation.commandSummary);
+  }
+  if (annotation.toolSummary !== void 0) {
+    setMessageToolSummary(store2, messageId, annotation.toolSummary);
+  }
+  if (annotation.runSummary !== void 0) {
+    setMessageRunSummary(store2, messageId, annotation.runSummary);
+  }
+  if (!isRuntimeOwnedMessage(messageId)) return;
+  const projectId = backgroundProjectOf(store2, threadId) ?? store2.getState().activeProjectId;
+  if (!projectId) return;
+  void api2.threads.annotateMessage(projectId, threadId, messageId, annotation).catch((err2) => {
+    console.error("[threads] could not save a summary label", err2);
+  });
+}
+function maybeSummarizeCommands(store2, api2, threadId, msgId, st3) {
   if (!msgId) return;
   const msg = getThreadById(store2, threadId)?.messages.find((m3) => m3.id === msgId);
   if (!msg) return;
@@ -197804,11 +198871,12 @@ function maybeSummarizeCommands(store2, api2, threadId, st3) {
     } catch {
       summary = null;
     }
-    if (summary?.trim()) setMessageCommandSummary(store2, msgId, summary.trim());
+    if (summary?.trim()) {
+      applySummary(store2, api2, threadId, msgId, { commandSummary: summary.trim() });
+    }
   })();
 }
-function maybeSummarizeToolTurn(store2, api2, threadId, st3) {
-  const msgId = st3.msgId;
+function maybeSummarizeToolTurn(store2, api2, threadId, msgId, st3) {
   if (!msgId) return;
   const msg = getThreadById(store2, threadId)?.messages.find((m3) => m3.id === msgId);
   if (!msg) return;
@@ -197825,11 +198893,12 @@ function maybeSummarizeToolTurn(store2, api2, threadId, st3) {
     } catch {
       summary = null;
     }
-    if (summary?.trim()) setMessageToolSummary(store2, msgId, summary.trim());
+    if (summary?.trim()) {
+      applySummary(store2, api2, threadId, msgId, { toolSummary: summary.trim() });
+    }
   })();
 }
-function maybeSummarizeToolRun(store2, api2, threadId, st3) {
-  const msgId = st3.msgId;
+function maybeSummarizeToolRun(store2, api2, threadId, msgId, st3) {
   if (!msgId) return;
   const thread = getThreadById(store2, threadId);
   if (!thread) return;
@@ -197848,24 +198917,41 @@ function maybeSummarizeToolRun(store2, api2, threadId, st3) {
       summary = null;
     }
     if (st3.runSummaryAnchorId === run4.anchorId && st3.runSummaryCount !== requestCount) return;
-    if (summary?.trim()) setMessageRunSummary(store2, run4.anchorId, summary.trim());
+    if (summary?.trim()) {
+      applySummary(store2, api2, threadId, run4.anchorId, { runSummary: summary.trim() });
+    }
   })();
 }
-function tryOpenFileFromResult(_store, _result) {
+function mergeRuntimeMessages(current, incoming) {
+  const messages = [...current];
+  let previous = -1;
+  for (const message2 of incoming) {
+    const index = messages.findIndex((candidate) => candidate.id === message2.id);
+    if (index < 0) {
+      previous += 1;
+      messages.splice(previous, 0, message2);
+      continue;
+    }
+    const local = messages[index];
+    messages[index] = {
+      ...local,
+      ...message2
+    };
+    previous = index;
+  }
+  return messages;
 }
-var pendingTurn;
 var init_agent = __esm({
   "src/renderer/controller/agent.ts"() {
-    init_automation_failure();
     init_thread_prompts();
-    init_dynamic_model();
     init_thread_helpers();
+    init_transcript_state();
+    init_persistence();
+    init_transcript_reducer();
     init_sync_thread_branch_after_shell();
     init_sync_thread_branch();
     init_tool_display();
     init_tool_runs();
-    init_subagent_helpers();
-    init_agent_text_chunk();
     init_agent_activity();
     init_message_queue();
     init_diff_state();
@@ -197874,9 +198960,8 @@ var init_agent = __esm({
     init_review_report_target();
     init_send_now_aborts();
     init_background_threads();
-    init_remote_agent_stream();
+    init_runtime_transcript();
     init_perf();
-    pendingTurn = /* @__PURE__ */ new Map();
   }
 });
 
@@ -206251,6 +207336,9 @@ async function boot() {
   mountOnboardingDialog(store, api);
   const approvalRequests = mountApprovalDialog(api, store);
   const askUserRequests = mountAskUserDialog(api, store);
+  void api.agent.replayPendingDecisions().catch((error62) => {
+    console.error("[agent] could not restore pending decisions:", error62);
+  });
   mountAlertThreadNavigation(store, api);
   mountSshPromptDialog(api);
   mountUpdatePromptDialog(api);
@@ -206355,7 +207443,7 @@ async function boot() {
   api.menu.onNewThread(() => {
     if (!store.getState().workspaceRoot) return;
     ensureLayout();
-    openNewThread(store);
+    openNewProjectThread(store, api);
   });
   api.menu.onToggleSidebar(() => {
     ensureLayout();
@@ -206596,7 +207684,7 @@ function registerKeyboardShortcuts() {
     if (isAnyDialogOpen()) return;
     if (meta3 && e3.key === "t") {
       e3.preventDefault();
-      openNewThread(store);
+      openNewProjectThread(store, api);
     }
     if (meta3 && e3.shiftKey && e3.key.toLowerCase() === "p") {
       e3.preventDefault();
@@ -206708,6 +207796,7 @@ var init_main = __esm({
     init_themes();
     init_popout();
     init_store();
+    init_projects();
     init_thread_helpers();
     init_welcome();
     init_titlebar();
