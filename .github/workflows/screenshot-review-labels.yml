@@ -50,7 +50,7 @@ jobs:
       (github.event.label.name == 'accept-screenshots' ||
       github.event.label.name == 'decline-screenshots') &&
       github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
