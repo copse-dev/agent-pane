@@ -119,12 +119,13 @@ describe('spawnRemoteShellCommand', () => {
     const fakeSsh = join(binDir, 'ssh')
     writeFileSync(fakeSsh, `#!/bin/sh\nprintf '${REMOTE_PGID_PREFIX}4242\\nhello\\n'\n`)
     chmodSync(fakeSsh, 0o755)
-    previousPath = process.env.PATH
-    process.env.PATH = `${binDir}:${previousPath ?? ''}`
+    previousPath = process.env['PATH']
+    process.env['PATH'] = `${binDir}:${previousPath ?? ''}`
   })
 
   afterEach(() => {
-    process.env.PATH = previousPath
+    if (previousPath === undefined) delete process.env['PATH']
+    else process.env['PATH'] = previousPath
     rmSync(binDir, { recursive: true, force: true })
     resetSshConnectionManagerForTests()
   })
