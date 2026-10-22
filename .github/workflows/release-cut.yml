@@ -29,7 +29,7 @@ concurrency:
 
 jobs:
   cut:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - id: target
         name: Resolve the release commit to cut from

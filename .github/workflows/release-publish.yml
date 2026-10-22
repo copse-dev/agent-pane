@@ -33,7 +33,7 @@ concurrency:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       RELEASE_REPOSITORY: copse-dev/copse-releases
     steps:

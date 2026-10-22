@@ -32,7 +32,7 @@ concurrency:
 
 jobs:
   preflight:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       release_sha: ${{ steps.release.outputs.release_sha }}
       release_type: ${{ steps.release.outputs.release_type }}
@@ -148,7 +148,7 @@ jobs:
   # signing or packaging begins.
   verify-clean-release-build:
     needs: preflight
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -367,7 +367,7 @@ jobs:
 
   assemble:
     needs: [preflight, build-test]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -433,7 +433,7 @@ jobs:
   report-failure:
     needs: [preflight, verify-clean-release-build, build-test, assemble]
     if: failure()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       issues: write
     steps:
