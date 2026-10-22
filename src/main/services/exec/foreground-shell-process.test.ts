@@ -204,8 +204,8 @@ describe('foreground shell sandbox violation attribution', () => {
   let store: SandboxViolationStore
   /** Attribution keys the wrapper saw, one per sandboxed run, in order. */
   let runKeys: string[]
-  /** Violations each wrap records, keyed by the run index they belong to. */
-  let violationsDuringWrap: (runIndex: number) => number[]
+  /** Per wrap (by run index): the run indexes whose violations land in the store then. */
+  let violationsDuringWrap: number[][]
 
   function recordViolation(key: string): void {
     store.addViolation({
@@ -219,7 +219,7 @@ describe('foreground shell sandbox violation attribution', () => {
     root = mkdtempSync(join(tmpdir(), 'copse-violation-attribution-'))
     store = new SandboxViolationStore()
     runKeys = []
-    violationsDuringWrap = () => []
+    violationsDuringWrap = []
     mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
     mock.method(SandboxManager, 'cleanupAfterCommand', () => {})
     mock.method(SandboxManager, 'getSandboxViolationStore', () => store)
@@ -236,7 +236,7 @@ describe('foreground shell sandbox violation attribution', () => {
       ) => {
         const runIndex = runKeys.length
         runKeys.push(options?.commandId ?? command)
-        for (const owner of violationsDuringWrap(runIndex)) {
+        for (const owner of violationsDuringWrap[runIndex] ?? []) {
           const key = runKeys[owner]
           if (key !== undefined) recordViolation(key)
         }
@@ -260,7 +260,7 @@ describe('foreground shell sandbox violation attribution', () => {
   it('does not count an earlier run of the same command against a later failure', async () => {
     const command = 'pnpm test >/dev/null 2>&1; exit "$COPSE_TEST_EXIT"'
     // The first run touches a denied path but succeeds; the second fails on its own.
-    violationsDuringWrap = (runIndex) => (runIndex === 0 ? [0] : [])
+    violationsDuringWrap = [[0]]
     const first = await run(command, 0)
     const second = await run(command, 1)
 
@@ -278,7 +278,7 @@ describe('foreground shell sandbox violation attribution', () => {
 
   it('does not share violations between commands with the same first 100 characters', async () => {
     const prefix = `: ${'x'.repeat(100)};`
-    violationsDuringWrap = (runIndex) => (runIndex === 0 ? [0] : [])
+    violationsDuringWrap = [[0]]
     const blocked = await run(`${prefix} exit "$COPSE_TEST_EXIT"`, 1)
     const other = await run(`${prefix} true; exit "$COPSE_TEST_EXIT"`, 1)
 
@@ -289,7 +289,7 @@ describe('foreground shell sandbox violation attribution', () => {
   it('attributes a late log line to the run that caused it, not the run that is executing', async () => {
     const command = 'exit "$COPSE_TEST_EXIT"'
     // The first run's violation only reaches the store while the second runs.
-    violationsDuringWrap = (runIndex) => (runIndex === 1 ? [0] : [])
+    violationsDuringWrap = [[], [0]]
     await run(command, 0)
     const second = await run(command, 1)
 
@@ -297,7 +297,7 @@ describe('foreground shell sandbox violation attribution', () => {
   })
 
   it('still counts a violation the current run recorded', async () => {
-    violationsDuringWrap = (runIndex) => [runIndex]
+    violationsDuringWrap = [[0]]
     const result = await run('exit "$COPSE_TEST_EXIT"', 1)
 
     assert.equal(result.sandboxViolationCount, 1)
