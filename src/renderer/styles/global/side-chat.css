@@ -72,12 +72,14 @@
   color: var(--error);
 }
 /* Mirrors the main transcript's prose tier (conversation.css), minus its
-   reading-column width and wider block spacing, which a narrow bubble can't use. */
+   reading-column width and wider block spacing, which a narrow bubble can't use.
+   docs/ui-taste.md → "Assistant reading rhythm". */
 .side-chat-msg.is-assistant {
   align-self: flex-start;
   background: var(--bg-subtle);
   --sm-line-height: 1.6;
   font-family: var(--font-prose);
+  font-size: var(--font-size-md);
   line-height: var(--sm-line-height);
   color: var(--text-prose);
 }
