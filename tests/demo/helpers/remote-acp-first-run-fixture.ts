@@ -15,6 +15,11 @@ declare global {
   interface Window {
     remoteFirstRun: {
       terminalCreates: number
+      /** Text the pane forwarded to the spawned shell. */
+      terminalWrites: string[]
+      titleSuggestions: number
+      /** Output from the spawned shell, as the PTY would send it. */
+      emitTerminalOutput: (data: string) => void
       sendChunk: (chunk: StreamChunk) => void
       startThread: (id: string) => void
     }
@@ -55,8 +60,10 @@ const store = createStore({
 })
 
 let chunkHandler: ((threadId: string, chunk: StreamChunk) => void) | null = null
+let outputHandler: ((sessionId: string, data: string) => void) | null = null
 const base = createFakeApi()
-const state = { terminalCreates: 0 }
+const state = { terminalCreates: 0, titleSuggestions: 0, terminalWrites: new Array<string>() }
+const SESSION_ID = 'remote-shell'
 const api: ApiClient = {
   ...base,
   agent: {
@@ -65,12 +72,25 @@ const api: ApiClient = {
       chunkHandler = handler
       return (): void => {}
     },
+    suggestTerminalTitle: () => {
+      state.titleSuggestions += 1
+      return Promise.resolve('Remote shell')
+    },
   },
   terminal: {
     ...base.terminal,
-    create: (...args) => {
+    create: async (...args) => {
       state.terminalCreates += 1
-      return base.terminal.create(...args)
+      const created = await base.terminal.create(...args)
+      return { ...created, sessionId: SESSION_ID }
+    },
+    write: (sessionId, data) => {
+      state.terminalWrites.push(data)
+      return base.terminal.write(sessionId, data)
+    },
+    onOutput: (handler) => {
+      outputHandler = handler
+      return (): void => {}
     },
   },
 }
@@ -83,10 +103,19 @@ window.remoteFirstRun = {
   get terminalCreates(): number {
     return state.terminalCreates
   },
-  sendChunk: (chunk) => {
+  get terminalWrites(): string[] {
+    return state.terminalWrites
+  },
+  get titleSuggestions(): number {
+    return state.titleSuggestions
+  },
+  emitTerminalOutput: (data): void => {
+    outputHandler?.(SESSION_ID, data)
+  },
+  sendChunk: (chunk): void => {
     chunkHandler?.('thread-1', chunk)
   },
-  startThread: (id) => {
+  startThread: (id): void => {
     const { threads } = store.getState()
     store.setState({
       threads: [

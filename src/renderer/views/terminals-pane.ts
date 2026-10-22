@@ -429,12 +429,14 @@ export function mountTerminalsPane(
     // command output can be referenced as a prompt attachment.
     registerTerminalSelectionToChatShortcut(tab.term, () => tab.label)
     tab.term.onData((data) => {
+      // The keypress that connects a waiting remote tab is not shell input, so
+      // an Enter here must not count as a command: the login banner that
+      // follows would otherwise auto-name the tab.
+      if (connectWaitingTab(tab)) return
       if (data.includes('\r')) {
         tab.commandRan = true
         scheduleAutoName(tab)
       }
-      // The keypress that connects a waiting remote tab is not shell input.
-      if (connectWaitingTab(tab)) return
       if (!tab.sessionId) {
         tab.pendingInput.push(data)
         void ensureSession(tab)

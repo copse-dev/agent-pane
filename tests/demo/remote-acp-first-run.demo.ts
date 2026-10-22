@@ -56,7 +56,11 @@ describe('remote ACP first run', () => {
         animation.pause()
         animation.currentTime = 1250
       }
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          resolve()
+        })
+      })
     })
     await saveElementScreenshot('#fixture', 'remote-acp-first-run-setup.png', {
       frame: 'document',
@@ -81,5 +85,41 @@ describe('remote ACP first run', () => {
     await $('.terminals-tab-panel.is-active .terminal-container').click()
     await browser.waitUntil(async () => (await creates()) === 1)
     await expect($('.terminals-tab-panel.is-active')).not.toHaveAttribute('data-awaiting-connect')
+  })
+
+  it('does not treat the Enter that connects a waiting shell as a command', async () => {
+    await browser.url('/remote-acp-first-run-fixture.html')
+    await expect($('.terminals-tab-panel.is-active[data-awaiting-connect]')).toBeExisting()
+
+    // Focus the terminal without a click, so the keypress is what connects it.
+    await browser.execute(() => {
+      document
+        .querySelector<HTMLTextAreaElement>('.terminals-tab-panel.is-active .xterm-helper-textarea')
+        ?.focus()
+    })
+    await browser.keys('Enter')
+    await browser.waitUntil(async () => (await creates()) === 1)
+    await expect($('.terminals-tab-panel.is-active')).not.toHaveAttribute('data-awaiting-connect')
+
+    const writes = (): Promise<string[]> =>
+      browser.execute(() => [...window.remoteFirstRun.terminalWrites])
+    const titleSuggestions = (): Promise<number> =>
+      browser.execute(() => window.remoteFirstRun.titleSuggestions)
+    expect(await writes()).toEqual([])
+
+    // The login banner arrives; with no command run, the tab keeps its name.
+    await browser.execute(() => {
+      window.remoteFirstRun.emitTerminalOutput('Last login: Mon Oct 19 on Dev\r\nuser@dev:~$ ')
+    })
+    await browser.pause(3500)
+    expect(await titleSuggestions()).toBe(0)
+
+    // Positive control: a real command still names the tab from its output.
+    await browser.keys(['l', 's', 'Enter'])
+    await browser.waitUntil(async () => (await writes()).join('').includes('\r'))
+    await browser.execute(() => {
+      window.remoteFirstRun.emitTerminalOutput('ls\r\nREADME.md  package.json  src\r\n')
+    })
+    await browser.waitUntil(async () => (await titleSuggestions()) === 1, { timeout: 6000 })
   })
 })
