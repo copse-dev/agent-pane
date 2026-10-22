@@ -153,6 +153,29 @@ describe('workflow model contract', () => {
     )
   })
 
+  it('rejects a reasoning ceiling on a route with no reasoning control, unless a fallback can honour it', async () => {
+    // An empty ladder means Copse cannot send a level, not that the model does
+    // not reason: an unlisted id such as gpt-6-luna would run at its own default.
+    for (const model of ['gpt-4o', 'gpt-6-luna']) {
+      await assert.rejects(
+        resolveWorkflowModel(
+          { role: 'coder', model, maxReasoning: 'low' },
+          signal(),
+          host({ models: [model] }),
+        ),
+        new RegExp(`${model} cannot honour the requested reasoning ceiling low`),
+      )
+    }
+    const fallback = await resolveWorkflowModel(
+      { role: 'coder', model: 'gpt-6-luna', fallback: [B], maxReasoning: 'low' },
+      signal(),
+      host({ models: ['gpt-6-luna', B] }),
+    )
+    assert.equal(fallback.model, B)
+    assert.equal(fallback.parameters.reasoning, 'low')
+    assert.match(fallback.fallback[0]?.reason ?? '', /no reasoning control/)
+  })
+
   it('resolves distinct configured models from a multi-model pool', async () => {
     const result = await resolveWorkflowPanelModels(
       [

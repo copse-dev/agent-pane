@@ -96,9 +96,13 @@ export async function resolveWorkflowModel(
       const effective = support.reasoning.findLast(
         (level) => REASONING_LEVELS.indexOf(level) <= Math.min(limit, wanted),
       )
-      if (desired !== undefined && support.reasoning.length > 0 && effective === undefined)
+      // A caller ceiling must reach the wire. An empty ladder means Copse cannot
+      // send a level, not that the model does not reason, so it fails too.
+      const unhonoured =
+        request.maxReasoning ?? (support.reasoning.length > 0 ? desired : undefined)
+      if (effective === undefined && unhonoured !== undefined)
         throw new Error(
-          `${model} cannot honour the requested reasoning ceiling ${ceiling ?? desired}.`,
+          `${model} cannot honour the requested reasoning ceiling ${unhonoured}${support.reasoning.length ? '' : ' (it exposes no reasoning control)'}.`,
         )
       const { reasoning: _savedReasoning, ...parameters } = route.parameters
       return {
