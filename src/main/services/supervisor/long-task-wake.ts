@@ -3,10 +3,12 @@ import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-re
 import type { TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import { createHash } from 'node:crypto'
 import type { MachineDispatchResult } from '@shared/types/machine-dispatch.ts'
+import type { TodoItem } from '@shared/types/todo.ts'
 import type { MachineAgentDispatchRequest } from '../agent-dispatcher.ts'
 import { abortAgent } from '../agent-service.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { getSetting } from '../storage/settings.ts'
+import { getThreadMeta } from '../thread-store.ts'
 import { resolveSshExecutionTargetForCwd } from '../ssh-workspace/execution-target.ts'
 import { loadLongTasksForScope, taskProgress, type LongTask } from '../storage/long-task-tracker.ts'
 import { threadProjectStoreScope, type ProjectStoreScope } from '../storage/project-namespace.ts'
@@ -48,6 +50,8 @@ export interface LongTaskWakeDependencies {
     id?: string
   }
   loadTasks: (scope: ProjectStoreScope) => LongTask[]
+  /** The woken thread's persisted plan, read by its own project id. */
+  loadThreadTodos: (projectId: string, threadId: string) => Promise<TodoItem[]>
   now: () => number
   abortThread: (threadId: string) => void
 }
@@ -62,6 +66,8 @@ const defaultDependencies: LongTaskWakeDependencies = {
     return target?.kind === 'ssh' ? { kind: 'ssh', id: target.hostId } : { kind: 'local' }
   },
   loadTasks: loadLongTasksForScope,
+  loadThreadTodos: async (projectId, threadId) =>
+    (await getThreadMeta(projectId, threadId))?.todos ?? [],
   now: Date.now,
   abortThread: abortAgent,
 }
@@ -157,6 +163,10 @@ export function installLongTaskWakeConsumer(
         dependencies,
       )
       if (!prompt) return { resultRef: { kind: 'handler', ref: 'no-incomplete-long-tasks' } }
+      // Carry the thread's plan like a human submission does (the renderer sends
+      // `thread.todos` unfiltered): the run seeds its live plan from it, so dropping
+      // completed items here would erase them from the thread on the next update.
+      const priorTodos = await dependencies.loadThreadTodos(task.projectId, task.threadId)
       signal.throwIfAborted()
       const abort = (): void => {
         dependencies.abortThread(task.threadId)
@@ -172,7 +182,7 @@ export function installLongTaskWakeConsumer(
           payload: {
             userContent: prompt,
             invokedSkills: [],
-            priorTodos: [],
+            priorTodos,
           },
         })
       } finally {
