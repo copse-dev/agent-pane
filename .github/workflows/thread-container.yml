@@ -34,7 +34,7 @@ jobs:
     name: Docker-path integration tests
     # Fork PRs get no secrets and no trust; the nightly and dispatch runs cover them after merge.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # A cold run builds the worker image (15 minute cap inside the test) and then runs a few
     # short containers. The cap is a leak-stopper, not a latency target.
     timeout-minutes: 40

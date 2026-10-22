@@ -19,7 +19,7 @@ jobs:
       github.triggering_actor == 'jonathanKingston' &&
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '@copse-review ')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     environment: copse-review-models
     permissions:
@@ -114,7 +114,7 @@ jobs:
   resolve-copse-threads:
     needs: follow-up
     if: needs.follow-up.outputs.mode == 'fix' && needs.follow-up.outputs.head != ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     environment: copse-review-models
     permissions:
