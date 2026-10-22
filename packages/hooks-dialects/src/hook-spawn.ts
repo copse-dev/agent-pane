@@ -17,6 +17,7 @@
 //
 // rule 4: spawning is Electron-adjacent host code, never `packages/agent`.
 import { spawn, type ChildProcess } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { hooksDialectsEnvironment } from './environment.ts'
 import { safeJsonStringify } from '@copse/std/safe-json.ts'
 import { signalProcessTree } from '@copse/std/process-tree.ts'
@@ -139,10 +140,14 @@ export interface HookSandboxRuntime {
   /** Spawn a shell command line inside the project sandbox (stdio piped). */
   spawnShell(
     command: string,
-    opts: { cwd: string; env: NodeJS.ProcessEnv; signal?: AbortSignal },
+    opts: { cwd: string; env: NodeJS.ProcessEnv; signal?: AbortSignal; violationId: string },
   ): Promise<ChildProcess>
-  /** Runner-recorded sandbox policy violations for this command (never stdout-derived). */
-  violationCount(command: string): number
+  /**
+   * Runner-recorded sandbox policy violations for the run spawned with
+   * `violationId` (never stdout-derived). Keyed per run, so an earlier run of
+   * the same hook command cannot lend this one its violations.
+   */
+  violationCount(violationId: string): number
   /** Per-command sandbox cleanup, mirroring the shell tool's `afterSandboxedCommand`. */
   afterCommand(): void
 }
@@ -223,6 +228,7 @@ export async function spawnHookProcess(
   const stdin = serializeStdin(stdinPayload)
   const timeoutMs = effectiveHookTimeoutMs(opts.timeoutMs)
 
+  const violationId = `copse-hook-${randomUUID()}`
   let child: ChildProcess
   try {
     if (sandboxed) {
@@ -240,6 +246,7 @@ export async function spawnHookProcess(
         sandboxRuntime().spawnShell(command, {
           cwd: opts.cwd,
           env: overlay,
+          violationId,
           ...(opts.signal ? { signal: opts.signal } : {}),
         }),
         timeoutMs,
@@ -295,7 +302,7 @@ export async function spawnHookProcess(
       clearTimeout(timer)
       // Query the runner-recorded violation count BEFORE per-command cleanup,
       // matching the shell tool's ordering. Only meaningful for a sandboxed run.
-      const sandboxViolationCount = sandboxed ? sandboxRuntime().violationCount(command) : 0
+      const sandboxViolationCount = sandboxed ? sandboxRuntime().violationCount(violationId) : 0
       if (sandboxed) sandboxRuntime().afterCommand()
       resolve({
         stdin,

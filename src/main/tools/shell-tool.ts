@@ -5,10 +5,7 @@ import { defineTool } from '@shared/types'
 import { getAgentExecutionRoot } from '../services/execution-root.ts'
 import { isThreadCheckoutDeferred } from '../services/thread-execution-context.ts'
 import { REQUEST_WRITE_ACCESS_TOOL } from '@shared/tools/readonly-tools.ts'
-import {
-  isProjectSandboxEnabled,
-  sandboxViolationCountForCommand,
-} from '../project-sandbox/index.ts'
+import { isProjectSandboxEnabled } from '../project-sandbox/index.ts'
 import {
   shellReadGrantTargets,
   shellRunsOutsideSandbox,
@@ -145,7 +142,10 @@ async function maybeRetryUnsandboxed(
   // spawn failure) — never from the command's own stdout/stderr (issue #104).
   const runnerDetection = detectSandboxFailure({
     exitCode: result.exitCode,
-    violationCount: result.sandboxViolationCount ?? sandboxViolationCountForCommand(command),
+    // Only this run's own count. When `runShellOnce` recorded none (the wrapper
+    // failed before a run existed), a lookup by command text would find another
+    // run's violations; `spawnFailed` carries that case instead.
+    violationCount: result.sandboxViolationCount ?? 0,
     spawnFailed: result.spawnFailed ?? false,
   })
   // Some denials never touch the OS sandbox's own violation counter — a network
@@ -549,10 +549,9 @@ export const runShellTool = defineTool({
         sandboxDenialAdvice({
           root: cwd,
           cdTarget,
-          // Whatever the runner recorded for this run. Re-reading the store here
-          // would always be 0: `runShellOnce` samples it before
-          // `afterSandboxedCommand()` clears it. A run that went outside the
-          // sandbox has no denial to explain in the first place.
+          // Whatever the runner recorded for this run, keyed by its own violation
+          // id in `runShellOnce`. A run that went outside the sandbox has no
+          // denial to explain in the first place.
           blockedOperations: outsideSandbox ? 0 : (result.sandboxViolationCount ?? 0),
         }),
       )

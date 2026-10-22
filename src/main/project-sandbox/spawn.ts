@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess, type SpawnOptionsWithoutStdio } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import * as pty from 'node-pty'
@@ -230,6 +231,15 @@ export async function spawnShellInProjectSandbox(
      * contained way to honour that request, so it fails instead.
      */
     readonlyCheckout?: boolean
+    /**
+     * Per-invocation key ASRT files this run's violations under. Pass a fresh id
+     * (see {@link newSandboxViolationId}) and count with
+     * {@link sandboxViolationCountForRun} after the child exits. Without one, ASRT
+     * keys violations on the first 100 characters of the command text, which an
+     * earlier run of the same command (or a different command with the same
+     * prefix) shares.
+     */
+    violationId?: string
     executionTarget?: ExecutionTarget
   } & Pick<SpawnOptionsWithoutStdio, 'stdio'>,
 ): Promise<ChildProcess> {
@@ -277,6 +287,8 @@ export async function spawnShellInProjectSandbox(
     shellForSandboxWrap(),
     customConfig,
     opts.signal,
+    undefined,
+    opts.violationId === undefined ? undefined : { commandId: opts.violationId },
   )
 
   const file = argv[0]
@@ -373,19 +385,31 @@ export async function spawnBackgroundProcess(
   }
 }
 
+/** A fresh per-run key for {@link spawnShellInProjectSandbox}'s `violationId`. */
+export function newSandboxViolationId(): string {
+  return `copse-run-${randomUUID()}`
+}
+
 /**
- * Number of sandbox policy violations the runner (ASRT) recorded for a command.
- * This is a runner/kernel-side signal — it is NOT derived from the command's own
- * stdout/stderr, so a command cannot forge it by echoing "operation not permitted"
- * to trick the user into an unsandboxed re-run (issue #104).
+ * Number of sandbox policy violations the runner (ASRT) recorded for the run
+ * spawned with `violationId`. This is a runner/kernel-side signal — it is NOT
+ * derived from the command's own stdout/stderr, so a command cannot forge it by
+ * echoing "operation not permitted" to trick the user into an unsandboxed re-run
+ * (issue #104).
+ *
+ * Counting by id rather than command text matters: ASRT's store keeps the last
+ * 100 violations and is never cleared, and keys an id-less run on its first 100
+ * characters. A text lookup would count an earlier run of the same command, a
+ * different command sharing that prefix, or a late log line from the previous
+ * run, and turn an ordinary test failure into a "blocked by sandbox" retry.
  *
  * Returns 0 when the sandbox is inactive or no violation log is available.
  */
-export function sandboxViolationCountForCommand(command: string): number {
+export function sandboxViolationCountForRun(violationId: string): number {
   if (!isProjectSandboxEnabled()) return 0
   try {
     const store = SandboxManager.getSandboxViolationStore()
-    return store.getViolationsForCommand(command).length
+    return store.getViolationsForCommand(violationId).length
   } catch {
     return 0
   }
