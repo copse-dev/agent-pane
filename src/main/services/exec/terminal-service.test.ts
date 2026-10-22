@@ -693,16 +693,22 @@ describe('terminal history sharing (#2433)', () => {
       // Exit the shells rather than only destroying them: a killed bash writes
       // its HISTFILE while it dies, after destroy has already detached the exit
       // listener, and that late write races the suite's temp-directory removal.
-      if (session1) {
-        writeTerminalSession(session1, OWNER, 'exit\n')
-        await waitForTerminalExit(win1, session1)
-        destroyTerminalSession(session1, OWNER)
+      const exitShell = async (
+        sessionId: string,
+        ownerId: number,
+        win: ReturnType<typeof mockWindow>,
+      ): Promise<void> => {
+        if (!sessionId) return
+        try {
+          writeTerminalSession(sessionId, ownerId, 'exit\n')
+          await waitForTerminalExit(win, sessionId)
+        } catch {
+          // The shell already exited and left the session map; nothing to exit.
+        }
+        destroyTerminalSession(sessionId, ownerId)
       }
-      if (session2) {
-        writeTerminalSession(session2, OTHER_OWNER, 'exit\n')
-        await waitForTerminalExit(win2, session2)
-        destroyTerminalSession(session2, OTHER_OWNER)
-      }
+      await exitShell(session1, OWNER, win1)
+      await exitShell(session2, OTHER_OWNER, win2)
     }
   })
 })
