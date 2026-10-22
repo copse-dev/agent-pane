@@ -506,7 +506,9 @@ export const runShellTool = defineTool({
         return skippedProbeViaCache ? prefixWithSandboxCacheSkipNote(success) : success
       }
 
-      if (!suppressUnsandboxedRetry) {
+      // A Stop kills the child, which now reports its signal as a non-zero exit;
+      // that is the user's cancel, not a sandbox denial to offer a retry for.
+      if (!suppressUnsandboxedRetry && !signal.aborted) {
         const retry = await maybeRetryUnsandboxed(
           executedCommand,
           cwd,
