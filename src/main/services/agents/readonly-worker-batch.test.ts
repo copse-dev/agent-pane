@@ -153,7 +153,7 @@ describe('supervised read-only worker batches', () => {
       execute,
     }
     const first = turn.run(options)
-    const second = turn.run(options)
+    const second = turn.run({ ...options, mode: 'isolated' })
     await assert.rejects(turn.run(options), /At most two/)
     await Promise.all([first, second])
     await assert.rejects(turn.run(options), /At most two/)

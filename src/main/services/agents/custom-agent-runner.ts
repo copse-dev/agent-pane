@@ -20,6 +20,7 @@ import {
 import { addSubagentUsage } from '../subagent-usage.ts'
 import { runWithAgentRunReadFileLimits } from '../agent-run-read-limits.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
+import { isolatedWorkerScope } from './isolated-worker-scope.ts'
 import { agentWorkspaceLabel } from '../execution-root.ts'
 import { subagentHookCallbacks } from '../hooks/subagent.ts'
 import { isAgentRunReadonly } from '../agent-run-readonly.ts'
@@ -29,6 +30,29 @@ import { getThreadExecutionContext } from '../thread-execution-context.ts'
 import { isAppleDevelopmentToolOffered } from '../apple-development/apple-development-tool-scope.ts'
 import { buildProvider, isLocalChatModel } from '../providers/provider-selection.ts'
 import { resolveContextWindow } from '../providers/resolve-context-window.ts'
+
+// Only reviewed, root-confined native tools. External execution cannot inherit this authority.
+const ISOLATED_WORKER_TOOLS = new Set([
+  'read_file',
+  'list_dir',
+  'search_code',
+  'search_codebase',
+  'semantic_search',
+  'find_files',
+  'git_status',
+  'git_diff',
+  'git_log',
+  'git_show',
+  'staged_diffs',
+  'read_staged_diff',
+  'write_file',
+  'str_replace',
+  'delete_file',
+  'rename_file',
+  'make_directory',
+  'preflight_worktree',
+  'prepare_worktree',
+])
 
 /**
  * Runs a user-authored subagent (docs/plans/custom-subagents.md, P2).
@@ -78,6 +102,11 @@ export async function runCustomAgent(
       `Agent "${agent.name}" requests isolation, but custom-agent worktree isolation is unavailable. The agent was not started.`,
     )
   }
+  if (agent.isolation === 'worktree' && !isolatedWorkerScope.getStore()) {
+    throw new Error(
+      `Agent "${agent.name}" requires run_isolated_workers; no isolated worker was started.`,
+    )
+  }
   const workspace = agentWorkspaceLabel()
   const model = resolveCustomAgentModel(agent.model, ctx.parentModel)
   const usesParentModel = model === ctx.parentModel
@@ -105,6 +134,7 @@ export async function runCustomAgent(
   const projectId = getThreadExecutionContext()?.projectId
   const available = ctx.registry.toLLMTools().filter(
     (tool) =>
+      (!isolatedWorkerScope.getStore() || ISOLATED_WORKER_TOOLS.has(tool.name)) &&
       isAppleDevelopmentToolOffered(tool.name, projectId) &&
       (!readonly ||
         isToolAllowedInReadonlyMode(tool.name, {

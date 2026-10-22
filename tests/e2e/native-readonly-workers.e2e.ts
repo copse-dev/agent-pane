@@ -99,10 +99,7 @@ describe('native supervised read-only workers', function () {
       if (requestSystem.includes('WORKER_ISOLATED'))
         errors.push('Isolated provider unexpectedly started')
       if (scenario === 'isolation') {
-        answer(
-          response,
-          'The isolated agent did not start because worktree isolation is unavailable.',
-        )
+        answer(response, 'The isolated agent did not start; use run_isolated_workers.')
         return
       }
       const system = messages
@@ -290,8 +287,7 @@ describe('native supervised read-only workers', function () {
     await setComposerValue('/isolated Inspect the workspace.')
     await $('.submit-btn').click()
     await browser.waitUntil(
-      async () =>
-        (await $('.messages-list').getText()).includes('worktree isolation is unavailable'),
+      async () => (await $('.messages-list').getText()).includes('requires run_isolated_workers'),
       { timeout: 15_000 },
     )
     await waitForAgentIdle()

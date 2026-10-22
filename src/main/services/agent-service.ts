@@ -161,6 +161,12 @@ import { formatReadFileLimitHint } from '@copse/agent/read-file-limits.ts'
 import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
 import { runCustomAgent } from './agents/custom-agent-runner.ts'
 import { isProjectSandboxEnabled } from '../project-sandbox/index.ts'
+import {
+  runInIsolatedWorkerCheckout,
+  type WorkerCheckout,
+} from './agents/isolated-worker-checkout.ts'
+import { threadProjectExecutionTarget } from './ssh-workspace/execution-target.ts'
+import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { createReadonlyWorkerTurn } from './agents/readonly-worker-batch.ts'
 import { getTaskSupervisor } from './supervisor/task-supervisor.ts'
 import { runWithReadonlyWorkerRunner } from '../tools/readonly-workers-tool.ts'
@@ -2353,11 +2359,19 @@ async function runAgentWithInlineCanvas(
               () => registry.execute(name, args, signal),
             )
           }
-          if (name === 'run_readonly_workers') {
+          if (name === 'run_readonly_workers' || name === 'run_isolated_workers') {
+            const isolated = name === 'run_isolated_workers'
             return runWithReadonlyWorkerRunner(
               async (requests, workerSignal) => {
                 const owner = getThreadExecutionContext()
-                if (!owner) throw new Error('Read-only workers require an owning thread checkout.')
+                if (!owner) throw new Error('Workers require an owning thread checkout.')
+                if (isolated && isAgentRunReadonly())
+                  throw new Error('Isolated writable workers are unavailable in read-only mode.')
+                if (isolated && threadProjectExecutionTarget()?.kind === 'ssh') {
+                  throw new Error(
+                    'Isolated workers require a local Git checkout; no workers were started.',
+                  )
+                }
                 // The Settings cache follows the active project; concurrent turns
                 // resolve their own trusted project definitions without changing it.
                 const definitions = await discoverAgentsFromRoots(
@@ -2372,16 +2386,21 @@ async function runAgentWithInlineCanvas(
                     if (agent.source === 'project' && !isWorkspaceTrusted(owner.projectRoot)) {
                       throw new Error(`Workspace trust is required for agent "${request.agent}".`)
                     }
-                    if (agent.unsupportedFields.some((field) => field.field === 'isolation')) {
+                    if (
+                      agent.unsupportedFields.some((field) => field.field === 'isolation') ||
+                      (!isolated && agent.isolation === 'worktree')
+                    ) {
                       throw new Error(
-                        `Agent "${request.agent}" requests unavailable worktree isolation; no workers were started.`,
+                        `Agent "${request.agent}" requires run_isolated_workers or has unsupported isolation; no workers were started.`,
                       )
                     }
                     return [request.agent, agent] as const
                   }),
                 )
                 const started = new Set<string>()
+                const checkouts = new Map<string, WorkerCheckout>()
                 const results = await readonlyWorkerTurn.run({
+                  mode: isolated ? 'isolated' : 'readonly',
                   owner,
                   permissionSnapshot: {
                     capturedAt: Date.now(),
@@ -2406,8 +2425,12 @@ async function runAgentWithInlineCanvas(
                         args: { subagent_type: request.agent, prompt: request.prompt },
                       },
                     })
-                    return runWithAgentRunReadonly(true, () =>
-                      runCustomAgent(
+                    const execute = (): Promise<string> => {
+                      ownedSignal.throwIfAborted()
+                      if (agent.source === 'project' && !isWorkspaceTrusted(owner.projectRoot)) {
+                        throw new Error(`Workspace trust was revoked for agent "${request.agent}".`)
+                      }
+                      return runCustomAgent(
                         {
                           parentToolCallId: workerId,
                           parentGoal,
@@ -2425,8 +2448,20 @@ async function runAgentWithInlineCanvas(
                         agent,
                         request.prompt,
                         ownedSignal,
-                      ),
-                    )
+                      )
+                    }
+                    return isolated
+                      ? runInIsolatedWorkerCheckout({
+                          parent: owner,
+                          workerId,
+                          request,
+                          signal: ownedSignal,
+                          onCheckout: (checkout) => {
+                            checkouts.set(workerId, checkout)
+                          },
+                          execute,
+                        })
+                      : runWithAgentRunReadonly(true, execute)
                   },
                 })
                 for (const result of results) {
@@ -2447,7 +2482,10 @@ async function runAgentWithInlineCanvas(
                     })
                   }
                 }
-                return results
+                return results.map((result) => {
+                  const checkout = checkouts.get(result.workerId)
+                  return { ...result, ...(checkout ? { checkout } : {}) }
+                })
               },
               () => registry.execute(name, args, signal),
             )

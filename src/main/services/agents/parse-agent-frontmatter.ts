@@ -16,6 +16,7 @@ export interface ParsedAgentFile {
   disallowedTools: string[]
   model: string
   readonly: boolean
+  isolation?: 'worktree'
   maxTurns: number | null
   color: string | null
   unsupportedFields: UnsupportedAgentField[]
@@ -39,7 +40,7 @@ export type AgentParseResult =
  * Two of these are load-bearing for safety rather than convenience.
  * `permissionMode`'s permissive values are ignored *by design* — a file on disk
  * does not get to relax the permission gate — and `isolation: worktree` is
- * called out and prevents execution: an agent expecting a throwaway checkout
+ * honoured only by run_isolated_workers: an agent expecting a throwaway checkout
  * must never silently edit the parent tree.
  */
 const UNSUPPORTED_FIELD_REASONS: Record<string, string> = {
@@ -160,10 +161,10 @@ export function parseAgentFile(
   }
 
   const isolation = parseScalarBlock(yaml, 'isolation')
-  if (isolation !== undefined) {
+  if (isolation !== undefined && isolation !== 'worktree') {
     unsupportedFields.push({
       field: 'isolation',
-      reason: 'cannot run: custom-agent worktree isolation is not available yet',
+      reason: 'cannot run: unsupported isolation mode',
     })
   }
 
@@ -198,6 +199,7 @@ export function parseAgentFile(
       disallowedTools: disallowed.names,
       model: model || 'inherit',
       readonly: parseYamlBoolean(yaml, 'readonly') || permissionMode === 'plan',
+      ...(isolation === 'worktree' ? { isolation } : {}),
       maxTurns: parseMaxTurns(parseScalarBlock(yaml, 'maxTurns')),
       color: parseScalarBlock(yaml, 'color') ?? null,
       unsupportedFields,

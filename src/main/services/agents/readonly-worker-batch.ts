@@ -51,6 +51,7 @@ function waitForWorker(
 /** One live parent turn's allowance. The supervisor remains the only scheduler. */
 export function createReadonlyWorkerTurn(supervisor: TaskSupervisor): {
   run: (options: {
+    mode?: 'readonly' | 'isolated'
     owner: ThreadExecutionOwner
     permissionSnapshot: PermissionSnapshot
     requests: readonly ReadonlyWorkerRequest[]
@@ -65,6 +66,7 @@ export function createReadonlyWorkerTurn(supervisor: TaskSupervisor): {
   let admitted = 0
   return {
     async run({
+      mode = 'readonly',
       owner,
       permissionSnapshot,
       requests,
@@ -73,11 +75,11 @@ export function createReadonlyWorkerTurn(supervisor: TaskSupervisor): {
     }): Promise<ReadonlyWorkerResult[]> {
       signal.throwIfAborted()
       if (requests.length < 1 || requests.length > READONLY_WORKER_LIMIT - admitted) {
-        throw new Error('At most two read-only workers may run over one parent turn.')
+        throw new Error('At most two workers may run over one parent turn.')
       }
       // Reserve synchronously before the first await, including concurrent tool calls.
       admitted += requests.length
-      const handler = `native_readonly_worker:${randomUUID()}`
+      const handler = `native_${mode === 'readonly' ? 'readonly' : 'isolated'}_worker:${randomUUID()}`
       const reports = new Map<string, string>()
       const workers = requests.map((request) => ({ request, id: randomUUID() }))
       const runInParentContext = AsyncLocalStorage.snapshot()
@@ -89,7 +91,11 @@ export function createReadonlyWorkerTurn(supervisor: TaskSupervisor): {
         context.signal.throwIfAborted()
         signal.throwIfAborted()
         const report = await runInParentContext(() =>
-          runWithAgentRunReadonly(true, () => execute(worker.request, worker.id, context.signal)),
+          mode === 'readonly'
+            ? runWithAgentRunReadonly(true, () =>
+                execute(worker.request, worker.id, context.signal),
+              )
+            : execute(worker.request, worker.id, context.signal),
         )
         context.signal.throwIfAborted()
         reports.set(worker.id, report)

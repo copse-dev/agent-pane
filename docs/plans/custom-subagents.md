@@ -252,10 +252,10 @@ Mapped rather than honoured literally:
   **ignored, always**. A file on disk does not get to relax Copse's permission gate,
   staged-edit review, or the sandbox. This is the security stance for the whole feature: a
   definition's tool list can only ever _narrow_ what the parent turn could already do.
-- `isolation: worktree` → not supported yet (Copse's worktree work is
-  [thread-worktrees.md](thread-worktrees.md)). Register the agent with a Settings warning, but reject execution before inference.
-  A request for isolation must never silently edit the parent checkout. Native
-  read-only workers use the same fail-closed rule until worker checkout ownership lands.
+- `isolation: worktree` → supported through `run_isolated_workers`, which allocates
+  separate owned worker checkouts. Slash invocation and `run_readonly_workers`
+  reject the requirement before inference; they never fall back to the parent tree.
+  See [the writable worker contract](native-writable-workers.md).
 - `is_background` / `background` → ignored in v1; Copse's equivalent is the background
   task supervisor, not a subagent flag.
 
@@ -434,9 +434,7 @@ setting to turn it off. This is the part that gets an eval pass before it defaul
 [agent-plugins-migration.md](agent-plugins-migration.md).
 
 **P6 — Deferred fields.** `skills` preloading (Copse has `buildInvokedSkillsBlock`, so
-this is cheap), per-agent `mcpServers`, `memory`, `isolation: worktree` (per-thread worktrees
-now exist — [thread-worktrees.md](thread-worktrees.md) — so this is no longer blocked on
-them), and
+this is cheap), per-agent `mcpServers`, `memory`, broader isolated-agent entry points, and
 injecting definitions into non-Claude ACP agents the way invoked skills are injected today.
 
 **P7 — Background and follow-up runs (proposed, not yet a decision).** Let an agent run
@@ -474,7 +472,7 @@ Ranked by user impact:
 | G-01 | The model picks an agent from its `description` and can launch several at once.                                                 | Explicit `/name` only, one agent per message, run before the parent's first LLM call. The model has no `task` tool.                                                                                                                                                                | P4                                                   |
 | G-02 | Agents can run in the background. The parent keeps working and is notified when one completes.                                  | Always runs inline and blocks the turn. `background` / `is_background` are ignored with a note.                                                                                                                                                                                    | P7                                                   |
 | G-03 | A finished agent can be continued with its context intact (send it another message by id).                                      | Every run is one-shot and returns only a summary. Nothing addresses a finished run again.                                                                                                                                                                                          | P7                                                   |
-| G-04 | `isolation: worktree` gives the agent a throwaway checkout.                                                                     | Rejected before inference. Custom-agent worktree isolation is unavailable; the parent checkout is never a silent fallback.                                                                                                                                                         | P6                                                   |
+| G-04 | `isolation: worktree` gives the agent a throwaway checkout.                                                                     | Supported through `run_isolated_workers` with owned checkouts; other entry points reject before inference. The parent checkout is never a fallback.                                                                                                                                | P6                                                   |
 | G-05 | No small step cap. Agents run until done, bounded by context and compaction.                                                    | `CUSTOM_AGENT_DEFAULT_MAX_STEPS = 12`, `CUSTOM_AGENT_MAX_STEPS_CEILING = 30`. Too few for review or refactor agents on a real diff. Raise the cap, or make the ceiling a setting instead of a constant, while keeping the rule that a definition file cannot raise its own budget. | New decision needed                                  |
 | G-06 | `skills`, `mcpServers`, `hooks` (agent-scoped), `memory`, `effort` are honoured.                                                | All parsed, then ignored with a Settings note. `skills` is the cheapest: reuse `buildInvokedSkillsBlock`.                                                                                                                                                                          | P6                                                   |
 | G-07 | Built-in general-purpose and Plan agents, plus a fork agent that inherits the conversation.                                     | Copse has fixed built-ins (`explore`, `investigate_ci`, `delegate_step`, advisor, review). A custom agent sees only `parentGoal`, never the conversation, and there is no fork mode.                                                                                               | Unowned                                              |

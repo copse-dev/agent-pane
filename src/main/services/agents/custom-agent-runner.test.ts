@@ -5,6 +5,7 @@ import type { LLMProvider } from '@shared/types'
 import { defineTool } from '@shared/types'
 import type { AgentMetadata } from '@shared/types/agents.ts'
 import { ToolRegistry } from '../tool-registry.ts'
+import { isolatedWorkerScope } from './isolated-worker-scope.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
 import { runCustomAgent, type CustomAgentRunContext } from './custom-agent-runner.ts'
 
@@ -50,12 +51,12 @@ describe('custom agent runner containment', () => {
         context(provider),
         {
           ...agent,
-          unsupportedFields: [{ field: 'isolation', reason: 'worktree requested' }],
+          isolation: 'worktree',
         },
         'inspect',
         new AbortController().signal,
       ),
-      /isolation.*unavailable/,
+      /requires run_isolated_workers/,
     )
     assert.equal(calls, 0)
   })
@@ -96,6 +97,58 @@ describe('custom agent runner containment', () => {
     )
     assert.equal(writes, 0)
     assert.equal(report, 'Read-only report.')
+  })
+
+  it('offers only root-confined native edits and preparation inside an isolated worker', async () => {
+    const registry = new ToolRegistry()
+    const dispatched: string[] = []
+    for (const name of [
+      'write_file',
+      'prepare_worktree',
+      'preflight_worktree',
+      'run_shell',
+      'mcp__write',
+      'custom_write',
+      'run_isolated_workers',
+      'update_thread_plan',
+    ]) {
+      registry.register(
+        defineTool({
+          name,
+          description: name,
+          parameters: z.object({}),
+          execute: () => {
+            dispatched.push(name)
+            return 'done'
+          },
+        }),
+      )
+    }
+    let calls = 0
+    const provider: LLMProvider = {
+      async *stream(_messages, tools) {
+        assert.deepEqual(tools.map((tool) => tool.name).sort(), [
+          'preflight_worktree',
+          'prepare_worktree',
+          'write_file',
+        ])
+        if (calls++ === 0)
+          yield { type: 'tool_call', toolCall: { id: 'escape', name: 'run_shell', args: {} } }
+        else if (calls === 2)
+          yield { type: 'tool_call', toolCall: { id: 'write', name: 'write_file', args: {} } }
+        else yield { type: 'text', text: 'done' }
+        yield { type: 'done' }
+      },
+    }
+    await isolatedWorkerScope.run(true, () =>
+      runCustomAgent(
+        context(provider, registry),
+        { ...agent, maxTurns: 4, isolation: 'worktree' },
+        'edit',
+        new AbortController().signal,
+      ),
+    )
+    assert.deepEqual(dispatched, ['write_file'])
   })
 
   it('propagates provider failure instead of reporting a successful supervised worker', async () => {

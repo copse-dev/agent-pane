@@ -82,6 +82,13 @@ describe('supervised tasks', () => {
               agentId: 'alpha',
               state: 'failed',
             },
+            {
+              ...task,
+              taskId: 'isolated',
+              handler: 'native_isolated_worker:live-parent',
+              agentId: 'beta',
+              state: 'blocked',
+            },
           ],
         }),
         resume: async () => {
@@ -96,6 +103,10 @@ describe('supervised tasks', () => {
     assert.equal(
       root.querySelector('[data-task-id=worker] .supervised-task-label')?.textContent,
       'alpha (read-only)',
+    )
+    assert.equal(
+      root.querySelector('[data-task-id=isolated] .supervised-task-label')?.textContent,
+      'beta (isolated)',
     )
     root.querySelector<HTMLButtonElement>('.supervised-task-resume')?.click()
     await flush()

@@ -44,8 +44,8 @@ finished parent/provider session; submit a new explicit request after interrupti
 
 ## Remaining work
 
-- Isolated **writable** worker checkouts and preparation through existing worktree
-  ownership; fail clearly on unsupported targets and cleanup without discarding work.
+- Isolated **writable** worker checkouts are implemented by the next
+  [worker slice](native-writable-workers.md), through existing ownership and preparation.
 - Plugin-declared agent discovery, namespacing, enablement/revocation and trust.
 - Detached start/status/wait/cancel tools and durable report retrieval/resume.
 - Shared monetary/token spend budgets beyond the fixed worker/step/time bounds.

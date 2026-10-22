@@ -8,6 +8,8 @@ function taskLabel(task: SupervisedTaskSummary): string {
   const { handler } = task
   if (handler.startsWith('native_readonly_worker:'))
     return task.agentId ? `${task.agentId} (read-only)` : 'Read-only worker'
+  if (handler.startsWith('native_isolated_worker:'))
+    return task.agentId ? `${task.agentId} (isolated)` : 'Isolated worker'
   if (handler === 'long_horizon_continue') return 'Long task continuation'
   return handler.replaceAll('_', ' ')
 }
@@ -73,7 +75,8 @@ export function mountSupervisedTasks(
         if (
           (value.state === 'blocked' || value.state === 'failed') &&
           value.handler !== 'shell_process' &&
-          !value.handler.startsWith('native_readonly_worker:')
+          !value.handler.startsWith('native_readonly_worker:') &&
+          !value.handler.startsWith('native_isolated_worker:')
         ) {
           const resume = el(
             'button',

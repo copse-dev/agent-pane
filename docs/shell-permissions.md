@@ -197,7 +197,12 @@ Keep the table aligned when tools are registered or their handlers change. The g
 unmatched-tool branch is default-allow: a new mutating or network-capable tool must use an explicit
 operation gate or the diff queue, not rely on that branch as authorization or confinement.
 
-Custom agents retain the ordinary tool gate and run read-only scope. They cannot
+Custom agents retain the ordinary tool gate and inherit run read-only scope.
+`run_isolated_workers` gives each named worker an owned local Git checkout and
+separate diff queue; only root-confined native file tools and the existing
+preflight/approved preparation tools are available. Shells, MCP and arbitrary
+custom tools are withheld from these workers. Both worker tools share the two-run
+parent-turn allowance and existing supervisor limits. They cannot
 call `update_thread_plan` or `report_plan_completion`: the parent owns the shared
 thread plan, and workers return their findings in attributable task results.
 

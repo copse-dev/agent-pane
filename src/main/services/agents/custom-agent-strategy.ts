@@ -23,6 +23,7 @@ import type { AgentMetadata, AgentSource } from '@shared/types/agents.ts'
 export const CUSTOM_AGENT_FORBIDDEN_TOOLS: readonly string[] = [
   'task',
   'run_readonly_workers',
+  'run_isolated_workers',
   'explore',
   'investigate_ci',
   'delegate_step',
