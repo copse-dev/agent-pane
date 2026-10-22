@@ -95,8 +95,15 @@ jobs:
   # self-hosted fleet is opt-in. Every `runs-on` below (except e2e, which routes
   # by label with its own nightly-hosted exception, and release-mac in its own
   # workflow) reads the SELF_HOSTED_CHECKS Actions variable:
-  #   (unset or '')                    ->  ubuntu-latest          <- default
+  #   (unset or '')                    ->  ubuntu-24.04           <- default
   #   SELF_HOSTED_CHECKS=copse-checks  ->  the fleet (ci-runners/)
+  #
+  # Hosted jobs pin `ubuntu-24.04`, not `ubuntu-latest`. When `ubuntu-latest`
+  # started rolling over to ubuntu-26.04 (October 2026), the real-sandbox unit
+  # tests failed there with "apply-seccomp: write /proc/self/setgroups (nested
+  # userns is capability-restricted; caller must provide CAP_SYS_ADMIN)", even
+  # after clearing `apparmor_restrict_unprivileged_userns`. Move the pin only
+  # with ASRT working on the newer image.
   #
   # This inverts the old CHECKS_RUNNER scheme, which defaulted to whatever a
   # variable said and treated hosted as the fallback. Two things changed when
@@ -147,7 +154,7 @@ jobs:
     # it must never reach the self-hosted fleet — same invariant gitleaks.yml
     # states for its standalone fork scan. Hosted minutes are free once the
     # repository is public, so this costs nothing on the runs it applies to.
-    runs-on: ${{ (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && 'ubuntu-24.04' || vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -693,7 +700,7 @@ jobs:
   screenshot-baselines:
     needs: precheck
     if: ${{ !cancelled() && needs.precheck.result == 'success' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -725,7 +732,7 @@ jobs:
       toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1},"title":{2}{3}', '{', toJSON(github.event.changes.body), toJSON(github.event.changes.title), '}')))))))
     # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
     # self-hosted check fleet (see the routing note above). Watch for 6 GB self-hosted OOM on eslint (see precheck).
-    runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-24.04' || vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
       contents: write
@@ -863,7 +870,7 @@ jobs:
     # self-hosted check fleet (see the routing note above). History: coverage/esbuild has died with "service was stopped" on
     # the 6 GB self-hosted fleet under load (same class as precheck OOM) — add
     # headroom if it recurs.
-    runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-24.04' || vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7.0.1
@@ -908,7 +915,7 @@ jobs:
           # test worker has already exited -- not the workers themselves, so
           # TEST_FILE_CONCURRENCY does not bound it. 3072 and 6144 have both
           # aborted there with "Ineffective mark-compacts near heap limit" once
-          # the whole suite had passed. ubuntu-latest has 16 GB, and only this
+          # the whole suite had passed. ubuntu-24.04 has 16 GB, and only this
           # one process is live at that point.
           NODE_OPTIONS: --max-old-space-size=8192
           UNIT_MODE: ${{ needs.precheck.outputs.unit_mode }}
@@ -980,7 +987,7 @@ jobs:
       needs.precheck.outputs.review_cell_required == 'true' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -1038,7 +1045,7 @@ jobs:
     # unit tests and the autofixer keep giving fast feedback.
     # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
     # self-hosted check fleet (see the routing note above). No Electron/display need.
-    runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-24.04' || vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7.0.1
@@ -1336,7 +1343,7 @@ jobs:
     # unit tests and the autofixer keep giving fast feedback.
     # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
     # self-hosted check fleet (see the routing note above). Produces the dist artifact consumed by the e2e shards below.
-    runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-24.04' || vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }}
     timeout-minutes: 30
     # Build dist once and hand it to every e2e shard. Previously each shard ran
     # its own `npm run build`; an earlier attempt to share dist via upload/
@@ -1444,7 +1451,7 @@ jobs:
     # Draft PRs skip e2e for the same reason as `build` above; `build` is also
     # gated, so on a draft this job's `needs` are unsatisfied and it would skip
     # regardless — the explicit clause keeps the intent readable at this job.
-    # e2e runs on GitHub-hosted ubuntu-latest by default, for every event.
+    # e2e runs on GitHub-hosted ubuntu-24.04 by default, for every event.
     # The self-hosted Docker fleet (see ci-runners/) is opt-in via
     # SELF_HOSTED_E2E=copse-e2e. The fleet was the default while this repo was
     # private, when hosted meant 2-core/7GB — the box most of the shard
@@ -1472,13 +1479,13 @@ jobs:
     #     label) so the job fails closed instead of dispatching untrusted code
     #     anywhere — including onto a free hosted runner.
     runs-on: >-
-      ${{ (github.event_name == 'schedule' || github.event_name == 'merge_group') && fromJSON('["ubuntu-latest"]') ||
+      ${{ (github.event_name == 'schedule' || github.event_name == 'merge_group') && fromJSON('["ubuntu-24.04"]') ||
           ((github.event_name == 'push' ||
             (github.event_name == 'pull_request' &&
              github.event.pull_request.head.repo.full_name == github.repository))
            && (vars.SELF_HOSTED_E2E == 'copse-e2e'
                && fromJSON('["self-hosted", "copse-e2e"]')
-               || fromJSON('["ubuntu-latest"]'))) }}
+               || fromJSON('["ubuntu-24.04"]'))) }}
     timeout-minutes: 45
     # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
     # whole gate finishes well inside the runner window. Each shard runs a disjoint
@@ -2165,7 +2172,7 @@ jobs:
     if: >-
       !cancelled() && needs.build.result == 'success' && needs.e2e.result == 'success' &&
       github.event_name == 'pull_request'
-    runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'merge_group' && 'ubuntu-24.04' || vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }}
     # Raised from 10 to cover the checkout + dependency install that the noise
     # filter below needs. Both are cache-warm on the fleet; the budget is for a
     # cold runner, not the steady state.
@@ -2384,7 +2391,7 @@ jobs:
     if: ${{ always() }}
     needs:
       [precheck, screenshot-baselines, check, review-cell, bench, build, e2e, screenshot-artifacts]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {}
     steps:
@@ -2503,7 +2510,7 @@ jobs:
       always() && github.event_name == 'push' &&
       (github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v'))
     needs: [precheck, screenshot-baselines, check, bench, build, e2e, ci-passed]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {}
     steps:
