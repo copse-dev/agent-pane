@@ -26,7 +26,7 @@ jobs:
   sync:
     # SELF_HOSTED_CHECKS routes to the self-hosted check fleet when set (see ci.yml's
     # routing note); hosted otherwise. Scheduled, trusted-main only.
-    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7.0.1
 
