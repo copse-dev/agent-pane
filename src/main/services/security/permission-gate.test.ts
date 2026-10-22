@@ -2224,6 +2224,147 @@ describe('turn-tree shell replay leases', () => {
       setApprovalHandler(null)
     }
   })
+  it('offers a verified sandbox block the outside replay lease and honours it', async () => {
+    shellReplayLeaseStore.clear()
+    const requests: Array<{ lease?: boolean; label?: string; subject?: string }> = []
+    setApprovalHandler(async (request) => {
+      requests.push({
+        ...(request.allowTurnTreeLease === undefined ? {} : { lease: request.allowTurnTreeLease }),
+        ...(request.turnTreeLeaseLabel === undefined ? {} : { label: request.turnTreeLeaseLabel }),
+        ...(request.turnTreeLeaseSubject === undefined
+          ? {}
+          : { subject: request.turnTreeLeaseSubject }),
+      })
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    const command = 'node scripts/run-demo.mts'
+    try {
+      await runInTree('tree-1', async () => {
+        assert.equal(await promptUnsandboxedShell(command, ['sandbox violation']), true)
+        assert.equal(await promptUnsandboxedShell(command, ['sandbox violation']), true)
+      })
+      assert.deepEqual(requests, [
+        {
+          lease: true,
+          label: 'Allow retries outside the sandbox (up to 10, for 2 hours)',
+          subject: command,
+        },
+      ])
+      // Another turn tree, or a changed command, asks again.
+      await runInTree('tree-2', () => promptUnsandboxedShell(command, ['sandbox violation']))
+      await runInTree('tree-1', () =>
+        promptUnsandboxedShell(`${command} --headed`, ['sandbox violation']),
+      )
+      assert.equal(requests.length, 3)
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('leases a whole multi-segment command line from a verified sandbox block', async () => {
+    shellReplayLeaseStore.clear()
+    const demo =
+      'C=.cache/demo; export DEMO_BINARY="$PWD/$C/chrome"; node scripts/run-demo.mts > $TMPDIR/demo.log 2>&1; echo exit=$?'
+    let prompts = 0
+    setApprovalHandler(async (request) => {
+      prompts++
+      assert.equal(request.allowTurnTreeLease, true)
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    try {
+      await runInTree('tree-1', async () => {
+        assert.equal(await promptUnsandboxedShell(demo, ['sandbox violation']), true)
+        assert.equal(await promptUnsandboxedShell(demo, ['sandbox violation']), true)
+      })
+      assert.equal(prompts, 1)
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('never offers or spends a lease when the retry must be answered interactively', async () => {
+    shellReplayLeaseStore.clear()
+    const offered: boolean[] = []
+    setApprovalHandler(async (request) => {
+      offered.push(request.allowTurnTreeLease === true)
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    const command = 'node scripts/run-demo.mts'
+    try {
+      await runInTree('tree-1', async () => {
+        // A lease already granted for this exact command...
+        await promptExpectedSandboxBlock(command, ['runs a local script'], undefined, {
+          executionRoot: root,
+        })
+        // ...does not answer a block matched from command output.
+        for (let i = 0; i < 2; i++) {
+          assert.equal(
+            await promptUnsandboxedShell(command, ['sandbox violation'], undefined, {
+              requireInteractiveApproval: true,
+            }),
+            true,
+          )
+        }
+      })
+      assert.deepEqual(offered, [true, false, false])
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('spends an agent-requested escape lease on a later verified block', async () => {
+    shellReplayLeaseStore.clear()
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts++
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    const command = './scripts/e2e.sh'
+    try {
+      await runInTree('tree-1', async () => {
+        assert.equal(
+          await promptExpectedSandboxBlock(command, ['runs a local script'], undefined, {
+            executionRoot: root,
+          }),
+          true,
+        )
+        // The agent drops `expects_sandbox_block`; the verified block still replays.
+        assert.equal(await promptUnsandboxedShell(command, ['sandbox violation']), true)
+      })
+      assert.equal(prompts, 1)
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('never offers a verified sandbox block a lease for network, deletion or installs', async () => {
+    shellReplayLeaseStore.clear()
+    const offered: boolean[] = []
+    setApprovalHandler(async (request) => {
+      offered.push(request.allowTurnTreeLease === true)
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    try {
+      await runInTree('tree-1', async () => {
+        for (const command of [
+          'gh api repos/o/r',
+          'rm -rf x && node scripts/run-demo.mts',
+          'npm install && node scripts/run-demo.mts',
+        ]) {
+          await promptUnsandboxedShell(command, ['sandbox violation'])
+          await promptUnsandboxedShell(command, ['sandbox violation'])
+        }
+      })
+      assert.deepEqual(offered, [false, false, false, false, false, false])
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
 })
 
 describe('decideShellPermission', () => {
