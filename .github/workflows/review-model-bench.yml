@@ -48,7 +48,7 @@ jobs:
       github.actor_id == '338988' &&
       github.triggering_actor == 'jonathanKingston' }}
     environment: copse-review-models
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       REVIEW_PROFILE: ${{ inputs.profile || 'configured' }}
