@@ -1,5 +1,5 @@
-import { Terminal, type ITheme } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
+import type { Terminal, ITheme } from '@xterm/xterm'
+import type { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { el } from '../dom/helpers.ts'
 import { closeIcon, plusIcon } from '../dom/icons.ts'
@@ -34,6 +34,27 @@ import {
    it on xterm.css's hardcoded #000 — which read as a black stripe under the
    last line. Publish the palette background so the viewport can match it (see
    `.terminal-container .xterm .xterm-viewport` in layout.css). */
+
+interface XtermModules {
+  Terminal: typeof Terminal
+  FitAddon: typeof FitAddon
+}
+
+let xtermModules: Promise<XtermModules> | null = null
+
+/**
+ * xterm is loaded on the first shell, not at app start. The Shells pane mounts
+ * (hidden) on every boot, but the ~450 KB terminal emulator is only needed once
+ * a tab exists, so it ships as a code-split chunk and is fetched here. The
+ * promise is cached, so every tab after the first resolves immediately.
+ */
+function loadXterm(): Promise<XtermModules> {
+  xtermModules ??= Promise.all([import('@xterm/xterm'), import('@xterm/addon-fit')]).then(
+    ([xterm, fit]) => ({ Terminal: xterm.Terminal, FitAddon: fit.FitAddon }),
+  )
+  return xtermModules
+}
+
 function applyXtermBg(container: HTMLElement, theme: ITheme): void {
   container.style.setProperty('--xterm-bg', theme.background ?? '')
 }
@@ -136,7 +157,7 @@ export function mountTerminalsPane(
   // Main-process surfaces (the ACP re-authentication offer) route through the
   // same path as the in-app callers on `request_terminal_command`.
   const unsubRunCommand = api.terminal.onRunCommand((command) => {
-    runCommandInNewShell(command)
+    void runCommandInNewShell(command)
   })
 
   const unsubExit = api.terminal.onExit((id, code) => {
@@ -155,7 +176,8 @@ export function mountTerminalsPane(
     )
   })
 
-  function createXterm(): { term: Terminal; fitAddon: FitAddon } {
+  async function createXterm(): Promise<{ term: Terminal; fitAddon: FitAddon }> {
+    const { Terminal, FitAddon } = await loadXterm()
     const term = new Terminal({
       cursorBlink: true,
       fontSize: scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
@@ -344,7 +366,7 @@ export function mountTerminalsPane(
       publishActive(tab)
       await flushPendingInput(tab)
       if (created.checkoutMode === 'shared' && worktreePath) {
-        preserveSharedShell(tab, worktreePath)
+        await preserveSharedShell(tab, worktreePath)
       }
     } catch (err) {
       // The console keeps the original, wrapping and all; the pane shows the
@@ -468,12 +490,34 @@ export function mountTerminalsPane(
     return tabsForScope(tabs.values(), currentThreadId())
   }
 
+  // Creating a shell is asynchronous (xterm loads on first use), and more than
+  // one listener can ask for "a shell for this scope" before the first lands:
+  // opening the pane fires `files_pane_changed` and `right_panel_mode_changed`
+  // in the same tick. Share the in-flight creation per scope so they get one.
+  const pendingScopeTabs = new Map<string | null, Promise<string>>()
+
+  function scopeHasTab(): boolean {
+    return visibleTabs().length > 0 || pendingScopeTabs.has(currentThreadId())
+  }
+
+  function ensureScopeTab(options?: { focus?: boolean }): Promise<string> {
+    const scopeId = currentThreadId()
+    let pending = pendingScopeTabs.get(scopeId)
+    if (!pending) {
+      pending = addTab(options).finally(() => {
+        pendingScopeTabs.delete(scopeId)
+      })
+      pendingScopeTabs.set(scopeId, pending)
+    }
+    return pending
+  }
+
   function setTabVisible(tab: TerminalTab, visible: boolean): void {
     tab.tabBtn.hidden = !visible
     if (!visible) tab.panel.classList.remove('is-active')
   }
 
-  function addTab(options?: {
+  async function addTab(options?: {
     activate?: boolean
     focus?: boolean
     initialInput?: string
@@ -482,7 +526,7 @@ export function mountTerminalsPane(
     scopeProjectId?: string
     executionTarget?: 'local'
     scopeId?: string
-  }): string {
+  }): Promise<string> {
     tabCounter += 1
     const id = crypto.randomUUID()
     const label = options?.label ?? `Terminal ${String(tabCounter)}`
@@ -525,9 +569,11 @@ export function mountTerminalsPane(
     applyXtermBg(container, xtermThemeFromTokens(readEditorThemeTokens()))
     panel.append(container)
 
-    const { term, fitAddon } = createXterm()
-    const fileLinks = installTerminalFileLinks(term, store, api)
+    // Scope is fixed before xterm loads, so a thread switch during the load
+    // cannot re-home the shell (or orphan `pendingScopeTabs`' key for it).
     const { scopeProjectId, scopeId } = resolveTerminalTabScope(store.getState(), options)
+    const { term, fitAddon } = await createXterm()
+    const fileLinks = installTerminalFileLinks(term, store, api)
     const tab: TerminalTab = {
       id,
       scopeProjectId,
@@ -634,7 +680,7 @@ export function mountTerminalsPane(
       setActiveTab(lastRemaining.id)
     } else {
       activeTabId = null
-      if (terminalModeActive(store)) addTab()
+      if (terminalModeActive(store)) void ensureScopeTab()
     }
   }
 
@@ -651,7 +697,7 @@ export function mountTerminalsPane(
     if (activeTabId && !visible.some((t) => t.id === activeTabId)) activeTabId = null
 
     if (needsNew) {
-      if (terminalModeActive(store)) addTab({ focus: false })
+      if (terminalModeActive(store) && !scopeHasTab()) void ensureScopeTab({ focus: false })
       return
     }
     if (!activeTabId && visible.length > 0) setActiveTab(at(visible, 0).id, { focus: false })
@@ -671,23 +717,30 @@ export function mountTerminalsPane(
     if (tab) fitTab(tab)
   })
 
+  function showActiveTab(): void {
+    if (!terminalModeActive(store)) return
+    const tab = activeTabId ? tabs.get(activeTabId) : null
+    if (!tab) return
+    resizeObserver.observe(tab.container)
+    openTerminalSurface(tab)
+    fitTab(tab)
+    void ensureSession(tab)
+    requestAnimationFrame(() => {
+      focusTab(tab)
+    })
+  }
+
   function onTerminalModeChange(): void {
-    const active = terminalModeActive(store)
-    if (active) {
-      if (visibleTabs().length === 0) addTab()
-      const tab = activeTabId ? tabs.get(activeTabId) : null
-      if (tab) {
-        resizeObserver.observe(tab.container)
-        openTerminalSurface(tab)
-        fitTab(tab)
-        void ensureSession(tab)
-        requestAnimationFrame(() => {
-          focusTab(tab)
-        })
-      }
-    } else {
+    if (!terminalModeActive(store)) {
       resizeObserver.disconnect()
+      return
     }
+    // The first shell of a scope arrives once xterm has loaded; show it then.
+    if (!scopeHasTab()) {
+      void ensureScopeTab().then(showActiveTab)
+      return
+    }
+    showActiveTab()
   }
 
   // Theme, tint and accent all land on <html>; follow them there rather than on
@@ -710,16 +763,21 @@ export function mountTerminalsPane(
     if (tab) fitTab(tab)
   }
 
-  newBtn.addEventListener('click', () => addTab())
+  newBtn.addEventListener('click', () => {
+    void addTab()
+  })
 
   // Open a fresh shell and run a command in it (e.g. `claude auth login` from the
   // Usage panel). Seed the tab first so switching to terminal mode spawns the
   // seeded session rather than an extra empty one.
-  function runCommandInNewShell(command: string, options?: { executionTarget: 'local' }): void {
+  async function runCommandInNewShell(
+    command: string,
+    options?: { executionTarget: 'local' },
+  ): Promise<void> {
     const trimmed = command.trim()
     if (!trimmed) return
     const wasActive = terminalModeActive(store)
-    addTab({ activate: true, initialInput: `${trimmed}\r`, ...options })
+    await addTab({ activate: true, initialInput: `${trimmed}\r`, ...options })
     if (!wasActive) {
       store.setState({ filesPaneOpen: true, rightPanelMode: 'terminal' })
       store.emit('files_pane_changed')
@@ -727,13 +785,13 @@ export function mountTerminalsPane(
     }
   }
 
-  function runCodeBlockInBackground(request: CodeBlockRunRequest): void {
+  async function runCodeBlockInBackground(request: CodeBlockRunRequest): Promise<void> {
     const command = request.command.trim()
     if (!command) return
     const oneLine = command.split(/\s+/).join(' ')
     const summary = oneLine.length > 48 ? `${oneLine.slice(0, 47)}…` : oneLine
     const initialInput = `${command.replace(/\r\n?|\n/g, '\r')}\rexit\r`
-    const tabId = addTab({
+    const tabId = await addTab({
       activate: false,
       initialInput,
       label: `Run · ${summary}`,
@@ -765,7 +823,7 @@ export function mountTerminalsPane(
     onScopeSwitch()
   }
 
-  function preserveSharedShell(tab: TerminalTab, worktreePath: string): void {
+  async function preserveSharedShell(tab: TerminalTab, worktreePath: string): Promise<void> {
     if (tab.executionTarget === 'local' || !tab.checkoutBadge.hidden) return
     tab.checkoutBadge.hidden = false
     tab.term.writeln(
@@ -775,7 +833,7 @@ export function mountTerminalsPane(
       (candidate) => candidate.scopeId === tab.scopeId && candidate.checkoutPath === worktreePath,
     )
     if (!replacementExists && tab.scopeId && tab.scopeProjectId) {
-      addTab({
+      await addTab({
         activate: tab.scopeId === currentThreadId(),
         scopeProjectId: tab.scopeProjectId,
         scopeId: tab.scopeId,
@@ -783,7 +841,9 @@ export function mountTerminalsPane(
     }
   }
 
-  function onThreadCheckoutChanged(threadId: string): void {
+  // Sequential on purpose: each replacement shell is visible to the next
+  // iteration's `replacementExists` check only once its (async) tab exists.
+  async function onThreadCheckoutChanged(threadId: string): Promise<void> {
     const worktreePath = currentWorktreePath(threadId)
     if (!worktreePath) return
 
@@ -796,7 +856,7 @@ export function mountTerminalsPane(
         if (!tab.creating) tab.checkoutPath = worktreePath
         continue
       }
-      preserveSharedShell(tab, worktreePath)
+      await preserveSharedShell(tab, worktreePath)
     }
   }
 
@@ -806,10 +866,16 @@ export function mountTerminalsPane(
     store.on('agent_task_selected', onAgentTaskSelected),
     store.on('settings_changed', onFontSizeChange),
     store.on('threads_changed', onThreadMaybeChanged),
-    store.on('thread_checkout_changed', onThreadCheckoutChanged),
+    store.on('thread_checkout_changed', (threadId) => {
+      void onThreadCheckoutChanged(threadId)
+    }),
     store.on('workspace_changed', onThreadMaybeChanged),
-    store.on('request_terminal_command', runCommandInNewShell),
-    store.on('code_block_run_requested', runCodeBlockInBackground),
+    store.on('request_terminal_command', (command, options) => {
+      void runCommandInNewShell(command, options)
+    }),
+    store.on('code_block_run_requested', (request) => {
+      void runCodeBlockInBackground(request)
+    }),
     unwatchTheme,
   ]
 
