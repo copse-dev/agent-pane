@@ -119,6 +119,16 @@ startup stops before any store opens and explains how to restore a consistent
 profile. Only the desktop entry takes the single-instance lock and runs replay;
 a second instance exits first, and headless clients (ACP, smoke, agent and
 classifier evals) join as leaseholders.
+New Linux leases record the kernel boot ID and process start tick; new macOS
+leases record the OS process birth time (`ps lstart`, fixed locale/timezone).
+Maintenance removes a lease for a reused live PID only when its recorded birth
+identity differs. A birth-time collision conservatively keeps the lease locked.
+Legacy empty leases and unsupported platforms retain PID-only exclusion; an alive
+legacy PID cannot safely be retired automatically. Invalid records and failed
+identity probes block maintenance rather than guessing from lease age. A legacy
+lease remains locked until its PID no longer exists; restart alone is not proof
+if that PID is reused again. Never delete a lease while its original client might
+still be writing.
 Successful migration restarts once to discard cached legacy stores and keys.
 The next startup opens the vault under its selected authentication policy.
 
