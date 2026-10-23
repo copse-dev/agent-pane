@@ -253,7 +253,7 @@ async function runOnce(index: number): Promise<RunResult | null> {
 }
 
 function median(values: (number | null)[]): string {
-  const sorted = values.filter((v): v is number => v !== null).sort((a, b) => a - b)
+  const sorted = values.flatMap((v) => (v === null ? [] : [v])).sort((a, b) => a - b)
   if (sorted.length === 0) return '—'
   const mid = Math.floor(sorted.length / 2)
   const value =
