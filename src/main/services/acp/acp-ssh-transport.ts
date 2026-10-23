@@ -235,7 +235,7 @@ const REMOTE_INSTALL_TIMEOUT_MS = 300_000
  * use`) installs into *that* Node's global prefix without repointing the host's
  * default version — which matters because the default is frequently older than
  * the agent's engine floor, and a remote may be shared with other users.
- * `--ignore-scripts` mirrors the local Socket-Firewall install path.
+ * `--ignore-scripts` mirrors the local package-firewall install path.
  */
 export function remoteNpmInstallScript(pkg: string, npmBinDir: string | null): string {
   const install = `npm install -g --ignore-scripts ${posixQuote(pkg)}`
@@ -254,7 +254,7 @@ const REMOTE_ONLY_ACP_INSTALL_PINS = [
  * or `null` when Copse has no reviewed pin for it. Container-capable agents
  * share the worker image's pin; the explicit remote-only table covers agents
  * whose provider configuration has not been verified for the worker image.
- * Local installs float because Socket Firewall screens them; a remote install
+ * Local installs float because the package firewall screens them; a remote install
  * has no such screen, so it never takes `latest` — no pin, no install.
  */
 export function remoteAcpInstallSpec(known: {
@@ -271,8 +271,8 @@ export function remoteAcpInstallSpec(known: {
 
 /**
  * Approval copy for a remote install. Deliberately names the host and the Node
- * prefix, and is explicit that Socket Firewall does not cover this install:
- * `sfw` runs on the desktop, so a remote install cannot be proxied through it.
+ * prefix, and is explicit that the package firewall does not cover this install:
+ * it runs on the desktop, so a remote install cannot be proxied through it.
  * The package name still comes from Copse's pinned curated catalog rather than
  * from anything the remote said, and lifecycle scripts stay disabled.
  */
@@ -290,7 +290,7 @@ export function formatRemoteAcpInstallApproval(input: {
       ? `It installs into the Node at ${input.npmBinDir}, leaving the host's default Node version unchanged.`
       : "It installs with the `npm` on your remote login shell's PATH.",
     '',
-    'Lifecycle scripts are disabled (`--ignore-scripts`). Unlike a local install, this one does NOT go through Socket Firewall — it runs on the remote host, where Socket Firewall is not available.',
+    'Lifecycle scripts are disabled (`--ignore-scripts`). Unlike a local install, this one is NOT checked by the Copse package firewall — it runs on the remote host, which the firewall does not cover.',
   ]
   return {
     title: `Install software to connect your coding agent on ${input.hostLabel}?`,

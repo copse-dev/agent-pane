@@ -2570,13 +2570,13 @@ describe('formatInstallPromptParts', () => {
     assert.equal(parts.bodyFooter, 'Allow this install?')
   })
 
-  it('mentions Socket Firewall scanning and (for JS) disabled scripts', () => {
+  it('mentions the package firewall and (for JS) disabled scripts', () => {
     const parts = formatInstallPromptParts('npm install', {
       outsideSandbox: false,
       safeInstall: true,
       jsManager: true,
     })
-    assert.ok(parts.bodyAdvice?.includes('Socket Firewall (sfw)'))
+    assert.ok(parts.bodyAdvice?.includes('The Copse package firewall blocks packages'))
     assert.ok(parts.bodyAdvice?.includes('install lifecycle scripts are disabled'))
   })
 
@@ -2586,7 +2586,7 @@ describe('formatInstallPromptParts', () => {
       safeInstall: true,
       jsManager: false,
     })
-    assert.ok(parts.bodyAdvice?.includes('Socket Firewall (sfw)'))
+    assert.ok(parts.bodyAdvice?.includes('The Copse package firewall blocks packages'))
     assert.ok(!parts.bodyAdvice?.includes('install lifecycle scripts'))
   })
 
@@ -2614,7 +2614,7 @@ describe('formatInstallPromptParts', () => {
       jsManager: true,
     })
     assert.ok(parts.bodyAdvice?.includes('off in Settings'))
-    assert.ok(!parts.bodyAdvice?.includes('Socket Firewall (sfw) scans'))
+    assert.ok(!parts.bodyAdvice?.includes('package firewall blocks'))
   })
 })
 
@@ -2674,12 +2674,12 @@ describe('formatEphemeralRunnerPromptParts', () => {
     assert.ok(!parts.bodyFooter.includes('Allow this install?'))
   })
 
-  it('mentions Socket Firewall scanning when enabled', () => {
+  it('mentions the package firewall when enabled', () => {
     const parts = formatEphemeralRunnerPromptParts('npx eslint .', {
       outsideSandbox: false,
       safeInstall: true,
     })
-    assert.ok(parts.bodyAdvice?.includes('Socket Firewall (sfw)'))
+    assert.ok(parts.bodyAdvice?.includes('The Copse package firewall blocks packages'))
     assert.ok(!parts.bodyAdvice?.includes('install lifecycle scripts'))
   })
 
@@ -2689,7 +2689,7 @@ describe('formatEphemeralRunnerPromptParts', () => {
       safeInstall: false,
     })
     assert.ok(parts.bodyAdvice?.includes('off in Settings'))
-    assert.ok(!parts.bodyAdvice?.includes('Socket Firewall (sfw) scans'))
+    assert.ok(!parts.bodyAdvice?.includes('package firewall blocks'))
   })
 })
 

@@ -32,12 +32,23 @@ describe('classifySandboxDenial (issue #1436)', () => {
     assert.match(match.advice, /~\/\.config\/gh/)
   })
 
-  it('classifies the Socket Firewall binary-prep denial and names it as one-time setup', () => {
-    const output = '[sfw] Failed to prepare firewall binary: EPERM'
+  it('classifies the package firewall losing its loopback proxy as a needed download', () => {
+    const output =
+      '[package-firewall] cannot listen on loopback here (EPERM); package downloads are disabled for this command\n' +
+      'npm error code ECONNREFUSED'
     const match = classifySandboxDenial(output, 'npx prettier --write .')
     assert.ok(match)
-    assert.equal(match.operation, 'prepare firewall binary (sfw)')
-    assert.match(match.advice, /one-time setup/)
+    assert.equal(match.operation, 'download packages (package firewall)')
+    assert.match(match.advice, /needs network access outside the sandbox/)
+  })
+
+  it('classifies the package firewall failing to reach a registry the same way', () => {
+    const output =
+      '[package-firewall] could not reach registry.npmjs.org: connect ENETUNREACH\nnpm error 502'
+    assert.equal(
+      classifySandboxDenial(output, 'npx cowsay hi')?.operation,
+      'download packages (package firewall)',
+    )
   })
 
   it('returns null for an unrecognised failure, unchanged', () => {

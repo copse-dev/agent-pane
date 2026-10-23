@@ -7,7 +7,7 @@ import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 
 /**
  * Detect whether a globally installed npm ACP adapter is behind the registry
- * latest, so auto-setup can offer an approved upgrade (same Socket-Firewall
+ * latest, so auto-setup can offer an approved upgrade (same package-firewall
  * install path as a missing adapter).
  *
  * Version reads are local (package.json next to the resolved binary). Latest

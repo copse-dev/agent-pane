@@ -787,6 +787,13 @@ export function packageInstallCommand(
   return { command: invocation.command, args: [...invocation.args, ...args] }
 }
 
+/** Online installs run behind the package firewall; offline ones only read the managed caches. */
+function installLabel(offline: boolean): string {
+  return offline
+    ? 'Install from Copse-managed caches (offline)'
+    : 'Install behind the Copse package firewall'
+}
+
 export function formatPreparationPlan(plan: WorktreePreparationPlan, offline: boolean): string {
   const install = packageInstallCommand(plan, offline)
   return [
@@ -795,7 +802,7 @@ export function formatPreparationPlan(plan: WorktreePreparationPlan, offline: bo
     `Package manager: ${plan.manager ? `${plan.manager.name}${plan.manager.version ? `@${plan.manager.version}` : ' (version detected locally)'}` : plan.ecosystem === 'uv' ? 'uv (Python)' : plan.ecosystem === 'pip' ? 'pip (hash-locked Python wheels)' : plan.ecosystem === 'go' ? 'Go modules' : plan.ecosystem === 'cargo' ? 'Cargo (Rust)' : 'project-defined setup'}`,
     ...(install
       ? [
-          `Install through Socket Firewall: ${JSON.stringify([install.command, ...install.args])} (dependency lifecycle scripts disabled)`,
+          `${installLabel(offline)}: ${JSON.stringify([install.command, ...install.args])} (dependency lifecycle scripts disabled)`,
         ]
       : []),
     ...plan.prepare.map((step) =>
@@ -825,7 +832,7 @@ export function formatPreparationApproval(
     body:
       [
         ...(install
-          ? ['Install through Socket Firewall:', formatArgvForShell(install.command, install.args)]
+          ? [`${installLabel(offline)}:`, formatArgvForShell(install.command, install.args)]
           : []),
         ...(plan.prepare.length
           ? [

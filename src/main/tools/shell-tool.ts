@@ -2,6 +2,7 @@ import { runShellOnce, type ShellRunResult } from '../services/exec/foreground-s
 import { homedir } from 'node:os'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
+import { errorMessage } from '@shared/errors.ts'
 import { getAgentExecutionRoot } from '../services/execution-root.ts'
 import { isThreadCheckoutDeferred } from '../services/thread-execution-context.ts'
 import { REQUEST_WRITE_ACCESS_TOOL } from '@shared/tools/readonly-tools.ts'
@@ -9,6 +10,7 @@ import {
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
 } from '../project-sandbox/index.ts'
+import { spawnRunsOnSshTarget } from '../project-sandbox/spawn.ts'
 import {
   shellReadGrantTargets,
   shellRunsOutsideSandbox,
@@ -34,7 +36,6 @@ import {
 } from '../services/security/denied-operations.ts'
 import {
   promptExpectedSandboxBlock,
-  promptInstallSocketFirewall,
   promptUnsandboxedShell,
 } from '../services/security/permission-gate.ts'
 import {
@@ -53,11 +54,11 @@ import {
   resolveSshExecutionTargetForCwd,
 } from '../services/ssh-workspace/execution-target.ts'
 import { getSetting } from '../services/storage/settings.ts'
-import { detectPackageInstall, wrapWithSocketFirewall } from '../services/security/safe-install.ts'
+import { detectPackageInstall, wrapWithPackageFirewall } from '../services/security/safe-install.ts'
 import {
-  installSocketFirewall,
-  isSocketFirewallAvailable,
-} from '../services/security/socket-firewall.ts'
+  packageFirewallLauncher,
+  type PackageFirewallLauncher,
+} from '../services/security/package-firewall-launcher.ts'
 import { stripTerminalControlSequences } from '../services/exec/subprocess-output-cap.ts'
 import { adoptWorktreeChangesSince, captureWorktreeBaseline } from '../services/diff-queue.ts'
 import { beginWorktreeWriter } from '../services/worktree-writers.ts'
@@ -149,7 +150,7 @@ async function maybeRetryUnsandboxed(
     spawnFailed: result.spawnFailed ?? false,
   })
   // Some denials never touch the OS sandbox's own violation counter — a network
-  // egress broker, or a tool (gh, sfw) failing to reach its own files outside the
+  // egress broker, a tool (gh) failing to reach its own files outside the
   // workspace — so the runner signal is silent and the command would otherwise be
   // handed back to the model as a raw, opaque failure (issue #1436). Only consulted
   // when the runner signal itself is silent, and it can only ever earn the SAME
@@ -203,12 +204,15 @@ type PreparedCommand =
   | { refused: string }
 
 /**
- * When a command performs a package install, route the whole command through
- * Socket Firewall once (installing sfw first if needed) so the package manager
- * it invokes is proxied. JS managers additionally get `npm_config_ignore_scripts`
- * to block install lifecycle scripts. Non-install commands pass through untouched.
+ * When a command performs a package install, run the whole command behind the
+ * Copse package firewall so every package manager it invokes is proxied and its
+ * downloads checked. JS managers additionally get `npm_config_ignore_scripts`
+ * to block install lifecycle scripts. Non-install commands pass through
+ * untouched. A command bound for an SSH workspace runs on the remote host,
+ * where this machine's firewall cannot reach, so it is left unwrapped and the
+ * banner says so.
  */
-async function prepareCommand(command: string, signal: AbortSignal): Promise<PreparedCommand> {
+function prepareCommand(command: string, cwd: string): PreparedCommand {
   const baseEnv = process.env
   if (!getSetting<boolean>('safeInstallEnabled', true)) {
     return { command, env: baseEnv, banner: '' }
@@ -217,30 +221,32 @@ async function prepareCommand(command: string, signal: AbortSignal): Promise<Pre
   const detection = detectPackageInstall(command)
   if (!detection.isInstall) return { command, env: baseEnv, banner: '' }
 
-  if (!isSocketFirewallAvailable()) {
-    const approved = await promptInstallSocketFirewall(command, signal)
-    if (!approved) {
-      return {
-        refused:
-          'Package install cancelled: Socket Firewall (sfw) is required to scan packages and was not installed.',
-      }
-    }
-    const installed = await installSocketFirewall(signal)
-    if (!installed) {
-      return { refused: 'Package install cancelled: Socket Firewall (sfw) installation failed.' }
-    }
-  }
-
-  const quote = process.platform === 'win32' ? winQuote : undefined
-  const wrapped = wrapWithSocketFirewall(command, SHELL_INVOCATION, quote)
   const env: NodeJS.ProcessEnv = detection.jsManager
     ? { ...baseEnv, npm_config_ignore_scripts: 'true' }
     : baseEnv
+  const scriptsNote = detection.jsManager
+    ? ['install scripts disabled (npm_config_ignore_scripts)']
+    : []
+  if (spawnRunsOnSshTarget(cwd)) {
+    const notes = ['not checked by the package firewall (runs on the remote host)', ...scriptsNote]
+    const banner = `[safe-install] ${notes.join('; ')}\n`
+    emitShellOutput(banner)
+    return { command, env, banner }
+  }
+
+  let launcher: PackageFirewallLauncher
+  try {
+    launcher = packageFirewallLauncher()
+  } catch (error) {
+    return { refused: `Package install cancelled: ${errorMessage(error)}.` }
+  }
+  const quote = process.platform === 'win32' ? winQuote : undefined
+  const wrapped = wrapWithPackageFirewall(command, SHELL_INVOCATION, launcher, quote)
   const notes = [
-    'scanned by Socket Firewall (sfw)',
-    ...(detection.jsManager ? ['install scripts disabled (npm_config_ignore_scripts)'] : []),
+    'downloads checked by the Copse package firewall against public malware advisories',
+    ...scriptsNote,
   ]
-  const banner = `[safe-install] ${notes.join('; ')}\n$ ${wrapped}\n`
+  const banner = `[safe-install] ${notes.join('; ')}\n$ ${command}\n`
   emitShellOutput(banner)
   return { command: wrapped, env, banner }
 }
@@ -267,10 +273,10 @@ export const runShellTool = defineTool({
     'Output is streamed to the conversation. ' +
     'Commands contained within the sandbox auto-run; network or outside-workspace access (e.g. gh, curl, git push) prompts for approval and runs outside the sandbox when the macOS project sandbox is active. ' +
     'If a sandbox-contained command fails because the sandbox blocks filesystem/process access (e.g. Playwright), the user may approve running it once outside the sandbox. ' +
-    'A sandbox-contained failure recognized as one of a known set of sandbox denials (e.g. gh reading its own config, Socket Firewall staging its binary) may be retried once with elevation, subject to the same approval as expects_sandbox_block; the result is prefixed with a one-line note when that happens, and the denial is remembered for that specific operation for the rest of this thread — a denied `git fetch` never implies `git push` or anything else is blocked too. ' +
+    'A sandbox-contained failure recognized as one of a known set of sandbox denials (e.g. gh reading its own config, the package firewall unable to download from inside the sandbox) may be retried once with elevation, subject to the same approval as expects_sandbox_block; the result is prefixed with a one-line note when that happens, and the denial is remembered for that specific operation for the rest of this thread — a denied `git fetch` never implies `git push` or anything else is blocked too. ' +
     'If you already expect a command to need the network or files outside the workspace (e.g. gh, cloud CLIs), set expects_sandbox_block so the user is asked up front instead of after a failed sandboxed attempt. ' +
     'Do not read credential files — .env and its variants, ~/.ssh, ~/.aws, keychains — inside or outside the workspace; ask the user for the value you need instead. ' +
-    'Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) are automatically run through Socket Firewall to scan for malicious packages, with install lifecycle scripts disabled. ' +
+    'Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) automatically run behind the Copse package firewall, which blocks packages that public advisories (OSV.dev) list as malicious, with install lifecycle scripts disabled. ' +
     'A foreground command may run up to 30 minutes (timeout_ms). Use run_background for dev servers and watchers, and for bounded work expected to leave you waiting (long builds, test suites, evals, data generation, migrations, and similar jobs); arm wake_on_completion and end the turn instead of polling. ' +
     "Piping a command through `tail`/`head` normally masks the earlier command's exit code; run_shell enables pipefail so a failing pipeline is still reported as failed, while a producer that only stopped because `head` closed the pipe early still counts as success.",
   parameters: z.object({
@@ -309,7 +315,7 @@ export const runShellTool = defineTool({
     // unsandboxed in that checkout.
     const readonlyCheckout = isThreadCheckoutDeferred()
 
-    const prepared = await prepareCommand(command, signal)
+    const prepared = prepareCommand(command, cwd)
     if ('refused' in prepared) return prepared.refused
     const { command: finalCommand, env, banner } = prepared
     const withBanner = (output: string): string => (banner ? `${banner}\n${output}` : output)
@@ -328,7 +334,7 @@ export const runShellTool = defineTool({
     })
     const pipefailInjected = pipefailWasInjected(finalCommand, executedCommand)
 
-    // Decide sandbox vs unsandboxed from the RAW command (not the sfw-wrapped
+    // Decide sandbox vs unsandboxed from the RAW command (not the firewall-wrapped
     // finalCommand) so this matches the permission gate's decision exactly: a
     // trusted allow-listed command runs unsandboxed with no prompt, otherwise the
     // existing external-command heuristic applies. shellRunsOutsideSandbox is the

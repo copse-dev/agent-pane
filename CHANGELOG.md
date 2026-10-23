@@ -8,6 +8,16 @@ released — rather than copying every published entry.
 
 ## Unreleased
 
+- Package installs now run behind Copse's own package firewall instead of a
+  third-party firewall Copse had to install first. Every npm, PyPI and crates.io
+  download an agent install, coding-agent adapter install or worktree
+  preparation makes is checked against public malware advisories (OSV.dev,
+  which carries the OpenSSF Malicious Packages dataset, and the DataDog
+  malicious packages dataset), and a listed package is blocked with the
+  advisory named in the output. There is no separate firewall install to
+  approve any more, and updating a coding-agent adapter that is already
+  installed no longer asks first.
+
 ## 0.1.0-beta.15
 
 - The footer hover now reports what the classifiers did for the thread: for the

@@ -575,11 +575,16 @@ export function formatGuardedYoloHarmPromptAdvice(reasons: string[]): string {
   return `${harm}${footer}`
 }
 
+const PACKAGE_FIREWALL_ADVICE =
+  'The Copse package firewall blocks packages that public advisories (OSV.dev) list as malicious'
+const PACKAGE_SCANNING_OFF_ADVICE =
+  'Package scanning is off in Settings, so packages are not checked against malware advisories.'
+
 /**
  * Approval body for a detected package install. Installs always need the network,
  * so the generic "external command" reason list (and its nested parentheticals)
  * just adds noise — this states plainly that it's an install, where it runs, and
- * whether Socket Firewall will scan it.
+ * whether the package firewall will check it.
  */
 export function formatInstallPromptParts(
   command: string,
@@ -589,10 +594,10 @@ export function formatInstallPromptParts(
     ? 'It runs once outside the project sandbox with network access.'
     : 'It fetches packages over the network.'
   const scan = opts.safeInstall
-    ? `Socket Firewall (sfw) scans the packages for known-malicious code${
+    ? `${PACKAGE_FIREWALL_ADVICE}${
         opts.jsManager ? ', and install lifecycle scripts are disabled' : ''
       }.`
-    : 'Package scanning (Socket Firewall) is off in Settings, so packages run unscanned.'
+    : PACKAGE_SCANNING_OFF_ADVICE
   return {
     command: command.trim(),
     bodyAdvice:
@@ -614,9 +619,7 @@ export function formatEphemeralRunnerPromptParts(
   const access = opts.outsideSandbox
     ? 'It runs once outside the project sandbox with network access.'
     : 'It may reach the network.'
-  const scan = opts.safeInstall
-    ? 'Socket Firewall (sfw) scans packages for known-malicious code.'
-    : 'Package scanning (Socket Firewall) is off in Settings, so packages run unscanned.'
+  const scan = opts.safeInstall ? `${PACKAGE_FIREWALL_ADVICE}.` : PACKAGE_SCANNING_OFF_ADVICE
   return {
     command: command.trim(),
     bodyAdvice:
