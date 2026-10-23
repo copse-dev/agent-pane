@@ -1,6 +1,8 @@
 interface PreparationStep {
   label: string
   path: string
+  /** Best-effort: a failure warns instead of aborting the install. Defaults to true. */
+  required?: boolean
 }
 
 export function nativePreparationSteps(platform: NodeJS.Platform): PreparationStep[] {
@@ -11,6 +13,16 @@ export function nativePreparationSteps(platform: NodeJS.Platform): PreparationSt
     steps.push({
       label: 'macOS native toolchain check',
       path: 'scripts/check-macos-native-toolchain.mts',
+    })
+    // Without assets/icons/app.icns, patch-dev-name.mts below leaves the dev
+    // bundle on Electron's stock icns, so the Dock and About panel show the
+    // generic Electron icon (#3486 only fixed the name/version, not the icon).
+    // iconutil is finicky across macOS versions, so a failure here shouldn't
+    // block `pnpm install`.
+    steps.push({
+      label: 'App icon generation',
+      path: 'scripts/generate-icon.mts',
+      required: false,
     })
   }
   // Electron 42+ downloads lazily. Prepare it during install on non-macOS hosts,

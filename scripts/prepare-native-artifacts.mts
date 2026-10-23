@@ -18,9 +18,15 @@ for (const step of steps) {
     env: process.env,
     stdio: 'inherit',
   })
-  if (result.error) throw result.error
-  if (result.status !== 0) {
-    throw new Error(`${step.label} failed (${result.signal ?? String(result.status)})`)
+  const failure =
+    result.error ??
+    (result.status !== 0 ? new Error(`exit ${result.signal ?? String(result.status)}`) : undefined)
+  if (failure) {
+    if (step.required === false) {
+      console.warn(`==> ${step.label} failed, continuing: ${failure.message}`)
+    } else {
+      throw failure
+    }
   }
 }
 

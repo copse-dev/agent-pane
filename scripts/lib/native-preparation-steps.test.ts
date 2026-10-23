@@ -13,4 +13,20 @@ describe('native runtime preparation order', () => {
       assert.equal(paths.includes('node_modules/electron/install.js'), platform !== 'darwin')
     })
   }
+
+  it('generates the app icon before patching the dev bundle on darwin', () => {
+    const steps = nativePreparationSteps('darwin')
+    const paths = steps.map((step) => step.path)
+    const iconIndex = paths.indexOf('scripts/generate-icon.mts')
+    assert.ok(iconIndex >= 0)
+    assert.ok(iconIndex < paths.indexOf('scripts/patch-dev-name.mts'))
+    assert.equal(steps[iconIndex]?.required, false)
+  })
+
+  it('does not generate the app icon on non-macOS platforms', () => {
+    for (const platform of ['linux', 'win32'] as const) {
+      const paths = nativePreparationSteps(platform).map((step) => step.path)
+      assert.ok(!paths.includes('scripts/generate-icon.mts'))
+    }
+  })
 })
