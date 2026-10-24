@@ -105,3 +105,15 @@ condition = "AND"
 regexTarget = "match"
 regexes = ['''ghp_copse_[A-Za-z0-9_]+''']
 paths = ['''^src/main/services/container-runtime/github-capability-wire\.test\.ts$''']
+
+[[allowlists]]
+# The sandboxed GitHub-reads test stands up a fake GitHub with an inert
+# `ghp_`-shaped desktop token to prove that token never reaches the command.
+# It authenticates nowhere. Require both the file and the fixture's exact
+# prefix, so a real credential in that file is still reported.
+description = "GitHub-reads sandbox fake desktop token fixture (inert)"
+targetRules = ["github-pat"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''ghp_DesktopTokenForTheFakeGitHub''']
+paths = ['''^src/main/project-sandbox/github-reads-sandbox\.test\.ts$''']

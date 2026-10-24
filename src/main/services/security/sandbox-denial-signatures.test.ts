@@ -9,8 +9,10 @@ import {
   SANDBOX_DENIAL_RETRY_NOTE,
   sandboxDenialRetryClassification,
   sandboxForwardEscalationMaySkipApproval,
+  sandboxGitHubReadShape,
   sandboxRetryMaySkipApproval,
 } from './sandbox-denial-signatures.ts'
+import { SANDBOX_GITHUB_READ_ONLY_NOTE } from '../github/sandbox-github-reads.ts'
 
 describe('classifySandboxDenial (issue #1436)', () => {
   it('classifies the git fetch CONNECT-tunnel denial and names the git subcommand, not "the network"', () => {
@@ -132,5 +134,72 @@ describe('retry/cache-skip observability notes (issue #1436)', () => {
   it('prefixes a cache-driven skip with its own distinct note', () => {
     const prefixed = prefixWithSandboxCacheSkipNote('done')
     assert.match(prefixed, new RegExp(`^\\[${SANDBOX_DENIAL_CACHE_SKIP_NOTE}\\]\\n`))
+  })
+})
+
+describe('sandboxed GitHub read route refusals', () => {
+  const gitPush =
+    'remote: Copse refused this request: pushing is not allowed from the project sandbox. ' +
+    `${SANDBOX_GITHUB_READ_ONLY_NOTE}\n` +
+    "fatal: unable to access 'http://s0123456789abcdef.github.copse.internal/o/r.git/': " +
+    'The requested URL returned error: 403'
+  const ghWrite =
+    'HTTP 403: Copse refused this request: GraphQL mutations are writes or streams, not reads. ' +
+    `${SANDBOX_GITHUB_READ_ONLY_NOTE} (https://api.github.com/graphql)`
+
+  it('turns a refused write into the ordinary outside-sandbox retry question', () => {
+    const push = sandboxDenialRetryClassification(gitPush, 'git push origin main')
+    assert.ok(push)
+    assert.equal(push.operation, 'git push (GitHub write)')
+    assert.match(push.advice, /Nothing was sent to GitHub/)
+    const pr = sandboxDenialRetryClassification(ghWrite, 'gh pr create --fill')
+    assert.equal(pr?.operation, 'GitHub write')
+    // Signature evidence never skips the prompt, in Guarded YOLO or not.
+    assert.equal(sandboxRetryMaySkipApproval('signature', true, false), false)
+  })
+
+  it('does not match an ordinary GitHub error or a refusal without the read-only note', () => {
+    assert.equal(
+      classifySandboxDenial('HTTP 404: Not Found (https://api.github.com/x)', 'gh api x'),
+      null,
+    )
+    assert.equal(
+      classifySandboxDenial(
+        'Copse refused this request: pushing is not allowed from a container run.',
+        'git push',
+      ),
+      null,
+    )
+  })
+
+  it('recognises SSH failing to authenticate from inside the sandbox', () => {
+    for (const output of [
+      'Received disconnect from 140.82.121.3 port 22:2: client did not offer an authentication method',
+      'Received disconnect from 140.82.121.3 port 22:14: No supported authentication methods available [preauth]',
+    ]) {
+      assert.equal(classifySandboxDenial(output, 'git fetch origin')?.operation, 'git fetch')
+    }
+  })
+
+  it('names the shapes the route serves from the command alone', () => {
+    const macos = { gh: true }
+    for (const command of [
+      'gh pr view 12',
+      'cd x && gh api user',
+      'git fetch origin',
+      'git ls-remote origin',
+    ]) {
+      assert.equal(sandboxGitHubReadShape(command, macos), true, command)
+    }
+    for (const command of ['git push origin', 'git status', 'echo gh', 'ghost run']) {
+      assert.equal(sandboxGitHubReadShape(command, macos), false, command)
+    }
+  })
+
+  it('leaves gh out where the route does not carry it (Linux)', () => {
+    const linux = { gh: false }
+    assert.equal(sandboxGitHubReadShape('gh pr view 12', linux), false)
+    assert.equal(sandboxGitHubReadShape('cd x && gh api user', linux), false)
+    assert.equal(sandboxGitHubReadShape('git fetch origin', linux), true)
   })
 })

@@ -405,6 +405,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // Defer eligible new threads across projects until their first write. Off by default.
   deferredWorktreesEnabled: z.boolean(),
   containerRunsEnabled: z.boolean(),
+  // Experimental GitHub reads for project-sandboxed shell commands, served on
+  // the host with the desktop sign-in. Off by default.
+  // See src/main/services/github/sandbox-github-reads.ts.
+  sandboxGitHubReadsEnabled: z.boolean(),
   advisorModel: z.string().max(256),
   // Experimental orchestration strategy: the chat model orchestrates and a
   // cheaper worker model implements delegated steps. See orchestration-strategy.ts.

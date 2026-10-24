@@ -144,6 +144,7 @@ export interface SettingsValues {
   conciseThreadsEnabled: boolean
   deferredWorktreesEnabled: boolean
   containerRunsEnabled: boolean
+  sandboxGitHubReadsEnabled: boolean
   advisorModel: string
   orchestrationStrategyEnabled: boolean
   orchestrationWorkerModel: string

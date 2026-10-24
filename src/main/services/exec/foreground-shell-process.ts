@@ -5,6 +5,7 @@ import {
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
   spawnShellInProjectSandbox,
+  type SandboxOnlySpawnAccess,
 } from '../../project-sandbox/index.ts'
 import { CappedOutputAccumulator, COMMAND_OUTPUT_MAX_BYTES } from './subprocess-output-cap.ts'
 import { terminateProcessTree } from './subprocess-kill.ts'
@@ -35,6 +36,8 @@ export async function runShellOnce(
   readGrantTargets: readonly string[] = [],
   onDetach?: () => () => Promise<void>,
   readonlyCheckout = false,
+  /** Access for a contained run only; an unsandboxed run never receives it. */
+  sandboxOnly?: SandboxOnlySpawnAccess,
 ): Promise<ShellRunResult> {
   signal.throwIfAborted()
   const owner = getThreadExecutionContext()
@@ -54,6 +57,7 @@ export async function runShellOnce(
           unsandboxed,
           readGrantTargets,
           ...(readonlyCheckout ? { readonlyCheckout } : {}),
+          ...(sandboxOnly && !unsandboxed ? { sandboxOnly } : {}),
           signal: spawnController.signal,
         })
       } catch (err) {
