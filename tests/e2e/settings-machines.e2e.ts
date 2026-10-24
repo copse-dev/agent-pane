@@ -378,6 +378,9 @@ describe('Machines settings', function () {
     )
     await click('[name="machineSharingEnabled"]')
     await expect($('.machine-sharing-save')).toBeDisabled()
+    // The Network list defaults to this host's LAN address, visible at the
+    // foot of the capture and different on every runner.
+    await $('[name="machineSharingAddress"]').selectByAttribute('value', '127.0.0.1')
     await browser.execute(() => {
       const content = document.querySelector('#settings-dialog .settings-content')
       if (content) content.scrollTop = 0
