@@ -144,6 +144,11 @@ inside the prose: the `pre` takes the code size and the shared
 instead of the prose line box. Display headings use the same
 family and weight while pending and after completion.
 
+Side-chat replies (`.side-chat-msg.is-assistant`) are assistant prose too and take the same face,
+size, colour, 1.6 line-height, bold, heading, code-block and list-item treatment. They leave out
+the 680px cap and the wider block spacing, which a narrow panel bubble cannot use.
+`tests/demo/side-chats.demo.ts` compares the two surfaces' computed type.
+
 The browser fixture and real renderer interaction checks live in
 `tests/demo/chat-reading-layout.demo.ts`. It covers long markdown, code overflow,
 nested lists, narrow/light layouts, interface scale, and submitting a streamed
