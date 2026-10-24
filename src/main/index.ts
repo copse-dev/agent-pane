@@ -1,3 +1,4 @@
+import './disable-brotli-decoding.ts' // MUST be first — see the module
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
 import {
