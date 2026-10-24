@@ -9,7 +9,6 @@ import {
   manifestAdvisoryLookup,
   memoizedManifests,
   osvAdvisoryLookup,
-  type PackageVerdict,
 } from './advisories.ts'
 import { downloadsDisabledChildEnv, firewallTrust, packageFirewallChildEnv } from './child-env.ts'
 import {
@@ -18,7 +17,7 @@ import {
   type FirewallDecision,
   type RunningFirewallProxy,
 } from './proxy.ts'
-import { formatPackage, INTERCEPTED_REGISTRY_HOSTS, packageKey } from './registry-targets.ts'
+import { INTERCEPTED_REGISTRY_HOSTS, packageKey } from './registry-targets.ts'
 import {
   connectUpstream,
   fetchUpstreamText,
@@ -31,14 +30,18 @@ import { createCertificateAuthority } from './x509.ts'
  * `package-firewall <command> [args…]`: run one command with its registry
  * downloads checked against public malware advisories, then exit with the
  * command's status. See docs/plans/package-firewall.md.
+ *
+ * It stays quiet unless it has to act: the only lines it prints are a refused
+ * download and the conditions that stop it from proxying at all. Clean and
+ * unverifiable downloads are not reported, so nothing reads as a guarantee.
  */
 
-export const FIREWALL_LOG_PREFIX = '[package-firewall]'
+/** Shared with the shell tool's own install banner. */
+export const FIREWALL_LOG_PREFIX = '[safe-install]'
 
 const ADVISORY_TIMEOUT_MS = 15_000
 const OSV_MAX_BYTES = 8 * 1024 * 1024
 const FEED_MAX_BYTES = 32 * 1024 * 1024
-const MAX_LISTED_UNVERIFIED = 5
 
 /** The blocked line, with an OSV link for each `MAL-` advisory. */
 export function blockedLogLine(decision: FirewallDecision): string {
@@ -47,28 +50,6 @@ export function blockedLogLine(decision: FirewallDecision): string {
     .map((id) => `https://osv.dev/vulnerability/${id}`)
   const suffix = links.length > 0 ? ` (${links.join(', ')})` : ''
   return `${FIREWALL_LOG_PREFIX} ${blockedMessage(decision.pkg, decision.verdict)}${suffix}`
-}
-
-/** The end-of-run line, or null when the command downloaded nothing from an inspected registry. */
-export function firewallSummary(decisions: ReadonlyMap<string, FirewallDecision>): string | null {
-  if (decisions.size === 0) return null
-  const all = [...decisions.values()]
-  const count = (status: PackageVerdict['status']): FirewallDecision[] =>
-    all.filter((decision) => decision.verdict.status === status)
-  const blocked = count('blocked')
-  const unverified = count('unverified')
-  const parts = [`${String(blocked.length)} blocked`]
-  if (unverified.length > 0) {
-    const names = unverified
-      .slice(0, MAX_LISTED_UNVERIFIED)
-      .map((decision) => formatPackage(decision.pkg))
-    const more = unverified.length > names.length ? ', …' : ''
-    parts.push(
-      `${String(unverified.length)} not verified because no advisory source answered (${names.join(', ')}${more})`,
-    )
-  }
-  const noun = decisions.size === 1 ? 'download' : 'downloads'
-  return `${FIREWALL_LOG_PREFIX} checked ${String(decisions.size)} package ${noun} against public malware advisories: ${parts.join('; ')}`
 }
 
 /** The errno when a listen failed for lack of permission, as inside a contained sandbox. */
@@ -167,7 +148,7 @@ export async function runPackageFirewall(
     ),
   ])
 
-  const decisions = new Map<string, FirewallDecision>()
+  const reportedBlocks = new Set<string>()
   const unreachableHosts = new Set<string>()
   const authority = createCertificateAuthority({
     permittedHosts: [...INTERCEPTED_REGISTRY_HOSTS.keys()],
@@ -182,9 +163,9 @@ export async function runPackageFirewall(
       registryAgent: agent,
       onDecision: (decision) => {
         const key = packageKey(decision.pkg)
-        if (decisions.has(key)) return
-        decisions.set(key, decision)
-        if (decision.verdict.status === 'blocked') log(blockedLogLine(decision))
+        if (decision.verdict.status !== 'blocked' || reportedBlocks.has(key)) return
+        reportedBlocks.add(key)
+        log(blockedLogLine(decision))
       },
       onUnreachable: (host, error) => {
         if (unreachableHosts.has(host)) return
@@ -211,15 +192,12 @@ export async function runPackageFirewall(
     const fullBundleFile = join(dir, 'ca-bundle.pem')
     writeFileSync(extraCaFile, trust.extraCaPem, { mode: 0o600 })
     writeFileSync(fullBundleFile, trust.fullBundlePem, { mode: 0o600 })
-    const status = await runChild(
+    return await runChild(
       command,
       args,
       packageFirewallChildEnv(env, { proxyUrl: proxy.url, extraCaFile, fullBundleFile }),
       log,
     )
-    const summary = firewallSummary(decisions)
-    if (summary) log(summary)
-    return status
   } finally {
     await proxy.close()
     agent.destroy()

@@ -575,16 +575,12 @@ export function formatGuardedYoloHarmPromptAdvice(reasons: string[]): string {
   return `${harm}${footer}`
 }
 
-const PACKAGE_FIREWALL_ADVICE =
-  'The Copse package firewall blocks packages that public advisories (OSV.dev) list as malicious'
-const PACKAGE_SCANNING_OFF_ADVICE =
-  'Package scanning is off in Settings, so packages are not checked against malware advisories.'
-
 /**
  * Approval body for a detected package install. Installs always need the network,
  * so the generic "external command" reason list (and its nested parentheticals)
  * just adds noise — this states plainly that it's an install, where it runs, and
- * whether the package firewall will check it.
+ * whether install scripts are disabled. Download checks are deliberately not
+ * advertised: they block known-bad packages but promise nothing more.
  */
 export function formatInstallPromptParts(
   command: string,
@@ -593,15 +589,12 @@ export function formatInstallPromptParts(
   const access = opts.outsideSandbox
     ? 'It runs once outside the project sandbox with network access.'
     : 'It fetches packages over the network.'
-  const scan = opts.safeInstall
-    ? `${PACKAGE_FIREWALL_ADVICE}${
-        opts.jsManager ? ', and install lifecycle scripts are disabled' : ''
-      }.`
-    : PACKAGE_SCANNING_OFF_ADVICE
+  const scripts =
+    opts.safeInstall && opts.jsManager ? '\n\nInstall lifecycle scripts are disabled.' : ''
   return {
     command: command.trim(),
     bodyAdvice:
-      `This installs packages. ${access}\n\n${scan}` +
+      `This installs packages. ${access}${scripts}` +
       (opts.outsideSandbox ? `\n\n${UNSANDBOXED_ACCESS_WARNING}` : ''),
     bodyFooter: 'Allow this install?',
   }
@@ -614,16 +607,15 @@ export function formatInstallPromptParts(
  */
 export function formatEphemeralRunnerPromptParts(
   command: string,
-  opts: { outsideSandbox: boolean; safeInstall: boolean },
+  opts: { outsideSandbox: boolean },
 ): ShellPromptParts {
   const access = opts.outsideSandbox
     ? 'It runs once outside the project sandbox with network access.'
     : 'It may reach the network.'
-  const scan = opts.safeInstall ? `${PACKAGE_FIREWALL_ADVICE}.` : PACKAGE_SCANNING_OFF_ADVICE
   return {
     command: command.trim(),
     bodyAdvice:
-      `This may download and run code from the network. ${access}\n\n${scan}` +
+      `This may download and run code from the network. ${access}` +
       (opts.outsideSandbox ? `\n\n${UNSANDBOXED_ACCESS_WARNING}` : ''),
     bodyFooter: 'Allow this command?',
   }

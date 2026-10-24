@@ -1670,7 +1670,6 @@ export async function ensureShellCommandPermitted(
             ...shellPromptToApprovalFields(
               formatEphemeralRunnerPromptParts(command, {
                 outsideSandbox: outsideSandbox || !sandboxEnabled,
-                safeInstall,
               }),
             ),
             subject: SHELL_DECISION_SUBJECT,

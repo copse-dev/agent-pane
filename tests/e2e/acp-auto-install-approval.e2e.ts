@@ -27,7 +27,7 @@ describe('ACP adapter auto-install approval', () => {
     resetUserData()
   })
 
-  it('shows the install approval above open Settings with package firewall disclosure', async function () {
+  it('shows the install approval above open Settings with the install disclosure', async function () {
     this.timeout(60_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
@@ -42,10 +42,10 @@ describe('ACP adapter auto-install approval', () => {
 
     const body = await dialog.$('.approval-body').getText()
     expect(body).toContain('@agentclientprotocol/codex-acp')
-    expect(body).toContain('behind the Copse package firewall')
-    expect(body).toContain('lifecycle scripts disabled')
+    expect(body).toContain('Lifecycle scripts are disabled during the install.')
     expect(body).not.toContain('Socket')
     expect(body).not.toContain('sfw')
+    expect(body).not.toContain('firewall')
 
     const state = await browser.execute(() => ({
       settingsOpen: document.querySelector<HTMLDialogElement>('#settings-dialog')?.open,
@@ -82,7 +82,7 @@ describe('ACP adapter auto-install approval', () => {
     const body = await dialog.$('.approval-body').getText()
     expect(body).toContain('@agentclientprotocol/claude-agent-acp')
     expect(body).not.toContain('@agentclientprotocol/codex-acp')
-    expect(body).toContain('behind the Copse package firewall')
+    expect(body).not.toContain('firewall')
     await expect(dialog.$('.approval-approve')).toBeDisplayed()
     await expect(dialog.$('.approval-reject')).toBeDisplayed()
     await saveAppScreenshot('acp-mixed-install-approval.png')

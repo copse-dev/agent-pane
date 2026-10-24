@@ -1,4 +1,4 @@
-# Copse Package Firewall
+# Package firewall
 
 **Status: Implemented (phase 1).** Replaces the third-party Socket Firewall (`sfw`) with a
 package firewall written in this repository. It runs under the app's own runtime, checks every
@@ -68,7 +68,7 @@ Modules live in `src/main/services/security/package-firewall/`:
 | `upstream.ts`            | Outbound connections that honour the user's own `HTTPS_PROXY` / `NO_PROXY`.                                         |
 | `proxy.ts`               | CONNECT proxy, proxy authentication, selective TLS interception, request forwarding.                                |
 | `child-env.ts`           | Proxy and CA variables for every supported manager. `NO_PROXY` entries that would bypass the firewall are stripped. |
-| `firewall-cli.ts`        | Wrapper entry: wires the above together, forwards signals, prints the summary.                                      |
+| `firewall-cli.ts`        | Wrapper entry: wires the above together, forwards signals, reports refused downloads.                               |
 | `../package-firewall.ts` | Main-process facade: bundle path, the wrapped shell string, the global npm install used by ACP auto-setup.          |
 
 ## Data sources
@@ -96,10 +96,10 @@ used. Sources are combined with OR: a package is blocked if any source lists it.
    unauthenticated forward proxy would give them an egress path that bypasses the sandbox's
    network policy. Credentials travel in the proxy URL, which every supported manager sends as
    preemptive Basic auth.
-5. **Fail open, loudly, when no source can answer.** If OSV cannot be reached, the package is
-   still checked against the cached feed. If neither can give a verdict, the download proceeds
-   and the wrapper prints an `unverified` count. Failing closed would break every install during
-   an OSV outage or behind a filtering proxy. Revisit if we add a strict mode.
+5. **Fail open when no source can answer.** If OSV cannot be reached, the package is still
+   checked against the cached feed. If neither can give a verdict, the download proceeds without
+   comment. Failing closed would break every install during an OSV outage or behind a filtering
+   proxy. Revisit if we add a strict mode.
 6. **Strip interception bypasses from `NO_PROXY`.** Corporate and CI environments often list
    registries in `NO_PROXY`. Those entries are removed for the intercepted hosts only.
 7. **Block at the tarball, not the metadata.** Packuments and indexes pass through. Resolution
@@ -108,23 +108,32 @@ used. Sources are combined with OR: a package is blocked if any source lists it.
    The wrapper then runs the command with every proxy variable pointing at a closed port, so an
    installed binary (`npx tsx`) still runs and any download fails rather than going unchecked. On
    Linux, the proxy binds inside a private network namespace but reaches nothing upstream. Both
-   cases print a `[package-firewall]` line that `sandbox-denial-signatures.ts` turns into the
+   cases print a `[safe-install]` line that `sandbox-denial-signatures.ts` turns into the
    usual unsandboxed-retry approval. That retry still runs behind the firewall.
 9. **Offline preparation skips the wrapper.** With network blocked by kernel isolation, nothing
    can be downloaded, so there is nothing to check, and no loopback port to bind.
 10. **SSH workspaces are not wrapped.** Their commands run on the remote host, which this
     machine's firewall cannot reach. The install banner and the remote ACP install approval say
     so.
+11. **No product name and no promises in the UI.** The firewall is plumbing, not a feature
+    with a name. Approval dialogs, banners and the changelog state only facts that always hold,
+    such as "install lifecycle scripts are disabled". They never say packages are scanned or
+    safe. A blocklist catches known-bad packages and nothing more; advertising it would invite
+    users to expect guarantees it cannot give. The wrapper prints nothing for clean or
+    unverifiable downloads, only the line for a refused one. Its output shares the shell tool's
+    `[safe-install]` tag. The one exception is the SSH remote-install approval, which says its
+    downloads are not checked, because that is a gap the user should know about.
 
 ## Acceptance criteria
 
 - `npm install`, `pip install`, `uv pip install` and `cargo fetch` succeed through the wrapper
   with each tool's default TLS verification. Exercised manually against the live registries.
 - A tarball whose package version is listed by a source is answered with 403. The wrapper's
-  summary names the package and advisory id. (Unit test against a stub OSV server.)
+  blocked line names the package and advisory id. (Unit test against a stub OSV server.)
 - A wrong or missing proxy token gets 407 and no tunnel. (Unit test.)
 - Non-registry CONNECT targets are tunnelled byte-for-byte. (Unit test.)
-- No UI copy, tool description, banner or e2e expectation mentions Socket or `sfw`.
+- No UI copy, tool description, banner or e2e expectation mentions Socket or `sfw`, names the
+  firewall, or claims that packages are scanned (decision 11).
 - The "Install Socket Firewall?" prompts and their code paths are gone. ACP adapter updates no
   longer need a bootstrap approval.
 

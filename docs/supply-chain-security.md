@@ -24,7 +24,7 @@ issues #128 and #174).
 
 - **Agent package installs** — _prompt on all platforms_ (do not rely on the
   macOS seatbelt alone). Detected installs additionally run behind the built-in
-  Copse package firewall, with install lifecycle scripts disabled
+  package firewall, with install lifecycle scripts disabled
   (`npm_config_ignore_scripts`) for JS managers (`safe-install.ts`). See
   "Package firewall" below.
 - **MCP project-local config** — _prompt on first use_ (owned by #100's trust
@@ -84,7 +84,7 @@ issues #128 and #174).
 ### Package firewall
 
 Every detected agent install, every ACP adapter install and every online
-worktree-preparation install runs behind the Copse package firewall
+worktree-preparation install runs behind the package firewall
 (`src/main/services/security/package-firewall/`,
 [plan](plans/package-firewall.md)). It is our own code, run by the app binary as
 Node, so there is nothing to install or approve first. It replaced the
@@ -102,8 +102,10 @@ third-party firewall binary Copse used to bootstrap globally.
   malicious-software-packages-dataset. A listed package gets a 403 that names
   the advisory; the install fails.
 - Package names and versions of downloaded packages are sent to `api.osv.dev`.
-  If no advisory source can answer, the download proceeds and the wrapper reports
-  it as not verified (fail open, by design; see the plan's decisions).
+  If no advisory source can answer, the download proceeds (fail open, by design;
+  see the plan's decisions).
+- UI copy names no product and makes no scanning claim; only refused downloads are
+  reported.
 - Not covered: private registries and mirrors, git/URL dependencies, `curl | sh`
   installers, and installs on SSH hosts.
 

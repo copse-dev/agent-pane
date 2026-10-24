@@ -323,9 +323,8 @@ describe('ACP package install approval', () => {
     assert.equal(title, 'Install software to connect your coding agents?')
     assert.match(body, /@agentclientprotocol\/codex-acp/)
     assert.match(body, /@agentclientprotocol\/claude-agent-acp/)
-    assert.match(body, /behind the Copse package firewall/)
-    assert.match(body, /lifecycle scripts disabled/)
-    assert.doesNotMatch(body, /Socket|sfw/)
+    assert.match(body, /Lifecycle scripts are disabled during the install/)
+    assert.doesNotMatch(body, /Socket|sfw|firewall|malware/i)
     assert.equal(showWhileSettingsOpen, true)
   })
 

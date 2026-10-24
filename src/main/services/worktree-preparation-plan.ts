@@ -787,11 +787,11 @@ export function packageInstallCommand(
   return { command: invocation.command, args: [...invocation.args, ...args] }
 }
 
-/** Online installs run behind the package firewall; offline ones only read the managed caches. */
+/** Offline installs only read the managed caches; say so, since nothing is downloaded. */
 function installLabel(offline: boolean): string {
   return offline
-    ? 'Install from Copse-managed caches (offline)'
-    : 'Install behind the Copse package firewall'
+    ? 'Install dependencies from Copse-managed caches (offline)'
+    : 'Install dependencies'
 }
 
 export function formatPreparationPlan(plan: WorktreePreparationPlan, offline: boolean): string {

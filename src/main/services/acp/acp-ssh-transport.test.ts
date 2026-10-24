@@ -625,7 +625,7 @@ describe('remote adapter install', () => {
     }
   })
 
-  it('discloses the package firewall gap and the untouched default in the approval', () => {
+  it('discloses the unchecked remote downloads and the untouched default in the approval', () => {
     const { title, body } = formatRemoteAcpInstallApproval({
       pkg: '@agentclientprotocol/claude-agent-acp',
       hostLabel: 'Dev',
@@ -635,10 +635,10 @@ describe('remote adapter install', () => {
     assert.ok(body.includes('@agentclientprotocol/claude-agent-acp'))
     assert.ok(body.includes('v22.21.1'), 'the target Node prefix must be shown')
     assert.ok(body.includes('default Node version unchanged'))
-    // The local path installs behind the package firewall; a remote install cannot.
+    // A local install's downloads are checked; a remote install's cannot be.
     // That divergence must be stated, never silently accepted for the user.
-    assert.ok(body.includes('NOT checked by the Copse package firewall'))
-    assert.ok(!body.includes('Socket'))
+    assert.ok(body.includes('not checked against known-malware lists'))
+    assert.doesNotMatch(body, /Socket|firewall/i)
     assert.ok(body.includes('--ignore-scripts'))
   })
 

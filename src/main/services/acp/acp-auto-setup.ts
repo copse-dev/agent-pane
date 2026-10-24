@@ -374,10 +374,7 @@ export function formatAcpPackageApproval(changes: readonly AcpPackageChange[]): 
     }
   }
   lines.push('')
-  lines.push(
-    'They are installed behind the Copse package firewall, which blocks packages that public ' +
-      'advisories list as malicious, with lifecycle scripts disabled.',
-  )
+  lines.push('Lifecycle scripts are disabled during the install.')
   return { title: 'Install software to connect your coding agents?', body: lines.join('\n') }
 }
 

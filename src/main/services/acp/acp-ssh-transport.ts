@@ -290,7 +290,7 @@ export function formatRemoteAcpInstallApproval(input: {
       ? `It installs into the Node at ${input.npmBinDir}, leaving the host's default Node version unchanged.`
       : "It installs with the `npm` on your remote login shell's PATH.",
     '',
-    'Lifecycle scripts are disabled (`--ignore-scripts`). Unlike a local install, this one is NOT checked by the Copse package firewall — it runs on the remote host, which the firewall does not cover.',
+    'Lifecycle scripts are disabled (`--ignore-scripts`). Unlike a local install, its downloads are not checked against known-malware lists, because it runs on the remote host.',
   ]
   return {
     title: `Install software to connect your coding agent on ${input.hostLabel}?`,

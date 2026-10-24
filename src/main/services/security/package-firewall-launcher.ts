@@ -5,7 +5,7 @@ import { errorMessage } from '@shared/errors.ts'
 import { emitShellOutput } from '../exec/shell-output-context.ts'
 
 /**
- * Main-process side of the Copse package firewall (docs/plans/package-firewall.md).
+ * Main-process side of the package firewall (docs/plans/package-firewall.md).
  *
  * The firewall is the standalone `package-firewall.js` bundle, run as Node by
  * the app's own binary. There is nothing to install or approve first: callers
@@ -32,7 +32,7 @@ export function packageFirewallLauncher(): PackageFirewallLauncher {
   const scriptPath = join(__dirname, 'package-firewall.js')
   if (!bundleVerified && !existsSync(scriptPath)) {
     throw new Error(
-      `the package firewall bundle is missing at ${scriptPath} — run \`pnpm run build\`, ` +
+      `the package install proxy is missing at ${scriptPath} — run \`pnpm run build\`, ` +
         'or restart `pnpm run dev`, to emit it',
     )
   }
@@ -78,10 +78,7 @@ export async function installGlobalNpmPackage(
   }
 
   const npmBin = opts.npmBin ?? 'npm'
-  emit(
-    `[safe-install] installing ${pkg} behind the Copse package firewall ` +
-      `(${npmBin} install -g --ignore-scripts ${pkg})…\n`,
-  )
+  emit(`[safe-install] installing ${pkg} (${npmBin} install -g --ignore-scripts ${pkg})…\n`)
   return new Promise((resolve) => {
     let proc
     try {

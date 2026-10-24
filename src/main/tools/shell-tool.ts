@@ -205,12 +205,13 @@ type PreparedCommand =
 
 /**
  * When a command performs a package install, run the whole command behind the
- * Copse package firewall so every package manager it invokes is proxied and its
- * downloads checked. JS managers additionally get `npm_config_ignore_scripts`
- * to block install lifecycle scripts. Non-install commands pass through
- * untouched. A command bound for an SSH workspace runs on the remote host,
- * where this machine's firewall cannot reach, so it is left unwrapped and the
- * banner says so.
+ * package firewall so every package manager it invokes is proxied and listed
+ * malicious packages are refused. JS managers additionally get
+ * `npm_config_ignore_scripts` to block install lifecycle scripts, which the
+ * banner states. Download checks are not announced: a refusal speaks for
+ * itself. Non-install commands pass through untouched. A command bound for an
+ * SSH workspace runs on the remote host, where this machine's proxy cannot
+ * reach, so it is left unwrapped.
  */
 function prepareCommand(command: string, cwd: string): PreparedCommand {
   const baseEnv = process.env
@@ -224,15 +225,11 @@ function prepareCommand(command: string, cwd: string): PreparedCommand {
   const env: NodeJS.ProcessEnv = detection.jsManager
     ? { ...baseEnv, npm_config_ignore_scripts: 'true' }
     : baseEnv
-  const scriptsNote = detection.jsManager
-    ? ['install scripts disabled (npm_config_ignore_scripts)']
-    : []
-  if (spawnRunsOnSshTarget(cwd)) {
-    const notes = ['not checked by the package firewall (runs on the remote host)', ...scriptsNote]
-    const banner = `[safe-install] ${notes.join('; ')}\n`
-    emitShellOutput(banner)
-    return { command, env, banner }
-  }
+  const banner = detection.jsManager
+    ? '[safe-install] install scripts disabled (npm_config_ignore_scripts)\n'
+    : ''
+  if (banner) emitShellOutput(banner)
+  if (spawnRunsOnSshTarget(cwd)) return { command, env, banner }
 
   let launcher: PackageFirewallLauncher
   try {
@@ -241,14 +238,11 @@ function prepareCommand(command: string, cwd: string): PreparedCommand {
     return { refused: `Package install cancelled: ${errorMessage(error)}.` }
   }
   const quote = process.platform === 'win32' ? winQuote : undefined
-  const wrapped = wrapWithPackageFirewall(command, SHELL_INVOCATION, launcher, quote)
-  const notes = [
-    'downloads checked by the Copse package firewall against public malware advisories',
-    ...scriptsNote,
-  ]
-  const banner = `[safe-install] ${notes.join('; ')}\n$ ${command}\n`
-  emitShellOutput(banner)
-  return { command: wrapped, env, banner }
+  return {
+    command: wrapWithPackageFirewall(command, SHELL_INVOCATION, launcher, quote),
+    env,
+    banner,
+  }
 }
 
 function formatShellSuccess(result: ShellRunResult): string {
@@ -273,10 +267,10 @@ export const runShellTool = defineTool({
     'Output is streamed to the conversation. ' +
     'Commands contained within the sandbox auto-run; network or outside-workspace access (e.g. gh, curl, git push) prompts for approval and runs outside the sandbox when the macOS project sandbox is active. ' +
     'If a sandbox-contained command fails because the sandbox blocks filesystem/process access (e.g. Playwright), the user may approve running it once outside the sandbox. ' +
-    'A sandbox-contained failure recognized as one of a known set of sandbox denials (e.g. gh reading its own config, the package firewall unable to download from inside the sandbox) may be retried once with elevation, subject to the same approval as expects_sandbox_block; the result is prefixed with a one-line note when that happens, and the denial is remembered for that specific operation for the rest of this thread — a denied `git fetch` never implies `git push` or anything else is blocked too. ' +
+    'A sandbox-contained failure recognized as one of a known set of sandbox denials (e.g. gh reading its own config, a package install unable to download from inside the sandbox) may be retried once with elevation, subject to the same approval as expects_sandbox_block; the result is prefixed with a one-line note when that happens, and the denial is remembered for that specific operation for the rest of this thread — a denied `git fetch` never implies `git push` or anything else is blocked too. ' +
     'If you already expect a command to need the network or files outside the workspace (e.g. gh, cloud CLIs), set expects_sandbox_block so the user is asked up front instead of after a failed sandboxed attempt. ' +
     'Do not read credential files — .env and its variants, ~/.ssh, ~/.aws, keychains — inside or outside the workspace; ask the user for the value you need instead. ' +
-    'Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) automatically run behind the Copse package firewall, which blocks packages that public advisories (OSV.dev) list as malicious, with install lifecycle scripts disabled. ' +
+    'Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) run with install lifecycle scripts disabled, and a download of a package on a known-malware list is refused with a 403. ' +
     'A foreground command may run up to 30 minutes (timeout_ms). Use run_background for dev servers and watchers, and for bounded work expected to leave you waiting (long builds, test suites, evals, data generation, migrations, and similar jobs); arm wake_on_completion and end the turn instead of polling. ' +
     "Piping a command through `tail`/`head` normally masks the earlier command's exit code; run_shell enables pipefail so a failing pipeline is still reported as failed, while a producer that only stopped because `head` closed the pipe early still counts as success.",
   parameters: z.object({

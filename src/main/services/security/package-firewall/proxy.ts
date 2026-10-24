@@ -101,7 +101,7 @@ function parseAuthority(authority: string): { host: string; port: number } | nul
 
 export function blockedMessage(pkg: PackageCoordinates, verdict: PackageVerdict): string {
   return (
-    `Copse Package Firewall blocked ${pkg.ecosystem} package ${formatPackage(pkg)}: ` +
+    `Blocked ${pkg.ecosystem} package ${formatPackage(pkg)}: ` +
     `listed as malicious by ${verdict.advisories.join(', ')}`
   )
 }
@@ -112,7 +112,7 @@ function respondBlocked(
   verdict: PackageVerdict,
 ): void {
   const body = JSON.stringify({ error: blockedMessage(pkg, verdict) })
-  response.writeHead(403, 'Blocked by Copse Package Firewall', {
+  response.writeHead(403, 'Blocked: listed as malicious', {
     'content-type': 'application/json',
     'content-length': Buffer.byteLength(body),
     connection: 'close',
@@ -182,7 +182,7 @@ export async function startPackageFirewallProxy(
 
   const unreachable = (host: string, error: unknown, response: ServerResponse | null): void => {
     options.onUnreachable?.(host, error instanceof Error ? error : new Error(String(error)))
-    if (response) respondPlain(response, 502, `Copse Package Firewall could not reach ${host}`)
+    if (response) respondPlain(response, 502, `Could not reach ${host}`)
   }
 
   const relay = (
@@ -238,7 +238,7 @@ export async function startPackageFirewallProxy(
       )
     }
     forward().catch(() => {
-      respondPlain(response, 500, 'Copse Package Firewall could not check this download')
+      respondPlain(response, 500, 'Could not check this download')
     })
   })
   inspector.on('clientError', (_error, socket) => {
@@ -295,7 +295,7 @@ export async function startPackageFirewallProxy(
       )
     }
     forward().catch(() => {
-      respondPlain(response, 500, 'Copse Package Firewall could not check this download')
+      respondPlain(response, 500, 'Could not check this download')
     })
   })
 

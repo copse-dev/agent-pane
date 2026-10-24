@@ -190,7 +190,7 @@ describe('package firewall proxy', () => {
       firewallCa.certPem,
     )
     assert.equal(reply.status, 403)
-    assert.match(reply.body, /Copse Package Firewall blocked npm package evil@1\.0\.0/)
+    assert.match(reply.body, /Blocked npm package evil@1\.0\.0: listed as malicious/)
     assert.match(reply.body, /MAL-2026-1/)
     assert.deepEqual(registryRequests, [])
   })

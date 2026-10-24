@@ -9,7 +9,7 @@
  * command's stdout/stderr to grant an escape). But not every denial in this
  * codebase trips that counter. A `git fetch` blocked by the container's network
  * egress broker, `gh` failing to read its own config outside the workspace, and
- * the package firewall unable to open its loopback proxy are three *different*
+ * a package install unable to download from inside the sandbox are three *different*
  * subsystems, none of which increments the seatbelt/ASRT violation count, so
  * `detectSandboxFailure` never fires for them and no retry is ever offered.
  *
@@ -103,12 +103,12 @@ export const SANDBOX_DENIAL_SIGNATURES: readonly SandboxDenialSignature[] = [
     // outside the sandbox can make, still behind the firewall.
     id: 'package-firewall-loopback-denied',
     pattern:
-      /\[package-firewall] (?:cannot listen on loopback here \((?:EPERM|EACCES)\)|could not reach \S+)/,
+      /\[safe-install] (?:cannot listen on loopback here \((?:EPERM|EACCES)\)|could not reach \S+)/,
     classify: () => ({
-      operation: 'download packages (package firewall)',
+      operation: 'download packages',
       advice:
-        'The package firewall could not download packages from inside the sandbox — this ' +
-        'command needs to download packages, which needs network access outside the sandbox.',
+        'Packages cannot be downloaded from inside the sandbox — this command needs to ' +
+        'download packages, which needs network access outside the sandbox.',
     }),
   },
 ]

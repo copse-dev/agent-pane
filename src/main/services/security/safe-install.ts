@@ -4,7 +4,7 @@
  * The agent can emit package-manager commands (npm/pnpm/yarn/pip/uv/cargo/npx).
  * Run raw, these fetch and execute arbitrary third-party code with the user's
  * privileges — the npm-style supply-chain risk. When we detect an install, the
- * whole command is run once behind the Copse package firewall
+ * whole command is run once behind the package firewall
  * (`package-firewall/`), which proxies the package manager and blocks packages
  * public advisories list as malicious (and malicious transitive deps). Rather
  * than rewriting the command, we wrap the shell:

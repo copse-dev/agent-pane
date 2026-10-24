@@ -1642,7 +1642,7 @@
                 title: 'Package install',
                 sub: 'extra hardening',
                 summary:
-                  'Detected package managers always surface approval and run behind the built-in Copse package firewall, which blocks packages public advisories list as malicious, while JavaScript install lifecycle scripts are disabled.',
+                  'Detected package managers always surface approval and run with JavaScript install lifecycle scripts disabled; their registry downloads go through a local proxy that refuses packages on public malware lists.',
                 files: [
                   'src/main/services/security/safe-install.ts',
                   'src/main/services/security/package-firewall/proxy.ts',

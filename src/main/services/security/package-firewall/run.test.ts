@@ -8,7 +8,7 @@ import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { CLOSED_PROXY_URL } from './child-env.ts'
 import type { FirewallDecision } from './proxy.ts'
-import { blockedLogLine, firewallSummary, runPackageFirewall } from './run.ts'
+import { blockedLogLine, runPackageFirewall } from './run.ts'
 
 function decision(name: string, status: FirewallDecision['verdict']['status']): FirewallDecision {
   return {
@@ -17,29 +17,12 @@ function decision(name: string, status: FirewallDecision['verdict']['status']): 
   }
 }
 
-describe('firewallSummary', () => {
-  it('stays silent when nothing was downloaded from an inspected registry', () => {
-    assert.equal(firewallSummary(new Map()), null)
-  })
-
-  it('counts blocked and unverified downloads', () => {
-    const decisions = new Map(
-      [decision('a', 'allowed'), decision('b', 'blocked'), decision('c', 'unverified')].map(
-        (entry) => [entry.pkg.name, entry],
-      ),
-    )
-    assert.equal(
-      firewallSummary(decisions),
-      '[package-firewall] checked 3 package downloads against public malware advisories: ' +
-        '1 blocked; 1 not verified because no advisory source answered (c@1.0.0)',
-    )
-  })
-
-  it('links OSV advisories in the blocked line', () => {
+describe('blockedLogLine', () => {
+  it('names the package and links each OSV advisory', () => {
     assert.equal(
       blockedLogLine(decision('evil', 'blocked')),
-      '[package-firewall] Copse Package Firewall blocked npm package evil@1.0.0: listed as malicious ' +
-        'by MAL-2026-7 (https://osv.dev/vulnerability/MAL-2026-7)',
+      '[safe-install] Blocked npm package evil@1.0.0: listed as malicious by MAL-2026-7 ' +
+        '(https://osv.dev/vulnerability/MAL-2026-7)',
     )
   })
 })
@@ -85,7 +68,7 @@ describe('runPackageFirewall', () => {
     assert.equal(seen.hasCa, true)
     assert.equal(seen.runAsNode, null)
     assert.equal(existsSync(seen.caFile), false, 'trust files are removed after the run')
-    assert.deepEqual(lines, [], 'no summary when nothing was downloaded')
+    assert.deepEqual(lines, [], 'nothing is printed when nothing was blocked')
   })
 
   it('fails closed when loopback binding is denied, as inside a contained sandbox', async () => {

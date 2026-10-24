@@ -29,7 +29,7 @@ const OID = {
   serverAuth: '1.3.6.1.5.5.7.3.1',
 } as const
 
-const ORGANIZATION = 'Copse Package Firewall'
+const ORGANIZATION = 'Copse'
 const CLOCK_SKEW_MS = 60 * 60 * 1000
 const DEFAULT_VALIDITY_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -192,7 +192,7 @@ export function createCertificateAuthority(
   const caKeys = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
   const caSpki = caKeys.publicKey.export({ type: 'spki', format: 'der' })
   const caKeyId = keyIdentifier(caSpki)
-  const caName = distinguishedName(options.commonName ?? `${ORGANIZATION} (ephemeral)`)
+  const caName = distinguishedName(options.commonName ?? 'Copse local registry proxy (ephemeral)')
   const caDer = signCertificate(
     {
       issuer: caName,

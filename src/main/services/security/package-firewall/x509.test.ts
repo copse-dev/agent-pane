@@ -24,7 +24,7 @@ describe('createCertificateAuthority', () => {
     assert.equal(ca.ca, true)
     assert.ok(ca.verify(ca.publicKey), 'the CA signs itself')
     assert.ok(ca.checkIssued(ca))
-    assert.match(ca.subject, /O=Copse Package Firewall/)
+    assert.match(ca.subject, /O=Copse\n/)
     assert.equal(ca.publicKey.asymmetricKeyType, 'ec')
   })
 
