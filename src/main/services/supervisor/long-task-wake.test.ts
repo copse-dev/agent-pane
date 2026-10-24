@@ -213,6 +213,7 @@ describe('long-task supervised wake', () => {
       assert.deepEqual(reads, [['project-1', 'thread-1']])
       assert.equal(requests.length, 1)
       assert.deepEqual(requests[0]?.payload.priorTodos, storedTodos)
+      assert.equal(requests[0].payload.longTaskWake, true)
     } finally {
       dispose()
       await supervisor.shutdown()

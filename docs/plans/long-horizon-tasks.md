@@ -40,7 +40,9 @@ This is the "within a PR" companion to the roadmap-plans feature (#556), which c
   one bounded machine turn and asks that turn to schedule another only if checklist work
   remains. The woken turn carries the thread's persisted `todos` as `priorTodos`
   (read from the thread's own project, unfiltered, exactly as a human submission sends
-  them), so it resumes with its "Current plan" rather than an empty one.
+  them), so it resumes with its "Current plan" rather than an empty one. That plan is
+  open by design, so the woken turn skips the pre-review todo gate (decision 5 in
+  [`hooks-and-feature-packs.md`](hooks-and-feature-packs.md)).
 - **Tests** `long-task-tracker.test.ts`, `long-horizon-tasks-pack.test.ts` (registration +
   atomic disable), `pack-service.test.ts` (default-OFF migration),
   `settings-packs.e2e.ts` (pack row defaults off), and `settings-experimental.e2e.ts`

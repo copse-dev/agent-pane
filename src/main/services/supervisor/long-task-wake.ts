@@ -183,6 +183,7 @@ export function installLongTaskWakeConsumer(
             userContent: prompt,
             invokedSkills: [],
             priorTodos,
+            longTaskWake: true,
           },
         })
       } finally {
