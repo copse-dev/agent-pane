@@ -183,7 +183,7 @@ describe('ci.yml workflow invariants', () => {
     assert.ok(e2eJob, 'expected an `e2e:` job in ci.yml')
     assert.match(
       e2eJob,
-      /vars\.SELF_HOSTED_E2E == 'copse-e2e'\s*\n\s*&& fromJSON\('\["self-hosted", "copse-e2e"\]'\)\s*\n\s*\|\| fromJSON\('\["ubuntu-latest"\]'\)/,
+      /vars\.SELF_HOSTED_E2E == 'copse-e2e'\s*\n\s*&& fromJSON\('\["self-hosted", "copse-e2e"\]'\)\s*\n\s*\|\| fromJSON\('\["ubuntu-24\.04"\]'\)/,
       'the fleet must be the opted-in branch and hosted the fallthrough, not the reverse',
     )
     assert.match(e2eJob, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/)
@@ -210,7 +210,7 @@ describe('ci.yml workflow invariants', () => {
       const job = jobBlock(name)
       const binding = job.match(/^ {4}runs-on: (.+)$/m)?.[1]
       assert.ok(binding, `${name} needs a runner`)
-      if (binding === 'ubuntu-latest') return binding
+      if (binding === 'ubuntu-24.04') return binding
       const folded = job.match(/^ {4}runs-on: >-\n((?: {6}.+\n)+)/m)?.[1]
       const expression = (folded ?? binding).trim()
       assert.ok(expression.startsWith('${{ ') && expression.endsWith(' }}'))
@@ -246,16 +246,16 @@ describe('ci.yml workflow invariants', () => {
     assert.ok(checkRoutes.includes('precheck') && checkRoutes.includes('build'))
     for (const name of checkRoutes) {
       for (const sameRepo of [false, true]) {
-        assert.equal(route(name, 'merge_group', sameRepo), 'ubuntu-latest', name)
+        assert.equal(route(name, 'merge_group', sameRepo), 'ubuntu-24.04', name)
       }
       assert.equal(route(name, 'push', true), 'copse-checks', `${name} retains trusted opt-in`)
     }
-    assert.equal(route('precheck', 'pull_request', false), 'ubuntu-latest')
+    assert.equal(route('precheck', 'pull_request', false), 'ubuntu-24.04')
     assert.equal(route('precheck', 'pull_request', true), 'copse-checks')
     for (const sameRepo of [false, true]) {
-      assert.deepEqual(route('e2e', 'merge_group', sameRepo), ['ubuntu-latest'])
+      assert.deepEqual(route('e2e', 'merge_group', sameRepo), ['ubuntu-24.04'])
     }
-    assert.deepEqual(route('e2e', 'schedule', true), ['ubuntu-latest'])
+    assert.deepEqual(route('e2e', 'schedule', true), ['ubuntu-24.04'])
     assert.deepEqual(route('e2e', 'push', true), ['self-hosted', 'copse-e2e'])
     assert.equal(route('e2e', 'pull_request', false), false)
   })
@@ -364,7 +364,7 @@ describe('ci.yml workflow invariants', () => {
   it('runs the cancellation gate on hosted capacity without checkout or network dependencies', () => {
     const aggregate = jobBlock('ci-passed')
     assert.match(aggregate, /^ {4}if: \$\{\{ always\(\) \}\}$/m)
-    assert.match(aggregate, /^ {4}runs-on: ubuntu-latest$/m)
+    assert.match(aggregate, /^ {4}runs-on: ubuntu-24\.04$/m)
     assert.match(aggregate, /^ {4}timeout-minutes: 5$/m)
     assert.match(aggregate, /^ {4}permissions: \{\}$/m)
     assert.doesNotMatch(aggregate, /SELF_HOSTED_CHECKS|uses:|api_get|curl |gh api|GH_TOKEN/)
@@ -538,7 +538,7 @@ describe('ci.yml workflow invariants', () => {
     assert.match(precheck, /scripts\/prepare-review-stage0\.mts/)
 
     const cell = jobBlock('review-cell')
-    assert.match(cell, /runs-on: ubuntu-latest/)
+    assert.match(cell, /runs-on: ubuntu-24\.04/)
     assert.match(cell, /persist-credentials: false/)
     assert.match(cell, /docker build --pull/)
     assert.match(cell, /COPSE_REVIEW_CONTAINER_E2E: '1'/)
@@ -1460,8 +1460,8 @@ describe('runner-routing invariants across every workflow', () => {
         if (!line.includes('vars.SELF_HOSTED_CHECKS')) continue
         assert.match(
           line,
-          /vars\.SELF_HOSTED_CHECKS \|\| 'ubuntu-latest'/,
-          `${name}: \`${line.trim()}\` must fall back to 'ubuntu-latest'`,
+          /vars\.SELF_HOSTED_CHECKS \|\| 'ubuntu-24\.04'/,
+          `${name}: \`${line.trim()}\` must fall back to 'ubuntu-24.04'`,
         )
       }
     }
@@ -1483,7 +1483,7 @@ describe('codeql.yml workflow invariants', () => {
     // so the check tier's default is the right resolution here too.
     assert.match(
       workflow,
-      /^ {4}runs-on: \$\{\{ vars\.SELF_HOSTED_CHECKS \|\| 'ubuntu-latest' \}\}$/m,
+      /^ {4}runs-on: \$\{\{ vars\.SELF_HOSTED_CHECKS \|\| 'ubuntu-24\.04' \}\}$/m,
     )
   })
 })
@@ -1555,7 +1555,7 @@ describe('gitleaks workflow invariants', () => {
       gitleaksWorkflow,
       /^ {4}if: github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name != github\.repository$/m,
     )
-    assert.match(gitleaksWorkflow, /^ {4}runs-on: ubuntu-latest$/m)
+    assert.match(gitleaksWorkflow, /^ {4}runs-on: ubuntu-24\.04$/m)
   })
 })
 
