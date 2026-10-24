@@ -882,6 +882,13 @@ const TEXT_TO_ACTION_HEADS: ReadonlySet<string> = new Set([
 /** Text no expansion can change: no variable, substitution or brace expansion. */
 const UNEXPANDED_TEXT = /^[^$`{}]*$/
 
+/**
+ * A backslash escaping anything but `/`, or ending the token. `/etc/x\ y` splits
+ * at the escaped space, so the token `/etc/x\` matches no live word in either
+ * form even when `cat /etc/x\ y` opens it.
+ */
+const NON_SLASH_ESCAPE = /\\(?!\/)/
+
 /** A word as the shell reads it once backslash escapes are removed (`\/api\/` → `/api/`). */
 function unescapeShellText(text: string): string {
   return text.replace(/\\(.)/g, '$1')
@@ -950,7 +957,7 @@ function maskInertOperandPaths(command: string): string {
   if (!flush(false)) return command
   if (inert.length === 0) return command
   const masked = command.replace(ABSOLUTE_PATH_TOKENS, (match, lead: string, path: string) => {
-    if (!UNEXPANDED_TEXT.test(path)) return match
+    if (!UNEXPANDED_TEXT.test(path) || NON_SLASH_ESCAPE.test(path)) return match
     const unescaped = unescapeShellText(path)
     return inert.some((word) => word.includes(path)) &&
       !live.some((word) => word.includes(path) || word.includes(unescaped))

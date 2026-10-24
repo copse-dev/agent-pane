@@ -1167,6 +1167,8 @@ describe('analyzeShellCommand — text that names no file', () => {
     assert.equal(verdict("sed -i '/^\\/api\\//d' a.ts"), 'external')
     assert.equal(verdict("grep '/etc\\/passwd' /etc/passwd"), 'external')
     assert.equal(verdict("grep '/etc/*' /etc/*"), 'external')
+    assert.equal(verdict("grep '/etc/x\\ y' f; cat /etc/x\\ y"), 'external')
+    assert.equal(verdict("grep '/etc/x\\' f; cat /etc/x\\\\"), 'external')
   })
 
   it('does not treat open in a search pattern as launching a host app', () => {
