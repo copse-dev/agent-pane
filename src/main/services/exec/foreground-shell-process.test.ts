@@ -189,15 +189,26 @@ describe('foreground shell interruption', () => {
 })
 
 describe('sandboxed GitHub read access', () => {
+  // Values only this access sets: the host's own environment may carry any of
+  // these names (CI sets GIT_CONFIG_COUNT), so the probe looks for the values.
+  const given = {
+    GH_CONFIG_DIR: '/private/tmp/cghr/1/gh',
+    GH_TOKEN: 'copse_sgh_probe',
+    GIT_CONFIG_COUNT: '9995',
+  }
   const access = {
-    env: (): Record<string, string | undefined> => ({
-      GH_CONFIG_DIR: '/private/tmp/cghr/1/gh',
-      GIT_CONFIG_COUNT: '5',
-    }),
+    env: (): Record<string, string | undefined> => ({ ...given }),
     allowUnixSockets: ['/private/tmp/cghr/1/gh.sock'],
     allowRead: ['/private/tmp/cghr/1'],
   }
-  const probe = 'printf "%s:%s" "${GH_CONFIG_DIR-unset}" "${GIT_CONFIG_COUNT-unset}"'
+  const probe = 'printf "%s:%s:%s" "${GH_CONFIG_DIR-}" "${GH_TOKEN-}" "${GIT_CONFIG_COUNT-}"'
+  const assertNotGiven = (output: string): void => {
+    assert.deepEqual(
+      output.split(':').filter((value, index) => value === Object.values(given)[index]),
+      [],
+      output,
+    )
+  }
 
   it('is not given to a run escalated outside the sandbox', async () => {
     const root = mkdtempSync(join(tmpdir(), 'copse-gh-access-'))
@@ -214,7 +225,7 @@ describe('sandboxed GitHub read access', () => {
         false,
         access,
       )
-      assert.equal(result.output, 'unset:unset')
+      assertNotGiven(result.output)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -236,7 +247,7 @@ describe('sandboxed GitHub read access', () => {
         false,
         access,
       )
-      assert.equal(result.output, 'unset:unset')
+      assertNotGiven(result.output)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
