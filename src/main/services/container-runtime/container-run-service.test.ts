@@ -17,6 +17,7 @@ import type { loadRunForContinuation } from './thread-container.ts'
 import type { OrphanSweep } from './thread-container.ts'
 import type { ThreadContainerRecord, ThreadContainerRequest } from './thread-container.ts'
 import type { ThreadContainerEngine } from './container-engine.ts'
+import { HOST_GITHUB_TARGET } from './github-capability-wire.ts'
 
 const PROJECT = 'container-run-project'
 const THREAD = 'container-run-thread'
@@ -208,7 +209,8 @@ describe('ContainerRunService', () => {
       budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
     })
     assert.equal(first.phase, 'preparing')
-    assert.deepEqual(first.egressAllowlist, ['inference.copse.internal:443'])
+    // The provider's origin, and the host's GitHub read capability (A24).
+    assert.deepEqual(first.egressAllowlist, ['inference.copse.internal:443', HOST_GITHUB_TARGET])
 
     const finished = await waitFor(service, THREAD, (p) => p.phase === 'finished')
     assert.equal(seen.length, 1)
@@ -221,6 +223,8 @@ describe('ContainerRunService', () => {
     assert.ok(request.hostInference)
     assert.equal(request.contextWindow, 1_000_000)
     assert.equal(request.apiKey, undefined)
+    // GitHub reads go through the host with the desktop's sign-in, looked up there.
+    assert.equal(typeof request.github?.token, 'function')
     assert.equal(first.credential, 'host')
     assert.deepEqual(envDuringRun, [])
     assert.ok(!Object.values(process.env).includes('sk-ant-test'))
@@ -343,9 +347,19 @@ describe('ContainerRunService', () => {
     assert.equal(withInstall.installDependencies, true)
     assert.ok(withInstall.egressAllowlist.includes('registry.npmjs.org:443'))
     assert.ok(withInstall.egressAllowlist.includes('github.com:443'))
+    // Install scripts must not share the GitHub read capability.
+    assert.ok(!withInstall.egressAllowlist.includes(HOST_GITHUB_TARGET))
+    assert.equal(withInstall.github, undefined)
     assert.equal(without.installDependencies, undefined)
+    assert.ok(without.egressAllowlist.includes(HOST_GITHUB_TARGET))
+    assert.equal(typeof without.github?.token, 'function')
     assert.ok(!without.egressAllowlist.includes('registry.npmjs.org:443'))
-    assert.ok(!without.egressAllowlist.some((origin) => origin.includes('github')))
+    // No GitHub origin; only the host's own read capability, which is not one.
+    assert.ok(
+      !without.egressAllowlist.some(
+        (origin) => origin.includes('github') && origin !== HOST_GITHUB_TARGET,
+      ),
+    )
   })
 
   it('runs an ACP agent under its vendor key on its own domains, with no provider', async () => {
@@ -494,7 +508,7 @@ describe('ContainerRunService', () => {
       model: 'lmstudio:qwen3',
       budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
     })
-    assert.deepEqual(started.egressAllowlist, ['inference.copse.internal:443'])
+    assert.deepEqual(started.egressAllowlist, ['inference.copse.internal:443', HOST_GITHUB_TARGET])
     await waitFor(service, 'loopback', (p) => p.phase === 'finished')
     const request = seen[0]
     assert.ok(request)

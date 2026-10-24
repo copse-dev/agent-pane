@@ -90,3 +90,18 @@ paths = [
 description = "Inert CLI provider TLS fixture key"
 targetRules = ["private-key"]
 paths = ['''^tests/fixtures/cli-provider-transport/model\.key$''']
+
+[[allowlists]]
+# Container runs hand the guest `gh` an inert per-run placeholder token
+# (`ghp_copse_t<thread>_r<run>_<random>`, decision A24 in
+# docs/plans/thread-in-container.md); the host drops it and injects the real
+# token itself, so it authenticates nothing. The hosts.yml fixture line still
+# trips the entropy heuristic. Require both the exact test file and the
+# placeholder shape, so a real credential in that file is still reported. The
+# path also clears the finding in branch history.
+description = "Container gh placeholder token fixture (inert)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''ghp_copse_[A-Za-z0-9_]+''']
+paths = ['''^src/main/services/container-runtime/github-capability-wire\.test\.ts$''']

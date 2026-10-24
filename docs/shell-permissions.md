@@ -214,7 +214,10 @@ Reactive retries remain inside the same guest and never grant host execution.
 
 Network has no direct route out of the guest. A host broker enforces named destinations;
 per-command access is token-gated. The run receives the model credential it needs, not ambient
-host credentials or Git remotes. Results return as Git bundles to `refs/copse/runs/<id>` for
+host credentials or Git remotes. The one exception reachable from a shell command is the GitHub
+read capability: `gh` and `git` fetches reach a host handler that holds the user's token, admits
+reads only and refuses every write before forwarding, independently of the shell gate's own
+deferral of `gh` writes and `git push` (thread-in-container A24). Results return as Git bundles to `refs/copse/runs/<id>` for
 explicit adoption, without moving the host checkout's HEAD or pushing. This is not a
 hostile-workload/multi-tenant guarantee; syntactic effect classification cannot identify every
 possible action of arbitrary guest code.

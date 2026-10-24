@@ -38,7 +38,7 @@ permissions:
 jobs:
   cleanup:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }}
     outputs:
       removed: ${{ steps.remove.outputs.removed }}
     steps:
@@ -76,7 +76,7 @@ jobs:
   # the one PR an event named.
   prune:
     if: github.event_name != 'pull_request'
-    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }}
     outputs:
       removed: ${{ steps.remove.outputs.removed }}
     steps:

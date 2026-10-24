@@ -54,7 +54,7 @@ jobs:
       github.workflow_ref == 'copse-dev/agent-pane/.github/workflows/review-summary.yml@refs/heads/main' &&
       contains(fromJSON('["338988","41898282"]'), github.actor_id) &&
       contains(fromJSON('["jonathanKingston","github-actions[bot]"]'), github.triggering_actor) }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       pull-requests: read
@@ -107,7 +107,7 @@ jobs:
       contains(fromJSON('["338988","41898282"]'), github.actor_id) &&
       contains(fromJSON('["jonathanKingston","github-actions[bot]"]'), github.triggering_actor) }}
     environment: copse-review-models
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     # Only this job's token may write, and only pull requests: the description
     # edit needs it (see the header).

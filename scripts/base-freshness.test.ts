@@ -589,7 +589,7 @@ describe('base-freshness.yml workflow invariants', () => {
   it('stays on fixed hosted capacity and inside a timeout', () => {
     // Same rule as ci-passed: a control reporting on the fleet must not queue
     // behind it (#1669).
-    assert.match(workflow, /^ {4}runs-on: ubuntu-latest$/m)
+    assert.match(workflow, /^ {4}runs-on: ubuntu-24\.04$/m)
     assert.doesNotMatch(directives, /SELF_HOSTED/)
     assert.match(workflow, /^ {4}timeout-minutes: \d+$/m)
   })
