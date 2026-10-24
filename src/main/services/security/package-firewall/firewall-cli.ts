@@ -1,5 +1,6 @@
 // Entry point of the standalone `dist/main/package-firewall.js` bundle, run as
 // `ELECTRON_RUN_AS_NODE=1 <Copse> package-firewall.js <command> [args…]`.
+import '../../../disable-brotli-decoding.ts' // first: this process decodes registry metadata on Electron's Node
 import { FIREWALL_LOG_PREFIX, runPackageFirewall } from './run.ts'
 
 const log = (line: string): void => {
