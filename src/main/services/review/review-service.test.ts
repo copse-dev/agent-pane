@@ -114,6 +114,7 @@ describe('review service', () => {
     signal?: AbortSignal
     billable?: boolean
     approve?: boolean
+    resolveDistinctModels?: ReviewHostServices['resolveDistinctModels']
   }): Promise<Run> {
     const chunks: StreamChunk[] = []
     const providerCalls: string[] = []
@@ -136,7 +137,9 @@ describe('review service', () => {
     const services: ReviewHostServices = {
       providerFor,
       isBillable: () => options.billable ?? false,
-      resolveDistinctModels: (values) => Promise.resolve([...values]),
+      resolveDistinctModels:
+        options.resolveDistinctModels ??
+        ((values): Promise<string[]> => Promise.resolve([...values])),
       estimateCost: () => '~$0.00',
       requestSpendApproval: () => {
         spendRequests++
@@ -256,6 +259,41 @@ describe('review service', () => {
     const { result } = await run({ reviewer, signal: controller.signal })
     assert.equal(result.report.status, 'error')
     assert.equal(result.report.error, 'Review cancelled.')
+  })
+
+  it('reports cancellation while the models are still being resolved', async () => {
+    const controller = new AbortController()
+    const { reports, result, providerCalls, spendRequests } = await run({
+      signal: controller.signal,
+      resolveDistinctModels: (_values, signal) => {
+        controller.abort(new Error('stop review'))
+        signal.throwIfAborted()
+        return Promise.resolve([])
+      },
+    })
+    assert.equal(result.report.status, 'error')
+    assert.equal(result.report.error, 'Review cancelled.')
+    assert.deepEqual(
+      reports.map((report) => report.status),
+      ['error'],
+    )
+    assert.equal(result.report.reviewers.length, 0)
+    assert.deepEqual(providerCalls, [])
+    assert.equal(spendRequests, 0)
+  })
+
+  it('reports a model that cannot be resolved instead of rejecting', async () => {
+    const { reports, result } = await run({
+      resolveDistinctModels: () =>
+        Promise.reject(new Error('openrouter:x:batch is not a callable workflow route.')),
+    })
+    assert.equal(result.report.status, 'error')
+    assert.match(result.report.error ?? '', /not a callable workflow route/)
+    assert.match(result.summary, /^Review failed: /)
+    assert.deepEqual(
+      reports.map((report) => report.status),
+      ['error'],
+    )
   })
 
   it('drops a finding the challenger refutes, and counts it', async () => {

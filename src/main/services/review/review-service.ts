@@ -191,6 +191,21 @@ function defaultReadSetting(key: string): unknown {
   return readPluginSettingValue(REVIEW_PLUGIN_ID, key)
 }
 
+/** The reviewer and challenger selections, from settings then defaults, before expansion. */
+function reviewModelSelections(
+  chatModel: string,
+  readSetting: (key: string) => unknown,
+): ReviewModels {
+  return {
+    reviewer:
+      settingString(readSetting, REVIEWER_MODEL_SETTING_ID) ||
+      inheritableChatModel(chatModel) ||
+      BEST_VALUE_MODEL_SELECTOR,
+    challenger:
+      settingString(readSetting, CHALLENGER_MODEL_SETTING_ID) || DEFAULT_CHALLENGER_MODEL_ID,
+  }
+}
+
 /**
  * The reviewer and challenger selections (settings, then defaults), expanded
  * to callable model ids. Expanded before the spend decision so a prompt names
@@ -204,12 +219,7 @@ export async function resolveReviewModels(
     (await appHostServices()).resolveDistinctModels(values, signal),
   signal: AbortSignal = new AbortController().signal,
 ): Promise<ReviewModels> {
-  const reviewer =
-    settingString(readSetting, REVIEWER_MODEL_SETTING_ID) ||
-    inheritableChatModel(chatModel) ||
-    BEST_VALUE_MODEL_SELECTOR
-  const challenger =
-    settingString(readSetting, CHALLENGER_MODEL_SETTING_ID) || DEFAULT_CHALLENGER_MODEL_ID
+  const { reviewer, challenger } = reviewModelSelections(chatModel, readSetting)
   const [a, b] = await resolveDistinct([reviewer, challenger], signal)
   return { reviewer: a ?? reviewer, challenger: b ?? challenger }
 }
@@ -435,15 +445,29 @@ export async function runThreadReview(options: ReviewRunOptions): Promise<Review
   const services = options.services ?? (await appHostServices())
   const providerFor = (model: string): Promise<LLMProvider> =>
     services.providerFor(model, options.threadId)
-  const models = await resolveReviewModels(
-    options.chatModel,
-    readSetting,
-    services.resolveDistinctModels,
-    options.signal,
-  )
   const lensSpec = resolveReviewLensSpec(readSetting)
   const lenses = resolveLenses(lensSpec)
   const lensIds = lenses.map((lens) => lens.id)
+  let models: ReviewModels
+  try {
+    models = await resolveReviewModels(
+      options.chatModel,
+      readSetting,
+      services.resolveDistinctModels,
+      options.signal,
+    )
+  } catch (err) {
+    // Resolution checks routes and catalogs under the run's signal: a cancel
+    // or an unusable route here is reported like one in any later stage.
+    const selections = reviewModelSelections(options.chatModel, readSetting)
+    const report = errorReport(
+      runningReviewReport(selections, lensIds, startedAt, options.initiator),
+      options.signal.aborted ? 'Review cancelled.' : errorMessage(err),
+      now(),
+    )
+    options.onChunk({ type: 'review_report', report })
+    return { report, summary: `Review failed: ${report.error ?? ''}` }
+  }
   const placeholder = runningReviewReport(models, lensIds, startedAt, options.initiator)
 
   if (!getDefaultPluginRegistry().isEnabled(REVIEW_PLUGIN_ID)) {
