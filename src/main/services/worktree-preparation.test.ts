@@ -109,6 +109,37 @@ for (const [manager, lock, verb] of managerCases) {
   })
 }
 
+it('reports npm bootstrap failure separately from a ready pnpm manager', async () => {
+  project('pnpm@10.34.5', 'pnpm-lock.yaml')
+  const report = await inspectWorktreePreparation(root, {
+    probe: (command, args) => (command === 'npm' ? null : probe(command, args)),
+  })
+  assert.equal(
+    report.components.find((component) => component.name === 'Package manager')?.ready,
+    true,
+  )
+  const bootstrap = report.components.find(
+    (component) => component.name === 'Socket Firewall bootstrap',
+  )
+  assert.equal(bootstrap?.ready, false)
+  assert.match(bootstrap.detail, /npm is required.*unavailable in preparation confinement/)
+})
+
+it('does not require npm bootstrap when managed Socket Firewall is usable', async () => {
+  project('pnpm@10.34.5', 'pnpm-lock.yaml')
+  const report = await inspectWorktreePreparation(root, {
+    probe: (command, args) => {
+      if (command.endsWith('/socket-firewall/bin/sfw')) return '2.0.6'
+      assert.notEqual(command, 'npm')
+      return probe(command, args)
+    },
+  })
+  assert.equal(
+    report.components.some((component) => component.name === 'Socket Firewall bootstrap'),
+    false,
+  )
+})
+
 describe('project detection and declared setup', () => {
   it('detects a single lockfile without name, scripts, packageManager, or a Node pin', async () => {
     write('package.json', '{}')
