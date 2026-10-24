@@ -168317,8 +168317,8 @@ ${output2}` : "Terminal output: (none)"
       }
       void api2.terminal.write(tab.sessionId, data);
     });
-    tab.container.addEventListener("mousedown", () => {
-      connectWaitingTab(tab);
+    tab.container.addEventListener("mousedown", (e3) => {
+      if (e3.button === 0) connectWaitingTab(tab);
       if (activeTabId === tab.id) focusTab(tab);
     });
     tab.container.addEventListener("contextmenu", (e3) => {
