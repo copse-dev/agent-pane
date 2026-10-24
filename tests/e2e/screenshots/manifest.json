@@ -3790,8 +3790,8 @@
       "bytes": 86725
     },
     "settings-experimental.png": {
-      "sha256": "a7e5df7800436c9b0dc2ea7bf5f8aa1e467ec6de153385144497a0f5dced1b99",
-      "bytes": 231040
+      "sha256": "3d8ab78a9f84d55cef3f2bfe5c2ce12a4071d3ebd097e94f84e094c49057e271",
+      "bytes": 258908
     },
     "settings-explainers-browse-recovery.png": {
       "sha256": "870633effa91d34bcb401b47c5f0d6a914df9ca8d132617f15d3eff4b014dc9d",
@@ -3840,6 +3840,38 @@
     "settings-local-server-detect.png": {
       "sha256": "aa6cf705752cc10b52a8f1eb20957701aa407ada154caa56ad918ecf1709ac5b",
       "bytes": 269364
+    },
+    "settings-machines-classifier.png": {
+      "sha256": "d00176967ecb78798d0b2ce323b9fb567625ebd6e9a1db860ca850c33b11099c",
+      "bytes": 202764
+    },
+    "settings-machines-connected.png": {
+      "sha256": "34d761803edc008da6dd07b88c95c36f525dca994df22a152c1e987d7ff7fa0c",
+      "bytes": 208673
+    },
+    "settings-machines-disabled.png": {
+      "sha256": "dcd582384427ee64f61c1de9e32f853e93bbedb9d232077aaf04394060af1707",
+      "bytes": 215022
+    },
+    "settings-machines-experimental.png": {
+      "sha256": "61392cd5d15f048aa7767d9e62cf869410ff0e1e8410e93859155ca3cdafd9ad",
+      "bytes": 37774
+    },
+    "settings-machines-locked.png": {
+      "sha256": "e3879156d63dc047eb89d7af6c21b93deff93e37b16da4f8f0bb7224509cec9e",
+      "bytes": 226707
+    },
+    "settings-machines-offline.png": {
+      "sha256": "fa1f818a10f3c2c133511372abc4c8c37c1384f4b572d0b503f25798d20a7227",
+      "bytes": 214443
+    },
+    "settings-machines-paused.png": {
+      "sha256": "fd840dc9009ad4438d0af25edd1cd3cfd4fe076e54c8deb589d1e7d26e1375f5",
+      "bytes": 245366
+    },
+    "settings-machines-sharing.png": {
+      "sha256": "c2f6cebc2cb38c031ee28fea40801557fd66b0fca05451fab77f856fb6002799",
+      "bytes": 92464
     },
     "settings-mcp-lens.png": {
       "sha256": "ee0c34d00f2d7d7b57ce489f0c5ba793aa07b39a005250f2059200f22547b63d",
@@ -4626,8 +4658,8 @@
       "bytes": 23927
     },
     "ssh-config-alias-collision.png": {
-      "sha256": "42b0d49053e30be71106d5e3562aa5397f2924050dd2f87de40fc892232f93b6",
-      "bytes": 220899
+      "sha256": "24805351c411fc2e9879a4e8b19f4fc3b06f83eda1c4d2e011f86c782816babb",
+      "bytes": 233846
     },
     "ssh-project-add-menu.png": {
       "sha256": "b9a1c4b394bf671fc669789bd65c74684ad22d31e4cbf7291925b4279b602083",
