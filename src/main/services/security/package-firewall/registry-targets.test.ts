@@ -2,7 +2,9 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   INTERCEPTED_REGISTRY_HOSTS,
+  interceptedEcosystem,
   metadataForRequest,
+  normalizeHost,
   normalizePythonName,
   packageForDownload,
   packageKey,
@@ -127,6 +129,18 @@ describe('intercepted hosts', () => {
     assert.equal(packageForDownload('index.crates.io', '/crates/itoa/itoa-1.0.0.crate'), null)
   })
 
+  it('treats a fully qualified name with trailing dots as the same registry', () => {
+    assert.equal(normalizeHost('Registry.NPMJS.org.'), 'registry.npmjs.org')
+    assert.equal(normalizeHost('static.crates.io..'), 'static.crates.io')
+    assert.equal(interceptedEcosystem('registry.npmjs.org.'), 'npm')
+    assert.equal(interceptedEcosystem('files.pythonhosted.org.'), 'PyPI')
+    assert.deepEqual(packageForDownload('static.crates.io.', '/crates/itoa/itoa-1.0.11.crate'), {
+      ecosystem: 'crates.io',
+      name: 'itoa',
+      version: '1.0.11',
+    })
+  })
+
   it('covers each supported ecosystem', () => {
     assert.deepEqual(
       new Set(INTERCEPTED_REGISTRY_HOSTS.values()),
@@ -198,6 +212,17 @@ describe('metadataForRequest', () => {
       })
     }
     assert.equal(metadataForRequest('index.crates.io', '/config.json'), null)
+  })
+
+  it('treats a registry named with a trailing dot as the same registry', () => {
+    assert.deepEqual(metadataForRequest('pypi.org.', '/simple/six/'), {
+      ecosystem: 'PyPI',
+      name: 'six',
+    })
+    assert.deepEqual(metadataForRequest('Registry.NPMJS.org.', '/lodash'), {
+      ecosystem: 'npm',
+      name: 'lodash',
+    })
   })
 
   it('names nothing on download hosts or unknown hosts', () => {

@@ -32,8 +32,18 @@ export const INTERCEPTED_REGISTRY_HOSTS: ReadonlyMap<string, PackageEcosystem> =
   ['crates.io', 'crates.io'],
 ])
 
+/**
+ * The host as the intercepted list spells it: lowercase, without the trailing
+ * dots of a fully qualified name. DNS resolves `registry.npmjs.org.` to the
+ * same registry, so a client configured with it must not be tunnelled past the
+ * checks.
+ */
+export function normalizeHost(host: string): string {
+  return host.toLowerCase().replace(/\.+$/, '')
+}
+
 export function interceptedEcosystem(host: string): PackageEcosystem | undefined {
-  return INTERCEPTED_REGISTRY_HOSTS.get(host.toLowerCase())
+  return INTERCEPTED_REGISTRY_HOSTS.get(normalizeHost(host))
 }
 
 /** Stable cache key for one package version. */
@@ -136,7 +146,7 @@ function crateDownload(host: string, pathname: string): PackageCoordinates | nul
 export function packageForDownload(host: string, path: string): PackageCoordinates | null {
   const pathname = decodedPathname(path)
   if (pathname === null) return null
-  switch (host.toLowerCase()) {
+  switch (normalizeHost(host)) {
     case 'registry.npmjs.org':
     case 'registry.yarnpkg.com':
       return npmTarball(pathname)
@@ -182,7 +192,7 @@ function cratesIndexFile(pathname: string): MetadataTarget | null {
 export function metadataForRequest(host: string, path: string): MetadataTarget | null {
   const pathname = decodedPathname(path)
   if (pathname === null) return null
-  switch (host.toLowerCase()) {
+  switch (normalizeHost(host)) {
     case 'registry.npmjs.org':
     case 'registry.yarnpkg.com':
       return npmPackument(pathname)
