@@ -17,7 +17,8 @@ import {
   type FirewallDecision,
   type RunningFirewallProxy,
 } from './proxy.ts'
-import { INTERCEPTED_REGISTRY_HOSTS, packageKey } from './registry-targets.ts'
+import { INTERCEPTED_REGISTRY_HOSTS, packageKey, type MetadataTarget } from './registry-targets.ts'
+import { DEFAULT_MIN_RELEASE_AGE_MS, describeReleaseAge } from './release-age.ts'
 import {
   connectUpstream,
   fetchUpstreamText,
@@ -28,12 +29,14 @@ import { createCertificateAuthority } from './x509.ts'
 
 /**
  * `package-firewall <command> [args…]`: run one command with its registry
- * downloads checked against public malware advisories, then exit with the
+ * downloads checked against public malware advisories, and versions published
+ * in the last 48 hours left out of what it resolves, then exit with the
  * command's status. See docs/plans/package-firewall.md.
  *
  * It stays quiet unless it has to act: the only lines it prints are a refused
- * download and the conditions that stop it from proxying at all. Clean and
- * unverifiable downloads are not reported, so nothing reads as a guarantee.
+ * download, the packages whose recent versions were left out, and the
+ * conditions that stop it from proxying at all. Clean and unverifiable
+ * downloads are not reported, so nothing reads as a guarantee.
  */
 
 /** Shared with the shell tool's own install banner. */
@@ -50,6 +53,31 @@ export function blockedLogLine(decision: FirewallDecision): string {
     .map((id) => `https://osv.dev/vulnerability/${id}`)
   const suffix = links.length > 0 ? ` (${links.join(', ')})` : ''
   return `${FIREWALL_LOG_PREFIX} ${blockedMessage(decision.pkg, decision.verdict)}${suffix}`
+}
+
+/** Packages named in the recent-versions line before it summarises the rest. */
+const RECENT_PACKAGES_SHOWN = 8
+
+/**
+ * One line naming each package that had versions left out, with its newest
+ * left-out version, so a resolution that settled on an older version explains
+ * itself. `recent` maps a package to its left-out versions, newest first.
+ */
+export function recentVersionsLogLine(
+  recent: ReadonlyMap<string, { target: MetadataTarget; hidden: readonly string[] }>,
+  minAgeMs: number,
+): string | null {
+  if (recent.size === 0) return null
+  const named = [...recent.values()].map(({ target, hidden }) =>
+    hidden[0] === undefined ? target.name : `${target.name}@${hidden[0]}`,
+  )
+  const shown = named.slice(0, RECENT_PACKAGES_SHOWN).join(', ')
+  const more = named.length - RECENT_PACKAGES_SHOWN
+  const suffix = more > 0 ? ` and ${String(more)} more ${more === 1 ? 'package' : 'packages'}` : ''
+  return (
+    `${FIREWALL_LOG_PREFIX} Ignored versions published in the last ` +
+    `${describeReleaseAge(minAgeMs)}: ${shown}${suffix}`
+  )
 }
 
 /** The errno when a listen failed for lack of permission, as inside a contained sandbox. */
@@ -150,6 +178,7 @@ export async function runPackageFirewall(
 
   const reportedBlocks = new Set<string>()
   const unreachableHosts = new Set<string>()
+  const recent = new Map<string, { target: MetadataTarget; hidden: readonly string[] }>()
   const authority = createCertificateAuthority({
     permittedHosts: [...INTERCEPTED_REGISTRY_HOSTS.keys()],
   })
@@ -161,6 +190,10 @@ export async function runPackageFirewall(
       check: (pkg) => checker.check(pkg),
       connectTunnel: (host, port) => connectUpstream(host, port, upstream),
       registryAgent: agent,
+      releaseAge: { minAgeMs: DEFAULT_MIN_RELEASE_AGE_MS },
+      onRecentVersions: (target, hidden) => {
+        recent.set(`${target.ecosystem}:${target.name}`, { target, hidden })
+      },
       onDecision: (decision) => {
         const key = packageKey(decision.pkg)
         if (decision.verdict.status !== 'blocked' || reportedBlocks.has(key)) return
@@ -192,12 +225,15 @@ export async function runPackageFirewall(
     const fullBundleFile = join(dir, 'ca-bundle.pem')
     writeFileSync(extraCaFile, trust.extraCaPem, { mode: 0o600 })
     writeFileSync(fullBundleFile, trust.fullBundlePem, { mode: 0o600 })
-    return await runChild(
+    const status = await runChild(
       command,
       args,
       packageFirewallChildEnv(env, { proxyUrl: proxy.url, extraCaFile, fullBundleFile }),
       log,
     )
+    const line = recentVersionsLogLine(recent, DEFAULT_MIN_RELEASE_AGE_MS)
+    if (line) log(line)
+    return status
   } finally {
     await proxy.close()
     agent.destroy()

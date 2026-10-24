@@ -1,9 +1,10 @@
 # Package firewall
 
-**Status: Implemented (phase 1).** Replaces the third-party Socket Firewall (`sfw`) with a
-package firewall written in this repository. It runs under the app's own runtime, checks every
-package download against public malware advisories, and needs no global install, account or
-vendor branding.
+**Status: Implemented (phase 1, plus the release-age limit).** Replaces the third-party Socket
+Firewall (`sfw`) with a package firewall written in this repository. It runs under the app's own
+runtime, checks every package download against public malware advisories, leaves versions
+published in the last 48 hours out of what installs resolve, and needs no global install,
+account or vendor branding.
 
 ## Problem
 
@@ -24,6 +25,8 @@ preparation ran through `sfw`, a closed-source binary fetched from npm:
 
 - Block downloads of packages that public advisories list as malicious, for npm (npm, pnpm,
   Yarn), PyPI (pip, uv) and crates.io (cargo). These are the managers `safe-install.ts` detects.
+- Cover the window before any list knows about a package: do not offer installs a version
+  published in the last 48 hours (decision 12).
 - Use only code in this repository plus public, freely licensed data. Add no new npm dependency.
 - Keep the existing integration shape: a command wrapper that every caller already uses
   (`<firewall> <command…>`).
@@ -51,10 +54,14 @@ package-firewall.js  (standalone bundle, Electron-as-Node)
   3. write the CA *certificate* (never the key) to a private temp dir
   4. spawn <cmd…> with proxy + CA environment, wait, exit with its status
         │
-        ├─ CONNECT registry.npmjs.org / registry.yarnpkg.com / files.pythonhosted.org /
-        │  static.crates.io / crates.io  → terminate TLS with a leaf cert from the CA,
-        │  parse <ecosystem, name, version> from each tarball URL, ask the advisory
-        │  checker, then forward upstream or answer 403
+        ├─ CONNECT registry.npmjs.org / registry.yarnpkg.com / pypi.org /
+        │  files.pythonhosted.org / index.crates.io / static.crates.io / crates.io
+        │  → terminate TLS with a leaf cert from the CA, then per request:
+        │    · tarball, wheel or crate: parse <ecosystem, name, version>, ask the
+        │      advisory checker, then forward upstream or answer 403
+        │    · packument, simple index or sparse index file: fetch it whole and
+        │      serve it without versions younger than the release-age limit
+        │    · anything else: forward unchanged
         └─ CONNECT anything else → plain TCP tunnel (unchanged bytes)
 ```
 
@@ -63,7 +70,8 @@ Modules live in `src/main/services/security/package-firewall/`:
 | Module                   | Responsibility                                                                                                      |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------- |
 | `x509.ts`                | Minimal DER encoder plus CA and leaf issuance on `node:crypto`. No certificate library.                             |
-| `registry-targets.ts`    | Intercepted hosts. Tarball URL parsers for npm, PyPI and crates.io. PEP 503 name normalisation.                     |
+| `registry-targets.ts`    | Intercepted hosts. Download and metadata URL parsers for npm, PyPI and crates.io. PEP 503 name normalisation.       |
+| `release-age.ts`         | Release-age limit: leaves recent versions out of npm packuments, PyPI JSON simple indexes and sparse crates index.  |
 | `advisories.ts`          | Verdict engine. Batched OSV.dev queries, the cached DataDog feed and an in-memory cache.                            |
 | `upstream.ts`            | Outbound connections that honour the user's own `HTTPS_PROXY` / `NO_PROXY`.                                         |
 | `proxy.ts`               | CONNECT proxy, proxy authentication, selective TLS interception, request forwarding.                                |
@@ -102,8 +110,9 @@ used. Sources are combined with OR: a package is blocked if any source lists it.
    proxy. Revisit if we add a strict mode.
 6. **Strip interception bypasses from `NO_PROXY`.** Corporate and CI environments often list
    registries in `NO_PROXY`. Those entries are removed for the intercepted hosts only.
-7. **Block at the tarball, not the metadata.** Packuments and indexes pass through. Resolution
-   is unchanged, and a blocked package fails the install with a 403 that names the advisory.
+7. **Block malware at the tarball, not the metadata.** A listed package fails the install with a
+   403 that names the advisory. Metadata is only rewritten for the release-age limit
+   (decision 12), which leaves listed versions in place.
 8. **Fail closed inside a contained sandbox.** On macOS, a sandboxed `npx` cannot bind loopback.
    The wrapper then runs the command with every proxy variable pointing at a closed port, so an
    installed binary (`npx tsx`) still runs and any download fails rather than going unchecked. On
@@ -122,7 +131,43 @@ used. Sources are combined with OR: a package is blocked if any source lists it.
     users to expect guarantees it cannot give. The wrapper prints nothing for clean or
     unverifiable downloads, only the line for a refused one. Its output shares the shell tool's
     `[safe-install]` tag. The one exception is the SSH remote-install approval, which says its
-    downloads are not checked, because that is a gap the user should know about.
+    downloads are not checked, because that is a gap the user should know about. The
+    release-age limit adds one line, printed at exit and only when versions were left out,
+    naming each package's newest left-out version so a resolution that settled on an older
+    version explains itself. The limit stays out of approval copy, because it does not always
+    hold (decision 12).
+12. **Release-age limit: leave versions younger than 48 hours out of the metadata installs
+    resolve from.** Public malware lists learn about a package hours or days after it is
+    published, and self-spreading npm attacks do most of their damage in that window. The
+    registry's own publish time decides age: npm's packument `time`, PyPI's per-file
+    `upload-time` (PEP 700) and the sparse crates index `pubtime`. Filtering metadata rather
+    than refusing tarballs lets a version range settle on the newest older version, so a
+    package that released yesterday still installs. An exact pin to a newer version fails as
+    not found. Details:
+    - An abbreviated packument has no publish times. Its `modified` date moves on every
+      publish, so one modified before the cutoff passes untouched; otherwise the full
+      packument is fetched for its `time`. A dist-tag on a left-out version moves to the
+      highest remaining version below it (a stable one unless the tag named a prerelease), or
+      is dropped when there is none.
+    - PyPI files, not versions, are the unit: PyPI accepts new files for an old release, and
+      those are as new as a new release. Only the PEP 691 JSON index has upload times. pip
+      since 22.2 and uv ask for it; the HTML page an older pip gets passes unfiltered.
+    - Metadata is fetched without the client's validators. A rewritten document is served
+      without the registry's validators and with `cache-control: no-store`, so no cache
+      revalidates a document the client never saw, and no install outside the firewall is
+      later served the shortened list from npm's, pip's or uv's cache.
+    - Lockfile installs (`npm ci`, `pnpm install --frozen-lockfile`, `uv sync`, `yarn` with a
+      lockfile) fetch artifacts by URL and are not affected: a lockfile is a decision the
+      project already made. Cargo is the exception: when it refreshes its index cache it
+      checks locked crates against the index, so `cargo fetch` on a `Cargo.lock` that pins a
+      version younger than the limit fails ("locked to …") until the version ages in.
+      `cargo build` is not wrapped.
+    - A version without a publish time, or a document that does not parse, is kept or served
+      unchanged (decision 5).
+    - Installs a person runs in a terminal are not wrapped, so a person can always install a
+      fresh release; agents cannot. There is no setting yet.
+    - ACP auto-setup reads an adapter's latest version with `npm view` behind the firewall, so
+      an update is offered only once an install would actually get it.
 
 ## Acceptance criteria
 
@@ -136,11 +181,16 @@ used. Sources are combined with OR: a package is blocked if any source lists it.
   firewall, or claims that packages are scanned (decision 11).
 - The "Install Socket Firewall?" prompts and their code paths are gone. ACP adapter updates no
   longer need a bootstrap approval.
+- A packument, JSON simple index or sparse index file served through the firewall lists no
+  version published within the limit; a dist-tag on one moves to the previous version. (Unit
+  tests on each format, and a proxy test against a stub registry.) Exercised manually with
+  npm, pip, uv and cargo against packages that released within 48 hours.
 
 ## Follow-ups
 
 - Bun (`bun install`, `bunx`) and RubyGems detection in `safe-install.ts`, so they get wrapped.
 - Optional strict mode (fail closed) as a setting.
-- A packument-level filter that hides malicious versions, so resolution picks a safe one rather
-  than failing.
+- A setting for the release-age limit, if 48 hours proves wrong for some users.
+- Leave listed malicious versions out of metadata too, on the release-age filter's path, so
+  resolution picks a safe one rather than failing at the tarball.
 - An audit-log line per blocked package (supply-chain doc, phase 4).
