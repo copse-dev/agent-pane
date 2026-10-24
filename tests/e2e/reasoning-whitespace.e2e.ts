@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -8,6 +8,7 @@ import { expectAssistantReply, installMockScenario } from './helpers/mock-scenar
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('whitespace-only reasoning', () => {
   let workspaceRoot: string
@@ -25,7 +26,7 @@ describe('whitespace-only reasoning', () => {
 
   after(() => {
     resetUserData()
-    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
+    removeE2eTree(dirname(workspaceRoot))
   })
 
   it('omits a blank disclosure while preserving meaningful reasoning', async () => {

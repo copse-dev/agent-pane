@@ -41,7 +41,7 @@ async function rows(): Promise<Row[]> {
         cards: [...node.querySelectorAll('.tool-card')].filter(
           (card) => card instanceof HTMLElement && card.checkVisibility(),
         ).length,
-        text: (node.textContent ?? '').replace(/\s+/g, ' ').trim(),
+        text: node.textContent.replace(/\s+/g, ' ').trim(),
       }
     }),
   )
@@ -208,7 +208,8 @@ describe('concise thread view states', () => {
     await output.$('summary').click()
     await expect(output.$('.tool-result')).toHaveText(expect.stringContaining('test 400'))
     const geometry = await browser.execute(() => {
-      const list = document.querySelector<HTMLElement>('.messages-list')!
+      const list = document.querySelector<HTMLElement>('.messages-list')
+      if (!list) throw new Error('Missing transcript')
       return {
         pageOverflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
         listOverflowX: list.scrollWidth > list.clientWidth,
@@ -311,7 +312,7 @@ describe('concise thread view states', () => {
     const labels = await browser.execute(() =>
       [...document.querySelectorAll('.messages-list .msg-assistant')]
         .filter((node) => node instanceof HTMLElement && node.checkVisibility())
-        .map((node) => node.querySelector('.message-model')?.textContent?.trim() ?? ''),
+        .map((node) => node.querySelector('.message-model')?.textContent.trim() ?? ''),
     )
     expect(labels).toEqual(['Claude Opus 5.5', '', 'Claude Haiku 4.5', '', 'Claude Opus 5.5', ''])
     await saveAppScreenshot('concise-state-model-switch.png')

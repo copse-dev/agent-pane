@@ -77,7 +77,14 @@ export const config: Options.Testrunner = {
     timeout: 90_000,
   },
   async beforeSession(config, capabilities, specs, cid) {
-    process.env.COPSE_E2E_CI = '1'
-    await baseConfig.beforeSession?.(config, capabilities, specs, cid)
+    process.env['COPSE_E2E_CI'] = '1'
+    const beforeSession = baseConfig.beforeSession
+    for (const hook of Array.isArray(beforeSession)
+      ? beforeSession
+      : beforeSession
+        ? [beforeSession]
+        : []) {
+      await hook(config, capabilities, specs, cid)
+    }
   },
 }

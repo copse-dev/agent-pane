@@ -50,13 +50,12 @@ describe('Perplexity provider', () => {
         title: root?.querySelector('.provider-form-title')?.firstChild?.textContent?.trim() ?? '',
         baseUrl: url?.value ?? '',
         baseUrlReadOnly: url?.readOnly ?? false,
-        keyHint:
-          root?.querySelector('.provider-field-group .field-hint')?.textContent?.trim() ?? '',
+        keyHint: root?.querySelector('.provider-field-group .field-hint')?.textContent.trim() ?? '',
         modelIds,
         fetchModelsLabel:
           [...(root?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
-            .find((button) => button.textContent?.trim() === 'Fetch models')
-            ?.textContent?.trim() ?? '',
+            .find((button) => button.textContent.trim() === 'Fetch models')
+            ?.textContent.trim() ?? '',
       }
     })
 

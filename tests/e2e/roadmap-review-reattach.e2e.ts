@@ -1,9 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 async function expectViewerInset(selector: string): Promise<void> {
   const inset = await browser.execute((selector) => {
@@ -68,8 +69,8 @@ describe('roadmap review reattach', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceParent, { recursive: true, force: true })
-    rmSync(knowledgeDir, { recursive: true, force: true })
+    removeE2eTree(workspaceParent)
+    removeE2eTree(knowledgeDir)
   })
 
   it('keeps a review reachable through the header button after navigating away', async () => {
@@ -111,7 +112,7 @@ describe('roadmap review reattach', () => {
     await reviewBtn.click()
     const reviewView = $('.roadmap-review')
     await reviewView.waitForDisplayed({ timeout: 10_000 })
-    const rows = await $$('.roadmap-review-row')
+    const rows = await $$('.roadmap-review-row').getElements()
     if (rows.length !== 2) {
       throw new Error(`expected 2 recovered review rows, got ${String(rows.length)}`)
     }

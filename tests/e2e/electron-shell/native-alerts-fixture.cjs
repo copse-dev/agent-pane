@@ -15,6 +15,10 @@
  * - `app.setBadgeCount` is wrapped, not replaced: the real call still happens
  *   and each call is recorded with what `app.getBadgeCount()` reports after it.
  * - A "hide" request hides the app window, as a user switching away would.
+ * - A "close" request presses the main window's close button: it calls
+ *   `BrowserWindow.close()`, which is what the title-bar button and Cmd+W do,
+ *   so the product's preventable `close` handling runs. The page's own
+ *   `window.close()`, the only close WebDriver can reach, skips that event.
  *
  * The spec talks to it through files in `dir`: it writes `request.json`
  * (`{ id, action }`) and reads `events.jsonl`.
@@ -36,6 +40,17 @@ function install(dir) {
   }
 
   const shown = []
+  // Observe actual request delivery, including an unloaded renderer. This is
+  // an Electron transport fixture, not an app-only test command.
+  app.on('browser-window-created', (_event, win) => {
+    const send = win.webContents.send.bind(win.webContents)
+    win.webContents.send = (channel, ...args) => {
+      if (channel === 'agent:approval-request' || channel === 'agent:ask-user-request') {
+        record({ type: 'decision', channel, id: args[0]?.id, url: win.webContents.getURL() })
+      }
+      return send(channel, ...args)
+    }
+  })
   force(Notification, 'isSupported', () => true)
   force(Notification.prototype, 'show', function show() {
     shown.push(this)
@@ -61,6 +76,16 @@ function install(dir) {
       if (!notification) throw new Error('no notification has been shown')
       notification.emit('click')
       return { title: notification.title }
+    },
+    close: () => {
+      const win = BrowserWindow.getAllWindows().find(
+        (candidate) =>
+          !candidate.isDestroyed() &&
+          candidate.webContents.getURL().includes('/renderer/index.html'),
+      )
+      if (!win) throw new Error('no main window to close')
+      win.close()
+      return { destroyed: win.isDestroyed(), visible: !win.isDestroyed() && win.isVisible() }
     },
     'window-state': () => {
       const win = BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed())

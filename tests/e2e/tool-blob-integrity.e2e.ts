@@ -1,10 +1,12 @@
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import type { Message } from '../../src/shared/types/index.ts'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { e2eWorkspaceDir, resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { TOOL_RESULT_UNAVAILABLE } from '../../src/shared/threads/fold.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-tool-blob-integrity-project'
 const THREAD_ID = 'e2e-tool-blob-integrity-thread'
@@ -14,7 +16,7 @@ const SECOND_MESSAGE_ID = 'assistant-second-read'
 const REUSED_TOOL_CALL_ID = 'lmstudio-0'
 const SCREENSHOT = 'tool-blob-integrity.png'
 
-function toolMessage(id: string, path: string, result: string, createdAt: number) {
+function toolMessage(id: string, path: string, result: string, createdAt: number): Message {
   return {
     id,
     role: 'assistant',
@@ -41,7 +43,7 @@ function damageLikeLegacyIdReuse(): void {
       .replace(`blobs/${FIRST_MESSAGE_ID}.tool-0.result.txt`, legacyRef)
       .replace(`blobs/${SECOND_MESSAGE_ID}.tool-0.result.txt`, legacyRef),
   )
-  rmSync(join(dir, 'blobs'), { recursive: true, force: true })
+  removeE2eTree(join(dir, 'blobs'))
   mkdirSync(join(dir, 'blobs'))
   writeFileSync(join(dir, legacyRef), 'export const second = 2\n')
 }
@@ -49,9 +51,9 @@ function damageLikeLegacyIdReuse(): void {
 describe('tool blob integrity', () => {
   before(async () => {
     const now = Date.now()
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     writeSeedConfig({

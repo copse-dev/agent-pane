@@ -1,13 +1,5 @@
 import { $, browser, expect } from '@wdio/globals'
-import {
-  cpSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { delimiter, dirname, join } from 'node:path'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -16,6 +8,7 @@ import { expectAssistantReply, installMockScenario } from './helpers/mock-scenar
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const COMMAND = "pnpm exec oxfmt --check package.json && printf 'format-check-passed'"
 const PROMPT = 'Check the package manifest formatting.'
@@ -97,7 +90,7 @@ describe('pnpm exec format check', function () {
   after(() => {
     writeE2eEnv({ COPSE_PRESERVE_PATH: undefined, PATH: originalPath })
     resetUserData()
-    if (fixtureRoot) rmSync(fixtureRoot, { recursive: true, force: true })
+    if (fixtureRoot) removeE2eTree(fixtureRoot)
   })
 
   it('runs the installed formatter inside the sandbox without an approval dialog', async () => {

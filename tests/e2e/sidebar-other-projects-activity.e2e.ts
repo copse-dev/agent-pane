@@ -1,9 +1,10 @@
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig, writeSettings } from './helpers/seed-config.ts'
 import { prepareE2eScreenshot, savePreparedAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const activeProject = 'e2e-activity-open'
 const unopenedProject = 'e2e-activity-unopened'
@@ -78,11 +79,11 @@ describe('unopened-project metadata redraws Activity at startup', () => {
 
   after(() => {
     resetUserData()
-    if (root) rmSync(root, { recursive: true, force: true })
+    if (root) removeE2eTree(root)
   })
 
   for (const width of [800, 1600]) {
-    it(`shows the unopened completion without switching projects at ${width}px`, async function () {
+    it(`shows the unopened completion without switching projects at ${String(width)}px`, async function () {
       this.timeout(60_000)
       await prepareE2eScreenshot({ width, height: 900 })
       const row = $('#activity-home .activity-row[data-thread-id="e2e-activity-completed"]')
@@ -93,7 +94,7 @@ describe('unopened-project metadata redraws Activity at startup', () => {
         activeProject,
       )
       await expect($('.prompt-input')).toBeDisplayed()
-      await savePreparedAppScreenshot(`sidebar-unopened-activity-${width}.png`)
+      await savePreparedAppScreenshot(`sidebar-unopened-activity-${String(width)}.png`)
     })
   }
 })

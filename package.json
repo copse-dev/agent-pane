@@ -39,7 +39,9 @@
     "preinstall": "node scripts/check-node-version.cjs",
     "postinstall": "node scripts/prepare-native-artifacts.mts",
     "prepare:native": "node scripts/prepare-native-artifacts.mts",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && pnpm run typecheck:e2e && pnpm run typecheck:demo",
+    "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
+    "typecheck:demo": "tsc --noEmit -p tsconfig.demo.json",
     "type-coverage": "type-coverage --strict --project tsconfig.node.json --at-least 99.9 && type-coverage --strict --project tsconfig.web.json --at-least 99.92",
     "lint": "node scripts/run-lint.mts --pass-on-unpruned-suppressions",
     "lint:prune": "eslint . --prune-suppressions",
@@ -228,7 +230,7 @@
   "dependencies": {
     "@anthropic-ai/sandbox-runtime": "^0.0.74",
     "@mozilla/readability": "^0.6.0",
-    "@napi-rs/keyring": "2.1.0",
+    "@napi-rs/keyring": "2.1.1",
     "electron-updater": "^6.8.9",
     "jsdom": "^30.1.2",
     "node-pty": "^1.1.0",
@@ -237,8 +239,8 @@
     "xcodebuildmcp": "2.7.0"
   },
   "optionalDependencies": {
-    "@napi-rs/keyring-darwin-arm64": "2.1.0",
-    "@napi-rs/keyring-darwin-x64": "2.1.0",
+    "@napi-rs/keyring-darwin-arm64": "2.1.1",
+    "@napi-rs/keyring-darwin-x64": "2.1.1",
     "@nationaldesignstudio/rampart": "0.1.3"
   },
   "devDependencies": {
@@ -272,6 +274,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/jsdom": "^30.0.0",
     "@types/micromatch": "^4.0.9",
+    "@types/mocha": "10.0.10",
     "@types/node": "^26.6.5",
     "@types/pngjs": "^6.0.5",
     "@types/qrcode": "^1.5.6",
@@ -301,7 +304,8 @@
     "expect-webdriverio": "^8.0.0",
     "extract-zip": "workspace:*",
     "fast-check": "^4.10.2",
-    "happy-dom": "^20.14.5",
+    "graphql": "^16.14.2",
+    "happy-dom": "^21.0.1",
     "highlight.js": "^11.11.1",
     "js-yaml": "5.4.3",
     "micromatch": "^4.0.8",
@@ -310,7 +314,7 @@
     "oxfmt": "^0.72.0",
     "pele": "^1.6.0",
     "perfect-freehand": "1.2.3",
-    "pixelmatch": "^7.2.0",
+    "pixelmatch": "^8.0.0",
     "pngjs": "^7.0.0",
     "protobufjs": "^8.8.1",
     "qrcode": "^1.5.4",

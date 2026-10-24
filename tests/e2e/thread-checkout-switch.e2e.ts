@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
-import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT = 'e2e-checkout-switch'
 const ORIGINAL = 'e2e-checkout-original'
@@ -81,7 +82,7 @@ describe('switching threads during first-message checkout', () => {
     projectRoot = join(projectParent, 'checkout-switching')
     mkdirSync(projectRoot)
     worktreeRoot = join(worktreesRoot, PROJECT, ORIGINAL)
-    rmSync(worktreeRoot, { recursive: true, force: true })
+    removeE2eTree(worktreeRoot)
     git(projectRoot, ['init', '-q', '-b', 'main'])
     git(projectRoot, ['config', 'user.email', 'e2e@example.invalid'])
     git(projectRoot, ['config', 'user.name', 'Copse E2E'])
@@ -157,7 +158,7 @@ describe('switching threads during first-message checkout', () => {
     // The app is still running: a sandboxed command can briefly materialize
     // mount points in the checkout while it is being removed (ENOTEMPTY).
     if (projectRoot) {
-      rmSync(projectParent, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+      removeE2eTree(projectParent)
     }
     delete process.env['COPSE_PANEL_MOCK_LLM']
     delete process.env['ANTHROPIC_API_KEY']
@@ -228,7 +229,7 @@ describe('switching threads during first-message checkout', () => {
         browser.execute(
           (prompt) =>
             [...document.querySelectorAll<HTMLElement>('.msg-user')].some((message) =>
-              message.textContent?.includes(prompt),
+              message.textContent.includes(prompt),
             ),
           OTHER_PROMPT,
         ),
@@ -272,6 +273,14 @@ describe('switching threads during first-message checkout', () => {
     assert.equal(await $('.prompt-input').getText(), '')
     assert.equal(existsSync(join(worktreeRoot, '.git')), true, 'the real checkout must exist')
     assert.equal(git(projectRoot, ['branch', '--show-current']), 'main')
+    const originalRow = $(`.chat-row[data-thread-id="${ORIGINAL}"]`)
+    await originalRow.moveTo()
+    await expect(originalRow.$('.chat-menu-btn')).toHaveStyle({ opacity: '1' })
+    // A replaced sidebar row can lose hover/focus after the click. Exercise the
+    // real menu, then capture a deliberate non-hover state rather than that race.
+    await $('.prompt-input').click()
+    await parkPointer()
+    await expect(originalRow.$('.chat-menu-btn')).toHaveStyle({ opacity: '0' })
     await saveAppScreenshot('thread-checkout-switch-sent.png')
 
     await $(`.chat-row[data-thread-id="${OTHER}"]`).click()

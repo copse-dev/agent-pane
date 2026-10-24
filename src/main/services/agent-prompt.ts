@@ -58,12 +58,14 @@ const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
 - git_show: Show a file's contents at a commit/ref, or view a commit (message + diff)
+- git_fetch: Fetch branches or refs/pull/<n>/head from origin into refs/remotes/origin/* (no approval; prefer over run_shell git fetch)
 - git_commit: Create a commit; Copse attribution follows the Git attribution setting (local only; does not push)
 - gh_pr_create: Open a pull request for the current branch and link it to this thread; Copse attribution follows the Git attribution setting
 - gh_pr_list: List pull requests (read-only GitHub CLI; prefer over run_shell + gh)
 - gh_pr_view: Show pull request details incl. CI check status (read-only GitHub CLI; prefer over run_shell + gh)
 - gh_run_list: List recent CI workflow runs for a branch (read-only GitHub CLI)
 - gh_run_view: Fetch failing CI workflow run logs by run id (read-only GitHub CLI)
+- gh_api_read: Read any GitHub REST (GET) or GraphQL query data via the user's gh login (no approval; prefer over run_shell + gh api)
 - get_ci_status: Read GitHub pull request CI check status (requires gh CLI and an open PR)
 - wait_for_ci_checks: Register a durable CI watch after a push, end the turn, and resume once when checks finish
 - get_ci_failure_logs: Fetch failed GitHub Actions log output for a PR

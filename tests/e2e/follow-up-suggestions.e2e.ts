@@ -1,5 +1,5 @@
 import { $, $$, browser, expect } from '@wdio/globals'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -11,6 +11,7 @@ import {
 import { waitForAgentIdle } from './helpers.ts'
 import { completeMockTurn } from './helpers/follow-up-suggestions.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('follow-up suggestion bubbles', () => {
   describe('mock demo (Debug CI + Compare models + Continue Plan)', () => {
@@ -30,7 +31,7 @@ describe('follow-up suggestion bubbles', () => {
 
     after(() => {
       resetUserData()
-      if (workspace) rmSync(workspace, { recursive: true, force: true })
+      if (workspace) removeE2eTree(workspace)
     })
 
     it('shows demo bubbles after a turn completes', async () => {
@@ -39,17 +40,17 @@ describe('follow-up suggestion bubbles', () => {
       await expect($('.follow-up-bubble-changes')).not.toExist()
 
       // The accented "publish it" offer sits first, before the prompt chips.
-      const createPrBubble = await $('.follow-up-bubble[data-id="create-pr"]')
+      const createPrBubble = await $('.follow-up-bubble[data-id="create-pr"]').getElement()
       await expect(createPrBubble).toHaveText('Create PR')
       await expect(createPrBubble).toHaveElementClass('follow-up-bubble-create-pr')
 
-      const ciBubble = await $('.follow-up-bubble[data-id="debug-ci"]')
+      const ciBubble = await $('.follow-up-bubble[data-id="debug-ci"]').getElement()
       await expect(ciBubble).toHaveText('Debug CI Failure')
 
-      const reviewBubble = await $('.follow-up-bubble[data-id="review-changes"]')
+      const reviewBubble = await $('.follow-up-bubble[data-id="review-changes"]').getElement()
       await expect(reviewBubble).toHaveText('Review changes')
 
-      const continuePlanBubble = await $('.follow-up-bubble[data-id="continue-plan"]')
+      const continuePlanBubble = await $('.follow-up-bubble[data-id="continue-plan"]').getElement()
       await expect(continuePlanBubble).toHaveText('Continue: Run the test suite')
 
       await expect($('.prompt-input')).toHaveAttribute('data-placeholder', 'Send follow-up')
@@ -97,7 +98,9 @@ describe('follow-up suggestion bubbles', () => {
       await expect($('.chat-row.selected .chat-title')).toHaveText(originalThreadTitle)
       await expect($('.messages-list .msg-user')).toBeDisplayed()
       await waitForAgentIdle()
-      const assistantMessages = await $$('.messages-list .msg-assistant .message-text')
+      const assistantMessages = await $$(
+        '.messages-list .msg-assistant .message-text',
+      ).getElements()
       const finalReply = assistantMessages.at(-1)
       if (!finalReply) throw new Error('expected the Debug CI follow-up reply')
       await expect(finalReply).toHaveText(
@@ -125,14 +128,14 @@ describe('follow-up suggestion bubbles', () => {
     it('shows a Changes bubble from real git diff stats', async () => {
       const scenario = await completeMockTurn()
 
-      const changesBubble = await $('.follow-up-bubble-changes')
+      const changesBubble = await $('.follow-up-bubble-changes').getElement()
       await expect(changesBubble).toBeDisplayed()
       await expect(changesBubble.$('.follow-up-label')).toHaveText('Changes')
 
       const addText = await changesBubble.$('.follow-up-stat-add').getText()
       const delText = await changesBubble.$('.follow-up-stat-del').getText()
-      await expect(addText.startsWith('+')).toBe(true)
-      await expect(delText.startsWith('-')).toBe(true)
+      expect(addText.startsWith('+')).toBe(true)
+      expect(delText.startsWith('-')).toBe(true)
 
       await saveAppScreenshot('follow-up-suggestions-git-changes.png')
       await scenario.assertComplete()

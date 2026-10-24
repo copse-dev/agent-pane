@@ -17,6 +17,13 @@
   transform: translate(-50%, -50%);
   box-shadow: var(--shadow-lg);
 }
+/* Let the request list take the available height while the heading and decision
+ * controls remain visible. Only apply flex while open so close() hides <dialog>. */
+#approval-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+}
 /* When Settings already owns the top layer, provider-host approval keeps its
  * established modal exception. In that mode, center against the viewport. */
 #approval-dialog:modal {
@@ -66,6 +73,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
+  min-height: 0;
   max-height: 55vh;
   overflow-y: auto;
   margin-bottom: var(--spacing-md);
@@ -142,6 +150,12 @@
 /* Button look lives on `.ui-btn*`; this host keeps layout + the once-button rail. */
 .approval-buttons {
   margin-top: var(--spacing-sm);
+}
+/* Flex items do not collapse margins. Every row above the buttons (request list,
+ * remember and lease labels) already ends in a bottom margin at least this
+ * large, so drop it in the open flex layout to keep the block-layout gap. */
+#approval-dialog[open] > .approval-buttons {
+  margin-top: 0;
 }
 .approval-approve:disabled,
 .approval-approve-once:disabled {

@@ -35,16 +35,16 @@ function thread(id: string, title: string, createdAt: number, lastPromptAt: numb
 async function sidebarTitles(): Promise<string[]> {
   return browser.execute(() =>
     Array.from(document.querySelectorAll('.chats-list .chat-title')).map(
-      (title) => title.textContent ?? '',
+      (title) => title.textContent,
     ),
   )
 }
 
 describe('live sidebar thread ordering', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
 
     const now = Date.now()

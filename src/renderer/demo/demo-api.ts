@@ -1,5 +1,5 @@
 import type { SettingsSnapshot } from '@shared/settings-contract.ts'
-import type { ActiveDiff, StreamChunk, Thread } from '@shared/types'
+import type { ActiveDiff, StreamChunk, Thread, TranscriptAnnotation } from '@shared/types'
 import { ThreadPrRelationshipIndex } from '@shared/git/thread-pr-relations.ts'
 import { backlinksFor } from '@shared/threads/thread-links.ts'
 import type { AutomationPermissionOption, AutomationSchedule } from '@shared/types/automations.ts'
@@ -809,6 +809,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       suggestFollowUps: () => resolved(structuredClone([...(scenario.followUps ?? [])])),
       suggestPrBody: () => resolved(scenario.prBody ?? null),
       suggestNextStep: () => resolved(null),
+      replayPendingDecisions: () => resolvedVoid(),
+      attachTranscripts: () => resolvedVoid(),
+      onTranscriptSnapshot: () => () => {},
       onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => {
         chunkHandlers.add(handler)
         return (): void => {
@@ -1006,6 +1009,17 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     },
     plans: { get: () => resolved(null), revision: () => resolved(null), change: unsupported },
     threads: {
+      archiveState: () =>
+        resolved({ archived: threads.filter((thread) => thread.archivedAt != null), review: [] }),
+      archiveDecision: (_projectId, threadId, decision) => {
+        const thread = threads.find((candidate) => candidate.id === threadId)
+        if (!thread) return resolved(false)
+        if (decision === 'archive') thread.archivedAt = Date.now()
+        if (decision === 'restore') delete thread.archivedAt
+        thread.updatedAt = Date.now()
+        return resolved(true)
+      },
+      onAutoArchived: () => () => {},
       storageSize: () => resolved({ bytes: 24_576, truncated: false }),
       archive: (_projectId, threadId) => {
         const archivedAt = Date.now()
@@ -1016,7 +1030,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       loadProject: (projectId: string) =>
         resolved(
           projectId === scenario.project.id
-            ? structuredClone(threads)
+            ? structuredClone(threads).map((thread) =>
+                scenario.deferSideChatTranscripts === true && thread.sideChat !== undefined
+                  ? { ...thread, messages: [], messagesLoaded: false }
+                  : thread,
+              )
             : structuredClone(
                 scenario.otherProjects?.find((other) => other.project.id === projectId)?.threads ??
                   [],
@@ -1065,6 +1083,18 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         if (thread && !thread.messages.some((candidate) => candidate.id === message.id)) {
           thread.messages.push(message)
         }
+        return resolvedVoid()
+      },
+      annotateMessage: (
+        _projectId: string,
+        threadId: string,
+        messageId: string,
+        annotation: TranscriptAnnotation,
+      ) => {
+        const message = threads
+          .find((candidate) => candidate.id === threadId)
+          ?.messages.find((candidate) => candidate.id === messageId)
+        if (message) Object.assign(message, annotation)
         return resolvedVoid()
       },
       updateMeta: (

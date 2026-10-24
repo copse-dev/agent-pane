@@ -2,14 +2,18 @@ import { openCreatePrDialog } from '../../../src/renderer/views/create-pr-dialog
 
 let release: () => void = () => {}
 const bodyPromise = new Promise<string>((resolve) => {
-  release = () => resolve('Generated description kept after confirmation.')
+  release = (): void => {
+    resolve('Generated description kept after confirmation.')
+  }
 })
 const result = document.createElement('output')
 result.id = 'fixture-result'
 result.hidden = true
 result.dataset['status'] = 'pending'
 document.body.append(result)
-document.addEventListener('release-description', () => release())
+document.addEventListener('release-description', () => {
+  release()
+})
 void openCreatePrDialog({
   suggestedTitle: 'Preserve the generated PR description',
   branch: 'codex/description-ready',

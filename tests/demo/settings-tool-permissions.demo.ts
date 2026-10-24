@@ -14,7 +14,7 @@ describe('browser-hosted tool permission settings', () => {
     await $('.tool-permissions-panel').waitForDisplayed()
     await $('.tool-permission-group').waitForExist()
     const panel = $('.tool-permissions-panel')
-    const groups = await panel.$$('.tool-permission-group')
+    const groups = await panel.$$('.tool-permission-group').getElements()
     assert.equal(groups.length, 2)
     assert.deepEqual(
       await groups.map((group) => group.$('.tool-permission-group-name').getText()),
@@ -28,7 +28,7 @@ describe('browser-hosted tool permission settings', () => {
     const proton = panel.$('[data-group-id="mcp:project:proton-mcp"]')
     await expect(proton.$('.tool-permission-group-origin')).toHaveText('project')
     await expect(proton.$('.tool-permission-group-status')).toHaveText('connected')
-    assert.equal(await proton.$$('.tool-permission-row').then((rows) => rows.length), 4)
+    assert.equal((await proton.$$('.tool-permission-row').getElements()).length, 4)
     await expect(proton.$('[data-tool-id="mcp:project:proton-mcp:send-mail"]')).toHaveText(
       expect.stringContaining('Send a new mail message.'),
     )

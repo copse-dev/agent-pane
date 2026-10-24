@@ -5,7 +5,6 @@ import type { Server } from 'node:http'
 import { createServer } from 'node:http'
 import { createReadStream, existsSync, mkdirSync, statSync } from 'node:fs'
 import { extname, join, resolve, sep } from 'node:path'
-import type { Options } from '@wdio/types'
 import { browser } from '@wdio/globals'
 import { installDeleteSessionSafety, withTimeout } from './tests/e2e/helpers/after-test-safety.ts'
 import { prepareBenchmarkExplorerFixture } from './tests/demo/helpers/benchmark-explorer-fixture.ts'
@@ -307,11 +306,13 @@ function stopDemoServer(): Promise<void> {
       resolveStopped()
       return
     }
-    server.close(() => resolveStopped())
+    server.close(() => {
+      resolveStopped()
+    })
   })
 }
 
-export const config: Options.Testrunner = {
+export const config: WebdriverIO.Config = {
   // Preserve v9's first-match `$` behavior for the existing fixture selectors.
   strictSelectors: false,
   runner: 'local',
@@ -377,7 +378,7 @@ export const config: Options.Testrunner = {
     installDeleteSessionSafety(browser)
   },
   afterTest: async (_test, _context, result) => {
-    if (!result?.passed) {
+    if (!result.passed) {
       try {
         const failureDir = join(process.cwd(), 'e2e-failure-artifacts')
         mkdirSync(failureDir, { recursive: true })

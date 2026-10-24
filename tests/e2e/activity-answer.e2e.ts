@@ -1,4 +1,6 @@
+import type { Thread } from '@shared/types'
 import { $, browser, expect } from '@wdio/globals'
+import { Key } from 'webdriverio'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
@@ -19,7 +21,7 @@ const PROMPT = 'Choose the migration order.'
 const REPLY = 'The migration will add columns first.'
 const SEEDED_AT = 1_786_000_000_000
 
-function seededThread(id: string, title: string) {
+function seededThread(id: string, title: string): Thread {
   return {
     id,
     title,
@@ -56,7 +58,9 @@ describe('answering a background question from Activity', function () {
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('fills a rendered quick answer and sends it through the pending question queue', async () => {
     const scenario = await installMockScenario({
@@ -111,6 +115,7 @@ describe('answering a background question from Activity', function () {
     await detail.$('.activity-answer').click()
     await expect($('#activity-panel .activity-row[data-state="needs-answer"]')).not.toExist()
     await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', FOREGROUND_THREAD)
+    await expect(detail.$('.activity-final-reply')).toHaveText(REPLY)
     await saveAppScreenshot('activity-answer-panel-sent.png')
     await browser.keys('Escape')
     await $(`.chat-row[data-thread-id="${QUESTION_THREAD}"]`).click()
@@ -157,15 +162,16 @@ describe('answering a background question from Activity', function () {
     const detail = $('#activity-panel .activity-detail')
     const input = detail.$('.activity-answer-input')
     await input.waitForDisplayed({ timeout: 10_000 })
-    // A paste: one editing command, which the field's limits apply to as they
-    // would to the user's own paste (sending 9,000 keystrokes is too slow).
+    // A real clipboard paste, which the field's limits apply to as they would
+    // to the user's own paste (sending 9,000 keystrokes is too slow).
     await input.click()
     await browser.execute(
-      (text) => {
-        document.execCommand('insertText', false, text)
+      async (text) => {
+        await navigator.clipboard.writeText(text)
       },
       marker + 'x'.repeat(9_000),
     )
+    await browser.action('key').down(Key.Ctrl).down('v').up('v').up(Key.Ctrl).perform()
     // The field stops at the limit `ask:respond` accepts (ASK_USER_ANSWER_MAX_LENGTH).
     expect((await input.getValue()).length).toBe(8_192)
     await detail.$('.activity-answer').waitForEnabled({ timeout: 5_000 })

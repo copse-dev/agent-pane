@@ -1,7 +1,12 @@
 import type { TranscriptAttachment } from './thread.ts'
 
 /** Main-process decision for one host-native machine continuation. */
-export type MachineDispatchResult = 'completed' | 'duplicate' | 'stale' | 'budget-exhausted'
+export type MachineDispatchResult =
+  | 'completed'
+  | 'duplicate'
+  | 'stale'
+  | 'budget-exhausted'
+  | 'observed'
 
 /** Transcript presentation kept separate from the model-facing run payload. */
 export interface MachineTurnDisplay {

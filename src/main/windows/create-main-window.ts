@@ -82,6 +82,23 @@ export function beginMainWindowQuit(): void {
   quitting = true
 }
 
+/** Whether window closes are part of quitting rather than a user closing a window. */
+export function isMainWindowQuitting(): boolean {
+  return quitting
+}
+
+/** Whether this launch shows native windows (e2e can keep them hidden). */
+export function showsNativeMainWindows(): boolean {
+  return shouldShowNativeWindows(app.commandLine)
+}
+
+/** Load (or reload) the app's renderer into a main window. */
+export function loadMainWindowRenderer(win: BrowserWindow): Promise<void> {
+  return win.loadFile(join(__dirname, '../renderer/index.html'), {
+    query: bootThemeWindowOptions().query,
+  })
+}
+
 /**
  * E2E teardown seam (`test:markQuit`): treat the shutdown as a quit AND stop
  * persisting window state. The wdio harness closes a window so the outgoing
