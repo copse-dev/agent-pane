@@ -85,10 +85,6 @@
       "sha256": "978b66da731ab9bcb59ec7ca70d54601c903952635c311fe298269a5c81e6c1d",
       "bytes": 259562
     },
-    "acp-mixed-bootstrap-approval.png": {
-      "sha256": "b36e4f5995a7570dae80e4def61b0a04bb3c6998fdcebdd5ae0014839abdc02d",
-      "bytes": 270213
-    },
     "acp-mode-default-detected.png": {
       "sha256": "904d56e5258540e81943ddf821ac5fc46a819c0b5e2651140f0e70e5c6709fea",
       "bytes": 180662
@@ -156,10 +152,6 @@
     "acp-settled-open-tool.png": {
       "sha256": "8cf55546ad3df61dee1a516c90a6167adf18fdbdef9f0d914c7866f5124babe0",
       "bytes": 238576
-    },
-    "acp-sfw-bootstrap-approval.png": {
-      "sha256": "d26a4ecb6c163515367151c48db2ef9a92aaa6ec94daa7ff8b0e6e974761f165",
-      "bytes": 265197
     },
     "acp-shell-title.png": {
       "sha256": "6fe3c9c435c9b4d7e9dffe968f0d681ebac60d67323cfc1cc2c47a19d5af2d86",

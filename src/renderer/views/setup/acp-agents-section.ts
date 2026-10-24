@@ -798,8 +798,8 @@ export function createAcpAgentsSection(
     }
   }
 
-  // "Just works" setup: detect clients, install/upgrade npm adapters (Socket
-  // Firewall), register the Claude/Cursor/Codex presets, and cache their models.
+  // "Just works" setup: detect clients, install/upgrade npm adapters (behind the
+  // package firewall), register the Claude/Cursor/Codex presets, and cache their models.
   // Runs once per tab open; idempotent, best-effort, and never throws to the UI.
   async function autoSetup(): Promise<void> {
     try {

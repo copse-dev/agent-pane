@@ -8,6 +8,11 @@ released — rather than copying every published entry.
 
 ## Unreleased
 
+- Package installs no longer need a third-party tool installed first, so there
+  is nothing extra to approve before an install, and updating a coding-agent
+  adapter that is already installed no longer asks. A package that public
+  malware lists flag is refused when it is downloaded.
+
 ## 0.1.0-beta.15
 
 - The footer hover now reports what the classifiers did for the thread: for the
