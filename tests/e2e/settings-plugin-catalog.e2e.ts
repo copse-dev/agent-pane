@@ -47,8 +47,12 @@ describe('settings plugin catalogue', function () {
       '.plugin-catalog-card[data-catalog-id="https://github.com/cursor/plugins#pstack"]',
     )
     await bundled.waitForDisplayed({ timeout: 10_000 })
-    assert.equal(await bundled.getAttribute('data-installed'), 'true')
-    await expect(bundled.$('.plugin-catalog-badge-installed')).toHaveText('Installed')
+    assert.equal(await bundled.getAttribute('data-installed'), 'false')
+    await expect(bundled.$('.plugin-catalog-action')).toHaveText('Review install')
+    await prepareE2eScreenshot()
+    await bundled.scrollIntoView({ block: 'center', inline: 'nearest' })
+    await expect(bundled.$('.plugin-catalog-action')).toBeClickable()
+    await saveElementScreenshot('#settings-dialog', 'settings-optional-pstack-install.png')
 
     await search.setValue('stripe')
     const stripe = panel.$(
