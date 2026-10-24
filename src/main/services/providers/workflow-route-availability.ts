@@ -3,7 +3,7 @@ import { CLOUD_MODELS } from '@copse/llm/model-catalog.ts'
 import { getChatGptPlanService } from './chatgpt-plan-service.ts'
 import { assertModelMakerAllowed } from './model-maker-policy.ts'
 import { apiKeyForDescription, describeProvider } from './provider-selection.ts'
-import { isProviderKeyUsable } from './provider-key-status.ts'
+import { providerKeyStatus } from './provider-key-status.ts'
 import { isOpenAiModelAvailable } from './openai-model-availability.ts'
 import { fetchLmStudioModelsCached } from './lm-studio-models.ts'
 import { fetchOpenRouterModelsCached } from './openrouter-models.ts'
@@ -55,8 +55,11 @@ export async function assertWorkflowRouteAvailable(model: string): Promise<void>
       throw new Error(`Provider route ${model} is unavailable.`)
     return
   }
-  if (!(await isProviderKeyUsable(description.apiKeySlug)))
-    throw new Error(`No validated key for ${description.apiKeySlug}.`)
+  // A network/server failure while validating is not evidence the key went bad.
+  const keyStatus = await providerKeyStatus(description.apiKeySlug)
+  if (keyStatus === 'missing') throw new Error(`No validated key for ${description.apiKeySlug}.`)
+  if (keyStatus === 'invalid')
+    throw new Error(`${description.apiKeySlug} rejected its configured key.`)
   if (description.kind === 'openai') {
     const key = apiKeyForDescription(description)
     if (!key || !(await isOpenAiModelAvailable(key, description.model)))

@@ -178,6 +178,24 @@ describe('desktop workflow route preflight', () => {
     assert.ok(calls.every((url) => url === 'https://api.openai.com/v1/models'))
   })
 
+  it('treats an unverifiable key as usable but refuses a rejected one', async () => {
+    delete process.env['COPSE_PANEL_MOCK_LLM']
+    let status = 503
+    globalThis.fetch = (): Promise<Response> => Promise.resolve(new Response('', { status }))
+    await runWithExplicitSettings(
+      { values: {}, apiKeys: { anthropic: 'sk-ant-fake' } },
+      async () => {
+        await assertWorkflowRouteAvailable('claude-sonnet-4-6')
+        clearProviderKeyStatusCache()
+        status = 401
+        await assert.rejects(
+          assertWorkflowRouteAvailable('claude-sonnet-4-6'),
+          /rejected its configured key/,
+        )
+      },
+    )
+  })
+
   it('rejects missing credentials even if another provider has a key', async () => {
     delete process.env['COPSE_PANEL_MOCK_LLM']
     await runWithExplicitSettings(
