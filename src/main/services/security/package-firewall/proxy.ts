@@ -192,15 +192,20 @@ export async function startPackageFirewallProxy(
     response: ServerResponse,
     upstreamRequest: ReturnType<typeof httpRequest>,
   ): void => {
+    // Set when the client goes away first: the upstream request is then
+    // destroyed on purpose, and its error says nothing about the network.
+    let abandoned = false
     upstreamRequest.once('response', (upstream) => {
       response.writeHead(upstream.statusCode ?? 502, endToEndHeaders(upstream.headers))
       upstream.pipe(response)
     })
-    upstreamRequest.once('error', (error) => {
-      unreachable(host, error, response)
+    upstreamRequest.on('error', (error) => {
+      if (!abandoned) unreachable(host, error, response)
     })
     response.once('close', () => {
-      if (!response.writableFinished) upstreamRequest.destroy()
+      if (response.writableFinished) return
+      abandoned = true
+      upstreamRequest.destroy()
     })
     request.pipe(upstreamRequest)
   }

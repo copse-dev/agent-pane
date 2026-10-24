@@ -101,6 +101,11 @@ describe('package firewall proxy', () => {
     const leaf = registryCa.issue('registry.npmjs.org')
     registry = createHttpsServer({ cert: leaf.certPem, key: leaf.keyPem }, (request, response) => {
       registryRequests.push({ path: request.url ?? '', headers: request.headers })
+      if (request.url === '/slow') {
+        // Answers only after the client has given up.
+        setTimeout(() => response.end('late'), 300).unref()
+        return
+      }
       response.writeHead(200, { 'content-type': 'application/octet-stream' })
       response.end(`registry:${request.url ?? ''}`)
     })
@@ -244,6 +249,24 @@ describe('package firewall proxy', () => {
     socket.destroy()
     assert.equal(status, 502)
     assert.deepEqual(unreachable, ['down.test: connect ENETUNREACH'])
+  })
+
+  it('does not report a registry unreachable when the client gives up first', async () => {
+    const { socket } = await connectVia(proxy.port, 'registry.npmjs.org:443', AUTH)
+    const secure = tlsConnect({ socket, servername: 'registry.npmjs.org', ca: firewallCa.certPem })
+    await new Promise<void>((resolve) => {
+      secure.once('secureConnect', () => {
+        secure.write('GET /slow HTTP/1.1\r\nHost: registry.npmjs.org\r\n\r\n')
+        resolve()
+      })
+    })
+    // Let the proxy forward the request before the client hangs up.
+    while (!registryRequests.some((request) => request.path === '/slow')) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    secure.destroy()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.deepEqual(unreachable, [])
   })
 
   it('checks absolute-form plain-HTTP downloads too', async () => {
