@@ -163,6 +163,19 @@ describe('concise thread view states', () => {
     await saveAppScreenshot('concise-state-question.png')
   })
 
+  it('shows ACP sign-in as two direct actions without an answer form', async () => {
+    await open('reauth')
+    const dialog = $('#ask-user-dialog')
+    await dialog.waitForDisplayed()
+    await expect(dialog.$('.ask-user-title')).toHaveText('Sign in to Claude')
+    await expect(dialog.$$('.ask-user-action')).toBeElementsArrayOfSize(2)
+    await expect(dialog.$('.ask-user-input')).not.toExist()
+    await expect(dialog.$('.ask-user-submit')).not.toExist()
+    await expect(dialog.$('.ask-user-action:first-child')).toHaveText('Sign in')
+    await expect(dialog.$('.ask-user-action:last-child')).toHaveText('Not now')
+    await saveAppScreenshot('concise-state-reauth.png')
+  })
+
   it('hides subagent timelines behind the footer and shows them when opened', async () => {
     await open('subagent')
     const footer = $('.concise-turn-footer')

@@ -27,7 +27,7 @@
   flex-wrap: wrap;
   gap: var(--spacing-sm);
 }
-.ask-user-option {
+.ask-user-option:not(.ask-user-action) {
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -35,11 +35,14 @@
   font-size: var(--font-size-sm);
   cursor: pointer;
 }
-.ask-user-option:hover {
+.ask-user-option:not(.ask-user-action):hover {
   border-color: var(--accent);
 }
 .ask-user-option-recommended {
   border-color: var(--accent);
+}
+.ask-user-action {
+  padding: 8px 16px;
 }
 .ask-user-recommended-label {
   margin-left: var(--spacing-sm);

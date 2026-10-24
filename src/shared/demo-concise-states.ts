@@ -279,6 +279,31 @@ export const CONCISE_STATE_SCENARIOS: readonly DemoScenario[] = [
       ],
     },
   ),
+  scenario(
+    'reauth',
+    'A failed ACP turn offering a direct sign-in action',
+    [
+      user('reauth-user', 'Continue with Claude.'),
+      assistant('reauth-failed', 'Claude is not signed in, so this turn could not run.'),
+    ],
+    {
+      status: 'running',
+      askUserRequests: [
+        {
+          id: 'concise-state-reauth-request',
+          threadId: THREAD_ID('reauth'),
+          presentation: { kind: 'actions', title: 'Sign in to Claude' },
+          questions: [
+            {
+              question:
+                'Claude is not signed in, so this turn could not run. Open a terminal and run `claude auth login` to sign in again? Finish signing in there, then re-send your message.',
+              options: ['Sign in', 'Not now'],
+            },
+          ],
+        },
+      ],
+    },
+  ),
   scenario('subagent', 'A finished turn that used subagents', [
     user('subagent-user', 'Find where the footer is laid out and review the auth changes.'),
     assistant('subagent-work', 'Delegating the search.', [

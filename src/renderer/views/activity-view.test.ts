@@ -404,6 +404,22 @@ describe('activity view answering a question in place', () => {
     assert.equal(sendButton(harness).disabled, true)
   })
 
+  it('sends a host-authored sign-in action from its button without a draft', () => {
+    const { harness, fake } = showAsked([
+      {
+        ...ASKED,
+        questions: ['Sign in to Claude?'],
+        options: [['Sign in', 'Not now']],
+        presentation: { kind: 'actions', title: 'Sign in to Claude' },
+      },
+    ])
+    const body = harness.view.body
+    assert.equal(body.querySelector('.activity-answer-input'), null)
+    assert.equal(body.querySelector('.activity-answer'), null)
+    body.querySelector<HTMLButtonElement>('.activity-option')?.click()
+    assert.deepEqual(fake.answers, [{ id: 'ask1', answers: ['Sign in'] }])
+  })
+
   it('shows recommendations without appending the badge to the answer', () => {
     const { harness, fake } = showAsked([
       {
