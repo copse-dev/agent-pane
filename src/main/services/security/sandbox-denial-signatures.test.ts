@@ -182,16 +182,24 @@ describe('sandboxed GitHub read route refusals', () => {
   })
 
   it('names the shapes the route serves from the command alone', () => {
+    const macos = { gh: true }
     for (const command of [
       'gh pr view 12',
       'cd x && gh api user',
       'git fetch origin',
       'git ls-remote origin',
     ]) {
-      assert.equal(sandboxGitHubReadShape(command), true, command)
+      assert.equal(sandboxGitHubReadShape(command, macos), true, command)
     }
     for (const command of ['git push origin', 'git status', 'echo gh', 'ghost run']) {
-      assert.equal(sandboxGitHubReadShape(command), false, command)
+      assert.equal(sandboxGitHubReadShape(command, macos), false, command)
     }
+  })
+
+  it('leaves gh out where the route does not carry it (Linux)', () => {
+    const linux = { gh: false }
+    assert.equal(sandboxGitHubReadShape('gh pr view 12', linux), false)
+    assert.equal(sandboxGitHubReadShape('cd x && gh api user', linux), false)
+    assert.equal(sandboxGitHubReadShape('git fetch origin', linux), true)
   })
 })

@@ -33,6 +33,7 @@ import {
   sandboxGitHubAccessForThread,
   sandboxGitHubReadsActive,
 } from '../services/github/sandbox-github-reads-runtime.ts'
+import { sandboxGhRouted } from '../services/github/sandbox-github-reads-config.ts'
 import {
   cachedDenialAdvice,
   recordApprovedDeniedOperation,
@@ -395,16 +396,19 @@ export const runShellTool = defineTool({
       expects_sandbox_block === true ? null : operationDescriptorForCommand(command)
 
     // Experimental: GitHub reads served to contained commands through the host
-    // (sandbox-github-reads.ts). While that route is active, `gh` and `git
-    // fetch` run contained first even when the agent expected a block or the
-    // thread remembered one: a read then needs no prompt, and a write is
-    // refused before reaching GitHub and earns the same retry outside. Running
-    // contained never widens what the command may do.
+    // (sandbox-github-reads.ts). While that route is active, `git fetch` (and
+    // `gh` where the route carries it, macOS) runs contained first even when
+    // the agent expected a block or the thread remembered one: a read then
+    // needs no prompt, and a write is refused before reaching GitHub and earns
+    // the same retry outside. Running contained never widens what the command
+    // may do.
     const githubReadsActive =
       !readonlyCheckout && !isRemote && !unattendedContainer && sandboxEnabled
         ? sandboxGitHubReadsActive()
         : false
-    const containedGitHubRead = githubReadsActive && sandboxGitHubReadShape(command)
+    const containedGitHubRead =
+      githubReadsActive &&
+      sandboxGitHubReadShape(command, { gh: sandboxGhRouted(process.platform) })
     const expectsBlock = expects_sandbox_block === true && !containedGitHubRead
     const cachedAdvice =
       operationHint && !containedGitHubRead ? cachedDenialAdvice(threadId, operationHint) : null

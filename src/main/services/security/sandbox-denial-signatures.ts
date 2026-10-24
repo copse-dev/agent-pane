@@ -257,13 +257,14 @@ export function operationDescriptorForCommand(command: string): string | null {
 
 /**
  * Whether the command's shape is one the sandboxed GitHub read route serves:
- * `gh`, or a `git fetch` / `git ls-remote`. Derived from the command alone.
- * While that route is active the shell tool runs these contained first even
- * when the agent expected a block: a read then succeeds without a prompt, and
- * a write is refused before anything reaches GitHub and offers the same retry.
+ * `gh` where the route carries it (`routes.gh`), or a `git fetch` / `git
+ * ls-remote`. Derived from the command alone. While that route is active the
+ * shell tool runs these contained first even when the agent expected a block:
+ * a read then succeeds without a prompt, and a write is refused before
+ * anything reaches GitHub and offers the same retry.
  */
-export function sandboxGitHubReadShape(command: string): boolean {
-  if (GH_INVOCATION.test(command)) return true
+export function sandboxGitHubReadShape(command: string, routes: { gh: boolean }): boolean {
+  if (routes.gh && GH_INVOCATION.test(command)) return true
   const subcommand = GIT_SUBCOMMAND.exec(command)?.[1]
   return subcommand === 'fetch' || subcommand === 'ls-remote'
 }
