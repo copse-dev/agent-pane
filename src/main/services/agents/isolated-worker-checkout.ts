@@ -5,6 +5,7 @@ import type { ThreadExecutionContext } from '../thread-execution-context.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
 import { saveProjectThread, updateMetaOrThrow, appendMessage } from '../thread-store.ts'
 import { getSetting } from '../storage/settings.ts'
+import { listStagedDiffEntries } from '../diff-queue.ts'
 import { withThreadResourceFence } from '../thread-resource-fence.ts'
 import { getCurrentBranchName } from '../github/git-service.ts'
 import {
@@ -170,11 +171,14 @@ export async function runInIsolatedWorkerCheckout(
           // Completion notifications are detached by contract, never drained here.
           // Retain their checkout even if it currently appears clean; discovery
           // or a queued command can still be waiting to touch it.
+          // Staged edits live only in the worker's diff queue, so git sees a clean
+          // checkout. Retain it until the user approves or rejects them.
           if (
             lifecycle.ownershipPersisted &&
             !lifecycle.allocationRecovery &&
             !detachedHooksAtStart &&
-            !dependencies.detachedHooksEnabled()
+            !dependencies.detachedHooksEnabled() &&
+            listStagedDiffEntries(childOwner).length === 0
           ) {
             try {
               const result = await dependencies.retire({
@@ -198,6 +202,9 @@ export async function runInIsolatedWorkerCheckout(
         await dependencies.update(parent.projectId, workerId, {
           status: succeeded && !signal.aborted ? 'idle' : 'error',
           updatedAt: Date.now(),
+          // With no checkout ever owned there is nothing to recover; keep the
+          // failed attempt out of the chat list.
+          ...(worktree ? {} : { archivedAt: Date.now() }),
         })
       }
     }),

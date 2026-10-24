@@ -384,3 +384,66 @@ it('retains clean checkouts when detached hooks can outlive the worker without w
   assert.equal(checkout.error, undefined)
   await access(checkout.path)
 })
+
+it('retains a clean checkout whose worker left edits staged for approval', async () => {
+  const { parent, dependencies, saved } = await setup()
+  let checkout: WorkerCheckout | undefined
+  await runInIsolatedWorkerCheckout(
+    {
+      parent,
+      workerId: 'staged-only',
+      request: { agent: 'alpha', prompt: 'edit' },
+      signal: new AbortController().signal,
+      onCheckout: (value) => {
+        checkout = value
+      },
+      execute: async () => {
+        await stageDiff('pending.txt', '', 'staged', 'plaintext')
+        return 'staged for approval'
+      },
+    },
+    dependencies,
+  )
+  assert.ok(checkout)
+  assert.equal(checkout.cleanup, 'retained')
+  await access(checkout.path)
+  assert.equal(saved.get('staged-only')?.archivedAt, undefined)
+  assert.equal(
+    getStagedDiffEntry('pending.txt', { projectId: parent.projectId, threadId: 'staged-only' })
+      ?.after,
+    'staged',
+  )
+})
+
+it('archives the worker chat when allocation fails before any checkout exists', async () => {
+  const { parent, dependencies, saved } = await setup()
+  let checkout: WorkerCheckout | undefined
+  await assert.rejects(
+    runInIsolatedWorkerCheckout(
+      {
+        parent,
+        workerId: 'unallocated',
+        request: { agent: 'alpha', prompt: 'edit' },
+        signal: new AbortController().signal,
+        onCheckout: (value) => {
+          checkout = value
+        },
+        execute: async () => {
+          throw new Error('inference must not start')
+        },
+      },
+      {
+        ...dependencies,
+        allocate: async () => {
+          throw new Error('branch already exists')
+        },
+      },
+    ),
+    /branch already exists/,
+  )
+  assert.equal(checkout, undefined)
+  const thread = saved.get('unallocated')
+  assert.ok(thread)
+  assert.equal(thread.status, 'error')
+  assert.equal(typeof thread.archivedAt, 'number')
+})
