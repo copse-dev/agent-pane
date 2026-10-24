@@ -1,10 +1,11 @@
-import { afterEach, describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { z } from 'zod'
 import { SITE_BUILDING_STEERING_PROMPT } from '@copse/agent/site-building-steering.ts'
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { SITE_BUILDING_PLUGIN_ID } from '@copse/agent/plugins/site-building-plugin.ts'
+import { ENGINEERING_PLUGIN_ID } from '@copse/agent/plugins/engineering-plugin.ts'
 import { ToolRegistry } from '../tool-registry.ts'
 import { assembleAcpTurnStart } from './acp-turn-start.ts'
 
@@ -12,6 +13,11 @@ const cupcakeBrief =
   'Build a polished coming-soon site for Crumb & Bloom, a playful premium cupcake studio. Include email signup, make it feel handcrafted, and preview it when done.'
 
 describe('ACP turnStart assembly (decision 20)', () => {
+  beforeEach(() => {
+    const plugins = createFirstPartyPluginRegistry()
+    plugins.disable(ENGINEERING_PLUGIN_ID)
+    setDefaultPluginRegistry(plugins)
+  })
   afterEach(() => {
     setDefaultPluginRegistry(null)
   })
@@ -30,6 +36,7 @@ describe('ACP turnStart assembly (decision 20)', () => {
   it('removes the guidance atomically when the plugin is disabled', async () => {
     const plugins = createFirstPartyPluginRegistry()
     plugins.disable(SITE_BUILDING_PLUGIN_ID)
+    plugins.disable(ENGINEERING_PLUGIN_ID)
     setDefaultPluginRegistry(plugins)
 
     const guidance = await assembleAcpTurnStart({
@@ -40,6 +47,26 @@ describe('ACP turnStart assembly (decision 20)', () => {
       signal: new AbortController().signal,
     })
     assert.equal(guidance, undefined)
+  })
+
+  it('shares engineering guidance and explicit-skill precedence with ACP', async () => {
+    const plugins = createFirstPartyPluginRegistry()
+    plugins.enable(ENGINEERING_PLUGIN_ID)
+    setDefaultPluginRegistry(plugins)
+    const options = {
+      userText: 'Explain this parser',
+      priorTodos: [],
+      model: 'acp:codex',
+      registry: new ToolRegistry(),
+      signal: new AbortController().signal,
+    }
+    assert.match((await assembleAcpTurnStart(options)) ?? '', /Copse engineering workflows/)
+    assert.equal(
+      await assembleAcpTurnStart({ ...options, invokedSkills: ['poteto-mode'] }),
+      undefined,
+    )
+    plugins.disable(ENGINEERING_PLUGIN_ID)
+    assert.equal(await assembleAcpTurnStart(options), undefined)
   })
 
   it('reports only live Copse bridge tools to hooks', async () => {
