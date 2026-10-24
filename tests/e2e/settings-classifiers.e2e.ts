@@ -110,7 +110,11 @@ describe('classifier connections settings', () => {
         code.textContent = code.textContent.replace(/-[0-9a-f]{8}$/, '-00000000')
       }
     })
-    const hasDuration = /\b\d+ ms\b/.test(await $('#settings-classifiers-host').getText())
+    // A caller that already pinned a latency owns that text. A second pin with
+    // another replacement would rewrite it back and forth and hang the page.
+    const callerPinned = await browser.execute(() => (window.e2eCaptureTextPins?.size ?? 0) > 0)
+    const hasDuration =
+      !callerPinned && /\b\d+ ms\b/.test(await $('#settings-classifiers-host').getText())
     const restore = hasDuration
       ? await pinTextForCapture('#settings-classifiers-host', /\b\d+ ms\b/g, '10 ms')
       : async (): Promise<void> => {}
