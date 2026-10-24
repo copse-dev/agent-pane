@@ -14,7 +14,10 @@
  * process of the same user could connect. So each thread gets a session with
  * its own 32-byte secret, compared in constant time and never logged, and a
  * request without it is answered 401 and goes nowhere. The sockets live in a
- * 0700 directory and are 0600 themselves.
+ * 0700 directory and are 0600 themselves. That directory is under the system
+ * temporary directory, which the project sandbox does not hide from other
+ * sandboxed commands, so nothing in it is secret: a spawn gets its session's
+ * secret only in its own environment.
  */
 import { randomBytes } from 'node:crypto'
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
@@ -37,6 +40,7 @@ import {
   presentedSecret,
   sameSecret,
   sandboxGhConfigFiles,
+  sandboxGhRouted,
   sandboxGitHubEnv,
   SANDBOX_GITHUB_SESSION_HEADER,
   sessionAliasHost,
@@ -148,7 +152,7 @@ export class SandboxGitHubReads {
     this.options = options
     this.base = base
     this.gitSocketPath = join(base, 'git.sock')
-    this.routesGh = (options.platform ?? process.platform) === 'darwin'
+    this.routesGh = sandboxGhRouted(options.platform ?? process.platform)
     this.gitServer = this.makeServer('git', null)
   }
 
@@ -220,7 +224,7 @@ export class SandboxGitHubReads {
       const socketPath = join(dir, 'gh.sock')
       const configDir = join(dir, 'gh')
       mkdirSync(configDir, { mode: 0o700 })
-      for (const [name, contents] of Object.entries(sandboxGhConfigFiles({ socketPath, secret }))) {
+      for (const [name, contents] of Object.entries(sandboxGhConfigFiles({ socketPath }))) {
         writeFileSync(join(configDir, name), contents, { mode: 0o600 })
       }
       const server = this.makeServer('gh', session)

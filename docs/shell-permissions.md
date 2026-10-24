@@ -547,18 +547,21 @@ handler and policy ([thread-in-container A24](plans/thread-in-container.md)) on 
   proxy's allowlist and routes it with ASRT `mitmProxy` to a Copse-owned unix socket. No other
   host, port or CONNECT tunnel is added, and the seatbelt and bubblewrap profiles are unchanged.
 - **gh (macOS only).** `GH_CONFIG_DIR` names a Copse-owned per-thread directory whose `config.yml`
-  sets `http_unix_socket` and whose `hosts.yml` holds the thread's secret as the token. The spawn's
+  sets `http_unix_socket`, and `GH_TOKEN` carries the thread's secret as the token. The spawn's
   Seatbelt profile allows connecting to that one socket (`allowUnixSockets`) and reading that
-  directory. `GH_TOKEN`, `GITHUB_TOKEN`, the enterprise variants and `GH_HOST` are unset for the
-  contained run. Linux bubblewrap blocks every `AF_UNIX` socket with seccomp, and allowing them
+  directory. `GITHUB_TOKEN`, the enterprise variants and `GH_HOST` are unset for the contained run.
+  Linux bubblewrap blocks every `AF_UNIX` socket with seccomp, and allowing them
   would disable that filter for all sandboxed commands, so `gh` keeps today's behaviour on Linux.
 - **Authentication.** Both sockets are reachable by any process of the same user, so every request
-  must present the thread's 32-byte random secret (`Authorization` from gh's hosts.yml, or the git
+  must present the thread's 32-byte random secret (`Authorization` from gh's `GH_TOKEN`, or the git
   header). The secret is compared in constant time, never logged, and bound to the thread: another
   thread's secret, a missing one, or a wrong one is answered 401 and nothing is forwarded. The
   secret is also the handler's canary: found anywhere else in the request, the request is refused.
   Requests carrying `Origin` or `Sec-Fetch-*` are refused. Sockets are 0600 in a 0700 directory
-  under the system temporary directory, removed on quit. Copse chose unix sockets over a loopback
+  under the system temporary directory, removed on quit. The sandbox does not hide that directory
+  from other contained commands (or ACP agents), so no file in it holds a secret: a command
+  receives its thread's secret only in its own spawn environment, as `GH_TOKEN` and git's
+  `GIT_CONFIG_VALUE_*`. Copse chose unix sockets over a loopback
   TCP port: ASRT can admit loopback only as a whole (`allowLocalBinding`), bubblewrap's network
   namespace cannot reach host loopback at all, and a browser cannot reach a socket.
 - **Only contained runs.** The variables and socket grant are attached by

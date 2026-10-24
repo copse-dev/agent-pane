@@ -15,10 +15,12 @@
  *   profile allows connecting to that one socket path. Linux bubblewrap blocks
  *   every `AF_UNIX` socket with seccomp, so `gh` keeps today's behaviour there.
  *
- * Every request must carry the session's secret: gh sends it from hosts.yml
+ * Every request must carry the session's secret: gh sends it from `GH_TOKEN`
  * as `Authorization`, git as {@link SANDBOX_GITHUB_SESSION_HEADER} from
- * `http.<alias>.extraHeader`. Nothing here ever writes the user's own git or
- * gh configuration.
+ * `http.<alias>.extraHeader`. Both reach the command only through its own
+ * environment: the session directory is readable by other sandboxed
+ * processes, so no file holds the secret. Nothing here ever writes the user's
+ * own git or gh configuration.
  */
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { GITHUB_GIT_ALIAS_HOST } from '../container-runtime/github-capability-wire.ts'
@@ -44,14 +46,22 @@ export function sessionIdFromAliasHost(host: string): string | null {
   return SESSION_LABEL.test(label) ? label : null
 }
 
+/**
+ * Whether `gh` is routed on this platform: only macOS Seatbelt can allow one
+ * socket path, and Linux bubblewrap's seccomp filter blocks every `AF_UNIX`
+ * socket. `git` is routed on both.
+ */
+export function sandboxGhRouted(platform: NodeJS.Platform): boolean {
+  return platform === 'darwin'
+}
+
 /** ASRT allowlist entry: any session alias, plain HTTP on port 80 only. */
 export const SANDBOX_GITHUB_PROXY_DOMAIN = `*.${GITHUB_GIT_ALIAS_HOST}:80`
 /** ASRT `mitmProxy` domain pattern routed to the git socket. */
 export const SANDBOX_GITHUB_MITM_DOMAIN = `*.${GITHUB_GIT_ALIAS_HOST}`
 
-/** The environment variables gh would prefer over hosts.yml; unset in the sandbox. */
+/** The host's other gh token and host variables; unset in the sandbox. */
 const GH_ENV_OVERRIDES = [
-  'GH_TOKEN',
   'GITHUB_TOKEN',
   'GH_ENTERPRISE_TOKEN',
   'GITHUB_ENTERPRISE_TOKEN',
@@ -94,8 +104,8 @@ export interface SandboxGitHubEnvInput {
 
 /**
  * The variables a sandboxed command gets on top of `env`. `undefined` means
- * unset: Node's spawn skips such keys, so a host `GH_TOKEN` cannot take
- * precedence over the session's hosts.yml.
+ * unset: Node's spawn skips such keys, so no host token or host override
+ * reaches gh beside the session's secret in `GH_TOKEN`.
  */
 export function sandboxGitHubEnv(
   env: NodeJS.ProcessEnv,
@@ -111,6 +121,7 @@ export function sandboxGitHubEnv(
   out['GIT_CONFIG_COUNT'] = String(start + entries.length)
   if (input.ghConfigDir !== null) {
     for (const key of GH_ENV_OVERRIDES) out[key] = undefined
+    out['GH_TOKEN'] = input.secret
     out['GH_CONFIG_DIR'] = input.ghConfigDir
     out['GH_PROMPT_DISABLED'] = '1'
     out['GH_NO_UPDATE_NOTIFIER'] = '1'
@@ -118,11 +129,8 @@ export function sandboxGitHubEnv(
   return out
 }
 
-/** The two files written into the session's `GH_CONFIG_DIR`. */
-export function sandboxGhConfigFiles(input: {
-  socketPath: string
-  secret: string
-}): Record<'config.yml' | 'hosts.yml', string> {
+/** The one file written into the session's `GH_CONFIG_DIR`; it holds no secret. */
+export function sandboxGhConfigFiles(input: { socketPath: string }): Record<'config.yml', string> {
   return {
     'config.yml': [
       '# Written by Copse for sandboxed commands in one thread. gh sends every',
@@ -130,12 +138,6 @@ export function sandboxGhConfigFiles(input: {
       `http_unix_socket: ${JSON.stringify(input.socketPath)}`,
       'git_protocol: https',
       'prompt: disabled',
-      '',
-    ].join('\n'),
-    'hosts.yml': [
-      'github.com:',
-      `    oauth_token: ${JSON.stringify(input.secret)}`,
-      '    git_protocol: https',
       '',
     ].join('\n'),
   }

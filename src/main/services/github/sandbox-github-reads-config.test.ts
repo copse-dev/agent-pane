@@ -60,13 +60,15 @@ describe('sandboxGitHubEnv', () => {
     assert.ok(!Object.hasOwn(env, 'GIT_CONFIG_KEY_0'))
   })
 
-  it('points gh at its config directory and unsets host tokens only when gh is routed', () => {
+  it('gives gh its config directory and the session secret, and unsets host tokens, only when gh is routed', () => {
     const withGh = sandboxGitHubEnv(
       { GH_TOKEN: 'ghp_real', GITHUB_TOKEN: 'ghp_real' },
       { aliasHost: ALIAS, secret: SECRET, ghConfigDir: '/private/tmp/x/gh' },
     )
     assert.equal(withGh['GH_CONFIG_DIR'], '/private/tmp/x/gh')
-    for (const key of ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GH_HOST']) {
+    // The secret travels in the spawn's environment, never in a file.
+    assert.equal(withGh['GH_TOKEN'], SECRET)
+    for (const key of ['GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GH_HOST']) {
       assert.ok(Object.hasOwn(withGh, key), key)
       assert.equal(withGh[key], undefined, key)
     }
@@ -77,10 +79,11 @@ describe('sandboxGitHubEnv', () => {
 })
 
 describe('sandboxGhConfigFiles', () => {
-  it('names the socket and holds the session secret, nothing else', () => {
-    const files = sandboxGhConfigFiles({ socketPath: '/tmp/a b/gh.sock', secret: SECRET })
+  it('names the socket and nothing else: no hosts.yml, so no token on disk', () => {
+    const files = sandboxGhConfigFiles({ socketPath: '/tmp/a b/gh.sock' })
+    assert.deepEqual(Object.keys(files), ['config.yml'])
     assert.match(files['config.yml'], /^http_unix_socket: "\/tmp\/a b\/gh\.sock"$/m)
-    assert.match(files['hosts.yml'], new RegExp(`oauth_token: "${SECRET}"`))
+    assert.doesNotMatch(files['config.yml'], /token/)
   })
 })
 

@@ -7,7 +7,7 @@ import {
   type OutgoingHttpHeaders,
   type Server,
 } from 'node:http'
-import { mkdtempSync, rmSync, statSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { SandboxGitHubReads, SANDBOX_GITHUB_READ_ONLY_NOTE } from './sandbox-github-reads.ts'
 import { SANDBOX_GITHUB_SESSION_HEADER } from './sandbox-github-reads-config.ts'
@@ -127,6 +127,17 @@ describe('SandboxGitHubReads', () => {
     assert.equal(statSync(socket).mode & 0o777, 0o600)
     assert.equal(statSync(join(reads.gitSocketPath, '..')).mode & 0o777, 0o700)
     assert.equal(statSync(join(socket, '..')).mode & 0o777, 0o700)
+  })
+
+  it('writes no session secret to disk, where other sandboxed commands could read it', async () => {
+    const access = await reads.spawnFor('thread-disk')
+    const secret = secretFrom(access.env({}))
+    assert.equal(access.env({})['GH_TOKEN'], secret)
+    const files = readdirSync(parent, { recursive: true, withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => join(entry.parentPath, entry.name))
+    assert.ok(files.some((file) => file.endsWith('config.yml')))
+    for (const file of files) assert.ok(!readFileSync(file, 'utf8').includes(secret), file)
   })
 
   it('gives one session per thread and routes gh only where Seatbelt can allow the socket', async () => {
