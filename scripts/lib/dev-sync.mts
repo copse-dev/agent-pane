@@ -164,6 +164,7 @@ export function buildFingerprint(
 ): string {
   const inputs = fingerprintPaths(root, [
     'assets',
+    'native/profile-vault',
     'package.json',
     'packages',
     'pnpm-lock.yaml',

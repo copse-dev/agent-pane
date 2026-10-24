@@ -26,6 +26,13 @@ describe('build.mts bundle invariants', () => {
   const rendererHtml = readFileSync(resolve('src/renderer/index.html'), 'utf8')
   const rendererMain = readFileSync(resolve('src/renderer/main.ts'), 'utf8')
 
+  it('initializes desktop persistence and profile ownership before service imports', () => {
+    const entry = readFileSync(resolve('src/main/index.ts'), 'utf8')
+    const imports = [...entry.matchAll(/^import .* from '([^']+)'/gm)].map((match) => match[1])
+    assert.equal(imports[0], './app-init.ts')
+    assert.equal(imports[1], './app-profile-owner.ts')
+  })
+
   /** The `for (…of STANDALONE_MAIN_BUNDLES)` body — everything the emit sees. */
   const standaloneLoop = build.match(
     /for \(const \{ entry, outfile, manifest \} of STANDALONE_MAIN_BUNDLES\) \{[\s\S]*?\n {2}\}/,

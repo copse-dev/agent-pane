@@ -1,5 +1,5 @@
 {
-  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-19; plugin-client-approvals provisional at the median (8s) until its first CI run is measured, 2026-10-19; host-read-tool-cards provisional at the median (8s) until its first CI run is measured, 2026-10-20; detached-turn-transcript is macOS-only and skips on the Linux CI shards, recorded at 1s, 2026-10-16",
+  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-19; plugin-client-approvals provisional at the median (8s) until its first CI run is measured, 2026-10-19; host-read-tool-cards provisional at the median (8s) until its first CI run is measured, 2026-10-20; detached-turn-transcript is macOS-only and skips on the Linux CI shards, recorded at 1s, 2026-10-16; settings-profile-vault measured from five PASSED attempts in CI38322948245/job115058110678, CI38317537601/job115046081258, CI38317489762/job115045720916, CI38192430593/job114634731269 and CI38185862211/job114614686598, 2026-10-16",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15.7,
     "tests/e2e/acp-auth-error.e2e.ts": 37.5,
@@ -290,6 +290,7 @@
     "tests/e2e/settings-plaintext-secret-storage.e2e.ts": 7.8,
     "tests/e2e/settings-plugin-catalog.e2e.ts": 9.7,
     "tests/e2e/settings-plugins.e2e.ts": 18.1,
+    "tests/e2e/settings-profile-vault.e2e.ts": 11.4,
     "tests/e2e/settings-provider-hosts.e2e.ts": 10.6,
     "tests/e2e/settings-qwen-code.e2e.ts": 7.9,
     "tests/e2e/settings-read-terminal.e2e.ts": 7.2,
