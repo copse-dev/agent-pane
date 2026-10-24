@@ -149,14 +149,35 @@ const METADATA_MAX_BYTES = 256 * 1024 * 1024
 const METADATA_TIMEOUT_MS = 120_000
 
 /** Request headers that would let the registry answer 304 or a partial body. */
-const CONDITIONAL_HEADERS = [
+const CONDITIONAL_HEADERS: ReadonlySet<string> = new Set([
   'if-none-match',
   'if-modified-since',
   'if-match',
   'if-unmodified-since',
   'if-range',
   'range',
-]
+])
+
+/** Response headers that describe the registry's encoding of the body, not the decoded one served. */
+const ENCODING_HEADERS: ReadonlySet<string> = new Set(['content-encoding', 'content-length'])
+
+/** Response headers that would let a cache keep or revalidate a rewritten document. */
+const CACHE_HEADERS: ReadonlySet<string> = new Set([
+  'content-encoding',
+  'content-length',
+  'etag',
+  'last-modified',
+  'expires',
+  'age',
+  'cache-control',
+])
+
+function withoutHeaders(
+  headers: OutgoingHttpHeaders,
+  names: ReadonlySet<string>,
+): OutgoingHttpHeaders {
+  return Object.fromEntries(Object.entries(headers).filter(([name]) => !names.has(name)))
+}
 
 /** A metadata response that cannot be decoded or held in memory, so it is relayed unchanged. */
 class UnfilterableResponse extends Error {}
@@ -234,13 +255,11 @@ function respondBuffered(
   body: Buffer,
   rewritten: boolean,
 ): void {
-  const headers = endToEndHeaders(upstream.headers)
-  delete headers['content-encoding']
-  delete headers['content-length']
-  if (rewritten) {
-    for (const name of ['etag', 'last-modified', 'expires', 'age']) delete headers[name]
-    headers['cache-control'] = 'no-store'
-  }
+  const headers = withoutHeaders(
+    endToEndHeaders(upstream.headers),
+    rewritten ? CACHE_HEADERS : ENCODING_HEADERS,
+  )
+  if (rewritten) headers['cache-control'] = 'no-store'
   headers['content-length'] = body.length
   response.writeHead(upstream.status, upstream.statusMessage, headers)
   response.end(body)
@@ -367,9 +386,8 @@ export async function startPackageFirewallProxy(
     releaseAge: NonNullable<PackageFirewallProxyOptions['releaseAge']>,
   ): Promise<void> => {
     request.resume()
-    const headers = endToEndHeaders(request.headers)
+    const headers = withoutHeaders(endToEndHeaders(request.headers), CONDITIONAL_HEADERS)
     headers['host'] = host
-    for (const name of CONDITIONAL_HEADERS) delete headers[name]
     let upstream: BufferedResponse
     try {
       upstream = await fetchBuffered(host, path, headers, options.registryAgent)
