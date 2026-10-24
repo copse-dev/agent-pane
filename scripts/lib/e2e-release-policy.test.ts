@@ -123,8 +123,13 @@ describe('quarantine release acceptance', () => {
       'repos/copse-dev/agent-pane/issues/comments/123',
     )
     assert.equal(
+      ownerReviewApiPath('https://github.com/copse-dev/agent-pane/pull/3456#issuecomment-456'),
+      'repos/copse-dev/agent-pane/issues/comments/456',
+    )
+    // PR reviews have no edit timestamp, so they cannot be decisions.
+    assert.equal(
       ownerReviewApiPath('https://github.com/copse-dev/agent-pane/pull/3456#pullrequestreview-789'),
-      'repos/copse-dev/agent-pane/pulls/3456/reviews/789',
+      null,
     )
     assert.equal(
       ownerReviewApiPath('https://github.com/another/repo/issues/2719#issuecomment-123'),
@@ -136,63 +141,89 @@ describe('quarantine release acceptance', () => {
     const entry = waived()
     assert.ok(entry.accountability?.waiver)
     const waiver = entry.accountability.waiver
+    // The REST issue-comment shape: created and updated stamps, plus the author's role.
     const evidence = decodeOwnerReviewEvidence({
       user: { login: 'Maintainer' },
+      author_association: 'MEMBER',
       body: `Release waiver approved\nScope: ${waiver.scopeDigest}\nExpires: ${waiver.expiresOn}`,
+      created_at: '2026-10-04T09:12:00Z',
       updated_at: '2026-10-04T09:12:00Z',
     })
     assert.ok(evidence)
     assert.deepEqual(ownerReviewErrors(entry, evidence), [])
+    for (const association of ['OWNER', 'COLLABORATOR'])
+      assert.deepEqual(ownerReviewErrors(entry, { ...evidence, association }), [])
     for (const patch of [
       { author: 'someone-else' },
-      { approved: false },
+      { association: 'CONTRIBUTOR' },
+      { association: 'NONE' },
       { body: 'Proposed release waiver' },
       { body: `Release waiver approved\nScope: ${waiver.scopeDigest}` },
       { body: `Release waiver approved\nExpires: ${waiver.expiresOn}` },
       { reviewedOn: '2026-10-03' },
     ])
       assert.ok(ownerReviewErrors(entry, { ...evidence, ...patch }).length > 0)
-    const rejected = decodeOwnerReviewEvidence({
-      user: { login: 'maintainer' },
-      body: evidence.body,
-      state: 'CHANGES_REQUESTED',
-      submitted_at: '2026-10-04T09:12:00Z',
-    })
-    assert.ok(rejected)
-    assert.equal(rejected.approved, false)
     assert.equal(
       decodeOwnerReviewEvidence({
         user: { login: 'maintainer' },
+        author_association: 'MEMBER',
         body: 'text',
         updated_at: 'invalid',
       }),
       null,
     )
+    assert.equal(
+      decodeOwnerReviewEvidence({
+        user: { login: 'maintainer' },
+        body: evidence.body,
+        updated_at: '2026-10-04T09:12:00Z',
+      }),
+      null,
+      'a decision without an author role is not evidence',
+    )
   })
 })
 
-// A live decision must match the current review body, including subsequent edits.
-it('dates edited PR reviews by their update and rejects the stale recorded waiver', () => {
+// A live decision must match the current comment body, including subsequent edits.
+it('dates edited decision comments by their update and rejects the stale recorded waiver', () => {
   const entry = waived()
   assert.ok(entry.accountability?.waiver)
   const waiver = entry.accountability.waiver
   const evidence = decodeOwnerReviewEvidence({
     user: { login: 'maintainer' },
+    author_association: 'MEMBER',
     body: `Release waiver approved\nScope: ${waiver.scopeDigest}\nExpires: ${waiver.expiresOn}`,
-    state: 'APPROVED',
-    submitted_at: '2026-10-04T09:12:00Z',
+    created_at: '2026-10-04T09:12:00Z',
     updated_at: '2026-10-10T09:12:00Z',
   })
   assert.ok(evidence)
   assert.equal(evidence.reviewedOn, '2026-10-10')
   assert.ok(ownerReviewErrors(entry, evidence).length > 0)
+})
+
+// The REST PR-review object carries only `submitted_at`; an edited approval would
+// keep its original date, so reviews are refused rather than misdated.
+it('refuses PR reviews as waiver decisions', () => {
+  const entry = waived()
+  assert.ok(entry.accountability?.waiver)
+  const waiver = entry.accountability.waiver
   assert.equal(
     decodeOwnerReviewEvidence({
       user: { login: 'maintainer' },
-      body: 'Release waiver approved',
+      author_association: 'MEMBER',
+      body: `Release waiver approved\nScope: ${waiver.scopeDigest}\nExpires: ${waiver.expiresOn}`,
       state: 'APPROVED',
       submitted_at: '2026-10-04T09:12:00Z',
-      updated_at: 'invalid',
+    }),
+    null,
+  )
+  assert.equal(
+    decodeQuarantineAccountability({
+      ...entry.accountability,
+      waiver: {
+        ...waiver,
+        decisionUrl: 'https://github.com/copse-dev/agent-pane/pull/3456#pullrequestreview-789',
+      },
     }),
     null,
   )

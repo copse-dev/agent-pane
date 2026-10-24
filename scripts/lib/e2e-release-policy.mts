@@ -27,7 +27,9 @@ export const MAX_QUARANTINE_WAIVER_DAYS = 14
 const DAY_MS = 86_400_000
 const PERSON = /^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i
 const DECISION =
-  /^https:\/\/github\.com\/copse-dev\/agent-pane\/(?:issues\/[1-9]\d*#issuecomment-\d+|pull\/[1-9]\d*#(?:issuecomment-\d+|pullrequestreview-\d+))$/
+  /^https:\/\/github\.com\/copse-dev\/agent-pane\/(?:issues|pull)\/[1-9]\d*#issuecomment-\d+$/
+/** GitHub `author_association` values for people who hold a role in this repository. */
+const REPOSITORY_ROLES: ReadonlySet<string> = new Set(['OWNER', 'MEMBER', 'COLLABORATOR'])
 
 function property(value: unknown, key: string): unknown {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
@@ -203,40 +205,42 @@ export function quarantineReleaseErrors(
 
 export interface OwnerReviewEvidence {
   author: string
+  /** GitHub's `author_association` for the decision's author. */
+  association: string
   body: string
   reviewedOn: string
-  approved: boolean
 }
 
-/** Resolve only repository issue comments or PR reviews, never arbitrary URLs. */
+/**
+ * Resolve only repository issue comments (on an issue or a pull request), never
+ * arbitrary URLs. PR reviews are not accepted: the REST review object carries
+ * only `submitted_at`, so an approval edited afterwards could not be dated.
+ */
 export function ownerReviewApiPath(url: string): string | null {
   if (!DECISION.test(url)) return null
   const comment = /#issuecomment-(\d+)$/.exec(url)
-  if (comment) return `repos/copse-dev/agent-pane/issues/comments/${comment[1] ?? ''}`
-  const review = /\/pull\/(\d+)#pullrequestreview-(\d+)$/.exec(url)
-  return review
-    ? `repos/copse-dev/agent-pane/pulls/${review[1] ?? ''}/reviews/${review[2] ?? ''}`
-    : null
+  return comment ? `repos/copse-dev/agent-pane/issues/comments/${comment[1] ?? ''}` : null
 }
 
 export function decodeOwnerReviewEvidence(value: unknown): OwnerReviewEvidence | null {
   const author = property(property(value, 'user'), 'login')
+  const association = property(value, 'author_association')
   const body = property(value, 'body')
-  const state = property(value, 'state')
-  // Reviews may be edited after submission; an edit invalidates the old waiver date.
+  // A comment edited after the waiver was recorded moves `updated_at`, which then
+  // no longer matches the recorded review date.
   const updated = property(value, 'updated_at')
-  const timestamp = state === undefined ? updated : (updated ?? property(value, 'submitted_at'))
   if (
     typeof author !== 'string' ||
     !PERSON.test(author) ||
+    typeof association !== 'string' ||
     typeof body !== 'string' ||
-    typeof timestamp !== 'string' ||
-    !Number.isFinite(Date.parse(timestamp))
+    typeof updated !== 'string' ||
+    !Number.isFinite(Date.parse(updated))
   )
     return null
-  const reviewedOn = date(timestamp.slice(0, 10))
+  const reviewedOn = date(updated.slice(0, 10))
   if (!reviewedOn) return null
-  return { author, body, reviewedOn, approved: state === undefined || state === 'APPROVED' }
+  return { author, association, body, reviewedOn }
 }
 
 /** Registry text alone cannot claim a person's approval. Check the live decision. */
@@ -249,7 +253,11 @@ export function ownerReviewErrors(
   const errors: string[] = []
   if (evidence.author.toLowerCase() !== waiver.reviewedBy.toLowerCase())
     errors.push(`Live waiver decision is from a different person: ${entry.spec}`)
-  if (!evidence.approved || !/^Release waiver approved\s*$/im.test(evidence.body))
+  // Whoever edits the registry names the owner, so the owner must also hold a
+  // role in this repository for their comment to count.
+  if (!REPOSITORY_ROLES.has(evidence.association))
+    errors.push(`Live waiver decision author has no repository role: ${entry.spec}`)
+  if (!/^Release waiver approved\s*$/im.test(evidence.body))
     errors.push(`Live decision does not approve a release waiver: ${entry.spec}`)
   if (evidence.reviewedOn !== waiver.reviewedOn)
     errors.push(`Live waiver review date differs from its record: ${entry.spec}`)

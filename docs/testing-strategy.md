@@ -233,8 +233,12 @@ A waiver records `reviewedBy`, `reviewedOn`, `expiresOn`, `decisionUrl`, `reason
 `scopeDigest`. The reviewer must be the assigned person; the waiver expires at the start of its
 UTC expiry date, no more than 14 days after review. The scope digest covers the spec, category,
 reason, compensating evidence and exact skip markers, so changing those invalidates approval.
-The command prints current digests. The reviewer posts an issue comment or approved PR review
-in this repository containing these exact lines, with the actual digest and date:
+The command prints current digests. The reviewer posts an issue comment (on an issue or a pull
+request) in this repository containing these exact lines, with the actual digest and date. PR
+reviews are not accepted: GitHub's review object records only its submission time, so an edited
+approval could not be dated. The comment's author must hold a repository role (`OWNER`, `MEMBER`
+or `COLLABORATOR` in GitHub's `author_association`; make organisation membership public if it
+reports `CONTRIBUTOR`):
 
 ```text
 Release waiver approved
@@ -242,7 +246,8 @@ Scope: <printed SHA-256 digest>
 Expires: YYYY-MM-DD
 ```
 
-The gate uses authenticated `gh api` to verify the live author, approval, date, digest and expiry.
+The gate uses authenticated `gh api` to verify the live author and role, approval, date, digest and
+expiry.
 Unavailable/deleted decisions fail closed. An owner must update or remove an approval if a
 decision comment is edited; `reviewedOn` follows its current update date. The normal exclusion
 check also rejects invalid or expired recorded waivers, without interpreting pending ownership
