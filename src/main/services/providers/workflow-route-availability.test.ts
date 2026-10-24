@@ -127,14 +127,17 @@ describe('desktop workflow route preflight', () => {
     )
   })
 
-  it('rejects batch-only selections before provider discovery', async () => {
-    delete process.env['COPSE_PANEL_MOCK_LLM']
-    await runWithExplicitSettings({ values: {} }, async () => {
-      await assert.rejects(
-        assertWorkflowRouteAvailable('openrouter:minimax/minimax-m3:batch'),
-        /Batch-only/,
-      )
-    })
+  it('rejects batch-only selections before provider discovery, in mock mode too', async () => {
+    for (const mock of [false, true]) {
+      if (mock) process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+      else delete process.env['COPSE_PANEL_MOCK_LLM']
+      await runWithExplicitSettings({ values: {} }, async () => {
+        await assert.rejects(
+          assertWorkflowRouteAvailable('openrouter:minimax/minimax-m3:batch'),
+          /Batch-only/,
+        )
+      })
+    }
   })
 
   it('keeps a connected native subscription route and refuses unadvertised plan models', async (t) => {

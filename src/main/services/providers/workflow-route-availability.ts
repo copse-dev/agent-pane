@@ -15,10 +15,10 @@ import { hostRoutedNamespace } from '@copse/llm/model-selection.ts'
 export async function assertWorkflowRouteAvailable(model: string): Promise<void> {
   assertModelMakerAllowed(model)
   if (hostRoutedNamespace(model)) throw new Error(`${model} is not a callable workflow route.`)
-  // Mock mode cannot spend; still preserve the maker and callable-route guards.
-  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return
   if (model.startsWith('openrouter:') && model.endsWith(':batch'))
     throw new Error('Batch-only models cannot run workflow workers.')
+  // Mock mode cannot spend; still preserve the maker and callable-route guards.
+  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return
   const plan = parseChatGptPlanModel(model)
   if (plan) {
     const service = getChatGptPlanService()
