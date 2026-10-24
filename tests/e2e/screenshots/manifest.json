@@ -1662,8 +1662,8 @@
       "bytes": 100435
     },
     "footer-branch-bisect-in-progress.png": {
-      "sha256": "c8a061899e183369a5133db93a85c83ff4b50c03a7cbb796d0f2a83366f47e51",
-      "bytes": 36486
+      "sha256": "55629cdae4b8cee7590d8d66d0b4b50458e9eb63ce8138cc14153a42cd82914a",
+      "bytes": 36494
     },
     "footer-branch-detached-worktree.png": {
       "sha256": "ce82cb0555ae308010b25555960aa6459dba64f5a80532a9e0df87644cbbb115",
@@ -1678,8 +1678,8 @@
       "bytes": 20440
     },
     "footer-branch-missing-worktree.png": {
-      "sha256": "69938d8c437036b682e1ec9289eb034f41e682bc95d627ceb799b411ccec2c22",
-      "bytes": 19180
+      "sha256": "b04aced65f18e34397d139c8ab893dd54745ff1253ae8c8bac4ed02b57edff6b",
+      "bytes": 19179
     },
     "footer-branch-picker-compact-220.png": {
       "sha256": "ae9f9dd5bdd91d974862cef73fd551a3697fc21d13ea7c40cfffc5b453374f1c",
@@ -1722,20 +1722,20 @@
       "bytes": 36538
     },
     "footer-branch-recovery-continued.png": {
-      "sha256": "41cceea4c342a49d4f6b11ee0c1e4dae79291221f0ed6452585cff5bfe9e19f3",
-      "bytes": 244017
+      "sha256": "7e97c13f4acf09ee9a893461448c5d0a56e4b4efcbb01fe180af8dbe2acee132",
+      "bytes": 244021
     },
     "footer-branch-restored-composer.png": {
-      "sha256": "d702ad7d4545ded9e22a14900e0b2e42648c8c00009231cc8d0b6ee084511e0e",
-      "bytes": 384842
+      "sha256": "b7049cc4acb5bbe1131e8ab13e38e23a942a33895f022073ad5d47fba20613e7",
+      "bytes": 391760
     },
     "footer-branch-restored-worktree.png": {
-      "sha256": "e0ddff6d22b15e1fe3a24f367d5728ce32764c9a094862b9ac3b23709c148777",
-      "bytes": 14788
+      "sha256": "5722579bf470832b49826dc8ac0ce35d05c9b6308eef43d14938d710a3b065a1",
+      "bytes": 14791
     },
     "footer-branch-uncommitted-pick.png": {
-      "sha256": "90ee901da4870098dba128536f2f2fb351c6868a916e53ab6f2cd6ee5108b5e1",
-      "bytes": 19400
+      "sha256": "bc45f6eb54971b5eda5a31350d8379ff1e091cb62460bad798f86366546e837d",
+      "bytes": 19410
     },
     "footer-compact-narrow.png": {
       "sha256": "0534d41cdea48aafdf28c12e4562d867f14836083cd5064ca7454399625533a5",
@@ -2414,8 +2414,8 @@
       "bytes": 276350
     },
     "mobile-controls-queued-desktop.png": {
-      "sha256": "adefb8d0ab3825c22321169fa9060458b2860f8eb0c222f1e4c31bad6726e040",
-      "bytes": 228649
+      "sha256": "2d3c8920e1bed28587874590d001a422322d8fe3d0814c3ed978c495d5816871",
+      "bytes": 228823
     },
     "mobile-controls-stopped-desktop.png": {
       "sha256": "0cb1d4119fea51104edae286bb27b3be7e4cc2ff656997e52accad33400b7d05",
@@ -2622,12 +2622,12 @@
       "bytes": 45943
     },
     "pane-popout-explorer.png": {
-      "sha256": "602672a7f17cea9b210f08c73ff950fe2d6026774a0dcc3a0cd73f61f0a82e06",
-      "bytes": 114160
+      "sha256": "59dea7d2557bcaba4c319b15a534cb69efba12ccc8c09fffa4fea3b4703dff32",
+      "bytes": 49383
     },
     "pane-popout-main.png": {
-      "sha256": "49108ada13fc8c15ffeebe2d7a56098329ffb533e7d17846d3425394fa9667a0",
-      "bytes": 268412
+      "sha256": "5e8e631d491dd4ad985c7fb9d5572c8372f192898706c100bbb7657cb572ce2b",
+      "bytes": 268688
     },
     "pane-popout-memories.png": {
       "sha256": "13b4c7b7404fabf0a0ca8742482939218e5aae8055675ea0b96b93653aa3b14b",
@@ -4254,8 +4254,8 @@
       "bytes": 256626
     },
     "settings-usage-plan-unconfirmed.png": {
-      "sha256": "35b88da8eac207e8c30641989b1efc8c81d977f790f40e3812913a0640bc4289",
-      "bytes": 207277
+      "sha256": "b4a75b1f05cd582262bb2d1afdc5e47fb836d4691f0deaaaab227236988fce34",
+      "bytes": 211209
     },
     "settings-usage-plan-worth-it-inference.png": {
       "sha256": "3530a5064a7390228c021383ed264fbdab42801c9bd828f8a446a8e18c463a8b",
@@ -4550,12 +4550,12 @@
       "bytes": 101103
     },
     "sidebar-unopened-activity-1600.png": {
-      "sha256": "d087f71a4f0b702ca6fef8ece129ac82f688a07adc7773e4950dce431e2f5726",
-      "bytes": 333824
+      "sha256": "5b539084e8c48a50a356e93e4dca4a8c98b2022d28a7caaf07cafc59dfa25c61",
+      "bytes": 341262
     },
     "sidebar-unopened-activity-800.png": {
-      "sha256": "2a1a57835151c0a752b71d2eea9d5ee4f6673e1cbc4b2c88850267831ea70c28",
-      "bytes": 205817
+      "sha256": "c4c9da6b94de74a8441c060d6495f317d4623496fbc65bd96b4ebb58dbca0c5e",
+      "bytes": 212879
     },
     "simulator-desktop-choice.png": {
       "sha256": "7b3a002ee4ede6066f7632f2313360408d156d2e7ece98863ac34651f8135c00",
