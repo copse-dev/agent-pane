@@ -626,8 +626,8 @@
       "bytes": 26573
     },
     "automation-active.png": {
-      "sha256": "029696edfb6b7ca310e7dc0296f11bccd2c1b8ab6bf26cb7c120f080c823ccf9",
-      "bytes": 287520
+      "sha256": "97da8330d7d9071c2728c6574a766d79213897936fe32acbf74c05edfe70dfe0",
+      "bytes": 296284
     },
     "automation-attention-group.png": {
       "sha256": "c61f238152f474ac08522638b3b242da81b550a5f1b3233a3f1e5f0e6a6520d4",
@@ -722,8 +722,8 @@
       "bytes": 10298
     },
     "automation-sidebar-run-now-context-menu.png": {
-      "sha256": "f65ed62c51f28f0fa5bf05739156589d180cad0f3bbcff7ea011c6d288c31ba0",
-      "bytes": 274541
+      "sha256": "0de754c873fb76edf5ac4cf670f81b8e0c06f7f7e0d5f3565218279153036f5b",
+      "bytes": 263769
     },
     "automation-thread-group.png": {
       "sha256": "f6192477669a73cab830ab8683870dddd6afa2f613d6076a5faf08333d2f7f13",
@@ -1894,8 +1894,8 @@
       "bytes": 86868
     },
     "git-commit-signing-permission.png": {
-      "sha256": "fe8feb8eed945d96d95a6174b657ef8f6d8bb616f2546c18da452810221ecf59",
-      "bytes": 73919
+      "sha256": "a61d6d6ce1df0b51788d62355eae3c9026211014aac887f8468a1d490a095370",
+      "bytes": 76760
     },
     "git-private-signing-key-approval.png": {
       "sha256": "2aa0cb2eb58d7b239dcb14028c818644264029b3eab0f55405893517134d02b9",
@@ -2282,8 +2282,8 @@
       "bytes": 42764
     },
     "mermaid-parity-math.png": {
-      "sha256": "cf9f2c7f6a215e12d624108b458b3a9f9c7a4e4ebdf3257eff5d28f5e2e69f09",
-      "bytes": 37629
+      "sha256": "a54bd6fe46d7f19bb2f1872740d0ce914925af8582ff35e947f99f1e7020e435",
+      "bytes": 44528
     },
     "mermaid-parity-sequence.png": {
       "sha256": "e531042c79c5b12f1eb70d6624dff7a23a0245614827a444fc3c2f2b80c319c4",
@@ -2622,8 +2622,8 @@
       "bytes": 45943
     },
     "pane-popout-explorer.png": {
-      "sha256": "602672a7f17cea9b210f08c73ff950fe2d6026774a0dcc3a0cd73f61f0a82e06",
-      "bytes": 114160
+      "sha256": "30a47f5fd2201354c253459c48f99f75295149d986f90c9d0bf4d916cb84495f",
+      "bytes": 112729
     },
     "pane-popout-main.png": {
       "sha256": "49108ada13fc8c15ffeebe2d7a56098329ffb533e7d17846d3425394fa9667a0",
@@ -3982,8 +3982,8 @@
       "bytes": 275223
     },
     "settings-provider-hosts-page-2.png": {
-      "sha256": "2fe3b4a38fbdeaabb052b021710811d4fa36e5ad6f303d29af39b7b8308e13ca",
-      "bytes": 301381
+      "sha256": "2bd45de2d9e5088d4fa51299e128c7ac440a9370f4414d271aa61ced3b283f48",
+      "bytes": 292486
     },
     "settings-provider-hosts.png": {
       "sha256": "15034eb849194d90d8a2122c8de7948895df76e255a503e9146cce7e6820d133",
@@ -4174,16 +4174,16 @@
       "bytes": 265880
     },
     "settings-terminal-history-toggle-off-page-2.png": {
-      "sha256": "2fe3b4a38fbdeaabb052b021710811d4fa36e5ad6f303d29af39b7b8308e13ca",
-      "bytes": 301381
+      "sha256": "2bd45de2d9e5088d4fa51299e128c7ac440a9370f4414d271aa61ced3b283f48",
+      "bytes": 292486
     },
     "settings-terminal-history-toggle-off.png": {
       "sha256": "5efca136e3896872de9f0c54d86f3fa76bf09f035c67d776830adb194dc64822",
       "bytes": 286989
     },
     "settings-terminal-history-toggle-page-2.png": {
-      "sha256": "2fe3b4a38fbdeaabb052b021710811d4fa36e5ad6f303d29af39b7b8308e13ca",
-      "bytes": 301381
+      "sha256": "2bd45de2d9e5088d4fa51299e128c7ac440a9370f4414d271aa61ced3b283f48",
+      "bytes": 292486
     },
     "settings-terminal-history-toggle.png": {
       "sha256": "15034eb849194d90d8a2122c8de7948895df76e255a503e9146cce7e6820d133",
@@ -4238,8 +4238,8 @@
       "bytes": 7811
     },
     "settings-usage-plan-auth-errors.png": {
-      "sha256": "85a48ddeeeb73aeb18339d6b594671cff8980ec3a4c111de4af4faa764040e18",
-      "bytes": 206402
+      "sha256": "2935636afb79fd7889200a94b09fcd0ba54fa3e9fe19ac37e12758d5e002aa24",
+      "bytes": 210028
     },
     "settings-usage-plan-limits.png": {
       "sha256": "cb952625530d7c7a587fcf1f12fd96cc8ade3f0eb011a081e66a57dd169eba6d",
@@ -4250,8 +4250,8 @@
       "bytes": 256626
     },
     "settings-usage-plan-unconfirmed.png": {
-      "sha256": "35b88da8eac207e8c30641989b1efc8c81d977f790f40e3812913a0640bc4289",
-      "bytes": 207277
+      "sha256": "b4a75b1f05cd582262bb2d1afdc5e47fb836d4691f0deaaaab227236988fce34",
+      "bytes": 211209
     },
     "settings-usage-plan-worth-it-inference.png": {
       "sha256": "3530a5064a7390228c021383ed264fbdab42801c9bd828f8a446a8e18c463a8b",
