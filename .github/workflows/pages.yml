@@ -81,7 +81,7 @@ jobs:
     # SELF_HOSTED_CHECKS routes to the self-hosted check fleet when set (see
     # ci.yml's routing note); hosted otherwise. Trusted main-branch content
     # only, and deploy-pages/OIDC work fine from self-hosted runners.
-    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-24.04' }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
