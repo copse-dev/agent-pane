@@ -26,7 +26,11 @@ describe('isolated mermaid diagram rendering', () => {
   })
 
   after(async () => {
-    await new Promise<void>((resolve) => server.close(() => resolve()))
+    await new Promise<void>((resolve) =>
+      server.close(() => {
+        resolve()
+      }),
+    )
     const { resetUserData } = await import('./helpers/seed-config.ts')
     resetUserData()
   })
@@ -34,7 +38,7 @@ describe('isolated mermaid diagram rendering', () => {
   it('renders and expands in opaque frames without inserting SVG into the app', async () => {
     const selector = '.message-text iframe.mermaid-frame[data-rendered="true"]'
     await $(selector).waitForExist({ timeout: 40_000 })
-    const frame = await $(selector)
+    const frame = await $(selector).getElement()
     expect(await frame.getAttribute('sandbox')).toBe('allow-scripts')
     const hostState = await browser.execute(() => {
       const frame = document.querySelector<HTMLIFrameElement>('iframe.mermaid-frame')
@@ -43,19 +47,33 @@ describe('isolated mermaid diagram rendering', () => {
         inaccessibleDocument: frame?.contentDocument === null,
         width: frame?.getBoundingClientRect().width ?? 0,
         height: frame?.getBoundingClientRect().height ?? 0,
+        background: getComputedStyle(
+          document.querySelector('.mermaid-diagram') ??
+            ((): never => {
+              throw new Error("Missing fixture element: document.querySelector('.mermaid-diagram')")
+            })(),
+        ).backgroundColor,
+        sourceBackground: getComputedStyle(
+          document.querySelector('pre.mermaid') ??
+            ((): never => {
+              throw new Error("Missing fixture element: document.querySelector('pre.mermaid')")
+            })(),
+        ).backgroundColor,
       }
     })
     expect(hostState.svgCount).toBe(0)
     expect(hostState.inaccessibleDocument).toBe(true)
     expect(hostState.width).toBeGreaterThan(50)
     expect(hostState.height).toBeGreaterThan(50)
+    expect(hostState.background).toBe('rgb(17, 17, 17)')
+    expect(hostState.sourceBackground).toBe(hostState.background)
 
     await browser.switchFrame(frame)
     const isolation = await browser.execute(() => {
       let parentBlocked = false
       let parentApiBlocked = false
       try {
-        void window.parent.document.body
+        window.parent.document.querySelector('body')
       } catch {
         parentBlocked = true
       }
@@ -68,8 +86,14 @@ describe('isolated mermaid diagram rendering', () => {
         parentBlocked,
         parentApiBlocked,
         ownApi: 'api' in window,
-        svg: Boolean(document.querySelector('svg')),
+        svg: Boolean(document.querySelector('svg.pele')),
         text: document.body.textContent,
+        background: getComputedStyle(
+          document.querySelector('.mermaid-diagram') ??
+            ((): never => {
+              throw new Error("Missing fixture element: document.querySelector('.mermaid-diagram')")
+            })(),
+        ).backgroundColor,
         pliant: Array.from(document.fonts).filter(
           (font) => font.family === 'Pliant' && font.status === 'loaded',
         ).length,
@@ -79,6 +103,7 @@ describe('isolated mermaid diagram rendering', () => {
     expect(isolation.parentApiBlocked).toBe(true)
     expect(isolation.ownApi).toBe(false)
     expect(isolation.svg).toBe(true)
+    expect(isolation.background).toBe(hostState.background)
     expect(isolation.text).toContain('Agent')
     expect(isolation.pliant).toBe(2)
     await browser.switchToParentFrame()
@@ -87,15 +112,34 @@ describe('isolated mermaid diagram rendering', () => {
     await $('.mermaid-diagram--folded').click()
     await $('dialog.mermaid-expand-dialog[open]').waitForExist()
     await $('dialog .mermaid-frame[data-rendered="true"]').waitForExist({ timeout: 40_000 })
+    const expandedBackground = await browser.execute(
+      () =>
+        getComputedStyle(
+          document.querySelector('.mermaid-expand-viewport') ??
+            ((): never => {
+              throw new Error(
+                "Missing fixture element: document.querySelector('.mermaid-expand-viewport')",
+              )
+            })(),
+        ).backgroundColor,
+    )
+    expect(expandedBackground).toBe(hostState.background)
     expect(await $('dialog .mermaid-expand-stage svg').isExisting()).toBe(false)
-    await browser.switchFrame(await $('dialog .mermaid-frame'))
+    await browser.switchFrame(await $('dialog .mermaid-frame').getElement())
     const expandedFont = await browser.execute(() => ({
-      family: getComputedStyle(document.querySelector('svg')!).fontFamily,
+      family: getComputedStyle(
+        document.querySelector('svg') ??
+          ((): never => {
+            throw new Error("Missing fixture element: document.querySelector('svg')")
+          })(),
+      ).fontFamily,
+      pele: Boolean(document.querySelector('svg.pele')),
       loaded: Array.from(document.fonts).filter(
         (font) => font.family === 'Pliant' && font.status === 'loaded',
       ).length,
     }))
     expect(expandedFont.family).toContain('Pliant')
+    expect(expandedFont.pele).toBe(true)
     expect(expandedFont.loaded).toBe(2)
     await browser.switchToParentFrame()
 
@@ -131,7 +175,7 @@ describe('isolated mermaid diagram rendering', () => {
   })
 
   it('blocks network, inline script, navigation, and unsolicited parent messages even with code execution in the frame', async () => {
-    const frame = await $('.message-text iframe.mermaid-frame')
+    const frame = await $('.message-text iframe.mermaid-frame').getElement()
     const originalHeight = await frame.getCSSProperty('height')
     await browser.switchFrame(frame)
     const probes = await browser.execute(
@@ -168,22 +212,21 @@ describe('isolated mermaid diagram rendering', () => {
           document.body.append(label)
           window.parent.postMessage({ type: 'rendered', width: 1e9, height: 1e9 }, '*')
           void fetch(`${url}/diagram-fetch-probe`).then(
-            () =>
+            () => {
               done({
                 fetchBlocked: false,
                 inlineExecuted: document.body.dataset['inlineExecuted'],
                 violations,
-              }),
+              })
+            },
             () =>
-              setTimeout(
-                () =>
-                  done({
-                    fetchBlocked: true,
-                    inlineExecuted: document.body.dataset['inlineExecuted'] ?? null,
-                    violations,
-                  }),
-                100,
-              ),
+              setTimeout(() => {
+                done({
+                  fetchBlocked: true,
+                  inlineExecuted: document.body.dataset['inlineExecuted'] ?? null,
+                  violations,
+                })
+              }, 100),
           )
         }),
       probeUrl,
@@ -199,7 +242,7 @@ describe('isolated mermaid diagram rendering', () => {
       window.location.href = `${url}/diagram-navigation-probe`
     }, probeUrl)
     await browser.switchToParentFrame()
-    await browser.switchFrame(await $('.message-text iframe.mermaid-frame'))
+    await browser.switchFrame(await $('.message-text iframe.mermaid-frame').getElement())
     const navigation = await browser.execute(() => window.location.href)
     // Chromium replaces the cancelled navigation with its local error document.
     // The security assertion is that the destination receives no request.

@@ -91,6 +91,7 @@ describe('archiveStoredThread', () => {
       updateMeta: updateMetaOrThrow,
       projectRoot: (): string => repo,
       hasTerminals: (): boolean => terminals,
+      destroyEmptyTerminals: async (): Promise<void> => {},
       hasBackgroundProcesses: (): boolean => processes,
       destroyTerminals: async (): Promise<void> => {
         events.push('terminals')
@@ -405,6 +406,21 @@ describe('archiveStoredThread', () => {
     assert.equal((await getThreadMeta('project', 'thread'))?.archivedAt, undefined)
     assert.ok(await lstat(worktree.path))
     assert.equal(releases, 0)
+  })
+
+  it('closes out empty terminals before deciding whether the thread is still live', async () => {
+    const { worktree } = await seed()
+    assert.ok(worktree)
+    terminals = true
+    let emptyTerminalCalls = 0
+    dependencies.destroyEmptyTerminals = async (): Promise<void> => {
+      emptyTerminalCalls++
+      terminals = false
+    }
+    const result = await archive()
+    assert.equal(result.status, 'archived')
+    assert.ok(emptyTerminalCalls > 0)
+    await assert.rejects(lstat(worktree.path), { code: 'ENOENT' })
   })
 
   it('stops the agent, terminals and background processes before inspecting the checkout', async () => {

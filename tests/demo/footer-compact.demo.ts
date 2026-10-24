@@ -9,8 +9,8 @@ async function setChatPaneWidth(width: number): Promise<void> {
     for (const element of [pane, inputBar]) {
       if (!element) continue
       element.style.flex = '0 0 auto'
-      element.style.width = `${nextWidth}px`
-      element.style.maxWidth = `${nextWidth}px`
+      element.style.width = `${String(nextWidth)}px`
+      element.style.maxWidth = `${String(nextWidth)}px`
     }
     window.dispatchEvent(new Event('resize'))
   }, width)
@@ -50,15 +50,16 @@ describe('browser-hosted footer geometry', () => {
 
     await $('.footer-overflow-trigger').click()
     await expect($('.footer-overflow-menu')).toBeDisplayed()
-    const items = await $$('.footer-overflow-item')
-    await expect(items).toBeElementsArrayOfSize(7)
+    const items = await $$('.footer-overflow-item').getElements()
+    await expect(items).toBeElementsArrayOfSize(8)
     await expect(items[0]).toHaveText('Enable Guarded YOLO')
     await expect(items[1]).toHaveText('Run unattended in a container…')
     await expect(items[2]).toHaveText('Copy thread ID')
     await expect(items[3]).toHaveText('Export conversation (JSONL)')
     await expect(items[4]).toHaveText('Export thread folder (ZIP)')
     await expect(items[5]).toHaveText('Debug trace')
-    await expect(items[6]).toHaveText('Share trace')
+    await expect(items[6]).toHaveText('Create follow-up thread')
+    await expect(items[7]).toHaveText('Share trace')
 
     await saveElementScreenshot('.input-footer', 'footer-compact-wide.png')
   })
@@ -80,7 +81,7 @@ describe('browser-hosted footer geometry', () => {
       await expect($('.footer-usage')).not.toBeDisplayed()
     }
 
-    const wheel = await $('.context-wheel')
+    const wheel = await $('.context-wheel').getElement()
     await expect(wheel).toBeDisplayed()
     expect(await wheel.getAttribute('title')).toBeNull()
     const label = await wheel.getAttribute('aria-label')
@@ -97,15 +98,16 @@ describe('browser-hosted footer geometry', () => {
 
     await $('.footer-overflow-trigger').click()
     await expect($('.footer-overflow-menu')).toBeDisplayed()
-    const items = await $$('.footer-overflow-item')
-    await expect(items).toBeElementsArrayOfSize(7)
+    const items = await $$('.footer-overflow-item').getElements()
+    await expect(items).toBeElementsArrayOfSize(8)
     await expect(items[0]).toHaveText('Enable Guarded YOLO')
     await expect(items[1]).toHaveText('Run unattended in a container…')
     await expect(items[2]).toHaveText('Copy thread ID')
     await expect(items[3]).toHaveText('Export conversation (JSONL)')
     await expect(items[4]).toHaveText('Export thread folder (ZIP)')
     await expect(items[5]).toHaveText('Debug trace')
-    await expect(items[6]).toHaveText('Share trace')
+    await expect(items[6]).toHaveText('Create follow-up thread')
+    await expect(items[7]).toHaveText('Share trace')
     await saveAppScreenshot('footer-compact-overflow-open.png')
   })
 })

@@ -5,7 +5,12 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { CURSOR_AGENTS_WEB_URL } from '../../src/shared/remote-agent.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import {
+  readSeededSettings,
+  resetUserData,
+  seedEmptyProject,
+  writeSettings,
+} from './helpers/seed-config.ts'
 import { assertKitButtonChrome } from './helpers/ui-kit-style.ts'
 import { assertLegendInsideCard } from './helpers/settings-geometry.ts'
 
@@ -29,6 +34,13 @@ describe('Cursor Cloud Agent settings list hint', () => {
         { id: 'codex-acp', title: 'Codex', command: 'codex-acp', enabled: true },
       ],
     })
+    // The Cursor cloud agent is set up under a saved Cursor API key.
+    writeSettings({
+      ...readSeededSettings(),
+      apiKey: {
+        cursor: { v: 1, enc: Buffer.from('cur_e2e', 'utf8').toString('base64'), plain: true },
+      },
+    })
     await browser.reloadSession()
   })
 
@@ -44,12 +56,12 @@ describe('Cursor Cloud Agent settings list hint', () => {
     const general = $('.settings-section[data-section="general"]')
     await expect(general).toBeDisplayed()
 
-    // The Cursor cloud agent lives under the Cursor provider chip; select it,
-    // then scroll the Providers block into view so the sticky footer does not
+    // The Cursor cloud agent lives under the saved Cursor key's Options; open
+    // them, then scroll the block into view so the sticky footer does not
     // cover the hint.
-    const cursorChip = general.$('.provider-chip[data-provider="cursor"]')
-    await cursorChip.waitForExist({ timeout: 15_000 })
-    await cursorChip.click()
+    const cursorKey = general.$('[data-testid="models-agents-list"] [data-row="key:cursor"]')
+    await cursorKey.waitForExist({ timeout: 15_000 })
+    await cursorKey.$('button=Options').click()
 
     await browser.execute(() => {
       document
@@ -75,7 +87,7 @@ describe('Cursor Cloud Agent settings list hint', () => {
 
     // Cursor is not installed on this PATH, so it is offered under Add an agent
     // with a copyable install command.
-    await $('[data-testid="acp-add-toggle"]').click()
+    await $('[data-testid="connections-add-toggle"]').click()
     const addRow = $('.acp-add-row[data-agent="cursor"]')
     await expect(addRow).toBeDisplayed()
     await assertKitButtonChrome('.acp-add-row[data-agent="cursor"] button', 'secondary')

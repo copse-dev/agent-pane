@@ -66,29 +66,32 @@ async function latestToolResult(): Promise<WebdriverIO.Element> {
   // bodies directly so headless Chrome cannot reject a covered summary click.
   await browser.execute(() => {
     const rollups = document.querySelectorAll<HTMLDetailsElement>('details.tool-card-rollup')
-    const rollup = rollups.item(rollups.length - 1)
+    const rollup = rollups[rollups.length - 1]
     if (rollup) rollup.open = true
   })
-  await browser.waitUntil(async () => (await $$('details.tool-card[data-tool-id]')).length > 0, {
-    timeout: 5_000,
-    interval: 100,
-    timeoutMsg: 'expected a background tool card',
-  })
+  await browser.waitUntil(
+    async () => (await $$('details.tool-card[data-tool-id]').getElements()).length > 0,
+    {
+      timeout: 5_000,
+      interval: 100,
+      timeoutMsg: 'expected a background tool card',
+    },
+  )
   await browser.execute(() => {
     const cards = document.querySelectorAll<HTMLDetailsElement>('details.tool-card[data-tool-id]')
-    const card = cards.item(cards.length - 1)
+    const card = cards[cards.length - 1]
     if (!card) return
     card.open = false
     card
       .querySelector(':scope > summary')
       ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   })
-  await browser.waitUntil(async () => (await $$('.tool-result')).length > 0, {
+  await browser.waitUntil(async () => (await $$('.tool-result').getElements()).length > 0, {
     timeout: 5_000,
     interval: 100,
     timeoutMsg: 'expected a background tool result',
   })
-  const results = await $$('.tool-result')
+  const results = await $$('.tool-result').getElements()
   const result = results.at(-1)
   assert.ok(result)
   return result
@@ -124,26 +127,28 @@ describe('session-scoped background task lifecycle', function () {
     })
     await expect(await latestToolResult()).toHaveText(expect.stringContaining('running'))
 
-    const assistantCount = (await $$('.msg-assistant')).length
-    await browser.execute(() => window.location.reload())
+    const assistantCount = (await $$('.msg-assistant').getElements()).length
+    await browser.execute(() => {
+      window.location.reload()
+    })
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     writeFileSync(COMPLETION_SIGNAL, '')
     await browser.waitUntil(
-      async () => (await $$('.msg-assistant')).length === assistantCount + 1,
+      async () => (await $$('.msg-assistant').getElements()).length === assistantCount + 1,
       {
         timeout: 20_000,
         interval: 100,
         timeoutMsg: 'background completion did not dispatch exactly one continuation',
       },
     )
-    const assistants = await $$('.msg-assistant')
+    const assistants = await $$('.msg-assistant').getElements()
     const latestAssistant = assistants.at(-1)
     assert.ok(latestAssistant)
     await expect(latestAssistant.$('.message-text')).toHaveText(
       expect.stringContaining('completed successfully after the renderer reloaded'),
     )
     await browser.pause(500)
-    assert.equal((await $$('.msg-assistant')).length, assistantCount + 1)
+    assert.equal((await $$('.msg-assistant').getElements()).length, assistantCount + 1)
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'background-task-completion-wake.png'))
   })
 })

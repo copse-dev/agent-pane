@@ -4,7 +4,6 @@ import assert from 'node:assert/strict'
 import {
   decideShellPermission,
   decideWebFetchPermission,
-  decideWebSearchPermission,
   formatInstallPromptParts,
   formatGithubWritePrompt,
   formatGuardedYoloHarmPromptAdvice,
@@ -55,7 +54,7 @@ import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
-import { setSetting } from '../storage/settings.test-shim.ts'
+import { setSetting, setApiKey, deleteApiKey } from '../storage/settings.test-shim.ts'
 import { storageSet } from '../storage/storage.ts'
 import { drainWriteQueue } from '../storage/write-queue.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -237,7 +236,7 @@ describe('package command approval scope', () => {
         true,
       )
       assert.equal(requests.length, 0)
-      await ensureShellCommandPermitted('rm -f probe.e2e.ts && npx wdio run wdio.conf.ts', {
+      await ensureShellCommandPermitted('rm -rf probe-output && npx wdio run wdio.conf.ts', {
         sandboxEnabled: true,
         autoRun: true,
         executionRoot: root,
@@ -852,6 +851,62 @@ describe('ensureToolPermitted', () => {
       setSetting('toolPermissionOverrides', {})
       clearMcpToolPermissionTargets()
       storageSet(AUTOMATIONS_STORAGE_KEY, [])
+    }
+  })
+
+  it('asks for the selected web search origin and explains API-credit usage', async () => {
+    setPermissionGateForTests(null)
+    await setSetting('webSearchProvider', 'tavily')
+    setApiKey('tavily', 'fixture-key')
+    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
+    await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+    setApprovalHandler(async (request) => {
+      assert.equal(request.subject, 'https://api.tavily.com:443')
+      assert.equal(request.cause, 'web-origin')
+      assert.match(request.bodyAdvice ?? '', /Tavily.*paid API credits/)
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted({ toolName: 'web_search', args: { query: 'docs' } }),
+        false,
+      )
+      await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, false)
+      await assert.rejects(
+        ensureToolPermitted({ toolName: 'web_search', args: { query: 'docs' } }),
+        /Web search denied/,
+      )
+    } finally {
+      await setSetting('webSearchProvider', 'none')
+      await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+      deleteApiKey('tavily')
+      setApprovalHandler(null)
+    }
+  })
+
+  it('returns setup guidance without a network prompt and still respects Always ask', async () => {
+    setPermissionGateForTests(null)
+    await setSetting('webSearchProvider', 'none')
+    let prompted = 0
+    setApprovalHandler(async () => {
+      prompted += 1
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted({ toolName: 'web_search', args: { query: 'docs' } }),
+        true,
+      )
+      assert.equal(prompted, 0)
+      await setSetting('toolPermissionOverrides', { [copseToolPermissionId('web_search')]: 'ask' })
+      assert.equal(
+        await ensureToolPermitted({ toolName: 'web_search', args: { query: 'docs' } }),
+        false,
+      )
+      assert.equal(prompted, 1)
+    } finally {
+      await setSetting('toolPermissionOverrides', {})
+      setApprovalHandler(null)
     }
   })
 
@@ -2098,6 +2153,77 @@ describe('turn-tree shell replay leases', () => {
       setApprovalHandler(null)
     }
   })
+  it('offers an agent-requested escape the outside replay lease and honours it', async () => {
+    shellReplayLeaseStore.clear()
+    // The shape of a real demo rerun: several setup constituents, so no single
+    // core can be isolated and the whole line is leased byte for byte.
+    const demo =
+      'C=.cache/demo; export DEMO_BINARY="$PWD/$C/chrome"; node scripts/run-demo.mts > $TMPDIR/demo.log 2>&1; echo exit=$?'
+    const requests: Array<{ lease?: boolean; label?: string; subject?: string }> = []
+    setApprovalHandler(async (request) => {
+      requests.push({
+        ...(request.allowTurnTreeLease === undefined ? {} : { lease: request.allowTurnTreeLease }),
+        ...(request.turnTreeLeaseLabel === undefined ? {} : { label: request.turnTreeLeaseLabel }),
+        ...(request.turnTreeLeaseSubject === undefined
+          ? {}
+          : { subject: request.turnTreeLeaseSubject }),
+      })
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    const ask = (command: string): Promise<boolean> =>
+      promptExpectedSandboxBlock(command, ['runs a local script'], undefined, {
+        executionRoot: root,
+      })
+    try {
+      await runInTree('tree-1', async () => {
+        assert.equal(await ask(demo), true)
+        assert.equal(await ask(demo), true)
+        assert.equal(await ask(demo), true)
+      })
+      assert.deepEqual(requests, [
+        {
+          lease: true,
+          label: 'Allow retries outside the sandbox (up to 10, for 2 hours)',
+          subject: demo,
+        },
+      ])
+      // A different turn tree, or a changed command, asks again.
+      await runInTree('tree-2', () => ask(demo))
+      await runInTree('tree-1', () => ask(`${demo} --headed`))
+      assert.equal(requests.length, 3)
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
+  it('never offers an agent-requested escape a lease for network, deletion or installs', async () => {
+    shellReplayLeaseStore.clear()
+    const offered: boolean[] = []
+    setApprovalHandler(async (request) => {
+      offered.push(request.allowTurnTreeLease === true)
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    try {
+      await runInTree('tree-1', async () => {
+        for (const command of [
+          'gh api repos/o/r',
+          'rm -rf build && node scripts/run-demo.mts',
+          'npm install && node scripts/run-demo.mts',
+        ]) {
+          await promptExpectedSandboxBlock(command, ['may reach'], undefined, {
+            executionRoot: root,
+          })
+        }
+        // Without an execution root there is no identity to bind a lease to.
+        await promptExpectedSandboxBlock('node scripts/run-demo.mts', ['runs a local script'])
+      })
+      assert.deepEqual(offered, [false, false, false, false])
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
 })
 
 describe('decideShellPermission', () => {
@@ -2683,12 +2809,14 @@ describe('decideMcpPermission', () => {
 })
 
 describe('web tool permission decisions', () => {
-  it('allows default DuckDuckGo web search', () => {
-    const d = decideWebSearchPermission({
+  it('prompts for the selected search API rather than allowing the old DuckDuckGo origin', () => {
+    const d = decideWebFetchPermission({
+      url: 'https://api.tavily.com/search',
       allowedOrigins: DEFAULT_WEB_ALLOWED_ORIGINS,
       allowUserApproval: true,
     })
-    assert.equal(d.action, 'allow')
+    assert.equal(d.action, 'prompt')
+    assert.equal(d.origin, 'https://api.tavily.com:443')
   })
 
   it('prompts for fetch_url to a new public origin', () => {

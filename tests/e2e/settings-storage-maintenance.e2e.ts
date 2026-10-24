@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { copseDataRoot, copseWorkspaceTmpDir } from '../../src/main/services/storage/copse-paths.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const run = join(copseDataRoot(), 'runtimes/run-abc-abcdef')
 const build = join(copseWorkspaceTmpDir(), 'apple-development/storage-e2e')
@@ -27,16 +28,16 @@ describe('Storage cleanup controls', function () {
     await browser.reloadSession()
   })
   after(() => {
-    for (const path of [run, build, scratch]) rmSync(path, { recursive: true, force: true })
+    for (const path of [run, build, scratch]) removeE2eTree(path)
     resetUserData()
   })
   it('shows both areas, saves retention and cleans only the confirmed target', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog button[data-section="storage"]').click()
-    const panel = await $('#storage-maintenance')
+    const panel = await $('#storage-maintenance').getElement()
     await panel.scrollIntoView()
-    const runs = await $('#storage-runs-clean')
+    const runs = await $('#storage-runs-clean').getElement()
     await expect(runs).toBeEnabled()
     await expect($('#storage-builds-clean')).toBeEnabled()
     await expect($('#storage-runs-size')).toHaveText(expect.stringContaining('1 item'))

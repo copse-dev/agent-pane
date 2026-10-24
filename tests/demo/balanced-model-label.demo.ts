@@ -30,7 +30,7 @@ describe('browser-hosted Balanced model label', () => {
     await $('.prompt-input').setValue('Show the concrete model for this turn.')
     await $('.submit-btn').click()
     await expect(label).toHaveText('Claude Sonnet 4.6')
-    assert.equal((await $$('.messages-list .msg-assistant')).length, 0)
+    assert.equal((await $$('.messages-list .msg-assistant').getElements()).length, 0)
     assert.equal(await label.getAttribute('title'), 'auto:balanced')
     await saveElementScreenshot('#input-bar', 'balanced-model-resolved-live.png')
     await expect($('.messages-list .msg-assistant')).toExist()

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -8,6 +8,7 @@ import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const optionsSchema = z.object({
   applicationName: z.string(),
@@ -28,7 +29,7 @@ describe('source-build Copse identity', () => {
   after(() => {
     writeE2eEnv({ COPSE_E2E_ABOUT_OPTIONS: undefined })
     resetUserData()
-    rmSync(directory, { recursive: true, force: true })
+    removeE2eTree(directory)
   })
 
   it('uses the package version in native About options and the real Settings/license IPC', async () => {

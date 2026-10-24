@@ -13,9 +13,9 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 // than faking the IPC.
 describe('footer classifier use hover', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedContextWheelFixture(process.cwd())
     seedClassifierCalls('e2e-context-wheel-project', 'e2e-context-wheel-thread', [
@@ -66,7 +66,7 @@ describe('footer classifier use hover', () => {
     await expect(popover.$$('.footer-usage-popover-row.is-classifier')).toBeElementsArrayOfSize(2)
     const labels = await browser.execute(() =>
       [...document.querySelectorAll('.context-wheel-popover .footer-usage-popover-pill')].map(
-        (pill) => pill.textContent ?? '',
+        (pill) => pill.textContent,
       ),
     )
     expect(labels).toEqual(['15 sandbox', '3 external', '5 safe', '1 no verdict'])

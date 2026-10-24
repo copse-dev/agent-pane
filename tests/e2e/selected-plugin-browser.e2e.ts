@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,6 +10,7 @@ import { setComposerValue } from './helpers/composer.ts'
 import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
 import { E2E_SCREENSHOT_DIR, saveAppViewportScreenshot } from './helpers/screenshot.ts'
 import { assertBrowserAddressFieldRoomy } from './helpers/text-fit.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PLUGIN_ID = 'personal.browser-fixture'
 const MODEL_ID = 'browser'
@@ -110,7 +111,7 @@ describe('selected plugin browser behavior', function () {
 
   after(async () => {
     resetUserData()
-    if (pluginRoot) rmSync(pluginRoot, { recursive: true, force: true })
+    if (pluginRoot) removeE2eTree(pluginRoot)
     await closeServer(server)
   })
 
@@ -149,7 +150,8 @@ describe('selected plugin browser behavior', function () {
     assert.match(address, /^http:\/\/127\.0\.0\.1:\d+\/reference$/)
 
     const surface = await browser.execute(() => {
-      const host = document.querySelector('.browser-tab-panel.is-active .browser-webview-host')!
+      const host = document.querySelector('.browser-tab-panel.is-active .browser-webview-host')
+      if (!host) throw new Error('Missing active browser webview host')
       return {
         background: getComputedStyle(host).backgroundColor,
         canvas: host.classList.contains('is-canvas'),

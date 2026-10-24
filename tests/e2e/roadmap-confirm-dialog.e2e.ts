@@ -1,10 +1,12 @@
+import { at } from '@copse/std/array-utils.ts'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // #2497 — the roadmap pane's last native `confirm()` (bulk-apply after a
 // backlog review) now routes through the in-app dialog (confirm-dialog.ts).
@@ -44,8 +46,8 @@ describe('roadmap bulk-review confirm dialog', () => {
 
   after(() => {
     resetUserData()
-    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
-    rmSync(knowledgeDir, { recursive: true, force: true })
+    removeE2eTree(dirname(workspaceRoot))
+    removeE2eTree(knowledgeDir)
   })
 
   it('opens an in-app dialog for bulk archive; cancel leaves items untouched, confirm archives them', async function () {
@@ -59,18 +61,21 @@ describe('roadmap bulk-review confirm dialog', () => {
     await reviewBtn.waitForDisplayed({ timeout: 10_000 })
     await reviewBtn.click()
 
-    await browser.waitUntil(async () => (await $$('.roadmap-review-row')).length === 2, {
-      timeout: 15_000,
-      timeoutMsg: 'expected two judged review rows',
-    })
-    const badges = await $$('.roadmap-review-badge')
-    await expect(badges[0]).toHaveText(expect.stringContaining('review: resolved'))
-    await expect(badges[1]).toHaveText(expect.stringContaining('review: resolved'))
+    await browser.waitUntil(
+      async () => (await $$('.roadmap-review-row').getElements()).length === 2,
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected two judged review rows',
+      },
+    )
+    const badges = await $$('.roadmap-review-badge').getElements()
+    await expect(at([...badges], 0)).toHaveText(expect.stringContaining('review: resolved'))
+    await expect(at([...badges], 1)).toHaveText(expect.stringContaining('review: resolved'))
 
     // The bulk affordances start hidden while the review is "in flight"; opening
     // a result row and returning is the same round trip a person makes to read
     // an item before bulk-applying, and it is the render pass that reveals them.
-    await $$('.roadmap-review-open')[0].click()
+    await at([...(await $$('.roadmap-review-open').getElements())], 0).click()
     const reviewBackBtn = $('.roadmap-review-back')
     await reviewBackBtn.waitForDisplayed({ timeout: 10_000 })
     await reviewBackBtn.click()
@@ -83,14 +88,14 @@ describe('roadmap bulk-review confirm dialog', () => {
     await archiveResolvedBtn.click()
     const dialog = $('#confirm-dialog')
     await dialog.waitForDisplayed({ timeout: 10_000 })
-    await expect(await dialog.$('.confirm-dialog-message')).toHaveText(
+    await expect(await dialog.$('.confirm-dialog-message').getElement()).toHaveText(
       'Archive 2 item(s) judged resolved or likely?',
     )
-    await expect(await dialog.$('.confirm-dialog-detail')).toHaveText(
+    await expect(await dialog.$('.confirm-dialog-detail').getElement()).toHaveText(
       'Archives each one; you can restore any of them later.',
     )
-    await expect(await dialog.$('.confirm-dialog-cancel')).toHaveText('Cancel')
-    await expect(await dialog.$('.confirm-dialog-confirm')).toHaveText('Archive')
+    await expect(await dialog.$('.confirm-dialog-cancel').getElement()).toHaveText('Cancel')
+    await expect(await dialog.$('.confirm-dialog-confirm').getElement()).toHaveText('Archive')
 
     await saveElementScreenshot('#confirm-dialog', 'roadmap-confirm-dialog.png')
 
@@ -98,7 +103,7 @@ describe('roadmap bulk-review confirm dialog', () => {
     await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
 
     assert.equal(
-      (await $$('.roadmap-review-row.is-applied')).length,
+      (await $$('.roadmap-review-row.is-applied').getElements()).length,
       0,
       'cancel leaves both items unchanged',
     )
@@ -114,13 +119,16 @@ describe('roadmap bulk-review confirm dialog', () => {
     await expect($('.roadmap-review-status')).toHaveText(
       expect.stringContaining('Updated 2 item(s).'),
     )
-    await browser.waitUntil(async () => (await $$('.roadmap-review-row.is-applied')).length === 2, {
-      timeout: 10_000,
-      timeoutMsg: 'expected both rows to show as applied',
-    })
-    const appliedBadges = await $$('.roadmap-review-applied-badge')
-    await expect(appliedBadges[0]).toHaveText('status: archived', { ignoreCase: true })
-    await expect(appliedBadges[1]).toHaveText('status: archived', { ignoreCase: true })
+    await browser.waitUntil(
+      async () => (await $$('.roadmap-review-row.is-applied').getElements()).length === 2,
+      {
+        timeout: 10_000,
+        timeoutMsg: 'expected both rows to show as applied',
+      },
+    )
+    const appliedBadges = await $$('.roadmap-review-applied-badge').getElements()
+    await expect(at([...appliedBadges], 0)).toHaveText('status: archived', { ignoreCase: true })
+    await expect(at([...appliedBadges], 1)).toHaveText('status: archived', { ignoreCase: true })
     // Nothing left to bulk-act on: the affordance disappears.
     await expect(archiveResolvedBtn).not.toBeDisplayed()
   })

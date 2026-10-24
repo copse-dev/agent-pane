@@ -1,9 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // This guards #268: on macOS with ASRT active, `fs:list-dir` routes through the
 // seatbelt-wrapped `sandbox-fs-worker`, whose spawn broke when the workspace
@@ -35,15 +36,15 @@ describeSpacedExplorer('explorer reload with spaced workspace path', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceParent, { recursive: true, force: true })
+    removeE2eTree(workspaceParent)
   })
 
   it('reloads the file tree without fs:list-dir errors', async () => {
     // Click the toggle until the files pane actually shows (only when it isn't
     // already open, so we never toggle it back shut) — a single click can still
     // land a beat before the workspace is ready on a constrained runner.
-    const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]')
-    const pane = await $('#pane-files')
+    const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]').getElement()
+    const pane = await $('#pane-files').getElement()
     await browser.waitUntil(
       async () => {
         if (await pane.isDisplayed()) return true
@@ -53,18 +54,18 @@ describeSpacedExplorer('explorer reload with spaced workspace path', () => {
       { timeout: 30_000, interval: 1000, timeoutMsg: '#pane-files did not become visible' },
     )
 
-    const refreshBtn = await $('.sidebar-refresh[aria-label="Refresh"]')
+    const refreshBtn = await $('.sidebar-refresh[aria-label="Refresh"]').getElement()
     await refreshBtn.waitForDisplayed({ timeout: 10_000 })
     await refreshBtn.click()
 
-    const readmeRow = await $('.file-tree .tree-row[title="README.md"]')
+    const readmeRow = await $('.file-tree .tree-row[title="README.md"]').getElement()
     await readmeRow.waitForDisplayed({ timeout: 10_000 })
     await expect(readmeRow).toHaveText(expect.stringContaining('README.md'))
 
-    const errorPane = await $('.file-tree .sidebar-empty')
+    const errorPane = await $('.file-tree .sidebar-empty').getElement()
     if (await errorPane.isExisting()) {
       const message = await errorPane.getText()
-      await expect(message).not.toMatch(
+      expect(message).not.toMatch(
         /Error invoking remote method|No such file or directory|\/bin\/bash:/i,
       )
     }

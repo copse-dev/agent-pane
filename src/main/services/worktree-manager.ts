@@ -16,6 +16,8 @@ import {
 } from '@shared/git/worktree-policy.ts'
 import { describeBranchCheckoutFailure } from '@shared/git/branch-held.ts'
 import { runCommand, type CommandResult } from './exec/command-runner.ts'
+import { fetchDefaultBranchFromHost } from './default-branch-fetch.ts'
+import { getSetting } from './storage/settings.ts'
 import { parseWorkingTreeSnapshotHead } from './git-snapshot.mts'
 import { runSerialized } from './storage/write-queue.ts'
 import { copseWorktreesDir } from './storage/copse-paths.ts'
@@ -437,7 +439,20 @@ export function expectedThreadWorktreePath(projectId: string, threadId: string):
 /** A repo-controlled symlink must not turn a checkout grant into a host-directory grant. */
 async function assertManagedWorktreePath(projectId: string, path: string): Promise<void> {
   const expectedParent = join(worktreesRoot(), projectId)
-  if ((await realpath(dirname(path))) !== expectedParent) {
+  const parent = await realpath(dirname(path)).catch((error: unknown) => {
+    if (ownErrorCode(error) === 'ENOENT') return null
+    throw error
+  })
+  if (parent === null) {
+    const parentStat = await lstat(dirname(path)).catch((error: unknown) => {
+      if (ownErrorCode(error) === 'ENOENT') return null
+      throw error
+    })
+    if (parentStat?.isSymbolicLink()) {
+      throw new Error('Managed worktree parent must not be a dangling symlink')
+    }
+  }
+  if (parent !== null && parent !== expectedParent) {
     throw new Error('Managed worktree parent is redirected outside its configured project path')
   }
   const stat = await lstat(path).catch((error: unknown) => {
@@ -725,9 +740,65 @@ async function symbolicHeadBranch(worktreePath: string): Promise<string | null> 
  * `origin` remote just means the next resolution step falls back to the local ref.
  * A fetch that hangs until the command timeout rejects rather than returning a
  * failed result, so that rejection is absorbed here too.
+ *
+ * A failed fetch resolves with a non-zero code rather than rejecting, so the
+ * code itself is the failure signal. Without the warning below, a fetch the
+ * project sandbox denies (no network, no `~/.ssh`) left `origin/<branch>`
+ * frozen at whatever an outside `git pull` last wrote, with no trace anywhere.
+ * Each project warns once per distinct failure and once on recovery, so the
+ * hourly refresh does not repeat an unchanged error.
+ *
+ * With `backgroundDefaultBranchFetch` on (the default) a network origin is
+ * fetched from the host instead; see default-branch-fetch.ts. Concurrent calls
+ * for one project share a single fetch. Opting out skips every background fetch,
+ * including the contained fallback, so it cannot open an authentication prompt.
  */
-async function fetchDefaultBranch(projectRoot: string, branch: string): Promise<void> {
-  await git(projectRoot, ['fetch', '--quiet', 'origin', branch]).catch(() => undefined)
+export function fetchDefaultBranch(projectRoot: string, branch: string): Promise<void> {
+  const inFlight = defaultBranchFetchesInFlight.get(projectRoot)
+  if (inFlight) return inFlight
+  const fetch = fetchDefaultBranchOnce(projectRoot, branch).finally(() =>
+    defaultBranchFetchesInFlight.delete(projectRoot),
+  )
+  defaultBranchFetchesInFlight.set(projectRoot, fetch)
+  return fetch
+}
+
+const defaultBranchFetchesInFlight = new Map<string, Promise<void>>()
+
+async function fetchDefaultBranchOnce(projectRoot: string, branch: string): Promise<void> {
+  if (!getSetting<boolean>('backgroundDefaultBranchFetch', true)) return
+  let failure: string | null
+  try {
+    const result =
+      (await fetchDefaultBranchFromHost(projectRoot, branch, git)) ??
+      (await git(projectRoot, ['fetch', '--quiet', 'origin', branch]))
+    failure = result.code === 0 ? null : describeFetchFailure(result)
+  } catch (error) {
+    failure = error instanceof Error ? error.message : String(error)
+  }
+  const previous = defaultBranchFetchFailures.get(projectRoot)
+  if (failure === null) {
+    if (previous !== undefined) {
+      defaultBranchFetchFailures.delete(projectRoot)
+      console.warn('[copse-panel] default branch fetch recovered for', projectRoot)
+    }
+    return
+  }
+  if (previous !== failure) {
+    defaultBranchFetchFailures.set(projectRoot, failure)
+    console.warn(
+      `[copse-panel] fetching origin/${branch} failed for ${projectRoot}; ` +
+        `new threads start from the last fetched tip: ${failure}`,
+    )
+  }
+}
+
+/** Last distinct fetch failure per project root, so repeats stay quiet. */
+const defaultBranchFetchFailures = new Map<string, string>()
+
+function describeFetchFailure(result: CommandResult): string {
+  const detail = result.stderr.trim().replace(/\s+/g, ' ').slice(0, 500)
+  return detail ? `exit ${String(result.code)}: ${detail}` : `exit ${String(result.code)}`
 }
 
 /**
@@ -1506,7 +1577,18 @@ export async function inspectThreadWorktreeAttachment(
   input: ValidateWorktreeInput,
 ): Promise<ThreadWorktreeAttachment> {
   const observedAt = reattachGeneration
-  const validated = await validateThreadWorktreeState(input)
+  let validated: ValidatedThreadWorktreeState
+  try {
+    validated = await validateThreadWorktreeState(input)
+  } catch (error) {
+    if (!(error instanceof MissingThreadWorktreeError)) throw error
+    const projectRoot = (await repositoryLocation(input.projectRoot)).repositoryRoot
+    return {
+      state: 'missing',
+      branch: input.worktree.branch,
+      reason: await missingWorktreeRestoreReason(projectRoot, input),
+    }
+  }
   if (validated.branch) return { state: 'attached' }
   try {
     const recovery = await activeGitRecovery(validated.gitDir)
@@ -1522,6 +1604,66 @@ export async function inspectThreadWorktreeAttachment(
   } finally {
     releaseDetachedWorktreeRoot(validated.root, observedAt)
   }
+}
+
+/** A deleted checkout is recoverable only from its own retained branch, never its base. */
+async function missingWorktreeRestoreReason(
+  projectRoot: string,
+  input: ValidateWorktreeInput,
+): Promise<string | null> {
+  await assertBranchName(projectRoot, input.worktree.branch, 'Thread branch')
+  if (!(await resolveCommit(projectRoot, branchRef(input.worktree.branch)))) {
+    return 'The saved branch is no longer available. Restore it in the repository before retrying.'
+  }
+  const target = expectedThreadWorktreePath(input.projectId, input.threadId)
+  for (const record of await listRecords(projectRoot)) {
+    if (sameWorktreePath(record.path, target)) {
+      if (record.locked !== null) return 'This worktree is locked. Unlock it before restoring.'
+    } else if (record.branch === input.worktree.branch) {
+      return `The saved branch is already checked out at ${record.path}.`
+    }
+  }
+  return null
+}
+
+/** Explicit thread recovery. Existing paths, redirected parents and unavailable branches fail closed. */
+export async function restoreMissingThreadWorktree(
+  input: ValidateWorktreeInput,
+): Promise<ThreadWorktree> {
+  const projectRoot = (await repositoryLocation(input.projectRoot)).repositoryRoot
+  return runSerialized(`worktree-manager:${projectRoot}`, async () => {
+    try {
+      await validateThreadWorktreeState(input)
+      throw new Error('Thread worktree already exists')
+    } catch (error) {
+      if (!(error instanceof MissingThreadWorktreeError)) throw error
+    }
+    const reason = await missingWorktreeRestoreReason(projectRoot, input)
+    if (reason) throw new Error(reason)
+    const target = expectedThreadWorktreePath(input.projectId, input.threadId)
+    // lstat also catches a dangling symlink that realpath reported as missing.
+    const existing = await lstat(target).catch((error: unknown) => {
+      if (ownErrorCode(error) === 'ENOENT') return null
+      throw error
+    })
+    if (existing) throw new Error('Restore destination already exists; its files were preserved')
+    const records = await listRecords(projectRoot)
+    const stale = records.some((record) => sameWorktreePath(record.path, target))
+    await prepareManagedWorktreeDestination(input.projectId, target)
+    const added = await git(
+      projectRoot,
+      ['worktree', 'add', ...(stale ? ['--force'] : []), target, input.worktree.branch],
+      undefined,
+      [target],
+    )
+    if (added.code !== 0) {
+      await rmdir(target).catch(() => undefined)
+      throw commandFailure('Cannot restore thread worktree', added, input.worktree.branch)
+    }
+    const restored = activeWorktreeMetadata(input.worktree, await realpath(target))
+    await validateThreadWorktree({ ...input, worktree: restored })
+    return restored
+  })
 }
 
 async function isAncestor(cwd: string, ancestor: string, descendant: string): Promise<boolean> {

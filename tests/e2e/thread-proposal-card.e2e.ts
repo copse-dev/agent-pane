@@ -1,6 +1,6 @@
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -10,6 +10,7 @@ import {
 } from './helpers/seed-config.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // Visual eval for the model-proposed-thread card (`propose_thread`). The card's
 // DOM, its three states and the start/dismiss wiring are covered at component
@@ -132,7 +133,7 @@ describe('a proposed thread without an isolated checkout', () => {
 
   after(() => {
     resetUserData()
-    if (workspace) rmSync(workspace, { recursive: true, force: true })
+    if (workspace) removeE2eTree(workspace)
   })
 
   it('reports unavailable isolation without dispatching or consuming the offer', async () => {
@@ -160,7 +161,9 @@ describe('starting a proposed thread in an isolated checkout', () => {
     seedThreadProposalFixture(seedStableWorkspace())
     await browser.reloadSession()
   })
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('starts the mock agent only after creating the worktree', async () => {
     await $('.thread-proposal-start').waitForDisplayed({ timeout: 10_000 })
@@ -182,7 +185,7 @@ describe('starting a proposed thread in an isolated checkout', () => {
       async () =>
         browser.execute(() =>
           [...document.querySelectorAll('.msg-assistant .message-text')].some((message) =>
-            message.textContent?.includes('The config loader guard is ready for review.'),
+            message.textContent.includes('The config loader guard is ready for review.'),
           ),
         ),
       { timeout: 30_000, timeoutMsg: 'the isolated proposal did not reach the mock agent' },
@@ -224,7 +227,7 @@ describe('starting a proposed thread in an isolated checkout', () => {
     // persistent app shell, not a WebDriver reference to that replaceable node.
     const summary = await browser.execute(async () => {
       const row = [...document.querySelectorAll('.chat-row')].find((row) =>
-        row.textContent?.includes('Retire the legacy settings parser'),
+        row.textContent.includes('Retire the legacy settings parser'),
       )
       const threadId = row?.getAttribute('data-thread-id')
       if (!threadId) throw new Error('Missing proposed thread')

@@ -37,11 +37,14 @@ describe('browser-hosted light-theme contrast', () => {
           const scaled = channel > 1 ? channel / 255 : channel
           return scaled <= 0.03928 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4
         })
-        return 0.2126 * linear[0]! + 0.7152 * linear[1]! + 0.0722 * linear[2]!
+        const [red, green, blue] = linear
+        if (red === undefined || green === undefined || blue === undefined)
+          throw new Error('Expected three RGB colour channels')
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue
       }
       const contrast = (a: string, b: string): number => {
         const [x, y] = [luminance(channels(a)), luminance(channels(b))]
-        const [high, low] = x! > y! ? [x!, y!] : [y!, x!]
+        const [high, low] = x > y ? [x, y] : [y, x]
         return (high + 0.05) / (low + 0.05)
       }
       const blocks = [...document.querySelectorAll('.streaming-markdown pre')]

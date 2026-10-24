@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
 import { runInNewContext } from 'node:vm'
 import { load } from 'js-yaml'
@@ -705,7 +707,12 @@ describe('Copse dogfooding of the reusable reviewer', () => {
       event_name: 'workflow_dispatch',
     }
     const allows = (expression: string, context: Record<string, unknown>): boolean =>
-      Boolean(runInNewContext(expression.trim().slice(3, -2), context))
+      Boolean(
+        runInNewContext(expression.trim().slice(3, -2), {
+          needs: { ground: { outputs: { ready: 'true' } } },
+          ...context,
+        }),
+      )
     const preflight = workflow.jobs.authorize.steps[0]?.env['COPSE_CALLER_ALLOWED']
     assert.ok(preflight)
     assert.equal(allows(job.if, { github, inputs: { preparation: 'copse-pnpm' } }), true)
@@ -842,5 +849,153 @@ describe('shared findings model configuration', () => {
     })
     assert.equal(portableSummary.status, 0, portableSummary.stderr)
     assert.match(portableSummary.stdout, /--post-summary\ngithub\n$/)
+  })
+})
+
+describe('superseded review preparation', () => {
+  it('skips a moved head, prepares the pinned head, and still fails on fetch errors', () => {
+    const root = mkdtempSync(join(tmpdir(), 'copse-review-prepare-'))
+    try {
+      const bin = join(root, 'bin')
+      mkdirSync(bin)
+      writeFileSync(
+        join(bin, 'git'),
+        `#!/bin/sh
+printf '%s\\n' "$*" >> "$PREPARE_CALLS"
+case "$*" in
+  *fetch*) exit "\${FETCH_STATUS:-0}" ;;
+  *rev-parse*) printf '%s\\n' "$CURRENT_HEAD" ;;
+  *merge-base*) printf '%s\\n' "$BASE_SHA" ;;
+  *show*) printf '%s\\n' '{"lockfileVersion":3,"packages":{}}' ;;
+esac
+`,
+        { mode: 0o755 },
+      )
+      for (const command of ['npm', 'docker']) {
+        writeFileSync(
+          join(bin, command),
+          `#!/bin/sh
+printf '%s\\n' '${command}' >> "$PREPARE_CALLS"
+`,
+          { mode: 0o755 },
+        )
+      }
+      for (const scenario of ['superseded', 'current', 'fetch-error']) {
+        const directory = join(root, scenario)
+        mkdirSync(directory)
+        const output = join(directory, 'output')
+        const envFile = join(directory, 'env')
+        const callsFile = join(directory, 'calls')
+        writeFileSync(output, '')
+        writeFileSync(envFile, '')
+        const result = spawnSync(
+          process.execPath,
+          [resolve('packages/review/ci/prepare-action.mts')],
+          {
+            encoding: 'utf8',
+            env: {
+              PATH: `${bin}:${process.env['PATH'] ?? ''}`,
+              RUNNER_TEMP: directory,
+              GITHUB_ENV: envFile,
+              GITHUB_OUTPUT: output,
+              GITHUB_SERVER_URL: 'https://github.com',
+              COPSE_REVIEW_REQUEST: JSON.stringify(request),
+              COPSE_REVIEW_PREPARATION: 'npm',
+              CURRENT_HEAD: scenario === 'superseded' ? 'c'.repeat(40) : request.head,
+              BASE_SHA: request.base,
+              FETCH_STATUS: scenario === 'fetch-error' ? '42' : '0',
+              PREPARE_CALLS: callsFile,
+            },
+          },
+        )
+        const calls = readFileSync(callsFile, 'utf8')
+        if (scenario === 'current') {
+          assert.equal(result.status, 0, result.stderr)
+          assert.equal(readFileSync(output, 'utf8'), 'ready=true\n')
+          assert.match(readFileSync(envFile, 'utf8'), /COPSE_REVIEW_TARGET=/)
+          assert.match(calls, /docker/)
+        } else {
+          assert.equal(readFileSync(envFile, 'utf8'), '')
+          assert.doesNotMatch(calls, /merge-base|show|npm|docker/)
+          if (scenario === 'superseded') {
+            assert.equal(result.status, 0, result.stderr)
+            assert.match(result.stdout, /::notice::.*skipping superseded review/)
+            assert.equal(readFileSync(output, 'utf8'), 'ready=false\n')
+          } else {
+            assert.notEqual(result.status, 0)
+            assert.equal(readFileSync(output, 'utf8'), '')
+          }
+        }
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('gates all remaining action steps and findings jobs on successful preparation', () => {
+    const stepSchema = z.object({
+      id: z.string().optional(),
+      uses: z.string().optional(),
+      if: z.string().optional(),
+    })
+    const actionSchema = z.object({
+      outputs: z.record(z.string(), z.object({ value: z.string() })).optional(),
+      runs: z.object({ steps: z.array(stepSchema) }),
+    })
+    for (const name of ['review-ground', 'review-findings']) {
+      const action = actionSchema.parse(
+        load(readFileSync(`.github/actions/${name}/action.yml`, 'utf8')),
+      )
+      const prepare = action.runs.steps.findIndex((step) => step.id === 'prepare')
+      assert.ok(prepare >= 0)
+      for (const step of action.runs.steps.slice(prepare + 1)) {
+        assert.ok(step.if)
+        for (const ready of ['true', 'false', '']) {
+          const enabled: unknown = runInNewContext(
+            step.if.slice(3, -2).replace(/inputs\.(app-id|app-private-key)/g, "inputs['$1']"),
+            {
+              steps: { prepare: { outputs: { ready } } },
+              inputs: { 'app-id': 'app', 'app-private-key': 'key' },
+              always: () => true,
+            },
+          )
+          assert.equal(enabled, ready === 'true', `${name}: ${step.uses ?? 'run'}`)
+        }
+      }
+      if (name === 'review-ground') {
+        assert.equal(action.outputs?.['ready']?.value, '${{ steps.prepare.outputs.ready }}')
+      }
+    }
+    const workflow = z
+      .object({
+        jobs: z.record(
+          z.string(),
+          z.object({
+            if: z.string().optional(),
+            outputs: z.record(z.string(), z.string()).optional(),
+            steps: z.array(stepSchema),
+          }),
+        ),
+      })
+      .parse(load(readFileSync('.github/workflows/reviewer.yml', 'utf8')))
+    const ground = workflow.jobs['ground']
+    assert.ok(ground)
+    assert.equal(ground.outputs?.['ready'], '${{ steps.ground.outputs.ready }}')
+    assert.equal(
+      ground.steps.find((step) => step.id === 'ground')?.uses,
+      './.copse-reviewer/.github/actions/review-ground',
+    )
+    for (const name of ['findings', 'copse-findings']) {
+      const condition = workflow.jobs[name]?.if
+      assert.ok(condition)
+      for (const ready of ['false', '']) {
+        assert.equal(
+          runInNewContext(condition.slice(3, -2), {
+            needs: { ground: { outputs: { ready } } },
+          }),
+          false,
+        )
+      }
+    }
   })
 })

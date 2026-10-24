@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync, realpathSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // F3 (docs/plans/hooks-and-feature-packs.md, decision 7): hooks are sandboxed by
 // default; the Copse `sandbox: false` escape runs a hook OUTSIDE the project
@@ -49,7 +50,7 @@ describe('settings sources hooks (Copse sandbox escape)', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    removeE2eTree(workspaceRoot)
   })
 
   it('badges a `sandbox: false` Copse hook "outside sandbox" in Settings → Sources', async () => {

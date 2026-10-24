@@ -1,9 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // Exercises the Cmd/Ctrl+P quick-open palette end to end: open it, type a query,
 // see the matching file(s) from the workspace index, and choose one — which
@@ -26,11 +27,11 @@ describe('file search palette (Cmd/Ctrl+P quick open)', () => {
 
   after(() => {
     resetUserData()
-    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
+    removeE2eTree(dirname(workspaceRoot))
   })
 
   it('opens on Cmd/Ctrl+P, lists matches while typing, and opens the chosen file', async () => {
-    const dialog = await $('#file-search-dialog')
+    const dialog = await $('#file-search-dialog').getElement()
 
     // Fire the renderer shortcut. metaKey covers macOS, ctrlKey the rest — the
     // handler accepts either. The palette only registers after layout mounts,
@@ -45,17 +46,17 @@ describe('file search palette (Cmd/Ctrl+P quick open)', () => {
     // The workspace index builds asynchronously after boot; keep typing the
     // query (each input re-runs the debounced index lookup) until the unique
     // fixture file surfaces.
-    const input = await $('.file-search-input')
+    const input = await $('.file-search-input').getElement()
     await browser.waitUntil(
       async () => {
         await input.setValue('zebra-widget')
-        const rows = await $$('.file-search-item')
+        const rows = await $$('.file-search-item').getElements()
         return rows.length > 0
       },
       { timeout: 20_000, interval: 1000, timeoutMsg: 'no file-search results for "zebra-widget"' },
     )
 
-    const firstName = await $('.file-search-item .file-search-name')
+    const firstName = await $('.file-search-item .file-search-name').getElement()
     await expect(firstName).toHaveText(expect.stringContaining('zebra-widget.ts'))
 
     // Keep the focused caret visible instead of capturing either blink phase.
@@ -73,11 +74,11 @@ describe('file search palette (Cmd/Ctrl+P quick open)', () => {
 
     // Choosing the match closes the palette, opens the explorer, and loads the
     // file into the viewer (openWorkspaceFile → rightPanelMode: 'explorer').
-    const firstItem = await $('.file-search-item')
+    const firstItem = await $('.file-search-item').getElement()
     await firstItem.click()
     await dialog.waitForDisplayed({ timeout: 10_000, reverse: true })
 
-    const fileTab = await $('.file-tree .tree-row[title="src/zebra-widget.ts"]')
+    const fileTab = await $('.file-tree .tree-row[title="src/zebra-widget.ts"]').getElement()
     await fileTab.waitForDisplayed({ timeout: 10_000 })
   })
 })

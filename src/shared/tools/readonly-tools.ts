@@ -26,6 +26,7 @@ export const READONLY_AGENT_TOOLS = new Set<string>([
   'read_skill',
   // Reports worktree/cache readiness without installing or modifying anything.
   'preflight_worktree',
+  'deferred_approval_status',
   'explore',
   // Delegating to a user-authored subagent is itself non-mutating, and the
   // subagent cannot escape the run's read-only scope: that scope is ALS-based

@@ -31,8 +31,8 @@ async function frameCompletedMissingEntryTurn(): Promise<void> {
         (text, expected) => {
           const message = [
             ...document.querySelectorAll<HTMLElement>('.msg-assistant[data-message-id]'),
-          ].find((node) => node.querySelector('.message-text')?.textContent?.trim() === text)
-          const id = message?.dataset.messageId
+          ].find((node) => node.querySelector('.message-text')?.textContent.trim() === text)
+          const id = message?.dataset['messageId']
           const host = id
             ? document.querySelector<HTMLElement>(`[data-hook-cards-for="${id}"]`)
             : null
@@ -40,10 +40,11 @@ async function frameCompletedMissingEntryTurn(): Promise<void> {
           return (
             cards.length === expected.length &&
             cards.every(
-              (card) => card.dataset.hookEvent === 'stepBoundary' && card.dataset.status === 'ok',
+              (card) =>
+                card.dataset['hookEvent'] === 'stepBoundary' && card.dataset['status'] === 'ok',
             ) &&
             cards
-              .map((card) => card.dataset.hookId)
+              .map((card) => card.dataset['hookId'])
               .sort()
               .join('|') === expected.join('|')
           )
@@ -56,8 +57,8 @@ async function frameCompletedMissingEntryTurn(): Promise<void> {
   await browser.execute((text) => {
     const message = [
       ...document.querySelectorAll<HTMLElement>('.msg-assistant[data-message-id]'),
-    ].find((node) => node.querySelector('.message-text')?.textContent?.trim() === text)
-    const id = message?.dataset.messageId
+    ].find((node) => node.querySelector('.message-text')?.textContent.trim() === text)
+    const id = message?.dataset['messageId']
     const host = id ? document.querySelector(`[data-hook-cards-for="${id}"]`) : null
     const list = document.querySelector('.messages-list')
     if (!host || !list) throw new Error('final hook group or transcript missing')
@@ -70,8 +71,8 @@ async function frameCompletedMissingEntryTurn(): Promise<void> {
     const list = document.querySelector('.messages-list')
     const message = [
       ...document.querySelectorAll<HTMLElement>('.msg-assistant[data-message-id]'),
-    ].find((node) => node.querySelector('.message-text')?.textContent?.trim() === text)
-    const id = message?.dataset.messageId
+    ].find((node) => node.querySelector('.message-text')?.textContent.trim() === text)
+    const id = message?.dataset['messageId']
     const host = id ? document.querySelector(`[data-hook-cards-for="${id}"]`) : null
     if (!list || !message || !host) return false
     const box = list.getBoundingClientRect()
@@ -143,7 +144,7 @@ describe('browser preview tool', () => {
 
     await expect($('.tool-card .tool-name')).toHaveText('Opened preview', { wait: 30_000 })
     await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
-    const input = await $('.browser-tab-panel.is-active .browser-url-input')
+    const input = await $('.browser-tab-panel.is-active .browser-url-input').getElement()
     await browser.waitUntil(async () => /^http:\/\/localhost:\d+\/$/.test(await input.getValue()), {
       timeout: 10_000,
       timeoutMsg: "expected the visible Browser panel to show Copse's loopback preview URL",
@@ -151,10 +152,10 @@ describe('browser preview tool', () => {
     await browser.waitUntil(
       async () =>
         await browser.execute(() => {
-          const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
-            getTitle?: () => string
-          } | null
-          return webview?.getTitle?.() === 'Crumb & Bloom preview'
+          const webview = document.querySelector<Electron.WebviewTag>(
+            '.browser-tab-panel.is-active webview',
+          )
+          return webview?.getTitle() === 'Crumb & Bloom preview'
         }),
       {
         timeout: 15_000,
@@ -164,10 +165,10 @@ describe('browser preview tool', () => {
     await browser.waitUntil(
       async () =>
         await browser.execute(async () => {
-          const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
-            executeJavaScript?: (code: string) => Promise<unknown>
-          } | null
-          const text = await webview?.executeJavaScript?.('document.body.innerText')
+          const webview = document.querySelector<Electron.WebviewTag>(
+            '.browser-tab-panel.is-active webview',
+          )
+          const text: unknown = await webview?.executeJavaScript('document.body.innerText')
           return typeof text === 'string' && text.includes('Fresh from the Copse preview')
         }),
       {
@@ -228,7 +229,7 @@ describe('browser preview tool', () => {
   })
 
   it('shows actionable missing-entry guidance without opening or navigating a tab', async () => {
-    const panelsBefore = await $$('.browser-tab-panel')
+    const panelsBefore = await $$('.browser-tab-panel').getElements()
     const addressBefore = await $('.browser-tab-panel.is-active .browser-url-input').getValue()
     // Return to the composer through the visible Browser control before sending another turn.
     await $('[data-panel-control="browser"]').click()

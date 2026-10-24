@@ -1,5 +1,5 @@
 import type { SettingsSnapshot } from '@shared/settings-contract.ts'
-import type { ActiveDiff, StreamChunk, Thread } from '@shared/types'
+import type { ActiveDiff, StreamChunk, Thread, TranscriptAnnotation } from '@shared/types'
 import { ThreadPrRelationshipIndex } from '@shared/git/thread-pr-relations.ts'
 import { backlinksFor } from '@shared/threads/thread-links.ts'
 import type { AutomationPermissionOption, AutomationSchedule } from '@shared/types/automations.ts'
@@ -17,6 +17,7 @@ import {
 } from '@copse/agent/plugins/advisor-strategy-plugin.ts'
 import { workingBriefFromUserContent } from '@copse/agent/working-brief.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import type { GuardedYoloPhase } from '@shared/types/guarded-yolo.ts'
 import type { DemoScenario } from './scenarios.ts'
 import { playTrace, type TracePlayerOptions } from './trace-player.ts'
 import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
@@ -421,6 +422,31 @@ function unsupported(): Promise<never> {
 
 export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = {}): ApiClient {
   const settings = new Map(Object.entries(scenario.settings))
+  const guardedYoloPhases = new Map<string, GuardedYoloPhase>(
+    scenario.guardedYoloPhase && scenario.threads[0]
+      ? [[scenario.threads[0].id, scenario.guardedYoloPhase]]
+      : [],
+  )
+  const guardedYoloListeners = new Set<
+    Parameters<ApiClient['security']['onGuardedYoloChanged']>[0]
+  >()
+  const demoGuardedYoloState = (
+    threadId: string,
+  ): Awaited<ReturnType<ApiClient['security']['getGuardedYolo']>> => ({
+    threadId,
+    phase: guardedYoloPhases.get(threadId) ?? 'off',
+    containment: 'unsandboxed',
+    expiresAt: null,
+  })
+  const updateGuardedYolo = (
+    threadId: string,
+    phase: GuardedYoloPhase,
+  ): ReturnType<ApiClient['security']['getGuardedYolo']> => {
+    guardedYoloPhases.set(threadId, phase)
+    const state = demoGuardedYoloState(threadId)
+    for (const listener of guardedYoloListeners) listener(state)
+    return resolved(state)
+  }
   let toolPermissionCatalog = structuredClone(scenario.toolPermissions ?? DEMO_TOOL_PERMISSIONS)
   let mcpStatuses: readonly McpServerStatus[] = scenario.mcpServers ?? DEMO_MCP_STATUSES
   const pendingMcpSignIns = new Map<string, () => void>()
@@ -624,13 +650,23 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onPluginTabRequest: subscribe,
     },
     security: {
-      getGuardedYolo: (threadId) =>
-        resolved({ threadId, phase: 'off', containment: 'unsandboxed', expiresAt: null }),
-      enableGuardedYolo: (threadId) =>
-        resolved({ threadId, phase: 'off', containment: 'unsandboxed', expiresAt: null }),
-      disableGuardedYolo: (threadId) =>
-        resolved({ threadId, phase: 'off', containment: 'unsandboxed', expiresAt: null }),
-      onGuardedYoloChanged: subscribe,
+      getGuardedYolo: (threadId) => resolved(demoGuardedYoloState(threadId)),
+      getContextPermissions: () =>
+        resolved(
+          scenario.contextPermissions ?? {
+            outsideReadPaths: [],
+            browserOrigins: [],
+            portBindingAllowed: false,
+          },
+        ),
+      enableGuardedYolo: (threadId) => updateGuardedYolo(threadId, 'armed'),
+      disableGuardedYolo: (threadId) => updateGuardedYolo(threadId, 'off'),
+      onGuardedYoloChanged: (listener) => {
+        guardedYoloListeners.add(listener)
+        return () => {
+          guardedYoloListeners.delete(listener)
+        }
+      },
     },
     container: {
       runThread: (request) =>
@@ -773,6 +809,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       suggestFollowUps: () => resolved(structuredClone([...(scenario.followUps ?? [])])),
       suggestPrBody: () => resolved(scenario.prBody ?? null),
       suggestNextStep: () => resolved(null),
+      replayPendingDecisions: () => resolvedVoid(),
+      attachTranscripts: () => resolvedVoid(),
+      onTranscriptSnapshot: () => () => {},
       onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => {
         chunkHandlers.add(handler)
         return (): void => {
@@ -970,6 +1009,17 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     },
     plans: { get: () => resolved(null), revision: () => resolved(null), change: unsupported },
     threads: {
+      archiveState: () =>
+        resolved({ archived: threads.filter((thread) => thread.archivedAt != null), review: [] }),
+      archiveDecision: (_projectId, threadId, decision) => {
+        const thread = threads.find((candidate) => candidate.id === threadId)
+        if (!thread) return resolved(false)
+        if (decision === 'archive') thread.archivedAt = Date.now()
+        if (decision === 'restore') delete thread.archivedAt
+        thread.updatedAt = Date.now()
+        return resolved(true)
+      },
+      onAutoArchived: () => () => {},
       storageSize: () => resolved({ bytes: 24_576, truncated: false }),
       archive: (_projectId, threadId) => {
         const archivedAt = Date.now()
@@ -980,7 +1030,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       loadProject: (projectId: string) =>
         resolved(
           projectId === scenario.project.id
-            ? structuredClone(threads)
+            ? structuredClone(threads).map((thread) =>
+                scenario.deferSideChatTranscripts === true && thread.sideChat !== undefined
+                  ? { ...thread, messages: [], messagesLoaded: false }
+                  : thread,
+              )
             : structuredClone(
                 scenario.otherProjects?.find((other) => other.project.id === projectId)?.threads ??
                   [],
@@ -1031,6 +1085,18 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         }
         return resolvedVoid()
       },
+      annotateMessage: (
+        _projectId: string,
+        threadId: string,
+        messageId: string,
+        annotation: TranscriptAnnotation,
+      ) => {
+        const message = threads
+          .find((candidate) => candidate.id === threadId)
+          ?.messages.find((candidate) => candidate.id === messageId)
+        if (message) Object.assign(message, annotation)
+        return resolvedVoid()
+      },
       updateMeta: (
         _projectId: string,
         threadId: string,
@@ -1066,6 +1132,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       fork: () => resolved({ source: 'empty' as const, messageCount: 0 }),
       backlinks: (_projectId: string, kind: 'url' | 'thread', target: string) =>
         resolved(backlinksFor(threads, kind, target)),
+      pendingApprovals: () => resolved([]),
       historySnapshot: unsupported,
       editHistory: unsupported,
       undoHistoryEdit: unsupported,
@@ -1467,7 +1534,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       rollback: unsupported,
     },
     decisions: {
-      list: emptyArray,
+      list: () => resolved(scenario.decisions ?? []),
+      listThread: (_projectId, threadId) =>
+        resolved((scenario.decisions ?? []).filter((decision) => decision.threadId === threadId)),
       export: () => resolved({ path: '', count: 0 }),
     },
     automations: {
@@ -1586,6 +1655,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       // The demo has no linked worktrees, so there is never a detached one.
       worktreeAttachment: () => resolved({ state: 'attached' }),
       reattachWorktree: () => Promise.reject(new Error('The demo has no thread worktrees')),
+      restoreWorktree: () => Promise.reject(new Error('The demo has no thread worktrees')),
       promptState: () => resolved({ startingCommit: null, dirty: false }),
       checkoutBranch: (_projectId: string, _threadId: string, branch: string) => {
         currentBranch = branch

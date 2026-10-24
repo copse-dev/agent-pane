@@ -6,6 +6,7 @@ import type { FollowUpContext } from '@shared/follow-ups/types.ts'
 import type { UsageRecordInput } from '@shared/usage/usage-event.ts'
 import type { SmallTasksRoute } from './providers/small-tasks-provider.ts'
 import { setSetting } from './storage/settings.ts'
+import { runWithExplicitSettings } from './storage/settings-context.ts'
 import {
   NEXT_STEP_TIMEOUT_MS,
   cleanNextStep,
@@ -145,6 +146,16 @@ describe('suggestNextStep', () => {
     assert.equal(h.resolves(), 0)
     assert.equal(provider.calls, 0)
     assert.deepEqual(h.recorded, [])
+  })
+
+  it('suggests a next step when no preference is saved', async () => {
+    const provider = answering('Run the tests')
+    const h = harness({ provider, model: 'lmstudio:small' })
+    const hint = await runWithExplicitSettings({ values: {} }, () =>
+      suggestNextStep(CONTEXT, h.deps),
+    )
+    assert.equal(hint, 'Run the tests')
+    assert.equal(provider.calls, 1)
   })
 
   it('returns null without recording anything when no provider resolves', async () => {

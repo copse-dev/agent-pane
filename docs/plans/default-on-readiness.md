@@ -36,7 +36,7 @@ are from the audited commit.
 | Parallel Search (`copse.parallel-search`)            | Plugin manifest; `registry-bootstrap.ts:460-468`             | Keep opt-in                   | Paid third-party API; enabling _is_ the network consent (`permission-gate.ts:724-735`)                             | By design: needs the user's own key and consent                                                                        |
 | DevTools shortcut (`copse.devtools-shortcut`)        | Plugin manifest; `create-main-window.ts:304-336`             | Keep opt-in                   | Developer affordance                                                                                               | `globalShortcut` steals Ctrl+Shift+I system-wide                                                                       |
 | Remote desktop viewer (`vncEnabled`)                 | `settings-dialog.ts:300`; `ipc/vnc.ts` (≈11 inline defaults) | Keep opt-in — sign-off        | Good unit and e2e coverage when enabled                                                                            | Discovery (port scan, Bonjour, SSH) runs at every launch; LAN/SSH VNC not separable from local devices; stale copy     |
-| Next-step tab complete (`nextStepSuggestionEnabled`) | `next-step-service.ts:56`; `next-step-hint.ts:71`            | Keep opt-in                   | Enabled-state e2e with screenshots                                                                                 | Second small-tasks call per turn; can fall back to the chat model; Tab-key accessibility decision                      |
+| Next-step tab complete (`nextStepSuggestionEnabled`) | `next-step-service.ts`; `next-step-hint.ts`                  | On by default                 | Default-state unit and e2e coverage; toggle under Appearance                                                       | Second small-tasks call per turn; users can opt out under Appearance                                                   |
 | Unattended container runs (`containerRunsEnabled`)   | `container-run-service.ts:322`; `input-bar.ts:414`           | Keep opt-in — sign-off        | Large unit suite; hardened container design                                                                        | Docker path has no required CI (advisory workflow added, never yet run); no cost/idle budget; #2689; no named reviewer |
 | Model classifier (`modelClassifierEnabled`)          | `registry-bootstrap.ts:139-141`                              | Keep opt-in                   | Pure heuristic, 13 unit tests                                                                                      | Advice nothing consumes; toggle needs a restart; no enabled-state test                                                 |
 | Delegating steps (`orchestrationStrategyEnabled`)    | `registry-bootstrap.ts:155-157`                              | Keep opt-in — sign-off        | Worker goes through the permission gate                                                                            | Runner untested; bypasses afterToolUse hooks; no spend cap; toggle needs a restart                                     |
@@ -339,7 +339,13 @@ window-local accelerator.
   make discovery lazy. Local-device Desktop can then follow Apple Development, while network VNC stays
   opt-in.
 
-### Next-step tab complete (`nextStepSuggestionEnabled`) — Keep opt-in
+### Next-step tab complete (`nextStepSuggestionEnabled`) — On by default
+
+Update 2026-10-18: promoted at the user's request. The setting now lives under Appearance,
+defaults to enabled in both renderer and main, and preserves an explicit saved opt-out.
+The focused Electron spec exercises the unset preference and Tab acceptance; service and
+controller unit tests cover the default and disabled states. The original audit below records
+the cost and accessibility considerations at the time of review.
 
 - **Coverage:** enabled-state tests exist: `next-step-hint.test.ts`, `input-bar.test.ts` and
   `next-step-hint.e2e.ts` with screenshots.
@@ -347,8 +353,8 @@ window-local accelerator.
   On a cloud-only profile the default LM Studio route fails silently. If a configured small-tasks model
   fails to build, it falls back to the **chat model** (`provider-selection.ts:310-326`), so a frontier
   model can be billed every turn.
-- **Other gaps:** usage is logged against the wrong model. Taking plain Tab from an empty composer is
-  an accessibility decision that someone needs to make explicitly. `suggestNextStep` has no unit test.
+- **Other considerations:** plain Tab accepts the suggestion from an empty composer. Users can
+  disable this under Appearance. Service unit coverage now includes model calls and usage recording.
 
 ### Unattended container runs (`containerRunsEnabled`) — Keep opt-in (sign-off)
 

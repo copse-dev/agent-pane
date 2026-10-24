@@ -1,13 +1,14 @@
 # Deferred approvals and the review queue
 
-**Status: Active (D0–D1 landed).** Prompt-cause instrumentation and the `defer`
-outcome with its durable queue are implemented; D2 onward is design only. Split out of
+**Status: Active (D0–D1 landed; scheduled first-turn deferral and read-only Context list added).** Prompt-cause instrumentation and the `defer`
+outcome with its durable queue are implemented. The Context panel lists pending
+requests for the active thread; verdicts and approved-action replay remain design work. Split out of
 [`unattended-runs.md`](unattended-runs.md), which originally carried this as one of
 its phases. It is separate work with a separate value case: **it needs no container, no
 Docker, and no new runtime**, and it is worth shipping on today's host sandbox on its own.
 
 The motivation and future-tense decisions below are the original design. D0–D1
-now provide the gate outcome and storage; the review UI and approved-action replay
+now provide the gate outcome and storage; the full review UI and approved-action replay
 remain later phases. The experimental container runtime consumes the implemented
 queue; this does not imply those later review workflows are available.
 
@@ -152,6 +153,12 @@ in the queue and in the decision log; nothing a deferral touched was executed.
 
 ### D2 — review surface
 
+The Context panel now shows a read-only list of pending deferred requests beside
+live `ask_user` questions and saved `request_review_input` questions. Live questions
+open the existing Activity answer flow; saved questions open their existing answer
+panel. It marks each deferred action as not run. It cannot approve,
+reject, or replay an action; the exit gate below is still open.
+
 - A list of outstanding requests with their context, live while the run continues and
   summarised when it ends.
 - Per-item: approve and replay, approve for the rest of the run, reject with a note the
@@ -184,20 +191,26 @@ Wire the mode into the runs that need it: `automations.md` schedules,
 ([`unattended-runs.md`](unattended-runs.md)). Each is a consumer choosing the mode;
 none of them owns a second queue.
 
+Schedule-created threads defer prompts during their verified first turn. Later
+user turns remain interactive. The queue record and agent-facing request id let
+the agent report the dependency and continue work within existing permissions.
+Human review and replay still depend on D2; approval alone is not evidence that
+the action ran.
+
 Exit gate: a scheduled automation that hits an escalation completes its other work and
 presents a review queue, instead of pausing the thread.
 
 ## Test plan
 
-| Area                | Tier       | What it must prove                                                             |
-| ------------------- | ---------- | ------------------------------------------------------------------------------ |
-| Cause taxonomy      | unit       | Every prompt site maps to a cause; the type predicate has its own test         |
-| Outcome mapping     | unit       | `defer` maps onto the headless contract; cannot soften `deny` or widen `allow` |
-| Queue durability    | unit       | Survives restart; ordering; no duplicate entry for a repeated request          |
-| Non-execution       | unit       | A deferred action provably did not run                                         |
-| Replay              | unit + e2e | Approval replays the exact request; stale context fails loudly                 |
-| Agent comprehension | bench      | Deferral wording does not read as success or trigger a retry loop              |
-| Review surface      | e2e        | Queue states, approve/reject/bulk, end-of-run summary                          |
+| Area                | Tier       | What it must prove                                                                                                                                                                                              |
+| ------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cause taxonomy      | unit       | Every prompt site maps to a cause; the type predicate has its own test                                                                                                                                          |
+| Outcome mapping     | unit       | `defer` maps onto the headless contract (it has no `defer` today; proposed home: the execution contract's `unattendedAsk`, surfaced to ACP clients as `requires_action`); cannot soften `deny` or widen `allow` |
+| Queue durability    | unit       | Survives restart; ordering; no duplicate entry for a repeated request                                                                                                                                           |
+| Non-execution       | unit       | A deferred action provably did not run                                                                                                                                                                          |
+| Replay              | unit + e2e | Approval replays the exact request; stale context fails loudly                                                                                                                                                  |
+| Agent comprehension | bench      | Deferral wording does not read as success or trigger a retry loop                                                                                                                                               |
+| Review surface      | e2e        | Queue states, approve/reject/bulk, end-of-run summary                                                                                                                                                           |
 
 ## Risks and open questions
 

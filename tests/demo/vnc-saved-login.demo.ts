@@ -17,7 +17,23 @@ async function setRailWidth(width: number): Promise<void> {
   }, width)
 }
 
-async function measureSavedLogin() {
+async function measureSavedLogin(): Promise<{
+  visibleForgetActions: number
+  accountLines: number
+  forgetLines: number
+  text: string
+  copyHeight: number
+  copyBottom: number
+  lineHeight: number
+  forgetTop: number
+  forgetRight: number
+  forgetText: string
+  forgetClass: string
+  detailsRight: number
+  detailsPaddingLeft: string
+  headerPaddingLeft: string
+  railWidth: number
+} | null> {
   return browser.execute(() => {
     const copy = document.querySelector<HTMLElement>(
       '.vnc-device.is-selected .vnc-saved-login-copy',
@@ -48,13 +64,13 @@ async function measureSavedLogin() {
       ].filter((button) => button.getClientRects().length > 0).length,
       accountLines: lines(account),
       forgetLines: lines(forget),
-      text: copy.textContent ?? '',
+      text: copy.textContent,
       copyHeight: copyBox.height,
       copyBottom: copyBox.bottom,
       lineHeight: Number.parseFloat(getComputedStyle(copy).lineHeight),
       forgetTop: forgetBox.top,
       forgetRight: forgetBox.right,
-      forgetText: forget.textContent ?? '',
+      forgetText: forget.textContent,
       forgetClass: forget.className,
       detailsRight: details.getBoundingClientRect().right,
       detailsPaddingLeft: getComputedStyle(details).paddingLeft,
@@ -69,9 +85,9 @@ describe('remote desktop saved-login details', () => {
     await browser.url('/?scenario=vnc-saved-login')
     // Supply a saved remote machine at the IPC boundary; the local device is intentionally absent.
     await browser.execute(() => {
-      window.api.sshWorkspace.listHosts = async () => [
-        { id: 'demo-studio', label: 'Studio', host: 'studio.local' },
-      ]
+      window.api.sshWorkspace.listHosts = async (): Promise<
+        { id: string; label: string; host: string }[]
+      > => [{ id: 'demo-studio', label: 'Studio', host: 'studio.local' }]
     })
     const control = $('[data-panel-control="vnc"]')
     await control.waitForDisplayed({ timeout: 20_000 })

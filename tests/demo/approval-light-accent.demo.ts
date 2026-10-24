@@ -24,7 +24,10 @@ describe('browser-hosted light approval accent', () => {
           const scaled = channel / 255
           return scaled <= 0.04045 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4
         })
-        return 0.2126 * linear[0]! + 0.7152 * linear[1]! + 0.0722 * linear[2]!
+        const [red, green, blue] = linear
+        if (red === undefined || green === undefined || blue === undefined)
+          throw new Error('Expected three RGB colour channels')
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue
       }
       const background = style.backgroundColor
       const color = style.color
@@ -42,7 +45,10 @@ describe('browser-hosted light approval accent', () => {
     assert.ok(appearance, 'approval primary action must exist')
     assert.equal(appearance.background, 'rgb(32, 253, 133)')
     assert.equal(appearance.color, 'rgb(68, 68, 68)')
-    assert.ok(appearance.contrast >= 4.5, `expected WCAG AA contrast, got ${appearance.contrast}`)
+    assert.ok(
+      appearance.contrast >= 4.5,
+      `expected WCAG AA contrast, got ${String(appearance.contrast)}`,
+    )
 
     await saveElementScreenshot('#approval-dialog', 'approval-light-accent.png')
   })

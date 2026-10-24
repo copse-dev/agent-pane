@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
@@ -10,6 +10,7 @@ import {
   withCaptureFrame,
 } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const SKILL = 'settings-navigation-fixture'
 const INSTRUCTIONS = 'Prefer readable names and focused changes.'
@@ -29,10 +30,10 @@ describe('Settings section composition, validation and sticky actions', () => {
   })
   after(() => {
     resetUserData()
-    rmSync(workspace, { recursive: true, force: true })
+    removeE2eTree(workspace)
   })
 
-  it('shows the three General groups with providers contracted', async () => {
+  it('shows the two General groups with every connection row closed', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog button[type="submit"]').waitForEnabled({ timeout: 15_000 })
@@ -43,14 +44,14 @@ describe('Settings section composition, validation and sticky actions', () => {
         ),
       ].map((legend) => legend.textContent.trim()),
     )
-    assert.deepEqual(groups, ['Coding agents', 'API keys', 'Models'])
+    assert.deepEqual(groups, ['Models & agents', 'Models'])
+    await $('[data-testid="models-agents-list"] .acp-row').waitForExist({ timeout: 15_000 })
     assert.equal(
-      await browser.execute(() =>
-        [
-          ...document.querySelectorAll('.settings-section[data-section="general"] .provider-chip'),
-        ].some((chip) => chip.classList.contains('active')),
+      await browser.execute(
+        () =>
+          document.querySelectorAll('[data-testid="models-agents-list"] .acp-row-options').length,
       ),
-      false,
+      0,
     )
     await saveElementScreenshot('#settings-dialog', 'settings-composition-general.png')
     const model = $('[data-model-setting-target="model"]')

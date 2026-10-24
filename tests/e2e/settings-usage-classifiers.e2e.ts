@@ -63,11 +63,9 @@ describe('settings usage lists classifier calls', function () {
   }
 
   it('shows each connection and model with calls and tokens, apart from chat models', async () => {
-    const summary = (await browser.execute(() => window.api.usage.getSummary())) as {
-      day: { classifiers: Array<{ provider: string; model: string; calls: number }> }
-    }
+    const summary = await browser.execute(() => window.api.usage.getSummary())
     assert.deepEqual(
-      summary.day.classifiers.map((row) => [row.provider, row.model, row.calls]),
+      (summary.day.classifiers ?? []).map((row) => [row.provider, row.model, row.calls]),
       [
         ['TypeSafe / Jev', 'jev-1', 1],
         ['Kev (local)', 'kev-4b', 2],
@@ -81,7 +79,7 @@ describe('settings usage lists classifier calls', function () {
     await expect($('.usage-classifier-group h4')).toHaveText('Classifiers')
     const rows = await browser.execute(() =>
       [...document.querySelectorAll('.usage-classifier-table tbody tr')].map((row) =>
-        [...row.querySelectorAll('td')].map((cell) => cell.textContent ?? ''),
+        [...row.querySelectorAll('td')].map((cell) => cell.textContent),
       ),
     )
     assert.deepEqual(rows, [
@@ -93,7 +91,7 @@ describe('settings usage lists classifier calls', function () {
     // Chat-model tables hold only chat models: a classifier is not "unpriced cloud usage".
     const modelTables = await browser.execute(() =>
       [...document.querySelectorAll('.usage-model-group:not(.usage-classifier-group)')].map(
-        (group) => group.textContent ?? '',
+        (group) => group.textContent,
       ),
     )
     assert.ok(modelTables.some((text) => text.includes('claude-sonnet-4-6')))

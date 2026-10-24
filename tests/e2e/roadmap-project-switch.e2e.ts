@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedProjectSwitchFixture, seedRoadmapNotes } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('roadmap project switching', () => {
   let projectA: string
@@ -33,7 +34,7 @@ describe('roadmap project switching', () => {
 
   after(() => {
     resetUserData()
-    for (const path of cleanup) rmSync(path, { recursive: true, force: true })
+    for (const path of cleanup) removeE2eTree(path)
   })
 
   it('clears the selected editor when switching to another project with roadmap open', async () => {

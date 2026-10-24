@@ -255,6 +255,13 @@ export function createAcpAgentsSection(
     embedded?: boolean
     /** Fired after a refresh so an embedded host can rebuild its chip row. */
     onChanged?: () => void
+    /**
+     * Embedded only: omit this panel's own "Re-scan device" row. Set this when
+     * the host already owns a single Re-scan action and drives `scan`/`reload`
+     * itself, so an agent's open options don't show a second, narrower rescan
+     * button nested inside them.
+     */
+    hideRescanAction?: boolean
   } = {},
 ): AcpAgentsSection {
   const embedded = opts.embedded ?? false
@@ -286,7 +293,9 @@ export function createAcpAgentsSection(
     ? el(
         'div',
         { class: 'provider-panel-embedded' },
-        el('div', { class: 'provider-actions' }, rescanBtn, scanStatus),
+        ...(opts.hideRescanAction
+          ? []
+          : [el('div', { class: 'provider-actions' }, rescanBtn, scanStatus)]),
         formHost,
       )
     : el(
@@ -511,11 +520,18 @@ export function createAcpAgentsSection(
         .then((probe) => {
           detectedModels = selectorChoicesAfterProbe(detectedModels, probe.models)
           detectedModes = selectorChoicesAfterProbe(detectedModes, probe.modes)
+          // Refresh the option lists without selecting the agent's own current
+          // default: an unset field means "agent default" and must keep meaning
+          // that after a probe, or the session mode (or model) the agent
+          // happened to be on when probed silently becomes this config's pinned
+          // choice on the next Save — indistinguishable from the user actually
+          // picking it, and wrong the moment that default stops suiting every
+          // model the agent might run.
           if (probe.models) {
-            void modelPicker.refresh(modelSelect.value || probe.models.currentValue)
+            void modelPicker.refresh(modelSelect.value)
           }
           if (probe.modes) {
-            setModeOptions(probe.modes.choices, modeSelect.value || probe.modes.currentValue)
+            setModeOptions(probe.modes.choices, modeSelect.value)
           }
           // Persist immediately so the detected models/modes appear without a
           // separate Save. Merge onto the *saved* config (not the in-progress form
@@ -537,9 +553,11 @@ export function createAcpAgentsSection(
           }
           const bits = [
             probe.models
-              ? `${String(probe.models.choices.length)} models (default: ${probe.models.currentValue})`
+              ? `${String(probe.models.choices.length)} models (agent default: ${probe.models.currentValue})`
               : 'no selectable models',
-            probe.modes ? `${String(probe.modes.choices.length)} permission modes` : '',
+            probe.modes
+              ? `${String(probe.modes.choices.length)} permission modes (agent default: ${probe.modes.currentValue})`
+              : '',
           ].filter(Boolean)
           setInlineStatus(modelStatus, 'ok', `Detected ${bits.join(', ')}.`)
         })

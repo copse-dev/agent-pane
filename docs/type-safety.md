@@ -9,8 +9,9 @@ The static checks that keep the codebase honest run together under **`npm run ch
 **`npm run check`** composes that gate with the complete unit/component suite. CI runs the same
 checks in its required jobs:
 
-- **`tsc`** (`npm run typecheck`) — both tsconfig projects (`tsconfig.node.json`,
-  `tsconfig.web.json`), on `strict` plus the extra flags (`noUncheckedIndexedAccess`,
+- **`tsc`** (`npm run typecheck`) — the Node, renderer, E2E and demo projects
+  (`tsconfig.node.json`, `tsconfig.web.json`, `tsconfig.e2e.json`, `tsconfig.demo.json`),
+  on `strict` plus the extra flags (`noUncheckedIndexedAccess`,
   `exactOptionalPropertyTypes`, `noPropertyAccessFromIndexSignature`, …).
 - **Type coverage** (`npm run type-coverage`) — `type-coverage --strict` measures expressions whose
   type escapes to `any` or cannot be determined. The Node and renderer projects have separate
@@ -28,6 +29,19 @@ of it. The risk policy in [`AGENTS.md`](../AGENTS.md#before-committing) decides 
 or the complete `npm run check` are also required locally. For a fast inner loop on a few files,
 `npx tsc --noEmit -p tsconfig.web.json`, `npx eslint <files>`, and `npx oxfmt --write <files>` are the
 same tools the gates invoke.
+
+The E2E and demo projects include their WDIO configurations and imported helpers, with
+browser DOM, Mocha and WDIO declarations. `typecheck:e2e` and `typecheck:demo` run each
+project independently; the syntax smoke check remains a separate, faster parse-only check.
+Type-aware lint runs these projects in separate sequential shards to release each TypeScript
+program before loading the next one.
+
+UI fixtures use the existing `tests/**/*.ts` ESLint override: test doubles may keep async
+signatures without an internal await, assertion APIs may deliberately omit awaiting, and
+partial doubles may use explicit `any` or object-literal assertions. The override also permits
+prototype-membership probes. Unsafe assignment, argument, call, return and type-assertion
+checks remain enforced. These allowances do not apply to application source or WDIO
+configuration files; executable `.mts` fixtures retain the ordinary typed rules.
 
 ## Write code the linter never has to flag
 

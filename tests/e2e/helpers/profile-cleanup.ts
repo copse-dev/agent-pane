@@ -1,4 +1,4 @@
-import { rmSync } from 'node:fs'
+import { removeE2eTree } from './remove-tree.ts'
 
 interface ExitLifecycle {
   once(event: 'exit', listener: () => void): unknown
@@ -22,7 +22,7 @@ export function installE2eProfileCleanup(
     const path = pendingPath
     pendingPath = null
     try {
-      rmSync(path, { recursive: true, force: true })
+      removeE2eTree(path)
     } catch {
       // The OS may still have an Electron file open during forced teardown.
       // Cleanup is best-effort and must never hide the original test result.

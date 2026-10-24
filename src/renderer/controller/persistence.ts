@@ -3,16 +3,20 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { Project, ProjectGroup, Thread } from '@shared/types'
 import type { MainWindowNavigation } from '@shared/types/main-window.ts'
 import { getThreadById, sortThreadsNewestFirst } from '@shared/store/thread-helpers.ts'
+import { TRANSCRIPT_META_KEYS, type TranscriptMeta } from '@shared/store/transcript-state.ts'
 import { backgroundProjectOf } from './background-threads.ts'
+import { isApplyingRuntimeOwnedChunk, isRuntimeOwnedMessage } from './runtime-transcript.ts'
 import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { RendererStorageKey } from '@shared/storage-keys.ts'
 
 // On-disk persistence for projects and their chat threads. Projects stay in the
 // shared electron-store (config.json). Threads live in the filesystem-native
 // store (issue #644): the renderer maps store events onto event-level writes —
-// `create` on a new thread, `appendMessage` on each finalized message, and a
-// debounced `updateMeta` for metadata (draft/usage/status/todos/title/…) —
-// instead of rewriting whole threads on every keystroke.
+// `create` on a new thread, `appendMessage` on each human prompt and on each
+// finalized message of a stream main does not own, and a debounced
+// `updateMeta` for metadata (draft/usage/status/todos/title/…) — instead of
+// rewriting whole threads on every keystroke. Messages of a turn main
+// dispatched are main's to write.
 
 // Named from the shared allowlist: `storage:get` / `storage:set` reject any key
 // main does not know about, and `loadProjects` runs during an un-caught boot
@@ -219,6 +223,22 @@ function serializedNavigation(api: ApiClient, navigation: MainWindowNavigation):
 const threadWriteKey = (projectId: string, threadId: string): string =>
   `thread:${projectId}:${threadId}`
 
+/**
+ * Run `start` once this window's queued writes for a thread have landed —
+ * synchronously when none are queued. Starting a turn goes through here: main
+ * now writes the turn's transcript and reads the thread when the turn starts,
+ * so the human prompt this window appended must be on disk first or main's
+ * messages could be spine-ordered before it.
+ */
+export function afterThreadWrites<T>(
+  projectId: string,
+  threadId: string,
+  start: () => Promise<T>,
+): Promise<T> {
+  const pending = writeChains.get(threadWriteKey(projectId, threadId))
+  return pending ? pending.catch(() => undefined).then(start) : start()
+}
+
 type ThreadMeta = Omit<Thread, 'messages' | 'messagesLoaded' | 'hasSavedPlan'>
 
 function metaOf(thread: Thread): ThreadMeta {
@@ -276,6 +296,32 @@ function metaPatch(prev: ThreadMeta, next: ThreadMeta): Partial<ThreadMeta> {
 // writes and its deletions are still detected. Per-project so a project switch
 // never mistakes the other project's threads for deletions.
 const persistedMeta = new Map<string, Map<string, ThreadMeta>>()
+
+/** Runtime-derived fields are already owned by main, never autosaved back. */
+export function acceptRuntimeThreadMeta(
+  projectId: string,
+  thread: Thread,
+  before?: TranscriptMeta,
+): void {
+  const previous = persistedMeta.get(projectId)?.get(thread.id)
+  if (!previous) return
+  const next = { ...previous }
+  for (const key of TRANSCRIPT_META_KEYS) {
+    if (before && JSON.stringify(before[key]) === JSON.stringify(thread[key])) continue
+    Object.assign(next, { [key]: thread[key] })
+  }
+  persistedMeta.get(projectId)?.set(thread.id, next)
+}
+
+/** Register a thread loaded from main without resetting other pending metadata edits. */
+export function recordPersistedThread(projectId: string, thread: Thread): void {
+  let metas = persistedMeta.get(projectId)
+  if (!metas) {
+    metas = new Map<string, ThreadMeta>()
+    persistedMeta.set(projectId, metas)
+  }
+  metas.set(thread.id, metaOf(thread))
+}
 
 /**
  * Diff a project's threads against the last-persisted metadata baseline and emit
@@ -412,8 +458,26 @@ export function saveProjectGroups(api: ApiClient, groups: ProjectGroup[]): Promi
   return serializedSet(api, KEY_PROJECT_GROUPS, groups)
 }
 
+const threadLoadRevisions = new WeakMap<ApiClient, Map<string, number>>()
+
+/** Discard metadata responses that started before a main-process archive/restore. */
+export function invalidateProjectThreadLoads(api: ApiClient, projectId: string): void {
+  let revisions = threadLoadRevisions.get(api)
+  if (!revisions) {
+    revisions = new Map()
+    threadLoadRevisions.set(api, revisions)
+  }
+  revisions.set(projectId, (revisions.get(projectId) ?? 0) + 1)
+}
+
 export async function loadThreads(api: ApiClient, projectId: string): Promise<Thread[]> {
-  const threads = sortThreadsNewestFirst(await api.threads.loadProject(projectId)).map((thread) =>
+  let loaded: Thread[]
+  let revision: number
+  do {
+    revision = threadLoadRevisions.get(api)?.get(projectId) ?? 0
+    loaded = await api.threads.loadProject(projectId)
+  } while (revision !== (threadLoadRevisions.get(api)?.get(projectId) ?? 0))
+  const threads = sortThreadsNewestFirst(loaded).map((thread) =>
     thread.status !== 'running' && thread.lastSettledAt === undefined
       ? { ...thread, lastSettledAt: thread.updatedAt }
       : thread,
@@ -460,7 +524,10 @@ export function awaitPendingThreadPersistence(): Promise<void> {
 //   `create` (new id), `updateMeta` (changed meta), or `delete` (removed id).
 // - Finalized messages persist immediately via `appendMessage` (the commit
 //   point), preceded by a `reconcile` on the same per-thread queue so a
-//   brand-new thread's `create` lands before its first append.
+//   brand-new thread's `create` lands before its first append. The exception is
+//   a turn main dispatched: main reduces and writes that transcript itself, so
+//   events fired while a stamped chunk is applied write nothing here (see
+//   `runtime-transcript.ts`). Human prompts are still written from here.
 //
 // Stale-save protection: every write resolves the active project / thread from
 // current state at fire time. A late `message_done` from a thread that is gone
@@ -618,6 +685,8 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
         schedule()
         return
       }
+      // Anchored by a turn main owns: main wrote it.
+      if (isApplyingRuntimeOwnedChunk()) return
       const message = getThreadById(store, threadId)?.messages.find(
         (candidate) => candidate.id === messageId,
       )
@@ -645,6 +714,11 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
       // User messages are complete when added — persist now. An assistant message
       // is created empty and streamed, so it waits for `message_done`; still
       // reconcile so the thread's create/meta lands.
+      // A machine turn's prompt arrives in a stamped chunk; main wrote it.
+      if (message?.role === 'user' && isApplyingRuntimeOwnedChunk()) {
+        schedule()
+        return
+      }
       if (message?.role === 'user') {
         const backgroundProjectId = backgroundProjectOf(store, threadId)
         if (backgroundProjectId) {
@@ -658,6 +732,8 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
       else schedule()
     }),
     store.on('message_done', (messageId) => {
+      // Main finalized and wrote this message from the same chunk.
+      if (isApplyingRuntimeOwnedChunk()) return
       const threadId = threadIdOfMessage(messageId)
       if (!threadId) return
       // A carried background run persists into its own project's store; the
@@ -677,6 +753,10 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
     // carry the latest args/response across an app restart. Do not persist a
     // running tool: the v1 spine deliberately has no running status.
     store.on('tool_call_updated', (messageId, toolCallId) => {
+      if (isApplyingRuntimeOwnedChunk()) return
+      // A summary label on a main-owned message is sent to main to merge
+      // (`applySummary` in agent.ts); writing this copy could undo main's.
+      if (!toolCallId && isRuntimeOwnedMessage(messageId)) return
       const threadId = threadIdOfMessage(messageId)
       if (!threadId) return
       const message = getThreadById(store, threadId)?.messages.find(

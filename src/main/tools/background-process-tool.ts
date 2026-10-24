@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import {
   getBackgroundProcessLogs,
+  isBackgroundExitObserved,
   listBackgroundProcesses,
   type BackgroundProcessInfo,
 } from '../services/exec/background-process.ts'
@@ -75,7 +76,9 @@ export const runBackgroundTool = defineTool({
       if (!id) return 'run_background logs requires an id.'
       const logs = getBackgroundProcessLogs(id)
       if (logs === null) return `No background task with id "${id}".`
-      return logs.trim() || '(no output yet)'
+      const output = logs.trim() || '(no output yet)'
+      const info = listBackgroundProcesses().find((task) => task.id === id)
+      return info && !info.running ? `${formatInfo(info)}\n\n${output}` : output
     }
 
     if (action === 'stop') {
@@ -113,6 +116,7 @@ export const runBackgroundTool = defineTool({
                   turnTreeId,
                   exitCode: completed.exitCode,
                   timedOut: completed.timedOut,
+                  alreadyObserved: () => isBackgroundExitObserved(completed.id, owner),
                 },
                 armedWakeHandler,
               )

@@ -1,12 +1,18 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import {
+  readSeededSettings,
+  resetUserData,
+  seedEmptyProject,
+  writeSettings,
+} from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 async function assertPickerFits(): Promise<void> {
   const layout = await browser.execute(() => {
@@ -45,7 +51,7 @@ describe('roadmap import picker', () => {
     // a linked worktree whose external gitdir is correctly hidden by the app's
     // project sandbox, which would make origin detection environment-dependent.
     workspaceRoot = join(tmpdir(), 'copse-roadmap-import-workspace')
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    removeE2eTree(workspaceRoot)
     mkdirSync(workspaceRoot, { recursive: true })
     execFileSync('git', ['init', '-q'], { cwd: workspaceRoot, stdio: 'pipe' })
     execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/copse-mock/demo.git'], {
@@ -56,12 +62,14 @@ describe('roadmap import picker', () => {
       model: 'claude-sonnet-4-6',
       roadmapPlansEnabled: true,
     })
+    // Import uses mock GitHub data, never the deliberately fake upstream.
+    writeSettings({ ...readSeededSettings(), backgroundDefaultBranchFetch: false })
     await browser.reloadSession()
   })
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
+    if (workspaceRoot) removeE2eTree(workspaceRoot)
   })
 
   it('lists open issues with inline checkboxes', async function () {
@@ -73,10 +81,13 @@ describe('roadmap import picker', () => {
     await $('.roadmap-import-btn').waitForDisplayed({ timeout: 10_000 })
     await $('.roadmap-import-btn').click()
     await $('.roadmap-import').waitForDisplayed({ timeout: 10_000 })
-    await browser.waitUntil(async () => (await $$('.roadmap-import-row')).length >= 2, {
-      timeout: 15_000,
-      timeoutMsg: 'expected mock open issues in the import picker',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.roadmap-import-row').getElements()).length >= 2,
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected mock open issues in the import picker',
+      },
+    )
 
     const layout = await browser.execute(() => {
       const row = document.querySelector<HTMLElement>('.roadmap-import-row')
@@ -103,11 +114,11 @@ describe('roadmap import picker', () => {
       'checkbox and title are vertically aligned',
     )
     assert.ok(
-      layout.titles.some((t) => t?.includes('#41')),
+      layout.titles.some((t) => t.includes('#41')),
       'mock issue #41 is listed',
     )
     assert.ok(
-      layout.titles.some((t) => t?.includes('#52')),
+      layout.titles.some((t) => t.includes('#52')),
       'mock issue #52 is listed',
     )
 
@@ -128,15 +139,20 @@ describe('roadmap import picker', () => {
       model: 'claude-sonnet-4-6',
       roadmapPlansEnabled: true,
     })
+    // resetUserData also removed the first case's fake-upstream fetch opt-out.
+    writeSettings({ ...readSeededSettings(), backgroundDefaultBranchFetch: false })
     await browser.reloadSession()
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('.titlebar-text-btn[aria-label="Open roadmap"]').click()
     await $('.roadmap-import-btn').click()
-    await browser.waitUntil(async () => (await $$('.roadmap-import-row')).length === 20, {
-      timeout: 15_000,
-      timeoutMsg: 'expected the first bounded page of mock open issues',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.roadmap-import-row').getElements()).length === 20,
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected the first bounded page of mock open issues',
+      },
+    )
 
     const loadMore = $('.roadmap-import-more')
     await loadMore.waitForDisplayed({ timeout: 10_000 })
@@ -146,10 +162,13 @@ describe('roadmap import picker', () => {
     await saveAppScreenshot('roadmap-import-picker-paginated.png')
 
     await loadMore.click()
-    await browser.waitUntil(async () => (await $$('.roadmap-import-row')).length === 25, {
-      timeout: 15_000,
-      timeoutMsg: 'expected the final open-issue page to append',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.roadmap-import-row').getElements()).length === 25,
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected the final open-issue page to append',
+      },
+    )
     assert.equal(await loadMore.isDisplayed(), false, 'load-more hides after the final page')
   })
 })
