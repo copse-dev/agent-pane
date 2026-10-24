@@ -30,8 +30,18 @@ export const INTERCEPTED_REGISTRY_HOSTS: ReadonlyMap<string, PackageEcosystem> =
   ['crates.io', 'crates.io'],
 ])
 
+/**
+ * The host as the intercepted list spells it: lowercase, without the trailing
+ * dots of a fully qualified name. DNS resolves `registry.npmjs.org.` to the
+ * same registry, so a client configured with it must not be tunnelled past the
+ * checks.
+ */
+export function normalizeHost(host: string): string {
+  return host.toLowerCase().replace(/\.+$/, '')
+}
+
 export function interceptedEcosystem(host: string): PackageEcosystem | undefined {
-  return INTERCEPTED_REGISTRY_HOSTS.get(host.toLowerCase())
+  return INTERCEPTED_REGISTRY_HOSTS.get(normalizeHost(host))
 }
 
 /** Stable cache key for one package version. */
@@ -141,6 +151,6 @@ export function packageForDownload(host: string, path: string): PackageCoordinat
     case 'PyPI':
       return pythonFile(pathname)
     case 'crates.io':
-      return crateDownload(host.toLowerCase(), pathname)
+      return crateDownload(normalizeHost(host), pathname)
   }
 }

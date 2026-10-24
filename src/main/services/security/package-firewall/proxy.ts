@@ -15,6 +15,7 @@ import type { PackageVerdict } from './advisories.ts'
 import {
   formatPackage,
   interceptedEcosystem,
+  normalizeHost,
   packageForDownload,
   type PackageCoordinates,
 } from './registry-targets.ts'
@@ -96,7 +97,7 @@ function parseAuthority(authority: string): { host: string; port: number } | nul
   const match = /^(\[[0-9a-fA-F:.]+\]|[A-Za-z0-9.-]+):(\d{1,5})$/.exec(authority)
   const port = Number(match?.[2])
   if (!match?.[1] || !Number.isInteger(port) || port < 1 || port > 65535) return null
-  return { host: match[1].toLowerCase(), port }
+  return { host: normalizeHost(match[1]), port }
 }
 
 export function blockedMessage(pkg: PackageCoordinates, verdict: PackageVerdict): string {
@@ -266,7 +267,7 @@ export async function startPackageFirewallProxy(
       respondPlain(response, 400, 'Expected an absolute http:// URL')
       return
     }
-    const host = url.hostname.toLowerCase()
+    const host = normalizeHost(url.hostname)
     const port = url.port ? Number(url.port) : 80
     const forward = async (): Promise<void> => {
       if (!(await admit(host, `${url.pathname}${url.search}`, response))) {

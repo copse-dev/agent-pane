@@ -195,6 +195,20 @@ describe('package firewall proxy', () => {
     assert.deepEqual(registryRequests, [])
   })
 
+  it('intercepts a registry named with a trailing dot instead of tunnelling it', async () => {
+    const { status, socket } = await connectVia(proxy.port, 'registry.npmjs.org.:443', AUTH)
+    assert.equal(status, 200)
+    const reply = await getOverTls(
+      socket,
+      'registry.npmjs.org',
+      '/evil/-/evil-1.0.0.tgz',
+      firewallCa.certPem,
+    )
+    assert.equal(reply.status, 403)
+    assert.deepEqual(tunnels, [])
+    assert.deepEqual(registryRequests, [])
+  })
+
   it('passes metadata through without a check', async () => {
     const { socket } = await connectVia(proxy.port, 'registry.npmjs.org:443', AUTH)
     const reply = await getOverTls(socket, 'registry.npmjs.org', '/evil', firewallCa.certPem)

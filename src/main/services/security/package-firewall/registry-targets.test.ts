@@ -2,6 +2,8 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   INTERCEPTED_REGISTRY_HOSTS,
+  interceptedEcosystem,
+  normalizeHost,
   normalizePythonName,
   packageForDownload,
   packageKey,
@@ -119,6 +121,18 @@ describe('intercepted hosts', () => {
   it('classifies nothing outside the intercepted list', () => {
     assert.equal(packageForDownload('registry.example.com', '/lodash/-/lodash-1.0.0.tgz'), null)
     assert.equal(packageForDownload('pypi.org', '/packages/aa/six-1.16.0.tar.gz'), null)
+  })
+
+  it('treats a fully qualified name with trailing dots as the same registry', () => {
+    assert.equal(normalizeHost('Registry.NPMJS.org.'), 'registry.npmjs.org')
+    assert.equal(normalizeHost('static.crates.io..'), 'static.crates.io')
+    assert.equal(interceptedEcosystem('registry.npmjs.org.'), 'npm')
+    assert.equal(interceptedEcosystem('files.pythonhosted.org.'), 'PyPI')
+    assert.deepEqual(packageForDownload('static.crates.io.', '/crates/itoa/itoa-1.0.11.crate'), {
+      ecosystem: 'crates.io',
+      name: 'itoa',
+      version: '1.0.11',
+    })
   })
 
   it('covers each supported ecosystem', () => {
