@@ -533,10 +533,14 @@ async function workerMain(profile: WorkerProfile): Promise<void> {
   if (spec.acp) {
     say(`[worker] harness: ACP agent ${spec.acp.agent.id} (${spec.acp.agent.command})\n`)
   }
-  // Before any child exists, so the install step and the agent's shell both
-  // inherit the configuration. No link means no host to reach: say so and go on.
+  // Before any child exists, so the agent's shell inherits the configuration.
+  // The host never asks for it alongside a dependency install, whose scripts
+  // must not share it; refuse that here too. No link means no host to reach:
+  // say so and go on.
   let githubBridge: GuestGitHubBridge | null = null
-  if (spec.github && link) {
+  if (spec.github && spec.installDependencies) {
+    say('[worker] GitHub: requested alongside a dependency install; not configured\n')
+  } else if (spec.github && link) {
     githubBridge = await enableGitHubReads(link, spec.github.placeholder)
     say('[worker] GitHub: read-only through the host (gh and git configured)\n')
   } else if (spec.github) {
