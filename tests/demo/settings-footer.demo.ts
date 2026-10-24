@@ -256,8 +256,10 @@ describe('browser-hosted settings footer geometry', () => {
   // two: it takes the bar's depth out of the landing space, so a scrolled-to
   // target stops above the bar instead of under frosted glass it cannot be
   // clicked through. Keyboard focus, `scrollIntoView` and accessibility scrolls
-  // all route through the same reserve.
-  it('reserves the action bar depth so a scrolled-to control lands above it', async () => {
+  // all route through the same reserve. The reserve also covers the frost's
+  // ramp above the bar, or a control parked just clear of the bar renders
+  // blurred inside it.
+  it('reserves the action bar and its fade so a scrolled-to control lands above both', async () => {
     const geometry = await browser.execute(() => {
       const content = document.querySelector<HTMLElement>('.settings-content')
       const footer = document.querySelector<HTMLElement>('.settings-buttons')
@@ -287,6 +289,7 @@ describe('browser-hosted settings footer geometry', () => {
 
       const targetRect = target.getBoundingClientRect()
       const footerRect = footer.getBoundingClientRect()
+      const fadeTop = footerRect.top + Number.parseFloat(getComputedStyle(footer, '::before').top)
       const centreX = targetRect.left + targetRect.width / 2
       const centreY = targetRect.top + targetRect.height / 2
       const atCentre = document.elementFromPoint(centreX, centreY)
@@ -294,9 +297,11 @@ describe('browser-hosted settings footer geometry', () => {
         reserved: Number.parseFloat(getComputedStyle(content).scrollPaddingBottom),
         footerHeight: footerRect.height,
         clearsBar: targetRect.bottom <= footerRect.top + 1,
+        clearsFade: fadeTop < footerRect.top && targetRect.bottom <= fadeTop + 1,
         controlOwnsItsCentre: atCentre === target || (atCentre ? target.contains(atCentre) : false),
         centreHitTag: atCentre?.className ?? null,
         overshoot: targetRect.bottom - footerRect.top,
+        fadeOvershoot: targetRect.bottom - fadeTop,
       }
     })
 
@@ -311,10 +316,46 @@ describe('browser-hosted settings footer geometry', () => {
       `scrolled control must stop above the bar (overshoot=${String(geometry.overshoot)}px)`,
     )
     assert.equal(
+      geometry.clearsFade,
+      true,
+      `scrolled control must stop above the frost's fade (overshoot=${String(geometry.fadeOvershoot)}px)`,
+    )
+    assert.equal(
       geometry.controlOwnsItsCentre,
       true,
       `the bar intercepted the scrolled control (hit .${String(geometry.centreHitTag)})`,
     )
     await saveElementScreenshot('#settings-dialog', 'settings-footer-scroll-reserve.png')
+  })
+
+  // Scrolled to the end, the bar rests in flow below the last row. Its top
+  // margin must cover the fade too, or that row sits in the blur ramp.
+  it('leaves the last row clear of the fade when scrolled to the end', async () => {
+    await scrollSettingsContent(99_999)
+
+    const geometry = await browser.execute(() => {
+      const footer = document.querySelector<HTMLElement>('.settings-buttons')
+      const section = document.querySelector<HTMLElement>('.settings-section.active')
+      if (!footer || !section) return null
+      const rendered = [...section.querySelectorAll<HTMLElement>('*')].filter((element) => {
+        const rect = element.getBoundingClientRect()
+        return (
+          rect.width > 0 && rect.height > 0 && element.checkVisibility({ visibilityProperty: true })
+        )
+      })
+      if (rendered.length === 0) return null
+      const footerRect = footer.getBoundingClientRect()
+      const fadeTop = footerRect.top + Number.parseFloat(getComputedStyle(footer, '::before').top)
+      const lastRowBottom = Math.max(
+        ...rendered.map((element) => element.getBoundingClientRect().bottom),
+      )
+      return { fadeTop, lastRowBottom }
+    })
+
+    assert.ok(geometry, 'settings footer and a rendered section must exist')
+    assert.ok(
+      geometry.lastRowBottom <= geometry.fadeTop + 1,
+      `last row must end above the fade (row=${String(geometry.lastRowBottom)}, fade=${String(geometry.fadeTop)})`,
+    )
   })
 })

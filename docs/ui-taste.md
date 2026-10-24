@@ -651,7 +651,9 @@ Rules of thumb:
   (a hairline across a see-through bar reads as the cut the fade exists to avoid). Run the ramp
   _above_ the bar (extend the `::before` upward by the fade length) so the bar itself, buttons
   included, sits on full-strength frost; a ramp inside the bar leaves the actions in its half-clear
-  part. See `.settings-buttons` in `settings.css`.
+  part. Reserve the fade's depth as well as the bar's (in `scroll-padding-bottom` and the bar's top
+  margin), or a scrolled-to control and the last row stop inside the ramp and render blurred. See
+  `.settings-buttons` in `settings.css`.
 - An absolutely positioned `::before` paints in the **positioned** layer, i.e. _above_ the bar's
   in-flow children. Give the buttons `position: relative; z-index: 1` or they come out blurred
   along with the backdrop.
