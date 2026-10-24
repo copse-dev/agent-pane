@@ -1,0 +1,229 @@
+name: Screenshot drift refresh
+
+# Keeps one draft PR whose screenshot evidence is `main`'s current drift, so a
+# maintainer reviews accumulated drift once instead of on every feature PR whose
+# broad oracle selection re-renders it. This automates the hand-made
+# re-baseline PR (#3875): a branch holding one empty commit on `main`.
+#
+# The branch is `screenshot-refresh/main`. ci.yml recognises it on a
+# same-repository PR into `main` and renders every reference even though the
+# PR is a draft and its diff is empty, keeping the noise and flap filters but
+# turning off ownership scoping (an empty diff owns nothing). The publisher then
+# posts its compare view, previews and checkboxes like any other PR's.
+#
+# Review stays human. This workflow only moves the branch and opens the PR;
+# every committed hash goes through the normal accept, decline or tick controls,
+# and a maintainer marks the PR ready and merges it.
+#
+# Each night `scripts/screenshot-refresh.mts` decides whether to move the
+# branch to a new empty commit on the latest `main`: never while an open
+# refresh PR carries anything but that empty commit, and not when nothing
+# since the last rendered `main` reaches a render. One PR at most: when one is
+# open the branch is moved under it, otherwise a new draft is opened.
+#
+# The push and the PR use the release App token. A GITHUB_TOKEN push or PR
+# starts no workflow (and this organization blocks that token from creating
+# PRs), and the refresh is pointless without its CI render. The token is minted
+# in a job that checks out nothing: the planning job, which runs repository
+# scripts, holds only read permission.
+on:
+  schedule:
+    # After the day's merges and before the 06:17 UTC nightly full run, off the
+    # top of the hour to avoid GitHub Actions' busiest cron window.
+    - cron: '43 3 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Refresh even if nothing reaching a render changed on main
+        type: boolean
+        default: false
+
+concurrency:
+  group: screenshot-refresh
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    # A dispatch runs the dispatched ref's workflow and scripts; only main's
+    # may decide what the App token pushes.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      refresh: ${{ steps.decide.outputs.refresh }}
+      main-sha: ${{ steps.main.outputs.sha }}
+      branch-sha: ${{ steps.find.outputs.branch-sha }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+      # The oracle diffs from the last rendered `main` commit, so it needs this
+      # commit's history (not every branch and tag, as `fetch-depth: 0` would).
+      - name: Fetch main's history
+        id: main
+        run: |
+          git fetch --no-tags --quiet --unshallow origin "$(git rev-parse HEAD)"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # At most one PR from a head into a base can be open, and the newest
+      # closed one records which `main` was last reviewed.
+      - name: Find the newest refresh PR and the branch tip
+        id: find
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const branch = 'screenshot-refresh/main';
+            const list = (state) =>
+              github.rest.pulls.list({
+                owner, repo, state, base: 'main', head: `${owner}:${branch}`,
+                sort: 'created', direction: 'desc', per_page: 1,
+              });
+            const [openPull] = (await list('open')).data;
+            const pull = openPull ?? (await list('closed')).data[0];
+            core.setOutput('pull-number', pull ? String(pull.number) : '');
+            core.setOutput('pull-open', String(pull?.state === 'open'));
+            core.setOutput('pull-head', pull?.head.sha ?? '');
+            let tip = '';
+            try {
+              const { data } = await github.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
+              tip = data.object.sha;
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+            core.setOutput('branch-sha', tip);
+
+      - uses: ./.github/actions/setup
+
+      - name: Decide whether the refresh can change the evidence
+        id: decide
+        env:
+          MAIN_SHA: ${{ steps.main.outputs.sha }}
+          PULL_NUMBER: ${{ steps.find.outputs.pull-number }}
+          PULL_OPEN: ${{ steps.find.outputs.pull-open }}
+          PULL_HEAD: ${{ steps.find.outputs.pull-head }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force }}
+        run: node scripts/screenshot-refresh.mts
+
+  refresh:
+    needs: plan
+    if: needs.plan.outputs.refresh == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Require the release App credentials
+        env:
+          APP_ID: ${{ secrets.RELEASE_APP_ID }}
+          APP_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+        run: |
+          if [ -z "$APP_ID" ] || [ -z "$APP_KEY" ]; then
+            echo "::error::RELEASE_APP_ID / RELEASE_APP_PRIVATE_KEY are required: a GITHUB_TOKEN push or PR starts no CI render."
+            exit 1
+          fi
+
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      # The lease is the tip the plan read (empty: the branch must not exist).
+      # If a maintainer committed screenshots in the meantime the push is
+      # refused rather than discarding them. Built with `git commit-tree` in an
+      # empty repository, so no checkout or hook is involved, and the token
+      # reaches git only through env-scoped config.
+      - name: Move the branch to a new empty commit on main
+        env:
+          MAIN_SHA: ${{ needs.plan.outputs.main-sha }}
+          EXPECTED_TIP: ${{ needs.plan.outputs.branch-sha }}
+          PUSH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPOSITORY: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$MAIN_SHA" =~ ^[0-9a-f]{40}$ ]] ||
+            [[ -n "$EXPECTED_TIP" && ! "$EXPECTED_TIP" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::Refusing an unexpected main commit or branch tip.'
+            exit 1
+          fi
+          git init --quiet "$RUNNER_TEMP/screenshot-refresh"
+          cd "$RUNNER_TEMP/screenshot-refresh"
+          # Portable base64 (no GNU -w0), so the step's unit test runs on macOS.
+          basic="$(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 | tr -d '\n')"
+          echo "::add-mask::$basic"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="http.$SERVER_URL/.extraheader"
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $basic"
+          git fetch --quiet --no-tags --depth=1 "$SERVER_URL/$REPOSITORY.git" "$MAIN_SHA"
+          commit="$(
+            GIT_AUTHOR_NAME='github-actions[bot]' \
+            GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com' \
+            GIT_COMMITTER_NAME='github-actions[bot]' \
+            GIT_COMMITTER_EMAIL='41898282+github-actions[bot]@users.noreply.github.com' \
+            git commit-tree "$MAIN_SHA^{tree}" -p "$MAIN_SHA" \
+              -m 'chore(e2e): render main for the screenshot drift review' \
+              -m "Empty commit on main ${MAIN_SHA:0:12}. CI renders every reference screenshot against it, so the PR's screenshot evidence lists main's accumulated drift."
+          )"
+          if ! git push --quiet --force-with-lease="refs/heads/screenshot-refresh/main:$EXPECTED_TIP" \
+            "$SERVER_URL/$REPOSITORY.git" "$commit:refs/heads/screenshot-refresh/main"; then
+            echo '::error::screenshot-refresh/main moved after planning (for example, committed screenshots); left it as it is.'
+            exit 1
+          fi
+          echo "Moved screenshot-refresh/main to $commit on main ${MAIN_SHA:0:12}."
+
+      - name: Open the draft refresh PR unless one is open
+        uses: actions/github-script@v9
+        env:
+          MAIN_SHA: ${{ needs.plan.outputs.main-sha }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const { owner, repo } = context.repo;
+            const head = 'screenshot-refresh/main';
+            const main12 = process.env.MAIN_SHA.slice(0, 12);
+            const { data: open } = await github.rest.pulls.list({
+              owner, repo, state: 'open', base: 'main', head: `${owner}:${head}`, per_page: 1,
+            });
+            if (open.length > 0) {
+              core.notice(`Refreshed #${open[0].number} onto main ${main12}; CI re-renders it.`);
+              return;
+            }
+            const { data: pull } = await github.rest.pulls.create({
+              owner,
+              repo,
+              base: 'main',
+              head,
+              draft: true,
+              title: 'Review accumulated screenshot drift on main',
+              body: [
+                'Nightly screenshot drift refresh, opened by `.github/workflows/screenshot-refresh.yml`.',
+                '',
+                'The branch is one empty commit on `main`. CI renders every reference screenshot against it,',
+                'keeping the noise and flap filters but without ownership scoping, so the screenshot evidence',
+                "comment lists `main`'s accumulated drift. Reviewing it here keeps it off feature PRs.",
+                '',
+                '**Review** each candidate as `.agents/skills/pr-screenshot-review/SKILL.md` and',
+                `[Triage a recurring candidate before re-baselining](https://github.com/${owner}/${repo}/blob/main/docs/agent-development.md#triage-a-recurring-candidate-before-re-baselining) describe.`,
+                'Tick the stable, intended screenshots and then **Commit the ticked screenshots**, or use',
+                '`accept-screenshots` / `decline-screenshots`. Leave known unstable captures unticked: they',
+                'recur each night until their capture is made deterministic. Nothing is accepted or merged',
+                'automatically. Once the reviewed hashes are committed, mark this PR ready and merge it; if',
+                'none are, close it.',
+                '',
+                "**Each night** the workflow moves this branch to a new empty commit on the latest `main`,",
+                'which starts a new review. It skips a night when nothing on `main` reaches a render, and it',
+                'never moves the branch while this PR carries any other commit: merge or close it first.',
+                'If CI failed, re-run it, or dispatch the workflow with `force`.',
+              ].join('\n'),
+            });
+            core.notice(`Opened draft refresh PR #${pull.number} on main ${main12}.`);

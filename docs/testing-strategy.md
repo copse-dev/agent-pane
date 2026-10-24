@@ -611,8 +611,10 @@ Two consequences of running e2e on those PRs, both intended:
   PR touches (reference PNGs it changes, or names its changed specs mention)
   lead the preview, so unrelated drift cannot crowd them out. A `GITHUB_TOKEN`
   push starts no workflows, so that branch runs no CI. It is never merged. A
-  newer successful head deletes it, and so does closing the parent. No run
-  opens a PR for screenshots. Accepting references means committing them to
+  newer successful head deletes it, and so does closing the parent. No CI run
+  opens a PR for screenshots; the only screenshot PR is the nightly
+  [drift refresh](agent-development.md#nightly-screenshot-drift-refresh), which
+  carries `main`'s accumulated drift so feature PRs need not. Accepting references means committing them to
   the PR branch, so no write credential ever reaches the job that executed PR
   code. The publisher sets a `Screenshot review` status on the head that stays
   pending until a maintainer decides with `accept-screenshots` or
@@ -633,7 +635,8 @@ Two escape hatches on a `main`-targeted PR, both labels:
   branch like any other run. Remove the label after that run to avoid
   repeating the full refresh. It is not needed just to _see_ changed
   screenshots: every same-repository run with candidates already links a
-  compare view.
+  compare view. It also turns off the noise and flap filters; the nightly
+  drift refresh PR renders everything with them on.
 
 **What this costs.** Broad and LOW-confidence PRs pay for the complete Electron
 suite. That is intentional: those are the changes for which a selector-derived
