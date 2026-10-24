@@ -376,9 +376,11 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   fact; explicit instructions are resolved after negotiation. Satisfying these
   requirements still leaves workflow/model compatibility untested. Explicit skill
   instructions spend the same byte budget. Plugin enablement, trust framing, cancellation and skill-root containment
-  still apply; model selection adds no filesystem or shell grants. Invoked skills
-  fail clearly when the bridge is disabled, unavailable, remote, or the executor
-  cannot negotiate HTTP MCP. Agent-managed runs omit the automatic Copse catalog.
+  still apply; model selection adds no filesystem or shell grants. When the bridge
+  is disabled, unavailable, remote, or the executor cannot negotiate HTTP MCP,
+  invoked skills' SKILL.md instructions are still inlined with a notice that their
+  supporting files and model-selected skills are unavailable; no catalog is sent.
+  Agent-managed runs omit the automatic Copse catalog.
 - **Sandboxing is macOS-only and catalog-scoped.** Known presets (Claude,
   Gemini, Codex, Cursor) ship a catalog `sandbox` entry; custom agents spawn
   unsandboxed unless you add `sandbox` (`allowedDomains`, `homeDirs`) to their

@@ -10,19 +10,29 @@ import { createAcpSkillRun } from './acp-skill-context.ts'
 import { MAX_MODEL_SKILL_CONTEXT_BYTES } from '../skills/skill-activation.ts'
 
 describe('ACP skill execution context', () => {
-  it('fails clearly for invoked skills without a negotiated read_skill bridge', () => {
+  it('inlines invoked skills with a notice when no read_skill bridge was negotiated', () => {
     for (const toolNames of [[], ['read_file']]) {
-      assert.throws(
-        () =>
-          createAcpSkillRun()({
-            toolNames,
-            invokedSkills: ['tiny'],
-            skillsBlock: 'instructions',
-            includeCatalog: true,
-          }),
-        /local agent that supports HTTP MCP/,
-      )
+      const { prompt } = createAcpSkillRun()({
+        toolNames,
+        invokedSkills: ['tiny'],
+        skillsBlock: 'INSTRUCTIONS',
+        includeCatalog: true,
+      })
+      assert.match(prompt, /cannot reach Copse’s read_skill tool/)
+      assert.match(prompt, /supporting files and model-selected skills are unavailable/)
+      // Explicit instructions stay last, and no catalog is advertised without read_skill.
+      assert.ok(prompt.endsWith('INSTRUCTIONS'))
+      assert.doesNotMatch(prompt, /agent_skill/)
     }
+    assert.doesNotMatch(
+      createAcpSkillRun()({
+        toolNames: ['read_skill'],
+        invokedSkills: ['tiny'],
+        skillsBlock: 'INSTRUCTIONS',
+        includeCatalog: false,
+      }).prompt,
+      /cannot reach Copse’s read_skill tool/,
+    )
     assert.equal(
       createAcpSkillRun()({
         toolNames: [],

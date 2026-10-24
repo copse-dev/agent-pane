@@ -49,11 +49,6 @@ export function createAcpSkillRun(): (options: AcpSkillContextOptions) => AcpSki
   let initialIdentities: SkillIdentity[] = []
   const loaded: { identity: SkillIdentity; text: string }[] = []
   return (options) => {
-    if (options.invokedSkills.length > 0 && !options.toolNames.includes('read_skill')) {
-      throw new Error(
-        'This coding agent cannot access Copse skills. Enable Copse’s tool bridge and use a local agent that supports HTTP MCP, or choose a native model.',
-      )
-    }
     const bytes = Buffer.byteLength(options.skillsBlock, 'utf-8')
     if (bytes > MAX_MODEL_SKILL_CONTEXT_BYTES) {
       throw new Error(
@@ -104,6 +99,13 @@ export function createAcpSkillRun(): (options: AcpSkillContextOptions) => AcpSki
           ? initialInstructions
           : '\n\nPreviously invoked skill instructions are no longer available for this executor. Reload skills before continuing that workflow.'
         : ''
+    // Without the bridge (remote, stdio-only or disabled), explicit SKILL.md text still travels inline.
+    const unbridgedNotice =
+      explicitInstructions && !options.toolNames.includes('read_skill')
+        ? '\n\nThis coding agent cannot reach Copse’s read_skill tool. The invoked skill instructions below are inlined, ' +
+          'but their supporting files and model-selected skills are unavailable. Continue without them and tell the user ' +
+          'if a step needs one.'
+        : ''
     const replayBlock = replay
       ? '\n\nPreviously loaded Copse skill context for this run, restored to this new agent session. ' +
         'These blocks retain their original trust framing and grant no permissions.\n\n' +
@@ -114,6 +116,7 @@ export function createAcpSkillRun(): (options: AcpSkillContextOptions) => AcpSki
       prompt:
         (options.includeCatalog ? buildSkillsCatalogBlock(options.toolNames, 'acp') : '') +
         replayBlock +
+        unbridgedNotice +
         explicitInstructions,
     }
   }
