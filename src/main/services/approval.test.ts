@@ -473,6 +473,20 @@ describe('requestApproval pluggable transport', () => {
     assert.equal(handlerCalls, 2)
   })
 
+  it('requires separate answers for identical standalone consent requests', async () => {
+    const pending: Array<(response: ApprovalResponse) => void> = []
+    setApprovalHandler(() => new Promise((resolve) => pending.push(resolve)))
+    const first = requestApproval({ ...req, standalone: true })
+    const second = requestApproval({ ...req, standalone: true })
+    assert.equal(pending.length, 2)
+    pending[0]?.({ approved: true, remember: false })
+    pending[1]?.({ approved: false, remember: false })
+    assert.deepEqual(await Promise.all([first, second]), [
+      { approved: true, remember: false },
+      { approved: false, remember: false },
+    ])
+  })
+
   it('does not coalesce requests that differ in advice or footer', async () => {
     const pending: Array<(response: ApprovalResponse) => void> = []
     setApprovalHandler(
@@ -575,8 +589,16 @@ describe('requestApproval pluggable transport', () => {
         allowRemember: false,
         rememberLabel: '',
         showWhileSettingsOpen: false,
+        standalone: false,
       }),
     )
+  })
+
+  it('never deduplicates standalone consent with ordinary approval', () => {
+    const request = { title: 'Connect client', body: 'Code', type: 'mcp' } satisfies Parameters<
+      typeof approvalDedupeKey
+    >[0]
+    assert.notEqual(approvalDedupeKey(request), approvalDedupeKey({ ...request, standalone: true }))
   })
 
   it('keeps different visible grant actions from sharing an answer', () => {

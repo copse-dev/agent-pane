@@ -417,6 +417,8 @@ export interface ApiClient {
         collapseDetails?: boolean
         approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
+        /** Interrupt ordinary batches and require a separate decision. */
+        standalone?: boolean
         allowTurnTreeLease?: boolean
         turnTreeLeaseLabel?: string
         turnTreeLeaseDefault?: boolean
