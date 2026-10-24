@@ -3133,10 +3133,6 @@
       "sha256": "ef354a8142cb869d73fc826afe0f36e261eb062a132923a03f9e9aecfd6d66f4",
       "bytes": 264303
     },
-    "read-skill-switched-off-plugin-guidance.png": {
-      "sha256": "cedf88cc779f33cbdb20b9e88074a267026e66cab1dd48881d4ebb8b1588c4fd",
-      "bytes": 109244
-    },
     "read-skill-unknown-guidance.png": {
       "sha256": "7823b62c874bbd8f893fe5b4f334b24a4b47598383e4bca68222458e66df985f",
       "bytes": 98669
@@ -3573,14 +3569,6 @@
       "sha256": "46ed3181c6cee7d263c571152acc5eefe01aec650b2701894116cb86917cde09",
       "bytes": 287546
     },
-    "settings-bundled-plugin-pstack-off.png": {
-      "sha256": "2ed894e88eac51bbf10caadf345b0a23cc343c65903dd0e59ffe9c4e5c865eec",
-      "bytes": 57004
-    },
-    "settings-bundled-plugin-pstack-on.png": {
-      "sha256": "52727d05a058a742219d58aaa750b1099147848a60e8d928d5a0822a03500dd6",
-      "bytes": 57392
-    },
     "settings-capture-footer-reframed.png": {
       "sha256": "e66c906a569e4961d782966076a04c282210214cdcbccc9f14381c1c4b10d163",
       "bytes": 64013
@@ -3732,6 +3720,14 @@
     "settings-content-full-width-scroll.png": {
       "sha256": "f17b88bcb088d1247c2f52a36c6fe1c79267425e04f4847fa45785be4a7f15db",
       "bytes": 95941
+    },
+    "settings-copse-engineering-off.png": {
+      "sha256": "1789cc3ca8214dd822c1372bf9ff2ba22c4987e20c34118c7574e5b917694de3",
+      "bytes": 38469
+    },
+    "settings-copse-engineering-on.png": {
+      "sha256": "71b6380f49bc1c3764b7bcd5e2d18775ef7e00f7090c0b91224340929227492a",
+      "bytes": 40534
     },
     "settings-cursor-agents-hint.png": {
       "sha256": "be96dff3cc4ef1a4eb69529c939bdbc2899d22aa2fde32e5fd800676114414a4",
@@ -3936,6 +3932,14 @@
     "settings-openai-service-tier.png": {
       "sha256": "cad0b971ec28743c6f61f72e8516f02a6b14beed0d6f0163bc5ccd733a7b14b1",
       "bytes": 44164
+    },
+    "settings-optional-pstack-install.png": {
+      "sha256": "316be6b97ad512ecf007503a6a36169876a1a4bbd3bd6645e35ea495aba27ee6",
+      "bytes": 227067
+    },
+    "settings-optional-pstack-migration.png": {
+      "sha256": "e80274da606bf22ffc540fd34f42a3fdfaa28b0a8829ff525a58e3fa14228dd9",
+      "bytes": 227073
     },
     "settings-partial-save-error.png": {
       "sha256": "7113c972a95f60ebde117dc9c4b34da9855ad4319bf75f7ff92a9fe5f3a579dd",
