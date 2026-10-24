@@ -1024,7 +1024,11 @@ were smaller apart than the plan expected; what is recorded under each is what i
   so the rule is now that only the code that would refuse the start decides the row. The
   note under the field names the agents that can run and what they run on. The record
   view gained a Harness row, an "Effects refused" count and a section listing the
-  refusals.
+  refusals. The preselected model is still the thread's own, named before the roster
+  resolves — but once it answers and that row turns out to be one the resolver refuses,
+  `fallbackModel` swaps the selection to the first row on the roster it does not, so an
+  unattended run armed from a thread on a browser-sign-in-only agent opens ready to start
+  rather than stuck on a Start button it can only refuse.
 
 ### What this does not change
 

@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import { expectRecord } from '@shared/unknown-value.ts'
 import {
   serializedSet,
+  afterThreadWrites,
   attachAutosave,
+  acceptRuntimeThreadMeta,
   awaitPendingThreadPersistence,
   __resetPersistenceForTest,
   saveProjects,
@@ -14,6 +16,7 @@ import {
   AUTOSAVE_DEBOUNCE_MS,
 } from './persistence.ts'
 import { createStore } from '@shared/store/store.ts'
+import { transcriptMeta } from '@shared/store/transcript-state.ts'
 import type {
   Message,
   ReviewFindingRecord,
@@ -26,6 +29,7 @@ import { explodeMessage, foldMessage } from '@shared/threads/fold.ts'
 import { parseMessageValue } from '@shared/threads/thread-boundary.ts'
 import { parseSpine, serializeSpineLine } from '@shared/threads/spine-schema.ts'
 import { startAgentController } from './agent.ts'
+import { __resetRuntimeTranscriptForTest, applyRuntimeOwnedChunk } from './runtime-transcript.ts'
 import { dismissReviewFinding, dismissReviewReport, startReview } from './review-actions.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
@@ -1017,4 +1021,110 @@ test('a standalone review report and its dismissals reach the reviewed message o
     stopAgent()
     autosave.detach()
   }
+})
+
+test('store events from a stamped chunk write nothing; main owns that transcript', async () => {
+  __resetPersistenceForTest()
+  __resetRuntimeTranscriptForTest()
+  const { api, calls } = fakeApi()
+  const assistant: Message = {
+    id: 'a1',
+    role: 'assistant',
+    content: 'done',
+    toolCalls: [{ id: 'tc1', name: 'read_file', args: {}, status: 'done', result: 'ok' }],
+    createdAt: 20,
+  }
+  const store = createStore({
+    activeProjectId: 'p1',
+    activeThreadId: 't1',
+    threads: [thread('t1', { messages: [userMsg('m1'), assistant] })],
+    projects: [],
+  })
+  const autosave = attachAutosave(store, api)
+
+  applyRuntimeOwnedChunk(['a1'], () => {
+    store.emit('message_done', 'a1')
+    store.emit('tool_call_updated', 'a1', 'tc1')
+    store.emit('review_report_changed', 't1', 'a1')
+  })
+  // A summary label resolving later on a main-owned message goes to main.
+  store.emit('tool_call_updated', 'a1', '')
+  await tick()
+  assert.equal(calls.appends.length, 0, 'main owns these writes')
+
+  // A message main does not own is still the window's to write.
+  store.emit('message_done', 'm1')
+  await tick()
+  assert.deepEqual(
+    calls.appends.map((append) => append.message.id),
+    ['m1'],
+  )
+  autosave.detach()
+})
+
+test('runtime metadata does not autosave back, while a simultaneous user edit still does', async () => {
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi()
+  const original = thread('t1', { model: 'old-model' })
+  const store = createStore({ activeProjectId: 'p1', threads: [original] })
+  const autosave = attachAutosave(store, api)
+  store.emit('threads_changed')
+  await autosave.flush()
+  calls.metas.length = 0
+  const beforeChunk = { ...original, model: 'user-selected-model' }
+  const afterChunk = {
+    ...beforeChunk,
+    usage: { inputTokens: 10, outputTokens: 20 },
+    status: 'running' as const,
+  }
+  store.setState({ threads: [afterChunk] })
+  acceptRuntimeThreadMeta('p1', afterChunk, transcriptMeta(beforeChunk))
+  store.emit('usage_updated', 't1')
+  await autosave.flush()
+  assert.deepEqual(
+    calls.metas.map((call) => call.patch),
+    [{ model: 'user-selected-model' }],
+  )
+  autosave.detach()
+})
+
+test('a turn starts only after the thread writes queued before it', async () => {
+  __resetPersistenceForTest()
+  const order: string[] = []
+  let releaseCreate: () => void = () => undefined
+  const { api } = fakeApi({
+    create: () =>
+      new Promise<void>((resolve) => {
+        releaseCreate = (): void => {
+          order.push('create')
+          resolve()
+        }
+      }),
+  })
+  const store = createStore({
+    activeProjectId: 'p1',
+    activeThreadId: 't1',
+    threads: [],
+    projects: [],
+  })
+  const autosave = attachAutosave(store, api)
+  store.setState({ threads: [thread('t1')] })
+  store.emit('threads_changed')
+
+  const started = afterThreadWrites('p1', 't1', async () => {
+    order.push('run')
+  })
+  await tick()
+  assert.deepEqual(order, [], 'the run waits for the queued create')
+  releaseCreate()
+  await started
+  assert.deepEqual(order, ['create', 'run'])
+
+  // Nothing queued: the run starts synchronously, as before.
+  let ranSync = false
+  void afterThreadWrites('p1', 't2', async () => {
+    ranSync = true
+  })
+  assert.equal(ranSync, true)
+  autosave.detach()
 })

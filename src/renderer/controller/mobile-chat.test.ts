@@ -1,5 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { z } from 'zod'
+import { safeJsonParse, decodeWithSchema } from '@shared/safe-json.ts'
 import { randomUUID } from 'node:crypto'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { PreparedThreadCheckout } from '@shared/types/worktree.ts'
@@ -73,6 +75,35 @@ test('phone messages at idle enter the normal dispatcher as a fresh human turn',
   assert.ok(store.getState().threads[0]?.currentEpoch)
   assert.equal(store.getState().threads[0]?.status, 'running')
   assert.equal(store.getState().threads[0]?.continuationUsed, 0)
+})
+
+test('phone images reach the transcript and agent, including queued and image-only messages', async () => {
+  const image = 'data:image/png;base64,iVBORw0KGgo='
+  const idle = fixture()
+  const result = await acceptMobileChat(idle.store, idle.api, {
+    ...idle.command,
+    text: '',
+    image,
+  })
+  assert.equal(result.ok, true)
+  assert.equal(idle.store.getState().threads[0]?.messages[0]?.content, 'Please look at this image.')
+  assert.deepEqual(idle.store.getState().threads[0]?.messages[0]?.images, [image])
+  const run = safeJsonParse(
+    idle.runs[0] ?? '',
+    decodeWithSchema(z.object({ content: z.unknown() })),
+  )
+  assert.deepEqual(run?.content, [
+    { type: 'image', dataUrl: image },
+    { type: 'text', text: 'Please look at this image.' },
+  ])
+
+  const running = fixture('running')
+  await acceptMobileChat(running.store, running.api, { ...running.command, image })
+  assert.deepEqual(running.store.getState().threads[0]?.pendingMessages?.[0]?.payload.content, [
+    { type: 'image', dataUrl: image },
+    { type: 'text', text: running.command.text },
+  ])
+  assert.deepEqual(running.store.getState().threads[0]?.messages[0]?.images, [image])
 })
 
 test('expired, wrong-project, removed-thread and concurrent sends fail without a bubble or run', async () => {

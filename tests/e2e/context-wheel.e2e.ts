@@ -26,17 +26,18 @@ describeSkipInCi('context wheel footer seeded', () => {
   it('shows a neutral doughnut and the context and usage hover from the seeded snapshot', async () => {
     await $('.input-footer').waitForExist({ timeout: 30_000 })
 
-    const wheel = await $('.context-wheel')
+    const wheel = await $('.context-wheel').getElement()
     await expect(wheel).toBeDisplayed()
     // The percentage is no longer printed beside the ring: the ring carries the
     // fill, and the figures live in the aria-label and the hover.
     await expect(wheel.$('.context-wheel-label')).not.toExist()
     await expect(wheel).toHaveAttribute('aria-label', /Context 30% used/)
 
-    const fill = await wheel.$('.context-wheel-fill')
+    const fill = await wheel.$('.context-wheel-fill').getElement()
     const dash = await fill.getAttribute('stroke-dasharray')
     expect(dash).toBeTruthy()
-    const filled = Number.parseFloat(dash!.split(' ')[0]!)
+    if (!dash) throw new Error('Context wheel stroke dasharray missing')
+    const filled = Number.parseFloat(dash.split(' ')[0] ?? '')
     expect(filled).toBeGreaterThan(0)
 
     await expect($('.footer-usage')).not.toExist()
@@ -48,7 +49,7 @@ describeSkipInCi('context wheel footer seeded', () => {
     await expect(popover.$('.context-wheel-popover-header')).toHaveText(/^Context · .+ \(\d+%\)$/)
     await expect(popover.$('.footer-usage-popover-header')).toHaveText('Usage · 2.0k tokens')
 
-    const footer = await $('.input-footer')
+    const footer = await $('.input-footer').getElement()
     await footer.saveScreenshot(join(SCREENSHOT_DIR, 'context-wheel-seeded-30pct.png'))
   })
 })
@@ -74,7 +75,7 @@ describeSkipInCi('context wheel footer live mock', () => {
     await setComposerValue('list files please')
     await $('.submit-btn').click()
 
-    const wheel = await $('.context-wheel')
+    const wheel = await $('.context-wheel').getElement()
     await expect(wheel).toBeDisplayed({ wait: 30_000 })
     await expect(wheel).toHaveAttribute('aria-label', /context \d+%/i)
 
@@ -85,7 +86,7 @@ describeSkipInCi('context wheel footer live mock', () => {
       { wait: 30_000 },
     )
 
-    const footer = await $('.input-footer')
+    const footer = await $('.input-footer').getElement()
     await footer.saveScreenshot(join(SCREENSHOT_DIR, 'context-wheel-live-running.png'))
   })
 })

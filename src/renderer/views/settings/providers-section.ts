@@ -2,8 +2,7 @@ import type { ApiClient } from '../../../preload/api.d.ts'
 import type { SettingsSnapshot, SettingsUpdate } from '@shared/settings-contract.ts'
 import { qsRequired } from '../../dom/helpers.ts'
 import { createApiKeysSection } from '../setup/api-keys-section.ts'
-import { createProvidersPanel } from '../setup/providers-section.ts'
-import { createAcpAgentsList } from '../setup/acp-agents-list.ts'
+import { createModelsAgentsList } from '../setup/models-agents-list.ts'
 import { createLmStudioSection } from '../setup/lm-studio-section.ts'
 import { createGhCliSection } from '../setup/gh-cli-section.ts'
 export interface ProvidersSection {
@@ -17,16 +16,15 @@ export interface ProvidersSection {
   reset(): void
   getUrl(): string
 }
-export function createProvidersSection(overlay: HTMLElement, api: ApiClient): ProvidersSection {
+export function createProvidersSection(
+  overlay: HTMLElement,
+  api: ApiClient,
+  opts: {
+    /** Close Settings and run an install or sign-in command in a fresh terminal. */
+    runInTerminal?: (command: string) => void
+  } = {},
+): ProvidersSection {
   let activeSignal: AbortSignal | undefined
-  const agentsList = createAcpAgentsList(api, {
-    onKeysImported: () => {
-      void cursorKeySection.refreshKeyStatus(activeSignal)
-      void providersPanel.refresh(undefined, activeSignal)
-    },
-  })
-  qsRequired(overlay, '#settings-agents-host').append(agentsList.root)
-
   const cursorKeySection = createApiKeysSection(api, {
     legend: 'Cursor authentication',
     providers: ['cursor'],
@@ -51,18 +49,19 @@ export function createProvidersSection(overlay: HTMLElement, api: ApiClient): Pr
   })
   qsRequired(overlay, '#settings-aa-key-host').append(aaKeySection.root)
 
-  // One Providers panel covers every way Copse can reach a model: API keys, cloud
-  // agents, agents installed on this machine, and model servers you run yourself.
-  // The cloud-agent auth panels and their shared run options are built in the
-  // template above (their checkboxes must live in this form to round-trip) and
-  // relocated by the panel into whichever provider offers a cloud agent. LM Studio
-  // keeps its bespoke server UI as a native local provider; the dialog holds onto
+  // One Models & agents list covers every way Copse can reach a model: a
+  // ChatGPT plan, agents installed on this machine, API keys (with the cloud
+  // agents some of them unlock) and model servers you run yourself. The
+  // cloud-agent auth panels and their shared run options are built in the
+  // template (their checkboxes must live in this form to round-trip) and
+  // relocated by the list into the Anthropic or Cursor key's Options. LM Studio
+  // keeps its bespoke server UI as a native model server; the dialog holds onto
   // that handle for getUrl()/saveConnection() in the security-bundle save below.
   const lmStudioSection = createLmStudioSection(api, {
     showInstallGuide: false,
     loadOnMount: false,
   })
-  const providersPanel = createProvidersPanel(api, {
+  const modelsList = createModelsAgentsList(api, {
     nativeLocalProviders: [
       {
         id: 'lmstudio',
@@ -71,24 +70,18 @@ export function createProvidersSection(overlay: HTMLElement, api: ApiClient): Pr
         refresh: (): Promise<void> => lmStudioSection.refreshDetection(activeSignal),
       },
     ],
-    showOpenAiServiceTier: true,
-    deviceAgents: false,
-    deferOrdinaryWrites: true,
     cloudAgents: [
-      {
-        vendor: 'cursor',
-        element: qsRequired(overlay, '#settings-cursor-panel'),
-        keySlugs: ['cursor'],
-      },
-      {
-        vendor: 'anthropic',
-        element: qsRequired(overlay, '#settings-claude-panel'),
-        keySlugs: ['anthropic', 'github'],
-      },
+      { provider: 'cursor', element: qsRequired(overlay, '#settings-cursor-panel') },
+      { provider: 'anthropic', element: qsRequired(overlay, '#settings-claude-panel') },
     ],
     cloudAgentOptions: qsRequired(overlay, '#settings-cloud-agent-options'),
+    ...(opts.runInTerminal ? { runInTerminal: opts.runInTerminal } : {}),
+    onKeysChanged: () => {
+      for (const section of [cursorKeySection, claudeAgentKeySection])
+        void section.refreshKeyStatus(activeSignal)
+    },
   })
-  qsRequired(overlay, '#settings-providers-host').append(providersPanel.root)
+  qsRequired(overlay, '#settings-agents-host').append(modelsList.root)
 
   const ghCliSection = createGhCliSection(api, { deferOrdinaryWrites: true })
   qsRequired(overlay, '#settings-gh-cli-host').append(ghCliSection.root)
@@ -102,8 +95,7 @@ export function createProvidersSection(overlay: HTMLElement, api: ApiClient): Pr
         ...[cursorKeySection, claudeAgentKeySection].map((section) =>
           section.refreshKeyStatus(signal),
         ),
-        agentsList.refresh(signal),
-        providersPanel.refresh(snapshot, signal),
+        modelsList.refresh(snapshot, signal),
       ])
     },
     refreshAgent: (signal): Promise<void> => ghCliSection.refreshStatus(signal),
@@ -115,7 +107,7 @@ export function createProvidersSection(overlay: HTMLElement, api: ApiClient): Pr
     collect: (data, dirty): SettingsUpdate => {
       const backend = data.get('githubBackend')
       return {
-        ...providersPanel.readUpdate(),
+        ...modelsList.readUpdate(),
         ...(dirty.has('githubBackend') &&
         (backend === 'auto' || backend === 'cli' || backend === 'api')
           ? { githubBackend: backend }
@@ -123,13 +115,13 @@ export function createProvidersSection(overlay: HTMLElement, api: ApiClient): Pr
       }
     },
     markDirty(target: HTMLElement): void {
-      for (const section of [...keySections, providersPanel, lmStudioSection])
+      for (const section of [...keySections, modelsList, lmStudioSection])
         if (section.root.contains(target)) dirty.add(section.root)
     },
     async saveKeys(): Promise<boolean> {
       for (const section of keySections)
         if (dirty.has(section.root) && !(await section.saveKeys())) return false
-      if (dirty.has(providersPanel.root) && !(await providersPanel.saveKeys())) return false
+      if (dirty.has(modelsList.root) && !(await modelsList.saveKeys())) return false
       if (dirty.has(lmStudioSection.root)) await lmStudioSection.saveApiKey()
       return true
     },
@@ -137,8 +129,7 @@ export function createProvidersSection(overlay: HTMLElement, api: ApiClient): Pr
       activeSignal = undefined
       dirty.clear()
       for (const section of keySections) section.reset()
-      providersPanel.reset()
-      agentsList.reset()
+      modelsList.reset()
       for (const input of lmStudioSection.root.querySelectorAll<HTMLInputElement>(
         'input[type="password"]',
       ))

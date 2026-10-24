@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -7,6 +7,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const ROUTE = 'acp:privacy-fixture#fixture-sonnet'
 
@@ -63,7 +64,7 @@ describe('device-agent route retention qualification', function () {
   after(() => {
     writeE2eEnv({ COPSE_PRESERVE_PATH: originalPreservePath, PATH: originalPath })
     resetUserData()
-    if (fixtureBin) rmSync(fixtureBin, { recursive: true, force: true })
+    if (fixtureBin) removeE2eTree(fixtureBin)
   })
 
   it('qualifies the selected route, its picker row, and the agent settings without claiming local or ZDR', async () => {

@@ -276,6 +276,7 @@ export async function runHeadlessAgent(
                           createId: randomUUID,
                           prepareExecutionContext: (): Promise<typeof executionContext> =>
                             Promise.resolve(executionContext),
+                          isScheduledAutomationRun: (): boolean => false,
                           run: async (
                             dispatchThreadId,
                             userContent,
@@ -372,13 +373,17 @@ export async function runHeadlessAgent(
                               threadId: completion.owner.threadId,
                               operationId: completion.operationId,
                               turnTreeId: completion.turnTreeId,
+                              ...(completion.alreadyObserved
+                                ? { alreadyObserved: completion.alreadyObserved }
+                                : {}),
                               payload: {
                                 userContent: backgroundCompletionPrompt(completion),
                                 invokedSkills: [],
                                 priorTodos: [],
                               },
                             })
-                            if (result === 'completed') {
+                            // An observed wake was already handled inside the turn that read it.
+                            if (result === 'completed' || result === 'observed') {
                               machineContinuations += 1
                               if (machineContinuations >= wait.count) {
                                 resolveMachineWait?.()

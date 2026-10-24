@@ -19,9 +19,9 @@ describe('retry a turn interrupted by closing Copse', function () {
   this.timeout(120_000)
 
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), PROJECT_ID)
     await browser.reloadSession()
@@ -40,7 +40,7 @@ describe('retry a turn interrupted by closing Copse', function () {
       async ({ id, prompt }) => {
         const bridge = window.__copseE2e
         if (!bridge) throw new Error('Mock scenario bridge unavailable')
-        const scope = document.querySelector<HTMLElement>('.chat-row.selected')?.dataset.threadId
+        const scope = document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId']
         await bridge.setMockScenario(
           id,
           {
@@ -82,9 +82,9 @@ describe('retry a turn interrupted by closing Copse', function () {
     )
 
     await browser.reloadSession()
-    const card = await $('[data-turn-recovery-card]')
+    const card = await $('[data-turn-recovery-card]').getElement()
     await card.waitForDisplayed({ timeout: 30_000 })
-    const prompt = await $('.messages-list .msg-user')
+    const prompt = await $('.messages-list .msg-user').getElement()
     await expect(prompt).toHaveText(PROMPT, { containing: true })
     await expect(card).toHaveText('Copse closed before this turn finished.', {
       containing: true,
@@ -95,11 +95,14 @@ describe('retry a turn interrupted by closing Copse', function () {
     await savePreparedElementScreenshot('[data-turn-recovery-card]', 'reopen-turn-recovery.png')
 
     await card.$('button*=Retry this turn').click()
-    await browser.waitUntil(async () => (await $$('.messages-list .msg-user')).length === 2, {
-      timeout: 10_000,
-      timeoutMsg: 'expected one explicit continuation after clicking retry',
-    })
-    const userMessages = await $$('.messages-list .msg-user')
+    await browser.waitUntil(
+      async () => (await $$('.messages-list .msg-user').getElements()).length === 2,
+      {
+        timeout: 10_000,
+        timeoutMsg: 'expected one explicit continuation after clicking retry',
+      },
+    )
+    const userMessages = await $$('.messages-list .msg-user').getElements()
     await expect(userMessages[1]).toHaveText(INTERRUPTED_TURN_CONTINUATION, { containing: true })
     await expect($('[data-turn-recovery-card]')).not.toExist()
   })

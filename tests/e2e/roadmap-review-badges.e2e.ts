@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict'
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { copseDataRoot } from '../../src/main/services/storage/copse-paths.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 function knowledgeNamespace(workspaceRoot: string): string {
   const name =
@@ -98,7 +99,7 @@ describe('roadmap review badges', () => {
 
   after(() => {
     resetUserData()
-    rmSync(fixtureRoot, { recursive: true, force: true })
+    removeE2eTree(fixtureRoot)
   })
 
   it('shows the review button and persisted review verdict badges', async () => {
@@ -109,7 +110,7 @@ describe('roadmap review badges', () => {
     await $('.roadmap-review-btn').waitForDisplayed({ timeout: 10_000 })
     await $('.roadmap-row').waitForDisplayed({ timeout: 10_000 })
 
-    const badges = await $$('.roadmap-review-badge')
+    const badges = await $$('.roadmap-review-badge').getElements()
     assert.equal(badges.length, 2)
     await expect(badges[0]).toHaveText(expect.stringContaining('review: likely'))
     await expect(badges[1]).toHaveText(expect.stringContaining('review: open'))

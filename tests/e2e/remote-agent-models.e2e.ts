@@ -46,7 +46,10 @@ async function startCursorModelsServer(): Promise<{
     apiBase,
     close: () =>
       new Promise<void>((resolve, reject) => {
-        server.close((err) => (err ? reject(err) : resolve()))
+        server.close((err) => {
+          if (err) reject(err)
+          else resolve()
+        })
       }),
   }
 }
@@ -78,10 +81,10 @@ describe('remote agent model picker', () => {
     const picker = await browser.execute(() => {
       const groupLabels = [
         ...document.querySelectorAll<HTMLElement>('.model-picker-group-label'),
-      ].map((el) => el.textContent?.trim())
+      ].map((el) => el.textContent.trim())
       const optionLabels = [
         ...document.querySelectorAll<HTMLElement>('.model-picker-menu .model-picker-option-label'),
-      ].map((el) => el.textContent?.trim() ?? '')
+      ].map((el) => el.textContent.trim())
       return { groupLabels, optionLabels }
     })
 
@@ -104,7 +107,6 @@ describe('remote agent model picker', () => {
       `expected Claude thinking model from live catalog, saw ${JSON.stringify(picker.optionLabels)}`,
     )
 
-    const menu = await $('.model-picker-menu')
-    await saveElementScreenshot(menu, 'remote-agent-models-picker.png')
+    await saveElementScreenshot('.model-picker-menu', 'remote-agent-models-picker.png')
   })
 })

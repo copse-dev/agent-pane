@@ -29,7 +29,7 @@ describe('settings alerts', function () {
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="appearance"]').click()
 
-    const alerts = await $('[data-testid="settings-alerts"]')
+    const alerts = await $('[data-testid="settings-alerts"]').getElement()
     await alerts.waitForDisplayed({ timeout: 30_000 })
     await expect(alerts.$('legend')).toHaveText('Alerts')
     await expect(alerts.$$('label')).toBeElementsArrayOfSize(5)

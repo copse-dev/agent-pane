@@ -1,10 +1,11 @@
 import { execFileSync } from 'node:child_process'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { e2eWorkspaceDir, resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-thread-delete-worktree-project'
 const KEEP_THREAD_ID = 'e2e-thread-delete-worktree-keep'
@@ -45,8 +46,8 @@ describe('thread deletion → worktree retirement', function () {
     projectRoot = join(dirname(worktreesRoot), 'thread-delete-worktree-project')
     cleanRoot = join(worktreesRoot, PROJECT_ID, CLEAN_THREAD_ID)
     dirtyRoot = join(worktreesRoot, PROJECT_ID, DIRTY_THREAD_ID)
-    rmSync(projectRoot, { recursive: true, force: true })
-    rmSync(join(worktreesRoot, PROJECT_ID), { recursive: true, force: true })
+    removeE2eTree(projectRoot)
+    removeE2eTree(join(worktreesRoot, PROJECT_ID))
     mkdirSync(projectRoot, { recursive: true })
     git(projectRoot, ['init', '-q', '-b', 'main'])
     git(projectRoot, ['config', 'user.email', 'e2e@example.invalid'])
@@ -127,10 +128,10 @@ describe('thread deletion → worktree retirement', function () {
       try {
         git(projectRoot, ['worktree', 'remove', '--force', path])
       } catch {
-        rmSync(path, { recursive: true, force: true })
+        removeE2eTree(path)
       }
     }
-    if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
+    if (projectRoot) removeE2eTree(projectRoot)
   })
 
   async function deleteFromSidebar(threadId: string): Promise<void> {

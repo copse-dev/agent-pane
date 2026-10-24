@@ -28,7 +28,7 @@ import {
 // discovery runs at boot, so "one bad directory breaks startup" is a failure
 // mode only a real launch can rule out.
 
-function settingsSection(section: string) {
+function settingsSection(section: string): ReturnType<typeof $> {
   return $(`.settings-section[data-section="${section}"]`)
 }
 

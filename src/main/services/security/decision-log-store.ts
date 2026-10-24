@@ -230,9 +230,12 @@ export function readThreadDecisionLog(
     if (raw === null) return []
     const out: DecisionEvent[] = []
     for (const entry of parseSpineEntries(raw)) {
-      if (entry.line?.type !== 'decision') continue
-      const { detail: _d, turnId: _t, step: _s, ...event } = entry.line
-      out.push(event)
+      if (entry.line?.type === 'decision') {
+        const { detail: _d, turnId: _t, step: _s, ...event } = entry.line
+        out.push(event)
+      } else if (entry.line?.type === 'permission_decision') {
+        out.push(legacyPermissionToEvent(entry.line, threadId))
+      }
     }
     return out
   })

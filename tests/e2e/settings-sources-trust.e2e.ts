@@ -1,11 +1,12 @@
 // Settings → Sources: reading an untrusted workspace's AGENTS.md, then trusting
 // the workspace from the badge that reports it inert.
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-settings-sources-trust'
 const MARKER = 'Ship nothing without the release checklist.'
@@ -51,7 +52,7 @@ describe('settings sources workspace trust', function () {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    removeE2eTree(workspaceRoot)
   })
 
   it('opens an inert instruction file, then trusts the workspace from its badge', async () => {
@@ -108,7 +109,7 @@ describe('settings sources workspace trust', function () {
     await confirm.$('.confirm-dialog-confirm').click()
 
     await browser.waitUntil(
-      async () => (await row.$$('button.sources-badge-untrusted')).length === 0,
+      async () => (await row.$$('button.sources-badge-untrusted').getElements()).length === 0,
       { timeout: 15_000, timeoutMsg: 'expected the instruction row to reload as trusted' },
     )
     // The badge's capital comes from CSS `::first-letter`, which getText() ignores.

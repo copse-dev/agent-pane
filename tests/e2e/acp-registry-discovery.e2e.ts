@@ -1,3 +1,4 @@
+import { removeE2eTree } from './helpers/remove-tree.ts'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -106,7 +107,7 @@ describe('public agent registry discovery', function () {
   after(() => {
     writeE2eEnv({ COPSE_E2E_ACP_REGISTRY_FIXTURE: undefined })
     resetUserData()
-    if (ownsScratch) rmSync(scratch, { recursive: true, force: true })
+    if (ownsScratch) removeE2eTree(scratch)
   })
 
   it('discovers without executing, reviews a disabled draft, then explicitly enables and runs it', async () => {
@@ -115,8 +116,8 @@ describe('public agent registry discovery', function () {
     await $('#settings-dialog').waitForDisplayed()
     await $('.settings-nav-btn[data-section="general"]').click()
     assert.equal(existsSync(`${registryFile}.requests`), false)
-    await $('[data-testid="acp-add-toggle"]').click()
-    await $('.acp-add-row[data-agent="other"]').$('button=Set up').click()
+    await $('[data-testid="connections-add-toggle"]').click()
+    await $('.acp-add-row[data-add="agent"]').$('button=Set up').click()
     await $('.acp-registry-toggle').click()
     await $('.acp-registry-entry').waitForDisplayed()
     await expect($('.acp-registry-entry')).toHaveText(expect.stringContaining('Unverified'))

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
@@ -12,6 +12,7 @@ import {
 } from './helpers/seed-config.ts'
 import { startConversationServer, type ConversationServer } from './helpers/conversation-server.ts'
 import { E2E_SCREENSHOT_DIR, pinTextForCapture, saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 /**
  * Visual eval for the AI-generated roadmap short name (issue #2472).
@@ -41,7 +42,7 @@ describe('roadmap AI-generated short names', () => {
   })
 
   after(async () => {
-    rmSync(workspaceParent, { recursive: true, force: true })
+    removeE2eTree(workspaceParent)
     await server.close()
   })
   describe('persisted rows', () => {
@@ -82,7 +83,7 @@ describe('roadmap AI-generated short names', () => {
 
     after(() => {
       resetUserData()
-      rmSync(knowledgeDir, { recursive: true, force: true })
+      removeE2eTree(knowledgeDir)
     })
 
     it('renders the persisted short name and the truncation fallback', async () => {
@@ -91,7 +92,7 @@ describe('roadmap AI-generated short names', () => {
       await roadmapButton.waitForDisplayed({ timeout: 10_000 })
       await roadmapButton.click()
 
-      await browser.waitUntil(async () => (await $$('.roadmap-row')).length === 2, {
+      await browser.waitUntil(async () => (await $$('.roadmap-row').getElements()).length === 2, {
         timeout: 20_000,
         timeoutMsg: 'expected two seeded roadmap rows',
       })

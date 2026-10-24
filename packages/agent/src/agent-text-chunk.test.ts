@@ -238,6 +238,41 @@ describe('planAgentTextChunk', () => {
     assert.equal(plan.action === 'append' && plan.startNewMessage, false)
   })
 
+  it('keeps an inline code span together when a tool call cuts it mid-content', () => {
+    // "`docs/plans" streamed, then a tool call, then "/thread-in-container.md`"
+    // closes the span. The cut lands on a letter, not the opening backtick, so
+    // this must not be confused with a fresh reply.
+    const { plan } = planAgentTextChunk(
+      { msgId: 'msg-1', toolSinceText: true, currentText: 'Updates to `docs/plans' },
+      '/thread-in-container.md` and `docs/threat-model.md`.',
+    )
+    assert.equal(plan.action === 'append' && plan.startNewMessage, false)
+  })
+
+  it('does not carry an unmatched backtick across a paragraph break', () => {
+    const { plan } = planAgentTextChunk(
+      {
+        msgId: 'msg-1',
+        toolSinceText: true,
+        currentText: 'Example `unfinished\n\nThis paragraph is complete.',
+      },
+      'A new answer.',
+    )
+    assert.equal(plan.action === 'append' && plan.startNewMessage, true)
+  })
+
+  it('keeps an inline code span together across a soft line break', () => {
+    const { plan } = planAgentTextChunk(
+      {
+        msgId: 'msg-1',
+        toolSinceText: true,
+        currentText: 'Example `unfinished\nstill inside',
+      },
+      ' the span`.',
+    )
+    assert.equal(plan.action === 'append' && plan.startNewMessage, false)
+  })
+
   it('starts a fresh bubble after a completed emphasis span', () => {
     const { plan } = planAgentTextChunk(
       { msgId: 'msg-1', toolSinceText: true, currentText: '**Completed.**' },

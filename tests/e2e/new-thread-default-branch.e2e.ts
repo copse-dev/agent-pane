@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -9,6 +9,7 @@ import { setComposerValue } from './helpers/composer.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT = 'e2e-default-branch'
 const THREAD = 'e2e-default-branch-thread'
@@ -34,7 +35,7 @@ describe('new thread default branch checkout', () => {
     root = join(fixtureRoot, 'default-branch-checkout')
     mkdirSync(root)
     worktree = join(worktreesRoot, PROJECT, THREAD)
-    rmSync(worktree, { recursive: true, force: true })
+    removeE2eTree(worktree)
     git(root, ['init', '-q', '-b', 'main'])
     git(root, ['config', 'user.email', 'e2e@example.invalid'])
     git(root, ['config', 'user.name', 'Copse E2E'])
@@ -85,8 +86,7 @@ describe('new thread default branch checkout', () => {
     writeE2eEnv({})
     resetUserData()
     if (root && existsSync(worktree)) git(root, ['worktree', 'remove', '--force', worktree])
-    if (fixtureRoot)
-      rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    if (fixtureRoot) removeE2eTree(fixtureRoot)
   })
 
   for (const mode of ['startup', 'shared', 'worktree', 'explicit'] as const) {
@@ -108,12 +108,12 @@ describe('new thread default branch checkout', () => {
         await expect(
           menu.$('.branch-picker-option.is-selected .branch-picker-option-label'),
         ).toHaveText('main')
-        assert.equal((await menu.$$('.branch-picker-option.is-selected')).length, 1)
+        assert.equal((await menu.$$('.branch-picker-option.is-selected').getElements()).length, 1)
         await expect(
           menu.$('.branch-picker-option:first-child .branch-picker-default-badge'),
         ).toBeDisplayed()
         if (mode === 'explicit') {
-          const options = await menu.$$('.branch-picker-option')
+          const options = await menu.$$('.branch-picker-option').getElements()
           let selected = false
           for (const option of options) {
             if ((await option.$('.branch-picker-option-label').getText()) !== FEATURE) continue

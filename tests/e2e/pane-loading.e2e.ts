@@ -165,17 +165,17 @@ async function openAndFreezeLoadingPane(pane: LoadingPane): Promise<void> {
         }
 
         let settled = false
-        let timer: ReturnType<typeof setTimeout> | undefined
         const finish = (value: boolean): void => {
           if (settled) return
           settled = true
           observer.disconnect()
-          if (timer !== undefined) clearTimeout(timer)
+          clearTimeout(timer)
           resolve(value)
         }
         const capture = (): void => {
           if (!host.querySelector('.pane-loading')) return
-          const snapshot = filesPane.cloneNode(true) as HTMLElement
+          const snapshot = filesPane.cloneNode(true)
+          if (!(snapshot instanceof HTMLElement)) throw new Error('Expected a cloned files pane')
           filesPane.id = 'pane-files-live'
           filesPane.hidden = true
           snapshot.dataset['loadingSnapshot'] = ''
@@ -184,9 +184,11 @@ async function openAndFreezeLoadingPane(pane: LoadingPane): Promise<void> {
         }
         const observer = new MutationObserver(capture)
         observer.observe(host, { childList: true, subtree: true, characterData: true })
+        const timer = setTimeout(() => {
+          finish(false)
+        }, 5_000)
         button.click()
         capture()
-        timer = setTimeout(() => finish(false), 5_000)
       }),
     pane.button,
     pane.host,
@@ -284,7 +286,7 @@ async function emptyViewerChrome(viewerSelector: string): Promise<string[]> {
         (child) =>
           child.getClientRects().length > 0 &&
           child.getBoundingClientRect().height > 0 &&
-          (child.textContent ?? '').trim() === '' &&
+          child.textContent.trim() === '' &&
           child.querySelector('svg, img, canvas, .monaco-editor') === null,
       )
       .map((child) => child.className)
@@ -324,10 +326,12 @@ describe('async pane loading states', () => {
     for (const pane of LOADING_PANES) {
       await openAndFreezeLoadingPane(pane)
 
-      const loading = await $(`#pane-files ${pane.host} .pane-loading`)
+      const loading = await $(`#pane-files ${pane.host} .pane-loading`).getElement()
       await loading.waitForDisplayed({ timeout: 15_000 })
       await expect(loading).toHaveText(expect.stringContaining(pane.label))
-      await expect(await loading.$('.ui-inline-status[data-status-kind="pending"]')).toBeDisplayed()
+      await expect(
+        await loading.$('.ui-inline-status[data-status-kind="pending"]').getElement(),
+      ).toBeDisplayed()
 
       const header = await paneHeaderMetrics(`${pane.host} .pane-header`)
       assert.ok(header, `expected a displayed .pane-header in ${pane.host}`)

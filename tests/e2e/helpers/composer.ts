@@ -34,7 +34,7 @@ export async function setComposerValue(text: string): Promise<void> {
 export async function composerText(): Promise<string> {
   return browser.execute(() => {
     const composer = document.querySelector('.prompt-input')
-    return composer instanceof HTMLElement ? (composer.textContent ?? '') : ''
+    return composer instanceof HTMLElement ? composer.textContent : ''
   })
 }
 

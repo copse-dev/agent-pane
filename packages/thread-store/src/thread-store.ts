@@ -2394,6 +2394,42 @@ export function updateMeta(
   })
 }
 
+/**
+ * Commit a background metadata decision only while its observed record is current.
+ * The synchronous guard runs inside the store write queue immediately before the
+ * write, so live runtime state can veto a decision made during asynchronous I/O.
+ */
+export function updateMetaIfUnchanged(
+  projectId: string,
+  threadId: string,
+  expected: ThreadMeta,
+  patch: Partial<Omit<ThreadMeta, 'archivedAt'>> & { archivedAt?: number | undefined },
+  allowed: () => boolean,
+): Promise<boolean> {
+  return runStoreWrite(projectId, () => {
+    const dir = threadDir(projectId, threadId)
+    const current = readMeta(dir)
+    if (current === null || JSON.stringify(current) !== JSON.stringify(expected) || !allowed()) {
+      return false
+    }
+    const { archivedAt, ...fields } = patch
+    const lastSettledAt = completionTimeForPatch(current, fields)
+    const next: ThreadMeta = {
+      ...current,
+      ...fields,
+      ...(lastSettledAt !== undefined ? { lastSettledAt } : {}),
+      id: threadId,
+    }
+    if (Object.hasOwn(patch, 'archivedAt')) {
+      if (archivedAt === undefined) delete next.archivedAt
+      else next.archivedAt = archivedAt
+    }
+    atomicWriteFile(join(dir, META_FILE), `${JSON.stringify(next)}\n`)
+    refreshCatalogLine(projectId, threadId)
+    return true
+  })
+}
+
 /** Patch metadata, failing if the renderer has not persisted the thread yet. */
 export function updateMetaOrThrow(
   projectId: string,

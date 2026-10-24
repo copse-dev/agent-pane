@@ -1,15 +1,16 @@
 import { getDefaultBranch } from './github/git-service.ts'
 import { listLocalProjectRoots } from './workspace.ts'
-import { hasOriginRemote, runWorktreeGit } from './worktree-manager.ts'
+import { fetchDefaultBranch, hasOriginRemote } from './worktree-manager.ts'
 
 /**
  * How often to refresh each local project's cached `origin/<default>` ref.
  *
  * Thread creation only fetches it opportunistically (`allocateThreadWorktree`
- * in worktree-manager.ts), and that fetch is itself best-effort and silently
- * swallowed on failure. Without this, a project's default branch can only
- * drift further behind `origin` between successful app launches/fetches —
- * sometimes for days — until a new thread happens to fetch it successfully.
+ * in worktree-manager.ts), and that fetch is itself best-effort: failures are
+ * logged by `fetchDefaultBranch` but otherwise absorbed. Without this, a
+ * project's default branch can only drift further behind `origin` between
+ * successful app launches/fetches — sometimes for days — until a new thread
+ * happens to fetch it successfully.
  */
 export const DEFAULT_BRANCH_REFRESH_INTERVAL_MS = 60 * 60 * 1000
 
@@ -18,10 +19,11 @@ async function refreshOneProject(root: string): Promise<void> {
     if (!(await hasOriginRemote(root))) return
     const branch = await getDefaultBranch(root)
     if (!branch) return
-    await runWorktreeGit(root, ['fetch', '--quiet', 'origin', branch])
+    // A failed fetch exits non-zero rather than throwing; fetchDefaultBranch
+    // reports it, and the project keeps the `origin/<default>` ref it had.
+    await fetchDefaultBranch(root, branch)
   } catch (err) {
-    // Best-effort: a project that is offline, mid-rebase, or otherwise
-    // unreachable just keeps whatever `origin/<default>` ref it already had.
+    // Best-effort: the origin or default-branch lookup itself failed.
     console.warn('[copse-panel] default branch refresh failed for', root, err)
   }
 }

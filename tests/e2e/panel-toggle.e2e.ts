@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 
 const PROJECT_ID = 'e2e-panel-toggle-project'
@@ -33,7 +33,7 @@ async function pressPanelChord(chord: ChordInit, target?: 'document' | 'composer
           metaKey: c.meta ?? false,
           shiftKey: c.shift ?? false,
           key: c.key,
-          code: c.code,
+          ...(c.code === undefined ? {} : { code: c.code }),
         }),
       )
     },
@@ -50,7 +50,7 @@ async function focusOutsideComposer(): Promise<void> {
 }
 
 async function closeRightPanelIfOpen(): Promise<void> {
-  const pane = await $('#pane-files')
+  const pane = await $('#pane-files').getElement()
   if (await pane.isDisplayed()) {
     await pressPanelChord({ ctrl: true, key: 'j' })
     await browser.waitUntil(async () => !(await pane.isDisplayed()), {
@@ -63,7 +63,7 @@ async function closeRightPanelIfOpen(): Promise<void> {
 describe('right panel toggle and shortcuts', () => {
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), PROJECT_ID)
+    seedEmptyProject(seedStableWorkspace(), PROJECT_ID)
     await browser.reloadSession()
     await waitForComposer()
     // A prior spec can leave the first-run overlay visible across the app
@@ -80,8 +80,8 @@ describe('right panel toggle and shortcuts', () => {
   })
 
   it('opens and closes the files panel from the titlebar', async () => {
-    const pane = await $('#pane-files')
-    const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]')
+    const pane = await $('#pane-files').getElement()
+    const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]').getElement()
 
     await closeRightPanelIfOpen()
     await expect(pane).not.toBeDisplayed()
@@ -98,7 +98,8 @@ describe('right panel toggle and shortcuts', () => {
   })
 
   it('opens terminal mode from the titlebar', async () => {
-    const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]')
+    const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]').getElement()
+
     await terminalBtn.click()
     // Linux CI has no OS sandbox, so the terminal open itself prompts first.
     await approveUnsandboxedTerminalIfPrompted()
@@ -109,7 +110,7 @@ describe('right panel toggle and shortcuts', () => {
   })
 
   it('toggles the right panel with Ctrl/Cmd+J', async () => {
-    const pane = await $('#pane-files')
+    const pane = await $('#pane-files').getElement()
     await closeRightPanelIfOpen()
     await focusOutsideComposer()
 
@@ -126,8 +127,8 @@ describe('right panel toggle and shortcuts', () => {
 
   it('hides and shows the projects sidebar with Ctrl/Cmd+B and the titlebar button', async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    const sidebar = await $('#pane-projects')
-    const toggle = await $('.titlebar-sidebar-btn')
+    const sidebar = await $('#pane-projects').getElement()
+    const toggle = await $('.titlebar-sidebar-btn').getElement()
     await focusOutsideComposer()
     await sidebar.waitForDisplayed({ timeout: 5_000 })
 
@@ -147,9 +148,9 @@ describe('right panel toggle and shortcuts', () => {
 
   it('lets a maximized right panel cover the hidden projects sidebar', async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    const sidebarToggle = await $('.titlebar-sidebar-btn')
-    const panel = await $('#pane-files')
-    const panelToggle = await $('.titlebar-btn[aria-label="Toggle right panel"]')
+    const sidebarToggle = await $('.titlebar-sidebar-btn').getElement()
+    const panel = await $('#pane-files').getElement()
+    const panelToggle = await $('.titlebar-btn[aria-label="Toggle right panel"]').getElement()
     await closeRightPanelIfOpen()
     await panelToggle.click()
     await panel.waitForDisplayed({ timeout: 5_000 })
@@ -176,7 +177,20 @@ describe('right panel toggle and shortcuts', () => {
       bounds.paneLeft <= bounds.bodyLeft + 1,
       `expected maximized pane at body left edge, got ${JSON.stringify(bounds)}`,
     )
+    await expect($('#context-viewer-host [data-context-section="permissions"]')).toHaveText(
+      expect.stringContaining('No saved conversation access.'),
+    )
+    await expect(
+      $('#context-viewer-host [data-context-change-stats] .git-change-status-added'),
+    ).toHaveText('+0')
+    await expect(
+      $('#context-viewer-host [data-context-change-stats] .git-change-status-deleted'),
+    ).toHaveText('−0')
+    await expect($('#context-viewer-host [data-context-storage-size]')).toHaveText(/^\d+ B$/)
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'sidebar-hidden-panel-maximized.png'))
+    const archive = $('#context-viewer-host [data-action="archive-thread"]')
+    await archive.scrollIntoView({ block: 'end' })
+    await expect(archive).toBeDisplayedInViewport()
 
     await sidebarToggle.click()
     await maximize.click()
@@ -212,8 +226,8 @@ describe('right panel toggle and shortcuts', () => {
 
   it('does not toggle the panel while typing in the composer', async () => {
     await closeRightPanelIfOpen()
-    const pane = await $('#pane-files')
-    const composer = await $('.prompt-input')
+    const pane = await $('#pane-files').getElement()
+    const composer = await $('.prompt-input').getElement()
     await composer.click()
     await pressPanelChord({ ctrl: true, key: 'j' }, 'composer')
     await browser.waitUntil(async () => !(await pane.isDisplayed()), {

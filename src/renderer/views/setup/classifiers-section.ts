@@ -5,17 +5,19 @@ import type {
   LocalClassifierOverview,
   LocalClassifierStatus,
 } from '@shared/local-classifiers.ts'
-import type {
-  ClassifierClient,
-  ClassifierProfile,
-  ClassifierProfileStatus,
-  ClassifierResult,
+import {
+  HTTP_CLASSIFIER_PROTOCOLS,
+  type ClassifierClient,
+  type ClassifierProfile,
+  type ClassifierProfileStatus,
+  type ClassifierResult,
 } from '@copse/llm/classifiers/types.ts'
 import {
   CLASSIFIER_PRESETS,
   classifierCredentialId,
   classifierEndpointKey,
 } from '@copse/llm/classifiers/presets.ts'
+import { memberOf } from '@shared/member-of.ts'
 import { el, clear } from '../../dom/helpers.ts'
 import { disclosureSummary } from '../../dom/disclosure-summary.ts'
 import { setInlineStatus } from '../../dom/inline-status.ts'
@@ -27,6 +29,7 @@ interface ClassifiersSectionApi {
   classifiers: ClassifierClient
   localClassifiers: LocalClassifierClient
   settings: Pick<ApiClient['settings'], 'setKey'>
+  toolPermissions: Pick<ApiClient['toolPermissions'], 'list' | 'set' | 'reset'>
 }
 
 export interface ClassifiersSection {
@@ -55,8 +58,10 @@ interface SelectChoice {
 // The stored values are wire enums; the labels are what a person reads.
 const PROTOCOL_CHOICES: readonly SelectChoice[] = [
   { value: 'systemone', label: 'SystemOne' },
+  { value: 'decisions', label: 'Decisions API' },
   { value: 'featherless', label: 'Featherless classifier' },
 ]
+const isHttpClassifierProtocol = memberOf(HTTP_CLASSIFIER_PROTOCOLS)
 const AUTH_CHOICES: readonly SelectChoice[] = [
   { value: 'none', label: 'None' },
   { value: 'bearer', label: 'Bearer token (API key)' },
@@ -112,6 +117,7 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
   const status = el('p', { class: 'classifier-status', role: 'status', 'aria-live': 'polite' })
   const screening = el('select', { name: 'classifierScreening' })
   const background = el('select', { name: 'classifierBackground' })
+  const askBeforeHosted = el('input', { type: 'checkbox', name: 'classifierToolPrompt' })
   const localHost = el('div', {
     class: 'classifier-local',
     'aria-label': 'Local classifier servers',
@@ -147,6 +153,17 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
         "Which classifier rates roadmap items when you save them, gives the verdict for fit checks and roadmap reviews, checks which open issues the roadmap already covers, and picks follow-ups after each turn. If it fails, the small-tasks model answers instead. A hosted classifier receives that text, including issues, commit history and each finished turn's messages, with saved keys redacted.",
       ),
     ),
+    el(
+      'label',
+      { class: 'checkbox-label classifier-tool-prompt' },
+      askBeforeHosted,
+      'Ask before agent classifier questions',
+    ),
+    el(
+      'span',
+      { class: 'field-hint' },
+      'Off by default. Turn on to review each agent question before it reaches a classifier. Hosted classifiers receive the question and supplied content. Safety screening and background questions use their own settings above.',
+    ),
     localHost,
     chips,
     formHost,
@@ -156,10 +173,31 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
   let screeningId: string | null = null
   let backgroundId: string | null = null
   let selectedId: string | null = null
+  let classifierToolPermissionId: string | null = null
   const drafts = new Map<string, ClassifierProfile>()
   let captureDraft: (() => void) | undefined
   const pending = new Map<string, Map<string, string>>()
   let busy = false
+
+  askBeforeHosted.addEventListener('change', () => {
+    const id = classifierToolPermissionId
+    if (id === null) return
+    askBeforeHosted.disabled = true
+    const request = askBeforeHosted.checked
+      ? api.toolPermissions.set({ toolIds: [id], policy: 'ask' })
+      : api.toolPermissions.reset({ toolIds: [id] })
+    void request
+      .then((catalog) => {
+        const tool = catalog.groups.flatMap((group) => group.tools).find((item) => item.id === id)
+        askBeforeHosted.checked = tool?.policy === 'ask'
+        askBeforeHosted.disabled = tool === undefined || tool.policy === 'block'
+      })
+      .catch((error: unknown) => {
+        askBeforeHosted.checked = !askBeforeHosted.checked
+        askBeforeHosted.disabled = false
+        setInlineStatus(status, 'error', classifierErrorMessage(error))
+      })
+  })
 
   function renderChips(): void {
     clear(chips)
@@ -790,11 +828,12 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
     save.addEventListener('click', () => {
       void run(async () => {
         captureDraft?.()
+        const protocol = read('Protocol')
         const connection: ClassifierProfile['connection'] =
           profile.connection.type === 'http'
             ? {
                 type: 'http',
-                protocol: read('Protocol') === 'featherless' ? 'featherless' : 'systemone',
+                protocol: isHttpClassifierProtocol(protocol) ? protocol : 'systemone',
                 baseUrl: read('Url'),
                 auth: read('Auth') === 'none' ? 'none' : 'bearer',
                 ...(read('KeyEnv') ? { apiKeyEnv: read('KeyEnv') } : {}),
@@ -929,9 +968,20 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
         api.classifiers.list(),
         api.classifiers.screening(),
         api.classifiers.background(),
+        api.toolPermissions.list().then(
+          (catalog) => ({ catalog, error: null }),
+          (error: unknown) => ({ catalog: null, error: classifierErrorMessage(error) }),
+        ),
       ])
       if (signal?.aborted || request !== refreshGeneration) return
       ;[profiles, screeningId, backgroundId] = loaded
+      const permissionResult = loaded[3]
+      const classifierTool = permissionResult.catalog?.groups
+        .flatMap((group) => group.tools)
+        .find((tool) => tool.executionName === 'ask_classifier')
+      classifierToolPermissionId = classifierTool?.id ?? null
+      askBeforeHosted.checked = classifierTool?.policy === 'ask'
+      askBeforeHosted.disabled = classifierTool === undefined || classifierTool.policy === 'block'
       selectedId ??= profiles[0]?.profile.id ?? null
       void refreshLocal(signal)
       if (
@@ -941,6 +991,7 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
       )
         selectedId = null
       render()
+      if (permissionResult.error !== null) setInlineStatus(status, 'error', permissionResult.error)
     } catch (error) {
       if (signal?.aborted || request !== refreshGeneration) return
       setInlineStatus(status, 'error', classifierErrorMessage(error))

@@ -1,0 +1,14 @@
+/* Shared by the app panel and its isolated rendering document. */
+.mermaid-diagram,
+.mermaid-expand-viewport {
+  --pele-bg: #111;
+  --pele-fg: #ddd;
+  --pele-muted: #aaa;
+  --pele-line: #aaa;
+  --pele-surface: #24332d;
+  --pele-surface-alt: #2d3d35;
+  --pele-border: #708078;
+  --pele-accent: #ff93d0;
+  --pele-font: 'Pliant';
+  background: var(--pele-bg);
+}

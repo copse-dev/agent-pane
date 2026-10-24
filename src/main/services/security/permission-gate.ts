@@ -54,14 +54,13 @@ import { detectCheckoutDetachingCommand } from '@copse/shell-guard/checkout-deta
 import { isInsideManagedThreadWorktree } from '../worktree-manager.ts'
 import { requestApproval, type ApprovalRequest } from '../approval.ts'
 import { recordDecision } from './decision-log-store.ts'
-import { getSetting, updateSetting } from '../storage/settings.ts'
+import { getSetting, updateSetting, resolveApiKey } from '../storage/settings.ts'
 import {
   SANDBOX_TOOLS,
   decideShellPermission,
   decideTerminalPermission,
   decideMcpPermission,
   decideWebFetchPermission,
-  decideWebSearchPermission,
   describeMcpAnnotations,
   fetchUrlFromArgs,
   shellCommandFromArgs,
@@ -79,6 +78,7 @@ import {
   mcpToolLabel,
   formatGithubWritePrompt,
   GITHUB_NONMUTATING_CI_TOOLS,
+  HOST_NETWORK_READ_TOOLS,
   GITHUB_WRITE_TOOLS,
   isReadOnlySimpleCommand,
   isStructurallyReadOnlyShellCommand,
@@ -140,6 +140,8 @@ import { recordPermissionDecision } from './permission-audit.ts'
 import { resolveToolPermission } from './tool-permissions.ts'
 import type { ToolPermissionPolicy } from '@shared/types/tool-permissions.ts'
 import {
+  SHELL_REPLAY_LEASE_EXTERNAL_MAX_REPLAYS,
+  SHELL_REPLAY_LEASE_EXTERNAL_TTL_MS,
   replayLeaseCore,
   shellReplayLeaseStore,
   type ShellReplayLeaseIdentity,
@@ -153,12 +155,24 @@ import {
 import { getAutomationService } from '../automations/automation-service.ts'
 
 const SANDBOX_REPLAY_LABEL = 'Allow retries for this task (up to 10, for 15 minutes)'
-const EXTERNAL_REPLAY_LABEL = 'Allow retries outside the sandbox (up to 2, for 15 minutes)'
+const EXTERNAL_REPLAY_LABEL = `Allow retries outside the sandbox (up to ${String(
+  SHELL_REPLAY_LEASE_EXTERNAL_MAX_REPLAYS,
+)}, for ${String(SHELL_REPLAY_LEASE_EXTERNAL_TTL_MS / 3_600_000)} hours)`
 
-function issueShellReplayLease(identity: ShellReplayLeaseIdentity, command: string): void {
-  const core = replayLeaseCore(command, (segment) =>
-    leaseCompanionAllowed(segment, identity.executionRoot),
-  )
+/**
+ * @param wholeCommandFallback lease the exact command line when no single
+ *   constituent can be isolated. Only for a command whose whole analysis the user
+ *   just approved as bounded opaque local execution: the store then matches it
+ *   byte for byte, with no companion segments.
+ */
+function issueShellReplayLease(
+  identity: ShellReplayLeaseIdentity,
+  command: string,
+  wholeCommandFallback = false,
+): void {
+  const core =
+    replayLeaseCore(command, (segment) => leaseCompanionAllowed(segment, identity.executionRoot)) ??
+    (wholeCommandFallback ? command : null)
   if (!core) return
   const lease = shellReplayLeaseStore.issue(identity, core)
   recordDecision({
@@ -570,11 +584,17 @@ export async function promptExpectedSandboxBlock(
   command: string,
   reasons: string[],
   signal?: AbortSignal,
-  opts: { source?: 'agent' | 'prior-denial' } = {},
+  opts: { source?: 'agent' | 'prior-denial'; executionRoot?: string | null } = {},
 ): Promise<boolean> {
+  // An agent rerunning the same browser demo or test harness after each fix asks
+  // to leave the sandbox with the same command every time. Bounded opaque local
+  // execution may carry the same exact-command replay lease a verified-block
+  // escalation offers; nothing else is eligible.
+  const leaseIdentity = expectedBlockLeaseIdentity(command, opts.executionRoot ?? null)
+  if (leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
   // An explicit escape request must reach the user even when deterministic tiers
   // would approve the command. The caller handles already-authorized run modes.
-  const { approved } = await requestApproval(
+  const { approved, grantScope } = await requestApproval(
     {
       title:
         opts.source === 'prior-denial' ? 'Run outside sandbox?' : 'Agent requests sandbox escape',
@@ -587,10 +607,38 @@ export async function promptExpectedSandboxBlock(
       cause: 'shell-expected-sandbox-block',
       reasons,
       shellContext: shellApprovalAuditContext(),
+      ...(leaseIdentity
+        ? {
+            allowTurnTreeLease: true,
+            turnTreeLeaseLabel: EXTERNAL_REPLAY_LABEL,
+            turnTreeLeaseDefault: false,
+            turnTreeLeaseSubject: command,
+          }
+        : {}),
     },
     signal,
   )
+  if (approved && grantScope === 'turn-tree' && leaseIdentity) {
+    issueShellReplayLease(leaseIdentity, command, true)
+  }
   return approved
+}
+
+/**
+ * The outside-sandbox lease identity an agent-requested escape may use or offer:
+ * only for bounded opaque local execution (a project script, not network or
+ * outside-path access), never a destructive command or an install, and only
+ * inside an active turn tree at the execution root.
+ */
+function expectedBlockLeaseIdentity(
+  command: string,
+  executionRoot: string | null,
+): ShellReplayLeaseIdentity | null {
+  if (executionRoot === null) return null
+  if (dangerousInSandboxReasons(command).length > 0) return null
+  if (detectPackageInstall(command).isInstall) return null
+  if (!isReplayableOpaqueLocalExecution(analyzeShellCommand(command, executionRoot))) return null
+  return activeShellReplayLeaseIdentity(executionRoot, 'external')
 }
 
 /**
@@ -853,8 +901,16 @@ async function checkWebSearchPermission(
   signal?: AbortSignal,
   explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
 ): Promise<boolean> {
+  const { getWebSearchProvider } = await import('../web-search/provider.ts')
+  const { WEB_SEARCH_ENDPOINTS, WEB_SEARCH_LABELS } = await import('@shared/web-search.ts')
+  const provider = getWebSearchProvider()
+  // Let the tool return setup guidance without asking for an unrelated origin.
+  if (provider === 'none' || !resolveApiKey(provider)) {
+    return explicitPolicy === 'ask' ? promptExplicitToolAsk('web_search', {}, signal) : true
+  }
   const saved = getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)
-  const decision = decideWebSearchPermission({
+  const decision = decideWebFetchPermission({
+    url: WEB_SEARCH_ENDPOINTS[provider],
     allowedOrigins: webAllowedOriginsWithDefaults(saved),
     allowUserApproval: getSetting<boolean>(WEB_ALLOW_USER_APPROVAL_SETTING, true),
   })
@@ -873,29 +929,40 @@ async function checkWebSearchPermission(
     decision.origin,
     signal,
     explicitPolicy !== 'ask',
-    'Search queries will be sent to DuckDuckGo.',
+    `Search queries will be sent to ${WEB_SEARCH_LABELS[provider]} and may consume paid API credits.`,
   )
 }
 
 /**
- * `ask_classifier` sends model-supplied input to a saved classifier connection.
- * Host approval is the classifier service's own gate, applied again at call
- * time (`assertApprovedProviderHost`), so a host the user never approved fails
- * there whatever this returns. This gate decides whether the call needs a
- * prompt: a connection that leaves the machine asks, a local server or SemIf
- * scorer does not, and an explicit "allow" or "ask" override wins either way.
+ * Saved classifier connections may be used without another tool prompt.
+ * Provider-host approval remains a separate gate at call time. An explicit
+ * Always ask override reviews each question with its exact input tucked away
+ * until the person expands the details.
  */
 async function checkAskClassifierPermission(
   args: unknown,
   signal?: AbortSignal,
   explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
 ): Promise<boolean> {
-  if (explicitPolicy === 'allow') return true
+  if (explicitPolicy !== 'ask') return true
   const id = isRecord(args) && typeof args['classifier'] === 'string' ? args['classifier'] : ''
-  if (explicitPolicy === 'ask' || classifierSendsOffMachine(id)) {
-    return promptExplicitToolAsk('ask_classifier', args, signal)
-  }
-  return true
+  const offMachine = classifierSendsOffMachine(id)
+  const { approved } = await requestApproval(
+    {
+      title: 'Allow this classifier question?',
+      body: JSON.stringify(args, null, 2),
+      bodyAdvice: offMachine
+        ? 'The question and supplied content will be sent to a hosted classifier.'
+        : 'This classifier runs on this machine.',
+      type: 'mcp',
+      subject: 'ask_classifier',
+      cause: 'mcp-tool',
+      approveLabel: 'Allow once',
+      collapseDetails: true,
+    },
+    signal,
+  )
+  return approved
 }
 
 async function checkParallelSearchPermission(
@@ -1113,6 +1180,31 @@ async function checkShellPermission(
     ...(signal !== undefined ? { signal } : {}),
     ...(explicitPolicy !== undefined ? { toolPolicy: explicitPolicy } : {}),
   })
+}
+
+/** Spend a matching replay lease, recording that it answered the question. */
+function consumeShellReplayLease(identity: ShellReplayLeaseIdentity, command: string): boolean {
+  const match = shellReplayLeaseStore.consume(identity, command, (segment) =>
+    leaseCompanionAllowed(segment, identity.executionRoot),
+  )
+  if (!match.matched) return false
+  recordDecision({
+    kind: 'shell',
+    actor: 'system',
+    verdict: 'allowed',
+    subject: SHELL_DECISION_SUBJECT,
+    scope: identity.containment === 'external' ? 'external' : 'sandbox',
+    reasons: [
+      'bounded exact replay lease used',
+      ...(match.companionSegments.length > 0
+        ? ['composed shell constituents independently allowed']
+        : []),
+    ],
+    source: `turn-tree-capability-lease:${match.leaseId}`,
+    projectId: identity.projectId,
+    threadId: identity.threadId,
+  })
+  return true
 }
 
 function activeShellReplayLeaseIdentity(
@@ -1569,30 +1661,7 @@ export async function ensureShellCommandPermitted(
       ? activeShellReplayLeaseIdentity(leaseRoot, outsideSandbox ? 'external' : 'project-sandbox')
       : null
   const leaseOfferIdentity = leaseCore !== null ? leaseIdentity : null
-  if (!forceAsk && leaseIdentity) {
-    const match = shellReplayLeaseStore.consume(leaseIdentity, command, (segment) =>
-      leaseCompanionAllowed(segment, leaseIdentity.executionRoot),
-    )
-    if (match.matched) {
-      recordDecision({
-        kind: 'shell',
-        actor: 'system',
-        verdict: 'allowed',
-        subject: SHELL_DECISION_SUBJECT,
-        scope: leaseIdentity.containment === 'external' ? 'external' : 'sandbox',
-        reasons: [
-          'bounded exact replay lease used',
-          ...(match.companionSegments.length > 0
-            ? ['composed shell constituents independently allowed']
-            : []),
-        ],
-        source: `turn-tree-capability-lease:${match.leaseId}`,
-        projectId: leaseIdentity.projectId,
-        threadId: leaseIdentity.threadId,
-      })
-      return true
-    }
-  }
+  if (!forceAsk && leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
 
   // Reads of accountable paths outside the project ask the narrower read-access
   // question — and can be answered once for the whole thread — instead of the
@@ -2161,7 +2230,7 @@ export async function ensureToolPermitted(
     // fall through the default-allow tail by accident.
     permitted =
       explicitPolicy === 'ask' ? await promptExplicitToolAsk(toolName, args, signal) : true
-  } else if (GITHUB_NONMUTATING_CI_TOOLS.has(toolName)) {
+  } else if (GITHUB_NONMUTATING_CI_TOOLS.has(toolName) || HOST_NETWORK_READ_TOOLS.has(toolName)) {
     permitted =
       explicitPolicy === 'ask' ? await promptExplicitToolAsk(toolName, args, signal) : true
   } else if (toolName === 'prepare_worktree') {

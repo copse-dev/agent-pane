@@ -14,12 +14,26 @@ describe('global OpenAI service tier', () => {
     writeE2eEnv({
       COPSE_PRESERVE_PATH: '1',
       PATH: (process.platform === 'win32'
-        ? [join(process.env['SystemRoot'] ?? 'C:\Windows', 'System32')]
+        ? [join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32')]
         : ['/usr/bin', '/bin']
       ).join(delimiter),
     })
     seedEmptyProject(process.cwd(), 'e2e-openai-service-tier')
-    seedE2eViewport({ width: 1280, height: 800 }, { openAiServiceTier: 'flex' })
+    // The tier applies to OpenAI API-key requests, so it lives under the saved
+    // OpenAI key's Options in Models & agents.
+    seedE2eViewport(
+      { width: 1280, height: 800 },
+      {
+        openAiServiceTier: 'flex',
+        apiKey: {
+          openai: {
+            v: 1,
+            enc: Buffer.from('sk-e2e-openai', 'utf8').toString('base64'),
+            plain: true,
+          },
+        },
+      },
+    )
     await browser.reloadSession()
   })
 
@@ -33,11 +47,10 @@ describe('global OpenAI service tier', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
 
-    const providers = $('#settings-providers-host fieldset')
-    await expect(providers).toBeDisplayed()
-    await providers.$('.provider-chip[data-provider="openai"]').click()
+    const providers = $('[data-testid="models-agents-list"] [data-row="key:openai"]')
+    await providers.waitForExist({ timeout: 15_000 })
+    await providers.$('button=Options').click()
 
-    await providers.$('[data-testid="openai-api-details"] summary').click()
     const picker = providers.$('select[name="openAiServiceTier"]')
     await expect(picker).toBeDisplayed()
     await expect(picker).toHaveValue('flex')
@@ -67,7 +80,9 @@ describe('global OpenAI service tier', () => {
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
-    await $('#settings-providers-host .provider-chip[data-provider="openai"]').click()
-    await expect($('#settings-providers-host select[name="openAiServiceTier"]')).toHaveValue('fast')
+    const row = $('[data-testid="models-agents-list"] [data-row="key:openai"]')
+    await row.waitForExist({ timeout: 15_000 })
+    await row.$('button=Options').click()
+    await expect(row.$('select[name="openAiServiceTier"]')).toHaveValue('fast')
   })
 })

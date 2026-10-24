@@ -11,10 +11,15 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { parseSpineEntries } from '@shared/threads/spine-schema.ts'
+import {
+  parseSpineEntries,
+  SPINE_SCHEMA_VERSION,
+  type SpinePermissionDecisionLine,
+} from '@shared/threads/spine-schema.ts'
 import {
   recordDecision,
   readDecisionLog,
+  readThreadDecisionLog,
   exportDecisionLog,
   runWithDecisionRecorder,
   type RecordedDecision,
@@ -213,6 +218,46 @@ describe('decision-log-store', () => {
       events.map((e) => e.subject),
       ['cmd-0', 'cmd-1', 'cmd-2', 'cmd-3', 'cmd-4'],
     )
+  })
+
+  it('reads legacy permission_decision lines in a single-thread read', async () => {
+    recordDecision({
+      projectId: PROJECT,
+      kind: 'shell',
+      actor: 'user',
+      verdict: 'approved',
+      subject: 'echo hi',
+      scope: 'sandbox',
+      threadId: THREAD,
+    })
+    await readDecisionLog(PROJECT)
+    const legacy: SpinePermissionDecisionLine = {
+      v: SPINE_SCHEMA_VERSION,
+      type: 'permission_decision',
+      id: 'legacy-1',
+      decidedAt: Date.now() + 1000,
+      originalCommand: 'rm -rf build',
+      originalMode: 'guarded-yolo',
+      effectiveMode: 'guarded-yolo',
+      sandboxState: 'unsandboxed',
+      harmDecision: 'prompt',
+      policyDecision: 'prompt',
+      reasons: ['recursive delete'],
+      userResponse: 'declined',
+    }
+    const path = threadEventsPath(root)
+    writeFileSync(path, `${readFileSync(path, 'utf8')}${JSON.stringify(legacy)}\n`)
+
+    const events = await readThreadDecisionLog(PROJECT, THREAD)
+    assert.equal(events.length, 2)
+    const migrated = events[1]
+    assert.ok(migrated)
+    assert.equal(migrated.id, 'legacy-1')
+    assert.equal(migrated.verdict, 'denied')
+    assert.equal(migrated.scope, 'external')
+    assert.equal(migrated.threadId, THREAD)
+    assert.equal(migrated.subject, 'shell command (arguments omitted)')
+    assert.deepEqual(await readDecisionLog(PROJECT), events)
   })
 
   it('returns an empty log for a project with no decisions', async () => {

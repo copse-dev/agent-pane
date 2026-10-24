@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -19,6 +19,7 @@ import {
   saveAppScreenshot,
   savePreparedAppScreenshot,
 } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-deferred-worktree-project'
 const THREAD_ID = 'e2e-deferred-worktree-abc123'
@@ -79,7 +80,7 @@ describe('deferred thread worktree', () => {
     projectRoot = join(fixtureRoot, 'copse-deferred-worktree-QmXrAF')
     mkdirSync(projectRoot)
     worktreeRoot = join(worktreesRoot, PROJECT_ID, THREAD_ID)
-    rmSync(worktreeRoot, { recursive: true, force: true })
+    removeE2eTree(worktreeRoot)
     git(projectRoot, ['init', '-q', '-b', 'main'])
     git(projectRoot, ['config', 'user.email', 'e2e@example.invalid'])
     git(projectRoot, ['config', 'user.name', 'Copse E2E'])
@@ -119,8 +120,8 @@ describe('deferred thread worktree', () => {
       server.assertComplete()
     } finally {
       resetUserData()
-      if (worktreeRoot) rmSync(worktreeRoot, { recursive: true, force: true })
-      if (projectRoot) rmSync(fixtureRoot, { recursive: true, force: true })
+      if (worktreeRoot) removeE2eTree(worktreeRoot)
+      if (projectRoot) removeE2eTree(fixtureRoot)
       await server.close()
     }
   })

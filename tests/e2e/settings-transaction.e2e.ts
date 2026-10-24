@@ -11,7 +11,9 @@ describe('ordinary Settings transaction IPC', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })
 
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('round-trips null and merges role edits while rejecting a partial invalid save', async () => {
     await browser.execute(async () => {

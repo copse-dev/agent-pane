@@ -23,20 +23,20 @@ describe('markdown bold after glob table cells', () => {
 
     const metrics = await browser.execute(() => {
       const root = document.querySelector('.message-text')
-      if (!root) return { error: 'no message-text' }
+      if (!root) throw new Error('no message-text')
 
       const mcpItem = [...root.querySelectorAll('li')].find((li) =>
-        li.textContent?.includes('MCP host'),
+        li.textContent.includes('MCP host'),
       )
       const mcpStrong = mcpItem?.querySelector('strong')
       const globCell = root.querySelector('td strong code')
       const supportingHeading = [...root.querySelectorAll('h2')].find((h) =>
-        h.textContent?.includes('Key Supporting Files'),
+        h.textContent.includes('Key Supporting Files'),
       )
       const supportingList = supportingHeading?.nextElementSibling
       const supportingItems = supportingList ? [...supportingList.querySelectorAll('li')] : []
 
-      const gap = (a: Element | null | undefined, b: Element | null | undefined) => {
+      const gap = (a: Element | null | undefined, b: Element | null | undefined): number => {
         if (!a || !b) return 0
         return b.getBoundingClientRect().top - a.getBoundingClientRect().bottom
       }
@@ -45,10 +45,10 @@ describe('markdown bold after glob table cells', () => {
         mcpItemHtml: mcpItem?.innerHTML ?? '',
         mcpStrongText: mcpStrong?.textContent ?? '',
         hasLiteralMcpStars: (mcpItem?.textContent ?? '').includes('**'),
-        hasMalformedStrong: (root.innerHTML ?? '').includes('</strong>MCP host**'),
+        hasMalformedStrong: root.innerHTML.includes('</strong>MCP host**'),
         globCellText: globCell?.textContent ?? '',
-        architectureListLabels: [...(root.querySelectorAll('h2') ?? [])]
-          .filter((h) => h.textContent?.includes('Architecture Notes'))[0]
+        architectureListLabels: [...root.querySelectorAll('h2')]
+          .filter((h) => h.textContent.includes('Architecture Notes'))[0]
           ?.nextElementSibling?.querySelectorAll('li strong').length,
         supportingListItemCount: supportingItems.length,
         supportingItemGap: gap(supportingItems[0], supportingItems[1]),
@@ -70,7 +70,7 @@ describe('markdown bold after glob table cells', () => {
 
     await browser.execute(() => {
       const heading = [...document.querySelectorAll('.message-text h2')].find((h) =>
-        h.textContent?.includes('Architecture Notes'),
+        h.textContent.includes('Architecture Notes'),
       )
       heading?.scrollIntoView({ block: 'start' })
     })

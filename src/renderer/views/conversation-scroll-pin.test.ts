@@ -95,6 +95,78 @@ function mountAtBottom(): {
 }
 
 describe('transcript bottom pinning', () => {
+  it('retains compact previews through an upward reading-anchor correction', () => {
+    const store = createStore({ conciseThreadsEnabled: false })
+    const threadId = createThread(store)
+    addMessage(store, threadId, 'user', 'Earlier request')
+    addMessage(store, threadId, 'assistant', 'Earlier reply', undefined, undefined, {
+      model: 'claude-opus-5-5',
+    })
+    addMessage(store, threadId, 'user', 'Describe this image', ['data:image/png;base64,abc'])
+    addMessage(store, threadId, 'assistant', 'Image description')
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+    const list = host.querySelector<HTMLElement>('.messages-list')
+    const prompt = [...host.querySelectorAll<HTMLElement>('.msg-user')].at(-1)
+    const previous = prompt?.previousElementSibling
+    assert.ok(list && prompt && previous)
+    list.style.paddingTop = '0px'
+    list.style.rowGap = '0px'
+    prompt.style.position = 'sticky'
+    prompt.style.top = '0px'
+    let top = 0
+    let max = 600
+    Object.defineProperties(list, {
+      clientHeight: { configurable: true, get: () => CLIENT_HEIGHT },
+      scrollHeight: { configurable: true, get: () => max + CLIENT_HEIGHT },
+      scrollTop: {
+        configurable: true,
+        get: () => top,
+        set: (value: number): void => {
+          top = Math.min(Math.max(value, 0), max)
+        },
+      },
+    })
+    list.getBoundingClientRect = (): DOMRect => new DOMRect(0, 0, 500, CLIENT_HEIGHT)
+    for (const message of list.querySelectorAll<HTMLElement>(':scope > .msg')) {
+      message.getBoundingClientRect = (): DOMRect => new DOMRect(0, -500, 500, 80)
+    }
+    // Concise presentation removes 120px above the first visible row. The
+    // conversation restores that row's viewport position by scrolling upward.
+    previous.getBoundingClientRect = (): DOMRect =>
+      new DOMRect(0, 490 - top - (previous.classList.contains('msg-concise') ? 120 : 0), 500, 80)
+    prompt.getBoundingClientRect = (): DOMRect =>
+      new DOMRect(0, 0, 500, prompt.classList.contains('is-preview-compact') ? 60 : 200)
+    list.scrollTop = max
+    list.dispatchEvent(new Event('scroll'))
+    assert.ok(prompt.classList.contains('is-preview-compact'))
+
+    // The preview's shrink clamps the list into its hysteresis band: natural
+    // top 90px, below the sticky top but without enough space for a full image.
+    max = 480
+    list.scrollTop = max
+    list.dispatchEvent(new Event('scroll'))
+    assert.ok(prompt.classList.contains('is-preview-compact'))
+    max = 1000
+    const wheel = new Event('wheel', { bubbles: true })
+    Object.defineProperty(wheel, 'deltaY', { value: -120 })
+    list.dispatchEvent(wheel)
+    store.setState({ conciseThreadsEnabled: true })
+    store.emit('settings_changed')
+
+    assert.equal(list.scrollTop, 360, 'the automatic correction preserves the reading anchor')
+    assert.ok(prompt.classList.contains('is-preview-compact'), 'layout is not reader scroll intent')
+    list.dispatchEvent(new Event('scroll')) // consume the programmatic echo
+    list.scrollTop -= 10
+    list.dispatchEvent(new Event('scroll'))
+    assert.equal(
+      prompt.classList.contains('is-preview-compact'),
+      false,
+      'reader scroll still expands',
+    )
+  })
+
   it('lands at the bottom when switching between threads with the same live activity', () => {
     const { list, threadId, store, geometry } = mountAtBottom()
     setThreadStatus(store, threadId, 'running')

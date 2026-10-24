@@ -18,7 +18,7 @@ const pending = new Map<string, Promise<boolean>>()
 
 /**
  * Whether a settled thread's checkout root has uncommitted work, cached
- * against the thread's own `updatedAt` so a repeat poll (the mobile activity
+ * per thread and checkout root against the thread's own `updatedAt` so a repeat poll (the mobile activity
  * feed, later the desktop Activity panel) re-runs `git status` once per
  * actual change to the thread, or once per {@link RECHECK_AFTER_MS}, rather
  * than once per poll. Lazy: nothing is computed until a caller actually asks
@@ -29,7 +29,9 @@ export async function threadHasUncommittedChanges(
   root: string,
   updatedAt: number,
 ): Promise<boolean> {
-  const cached = cache.get(threadId)
+  // Thread ids can repeat across projects; a result belongs to its checkout.
+  const key = JSON.stringify([threadId, root])
+  const cached = cache.get(key)
   if (
     cached &&
     cached.updatedAt === updatedAt &&
@@ -38,7 +40,7 @@ export async function threadHasUncommittedChanges(
     return cached.hasChanges
   }
 
-  const inFlight = pending.get(threadId)
+  const inFlight = pending.get(key)
   if (inFlight) return inFlight
 
   const compute = (async (): Promise<boolean> => {
@@ -46,13 +48,13 @@ export async function threadHasUncommittedChanges(
       const checkedAt = Date.now()
       const status = await getGitStatus(root)
       const hasChanges = status !== null && (status.staged.length > 0 || status.unstaged.length > 0)
-      cache.set(threadId, { updatedAt, hasChanges, checkedAt })
+      cache.set(key, { updatedAt, hasChanges, checkedAt })
       return hasChanges
     } finally {
-      pending.delete(threadId)
+      pending.delete(key)
     }
   })()
-  pending.set(threadId, compute)
+  pending.set(key, compute)
   return compute
 }
 

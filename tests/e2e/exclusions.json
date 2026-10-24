@@ -213,6 +213,17 @@
       "reviewBy": "2026-10-10",
       "coverage": "Routing and renderer unit contracts run on every platform; native cold launch, second-instance selection and settings screenshots passed on macOS. The POSIX native spec remains enabled on Linux.",
       "markers": ["this.skip"]
+    },
+    {
+      "spec": "tests/e2e/detached-turn-transcript.e2e.ts",
+      "category": "platform",
+      "reason": "Closing the window during a turn detaches it only on macOS, where the Dock is the way back; on Linux and Windows closing the last window still quits, so the close-then-reopen flow does not exist there.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2312",
+      "ownerRole": "Main runtime and client/server split maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-10-16",
+      "reviewBy": "2026-11-13",
+      "coverage": "Main-owned transcript writing runs on every platform: turn-transcript-writer.test.ts drives the real AgentDispatcher and thread store with no window receiving chunks, and transcript-reducer.test.ts proves main and window reductions match. The macOS close, completion and reopen flow passed locally.",
+      "markers": ["this.skip"]
     }
   ]
 }

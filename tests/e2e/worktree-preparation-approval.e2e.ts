@@ -1,16 +1,17 @@
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { readWorktreePreparationPlan } from '../../src/main/services/worktree-preparation-plan.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const root = join(tmpdir(), 'copse-e2e', 'project-preparation-approval')
 describe('project preparation approval', () => {
   before(async () => {
-    rmSync(root, { recursive: true, force: true })
+    removeE2eTree(root)
     mkdirSync(root, { recursive: true })
     mkdirSync(join(root, '.copse'))
     writeFileSync(join(root, 'package.json'), '{"packageManager":"npm@11.19.0"}')
@@ -33,7 +34,7 @@ describe('project preparation approval', () => {
   })
   after(() => {
     resetUserData()
-    rmSync(root, { recursive: true, force: true })
+    removeE2eTree(root)
   })
   it('names the actual install and declared setup before asking for approval', async () => {
     const planFingerprint = readWorktreePreparationPlan(root).fingerprint

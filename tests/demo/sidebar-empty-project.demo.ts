@@ -2,7 +2,7 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
 
 async function choose(prefix: string): Promise<void> {
-  const items = await $$('.context-menu-item')
+  const items = await $$('.context-menu-item').getElements()
   for (const item of items) {
     if ((await item.getText()).startsWith(prefix)) {
       await item.click()
@@ -18,12 +18,15 @@ describe('an empty unopened project in the sidebar', () => {
       await browser.url('about:blank')
       await browser.url('/?scenario=sidebar-empty-project')
       await $('.projects-filter-btn').waitForDisplayed({ timeout: 30_000 })
+      await expect($('.chat-title')).toHaveText('Open project conversation')
       await $('.projects-sort-btn').click()
       await $('.context-menu').waitForDisplayed()
       await choose(group)
       await $('.projects-filter-btn').click()
       await $('.context-menu').waitForDisplayed()
       await choose('empty-project')
+      // Filtering an existing conversation must not open a thread in this empty project.
+      await expect($('.workspace-name')).toHaveText('copse-demo')
       const entry = $('.project-entry[data-project-id="demo-empty-other"]')
       await expect(entry.$('.project-name')).toHaveText('empty-project')
       if (group !== 'Project') {
@@ -33,7 +36,7 @@ describe('an empty unopened project in the sidebar', () => {
       for (const width of [800, 1600]) {
         await browser.setWindowSize(width, 900)
         await expect(entry).toBeDisplayed()
-        await saveAppScreenshot(`sidebar-empty-project-${group.toLowerCase()}-${width}.png`)
+        await saveAppScreenshot(`sidebar-empty-project-${group.toLowerCase()}-${String(width)}.png`)
       }
       if (group === 'Project') await entry.$('.project-row').click()
       else await entry.$('.project-new-thread-btn').click()

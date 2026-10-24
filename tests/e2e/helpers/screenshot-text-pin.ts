@@ -21,7 +21,8 @@ export function installCaptureTextPin(
     let matched = 0
     const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      const text = node as Text
+      if (!(node instanceof Text)) throw new Error('Expected a text node from the text-only walker')
+      const text = node
       // search ignores lastIndex, so /g cannot skip a node. An already-fixed
       // value still counts as present, without chasing our own mutation.
       if (text.data.search(re) === -1) continue

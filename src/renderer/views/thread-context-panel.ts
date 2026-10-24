@@ -9,18 +9,33 @@ import {
 } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import type { DecisionEvent } from '@shared/threads/decision-log.ts'
+import type { ContextPermissionSnapshot } from '@shared/types/context-permissions.ts'
+import type { GuardedYoloPhase } from '@shared/types/guarded-yolo.ts'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
+import type { DeferredApproval } from '@shared/threads/deferred-approval.ts'
+import { reviewerInputAnswer, reviewerInputRequests } from '@shared/threads/reviewer-input.ts'
 import {
   archiveThread,
   getActiveThread,
   restoreThread,
   switchThread,
 } from '@shared/store/thread-helpers.ts'
-import { openBrowserUrl, openPullRequest, toggleFilesPane } from '../controller/panels.ts'
+import {
+  openBrowserUrl,
+  openPullRequest,
+  openRightPanel,
+  toggleFilesPane,
+} from '../controller/panels.ts'
 import { startSideChat } from '../controller/side-chat.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
+import { openActivityPanel } from './activity-panel.ts'
+import type { AskUserRequests } from './ask-user-dialog.ts'
 import { deriveThreadContext, type ThreadContextModel } from './thread-context-model.ts'
+import { mountReviewerInput } from './reviewer-input.ts'
+import { showErrorToast } from './toast.ts'
+import { openSettingsDialog } from './settings-dialog.ts'
 
 /** A compact, single-column overview of the active thread. */
 
@@ -33,16 +48,26 @@ export interface ThreadContextHandlers {
   startSideChat: () => void
   archiveSideChat: (threadId: string) => void
   restoreSideChat: (threadId: string) => void
+  jumpToReviewerInput: (messageId: string, requestId: string) => void
 }
 
-type ContextSection = 'repos' | 'side-chats' | 'links' | 'subagents' | 'sources'
+type ContextSection =
+  | 'requests'
+  | 'repos'
+  | 'side-chats'
+  | 'links'
+  | 'subagents'
+  | 'sources'
+  | 'resolved-questions'
 
 const SECTION_TITLES: Record<ContextSection, string> = {
+  requests: 'Needs your input',
   repos: 'Access',
   'side-chats': 'Side chats',
   links: 'Links & references',
   subagents: 'Subagents',
   sources: 'Sources',
+  'resolved-questions': 'Resolved questions',
 }
 
 function section(kind: ContextSection, ...children: Array<Node | string>): HTMLElement {
@@ -283,6 +308,34 @@ function sourcesSection(model: ThreadContextModel, handlers: ThreadContextHandle
   )
 }
 
+function resolvedQuestionsSection(
+  model: ThreadContextModel,
+  handlers: ThreadContextHandlers,
+): HTMLElement | null {
+  if (model.resolvedQuestions.length === 0) return null
+  return section(
+    'resolved-questions',
+    ...model.resolvedQuestions.map(({ request, answer }) => {
+      const jump = el(
+        'button',
+        { type: 'button', class: 'reviewer-input-origin' },
+        'Show in conversation',
+      )
+      jump.addEventListener('click', () => {
+        handlers.jumpToReviewerInput(request.messageId, request.id)
+      })
+      return el(
+        'details',
+        { class: 'thread-context-question', 'data-reviewer-input-id': request.id },
+        el('summary', {}, request.question),
+        el('p', { class: 'reviewer-input-context' }, request.context),
+        el('p', { class: 'reviewer-input-answer' }, `Your answer: ${answer.text}`),
+        jump,
+      )
+    }),
+  )
+}
+
 /** Pure render of one thread's context. */
 export function renderThreadContext(
   model: ThreadContextModel,
@@ -316,8 +369,10 @@ export function renderThreadContext(
       ),
     )
   }
+  const resolvedQuestions = resolvedQuestionsSection(model, handlers)
   host.append(
     subagentsSection(model),
+    ...(resolvedQuestions ? [resolvedQuestions] : []),
     reposSection(model),
     linksSection(model, handlers),
     sourcesSection(model, handlers),
@@ -337,7 +392,9 @@ export function mountThreadContextPane(
   viewerRoot: HTMLElement,
   store: AppStore,
   api: ApiClient,
+  liveQuestions?: AskUserRequests,
 ): () => void {
+  const reviewerInput = mountReviewerInput(store, api)
   const close = el(
     'button',
     { type: 'button', class: 'thread-context-close', 'aria-label': 'Close context' },
@@ -363,11 +420,262 @@ export function mountThreadContextPane(
   let storageToken = 0
   let storageKey = ''
   let storageText = 'Calculating…'
+  let storageCheckedAt = 0
+  let storagePending = false
   let changesToken = 0
   let changesKey = ''
   let changesText = 'Calculating…'
   let changeStats: { additions: number; deletions: number } | null = null
+  let approvals: DeferredApproval[] = []
+  let approvalsKey = ''
+  let approvalsToken = 0
+  let approvalsError = false
+  let changesCheckedAt = 0
+  let changesPending = false
+  let renderedKey = ''
   let disposed = false
+  let accessToken = 0
+  let accessFor: string | null = null
+  let accessGrants: {
+    read: boolean
+    send: boolean
+    context: ContextPermissionSnapshot
+    guardedYolo: GuardedYoloPhase
+    workspaceTrusted: boolean
+    savedWebOrigins: number
+    toolOverrides: number
+    decisions: DecisionEvent[]
+  } | null = null
+  let accessStatus = 'Checking…'
+
+  function permissionRow(label: string, value: string, detail?: string): HTMLElement {
+    return el(
+      'div',
+      { class: 'thread-context-row' },
+      el(
+        'span',
+        { class: 'thread-context-main' },
+        el('span', { class: 'thread-context-title' }, label),
+        ...(detail ? [el('span', { class: 'thread-context-sub', title: detail }, detail)] : []),
+      ),
+      el('span', { class: 'thread-context-chip' }, value),
+    )
+  }
+
+  function accessSection(threadId: string): HTMLElement {
+    const result = el(
+      'section',
+      { class: 'thread-context-section', 'data-context-section': 'permissions' },
+      el('h5', {}, 'Permissions'),
+    )
+    if (accessFor !== threadId || !accessGrants) {
+      result.append(emptyNote(accessStatus))
+      return result
+    }
+    const currentGrants = accessGrants
+    result.append(el('p', { class: 'thread-context-permission-label' }, 'This thread'))
+    const grants = [
+      { access: 'read' as const, label: 'Read other threads' },
+      { access: 'send' as const, label: 'Send prompts to other threads' },
+    ].filter(({ access }) => currentGrants[access])
+    if (grants.length === 0) {
+      result.append(emptyNote('No saved conversation access.'))
+    }
+    for (const { access, label } of grants) {
+      const revoke = el(
+        'button',
+        {
+          type: 'button',
+          class: 'thread-context-action thread-context-row-action',
+          'data-action': `revoke-${access}-access`,
+          'aria-label': `Revoke permission to ${label.toLowerCase()}`,
+        },
+        'Revoke',
+      )
+      revoke.addEventListener('click', () => {
+        revoke.disabled = true
+        void api.threadPrompts
+          .revokeAccess(threadId, access)
+          .then(() => refreshAccess())
+          .catch((error: unknown) => {
+            revoke.disabled = false
+            showErrorToast('Could not revoke thread permission', error)
+          })
+      })
+      result.append(
+        el(
+          'div',
+          { class: 'thread-context-row-wrap' },
+          el(
+            'div',
+            { class: 'thread-context-row', 'data-access': access },
+            el('span', { class: 'thread-context-main' }, label),
+            el('span', { class: 'thread-context-chip' }, 'Granted'),
+          ),
+          revoke,
+        ),
+      )
+    }
+    if (currentGrants.guardedYolo !== 'off') {
+      const disable = el(
+        'button',
+        {
+          type: 'button',
+          class: 'thread-context-action thread-context-row-action',
+          'data-action': 'disable-guarded-yolo',
+        },
+        'Disable',
+      )
+      disable.addEventListener('click', () => {
+        disable.disabled = true
+        void api.security
+          .disableGuardedYolo(threadId)
+          .then(() => refreshAccess())
+          .catch((error: unknown) => {
+            disable.disabled = false
+            showErrorToast('Could not disable Guarded YOLO', error)
+          })
+      })
+      result.append(
+        el(
+          'div',
+          { class: 'thread-context-row-wrap' },
+          permissionRow(
+            'Guarded YOLO',
+            currentGrants.guardedYolo === 'armed' ? 'Armed' : 'Active',
+            'Until Copse closes',
+          ),
+          disable,
+        ),
+      )
+    }
+    const { outsideReadPaths, browserOrigins } = currentGrants.context
+    if (outsideReadPaths.length) {
+      result.append(
+        permissionRow(
+          'Outside-project reads',
+          `${String(outsideReadPaths.length)} session`,
+          outsideReadPaths.join(', '),
+        ),
+      )
+    }
+    if (browserOrigins.length) {
+      result.append(
+        permissionRow(
+          'Browser origins',
+          `${String(browserOrigins.length)} session`,
+          browserOrigins.join(', '),
+        ),
+      )
+    }
+    result.append(el('p', { class: 'thread-context-permission-label' }, 'Project'))
+    result.append(
+      permissionRow('Workspace trust', currentGrants.workspaceTrusted ? 'Trusted' : 'Untrusted'),
+    )
+    if (currentGrants.context.portBindingAllowed) {
+      result.append(permissionRow('Local port binding', 'Granted', 'Saved for this checkout'))
+    }
+    result.append(el('p', { class: 'thread-context-permission-label' }, 'App-wide'))
+    result.append(
+      permissionRow('Saved web origins', String(currentGrants.savedWebOrigins)),
+      permissionRow('Tool overrides', String(currentGrants.toolOverrides)),
+    )
+    const settings = el(
+      'button',
+      { type: 'button', class: 'thread-context-action', 'data-action': 'open-permission-settings' },
+      'Manage app permissions',
+    )
+    settings.addEventListener('click', () => {
+      openSettingsDialog('permissions')
+    })
+    result.append(el('div', { class: 'thread-context-section-actions' }, settings))
+    return result
+  }
+
+  function decisionsSection(threadId: string): HTMLElement {
+    const result = el(
+      'section',
+      { class: 'thread-context-section', 'data-context-section': 'decisions' },
+      el('h5', {}, 'Recent decisions'),
+    )
+    if (accessFor !== threadId || !accessGrants) {
+      result.append(emptyNote(accessStatus))
+      return result
+    }
+    const recent = accessGrants.decisions.slice(-4).reverse()
+    if (!recent.length) {
+      result.append(emptyNote('No recorded decisions for this thread.'))
+      return result
+    }
+    for (const decision of recent) {
+      result.append(
+        permissionRow(
+          decision.subject,
+          decision.verdict,
+          [decision.kind, decision.remembered ? 'remembered' : null].filter(Boolean).join(' · '),
+        ),
+      )
+    }
+    result.append(
+      el(
+        'p',
+        { class: 'thread-context-note' },
+        `Showing the latest ${String(recent.length)} of ${String(accessGrants.decisions.length)} recorded decisions. Current access is shown above.`,
+      ),
+    )
+    return result
+  }
+
+  async function refreshAccess(): Promise<void> {
+    const threadId = getActiveThread(store)?.id
+    const projectId = store.getState().activeProjectId
+    if (!threadId || !projectId) return
+    const mine = ++accessToken
+    if (accessFor !== threadId) {
+      accessFor = threadId
+      accessGrants = null
+      accessStatus = 'Checking…'
+    }
+    try {
+      const project = store.getState().projects.find((candidate) => candidate.id === projectId)
+      // Port-binding grants are saved per project, even for a worktree thread.
+      const projectRoot = project?.path
+      if (!projectRoot) return
+      const [read, send, context, guardedYolo, trusted, savedOrigins, overrides, decisions] =
+        await Promise.all([
+          api.settings.get('threadReadAccess'),
+          api.settings.get('threadSendAccess'),
+          api.security.getContextPermissions(projectId, threadId, projectRoot),
+          api.security.getGuardedYolo(threadId),
+          api.workspace.isTrusted(),
+          api.settings.get('webAllowedOrigins'),
+          api.settings.get('toolPermissionOverrides'),
+          api.decisions.listThread(projectId, threadId),
+        ])
+      if (disposed || mine !== accessToken || getActiveThread(store)?.id !== threadId) return
+      accessGrants = {
+        read: Array.isArray(read) && read.includes(threadId),
+        send: Array.isArray(send) && send.includes(threadId),
+        context,
+        guardedYolo: guardedYolo.phase,
+        workspaceTrusted: trusted,
+        savedWebOrigins: Array.isArray(savedOrigins) ? savedOrigins.length : 0,
+        toolOverrides:
+          typeof overrides === 'object' && overrides !== null && !Array.isArray(overrides)
+            ? Object.keys(overrides).length
+            : 0,
+        decisions,
+      }
+    } catch (error) {
+      if (disposed || mine !== accessToken || getActiveThread(store)?.id !== threadId) return
+      console.error('[context] thread permission lookup failed:', error)
+      accessGrants = null
+      accessStatus = 'Permissions unavailable.'
+    }
+    if (contextModeActive(store)) render()
+  }
+  const STORAGE_FRESH_MS = 5 * 60_000
+  const CHANGES_FRESH_MS = 60_000
 
   function activeStorageKey(): string {
     const state = store.getState()
@@ -394,24 +702,42 @@ export function mountThreadContextPane(
     const thread = getActiveThread(store)
     const projectId = store.getState().activeProjectId
     if (!thread || !projectId) return
-    const mine = ++changesToken
     const key = activeStorageKey()
-    changesKey = key
-    changesText = 'Calculating…'
-    changeStats = null
+    if (key !== changesKey) {
+      changesKey = key
+      changesText = 'Calculating…'
+      changeStats = null
+      changesCheckedAt = 0
+      changesPending = false
+    } else if (
+      changesPending ||
+      (changesCheckedAt && Date.now() - changesCheckedAt < CHANGES_FRESH_MS)
+    ) {
+      return
+    }
+    const mine = ++changesToken
+    changesPending = true
     const update = (): void => {
       const slot = viewerRoot.querySelector('[data-context-change-stats]')
       if (slot) slot.replaceChildren(...changesContent())
     }
-    update()
     try {
       const stats = await api.git.changeStats(projectId, thread.id)
       if (disposed || mine !== changesToken || key !== activeStorageKey()) return
-      changeStats = stats ?? { additions: 0, deletions: 0 }
+      const next = stats ?? { additions: 0, deletions: 0 }
+      changesCheckedAt = Date.now()
+      if (changeStats?.additions === next.additions && changeStats.deletions === next.deletions)
+        return
+      changeStats = next
     } catch (error) {
       if (disposed || mine !== changesToken || key !== activeStorageKey()) return
       console.error('[context] change totals lookup failed:', error)
+      changesCheckedAt = Date.now()
+      if (!changeStats && changesText === 'Unavailable') return
+      changeStats = null
       changesText = 'Unavailable'
+    } finally {
+      if (mine === changesToken) changesPending = false
     }
     update()
   }
@@ -421,15 +747,24 @@ export function mountThreadContextPane(
     const thread = getActiveThread(store)
     const projectId = store.getState().activeProjectId
     if (!thread || !projectId) return
-    const mine = ++storageToken
     const key = activeStorageKey()
-    storageKey = key
-    storageText = 'Calculating…'
+    if (key !== storageKey) {
+      storageKey = key
+      storageText = 'Calculating…'
+      storageCheckedAt = 0
+      storagePending = false
+    } else if (
+      storagePending ||
+      (storageCheckedAt && Date.now() - storageCheckedAt < STORAGE_FRESH_MS)
+    ) {
+      return
+    }
+    const mine = ++storageToken
+    storagePending = true
     const update = (): void => {
       const slot = viewerRoot.querySelector('[data-context-storage-size]')
-      if (slot) slot.textContent = storageText
+      if (slot && slot.textContent !== storageText) slot.textContent = storageText
     }
-    update()
     try {
       const [saved, checkout] = await Promise.all([
         api.threads.storageSize(projectId, thread.id),
@@ -438,11 +773,18 @@ export function mountThreadContextPane(
           : Promise.resolve({ bytes: 0, truncated: false }),
       ])
       if (disposed || mine !== storageToken || key !== activeStorageKey()) return
-      storageText = `${saved.truncated || checkout.truncated ? 'At least ' : ''}${formatByteSize(saved.bytes + checkout.bytes)}`
+      storageCheckedAt = Date.now()
+      const next = `${saved.truncated || checkout.truncated ? 'At least ' : ''}${formatByteSize(saved.bytes + checkout.bytes)}`
+      if (storageText === next) return
+      storageText = next
     } catch (error) {
       if (disposed || mine !== storageToken || key !== activeStorageKey()) return
       console.error('[context] storage lookup failed:', error)
+      storageCheckedAt = Date.now()
+      if (storageText === 'Unavailable') return
       storageText = 'Unavailable'
+    } finally {
+      if (mine === storageToken) storagePending = false
     }
     update()
   }
@@ -470,13 +812,18 @@ export function mountThreadContextPane(
     restoreSideChat: (threadId) => {
       restoreThread(store, threadId)
     },
+    jumpToReviewerInput: (messageId, requestId) => {
+      store.emit('reviewer_input_jump', messageId, requestId)
+    },
   }
 
   function render(): void {
     const state = store.getState()
     const thread = getActiveThread(store)
-    clear(viewerRoot)
     if (!thread) {
+      if (renderedKey === 'empty') return
+      renderedKey = 'empty'
+      clear(viewerRoot)
       viewerRoot.append(emptyNote('Open a thread to see its context.'))
       return
     }
@@ -487,7 +834,84 @@ export function mountThreadContextPane(
       threads: state.threads,
       mentionedIn: mentionedFor === thread.id ? mentionedIn : [],
     })
+    const questions = reviewerInputRequests(thread).filter(
+      (request) => !reviewerInputAnswer(thread.reviewerInputAnswers, request.id),
+    )
+    const agentQuestions =
+      liveQuestions?.pending().filter((request) => request.threadId === thread.id) ?? []
+    const approvalsLoaded = approvalsKey === activeStorageKey()
+    const pending = approvalsLoaded ? approvals : []
+    const key = JSON.stringify([
+      state.activeProjectId,
+      model,
+      thread.archivedAt,
+      questions,
+      agentQuestions,
+      pending,
+      approvalsLoaded,
+      approvalsError,
+      accessFor,
+      accessGrants,
+      accessStatus,
+    ])
+    if (key === renderedKey) return
+    renderedKey = key
+    clear(viewerRoot)
     const content = renderThreadContext(model, handlers)
+    reviewerInput.sync()
+    const requestRows: HTMLElement[] = agentQuestions.map((request) => {
+      const button = rowButton(
+        { 'data-agent-question-id': request.id },
+        el(
+          'span',
+          { class: 'thread-context-main' },
+          el(
+            'span',
+            { class: 'thread-context-title', title: request.questions.join(' · ') },
+            request.questions.join(' · '),
+          ),
+          el('span', { class: 'thread-context-sub' }, 'Agent question · Answer in Activity'),
+        ),
+      )
+      button.addEventListener('click', openActivityPanel)
+      return button
+    })
+    requestRows.push(
+      ...pending.map((request) =>
+        el(
+          'div',
+          { class: 'thread-context-row', 'data-deferred-approval-id': request.id },
+          el(
+            'span',
+            { class: 'thread-context-main' },
+            el('span', { class: 'thread-context-title', title: request.title }, request.title),
+            el(
+              'span',
+              { class: 'thread-context-sub' },
+              `Approval needed · Not run · ${request.subject}`,
+            ),
+          ),
+        ),
+      ),
+    )
+    const requestSection = section(
+      'requests',
+      ...(questions.length > 0 ? [reviewerInput.toggle, reviewerInput.panel] : []),
+      ...(requestRows.length > 0
+        ? [el('div', { class: 'thread-context-rows' }, ...requestRows)]
+        : questions.length > 0
+          ? []
+          : [
+              emptyNote(
+                approvalsError && approvalsLoaded
+                  ? 'Approval requests unavailable.'
+                  : approvalsLoaded
+                    ? 'Nothing waiting.'
+                    : 'Checking requests…',
+              ),
+            ]),
+    )
+    content.querySelector('[data-context-section="subagents"]')?.before(requestSection)
     const archive = el(
       'button',
       {
@@ -502,6 +926,8 @@ export function mountThreadContextPane(
       if (project) store.emit('thread_archive_requested', project.id, thread.id)
     })
     content.querySelector('[data-context-section="repos"]')?.after(
+      accessSection(thread.id),
+      decisionsSection(thread.id),
       el(
         'section',
         { class: 'thread-context-section', 'data-context-section': 'storage' },
@@ -543,6 +969,8 @@ export function mountThreadContextPane(
   /** Backlinks come from the index; ignore an answer for a thread since closed. */
   async function refreshMentions(): Promise<void> {
     void refreshStorage()
+    void refreshApprovals()
+    void refreshAccess()
     const thread = getActiveThread(store)
     const projectId = store.getState().activeProjectId
     if (!thread || !projectId) return
@@ -559,7 +987,52 @@ export function mountThreadContextPane(
     if (contextModeActive(store)) render()
   }
 
+  async function refreshApprovals(): Promise<void> {
+    const thread = getActiveThread(store)
+    const projectId = store.getState().activeProjectId
+    if (!thread || !projectId) return
+    const mine = ++approvalsToken
+    const key = activeStorageKey()
+    // Keep showing this thread's last answer while the refresh is in flight, so
+    // a routine update does not re-render Context.
+    try {
+      const rows = await api.threads.pendingApprovals(projectId, thread.id)
+      if (disposed || mine !== approvalsToken || key !== activeStorageKey()) return
+      approvals = rows
+      approvalsError = false
+    } catch (error) {
+      if (disposed || mine !== approvalsToken || key !== activeStorageKey()) return
+      console.error('[context] pending approvals lookup failed:', error)
+      approvals = []
+      approvalsError = true
+    }
+    approvalsKey = key
+    if (contextModeActive(store)) render()
+  }
+
   const offs = [
+    store.on('reviewer_input_open', (requestId) => {
+      openRightPanel(store, 'context')
+      reviewerInput.open(requestId)
+    }),
+    store.on('tool_call_started', () => {
+      if (contextModeActive(store)) reviewerInput.sync()
+    }),
+    store.on('tool_call_updated', () => {
+      if (contextModeActive(store)) reviewerInput.sync()
+    }),
+    ...(liveQuestions
+      ? [
+          liveQuestions.onChange(() => {
+            if (contextModeActive(store)) render()
+          }),
+        ]
+      : []),
+    api.security.onGuardedYoloChanged((state) => {
+      if (contextModeActive(store) && getActiveThread(store)?.id === state.threadId) {
+        void refreshAccess()
+      }
+    }),
     store.on('right_panel_mode_changed', () => {
       if (!contextModeActive(store)) return
       render()
@@ -584,9 +1057,14 @@ export function mountThreadContextPane(
     }),
     store.on('workspace_changed', () => {
       mentionedFor = null
+      approvalsKey = ''
+      approvalsToken++
       storageKey = ''
       changesKey = ''
       changesToken++
+      accessToken++
+      accessFor = null
+      accessGrants = null
       token++
       storageToken++
       if (contextModeActive(store)) {
@@ -604,6 +1082,8 @@ export function mountThreadContextPane(
     token++
     storageToken++
     changesToken++
+    approvalsToken++
+    accessToken++
     for (const off of offs) off()
   }
 }

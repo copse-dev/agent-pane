@@ -70,7 +70,10 @@ async function startCursorRunServer(): Promise<{
     requestCount: () => requests,
     close: () =>
       new Promise<void>((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()))
+        server.close((error) => {
+          if (error) reject(error)
+          else resolve()
+        })
       }),
   }
 }
@@ -128,7 +131,7 @@ describe('imported Cursor agent result refresh', () => {
   })
 
   it('fetches, persists, and shows one final cloud result when the imported stub is reopened', async () => {
-    const result = await $(`[data-message-id="${RESULT_ID}"] .message-text`)
+    const result = await $(`[data-message-id="${RESULT_ID}"] .message-text`).getElement()
     await result.waitForExist({ timeout: 30_000 })
     await expect(result).toHaveText(expect.stringContaining('Completed the requested refactor.'))
     await expect(result).toHaveText(expect.stringContaining('Pushed branch cursor/refresh-result'))

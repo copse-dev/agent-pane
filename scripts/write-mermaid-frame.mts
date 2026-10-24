@@ -5,6 +5,9 @@ import { buildMermaidFrameHtml } from '@copse/streaming-markdown/diagrams/mermai
 /** The package owns CSP and hashing; Copse supplies only bundled code and presentation. */
 export function writeMermaidFrameHtml(outputDir: string): void {
   const script = readFileSync(join(outputDir, 'mermaid-frame.js'), 'utf8')
-  const styles = readFileSync('src/renderer/markdown/mermaid-frame.css', 'utf8')
+  const styles = [
+    readFileSync('src/renderer/markdown/pele-theme.css', 'utf8'),
+    readFileSync('src/renderer/markdown/mermaid-frame.css', 'utf8'),
+  ].join('\n')
   writeFileSync(join(outputDir, 'mermaid-frame.html'), buildMermaidFrameHtml(script, styles))
 }

@@ -9,6 +9,7 @@ import type {
   ClassifierResult,
 } from '@copse/llm/classifiers/types.ts'
 import type { LocalClassifierOverview, LocalClassifierStatus } from '@shared/local-classifiers.ts'
+import type { ToolPermissionCatalog, ToolPermissionPolicy } from '@shared/types/tool-permissions.ts'
 import { createFakeApi } from '../../fake-api.test-support.ts'
 import { createClassifiersSection } from './classifiers-section.ts'
 import { qsRequired } from '../../dom/helpers.ts'
@@ -70,6 +71,8 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
     backgrounds: Array<string | null>
     local: LocalClassifierOverview
     localCalls: string[]
+    toolPolicy: ToolPermissionPolicy
+    toolPermissionFailure: string
   }
 } {
   const state = {
@@ -92,7 +95,29 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
     removals: new Array<string>(),
     local: { servers: [], hosted: [] } as LocalClassifierOverview,
     localCalls: new Array<string>(),
+    toolPolicy: 'allow' as ToolPermissionPolicy,
+    toolPermissionFailure: '',
   }
+  const permissionCatalog = (): ToolPermissionCatalog => ({
+    groups: [
+      {
+        id: 'copse',
+        name: 'Copse tools',
+        kind: 'copse',
+        tools: [
+          {
+            id: 'copse:classify_text',
+            executionName: 'ask_classifier',
+            name: 'Ask classifier',
+            description: '',
+            policy: state.toolPolicy,
+            defaultPolicy: 'allow',
+            overridden: state.toolPolicy !== 'allow',
+          },
+        ],
+      },
+    ],
+  })
   const api: Parameters<typeof createClassifiersSection>[0] = {
     classifiers: {
       list: async () => structuredClone(state.profiles),
@@ -174,6 +199,20 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
         return { ok: true }
       },
     },
+    toolPermissions: {
+      list: async () => {
+        if (state.toolPermissionFailure) throw new Error(state.toolPermissionFailure)
+        return permissionCatalog()
+      },
+      set: async (update) => {
+        state.toolPolicy = update.policy
+        return permissionCatalog()
+      },
+      reset: async () => {
+        state.toolPolicy = 'allow'
+        return permissionCatalog()
+      },
+    },
   }
   const section = createClassifiersSection(api)
   document.body.append(section.root)
@@ -198,6 +237,21 @@ beforeEach(() => {
 })
 
 describe('classifier connections settings', () => {
+  it('starts without prompts and lets the person opt in and back out', async () => {
+    const { section, state } = setup()
+    await section.refresh()
+    const prompt = field(section.root, 'ToolPrompt')
+    assert.equal(prompt.checked, false)
+    prompt.click()
+    await setImmediate()
+    assert.equal(state.toolPolicy, 'ask')
+    assert.equal(prompt.checked, true)
+    prompt.click()
+    await setImmediate()
+    assert.equal(state.toolPolicy, 'allow')
+    assert.equal(prompt.checked, false)
+  })
+
   it('routes safety screening to a saved connection and back without an inference call', async () => {
     const { section, state } = setup([
       HTTP_PROFILE,
@@ -429,6 +483,7 @@ describe('classifier connections settings', () => {
       )
     assert.deepEqual(choices('Protocol'), [
       ['systemone', 'SystemOne'],
+      ['decisions', 'Decisions API'],
       ['featherless', 'Featherless classifier'],
     ])
     assert.deepEqual(choices('Auth'), [
@@ -438,6 +493,31 @@ describe('classifier connections settings', () => {
     assert.equal(field(section.root, 'Protocol').value, 'systemone')
     assert.equal(field(section.root, 'Auth').value, 'bearer')
   })
+
+  for (const protocol of ['decisions', 'featherless', 'systemone'] as const) {
+    it(`saves the ${protocol} protocol the person selected`, async () => {
+      const { section, state } = setup([
+        {
+          ...HTTP_PROFILE,
+          connection: {
+            type: 'http',
+            protocol: protocol === 'systemone' ? 'decisions' : 'systemone',
+            baseUrl: 'http://127.0.0.1:8009/v1',
+            auth: 'bearer',
+          },
+        },
+      ])
+      await section.refresh()
+      const select = field(section.root, 'Protocol')
+      select.value = protocol
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+      button(section.root, 'save').click()
+      await setImmediate()
+      const saved = state.saves[0]?.connection
+      assert.ok(saved?.type === 'http')
+      assert.equal(saved.protocol, protocol)
+    })
+  }
 
   it('explains key removal when editing a saved destination, but ignores equivalent trailing slashes', async () => {
     const { section, state } = setup()
@@ -828,4 +908,21 @@ describe('Classifier refresh visit isolation', () => {
     assert.match(chips.textContent, /Fresh classifier/)
     assert.doesNotMatch(chips.textContent, /Fixture classifier/)
   })
+})
+
+it('keeps classifier connections and routes usable when permission discovery fails', async () => {
+  const { section, state } = setup()
+  state.screening = 'fixture'
+  state.background = 'fixture'
+  state.toolPermissionFailure = 'Permission catalog unavailable'
+  await section.refresh()
+  assert.equal(field(section.root, 'Screening').value, 'fixture')
+  assert.equal(field(section.root, 'Background').value, 'fixture')
+  assert.match(section.root.textContent, /Fixture classifier/)
+  const ask = qsRequired<HTMLInputElement>(section.root, '[name="classifierToolPrompt"]')
+  assert.equal(ask.disabled, true)
+  assert.match(section.root.textContent, /Permission catalog unavailable/)
+  state.toolPermissionFailure = ''
+  await section.refresh()
+  assert.equal(ask.disabled, false)
 })

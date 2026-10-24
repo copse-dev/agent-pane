@@ -36,9 +36,10 @@ describe('custom provider API format', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
 
-    const providers = $('#settings-providers-host fieldset')
-    await expect(providers).toBeDisplayed()
-    await providers.$('.provider-chip[data-provider="acme"]').click()
+    // A custom endpoint is listed in Models & agents even before it has a key.
+    const providers = $('[data-testid="models-agents-list"] [data-row="key:acme"]')
+    await providers.waitForExist({ timeout: 15_000 })
+    await providers.$('button=Options').click()
     const advanced = providers.$('.provider-advanced')
     await advanced.$('summary').click()
 
@@ -53,7 +54,7 @@ describe('custom provider API format', () => {
 
     const geometry = await browser.execute(() => {
       const control = document.querySelector<HTMLSelectElement>(
-        '#settings-providers-host select[name="providerApiStyle"]',
+        '[data-row="key:acme"] select[name="providerApiStyle"]',
       )
       const dialog = document.querySelector<HTMLDialogElement>('#settings-dialog')
       if (!control || !dialog) throw new Error('Expected API format control and settings dialog')

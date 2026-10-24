@@ -40,6 +40,20 @@
   font-size: var(--font-size-sm);
   font-weight: 600;
 }
+.thread-context-question {
+  padding: 4px 6px;
+  font-size: var(--font-size-sm);
+}
+.thread-context-question + .thread-context-question {
+  border-top: 1px solid var(--border-subtle);
+}
+.thread-context-question > summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.thread-context-question > .reviewer-input-answer {
+  overflow-wrap: anywhere;
+}
 .thread-context-group + .thread-context-group {
   margin-top: var(--spacing-sm);
 }
@@ -127,6 +141,14 @@ button.thread-context-row:disabled {
   margin: 0;
   color: var(--text-muted);
   font-size: var(--font-size-sm);
+}
+.thread-context-permission-label {
+  margin: 8px 0 3px;
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 .thread-context-section-actions {
   display: flex;
