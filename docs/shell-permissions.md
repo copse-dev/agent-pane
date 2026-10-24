@@ -577,10 +577,12 @@ handler and policy ([thread-in-container A24](plans/thread-in-container.md)) on 
   Guarded YOLO and deterministic auto-approval do not skip it. `git push` is hard-external and
   never reaches the route at all. The `git-ssh-no-authentication` signature also recognises an SSH
   fetch that could not authenticate inside the sandbox when the route is off.
-- **Limits.** Reads are not limited to the project's repository. A user `insteadOf` rule of the
-  same length for `https://github.com/` (for example rewriting it to SSH) takes precedence over the
-  route for HTTPS remotes. `run_background`, terminals, hooks and ACP agents' own shells do not get
-  the route.
+- **Limits.** Reads are not limited to the project's repository. git applies the first-defined of
+  equally long `insteadOf` rules, and the route's come last, so a user rule for one of its
+  prefixes takes precedence over the route for remotes of that form. That covers rules in the
+  user's git config or inherited `GIT_CONFIG_*` variables, for example `https://github.com/`
+  rewritten to SSH or `git@github.com:` rewritten to HTTPS. `run_background`, terminals, hooks and
+  ACP agents' own shells do not get the route.
 
 This complements the explicit host tools `gh_api_read` and `git_fetch`
 ([Host-side read tools](#host-side-read-tools), #3862): those construct a fixed request

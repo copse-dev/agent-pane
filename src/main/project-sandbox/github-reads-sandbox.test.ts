@@ -31,6 +31,20 @@ function git(cwd: string, ...args: string[]): string {
   return result.stdout.trim()
 }
 
+/**
+ * The environment without the runner's own git configuration. A rewrite of
+ * the same prefix there wins over the route (docs/shell-permissions.md,
+ * "Limits"), and CI's setup action rewrites `git@github.com:` to HTTPS through
+ * `GIT_CONFIG_*` variables.
+ */
+function withoutAmbientGitConfig(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {}
+  for (const [key, value] of Object.entries(env)) {
+    if (!/^GIT_CONFIG_(?:COUNT|PARAMETERS|KEY_\d+|VALUE_\d+)$/.test(key)) out[key] = value
+  }
+  return { ...out, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
+}
+
 /** git smart HTTP over CGI, the way GitHub would answer it. */
 function serveGit(
   root: string,
@@ -149,7 +163,10 @@ it(
         return new Promise((resolveRun) => {
           const child = spawn(file, args, {
             cwd: workspace,
-            env: withSandboxOnlyEnv({ ...env, GIT_TERMINAL_PROMPT: '0' }, withAccess ?? undefined),
+            env: withSandboxOnlyEnv(
+              { ...withoutAmbientGitConfig(env), GIT_TERMINAL_PROMPT: '0' },
+              withAccess ?? undefined,
+            ),
           })
           let output = ''
           child.stdout.on('data', (chunk: Buffer) => (output += chunk.toString()))
