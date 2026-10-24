@@ -46,11 +46,16 @@ let xtermModules: Promise<XtermModules> | null = null
  * xterm is loaded on the first shell, not at app start. The Shells pane mounts
  * (hidden) on every boot, but the ~450 KB terminal emulator is only needed once
  * a tab exists, so it ships as a code-split chunk and is fetched here. The
- * promise is cached, so every tab after the first resolves immediately.
+ * promise is cached, so every tab after the first resolves immediately. A failed
+ * load is not cached: the next shell retries rather than inheriting the failure.
  */
 function loadXterm(): Promise<XtermModules> {
   xtermModules ??= Promise.all([import('@xterm/xterm'), import('@xterm/addon-fit')]).then(
     ([xterm, fit]) => ({ Terminal: xterm.Terminal, FitAddon: fit.FitAddon }),
+    (error: unknown) => {
+      xtermModules = null
+      throw error
+    },
   )
   return xtermModules
 }
@@ -207,7 +212,16 @@ export function mountTerminalsPane(
     const request = tab.codeBlockRun
     if (!request) return
     tab.codeBlockRun = null
-    const output = readTerminalText(tab)
+    emitCodeBlockRunFinished(request, tab.id, tab.label, exitCode, readTerminalText(tab))
+  }
+
+  function emitCodeBlockRunFinished(
+    request: CodeBlockRunRequest,
+    tabId: string,
+    tabLabel: string,
+    exitCode: number | null,
+    output: string,
+  ): void {
     const exitLabel = exitCode === null ? 'unavailable' : String(exitCode)
     const content = [
       `Command:\n${request.command}`,
@@ -221,8 +235,8 @@ export function mountTerminalsPane(
       exitCode,
       output,
       shell: {
-        tabId: tab.id,
-        label: `${tab.label} · exit ${exitLabel}`,
+        tabId,
+        label: `${tabLabel} · exit ${exitLabel}`,
         content,
       },
       ...(request.completion ? { completion: request.completion } : {}),
@@ -495,9 +509,12 @@ export function mountTerminalsPane(
   // opening the pane fires `files_pane_changed` and `right_panel_mode_changed`
   // in the same tick. Share the in-flight creation per scope so they get one.
   const pendingScopeTabs = new Map<string | null, Promise<string>>()
+  // Every tab still waiting on xterm, by scope — including ones a command run, a
+  // code-block run or "+" started — so the scope is not given an extra empty one.
+  const creatingTabs = new Map<string | null, number>()
 
   function scopeHasTab(): boolean {
-    return visibleTabs().length > 0 || pendingScopeTabs.has(currentThreadId())
+    return visibleTabs().length > 0 || (creatingTabs.get(currentThreadId()) ?? 0) > 0
   }
 
   function ensureScopeTab(options?: { focus?: boolean }): Promise<string> {
@@ -572,7 +589,17 @@ export function mountTerminalsPane(
     // Scope is fixed before xterm loads, so a thread switch during the load
     // cannot re-home the shell (or orphan `pendingScopeTabs`' key for it).
     const { scopeProjectId, scopeId } = resolveTerminalTabScope(store.getState(), options)
-    const { term, fitAddon } = await createXterm()
+    creatingTabs.set(scopeId, (creatingTabs.get(scopeId) ?? 0) + 1)
+    let xterm: { term: Terminal; fitAddon: FitAddon }
+    try {
+      xterm = await createXterm()
+    } finally {
+      // Nothing below awaits before `tabs.set`, so the tab is never uncounted.
+      const remaining = (creatingTabs.get(scopeId) ?? 1) - 1
+      if (remaining > 0) creatingTabs.set(scopeId, remaining)
+      else creatingTabs.delete(scopeId)
+    }
+    const { term, fitAddon } = xterm
     const fileLinks = installTerminalFileLinks(term, store, api)
     const tab: TerminalTab = {
       id,
@@ -791,14 +818,30 @@ export function mountTerminalsPane(
     const oneLine = command.split(/\s+/).join(' ')
     const summary = oneLine.length > 48 ? `${oneLine.slice(0, 47)}…` : oneLine
     const initialInput = `${command.replace(/\r\n?|\n/g, '\r')}\rexit\r`
-    const tabId = await addTab({
-      activate: false,
-      initialInput,
-      label: `Run · ${summary}`,
-      codeBlockRun: request,
-      scopeProjectId: request.projectId,
-      scopeId: request.threadId,
-    })
+    const label = `Run · ${summary}`
+    let tabId: string
+    try {
+      tabId = await addTab({
+        activate: false,
+        initialInput,
+        label,
+        codeBlockRun: request,
+        scopeProjectId: request.projectId,
+        scopeId: request.threadId,
+      })
+    } catch (err) {
+      // No terminal exists to report from (xterm failed to load), so finish the
+      // run here: its code block and the agent would otherwise wait forever.
+      console.error('[terminals] could not open a shell for a code-block run:', err)
+      emitCodeBlockRunFinished(
+        request,
+        request.id,
+        label,
+        null,
+        `Failed to start terminal: ${terminalStartFailureMessage(err)}`,
+      )
+      return
+    }
     const tab = tabs.get(tabId)
     if (tab) void ensureSession(tab)
   }
