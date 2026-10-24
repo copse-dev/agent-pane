@@ -36,6 +36,8 @@ import type { CommandHookRunner } from './command-executor.ts'
 export interface TurnStartPayload {
   /** Raw user message text used for steering decisions (redaction-independent). */
   userText: string
+  /** Explicit user skill invocations; steering may yield to their workflow instructions. */
+  invokedSkills?: readonly string[]
   /** Todos carried over from prior turns (drives the prior-todos pin). */
   priorTodos: readonly TodoItem[]
   /**
