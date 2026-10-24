@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject, seedE2eViewport } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedEmptyProject,
+  seedE2eViewport,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
 import { maskProcessManagerLiveValues } from './helpers/process-manager-capture.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
@@ -14,7 +19,9 @@ describe('Process manager', function () {
 
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-process-manager')
+    // A fixed repo with a real `main`: CI's checkout is a detached PR ref, and
+    // the agent turn below fails with `invalid reference: main` against it.
+    seedEmptyProject(seedStableWorkspace(), 'e2e-process-manager')
     seedE2eViewport()
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
