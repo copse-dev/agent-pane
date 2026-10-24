@@ -3721,6 +3721,14 @@
       "sha256": "f17b88bcb088d1247c2f52a36c6fe1c79267425e04f4847fa45785be4a7f15db",
       "bytes": 95941
     },
+    "settings-copse-engineering-off.png": {
+      "sha256": "1789cc3ca8214dd822c1372bf9ff2ba22c4987e20c34118c7574e5b917694de3",
+      "bytes": 38469
+    },
+    "settings-copse-engineering-on.png": {
+      "sha256": "71b6380f49bc1c3764b7bcd5e2d18775ef7e00f7090c0b91224340929227492a",
+      "bytes": 40534
+    },
     "settings-cursor-agents-hint.png": {
       "sha256": "be96dff3cc4ef1a4eb69529c939bdbc2899d22aa2fde32e5fd800676114414a4",
       "bytes": 246614
@@ -3924,6 +3932,14 @@
     "settings-openai-service-tier.png": {
       "sha256": "cad0b971ec28743c6f61f72e8516f02a6b14beed0d6f0163bc5ccd733a7b14b1",
       "bytes": 44164
+    },
+    "settings-optional-pstack-install.png": {
+      "sha256": "316be6b97ad512ecf007503a6a36169876a1a4bbd3bd6645e35ea495aba27ee6",
+      "bytes": 227067
+    },
+    "settings-optional-pstack-migration.png": {
+      "sha256": "e80274da606bf22ffc540fd34f42a3fdfaa28b0a8829ff525a58e3fa14228dd9",
+      "bytes": 227073
     },
     "settings-partial-save-error.png": {
       "sha256": "7113c972a95f60ebde117dc9c4b34da9855ad4319bf75f7ff92a9fe5f3a579dd",
