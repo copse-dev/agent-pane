@@ -11,6 +11,7 @@ import {
 import { composerText, setComposerValue } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const READY = join(E2E_WORKSPACE_ROOT, '.e2e-send-now-ready')
 const RELEASE = join(E2E_WORKSPACE_ROOT, '.e2e-send-now-release')
@@ -191,7 +192,7 @@ describe('Send now preserves a running shell', function () {
       await expectChangesBubble('+1')
       await saveAppScreenshot('rm-safety-timeout.png')
     } finally {
-      rmSync(output, { recursive: true, force: true })
+      removeE2eTree(output)
     }
   })
 })

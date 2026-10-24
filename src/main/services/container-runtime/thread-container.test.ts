@@ -1491,7 +1491,11 @@ describe('secretCanaryCheck and host-held GitHub tokens (A24)', () => {
 })
 
 describe('runThreadInContainer and the GitHub capability (A24)', () => {
-  const run = (egressAllowlist: string[], github: boolean): Promise<unknown> =>
+  const run = (
+    egressAllowlist: string[],
+    github: boolean,
+    installDependencies = false,
+  ): Promise<unknown> =>
     runThreadInContainer({
       workspace: '/nonexistent/checkout',
       runtimesDir: join(tmpdir(), 'copse-tc-github-never-created'),
@@ -1500,6 +1504,7 @@ describe('runThreadInContainer and the GitHub capability (A24)', () => {
       hostInference: () => Promise.reject(new Error('not called')),
       budgets: { wallClockMs: 60_000, tokenCeiling: 1000 },
       egressAllowlist,
+      ...(installDependencies ? { installDependencies: true } : {}),
       ...(github ? { github: { token: (): Promise<string | null> => Promise.resolve(null) } } : {}),
     })
 
@@ -1511,6 +1516,13 @@ describe('runThreadInContainer and the GitHub capability (A24)', () => {
     await assert.rejects(
       run([HOST_INFERENCE_TARGET, HOST_GITHUB_TARGET], false),
       /names GitHub reads, but the run has none/,
+    )
+  })
+
+  it('refuses the capability beside a dependency install, whose scripts would share it', async () => {
+    await assert.rejects(
+      run([HOST_INFERENCE_TARGET, HOST_GITHUB_TARGET], true, true),
+      /GitHub reads are not offered to a run that installs dependencies/,
     )
   })
 })

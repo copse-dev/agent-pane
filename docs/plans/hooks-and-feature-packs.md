@@ -122,7 +122,13 @@ revisiting this document, not silently diverging in an implementation PR.
    observed from renderer dispatches. A stale or exhausted wake never runs; its
    completed process state and logs remain available for explicit human inspection.
    The background operation id deduplicates delivery, so recovery cannot execute the
-   same machine turn twice. Each in-run grant carries its bounded mechanism reason
+   same machine turn twice. ACP native-tool bridges snapshot the owning human
+   turn-tree epoch when binding a turn's execution context and rebind that epoch
+   for HTTP tool calls. Clearing the context clears the snapshot; a legacy run
+   without an explicit human epoch cannot synthesize one from its thread id.
+   Bounded background tasks launched through ACP therefore use the same wake
+   budget and stale-epoch checks as native launches.
+   Each in-run grant carries its bounded mechanism reason
    (`todo-closeout`, `pre-review-todo`, or `post-review-remediation`) for reporting;
    the reason does not change first-come ordering or the shared count. When the limit
    is reached and todos remain open, the host emits and persists one deterministic
@@ -1084,7 +1090,9 @@ Git hook process's sandbox. See `docs/shell-permissions.md#native-commits-and-si
 send grant on the source thread. It enters the destination's pending-message queue with
 `kind: 'machine'` provenance. These queued items consume the same continuation budget as
 hook-originated items (decision 5), never start a human turn tree, never interrupt an
-active run, and respect held/paused queues. The renderer remains the transcript writer.
+active run, and respect held/paused queues. The renderer remains the queue writer; the
+turn a drained item starts is written by main like any dispatched turn (`client-server-split.md`
+step 1a).
 Sending does not transfer the source's read or send grants to the destination.
 
 ### Mobile human submissions (26 September 2026)

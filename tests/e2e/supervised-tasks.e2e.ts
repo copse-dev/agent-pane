@@ -84,9 +84,7 @@ describe('supervised task list', function () {
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await browser.execute(async (rows) => {
-      const bridge = (
-        window as unknown as { __copseE2e?: { setPortRows: (value: unknown) => Promise<unknown> } }
-      ).__copseE2e
+      const bridge = window.__copseE2e
       if (!bridge) throw new Error('__copseE2e unavailable')
       await bridge.setPortRows(rows)
     }, SEEDED_PORTS)
@@ -150,7 +148,9 @@ describe('supervised task list', function () {
     assert.ok(resized.ports >= resized.portsMin - 1)
 
     const terminalToggle = $('.titlebar-btn[aria-label="Open terminal"]')
-    await terminalToggle.execute((button) => button.focus())
+    await terminalToggle.execute((button) => {
+      button.focus()
+    })
     await expect(terminalToggle).toBeFocused()
     await saveAppScreenshot('supervised-tasks-waiting.png')
 

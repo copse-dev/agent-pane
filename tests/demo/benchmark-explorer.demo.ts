@@ -4,9 +4,14 @@ import { saveAppScreenshot, saveElementScreenshot } from '../e2e/helpers/screens
 async function saveDocumentCapture(selector: string, filename: string): Promise<void> {
   await $(selector).scrollIntoView({ block: 'center', inline: 'nearest' })
   const framing = await browser.execute((subjectSelector) => {
-    const subject = document.querySelector(subjectSelector)!.getBoundingClientRect()
-    const masthead = document.querySelector('.masthead')!.getBoundingClientRect()
-    const app = document.getElementById('app')!
+    const subjectElement = document.querySelector(subjectSelector)
+    if (!subjectElement) throw new Error('Missing subject capture element')
+    const subject = subjectElement.getBoundingClientRect()
+    const mastheadElement = document.querySelector('.masthead')
+    if (!mastheadElement) throw new Error('Missing masthead capture element')
+    const masthead = mastheadElement.getBoundingClientRect()
+    const app = document.getElementById('app')
+    if (!app) throw new Error('Missing app capture subject')
     return {
       top: subject.top,
       bottom: subject.bottom,
@@ -52,7 +57,9 @@ describe('Copse Benchmarks', () => {
     await expect($('.badge*=low-work')).toBeDisplayed()
     await expect($('.tab[data-tab="trace"]')).toHaveText('Trace · 3 steps')
     await expect($$('.step-card')).toBeElementsArrayOfSize(3)
-    await browser.execute(() => window.scrollTo({ top: 0 }))
+    await browser.execute(() => {
+      window.scrollTo({ top: 0 })
+    })
     await saveAppScreenshot('benchmark-trial.png')
 
     await $('.tool-call summary').click()

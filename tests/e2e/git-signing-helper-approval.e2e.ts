@@ -14,6 +14,7 @@ import {
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // A public identity for the socket approval; the private-key case generates a disposable key.
 const PUBLIC_KEY =
@@ -25,14 +26,13 @@ describe('scoped Git signing approval', function () {
   let directory = ''
   let root = ''
   let server: Server | undefined
-  const previousSocket = process.env.SSH_AUTH_SOCK
+  const previousSocket = process.env['SSH_AUTH_SOCK']
   const git = (...args: string[]): string =>
     execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 
   before(async function () {
     if (process.platform !== 'darwin') {
       this.skip()
-      return
     }
     directory = mkdtempSync('/private/tmp/copse-sign-ui-')
     root = join(directory, 'repo')
@@ -94,18 +94,20 @@ describe('scoped Git signing approval', function () {
       })
     writeE2eEnv({ SSH_AUTH_SOCK: previousSocket })
     resetUserData()
-    if (directory) rmSync(directory, { recursive: true, force: true })
+    if (directory) removeE2eTree(directory)
   })
 
-  it('offers private-key consent with default settings and signs only after explicit approval', async () => {
+  it('offers private-key consent once ssh-agent signing is turned off', async () => {
     const key = join(directory, 'commit-key')
     execFileSync('/usr/bin/ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', key])
     git('config', 'user.signingKey', key)
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="permissions"]').click()
     const toggle = $('input[name="gitCommitSshAgentSocketAccess"]')
-    expect(await toggle.isSelected()).toBe(false)
-    await browser.keys('Escape')
+    expect(await toggle.isSelected()).toBe(true)
+    await toggle.click()
+    await $('#settings-dialog button[type="submit"]').click()
+    await $('#settings-dialog').waitForDisplayed({ timeout: 30_000, reverse: true })
     await prepareMockToolTurn(
       'Please commit the changes with the configured key.',
       { name: 'git_commit', args: { message: 'Approve scoped signing', stage_all: true } },
@@ -146,7 +148,7 @@ describe('scoped Git signing approval', function () {
     writeFileSync(join(root, 'change.txt'), 'another pending change\n')
   })
 
-  it('identifies the helper, key, socket and remembering scope before any staging or hooks', async () => {
+  it('signs without an approval dialog once the default grant is on', async () => {
     git('config', 'user.signingKey', `key::${PUBLIC_KEY}`)
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="permissions"]').click()
@@ -155,32 +157,18 @@ describe('scoped Git signing approval', function () {
     await toggle.click()
     await $('#settings-dialog button[type="submit"]').click()
     await $('#settings-dialog').waitForDisplayed({ timeout: 30_000, reverse: true })
-    await $('[aria-label="Settings"]').click()
-    await $('.settings-nav-btn[data-section="permissions"]').click()
-    expect(await toggle.isSelected()).toBe(true)
-    await browser.keys('Escape')
     await prepareMockToolTurn(
       'Please commit the changes with SSH signing.',
       { name: 'git_commit', args: { message: 'Approve scoped signing', stage_all: true } },
-      'The commit was cancelled.',
+      'The commit failed.',
     )
     await $('.submit-btn').click()
-    const dialog = $('#approval-dialog')
-    await dialog.waitForDisplayed({ timeout: 30_000 })
-    const text = await dialog.getText()
-    expect(text).toContain('Allow this Git signing helper?')
-    expect(text).toContain('/usr/bin/ssh-keygen -Y sign -n git -U')
-    expect(text).toContain('Key: SHA256:')
-    expect(text).toContain('Socket:')
-    expect(text).toContain('Git hooks keep their existing sandbox access')
-    expect(text).toContain('until Copse restarts')
-    assert.equal(git('diff', '--cached'), '')
-    assert.equal(existsSync(join(root, 'hook-ran')), false)
-    await saveElementScreenshot('#approval-dialog', 'git-signing-helper-approval.png')
-    await dialog.$('.approval-reject').click()
     await waitForAgentIdle()
+    // The default-on grant never shows a dialog: Copse stages and runs hooks as
+    // usual, and only the unreachable fixture socket fails the final signature.
+    assert.equal(await $('#approval-dialog').isExisting(), false)
+    assert.notEqual(git('diff', '--cached'), '')
+    assert.equal(existsSync(join(root, 'hook-ran')), true)
     assert.equal(git('rev-list', '--count', 'HEAD').trim(), '2')
-    assert.equal(git('diff', '--cached'), '')
-    assert.equal(existsSync(join(root, 'hook-ran')), false)
   })
 })

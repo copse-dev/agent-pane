@@ -73,6 +73,8 @@ const NATIVE_TOOL_ACP_KIND: Record<string, ToolKind> = {
   gh_pr_files: 'fetch',
   gh_run_list: 'fetch',
   gh_run_view: 'fetch',
+  gh_api_read: 'fetch',
+  git_fetch: 'fetch',
   get_ci_status: 'fetch',
   wait_for_ci_checks: 'fetch',
   get_ci_failure_logs: 'fetch',

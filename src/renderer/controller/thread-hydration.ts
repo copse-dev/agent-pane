@@ -40,6 +40,7 @@ import { applyCachedSidebarPrRefs } from './projects.ts'
 const HYDRATED_THREAD_BUDGET = 8
 
 interface Hydrator {
+  showSideChat(threadId: string | null): void
   ensure(projectId: string, threadId: string): Promise<void>
 }
 
@@ -70,6 +71,11 @@ export function ensureThreadMessages(projectId: string, threadId: string): Promi
   return activeHydrator?.ensure(projectId, threadId) ?? Promise.resolve()
 }
 
+/** The side-chat panel calls this before loading its selected transcript and on close. */
+export function showSideChatTranscript(threadId: string | null): void {
+  activeHydrator?.showSideChat(threadId)
+}
+
 /** True when this thread's transcript is known to be absent from memory. */
 export function needsHydration(thread: Pick<Thread, 'messagesLoaded'>): boolean {
   return thread.messagesLoaded === false
@@ -80,8 +86,15 @@ export function needsHydration(thread: Pick<Thread, 'messagesLoaded'>): boolean 
  * screen, anything the agent is streaming into, and anything with queued work
  * that will stream into it shortly.
  */
-function isPinned(thread: Thread, activeThreadId: string | null): boolean {
+function isPinned(
+  thread: Thread,
+  activeThreadId: string | null,
+  visibleSideChatId: string | null,
+): boolean {
   if (thread.id === activeThreadId) return true
+  // A side chat is read beside its parent and is never active itself; evicting it
+  // would blank the open panel on the next render.
+  if (thread.id === visibleSideChatId) return true
   if (thread.status === 'running') return true
   return (thread.pendingMessages?.length ?? 0) > 0
 }
@@ -91,6 +104,7 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
   const inFlight = new Map<string, Promise<void>>()
   /** Hydrated thread ids, least-recently-used first. */
   let recency: string[] = []
+  let visibleSideChatId: string | null = null
 
   const touch = (threadId: string): void => {
     recency = [...recency.filter((id) => id !== threadId), threadId]
@@ -106,7 +120,7 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
     const byId = new Map(threads.map((t) => [t.id, t]))
     const evictable = recency.filter((id) => {
       const thread = byId.get(id)
-      return thread !== undefined && !isPinned(thread, activeThreadId)
+      return thread !== undefined && !isPinned(thread, activeThreadId, visibleSideChatId)
     })
     const overBudget = evictable.length - HYDRATED_THREAD_BUDGET
     if (overBudget <= 0) return
@@ -192,6 +206,12 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
   }
 
   activeHydrator = {
+    showSideChat: (threadId): void => {
+      if (visibleSideChatId === threadId) return
+      visibleSideChatId = threadId
+      if (threadId !== null) touch(threadId)
+      evict()
+    },
     ensure: (projectId: string, threadId: string): Promise<void> => {
       const state = store.getState()
       const thread = state.threads.find((t) => t.id === threadId)

@@ -215,24 +215,41 @@ export const permissionsMarkup = `
               <legend>Commit signing</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="gitCommitSshAgentSocketAccess" />
-                Enable scoped SSH signing approvals (macOS)
+                Allow signed commits (macOS)
               </label>
               <p class="field-hint">
-                Off by default. Copse asks before its system SSH signer uses your configured key
-                through ssh-agent. You can remember the signer, key and socket for this project
-                until Copse restarts. Changed configuration requires approval again. Git hooks
-                keep their project sandbox; they receive no ssh-agent access. Turning this off
+                On by default. Copse's system SSH signer uses your configured key through
+                ssh-agent to sign commits without asking each time. A changed key, signer or
+                socket is re-verified before it's used again. Git hooks keep their project
+                sandbox; they receive no ssh-agent access. Set the git_commit tool to Always ask
+                in Tool Permissions to confirm every signing helper use. Turning this off
                 prevents further ssh-agent signing. With this off, a configured private key file
                 can be read and used only after a separate approval for each commit. Key contents
                 are never sent to the agent. Custom signing programs run with ordinary project
                 access. Scoped signing is macOS only.
               </p>
             </fieldset>
+
+            <fieldset>
+              <legend>Upstream updates</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="backgroundDefaultBranchFetch" />
+                Fetch each project's default branch in the background
+              </label>
+              <p class="field-hint">
+                Copse fetches the latest default branch from origin hourly and when a thread
+                starts, so new threads begin from current upstream code. It updates only the
+                stored copy of origin's branch; your checkout and branches are never changed. The
+                fetch uses your own Git credentials but ignores the project's Git configuration.
+                Turn off to keep Copse from contacting origin; threads then start from whatever
+                you last fetched yourself.
+              </p>
+            </fieldset>
           </section>
 `
 
 export const permissionsFields: readonly SettingField[] = [
-  { name: 'gitCommitSshAgentSocketAccess', kind: 'checkbox', default: false, save: true },
+  { name: 'gitCommitSshAgentSocketAccess', kind: 'checkbox', default: true, save: true },
   { name: 'browserToolsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'readTerminalEnabled', kind: 'checkbox', default: true, save: true },
   {
@@ -244,6 +261,7 @@ export const permissionsFields: readonly SettingField[] = [
   { name: 'acpAutoApproveEditsWithBackup', kind: 'checkbox', default: true, save: true },
   { name: 'acpAutoApproveNativeBridgeTools', kind: 'checkbox', default: true, save: true },
   { name: 'worktreeAutoApproveEdits', kind: 'checkbox', default: true, save: true },
+  { name: 'backgroundDefaultBranchFetch', kind: 'checkbox', default: true, save: true },
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
   { name: 'webAllowUserApproval', kind: 'checkbox', default: true, save: false },

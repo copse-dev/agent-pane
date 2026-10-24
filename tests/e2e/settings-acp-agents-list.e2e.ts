@@ -8,6 +8,7 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
 import { saveSettingsSection } from './helpers/settings-scroll-capture.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('Coding agents list in Settings', () => {
   const originalPath = process.env['PATH']
@@ -99,7 +100,7 @@ describe('Coding agents list in Settings', () => {
       HOME: originalHome,
     })
     resetUserData()
-    if (fixtureBin) rmSync(fixtureBin, { recursive: true, force: true })
+    if (fixtureBin) removeE2eTree(fixtureBin)
   })
 
   it('lists installed agents with the chip on the name row and buries the rest under Add', async function () {
@@ -154,7 +155,7 @@ describe('Coding agents list in Settings', () => {
       const out: string[] = []
       for (const row of document.querySelectorAll('.acp-row')) {
         if (row.scrollWidth > row.clientWidth)
-          out.push(`${row.getAttribute('data-agent')}: overflow`)
+          out.push(`${row.getAttribute('data-agent') ?? ''}: overflow`)
         const parts = [
           '.acp-logo',
           '.acp-row-name strong',
@@ -171,7 +172,8 @@ describe('Coding agents list in Settings', () => {
               b.r.right <= a.r.left + 0.5 ||
               a.r.bottom <= b.r.top + 0.5 ||
               b.r.bottom <= a.r.top + 0.5
-            if (!apart) out.push(`${row.getAttribute('data-agent')}: ${a.sel} overlaps ${b.sel}`)
+            if (!apart)
+              out.push(`${row.getAttribute('data-agent') ?? ''}: ${a.sel} overlaps ${b.sel}`)
           }
         }
       }

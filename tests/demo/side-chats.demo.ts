@@ -3,7 +3,7 @@ import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
 const sidebarTitles = async (): Promise<string[]> =>
   browser.execute(() =>
-    [...document.querySelectorAll('.chat-row .chat-title')].map((node) => node.textContent ?? ''),
+    [...document.querySelectorAll('.chat-row .chat-title')].map((node) => node.textContent),
   )
 
 const MAIN = 'Fix flaky mermaid e2e'

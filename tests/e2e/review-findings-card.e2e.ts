@@ -45,7 +45,7 @@ describe('review findings card inline in transcript', () => {
         meta: card?.querySelector('.review-report-meta')?.textContent ?? '',
         cost: card?.querySelector('.review-report-cost')?.textContent ?? '',
         checks: [...(card?.querySelectorAll('.review-report-check') ?? [])].map(
-          (node) => node.textContent ?? '',
+          (node) => node.textContent,
         ),
         rows: rows.map((row) => ({
           id: row.getAttribute('data-finding-id'),

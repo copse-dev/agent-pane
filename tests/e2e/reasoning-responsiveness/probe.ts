@@ -99,7 +99,8 @@ export async function stopResponsivenessProbe(): Promise<z.infer<typeof probeSch
   const raw: unknown = await browser.execute(() => {
     const stop: unknown = Reflect.get(window, '__copseResponsivenessProbe')
     if (typeof stop !== 'function') throw new Error('Responsiveness probe was not started')
-    return Reflect.apply(stop, window, [])
+    const result: unknown = Reflect.apply(stop, window, [])
+    return result
   })
   return probeSchema.parse(raw)
 }

@@ -42,7 +42,7 @@ describe('settings usage panel plans that are not set up', () => {
       assert.match(await card.$('.usage-plan-status').getText(), reason)
     }
     // Not a credential failure, so no sign-in recovery is offered.
-    assert.equal((await $$('.usage-plan-signin-btn')).length, 0)
+    assert.equal((await $$('.usage-plan-signin-btn').getElements()).length, 0)
 
     await prepareE2eScreenshot()
     await saveElementScreenshot('#settings-dialog', 'settings-usage-plan-unconfirmed.png')

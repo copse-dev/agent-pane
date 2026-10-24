@@ -42,7 +42,7 @@ export async function readModelPickerMenuStyle(
     const probe = (
       property: 'color' | 'backgroundColor' | 'fontFamily' | 'fontSize',
       value: string,
-    ) => {
+    ): string => {
       const el = document.createElement('div')
       el.style[property] = value
       menu.append(el)
@@ -56,11 +56,11 @@ export async function readModelPickerMenuStyle(
     const active = menu.querySelector<HTMLElement>('.model-picker-option.is-active')
     return {
       listHorizontalOverflow: list.scrollWidth - list.clientWidth,
-      labels: labels.map((label) => label.textContent ?? ''),
+      labels: labels.map((label) => label.textContent),
       labelTextOverflow: [...new Set(labels.map((label) => getComputedStyle(label).textOverflow))],
       truncated: truncated
         ? {
-            text: truncated.textContent ?? '',
+            text: truncated.textContent,
             title: truncated.closest<HTMLElement>('.model-picker-option')?.title ?? '',
           }
         : null,

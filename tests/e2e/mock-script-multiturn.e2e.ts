@@ -49,7 +49,7 @@ describe('mock script multi-turn', () => {
     await setComposerValue('Please list the src directory for me.')
     await submitComposer()
 
-    const listCard = await $('.tool-card[data-status="done"]')
+    const listCard = await $('.tool-card[data-status="done"]').getElement()
     await listCard.waitForDisplayed({ timeout: 30_000 })
     await expect(listCard.$('.tool-name')).toHaveText('Listed directory')
     await waitForAgentIdle()

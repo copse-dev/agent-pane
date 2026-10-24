@@ -24,14 +24,14 @@ describe('SSH remote project entry point', () => {
   it('aligns sidebar actions and includes remote projects in the main add menu', async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
 
-    const projectsPane = await $('#pane-projects')
+    const projectsPane = await $('#pane-projects').getElement()
     await expect(projectsPane).toBeDisplayed()
     await expect($('.projects-open-remote-btn')).not.toBeExisting()
 
-    const newThreadButton = await $('.project-new-thread-btn')
+    const newThreadButton = await $('.project-new-thread-btn').getElement()
     await expect(newThreadButton).toBeDisplayed()
     await newThreadButton.click()
-    const threadRow = await $('.chat-row')
+    const threadRow = await $('.chat-row').getElement()
     await expect(threadRow).toBeDisplayed()
     await threadRow.moveTo()
 
@@ -50,7 +50,7 @@ describe('SSH remote project entry point', () => {
 
     await saveElementScreenshot('#pane-projects', 'ssh-projects-pane.png')
 
-    const addButton = await $('.projects-add-btn')
+    const addButton = await $('.projects-add-btn').getElement()
     await expect(addButton).toHaveAttribute('aria-label', 'Add project')
     await expect(addButton).toHaveAttribute(
       'data-tooltip',
@@ -58,7 +58,7 @@ describe('SSH remote project entry point', () => {
     )
     await addButton.click()
 
-    const menu = await $('.context-menu')
+    const menu = await $('.context-menu').getElement()
     await expect(menu).toBeDisplayed()
     const labels = await $$('.context-menu-item').map((item) => item.getText())
     assert.deepEqual(labels, [

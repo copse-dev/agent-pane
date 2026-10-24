@@ -1936,6 +1936,11 @@ async function runThreadInContainerLeased(
     throw new Error('GitHub reads are not in the egress allowlist')
   if (!request.github && request.egressAllowlist.includes(HOST_GITHUB_TARGET))
     throw new Error('The egress allowlist names GitHub reads, but the run has none')
+  // Install scripts are code the user did not write, and the install reaches
+  // github.com through its own tunnel: with the capability beside it, one
+  // could read every private repository the token sees and push it anywhere.
+  if (request.github && request.installDependencies === true)
+    throw new Error('GitHub reads are not offered to a run that installs dependencies')
   if (request.hostInference && request.apiKey)
     throw new Error('Host inference must not transfer a credential to the guest')
   const apiKey = request.apiKey !== undefined && request.apiKey.length > 0 ? request.apiKey : null

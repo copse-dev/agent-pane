@@ -95,7 +95,7 @@ describe('continuation budget exhaustion summary', () => {
     const tagged = await browser.execute(() => {
       const messages = Array.from(document.querySelectorAll('.msg-assistant .message-text'))
       const node = messages.find((candidate) =>
-        candidate.textContent?.includes('automatic continuation limit'),
+        candidate.textContent.includes('automatic continuation limit'),
       )
       if (!(node instanceof HTMLElement)) return false
       node.dataset['e2eContinuationSummary'] = 'true'

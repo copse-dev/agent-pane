@@ -1,3 +1,4 @@
+import { removeE2eTree } from './helpers/remove-tree.ts'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -106,7 +107,7 @@ describe('public agent registry discovery', function () {
   after(() => {
     writeE2eEnv({ COPSE_E2E_ACP_REGISTRY_FIXTURE: undefined })
     resetUserData()
-    if (ownsScratch) rmSync(scratch, { recursive: true, force: true })
+    if (ownsScratch) removeE2eTree(scratch)
   })
 
   it('discovers without executing, reviews a disabled draft, then explicitly enables and runs it', async () => {

@@ -133,12 +133,14 @@ export function initAskUser(
   win: BrowserWindow,
   ipcMain: IpcMain,
   alertUser: UserAlertSender,
-): void {
+): (target: object) => void {
   const pending = new Map<string, (result: AskUserResult) => void>()
+  const replay = new Map<string, { threadId: string | undefined; questions: AskUserQuestion[] }>()
   const settle = (id: string, result: AskUserResult): void => {
     const resolve = pending.get(id)
     if (!resolve) return
     pending.delete(id)
+    replay.delete(id)
     pendingQuestionThreads.delete(id)
     resolve(result)
   }
@@ -161,6 +163,7 @@ export function initAskUser(
   win.on('closed', () => {
     for (const [id, resolve] of pending) {
       pending.delete(id)
+      replay.delete(id)
       pendingQuestionThreads.delete(id)
       resolve({ answers: [] })
     }
@@ -173,6 +176,7 @@ export function initAskUser(
       },
       register: (id, resolve, context) => {
         pending.set(id, resolve)
+        replay.set(id, context)
         if (context.threadId)
           pendingQuestionThreads.set(id, {
             threadId: context.threadId,
@@ -183,6 +187,12 @@ export function initAskUser(
       alertUser,
     }),
   )
+  return (target): void => {
+    if (target !== win.webContents) return
+    for (const [id, context] of replay) {
+      win.webContents.send('agent:ask-user-request', { id, ...context })
+    }
+  }
 }
 
 /** What the window-backed handler needs from `initAskUser`'s window and pending map. */

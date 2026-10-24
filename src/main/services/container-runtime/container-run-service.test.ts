@@ -347,7 +347,12 @@ describe('ContainerRunService', () => {
     assert.equal(withInstall.installDependencies, true)
     assert.ok(withInstall.egressAllowlist.includes('registry.npmjs.org:443'))
     assert.ok(withInstall.egressAllowlist.includes('github.com:443'))
+    // Install scripts must not share the GitHub read capability.
+    assert.ok(!withInstall.egressAllowlist.includes(HOST_GITHUB_TARGET))
+    assert.equal(withInstall.github, undefined)
     assert.equal(without.installDependencies, undefined)
+    assert.ok(without.egressAllowlist.includes(HOST_GITHUB_TARGET))
+    assert.equal(typeof without.github?.token, 'function')
     assert.ok(!without.egressAllowlist.includes('registry.npmjs.org:443'))
     // No GitHub origin; only the host's own read capability, which is not one.
     assert.ok(

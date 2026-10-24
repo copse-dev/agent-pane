@@ -24,8 +24,8 @@ describe('markdown nbsp metadata rendering', () => {
 
     const result = await browser.execute(() => {
       const textEl = document.querySelector('.message-text')
-      if (!textEl) return { error: 'no message text' }
-      const text = textEl.textContent ?? ''
+      if (!textEl) throw new Error('no message text')
+      const text = textEl.textContent
       const html = textEl.innerHTML
       return {
         text,

@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { realpathSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-settings-sources-hooks'
 
@@ -48,7 +49,7 @@ describe('settings sources hooks (Claude Code)', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    removeE2eTree(workspaceRoot)
   })
 
   it('lists Claude Code PreToolUse hooks in Settings → Sources', async () => {

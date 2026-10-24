@@ -78,6 +78,7 @@ import {
   mcpToolLabel,
   formatGithubWritePrompt,
   GITHUB_NONMUTATING_CI_TOOLS,
+  HOST_NETWORK_READ_TOOLS,
   GITHUB_WRITE_TOOLS,
   isReadOnlySimpleCommand,
   isStructurallyReadOnlyShellCommand,
@@ -2229,7 +2230,7 @@ export async function ensureToolPermitted(
     // fall through the default-allow tail by accident.
     permitted =
       explicitPolicy === 'ask' ? await promptExplicitToolAsk(toolName, args, signal) : true
-  } else if (GITHUB_NONMUTATING_CI_TOOLS.has(toolName)) {
+  } else if (GITHUB_NONMUTATING_CI_TOOLS.has(toolName) || HOST_NETWORK_READ_TOOLS.has(toolName)) {
     permitted =
       explicitPolicy === 'ask' ? await promptExplicitToolAsk(toolName, args, signal) : true
   } else if (toolName === 'prepare_worktree') {

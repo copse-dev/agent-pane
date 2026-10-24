@@ -125,7 +125,8 @@ git fetch carry-out → refs/copse/runs/<id>               + declareContainerRun
   surfaces and the guest's reported environment key names.
 - **GitHub reads go through the host (A24).** The guest's `gh` and `git` reach a host-side
   GitHub capability over the same stdio link; the host holds the token, admits reads only, and
-  re-originates HTTPS. No TLS is intercepted. See A24 below.
+  re-originates HTTPS. No TLS is intercepted. A run that installs dependencies gets none. See
+  A24 below.
 - **The thread's checkout, not the project's.** A thread with an isolated worktree has its
   own branch and its own uncommitted edits, so the service resolves the checkout through
   `resolveThreadExecutionContext` (the cold resolver the supervisor also uses) and refuses a
@@ -1113,6 +1114,7 @@ already in the list, one group up, and it keeps the deferral guarantee.
 | GitHub reads: GraphQL      | unit        | One query (plus fragments) passes; a mutation beside it, a subscription, a batch, a persisted id, or a keyword hidden in a string or comment does not fool it                                                                           | `github/graphql-read-only.test.ts` (A24)                                                                                               |
 | GitHub reads: end to end   | unit        | gh-shaped (socket) and git-shaped (proxy) requests through bridge, link and broker to a fake GitHub: token swapped for the placeholder, redirects returned unfollowed, reflected token redacted across a chunk boundary and inside gzip | `container-runtime/github-capability.test.ts`, `secret-scrubber.test.ts` (A24)                                                         |
 | GitHub reads: guest config | unit        | `config.yml` names the socket, `hosts.yml` holds only the placeholder, git's `insteadOf` and proxy name only the alias, no `GH_TOKEN`; a used token in a run surface fails the canary                                                   | `github-capability-wire.test.ts`, `thread-container.test.ts` (A24)                                                                     |
+| GitHub reads: install      | unit        | An installing run gets no capability: absent from its allowlist and its runner request, and the runner refuses a request with both                                                                                                      | `container-run-service.test.ts`, `thread-container.test.ts` (A24)                                                                      |
 
 ## Non-goals
 
@@ -1248,6 +1250,18 @@ which never asks for it.
   printed only the placeholder; no token appeared in guest output, bodies or headers. gh's
   HTTP client has no timeout (requests held for 630 s succeeded), which the write-prompt
   follow-up relies on.
+- **Never beside a dependency install.** An installing run's scripts are code the user did
+  not write, and A11 lets them reach github.com, `*.githubusercontent.com` and the registry
+  through CONNECT tunnels the broker cannot see into. With the capability in the same guest a
+  postinstall could read every private repository the token sees through `gh` and push it to
+  the attacker's own repository through that tunnel, with the attacker's own token. Starting
+  the bridge after the install would not close it: a daemonised install child keeps the
+  egress token in its environment, and the install's origins stay on the allowlist for the
+  whole run. So the service offers the capability only to runs without an install (the arming
+  record says "GitHub: off, because the run installs dependencies"), the runner refuses a
+  request that carries both, and the worker declines a spec that names both. Lifting this
+  needs the install's origins revoked on the host and its processes gone before the bridge
+  starts.
 - **Image.** The worker image now carries Debian's `gh` package. A run without the capability
   leaves it with no socket and no network.
 

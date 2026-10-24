@@ -1,16 +1,17 @@
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { readWorktreePreparationPlan } from '../../src/main/services/worktree-preparation-plan.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const root = join(tmpdir(), 'copse-e2e', 'cargo-preparation-approval')
 describe('automatic Cargo preparation approval', () => {
   before(async () => {
-    rmSync(root, { recursive: true, force: true })
+    removeE2eTree(root)
     mkdirSync(root, { recursive: true })
     mkdirSync(join(root, 'src'))
     writeFileSync(
@@ -32,7 +33,7 @@ describe('automatic Cargo preparation approval', () => {
   })
   after(() => {
     resetUserData()
-    rmSync(root, { recursive: true, force: true })
+    removeE2eTree(root)
   })
   it('shows the fetch-only Cargo boundary without claiming compilation or execution', async () => {
     const planFingerprint = readWorktreePreparationPlan(root).fingerprint

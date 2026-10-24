@@ -16,9 +16,9 @@ describe('remote desktop discovered ports', () => {
     await browser.url('/?scenario=vnc-discovered-ports')
     // Supply a saved remote machine at the IPC boundary; the local device is intentionally absent.
     await browser.execute(() => {
-      window.api.sshWorkspace.listHosts = async () => [
-        { id: 'demo-studio', label: 'Studio', host: 'studio.local' },
-      ]
+      window.api.sshWorkspace.listHosts = async (): Promise<
+        { id: string; label: string; host: string }[]
+      > => [{ id: 'demo-studio', label: 'Studio', host: 'studio.local' }]
     })
     const control = $('[data-panel-control="vnc"]')
     await control.waitForDisplayed({ timeout: 20_000 })

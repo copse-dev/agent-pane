@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PLUGIN_ID = 'personal.hook-loading'
 const ROW = `.plugin-row[data-plugin-id="${PLUGIN_ID}"]`
@@ -78,7 +79,7 @@ export async function activate(api) {
   after(() => {
     if (!root) return
     resetUserData()
-    rmSync(root, { recursive: true, force: true })
+    removeE2eTree(root)
   })
 
   async function openPluginSettings(): Promise<void> {

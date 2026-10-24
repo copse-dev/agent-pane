@@ -1,3 +1,4 @@
+import { isRecord } from '@copse/std/unknown-value.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { readSeededSettings, resetUserData, seedOnboardingFixture } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
@@ -24,7 +25,7 @@ describe('onboarding: nothing detected → providers fallback', () => {
 
   it('offers the settings providers panel and finishes with a manually-entered key', async function () {
     this.timeout(120_000)
-    const overlay = await $('#onboarding-dialog')
+    const overlay = await $('#onboarding-dialog').getElement()
     await overlay.waitForDisplayed({ timeout: 30_000 })
     await expect(overlay.$('h2')).toHaveText('Welcome to Copse')
 
@@ -52,7 +53,6 @@ describe('onboarding: nothing detected → providers fallback', () => {
     if (!fallbackShown) {
       // A real local server on this machine put onboarding in checklist mode.
       this.skip()
-      return
     }
 
     const chips = overlay.$('#onboarding-fallback-panel .provider-chips')
@@ -118,7 +118,8 @@ describe('onboarding: nothing detected → providers fallback', () => {
     expect(settings['localDefaultModel']).toBe('auto:best-local')
     // With no local server, local-model background work stays off.
     expect(settings['localSubagentsEnabled']).toBe(false)
-    const apiKeys = settings['apiKey'] as Record<string, unknown> | undefined
+    const keyValue = settings['apiKey']
+    const apiKeys = isRecord(keyValue) ? keyValue : undefined
     const anthropicKey = apiKeys?.['anthropic'] ?? settings['apiKey.anthropic']
     expect(anthropicKey).toBeDefined()
   })

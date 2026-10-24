@@ -119,7 +119,7 @@ export async function leaseGitPrivateSigningKey(
       identity.code === 0 && !identity.stdoutTruncated ? parseSshPublicKey(identity.stdout) : null
     if (!publicKey)
       throw new Error(
-        'Cannot use this SSH private key. For a passphrase-protected key, load it into ssh-agent and enable scoped SSH signing approvals in Settings → Permissions.',
+        'Cannot use this SSH private key. For a passphrase-protected key, load it into ssh-agent; "Allow signed commits" in Settings → Permissions → Commit signing is on by default.',
       )
     return {
       publicKey,

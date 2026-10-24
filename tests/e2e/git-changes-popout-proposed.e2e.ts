@@ -1,5 +1,6 @@
+import { at } from '@copse/std/array-utils.ts'
 import { expectAssistantReply, prepareMockToolTurn } from './helpers/mock-scenario.ts'
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
@@ -10,6 +11,7 @@ import {
   assertPopoutModesAllShown,
   assertPopoutModesOverflowAt,
 } from './helpers/popout-panel-bar.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const PROJECT_ID = 'e2e-popout-proposed-project'
@@ -74,7 +76,7 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
-    mainHandle = (await browser.getWindowHandles())[0]
+    mainHandle = at([...(await browser.getWindowHandles())], 0)
   })
 
   after(async () => {
@@ -84,7 +86,7 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
       // session already gone
     }
     resetUserData()
-    rmSync(WORKSPACE, { recursive: true, force: true })
+    removeE2eTree(WORKSPACE)
   })
 
   it('keeps the embed coloured through proposals and pop-out approvals', async () => {
@@ -105,8 +107,9 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
       timeout: 15_000,
       timeoutMsg: 'expected a pop-out window',
     })
-    popoutHandle = (await browser.getWindowHandles()).find((h) => !before.includes(h)) as string
-    expect(popoutHandle).toBeDefined()
+    const newHandle = (await browser.getWindowHandles()).find((h) => !before.includes(h))
+    if (!newHandle) throw new Error('Expected a new pop-out window handle')
+    popoutHandle = newHandle
 
     await browser.switchToWindow(popoutHandle)
     await $('#git-diff-viewer-host .monaco-diff-editor').waitForDisplayed({ timeout: 30_000 })
@@ -118,20 +121,26 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
     // Second proposal from the main window while the pop-out is open.
     await browser.switchToWindow(mainHandle)
     await proposeFileChange('src/e2e-popout-b.ts', 'export const b = 2\n')
-    await browser.waitUntil(async () => (await $$('.git-change-row-proposed')).length === 2, {
-      timeout: 30_000,
-      timeoutMsg: 'expected two proposed rows in the embed',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.git-change-row-proposed').getElements()).length === 2,
+      {
+        timeout: 30_000,
+        timeoutMsg: 'expected two proposed rows in the embed',
+      },
+    )
     await browser.waitUntil(hasDecorations, {
       timeout: 15_000,
       timeoutMsg: `embed lost colouring on the second proposal: ${await describeViewer()}`,
     })
 
     await browser.switchToWindow(popoutHandle)
-    await browser.waitUntil(async () => (await $$('.git-change-row-proposed')).length === 2, {
-      timeout: 30_000,
-      timeoutMsg: 'expected two proposed rows in the pop-out',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.git-change-row-proposed').getElements()).length === 2,
+      {
+        timeout: 30_000,
+        timeoutMsg: 'expected two proposed rows in the pop-out',
+      },
+    )
     await browser.waitUntil(hasDecorations, {
       timeout: 15_000,
       timeoutMsg: `pop-out lost colouring on the second proposal: ${await describeViewer()}`,
@@ -145,25 +154,31 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
 
     // Approve the selected diff in the pop-out; both windows fall back to the
     // remaining proposal and must colour it.
-    const acceptBtn = await $('#git-diff-viewer-host .diff-accept-btn')
+    const acceptBtn = await $('#git-diff-viewer-host .diff-accept-btn').getElement()
     // Accept is the kit primary, not a --success fill (#3065).
     await expect(acceptBtn).toHaveElementClass('ui-btn-primary')
     await acceptBtn.waitForDisplayed({ timeout: 10_000 })
     await acceptBtn.click()
-    await browser.waitUntil(async () => (await $$('.git-change-row-proposed')).length === 1, {
-      timeout: 30_000,
-      timeoutMsg: 'expected the approved row to leave the pop-out queue',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.git-change-row-proposed').getElements()).length === 1,
+      {
+        timeout: 30_000,
+        timeoutMsg: 'expected the approved row to leave the pop-out queue',
+      },
+    )
     await browser.waitUntil(hasDecorations, {
       timeout: 15_000,
       timeoutMsg: `pop-out uncoloured after its own approve: ${await describeViewer()}`,
     })
 
     await browser.switchToWindow(mainHandle)
-    await browser.waitUntil(async () => (await $$('.git-change-row-proposed')).length === 1, {
-      timeout: 30_000,
-      timeoutMsg: 'expected the approved row to leave the embed queue',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.git-change-row-proposed').getElements()).length === 1,
+      {
+        timeout: 30_000,
+        timeoutMsg: 'expected the approved row to leave the embed queue',
+      },
+    )
     await browser.waitUntil(hasDecorations, {
       timeout: 15_000,
       timeoutMsg: `embed uncoloured after the pop-out approve: ${await describeViewer()}`,
@@ -175,7 +190,7 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
     // the main window's panel closed; a new proposal must reveal a coloured
     // embed.
     await browser.switchToWindow(mainHandle)
-    const paneFiles = await $('#pane-files')
+    const paneFiles = await $('#pane-files').getElement()
     if (await paneFiles.isDisplayed()) {
       await $('.titlebar-btn[aria-label="Open changes"]').click()
       await browser.waitUntil(async () => !(await paneFiles.isDisplayed()), {

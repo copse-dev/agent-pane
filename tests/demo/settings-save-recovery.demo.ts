@@ -8,7 +8,7 @@ describe('Settings appearance after a partial save', () => {
     await $('.prompt-input').waitForExist()
     // Inject failure at the existing API boundary, without a product-only test flag.
     await browser.execute(() => {
-      window.api.settings.setSecurity = async () => {
+      window.api.settings.setSecurity = async (): Promise<never> => {
         throw new Error('Security save failed')
       }
     })
@@ -27,7 +27,8 @@ describe('Settings appearance after a partial save', () => {
     await expect($('#settings-dialog')).toBeDisplayed()
     assert.equal(await browser.execute(() => document.documentElement.dataset['theme']), 'light')
     const statusLayer = await browser.execute(() => {
-      const status = document.querySelector('#settings-save-status')!
+      const status = document.querySelector('#settings-save-status')
+      if (!status) throw new Error('Missing settings save status')
       const style = getComputedStyle(status)
       return { position: style.position, zIndex: Number(style.zIndex) }
     })
@@ -61,7 +62,9 @@ describe('Settings appearance after a partial save', () => {
     // Exercise the dialog's existing recovery event boundary. The component
     // test separately verifies openModelSettings supplies and focuses its target.
     await browser.execute(() => {
-      document.querySelector('#settings-dialog')!.dispatchEvent(new Event('settings-reveal-model'))
+      const dialog = document.querySelector('#settings-dialog')
+      if (!dialog) throw new Error('Missing settings dialog')
+      dialog.dispatchEvent(new Event('settings-reveal-model'))
     })
     await expect(search).toHaveValue('')
     await expect($('.settings-section[data-section="general"]')).toBeDisplayed()

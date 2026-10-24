@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -10,14 +10,15 @@ import {
 } from '../../src/main/services/storage/knowledge-store.ts'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('memory recall metadata', () => {
   let result: string
 
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     const root = mkdtempSync(join(tmpdir(), 'copse-memory-visual-'))
     setKnowledgeRootForTest(root)
@@ -33,7 +34,7 @@ describe('memory recall metadata', () => {
           'revision: 3\nmemorySchema: 2\nsources: ["msg:review", "https://example.com/a,b"]\nappliesTo: ["src/{a,b}/**"]',
         ],
         ['memory-legacy', 'Legacy guidance', ''],
-      ]) {
+      ] as const) {
         writeFileSync(
           join(dir, `${id}.md`),
           [
@@ -65,7 +66,7 @@ describe('memory recall metadata', () => {
       assert.match(result, /Next cursor: m:1/)
     } finally {
       setKnowledgeRootForTest(null)
-      rmSync(root, { recursive: true, force: true })
+      removeE2eTree(root)
     }
     resetUserData()
     const projectId = 'memory-visual-project'
@@ -106,7 +107,9 @@ describe('memory recall metadata', () => {
     await browser.reloadSession()
   })
 
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('shows revision, unverified sources, applicability and paging in the native tool card', async () => {
     const card = $('.tool-card[data-tool-id="memory-recall"]')

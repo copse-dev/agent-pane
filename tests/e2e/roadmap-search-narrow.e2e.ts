@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser } from '@wdio/globals'
@@ -9,6 +9,7 @@ import {
   prepareE2eScreenshot,
   saveAppScreenshot,
 } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // The Roadmap header holds the title, pane buttons, search + Filter and five
 // action buttons. In a narrow pane the search box used to be squeezed to
@@ -36,14 +37,14 @@ describe('roadmap search box in a narrow pane', () => {
 
   after(() => {
     resetUserData()
-    rmSync(scratchRoot, { recursive: true, force: true })
-    rmSync(knowledgeDir, { recursive: true, force: true })
+    removeE2eTree(scratchRoot)
+    removeE2eTree(knowledgeDir)
   })
 
   it('keeps the placeholder readable instead of squeezing the input', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('.titlebar-text-btn[aria-label="Open roadmap"]').click()
-    await browser.waitUntil(async () => (await $$('.roadmap-row')).length === 1, {
+    await browser.waitUntil(async () => (await $$('.roadmap-row').getElements()).length === 1, {
       timeout: 20_000,
     })
 

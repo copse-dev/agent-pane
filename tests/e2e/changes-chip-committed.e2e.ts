@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -9,6 +9,7 @@ import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { saveAppViewportScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('Changes chip includes committed branch work', () => {
   let temporaryRoot = ''
@@ -48,7 +49,7 @@ describe('Changes chip includes committed branch work', () => {
   after(() => {
     writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: previousMockBranch })
     resetUserData()
-    if (temporaryRoot) rmSync(temporaryRoot, { recursive: true, force: true })
+    if (temporaryRoot) removeE2eTree(temporaryRoot)
   })
 
   it('keeps accurate totals as edits move from the working tree into commits', async () => {
@@ -122,7 +123,7 @@ describe('Changes chip includes committed branch work', () => {
                   list?.querySelector('.git-change-row-committed .git-change-path')?.textContent ===
                     'example.txt' &&
                   !list.querySelector('.pane-loading') &&
-                  !(list.textContent ?? '').includes('Checking committed changes')
+                  !list.textContent.includes('Checking committed changes')
                 )
               })
               if (!settled) {
@@ -170,9 +171,15 @@ describe('Changes chip includes committed branch work', () => {
             host.dataset['captureChanged'] = 'true'
           })
           observer.observe(host, { childList: true, subtree: true, characterData: true })
-          document.addEventListener('e2e-changes-capture-finished', () => observer.disconnect(), {
-            once: true,
-          })
+          document.addEventListener(
+            'e2e-changes-capture-finished',
+            () => {
+              observer.disconnect()
+            },
+            {
+              once: true,
+            },
+          )
         })
       })
       stableCapture = await browser.execute(() => {

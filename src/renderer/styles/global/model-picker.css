@@ -69,7 +69,6 @@
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  opacity: 0.7;
 }
 .model-picker-field .model-picker-label {
   flex: 1;

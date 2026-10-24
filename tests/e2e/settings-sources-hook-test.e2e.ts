@@ -1,11 +1,12 @@
 import { saveSettingsSection } from './helpers/settings-scroll-capture.ts'
 import assert from 'node:assert/strict'
-import { mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs'
+import { mkdirSync, writeFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, pinTextForCapture } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // G2 (docs/plans/hooks-and-feature-packs.md): the dry-run hook tester. Each
 // Sources hook row gets a "Test" button that runs the hook once against a
@@ -26,7 +27,7 @@ describe('settings sources hooks (dry-run tester)', () => {
     // A fixed path, not mkdtemp: the Sources list prints it, and a random
     // suffix made every capture differ.
     workspaceRoot = join(tmpdir(), 'copse-e2e', 'hook-test')
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    removeE2eTree(workspaceRoot)
     mkdirSync(workspaceRoot, { recursive: true })
     mkdirSync(join(workspaceRoot, '.cursor'), { recursive: true })
     writeFileSync(
@@ -55,7 +56,7 @@ describe('settings sources hooks (dry-run tester)', () => {
 
   after(() => {
     resetUserData()
-    rmSync(workspaceRoot, { recursive: true, force: true })
+    removeE2eTree(workspaceRoot)
   })
 
   it('dry-runs a hook and shows stdin/stdout/stderr/exit/duration in Sources', async () => {
@@ -76,12 +77,15 @@ describe('settings sources hooks (dry-run tester)', () => {
       '[.//span[@class="sources-row-title" and text()="beforeShellExecution"]]' +
       '[div[@class="sources-row-header"]/span[contains(@class,"sources-badge") and text()="project"]]' +
       '[div[@class="sources-row-detail" and text()="Cursor · cat"]]'
-    await browser.waitUntil(async () => (await hooksList.$$(seededRowSelector)).length === 1, {
-      timeout: 15_000,
-      timeoutMsg: 'expected the seeded Cursor hook to be listed',
-    })
+    await browser.waitUntil(
+      async () => (await hooksList.$$(seededRowSelector).getElements()).length === 1,
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected the seeded Cursor hook to be listed',
+      },
+    )
 
-    assert.equal((await hooksList.$$(seededRowSelector)).length, 1)
+    assert.equal((await hooksList.$$(seededRowSelector).getElements()).length, 1)
     const seededRow = hooksList.$(seededRowSelector)
     await expect(seededRow.$('.sources-row-title')).toHaveText('beforeShellExecution')
     await expect(seededRow.$('.sources-badge')).toHaveText('project', { ignoreCase: true })

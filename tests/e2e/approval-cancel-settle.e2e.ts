@@ -7,11 +7,6 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
 const PROJECT_ID = 'e2e-approval-cancel-settle'
 
-interface ApprovalTestBridge {
-  emitApprovalRequests: (requests: unknown) => Promise<void>
-  cancelApprovalRequest: (id: string) => Promise<void>
-}
-
 describe('approval cancellation settle guard', function () {
   this.timeout(30_000)
 
@@ -46,7 +41,7 @@ describe('approval cancellation settle guard', function () {
       },
     ]
     await browser.execute(async (value) => {
-      const bridge = (window as unknown as { __copseE2e?: ApprovalTestBridge }).__copseE2e
+      const bridge = window.__copseE2e
       if (!bridge) throw new Error('__copseE2e unavailable')
       await bridge.emitApprovalRequests(value)
     }, requests)
@@ -59,7 +54,7 @@ describe('approval cancellation settle guard', function () {
 
     await prepareE2eScreenshot()
     await browser.execute(async () => {
-      const bridge = (window as unknown as { __copseE2e?: ApprovalTestBridge }).__copseE2e
+      const bridge = window.__copseE2e
       if (!bridge) throw new Error('__copseE2e unavailable')
       await bridge.cancelApprovalRequest('sibling')
     })

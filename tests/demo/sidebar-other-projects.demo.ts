@@ -6,7 +6,7 @@ import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
 // beside the open project's thread without a project switch.
 
 async function titles(): Promise<string[]> {
-  const rows = await $$('.chats-list .chat-title')
+  const rows = await $$('.chats-list .chat-title').getElements()
   return rows.map((row) => row.getText())
 }
 
@@ -31,7 +31,7 @@ describe('sidebar listing projects not opened yet', () => {
         'Add pagination to the list endpoint',
       ]),
     )
-    const owners = await $$('.chat-thread-owner')
+    const owners = await $$('.chat-thread-owner').getElements()
     const names = await owners.map((owner) => owner.getText())
     expect(names).toEqual(expect.arrayContaining(['· docs-site', '· api-server']))
     await $(
@@ -69,6 +69,7 @@ describe('sidebar listing projects not opened yet', () => {
     )
     expect(positions).toHaveLength(3)
     const first = positions[0]
+    if (!first) throw new Error('Missing status icon positions')
     for (const position of positions) {
       expect(Math.abs(position.right - first.right)).toBeLessThan(1)
       expect(Math.abs(position.centerY)).toBeLessThan(1)
@@ -82,18 +83,18 @@ describe('sidebar listing projects not opened yet', () => {
   it('counts the unopened projects in the Show menu', async () => {
     await $('.projects-filter-btn').click()
     await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
-    const items = await $$('.context-menu-item')
+    const items = await $$('.context-menu-item').getElements()
     const labels = await items.map((item) => item.getText())
     expect(labels.some((label) => label.includes('docs-site') && label.includes('2'))).toBe(true)
     await browser.keys('Escape')
   })
   for (const width of [800, 1600]) {
-    it(`lists unopened threads at ${width}px`, async () => {
+    it(`lists unopened threads at ${String(width)}px`, async () => {
       await browser.setWindowSize(width, 900)
       expect(await titles()).toHaveLength(4)
       await expect($('.projects-filter-btn')).toBeDisplayed()
       await expectStatusIconsAligned()
-      await saveAppScreenshot(`sidebar-other-projects-${width}.png`)
+      await saveAppScreenshot(`sidebar-other-projects-${String(width)}.png`)
     })
   }
 })

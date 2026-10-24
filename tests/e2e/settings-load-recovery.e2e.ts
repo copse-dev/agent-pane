@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('Settings snapshot recovery', () => {
   let workspace = ''
@@ -19,7 +20,7 @@ describe('Settings snapshot recovery', () => {
   after(() => {
     writeE2eEnv({ COPSE_E2E_SETTINGS_SNAPSHOT_FAILURE: undefined })
     resetUserData()
-    rmSync(workspace, { recursive: true, force: true })
+    removeE2eTree(workspace)
   })
   it('retries the failed load in the same dialog before enabling Save', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
