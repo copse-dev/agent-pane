@@ -27,7 +27,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/context-wheel-classifier.e2e.ts': {
-    sourceSha256: '42f16de57f14520051bb4937e4bc14a40dfc7dd6848c317c719cfef5545531cc',
+    sourceSha256: 'd077cf6c449821c8ba1ed8d9ec120287c0bea75f2228a63b9737b3fa833cda55',
     filenames: ['context-wheel-classifier-configured.png', 'context-wheel-classifier-none.png'],
   },
   'tests/e2e/file-viewer-changes.e2e.ts': {
@@ -90,7 +90,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/pane-popout.e2e.ts': {
-    sourceSha256: '6ea4096df0017141f14ac4a393119a281b0df3508f03462c329c8e2d3c0124c0',
+    sourceSha256: 'c2b81d25e1788542faa522839c859aa75249c91048f8a45475660633370b5e72',
     filenames: [
       'pane-popout-browser.png',
       'pane-popout-changes.png',
@@ -173,7 +173,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/sidebar-other-projects-activity.e2e.ts': {
-    sourceSha256: 'be90e1cb2217e5eda526ab938d2279c6611addd18fe5fa82e8067e158394ff39',
+    sourceSha256: '082610f4fc73977cf993828fe8c2c38a15542553b261b7b3e0e10029b98768c8',
     filenames: ['sidebar-unopened-activity-1600.png', 'sidebar-unopened-activity-800.png'],
   },
   'tests/e2e/terminal-display.e2e.ts': {

@@ -420,7 +420,7 @@ const E2E_WORKSPACE_FILES: Record<string, string> = {
 }
 
 /** Commit date for the fixture's one commit; fixed so the hash never moves. */
-const E2E_WORKSPACE_COMMIT_DATE = '2026-01-01T00:00:00Z'
+export const E2E_WORKSPACE_COMMIT_DATE = '2026-01-01T00:00:00Z'
 
 export function seedStableWorkspace(options: { files?: Record<string, string> } = {}): string {
   const root = E2E_WORKSPACE_ROOT
