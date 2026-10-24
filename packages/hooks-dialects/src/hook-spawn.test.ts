@@ -108,6 +108,32 @@ describe('hook-spawn — sandbox-by-default reversal (F3)', () => {
     assert.equal(result.exitCode, 1)
   })
 
+  it('counts violations for each run by its own violation id, not by the command text', async () => {
+    const spawnedIds: string[] = []
+    const counted: string[] = []
+    const base = fakeSandbox({ enabled: true })
+    const sandbox: FakeSandbox = {
+      ...base,
+      spawnShell: (command, spawnOpts) => {
+        spawnedIds.push(spawnOpts.violationId)
+        return base.spawnShell(command, spawnOpts)
+      },
+      // Only the first run touched a denied path.
+      violationCount: (violationId) => {
+        counted.push(violationId)
+        return violationId === spawnedIds[0] ? 1 : 0
+      },
+    }
+    setHookSandboxRuntimeForTest(sandbox)
+    const first = await spawnHookProcess('exit 0', {}, { cwd: process.cwd() })
+    const second = await spawnHookProcess('exit 0', {}, { cwd: process.cwd() })
+    assert.equal(spawnedIds.length, 2)
+    assert.notEqual(spawnedIds[0], spawnedIds[1], 'each run gets a fresh violation id')
+    assert.deepEqual(counted, spawnedIds, 'each run counts under the id it was spawned with')
+    assert.equal(first.sandboxViolationCount, 1)
+    assert.equal(second.sandboxViolationCount, 0, "the earlier run's violation is not inherited")
+  })
+
   it('a sandbox wrapper spawn failure surfaces as spawnError (still marked sandboxed)', async () => {
     const sandbox = fakeSandbox({ enabled: true, throwOnSpawn: true })
     setHookSandboxRuntimeForTest(sandbox)

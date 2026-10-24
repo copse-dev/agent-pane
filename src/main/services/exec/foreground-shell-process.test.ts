@@ -2,7 +2,14 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it, mock } from 'node:test'
+import {
+  SandboxManager,
+  SandboxViolationStore,
+  type WrapWithSandboxOptions,
+} from '@anthropic-ai/sandbox-runtime'
+import { setProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
+import { detectSandboxFailure } from '../security/sandbox-failure.ts'
 import { runShellOnce } from './foreground-shell-process.ts'
 import { setShellOutputSink } from './shell-output-context.ts'
 import {
@@ -185,5 +192,119 @@ describe('foreground shell interruption', () => {
       runShellOnce('echo unexpected', root, 5_000, controller.signal, true, process.env),
     )
     assert.deepEqual(listBackgroundProcesses(OWNER), [])
+  })
+})
+
+// ASRT keeps its violation store for the whole session and, for a wrap without a
+// command id, keys each violation on the first 100 characters of the command
+// text. These runs stub only the wrapper; the store is ASRT's real one, and the
+// stub attributes violations exactly as ASRT does (`commandId ?? command`).
+describe('foreground shell sandbox violation attribution', () => {
+  let root: string
+  let store: SandboxViolationStore
+  /** Attribution keys the wrapper saw, one per sandboxed run, in order. */
+  let runKeys: string[]
+  /** Per wrap (by run index): the run indexes whose violations land in the store then. */
+  let violationsDuringWrap: number[][]
+
+  function recordViolation(key: string): void {
+    store.addViolation({
+      line: 'deny(1) file-read-data /Users/someone/.ssh/id_ed25519',
+      encodedCommand: Buffer.from(key.slice(0, 100)).toString('base64'),
+      timestamp: new Date(),
+    })
+  }
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'copse-violation-attribution-'))
+    store = new SandboxViolationStore()
+    runKeys = []
+    violationsDuringWrap = []
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    mock.method(SandboxManager, 'cleanupAfterCommand', () => {})
+    mock.method(SandboxManager, 'getSandboxViolationStore', () => store)
+    mock.method(
+      SandboxManager,
+      'wrapWithSandboxArgv',
+      (
+        command: string,
+        _binShell?: unknown,
+        _customConfig?: unknown,
+        _abortSignal?: AbortSignal,
+        _cwd?: string,
+        options?: WrapWithSandboxOptions,
+      ) => {
+        const runIndex = runKeys.length
+        runKeys.push(options?.commandId ?? command)
+        for (const owner of violationsDuringWrap[runIndex] ?? []) {
+          const key = runKeys[owner]
+          if (key !== undefined) recordViolation(key)
+        }
+        return Promise.resolve({ argv: ['/bin/sh', '-c', command], env: { ...process.env } })
+      },
+    )
+    setProjectSandboxEnabled(true)
+  })
+  afterEach(() => {
+    setProjectSandboxEnabled(false)
+    mock.restoreAll()
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  function run(command: string, exitCode: number): ReturnType<typeof runShellOnce> {
+    return runShellOnce(command, root, 5_000, new AbortController().signal, false, {
+      COPSE_TEST_EXIT: String(exitCode),
+    })
+  }
+
+  it('does not count an earlier run of the same command against a later failure', async () => {
+    const command = 'pnpm test >/dev/null 2>&1; exit "$COPSE_TEST_EXIT"'
+    // The first run touches a denied path but succeeds; the second fails on its own.
+    violationsDuringWrap = [[0]]
+    const first = await run(command, 0)
+    const second = await run(command, 1)
+
+    assert.equal(first.sandboxViolationCount, 1)
+    assert.equal(second.exitCode, 1)
+    assert.equal(second.sandboxViolationCount, 0)
+    assert.notEqual(runKeys[0], runKeys[1], 'each run is wrapped with its own violation id')
+    const detection = detectSandboxFailure({
+      exitCode: second.exitCode,
+      violationCount: second.sandboxViolationCount ?? 0,
+      spawnFailed: second.spawnFailed ?? false,
+    })
+    assert.equal(detection.likely, false, 'an ordinary failure is not offered an unsandboxed retry')
+  })
+
+  it('does not share violations between commands with the same first 100 characters', async () => {
+    const prefix = `: ${'x'.repeat(100)};`
+    violationsDuringWrap = [[0]]
+    const blocked = await run(`${prefix} exit "$COPSE_TEST_EXIT"`, 1)
+    const other = await run(`${prefix} true; exit "$COPSE_TEST_EXIT"`, 1)
+
+    assert.equal(blocked.sandboxViolationCount, 1)
+    assert.equal(other.sandboxViolationCount, 0)
+  })
+
+  it('attributes a late log line to the run that caused it, not the run that is executing', async () => {
+    const command = 'exit "$COPSE_TEST_EXIT"'
+    // The first run's violation only reaches the store while the second runs.
+    violationsDuringWrap = [[], [0]]
+    await run(command, 0)
+    const second = await run(command, 1)
+
+    assert.equal(second.sandboxViolationCount, 0)
+  })
+
+  it('still counts a violation the current run recorded', async () => {
+    violationsDuringWrap = [[0]]
+    const result = await run('exit "$COPSE_TEST_EXIT"', 1)
+
+    assert.equal(result.sandboxViolationCount, 1)
+    assert.equal(
+      detectSandboxFailure({ exitCode: result.exitCode, violationCount: 1, spawnFailed: false })
+        .likely,
+      true,
+    )
   })
 })
