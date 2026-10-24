@@ -58591,7 +58591,7 @@ function createStorageMaintenancePanel(api2) {
     <label class="storage-project-field"><span>Keep unused data for</span><select id="storage-expiry-days" aria-label="Storage retention"><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">365 days</option></select></label>
     <p class="field-hint">Checked when Copse starts and once a day. Older saved run outputs will no longer be available for review or continuation. Old unused Copse worker images are also removed; the current local worker is kept. Broader shared cache cleanup requires confirmation; Apple garbage collection also removes orphaned snapshots and blobs when deleting a Copse image.</p>
     </fieldset>
-    <fieldset id="storage-containers">
+    <fieldset id="storage-containers" hidden>
       <legend>Apple container storage</legend>
       <p class="field-hint">Shared across Copse profiles and other Apple container applications on this Mac.</p>
       <p id="storage-containers-status" class="field-hint" role="status"></p>
@@ -58623,7 +58623,8 @@ function createStorageMaintenancePanel(api2) {
   function renderContainers() {
     const container = state?.containers;
     if (!container) return;
-    qsRequired(element, "#storage-containers-status").textContent = container.error ? `Inventory unavailable: ${container.error}` : !container.available ? "Apple container is not available on this platform." : container.busy ? "Containers or builds are in use. Cleanup is paused." : "Apple container storage is ready.";
+    qsRequired(element, "#storage-containers").hidden = !container.available && !container.error;
+    qsRequired(element, "#storage-containers-status").textContent = container.error ? `Inventory unavailable: ${container.error}` : container.busy ? "Containers or builds are in use. Cleanup is paused." : "Apple container storage is ready.";
     const breakdown = qsRequired(element, "#storage-container-breakdown");
     breakdown.replaceChildren();
     const rows = [
