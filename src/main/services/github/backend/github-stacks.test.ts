@@ -89,6 +89,33 @@ describe('parseStack', () => {
     assert.equal(parseStack(raw)?.open, false)
   })
 
+  it('decodes the gh --jq projection, which writes omitted keys as null', () => {
+    // STACKS_JQ builds objects with `{open, draft}` shorthand; jq emits `null`
+    // for a key GitHub left out rather than dropping it.
+    const response = stacksResponseFromGh({
+      stdout: JSON.stringify([
+        {
+          number: 7,
+          open: null,
+          base: { ref: 'main' },
+          pull_requests: [
+            { number: 1, state: 'open', draft: null, merged_at: null, head: { ref: 'b1' } },
+          ],
+        },
+      ]),
+      stderr: '',
+      code: 0,
+      errorMessage: '',
+    })
+    assert.equal(response.kind, 'ok')
+    const stacks = parseStackList(response.json)
+    assert.ok(stacks)
+    assert.deepEqual(
+      stacks.map((stack) => [stack.open, stack.entries.map((entry) => entry.draft)]),
+      [[true, [false]]],
+    )
+  })
+
   it('rejects payloads that are not a stack', () => {
     assert.equal(parseStack({ number: 'x' }), null)
     assert.equal(parseStack(restStack(1, [{ number: 1 }])), null)

@@ -21,10 +21,12 @@ export const STACKS_PAGE_SIZE = 100
  */
 export const STACKS_MAX_PAGES = 10
 
+// `open` and `draft` are nullish, not just optional: the CLI backend projects
+// through jq, which writes a key GitHub omitted as `null`.
 const stackPullSchema = z.object({
   number: z.number().int().positive(),
   state: z.string(),
-  draft: z.boolean().optional(),
+  draft: z.boolean().nullish(),
   merged_at: z.string().nullable().optional(),
   head: z.object({ ref: z.string() }),
 })
@@ -32,7 +34,7 @@ const stackPullSchema = z.object({
 const stackSchema = z.object({
   number: z.number().int().positive(),
   base: z.object({ ref: z.string() }),
-  open: z.boolean().optional(),
+  open: z.boolean().nullish(),
   pull_requests: z.array(stackPullSchema),
 })
 
