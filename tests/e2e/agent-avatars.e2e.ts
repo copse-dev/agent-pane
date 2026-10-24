@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { setComposerValue } from './helpers/composer.ts'
@@ -12,6 +12,7 @@ import {
   saveAppScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // Real Electron eval: the generated SVG must decode under the app's CSP, retain
 // its identity after the filesystem thread store reloads, and fit chat chrome.
@@ -85,6 +86,7 @@ function seedAgentAvatars(live = false): void {
                 messages: [
                   {
                     id: `${task.id}-message`,
+                    createdAt: timestamp + 1,
                     role: 'assistant',
                     content: task.summary,
                     toolCalls: [],
@@ -192,7 +194,7 @@ describe('riso avatars in agent chat', () => {
 
   after(() => {
     resetUserData()
-    rmSync(framesDir, { recursive: true, force: true })
+    removeE2eTree(framesDir)
   })
 
   it('uses distinct styles only at remote and named-agent boundaries', async () => {
@@ -226,7 +228,7 @@ describe('riso avatars in agent chat', () => {
     await parkPointer()
     await saveAppScreenshot('agent-avatars-dark.png')
 
-    const card = await $('.tool-card-subagent')
+    const card = await $('.tool-card-subagent').getElement()
     await card.$('summary').click()
     await expect(card).toHaveAttribute('open')
     await expect(card.$('.subagent-timeline')).toBeDisplayed()
@@ -259,11 +261,11 @@ describe('riso avatars in agent chat', () => {
     // marker and that one — not named-first, far above — is the one that moves.
     const activeId = await latestMarkedReplyId()
     expect(activeId).not.toBe('named-first')
-    const active = await $(`[data-message-id="${activeId}"] .agent-avatar`)
+    const active = await $(`[data-message-id="${activeId}"] .agent-avatar`).getElement()
     await expect($('[data-message-id="named-first"] .agent-avatar')).not.toHaveAttribute(
       'data-avatar-active',
     )
-    const remote = await $('[data-message-id="remote-first"] .agent-avatar')
+    const remote = await $('[data-message-id="remote-first"] .agent-avatar').getElement()
     await expect(active).toHaveAttribute('data-avatar-animating')
     await expect(remote).not.toHaveAttribute('data-avatar-active')
     const stationary = await remote.saveScreenshot(join(framesDir, 'idle.png'))
@@ -362,7 +364,7 @@ describe('riso avatars in agent chat', () => {
     })
     await expect(active).toHaveAttribute('data-avatar-animating')
     await openMotionSettings()
-    const toggle = await $('input[name="animateAgentAvatars"]')
+    const toggle = await $('input[name="animateAgentAvatars"]').getElement()
     await expect(toggle).toBeChecked()
     await toggle.click()
     await saveElementScreenshot('#settings-dialog', 'agent-avatars-appearance.png')
@@ -406,7 +408,9 @@ describe('riso avatars in agent chat', () => {
         previousReplies,
       { timeout: 15_000, timeoutMsg: 'Expected the named agent to start a second reply' },
     )
-    const avatar = await $(`[data-message-id="${await latestMarkedReplyId()}"] .agent-avatar`)
+    const avatar = await $(
+      `[data-message-id="${await latestMarkedReplyId()}"] .agent-avatar`,
+    ).getElement()
     await expect(avatar).not.toHaveAttribute('data-avatar-animating')
     expect(
       await browser.execute(() => document.querySelectorAll('[data-avatar-animating]').length),

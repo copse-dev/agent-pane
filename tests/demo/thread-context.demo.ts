@@ -59,6 +59,31 @@ describe('The thread Context panel', () => {
   })
 
   it('lists repos, side chats, links, mentions and subagents for the open thread', async () => {
+    await expect($('[data-context-section="permissions"] [data-access="read"]')).toHaveText(
+      expect.stringContaining('Read other threads'),
+    )
+    await expect($('[data-context-section="permissions"] [data-access="send"]')).toHaveText(
+      expect.stringContaining('Send prompts to other threads'),
+    )
+    await expect(
+      $$('[data-context-section="permissions"] [data-action^="revoke-"]'),
+    ).toBeElementsArrayOfSize(2)
+    await expect($('[data-action="disable-guarded-yolo"]')).toBeDisplayed()
+    await expect($('[data-context-section="permissions"]')).toHaveText(
+      expect.stringContaining('Outside-project reads'),
+    )
+    await expect($('[data-context-section="permissions"]')).toHaveText(
+      expect.stringContaining('Browser origins'),
+    )
+    await expect($('[data-context-section="permissions"]')).toHaveText(
+      expect.stringContaining('Local port binding'),
+    )
+    await expect($('[data-context-section="permissions"]')).toHaveText(
+      expect.stringContaining('Tool overrides'),
+    )
+    await expect($('[data-context-section="decisions"]')).toHaveText(
+      expect.stringContaining('https://example.net:443'),
+    )
     await expect($('[data-context-storage-size]')).toHaveText('24 KB')
     await expect($('[data-context-section="storage"] [data-context-change-stats]')).toHaveText(
       '+42 −7',
@@ -145,16 +170,25 @@ describe('The thread Context panel', () => {
       ['sc-side-1', 'archive-side-chat'],
       ['sc-side-2', 'restore-side-chat'],
     ])
-    await saveElementScreenshot('#pane-files', 'side-chats-context-panel.png')
+    await $('[data-context-section="decisions"]').scrollIntoView()
+    await saveElementScreenshot('#pane-files', 'side-chats-context-permissions-decisions.png')
   })
 
   it('expands and closes the single context panel', async () => {
+    const storageSectionId = (await $('[data-context-section="storage"]')).elementId
     await $('[aria-label="Expand context over chat"]').click()
     await expect($('#body')).toHaveElementClass('is-right-panel-maximized')
     await $('[aria-label="Restore context"]').click()
     await $('[aria-label="Close context"]').click()
     await expect($('#pane-files')).not.toBeDisplayed()
     await openContext()
+    expect((await $('[data-context-section="storage"]')).elementId).toBe(storageSectionId)
+    await expect($('[data-context-storage-size]')).toHaveText('24 KB')
+    await showSideChatsForCapture([
+      ['sc-side-1', 'archive-side-chat'],
+      ['sc-side-2', 'restore-side-chat'],
+    ])
+    await saveElementScreenshot('#pane-files', 'side-chats-context-panel.png')
   })
 
   it('archives and restores side chats from the panel', async () => {
@@ -181,6 +215,12 @@ describe('The thread Context panel', () => {
     await expect($('.chat-row.selected .chat-title')).toHaveText(MAIN)
     await expect($('.side-chat-row.is-selected')).toHaveAttribute('data-side-chat-id', 'sc-side-2')
     await expect($('#right-sidebar')).toBeDisplayed()
+  })
+  it('disables a session-only grant from Context', async () => {
+    await openContext()
+    await $('[data-action="disable-guarded-yolo"]').click()
+    await expect($('[data-action="disable-guarded-yolo"]')).not.toExist()
+    await expect($('.guarded-yolo-banner')).not.toBeDisplayed()
   })
   it('archives the current thread from Context', async () => {
     await openContext()

@@ -37,9 +37,12 @@ describe('Process manager', function () {
     await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'Shift', 'p'])
     const dialog = $('#process-manager-dialog')
     await dialog.waitForDisplayed({ timeout: 10_000 })
-    await browser.waitUntil(async () => (await $$('.process-manager-rows tr')).length > 0, {
-      timeout: 10_000,
-    })
+    await browser.waitUntil(
+      async () => (await $$('.process-manager-rows tr').getElements()).length > 0,
+      {
+        timeout: 10_000,
+      },
+    )
     await expect(dialog.$('h2')).toHaveText('Process Manager')
     // Thread groups start collapsed, so the Shared group's rows are in the DOM
     // but hidden; `toHaveText` only sees visible text.
@@ -116,7 +119,9 @@ describe('Process manager', function () {
     )
 
     const memorySort = dialog.$('.process-manager-sort=Memory')
-    const sortIndicator = async (direction: 'ascending' | 'descending') =>
+    const sortIndicator = async (
+      direction: 'ascending' | 'descending',
+    ): Promise<{ width: string; height: string; visibility: string; clipPath: string }> =>
       browser.execute((order) => {
         const button = document.querySelector(
           `.process-manager-table th[aria-sort="${order}"] button`,

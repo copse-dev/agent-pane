@@ -94,7 +94,9 @@ turn. A desktop that must be reachable for the run to proceed has not offloaded 
 ## Binding decisions
 
 1. **The worker is a Copse process, not a foreign agent.** It runs the same
-   `runHeadlessAgent` stack over the headless contract. This is what separates the plan from
+   `runHeadlessAgent` stack over the headless contract (_2026-10-16: `runHeadlessAgent` speaks
+   no contract today; proposed: attach over ACP — as `thread-in-container.md` T2 already says —
+   with the execution contract carrying budgets, policy and the lease_). This is what separates the plan from
    `acp-over-ssh.md` (someone else's loop) and `managed-agent-environments.md` (someone
    else's runtime).
 2. **Ownership is a fenced, per-thread writer lease** with an owner id, a monotonic epoch, and
@@ -106,9 +108,10 @@ turn. A desktop that must be reachable for the run to proceed has not offloaded 
    `attach`/`detach` on a run the worker owns. Connection loss must never terminate a run, and
    must never be inferred as consent to continue.
 4. **The worker owns the transcript.** It appends to the spine, so a disconnected turn is
-   complete when the desktop returns. Note this fixes a bug that exists locally today:
-   closing the window mid-run loses that turn's transcript while the agent keeps running
-   (`mobile-web-experience.md` L1).
+   complete when the desktop returns. Locally this is now true of main: since 2026-10-16
+   the process running a dispatched turn writes its transcript and the window only draws
+   it (`mobile-web-experience.md` L1, `client-server-split.md` step 1a). The worker reuses
+   that writer; it does not add a second one.
 5. **No new listening surface.** The worker channel travels over the SSH workspace's existing
    ControlMaster forward. The sidecar WebSocket bridge binds loopback and fabricates
    `event.senderFrame` so existing guards pass; pointing it at a network peer would expose the
@@ -170,6 +173,10 @@ This is the half nothing has built. `thread-in-container.md` parks it as T2 and 
 mechanism — "the per-thread writer lease from `acp-session-continuity.md` so desktop and guest
 never both advance a turn" — so O1 and T2 should be one piece of work, not two.
 
+Not started. The local writer from `mobile-web-experience.md` L1 relies on the
+dispatcher's per-thread slot for exclusion, which only holds inside one process; O1 is
+what lets any second process write.
+
 _Exit gate:_ two processes race for one thread and exactly one advances it. Killing the owner
 lets the other take over only after expiry. No duplicate provider turn, commit, or spine
 append under a partition.
@@ -179,6 +186,14 @@ append under a partition.
 The desktop streams a worker-owned run over the ControlMaster forward and detaches without
 stopping it. Requires moving the chunk-to-message reducer into main
 (`mobile-web-experience.md` L1) so the transcript survives the window.
+
+**Prerequisite landed locally (2026-10-16).** The reducer is shared and main writes
+dispatched turns (`turn-transcript-writer.ts`), and on macOS a window closed mid-turn
+detaches and reattaches by reloading from disk. That is O2's local shape with no transport:
+detach is already the normal case for the window, not an error path. What O2 still adds is
+attaching over the ControlMaster forward and the lease from O1 underneath it.
+Local mid-turn reattachment restores the runtime transcript and reducer checkpoint;
+pending decisions replay with their existing ids.
 
 _Exit gate:_ disconnect the desktop mid-turn, sleep the machine, reconnect. The transcript is
 complete and the run converged exactly once.

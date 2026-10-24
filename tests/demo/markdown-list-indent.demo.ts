@@ -10,13 +10,13 @@ describe('browser-hosted markdown geometry', () => {
   it('preserves list structure, indentation, and compact row spacing', async () => {
     const layout = await browser.execute(() => {
       const root = document.querySelector('.message-text')
-      if (!root) return { error: 'no message-text' }
+      if (!root) throw new Error('no message-text')
 
       const architectureHeading = [...root.querySelectorAll('h3')].find((candidate) =>
-        candidate.textContent?.includes('Architecture Highlights'),
+        candidate.textContent.includes('Architecture Highlights'),
       )
       const knownFailuresSubheading = [...root.querySelectorAll('p strong')].find((candidate) =>
-        candidate.textContent?.includes('Unit tests'),
+        candidate.textContent.includes('Unit tests'),
       )
       const architectureList = architectureHeading?.nextElementSibling ?? null
       const knownFailuresList = knownFailuresSubheading?.closest('p')?.nextElementSibling ?? null
@@ -43,7 +43,6 @@ describe('browser-hosted markdown geometry', () => {
     })
 
     expect(layout).not.toHaveProperty('error')
-    if ('error' in layout) throw new Error(layout.error)
     expect(layout.h3Count).toBe(2)
     expect(layout.listsInsideParagraphs).toBe(0)
     expect(layout.architectureHeadingIsFollowedByUl).toBe(true)

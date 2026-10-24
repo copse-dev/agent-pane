@@ -99,5 +99,8 @@
 // v59 integrates explicit local terminal creation targets.
 // v60 adds living-plan reads and revision-checked changes.
 // v61 integrates Send now abort causes and cross-thread read/send permissions.
-// v63 integrates remote machine classifier connections.
-export const API_PROTOCOL_VERSION = 63 as const
+// v62 integrates missing-worktree recovery.
+// v63 versions background default-branch fetch and configurable web-search settings updates.
+// v64 versions Decision Index classifier connection variants.
+// v65 integrates remote machine classifier connections.
+export const API_PROTOCOL_VERSION = 65 as const

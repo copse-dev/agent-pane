@@ -1,5 +1,9 @@
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
+import {
+  syncPluginClientApi,
+  stopPluginClientApi,
+} from './services/plugins/plugin-client-service.ts'
 import { initThreadPrompts } from './services/thread-prompts.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
@@ -41,6 +45,12 @@ import {
   attachBrowserGuestShareShortcut,
 } from './windows/browser-context-menu.ts'
 import { applyAppIcon } from './app-icon.ts'
+import {
+  detachWindow,
+  isWindowDetached,
+  reattachWindow,
+  shouldDetachOnClose,
+} from './windows/window-detach.ts'
 import { isWorktreeDeferralPending } from '@shared/git/worktree-policy.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
 import { THEME_BACKGROUND } from '@shared/theme.ts'
@@ -49,6 +59,9 @@ import {
   beginMainWindowQuit,
   createMainWindow,
   getFocusedMainWindow,
+  isMainWindowQuitting,
+  loadMainWindowRenderer,
+  showsNativeMainWindows,
   getMainWindow,
   getMainWindowForWebContents,
   getRestorableMainWindowRecords,
@@ -148,13 +161,16 @@ import { followUpExecutorForModels, suggestFollowUps } from './services/follow-u
 import { suggestPrBody } from './services/pr-body-service.ts'
 import { suggestNextStep } from './services/next-step-service.ts'
 import {
+  appendMessage,
   clearAgentHistory,
   closeThreadStoreIndexes,
   getProjectThread,
   getThreadMeta,
   loadAgentHistory,
   saveAgentHistory,
+  updateMeta,
 } from './services/thread-store.ts'
+import { TurnTranscriptWriter } from './services/turn-transcript-writer.ts'
 import { getContainerRunService } from './services/container-runtime/container-run-service.ts'
 import { recordContainerRunTurn } from './services/container-runtime/container-run-history.ts'
 import { recordUserReview } from './services/review/review-history.ts'
@@ -438,6 +454,23 @@ const agentEval = process.env['COPSE_AGENT_EVAL'] === '1'
 // Used only by the release workflow against the final signed app bundle. It
 // avoids renderer/WebDriver dependencies while still exercising Electron boot,
 // node-pty, and the filesystem-native thread store from the packaged artifact.
+/**
+ * Show the primary window, first reloading its renderer if it was detached
+ * when closed during a turn (`windows/window-detach.ts`).
+ */
+function bringBackMainWindow(win: BrowserWindow): void {
+  reattachWindow(win, () => loadMainWindowRenderer(win), { show: showsNativeMainWindows() })
+}
+
+/** `threads:annotate-message`: only the summary labels the window derives. */
+const transcriptAnnotationSchema = z
+  .object({
+    commandSummary: z.string().min(1).max(500).optional(),
+    toolSummary: z.string().min(1).max(500).optional(),
+    runSummary: z.string().min(1).max(500).optional(),
+  })
+  .strict()
+
 const releaseSmokeTest = process.argv.includes('--release-smoke-test')
 // `copse --acp` drives the agent over stdio for an ACP client; it must not take
 // the single-instance lock (each client spawns its own) or open a window.
@@ -456,11 +489,12 @@ if (!gotSingleInstanceLock) {
   app.on('second-instance', (_event, argv) => {
     for (const arg of argv) threadDeepLinks.accept(arg)
     const win = getMainWindow()
-    if (win) {
-      if (win.isMinimized()) win.restore()
-      win.show()
-      win.focus()
-    }
+    if (win) bringBackMainWindow(win)
+  })
+  // macOS: clicking the Dock icon reopens a window closed during a turn.
+  app.on('activate', () => {
+    const win = getMainWindow()
+    if (win && isWindowDetached(win)) bringBackMainWindow(win)
   })
 }
 
@@ -572,7 +606,15 @@ app
     void resumeMobileCompanion()
     initUpdatePrompt(win)
     initCloseConfirm(win)
-    guardWindowClose(win)
+    guardWindowClose(win, () => {
+      const detach = shouldDetachOnClose({
+        platform: process.platform,
+        quitting: isMainWindowQuitting(),
+        runningTurns: listRunningThreadIds().length,
+      })
+      if (detach) detachWindow(win)
+      return detach
+    })
     // Probe for rg/git/gh and the search backends only now: these are ~9 process
     // spawns (one of them, `gh auth status`, a network round trip), and run
     // before the window they cost the user seconds of blank screen. The window
@@ -625,6 +667,27 @@ app
         if (!win.isDestroyed()) win.webContents.send('agent:chunk', threadId, chunk)
       },
     }
+    // Dispatched turns are reduced and written here, then reach the window
+    // stamped, so the transcript no longer depends on a window being open.
+    const transcriptWriter = new TurnTranscriptWriter({
+      forward: (threadId, chunk, stamp): void => {
+        if (!win.isDestroyed()) win.webContents.send('agent:chunk', threadId, chunk, stamp)
+      },
+      snapshot: (snapshot): void => {
+        if (!win.isDestroyed()) win.webContents.send('agent:transcript-snapshot', snapshot)
+      },
+      loadThread: getProjectThread,
+      appendMessage,
+      updateMeta,
+      defaultModel: (): string | undefined => {
+        const model = getSetting<unknown>('model', undefined)
+        return typeof model === 'string' ? model : undefined
+      },
+      createId: (): string => crypto.randomUUID(),
+      onError: (error): void => {
+        console.error('[threads] could not write a turn transcript:', error)
+      },
+    })
 
     // C2: forward an async hook's queued message to the renderer's pending queue
     // (decision 4). Same window-guarded send as `agent:chunk`.
@@ -634,8 +697,14 @@ app
 
     const alertUser = createElectronUserAlertSender(win, app.dock, getFocusedMainWindow)
     setExplainerPreviewCapture(captureExplainerFrames)
-    initApproval(win, ipcMain, alertUser)
-    initAskUser(win, ipcMain, alertUser)
+    const replayApprovals = initApproval(win, ipcMain, alertUser)
+    const replayQuestions = initAskUser(win, ipcMain, alertUser)
+    ipcMain.handle('agent:replay-pending-decisions', (event) => {
+      assertMainFrameSender(event, win)
+      replayApprovals(event.sender)
+      replayQuestions(event.sender)
+    })
+    void syncPluginClientApi()
     initMobileChat(win, ipcMain)
     initThreadPrompts(win, ipcMain)
     // Lets main-process code hand the user a running command in the Shells pane
@@ -656,7 +725,7 @@ app
     const disposeSimulatorDesktopHandlers = initSimulatorDesktop(win)
     recordStartupPhase('register-handlers')
     perfMark('main:register-handlers')
-    const agentDispatcher = new AgentDispatcher(agentHost, registry)
+    const agentDispatcher = new AgentDispatcher(agentHost, registry, undefined, transcriptWriter)
     setAgentInitiatedTurnAuthority(agentDispatcher)
     registerAllHandlers(
       win,
@@ -696,9 +765,12 @@ app
         },
       },
     )
-    getAutomationService().start((event) => {
-      if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
-    })
+    getAutomationService().start(
+      (event) => {
+        if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
+      },
+      (request, host) => agentDispatcher.dispatch(request, host),
+    )
     getAutomationService().onHealthChange((health) => {
       if (!win.isDestroyed()) win.webContents.send('automations:scheduler-health', health)
     })
@@ -735,6 +807,7 @@ app
         threadId: completion.owner.threadId,
         operationId: completion.operationId,
         turnTreeId: completion.turnTreeId,
+        ...(completion.alreadyObserved ? { alreadyObserved: completion.alreadyObserved } : {}),
         payload: {
           userContent: backgroundCompletionPrompt(completion),
           invokedSkills: [],
@@ -972,11 +1045,42 @@ app
       invalidateCursorCloudModelsCache()
     })
 
+    ipcMain.handle('agent:attach-transcripts', async (event, ...args: unknown[]) => {
+      assertMainFrameSender(event, win)
+      assertPrimaryMainWindow(event.sender)
+      const [projectId, threadIds] = parseIpcArgs(
+        z.tuple([zProjectId, z.array(zThreadId).max(10000)]),
+        args,
+      )
+      await transcriptWriter.attach(projectId, threadIds)
+    })
+
+    // A small-model label for a message main wrote. Main merges it into its own
+    // copy so the window never writes over a newer one.
+    ipcMain.handle(
+      'threads:annotate-message',
+      async (event, projectId: unknown, threadId: unknown, messageId: unknown, patch: unknown) => {
+        assertMainFrameSender(event, win)
+        const [pid, tid, mid, annotation] = parseIpcArgs(
+          z.tuple([zProjectId, zThreadId, z.string().min(1).max(256), transcriptAnnotationSchema]),
+          [projectId, threadId, messageId, patch],
+        )
+        await transcriptWriter.annotate(pid, tid, mid, {
+          ...(annotation.commandSummary !== undefined
+            ? { commandSummary: annotation.commandSummary }
+            : {}),
+          ...(annotation.toolSummary !== undefined ? { toolSummary: annotation.toolSummary } : {}),
+          ...(annotation.runSummary !== undefined ? { runSummary: annotation.runSummary } : {}),
+        })
+      },
+    )
+
     ipcMain.handle('agent:abort', (event, threadIdArg: unknown, reasonArg: unknown) => {
       assertMainFrameSender(event, win)
       assertPrimaryMainWindow(event.sender)
       const threadId = parseIpcArgs(zThreadId, [threadIdArg])
       const reason = z.literal('send_now').optional().parse(reasonArg)
+      transcriptWriter.noteUserAbort(threadId, reason ?? 'stop')
       abortAgent(threadId, reason)
     })
 
@@ -1259,6 +1363,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   getAutomationService().stop()
   getBranchCiAutomationService().stop()
   await stopMobileCompanion()
+  await stopPluginClientApi()
   disposeDarkFactorySensor?.()
   disposeDarkFactorySensor = undefined
   disposeTaskSupervisorEvents?.()

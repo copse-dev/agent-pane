@@ -23,6 +23,10 @@
 }
 
 :root {
+  /* Fixed logo colors, independent of the selected application theme. */
+  --brand-chatgpt-background: #000;
+  --credential-logo-background: #d9a441;
+  --credential-logo-foreground: #2a1c00;
   /* Unthemed web documents use black text over the browser's default white page. */
   --browser-page-background: #ffffff;
   /* ---- Whole-app tint --------------------------------------------------

@@ -285,12 +285,17 @@ describe('githubApiBackend', () => {
           html_url: 'https://github.com/octo/demo/pull/7',
           state: 'closed',
           merged: true,
+          merged_at: '2026-10-01T12:00:00Z',
+          updated_at: '2026-10-19T12:00:00Z',
+          head: { ref: 'deleted-feature', sha: '1234567890abcdef1234567890abcdef12345678' },
         },
       }
     }
     const details = await githubApiBackend.getPrDetails(REF)
     assert.ok(details)
     assert.equal(details.state, 'MERGED')
+    assert.equal(details.mergedAt, '2026-10-01T12:00:00Z')
+    assert.equal(details.headRefOid, '1234567890abcdef1234567890abcdef12345678')
   })
 
   it('returns before and after image data URLs for PR image diffs', async () => {

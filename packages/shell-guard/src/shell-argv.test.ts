@@ -9,8 +9,10 @@ import {
   hasShellInputRedirect,
   inlineCodeBody,
   inlineLeadingLiteralAssignments,
+  isInertReadArgv,
   isReadOnlySimpleCommand,
   isStructurallyReadOnlyShellCommand,
+  parsedShellSegments,
   printfAssignsShellVariable,
   shellInputRedirects,
   shellRedirects,
@@ -423,6 +425,88 @@ describe('read-only classification and its escape hatches', () => {
     assert.equal(isReadOnlySimpleCommand('sort -o out.txt data.txt'), false)
     // A bare `-` is stdin, not a flag.
     assert.equal(isReadOnlySimpleCommand('sort -'), true)
+  })
+})
+
+describe('parsedShellSegments', () => {
+  const read = (command: string): string[] | null =>
+    parsedShellSegments(command)?.map(({ argv, after }) => `${after ?? '^'} ${argv.join(' ')}`) ??
+    null
+
+  it("keeps the shell's own reading of quoted separators, with no raw fallback", () => {
+    assert.deepEqual(read('grep -E "a|ssh|b" docs/x.md | head -5; echo ---'), [
+      '^ grep -E a|ssh|b docs/x.md',
+      '| head -5',
+      '; echo ---',
+    ])
+  })
+
+  it('drops redirect targets and keeps globs as operands', () => {
+    assert.deepEqual(read('grep -rn x src --include=*.ts 2>/dev/null > out.txt'), [
+      '^ grep -rn x src --include=*.ts 2',
+    ])
+  })
+
+  it('records the pipe, not a following subshell, as what feeds a segment', () => {
+    assert.deepEqual(read('echo hi | (bash)'), ['^ echo hi', '| bash'])
+  })
+
+  it('splits command lines and ignores comments', () => {
+    assert.deepEqual(read('ls src # a | b\ncat a.txt'), ['^ ls src', '; cat a.txt'])
+  })
+
+  it('refuses a reading it cannot vouch for', () => {
+    for (const command of [
+      'grep "$(ssh host)" f',
+      'grep `ssh host` f',
+      'bash <(echo ssh host)',
+      'cat f > >(ssh host)',
+      'grep "unterminated f',
+    ]) {
+      assert.equal(parsedShellSegments(command), null, command)
+    }
+    // Single quotes expand nothing, so a `$` inside them is just text.
+    assert.deepEqual(read("grep '$HOME' f"), ['^ grep $HOME f'])
+  })
+
+  it('keeps a variable as its source text rather than an empty word', () => {
+    assert.deepEqual(read('x=ssh; $x host'), ['^ x=ssh', '; $x host'])
+    assert.deepEqual(read('grep -n ssh "${LOG}" > $TMPDIR/out.log; echo exit=$?'), [
+      '^ grep -n ssh $LOG',
+      '; echo exit=$?',
+    ])
+  })
+})
+
+describe('isInertReadArgv', () => {
+  it('accepts read-only tools and plain echo/printf', () => {
+    for (const argv of [
+      ['grep', '-rn', 'ssh', 'src'],
+      ['sed', '-n', '1,80p', 'src/main/services/exec/a.ts'],
+      ['ls', 'src'],
+      ['git', 'log', '--oneline'],
+      ['echo', '---'],
+      ['printf', '%s\\n', 'x'],
+    ]) {
+      assert.equal(isInertReadArgv(argv), true, argv.join(' '))
+    }
+  })
+
+  it('rejects anything that can run an operand or assign a variable', () => {
+    for (const argv of [
+      ['ssh', 'host'],
+      ['xargs', 'ssh'],
+      ['bash', '-c', 'ssh host'],
+      ['rg', '--pre', 'ssh', 'x', 'src'],
+      ['sort', '--compress-program=ssh', 'f'],
+      ['fd', '-x', 'ssh'],
+      ['sed', 's/a/b/e', 'f'],
+      ['printf', '-v', 'PATH', '/tmp/evil'],
+      ['find', '.', '-exec', 'ssh', '{}', ';'],
+      ['timeout', '5', 'grep', 'x'],
+    ]) {
+      assert.equal(isInertReadArgv(argv), false, argv.join(' '))
+    }
   })
 })
 

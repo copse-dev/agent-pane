@@ -26,8 +26,9 @@ async function openScenario(): Promise<void> {
 /** Distance from the transcript's top edge to the element, in CSS pixels. */
 async function offsetFromListTop(selector: string): Promise<number> {
   return browser.execute((sel) => {
-    const list = document.querySelector('.messages-list')!
-    const node = document.querySelector(sel)!
+    const list = document.querySelector('.messages-list')
+    const node = document.querySelector(sel)
+    if (!list || !node) throw new Error(`Missing transcript offset target ${sel}`)
     return Math.round(node.getBoundingClientRect().top - list.getBoundingClientRect().top)
   }, selector)
 }
@@ -43,10 +44,11 @@ async function visibleToolCards(): Promise<number> {
 
 async function selectText(messageId: string): Promise<string> {
   return browser.execute((id) => {
-    const text = document.querySelector(`[data-message-id="${id}"] .message-text`)!
+    const text = document.querySelector(`[data-message-id="${id}"] .message-text`)
+    const selection = window.getSelection()
+    if (!text || !selection) throw new Error(`Missing selectable message ${id}`)
     const range = document.createRange()
     range.selectNodeContents(text)
-    const selection = window.getSelection()!
     selection.removeAllRanges()
     selection.addRange(range)
     return selection.toString()
@@ -55,7 +57,8 @@ async function selectText(messageId: string): Promise<string> {
 
 async function selection(): Promise<{ text: string; connected: boolean }> {
   return browser.execute(() => {
-    const current = window.getSelection()!
+    const current = window.getSelection()
+    if (!current) return { text: '', connected: false }
     return { text: current.toString(), connected: current.anchorNode?.isConnected ?? false }
   })
 }
@@ -71,7 +74,7 @@ describe('concise thread view toggling', () => {
     }, TURN_3_PROMPT)
     const promptBefore = await offsetFromListTop(`[data-message-id="${TURN_3_PROMPT}"]`)
     const scrollBefore = await browser.execute(
-      () => document.querySelector('.messages-list')!.scrollTop,
+      () => document.querySelector('.messages-list')?.scrollTop,
     )
     expect(await visibleToolCards()).toBe(0)
 
@@ -80,7 +83,7 @@ describe('concise thread view toggling', () => {
     await expect($(`${turn3Footer} button`)).toHaveAttribute('aria-expanded', 'true')
     expect(await visibleToolCards()).toBeGreaterThan(0)
     expect(await offsetFromListTop(`[data-message-id="${TURN_3_PROMPT}"]`)).toBe(promptBefore)
-    expect(await browser.execute(() => document.querySelector('.messages-list')!.scrollTop)).toBe(
+    expect(await browser.execute(() => document.querySelector('.messages-list')?.scrollTop)).toBe(
       scrollBefore,
     )
     await saveAppScreenshot('concise-thread-toggle-open.png')

@@ -11,7 +11,7 @@ describe('retention mark in the model picker', () => {
     await $(TRIGGER).waitForDisplayed()
     await browser.execute(() => {
       const getSetting = window.api.settings.get
-      window.api.settings.get = async (key) =>
+      window.api.settings.get = async (key): Promise<unknown> =>
         key === 'registeredAcpAgents'
           ? [
               {

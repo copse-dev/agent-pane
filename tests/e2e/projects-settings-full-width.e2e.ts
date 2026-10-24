@@ -18,13 +18,21 @@ describe('Settings footer button', function () {
   })
 
   it('fills the sidebar footer and opens Settings from its left edge', async () => {
-    const button = await $('.projects-settings-btn')
+    const button = await $('.projects-settings-btn').getElement()
     await button.waitForDisplayed({ timeout: 30_000 })
     await expect(button).toHaveText('Settings')
 
     const span = await browser.execute(() => {
-      const actions = document.querySelector('.projects-settings-actions')!.getBoundingClientRect()
-      const settings = document.querySelector<HTMLElement>('.projects-settings-btn')!
+      const actions = (
+        document.querySelector('.projects-settings-actions') ??
+        ((): never => {
+          throw new Error(
+            "Missing fixture element: document.querySelector('.projects-settings-actions')",
+          )
+        })()
+      ).getBoundingClientRect()
+      const settings = document.querySelector<HTMLElement>('.projects-settings-btn')
+      if (settings == null) throw new Error('Missing settings in test fixture')
       const rect = settings.getBoundingClientRect()
       const middle = rect.top + rect.height / 2
       return {
@@ -46,7 +54,14 @@ describe('Settings footer button', function () {
     )
 
     await browser.execute(() => {
-      const actions = document.querySelector('.projects-settings-actions')!.getBoundingClientRect()
+      const actions = (
+        document.querySelector('.projects-settings-actions') ??
+        ((): never => {
+          throw new Error(
+            "Missing fixture element: document.querySelector('.projects-settings-actions')",
+          )
+        })()
+      ).getBoundingClientRect()
       const target = document.elementFromPoint(actions.left + 1, actions.top + actions.height / 2)
       if (!(target instanceof HTMLElement)) throw new Error('Settings left edge has no hit target')
       target.click()

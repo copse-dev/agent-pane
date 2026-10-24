@@ -17,9 +17,9 @@ describe('ACP resource paths', () => {
     const workspace = process.cwd()
     const scratch = join(workspace, SCRATCH_PATH)
     const screenshot = join(workspace, SCREENSHOT_PATH)
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedE2eViewport()
     writeSeedConfig({
@@ -91,8 +91,8 @@ describe('ACP resource paths', () => {
     const scratch = join(process.cwd(), SCRATCH_PATH)
     const inlinePreview = $(`[data-message-id="${REPLY_ID}"] .acp-referenced-image`)
     await inlinePreview.waitForExist({ timeout: 45_000 })
-    const content = await $(`[data-message-id="${MESSAGE_ID}"] > .tool-result-content`)
-    const previews = await content.$$('.acp-resource-image')
+    const content = await $(`[data-message-id="${MESSAGE_ID}"] > .tool-result-content`).getElement()
+    const previews = await content.$$('.acp-resource-image').getElements()
     await expect(previews).toBeElementsArrayOfSize(2)
     await expect(content.$$('.acp-resource-link')).toBeElementsArrayOfSize(0)
     const captions = await browser.execute(
@@ -110,7 +110,7 @@ describe('ACP resource paths', () => {
       const preview = previews[index]
       assert.ok(preview)
       await expect(preview).toHaveAttribute('title', join(process.cwd(), relativePath))
-      const image = await preview.$('img')
+      const image = await preview.$('img').getElement()
       assert.match((await image.getAttribute('src')) ?? '', /^data:image\/png;base64,/)
     }
     await expect(previews[0]).toHaveAttribute('hidden')

@@ -35,16 +35,16 @@ async function openPacksSection(): Promise<WebdriverIO.Element> {
     timeout: 10_000,
     timeoutMsg: 'the pack settings fold never opened',
   })
-  return row
+  return row.getElement()
 }
 
 describe('Parallel Search plugin settings', function () {
   this.timeout(60_000)
 
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-parallel-search-plugin')

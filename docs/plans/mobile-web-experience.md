@@ -139,7 +139,12 @@ expensive is an axis this version simply does not have.
    while the agent keeps running. L1 moves the reducer into main and fixes both. Shipping
    "watch the run from your phone" before this would ship a feature that is wrong exactly
    when it is used.
-5. **The desktop renderer remains the sole transcript and queue writer.** On
+   _Status 2026-10-16:_ the first half has landed. Main reduces and writes every turn the
+   dispatcher owns (`turn-transcript-writer.ts`), so a window closed mid-run no longer
+   loses the turn; a phone reading disk still sees a turn's in-progress message only once
+   main has finalized it. See L1 below.
+5. **The desktop renderer remains the sole queue writer and the writer of human
+   prompts; main writes the turns they start (amended 2026-10-16 by L1's first slice).** On
    26 September 2026 the user explicitly requested full chat control: phone
    follow-ups and new chats may start human-authored runs. Authenticated control
    devices submit a bounded, strict message envelope through `/api/action`.
@@ -147,8 +152,8 @@ expensive is an axis this version simply does not have.
    renderer, with a deadline and an acknowledgement. The renderer activates the
    project through its normal trust/workspace path, hydrates history, prepares a
    first checkout, and uses `enqueueUserMessage` / `dispatchAgentRun`. This changes
-   the Mac's selected project/thread. It does not add a second transcript writer,
-   a generic IPC bridge, or machine-initiated continuation authority. Phone chat
+   the Mac's selected project/thread. It adds no writer beyond those two, no
+   generic IPC bridge, and no machine-initiated continuation authority. Phone chat
    currently sends plain text and uses desktop project/model settings.
    Request IDs deduplicate deliveries for the current server session; a server
    session UUID and bounded issue time reject replay after restart or expiry.
@@ -226,6 +231,16 @@ expensive is an axis this version simply does not have.
     `storage:set` — decision 6's own argument). Per-device is not a later refinement: it is
     what makes revocation and "which device answered" possible at all, and
     retrofitting it after users have paired is a migration nobody will do.
+
+    Mobile and interactive plugin clients now share the bearer and desktop-consent pairing
+    implementation in `src/main/services/clients/`. Existing mobile records retain their IDs,
+    hashes and grants, including the read-only default for older records. Pairing expires after
+    two minutes, has a one-second cooldown and one pending phone request, and delivers its token
+    once to the requesting peer. Timeout or server stop cancels the Settings prompt; late consent
+    cannot issue a token. An approved but uncollected token is revoked on expiry or stop. Delivered
+    mobile credentials remain persistent, while plugin credentials remain session-only and
+    origin-bound. Transport guards and each adapter's operation scope remain distinct; sharing
+    auth never gives a plugin mobile chat/run authority. See [the client API](../plugin-client-api.md).
 
 11. **Control requires an explicit desktop grant after local-root installation.**
     Existing device records default to read-only. Pairing or Manage paired phones
@@ -417,6 +432,26 @@ Then add SSE: a `threads:changed` push (there is none today — a repo-wide sear
 
 Exit gate: a run started at the desk streams to the phone within the measured budget; the
 desktop window is closed mid-run and the transcript is complete on disk afterwards.
+
+**Landed (2026-10-16), the first slice toward an always-detached client**
+([`client-server-split.md`](client-server-split.md) step 1a): the reducer is
+`src/shared/store/transcript-reducer.ts`; main runs it in
+`src/main/services/turn-transcript-writer.ts` for every dispatched turn and is the only
+writer of those messages and the turn's closing status/usage/todos; `agent:chunk` carries
+the ids main minted so the window draws the same messages and writes none of them. On macOS
+a window closed mid-run detaches and reloads from disk when reopened. The second half of the
+exit gate is met: `tests/e2e/detached-turn-transcript.e2e.ts` closes the window mid-answer
+and finds the transcript complete on disk and in the reopened window, once. The reducer
+parity test the test plan asks for is `transcript-reducer.test.ts`.
+
+Local reattachment now restores the in-flight transcript and reducer checkpoint before
+further chunks are consumed. Pending approvals/questions are replayed by their original
+request ids. Runtime metadata is persisted independently of renderer autosave.
+
+Still L1 work: SSE, `threads:changed`, the chunk fan-out registry (main still sends to the
+captured boot window), phone visibility of an unfinalized message, and the pop-out becoming
+a pure view. The ordering characterisation from Risks still applies to the fan-out; the
+in-process path keeps one ordered stream per turn.
 
 ### L2 — the decision channel
 
@@ -732,7 +767,8 @@ by hand, on a device the app cannot reach.
 - Phone decisions reuse the desktop pending prompt, consume it synchronously,
   withdraw the desktop modal, and retain device attribution in the decision spine.
   Polling refreshes pending and cancelled prompts together on an open phone thread;
-  stale answers return 409. SSE and main-owned live transcript reduction remain L1 work.
+  stale answers return 409. SSE remains L1 work; main-owned transcript reduction landed
+  in L1's first slice (2026-10-16).
 - Stop names an opaque ID for the actual AbortController, so a stale page cannot
   stop a replacement run. Question answers must match the full question count.
 - Phones with read access cannot use any action. Access changes take effect without

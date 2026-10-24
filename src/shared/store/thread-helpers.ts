@@ -480,9 +480,11 @@ export function addMessage(
     origin?: MessageOrigin
     startingCommit?: string
     dirty?: boolean
+    /** An id minted elsewhere — main's transcript writer — so both copies agree. */
+    id?: string
   },
 ): string {
-  const id = randomUUID()
+  const id = opts?.id ?? randomUUID()
   const message: Message = {
     id,
     role,

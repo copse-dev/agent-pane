@@ -55,19 +55,6 @@ export const experimentalMarkup = `
             </fieldset>
 
             <fieldset>
-              <legend>Next-step tab complete</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="nextStepSuggestionEnabled" />
-                Offer an obvious next step in the message box after each turn
-              </label>
-              <p class="field-hint">
-                When a turn ends with one clearly valuable next move, it appears as placeholder
-                text in the message box — press Tab to accept it, or just type to ignore it.
-                Uses the small-tasks model; most turns show nothing.
-              </p>
-            </fieldset>
-
-            <fieldset>
               <legend>Deferred worktrees</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="deferredWorktreesEnabled" />
@@ -164,7 +151,6 @@ export const experimentalFields: readonly SettingField[] = [
   { name: 'remoteSystemOneModelsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'vncEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
-  { name: 'nextStepSuggestionEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'deferredWorktreesEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'containerRunsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },

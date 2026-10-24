@@ -153,7 +153,7 @@ describe('installSettingsActionBarClickSafety', () => {
   } {
     const registered: { name: string; options?: unknown }[] = []
     const order: string[] = []
-    let patched: ((this: unknown, orig: (...a: unknown[]) => unknown) => unknown) | null = null
+    let patched: Parameters<NonNullable<ActionBarClickSession['overwriteCommand']>>[1] | null = null
 
     const session: ActionBarClickSession = {
       execute: async () => {
@@ -172,7 +172,7 @@ describe('installSettingsActionBarClickSafety', () => {
       invokeClick: async (throwOn): Promise<unknown> => {
         assert.ok(patched, 'click was never overwritten')
         let n = 0
-        return await patched.call({}, (): string => {
+        return await patched.call({}, async (): Promise<string> => {
           n += 1
           order.push('click')
           const boom = throwOn(n)

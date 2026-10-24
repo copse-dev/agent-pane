@@ -289,6 +289,18 @@ const ALLOWED: readonly Allowance[] = [
     count: 2,
     reason: REASON.identifier,
   },
+  {
+    file: 'src/renderer/views/setup/models-agents-list.ts',
+    term: 'capability',
+    count: 2,
+    reason: REASON.identifier,
+  },
+  {
+    file: 'src/renderer/views/setup/openai-service-tier-field.ts',
+    term: 'capability',
+    count: 2,
+    reason: REASON.identifier,
+  },
   { file: 'src/shared/humanize-identifier.ts', term: 'ACP', count: 1, reason: REASON.casing },
 
   // MCP / plugin transport: the name users type into an MCP config.

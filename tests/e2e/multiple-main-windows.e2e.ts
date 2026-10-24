@@ -2,10 +2,6 @@ import { mkdirSync } from 'node:fs'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedProjectSwitchFixture } from './helpers/seed-config.ts'
 
-interface MultiWindowBridge {
-  createMainWindow(): Promise<void>
-}
-
 describe('multiple main windows', function () {
   this.timeout(90_000)
   let primaryHandle: string | undefined
@@ -32,8 +28,8 @@ describe('multiple main windows', function () {
 
     const before = await browser.getWindowHandles()
     await browser.execute(async () => {
-      const bridge = (window as unknown as { __copseE2e?: MultiWindowBridge }).__copseE2e
-      if (!bridge?.createMainWindow) {
+      const bridge = window.__copseE2e
+      if (!bridge) {
         throw new Error('__copseE2e.createMainWindow unavailable')
       }
       await bridge.createMainWindow()
@@ -52,7 +48,7 @@ describe('multiple main windows', function () {
     await $('#pane-chat').waitForExist({ timeout: 30_000 })
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    const projectB = await $('.project-row*=Project B')
+    const projectB = await $('.project-row*=Project B').getElement()
     await projectB.click()
     await browser.waitUntil(
       async () => (await $('.project-row.active .project-name').getText()) === 'Project B',
@@ -66,7 +62,7 @@ describe('multiple main windows', function () {
     await browser.switchToWindow(mainHandle)
     await $('#app').waitForDisplayed({ timeout: 10_000 })
     await expect($('.project-row.active .project-name')).toHaveText('Project A')
-    await expect(await browser.getWindowHandles()).toContain(mainHandle)
+    expect(await browser.getWindowHandles()).toContain(mainHandle)
   })
 
   it('restores each window with its own selected project', async () => {

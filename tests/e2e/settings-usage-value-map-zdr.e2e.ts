@@ -50,7 +50,10 @@ async function startOpenRouterServer(): Promise<{ apiBase: string; close: () => 
     apiBase,
     close: () =>
       new Promise<void>((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()))
+        server.close((error) => {
+          if (error) reject(error)
+          else resolve()
+        })
       }),
   }
 }

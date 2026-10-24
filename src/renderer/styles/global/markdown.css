@@ -1,3 +1,5 @@
+@import '../../markdown/pele-theme.css';
+
 /* Balance prose wrapping so a paragraph's last line does not strand a single
    short "orphan" word (#2461). `text-wrap` is inherited, so setting it once at
    the shared `.streaming-markdown` host boundary — the class every render sink
@@ -45,12 +47,15 @@
   overflow: auto;
   margin: var(--spacing-sm) 0;
 }
+.message-text .mermaid-diagram pre.mermaid {
+  background: var(--pele-bg);
+}
 .message-text .mermaid-diagram.mermaid-diagram--folded {
   cursor: zoom-in;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: var(--spacing-xs);
-  background: var(--bg-elevated);
+  background: var(--pele-bg);
 }
 .message-text .mermaid-diagram.mermaid-diagram--folded:focus-visible {
   outline: 2px solid var(--accent);
@@ -94,7 +99,7 @@
   min-height: min(50vh, 320px);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--bg-base);
+  background: var(--pele-bg);
   cursor: grab;
   touch-action: none;
 }

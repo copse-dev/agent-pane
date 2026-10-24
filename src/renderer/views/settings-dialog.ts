@@ -8,6 +8,7 @@ import { closeIcon } from '../dom/icons.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { createClassifiersSection } from './setup/classifiers-section.ts'
 import { createMachinesSection } from './setup/machines-section.ts'
+import { createWebSearchSection } from './settings/web-search-section.ts'
 import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import { createToolPermissionsPanel } from './tool-permissions-panel.ts'
 import { createUsageSection } from './setup/usage-section.ts'
@@ -112,6 +113,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // silent non-null assertion.
   const classifiersSection = createClassifiersSection(api)
   qsRequired(overlay, '#settings-classifiers-host').append(classifiersSection.root)
+  const webSearchSection = createWebSearchSection(api)
+  qsRequired(overlay, '#settings-web-search-host').append(webSearchSection.root)
 
   const machinesSection = createMachinesSection(api)
   qsRequired(overlay, '#settings-machines-host').append(machinesSection.root)
@@ -126,7 +129,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   })
   qsRequired(overlay, '#settings-ssh-workspace-host').append(sshWorkspaceSection.root)
 
-  const providersSection = createProvidersSection(overlay, api)
+  const providersSection = createProvidersSection(overlay, api, {
+    // Agent installs and sign-ins are interactive programs: close Settings so
+    // the new shell is visible, as the Usage page's plan sign-in does.
+    runInTerminal: (command): void => {
+      closeSettingsDialog()
+      store.emit('request_terminal_command', command, { executionTarget: 'local' })
+    },
+  })
   const toolPermissionsPanel = createToolPermissionsPanel(api.toolPermissions)
   qsRequired(overlay, '#tool-permissions-host').append(toolPermissionsPanel.root)
 
@@ -221,6 +231,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       },
       classifiers: {
         refresh: (_values, signal): Promise<void> => classifiersSection.refresh(signal),
+      },
+      'web-search': {
+        retainDrafts: true,
+        refresh: (values, signal): Promise<void> => webSearchSection.refresh(values, signal),
       },
       usage: {
         refresh: async (_values, signal): Promise<void> => {
@@ -331,6 +345,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     dirty.clear()
     snapshot = null
     providersSection.reset()
+    webSearchSection.reset()
     storage.reset()
     appearance.begin()
     status.hidden = true
@@ -424,6 +439,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         ...providersSection.collect(data, savedDirty),
         ...appearance.collect(data, savedDirty),
         ...sshWorkspaceSection.collect(data, savedDirty),
+        ...webSearchSection.collect(savedDirty),
       }
       for (const section of SETTINGS_SECTIONS)
         Object.assign(changes, collectSimpleFields(section.fields, data, savedDirty))
@@ -444,6 +460,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       store.emit('settings_changed')
       window.dispatchEvent(new Event('copse:skills-changed'))
       await security.save(data, savedDirty)
+      if (!(await webSearchSection.saveKeys())) {
+        nav.show('web-search')
+        status.textContent = 'Preferences saved. Review the search API key before saving again.'
+        status.hidden = false
+        return
+      }
       if (!(await providersSection.saveKeys())) {
         if (mine === openGeneration && isSettingsDialogOpen()) {
           nav.show('general')
@@ -482,6 +504,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     snapshot = null
     appearance.rollback()
     providersSection.reset()
+    webSearchSection.reset()
     dirty.clear()
   })
   qsRequired(overlay, '#settings-cancel').addEventListener('click', closeSettingsDialog)

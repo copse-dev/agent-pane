@@ -1,21 +1,22 @@
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { setComposerValue } from './helpers/composer.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedMachineTurnAttributionFixture } from './helpers/seed-config.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('machine turn attribution', function () {
   this.timeout(90_000)
   let workspaceRoot: string
 
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-machine-attribution-')), 'workspace')
     mkdirSync(workspaceRoot)
@@ -25,13 +26,15 @@ describe('machine turn attribution', function () {
 
   after(() => {
     resetUserData()
-    rmSync(dirname(workspaceRoot), { recursive: true, force: true })
+    removeE2eTree(dirname(workspaceRoot))
   })
 
   it('labels a machine prompt and makes the submit action queue during a running turn', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    const machineTurn = await $('.msg-machine-origin[data-operation-id="background-checks-17"]')
+    const machineTurn = await $(
+      '.msg-machine-origin[data-operation-id="background-checks-17"]',
+    ).getElement()
     await expect(machineTurn).toBeExisting()
     await expect(machineTurn.$('.msg-machine-origin-marker')).toHaveText(
       'Machine · automatic continuation',

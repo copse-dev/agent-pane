@@ -36,9 +36,12 @@ export function localServerTargets(): LocalServerTarget[] {
 }
 
 /** Probe every known local endpoint concurrently; never rejects (errors → unreachable). */
-export async function detectLocalServers(api: ApiClient): Promise<LocalServerResult[]> {
+export async function detectLocalServers(
+  api: ApiClient,
+  targets: readonly LocalServerTarget[] = localServerTargets(),
+): Promise<LocalServerResult[]> {
   return Promise.all(
-    localServerTargets().map(async (target): Promise<LocalServerResult> => {
+    targets.map(async (target): Promise<LocalServerResult> => {
       try {
         const res = await api.lmStudio.test(target.baseUrl)
         return {

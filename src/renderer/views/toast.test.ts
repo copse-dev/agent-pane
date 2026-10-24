@@ -14,6 +14,22 @@ afterEach(() => {
 })
 
 describe('toast (#119 surface IPC errors)', () => {
+  it('runs an accessible action once and dismisses its notification', () => {
+    let calls = 0
+    showToast('Archived thread', {
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          calls++
+        },
+      },
+    })
+    const button = qsRequired<HTMLButtonElement>(document, '.toast-action')
+    assert.equal(button.textContent, 'Undo')
+    button.click()
+    assert.equal(calls, 1)
+    assert.equal(document.querySelector('.toast'), null)
+  })
   it('appends a toast to a shared host and returns a dismiss fn', () => {
     const dismiss = showToast('hello', { durationMs: 100000 })
     const host = document.getElementById('toast-host')

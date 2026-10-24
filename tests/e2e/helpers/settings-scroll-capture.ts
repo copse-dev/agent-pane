@@ -29,7 +29,8 @@ async function captureSettingsSection(selector: string, filename: string): Promi
     const section = $(selector)
     await section.scrollIntoView({ block: 'start' })
     await browser.execute((sel) => {
-      const section = document.querySelector(sel)!
+      const section = document.querySelector(sel)
+      if (!section) throw new Error(`Missing settings section ${sel}`)
       for (let parent = section.parentElement; parent; parent = parent.parentElement) {
         if (
           parent.scrollHeight > parent.clientHeight &&
@@ -47,13 +48,15 @@ async function captureSettingsSection(selector: string, filename: string): Promi
     for (let page = 0; page < 8; page++) {
       await waitForSettledLayout(selector)
       const bounds = await browser.execute((sel) => {
-        const section = document.querySelector(sel)!
+        const section = document.querySelector(sel)
+        const scroll = section?.closest('.settings-content')
+        const app = document.getElementById('app')
+        if (!section || !scroll || !app) throw new Error(`Missing settings capture frame ${sel}`)
         const rect = section.getBoundingClientRect()
-        const scroll = section.closest('.settings-content')!
         const viewport = scroll.getBoundingClientRect()
         // Settings is fixed to the native window, which can be taller than the
         // app element cropped by savePreparedAppScreenshot (e.g. automation).
-        const frame = document.getElementById('app')!.getBoundingClientRect()
+        const frame = app.getBoundingClientRect()
         const footer = document.querySelector('.settings-buttons')?.getBoundingClientRect()
         const footerTop = footer && footer.height > 0 ? footer.top - 12 : viewport.bottom
         return {
@@ -73,13 +76,14 @@ async function captureSettingsSection(selector: string, filename: string): Promi
       assert.ok(end > covered, 'scroll capture must make progress')
       await parkPointer()
       await savePreparedAppScreenshot(
-        page === 0 ? filename : filename.replace('.png', `-page-${page + 1}.png`),
+        page === 0 ? filename : filename.replace('.png', `-page-${String(page + 1)}.png`),
       )
       covered = end
       if (bounds.bottom <= bounds.visibleBottom) return
       await browser.execute(
         ({ sel, distance }) => {
-          const section = document.querySelector(sel)!
+          const section = document.querySelector(sel)
+          if (!section) throw new Error(`Missing settings section ${sel}`)
           for (let parent = section.parentElement; parent; parent = parent.parentElement) {
             if (
               parent.scrollHeight > parent.clientHeight &&

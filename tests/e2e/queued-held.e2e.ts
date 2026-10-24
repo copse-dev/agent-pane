@@ -30,7 +30,7 @@ describe('held hook message in the queue', function () {
     await browser.reloadSession()
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    const heldItem = await $('.conversation-queued .msg-queued.msg-held')
+    const heldItem = await $('.conversation-queued .msg-queued.msg-held').getElement()
     await heldItem.waitForExist({ timeout: 10_000 })
 
     await expect($('.msg-held .message-queued-badge')).toHaveText('HELD')
@@ -66,10 +66,15 @@ describe('held hook message in the queue', function () {
           const c = v / 255
           return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
         })
+        if (r === undefined || g === undefined || b === undefined)
+          throw new Error('Expected three RGB channels')
         return 0.2126 * r + 0.7152 * g + 0.0722 * b
       }
       const contrast = (a: number[], b: number[]): number => {
-        const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+        const lightA = luminance(a)
+        const lightB = luminance(b)
+        const hi = Math.max(lightA, lightB)
+        const lo = Math.min(lightA, lightB)
         return (hi + 0.05) / (lo + 0.05)
       }
       // Walk up to the nearest painted ancestor: that is the surface the chip
@@ -99,9 +104,9 @@ describe('held hook message in the queue', function () {
     }, ROW_SELECTOR)
     if (!row) throw new Error('queued action row, or the surface behind it, not found')
     // Every chip in the row is the same box — the fix is that they now all draw it.
-    await expect(new Set(row.heights).size).toBe(1)
+    expect(new Set(row.heights).size).toBe(1)
     for (const chip of row.outlined) {
-      await expect(chip.edge).toBeGreaterThan(1.6)
+      expect(chip.edge).toBeGreaterThan(1.6)
     }
     await saveElementScreenshot(ROW_SELECTOR, 'queued-held-actions-row.png')
   })
@@ -124,8 +129,8 @@ describe('held hook message in the queue', function () {
       const badge = await fillContrast('.conversation-queued .msg-held .message-queued-badge')
       const release = await fillContrast('.conversation-queued .msg-held .queued-release')
       if (!badge || !release) throw new Error('held badge or Release chip not found')
-      await expect(badge.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
-      await expect(release.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
+      expect(badge.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
+      expect(release.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
       await saveElementScreenshot(
         '.conversation-queued .msg-queued.msg-held',
         `queued-held-contrast-${theme}.png`,
@@ -135,7 +140,7 @@ describe('held hook message in the queue', function () {
       await browser.pause(200)
       const hovered = await fillContrast('.conversation-queued .msg-held .queued-release')
       if (!hovered) throw new Error('Release chip not found')
-      await expect(hovered.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
+      expect(hovered.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
     }
   })
 })

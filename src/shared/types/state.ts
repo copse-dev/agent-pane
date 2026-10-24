@@ -146,6 +146,8 @@ export interface AppState {
   uiScale: number // 0.75–1.5 interface scale; drives CSS --ui-scale tokens
   autoPortraitRightPanel: boolean // Auto-stack the right panel below chat on portrait windows.
   rightPanelPosition: RightPanelPosition // Where the right panel (explorer/terminal/etc.) lives.
+  /** Session-only sidebar filter and default project for new threads; null means all projects. */
+  sidebarProjectFilterId: string | null
   sidebarThreadSort: ThreadSortMode // How the sidebar orders each project's threads.
   sidebarThreadSortReverse: boolean // Flip that order (oldest or Z–A first).
   sidebarThreadGroup: ThreadGroupMode // Whether the sidebar groups threads by project, by status, or not at all.

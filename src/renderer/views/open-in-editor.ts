@@ -55,7 +55,7 @@ export function mountOpenInEditor(
       'aria-haspopup': 'menu',
       'aria-expanded': 'false',
     },
-    chevronDownIcon('ui-icon ui-icon-sm'),
+    chevronDownIcon('ui-icon ui-icon-sm ui-picker-chevron'),
   )
   const menu = el('div', { class: 'open-in-editor-menu', role: 'menu', hidden: '' })
   // A transparent full-window backdrop is the only reliable way to dismiss the

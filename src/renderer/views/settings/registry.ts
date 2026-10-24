@@ -1,11 +1,12 @@
 import { generalMarkup, generalFields } from './general-markup.ts'
 import { classifiersMarkup } from './classifiers-markup.ts'
+import { webSearchMarkup } from './web-search-markup.ts'
 import { usageMarkup } from './usage-markup.ts'
 import { agentMarkup, agentFields } from './agent-markup.ts'
 import { permissionsMarkup, permissionsFields } from './permissions-markup.ts'
 import { mcpMarkup, mcpFields } from './mcp-markup.ts'
 import { customiseMarkup, customiseFields } from './customise-markup.ts'
-import { storageMarkup } from './storage-markup.ts'
+import { storageMarkup, storageFields } from './storage-markup.ts'
 import { appearanceMarkup, appearanceFields } from './appearance-markup.ts'
 import { sshMarkup, sshFields } from './ssh-markup.ts'
 import { experimentalMarkup, experimentalFields } from './experimental-markup.ts'
@@ -24,12 +25,13 @@ export interface SettingsSectionDefinition {
 export const SETTINGS_SECTIONS: readonly SettingsSectionDefinition[] = [
   { id: 'general', label: 'General', markup: generalMarkup, fields: generalFields },
   { id: 'classifiers', label: 'Classifiers', markup: classifiersMarkup, fields: [] },
+  { id: 'web-search', label: 'Web search', markup: webSearchMarkup, fields: [] },
   { id: 'usage', label: 'Usage', markup: usageMarkup, fields: [] },
   { id: 'agent', label: 'Agent', markup: agentMarkup, fields: agentFields },
   { id: 'permissions', label: 'Permissions', markup: permissionsMarkup, fields: permissionsFields },
   { id: 'mcp', label: 'MCP servers', markup: mcpMarkup, fields: mcpFields },
   { id: 'customise', label: 'Customise', markup: customiseMarkup, fields: customiseFields },
-  { id: 'storage', label: 'Storage', markup: storageMarkup, fields: [] },
+  { id: 'storage', label: 'Storage', markup: storageMarkup, fields: storageFields },
   { id: 'appearance', label: 'Appearance', markup: appearanceMarkup, fields: appearanceFields },
   { id: 'ssh', label: 'Machines', markup: sshMarkup, fields: sshFields },
   {
