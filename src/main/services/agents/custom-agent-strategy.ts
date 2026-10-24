@@ -22,6 +22,8 @@ import type { AgentMetadata, AgentSource } from '@shared/types/agents.ts'
  */
 export const CUSTOM_AGENT_FORBIDDEN_TOOLS: readonly string[] = [
   'task',
+  'run_readonly_workers',
+  'run_isolated_workers',
   'explore',
   'investigate_ci',
   'delegate_step',
@@ -30,6 +32,9 @@ export const CUSTOM_AGENT_FORBIDDEN_TOOLS: readonly string[] = [
   'ask_user',
   'request_review_input',
   'git_commit',
+  // A worker reports findings; the parent owns the shared thread plan.
+  'update_thread_plan',
+  'report_plan_completion',
   // Skill activation is parent-run scoped. Children have no catalog/budget;
   // do not advertise a tool that would fail or inherit the parent's allowance.
   'read_skill',

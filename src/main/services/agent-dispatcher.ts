@@ -1,3 +1,4 @@
+import { runWithWorkerDispatchSlots } from './agents/isolated-worker-scope.ts'
 import { runWithThreadPlan } from './thread-plan-context.ts'
 import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
@@ -777,13 +778,20 @@ export class AgentDispatcher {
       result = await runWithThreadExecutionContext(executionContext, () =>
         runWithThreadPlan(plan, () =>
           runWithActiveRunIdentity(threadId, () =>
-            this.dependencies.run(
-              threadId,
-              payload.userContent,
-              priorMessages,
-              host,
-              this.registry,
-              options,
+            runWithWorkerDispatchSlots(
+              {
+                run: (owner, execute) =>
+                  this.withExclusiveHistory(owner.projectId, owner.threadId, execute),
+              },
+              () =>
+                this.dependencies.run(
+                  threadId,
+                  payload.userContent,
+                  priorMessages,
+                  host,
+                  this.registry,
+                  options,
+                ),
             ),
           ),
         ),
