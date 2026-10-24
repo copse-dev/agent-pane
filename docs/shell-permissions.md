@@ -975,7 +975,11 @@ whose `bin/python` links into those installs therefore start contained instead o
 offering to run outside. None of these roots is writable (a writable shim on `PATH` would run later
 outside the sandbox), and a root is dropped when it is or contains home, or contains or sits inside
 a credential path (`~/.npmrc`, `~/.yarnrc.yml`, `~/.config/pnpm/rc`, `~/.bunfig.toml`,
-`~/.config/uv`, `~/.pypirc`, `~/.config/pip`, `~/.netrc`), which stay denied. Shells in a
+`~/.config/uv`, `~/.pypirc`, `~/.config/pip`, `~/.netrc`), which stay denied. Everything inside
+an allowed root is readable, so a pyenv or conda prefix's own `pip.conf`, `pip.ini`, or `.condarc`
+can carry an index or channel token, and a contained command can read it. That is accepted, because
+the sandbox cannot deny a file pattern inside a read-only tree on both platforms (bubblewrap binds
+concrete paths). Keep such tokens in the user-level files above, which stay denied. Shells in a
 worktree with a valid preparation plan point `COREPACK_HOME` at Copse's Corepack cache only after
 preparation has stamped the worktree; before that, Copse's cache is empty, so they keep the user's.
 
