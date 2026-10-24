@@ -1106,8 +1106,8 @@
       "bytes": 40932
     },
     "claude-login-deferred-settings.png": {
-      "sha256": "469b81a4880873fed867a809b35a6f23d377a250c76ad2b98690ccdc8ee0d7af",
-      "bytes": 255470
+      "sha256": "94ef7294652f67acd6b836a424c5fccbf27a6e1c68b2a3f6edc15edfdd391ed0",
+      "bytes": 259667
     },
     "claude-opus-5-5-effort.png": {
       "sha256": "1a68ed511ada2649b6e1e26b7e3dfaa4e611acfb79779326e9ae96b4553ec7d4",
@@ -3729,6 +3729,18 @@
       "sha256": "911feb807cca57d81bd25e315e29a599d2e12becbece9d1a9773a0c69481a31e",
       "bytes": 39270
     },
+    "settings-container-storage-busy.png": {
+      "sha256": "eb5fde43d9d71f0be730aa27bc47875aeb213fee8821d7ea3189713d7d22064b",
+      "bytes": 67814
+    },
+    "settings-container-storage-confirm.png": {
+      "sha256": "d013a4f5436d27c490b1b929a6020dc49b9f31c7fc55279922a966780e97b41c",
+      "bytes": 19312
+    },
+    "settings-container-storage.png": {
+      "sha256": "c085664d40715c87c97ba43497c26a5c5ca9abd176b227a1437e9b57830498d3",
+      "bytes": 71914
+    },
     "settings-content-full-width-scroll.png": {
       "sha256": "f17b88bcb088d1247c2f52a36c6fe1c79267425e04f4847fa45785be4a7f15db",
       "bytes": 95941
@@ -4122,32 +4134,32 @@
       "bytes": 154746
     },
     "settings-storage-maintenance-cleaned.png": {
-      "sha256": "d7f8f2ec780fb7d2132f2589cc6722c3971725e07b65e94fed51cb6b8bc8264c",
-      "bytes": 102385
+      "sha256": "dc6b4d78d548c37d98d70f6541bd64eca3b78bc38849629a41d85458f032da0b",
+      "bytes": 121045
     },
     "settings-storage-maintenance-confirm.png": {
       "sha256": "8a82fd203545fd34d9de795026de6d20ac5f228b0a910d6c4147dfa523d42bc0",
       "bytes": 43160
     },
     "settings-storage-maintenance.png": {
-      "sha256": "43b34140b0a704402e18b164bc6c10e6a9da7986664e742cbc4622c2e00af79f",
-      "bytes": 102749
+      "sha256": "3f45423554da7145bed039b27d3d471b435b1064a5677cb42e0e0df4eb45e77c",
+      "bytes": 119794
     },
     "settings-storage-project-a-worktrees.png": {
-      "sha256": "3b9de3933e338c2e67e90546c8743de6203c4aa8903c6e4de6300d2eb4218481",
-      "bytes": 254998
+      "sha256": "e833e8bd96e0329a6dcd7390ea056819ea5c9fdfd437869fc81844dbb760d04b",
+      "bytes": 273163
     },
     "settings-storage-project-b-worktrees.png": {
-      "sha256": "00fac2dc39f927b2bdd92af0683cc1b2a66d32a73b48eabf0eba5ce95fc7fe2b",
-      "bytes": 255344
+      "sha256": "a7a2ab4f665bd48b16fe9cc4b8c9506fcc17341601e134ee0b31f53f07047bed",
+      "bytes": 273515
     },
     "settings-storage-project-picker.png": {
       "sha256": "4bc1f662b94063aea43410ca04e2bebba51c0e8fb37df16e2dbc01f09fd0cffd",
       "bytes": 105985
     },
     "settings-storage.png": {
-      "sha256": "10455f106134ce7a898e318b0bb7b85b345c4810d80c904bec1cb7c076255763",
-      "bytes": 255361
+      "sha256": "e5e0ddc1ca00759e77b88ddc4e8b866163ccefdd1683539705cbcfe9dcdd1fcd",
+      "bytes": 259615
     },
     "settings-styling-appearance.png": {
       "sha256": "4cbc704eec43c929bae2e83945c45f32ec5f4dfc3b2090250bd713d7f0a5f07e",
@@ -4314,8 +4326,8 @@
       "bytes": 74576
     },
     "settings-worktree-actions.png": {
-      "sha256": "ebb6fed9a209efcb810f99b3d381e0111db1e9963ed7d4df6fe0e16741db88cb",
-      "bytes": 286073
+      "sha256": "8b1875e755bd9b23c9a7c36b869cc84d4ffd037bd8c2da2dda837dabeaf534d3",
+      "bytes": 285031
     },
     "settings-worktree-bulk-selection.png": {
       "sha256": "35503a298f9108d6143485a9bd0c209f51d04748de45658692b4d2d591ad319b",
@@ -4330,12 +4342,12 @@
       "bytes": 118625
     },
     "settings-worktree-cleanup-confirm.png": {
-      "sha256": "c027c8949cd419bd7757086731b2a99cf8705a23771b32b833e60e438ed57eec",
-      "bytes": 244152
+      "sha256": "cecaf3d2b8fd0dd827e1099234a21fa3033e8f11fadff8e6e32120adc691b9af",
+      "bytes": 245991
     },
     "settings-worktree-cleanup-pending.png": {
-      "sha256": "e7ef81ba802f998fb24b241111eb84704b4605799fc9f1f8bd47eac5adae70e0",
-      "bytes": 268029
+      "sha256": "d8d6fe424e531504def0e095b5985f26ee1ecce451a7ce3fbc0a342c0202ca11",
+      "bytes": 260748
     },
     "settings-worktree-cleanup-stopped.png": {
       "sha256": "725ffc2e15bca8429999ceea25b4eeb76b39a3b25bc037ddaf966927161c4773",

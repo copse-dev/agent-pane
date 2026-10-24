@@ -1,4 +1,5 @@
 import type { SettingsSnapshot } from '@shared/settings-contract.ts'
+import { emptyContainerStorage } from '../../shared/types/storage-cleanup.ts'
 import type { ActiveDiff, StreamChunk, Thread, TranscriptAnnotation } from '@shared/types'
 import { ThreadPrRelationshipIndex } from '@shared/git/thread-pr-relations.ts'
 import { backlinksFor } from '@shared/threads/thread-links.ts'
@@ -980,8 +981,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       reopenArtefact: () => resolved(false),
     },
     storage: {
+      containerCleanup: () => resolved({ removed: 0, bytes: 0, skipped: 0 }),
       maintenance: () =>
         resolved({
+          containers: emptyContainerStorage(),
           retention: { enabled: true, days: 30 },
           areas: [
             { area: 'runs', bytes: 0, entries: 0, busy: false },
