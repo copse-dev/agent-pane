@@ -14,6 +14,10 @@ import {
 import { setSetting } from '../storage/settings.test-shim.ts'
 import type { RunCommandOptions } from '../exec/command-runner.ts'
 import { resolveReadablePathWithinRoot } from '../workspace.ts'
+import {
+  runWithThreadExecutionContext,
+  type ThreadExecutionContext,
+} from '../thread-execution-context.ts'
 
 describe('external file tool approval', () => {
   let base = ''
@@ -156,6 +160,30 @@ describe('external file tool approval', () => {
     await writeFile(local, 'local')
     assert.equal(await read('reader', local), null)
     assert.equal(await read('reader', '../note.txt'), null)
+    assert.equal(prompts, 0)
+    assert.equal(calls.length, 0)
+  })
+  it('leaves project-checkout paths in a worktree turn to the worktree rebase', async () => {
+    const worktree = join(base, 'worktree')
+    await mkdir(worktree)
+    await writeFile(join(root, 'shared.txt'), 'project checkout copy')
+    await writeFile(join(worktree, 'shared.txt'), 'thread copy')
+    const target = join(root, 'shared.txt')
+    const context: ThreadExecutionContext = {
+      projectId: 'project',
+      threadId: 'reader',
+      projectRoot: root,
+      root: worktree,
+      checkoutMode: 'worktree',
+      branch: 'copse/reader',
+    }
+    const resolved = await runWithThreadExecutionContext(context, () =>
+      runWithActiveRunIdentity('reader', async () => {
+        assert.equal(await reader(target, worktree, 'read_file', { kind: 'read' }), null)
+        return resolveReadablePathWithinRoot(target, worktree)
+      }),
+    )
+    assert.equal(resolved, join(worktree, 'shared.txt'))
     assert.equal(prompts, 0)
     assert.equal(calls.length, 0)
   })

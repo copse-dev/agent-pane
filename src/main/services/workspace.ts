@@ -567,6 +567,20 @@ async function rebaseOntoExecutionRoot(
   return resolve(absRoot, relative(absAlias, absInput))
 }
 
+/**
+ * True when `resolvePathWithinRoot` would rebase this canonical absolute path
+ * from the project checkout onto `root`'s worktree, so callers that route
+ * paths outside the root elsewhere leave it on the ordinary resolver.
+ */
+export async function rebasesOntoExecutionRoot(
+  absInput: string,
+  root: string,
+  backend: PathBackend = getActivePathBackend(),
+): Promise<boolean> {
+  const absRoot = await backend.realpath(resolve(root))
+  return (await rebaseOntoExecutionRoot(absInput, root, absRoot, backend)) !== null
+}
+
 /** Resolve a path against an explicit trusted root, with the workspace containment rules. */
 export async function resolvePathWithinRoot(
   path: string,

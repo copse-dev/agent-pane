@@ -3,7 +3,7 @@ import { isAbsolute, relative, sep } from 'node:path'
 import { z } from 'zod'
 import { safeJsonParse, decodeWithSchema } from '@shared/safe-json.ts'
 import { getActiveRunThread } from '../active-run-identity.ts'
-import { getChatStoreRoot } from '../workspace.ts'
+import { getChatStoreRoot, rebasesOntoExecutionRoot } from '../workspace.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { requestApproval } from '../approval.ts'
 import { runCommand } from '../exec/command-runner.ts'
@@ -70,6 +70,8 @@ async function readExternalTool(
     return null
   }
   if (isPathInsideRoot(canonical, await realpath(root))) return null
+  // A worktree turn reads a project-checkout path as the thread's own copy.
+  if (await rebasesOntoExecutionRoot(canonical, root)) return null
   const chatRoot = await getChatStoreRoot()
   // Other-conversation access stays under its separate permission, including
   // aliases into the store. Never turn a declined conversation read into an
