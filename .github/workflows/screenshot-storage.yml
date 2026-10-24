@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   storage:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       SCREENSHOT_R2_ACCOUNT_ID: ${{ secrets.SCREENSHOT_R2_ACCOUNT_ID || vars.SCREENSHOT_R2_ACCOUNT_ID }}

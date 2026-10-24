@@ -21,6 +21,8 @@ permissions:
   contents: read
   checks: read
   actions: read
+  issues: read
+  pull-requests: read
   attestations: write
   id-token: write
 
@@ -30,7 +32,7 @@ concurrency:
 
 jobs:
   preflight:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       release_sha: ${{ steps.release.outputs.release_sha }}
       release_type: ${{ steps.release.outputs.release_type }}
@@ -111,6 +113,9 @@ jobs:
           # body. Generate it from CHANGELOG.md now so a missing or empty
           # `## <version>` section fails in seconds rather than after notarization.
           node scripts/release-notes.mts "$version" > /dev/null
+          # An exclusion review deadline is not acceptance of missing runtime
+          # coverage. Recheck current owner decisions before signing begins.
+          node scripts/check-e2e-release-waivers.mts
           echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
           echo "release_type=$release_type" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -143,7 +148,7 @@ jobs:
   # signing or packaging begins.
   verify-clean-release-build:
     needs: preflight
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -362,7 +367,7 @@ jobs:
 
   assemble:
     needs: [preflight, build-test]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -428,7 +433,7 @@ jobs:
   report-failure:
     needs: [preflight, verify-clean-release-build, build-test, assemble]
     if: failure()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       issues: write
     steps:

@@ -1,20 +1,39 @@
 import ts from 'typescript'
 import { z } from 'zod'
+import {
+  decodeQuarantineAccountability,
+  quarantineReleaseErrors,
+  type QuarantineAccountability,
+} from './e2e-release-policy.mts'
 
 export const exclusionRegistrySchema = z.strictObject({
-  version: z.literal(1),
+  version: z.literal(2),
   entries: z.array(
-    z.strictObject({
-      spec: z.string().regex(/^tests\/e2e\/.+\.e2e\.ts$/),
-      category: z.enum(['quarantine', 'external-service', 'platform', 'environment']),
-      reason: z.string().min(1),
-      tracker: z.url().regex(/^https:\/\/github\.com\/copse-dev\/agent-pane\/issues\/[1-9]\d*$/),
-      ownerRole: z.string().min(1),
-      recordedOn: z.iso.date(),
-      reviewBy: z.iso.date(),
-      coverage: z.string().min(1),
-      markers: z.array(z.string().min(1)).min(1),
-    }),
+    z
+      .strictObject({
+        spec: z.string().regex(/^tests\/e2e\/.+\.e2e\.ts$/),
+        category: z.enum(['quarantine', 'external-service', 'platform', 'environment']),
+        reason: z.string().min(1),
+        tracker: z.url().regex(/^https:\/\/github\.com\/copse-dev\/agent-pane\/issues\/[1-9]\d*$/),
+        ownerRole: z.string().min(1),
+        recordedOn: z.iso.date(),
+        reviewBy: z.iso.date(),
+        coverage: z.string().min(1),
+        markers: z.array(z.string().min(1)).min(1),
+        accountability: z
+          .custom<QuarantineAccountability>(
+            (value) => decodeQuarantineAccountability(value) !== null,
+          )
+          .optional(),
+      })
+      .superRefine((entry, context) => {
+        if ((entry.category === 'quarantine') !== (entry.accountability !== undefined))
+          context.addIssue({
+            code: 'custom',
+            path: ['accountability'],
+            message: 'Only quarantines require an accountable person and disposition record.',
+          })
+      }),
   ),
 })
 
@@ -236,6 +255,11 @@ export function validateExclusionRegistry(
     if (entry.reviewBy < entry.recordedOn)
       errors.push(`Review date precedes inventory date: ${entry.spec}`)
     if (entry.reviewBy <= today) due.push(entry.spec)
+    if (entry.accountability?.waiver) {
+      errors.push(...quarantineReleaseErrors([entry], today))
+      if (entry.accountability.waiver.reviewedOn < entry.recordedOn)
+        errors.push(`Waiver review precedes inventory: ${entry.spec}`)
+    }
   }
   for (const spec of new Set(actual.map((item) => item.spec))) {
     if (!recorded.has(spec)) errors.push(`Unrecorded exclusion: ${spec}`)
