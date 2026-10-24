@@ -143,11 +143,13 @@ function profileKey(profile: ClassifierProfile): string | undefined {
 /**
  * Whether a call to this connection leaves the machine. SemIf is a local
  * process and a loopback URL stays on the host; any other HTTP endpoint is
- * remote. A connection that is not configured sends nothing, so it reads local.
+ * remote, and a paired-machine connection sends the call to that computer. A
+ * connection that is not configured sends nothing, so it reads local.
  */
 export function classifierSendsOffMachine(id: string): boolean {
-  const profile = configuredProfiles().find((entry) => entry.id === id)
-  return profile?.connection.type === 'http' && !isLocalBaseUrl(profile.connection.baseUrl)
+  const connection = configuredProfiles().find((entry) => entry.id === id)?.connection
+  if (connection?.type === 'machine') return true
+  return connection?.type === 'http' && !isLocalBaseUrl(connection.baseUrl)
 }
 
 /** Saved connections, for deciding whether a turn offers the classifier tool. */
