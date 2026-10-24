@@ -9,43 +9,48 @@ import {
 import { el, qsRequired } from '../../../src/renderer/dom/helpers.ts'
 
 const api = createFakeApi()
-const busy = new URLSearchParams(location.search).has('busy')
+const params = new URLSearchParams(location.search)
+const busy = params.has('busy')
+// `?missing`: a Mac without the container CLI, or another platform.
+const missing = params.has('missing')
 api.storage.maintenance = async (): Promise<StorageMaintenanceState> => ({
   retention: { enabled: true, days: 30 },
   areas: [
     { area: 'runs', bytes: 0, entries: 0, busy: false },
     { area: 'builds', bytes: 0, entries: 0, busy: false },
   ],
-  containers: {
-    ...emptyContainerStorage(),
-    available: true,
-    busy,
-    builderRunning: true,
-    totalBytes: 69.49 * 1024 ** 3,
-    snapshotsBytes: 53.37 * 1024 ** 3,
-    containersBytes: 15.07 * 1024 ** 3,
-    builderDiskBytes: 15.07 * 1024 ** 3,
-    blobsBytes: 1.01 * 1024 ** 3,
-    otherBytes: 0.04 * 1024 ** 3,
-    builderCacheBytes: 4420000000,
-    builderReclaimableBytes: 4420000000,
-    snapshotCount: 22,
-    unmatchedSnapshots: 15,
-    images: [
-      {
-        name: 'copse-worker:local',
-        bytes: 598000000,
-        snapshotBytes: 2.81 * 1024 ** 3,
-        eligible: false,
+  containers: missing
+    ? emptyContainerStorage()
+    : {
+        ...emptyContainerStorage(),
+        available: true,
+        busy,
+        builderRunning: true,
+        totalBytes: 69.49 * 1024 ** 3,
+        snapshotsBytes: 53.37 * 1024 ** 3,
+        containersBytes: 15.07 * 1024 ** 3,
+        builderDiskBytes: 15.07 * 1024 ** 3,
+        blobsBytes: 1.01 * 1024 ** 3,
+        otherBytes: 0.04 * 1024 ** 3,
+        builderCacheBytes: 4420000000,
+        builderReclaimableBytes: 4420000000,
+        snapshotCount: 22,
+        unmatchedSnapshots: 15,
+        images: [
+          {
+            name: 'copse-worker:local',
+            bytes: 598000000,
+            snapshotBytes: 2.81 * 1024 ** 3,
+            eligible: false,
+          },
+          {
+            name: 'copse-worker:e2e',
+            bytes: 334000000,
+            snapshotBytes: 2.09 * 1024 ** 3,
+            eligible: true,
+          },
+        ],
       },
-      {
-        name: 'copse-worker:e2e',
-        bytes: 334000000,
-        snapshotBytes: 2.09 * 1024 ** 3,
-        eligible: true,
-      },
-    ],
-  },
 })
 api.storage.containerCleanup = async (): Promise<StorageCleanupResult> => ({
   removed: 1,

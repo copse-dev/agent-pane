@@ -3,6 +3,9 @@ import { test } from 'node:test'
 import { mkdtemp, mkdir, writeFile, rm, lstat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { emptyContainerStorage } from '../../shared/types/storage-cleanup.ts'
 import { ContainerStorage } from './container-storage.ts'
 
 const hash = 'a'.repeat(64)
@@ -139,4 +142,41 @@ test('malformed inventory fails closed and filesystem totals remain visible when
     assert.ok(summary.totalBytes > 0)
     await assert.rejects(storage.clean('worker-images'), /unsupported/)
     assert.ok(!calls.some((args) => args[1] === 'delete'))
+  }))
+
+test('recognises the builder when the listing nests its id under configuration', async () =>
+  fixture(async (root) => {
+    const nested = {
+      configuration: {
+        id: 'buildkit',
+        labels: { 'com.apple.container.resource.role': 'builder' },
+      },
+      status: { state: 'running' },
+    }
+    const summary = await service(root, [image('copse-worker:e2e')], [nested]).storage.inspect()
+    assert.equal(summary.error, null)
+    assert.equal(summary.available, true)
+    assert.equal(summary.builderRunning, true)
+    assert.equal(summary.busy, false)
+  }))
+
+test('a Mac without the container CLI shows nothing and expiry has nothing to clean', async () =>
+  fixture(async (root) => {
+    const exec = promisify(execFile)
+    const storage = new ContainerStorage({
+      supported: true,
+      root,
+      lastUsed: async (): Promise<number> => 0,
+      exclusive: async <T>(run: () => Promise<T>): Promise<T> => run(),
+      // A real spawn of an absent binary, so the error has execFile's shape.
+      run: async (args): Promise<string> =>
+        (await exec('copse-test-missing-container-cli', args)).stdout,
+    })
+    assert.deepEqual(await storage.inspect(), emptyContainerStorage())
+    for (const action of ['worker-images', 'apple-images', 'apple-builder'] as const)
+      assert.deepEqual(await storage.clean(action, Date.now()), {
+        removed: 0,
+        bytes: 0,
+        skipped: 0,
+      })
   }))

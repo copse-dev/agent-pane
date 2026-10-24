@@ -160,3 +160,27 @@ test('Apple storage shows all categories and image names as text; shared cleanup
   await panel.refresh()
   assert.equal(button.disabled, true)
 })
+
+test('Apple storage is hidden when there is nothing to manage, and shown with an inventory error', async () => {
+  const base = createFakeApi()
+  const next = state()
+  const panel = createStorageMaintenancePanel({
+    ...base,
+    storage: { ...base.storage, maintenance: async () => next },
+  })
+  document.body.append(panel.element)
+  const section = panel.element.querySelector<HTMLFieldSetElement>('#storage-containers')
+  assert.ok(section)
+  assert.equal(section.hidden, true)
+  await panel.refresh()
+  assert.equal(section.hidden, true)
+  next.containers = emptyContainerStorage(
+    'Apple container returned an unsupported storage inventory',
+  )
+  await panel.refresh()
+  assert.equal(section.hidden, false)
+  assert.match(
+    panel.element.querySelector('#storage-containers-status')?.textContent ?? '',
+    /Inventory unavailable: Apple container returned/,
+  )
+})

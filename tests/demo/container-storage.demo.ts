@@ -54,4 +54,12 @@ describe('Apple container storage accounting', () => {
     await $('#storage-containers').scrollIntoView()
     await saveElementScreenshot('#storage-containers', 'settings-container-storage-busy.png')
   })
+  it('hides Apple container storage when the container CLI is not installed', async () => {
+    await browser.url('/container-storage-fixture.html?missing')
+    // The saved-data rows fill in once the maintenance state has loaded.
+    await browser.waitUntil(
+      async () => (await $('#storage-runs-size').getProperty('textContent')) !== 'Checking…',
+    )
+    await expect($('#storage-containers')).not.toBeDisplayed()
+  })
 })

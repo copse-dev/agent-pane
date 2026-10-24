@@ -34,10 +34,14 @@ const imagesSchema = z.array(
     ),
   }),
 )
+// Listings carry the container id at the top level or under `configuration`; accept either.
 const containersSchema = z.array(
   z.object({
-    id: z.string(),
-    configuration: z.object({ labels: z.record(z.string(), z.string()).optional() }),
+    id: z.string().optional(),
+    configuration: z.object({
+      id: z.string().optional(),
+      labels: z.record(z.string(), z.string()).optional(),
+    }),
     status: z.object({ state: z.string() }),
   }),
 )
@@ -46,6 +50,15 @@ const cacheSchema = z
   .array(z.object({ size: z.number().nonnegative(), inUse: z.boolean() }))
   .nullable()
   .transform((records) => records ?? [])
+
+/** `execFile` reports a missing `container` binary as a spawn ENOENT. */
+function cliMissing(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    Reflect.get(error, 'code') === 'ENOENT' &&
+    String(Reflect.get(error, 'syscall')).startsWith('spawn')
+  )
+}
 
 async function allocated(path: string): Promise<number> {
   const stat = await lstat(path).catch((error: unknown) => {
@@ -89,7 +102,7 @@ export class ContainerStorage {
       throw new Error('Apple container returned an unsupported storage inventory')
     const builder = containers.find(
       (entry) =>
-        entry.id === 'buildkit' &&
+        (entry.id ?? entry.configuration.id) === 'buildkit' &&
         entry.configuration.labels?.['com.apple.container.resource.role'] === 'builder',
     )
     return { images, containers, builder, busy: containers.some((entry) => entry !== builder) }
@@ -167,6 +180,8 @@ export class ContainerStorage {
         })),
       )
     } catch (error) {
+      // Apple container is optional: without its CLI there is nothing to show.
+      if (cliMissing(error)) return emptyContainerStorage()
       summary.error = errorMessage(error)
     }
     return summary
@@ -184,6 +199,18 @@ export class ContainerStorage {
   }
   async clean(action: ContainerStorageAction, olderThan?: number): Promise<StorageCleanupResult> {
     if (!this.dependencies.supported) return { removed: 0, bytes: 0, skipped: 0 }
+    try {
+      return await this.exclusiveClean(action, olderThan)
+    } catch (error) {
+      // Daily expiry runs on every Apple-silicon Mac; one without the CLI has nothing to clean.
+      if (cliMissing(error)) return { removed: 0, bytes: 0, skipped: 0 }
+      throw error
+    }
+  }
+  private async exclusiveClean(
+    action: ContainerStorageAction,
+    olderThan: number | undefined,
+  ): Promise<StorageCleanupResult> {
     const result = await this.dependencies.exclusive(async () => {
       const inventory = await this.inventory()
       // Apple's snapshot GC does not consider container references. Protect stopped containers too.
