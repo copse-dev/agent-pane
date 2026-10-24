@@ -460,4 +460,90 @@ describe('githubApiBackend', () => {
     assert.equal(first.checks, 'pending')
     assert.ok(!calls.some((call) => call.url.includes('/search/')))
   })
+
+  it('lists stacks across pages and reports a 404 as unavailable', async () => {
+    router = (_m: string, url: string): RouteResult => {
+      if (url.includes('/repos/octo/demo/stacks?per_page=100&page=1')) {
+        return {
+          body: [
+            {
+              number: 3,
+              base: { ref: 'main' },
+              open: true,
+              pull_requests: [
+                { number: 1, state: 'open', draft: false, merged_at: null, head: { ref: 'a' } },
+                { number: 2, state: 'open', draft: true, merged_at: null, head: { ref: 'b' } },
+              ],
+            },
+          ],
+        }
+      }
+      return { status: 404, body: { message: 'Not Found' } }
+    }
+    const stacks = await githubApiBackend.listStacks('octo', 'demo')
+    assert.equal(stacks.status, 'enabled')
+    assert.deepEqual(
+      stacks.stacks[0]?.entries.map((entry) => entry.position),
+      [1, 2],
+    )
+    assert.deepEqual(await githubApiBackend.listStacks('octo', 'nostacks'), {
+      status: 'unavailable',
+    })
+  })
+
+  it('throws when listing stacks fails for a reason other than 404', async () => {
+    router = (): RouteResult => ({ status: 500, body: { message: 'Server Error' } })
+    await assert.rejects(githubApiBackend.listStacks('octo', 'demo'))
+  })
+
+  it('adds stack membership to PR details, and still loads details when the stack read fails', async () => {
+    const pull = {
+      number: 7,
+      title: 'Layer two',
+      html_url: 'https://github.com/octo/demo/pull/7',
+      state: 'open',
+      head: { ref: 'layer-2' },
+      base: { ref: 'layer-1' },
+    }
+    let stacksStatus = 200
+    router = (_m: string, url: string): RouteResult => {
+      if (url.endsWith('/graphql')) {
+        return { body: { data: { repository: { pullRequest: { reviewDecision: null } } } } }
+      }
+      if (url.endsWith('/files?per_page=100')) return { body: [] }
+      if (url.includes('/stacks?pull_request=7')) {
+        return {
+          status: stacksStatus,
+          body:
+            stacksStatus === 200
+              ? [
+                  {
+                    number: 5,
+                    base: { ref: 'main' },
+                    open: true,
+                    pull_requests: [
+                      { number: 6, state: 'open', merged_at: null, head: { ref: 'layer-1' } },
+                      { number: 7, state: 'open', merged_at: null, head: { ref: 'layer-2' } },
+                    ],
+                  },
+                ]
+              : { message: 'Server Error' },
+        }
+      }
+      return { body: pull }
+    }
+    const details = await githubApiBackend.getPrDetails(REF)
+    const stack = details?.stack
+    assert.ok(stack)
+    assert.equal(stack.number, 5)
+    assert.equal(stack.baseRefName, 'main')
+    assert.equal(stack.entries.find((entry) => entry.number === 7)?.position, 2)
+
+    resetGitHubHttpCacheForTest()
+    stacksStatus = 500
+    const withoutStack = await githubApiBackend.getPrDetails(REF)
+    assert.ok(withoutStack)
+    assert.equal(withoutStack.title, 'Layer two')
+    assert.equal(withoutStack.stack, undefined)
+  })
 })

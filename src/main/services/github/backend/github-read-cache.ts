@@ -16,6 +16,7 @@ import type {
   GhPrDetails,
   GhPrFileDiff,
   GhPrSummary,
+  GhRepoStacks,
   PrActionResult,
 } from '@shared/types/git.ts'
 import { branchPrCache } from '../branch-pr-cache.ts'
@@ -31,6 +32,7 @@ const TTL = {
   issues: 30_000,
   issue: 60_000,
   search: 20_000,
+  stacks: 20_000,
   diff: 60_000,
 } as const
 
@@ -87,6 +89,10 @@ export function cachingGitHubBackend(inner: GitHubBackend): GitHubBackend {
     ttlMs: TTL.search,
     maxEntries: 64,
   })
+  const stacks = new AsyncTtlCache<string, GhRepoStacks>({
+    ttlMs: TTL.stacks,
+    maxEntries: 16,
+  })
 
   const handle = {
     clear(): void {
@@ -99,6 +105,7 @@ export function cachingGitHubBackend(inner: GitHubBackend): GitHubBackend {
       issuePages.clear()
       issues.clear()
       searches.clear()
+      stacks.clear()
     },
   }
   wrappers.push(handle)
@@ -110,6 +117,9 @@ export function cachingGitHubBackend(inner: GitHubBackend): GitHubBackend {
     diffs.clear()
     workspacePrs.clear()
     myPrs.clear()
+    // A write can change a stacked PR's state (draft, merged), which the
+    // repository's stack list carries too.
+    stacks.clear()
   }
 
   const backend: GitHubBackend = {
@@ -138,6 +148,9 @@ export function cachingGitHubBackend(inner: GitHubBackend): GitHubBackend {
 
     searchWorkspaceIssues: (query, limit) =>
       searches.get(`${query}:${String(limit)}`, () => inner.searchWorkspaceIssues(query, limit)),
+
+    listStacks: (owner, repo) =>
+      stacks.get(`${owner}/${repo}`, () => inner.listStacks(owner, repo)),
 
     async createPr(input) {
       const result = await inner.createPr(input)
