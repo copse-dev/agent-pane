@@ -7,8 +7,9 @@ import {
   type OutgoingHttpHeaders,
   type Server,
 } from 'node:http'
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { SandboxGitHubReads, SANDBOX_GITHUB_READ_ONLY_NOTE } from './sandbox-github-reads.ts'
 import { SANDBOX_GITHUB_SESSION_HEADER } from './sandbox-github-reads-config.ts'
 
@@ -159,13 +160,63 @@ describe('SandboxGitHubReads', () => {
     try {
       const access = await linux.spawnFor('thread-a')
       assert.deepEqual(access.allowUnixSockets, [])
-      assert.deepEqual(access.allowRead, [])
+      // Only the session's git configuration is read from its directory on Linux.
+      assert.equal(access.allowRead.length, 1)
+      assert.equal(dirname(access.env({})['GIT_CONFIG_GLOBAL'] ?? ''), access.allowRead[0])
       assert.ok(!Object.hasOwn(access.env({}), 'GH_CONFIG_DIR'))
       assert.ok(aliasFrom(access.env({})).endsWith('.github.copse.internal'))
     } finally {
       await linux.close()
       rmSync(linuxParent, { recursive: true, force: true })
     }
+  })
+
+  it('sends every remote form to the alias over a user or inherited rewrite, keeping the rest of their config', async (t) => {
+    if (spawnSync('git', ['--version']).status !== 0) {
+      t.skip('requires git')
+      return
+    }
+    const home = mkdtempSync('/tmp/sgh-home-')
+    t.after(() => {
+      rmSync(home, { recursive: true, force: true })
+    })
+    // Rewrites many users and CI's setup action carry, each the same length as
+    // one of the route's: git takes the first-defined, so the route must lead.
+    writeFileSync(
+      join(home, '.gitconfig'),
+      '[user]\n\tname = Real User\n[url "git@github.com:"]\n\tinsteadOf = https://github.com/\n',
+    )
+    const base: NodeJS.ProcessEnv = {
+      PATH: process.env['PATH'],
+      HOME: home,
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG_COUNT: '2',
+      GIT_CONFIG_KEY_0: 'url.https://github.com/.insteadOf',
+      GIT_CONFIG_VALUE_0: 'git@github.com:',
+      GIT_CONFIG_KEY_1: 'url.https://github.com/.insteadOf',
+      GIT_CONFIG_VALUE_1: 'ssh://git@github.com/',
+    }
+    const access = await reads.spawnFor('thread-precedence')
+    // As the spawn applies it: the route's variables over the base, undefined unsets.
+    const env: NodeJS.ProcessEnv = {}
+    for (const [key, value] of Object.entries({ ...base, ...access.env(base) })) {
+      if (value !== undefined) env[key] = value
+    }
+    const git = (...args: string[]): string =>
+      spawnSync('git', args, { env, encoding: 'utf8' }).stdout.trim()
+    const alias = aliasFrom(access.env({}))
+    for (const remote of [
+      'https://github.com/o/r.git',
+      'git@github.com:o/r.git',
+      'ssh://git@github.com/o/r.git',
+    ]) {
+      assert.equal(git('ls-remote', '--get-url', remote), `http://${alias}/o/r.git`, remote)
+    }
+    assert.equal(git('config', 'user.name'), 'Real User')
+    // The session file holds the alias, never the secret.
+    const file = readFileSync(env['GIT_CONFIG_GLOBAL'] ?? '', 'utf8')
+    assert.ok(file.includes(alias))
+    assert.ok(!file.includes(secretFrom(access.env(base))))
   })
 
   it('forwards a gh read with the desktop token, never the session secret', async () => {

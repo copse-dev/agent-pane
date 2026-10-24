@@ -19,8 +19,16 @@
  * sandboxed commands, so nothing in it is secret: a spawn gets its session's
  * secret only in its own environment.
  */
-import { randomBytes } from 'node:crypto'
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash, randomBytes } from 'node:crypto'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { Socket } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -41,10 +49,12 @@ import {
   sameSecret,
   sandboxGhConfigFiles,
   sandboxGhRouted,
+  sandboxGitGlobalConfig,
   sandboxGitHubEnv,
   SANDBOX_GITHUB_SESSION_HEADER,
   sessionAliasHost,
   sessionIdFromAliasHost,
+  userGlobalGitConfigIncludes,
 } from './sandbox-github-reads-config.ts'
 
 /** Appended to every policy refusal; the shell tool's denial signature keys on it. */
@@ -70,7 +80,7 @@ export interface SandboxGitHubSpawn {
   env: (base: NodeJS.ProcessEnv) => Record<string, string | undefined>
   /** Unix socket paths the spawn may connect to (macOS Seatbelt). */
   allowUnixSockets: string[]
-  /** Paths the spawn may read: the session's gh configuration. */
+  /** Paths the spawn may read: the session's git and (macOS) gh configuration. */
   allowRead: string[]
 }
 
@@ -135,6 +145,30 @@ function closeServer(server: Server): Promise<void> {
   })
 }
 
+/**
+ * The session's global git configuration for one spawn's environment, written
+ * when missing. Its name is its contents' hash, so spawns whose environments
+ * name the same user files share one file. Null leaves the user's global
+ * configuration in place and the route to the `GIT_CONFIG_*` rewrites alone,
+ * as before this file existed.
+ */
+function gitGlobalConfigFor(session: Session, base: NodeJS.ProcessEnv): string | null {
+  const includes = userGlobalGitConfigIncludes(base)
+  if (includes === null) return null
+  const contents = sandboxGitGlobalConfig(session.aliasHost, includes)
+  if (contents === null) return null
+  const digest = createHash('sha256').update(contents).digest('hex').slice(0, 12)
+  const path = join(session.dir, `git-${digest}.config`)
+  if (!existsSync(path)) {
+    try {
+      writeFileSync(path, contents, { mode: 0o600 })
+    } catch {
+      return null
+    }
+  }
+  return path
+}
+
 export class SandboxGitHubReads {
   /** The socket ASRT's proxy routes every session's git alias to. */
   readonly gitSocketPath: string
@@ -189,9 +223,10 @@ export class SandboxGitHubReads {
           aliasHost: session.aliasHost,
           secret: session.secret,
           ghConfigDir: session.gh?.configDir ?? null,
+          gitGlobalConfig: gitGlobalConfigFor(session, base),
         }),
       allowUnixSockets: session.gh ? [session.gh.socketPath] : [],
-      allowRead: session.gh ? [session.dir] : [],
+      allowRead: [session.dir],
     }
   }
 

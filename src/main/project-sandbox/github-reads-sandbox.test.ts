@@ -32,17 +32,25 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 /**
- * The environment without the runner's own git configuration. A rewrite of
- * the same prefix there wins over the route (docs/shell-permissions.md,
- * "Limits"), and CI's setup action rewrites `git@github.com:` to HTTPS through
- * `GIT_CONFIG_*` variables.
+ * The environment with the runner's own git configuration replaced by one
+ * competing rewrite, the one CI's setup action and many users carry:
+ * `git@github.com:` to HTTPS. It is as long as the route's own rule for that
+ * prefix, and git applies the first-defined, so the fetch below proves the
+ * route's rules come first.
  */
-function withoutAmbientGitConfig(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+function withCompetingGitRewrite(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const out: NodeJS.ProcessEnv = {}
   for (const [key, value] of Object.entries(env)) {
     if (!/^GIT_CONFIG_(?:COUNT|PARAMETERS|KEY_\d+|VALUE_\d+)$/.test(key)) out[key] = value
   }
-  return { ...out, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
+  return {
+    ...out,
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'url.https://github.com/.insteadOf',
+    GIT_CONFIG_VALUE_0: 'git@github.com:',
+  }
 }
 
 /** git smart HTTP over CGI, the way GitHub would answer it. */
@@ -164,7 +172,7 @@ it(
           const child = spawn(file, args, {
             cwd: workspace,
             env: withSandboxOnlyEnv(
-              { ...withoutAmbientGitConfig(env), GIT_TERMINAL_PROMPT: '0' },
+              { ...withCompetingGitRewrite(env), GIT_TERMINAL_PROMPT: '0' },
               withAccess ?? undefined,
             ),
           })

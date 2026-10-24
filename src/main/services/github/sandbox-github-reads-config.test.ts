@@ -5,10 +5,12 @@ import {
   presentedSecret,
   sameSecret,
   sandboxGhConfigFiles,
+  sandboxGitGlobalConfig,
   sandboxGitHubEnv,
   SANDBOX_GITHUB_SESSION_HEADER,
   sessionAliasHost,
   sessionIdFromAliasHost,
+  userGlobalGitConfigIncludes,
 } from './sandbox-github-reads-config.ts'
 
 const ALIAS = 's0123456789abcdef.github.copse.internal'
@@ -34,7 +36,10 @@ describe('session alias hosts', () => {
 
 describe('sandboxGitHubEnv', () => {
   it('rewrites every github.com remote form to the alias and sends the secret as a header', () => {
-    const env = sandboxGitHubEnv({}, { aliasHost: ALIAS, secret: SECRET, ghConfigDir: null })
+    const env = sandboxGitHubEnv(
+      {},
+      { aliasHost: ALIAS, secret: SECRET, ghConfigDir: null, gitGlobalConfig: null },
+    )
     const pairs: Array<[string | undefined, string | undefined]> = []
     for (let i = 0; i < Number(env['GIT_CONFIG_COUNT']); i++) {
       pairs.push([env[`GIT_CONFIG_KEY_${String(i)}`], env[`GIT_CONFIG_VALUE_${String(i)}`]])
@@ -52,7 +57,7 @@ describe('sandboxGitHubEnv', () => {
   it('appends after configuration the environment already carries', () => {
     const env = sandboxGitHubEnv(
       { GIT_CONFIG_COUNT: '2', GIT_CONFIG_KEY_0: 'a.b', GIT_CONFIG_VALUE_0: '1' },
-      { aliasHost: ALIAS, secret: SECRET, ghConfigDir: null },
+      { aliasHost: ALIAS, secret: SECRET, ghConfigDir: null, gitGlobalConfig: null },
     )
     assert.equal(env['GIT_CONFIG_COUNT'], '7')
     assert.equal(env['GIT_CONFIG_KEY_0'], undefined)
@@ -63,7 +68,12 @@ describe('sandboxGitHubEnv', () => {
   it('gives gh its config directory and the session secret, and unsets host tokens, only when gh is routed', () => {
     const withGh = sandboxGitHubEnv(
       { GH_TOKEN: 'ghp_real', GITHUB_TOKEN: 'ghp_real' },
-      { aliasHost: ALIAS, secret: SECRET, ghConfigDir: '/private/tmp/x/gh' },
+      {
+        aliasHost: ALIAS,
+        secret: SECRET,
+        ghConfigDir: '/private/tmp/x/gh',
+        gitGlobalConfig: null,
+      },
     )
     assert.equal(withGh['GH_CONFIG_DIR'], '/private/tmp/x/gh')
     // The secret travels in the spawn's environment, never in a file.
@@ -72,9 +82,66 @@ describe('sandboxGitHubEnv', () => {
       assert.ok(Object.hasOwn(withGh, key), key)
       assert.equal(withGh[key], undefined, key)
     }
-    const gitOnly = sandboxGitHubEnv({}, { aliasHost: ALIAS, secret: SECRET, ghConfigDir: null })
+    const gitOnly = sandboxGitHubEnv(
+      {},
+      { aliasHost: ALIAS, secret: SECRET, ghConfigDir: null, gitGlobalConfig: null },
+    )
     assert.ok(!Object.hasOwn(gitOnly, 'GH_CONFIG_DIR'))
     assert.ok(!Object.hasOwn(gitOnly, 'GH_TOKEN'))
+  })
+})
+
+describe('the session global git configuration', () => {
+  it('includes the global files git itself would read, in its order', () => {
+    assert.deepEqual(userGlobalGitConfigIncludes({}), ['~/.config/git/config', '~/.gitconfig'])
+    assert.deepEqual(userGlobalGitConfigIncludes({ XDG_CONFIG_HOME: '/home/u/cfg/' }), [
+      '/home/u/cfg/git/config',
+      '~/.gitconfig',
+    ])
+    assert.deepEqual(userGlobalGitConfigIncludes({ GIT_CONFIG_GLOBAL: '/etc/team.gitconfig' }), [
+      '/etc/team.gitconfig',
+    ])
+    assert.deepEqual(userGlobalGitConfigIncludes({ GIT_CONFIG_GLOBAL: '~/work.gitconfig' }), [
+      '~/work.gitconfig',
+    ])
+  })
+
+  it('leaves a relative or empty location to git, which reads it against its working directory', () => {
+    assert.equal(userGlobalGitConfigIncludes({ GIT_CONFIG_GLOBAL: 'team.gitconfig' }), null)
+    assert.equal(userGlobalGitConfigIncludes({ GIT_CONFIG_GLOBAL: '' }), null)
+    assert.equal(userGlobalGitConfigIncludes({ XDG_CONFIG_HOME: 'cfg' }), null)
+    assert.deepEqual(userGlobalGitConfigIncludes({ XDG_CONFIG_HOME: '' }), [
+      '~/.config/git/config',
+      '~/.gitconfig',
+    ])
+  })
+
+  it('defines the alias rewrites before including the user files', () => {
+    const text = sandboxGitGlobalConfig(ALIAS, ['~/.config/git/config', '/a b/"q"\\x'])
+    assert.equal(
+      text,
+      [
+        "# Written by Copse for sandboxed commands in one thread. GitHub remotes go to Copse's",
+        '# read-only route; your own global git configuration follows unchanged.',
+        `[url "http://${ALIAS}/"]`,
+        '\tinsteadOf = https://github.com/',
+        '\tinsteadOf = git@github.com:',
+        '\tinsteadOf = ssh://git@github.com/',
+        '[include]',
+        '\tpath = "~/.config/git/config"',
+        '\tpath = "/a b/\\"q\\"\\\\x"',
+        '',
+      ].join('\n'),
+    )
+    assert.equal(sandboxGitGlobalConfig(ALIAS, ['/a\nb']), null)
+  })
+
+  it('points GIT_CONFIG_GLOBAL at the session file only when there is one', () => {
+    const input = { aliasHost: ALIAS, secret: SECRET, ghConfigDir: null }
+    const routed = sandboxGitHubEnv({}, { ...input, gitGlobalConfig: '/tmp/s/1/git-a.config' })
+    assert.equal(routed['GIT_CONFIG_GLOBAL'], '/tmp/s/1/git-a.config')
+    const left = sandboxGitHubEnv({ GIT_CONFIG_GLOBAL: 'rel' }, { ...input, gitGlobalConfig: null })
+    assert.ok(!Object.hasOwn(left, 'GIT_CONFIG_GLOBAL'))
   })
 })
 

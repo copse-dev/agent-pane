@@ -5,11 +5,14 @@
  *
  * Route, in brief (docs/shell-permissions.md, "GitHub reads in the sandbox"):
  * - `git` rewrites github.com remotes (https, scp-style and ssh) to a
- *   per-session plain-HTTP alias, `s<id>.github.copse.internal`, through
- *   `GIT_CONFIG_*` variables. The project sandbox already sends a contained
- *   command's HTTP through ASRT's own proxy; Copse names the alias in that
- *   proxy's allowlist and routes it (ASRT `mitmProxy`) to a Copse-owned unix
- *   socket. Works under macOS Seatbelt and Linux bubblewrap alike.
+ *   per-session plain-HTTP alias, `s<id>.github.copse.internal`. The rewrites
+ *   lead a per-session `GIT_CONFIG_GLOBAL` file that then includes the user's
+ *   own global files, so they win over a user or inherited rewrite of the same
+ *   prefix; `GIT_CONFIG_*` variables carry the secret header. The project
+ *   sandbox already sends a contained command's HTTP through ASRT's own proxy;
+ *   Copse names the alias in that proxy's allowlist and routes it (ASRT
+ *   `mitmProxy`) to a Copse-owned unix socket. Works under macOS Seatbelt and
+ *   Linux bubblewrap alike.
  * - `gh` (macOS only) is pointed at a per-session unix socket by
  *   `http_unix_socket` in a Copse-owned `GH_CONFIG_DIR`; the spawn's Seatbelt
  *   profile allows connecting to that one socket path. Linux bubblewrap blocks
@@ -23,6 +26,7 @@
  * own git or gh configuration.
  */
 import { createHash, timingSafeEqual } from 'node:crypto'
+import { isAbsolute } from 'node:path'
 import { GITHUB_GIT_ALIAS_HOST } from '../container-runtime/github-capability-wire.ts'
 
 /** The header git sends the session secret in. */
@@ -68,10 +72,14 @@ const GH_ENV_OVERRIDES = [
   'GH_HOST',
 ] as const
 
+/** Every github.com remote form git is rewritten from. */
+const GITHUB_REMOTE_PREFIXES = ['https://github.com/', 'git@github.com:', 'ssh://git@github.com/']
+
 /**
  * The `GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n` pairs that send this session's
  * GitHub traffic to its alias. Appended after any the environment already
- * carries, so nothing set by the caller is overwritten.
+ * carries, so nothing set by the caller is overwritten. The rewrites repeat
+ * the session's global file for a git too old to read `GIT_CONFIG_GLOBAL`.
  */
 export function sandboxGitConfigEntries(
   aliasHost: string,
@@ -79,14 +87,65 @@ export function sandboxGitConfigEntries(
 ): Array<[key: string, value: string]> {
   const base = `http://${aliasHost}/`
   return [
-    [`url.${base}.insteadOf`, 'https://github.com/'],
-    [`url.${base}.insteadOf`, 'git@github.com:'],
-    [`url.${base}.insteadOf`, 'ssh://git@github.com/'],
+    ...GITHUB_REMOTE_PREFIXES.map((prefix): [string, string] => [`url.${base}.insteadOf`, prefix]),
     [`http.${base}.extraHeader`, `${SANDBOX_GITHUB_SESSION_HEADER}: ${secret}`],
     // An empty helper clears the list for the alias: the user's keychain
     // helper has nothing for it and cannot be written from the sandbox.
     [`credential.${base}.helper`, ''],
   ]
+}
+
+/** A config value git reads back verbatim, or null for one it cannot hold. */
+function gitConfigString(value: string): string | null {
+  if (/[\n\r\0]/.test(value)) return null
+  return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
+}
+
+/**
+ * The user's global git configuration files for a spawn's environment, in the
+ * order git reads them: `GIT_CONFIG_GLOBAL` when set, otherwise the XDG file
+ * and then `~/.gitconfig`. `~` stays for git to expand against the spawn's own
+ * HOME. Null leaves `GIT_CONFIG_GLOBAL` alone: git reads a relative or empty
+ * value against its working directory, which an include, resolved against its
+ * own file, cannot name.
+ */
+export function userGlobalGitConfigIncludes(env: NodeJS.ProcessEnv): string[] | null {
+  const explicit = env['GIT_CONFIG_GLOBAL']
+  if (explicit !== undefined) {
+    return isAbsolute(explicit) || explicit.startsWith('~/') ? [explicit] : null
+  }
+  const xdg = env['XDG_CONFIG_HOME']
+  if (!xdg) return ['~/.config/git/config', '~/.gitconfig']
+  return isAbsolute(xdg) ? [`${xdg.replace(/\/+$/, '')}/git/config`, '~/.gitconfig'] : null
+}
+
+/**
+ * The session's `GIT_CONFIG_GLOBAL` file: the alias rewrites, then the user's
+ * own global files. git applies the first-defined of equally long `insteadOf`
+ * rules, and global configuration is read before the repository's and before
+ * `GIT_CONFIG_*` variables, so a user or inherited rewrite of the same prefix
+ * no longer takes the remote elsewhere. It names the alias, never the secret.
+ * Null when an include path cannot be written into git configuration.
+ */
+export function sandboxGitGlobalConfig(
+  aliasHost: string,
+  includes: readonly string[],
+): string | null {
+  const paths: string[] = []
+  for (const include of includes) {
+    const quoted = gitConfigString(include)
+    if (quoted === null) return null
+    paths.push(quoted)
+  }
+  return [
+    "# Written by Copse for sandboxed commands in one thread. GitHub remotes go to Copse's",
+    '# read-only route; your own global git configuration follows unchanged.',
+    `[url "http://${aliasHost}/"]`,
+    ...GITHUB_REMOTE_PREFIXES.map((prefix) => `\tinsteadOf = ${prefix}`),
+    '[include]',
+    ...paths.map((path) => `\tpath = ${path}`),
+    '',
+  ].join('\n')
 }
 
 function existingGitConfigCount(env: NodeJS.ProcessEnv): number {
@@ -100,6 +159,8 @@ export interface SandboxGitHubEnvInput {
   secret: string
   /** The session's gh configuration directory, or null where gh is not routed. */
   ghConfigDir: string | null
+  /** The session's global git configuration file, or null to leave the user's in place. */
+  gitGlobalConfig: string | null
 }
 
 /**
@@ -119,6 +180,7 @@ export function sandboxGitHubEnv(
     out[`GIT_CONFIG_VALUE_${String(start + index)}`] = value
   })
   out['GIT_CONFIG_COUNT'] = String(start + entries.length)
+  if (input.gitGlobalConfig !== null) out['GIT_CONFIG_GLOBAL'] = input.gitGlobalConfig
   if (input.ghConfigDir !== null) {
     for (const key of GH_ENV_OVERRIDES) out[key] = undefined
     out['GH_TOKEN'] = input.secret

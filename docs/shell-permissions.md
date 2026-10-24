@@ -539,13 +539,17 @@ handler and policy ([thread-in-container A24](plans/thread-in-container.md)) on 
   refused before anything is forwarded. The user's token (`resolveGitHubApiToken`, the same
   desktop sign-in A24 uses; unauthenticated when there is none) is added on the host and redacted
   from responses. Redirects are returned, not followed.
-- **git (macOS and Linux).** `GIT_CONFIG_*` variables rewrite `https://github.com/`,
-  `git@github.com:` and `ssh://git@github.com/` to a per-thread plain-HTTP alias,
-  `s<id>.github.copse.internal`, and add `http.<alias>.extraHeader` carrying the thread's secret
-  (git sends no credential of its own) and an empty `credential.<alias>.helper`. The contained
-  command's HTTP already goes through ASRT's proxy. Copse adds `*.github.copse.internal:80` to the
-  proxy's allowlist and routes it with ASRT `mitmProxy` to a Copse-owned unix socket. No other
-  host, port or CONNECT tunnel is added, and the seatbelt and bubblewrap profiles are unchanged.
+- **git (macOS and Linux).** `https://github.com/`, `git@github.com:` and `ssh://git@github.com/`
+  are rewritten to a per-thread plain-HTTP alias, `s<id>.github.copse.internal`. The rewrites lead
+  a per-thread `GIT_CONFIG_GLOBAL` file that then includes the user's own global files
+  (`GIT_CONFIG_GLOBAL` when set, else the XDG file and `~/.gitconfig`), so every other global
+  setting still applies. The file names the alias, not the secret. `GIT_CONFIG_*` variables
+  repeat the rewrites for a git older than 2.32 and add `http.<alias>.extraHeader` carrying the
+  thread's secret (git sends no credential of its own) and an empty `credential.<alias>.helper`. The
+  contained command's HTTP already goes through ASRT's proxy. Copse adds
+  `*.github.copse.internal:80` to the proxy's allowlist and routes it with ASRT `mitmProxy` to a
+  Copse-owned unix socket. No other host, port or CONNECT tunnel is added, and the only sandbox
+  grant is reading the thread's directory.
 - **gh (macOS only).** `GH_CONFIG_DIR` names a Copse-owned per-thread directory whose `config.yml`
   sets `http_unix_socket`, and `GH_TOKEN` carries the thread's secret as the token. The spawn's
   Seatbelt profile allows connecting to that one socket (`allowUnixSockets`) and reading that
@@ -578,11 +582,15 @@ handler and policy ([thread-in-container A24](plans/thread-in-container.md)) on 
   never reaches the route at all. The `git-ssh-no-authentication` signature also recognises an SSH
   fetch that could not authenticate inside the sandbox when the route is off.
 - **Limits.** Reads are not limited to the project's repository. git applies the first-defined of
-  equally long `insteadOf` rules, and the route's come last, so a user rule for one of its
-  prefixes takes precedence over the route for remotes of that form. That covers rules in the
-  user's git config or inherited `GIT_CONFIG_*` variables, for example `https://github.com/`
-  rewritten to SSH or `git@github.com:` rewritten to HTTPS. `run_background`, terminals, hooks and
-  ACP agents' own shells do not get the route.
+  equally long `insteadOf` rules. The route's rules come first in the global file, so they win over
+  the same prefix rewritten in the user's global or repository config or in inherited
+  `GIT_CONFIG_*` variables (`https://github.com/` to SSH, `git@github.com:` to HTTPS). A longer
+  rewrite (one naming an owner) still wins anywhere, since git prefers the longest match. So does a
+  same-length rewrite in the system config (`/etc/gitconfig`), read before any global file, or any
+  rewrite when the environment's own `GIT_CONFIG_GLOBAL` or `XDG_CONFIG_HOME` is relative, which
+  an include cannot name. `git config --global` in a contained command reads the thread's
+  file, never edits the user's. `run_background`, terminals, hooks and ACP agents' own shells do
+  not get the route.
 
 This complements the explicit host tools `gh_api_read` and `git_fetch`
 ([Host-side read tools](#host-side-read-tools), #3862): those construct a fixed request
