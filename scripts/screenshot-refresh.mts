@@ -145,7 +145,7 @@ function main(): void {
   const mainSha = env['MAIN_SHA'] ?? ''
   if (!SHA.test(mainSha) || git(['rev-parse', 'HEAD']) !== mainSha)
     throw new Error('MAIN_SHA must be the checked-out main commit')
-  const number = Number(env['PULL_NUMBER'] || 0)
+  const number = Number(env['PULL_NUMBER'] ?? '')
   let pull: RefreshPull | null = null
   if (number > 0) {
     const head = env['PULL_HEAD'] ?? ''
@@ -157,7 +157,7 @@ function main(): void {
     pull = {
       number,
       open: env['PULL_OPEN'] === 'true',
-      renderedMain: present ? git(['merge-base', head, mainSha]) || null : null,
+      renderedMain: present ? git(['merge-base', head, mainSha]) : null,
       ownHead: present && isRefreshCommit(head),
     }
   }
