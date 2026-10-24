@@ -23,9 +23,9 @@ describe('withoutFirewallBypass', () => {
   it('drops entries that would exempt an intercepted registry and keeps the rest', () => {
     assert.equal(
       withoutFirewallBypass(
-        'localhost,127.0.0.1,registry.npmjs.org,.npmjs.org,files.pythonhosted.org,crates.io,pypi.org,*',
+        'localhost,127.0.0.1,registry.npmjs.org,.npmjs.org,files.pythonhosted.org,crates.io,pypi.org,upload.pypi.org,*',
       ),
-      'localhost,127.0.0.1,pypi.org',
+      'localhost,127.0.0.1,upload.pypi.org',
     )
     assert.equal(withoutFirewallBypass(undefined), '')
   })

@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   INTERCEPTED_REGISTRY_HOSTS,
+  metadataForRequest,
   normalizePythonName,
   packageForDownload,
   packageKey,
@@ -118,7 +119,12 @@ describe('packageForDownload — crates.io', () => {
 describe('intercepted hosts', () => {
   it('classifies nothing outside the intercepted list', () => {
     assert.equal(packageForDownload('registry.example.com', '/lodash/-/lodash-1.0.0.tgz'), null)
+    assert.equal(packageForDownload('pypi.example.com', '/packages/aa/six-1.16.0.tar.gz'), null)
+  })
+
+  it('reads downloads only from the hosts that serve them', () => {
     assert.equal(packageForDownload('pypi.org', '/packages/aa/six-1.16.0.tar.gz'), null)
+    assert.equal(packageForDownload('index.crates.io', '/crates/itoa/itoa-1.0.0.crate'), null)
   })
 
   it('covers each supported ecosystem', () => {
@@ -133,5 +139,70 @@ describe('intercepted hosts', () => {
       packageKey({ ecosystem: 'npm', name: 'x', version: null }),
       packageKey({ ecosystem: 'npm', name: 'x', version: '1.0.0' }),
     )
+  })
+})
+
+describe('metadataForRequest', () => {
+  it('names the package of an npm packument, scoped or not', () => {
+    assert.deepEqual(metadataForRequest('registry.npmjs.org', '/lodash'), {
+      ecosystem: 'npm',
+      name: 'lodash',
+    })
+    assert.deepEqual(metadataForRequest('registry.yarnpkg.com', '/@types%2fnode'), {
+      ecosystem: 'npm',
+      name: '@types/node',
+    })
+    assert.deepEqual(metadataForRequest('registry.npmjs.org', '/@types/node'), {
+      ecosystem: 'npm',
+      name: '@types/node',
+    })
+  })
+
+  it('leaves other npm endpoints alone', () => {
+    for (const path of [
+      '/',
+      '/lodash/-/lodash-4.17.21.tgz',
+      '/lodash/4.17.21',
+      '/lodash/latest',
+      '/-/v1/search?text=x',
+      '/-/npm/v1/security/advisories/bulk',
+    ]) {
+      assert.equal(metadataForRequest('registry.npmjs.org', path), null, path)
+    }
+  })
+
+  it('names the project of a PyPI simple index page', () => {
+    assert.deepEqual(metadataForRequest('pypi.org', '/simple/Typing_Extensions/'), {
+      ecosystem: 'PyPI',
+      name: 'typing-extensions',
+    })
+    assert.deepEqual(metadataForRequest('pypi.org', '/simple/six'), {
+      ecosystem: 'PyPI',
+      name: 'six',
+    })
+    assert.equal(metadataForRequest('pypi.org', '/simple/'), null)
+    assert.equal(metadataForRequest('pypi.org', '/pypi/six/json'), null)
+  })
+
+  it('names the crate of a sparse index file', () => {
+    const files = [
+      { path: '/1/a', name: 'a' },
+      { path: '/2/ab', name: 'ab' },
+      { path: '/3/a/abc', name: 'abc' },
+      { path: '/se/rd/serde', name: 'serde' },
+    ]
+    for (const { path, name } of files) {
+      assert.deepEqual(metadataForRequest('index.crates.io', path), {
+        ecosystem: 'crates.io',
+        name,
+      })
+    }
+    assert.equal(metadataForRequest('index.crates.io', '/config.json'), null)
+  })
+
+  it('names nothing on download hosts or unknown hosts', () => {
+    assert.equal(metadataForRequest('files.pythonhosted.org', '/simple/six/'), null)
+    assert.equal(metadataForRequest('static.crates.io', '/se/rd/serde'), null)
+    assert.equal(metadataForRequest('registry.example.com', '/lodash'), null)
   })
 })

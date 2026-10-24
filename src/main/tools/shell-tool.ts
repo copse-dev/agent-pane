@@ -271,6 +271,7 @@ export const runShellTool = defineTool({
     'If you already expect a command to need the network or files outside the workspace (e.g. gh, cloud CLIs), set expects_sandbox_block so the user is asked up front instead of after a failed sandboxed attempt. ' +
     'Do not read credential files — .env and its variants, ~/.ssh, ~/.aws, keychains — inside or outside the workspace; ask the user for the value you need instead. ' +
     'Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) run with install lifecycle scripts disabled, and a download of a package on a known-malware list is refused with a 403. ' +
+    'Versions published to the public npm, PyPI and crates.io registries in the last 48 hours are not offered to these installs: a version range resolves to an older version, and an exact pin to a newer one fails as not found. ' +
     'A foreground command may run up to 30 minutes (timeout_ms). Use run_background for dev servers and watchers, and for bounded work expected to leave you waiting (long builds, test suites, evals, data generation, migrations, and similar jobs); arm wake_on_completion and end the turn instead of polling. ' +
     "Piping a command through `tail`/`head` normally masks the earlier command's exit code; run_shell enables pipefail so a failing pipeline is still reported as failed, while a producer that only stopped because `head` closed the pipe early still counts as success.",
   parameters: z.object({
