@@ -27,13 +27,7 @@
  * same trust level as the model's own `expects_sandbox_block` hint.
  */
 
-import {
-  SHELL_INTERPRETERS,
-  commandName,
-  inlineCodeBody,
-  shellSegments,
-  unwrapWrappers,
-} from './shell-argv.ts'
+import { SHELL_INTERPRETERS, commandName, shellSegments, unwrapWrappers } from './shell-argv.ts'
 
 export interface SandboxDenialClassification {
   /** Stable operation descriptor, independent of which tool ran the command (issue #1436 point 2). */
@@ -70,6 +64,21 @@ const GIT_VALUE_OPTIONS: ReadonlySet<string> = new Set([
 ])
 
 /**
+ * A shell's `-c`, alone or ending a cluster of single-letter options (`bash -lc`,
+ * `sh -ec`). The shared `inlineCodeBody` matches only the exact flag, and its
+ * `-e` means inline code to node, not errexit to a shell.
+ */
+const SHELL_INLINE_CODE_FLAG = /^-[a-z]*c$/
+
+/** The command string a shell interpreter's argv runs with `-c`, or null. */
+function shellInlineBody(argv: readonly string[]): string | null {
+  for (let index = 1; index < argv.length - 1; index += 1) {
+    if (SHELL_INLINE_CODE_FLAG.test(argv[index] ?? '')) return argv[index + 1] ?? null
+  }
+  return null
+}
+
+/**
  * Every argv that runs as a command, after wrapper unwrapping (`env FOO=1 git
  * push`, `timeout 5 gh …`), including the body of `sh -c '…'`. Built from the
  * shell parser alone — never the raw-text fallback — so a program name inside a
@@ -83,7 +92,7 @@ function commandArgvs(command: string): string[][] {
     if (argv.length === 0) continue
     argvs.push(argv)
     if (SHELL_INTERPRETERS.has(commandName(argv[0]))) {
-      const body = inlineCodeBody(argv)
+      const body = shellInlineBody(argv)
       if (body !== null) argvs.push(...commandArgvs(body))
     }
   }

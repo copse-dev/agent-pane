@@ -145,6 +145,13 @@ describe('operationDescriptorForCommand', () => {
     assert.equal(operationDescriptorForCommand('git -c http.version=HTTP/1.1 push'), 'git push')
     assert.equal(operationDescriptorForCommand('timeout 30 git ls-remote origin'), 'git ls-remote')
     assert.equal(operationDescriptorForCommand("bash -c 'git fetch origin'"), 'git fetch')
+    assert.equal(
+      operationDescriptorForCommand("bash -lc 'cd repo && git fetch origin'"),
+      'git fetch',
+    )
+    assert.equal(operationDescriptorForCommand("sh -ec 'git push origin HEAD'"), 'git push')
+    assert.equal(operationDescriptorForCommand("bash -e -c 'git fetch'"), 'git fetch')
+    assert.equal(operationDescriptorForCommand("zsh -lc 'gh pr view 42'"), 'read ~/.config/gh')
     assert.equal(operationDescriptorForCommand('pnpm build; gh pr view 42'), 'read ~/.config/gh')
     assert.equal(operationDescriptorForCommand('env GH_PAGER= gh pr list'), 'read ~/.config/gh')
   })
