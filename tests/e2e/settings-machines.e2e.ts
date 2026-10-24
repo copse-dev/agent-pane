@@ -10,6 +10,7 @@ import {
 import { MachineManager } from '../../src/main/services/machines/machine-manager.ts'
 import {
   machineStoreSchema,
+  type MachineStore,
   type MachineStoreData,
 } from '../../src/main/services/machines/machine-store.ts'
 import { createKeyringCipher } from '../../src/main/services/storage/keyring-cipher.ts'
@@ -38,7 +39,7 @@ describe('Machines settings', function () {
       key = next
     },
   })
-  const store = {
+  const store: MachineStore = {
     enabled: () => true,
     load: () => saved,
     save: async (next: MachineStoreData) => {
@@ -98,7 +99,10 @@ describe('Machines settings', function () {
   after(async () => {
     await host?.close()
     await new Promise<void>((resolve) => {
-      if (native) native.close(() => resolve())
+      if (native)
+        native.close(() => {
+          resolve()
+        })
       else resolve()
     })
     writeE2eEnv({
