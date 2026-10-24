@@ -851,7 +851,14 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
   it('separates the write-capable publisher from pull-request code execution', () => {
     assert.match(workflow, /^ {2}workflow_run:\n {4}workflows: \[CI\]\n {4}types: \[completed\]$/m)
     assert.doesNotMatch(workflow, /pull_request_target/)
-    assert.match(workflow, /github\.event\.workflow_run\.conclusion == 'success'/)
+    // A red run publishes only what it rendered (discovery checks the job);
+    // a cancelled run was superseded or stopped and never publishes.
+    assert.match(
+      workflow,
+      /\(github\.event\.workflow_run\.conclusion == 'success' \|\|\n {6}github\.event\.workflow_run\.conclusion == 'failure' \|\|\n {6}github\.event\.workflow_run\.conclusion == 'timed_out'\) &&/,
+    )
+    assert.doesNotMatch(workflow, /conclusion (?:==|!=) 'cancelled'/)
+    assert.match(workflow, /job\.name === 'screenshot-artifacts' && job\.conclusion === 'success'/)
     assert.match(
       workflow,
       /github\.event\.workflow_run\.head_repository\.full_name == github\.repository/,

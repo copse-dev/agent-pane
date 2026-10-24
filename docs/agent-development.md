@@ -372,6 +372,14 @@ while candidates await a decision and passes when there are none. The publisher 
 `screenshots-need-review` while a decision is pending and removes it when there are no candidates
 or a successful label or checkbox decision is recorded. Failed decisions keep the reminder.
 A push rechecks screenshots for the new head and adds the label again if review is needed.
+The evidence comment never stands in for a newer head: as soon as a push lands,
+`.github/workflows/screenshot-review-push.yml` replaces it with a "Waiting for CI on `<sha>`"
+notice and removes `screenshots-need-review`, writing no status, so no decision can be made before
+the new head renders. A red CI run still publishes evidence when its `screenshot-artifacts` job
+passed (it needs only build and e2e, so a lint or unit failure does not hold the review back); a red
+run that rendered nothing replaces the notice with "No screenshots for `<sha>`" and the run link.
+Lower layers of a screenshot stack are left to the stack gate, and stacks publish only from green
+runs.
 A maintainer decides with a label,
 which `.github/workflows/screenshot-review-labels.yml` acts on and then removes:
 `accept-screenshots` fast-forwards the PR branch to the compare commit, after checking that it is

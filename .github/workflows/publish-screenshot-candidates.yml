@@ -12,7 +12,15 @@ name: Publish screenshot candidates
 # are none. The `accept-screenshots` and
 # `decline-screenshots` labels record the decision
 # (screenshot-review-labels.yml); a push starts a new review, because statuses
-# belong to one SHA.
+# belong to one SHA. screenshot-review-push.yml retires the previous head's
+# evidence comment as soon as the push lands, so it never stands in for the new
+# head while this head renders.
+#
+# A red run still publishes what it rendered: `screenshot-artifacts` needs only
+# build and e2e, so a failure elsewhere (lint, a unit test) must not leave the
+# PR without evidence for its head. A red run that rendered nothing says so in
+# the comment and writes no status. Stacked PRs keep publishing only from green
+# runs, because stack coverage is attested from one.
 #
 # `workflow_run` is deliberately used instead of adding a
 # write token to the job that executes pull-request code. Nothing from the
@@ -41,10 +49,13 @@ jobs:
   publish:
     # A workflow_run receives secrets even when its source run came from a fork.
     # Reject forks before pushing any branch or writing to a PR.
-    # Failed/cancelled runs have no accepted evidence to publish.
+    # A cancelled run was superseded or stopped; its replacement publishes.
+    # A failed run publishes only if it rendered (see discovery below).
     if: >-
       github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.conclusion == 'success' &&
+      (github.event.workflow_run.conclusion == 'success' ||
+      github.event.workflow_run.conclusion == 'failure' ||
+      github.event.workflow_run.conclusion == 'timed_out') &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -73,11 +84,13 @@ jobs:
         env:
           RUN_ID: ${{ github.event.workflow_run.id }}
           RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         with:
           script: |
             const { owner, repo } = context.repo;
             const runId = Number(process.env.RUN_ID);
             const runHeadSha = process.env.RUN_HEAD_SHA;
+            const green = process.env.RUN_CONCLUSION === 'success';
             const candidates = context.payload.workflow_run.pull_requests || [];
 
             core.setOutput('eligible', 'false');
@@ -99,8 +112,9 @@ jobs:
             const integrationHead = ['main', 'promote/main', 'release'].includes(parent.head.ref);
             // Promotion (`promote/main`, promote-develop.yml) and merge-back PRs
             // carry commits whose screenshots were reviewed on their source PRs;
-            // their review gate passes unasked.
+            // their review gate passes unasked, once their CI is green.
             if (
+              green &&
               parent.state === 'open' &&
               sameRepository &&
               integrationHead &&
@@ -120,6 +134,40 @@ jobs:
                   'publishing no screenshot evidence.',
               );
               return;
+            }
+
+            // A red run can still have rendered this head: `screenshot-artifacts`
+            // needs only build and e2e. Publish that rather than leave the PR on
+            // a notice; when nothing rendered, the report step says so instead.
+            // Stacked PRs publish only from a green run, which attests coverage.
+            if (!green) {
+              const body = parent.body || '';
+              if (body.includes('<!-- copse-screenshot-stack:')) {
+                if (body.includes(`tip=#${number} -->`)) {
+                  core.setOutput('not-rendered', 'stack');
+                  core.setOutput('parent-number', String(number));
+                  core.setOutput('head-sha', runHeadSha);
+                }
+                core.notice(`Run ${runId} did not pass; stacked PRs publish screenshots only from a green run.`);
+                return;
+              }
+              const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+                owner,
+                repo,
+                run_id: runId,
+                filter: 'latest',
+                per_page: 100,
+              });
+              const rendered = jobs.some(
+                (job) => job.name === 'screenshot-artifacts' && job.conclusion === 'success',
+              );
+              if (!rendered) {
+                core.setOutput('not-rendered', 'e2e');
+                core.setOutput('parent-number', String(number));
+                core.setOutput('head-sha', runHeadSha);
+                core.notice(`Run ${runId} rendered no screenshots for ${runHeadSha}.`);
+                return;
+              }
             }
 
             const artifactName = `reference-screenshot-candidates-${runId}`;
@@ -942,6 +990,86 @@ jobs:
                 issue_number: parentNumber,
                 body,
               });
+            }
+
+      # A red run that rendered nothing for this head. Say so in place of the
+      # push notice (or older evidence), so the PR never reads as rendering or
+      # reviewable when it is neither. No status: a head without one reads as
+      # waiting, and the decision workflows refuse it.
+      - name: Report a run that rendered no screenshots
+        if: steps.discover.outputs.not-rendered != ''
+        uses: actions/github-script@v9
+        env:
+          PARENT_NUMBER: ${{ steps.discover.outputs.parent-number }}
+          EXPECTED_HEAD_SHA: ${{ steps.discover.outputs.head-sha }}
+          REASON: ${{ steps.discover.outputs.not-rendered }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const number = Number(process.env.PARENT_NUMBER);
+            const sha = process.env.EXPECTED_HEAD_SHA;
+            const marker = '<!-- copse-e2e-screenshot-review -->';
+
+            // Evidence or a decision an earlier run published for this head
+            // still stands; a later red re-run (a label re-runs CI) renders
+            // nothing new and must not replace it.
+            const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
+              owner,
+              repo,
+              ref: sha,
+              per_page: 100,
+            });
+            if (statuses.some((status) => status.context === 'Screenshot review')) {
+              core.info('This head already has a screenshot review; keeping it.');
+              return;
+            }
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: number,
+              per_page: 100,
+            });
+            // Like a run with no candidates, a red run never opens a comment.
+            const previous = comments.find(
+              (comment) => comment.user?.type === 'Bot' && comment.body?.includes(marker),
+            );
+            if (!previous) return;
+            const { data: parent } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            if (parent.state !== 'open' || parent.head.sha !== sha) {
+              core.notice(`PR #${number} moved past ${sha}; a later run reports on its head.`);
+              return;
+            }
+
+            const why =
+              process.env.REASON === 'stack'
+                ? 'a declared stack tip publishes its combined screenshots only from a green run'
+                : 'e2e did not run or did not pass, so no screenshots were rendered to review';
+            const body = [
+              marker,
+              '### Screenshot evidence',
+              '',
+              '<!-- copse-screenshot-review-state -->',
+              `**No screenshots for \`${sha.slice(0, 12)}\`.** [CI run ${process.env.RUN_ID}](${process.env.RUN_URL}) ` +
+                `failed: ${why}. Re-run the failed jobs or push a fix; this head's evidence and ` +
+                '`Screenshot review` check appear after a run that renders it.',
+              '<!-- /copse-screenshot-review-state -->',
+            ].join('\n');
+            if (previous.body !== body) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: previous.id, body });
+            }
+            if (parent.labels.some((label) => label.name === 'screenshots-need-review')) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner,
+                  repo,
+                  issue_number: number,
+                  name: 'screenshots-need-review',
+                });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+              }
             }
 
       - name: Load trusted screenshot stack policy
