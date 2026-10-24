@@ -134,3 +134,91 @@ it(
     }
   },
 )
+
+it(
+  'grants the install trees behind Volta, asdf, and mise shims, never the manager root',
+  { skip: process.platform === 'win32' },
+  () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'preparation-shims-')))
+    const executable = (path: string, body = ''): void => {
+      mkdirSync(dirname(path), { recursive: true })
+      writeFileSync(path, body)
+      chmodSync(path, 0o755)
+    }
+    try {
+      const volta = join(home, '.volta')
+      executable(join(volta, 'bin', 'volta-shim'))
+      symlinkSync('volta-shim', join(volta, 'bin', 'node'))
+      executable(join(volta, 'tools', 'image', 'node', '24.20.0', 'bin', 'node'))
+
+      const asdf = join(home, '.asdf')
+      executable(join(asdf, 'shims', 'node'), '#!/usr/bin/env bash\nexec asdf exec node "$@"\n')
+      executable(join(asdf, 'installs', 'nodejs', '24.20.0', 'bin', 'node'))
+      mkdirSync(join(asdf, 'plugins', 'nodejs'), { recursive: true })
+
+      const mise = join(home, '.local', 'share', 'mise')
+      executable(join(home, '.local', 'bin', 'mise'))
+      mkdirSync(join(mise, 'shims'), { recursive: true })
+      symlinkSync(join(home, '.local', 'bin', 'mise'), join(mise, 'shims', 'node'))
+      executable(join(mise, 'installs', 'node', '24.20.0', 'bin', 'node'))
+
+      const cases: Array<[string, string, string[]]> = [
+        [join(volta, 'bin'), volta, ['bin', 'tools']],
+        [join(asdf, 'shims'), asdf, ['shims', 'installs', 'plugins']],
+        [join(mise, 'shims'), mise, ['shims', 'installs']],
+      ]
+      for (const [path, root, subtrees] of cases) {
+        const allow = preparationNodeToolchainReadPaths({ PATH: path }, home)
+        for (const subtree of subtrees) {
+          assert.ok(allow.includes(join(root, subtree)), `${root} ${subtree}`)
+          assert.ok(allow.includes(`${join(root, subtree)}/**`), `${root} ${subtree}`)
+        }
+        for (const broad of [home, root, join(home, '.local')]) {
+          assert.ok(!allow.includes(broad), broad)
+          assert.ok(!allow.includes(`${broad}/**`), broad)
+        }
+      }
+
+      // The data root follows the manager's override variable.
+      const custom = join(home, 'volta-home')
+      executable(join(custom, 'bin', 'volta-shim'))
+      symlinkSync('volta-shim', join(custom, 'bin', 'node'))
+      mkdirSync(join(custom, 'tools'))
+      const overridden = preparationNodeToolchainReadPaths(
+        { PATH: join(custom, 'bin'), VOLTA_HOME: custom },
+        home,
+      )
+      assert.ok(overridden.includes(`${join(custom, 'tools')}/**`))
+      assert.ok(!overridden.includes(`${join(volta, 'tools')}/**`))
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  },
+)
+
+it(
+  'does not treat an unrelated bin directory, or a manager rooted at home, as a shim layout',
+  { skip: process.platform === 'win32' },
+  () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'preparation-not-shims-')))
+    try {
+      for (const path of [join(home, 'bin', 'node'), join(home, '.volta', 'tools', 'node')]) {
+        mkdirSync(dirname(path), { recursive: true })
+        writeFileSync(path, '')
+        chmodSync(path, 0o755)
+      }
+      mkdirSync(join(home, 'tools'))
+      const bin = join(home, 'bin')
+      assert.deepEqual(preparationNodeToolchainReadPaths({ PATH: bin }, home), [join(bin, 'node')])
+      assert.deepEqual(preparationNodeToolchainReadPaths({ PATH: bin, VOLTA_HOME: home }, home), [
+        join(bin, 'node'),
+      ])
+      assert.deepEqual(
+        preparationNodeToolchainReadPaths({ PATH: bin, VOLTA_HOME: 'relative' }, home),
+        [join(bin, 'node')],
+      )
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  },
+)
