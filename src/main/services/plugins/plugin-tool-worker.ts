@@ -5,4 +5,5 @@
  * `join(__dirname, 'plugin-tool-worker.js')` lookup keep one stable path. Keep it
  * free of Electron imports.
  */
+import '../../disable-brotli-decoding.ts' // first: plugin tools fetch on Electron's Node
 import '@copse/plugin-sdk/plugin-tool-worker.ts'
