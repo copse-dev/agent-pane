@@ -49,6 +49,15 @@ export const GITHUB_NONMUTATING_CI_TOOLS = new Set([
 ])
 
 /**
+ * Host-side network reads whose request Copse constructs itself, so they need
+ * no shell approval: `gh_api_read` (GitHub REST GET / GraphQL query through the
+ * user's gh login) and `git_fetch` (origin-only fetch into
+ * `refs/remotes/origin/*` through the scratch-repository fetch). An explicit
+ * per-tool Ask still prompts. See docs/shell-permissions.md "Host-side read tools".
+ */
+export const HOST_NETWORK_READ_TOOLS = new Set(['gh_api_read', 'git_fetch'])
+
+/**
  * Mutating GitHub PR tools (create, rerun CI, approve, mark-ready, enable-auto-merge).
  * Unlike the read-only sets above, these change state on github.com, so the gate
  * route to the explicit GitHub gate — they are deliberately kept out of every

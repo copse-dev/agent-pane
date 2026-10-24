@@ -21,6 +21,7 @@ export const CHECKOUT_NEUTRAL_TOOLS = new Set<string>([
   'gh_pr_files',
   'gh_run_list',
   'gh_run_view',
+  'gh_api_read',
   'get_ci_status',
   'get_ci_failure_logs',
   'wait_for_ci_checks',

@@ -26,10 +26,10 @@ async function waitForComposer(): Promise<void> {
 }
 
 async function openBrowserMode(): Promise<void> {
-  const browserBtn = await $('.titlebar-btn[aria-label="Open browser"]')
+  const browserBtn = await $('.titlebar-btn[aria-label="Open browser"]').getElement()
   await browserBtn.click()
 
-  const pane = await $('#pane-files')
+  const pane = await $('#pane-files').getElement()
   await browser.waitUntil(async () => await pane.isDisplayed(), {
     timeout: 10_000,
     timeoutMsg: 'expected pane-files to open from titlebar',
@@ -70,7 +70,7 @@ describe('browser panel display', () => {
 
   after(async () => {
     resetUserData()
-    await page?.close()
+    await page.close()
   })
 
   it('opens browser mode with tabs, toolbar, and loaded page', async () => {
@@ -105,8 +105,14 @@ describe('browser panel display', () => {
         toolbarHeight: toolbarRect.height,
         headerCssHeight: headerStyle.height,
         toolbarCssHeight: toolbarStyle.height,
-        viewerBorderTop: getComputedStyle(document.getElementById('browser-viewer-host')!)
-          .borderTopWidth,
+        viewerBorderTop: getComputedStyle(
+          document.getElementById('browser-viewer-host') ??
+            ((): never => {
+              throw new Error(
+                "Missing fixture element: document.getElementById('browser-viewer-host')",
+              )
+            })(),
+        ).borderTopWidth,
       }
     })
     expect(chromeAlign.headerCssHeight).toBe(chromeAlign.toolbarCssHeight)
@@ -115,7 +121,7 @@ describe('browser panel display', () => {
     expect(Math.abs(chromeAlign.headerBottom - chromeAlign.toolbarBottom)).toBeLessThanOrEqual(1)
     expect(chromeAlign.viewerBorderTop).toBe('0px')
 
-    const caretAnimation = () =>
+    const caretAnimation = (): Promise<string> =>
       browser.execute(() => {
         const input = document.querySelector('.browser-url-input')
         if (!input) throw new Error('missing browser URL input')
@@ -153,7 +159,7 @@ describe('browser panel display', () => {
       ].join(';')
       document.body.append(host)
     })
-    const seam = await $('#e2e-browser-chrome-seam')
+    const seam = await $('#e2e-browser-chrome-seam').getElement()
     await seam.waitForExist({ timeout: 5_000 })
     await seam.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'browser-chrome-tabs-toolbar-seam.png'))
     await browser.execute(() => document.getElementById('e2e-browser-chrome-seam')?.remove())
@@ -162,10 +168,13 @@ describe('browser panel display', () => {
     await waitForWebviewTitle('Copse browser fixture')
     await expect($('.browser-tab-panel.is-active .browser-url-input')).toHaveValue(page.url)
     expect(page.requests).toContain('/page')
-    const heading = await browser.execute(async () => {
+    const heading: unknown = await browser.execute(async () => {
       const webview = document.querySelector<WebviewTag>('.browser-tab-panel.is-active webview')
       if (!webview) throw new Error('active browser webview missing')
-      return webview.executeJavaScript("document.querySelector('h1')?.textContent")
+      const result: unknown = await webview.executeJavaScript(
+        "document.querySelector('h1')?.textContent",
+      )
+      return result
     })
     expect(heading).toBe('Local browser page')
     // Capture the full app: WebDriver's element crop can misalign a native guest surface.
@@ -174,12 +183,16 @@ describe('browser panel display', () => {
     await navigateActiveBrowserTab(`${page.origin}/unstyled`)
     await waitForWebviewTitle('Copse browser fixture')
     const ordinarySurface = await browser.execute(async () => {
-      const host = document.querySelector('.browser-tab-panel.is-active .browser-webview-host')!
-      const webview = host.querySelector<WebviewTag>('webview')!
+      const host = document.querySelector('.browser-tab-panel.is-active .browser-webview-host')
+      const webview = host?.querySelector<WebviewTag>('webview')
+      if (!host || !webview) throw new Error('Missing active browser webview')
+      const guestText: unknown = await webview.executeJavaScript(
+        'getComputedStyle(document.body).color',
+      )
       return {
         canvas: host.classList.contains('is-canvas'),
         background: getComputedStyle(host).backgroundColor,
-        guestText: await webview.executeJavaScript('getComputedStyle(document.body).color'),
+        guestText,
       }
     })
     expect(ordinarySurface).toEqual({
@@ -193,7 +206,7 @@ describe('browser panel display', () => {
 
     const newTabBtn = await $('.browser-tabs-new-btn')
     await newTabBtn.click()
-    await browser.waitUntil(async () => (await $$('.browser-tabs-tab')).length >= 2, {
+    await browser.waitUntil(async () => (await $$('.browser-tabs-tab').getElements()).length >= 2, {
       timeout: 5_000,
       timeoutMsg: 'expected second browser tab after clicking +',
     })

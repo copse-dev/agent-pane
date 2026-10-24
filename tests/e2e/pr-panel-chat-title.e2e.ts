@@ -57,11 +57,13 @@ describe('PR panel chat-only title enrichment', () => {
 
   it('shows the PR title on hover and still opens the PR on click', async function () {
     this.timeout(120_000)
-    const link = await $('[data-message-id="chat-only-pr-message"] a[href*="/pull/99"]')
+    const link = await $(
+      '[data-message-id="chat-only-pr-message"] a[href*="/pull/99"]',
+    ).getElement()
     await link.waitForDisplayed({ timeout: 15_000 })
     await link.moveTo()
 
-    const card = await $('.pr-link-preview')
+    const card = await $('.pr-link-preview').getElement()
     await card.waitForDisplayed({ timeout: 15_000 })
     await expect(card.$('.pr-link-preview-title')).toHaveText('Ship sidebar thread PR status')
     await expect(card.$('.pr-link-preview-meta')).toHaveText('Pull request #99')
@@ -84,12 +86,14 @@ describe('PR panel chat-only title enrichment', () => {
 
   it('replaces the repo fallback for a PR absent from the open-list pools', async function () {
     this.timeout(120_000)
-    const pane = await $('#pane-files')
+    const pane = await $('#pane-files').getElement()
     if (!(await pane.isDisplayed())) {
       await $('.titlebar-panel-controls .titlebar-btn[aria-label="Toggle right panel"]').click()
       await pane.waitForDisplayed({ timeout: 10_000 })
     }
-    const linkedTitle = await $('.pr-list-row[data-pr-section="linked"] .pr-list-title')
+    const linkedTitle = await $(
+      '.pr-list-row[data-pr-section="linked"] .pr-list-title',
+    ).getElement()
     if (!(await linkedTitle.isDisplayed())) {
       await $('[aria-label="Open pull requests"]').click()
     }

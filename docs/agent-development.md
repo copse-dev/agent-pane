@@ -265,6 +265,12 @@ Use `writeSeedConfig` in `tests/e2e/helpers/seed-config.ts` to seed e2e state. I
 `config.json` no longer works. The thread store is mounted read-only into agent read tools for past
 thread references. See [`thread-store-format.md`](thread-store-format.md).
 
+Spec hooks run while the app is still alive, so remove profile, thread-store, checkout and fixture
+trees with `removeE2eTree` (`tests/e2e/helpers/remove-tree.ts`), not a bare recursive `rmSync`: it
+retries the `ENOTEMPTY` a concurrent write causes. It only absorbs a write already in flight. Never
+point a fixture checkout at the thread-store root itself, and let a running turn finish (or reload
+the session) before deleting a project the app is still writing.
+
 ## Focused validation
 
 The post-edit hook runs `scripts/hook-file-check.mts` through the Copse, Cursor, and Claude hook
@@ -300,6 +306,11 @@ Results land in `.tmp/remote-e2e/runs/<run-id>/`. With `COPSE_CI_REGISTRY`, `e2e
 pre-baked image. Use local `test:e2e` for macOS-specific behavior, where no remote host is available,
 or when a skill requires an on-machine display. For native GUI behavior or authenticated real-agent
 runs, use the isolated workflow in [`remote-agent-demo-debugging.md`](remote-agent-demo-debugging.md).
+
+Use a spare macOS GUI machine when validation needs the real product and a real agent: authenticated
+ACP inference, native macOS UI, GUI-only reproduction, or real-model demo recording. Isolate the app
+profile and project workspace, keep at least one run visible, and pair it with focused WebdriverIO
+evidence.
 
 Inside a Copse agent session, send local Electron e2e through Copse's `run_shell` host path with the
 same wrapper used by `test:e2e`:

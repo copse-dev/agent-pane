@@ -3,7 +3,11 @@ import type { Thread } from '@shared/types/thread.ts'
 import { disposeAcpSession } from './acp/acp-session-pool.ts'
 import { hasBackgroundProcessesForThread } from './exec/background-process.ts'
 import { stopSupervisedBackgroundProcessesForThread } from './exec/supervised-background-process.ts'
-import { destroyTerminalSessionsForThread, hasTerminalSessions } from './exec/terminal-service.ts'
+import {
+  destroyEmptyTerminalSessionsForThread,
+  destroyTerminalSessionsForThread,
+  hasTerminalSessions,
+} from './exec/terminal-service.ts'
 import { withThreadResourceFence } from './thread-resource-fence.ts'
 import { getThreadMeta, updateMetaOrThrow } from './thread-store.ts'
 import { getProjectRoot } from './workspace.ts'
@@ -23,6 +27,7 @@ export interface ThreadArchivingDependencies {
   updateMeta: typeof updateMetaOrThrow
   projectRoot: (projectId: string) => string | null
   hasTerminals: (threadId: string) => boolean
+  destroyEmptyTerminals: (threadId: string) => Promise<unknown>
   hasBackgroundProcesses: (projectId: string, threadId: string) => boolean
   destroyTerminals: (threadId: string) => Promise<unknown>
   stopBackgroundProcesses: (owner: { projectId: string; threadId: string }) => Promise<unknown>
@@ -35,6 +40,7 @@ const defaultDependencies: ThreadArchivingDependencies = {
   updateMeta: updateMetaOrThrow,
   projectRoot: getProjectRoot,
   hasTerminals: hasTerminalSessions,
+  destroyEmptyTerminals: destroyEmptyTerminalSessionsForThread,
   hasBackgroundProcesses: (projectId, threadId) =>
     hasBackgroundProcessesForThread({ projectId, threadId }),
   destroyTerminals: destroyTerminalSessionsForThread,
@@ -63,6 +69,9 @@ export async function archiveStoredThread(
   dependencies: ThreadArchivingDependencies = defaultDependencies,
 ): Promise<ThreadArchiveResult> {
   const live = async (): Promise<ThreadLiveResources> => {
+    // A terminal tab nobody ever typed into has nothing to lose; close it out
+    // before deciding what counts as still live rather than warning about it.
+    await dependencies.destroyEmptyTerminals(threadId)
     const meta = await dependencies.getMeta(projectId, threadId)
     return {
       agent: meta?.status === 'running' || runtime.isAgentActive(projectId, threadId),

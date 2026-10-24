@@ -7,7 +7,7 @@ describe('classifier settings with unavailable permission catalog', () => {
     await $('.prompt-input').waitForExist()
     // Inject at the demo API boundary; product settings and permission policy are unchanged.
     await browser.execute(() => {
-      window.api.classifiers.list = async () => [
+      window.api.classifiers.list = async (): ReturnType<typeof window.api.classifiers.list> => [
         {
           profile: {
             id: 'saved-classifier',
@@ -25,9 +25,13 @@ describe('classifier settings with unavailable permission catalog', () => {
           encrypted: null,
         },
       ]
-      window.api.classifiers.screening = async () => 'saved-classifier'
-      window.api.classifiers.background = async () => 'saved-classifier'
-      window.api.toolPermissions.list = async () => {
+      window.api.classifiers.screening = async (): ReturnType<
+        typeof window.api.classifiers.screening
+      > => 'saved-classifier'
+      window.api.classifiers.background = async (): ReturnType<
+        typeof window.api.classifiers.background
+      > => 'saved-classifier'
+      window.api.toolPermissions.list = async (): Promise<never> => {
         throw new Error('Permission catalog unavailable')
       }
     })

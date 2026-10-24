@@ -18,7 +18,9 @@ describe('terminal read screening coverage', function () {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })
 
-  after(() => resetUserData())
+  after(() => {
+    resetUserData()
+  })
 
   it('asks before sharing oversized output without claiming it was screened', async () => {
     await $('.titlebar-btn[aria-label="Open terminal"]').click()
@@ -26,9 +28,7 @@ describe('terminal read screening coverage', function () {
     await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
     await browser.waitUntil(
       () =>
-        browser.execute(
-          () => (document.querySelector('.xterm-rows')?.textContent?.length ?? 0) > 0,
-        ),
+        browser.execute(() => (document.querySelector('.xterm-rows')?.textContent.length ?? 0) > 0),
       { timeout: 20_000 },
     )
     await $('.xterm-helper-textarea').click()
@@ -38,7 +38,7 @@ describe('terminal read screening coverage', function () {
       () =>
         browser.execute(
           () =>
-            document.querySelector('.xterm-rows')?.textContent?.includes('TERMINAL_READ_READY') ??
+            document.querySelector('.xterm-rows')?.textContent.includes('TERMINAL_READ_READY') ??
             false,
         ),
       { timeout: 20_000 },

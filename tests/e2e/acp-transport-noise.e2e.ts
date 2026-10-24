@@ -4,9 +4,9 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('ACP transport noise demotion', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedAcpTransportNoiseFixture(process.cwd())
     await browser.reloadSession()

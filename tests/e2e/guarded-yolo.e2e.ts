@@ -1,10 +1,11 @@
+import { findAsync } from './helpers/find-async.ts'
 import {
   expectAssistantReply,
   installMockScenario,
   prepareMockTurn,
   prepareMockToolTurn,
 } from './helpers/mock-scenario.ts'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
@@ -12,20 +13,21 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-guarded-yolo-project'
 let workspaceRoot = ''
 
 async function enableGuardedYolo(captureWarning = false): Promise<void> {
   await $('.footer-overflow-trigger').click()
-  const items = await $$('.footer-overflow-item')
-  const enableItem = await items.find(async (item) =>
+  const items = await $$('.footer-overflow-item').getElements()
+  const enableItem = await findAsync(items, async (item) =>
     (await item.getText()).includes('Enable Guarded YOLO'),
   )
   if (!enableItem) throw new Error('Guarded YOLO footer action was not available')
   await enableItem.click()
 
-  const dialog = await $('#approval-dialog')
+  const dialog = await $('#approval-dialog').getElement()
   await dialog.waitForDisplayed({ timeout: 10_000 })
   await expect(dialog.$('.approval-heading')).toHaveText('Enable Guarded YOLO for this thread?')
   const body = await dialog.$('.approval-body').getText()
@@ -38,7 +40,7 @@ async function enableGuardedYolo(captureWarning = false): Promise<void> {
   }
   await dialog.$('.approval-approve').click()
 
-  const banner = await $('.guarded-yolo-banner')
+  const banner = await $('.guarded-yolo-banner').getElement()
   await banner.waitForDisplayed({ timeout: 10_000 })
   await expect(banner).toHaveAttribute('data-phase', 'armed')
 }
@@ -59,7 +61,7 @@ describe('Guarded YOLO shell mode', function () {
   })
 
   afterEach(async () => {
-    const dialog = await $('#approval-dialog')
+    const dialog = await $('#approval-dialog').getElement()
     if (await dialog.isDisplayed()) {
       await dialog.$('.approval-reject').click()
       await waitForAgentIdle()
@@ -68,7 +70,7 @@ describe('Guarded YOLO shell mode', function () {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
+    if (workspaceRoot) removeE2eTree(workspaceRoot)
   })
 
   it('requires explicit opt-in and stays active for the thread across turns', async () => {
@@ -80,7 +82,7 @@ describe('Guarded YOLO shell mode', function () {
     ])
     await $('.submit-btn').click()
 
-    const banner = await $('.guarded-yolo-banner')
+    const banner = await $('.guarded-yolo-banner').getElement()
     await expect(banner).toHaveAttribute('data-phase', 'active', { wait: 10_000 })
     const bannerText = await banner.getText()
     expect(bannerText).toContain('active for this thread')
@@ -105,7 +107,7 @@ describe('Guarded YOLO shell mode', function () {
   })
 
   it('keeps a non-bypassable confirmation for bounded destructive work', async () => {
-    const banner = await $('.guarded-yolo-banner')
+    const banner = await $('.guarded-yolo-banner').getElement()
     await expect(banner).toHaveAttribute('data-phase', 'active')
     await prepareMockToolTurn(
       'Remove the unused bounded-delete fixture directory.',
@@ -114,7 +116,7 @@ describe('Guarded YOLO shell mode', function () {
     )
     await $('.submit-btn').click()
 
-    const dialog = await $('#approval-dialog')
+    const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
     await expect(dialog.$('.approval-heading')).toHaveText('Guarded YOLO safety check')
     expect(await dialog.$('.approval-advice').getText()).toContain(
@@ -134,7 +136,7 @@ describe('Guarded YOLO shell mode', function () {
   })
 
   it('asks once before running anything as another user', async () => {
-    const banner = await $('.guarded-yolo-banner')
+    const banner = await $('.guarded-yolo-banner').getElement()
     await expect(banner).toHaveAttribute('data-phase', 'active')
     await prepareMockToolTurn(
       'Install curl with the system package manager.',
@@ -143,7 +145,7 @@ describe('Guarded YOLO shell mode', function () {
     )
     await $('.submit-btn').click()
 
-    const dialog = await $('#approval-dialog')
+    const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
     await expect(dialog.$('.approval-heading')).toHaveText('Guarded YOLO safety check')
     const advice = await dialog.$('.approval-advice').getText()
@@ -190,12 +192,12 @@ describe('Guarded YOLO shell mode', function () {
     }
 
     await submitCommand()
-    const dialog = await $('#approval-dialog')
+    const dialog = await $('#approval-dialog').getElement()
     await expect(dialog.$('.approval-heading')).toHaveText('Guarded YOLO safety check')
     expect(await dialog.$('.approval-body').getText()).toContain(command)
     expect(await dialog.$('.approval-advice').getText()).toContain('could not be confirmed')
     expect(await dialog.getText()).toMatch(/Runs (inside|outside) the project sandbox/)
-    for (const checkbox of await dialog.$$('input[type="checkbox"]')) {
+    for (const checkbox of await dialog.$$('input[type="checkbox"]').getElements()) {
       await expect(checkbox).not.toBeDisplayed()
     }
     expect(existsSync(marker)).toBe(false)
@@ -231,7 +233,7 @@ describe('Guarded YOLO shell mode', function () {
     // Idle can still describe the previous turn until the new tool is rendered.
     await browser.waitUntil(
       async () => {
-        const latest = (await $$('.tool-card-rollup')).at(-1)
+        const latest = (await $$('.tool-card-rollup').getElements()).at(-1)
         return latest !== undefined && (await latest.getText()).includes('rm -rf /')
       },
       { timeout: 30_000, timeoutMsg: 'The catastrophic command was never rendered' },
@@ -239,12 +241,12 @@ describe('Guarded YOLO shell mode', function () {
     await waitForAgentIdle()
 
     await expect($('#approval-dialog')).not.toBeDisplayed()
-    const rollups = await $$('.tool-card-rollup[data-status="error"]')
+    const rollups = await $$('.tool-card-rollup[data-status="error"]').getElements()
     const rollup = rollups.at(-1)
     if (rollup && !(await rollup.getProperty('open'))) {
       await rollup.$('summary.tool-card-header').click()
     }
-    const failures = await $$('.tool-card[data-tool-id][data-status="error"]')
+    const failures = await $$('.tool-card[data-tool-id][data-status="error"]').getElements()
     const failedTool = failures.at(-1)
     if (!failedTool) throw new Error('Expected the catastrophic command to be denied')
     await failedTool.waitForDisplayed({ timeout: 30_000 })
@@ -260,8 +262,10 @@ describe('Guarded YOLO shell mode', function () {
       },
     )
     expect(await failedTool.getText()).toContain('Guarded YOLO harm gate')
+    const toolId = await failedTool.getAttribute('data-tool-id')
+    if (!toolId) throw new Error('Missing failed tool id')
     await saveElementScreenshot(
-      `.tool-card[data-tool-id="${await failedTool.getAttribute('data-tool-id')}"]`,
+      `.tool-card[data-tool-id="${toolId}"]`,
       'guarded-yolo-hard-deny.png',
     )
   })

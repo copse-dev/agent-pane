@@ -153,7 +153,7 @@ export interface DisplacedShellShape {
  * (`git log`, `git status`, `git diff`, `git show`) is *not* here: it is a
  * legitimate workspace probe that auto-runs inside the sandbox, and issue #1845
  * names it a non-goal. Neither are `gh` subcommands with no first-class
- * equivalent (`gh api`, `gh issue`, `gh workflow`, `gh release`) — flagging
+ * equivalent (`gh issue`, `gh workflow`, `gh release`) — flagging
  * those would penalise unavoidable shell. That qualifier is what keeps false
  * positives rare, and it is why this is a table of shapes rather than a blanket
  * `/\bgh\b/`.
@@ -187,11 +187,12 @@ export const DISPLACED_SHELL_SHAPES: readonly DisplacedShellShape[] = [
     subcommand: ['run', 'watch'],
     instead: ['wait_for_ci_checks'],
   },
+  { id: 'gh-api', command: 'gh', subcommand: ['api'], instead: ['gh_api_read'] },
   {
     id: 'git-fetch',
     command: 'git',
     subcommand: ['fetch'],
-    instead: ['gh_pr_list', 'gh_run_list', 'get_ci_status'],
+    instead: ['git_fetch', 'gh_pr_list', 'gh_run_list', 'get_ci_status'],
   },
   {
     id: 'git-pull',

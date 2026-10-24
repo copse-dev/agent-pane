@@ -167,6 +167,42 @@
   flex-shrink: 0;
   max-width: 40%;
 }
+#titlebar button.workspace-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-weight: inherit;
+  line-height: var(--line-height-base);
+  padding: var(--spacing-xs);
+  border-radius: var(--radius-sm);
+  text-align: left;
+  cursor: pointer;
+}
+#titlebar .workspace-name-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#titlebar button.workspace-name:disabled .workspace-name-chevron {
+  display: none;
+}
+#titlebar button.workspace-name:enabled:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+#titlebar button.workspace-name:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+#titlebar button.workspace-name:disabled {
+  cursor: default;
+  opacity: 1;
+}
 #titlebar .workspace-name,
 #titlebar .workspace-ssh-target,
 #titlebar .workspace-branch {

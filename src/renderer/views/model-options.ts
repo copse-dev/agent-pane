@@ -107,25 +107,25 @@ export interface ModelOption {
   supportsImages?: boolean
   /** Route-level privacy evidence; ACP does not report account retention controls. */
   retention?: Readonly<AcpRetentionNotice>
+  /**
+   * The tracked cloud model id (`model-catalog.ts`) this route resolves to, when
+   * known — an ACP/remote-agent row's own spelling, canonicalised the same way
+   * its intellect hint is. Used only to find a same-`lineageScope` successor;
+   * absent means `value` is already a bare cloud id, or resolves to nothing
+   * tracked.
+   */
+  lineageId?: string
+  /**
+   * Suppression scope for `lineageId`: distinct agents/providers never hide one
+   * another's releases, since availability and billing differ per route. Bare
+   * cloud ids share the one "Cloud models" group and omit this, comparing
+   * globally.
+   */
+  lineageScope?: string
 }
 
 export function modelDisplayLabel(model: string): string {
   return displayModelLabel(model)
-}
-
-/**
- * Intellect hint for a model an agent named itself. The same weights arrive
- * spelled every which way ("Opus 4.8", "Claude 4.6 Sonnet", a bare id), so the
- * forms are resolved by {@link resolveAgentModelIdentity} — shared with the
- * routable frontier, so a row this picker can annotate is one an `auto:`
- * selector can also pick. Null when none resolve, so an unmeasured model
- * renders without a hint rather than with a guess.
- */
-function agentModelIntellectHint(
-  ...forms: ReadonlyArray<string | null | undefined>
-): string | null {
-  const id = resolveAgentModelIdentity(...forms)
-  return id === null ? null : modelIntellectHint(id)
 }
 
 async function pluginModelOptions(
@@ -183,13 +183,17 @@ function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
       for (const model of models) {
         const label = acpModelChoiceLabel(model, ': ')
         const versioned = acpModelVersionName(model.description)
-        const hint = agentModelIntellectHint(model.value, versioned, model.label, label)
+        const lineageId = resolveAgentModelIdentity(model.value, versioned, model.label, label)
+        const hint = lineageId === null ? null : modelIntellectHint(lineageId)
         options.push({
           retention: ACP_RETENTION_NOTICE,
           value: acpModelValue(agent.id, model.value),
           label: hint ? `${label}: ${hint}` : label,
           shortLabel: label,
           group,
+          // Scoped to this agent: a different agent's newer release never hides
+          // a model only this agent can actually run.
+          ...(lineageId ? { lineageId, lineageScope: `acp:${agent.id}` } : {}),
         })
       }
     } else {
@@ -383,6 +387,8 @@ async function remoteAgentOptions(
         group: OPENAI_AGENT_GROUP,
         retention: OPENAI_AGENT_RETENTION_NOTICE,
         supportsImages: true,
+        lineageId: id,
+        lineageScope: 'remote-agent:openai',
       })
     }
     const selected = parseRemoteAgentModelSelection(current)
@@ -407,10 +413,19 @@ async function remoteAgentOptions(
     }
 
     const seen = new Set<string>()
-    const add = (value: string, label: string): void => {
+    const add = (value: string, label: string, lineageId?: string): void => {
       if (seen.has(value)) return
       seen.add(value)
-      options.push({ value, label, group })
+      options.push({
+        value,
+        label,
+        group,
+        // Scoped to Cursor: an unrelated agent/provider's newer release never
+        // hides a model only Cursor's catalog actually offers.
+        ...(lineageId
+          ? { lineageId, lineageScope: `remote-agent:${REMOTE_AGENT_PROVIDER_CURSOR}` }
+          : {}),
+      })
     }
 
     // Account default (omit model on Create Agent) — always first when the key
@@ -424,10 +439,12 @@ async function remoteAgentOptions(
       const vendorLabel = model.label || model.id
       const label = canonicalModelLabel(vendorLabel)
       // Intellect-only hint (remote agents are subscription-billed, no token price).
-      const hint = agentModelIntellectHint(model.id, vendorLabel, label)
+      const lineageId = resolveAgentModelIdentity(model.id, vendorLabel, label)
+      const hint = lineageId === null ? null : modelIntellectHint(lineageId)
       add(
         remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR, model.id),
         hint ? `${label}: ${hint}` : label,
+        lineageId ?? undefined,
       )
     }
     const currentSelection = parseRemoteAgentModelSelection(current)
@@ -447,10 +464,20 @@ async function remoteAgentOptions(
     // on-device option (their own login) is the cheaper alternative.
     const group = preferAcpForClaude ? `${baseGroup} (billed to your API key)` : baseGroup
     const seen = new Set<string>()
-    const add = (value: string, label: string): void => {
+    const add = (value: string, label: string, lineageId?: string): void => {
       if (seen.has(value)) return
       seen.add(value)
-      options.push({ value, label, group })
+      options.push({
+        value,
+        label,
+        group,
+        // Scoped to the managed Anthropic agent, separately from the direct-key
+        // "Cloud models" group: the two are different billing routes, each with
+        // its own availability.
+        ...(lineageId
+          ? { lineageId, lineageScope: `remote-agent:${REMOTE_AGENT_PROVIDER_ANTHROPIC}` }
+          : {}),
+      })
     }
     // Same Claude ids as the Cloud models group, with the shared friendly
     // labels. Intellect-only hint (subscription-billed, like Cursor).
@@ -460,6 +487,7 @@ async function remoteAgentOptions(
       add(
         remoteAgentModelValue(REMOTE_AGENT_PROVIDER_ANTHROPIC, id),
         hint ? `${label}: ${hint}` : label,
+        id,
       )
     }
     const currentSelection = parseRemoteAgentModelSelection(current)
@@ -755,9 +783,25 @@ export async function fetchModelOptions(
   // `model-version-suppression.ts`), so a gated or keyless successor never hides
   // a model the user can run. A superseded model that is still the saved
   // selection stays, disabled and naming its successor, like a maker block.
-  const offered = unblockedOptions.map((option) => option.value)
+  //
+  // A bare cloud id (the one "Cloud models" group) compares against every other
+  // bare id offered. An ACP or remote-agent row instead carries its own
+  // `lineageId` (the tracked model its agent/provider route resolves to) and
+  // `lineageScope` (that agent or provider), so two releases the *same* agent
+  // offers can suppress each other without a different agent, or a different
+  // billing route for the same model, hiding anything.
+  const lineageIdsByScope = new Map<string, string[]>()
+  for (const option of unblockedOptions) {
+    const scope = option.lineageScope ?? ''
+    const id = option.lineageId ?? option.value
+    const bucket = lineageIdsByScope.get(scope)
+    if (bucket) bucket.push(id)
+    else lineageIdsByScope.set(scope, [id])
+  }
   const visibleOptions = unblockedOptions.flatMap((option) => {
-    const successor = supersedingModel(option.value, offered)
+    const id = option.lineageId ?? option.value
+    const offered = lineageIdsByScope.get(option.lineageScope ?? '') ?? []
+    const successor = supersedingModel(id, offered)
     if (successor === null) return [option]
     if (option.value !== current) return []
     return [

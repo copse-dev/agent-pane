@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
@@ -9,6 +9,7 @@ import {
   pinProfilePathForCapture,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // The Storage → Worktrees section lists checkouts for one project at a time.
 // Before the picker, that project was always whichever thread the sidebar
@@ -89,11 +90,11 @@ describe('settings → Storage → project picker', function () {
       try {
         git(projectRoot, ['worktree', 'remove', '--force', worktreeRoot])
       } catch {
-        rmSync(worktreeRoot, { recursive: true, force: true })
+        removeE2eTree(worktreeRoot)
       }
     }
     for (const root of [projectARoot, projectBRoot]) {
-      if (root) rmSync(root, { recursive: true, force: true })
+      if (root) removeE2eTree(root)
     }
   })
 

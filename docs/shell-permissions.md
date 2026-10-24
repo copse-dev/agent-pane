@@ -27,7 +27,7 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 | Read-only agent mode             | Default-deny tool allowlist; MCP tools need read-only/non-destructive hints and retain their ordinary gate. Child calls inherit the run scope.                                                                                                                                                                                                                                                           |
 | Strict external denial           | Classifier confidence plus a deterministic destructive signal can hard-deny. The classifier cannot authorize execution.                                                                                                                                                                                                                                                                                  |
 | Outside-project reads            | Thread-scoped, in-memory grant; every command must prove an eligible plain read. Credential and whole-home/root targets are excluded.                                                                                                                                                                                                                                                                    |
-| Commit-signing grants            | macOS-only isolated system signer access to an approved key/socket. Socket consent can be remembered for the project/identity until restart; private-key-file consent is one commit only. Git, hooks and the agent receive no direct key/socket access.                                                                                                                                                  |
+| Commit-signing grants            | macOS-only isolated system signer access to an approved key/socket. Socket access is granted automatically by default and cached for the project/identity until restart; an Always ask override on git_commit asks every time and never remembers. Private-key-file consent is one commit only. Git, hooks and the agent receive no direct key/socket access.                                            |
 | Web/browser grants               | Named origins; temporary scoped or persistent remembered grants. Hard URL/network denials and preview CSP remain enforced.                                                                                                                                                                                                                                                                               |
 | MCP/custom grants                | Exact tools; MCP identity includes origin, source, server and name. Custom requiresApproval tools cannot remember consent. Neither grant establishes a project OS sandbox for the handler/server.                                                                                                                                                                                                        |
 | Automation grants                | Exact schedule-owned MCP tools or eligible project-repository GitHub actions. No ambient shell, file, web-origin, ACP, sensitive-reveal or model-spend authority.                                                                                                                                                                                                                                        |
@@ -153,6 +153,8 @@ in that mode. Always allow does not bypass the restrictions below.
 | `preflight_worktree`                                                                                    | Enforcing OS sandbox required; network blocked, project/caches read-only, private disposable scratch. No unsandboxed fallback.                                                      | Yes         |
 | `prepare_worktree`                                                                                      | Fresh approval of exact plan/fingerprint; scoped project/cache writes and setup network policy. No reusable arbitrary-command grant or unsandboxed fallback.                        | No          |
 | `gh_pr_list`, `gh_pr_view`, `gh_pr_files`, `gh_run_list`, `gh_run_view`                                 | GitHub read authority and tool availability; explicitly excluded from unattended guests.                                                                                            | No          |
+| `gh_api_read`                                                                                           | Copse-built `gh api` argv: REST GET or one GraphQL `query`; no flags, headers, hosts or URLs; 256 KiB output, 10 pages, 60 s. See [Host-side read tools](#host-side-read-tools).    | No          |
+| `git_fetch`                                                                                             | Origin-only fetch of named branches / `refs/pull/<n>/head` into `refs/remotes/origin/*` through the host scratch repository. See [Host-side read tools](#host-side-read-tools).     | No          |
 | `get_ci_status`, `get_ci_failure_logs`, `wait_for_ci_checks`                                            | GitHub reads; bounded supervisor wait. Explicitly excluded from unattended guests.                                                                                                  | No          |
 | `gh_pr_create`, `gh_pr_approve`, `gh_pr_mark_ready`, `gh_pr_enable_auto_merge`, `gh_pr_rerun_failed_ci` | Fresh approval unless an exact owning schedule/project grant applies. Ordinary Always allow unavailable; excluded from unattended guests.                                           | No          |
 | `web_search`, `fetch_url`                                                                               | Web-origin policy, approval settings and hard URL/network denials, including across redirects.                                                                                      | No          |
@@ -513,6 +515,60 @@ in forgeable command output, Guarded YOLO and deterministic shell auto-approval 
 question; only an unattended container may advance it without a person while staying inside the same
 guest.
 
+## Host-side read tools
+
+`gh` through `run_shell` is an ambiguous “may reach” command: it starts in the network-less project
+sandbox, fails, and then asks for an unsandboxed retry. `gh api graphql` and `gh api -f …` always
+prompt via the harm gate, and the exact-operation denial cache means each differently-worded query
+prompts again. `git fetch origin <branch>` fails in the sandbox the same way. Two registered tools
+cover these reads without a prompt. Both are in `HOST_NETWORK_READ_TOOLS`
+(`permission-policy.ts`): they auto-run, an explicit per-tool **Ask** still prompts and **Block**
+still blocks. They are not in the read-only run allowlist, are excluded from unattended container
+guests, and are bridged to ACP agents. Their read-only guarantee comes from Copse constructing the
+request, not from a reduced credential; no new token is introduced.
+
+**`gh_api_read`** is registered with the other `gh` read tools and hidden whenever `gh` is
+unavailable or unauthenticated. It runs `gh` on the host without a shell, using the user's
+existing `gh` login exactly as `gh_pr_view` does, so it can read **any repository, organisation or
+user data that login can read**, not only the current project. The agent supplies an `endpoint` or
+a `graphql` document, optional `variables`, `jq` and `paginate`; nothing else (the schema is
+strict, so `method`, `headers`, `hostname` or flags are rejected).
+
+- REST: Copse runs `gh api --method GET --include [--jq=…] -- <endpoint>`. The endpoint must be a
+  relative API path with an optional query string: no scheme, host, `//`, leading `-`, `.`/`..`
+  segments (also percent-encoded), whitespace, control characters, `\` or `#`, and not `graphql`.
+- GraphQL: the document is parsed with the reference `graphql` package and must hold exactly one
+  operation, of type `query`, plus any fragments. Mutations and subscriptions (named, anonymous or
+  aliased), several operations, schema definitions and unparsable documents are refused before
+  anything is sent. Copse sends `{query, variables}` as the request body on stdin
+  (`gh api graphql --input -`), so variable values cannot become flags.
+- `jq` is passed as one `--jq=` argument. `gh` evaluates it with gojq, whose `env`/`$ENV` expose
+  the `gh` process environment (including a forwarded `GH_TOKEN`), so those and module
+  `import`/`include` are refused.
+- Output after `jq` is capped at `GH_API_READ_MAX_OUTPUT_BYTES` (256 KiB), truncated on a UTF-8
+  boundary with a notice to narrow the query. `paginate` follows REST `Link: rel="next"` headers
+  (keeping only the link's path, never its host) or the first GraphQL `pageInfo` (the query must
+  declare `$endCursor`), and stops after 10 pages with a notice naming where to resume. The whole
+  call has a 60 s budget.
+
+**`git_fetch`** is a core tool, unavailable in SSH workspaces. The agent names branches on origin
+and/or `refs/pull/<n>/head` (at most 20). Copse validates each as a plain branch name (no
+refspec, `refs/` path, remote, URL, option, `..`, `@{`, `~^:?*[\`, whitespace or control
+characters) and maps it to a fixed destination: `refs/heads/<b>` → `refs/remotes/origin/<b>`, and
+`refs/pull/<n>/head` → `refs/remotes/origin/pr/<n>`. A branch that is literally named `pr/<n>` shares
+that destination: a call naming both is refused, and separate calls overwrite each other. The fetch reuses the background default-branch fetch
+([threat model](threat-model.md#background-default-branch-fetch)): only an `http(s)://`, `ssh://` or
+`user@host:` `remote.origin.url` is accepted; the network step runs on the host in a fresh,
+per-call Copse scratch repository that never reads the project's `.git/config`; and a sandboxed,
+local-only fetch copies the tips into the project. Local branches, HEAD, the index and the working
+tree never change. The result lists each destination ref with its SHA. Any other origin returns a
+message pointing at `run_shell git fetch`.
+
+`backgroundDefaultBranchFetch` (Settings → Permissions → Upstream updates) does **not** govern
+`git_fetch`. That setting controls Copse's own unattended hourly/allocation fetches; `git_fetch` is
+an agent-requested action, governed like any tool by its per-tool permission (set it to Ask or
+Block to require approval or disable it).
+
 ## Read access outside the project
 
 A command that only reads fully-accounted-for paths outside the project receives the narrower
@@ -576,13 +632,15 @@ stay inside the available project sandbox even when `git` has a remembered shell
 bypass. Without containment, each commit prompts before staging. Auto-run disabled
 also prompts. An unsuccessful helper never triggers an unsigned or unsandboxed retry.
 
-On macOS, Settings → Permissions → Commit signing enables **scoped SSH signing
-approvals**, off by default. After a trusted sandboxed socket probe receives an OS
-permission denial, Copse asks to use the system SSH signer, one configured public key
-and the exact agent socket. Remembering covers that project and identity until app
-restart. Changes to the config, key, signer binary or socket require new approval.
-Always ask suppresses remembering; turning off the setting blocks further brokered
-ssh-agent signing. Config supplied by the repository never grants authority on its own.
+On macOS, Settings → Permissions → Commit signing has an **Allow signed commits**
+toggle, on by default. After a trusted sandboxed socket probe receives an OS
+permission denial, Copse uses the system SSH signer, one configured public key and
+the exact agent socket, without asking. The grant for that project and identity is
+cached until app restart; a changed config, key, signer binary or socket re-runs the
+probe and re-grants, still without asking. Setting the git_commit tool to Always ask
+in Tool Permissions forces a fresh approval for every signing helper use instead, and
+never remembers it. Turning the setting off blocks further brokered ssh-agent
+signing. Config supplied by the repository never grants authority on its own.
 
 The socket is available only to a separately sandboxed `/usr/bin/ssh-keygen`, with
 fixed arguments selecting that public key and the `git` signing namespace. Git and
@@ -731,7 +789,8 @@ While active:
   seatbelt rather than a full sandbox escape. Credential targets and paths as broad as `~` or `/`
   remain hard-denied by the harm gate.
 - Writing or opaque GitHub CLI forms (`gh pr create`, `gh api -X POST`, `gh api -f …`,
-  `gh api graphql`, …) prompt via the harm gate. A `gh api` call is a read only as a plain GET:
+  `gh api graphql`, …) prompt via the harm gate. Agents should use `gh_api_read` and `git_fetch`
+  ([Host-side read tools](#host-side-read-tools)) for GitHub reads and branch fetches instead. A `gh api` call is a read only as a plain GET:
   one REST endpoint (no full URL), no method other than `GET`, no field, `--input`, header or
   `--hostname` flag.
   `gh run download` may run inside the project sandbox, which contains its local writes.
@@ -923,6 +982,9 @@ the registry still fails contained and offers to run outside.
   the scratch directories configured ACP agents declare. Docker run/pull/push and Apple
   container run/image pull/image push are hard-external; read-only list/inspect/status commands
   remain sandbox-scoped.
+- `github/gh-api-read.ts` and `git-fetch-origin.ts`: validation and argv construction for the
+  host-side read tools `gh_api_read` and `git_fetch`; `default-branch-fetch.ts` owns the shared
+  host scratch-repository fetch.
 - `read-outside-grant.ts`: the thread-scoped read grant; the approval-prompt copy for it stays in
   `read-outside-project.ts` beside the other prompt formatters.
 - `safety-classifier.ts`: optional model classifier used only when the OS sandbox is unavailable.

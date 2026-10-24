@@ -29,7 +29,10 @@ describe('local classifier servers in settings', () => {
     writeE2eEnv({ TYPESAFE_API_KEY: undefined, FEATHERLESS_API_KEY: undefined })
     resetUserData()
     await new Promise<void>((resolve) => {
-      if (!listener) return resolve()
+      if (!listener) {
+        resolve()
+        return
+      }
       listener.close(() => {
         resolve()
       })
@@ -101,10 +104,13 @@ describe('local classifier servers in settings', () => {
     assert.equal(await winnow.$('.classifier-local-install').isExisting(), false)
 
     await winnow.$('.classifier-local-connect').click()
-    await browser.waitUntil(async () => (await $$('[data-classifier-id="winnow"]')).length === 1, {
-      timeout: 10_000,
-      timeoutMsg: 'the detected server was not saved as a connection',
-    })
+    await browser.waitUntil(
+      async () => (await $$('[data-classifier-id="winnow"]').getElements()).length === 1,
+      {
+        timeout: 10_000,
+        timeoutMsg: 'the detected server was not saved as a connection',
+      },
+    )
     await expect(winnow).toHaveText(expect.stringContaining('connection saved'))
     assert.equal(await winnow.$('.classifier-local-connect').isExisting(), false)
     await saveElementScreenshot(

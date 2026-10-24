@@ -369,13 +369,35 @@ const api: ApiClient = {
       ipcRenderer.invoke('agent:suggest-pr-body', projectId, threadId, contextJson),
     suggestNextStep: (contextJson: string) =>
       ipcRenderer.invoke('agent:suggest-next-step', contextJson),
-    onChunk: (handler: (threadId: string, chunk: import('@shared/types').StreamChunk) => void) => {
+    replayPendingDecisions: () => ipcRenderer.invoke('agent:replay-pending-decisions'),
+    attachTranscripts: (projectId, threadIds) =>
+      ipcRenderer.invoke('agent:attach-transcripts', projectId, threadIds),
+    onTranscriptSnapshot: (handler) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        snapshot: import('@shared/types').TranscriptSnapshot,
+      ): void => {
+        handler(snapshot)
+      }
+      ipcRenderer.on('agent:transcript-snapshot', listener)
+      return () => {
+        ipcRenderer.off('agent:transcript-snapshot', listener)
+      }
+    },
+    onChunk: (
+      handler: (
+        threadId: string,
+        chunk: import('@shared/types').StreamChunk,
+        stamp?: import('@shared/types').TranscriptStamp,
+      ) => void,
+    ) => {
       const listener = (
         _e: Electron.IpcRendererEvent,
         tid: string,
         chunk: import('@shared/types').StreamChunk,
+        stamp?: import('@shared/types').TranscriptStamp,
       ): void => {
-        handler(tid, chunk)
+        handler(tid, chunk, stamp)
       }
       ipcRenderer.on('agent:chunk', listener)
       return (): void => {
@@ -832,6 +854,27 @@ const api: ApiClient = {
     ) => ipcRenderer.invoke('plans:change', projectId, threadId, change),
   },
   threads: {
+    archiveState: (projectId: string, view: 'review' | 'archived') =>
+      ipcRenderer.invoke('threads:archive-state', projectId, view),
+    archiveDecision: (
+      projectId: string,
+      threadId: string,
+      decision: import('@shared/threads/auto-archive.ts').ThreadArchiveDecision,
+    ) => ipcRenderer.invoke('threads:archive-decision', projectId, threadId, decision),
+    onAutoArchived: (
+      handler: (event: import('@shared/threads/auto-archive.ts').ThreadAutoArchived) => void,
+    ) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        event: import('@shared/threads/auto-archive.ts').ThreadAutoArchived,
+      ): void => {
+        handler(event)
+      }
+      ipcRenderer.on('threads:auto-archived', listener)
+      return () => {
+        ipcRenderer.removeListener('threads:auto-archived', listener)
+      }
+    },
     storageSize: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:storage-size', projectId, threadId),
     archive: (
@@ -896,6 +939,12 @@ const api: ApiClient = {
       threadId: string,
       message: import('@shared/types').Message,
     ) => ipcRenderer.invoke('threads:append-message', projectId, threadId, message),
+    annotateMessage: (
+      projectId: string,
+      threadId: string,
+      messageId: string,
+      annotation: import('@shared/types').TranscriptAnnotation,
+    ) => ipcRenderer.invoke('threads:annotate-message', projectId, threadId, messageId, annotation),
     updateMeta: (
       projectId: string,
       threadId: string,

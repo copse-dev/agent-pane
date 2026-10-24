@@ -218,6 +218,7 @@ import {
 } from '../services/thread-deletion.ts'
 import { buildThreadArchive } from '../services/thread-archive.ts'
 import { archiveStoredThread, type ThreadArchivingRuntime } from '../services/thread-archiving.ts'
+import { ThreadAutoArchive } from '../services/thread-auto-archive.ts'
 import {
   getElectronAppVersion,
   getElectronBuildCommit,
@@ -634,6 +635,36 @@ export function registerAllHandlers(
 ): void {
   const mobileAddressSchema = z.string().regex(/^(?:\d{1,3}\.){3}\d{1,3}$/)
   const mobileDeviceIdSchema = z.uuid()
+  const autoArchive = new ThreadAutoArchive({
+    ...threadArchivingRuntime,
+    isViewed: (projectId, threadId): boolean =>
+      BrowserWindow.getAllWindows().some((window) => {
+        if (!getMainWindowForWebContents(window.webContents)) return false
+        const navigation = getMainWindowNavigation(window.webContents)
+        return navigation.activeProjectId === projectId && navigation.activeThreadId === threadId
+      }),
+  })
+  const notifyAutoArchive = (
+    event: import('@shared/threads/auto-archive.ts').ThreadAutoArchived,
+  ): void => {
+    if (!win.isDestroyed()) win.webContents.send('threads:auto-archived', event)
+  }
+  const sweepArchives = (): void => {
+    const ids = recordArrayOrEmpty(storageGet('projects')).flatMap((project) =>
+      typeof project['id'] === 'string' && !project['sshHost'] ? [project['id']] : [],
+    )
+    void autoArchive.sweep(ids, notifyAutoArchive).catch((error: unknown) => {
+      console.warn('[auto-archive]', error)
+    })
+  }
+  const archiveStartup = setTimeout(sweepArchives, 60_000)
+  const archiveInterval = setInterval(sweepArchives, 60 * 60_000)
+  archiveStartup.unref()
+  archiveInterval.unref()
+  win.once('closed', () => {
+    clearTimeout(archiveStartup)
+    clearInterval(archiveInterval)
+  })
 
   ipcMain.handle('mobile:get-state', (event) => {
     assertMainFrameSender(event, win)
@@ -2095,6 +2126,30 @@ export function registerAllHandlers(
     // when their rows enter the visible viewport.
     return loadProjectThreadMetas(id, { includeArchived: false })
   })
+  ipcMain.handle('threads:archive-state', async (event, projectId: unknown, view: unknown) => {
+    assertMainFrameSender(event, win)
+    const [id, mode] = parseIpcArgs(z.tuple([zProjectId, z.enum(['review', 'archived'])]), [
+      projectId,
+      view,
+    ])
+    if (mode === 'review') await autoArchive.sweep([id], notifyAutoArchive, false)
+    const threads = mode === 'archived' ? await loadProjectThreadMetas(id) : []
+    return {
+      archived: threads.filter((thread) => thread.archivedAt != null && !thread.sideChat),
+      review: autoArchive.review(id),
+    }
+  })
+  ipcMain.handle(
+    'threads:archive-decision',
+    (event, projectId: unknown, threadId: unknown, decision: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, action] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.enum(['archive', 'keep', 'restore'])]),
+        [projectId, threadId, decision],
+      )
+      return autoArchive.decide(pid, tid, action)
+    },
+  )
   ipcMain.handle('threads:backfill-pr-refs', async (event, projectId: unknown, ids: unknown) => {
     assertMainFrameSender(event, win)
     const [id, threadIds] = parseIpcArgs(z.tuple([zProjectId, z.array(zThreadId).min(1).max(10)]), [

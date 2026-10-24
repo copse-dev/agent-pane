@@ -8,7 +8,7 @@ describe('browser-hosted semantic-search markdown geometry', () => {
   })
 
   it('keeps the expanded summary preview hidden and indents its lists', async () => {
-    const card = await $('.tool-card-subagent')
+    const card = await $('.tool-card-subagent').getElement()
     await card.$('summary.tool-card-header').click()
 
     const layout = await browser.execute(() => {
@@ -16,7 +16,7 @@ describe('browser-hosted semantic-search markdown geometry', () => {
         '.tool-card-subagent .subagent-message-assistant.message-text',
       )
       const classificationHeading = [...(firstSummary?.querySelectorAll('h3') ?? [])].find(
-        (heading) => heading.textContent?.includes('Classification'),
+        (heading) => heading.textContent.includes('Classification'),
       )
       const firstListItem = firstSummary?.querySelector('ul li')
       const preview = document.querySelector<HTMLElement>(
@@ -35,7 +35,7 @@ describe('browser-hosted semantic-search markdown geometry', () => {
 
     await browser.execute(() => {
       const heading = [...document.querySelectorAll('.subagent-message-assistant h3')].find(
-        (candidate) => candidate.textContent?.includes('Classification'),
+        (candidate) => candidate.textContent.includes('Classification'),
       )
       heading?.scrollIntoView({ block: 'center' })
     })

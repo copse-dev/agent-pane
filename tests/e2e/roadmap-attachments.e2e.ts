@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -7,6 +7,7 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 import { pinRoadmapDisplayTimestamp } from './helpers/roadmap-capture.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-roadmap-attachments'
 const PENDING_SCREENSHOT = 'roadmap-attachments-pending.png'
@@ -57,7 +58,7 @@ describe('Roadmap item attachments', () => {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(dirname(workspaceRoot), { recursive: true, force: true })
+    if (workspaceRoot) removeE2eTree(dirname(workspaceRoot))
   })
 
   it('stages pasted files as removable chips before saving', async () => {
@@ -74,16 +75,22 @@ describe('Roadmap item attachments', () => {
       { name: 'prompt-shot.png', type: 'image/png', base64: PNG_BASE64 },
     ])
 
-    await browser.waitUntil(async () => (await $$('.roadmap-attachment-chip')).length === 2, {
-      timeout: 5_000,
-      timeoutMsg: 'expected both pasted files to stage as chips',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.roadmap-attachment-chip').getElements()).length === 2,
+      {
+        timeout: 5_000,
+        timeoutMsg: 'expected both pasted files to stage as chips',
+      },
+    )
     // wdio's element-array .map is itself async — never wrap it in Promise.all.
     const names = await $$('.roadmap-attachment-name').map((chip) => chip.getText())
     assert.deepEqual(names, ['evals.jsonl', 'prompt-shot.png'])
     // The pending image previews from memory (no save yet).
     const thumbSrc = await $('.roadmap-attachment-thumb').getAttribute('src')
-    assert.ok(thumbSrc.startsWith('data:image/png;base64,'), 'image chip shows a data-URL thumb')
+    assert.ok(
+      thumbSrc?.startsWith('data:image/png;base64,') === true,
+      'image chip shows a data-URL thumb',
+    )
     await saveAppScreenshot(PENDING_SCREENSHOT)
   })
 
@@ -91,10 +98,10 @@ describe('Roadmap item attachments', () => {
     await $('.roadmap-save-btn').click()
 
     // The saved row shows the attachment count badge...
-    await browser.waitUntil(
-      async () => (await $('.roadmap-attachment-badge').isExisting()) === true,
-      { timeout: 10_000, timeoutMsg: 'expected the list row to show an attachment badge' },
-    )
+    await browser.waitUntil(async () => await $('.roadmap-attachment-badge').isExisting(), {
+      timeout: 10_000,
+      timeoutMsg: 'expected the list row to show an attachment badge',
+    })
     assert.equal(await $('.roadmap-attachment-badge').getText(), '2')
 
     // Keep the real save/IPC round trip above, then pin only the persisted
@@ -108,17 +115,20 @@ describe('Roadmap item attachments', () => {
           () =>
             document
               .querySelector('.roadmap-form .memories-meta')
-              ?.textContent?.includes('2026-01-15') ?? false,
+              ?.textContent.includes('2026-01-15') ?? false,
         ),
       { timeout: 10_000, timeoutMsg: 'expected the pinned roadmap display date' },
     )
 
     // ...and reopening the item renders chips hydrated from disk, image thumb included.
     await $('.roadmap-row').click()
-    await browser.waitUntil(async () => (await $$('.roadmap-attachment-chip')).length === 2, {
-      timeout: 10_000,
-      timeoutMsg: 'expected stored attachments to render as chips',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.roadmap-attachment-chip').getElements()).length === 2,
+      {
+        timeout: 10_000,
+        timeoutMsg: 'expected stored attachments to render as chips',
+      },
+    )
     await browser.waitUntil(
       async () => {
         const src = await $('.roadmap-attachment-thumb').getAttribute('src')
@@ -142,21 +152,12 @@ describe('Roadmap item attachments', () => {
     // Delete through the real IPC so the note and its attachment directory
     // leave the runner's ~/.copse/knowledge rather than accumulating per run.
     await browser.execute(async () => {
-      const api = (
-        window as unknown as {
-          api: {
-            roadmap: {
-              list: () => Promise<{ id: string }[]>
-              delete: (id: string) => Promise<boolean>
-            }
-          }
-        }
-      ).api
+      const api = window.api
       for (const item of await api.roadmap.list()) await api.roadmap.delete(item.id)
     })
     // The pane doesn't watch the store, so refresh explicitly to confirm.
     await $('.roadmap-refresh-btn').click()
-    await browser.waitUntil(async () => (await $$('.roadmap-row')).length === 0, {
+    await browser.waitUntil(async () => (await $$('.roadmap-row').getElements()).length === 0, {
       timeout: 10_000,
       timeoutMsg: 'expected the cleanup delete to empty the roadmap list',
     })
