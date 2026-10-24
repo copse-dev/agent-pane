@@ -9,7 +9,8 @@ import {
 } from './chat-agent-identity.ts'
 import { reasoningActivityIcon } from '../dom/reasoning-activity-icon.ts'
 import {
-  arrowDownIcon,
+  chevronUpIcon,
+  cornerDownLeftIcon,
   checkIcon,
   closeIcon,
   gitBranchIcon,
@@ -2637,17 +2638,28 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   let agentNamesRevision = 0
   let disposed = false
   const avatarMotion = createAgentAvatarMotion()
+  const scrollToBottomLabel = el('span', {}, 'Back to latest')
   const scrollToBottomBtn = el(
     'button',
     {
       class: 'scroll-to-bottom',
       type: 'button',
-      'aria-label': 'Scroll to bottom',
-      'data-tooltip': 'Scroll to bottom',
-      'data-tooltip-placement': 'top',
+      'aria-label': 'Back to latest',
       hidden: true,
     },
-    arrowDownIcon('ui-icon'),
+    cornerDownLeftIcon('ui-icon'),
+    scrollToBottomLabel,
+  )
+  const firstPromptBtn = el(
+    'button',
+    {
+      class: 'conversation-first-prompt',
+      type: 'button',
+      'aria-label': 'Jump to first prompt',
+      hidden: true,
+    },
+    chevronUpIcon('ui-icon'),
+    el('span', { class: 'conversation-first-prompt-label' }, 'First prompt'),
   )
   const appleSuggestions = mountAppleProjectSuggestions(store, api, () =>
     appleDevelopmentHost.dispatchEvent(new Event('apple-development-refresh')),
@@ -2658,7 +2670,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     todoHost,
     list,
     archiveReview.element,
-    scrollToBottomBtn,
+    firstPromptBtn,
   )
 
   // The concise turns the user opened to debug, by their prompts' ids. UI-only:
@@ -2725,7 +2737,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // streaming response inside the scrollable message list.
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
   const roadmapOrigin = mountThreadRoadmapOrigin(store, api)
-  root.append(roadmapOrigin.element, scrollArea, queuedHost)
+  const navigationRow = el('div', { class: 'conversation-navigation' }, scrollToBottomBtn)
+  root.append(roadmapOrigin.element, scrollArea, navigationRow, queuedHost)
 
   const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
     const { activeProjectId: projectId, activeThreadId: threadId } = store.getState()
@@ -3127,6 +3140,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     queuedHost.hidden = queuedHost.childElementCount === 0
   }
 
+  let returnPosition: {
+    anchor: ReturnType<typeof captureReadingAnchor>
+    scrollTop: number
+    pinned: boolean
+  } | null = null
+  let pendingFirstPromptId: string | null = null
   let pinnedToBottom = true
   let lastScrollTop = 0
   // The scrollTop our own scrollToBottom() last landed on. Used to tell our
@@ -3278,7 +3297,30 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function updateScrollButton(): void {
-    scrollToBottomBtn.hidden = isNearBottom()
+    const firstPrompt = getActiveThread(store)?.messages.find(
+      (message) => message.role === 'user' && !message.origin,
+    )
+    // Long threads backfill in frames. Finish the jump only when its prompt is
+    // mounted, keeping the saved reading anchor while older rows arrive above it.
+    if (pendingFirstPromptId) {
+      const target = Array.from(list.querySelectorAll<HTMLElement>('[data-message-id]')).find(
+        (element) => element.dataset['messageId'] === pendingFirstPromptId,
+      )
+      if (target) {
+        pendingFirstPromptId = null
+        setScrollTopProgrammatically(
+          list.scrollTop + target.getBoundingClientRect().top - list.getBoundingClientRect().top,
+        )
+      }
+    }
+    firstPromptBtn.hidden =
+      !firstPrompt || list.scrollTop <= SCROLL_PIN_THRESHOLD_PX || returnPosition !== null
+    const label = returnPosition ? 'Back to where you were' : 'Back to latest'
+    if (scrollToBottomLabel.textContent !== label) {
+      scrollToBottomLabel.textContent = label
+      scrollToBottomBtn.setAttribute('aria-label', label)
+    }
+    scrollToBottomBtn.hidden = returnPosition === null && isNearBottom()
   }
 
   function syncStickyImagePreview(releaseOnScrollUp = false): void {
@@ -3405,9 +3447,38 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     },
     { passive: true },
   )
+  firstPromptBtn.addEventListener('click', () => {
+    const firstPrompt = getActiveThread(store)?.messages.find(
+      (message) => message.role === 'user' && !message.origin,
+    )
+    if (!firstPrompt || returnPosition) return
+    returnPosition = {
+      anchor: captureReadingAnchor(),
+      scrollTop: list.scrollTop,
+      pinned: pinnedToBottom,
+    }
+    pinnedToBottom = false
+    userScrolledUpAt = Date.now()
+    pendingFirstPromptId = firstPrompt.id
+    updateScrollButton()
+    scrollToBottomBtn.focus({ preventScroll: true })
+  })
   scrollToBottomBtn.addEventListener('click', () => {
-    userScrolledUpAt = 0
-    scrollToBottom(true)
+    const previous = returnPosition
+    returnPosition = null
+    pendingFirstPromptId = null
+    if (previous) {
+      pinnedToBottom = previous.pinned
+      userScrolledUpAt = previous.pinned ? 0 : Date.now()
+      restoreReadingAnchor(previous.anchor, previous.scrollTop)
+      updateScrollButton()
+      // The return button may disappear at the bottom; keep keyboard navigation
+      // in the conversation without moving the restored reading position.
+      firstPromptBtn.focus({ preventScroll: true })
+    } else {
+      userScrolledUpAt = 0
+      scrollToBottom(true)
+    }
   })
 
   // Streamed prose grows a line at a time. Snapping to the bottom on every
@@ -3548,6 +3619,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // The scrollable element is the messages list, not the mount root.
     setScrollTopProgrammatically(list.scrollHeight)
     if (force) {
+      returnPosition = null
+      pendingFirstPromptId = null
       userScrolledUpAt = 0
       pinnedToBottom = true
       const threadId = store.getState().activeThreadId
@@ -4900,6 +4973,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const rebuildingSameThread = thread !== undefined && thread.id === renderedThreadId
     const preservedScrollTop = rebuildingSameThread && !pinnedToBottom ? list.scrollTop : null
     if (!rebuildingSameThread) {
+      returnPosition = null
+      pendingFirstPromptId = null
       pinnedToBottom = true
       userScrolledUpAt = 0
       lastScrollTop = 0
