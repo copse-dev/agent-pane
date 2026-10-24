@@ -23,6 +23,11 @@ import { createTerminalAfterPersist } from '../terminal/create-after-persist.ts'
 import { terminalStartFailureMessage } from '../terminal/start-failure-message.ts'
 import { resolveTerminalTabScope } from '../terminal/tab-scope.ts'
 import {
+  deferTerminalSpawn,
+  remoteTerminalConnectHint,
+  remoteTerminalHostLabel,
+} from '../terminal/remote-connect.ts'
+import {
   readEditorThemeTokens,
   watchEditorTheme,
   xtermThemeFromTokens,
@@ -58,6 +63,11 @@ interface TerminalTab {
   fileLinks: TerminalFileLinks
   sessionId: string | null
   creating: boolean
+  /**
+   * An SSH shell Copse opened on its own (not at the user's request) that waits
+   * for a click or keypress before spawning — see remote-connect.ts.
+   */
+  awaitingConnect: boolean
   pendingInput: string[]
   codeBlockRun: CodeBlockRunRequest | null
   termOpened: boolean
@@ -314,6 +324,11 @@ export function mountTerminalsPane(
 
   async function ensureSession(tab: TerminalTab): Promise<void> {
     if (tab.sessionId || tab.creating) return
+    if (tab.awaitingConnect) {
+      openTerminalSurface(tab)
+      fitTab(tab)
+      return
+    }
     if (!store.getState().workspaceRoot || !tab.scopeProjectId) {
       tab.term.writeln('\x1b[90mOpen a folder to use the terminal.\x1b[0m', () => {
         finishCodeBlockRun(tab, null)
@@ -414,6 +429,10 @@ export function mountTerminalsPane(
     // command output can be referenced as a prompt attachment.
     registerTerminalSelectionToChatShortcut(tab.term, () => tab.label)
     tab.term.onData((data) => {
+      // The keypress that connects a waiting remote tab is not shell input, so
+      // an Enter here must not count as a command: the login banner that
+      // follows would otherwise auto-name the tab.
+      if (connectWaitingTab(tab)) return
       if (data.includes('\r')) {
         tab.commandRan = true
         scheduleAutoName(tab)
@@ -425,7 +444,9 @@ export function mountTerminalsPane(
       }
       void api.terminal.write(tab.sessionId, data)
     })
-    tab.container.addEventListener('mousedown', () => {
+    tab.container.addEventListener('mousedown', (e) => {
+      // Only a primary click connects; a right-click opens the context menu.
+      if (e.button === 0) connectWaitingTab(tab)
       if (activeTabId === tab.id) focusTab(tab)
     })
     tab.container.addEventListener('contextmenu', (e) => {
@@ -455,6 +476,16 @@ export function mountTerminalsPane(
     })
   }
 
+  /** Spawn a waiting remote tab on the user's say-so; false if it was not waiting. */
+  function connectWaitingTab(tab: TerminalTab): boolean {
+    if (!tab.awaitingConnect) return false
+    tab.awaitingConnect = false
+    tab.panel.removeAttribute('data-awaiting-connect')
+    tab.term.reset()
+    void ensureSession(tab)
+    return true
+  }
+
   function currentThreadId(): string | null {
     return store.getState().activeThreadId
   }
@@ -482,6 +513,8 @@ export function mountTerminalsPane(
     scopeProjectId?: string
     executionTarget?: 'local'
     scopeId?: string
+    /** Copse opened this tab itself (thread switch, worktree hand-off, …). */
+    automatic?: boolean
   }): string {
     tabCounter += 1
     const id = crypto.randomUUID()
@@ -528,6 +561,21 @@ export function mountTerminalsPane(
     const { term, fitAddon } = createXterm()
     const fileLinks = installTerminalFileLinks(term, store, api)
     const { scopeProjectId, scopeId } = resolveTerminalTabScope(store.getState(), options)
+    const remoteHost = remoteTerminalHostLabel(
+      store.getState().projects,
+      scopeProjectId,
+      options?.executionTarget,
+    )
+    const awaitingConnect = deferTerminalSpawn({
+      automatic: options?.automatic === true && !options.initialInput && !options.codeBlockRun,
+      hostLabel: remoteHost,
+    })
+    if (awaitingConnect && remoteHost) {
+      panel.setAttribute('data-awaiting-connect', '')
+      for (const line of remoteTerminalConnectHint(remoteHost)) {
+        term.writeln(`\x1b[90m${line}\x1b[0m`)
+      }
+    }
     const tab: TerminalTab = {
       id,
       scopeProjectId,
@@ -545,6 +593,7 @@ export function mountTerminalsPane(
       fileLinks,
       sessionId: null,
       creating: false,
+      awaitingConnect,
       // Seed the command so it runs as soon as the PTY spawns; `ensureSession`
       // flushes pending input right after create.
       pendingInput: options?.initialInput ? [options.initialInput] : [],
@@ -634,7 +683,7 @@ export function mountTerminalsPane(
       setActiveTab(lastRemaining.id)
     } else {
       activeTabId = null
-      if (terminalModeActive(store)) addTab()
+      if (terminalModeActive(store)) addTab({ automatic: true })
     }
   }
 
@@ -651,7 +700,7 @@ export function mountTerminalsPane(
     if (activeTabId && !visible.some((t) => t.id === activeTabId)) activeTabId = null
 
     if (needsNew) {
-      if (terminalModeActive(store)) addTab({ focus: false })
+      if (terminalModeActive(store)) addTab({ focus: false, automatic: true })
       return
     }
     if (!activeTabId && visible.length > 0) setActiveTab(at(visible, 0).id, { focus: false })
@@ -672,9 +721,15 @@ export function mountTerminalsPane(
   })
 
   function onTerminalModeChange(): void {
+    syncTerminalMode(false)
+  }
+
+  // `automatic` is the restore at mount: the pane was left open, and nobody
+  // asked for a shell this time. Opening the pane later is the user's request.
+  function syncTerminalMode(automatic: boolean): void {
     const active = terminalModeActive(store)
     if (active) {
-      if (visibleTabs().length === 0) addTab()
+      if (visibleTabs().length === 0) addTab({ automatic })
       const tab = activeTabId ? tabs.get(activeTabId) : null
       if (tab) {
         resizeObserver.observe(tab.container)
@@ -745,7 +800,7 @@ export function mountTerminalsPane(
     if (tab) void ensureSession(tab)
   }
 
-  onTerminalModeChange()
+  syncTerminalMode(true)
 
   // While an agent task panel owns the viewer, the shells list drops its active
   // highlight; when the task is cleared (taskId null), restore it.
@@ -779,6 +834,7 @@ export function mountTerminalsPane(
         activate: tab.scopeId === currentThreadId(),
         scopeProjectId: tab.scopeProjectId,
         scopeId: tab.scopeId,
+        automatic: true,
       })
     }
   }

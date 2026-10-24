@@ -81,6 +81,35 @@ test('main and the window reduce a recorded turn to the same messages', () => {
   assert.deepEqual(getThreadById(main, 't1')?.todos, getThreadById(window, 't1')?.todos)
 })
 
+test('remote agent setup stages are status for the window, never transcript', () => {
+  const setup: StreamChunk[] = [
+    { type: 'agent_setup_progress', phase: 'start', label: 'Connecting to Dev…' },
+    { type: 'agent_setup_progress', phase: 'setup', label: 'Installing pkg on Dev…' },
+    { type: 'agent_setup_progress', phase: 'ready' },
+  ]
+  // Main runs without window hooks: the stages leave no message behind.
+  const { main, window } = reduceBoth(setup)
+  assert.deepEqual(
+    messagesOf(main).map((message) => message.id),
+    ['u1'],
+  )
+  assert.deepEqual(comparable(messagesOf(window)), comparable(messagesOf(main)))
+
+  // The window hears each stage's label, then `ready` hands the row back.
+  const store = seeded()
+  const calls: string[] = []
+  const reducer = createTranscriptReducer(store, {
+    setupProgress: (_threadId, label) => calls.push(`label:${label}`),
+    activity: () => calls.push('activity'),
+  })
+  for (const chunk of setup) reducer.apply('t1', chunk)
+  assert.deepEqual(calls, ['label:Connecting to Dev…', 'label:Installing pkg on Dev…', 'activity'])
+  assert.deepEqual(
+    messagesOf(store).map((message) => message.id),
+    ['u1'],
+  )
+})
+
 test('a machine turn prompt takes the id main stamped', () => {
   const { main, window } = reduceBoth([
     {
