@@ -206,7 +206,13 @@ async function shouldForwardEnvToken(cwd: string, signal?: AbortSignal): Promise
 /** Run GitHub CLI outside the project sandbox so read-only API calls can reach GitHub. */
 export async function runGh(
   args: string[],
-  opts: { timeout_ms?: number; signal?: AbortSignal; cwd?: string } = {},
+  opts: {
+    timeout_ms?: number
+    signal?: AbortSignal
+    cwd?: string
+    stdin?: Buffer
+    stdoutMaxBytes?: number
+  } = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   const cwd = opts.cwd ?? getWorkspaceRoot()
   if (!cwd) return { stdout: '', stderr: 'No workspace open.', code: 1 }
@@ -218,6 +224,8 @@ export async function runGh(
   }
   if (opts.timeout_ms !== undefined) commandOpts.timeout_ms = opts.timeout_ms
   if (opts.signal !== undefined) commandOpts.signal = opts.signal
+  if (opts.stdin !== undefined) commandOpts.stdin = opts.stdin
+  if (opts.stdoutMaxBytes !== undefined) commandOpts.stdoutMaxBytes = opts.stdoutMaxBytes
   const { stdout, stderr, code } = await runCommand('gh', args, commandOpts)
   return { stdout, stderr, code }
 }

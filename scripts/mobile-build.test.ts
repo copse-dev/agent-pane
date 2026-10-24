@@ -19,6 +19,14 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
       pretendToBeVisual: true,
     })
     const { window } = dom
+    // JSDOM has no viewport intersection API; these fixtures contain no images.
+    Object.defineProperty(window, 'IntersectionObserver', {
+      value: class {
+        observe(): void {}
+        unobserve(): void {}
+        disconnect(): void {}
+      },
+    })
     const viewport = new window.EventTarget()
     let viewportHeight = 600
     let viewportOffset = 0
@@ -51,7 +59,7 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
       ['#message', { top: 650, bottom: 750, height: 100 }],
       ['#send', { top: 770, bottom: 814, height: 44 }],
       ['#new-message', { top: 400, bottom: 500, height: 100 }],
-      ['#new-chat-form button', { top: 550, bottom: 594, height: 44 }],
+      ['#new-chat-form button[type="submit"]', { top: 550, bottom: 594, height: 44 }],
     ] as const) {
       Object.defineProperty(window.document.querySelector(selector), 'getBoundingClientRect', {
         value: () => rect,

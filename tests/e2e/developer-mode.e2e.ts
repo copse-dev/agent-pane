@@ -21,7 +21,7 @@ describe('Developer mode surfaces', function () {
     await overflow.$('.footer-overflow-trigger').click()
     const labels = await browser.execute(() =>
       Array.from(document.querySelectorAll('.footer-overflow-item'), (item) =>
-        item.textContent?.trim(),
+        item.textContent.trim(),
       ),
     )
     // Debug trace and Share trace are the two "this went wrong" exits, so they
@@ -30,6 +30,7 @@ describe('Developer mode surfaces', function () {
       'Enable Guarded YOLO',
       'Run unattended in a container…',
       'Debug trace',
+      'Create follow-up thread',
       'Share trace',
     ])
     await saveElementScreenshot('#input-bar', 'developer-mode-footer-menu-default.png')
@@ -51,7 +52,7 @@ describe('Developer mode surfaces', function () {
     await overflow.$('.footer-overflow-trigger').click()
     const labels = await browser.execute(() =>
       Array.from(document.querySelectorAll('.footer-overflow-item'), (item) =>
-        item.textContent?.trim(),
+        item.textContent.trim(),
       ),
     )
     assert.deepEqual(labels, [
@@ -61,6 +62,7 @@ describe('Developer mode surfaces', function () {
       'Export conversation (JSONL)',
       'Export thread folder (ZIP)',
       'Debug trace',
+      'Create follow-up thread',
       'Share trace',
     ])
     await saveElementScreenshot('#input-bar', 'developer-mode-footer-menu.png')

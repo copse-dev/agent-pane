@@ -28,9 +28,12 @@ describe('titlebar compact layout', () => {
     const titlebar = document.createElement('div')
     const left = document.createElement('div')
     const controls = document.createElement('div')
+    controls.className = 'titlebar-panel-controls'
+    const overflowMenu = document.createElement('div')
+    overflowMenu.className = 'portrait-panel-overflow'
     const overflowed = document.createElement('button')
     overflowed.setAttribute('data-portrait-overflow', '')
-    controls.append(overflowed)
+    controls.append(overflowed, overflowMenu)
     titlebar.append(left, controls)
     document.body.append(titlebar)
 
@@ -43,7 +46,9 @@ describe('titlebar compact layout', () => {
           titlebar.classList.contains(TITLEBAR_COMPACT_CLASS) ||
           overflowed.hasAttribute('data-portrait-overflow')
             ? 400
-            : 600,
+            : overflowMenu.hidden
+              ? 600
+              : 720,
       },
     })
 
@@ -54,6 +59,9 @@ describe('titlebar compact layout', () => {
       assert.equal(overflowed.hasAttribute('data-portrait-overflow'), true)
 
       availableWidth = 700
+      window.dispatchEvent(new Event('resize'))
+      assert.equal(titlebar.classList.contains(TITLEBAR_COMPACT_CLASS), false)
+      assert.equal(overflowMenu.hidden, false, 'measurement restores the overflow menu')
       window.dispatchEvent(new Event('resize'))
       assert.equal(titlebar.classList.contains(TITLEBAR_COMPACT_CLASS), false)
     } finally {

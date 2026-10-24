@@ -6,9 +6,9 @@ import { E2E_SCREENSHOT_DIR, saveChatPaneScreenshot } from './helpers/screenshot
 describe('worktree preparation tool cards', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedWorktreePreparationFixture(process.cwd())
     await browser.reloadSession()

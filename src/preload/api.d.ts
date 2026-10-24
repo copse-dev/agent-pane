@@ -18,6 +18,7 @@ import type {
   MachineAgentRunRequest,
   MachineDispatchResult,
   StreamChunk,
+  TranscriptStamp,
 } from '@shared/types'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
@@ -281,6 +282,11 @@ export interface ApiClient {
   }
   security: {
     getGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
+    getContextPermissions: (
+      projectId: string,
+      threadId: string,
+      projectRoot: string,
+    ) => Promise<import('@shared/types/context-permissions.ts').ContextPermissionSnapshot>
     enableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
     disableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
     onGuardedYoloChanged: (handler: (state: GuardedYoloState) => void) => () => void
@@ -384,7 +390,18 @@ export interface ApiClient {
     ) => Promise<string | null>
     /** Tab-completable next step for the composer placeholder; null = no obvious step. */
     suggestNextStep: (contextJson: string) => Promise<string | null>
-    onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => () => void
+    /**
+     * `stamp` is present when main has already persisted this chunk's turn; the
+     * window then draws it with main's message ids and writes nothing itself.
+     */
+    replayPendingDecisions: () => Promise<void>
+    attachTranscripts: (projectId: string, threadIds: string[]) => Promise<void>
+    onTranscriptSnapshot: (
+      handler: (snapshot: import('@shared/types').TranscriptSnapshot) => void,
+    ) => () => void
+    onChunk: (
+      handler: (threadId: string, chunk: StreamChunk, stamp?: TranscriptStamp) => void,
+    ) => () => void
     onApprovalRequest: (
       handler: (req: {
         id: string
@@ -630,6 +647,18 @@ export interface ApiClient {
     ) => Promise<import('@copse/thread-store/plan-schema.ts').StoredThreadPlan | null>
   }
   threads: {
+    archiveState: (
+      projectId: string,
+      view: 'review' | 'archived',
+    ) => Promise<import('@shared/threads/auto-archive.ts').ThreadArchiveState>
+    archiveDecision: (
+      projectId: string,
+      threadId: string,
+      decision: import('@shared/threads/auto-archive.ts').ThreadArchiveDecision,
+    ) => Promise<boolean>
+    onAutoArchived: (
+      handler: (event: import('@shared/threads/auto-archive.ts').ThreadAutoArchived) => void,
+    ) => () => void
     storageSize: (
       projectId: string,
       threadId: string,
@@ -663,6 +692,13 @@ export interface ApiClient {
       projectId: string,
       threadId: string,
       message: import('@shared/types').Message,
+    ) => Promise<void>
+    /** Merge a window-derived label into a message main owns, and persist it. */
+    annotateMessage: (
+      projectId: string,
+      threadId: string,
+      messageId: string,
+      annotation: import('@shared/types').TranscriptAnnotation,
     ) => Promise<void>
     updateMeta: (
       projectId: string,
@@ -714,6 +750,10 @@ export interface ApiClient {
       kind: 'url' | 'thread',
       target: string,
     ) => Promise<import('@shared/threads/thread-links.ts').ThreadBacklink[]>
+    pendingApprovals: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/threads/deferred-approval.ts').DeferredApproval[]>
     historySnapshot: (
       projectId: string,
       threadId: string,
@@ -1068,6 +1108,10 @@ export interface ApiClient {
   }
   decisions: {
     list: (projectId?: string) => Promise<import('@shared/threads/decision-log.ts').DecisionEvent[]>
+    listThread: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/threads/decision-log.ts').DecisionEvent[]>
     export: (projectId?: string) => Promise<{ path: string; count: number }>
   }
   index: {
@@ -1469,6 +1513,8 @@ export interface ApiClient {
     worktreeAttachment: (projectId: string, threadId: string) => Promise<ThreadWorktreeAttachment>
     /** Put a detached thread checkout back on its branch, keeping any detached commits. */
     reattachWorktree: (projectId: string, threadId: string) => Promise<ThreadWorktreeReattachResult>
+    /** Recreate a missing thread checkout from its retained branch, preserving the chat. */
+    restoreWorktree: (projectId: string, threadId: string) => Promise<void>
     /** HEAD commit + dirty state snapshot for a prompt about to be sent. */
     promptState: (projectId: string, threadId: string) => Promise<GitPromptState>
     checkoutBranch: (projectId: string, threadId: string, branch: string) => Promise<void>

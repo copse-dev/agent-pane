@@ -176,6 +176,7 @@ interface RestPull {
   mergeable_state?: string | undefined
   created_at?: string | undefined
   updated_at?: string | undefined
+  merged_at?: string | undefined
   auto_merge?: unknown
   user?: { login?: string | undefined } | undefined
   head?: { ref?: string | undefined; sha?: string | undefined } | undefined
@@ -227,6 +228,7 @@ function parseRestPull(value: unknown): RestPull {
     mergeable_state: optionalString(value['mergeable_state']),
     created_at: optionalString(value['created_at']),
     updated_at: optionalString(value['updated_at']),
+    merged_at: optionalString(value['merged_at']),
     auto_merge: value['auto_merge'],
     user,
     head: nestedRef(value['head']),
@@ -522,6 +524,8 @@ export const githubApiBackend: GitHubBackend = {
       activity,
     }
     if (pull.head?.ref) details.headRefName = pull.head.ref
+    if (pull.head?.sha) details.headRefOid = pull.head.sha
+    if (pull.merged_at) details.mergedAt = pull.merged_at
     if (pull.base?.ref) details.baseRefName = pull.base.ref
     if (pull.user?.login) details.authorLogin = pull.user.login
     const mergeable = mapMergeable(pull)

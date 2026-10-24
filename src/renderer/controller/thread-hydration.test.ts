@@ -4,7 +4,12 @@ import { createStore } from '@shared/store/store.ts'
 import type { Message, Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
-import { attachThreadHydration, ensureThreadMessages, hydrationFailed } from './thread-hydration.ts'
+import {
+  attachThreadHydration,
+  ensureThreadMessages,
+  hydrationFailed,
+  showSideChatTranscript,
+} from './thread-hydration.ts'
 
 function unloaded(id: string, overrides: Partial<Thread> = {}): Thread {
   return {
@@ -237,5 +242,48 @@ test('evicts old transcripts but never the active or running ones', async () => 
     'running thread pinned',
   )
   assert.equal(state.threads.find((t) => t.id === 't11')?.messagesLoaded, true, 'newest kept')
+  detach()
+})
+
+test('only the visible side chat stays pinned while loaded siblings remain bounded', async () => {
+  const store = createStore()
+  const api = createFakeApi()
+  const loading: ApiClient = {
+    ...api,
+    threads: {
+      ...api.threads,
+      loadMessages: (_p: string, threadId: string) => Promise.resolve([message(threadId)]),
+    },
+  }
+  const link = { parentThreadId: 'main', anchorMessageId: 'm1' }
+  const threads = [
+    unloaded('main'),
+    unloaded('side', { sideChat: link }),
+    ...Array.from({ length: 12 }, (_, i) => unloaded(`s${String(i)}`, { sideChat: link })),
+    ...Array.from({ length: 12 }, (_, i) => unloaded(`t${String(i)}`)),
+  ]
+  store.setState({ activeProjectId: 'p', activeThreadId: 'main', threads })
+  const detach = attachThreadHydration(store, loading)
+
+  showSideChatTranscript('side')
+  await ensureThreadMessages('p', 'side')
+  for (let i = 0; i < 12; i++) await ensureThreadMessages('p', `s${String(i)}`)
+  for (let i = 0; i < 12; i++) await ensureThreadMessages('p', `t${String(i)}`)
+
+  const state = store.getState()
+  assert.equal(state.threads.find((t) => t.id === 'side')?.messagesLoaded, true)
+  assert.ok(state.threads.filter((t) => t.messagesLoaded === true).length <= 10)
+  assert.equal(
+    state.threads.find((t) => t.id === 's0')?.messagesLoaded,
+    false,
+    'unselected siblings can be evicted',
+  )
+  showSideChatTranscript(null)
+  for (let i = 0; i < 12; i++) await ensureThreadMessages('p', `t${String(i)}`)
+  assert.equal(
+    store.getState().threads.find((t) => t.id === 'side')?.messagesLoaded,
+    false,
+    'closing the panel releases its transcript',
+  )
   detach()
 })

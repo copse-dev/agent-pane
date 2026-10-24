@@ -158,7 +158,7 @@ export function mountModelPicker(
   const chevron = el(
     'span',
     { class: 'model-picker-chevron', 'aria-hidden': 'true' },
-    chevronDownIcon('ui-icon ui-icon-sm'),
+    chevronDownIcon('ui-icon ui-icon-sm ui-picker-chevron'),
   )
   const triggerCost = el(
     'span',

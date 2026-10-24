@@ -3,6 +3,7 @@ import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.t
 export type SettingsSection =
   | 'general'
   | 'classifiers'
+  | 'web-search'
   | 'usage'
   | 'agent'
   | 'permissions'
@@ -17,6 +18,7 @@ export type SettingsSection =
 export const isSettingsSection: (value: unknown) => value is SettingsSection = (value) =>
   value === 'general' ||
   value === 'classifiers' ||
+  value === 'web-search' ||
   value === 'usage' ||
   value === 'agent' ||
   value === 'permissions' ||

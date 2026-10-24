@@ -91,6 +91,7 @@ export interface GitBranchStatus {
  */
 export type ThreadWorktreeAttachment =
   | { state: 'attached' }
+  | { state: 'missing'; branch: string; reason: string | null }
   | {
       state: 'detached'
       branch: string
@@ -185,6 +186,10 @@ export interface GhPrSummary {
 
 export interface GhPrDetails extends GhPrSummary {
   body: string
+  /** Exact source commit retained by GitHub even after a squash merge deletes the branch. */
+  headRefOid?: string
+  /** Actual merge time; updatedAt can change after completion. */
+  mergedAt?: string
   baseRefName?: string
   mergeable?: string
   mergeStateStatus?: string

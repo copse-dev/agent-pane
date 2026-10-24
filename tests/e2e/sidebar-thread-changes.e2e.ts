@@ -1,12 +1,13 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync, existsSync, readFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig, writeSettings } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { e2eWorkspaceDir } from './helpers/seed-config.ts'
-import type { Thread } from '../../src/shared/types/index.ts'
+import type { Thread, ThreadChangeSummary } from '../../src/shared/types/index.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const projectId = 'e2e-changes-project'
 const threadId = 'e2e-changes-thread'
@@ -19,7 +20,7 @@ let retiredRoot = ''
 const git = (...args: string[]): string =>
   execFileSync('git', args, { cwd: root, encoding: 'utf8' })
 
-async function summary() {
+async function summary(): Promise<Array<ThreadChangeSummary | null>> {
   return browser.execute(
     async (projectId, threadId) => {
       return window.api.git.threadChangeSummary([{ projectId, threadId }], { fresh: true })
@@ -45,7 +46,7 @@ describe('native sidebar thread changes', () => {
     if (!managedRoot) throw new Error('Missing isolated e2e worktrees root')
     isolatedRoot = join(managedRoot, projectId, isolatedId)
     retiredRoot = join(managedRoot, projectId, retiredId)
-    rmSync(join(managedRoot, projectId), { recursive: true, force: true })
+    removeE2eTree(join(managedRoot, projectId))
     mkdirSync(join(managedRoot, projectId), { recursive: true })
     git('worktree', 'add', '-q', '-b', 'changes-isolated', isolatedRoot)
     git('worktree', 'add', '-q', '-b', 'changes-retired', retiredRoot)
@@ -61,11 +62,18 @@ describe('native sidebar thread changes', () => {
       title: 'Review isolated work',
       status: 'idle',
       messages: [
-        { id: 'isolated-user', role: 'user', content: 'Prepare isolated work', createdAt: now },
+        {
+          id: 'isolated-user',
+          role: 'user',
+          content: 'Prepare isolated work',
+          toolCalls: [],
+          createdAt: now,
+        },
         {
           id: 'isolated-answer',
           role: 'assistant',
           content: 'Isolated work is ready.',
+          toolCalls: [],
           createdAt: now + 1,
         },
       ],
@@ -131,7 +139,7 @@ describe('native sidebar thread changes', () => {
     resetUserData()
     if (root) {
       git('worktree', 'remove', '--force', isolatedRoot)
-      rmSync(fixtureDir, { recursive: true, force: true })
+      removeE2eTree(fixtureDir)
     }
   })
 
@@ -171,7 +179,7 @@ describe('native sidebar thread changes', () => {
       retiredMeta: readFileSync(retiredMetaPath, 'utf8'),
     }
     expect(existsSync(retiredRoot)).toBe(false)
-    const read = () =>
+    const read = async (): Promise<Array<ThreadChangeSummary | null>> =>
       browser.execute(
         async (projectId, isolatedId, retiredId) =>
           window.api.git.threadChangeSummary(

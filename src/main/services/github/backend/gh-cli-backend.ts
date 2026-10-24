@@ -51,6 +51,7 @@ interface GhPrViewJson {
   baseRefName?: string | undefined
   baseRefOid?: string | undefined
   headRefOid?: string | undefined
+  mergedAt?: string | undefined
   author?: { login?: string | undefined } | undefined
   mergeable?: string | undefined
   mergeStateStatus?: string | undefined
@@ -143,6 +144,7 @@ const PR_VIEW_FIELDS = [
   'baseRefName',
   'baseRefOid',
   'headRefOid',
+  'mergedAt',
   'author',
   'mergeable',
   'mergeStateStatus',
@@ -216,6 +218,8 @@ function toGhPrDetails(
     files,
   }
   if (pr.headRefName) details.headRefName = pr.headRefName
+  if (pr.headRefOid) details.headRefOid = pr.headRefOid
+  if (pr.mergedAt) details.mergedAt = pr.mergedAt
   if (pr.baseRefName) details.baseRefName = pr.baseRefName
   if (pr.author?.login) details.authorLogin = pr.author.login
   if (pr.mergeable) details.mergeable = pr.mergeable

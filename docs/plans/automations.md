@@ -77,11 +77,15 @@ ownership. Before applying a grant, main matches the claimed schedule, thread id
 and trigger time to that schedule's main-owned latest-run record. A copied or
 edited metadata claim fails closed and follows the ordinary approval path.
 
-The renderer currently owns interactive agent streams and transcript persistence.
-Consequently, a task for the active project starts immediately; a task created for
-an inactive project starts when that project is next opened. True headless execution
-while no renderer owns the project belongs to #1081's durable supervisor and #1079's
-shared turn contract rather than a second automation-specific runtime.
+Interactive turns retain renderer-owned streams. App-open cron turns for an inactive
+project use the shared AgentDispatcher with a main-owned transcript assembler. Before
+that dispatch, they execute the same first-message checkout transaction with an explicit
+`worktree` choice. Checkout failure preserves the unsent prompt, marks start failure,
+and never dispatches tools against the shared project checkout. Main remains the sole
+transcript writer for the headless turn. After persistence settles, a completion notification
+refreshes the authoritative transcript and status in any renderer that opened the project
+mid-turn; the renderer never re-dispatches that completion. This does not provide
+a detached runtime or device-independent execution; those remain with #1081 and #1079.
 
 Prototype boundaries:
 
@@ -90,7 +94,16 @@ Prototype boundaries:
 - standard five-field cron, evaluated once per minute;
 - no missed-run catch-up, retry/backoff, cross-schedule concurrency cap, or process recovery;
 - no webhook ingress; an app-open GitHub Actions branch-failure poller is the first event adapter;
-- no headless execution for an inactive project or closed renderer.
+- inactive-project cron execution requires the desktop main process; no detached runtime.
+
+Due schedules prepare concurrently, each with a 90-second trigger deadline inside the
+supervisor tick budget. A deadline releases only that attempt's schedule lock, so a
+later minute or manual run may retry. Filesystem work that cannot be cancelled may
+finish late, but the expired attempt cannot publish run metadata or notify the renderer;
+a late-created thread remains an unsent failed-start draft rather than starting a turn.
+If that failed-start marker cannot be written, the late thread is removed so it can never
+look like a pending run the renderer would start.
+Its completion cannot release a newer attempt's lock.
 
 The minute clock is now a durable recurring task owned by #1081's shared supervisor;
 the schedule/IPC shape remains an Automations consumer. Pack disablement cancels the

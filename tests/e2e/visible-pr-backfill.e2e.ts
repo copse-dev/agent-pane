@@ -72,9 +72,9 @@ describe('visible legacy thread PR backfill', () => {
     expect(metaHasPrRefs('thread-11')).toBe(false)
 
     await $('.chats-show-more').click()
-    const laterRow = await $('.chat-row[data-thread-id="thread-11"]')
+    const laterRow = await $('.chat-row[data-thread-id="thread-11"]').getElement()
     await laterRow.scrollIntoView()
-    const laterChip = await laterRow.$('.chat-pr-status')
+    const laterChip = await laterRow.$('.chat-pr-status').getElement()
     await laterChip.waitForExist({ timeout: 15_000 })
     await expect(laterChip).toHaveAttribute('aria-label', expect.stringMatching(/merged/i))
     await browser.waitUntil(() => metaHasPrRefs('thread-11'), { timeout: 15_000 })

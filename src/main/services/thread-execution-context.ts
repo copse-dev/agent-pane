@@ -16,6 +16,7 @@ import {
   inspectThreadWorktreeAttachment,
   reattachThreadWorktree,
   restoreRetiredThreadWorktree,
+  restoreMissingThreadWorktree,
   ThreadWorktreeDetachedError,
   validateThreadWorktree,
   validateThreadWorktreeRecovery,
@@ -49,6 +50,7 @@ export interface ThreadExecutionContextDependencies {
     readonly gitBranch?: string
     readonly worktree?: ThreadWorktree
     readonly automation?: NonNullable<Thread['automation']>
+    readonly followUpOf?: { readonly parentThreadId: string }
     readonly deferredWorktree?: ThreadDeferredWorktree
   } | null>
   validateWorktree?: (input: {
@@ -266,6 +268,23 @@ export function wasThreadContextResolvedAt(projectId: string, root: string): boo
   return resolvedProjectRoots.get(projectId)?.has(root) === true
 }
 
+/** Restore an externally removed checkout only after the user clicks in its owning thread. */
+export async function restoreThreadCheckout(
+  projectId: string,
+  threadId: string,
+  isBusy: ThreadCheckoutBusy,
+): Promise<void> {
+  if (isBusy(projectId, threadId)) {
+    throw new Error(
+      'The agent is still working in this checkout. Wait for it to finish, then restore.',
+    )
+  }
+  const input = await activeThreadWorktreeInput(projectId, threadId)
+  if (!input) throw new Error('Only an isolated thread worktree can be restored')
+  const worktree = await restoreMissingThreadWorktree(input)
+  await syncAdoptedWorktreeBranch(projectId, threadId, worktree)
+}
+
 async function resolveThreadExecutionContextUncached(
   projectId: string,
   threadId: string,
@@ -335,6 +354,7 @@ async function resolveThreadExecutionContextUncached(
       checkoutMode: 'worktree',
       branch: worktree.branch,
       ...(threadMeta.automation ? { automation: { ...threadMeta.automation } } : {}),
+      ...followUpContext(threadMeta),
     })
   }
 
@@ -346,8 +366,17 @@ async function resolveThreadExecutionContextUncached(
     checkoutMode: 'shared',
     branch: threadMeta.gitBranch ?? null,
     ...(threadMeta.automation ? { automation: { ...threadMeta.automation } } : {}),
+    ...followUpContext(threadMeta),
     ...(threadMeta.deferredWorktree ? { deferredWorktree: threadMeta.deferredWorktree } : {}),
   })
+}
+
+// The id becomes a path segment under the chat store, so only plain ids pass.
+function followUpContext(meta: {
+  readonly followUpOf?: { readonly parentThreadId: string }
+}): { followUpParentThreadId: string } | Record<string, never> {
+  const id = meta.followUpOf?.parentThreadId
+  return id !== undefined && /^[A-Za-z0-9_-]+$/.test(id) ? { followUpParentThreadId: id } : {}
 }
 
 /**

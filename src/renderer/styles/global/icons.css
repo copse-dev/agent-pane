@@ -22,6 +22,17 @@
   height: 12px;
 }
 
+/* Keep picker arrows equally quiet across the titlebar, sidebar and composer. */
+.ui-picker-chevron {
+  opacity: 0.7;
+}
+
+/* Chrome labels need a small optical offset; composer pickers already align. */
+.titlebar .ui-picker-chevron,
+.projects-filters .ui-picker-chevron {
+  transform: translateY(1px);
+}
+
 .ui-icon-dot {
   stroke-width: 8;
 }

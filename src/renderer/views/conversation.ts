@@ -1,4 +1,5 @@
 import { el, clear } from '../dom/helpers.ts'
+import { createThreadArchiveReview } from './thread-archive-review.ts'
 import { createAgentAvatar, createAgentAvatarMotion } from '../dom/agent-avatar.ts'
 import {
   agentRouteModel,
@@ -165,7 +166,7 @@ import {
   isThreadProposalCall,
   threadProposalCardSignature,
 } from './thread-proposal-tool-card.ts'
-import { createReviewerInputToolCard, mountReviewerInput } from './reviewer-input.ts'
+import { createReviewerInputToolCard } from './reviewer-input.ts'
 import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
 import { renderSignature } from './render-signature.ts'
 import {
@@ -2628,6 +2629,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   showAcpTransportNoiseDisclosure = (): boolean => store.getState().developerMode
   const scrollArea = el('div', { class: 'conversation-scroll' })
   const todoHost = el('div', { class: 'conversation-todos-host' })
+  const archiveReview = createThreadArchiveReview(store, api)
   const appleDevelopmentHost = createAppleDevelopmentPanel(store, api, { allowEnrollment: false })
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
   let agentNames: ReadonlyMap<string, string> = new Map()
@@ -2655,6 +2657,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     appleDevelopmentHost,
     todoHost,
     list,
+    archiveReview.element,
     scrollToBottomBtn,
   )
 
@@ -2722,14 +2725,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // streaming response inside the scrollable message list.
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
   const roadmapOrigin = mountThreadRoadmapOrigin(store, api)
-  const reviewerInput = mountReviewerInput(store, api)
-  const transcriptAndInput = el(
-    'div',
-    { class: 'conversation-reviewer-body' },
-    scrollArea,
-    reviewerInput.panel,
-  )
-  root.append(roadmapOrigin.element, reviewerInput.toggle, transcriptAndInput, queuedHost)
+  root.append(roadmapOrigin.element, scrollArea, queuedHost)
 
   const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
     const { activeProjectId: projectId, activeThreadId: threadId } = store.getState()
@@ -3140,6 +3136,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   let userScrolledUpAt = 0
   let renderedThreadId: string | null = null
   let stickyImagePrompt: HTMLElement | null = null
+  let stickyImageFullHeight = 0
   // Bumped on every rebuildForThread (and on unmount) so a backward-fill step
   // scheduled by a since-superseded rebuild recognizes it's stale and bails
   // instead of touching a list that has since been cleared/rebuilt again.
@@ -3284,12 +3281,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     scrollToBottomBtn.hidden = isNearBottom()
   }
 
-  function syncStickyImagePreview(): void {
+  function syncStickyImagePreview(releaseOnScrollUp = false): void {
     const prompt = stickyImagePrompt
     if (!prompt?.isConnected) return
     const promptStyle = window.getComputedStyle(prompt)
     if (promptStyle.position !== 'sticky') {
       prompt.classList.remove('is-preview-compact')
+      stickyImageFullHeight = 0
       return
     }
     const listRect = list.getBoundingClientRect()
@@ -3302,7 +3300,18 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       : listRect.top + Number.parseFloat(listStyle.paddingTop) - list.scrollTop
     const stickyTop =
       listRect.top + Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top)
-    prompt.classList.toggle('is-preview-compact', naturalTop < stickyTop - 1)
+    const compact = prompt.classList.contains('is-preview-compact')
+    // Shrinking the prompt can shorten the list and clamp scrollTop. That moves
+    // naturalTop down without a reader scroll, so require enough room for the
+    // full preview before expanding it again.
+    const releaseOffset = compact
+      ? Math.max(0, stickyImageFullHeight - prompt.getBoundingClientRect().height)
+      : 0
+    const shouldCompact = naturalTop < stickyTop + (releaseOnScrollUp ? 0 : releaseOffset) - 1
+    if (shouldCompact === compact) return
+    if (shouldCompact) stickyImageFullHeight = prompt.getBoundingClientRect().height
+    else stickyImageFullHeight = 0
+    prompt.classList.toggle('is-preview-compact', shouldCompact)
   }
 
   function refreshStickyImagePrompt(): void {
@@ -3311,14 +3320,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     )
     const latest = prompts[prompts.length - 1]
     const next = latest?.querySelector('.message-images') ? latest : null
-    if (stickyImagePrompt !== next) stickyImagePrompt?.classList.remove('is-preview-compact')
+    if (stickyImagePrompt !== next) {
+      stickyImagePrompt?.classList.remove('is-preview-compact')
+      stickyImageFullHeight = 0
+    }
     stickyImagePrompt = next
     syncStickyImagePreview()
   }
 
   function handleUserScroll(): void {
     const scrollTop = list.scrollTop
-    syncStickyImagePreview()
     // Ignore the scroll event emitted by our own scrollToBottom(): it lands on
     // an exact, known position. Everything else is a real user scroll. Matching
     // the position (rather than suppressing for a time window) means a user
@@ -3339,6 +3350,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // re-pinned just because layout pulled it onto the bottom.
     const dropped = scrollTop < lastScrollTop - 1
     const clamped = dropped && list.scrollHeight - scrollTop - list.clientHeight <= 1
+    // A reader scrolling up can restore the full preview as soon as the prompt
+    // leaves its sticky position. A clamp caused by the preview shrinking cannot.
+    syncStickyImagePreview(dropped && !clamped)
     if (clamped) {
       // Layout, not the reader; the pin state stands.
     } else if (dropped) {
@@ -3355,7 +3369,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
   list.addEventListener('scroll', handleUserScroll, { passive: true })
   const listResizeObserver =
-    typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(syncStickyImagePreview)
+    typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(() => {
+          syncStickyImagePreview()
+        })
   listResizeObserver?.observe(list)
   // Messages arrive one at a time and in older-history batches; every one may
   // end a turn, so the footers follow the list's own children.
@@ -3513,6 +3531,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const before = list.scrollTop
     list.scrollTop = top
     const landed = list.scrollTop
+    // Reading-anchor and layout corrections can move upward without reader
+    // intent. Keep the compact preview's hysteresis; only handleUserScroll
+    // releases it early for a genuine upward scroll.
     syncStickyImagePreview()
     lastScrollTop = landed
     if (landed !== before) {
@@ -5031,9 +5052,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   const unsubs = [
-    store.on('reviewer_input_open', (requestId) => {
-      reviewerInput.open(requestId)
-    }),
     store.on('reviewer_input_jump', jumpToReviewerInput),
     store.on('code_block_run_finished', (result) => {
       setCodeBlockRunOutcome(list, result.id, {
@@ -5183,16 +5201,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }),
     store.on('tool_call_started', (mid) => {
       refreshToolCards(mid)
-      reviewerInput.sync()
     }),
     store.on('tool_call_updated', (mid) => {
       refreshToolCards(mid)
-      reviewerInput.sync()
     }),
     store.on('threads_changed', () => {
       rebuildForThread()
       syncFromStore()
-      reviewerInput.sync()
       scheduleConciseTurnFooterSync()
       syncSideChatChips()
     }),
@@ -5274,9 +5289,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const unbindBrowserLinks = bindBrowserLinkClicks(root, store, api)
   rebuildForThread()
   syncFromStore()
-  reviewerInput.sync()
   return () => {
     disposed = true
+    archiveReview.dispose()
     selectionQuote.destroy()
     avatarMotion.dispose()
     // Invalidate any backfillOlderMessages step still queued via

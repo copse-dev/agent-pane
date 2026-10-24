@@ -6,7 +6,6 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
-  rmSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -16,6 +15,7 @@ import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { expectAssistantReply, prepareMockToolTurn } from './helpers/mock-scenario.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT = 'e2e-submodule-worktree'
 const THREAD = 'e2e-submodule-worktree-thread'
@@ -61,7 +61,7 @@ describe('thread worktree with submodules', () => {
     mkdirSync(upstream)
     mkdirSync(root)
     worktree = join(worktreesRoot, PROJECT, THREAD)
-    rmSync(worktree, { recursive: true, force: true })
+    removeE2eTree(worktree)
     git(upstream, ['init', '-q', '-b', 'main'])
     commit(upstream, 'lib.txt', 'Vendored library fixture\n', 'library')
     git(root, ['init', '-q', '-b', 'main'])
@@ -97,8 +97,7 @@ describe('thread worktree with submodules', () => {
     writeE2eEnv({})
     resetUserData()
     if (root && existsSync(worktree)) git(root, ['worktree', 'remove', '--force', worktree])
-    if (fixtureRoot)
-      rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    if (fixtureRoot) removeE2eTree(fixtureRoot)
   })
 
   it('previews and allocates an isolated worktree with the submodule checked out on demand', async function () {

@@ -9,6 +9,7 @@ import {
   type MobileActionResult,
 } from './mobile-actions.ts'
 import { MobileDecisions } from './mobile-decisions.ts'
+import { HumanDecisions } from '../human-decisions.ts'
 import {
   makeDecisionEvent,
   parseDecisionLine,
@@ -59,6 +60,29 @@ describe('mobile control boundary', () => {
       mobileActionSchema.safeParse({ ...message(randomUUID()), text: 'x'.repeat(32001) }).success,
       false,
     )
+    const image = 'data:image/png;base64,iVBORw0KGgo='
+    assert.equal(
+      mobileActionSchema.safeParse({ ...message(randomUUID()), text: '', image }).success,
+      true,
+    )
+    assert.equal(
+      mobileActionSchema.safeParse({ ...message(randomUUID()), text: '' }).success,
+      false,
+    )
+    assert.equal(
+      mobileActionSchema.safeParse({
+        ...message(randomUUID()),
+        image: 'data:text/html;base64,AA==',
+      }).success,
+      false,
+    )
+    assert.equal(
+      mobileActionSchema.safeParse({
+        ...message(randomUUID()),
+        image: image + 'A'.repeat(4_200_000),
+      }).success,
+      false,
+    )
     assert.equal(mobileActionSchema.safeParse({ ...valid, projectId: '../p' }).success, false)
     assert.equal(mobileActionSchema.safeParse({ ...valid, action: 'run-shell' }).success, false)
   })
@@ -97,10 +121,11 @@ describe('mobile control boundary', () => {
   })
 
   it('scopes decisions to their project and thread, enforces kind/count, and settles once', () => {
-    const decisions = new MobileDecisions()
+    const registry = new HumanDecisions()
+    const decisions = new MobileDecisions(registry)
     const id = randomUUID()
     const answers: unknown[] = []
-    const dispose = decisions.register(
+    const dispose = registry.register(
       'p',
       't',
       { id, kind: 'question', questions: [{ question: 'Which?', options: ['One'] }] },
@@ -132,7 +157,7 @@ describe('mobile control boundary', () => {
     ])
     dispose()
     assert.deepEqual(decisions.list('p', 't'), [])
-    const cancel = decisions.register(
+    const cancel = registry.register(
       'p',
       't',
       { id, kind: 'approval', title: 'Run?', body: 'full command' },

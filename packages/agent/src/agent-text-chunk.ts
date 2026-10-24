@@ -73,11 +73,17 @@ function endsInsideMarkup(text: string, incomingText: string): boolean {
   let fence: { character: string; length: number } | undefined
   let lastLineClosesFence = false
   const inlineLines: string[] = []
+  let inlineParagraphLines: string[] = []
+  const pushInlineLine = (line: string): void => {
+    inlineLines.push(line)
+    if (line.trim()) inlineParagraphLines.push(line)
+    else inlineParagraphLines = []
+  }
   for (const line of text.split('\n')) {
     lastLineClosesFence = false
     const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line)
     if (!match) {
-      if (!fence) inlineLines.push(line)
+      if (!fence) pushInlineLine(line)
       continue
     }
     const marker = match[1] ?? ''
@@ -86,11 +92,13 @@ function endsInsideMarkup(text: string, incomingText: string): boolean {
       if (marker[0] === fence.character && marker.length >= fence.length && !rest.trim()) {
         fence = undefined
         lastLineClosesFence = true
+        inlineParagraphLines = []
       }
     } else if (marker[0] !== '`' || !rest.includes('`')) {
       fence = { character: marker[0] ?? '', length: marker.length }
+      inlineParagraphLines = []
     } else {
-      inlineLines.push(line)
+      pushInlineLine(line)
     }
   }
   if (fence) return true
@@ -121,14 +129,18 @@ function endsInsideMarkup(text: string, incomingText: string): boolean {
     break
   }
   if (lastLine.startsWith('|') && !lastLine.endsWith('|')) return true
-  const trailingMarker = /(\*+|_+|~{2,}|`+)$/.exec(lastLine)?.[1]
-  if (!trailingMarker) return false
+  const trailingMarker = /(\*+|_+|~{2,})$/.exec(lastLine)?.[1]
   // Closing markers are renderable on their own. Only an unmatched terminal
-  // run needs the next chunk, preserving the fresh-bubble boundary after a
-  // complete span such as "**Completed.**". Escaped runs are literal text.
+  // emphasis run needs the next chunk, preserving the fresh-bubble boundary
+  // after a complete span such as "**Completed.**". Escaped runs are literal
+  // text. An inline code span opened earlier in this uninterrupted paragraph
+  // and never closed also needs the next chunk, even when the cut lands
+  // mid-content rather than on the backtick itself — otherwise the opening
+  // backtick and partial path/code text strand as literal text in this
+  // bubble, and the closing backtick strands in the next.
   let unmatched = false
   let inlineCodeLength: number | undefined
-  const inlineText = inlineLines.join('\n')
+  const inlineText = inlineParagraphLines.join('\n')
   for (const match of inlineText.matchAll(/\*+|_+|~{2,}|`+/g)) {
     let precedingBackslashes = 0
     for (let index = match.index - 1; index >= 0 && inlineText[index] === '\\'; index -= 1) {
@@ -143,7 +155,8 @@ function endsInsideMarkup(text: string, incomingText: string): boolean {
       unmatched = !unmatched
     }
   }
-  if (trailingMarker.startsWith('`')) return inlineCodeLength !== undefined
+  if (inlineCodeLength !== undefined) return true
+  if (!trailingMarker) return false
   return unmatched
 }
 

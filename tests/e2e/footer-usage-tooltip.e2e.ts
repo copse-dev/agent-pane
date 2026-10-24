@@ -16,9 +16,9 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 // its explicit boundary from whole-thread cache/cost, and the free-model note.
 describe('footer context and usage hover', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     // Checkout changes must not leak into the composer's Changes badge.
     seedFooterUsageFixture(seedStableWorkspace())
@@ -34,12 +34,12 @@ describe('footer context and usage hover', () => {
 
     // No separate counter any more, and no percentage beside the ring.
     await expect($('.footer-usage')).not.toExist()
-    const wheel = await $('.context-wheel')
+    const wheel = await $('.context-wheel').getElement()
     await expect(wheel).toBeDisplayed()
     // 82% full: amber, short of the red threshold.
     await expect(wheel.$('.context-wheel-fill')).toHaveElementClass('is-warn')
 
-    const popover = await $('.context-wheel-popover')
+    const popover = await $('.context-wheel-popover').getElement()
     await expect(popover).not.toBeDisplayed()
 
     await browser.pause(500)
@@ -79,7 +79,7 @@ describe('footer context and usage hover', () => {
 
   it('keeps the popover closed when the wheel is clicked', async () => {
     await $('#pane-projects').moveTo({ xOffset: 8, yOffset: 8 })
-    const wheel = await $('.context-wheel')
+    const wheel = await $('.context-wheel').getElement()
     await wheel.click()
     await $('#pane-projects').moveTo({ xOffset: 8, yOffset: 8 })
 

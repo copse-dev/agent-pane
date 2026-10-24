@@ -29,6 +29,8 @@ it('keeps the latest 40 readable messages after omitting empty assistant records
   assert.equal(visible.length, 40)
   assert.equal(visible[0]?.content, 'Answer 1')
   assert.deepEqual(visible.at(-1), {
+    id: 'summary',
+    imageCount: 0,
     role: 'assistant',
     content: '',
     summary: 'Reviewed three files',
@@ -47,9 +49,17 @@ it('keeps user and error records, and caps displayed text', () => {
       message('long', 'assistant', 'x'.repeat(20_001)),
     ]),
     [
-      { role: 'user', content: '', summary: null },
-      { role: 'error', content: 'Failed', summary: null },
-      { role: 'assistant', content: 'x'.repeat(20_000), summary: null },
+      { id: 'image', imageCount: 0, role: 'user', content: '', summary: null },
+      { id: 'failure', imageCount: 0, role: 'error', content: 'Failed', summary: null },
+      { id: 'long', imageCount: 0, role: 'assistant', content: 'x'.repeat(20_000), summary: null },
     ],
   )
+})
+
+it('keeps an image-only assistant response while dropping truly empty records', () => {
+  const image = { ...message('picture', 'assistant', ''), images: ['data:image/png;base64,YQ=='] }
+  const visible = mobileTranscriptMessages([message('empty', 'assistant', ''), image])
+  assert.deepEqual(visible, [
+    { id: 'picture', role: 'assistant', content: '', summary: null, imageCount: 1 },
+  ])
 })

@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json'
 import { $, browser, expect } from '@wdio/globals'
 import { e2eWorkspaceDir, resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-thread-archive-worktree'
 const CLEAN_ID = 'archive-clean'
@@ -37,8 +38,8 @@ describe('archive chat and remove its worktree', function () {
     cleanRoot = join(worktreesRoot, PROJECT_ID, CLEAN_ID)
     dirtyRoot = join(worktreesRoot, PROJECT_ID, DIRTY_ID)
     busyRoot = join(worktreesRoot, PROJECT_ID, BUSY_ID)
-    rmSync(projectRoot, { recursive: true, force: true })
-    rmSync(join(worktreesRoot, PROJECT_ID), { recursive: true, force: true })
+    removeE2eTree(projectRoot)
+    removeE2eTree(join(worktreesRoot, PROJECT_ID))
     mkdirSync(projectRoot, { recursive: true })
     git(projectRoot, ['init', '-q', '-b', 'main'])
     git(projectRoot, ['config', 'user.name', 'Copse E2E'])
@@ -118,10 +119,10 @@ describe('archive chat and remove its worktree', function () {
       try {
         git(projectRoot, ['worktree', 'remove', '--force', path])
       } catch {
-        rmSync(path, { recursive: true, force: true })
+        removeE2eTree(path)
       }
     }
-    if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
+    if (projectRoot) removeE2eTree(projectRoot)
   })
 
   async function archiveFromSidebar(threadId: string): Promise<void> {
@@ -133,7 +134,40 @@ describe('archive chat and remove its worktree', function () {
     await $('.context-menu-item=Archive').click()
   }
 
+  /**
+   * Open a Shells-tab terminal for a chat, optionally typing `input` into it.
+   * Creating a shell is gated by an approval prompt on hosts without an OS
+   * sandbox, so start it without awaiting and approve if the prompt appears.
+   */
+  async function openThreadShell(threadId: string, input?: string): Promise<void> {
+    await browser.execute(
+      (projectId: string, id: string, data: string | null) => {
+        delete document.body.dataset['e2eThreadShell']
+        void window.api.terminal
+          .create(80, 24, { projectId, threadId: id, label: 'Dev server' })
+          .then(async ({ sessionId }) => {
+            if (data !== null) await window.api.terminal.write(sessionId, data)
+            document.body.dataset['e2eThreadShell'] = sessionId
+          })
+      },
+      PROJECT_ID,
+      threadId,
+      input ?? null,
+    )
+    const approval = $('#approval-dialog')
+    await browser.waitUntil(
+      async () => {
+        if (await approval.isDisplayed()) await approval.$('.approval-approve').click()
+        return (await $('body').getAttribute('data-e2e-thread-shell')) !== null
+      },
+      { timeout: 30_000, timeoutMsg: 'expected the chat’s shell to start' },
+    )
+  }
+
   it('removes a clean checkout immediately and keeps its unmerged branch and history', async () => {
+    // An opened but never-used shell is not running work: it closes with the
+    // chat instead of asking first.
+    await openThreadShell(CLEAN_ID)
     await archiveFromSidebar(CLEAN_ID)
     await $(`.chat-row[data-thread-id="${CLEAN_ID}"]`).waitForExist({
       reverse: true,
@@ -190,12 +224,10 @@ describe('archive chat and remove its worktree', function () {
     const visibleMeta = safeJsonParse(
       readFileSync(join(e2eWorkspaceDir(), PROJECT_ID, DIRTY_ID, 'meta.json'), 'utf8'),
       decodeWithSchema(
-        z
-          .object({
-            archivedAt: z.number().optional(),
-            worktree: z.object({ retiredAt: z.number().optional() }).passthrough().optional(),
-          })
-          .passthrough(),
+        z.looseObject({
+          archivedAt: z.number().optional(),
+          worktree: z.looseObject({ retiredAt: z.number().optional() }).optional(),
+        }),
       ),
     )
     assert.ok(visibleMeta)
@@ -223,27 +255,9 @@ describe('archive chat and remove its worktree', function () {
 
   it('asks before stopping a chat’s live shell, then stops it and archives', async () => {
     await $(`.chat-row[data-thread-id="${BUSY_ID}"]`).waitForDisplayed({ timeout: 30_000 })
-    // Creating a shell is gated by an approval prompt on hosts without an OS
-    // sandbox, so start it without awaiting and approve if the prompt appears.
-    await browser.execute(
-      (projectId: string, threadId: string) => {
-        void window.api.terminal
-          .create(80, 24, { projectId, threadId, label: 'Dev server' })
-          .then((id: string) => {
-            document.body.dataset['e2eBusyTerminal'] = id
-          })
-      },
-      PROJECT_ID,
-      BUSY_ID,
-    )
-    const approval = $('#approval-dialog')
-    await browser.waitUntil(
-      async () => {
-        if (await approval.isDisplayed()) await approval.$('.approval-approve').click()
-        return (await $('body').getAttribute('data-e2e-busy-terminal')) !== null
-      },
-      { timeout: 30_000, timeoutMsg: 'expected the chat’s shell to start' },
-    )
+    // A shell nobody has typed into is closed out silently on archive, so run
+    // a long-lived command in it: that is the live work the dialog must guard.
+    await openThreadShell(BUSY_ID, 'sleep 600\r')
     await archiveFromSidebar(BUSY_ID)
     const dialog = $('#confirm-dialog')
     await dialog.waitForDisplayed({ timeout: 10_000 })

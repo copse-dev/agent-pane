@@ -13,6 +13,7 @@ import { keyOf } from '@shared/member-of.ts'
 import { RELEASE_CHANNELS } from '@shared/release-channel.mts'
 import { GIT_ATTRIBUTION_SETTING } from '@shared/git/commit-attribution.ts'
 import { GIT_THREAD_LINK_SETTING } from '@shared/git/thread-link.ts'
+import { WEB_SEARCH_PROVIDERS } from '@shared/web-search.ts'
 
 // Empty string means "use the provider default"; any non-empty value must be a
 // safe base URL since it carries the Cursor API key as an Authorization header.
@@ -183,6 +184,7 @@ export const trustedSshHostsSchema = z.array(z.string().min(1).max(253)).max(200
 export const autoApprovalLevelSchema = z.enum(AUTO_APPROVAL_LEVELS)
 
 export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
+  autoArchiveAfterDays: z.union([z.literal(0), z.number().int().min(3).max(3650)]),
   acknowledgedProductAnnouncements: announcementHistorySchema,
   model: z.string().max(256),
   // Acknowledgement of the one-time ChatGPT plan onboarding notice.
@@ -313,6 +315,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // the `gh` CLI and falls back to the REST/GraphQL API, or force one. See
   // services/github/backend/backend.ts.
   githubBackend: z.enum(['auto', 'cli', 'api']),
+  webSearchProvider: z.enum(WEB_SEARCH_PROVIDERS),
   [GIT_ATTRIBUTION_SETTING]: z.boolean(),
   [GIT_THREAD_LINK_SETTING]: z.boolean(),
   remoteAgentBaseUrl: remoteAgentBaseUrlSchema,
@@ -328,10 +331,12 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // back. Off means the turn falls back to a local chat model instead.
   preferAcpOverCloudAgent: z.boolean(),
   // Let Copse's native git_commit subprocess reach the one macOS ssh-agent
-  // socket named by SSH_AUTH_SOCK. Off by default: the socket can use every key
-  // loaded into the agent, and Git hooks inherit the commit process's sandbox.
-  // The private key remains unreadable; git-commit-signing.ts supplies only its
-  // public identity when the configured signingKey names the private-key path.
+  // socket named by SSH_AUTH_SOCK. On by default: Copse signs without asking,
+  // after a sandboxed probe proves the socket is otherwise unreachable, unless
+  // the git_commit tool is set to Always ask. Git hooks inherit the commit
+  // process's sandbox, not the socket. The private key remains unreadable;
+  // git-commit-signing.ts supplies only its public identity when the
+  // configured signingKey names the private-key path.
   gitCommitSshAgentSocketAccess: z.boolean(),
   // External ACP agents Copse drives as a client (model value `acp:<id>`).
   registeredAcpAgents: registeredAcpAgentsSchema,
@@ -370,6 +375,14 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // stages when git is unreadable, when unowned work could not be backed up, or
   // when the target changed on disk since Copse last touched it.
   worktreeAutoApproveEdits: z.boolean(),
+  // Keep each local project's `origin/<default>` ref current in the background
+  // so new threads start from the latest upstream code. Only the remote-tracking
+  // ref moves; the user's checkout and branches never do. The networked fetch
+  // runs outside the project sandbox in a Copse-owned scratch repository, so it
+  // uses the user's global Git credentials but never the project's own config
+  // (see default-branch-fetch.ts). Default on. Off skips background fetches,
+  // including the contained fallback, on every platform.
+  backgroundDefaultBranchFetch: z.boolean(),
   // Experimental features, opt-in and off by default. See the experimental
   // section in Settings.
   //
@@ -377,7 +390,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // first-party plugin's `mcp-ui-canvas` capability (Settings > Plugins), so the
   // former `mcpUiArtefactsEnabled` top-level boolean is retired.
   modelClassifierEnabled: z.boolean(),
-  // Experimental next-step tab complete: after a turn, a small-tasks model may
+  // Default-on next-step tab complete: after a turn, a small-tasks model may
   // offer one obvious next step as composer placeholder text the user accepts
   // with Tab. See next-step-service.ts.
   nextStepSuggestionEnabled: z.boolean(),

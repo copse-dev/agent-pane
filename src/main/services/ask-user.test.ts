@@ -13,6 +13,9 @@ import {
   type PausableRunDeadline,
 } from './hooks/run-deadline.ts'
 import { runWithActiveRunIdentity } from './thread-models.ts'
+import { runWithThreadExecutionContext } from './thread-execution-context.ts'
+import { humanDecisions } from './human-decisions.ts'
+import { mobileDecisions } from './mobile/mobile-decisions.ts'
 
 const req: AskUserRequest = {
   questions: [{ question: 'Which DB?', options: ['Postgres'] }, { question: 'Async?' }],
@@ -145,6 +148,56 @@ describe('window ask_user handler', () => {
 
     assert.deepEqual(await pending, { answers: ['', ''], cancelled: true })
     assert.deepEqual(window.sent, ['agent:ask-user-request', 'agent:ask-user-cancelled'])
+  })
+
+  it('shares desktop question registration and withdrawal with host consumers and mobile', async () => {
+    const window = fakeWindowDeps()
+    setAskUserHandler(createWindowAskUserHandler(window.deps))
+    const controller = new AbortController()
+    const pending = runWithThreadExecutionContext(
+      {
+        projectId: 'question-project',
+        threadId: 'question-thread',
+        projectRoot: process.cwd(),
+        root: process.cwd(),
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () =>
+        runWithActiveRunIdentity('question-thread', () =>
+          requestUserAnswers(req, controller.signal),
+        ),
+    )
+    const snapshot = humanDecisions.snapshot()
+    const registered = snapshot.requests.find((request) => request.threadId === 'question-thread')
+    assert.ok(registered)
+    assert.equal(registered.projectId, 'question-project')
+    assert.deepEqual(mobileDecisions.list('question-project', 'question-thread'), [
+      registered.decision,
+    ])
+    assert.deepEqual(registered.decision, {
+      id: registered.decision.id,
+      kind: 'question',
+      questions: req.questions,
+    })
+
+    window.answer(['Postgres', 'Yes'])
+    assert.deepEqual(await pending, { answers: ['Postgres', 'Yes'] })
+    assert.deepEqual(mobileDecisions.list('question-project', 'question-thread'), [])
+    assert.equal(
+      humanDecisions.respond(
+        {
+          sessionId: snapshot.sessionId,
+          projectId: registered.projectId,
+          threadId: registered.threadId,
+          requestId: registered.decision.id,
+          revision: registered.revision,
+        },
+        { kind: 'question', answers: ['SQLite', 'No'] },
+        { id: 'late-client', label: 'Late client' },
+      ),
+      false,
+    )
   })
 
   it('alerts for the asking thread and releases the alert once answered', async () => {

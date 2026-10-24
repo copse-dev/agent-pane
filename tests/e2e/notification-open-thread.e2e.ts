@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -17,6 +17,7 @@ import {
   writeSettings,
 } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 /**
  * Native alert proof: a question from a thread the user is not looking at is
@@ -99,7 +100,7 @@ async function nativeAlerts(action: 'hide' | 'click-notification'): Promise<void
 
 async function selectedThreadId(): Promise<string | undefined> {
   return browser.execute(
-    () => document.querySelector<HTMLElement>('.chat-row.selected')?.dataset.threadId,
+    () => document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId'],
   )
 }
 
@@ -149,7 +150,7 @@ describe('notification opens its thread', function () {
   after(() => {
     writeE2eEnv({ COPSE_E2E_NATIVE_ALERTS: undefined })
     resetUserData()
-    rmSync(alertsDir, { recursive: true, force: true })
+    removeE2eTree(alertsDir)
   })
 
   it('badges a background question and opens its thread from the notification', async () => {

@@ -7,6 +7,7 @@ import { addMessage, createThread, setThreadStatus } from '@shared/store/thread-
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { startSideChat } from '../controller/side-chat.ts'
+import { attachThreadHydration, ensureThreadMessages } from '../controller/thread-hydration.ts'
 import {
   mountSideChatPane,
   renderSideChat,
@@ -256,6 +257,129 @@ test('the mounted pane shows a requested side chat beside the main thread, sends
     )
   } finally {
     dispose()
+    document.body.replaceChildren()
+  }
+})
+
+test('a side chat whose transcript is not read yet shows loading, not the empty-chat suggestions', () => {
+  const side = thread('s', { sideChat: link, messagesLoaded: false })
+  const loading = renderSideChat({
+    side,
+    parent: thread('main'),
+    onSuggestion: () => undefined,
+    onArchive: () => undefined,
+  })
+  assert.match(loading.body.textContent, /Loading conversation/)
+  assert.equal(loading.body.querySelectorAll('[data-suggestion]').length, 0)
+
+  const failed = renderSideChat({
+    side,
+    parent: thread('main'),
+    loadFailed: true,
+    onSuggestion: () => undefined,
+    onArchive: () => undefined,
+  })
+  assert.match(failed.body.textContent, /Couldn’t load this side chat/)
+})
+
+test('after a restart the mounted pane reads the selected side chat transcript from disk', async () => {
+  const store = createStore()
+  const link = { parentThreadId: 'main', anchorMessageId: 'm1' }
+  store.setState({
+    activeProjectId: 'project-1',
+    activeThreadId: 'main',
+    filesPaneOpen: true,
+    rightPanelMode: 'side-chat',
+    threads: [
+      thread('main', { messages: [message('m1', 'user', 'Why?')] }),
+      thread('s', { sideChat: link, messagesLoaded: false }),
+    ],
+  })
+  const base = createFakeApi()
+  const reads: string[] = []
+  const api: ApiClient = {
+    ...base,
+    threads: {
+      ...base.threads,
+      loadMessages: (_projectId: string, threadId: string): Promise<Message[]> => {
+        reads.push(threadId)
+        return Promise.resolve(
+          threadId === 's'
+            ? [message('q', 'user', 'Is it safe?'), message('a', 'assistant', 'Yes.')]
+            : [],
+        )
+      },
+    },
+  }
+  const list = document.createElement('div')
+  const viewer = document.createElement('div')
+  document.body.append(list, viewer)
+  const detachHydration = attachThreadHydration(store, api)
+  const dispose = mountSideChatPane(list, viewer, store, api)
+  const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 30))
+  try {
+    await settle()
+    assert.ok(reads.includes('s'), 'the selected side chat was read')
+    assert.equal(reads.filter((id) => id === 's').length, 1, 'read once, not per render')
+    assert.equal(viewer.querySelector('.is-user')?.textContent, 'Is it safe?')
+    assert.equal(viewer.querySelectorAll('[data-suggestion]').length, 0)
+    assert.equal(viewer.querySelector<HTMLInputElement>('.side-chat-input')?.disabled, false)
+  } finally {
+    dispose()
+    detachHydration()
+    document.body.replaceChildren()
+  }
+})
+
+test('the mounted panel pins only its selected transcript and releases it when hidden', async () => {
+  const store = createStore()
+  const base = createFakeApi()
+  const api: ApiClient = {
+    ...base,
+    threads: {
+      ...base.threads,
+      loadMessages: async (_projectId, threadId) => [
+        message(`${threadId}-answer`, 'assistant', `Answer ${threadId}`),
+      ],
+    },
+  }
+  store.setState({
+    activeProjectId: 'project-1',
+    activeThreadId: 'main',
+    filesPaneOpen: true,
+    rightPanelMode: 'side-chat',
+    threads: [
+      thread('main'),
+      ...Array.from({ length: 14 }, (_, i) =>
+        thread(`side-${String(i)}`, { sideChat: link, messagesLoaded: false }),
+      ),
+    ],
+  })
+  const list = document.createElement('div')
+  const viewer = document.createElement('div')
+  document.body.append(list, viewer)
+  const detach = attachThreadHydration(store, api)
+  const dispose = mountSideChatPane(list, viewer, store, api)
+  const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 30))
+  try {
+    await settle()
+    for (let i = 1; i < 14; i++) {
+      const row = list.querySelector<HTMLButtonElement>(`[data-side-chat-id="side-${String(i)}"]`)
+      assert.ok(row)
+      row.click()
+      await settle()
+      assert.match(viewer.textContent, new RegExp(`Answer side-${String(i)}`))
+      assert.ok(store.getState().threads.filter((t) => t.messagesLoaded === true).length <= 9)
+    }
+    assert.equal(store.getState().threads.find((t) => t.id === 'side-0')?.messagesLoaded, false)
+    // Closing releases the latest pin; the next loads can evict it normally.
+    store.setState({ filesPaneOpen: false })
+    store.emit('files_pane_changed')
+    for (let i = 0; i < 13; i++) await ensureThreadMessages('project-1', `side-${String(i)}`)
+    assert.equal(store.getState().threads.find((t) => t.id === 'side-13')?.messagesLoaded, false)
+  } finally {
+    dispose()
+    detach()
     document.body.replaceChildren()
   }
 })

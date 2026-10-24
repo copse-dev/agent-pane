@@ -1,12 +1,13 @@
+import { isRecord } from '@copse/std/unknown-value.ts'
 import { createServer, type Server } from 'node:http'
-import type { AddressInfo } from 'node:net'
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { readSeededSettings, resetUserData, seedOnboardingFixture } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // The happy path with real detections, made deterministic by injecting them:
 // two provider keys through the electron-shell env file (bootstrap.cjs applies
@@ -40,7 +41,12 @@ function listen(server: Server, port: number, what: string): Promise<number> {
       )
     })
     server.listen(port, '127.0.0.1', () => {
-      resolve((server.address() as AddressInfo).port)
+      const address = server.address()
+      if (!address || typeof address === 'string') {
+        reject(new Error('Expected a bound TCP server address'))
+        return
+      }
+      resolve(address.port)
     })
   })
 }
@@ -78,13 +84,13 @@ describe('onboarding: scan finds keys and local servers', () => {
     writeE2eEnv({ PATH: originalPath })
     await new Promise((resolve) => janServer.close(resolve))
     await new Promise((resolve) => lmServer.close(resolve))
-    rmSync(agentBinDir, { recursive: true, force: true })
+    removeE2eTree(agentBinDir)
     resetUserData()
   })
 
   it('pre-checks every detection and shows LM Studio as automatic', async function () {
     this.timeout(120_000)
-    const overlay = await $('#onboarding-dialog')
+    const overlay = await $('#onboarding-dialog').getElement()
     await overlay.waitForDisplayed({ timeout: 30_000 })
 
     // Automatic onboarding may inspect local services, but shell startup files
@@ -129,7 +135,7 @@ describe('onboarding: scan finds keys and local servers', () => {
 
   it('finish imports what stayed ticked and writes relative-selector defaults', async function () {
     this.timeout(120_000)
-    const overlay = await $('#onboarding-dialog')
+    const overlay = await $('#onboarding-dialog').getElement()
 
     // Untick OpenAI: its key must stay out of Copse storage.
     await overlay
@@ -148,7 +154,8 @@ describe('onboarding: scan finds keys and local servers', () => {
     expect(settings['onboardingCompleted']).toBe(true)
     expect(settings['envKeyAutoDetectEnabled']).toBe(true)
 
-    const apiKeys = (settings['apiKey'] ?? {}) as Record<string, unknown>
+    const keyValue = settings['apiKey']
+    const apiKeys = isRecord(keyValue) ? keyValue : {}
     // The unticked key must never land, on any platform.
     expect(apiKeys['openai'] ?? settings['apiKey.openai']).toBeUndefined()
     // The ticked key lands wherever an OS keyring exists. On keyring-less
@@ -157,9 +164,7 @@ describe('onboarding: scan finds keys and local servers', () => {
     // consent is on and the detection still resolves, so a re-run reports the
     // key as refused (or already-configured where the first import stored it).
     const anthropicKey = apiKeys['anthropic'] ?? settings['apiKey.anthropic']
-    const rerun = (await browser.execute(() =>
-      window.api.settings.importEnvKeys(['anthropic']),
-    )) as { imported: unknown[]; skipped: { provider: string; reason: string }[] }
+    const rerun = await browser.execute(() => window.api.settings.importEnvKeys(['anthropic']))
     expect(rerun.imported).toEqual([])
     expect(rerun.skipped).toEqual([
       {

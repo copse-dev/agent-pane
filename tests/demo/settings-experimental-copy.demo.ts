@@ -1,3 +1,4 @@
+import type { MobileCompanionState } from '@shared/types/mobile-companion.ts'
 import assert from 'node:assert/strict'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
@@ -63,6 +64,10 @@ describe('browser-hosted Experimental settings copy', () => {
 
   it('no longer lists concise threads as experimental', async () => {
     await expect($(`${EXPERIMENTAL} input[name="conciseThreadsEnabled"]`)).not.toBeExisting()
+  })
+
+  it('no longer lists next-step tab complete as experimental', async () => {
+    await expect($(`${EXPERIMENTAL} input[name="nextStepSuggestionEnabled"]`)).not.toBeExisting()
   })
 
   it('names the Developer Tools menu item that Developer mode adds', async () => {
@@ -139,6 +144,7 @@ describe('browser-hosted Experimental settings copy', () => {
     await $('#plugins-list .plugin-row[data-plugin-id="copse.todos"]').waitForExist()
     await browser.waitUntil(async () => (await $('#plugins-reload-status').getText()) === '')
     for (const id of expectedIds) {
+      assert.ok(id, 'Expected a registered plugin id')
       await expect($(`#plugins-list .plugin-row[data-plugin-id="${id}"]`)).toExist()
     }
     assert.equal(await $$('#advisorModel').length, 1)
@@ -148,13 +154,18 @@ describe('browser-hosted Experimental settings copy', () => {
     await $('.prompt-input').waitForExist()
     await browser.execute(() => {
       const getState = window.api.mobile.getState
-      window.api.mobile.getState = async () => ({
+      window.api.mobile.getState = async (): Promise<MobileCompanionState> => ({
         ...(await getState()),
         pairing: { id: '8abde2d0-8c97-4a99-9ea8-a7518309ee52', label: 'My phone', code: '123456' },
       })
-      document.body.dataset.mobilePairingCalls = '[]'
-      window.api.mobile.respondPairing = async (decision, code, pairingId, rootTrusted) => {
-        document.body.dataset.mobilePairingCalls = JSON.stringify([
+      document.body.dataset['mobilePairingCalls'] = '[]'
+      window.api.mobile.respondPairing = async (
+        decision,
+        code,
+        pairingId,
+        rootTrusted,
+      ): ReturnType<typeof window.api.mobile.respondPairing> => {
+        document.body.dataset['mobilePairingCalls'] = JSON.stringify([
           [decision, code, pairingId, rootTrusted],
         ])
       }
@@ -180,7 +191,7 @@ describe('browser-hosted Experimental settings copy', () => {
     )
     await control.click()
     assert.equal(
-      await browser.execute(() => document.body.dataset.mobilePairingCalls),
+      await browser.execute(() => document.body.dataset['mobilePairingCalls']),
       JSON.stringify([['control', '123456', '8abde2d0-8c97-4a99-9ea8-a7518309ee52', true]]),
     )
     await expect($('#settings-dialog')).toBeDisplayed()
@@ -193,7 +204,7 @@ describe('browser-hosted Mobile Companion device control', () => {
     await $('.prompt-input').waitForExist()
     await browser.execute(() => {
       const getState = window.api.mobile.getState
-      window.api.mobile.getState = async () => ({
+      window.api.mobile.getState = async (): Promise<MobileCompanionState> => ({
         ...(await getState()),
         devices: [
           {
@@ -204,9 +215,13 @@ describe('browser-hosted Mobile Companion device control', () => {
           },
         ],
       })
-      document.body.dataset.mobileAccessCalls = '[]'
-      window.api.mobile.setDeviceAccess = async (id, access, rootTrusted) => {
-        document.body.dataset.mobileAccessCalls = JSON.stringify([[id, access, rootTrusted]])
+      document.body.dataset['mobileAccessCalls'] = '[]'
+      window.api.mobile.setDeviceAccess = async (
+        id,
+        access,
+        rootTrusted,
+      ): ReturnType<typeof window.api.mobile.setDeviceAccess> => {
+        document.body.dataset['mobileAccessCalls'] = JSON.stringify([[id, access, rootTrusted]])
       }
     })
     await $('[aria-label="Settings"]').click()
@@ -228,7 +243,7 @@ describe('browser-hosted Mobile Companion device control', () => {
     )
     await control.click()
     assert.equal(
-      await browser.execute(() => document.body.dataset.mobileAccessCalls),
+      await browser.execute(() => document.body.dataset['mobileAccessCalls']),
       JSON.stringify([['8abde2d0-8c97-4a99-9ea8-a7518309ee52', 'control', true]]),
     )
   })
@@ -254,5 +269,26 @@ describe('browser-hosted Concise threads setting', () => {
     assert.doesNotMatch(await fieldset.getText(), /experimental/i)
 
     await saveElementScreenshot(CONCISE_FIELDSET, 'settings-appearance-concise-threads.png')
+  })
+})
+
+describe('browser-hosted Next-step tab complete setting', () => {
+  it('is on by default under Appearance and can be turned off', async () => {
+    await browser.url('/?scenario=settings-footer')
+    await $('.prompt-input').waitForExist()
+    await $('[aria-label="Settings"]').click()
+    await $('#settings-dialog').$('button[data-section="appearance"]').click()
+
+    const selector = `${APPEARANCE} [data-testid="settings-next-step"]`
+    const fieldset = $(selector)
+    await fieldset.scrollIntoView()
+    await expect(fieldset).toBeDisplayed()
+    const checkbox = fieldset.$('input[name="nextStepSuggestionEnabled"]')
+    await expect(checkbox).toBeSelected()
+    assert.match(await fieldset.getText(), /press Tab to accept it/)
+    assert.doesNotMatch(await fieldset.getText(), /experimental/i)
+    await saveElementScreenshot(selector, 'settings-appearance-next-step.png')
+    await checkbox.click()
+    await expect(checkbox).not.toBeSelected()
   })
 })

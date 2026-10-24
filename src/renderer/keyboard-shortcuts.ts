@@ -1,7 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../preload/api.d.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
-import { openNewThread } from '@shared/store/thread-helpers.ts'
+import { openNewProjectThread } from './controller/projects.ts'
 import {
   openRightPanelWithWorkspace,
   toggleFilesPaneWithWorkspace,
@@ -113,7 +113,7 @@ export function registerPanelKeyboardShortcuts(store: AppStore, api: ApiClient):
     if (matchNewThreadShortcut(e)) {
       if (!store.getState().workspaceRoot) return
       e.preventDefault()
-      openNewThread(store)
+      openNewProjectThread(store, api)
       return
     }
     if (isTypingTarget(e.target)) return

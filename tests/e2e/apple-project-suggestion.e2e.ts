@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // Detection only runs for local projects on macOS, where Xcode can exist.
 const describeAppleSuggestion = process.platform === 'darwin' ? describe : describe.skip
@@ -27,7 +28,7 @@ describeAppleSuggestion('Apple development suggestion on project open', function
 
   after(() => {
     resetUserData()
-    rmSync(workspace, { recursive: true, force: true })
+    removeE2eTree(workspace)
   })
 
   it('asks to turn the plugin on the first time an Apple project opens', async () => {

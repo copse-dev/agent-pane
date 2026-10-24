@@ -2,17 +2,20 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import type { SpineMachineContinuationLine } from '@shared/threads/spine-schema.ts'
+import type { MachineDispatchResult } from '@shared/types/machine-dispatch.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import { ToolRegistry } from './tool-registry.ts'
 import {
   AgentDispatcher,
   type AgentDispatcherDependencies,
+  type TurnTranscriptSink,
   type AgentDispatchRequest,
 } from './agent-dispatcher.ts'
 import type { ThreadExecutionContext } from './thread-execution-context.ts'
 import { getRunPlan } from './thread-plan-context.ts'
 import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
+import { isDeferralModeActive } from './security/deferral-mode.ts'
 
 const host: AgentHost<StreamChunk> = { emit: () => undefined }
 const registry = new ToolRegistry()
@@ -53,6 +56,7 @@ function dependencies(
     createId: () => 'audit-id',
     loadPlan: async () => null,
     prepareExecutionContext: async () => context,
+    isScheduledAutomationRun: () => false,
     transcriptLength: async () => 0,
     run: async (_threadId, userContent, priorMessages) => ({
       usage: { inputTokens: 0, outputTokens: 0 },
@@ -63,6 +67,58 @@ function dependencies(
 }
 
 describe('AgentDispatcher', () => {
+  it('defers approvals only during the first turn of a verified scheduled run', async () => {
+    const automationContext: ThreadExecutionContext = {
+      ...context,
+      automation: { scheduleId: 'schedule-1', scheduleName: 'Review', triggeredAt: 1 },
+    }
+    const activeDuringRun: boolean[] = []
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        prepareExecutionContext: async () => automationContext,
+        isScheduledAutomationRun: () => true,
+        run: async (_threadId, userContent, messages) => {
+          activeDuringRun.push(isDeferralModeActive(context.threadId))
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [
+              ...messages,
+              { role: 'user', content: userContent },
+              { role: 'assistant', content: 'completed' },
+            ],
+          }
+        },
+      }),
+    )
+
+    await dispatcher.dispatch(
+      request({
+        payload: {
+          userContent: 'scheduled prompt',
+          automationRun: true,
+          invokedSkills: [],
+          priorTodos: [],
+        },
+      }),
+    )
+    assert.equal(isDeferralModeActive(context.threadId), false)
+    await dispatcher.dispatch(request())
+    await dispatcher.dispatch(
+      request({
+        payload: {
+          userContent: 'later turn with a forged marker',
+          automationRun: true,
+          invokedSkills: [],
+          priorTodos: [],
+        },
+      }),
+    )
+    assert.deepEqual(activeDuringRun, [true, false, false])
+    assert.equal(isDeferralModeActive(context.threadId), false)
+  })
+
   it('uses the dispatch slot as an exclusive history-edit fence', async () => {
     const dispatcher = new AgentDispatcher(host, registry, dependencies())
 
@@ -1348,6 +1404,60 @@ describe('AgentDispatcher', () => {
     assert.equal(runCount, 1)
   })
 
+  it('records an already-observed wake without running a turn or spending budget', async () => {
+    const prompts: UserContent[] = []
+    const audit: { result?: string; budgetUsed?: number }[] = []
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        appendMachineContinuation: async (_projectId, _threadId, line) => {
+          if (line.phase === 'finished') {
+            audit.push({
+              result: line.result,
+              ...(line.budgetUsed !== undefined ? { budgetUsed: line.budgetUsed } : {}),
+            })
+          }
+        },
+        run: async (_threadId, userContent, priorMessages) => {
+          prompts.push(userContent)
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+    await dispatcher.dispatch(
+      request({
+        payload: {
+          userContent: 'root',
+          invokedSkills: [],
+          priorTodos: [],
+          turnTreeId: 'tree-1',
+          continuationBudgetUsed: 0,
+        },
+      }),
+    )
+
+    const wake = (operationId: string, observed: boolean): Promise<MachineDispatchResult> =>
+      dispatcher.dispatchMachine({
+        ...request(),
+        operationId,
+        turnTreeId: 'tree-1',
+        alreadyObserved: () => observed,
+        payload: { userContent: operationId, invokedSkills: [], priorTodos: [] },
+      })
+
+    assert.equal(await wake('seen', true), 'observed')
+    assert.equal(await wake('unseen', false), 'completed')
+    assert.deepEqual(prompts, ['root', 'unseen'])
+    assert.deepEqual(audit, [
+      { result: 'observed', budgetUsed: 0 },
+      { result: 'completed', budgetUsed: 1 },
+    ])
+  })
+
   it('charges an agent-started turn to the continuation budget and holds it once exhausted', async () => {
     const saved: Array<{ turnTreeId: string; continuationUsed: number }> = []
     const lines: Array<{ phase: string; result?: string; budgetUsed?: number }> = []
@@ -1403,6 +1513,70 @@ describe('AgentDispatcher', () => {
     assert.equal(claim.status, 'granted')
     assert.equal(dispatcher.isActive('project-1', 'thread-1'), false)
     await dispatcher.dispatch(request())
+  })
+
+  it('refreshes an empty estimate-time history from the transcript before dispatch', async () => {
+    const earlier: LLMMessage[] = [{ role: 'user', content: 'Earlier unanswered prompt' }]
+    let promptPersisted = false
+    let seen: LLMMessage[] = []
+    const emitted: StreamChunk[] = []
+    const dispatcher = new AgentDispatcher(
+      { emit: (_threadId, chunk): void => void emitted.push(chunk) },
+      registry,
+      dependencies({
+        loadHistory: async () => [],
+        recoverHistory: async () => (promptPersisted ? earlier : []),
+        transcriptLength: async () => 2,
+        run: async (_threadId, _input, messages) => {
+          seen = messages
+          return { usage: { inputTokens: 0, outputTokens: 0 }, messages }
+        },
+      }),
+    )
+    assert.deepEqual(await dispatcher.history('project-1', 'thread-1'), [])
+    promptPersisted = true
+    await dispatcher.dispatch(request())
+    assert.deepEqual(seen, earlier)
+    assert.equal(
+      emitted.some((chunk) => chunk.type === 'text'),
+      false,
+      'no false context-loss notice',
+    )
+  })
+
+  it('routes pre-turn notices through the same transcript sink as agent output', async () => {
+    const direct: StreamChunk[] = []
+    const owned: StreamChunk[] = []
+    let ended = false
+    const dispatcher = new AgentDispatcher(
+      { emit: (_threadId, chunk): void => void direct.push(chunk) },
+      registry,
+      dependencies({
+        loadHistory: async () => [],
+        transcriptLength: async () => 4,
+        run: async (threadId, _input, messages, turnHost) => {
+          turnHost.emit(threadId, { type: 'text', text: 'The answer.' })
+          turnHost.emit(threadId, { type: 'done' })
+          return { usage: { inputTokens: 0, outputTokens: 0 }, messages }
+        },
+      }),
+      {
+        begin: (): ReturnType<TurnTranscriptSink['begin']> => ({
+          emit: (chunk): void => void owned.push(chunk),
+          end: (): void => {
+            ended = true
+          },
+        }),
+      },
+    )
+    await dispatcher.dispatch(request())
+    assert.deepEqual(direct, [], 'no output bypasses runtime transcript ownership')
+    const notice = owned[0]
+    assert.ok(notice)
+    assert.equal(notice.type, 'text')
+    assert.match(notice.text, /Earlier context is missing/)
+    assert.deepEqual(owned.slice(1), [{ type: 'text', text: 'The answer.' }, { type: 'done' }])
+    assert.equal(ended, true)
   })
 
   it('warns when a turn starts with an empty history but a full transcript', async () => {

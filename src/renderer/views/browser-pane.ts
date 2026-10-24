@@ -621,8 +621,12 @@ export function mountBrowserPane(
       tab.tabLabelEl.textContent = tab.label
       return
     }
+    // Keep the requested destination visible while the fallback iframe still
+    // reports its initial about:blank document. A navigation can take longer
+    // than the first ready event, and that must not temporarily relabel a known
+    // page as “New tab”.
     const url = nonEmptyStringOr(
-      firstNonEmptyString(webviewUrl(tab), tab.pendingUrl),
+      firstNonEmptyString(tab.pendingUrl, webviewUrl(tab)),
       'about:blank',
     )
     const title = webviewTitle(tab)
@@ -924,11 +928,7 @@ export function mountBrowserPane(
     if (!tab) return
     if (browserModeActive(store)) {
       ensureWebview(tab)
-      if (tab.pendingUrl) {
-        const url = tab.pendingUrl
-        tab.pendingUrl = null
-        navigateWebview(tab, url)
-      }
+      if (tab.pendingUrl) navigateWebview(tab, tab.pendingUrl)
       syncAddressBar(tab)
       revealActiveTab(tab)
     }
@@ -1612,11 +1612,7 @@ export function mountBrowserPane(
       const tab = activeTabId ? tabs.get(activeTabId) : null
       if (tab) {
         ensureWebview(tab)
-        if (tab.pendingUrl) {
-          const url = tab.pendingUrl
-          tab.pendingUrl = null
-          navigateWebview(tab, url)
-        }
+        if (tab.pendingUrl) navigateWebview(tab, tab.pendingUrl)
         syncAddressBar(tab)
         ensureBrowserResizeObserver()
         revealActiveTab(tab)

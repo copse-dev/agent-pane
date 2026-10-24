@@ -11,6 +11,7 @@ import {
   shouldSkipAfterTestSessionTraffic,
   wedgedSessionPatternsForTest,
   withTimeout,
+  type SessionDeleter,
 } from '../tests/e2e/helpers/after-test-safety.ts'
 
 describe('isMochaTimeoutError', () => {
@@ -177,19 +178,15 @@ describe('installDeleteSessionSafety', () => {
   it('uses overwriteCommand when present (WDIO / @wdio/globals path)', async () => {
     let killed = 0
     let overwriteCalls = 0
-    let activeDelete: ((options?: unknown) => Promise<unknown>) | undefined
+    let activeDelete: SessionDeleter['deleteSession'] | undefined
 
     const session = {
       deleteSession: async (): Promise<string> => {
         throw new Error('raw deleteSession must not be called after overwriteCommand')
       },
       overwriteCommand(
-        name: string,
-        fn: (
-          this: unknown,
-          origCommand: (...args: unknown[]) => unknown,
-          ...args: unknown[]
-        ) => unknown,
+        name: 'deleteSession',
+        fn: Parameters<NonNullable<SessionDeleter['overwriteCommand']>>[1],
       ): void {
         assert.equal(name, 'deleteSession')
         overwriteCalls += 1
@@ -198,8 +195,7 @@ describe('installDeleteSessionSafety', () => {
             'WebDriverError: Request failed with error code ECONNREFUSED when running DELETE',
           )
         }
-        activeDelete = async (options?: unknown): Promise<unknown> =>
-          await fn.call(session, orig, options)
+        activeDelete = async (options): Promise<unknown> => await fn.call(session, orig, options)
       },
     }
 

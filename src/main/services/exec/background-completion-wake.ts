@@ -8,6 +8,8 @@ export interface BackgroundCompletionWakeRequest {
   turnTreeId: string
   exitCode: number | null
   timedOut: boolean
+  /** True once the agent has read the exited task itself; the wake is then redundant. */
+  alreadyObserved?: () => boolean
 }
 
 export type BackgroundCompletionWakeHandler = (

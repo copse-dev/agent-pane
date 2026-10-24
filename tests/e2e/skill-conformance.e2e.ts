@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, realpathSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, writeSettings } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('Agent Skills conformance Sources and picker', () => {
   let workspace = ''
@@ -18,7 +19,7 @@ describe('Agent Skills conformance Sources and picker', () => {
   before(async () => {
     resetUserData()
     const fixture = join(tmpdir(), 'copse-e2e-skill-conformance', 'workspace')
-    rmSync(fixture, { recursive: true, force: true })
+    removeE2eTree(fixture)
     mkdirSync(fixture, { recursive: true })
     workspace = realpathSync(fixture)
     extra = join(workspace, 'extra-skills')
@@ -43,7 +44,7 @@ describe('Agent Skills conformance Sources and picker', () => {
   })
   after(() => {
     resetUserData()
-    rmSync(workspace, { recursive: true, force: true })
+    removeE2eTree(workspace)
   })
 
   it('explains origins, invocation controls, metadata, invalid and duplicate entries', async () => {
