@@ -1,3 +1,4 @@
+import './disable-brotli-decoding.ts' // MUST be first — see the module
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
 // MUST be second — owns the profile (single-instance lock, vault replay) before any store opens.
 import { profileSingleInstanceLock } from './app-profile-owner.ts'

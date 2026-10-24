@@ -46,7 +46,8 @@ The standard scripts live in `package.json`; use `dev`, `build`, `start`, `typec
 `format:check`, `test`, `test:e2e`, and `check` rather than recreating their behavior. Reach for
 `dev` over `make run` when you want watch mode rather than a single build.
 
-The repo pins the Node 24 LTS release in `.nvmrc` and requires Node `>=24` plus
+The repo pins the Node 24 LTS release in `.nvmrc` and requires a Node release with the
+CVE-2026-111497 fix (24.22.1+ on the 24 line, 26.12.1+ on the 26 line, or a newer major) plus
 pnpm (`packageManager`: `pnpm@10.34.5`; enable with `corepack enable`). Both nvm
 and fnm read `.nvmrc`. Tooling under `scripts/*.mts` uses native TypeScript type
 stripping.
