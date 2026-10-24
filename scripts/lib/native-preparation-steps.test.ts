@@ -21,6 +21,8 @@ describe('native runtime preparation order', () => {
     assert.ok(iconIndex >= 0)
     assert.ok(iconIndex < paths.indexOf('scripts/patch-dev-name.mts'))
     assert.equal(steps[iconIndex]?.required, false)
+    // Installs must only write the gitignored .icns, never the tracked sources.
+    assert.deepEqual(steps[iconIndex].args, ['--icns-only'])
   })
 
   it('does not generate the app icon on non-macOS platforms', () => {

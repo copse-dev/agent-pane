@@ -13,7 +13,7 @@ for (const step of steps) {
     throw new Error(`${step.label} input is missing: ${step.path}`)
   }
   console.log(`==> ${step.label}…`)
-  const result = spawnSync(process.execPath, [absolute], {
+  const result = spawnSync(process.execPath, [absolute, ...(step.args ?? [])], {
     cwd: root,
     env: process.env,
     stdio: 'inherit',

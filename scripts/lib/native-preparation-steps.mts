@@ -1,6 +1,7 @@
 interface PreparationStep {
   label: string
   path: string
+  args?: readonly string[]
   /** Best-effort: a failure warns instead of aborting the install. Defaults to true. */
   required?: boolean
 }
@@ -18,10 +19,12 @@ export function nativePreparationSteps(platform: NodeJS.Platform): PreparationSt
     // bundle on Electron's stock icns, so the Dock and About panel show the
     // generic Electron icon (#3486 only fixed the name/version, not the icon).
     // iconutil is finicky across macOS versions, so a failure here shouldn't
-    // block `pnpm install`.
+    // block `pnpm install`. `--icns-only` writes just that gitignored file, so
+    // installs never rewrite the tracked icon sources.
     steps.push({
       label: 'App icon generation',
       path: 'scripts/generate-icon.mts',
+      args: ['--icns-only'],
       required: false,
     })
   }
