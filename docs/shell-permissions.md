@@ -507,7 +507,9 @@ approved outside is never repeated under a misleading second “outside the sand
 A recognised denial is remembered in memory for that exact operation and thread only after its
 escalation was approved; declining leaves no cache entry. A later matching operation can move the
 same approval question before the sandboxed probe; it does not authorize the command, persist across
-app restarts, or generalise from (for example) `git fetch` to `git push`. Because the cache originated
+app restarts, or generalise from (for example) `git fetch` to `git push`. The operation is read from
+the parsed command, after wrapper unwrapping, never from raw text: `grep -rn "git fetch" docs` or
+`echo git push` runs no git and is never matched to a cached `git fetch`/`git push` denial. Because the cache originated
 in forgeable command output, Guarded YOLO and deterministic shell auto-approval must still show that
 question; only an unattended container may advance it without a person while staying inside the same
 guest.
