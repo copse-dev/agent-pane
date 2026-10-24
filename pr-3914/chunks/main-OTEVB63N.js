@@ -69926,7 +69926,11 @@ var init_tab_scope = __esm({
 // src/renderer/views/terminals-pane.ts
 function loadXterm() {
   xtermModules ??= Promise.all([import("./xterm-IKRIYUAQ.js"), import("./addon-fit-E3NYE2VH.js")]).then(
-    ([xterm, fit]) => ({ Terminal: xterm.Terminal, FitAddon: fit.FitAddon })
+    ([xterm, fit]) => ({ Terminal: xterm.Terminal, FitAddon: fit.FitAddon }),
+    (error) => {
+      xtermModules = null;
+      throw error;
+    }
   );
   return xtermModules;
 }
@@ -70022,7 +70026,9 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
     const request = tab.codeBlockRun;
     if (!request) return;
     tab.codeBlockRun = null;
-    const output = readTerminalText(tab);
+    emitCodeBlockRunFinished(request, tab.id, tab.label, exitCode2, readTerminalText(tab));
+  }
+  function emitCodeBlockRunFinished(request, tabId, tabLabel, exitCode2, output) {
     const exitLabel = exitCode2 === null ? "unavailable" : String(exitCode2);
     const content = [
       `Command:
@@ -70038,8 +70044,8 @@ ${output}` : "Terminal output: (none)"
       exitCode: exitCode2,
       output,
       shell: {
-        tabId: tab.id,
-        label: `${tab.label} \xB7 exit ${exitLabel}`,
+        tabId,
+        label: `${tabLabel} \xB7 exit ${exitLabel}`,
         content
       },
       ...request.completion ? { completion: request.completion } : {}
@@ -70278,8 +70284,9 @@ ${output}` : "Terminal output: (none)"
     return tabsForScope(tabs.values(), currentThreadId());
   }
   const pendingScopeTabs = /* @__PURE__ */ new Map();
+  const creatingTabs = /* @__PURE__ */ new Map();
   function scopeHasTab() {
-    return visibleTabs().length > 0 || pendingScopeTabs.has(currentThreadId());
+    return visibleTabs().length > 0 || (creatingTabs.get(currentThreadId()) ?? 0) > 0;
   }
   function ensureScopeTab(options) {
     const scopeId = currentThreadId();
@@ -70338,7 +70345,16 @@ ${output}` : "Terminal output: (none)"
     applyXtermBg(container, xtermThemeFromTokens(readEditorThemeTokens()));
     panel.append(container);
     const { scopeProjectId, scopeId } = resolveTerminalTabScope(store2.getState(), options);
-    const { term, fitAddon } = await createXterm();
+    creatingTabs.set(scopeId, (creatingTabs.get(scopeId) ?? 0) + 1);
+    let xterm;
+    try {
+      xterm = await createXterm();
+    } finally {
+      const remaining = (creatingTabs.get(scopeId) ?? 1) - 1;
+      if (remaining > 0) creatingTabs.set(scopeId, remaining);
+      else creatingTabs.delete(scopeId);
+    }
+    const { term, fitAddon } = xterm;
     const fileLinks = installTerminalFileLinks(term, store2, api2);
     const tab = {
       id,
@@ -70520,14 +70536,28 @@ ${output}` : "Terminal output: (none)"
     const oneLine = command2.split(/\s+/).join(" ");
     const summary = oneLine.length > 48 ? `${oneLine.slice(0, 47)}\u2026` : oneLine;
     const initialInput = `${command2.replace(/\r\n?|\n/g, "\r")}\rexit\r`;
-    const tabId = await addTab({
-      activate: false,
-      initialInput,
-      label: `Run \xB7 ${summary}`,
-      codeBlockRun: request,
-      scopeProjectId: request.projectId,
-      scopeId: request.threadId
-    });
+    const label = `Run \xB7 ${summary}`;
+    let tabId;
+    try {
+      tabId = await addTab({
+        activate: false,
+        initialInput,
+        label,
+        codeBlockRun: request,
+        scopeProjectId: request.projectId,
+        scopeId: request.threadId
+      });
+    } catch (err) {
+      console.error("[terminals] could not open a shell for a code-block run:", err);
+      emitCodeBlockRunFinished(
+        request,
+        request.id,
+        label,
+        null,
+        `Failed to start terminal: ${terminalStartFailureMessage(err)}`
+      );
+      return;
+    }
     const tab = tabs.get(tabId);
     if (tab) void ensureSession(tab);
   }
