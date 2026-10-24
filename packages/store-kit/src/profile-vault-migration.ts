@@ -116,6 +116,21 @@ function transformVaultStores(
       ]),
     )
   }
+  // Dot notation nests `setSetting('mcpOAuth.<digest>')` under one root; the
+  // identity keeps the dotted key the store encrypts and reads with.
+  if (Object.hasOwn(settings, 'mcpOAuth')) {
+    settings['mcpOAuth'] = Object.fromEntries(
+      Object.entries(records(settings['mcpOAuth'], 'settings.json “mcpOAuth”')).map(
+        ([digest, value]) => {
+          const record = `mcpOAuth.${digest}`
+          return [
+            digest,
+            migrate(value, { store: 'mcp-oauth', record }, false, `saved MCP sign-in “${record}”`),
+          ]
+        },
+      ),
+    )
+  }
   for (const record of Object.keys(settings)) {
     if (!record.startsWith('mcpOAuth.')) continue
     settings[record] = migrate(
@@ -226,7 +241,7 @@ export function assertMigratedVaultStores(
     inspect.decryptString(decodeBytes(parsed.data.enc))
   }
   const settingsObject = object(settings)
-  for (const root of ['apiKey', 'vncUsername', 'vncPassword']) {
+  for (const root of ['apiKey', 'vncUsername', 'vncPassword', 'mcpOAuth']) {
     if (Object.hasOwn(settingsObject, root))
       for (const value of Object.values(object(settingsObject[root]))) inspectRecord(value)
   }

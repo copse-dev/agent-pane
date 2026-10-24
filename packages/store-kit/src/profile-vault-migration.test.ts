@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { randomBytes, randomUUID, createHash } from 'node:crypto'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  linkSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createKeyringCipher } from './keyring-cipher.ts'
@@ -95,6 +103,37 @@ describe('profile vault migration', () => {
         () => inventoryVaultStores({ chatgptPlanCredentials: bad }, {}, legacy),
         VaultMigrationBlockedError,
       )
+    }
+  })
+  it('migrates OAuth sign-ins that electron-store nested under the mcpOAuth root', () => {
+    const { key, manifest, legacy, sealed } = fixture()
+    const digest = createHash('sha256').update('https://mcp.example/').digest('hex')
+    // Dot notation writes `setSetting('mcpOAuth.<digest>')` as a nested object.
+    const settings = { mcpOAuth: { [digest]: sealed } }
+    assert.equal(inventoryVaultStores(settings, {}, legacy), 1)
+    const result = migrateVaultStores(settings, {}, legacy, key, manifest)
+    assert.equal(result.count, 1)
+    const root = result.settings['mcpOAuth']
+    assert.ok(root && typeof root === 'object')
+    const record: unknown = Reflect.get(root, digest)
+    assert.ok(record && typeof record === 'object')
+    const encoded: unknown = Reflect.get(record, 'enc')
+    assert.ok(typeof encoded === 'string')
+    assert.equal(
+      openVaultRecord(
+        key,
+        manifest,
+        { store: 'mcp-oauth', record: `mcpOAuth.${digest}` },
+        Buffer.from(encoded, 'base64'),
+      ),
+      'synthetic',
+    )
+    assertMigratedVaultStores(result.settings, {}, manifest)
+    assert.throws(() => {
+      assertMigratedVaultStores(settings, {}, manifest)
+    }, VaultError)
+    for (const bad of [{ mcpOAuth: { [digest]: null } }, { mcpOAuth: 'broken' }]) {
+      assert.throws(() => inventoryVaultStores(bad, {}, legacy), VaultMigrationBlockedError)
     }
   })
   it('migrates every registered secret namespace and preserves unrelated settings', () => {
@@ -278,6 +317,32 @@ describe('vault startup downgrade prevention', () => {
       }, VaultError)
       delete migrated.settings['savedSecretEncryption']
       writeFileSync(join(directory, 'settings.json'), JSON.stringify(migrated.settings))
+      assert.throws(() => {
+        assertVaultProfileState(directory)
+      }, VaultError)
+      writeFileSync(join(directory, 'vault-manifest.json'), JSON.stringify(manifest))
+      assert.throws(() => {
+        assertVaultProfileState(directory)
+      }, VaultError)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+  it('opens an unenrolled profile whose stores are links, and still finds vault records through them', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'copse-vault-unenrolled-'))
+    try {
+      const settingsTarget = join(directory, 'dotfiles-settings.json')
+      const sshTarget = join(directory, 'dotfiles-ssh.json')
+      writeFileSync(settingsTarget, JSON.stringify({ theme: 'dark' }))
+      writeFileSync(sshTarget, JSON.stringify({ hosts: {} }))
+      symlinkSync(settingsTarget, join(directory, 'settings.json'))
+      linkSync(sshTarget, join(directory, 'ssh-credentials.json'))
+      assert.doesNotThrow(() => {
+        assertVaultProfileState(directory)
+      })
+      const { key, manifest, legacy, plain } = fixture()
+      const migrated = migrateVaultStores({ apiKey: { openai: plain } }, {}, legacy, key, manifest)
+      writeFileSync(settingsTarget, JSON.stringify(migrated.settings))
       assert.throws(() => {
         assertVaultProfileState(directory)
       }, VaultError)

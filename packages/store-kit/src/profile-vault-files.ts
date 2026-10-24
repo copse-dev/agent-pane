@@ -8,6 +8,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
@@ -111,16 +112,28 @@ export function readVaultManifest(userData: string): VaultManifest | null {
   regular(path)
   return decodeVaultManifest(readFileSync(path, 'utf8'))
 }
+function readSourceObject(path: string, check: (path: string) => void): Record<string, unknown> {
+  if (!existsSync(path)) return {}
+  check(path)
+  const object = safeJsonParse(readFileSync(path, 'utf8'), decodeWithSchema(objectSchema))
+  if (!object) throw new VaultError('corrupt')
+  return object
+}
 export function readVaultSource(
   userData: string,
   file: 'settings.json' | 'ssh-credentials.json',
 ): Record<string, unknown> {
-  const path = join(userData, file)
-  if (!existsSync(path)) return {}
-  regular(path)
-  const object = safeJsonParse(readFileSync(path, 'utf8'), decodeWithSchema(objectSchema))
-  if (!object) throw new VaultError('corrupt')
-  return object
+  return readSourceObject(join(userData, file), regular)
+}
+/** Read-only evidence scan of a store no vault write will touch: links are followed. */
+function readUnenrolledSource(
+  userData: string,
+  file: 'settings.json' | 'ssh-credentials.json',
+): Record<string, unknown> {
+  return readSourceObject(join(userData, file), (path) => {
+    const info = statSync(path)
+    if (!info.isFile() || info.size > 64 * 1024 * 1024) throw new VaultError('corrupt')
+  })
 }
 /**
  * All staged files contain ciphertext. The durable journal is the commit point;
@@ -223,9 +236,7 @@ export function recoverVaultMigration(userData: string): boolean {
 
 /** Detect a missing/mismatched manifest before a legacy cipher can write a new key. */
 export function assertVaultProfileState(userData: string): void {
-  const settings = readVaultSource(userData, 'settings.json')
   const manifest = readVaultManifest(userData)
-  const marker = settings['savedSecretEncryption']
   if (manifest) {
     const parsed = z
       .strictObject({
@@ -233,11 +244,15 @@ export function assertVaultProfileState(userData: string): void {
         profileId: z.literal(manifest.profileId),
         keyId: z.literal(manifest.keyId),
       })
-      .safeParse(marker)
+      .safeParse(readVaultSource(userData, 'settings.json')['savedSecretEncryption'])
     if (!parsed.success) throw new VaultError('corrupt')
     return
   }
-  if (marker !== undefined) throw new VaultError('corrupt')
+  // Without a manifest this only looks for vault evidence. A profile that never
+  // enrolled (any platform, any build) keeps opening with linked stores;
+  // migration still holds them to the vault's file shape before writing.
+  const settings = readUnenrolledSource(userData, 'settings.json')
+  if (settings['savedSecretEncryption'] !== undefined) throw new VaultError('corrupt')
   const containsVaultRecord = (value: unknown): boolean => {
     if (Array.isArray(value)) return value.some(containsVaultRecord)
     const parsed = objectSchema.safeParse(value)
@@ -251,7 +266,7 @@ export function assertVaultProfileState(userData: string): void {
   }
   if (
     containsVaultRecord(settings) ||
-    containsVaultRecord(readVaultSource(userData, 'ssh-credentials.json'))
+    containsVaultRecord(readUnenrolledSource(userData, 'ssh-credentials.json'))
   )
     throw new VaultError('corrupt')
 }
