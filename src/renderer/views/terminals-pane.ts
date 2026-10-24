@@ -444,8 +444,9 @@ export function mountTerminalsPane(
       }
       void api.terminal.write(tab.sessionId, data)
     })
-    tab.container.addEventListener('mousedown', () => {
-      connectWaitingTab(tab)
+    tab.container.addEventListener('mousedown', (e) => {
+      // Only a primary click connects; a right-click opens the context menu.
+      if (e.button === 0) connectWaitingTab(tab)
       if (activeTabId === tab.id) focusTab(tab)
     })
     tab.container.addEventListener('contextmenu', (e) => {

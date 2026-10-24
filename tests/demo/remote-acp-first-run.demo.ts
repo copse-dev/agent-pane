@@ -81,6 +81,12 @@ describe('remote ACP first run', () => {
     await expect($$('.terminals-tab-panel[data-awaiting-connect]')).toBeElementsArrayOfSize(2)
     expect(await creates()).toBe(0)
 
+    // A right-click opens the context menu without connecting the shell.
+    await $('.terminals-tab-panel.is-active .terminal-container').click({ button: 'right' })
+    await browser.keys('Escape')
+    expect(await creates()).toBe(0)
+    await expect($('.terminals-tab-panel.is-active[data-awaiting-connect]')).toBeExisting()
+
     // Only the user's click opens the remote shell (behind the usual approval).
     await $('.terminals-tab-panel.is-active .terminal-container').click()
     await browser.waitUntil(async () => (await creates()) === 1)
