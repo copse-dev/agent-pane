@@ -253,6 +253,32 @@ paths:
     assert.deepEqual(threadReadRoots('blocked-thread'), [])
   })
 
+  it('still injects instructions when SKILL.md names a supporting file that is missing', async () => {
+    await writeFile(
+      join(tempRoot, '.cursor', 'skills', 'demo-skill', 'SKILL.md'),
+      `---
+name: demo-skill
+description: Demo skill for tests
+---
+
+# Demo instructions
+
+Write results to scripts/report.json.`,
+      'utf-8',
+    )
+    await refreshSkillsRegistry()
+    assert.match(buildSkillsCatalogBlock(['read_skill']), /demo-skill/)
+    const block = await buildInvokedSkillsBlock(['demo-skill'], {
+      preflight: { tools: ['read_skill'], executor: 'native' },
+    })
+    assert.match(block, /# Demo instructions/)
+    assert.match(
+      block,
+      /Supporting file "scripts\/report\.json" is missing\. The skill still loads/,
+    )
+    assert.doesNotMatch(block, /Do not start this workflow/)
+  })
+
   it('injects tier-2 skill body without frontmatter', async () => {
     const block = await buildInvokedSkillsBlock(['demo-skill'])
     assert.match(block, /<skill_content name="demo-skill" trust="untrusted">/)

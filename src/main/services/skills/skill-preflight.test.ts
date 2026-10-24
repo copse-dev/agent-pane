@@ -99,6 +99,32 @@ describe('explicit skill preflight', () => {
     assert.match(result.checks[3]?.reason ?? '', /Choose one of: native/)
   })
 
+  it('warns about a prose-inferred missing supporting file without blocking the skill', () => {
+    const result = preflightSkill(
+      {
+        ...workflow,
+        requirements: {},
+        dependencies: [],
+        missingReferences: ['scripts/report.json'],
+      },
+      { tools: ['read_skill'], executor: 'native' },
+    )
+    assert.equal(result.status, 'untested')
+    assert.deepEqual(
+      result.checks.map(({ kind, name, state }) => [kind, name, state]),
+      [['supporting-file', 'scripts/report.json', 'unavailable']],
+    )
+    assert.doesNotMatch(
+      skillPreflightNotice({
+        ...workflow,
+        requirements: {},
+        dependencies: [],
+        missingReferences: ['scripts/report.json'],
+      }),
+      /Do not start this workflow/,
+    )
+  })
+
   it('keeps unknown facts and entire workflow compatibility untested', () => {
     assert.equal(preflightSkill(workflow).status, 'untested')
     assert.ok(preflightSkill(workflow).checks.every((check) => check.state === 'untested'))

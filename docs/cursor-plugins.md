@@ -193,7 +193,9 @@ paths:
   source/plugin container), whose authorization policy remains authoritative.
   Sources shows missing agents/files and unresolved turn-specific checks; native
   invocation/activation checks actual offered tools before loading instructions.
-  Known blockers stop skill instruction injection and new read grants. Missing,
+  Known blockers stop skill instruction injection and new read grants. A missing
+  supporting file named in SKILL.md prose is a warning, not a blocker: the skill
+  still loads with a note to continue without it. Missing,
   disabled, excluded executors and untested facts have distinct diagnostics.
   A `supported` capability means only that the declared requirement is available;
   workflow/model compatibility stays **untested**, including for ACP/child runners

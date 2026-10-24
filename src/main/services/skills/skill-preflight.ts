@@ -100,18 +100,20 @@ function preflightOneSkill(
       kind: 'supporting-file',
       name,
       state: 'unavailable',
-      reason: `Supporting file "${name}" is missing. Repair or reinstall this skill before using it.`,
+      reason: `Supporting file "${name}" is missing. The skill still loads; continue without it and report the broken skill.`,
     })
   return preflightResult(checks)
 }
 
 function preflightResult(checks: SkillCapabilityCheck[]): SkillPreflightResult {
   return {
+    // Supporting-file paths are inferred from SKILL.md prose, so a miss warns but never blocks.
     status: checks.some(
       (check) =>
-        check.state === 'unavailable' ||
-        check.state === 'disabled' ||
-        check.state === 'unsupported',
+        check.kind !== 'supporting-file' &&
+        (check.state === 'unavailable' ||
+          check.state === 'disabled' ||
+          check.state === 'unsupported'),
     )
       ? 'blocked'
       : 'untested',

@@ -68,30 +68,37 @@ describe('readSkillTool', () => {
     assert.match(result, /# Body/)
   })
 
-  it('reports a missing bundle file before loading instructions', async () => {
+  it('appends a note when the skill references a missing bundle file', async () => {
     await writeFile(
       join(tempRoot, 'SKILL.md'),
       '---\nname: linky-refs\ndescription: A test skill\n---\n# Body',
       'utf-8',
     )
     seedMetadata({ missingReferences: ['references/patterns.md'] })
-    await assert.rejects(
-      async () => executeReadSkill({ name: 'linky-refs' }, new AbortController().signal),
-      /Supporting file "references\/patterns\.md" is missing/,
+    const result = toolText(
+      await executeReadSkill({ name: 'linky-refs' }, new AbortController().signal),
+    )
+    assert.match(result, /Missing bundled references: references\/patterns\.md/)
+    assert.match(result, /# Body/)
+    // Prose-inferred paths warn in preflight without blocking the instructions.
+    assert.match(result, /Skill preflight for "linky-refs": untested\./)
+    assert.match(
+      result,
+      /Supporting file "references\/patterns\.md" is missing\. The skill still loads/,
     )
   })
 
-  it('reports every missing supporting file in the preflight error', async () => {
+  it('pluralizes the note for more than one missing reference', async () => {
     await writeFile(
       join(tempRoot, 'SKILL.md'),
       '---\nname: linky-refs\ndescription: A test skill\n---\n# Body',
       'utf-8',
     )
     seedMetadata({ missingReferences: ['references/patterns.md', 'scripts/setup.sh'] })
-    await assert.rejects(
-      async () => executeReadSkill({ name: 'linky-refs' }, new AbortController().signal),
-      /Supporting file "references\/patterns\.md" is missing[\s\S]*Supporting file "scripts\/setup\.sh" is missing/,
+    const result = toolText(
+      await executeReadSkill({ name: 'linky-refs' }, new AbortController().signal),
     )
+    assert.match(result, /Missing bundled references: references\/patterns\.md, scripts\/setup\.sh/)
   })
 
   it('surfaces the enhanced unknown-skill error for an unrecognized name', async () => {
