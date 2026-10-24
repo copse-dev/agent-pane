@@ -295,6 +295,12 @@ function shellApprovalAuditContext(): NonNullable<ApprovalRequest['shellContext'
   }
 }
 
+/**
+ * @param leaseIdentity offer the outside-sandbox replay lease. Only from
+ *   {@link expectedBlockLeaseIdentity}, which has already judged the whole
+ *   command bounded opaque local execution, so a lease falls back to the exact
+ *   command line when no single constituent can be isolated.
+ */
 async function requestEscalationApproval(
   title: string,
   parts: ShellPromptParts,
@@ -331,7 +337,7 @@ async function requestEscalationApproval(
   )
   if (approved && remember && trustable) await addTrustedShellCommand(trustable)
   if (approved && grantScope === 'turn-tree' && leaseIdentity) {
-    issueShellReplayLease(leaseIdentity, parts.command)
+    issueShellReplayLease(leaseIdentity, parts.command, true)
   }
   return approved
 }
@@ -456,6 +462,8 @@ async function promptShell(
   if (signal?.aborted) return false
   // The trusted-command tick box only makes sense on an escalation to OUTSIDE the
   // sandbox (a trusted command runs unsandboxed); an in-sandbox prompt never offers it.
+  // An up-front `external` verdict is never bounded opaque local execution, so it
+  // never carries a replay lease.
   if (outsideSandbox) {
     return requestEscalationApproval(
       'Run outside sandbox?',
@@ -463,7 +471,6 @@ async function promptShell(
       reasons,
       'shell-sandbox-escalation',
       signal,
-      leaseIdentity,
     )
   }
   const sandboxed =
@@ -559,6 +566,15 @@ export async function promptUnsandboxedShell(
   const forceAsk =
     opts.requireInteractiveApproval === true || resolveToolPermission('run_shell')?.policy === 'ask'
   if (!forceAsk && autoApproveShell(command, 'external')) return true
+  // An agent rerunning the same demo or harness after each fix is blocked the
+  // same way every time. A runner-verified block of bounded opaque local
+  // execution may use or offer the outside-sandbox lease `promptExpectedSandboxBlock`
+  // offers. A forced ask, which includes a block matched only from forgeable
+  // command output, always reaches the user and never offers one.
+  const leaseIdentity = forceAsk
+    ? null
+    : expectedBlockLeaseIdentity(command, getAgentExecutionRoot())
+  if (leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
   // A command that failed inside the sandbox because it reads a file in the
   // user's home directory is the same read-access question as the up-front gate,
   // so a thread that already granted that scope should not be asked again.
@@ -572,6 +588,7 @@ export async function promptUnsandboxedShell(
     reasons,
     'shell-sandbox-retry',
     signal,
+    leaseIdentity ?? undefined,
   )
 }
 
@@ -1643,23 +1660,23 @@ export async function ensureShellCommandPermitted(
   // A user may explicitly authorize one constituent for bounded exact retries in
   // this human turn tree. Conservative top-level composition is allowed only
   // when every other constituent independently passes ordinary policy.
-  const baseLeaseEligible =
+  // Contained commands only: past the Guarded YOLO return above, `outsideSandbox`
+  // means an `external` verdict, which is never bounded opaque local execution.
+  // Outside-sandbox leases come from the escalation prompts instead
+  // (`expectedBlockLeaseIdentity`).
+  const leaseMatchEligible =
     sandboxEnabled &&
+    !outsideSandbox &&
     workspaceRoot !== null &&
     dangerousInSandboxReasons(command).length === 0 &&
     !detectPackageInstall(command).isInstall
-  const externalReplayEligible =
-    outsideSandbox && isReplayableOpaqueLocalExecution(analyzeShellCommand(command, workspaceRoot))
   const leaseCore =
     workspaceRoot === null
       ? null
       : replayLeaseCore(command, (segment) => leaseCompanionAllowed(segment, workspaceRoot))
-  const leaseMatchEligible = baseLeaseEligible && (!outsideSandbox || externalReplayEligible)
   const leaseRoot = leaseMatchEligible ? workspaceRoot : null
   const leaseIdentity =
-    leaseRoot !== null
-      ? activeShellReplayLeaseIdentity(leaseRoot, outsideSandbox ? 'external' : 'project-sandbox')
-      : null
+    leaseRoot !== null ? activeShellReplayLeaseIdentity(leaseRoot, 'project-sandbox') : null
   const leaseOfferIdentity = leaseCore !== null ? leaseIdentity : null
   if (!forceAsk && leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
 

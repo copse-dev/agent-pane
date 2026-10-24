@@ -488,6 +488,7 @@ exact command line, byte for byte, to the current human turn tree in this thread
 root, so an agent rerunning the same browser demo or harness after each fix is not asked again.
 Any other command, a changed command, another turn tree or another thread asks again. The same
 outside-sandbox lease, with the same bounds, is offered when a verified sandbox block escalates.
+A block recognised only from command output, or a forced ask, never offers or spends it.
 
 The prompt is titled “Agent requests sandbox escape” and describes this as the agent's
 expectation, not a confirmed sandbox failure. A cached denial instead retains “Run outside
