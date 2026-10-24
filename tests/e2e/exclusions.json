@@ -137,6 +137,17 @@
       "markers": ["wdio.ci.conf.ts: exclude"]
     },
     {
+      "spec": "tests/e2e/read-outside-approval.e2e.ts",
+      "category": "platform",
+      "reason": "The approved external read case reads /etc/hosts through the project sandbox, which Windows does not provide; the shell read-approval case still runs on every platform.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Sandbox maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-10-20",
+      "reviewBy": "2026-11-03",
+      "coverage": "external-tool-read and external-read-worker unit tests cover approval and the worker cross-platform; the real sandbox regression runs on macOS.",
+      "markers": ["this.skip"]
+    },
+    {
       "spec": "tests/e2e/scroll-to-bottom.e2e.ts",
       "category": "quarantine",
       "reason": "CI config excludes the entire spec for historical renderer crash/timeouts; two streaming cases also skip in-spec.",

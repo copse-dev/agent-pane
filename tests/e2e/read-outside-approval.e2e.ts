@@ -1,5 +1,5 @@
 import { submitComposer } from './helpers/composer.ts'
-import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
+import { prepareMockToolTurn, prepareMockTurn } from './helpers/mock-scenario.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
@@ -61,5 +61,41 @@ describe('read access outside the project approval', () => {
     await saveAppScreenshot('read-outside-approval-expanded.png')
 
     await dialog.$('.approval-reject').click()
+  })
+
+  it('approves an external file read and reuses only that path for search', async function () {
+    if (process.platform === 'win32') this.skip()
+    // /etc/hosts is a non-credential, stable external file on both supported
+    // sandbox platforms. Assert the actual tool result, not the mock reply.
+    const scenario = await prepareMockTurn('Read the hosts file, then find localhost in it.', [
+      { toolCalls: [{ name: 'read_file', args: { path: '/etc/hosts' } }] },
+      {
+        expectToolResults: [{ name: 'read_file', includes: 'localhost' }],
+        toolCalls: [
+          {
+            name: 'search_code',
+            args: { path: '/etc/hosts', pattern: 'localhost', fixed_string: true },
+          },
+        ],
+      },
+      {
+        text: 'The approved hosts file contains localhost.',
+        expectToolResults: [{ name: 'search_code', includes: 'localhost' }],
+      },
+    ])
+    await submitComposer()
+    const dialog = await $('#approval-dialog')
+    await dialog.waitForDisplayed({ timeout: 30_000 })
+    await expect(dialog.$('.approval-heading')).toHaveText(
+      'Allow read access outside of the project?',
+    )
+    expect(await dialog.$('.approval-advice').getText()).toContain('/etc/hosts')
+    await dialog.$('.approval-details-toggle').click()
+    await expect(dialog.$('.approval-approve-once')).toHaveText('Approve this read')
+    expect(await dialog.$('.approval-body').getText()).toContain('read_file: /etc/hosts')
+    await saveAppScreenshot('external-file-read-approval.png')
+    await dialog.$('.approval-approve').click()
+    await scenario.waitForComplete()
+    await scenario.assertComplete()
   })
 })

@@ -9,6 +9,7 @@ import { getIndex, whenFileIndexReady } from '../services/search/file-index.ts'
 import { formatCodeSearchResults, searchCodeContent } from '../services/search/indexed-grep.ts'
 import { slowCodeSearch } from '../services/search/slow-code-search.ts'
 import { isActiveSshWorkspace } from '../services/ssh-workspace/execution-target.ts'
+import { externalToolRead } from '../services/security/external-tool-read.ts'
 
 export const searchCodeTool = defineTool({
   name: 'search_code',
@@ -44,6 +45,24 @@ export const searchCodeTool = defineTool({
     const searchPattern = resolveSearchText(pattern, query)
     if (searchPattern === undefined) {
       return 'Provide a search pattern via `pattern` (its alias `query` also works).'
+    }
+    if (path) {
+      const external = await externalToolRead(
+        path,
+        root,
+        'search_code',
+        {
+          kind: 'search',
+          pattern: searchPattern,
+          fixed: fixed_string,
+          caseSensitive: case_sensitive,
+          glob: file_glob,
+          maxResults: max_results,
+          contextLines: context_lines,
+        },
+        signal,
+      )
+      if (external !== null) return external
     }
     const searchRoot = path ? await resolveReadablePathWithinRoot(path, root) : root
 
