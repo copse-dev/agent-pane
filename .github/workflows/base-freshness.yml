@@ -87,7 +87,7 @@ jobs:
     # Fixed GitHub-hosted capacity, never SELF_HOSTED_CHECKS — the same rule
     # ci-passed follows. A report on whether a candidate is current must not
     # queue behind the fleet it is reporting on (#1669).
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       # Exactly what publishing the verdict needs, and nothing that could change
