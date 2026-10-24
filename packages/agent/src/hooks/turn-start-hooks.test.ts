@@ -20,6 +20,8 @@ import { TODO_STEERING_PROMPT, formatTodosForPrompt } from '../todo-steering.ts'
 import { buildGithubLinkSteeringPrompt } from '../github-link-steering.ts'
 import type { TodoItem } from '../wire-types.ts'
 import { SITE_BUILDING_STEERING_PROMPT } from '../site-building-steering.ts'
+import { PluginRegistry } from '../plugins/plugin-registry.ts'
+import { todosPlugin } from '../plugins/todos-plugin.ts'
 
 const multiStepPrompt =
   'Refactor the renderer across several files and then run tests to confirm nothing broke'
@@ -209,7 +211,9 @@ describe('turnStart emit — enabled todos plugin yields the expected assembly o
     // Post-P4 order: static `TURN_START_HOOKS` (`github`) fire first, then the
     // `copse.todos` plugin's turn-start hooks (`todo-steering`, `todo-pin`) —
     // the plugin fold appends after the static list in `createHookRegistry`.
-    const registry = createHookRegistry()
+    const plugins = new PluginRegistry()
+    plugins.register(todosPlugin)
+    const registry = createHookRegistry(FIRST_PARTY_HOOKS, plugins)
     const result = await registry.emit(
       'turnStart',
       {
@@ -232,7 +236,9 @@ describe('turnStart emit — enabled todos plugin yields the expected assembly o
   })
 
   it('emits nothing for a plain prompt with no prior todos', async () => {
-    const registry = createHookRegistry()
+    const plugins = new PluginRegistry()
+    plugins.register(todosPlugin)
+    const registry = createHookRegistry(FIRST_PARTY_HOOKS, plugins)
     const result = await registry.emit(
       'turnStart',
       { userText: plainPrompt, priorTodos: [] },

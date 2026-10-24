@@ -9,6 +9,7 @@ import { getThreadExecutionContext, isThreadCheckoutDeferred } from '../thread-e
 
 export interface AssembleAcpTurnStartOptions {
   userText: string
+  invokedSkills?: readonly string[]
   priorTodos: readonly TodoItem[]
   model: string
   registry: ToolRegistry
@@ -51,6 +52,7 @@ export async function assembleAcpTurnStart(
     'turnStart',
     {
       userText: options.userText,
+      ...(options.invokedSkills ? { invokedSkills: options.invokedSkills } : {}),
       priorTodos: options.priorTodos,
       executor: 'acp',
       model: options.model,
