@@ -6,6 +6,9 @@ import type { ManagedProcessHandle, ProcessManagerRow } from '@shared/types/proc
 import { listTerminalProcesses } from './exec/terminal-service.ts'
 import { listBackgroundProcessPids } from './exec/background-process.ts'
 import { listAcpSessionProcesses } from './acp/acp-process-registry.ts'
+import { listForegroundShellProcesses } from './exec/foreground-shell-process.ts'
+import { listSandboxFsServerProcesses } from '../project-sandbox/sandbox-fs-server.ts'
+import { threadWorktreeOwner } from './worktree-manager.ts'
 import { gortexDaemonPidPath } from './search/semantic-index.ts'
 
 const execFileAsync = promisify(execFile)
@@ -13,7 +16,7 @@ const execFileAsync = promisify(execFile)
 export interface OwnedProcessRoot {
   pid: number
   label: string
-  type: 'Terminal' | 'Background task' | 'Indexer' | 'Subprocess'
+  type: 'Terminal' | 'Background task' | 'Command' | 'Indexer' | 'Subprocess'
   threadId: string | null
   projectId?: string | null
   managed?: ManagedProcessHandle
@@ -153,6 +156,27 @@ export function copseChildRoots(
     }))
 }
 
+/**
+ * Sandbox file servers, one per workspace root. A server for a thread's managed
+ * worktree belongs to that thread; one for a project checkout is shared by every
+ * thread that browses it.
+ */
+export function sandboxFsServerRoots(
+  servers: readonly { pid: number; root: string }[],
+  ownerOfRoot: (root: string) => { projectId: string; threadId: string } | null,
+): OwnedProcessRoot[] {
+  return servers.map(({ pid, root }) => {
+    const owner = ownerOfRoot(root)
+    return {
+      pid,
+      label: 'Sandbox file server',
+      type: 'Subprocess',
+      threadId: owner?.threadId ?? null,
+      ...(owner ? { projectId: owner.projectId } : {}),
+    }
+  })
+}
+
 /** Friendly names for the worker scripts Copse runs as `<execPath> <worker>.js`. */
 const SELF_WORKER_LABELS = new Map([
   ['acp-session-host-worker', 'Agent session host'],
@@ -241,6 +265,17 @@ export async function readOwnedProcessRows(
         managed: { kind: 'background', id, projectId, threadId },
       }),
     ),
+    // run_shell commands are direct children of main; without this they read as Shared.
+    ...listForegroundShellProcesses().map(
+      ({ pid, command, threadId, projectId }): OwnedProcessRoot => ({
+        pid,
+        label: command,
+        type: 'Command',
+        threadId,
+        projectId,
+      }),
+    ),
+    ...sandboxFsServerRoots(listSandboxFsServerProcesses(), threadWorktreeOwner),
   ]
   if (process.platform === 'win32') return ownedProcessRows(roots, [])
   const gortex = await readGortexDaemonRoot()
