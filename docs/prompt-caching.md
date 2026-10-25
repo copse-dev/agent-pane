@@ -13,17 +13,20 @@ hits or misses is one of the larger levers on cost.
 ## Where the breakpoints are
 
 `AnthropicProvider` (`packages/llm/src/anthropic-provider.ts`) and Claude models
-selected through `createOpenRouterProvider` place up to three:
+selected through `createOpenRouterProvider` place up to four:
 
 | Breakpoint                                                                | Caches                                   |
 | ------------------------------------------------------------------------- | ---------------------------------------- |
 | Last tool definition                                                      | `tools`                                  |
 | System prompt block                                                       | `tools` + `system`                       |
 | Last cacheable conversation content before trailing operator instructions | `tools` + `system` + conversation prefix |
+| Message before a large parallel tool round                                | Previous request's conversation prefix   |
 
 The third is the rolling one: each request marks its own tail, and the next
-request matches that entry as a cached prefix. The fourth slot is currently
-unused. OpenRouter uses its documented text-block extension on the leading
+request matches that entry as a cached prefix. When a round contains at least
+10 parallel tool calls, the fourth breakpoint repeats the preceding message's
+boundary so a round of more than 20 blocks cannot hide that cached prefix.
+OpenRouter uses its documented text-block extension on the leading
 system message and conversation tail, plus `cache_control` on the final tool
 definition. Tool outputs become text blocks without changing their call IDs.
 Images retain their order and detail; if a message ends in an image, the boundary
@@ -117,12 +120,11 @@ session and reported as per-turn deltas. Cursor's per-run usage carries
 `cacheReadTokens` and `cacheWriteTokens`.
 
 Known gaps are tracked in
-[#1286](https://github.com/copse-dev/agent-pane/issues/1286): the fourth breakpoint
-is unused, only the 5-minute TTL is used, and changing auto-attached rules,
-invoked skills or terminal state can still change the system prefix. A large
-tool round may move the rolling breakpoint beyond the provider's lookback
-window; the tests covering twelve parallel results verify request mapping, not
-a guaranteed cache hit. Stable/dynamic tool partitioning is also still open.
+[#1286](https://github.com/copse-dev/agent-pane/issues/1286): only the 5-minute
+TTL is used, and changing auto-attached rules, invoked skills or terminal state
+can still change the system prefix. Stable/dynamic tool partitioning is also
+still open. The large-tool-round tests verify the matching request boundaries;
+an actual cache read still depends on the upstream provider and TTL.
 
 Wire format and usage fields follow
 [OpenRouter's prompt-caching documentation](https://openrouter.ai/docs/guides/best-practices/prompt-caching)

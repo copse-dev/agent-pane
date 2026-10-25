@@ -28,7 +28,7 @@ a foundation stage does not establish a supported external API.
   replacement, another client's answer, disconnect, revocation and restart invalidate stale answers.
   Repeated delivery cannot settle twice. Read permission alone cannot submit an answer.
 - Consumers can request bounded activity and resolved semantic theme state, subscribe to changes,
-  and open a thread through explicit capabilities. None grants general settings, transcript,
+  and open a thread through explicit capabilities. None grants general settings, unrestricted transcript,
   filesystem, shell, hook or arbitrary IPC access.
 - Unsupported or incompletely represented prompts are read-only and direct the user to Copse.
   Approval responses grant once; no remembered grants, task leases or automatic approvals.
@@ -37,6 +37,27 @@ a foundation stage does not establish a supported external API.
   Unrelated consumers and historical transcript rendering continue to work.
 - Different client/host versions negotiate explicitly. Malformed, oversized, expired,
   wrong-scope and unauthorized messages fail closed with documented errors.
+
+## Interactive client consent update
+
+Interactive plugin clients pair for viewing and decision submission together. The desktop prompt
+states that scope explicitly and offers Connect client or Reject, with no read-only mode or extra
+checkbox. Each pairing interrupts and hides ordinary approval batches, is answered individually,
+and restores unanswered thread requests afterwards. The shared authentication core still preserves
+existing mobile read/control credentials; plugin clients always receive session-only control
+within their supported approval scope. No existing persisted mobile grant is upgraded.
+
+## Recent activity and navigation preview
+
+The first-party interactive-client transport adds generic `activity.read` and `threads.open`
+operations under the existing session-pairing consent. The desktop explicitly discloses recent
+chat titles, bounded selected-chat text and navigation across configured projects. Activity is a bounded metadata projection
+of settled chats. A separate on-demand `threads/content` operation reads at most eight visible user/assistant messages and 24,000 characters for an exact current completion. It excludes reasoning, tools and attachments, rechecks eligibility/authority after hydration and never exposes arbitrary history. Completion ordering uses lastSettledAt with a documented
+legacy used-chat fallback; running/waiting, archived, hidden and interrupted chats are excluded.
+The authenticated Open operation validates the exact project/thread against current activity or
+supported pending approvals and rechecks authority after asynchronous reads. It targets the same
+host's ready window, with no client-supplied executable, URI or path. This does not complete the
+provider/consumer registration framework, general activity subscriptions, theme or durable grants.
 
 ## Shared client authentication follow-up
 
