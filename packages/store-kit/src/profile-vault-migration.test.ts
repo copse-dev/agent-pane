@@ -328,6 +328,25 @@ describe('vault startup downgrade prevention', () => {
       rmSync(directory, { recursive: true, force: true })
     }
   })
+  it('refuses an enrolled profile whose SSH credentials store is a symlink or hard link', () => {
+    for (const link of [symlinkSync, linkSync]) {
+      const directory = mkdtempSync(join(tmpdir(), 'copse-vault-linked-ssh-'))
+      try {
+        const { key, manifest, legacy, plain } = fixture()
+        const migrated = migrateVaultStores({ apiKey: { openai: plain } }, {}, legacy, key, manifest)
+        commitVaultMigration(directory, migrated, manifest)
+        const outside = join(directory, 'outside-ssh.json')
+        writeFileSync(outside, JSON.stringify({ hosts: {} }))
+        rmSync(join(directory, 'ssh-credentials.json'), { force: true })
+        link(outside, join(directory, 'ssh-credentials.json'))
+        assert.throws(() => {
+          assertVaultProfileState(directory)
+        }, VaultError)
+      } finally {
+        rmSync(directory, { recursive: true, force: true })
+      }
+    }
+  })
   it('opens an unenrolled profile whose stores are links, and still finds vault records through them', () => {
     const directory = mkdtempSync(join(tmpdir(), 'copse-vault-unenrolled-'))
     try {

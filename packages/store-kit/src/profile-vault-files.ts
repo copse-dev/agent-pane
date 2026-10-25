@@ -238,6 +238,10 @@ export function recoverVaultMigration(userData: string): boolean {
 export function assertVaultProfileState(userData: string): void {
   const manifest = readVaultManifest(userData)
   if (manifest) {
+    // An enrolled profile's stores are its own regular files, as migration and
+    // writeVaultFile require: refuse a linked SSH store before anything opens it.
+    const ssh = join(userData, 'ssh-credentials.json')
+    if (existsSync(ssh)) regular(ssh)
     const parsed = z
       .strictObject({
         version: z.literal(1),
