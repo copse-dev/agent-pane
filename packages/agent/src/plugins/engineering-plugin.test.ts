@@ -48,6 +48,15 @@ describe('Copse engineering workflows', () => {
     assert.equal(buildEngineeringGuidance({ userText: '  ', priorTodos: [] }), undefined)
   })
 
+  it('injects once per thread: fires on the first turn, abstains afterward', () => {
+    const payload = { userText: 'Fix this bug', priorTodos: [] }
+    assert.ok(buildEngineeringGuidance({ ...payload, firstTurn: true }))
+    assert.equal(buildEngineeringGuidance({ ...payload, firstTurn: false }), undefined)
+    // Absent `firstTurn` (older fire sites, pure package tests) keeps the prior
+    // always-inject behavior rather than silently going quiet.
+    assert.ok(buildEngineeringGuidance(payload))
+  })
+
   it('removes new guidance when disabled and leaves other contributions intact', async () => {
     const plugins = createFirstPartyPluginRegistry()
     setDefaultPluginRegistry(plugins)
