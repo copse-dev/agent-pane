@@ -497,7 +497,7 @@ to the agent. Approval authorizes one outside execution; rejection keeps the con
 
 Some sandboxed failures come from a broker or helper that does not increment the OS sandbox's
 violation counter. After a non-zero attempt, `run_shell` may recognise the bounded denial signatures
-for a Git network read, GitHub CLI config access, or Socket Firewall binary preparation and offer the
+for a Git network read, GitHub CLI config access, or a package install unable to download from inside the sandbox and offer the
 same one-time unsandboxed retry. Command output is untrusted evidence: a signature can open that
 approval prompt, but cannot approve the retry: neither Guarded YOLO nor the deterministic shell
 auto-approval classifier may answer it. An unattended container may retry either kind inside the
@@ -749,14 +749,14 @@ Preparation always asks once, displaying the selected project, exact package ins
 setup command, and its network/write scope. Project-defined setup is labelled executable repository
 code. The fingerprint from preflight is required in the tool call and is checked before approval and
 again before each step; changed inputs require a new approval. Grants cannot be remembered or reused
-for arbitrary commands. Automatic JavaScript installs use frozen lockfiles, Socket Firewall, and
+for arbitrary commands. Automatic JavaScript installs use frozen lockfiles, the package firewall, and
 manager-specific lifecycle disabling. Custom steps retain their explicitly approved semantics.
 
 Both tools require an enforcing OS sandbox and have no unsandboxed fallback. Preflight probes and
 checks run with network blocked and the project/shared caches read-only. Each probe can write only
 private disposable scratch, removed after execution, for manager bookkeeping. Preparation writes only the selected project and fixed
 managed cache directories under `~/.copse/cache/` (`COPSE_DIR` relocates them), including Corepack,
-npm, pnpm, Yarn, Bun, uv, Socket Firewall, and native build caches. Toolchains are read-only; native setup
+npm, pnpm, Yarn, Bun, uv, package-firewall advisory feeds, and native build caches. Toolchains are read-only; native setup
 uses a managed build home. No declaration may request broader filesystem grants. Temporary files
 stay in the project; redirected cache roots and outside-worktree metadata inputs are rejected.
 Root Git/editor configuration remains protected, while dependency metadata can be extracted.
