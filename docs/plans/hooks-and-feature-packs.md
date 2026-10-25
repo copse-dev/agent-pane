@@ -327,11 +327,18 @@ revisiting this document, not silently diverging in an implementation PR.
     list). A hook must not name a tool absent from that list. Disabling a pack removes
     its guidance from both executors on the next turn and leaves prior history intact
     (decision 17). `invokedSkills` carries explicit user-selected skill names from
-    both host fire sites. The experimental `copse.engineering` plugin yields to
-    every explicit skill invocation, so it does not compete with an installed
-    workflow. It adds bounded engineering guidance through this same event and
-    names optional tools only when offered. It creates no worker, permission or
-    continuation mechanism. See [Copse engineering workflows](copse-engineering-workflows.md).
+    both host fire sites. `TurnStartPayload.firstTurn` (the same "no prior
+    messages" fact `fireSessionStartHook`'s `firstTurn` already uses) lets a hook
+    abstain on later turns of a thread it already steered; absent means the fire
+    site has not computed thread history, which keeps a hook's prior
+    always-inject behavior rather than going quiet. The experimental
+    `copse.engineering` plugin yields to every explicit skill invocation, so it
+    does not compete with an installed workflow, and now contributes its guidance
+    once per thread via `firstTurn` rather than on every turn — the event itself
+    still fires every turn. It adds bounded engineering guidance through this
+    same event and names optional tools only when offered. It creates no worker,
+    permission or continuation mechanism. See
+    [Copse engineering workflows](copse-engineering-workflows.md).
 21. **A plugin offers; it does not interrupt.** A plugin that wants the user to do
     something optional and expensive contributes a **follow-up bubble**
     (`manifest.followUps`), not an approval modal. A modal arrives unbidden, blocks the

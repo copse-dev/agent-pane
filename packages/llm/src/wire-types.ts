@@ -292,10 +292,10 @@ export interface LLMProvider {
    * reduced instead of trimming them again.
    */
   readonly compactionIdentity?: CompactionIdentity | undefined
-  stream(
+  stream: (
     messages: LLMMessage[],
     tools: LLMTool[],
     signal?: AbortSignal,
     options?: LLMStreamOptions,
-  ): AsyncIterable<ProviderStreamChunk>
+  ) => AsyncIterable<ProviderStreamChunk>
 }
