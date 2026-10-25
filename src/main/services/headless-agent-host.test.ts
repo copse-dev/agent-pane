@@ -332,7 +332,7 @@ describe('runHeadlessAgent', () => {
           (message) =>
             message.role === 'user' &&
             typeof message.content === 'string' &&
-            message.content.includes('Background task'),
+            message.content.includes('background task'),
         ),
       )
       assert.equal(

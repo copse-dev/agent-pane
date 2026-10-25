@@ -41,6 +41,7 @@ import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { ARTIFACT_CHECKPOINT_PLUGIN_ID } from '@copse/agent/plugins/artifact-checkpoint-plugin.ts'
 import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
+import { ENGINEERING_PLUGIN_ID } from '@copse/agent/plugins/engineering-plugin.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import {
   AGENTS_MD_INSTRUCTION_FILES_SETTING_ID,
@@ -148,6 +149,7 @@ function clearStorage(): void {
   storageSet(DARK_FACTORY_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(AGENTS_MD_MODE_MIGRATION_KEY, true)
   storageSet('pluginMigration.pluginClientApi', true)
+  storageSet('pluginMigration.engineeringEnablement', true)
   storageSet(PLUGIN_SOURCES_KEY, [])
   storageSet(pluginSettingsKey('demo.plugin'), {})
   storageSet(pluginSettingsKey('copse.other'), {})
@@ -401,6 +403,7 @@ describe('PluginService', () => {
       ARTIFACT_CHECKPOINT_PLUGIN_ID,
       REVIEWER_INPUT_PLUGIN_ID,
       APPLE_DEVELOPMENT_PLUGIN_ID,
+      ENGINEERING_PLUGIN_ID,
     ]) {
       assert.equal(service.registry.isEnabled(id), false, id)
     }
@@ -424,6 +427,7 @@ describe('PluginService', () => {
         ARTIFACT_CHECKPOINT_PLUGIN_ID,
         REVIEWER_INPUT_PLUGIN_ID,
         APPLE_DEVELOPMENT_PLUGIN_ID,
+        ENGINEERING_PLUGIN_ID,
       ].sort(),
     )
   })
@@ -515,6 +519,22 @@ describe('PluginService', () => {
     await service.setEnabled(PLUGIN_CLIENT_API_ID, true)
     __resetPluginServiceForTests()
     assert.equal(getPluginService().registry.isEnabled(PLUGIN_CLIENT_API_ID), true)
+  })
+
+  it('keeps engineering opt-in on fresh and upgraded profiles, then preserves user choice', async () => {
+    storageDelete(PLUGIN_DISABLED_KEY)
+    storageDelete('pluginMigration.engineeringEnablement')
+    assert.equal(getPluginService().registry.isEnabled(ENGINEERING_PLUGIN_ID), false)
+
+    __resetPluginServiceForTests()
+    storageSet(PLUGIN_DISABLED_KEY, ['copse.todos'])
+    storageDelete('pluginMigration.engineeringEnablement')
+    const service = getPluginService()
+    assert.equal(service.registry.isEnabled(ENGINEERING_PLUGIN_ID), false)
+    assert.equal(service.registry.isEnabled('copse.todos'), false)
+    await service.setEnabled(ENGINEERING_PLUGIN_ID, true)
+    __resetPluginServiceForTests()
+    assert.equal(getPluginService().registry.isEnabled(ENGINEERING_PLUGIN_ID), true)
   })
 
   it('seeds the dark-factory sensor off once for existing profiles without erasing later choices', async () => {
