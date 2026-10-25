@@ -134,7 +134,7 @@ pin in `acp-ssh-transport.ts` when the agent's unattended-container provider
 configuration has not been verified. Qwen Code uses the latter at 0.24.7;
 this does not add it to the worker image or advertise a container credential
 route. A catalog agent without either pin is not auto-installed.
-The approval states that Socket Firewall does **not** cover
+The approval states that the package firewall does **not** cover
 this install (it runs on the desktop); `--ignore-scripts` and the pin are the
 remaining supply-chain controls. The install fails closed where no approver is
 wired (inside ACP workers). Other agents fail with the catalog's own install
@@ -189,7 +189,7 @@ host and appear in the picker.
   zed#52254). Copse's native-tool bridge (http/localhost) needs a **reverse
   tunnel**, which is [#771](https://github.com/copse-dev/agent-pane/issues/771)'s
   scope.
-- **Phase 3.** Remote model-detection polish, a Socket-Firewall equivalent for
+- **Phase 3.** Remote model-detection polish, a package-firewall equivalent for
   the remote install, terminal (`terminal/*`) parity on the remote host.
 
 ## Testing

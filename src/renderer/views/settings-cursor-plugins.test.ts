@@ -206,14 +206,13 @@ describe('settings → plugin settings disclosure', () => {
   })
 })
 
-const PSTACK: BundledSkillPluginSummary = {
-  name: 'pstack',
-  description: 'Rigorous agent workflows.',
+const TEACHING: BundledSkillPluginSummary = {
+  name: 'teaching',
+  description: 'Teaching guidance.',
   version: '0.9.2',
-  skillCount: 36,
+  skillCount: 2,
   enabled: false,
-  defaultEnabled: false,
-  offByDefaultReason: 'Written for Cursor.',
+  defaultEnabled: true,
   suppressed: false,
 }
 
@@ -242,26 +241,23 @@ describe('settings → bundled Cursor plugins in the plugin list', () => {
     const list = await openCustomise(
       { plugins: [] },
       [],
-      stubApi({ plugins: [] }, [], [PSTACK, TEAM_KIT]),
+      stubApi({ plugins: [] }, [], [TEACHING, TEAM_KIT]),
     )
     const ids = [...list.querySelectorAll<HTMLElement>('.plugin-row')].map(
       (row) => row.dataset['pluginId'],
     )
-    assert.deepEqual(ids, ['cursor-team-kit', 'pstack'], 'Active first, then Inactive')
+    assert.deepEqual(ids, ['cursor-team-kit', 'teaching'], 'Active first, then Inactive')
 
-    const pstack = bundledRow(list, 'pstack')
-    const toggle = pstack.querySelector<HTMLInputElement>('.plugin-toggle-input')
+    const teaching = bundledRow(list, 'teaching')
+    const toggle = teaching.querySelector<HTMLInputElement>('.plugin-toggle-input')
     assert.ok(toggle)
     assert.equal(toggle.checked, false)
     assert.equal(toggle.disabled, false, 'Copse vendors it, so the switch is ours')
-    assert.equal(pstack.querySelector('.plugin-badge-cursor')?.textContent, 'Cursor · Bundled')
-    assert.equal(
-      pstack.querySelector('.plugin-default-off-note')?.textContent,
-      'Off by default. Written for Cursor.',
-    )
+    assert.equal(teaching.querySelector('.plugin-badge-cursor')?.textContent, 'Cursor · Bundled')
+    assert.equal(teaching.querySelector('.plugin-default-off-note')?.textContent, undefined)
     assert.deepEqual(
-      [...pstack.querySelectorAll('.plugin-chip')].map((chip) => chip.textContent),
-      ['36 skills'],
+      [...teaching.querySelectorAll('.plugin-chip')].map((chip) => chip.textContent),
+      ['2 skills'],
     )
     assert.equal(
       bundledRow(list, 'cursor-team-kit').querySelector('.plugin-default-off-note'),
@@ -271,7 +267,7 @@ describe('settings → bundled Cursor plugins in the plugin list', () => {
 
   it("saves the switch into the per-plugin choices, keeping the others'", async () => {
     const writes: unknown[] = []
-    const api = stubApi({ plugins: [] }, [], [PSTACK], {
+    const api = stubApi({ plugins: [] }, [], [TEACHING], {
       'settings.get': (key: string) =>
         Promise.resolve(
           key === 'bundledSkillPluginOverrides' ? { 'cursor-team-kit': false } : null,
@@ -282,14 +278,14 @@ describe('settings → bundled Cursor plugins in the plugin list', () => {
       },
     })
     const list = await openCustomise({ plugins: [] }, [], api)
-    const toggle = bundledRow(list, 'pstack').querySelector<HTMLInputElement>(
+    const toggle = bundledRow(list, 'teaching').querySelector<HTMLInputElement>(
       '.plugin-toggle-input',
     )
     assert.ok(toggle)
     toggle.checked = true
     toggle.dispatchEvent(new Event('change'))
     await new Promise((resolve) => setTimeout(resolve, 0))
-    assert.deepEqual(writes, [{ 'cursor-team-kit': false, pstack: true }])
+    assert.deepEqual(writes, [{ 'cursor-team-kit': false, teaching: true }])
   })
 
   it('locks every switch while all bundled skills are off, and says where to change it', async () => {
@@ -302,5 +298,49 @@ describe('settings → bundled Cursor plugins in the plugin list', () => {
     assert.equal(row.dataset['enabled'], 'false', 'contributes nothing, so it is not Active')
     assert.equal(row.querySelector<HTMLInputElement>('.plugin-toggle-input')?.disabled, true)
     assert.match(row.querySelector('.plugin-toggle')?.getAttribute('title') ?? '', /Agent → Skills/)
+  })
+})
+
+describe('optional pstack migration', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('offers reviewed installation for an enabled bundled copy', async () => {
+    const list = await openCustomise(
+      { plugins: [] },
+      [],
+      stubApi({ plugins: [] }, [], [], {
+        'settings.getSnapshot': () =>
+          Promise.resolve({ bundledSkillPluginOverrides: { pstack: true } }),
+      }),
+    )
+    const notice = list.querySelector('.bundled-plugin-migration')
+    assert.ok(notice)
+    assert.match(notice.textContent, /now an optional plugin/)
+    notice.querySelector('button')?.click()
+    assert.equal(
+      document.querySelector<HTMLInputElement>('.plugin-catalog-search-input')?.value,
+      'pstack',
+    )
+    const card = document.querySelector('.plugin-catalog-card')
+    assert.equal(card?.getAttribute('data-installed'), 'false')
+    assert.equal(card.querySelector('.plugin-catalog-action')?.textContent, 'Review install')
+  })
+
+  it('preserves an independently installed copy without a migration offer', async () => {
+    const list = await openCustomise(
+      { plugins: [] },
+      [{ ...CURSOR_PLUGIN, name: 'pstack' }],
+      stubApi({ plugins: [] }, [{ ...CURSOR_PLUGIN, name: 'pstack' }], [], {
+        'settings.getSnapshot': () =>
+          Promise.resolve({ bundledSkillPluginOverrides: { pstack: true } }),
+      }),
+    )
+    assert.equal(list.querySelector('.bundled-plugin-migration'), null)
+    assert.equal(
+      list.querySelector('[data-plugin-id="pstack"]')?.getAttribute('data-enabled'),
+      'true',
+    )
   })
 })

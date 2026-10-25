@@ -6,6 +6,7 @@ import {
   type IntellectBand,
 } from '@copse/llm/model-intellect.ts'
 import { getAgentRole, type AgentRoleId } from '@copse/llm/agent-roles.ts'
+import { supersedingModel } from '@copse/llm/model-version-suppression.ts'
 
 /**
  * Experimental, opt-in "model classifier" feature (tracked in
@@ -91,7 +92,12 @@ export function modelUsdPerMTok(model: string): number | null {
   return info.inputPricePerMTok + info.outputPricePerMTok
 }
 
-/** Pick the cheapest candidate whose context window covers the estimate. */
+/**
+ * Pick the cheapest candidate whose context window covers the estimate.
+ * Never picks a release that a newer same-lineage candidate in the pool
+ * supersedes (same rule the model picker uses — see
+ * `model-version-suppression.ts`).
+ */
 export function pickCheapestFittingModel(
   candidates: readonly TrackedModel[],
   contextNeed: number,
@@ -100,10 +106,14 @@ export function pickCheapestFittingModel(
   const priced = candidates
     .map((model) => ({ model, info: getModelInfo(model), usdPerMTok: modelUsdPerMTok(model) }))
     .filter((candidate) => candidate.usdPerMTok !== null)
-  const fitting = priced.filter(
+  const current = priced.filter(
+    (candidate) => supersedingModel(candidate.model, candidates) === null,
+  )
+  const pricedPool = current.length > 0 ? current : priced
+  const fitting = pricedPool.filter(
     (candidate) => candidate.info && candidate.info.contextWindow >= contextNeed,
   )
-  const pool = fitting.length > 0 ? fitting : priced
+  const pool = fitting.length > 0 ? fitting : pricedPool
   const picked = pool.toSorted(
     (left, right) => (left.usdPerMTok ?? Infinity) - (right.usdPerMTok ?? Infinity),
   )[0]

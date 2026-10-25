@@ -4,15 +4,22 @@ import { dirname, join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
+import {
+  PACKAGE_FIREWALL_LAUNCH_ENV,
+  packageFirewallLauncher,
+  type PackageFirewallLauncher,
+} from '../security/package-firewall-launcher.ts'
 
 /**
  * Detect whether a globally installed npm ACP adapter is behind the registry
- * latest, so auto-setup can offer an approved upgrade (same Socket-Firewall
+ * latest, so auto-setup can offer an approved upgrade (same package-firewall
  * install path as a missing adapter).
  *
  * Version reads are local (package.json next to the resolved binary). Latest
- * comes from `npm view <pkg> version` and is best-effort — offline / registry
- * failures return null so setup continues without prompting.
+ * comes from `npm view <pkg> version` behind the package firewall, so it is the
+ * version an install would get once the firewall's release-age limit applies,
+ * and best-effort — offline / registry failures return null so setup continues
+ * without prompting.
  */
 
 const packageJsonSchema = z.object({
@@ -186,6 +193,41 @@ export async function fetchLatestNpmPackageVersion(
   return version
 }
 
+export interface NpmViewCommand {
+  command: string
+  args: string[]
+  env?: NodeJS.ProcessEnv
+  shell: boolean
+}
+
+/**
+ * `npm view <pkg> version`, behind the package firewall when its bundle is
+ * there. Without the firewall, a version too recent to install would read as
+ * an available upgrade on every check until it aged in. Pure.
+ */
+export function npmViewVersionCommand(
+  npmBin: string,
+  packageName: string,
+  launcher: PackageFirewallLauncher | null,
+): NpmViewCommand {
+  const view = ['view', packageName, 'version']
+  if (!launcher) return { command: npmBin, args: view, shell: process.platform === 'win32' }
+  return {
+    command: launcher.execPath,
+    args: [launcher.scriptPath, npmBin, ...view],
+    env: { ...process.env, ...PACKAGE_FIREWALL_LAUNCH_ENV },
+    shell: false,
+  }
+}
+
+function firewallLauncherOrNull(): PackageFirewallLauncher | null {
+  try {
+    return packageFirewallLauncher()
+  } catch {
+    return null
+  }
+}
+
 function runNpmViewVersion(
   npmBin: string,
   packageName: string,
@@ -194,11 +236,13 @@ function runNpmViewVersion(
   return new Promise((resolve) => {
     let proc
     try {
-      proc = spawn(npmBin, ['view', packageName, 'version'], {
+      const view = npmViewVersionCommand(npmBin, packageName, firewallLauncherOrNull())
+      proc = spawn(view.command, view.args, {
         stdio: ['ignore', 'pipe', 'ignore'],
         signal,
-        shell: process.platform === 'win32',
+        shell: view.shell,
         timeout: 15_000,
+        ...(view.env ? { env: view.env } : {}),
       })
     } catch {
       resolve(null)
