@@ -156,6 +156,17 @@ describe('ask_user dialog', () => {
     await expect(dialog.$('.ask-user-recommendation-reason')).toHaveText(
       'Sign-in is required before this task can continue.',
     )
+    const recommendedBorder = await browser.execute(() => {
+      const recommended = document.querySelector('#ask-user-dialog .ask-user-option-recommended')
+      if (!recommended) throw new Error('Expected the recommended option')
+      const probe = document.createElement('span')
+      probe.style.color = 'var(--accent)'
+      document.body.append(probe)
+      const accent = getComputedStyle(probe).color
+      probe.remove()
+      return { border: getComputedStyle(recommended).borderTopColor, accent }
+    })
+    expect(recommendedBorder.border).toBe(recommendedBorder.accent)
     await saveElementScreenshot('#ask-user-dialog', 'ask-user-dialog.png')
     await option.click()
 

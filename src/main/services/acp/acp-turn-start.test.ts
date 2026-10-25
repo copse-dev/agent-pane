@@ -26,6 +26,7 @@ describe('ACP turnStart assembly (decision 20)', () => {
     const guidance = await assembleAcpTurnStart({
       userText: cupcakeBrief,
       priorTodos: [],
+      firstTurn: true,
       model: 'acp:codex',
       registry: new ToolRegistry(),
       signal: new AbortController().signal,
@@ -42,6 +43,7 @@ describe('ACP turnStart assembly (decision 20)', () => {
     const guidance = await assembleAcpTurnStart({
       userText: cupcakeBrief,
       priorTodos: [],
+      firstTurn: true,
       model: 'acp:codex',
       registry: new ToolRegistry(),
       signal: new AbortController().signal,
@@ -56,6 +58,7 @@ describe('ACP turnStart assembly (decision 20)', () => {
     const options = {
       userText: 'Explain this parser',
       priorTodos: [],
+      firstTurn: true,
       model: 'acp:codex',
       registry: new ToolRegistry(),
       signal: new AbortController().signal,
@@ -66,6 +69,21 @@ describe('ACP turnStart assembly (decision 20)', () => {
       undefined,
     )
     plugins.disable(ENGINEERING_PLUGIN_ID)
+    assert.equal(await assembleAcpTurnStart(options), undefined)
+  })
+
+  it('abstains the engineering guidance on a later turn in the same thread', async () => {
+    const plugins = createFirstPartyPluginRegistry()
+    plugins.enable(ENGINEERING_PLUGIN_ID)
+    setDefaultPluginRegistry(plugins)
+    const options = {
+      userText: 'Explain this parser',
+      priorTodos: [],
+      firstTurn: false,
+      model: 'acp:codex',
+      registry: new ToolRegistry(),
+      signal: new AbortController().signal,
+    }
     assert.equal(await assembleAcpTurnStart(options), undefined)
   })
 
@@ -94,6 +112,7 @@ describe('ACP turnStart assembly (decision 20)', () => {
     await assembleAcpTurnStart({
       userText: cupcakeBrief,
       priorTodos: [],
+      firstTurn: true,
       model: 'acp:codex',
       registry,
       signal: new AbortController().signal,
@@ -105,6 +124,7 @@ describe('ACP turnStart assembly (decision 20)', () => {
     assert.deepEqual(siteRecord.payload, {
       userText: cupcakeBrief,
       priorTodos: [],
+      firstTurn: true,
       executor: 'acp',
       model: 'acp:codex',
       toolNames: ['read_file', 'mcp__docs__search'],

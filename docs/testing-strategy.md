@@ -181,6 +181,18 @@ Those categories are mandatory because the oracle only knows imports and selecto
 reached through dynamic dispatch, string keys, generated artifacts, or external workflow wiring can
 be invisible to it. When classification is unclear, take the full path.
 
+That mandate is about catching failures the oracle would have missed, not about clearing a
+locally-unachievable zero-failure bar. Some unit tests fail for reasons that have nothing to do
+with the diff — a local sandbox blocking `/tmp` or loopback TCP, a `/private/tmp` realpath
+mismatch, hook-dispatch timeouts under suite load — and reproduce on an unmodified checkout. Triage
+a full check's result against
+[`host-environment-test-noise.md`](host-environment-test-noise.md): a failure outside that
+signature, or one that only reproduces with the diff applied, is yours to fix; one that matches it
+and reproduces on a clean checkout too isn't grounds to call the gate failed, but also isn't grounds
+to skip it silently — name which you saw in the PR's Validation section. Required PR CI runs this
+same full unit suite on a clean runner on every normal PR regardless of oracle output, so it remains
+the backstop either way.
+
 ## What stays e2e
 
 E2E is for **broad validation** and for assertions that need a real runtime.
@@ -441,8 +453,9 @@ Rules for anything that lands in a captured frame:
   workspace-relative paths.
 - **Randomness.** No `Math.random()` / `randomUUID()` in rendered output. Derive
   visible ids/order from fixture data. Background task ids are the one product
-  id that reaches the transcript (the completion wake names the task), so under
-  `COPSE_E2E` they come from a counter (`nextBackgroundOperationId`).
+  id that reaches an expanded tool card (the completion wake's transcript text
+  stays id-free), so under `COPSE_E2E` they come from a counter
+  (`nextBackgroundOperationId`).
 - **The checkout itself.** Prefer `seedStableWorkspace()` over
   `seedEmptyProject(process.cwd(), …)` for a spec that needs a project but not
   this repository. The checkout leaks into frames three ways: the Changes rail

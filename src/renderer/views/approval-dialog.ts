@@ -286,6 +286,7 @@ export function mountApprovalDialog(
     collapseDetails: boolean | undefined
     approveOnceLabel: string | undefined
     showWhileSettingsOpen: boolean | undefined
+    standalone: boolean | undefined
     allowTurnTreeLease: boolean | undefined
     turnTreeLeaseLabel: string | undefined
     turnTreeLeaseDefault: boolean | undefined
@@ -360,10 +361,19 @@ export function mountApprovalDialog(
   /** Move every currently-showable queued request onto the on-screen batch,
    * preserving arrival order (older requests stay at the top of the list). */
   function drainShowableIntoBatch(): number {
+    // A consent with its own scope and controls must never inherit a batch's
+    // answer. Give it priority, one at a time, while preserving ordinary work.
+    if (batch.some((req) => req.standalone)) return 0
+    const standaloneIndex = queue.findIndex((req) => req.standalone && isShowable(req))
+    if (batch.length === 0 && standaloneIndex >= 0) {
+      const [request] = queue.splice(standaloneIndex, 1)
+      if (request) batch.push(request)
+      return request ? 1 : 0
+    }
     let moved = 0
     for (let i = 0; i < queue.length;) {
       const req = queue[i]
-      if (req && isShowable(req)) {
+      if (req && !req.standalone && isShowable(req)) {
         queue.splice(i, 1)
         batch.push(req)
         moved++
@@ -617,11 +627,12 @@ export function mountApprovalDialog(
       batch.map((req) => req.threadId),
     )
     if (asker) store.emit('side_chat_open_requested', asker.firstSideChatId)
-    // A Settings-owned provider-host prompt is the one deliberate modal
-    // exception: Settings already makes the document inert, so an inline prompt
-    // could not be answered. Pop-out windows also have no visible chat pane.
+    // Standalone consent owns the focus until it is answered. Settings-owned
+    // prompts must also sit above the Settings modal, and pop-outs have no chat pane.
     const shouldShowModal =
-      isSettingsDialogOpen() || document.documentElement.classList.contains('is-popout')
+      soloRequest()?.standalone === true ||
+      isSettingsDialogOpen() ||
+      document.documentElement.classList.contains('is-popout')
     if (shouldShowModal) {
       dialog.showModal()
     } else {
@@ -703,6 +714,7 @@ export function mountApprovalDialog(
   function removeCancelled(id: string): void {
     const queueIdx = queue.findIndex((req) => req.id === id)
     if (queueIdx >= 0) queue.splice(queueIdx, 1)
+    const wasStandalone = batch.some((req) => req.id === id && req.standalone)
     const wasInBatch = batch.some((req) => req.id === id)
     batch = batch.filter((req) => req.id !== id)
     if (wasInBatch && active) {
@@ -711,6 +723,7 @@ export function mountApprovalDialog(
         active = false
         clearSettle()
         show()
+        if (dialog.open && (wasStandalone || batch.some((req) => req.standalone))) startSettle()
       } else {
         renderBatch()
         // Removing a sibling can change the remaining primary action from a
@@ -740,6 +753,11 @@ export function mountApprovalDialog(
     // Surface anything that was waiting behind this batch immediately — it has
     // already sat through its own coalesce window, so no extra delay.
     show()
+    if (
+      dialog.open &&
+      (answered.some((req) => req.standalone) || batch.some((req) => req.standalone))
+    )
+      startSettle()
   }
 
   api.agent.onApprovalRequest(
@@ -757,6 +775,7 @@ export function mountApprovalDialog(
       collapseDetails,
       approveOnceLabel,
       showWhileSettingsOpen,
+      standalone,
       allowTurnTreeLease,
       turnTreeLeaseLabel,
       turnTreeLeaseDefault,
@@ -778,6 +797,7 @@ export function mountApprovalDialog(
         collapseDetails,
         approveOnceLabel,
         showWhileSettingsOpen,
+        standalone,
         allowTurnTreeLease,
         turnTreeLeaseLabel,
         turnTreeLeaseDefault,
@@ -786,7 +806,27 @@ export function mountApprovalDialog(
         arrival: arrivals++,
       }
       queue.push(pending)
-      if (active && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
+      if (
+        active &&
+        pending.standalone &&
+        isShowable(pending) &&
+        !batch.some((req) => req.standalone)
+      ) {
+        queue.unshift(...batch)
+        batch = []
+        closeDialog()
+        active = false
+        clearSettle()
+        show()
+        // A click already committed against the interrupted shell must not
+        // become consent to connect a client, or grant it decision authority.
+        if (dialog.open) startSettle()
+      } else if (
+        active &&
+        !batch.some((req) => req.standalone) &&
+        isSettingsDialogOpen() &&
+        pending.showWhileSettingsOpen
+      ) {
         // Settings may have been opened after an ordinary inline approval was
         // already visible. Its modal top layer makes that chat prompt inert, so
         // put the interrupted batch back at the front and surface only the
