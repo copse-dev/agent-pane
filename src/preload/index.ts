@@ -466,6 +466,7 @@ const api: ApiClient = {
         id: string
         threadId?: string
         questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
+        presentation?: import('@shared/types/ask-user.ts').AskUserActionsPresentation
       }) => void,
     ) => {
       const listener = (
@@ -474,6 +475,7 @@ const api: ApiClient = {
           id: string
           threadId?: string
           questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
+          presentation?: import('@shared/types/ask-user.ts').AskUserActionsPresentation
         },
       ): void => {
         handler(req)
