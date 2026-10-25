@@ -76,7 +76,7 @@ required. Say so in the PR's Validation section and name that gate. When in doub
 check. List an intentionally unlinked file in
 `ALLOWED_UNLINKED` (`scripts/check-dead-code.mts`) with a reason.
 
-A mandatory full check is satisfied by *no new failures*, not by a literal zero: triage its result
+A mandatory full check is satisfied by _no new failures_, not by a literal zero: triage its result
 against [`docs/host-environment-test-noise.md`](docs/host-environment-test-noise.md) before calling
 it green or calling it blocking, and name which you saw in the Validation section. Run it through
 `run_background`, not a foreground call — it routinely outruns a silent shell's timeout.
