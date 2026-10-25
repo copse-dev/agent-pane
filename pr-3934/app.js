@@ -93886,8 +93886,9 @@ function createActivityView(api2, store2, sources3, deps, host) {
       for (const option of options) {
         const choice = el("button", {
           type: "button",
-          class: `ui-btn ${actionsOnly && option === options[0] ? "ui-btn-primary" : "ui-btn-secondary"} activity-option`
+          class: actionsOnly ? `ui-btn ${option === options[0] ? "ui-btn-primary" : "ui-btn-secondary"} activity-option activity-answer-action` : "ui-btn ui-btn-secondary activity-option"
         });
+        if (actionsOnly) choice.disabled = settling;
         setInlineMarkdown(choice, option);
         const answer = choice.textContent;
         if (option === recommendedOption) {
@@ -94507,7 +94508,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     cancelSettle?.();
     settling = true;
     for (const control of detail.querySelectorAll(
-      ".activity-approve, .activity-answer"
+      ".activity-approve, .activity-answer, .activity-answer-action"
     )) {
       control.disabled = true;
     }
@@ -94515,7 +94516,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
       cancelSettle = null;
       settling = false;
       for (const control of detail.querySelectorAll(
-        ".activity-approve, .activity-answer"
+        ".activity-approve, .activity-answer, .activity-answer-action"
       )) {
         if (control.dataset["answered"]) continue;
         const requestId = control.dataset["requestId"];
@@ -196031,7 +196032,8 @@ function mountAskUserDialog(api2, store2) {
     });
     if (active3.presentation?.kind === "actions") {
       dialog2.showModal();
-      form.querySelector(".ask-user-action")?.focus();
+      const actions = form.querySelectorAll(".ask-user-action");
+      actions[actions.length - 1]?.focus();
       return;
     }
     const cancelBtn = el("button", { type: "button", class: "ask-user-cancel" }, "Cancel");
