@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { LLMMessage } from '@shared/types'
+import { setLastMeasuredInputTokens } from '@copse/agent/trim-history.ts'
 import {
   contextPressureChunk,
   prepareAgentHistory,
@@ -21,6 +22,27 @@ describe('prepareAgentHistory', () => {
     ]
     const prepared = prepareAgentHistory(messages, 128_000, 0)
     assert.equal(prepared.estimatedPromptTokens, 300)
+  })
+
+  it("ignores another loop's leftover measured input size", () => {
+    // A loop for another thread (or a larger model) last measured a near-full
+    // window. That reading says nothing about this history, which fits easily.
+    const messages: LLMMessage[] = [
+      { role: 'system', content: 'You are helpful.' },
+      userMessage(400),
+      ...Array.from({ length: 8 }, (_, i): LLMMessage[] => [
+        { role: 'assistant', content: [{ id: `tc${String(i)}`, name: 'read_file', args: {} }] },
+        { role: 'tool', toolResults: [{ toolCallId: `tc${String(i)}`, result: 'ok' }] },
+      ]).flat(),
+    ]
+    setLastMeasuredInputTokens(1_000_000)
+    try {
+      const prepared = prepareAgentHistory(messages, 128_000, 0)
+      assert.equal(prepared.wasTrimmed, false)
+      assert.equal(prepared.trimmed.length, messages.length)
+    } finally {
+      setLastMeasuredInputTokens(null)
+    }
   })
 })
 
