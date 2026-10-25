@@ -16,6 +16,7 @@ import { startPluginClientServer } from './plugin-client-server.ts'
 import {
   clientSnapshotSchema,
   clientQuestionSnapshotSchema,
+  clientAttentionSnapshotSchema,
   clientActivitySnapshotSchema,
   clientThreadContentSchema,
 } from '../../../shared/plugin-client-protocol.ts'
@@ -818,6 +819,122 @@ describe('interactive client questions', () => {
       assert.equal(answers.length, 1)
     } finally {
       withdraw()
+      await server.close()
+    }
+  })
+})
+
+describe('interactive client attention', () => {
+  it('lists all live pings beyond recent completions and opens desktop-only permissions without allowing decisions', async () => {
+    const decisions = new HumanDecisions(),
+      stops: Array<() => void> = [],
+      opened: string[] = [],
+      answers: unknown[] = []
+    for (let i = 0; i < 25; i++)
+      stops.push(
+        decisions.register(
+          'p',
+          'waiting-' + String(i),
+          {
+            id: randomUUID(),
+            kind: 'approval',
+            title: 'Permission ' + String(i),
+            body: 'PRIVATE BODY',
+          },
+          (answer) => answers.push(answer),
+        ),
+      )
+    stops.push(
+      decisions.register(
+        'p',
+        'asking',
+        {
+          id: randomUUID(),
+          kind: 'question',
+          questions: [{ question: 'Which option?', options: ['One', 'Two'] }],
+        },
+        (answer) => answers.push(answer),
+      ),
+    )
+    let enabled = true
+    const server = await startPluginClientServer({
+      decisions,
+      enabled: () => enabled,
+      approvePair: async () => true,
+      openThread: (p, t) => {
+        opened.push(p + '/' + t)
+        return true
+      },
+    })
+    try {
+      assert.equal((await fetch(server.origin + '/v1/attention')).status, 401)
+      const token = await pair(server.origin),
+        headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }
+      assert.equal(
+        (
+          await fetch(server.origin + '/v1/attention', {
+            headers: { ...headers, Origin: 'http://127.0.0.1:9999' },
+          })
+        ).status,
+        401,
+      )
+      const state = await read(
+        await fetch(server.origin + '/v1/attention', { headers }),
+        clientAttentionSnapshotSchema,
+      )
+      assert.equal(state.requests.length, 26)
+      assert.equal(JSON.stringify(state).includes('PRIVATE BODY'), false)
+      const row = state.requests[24]
+      assert.ok(row)
+      assert.equal(row.canRespond, false)
+      assert.equal(state.requests[25]?.canRespond, true)
+      const input = {
+        version: 1,
+        sessionId: state.sessionId,
+        submissionId: randomUUID(),
+        projectId: row.projectId,
+        threadId: row.threadId,
+        requestId: row.requestId,
+        revision: row.revision,
+        approved: true,
+      }
+      assert.equal(
+        (
+          await read(
+            await fetch(server.origin + '/v1/decisions', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(input),
+            }),
+            resultSchema,
+          )
+        ).ok,
+        false,
+      )
+      assert.equal(answers.length, 0)
+      const open = (): Promise<Response> =>
+        fetch(server.origin + '/v1/threads/open', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ version: 1, projectId: row.projectId, threadId: row.threadId }),
+        })
+      assert.equal((await open()).status, 200)
+      assert.deepEqual(opened, ['p/waiting-24'])
+      stops[24]?.()
+      assert.equal((await open()).status, 404)
+      assert.equal(
+        (
+          await read(
+            await fetch(server.origin + '/v1/attention', { headers }),
+            clientAttentionSnapshotSchema,
+          )
+        ).requests.length,
+        25,
+      )
+      enabled = false
+      assert.equal((await fetch(server.origin + '/v1/attention', { headers })).status, 403)
+    } finally {
+      for (const stop of stops) stop()
       await server.close()
     }
   })

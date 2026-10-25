@@ -224,6 +224,31 @@ export async function startPluginClientServer(options: {
       })
       return
     }
+    if (req.method === 'GET' && path === '/v1/attention') {
+      const state = options.decisions.snapshot()
+      json(res, 200, {
+        version: 1,
+        sessionId: state.sessionId,
+        sequence: state.sequence,
+        requests: state.requests.map(
+          ({ projectId, threadId, revision, decision, interactiveClientSupported }) => ({
+            projectId,
+            threadId,
+            revision,
+            requestId: decision.id,
+            kind: decision.kind,
+            title: (decision.kind === 'question'
+              ? (decision.questions[0]?.question ?? 'Agent question')
+              : decision.title
+            )
+              .replace(/[\r\n\t]/g, ' ')
+              .slice(0, 200),
+            canRespond: decision.kind === 'question' || interactiveClientSupported === true,
+          }),
+        ),
+      })
+      return
+    }
     if (req.method === 'POST' && path === '/v1/actions') {
       const input = safeJsonParse(await body(req), decodeWithSchema(clientActionSubmissionSchema))
       if (!input) {
@@ -379,10 +404,7 @@ export async function startPluginClientServer(options: {
         options.decisions
           .snapshot()
           .requests.some(
-            (row) =>
-              (row.interactiveClientSupported === true || row.decision.kind === 'question') &&
-              row.projectId === input.projectId &&
-              row.threadId === input.threadId,
+            (row) => row.projectId === input.projectId && row.threadId === input.threadId,
           )
       if (!known || !options.openThread?.(input.projectId, input.threadId)) {
         json(res, 404, { ok: false, reason: 'Thread is no longer available' })

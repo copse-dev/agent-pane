@@ -37,6 +37,26 @@ export const clientSnapshotSchema = z.strictObject({
 })
 export type ClientSnapshot = z.infer<typeof clientSnapshotSchema>
 
+/** All waiting human requests, including those whose decision semantics need the desktop. */
+export const clientAttentionSnapshotSchema = z.strictObject({
+  version: z.literal(1),
+  sessionId: z.uuid(),
+  sequence: z.number().int().nonnegative(),
+  requests: z
+    .array(
+      z.strictObject({
+        projectId: id,
+        threadId: id,
+        requestId: z.uuid(),
+        revision: z.number().int().positive(),
+        kind: z.enum(['approval', 'question']),
+        title: z.string().max(200),
+        canRespond: z.boolean(),
+      }),
+    )
+    .max(1000),
+})
+
 export const clientQuestionSnapshotSchema = z.strictObject({
   version: z.literal(1),
   sessionId: z.uuid(),

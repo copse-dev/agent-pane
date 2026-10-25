@@ -114,3 +114,14 @@ characters each). Existing origin-bound authentication, revocation and exactly-o
 apply. The standard question lifecycle records the paired client as the human answer source.
 Open accepts pending question chats even when absent from recent completions. Devices that cannot
 type should offer Open in Copse rather than fabricate an answer to a free-text question.
+
+## Attention across chats
+
+Authenticated GET `/v1/attention` returns `{version:1, sessionId, sequence, requests}` for all
+live human-decision registrations, independently of the 20 finished chats. Each entry carries
+project/thread/request/revision, kind (`approval` or `question`), a bounded title, and `canRespond`.
+It omits approval bodies and question options; existing decision/question endpoints provide their
+supported projections. Desktop-only permissions are discoverable and can be opened in Copse,
+but remain unanswerable through the decision API. Opening an exact currently waiting chat does
+not grant permission to answer it. Settlement withdraws attention. Pairing discloses pending
+request titles. Clients refresh on the shared event sequence and reconcile periodically.

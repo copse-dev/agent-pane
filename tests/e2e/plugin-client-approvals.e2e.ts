@@ -11,6 +11,7 @@ import type { Thread } from '@shared/types'
 import {
   clientSnapshotSchema,
   clientQuestionSnapshotSchema,
+  clientAttentionSnapshotSchema,
   clientActivitySnapshotSchema,
   clientThreadContentSchema,
 } from '../../src/shared/plugin-client-protocol.ts'
@@ -86,6 +87,7 @@ describe('interactive client live approvals', function () {
     await expect(dialog.$('.approval-heading')).toHaveText('Connect interactive client')
     assert.ok((await dialog.$('.approval-body').getText()).includes(pairing.code))
     assert.ok((await dialog.getText()).includes('agent questions'))
+    assert.ok((await dialog.getText()).includes('pending request titles'))
     await expect(dialog.$('.approval-remember')).not.toBeDisplayed()
     // Normalize only the random display code for deterministic visual evidence.
     await saveElementScreenshot('#approval-dialog', 'plugin-client-pairing.png', {
@@ -647,6 +649,13 @@ describe('interactive client live approvals', function () {
     )
     const row = state.requests[0]
     assert.ok(row)
+    const attention = await json(
+      await fetch(service.origin + '/v1/attention', { headers }),
+      clientAttentionSnapshotSchema,
+    )
+    assert.equal(attention.requests[0]?.requestId, row.requestId)
+    assert.equal(attention.requests[0].title, 'Which database should this fresh chat use?')
+    assert.equal(attention.requests[0].canRespond, true)
     const activity = await json(
       await fetch(service.origin + '/v1/activity', { headers }),
       clientActivitySnapshotSchema,
