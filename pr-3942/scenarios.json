@@ -221,7 +221,7 @@
   },
   {
     "id": "acp-subagent-visibility",
-    "label": "Background ACP subagents show up live"
+    "label": "A coding agent's own background subagents show up live"
   },
   {
     "id": "side-chat-approval",
