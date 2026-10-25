@@ -48,7 +48,9 @@ function markMessage(message: Message): Message {
  * Cache the stable leading system prompt and the reusable conversation tail.
  * Trailing operator instructions are rebuilt every turn, so caching through
  * them would write a prefix the following request cannot reuse (#1286).
- * The third breakpoint is on the last tool definition in OpenAIProvider.
+ * A large tool round also repeats the preceding conversation breakpoint,
+ * leaving a reusable prefix within Anthropic's 20-block lookback window.
+ * The tool breakpoint is on the last definition in OpenAIProvider.
  */
 export function markOpenRouterCacheBreakpoints(messages: Message[]): Message[] {
   const result = [...messages]
@@ -59,6 +61,26 @@ export function markOpenRouterCacheBreakpoints(messages: Message[]): Message[] {
     const role = result[end - 1]?.role
     if (role !== 'system' && role !== 'developer') break
     end--
+  }
+  for (let index = end - 2; index > 0; index--) {
+    const message = result[index]
+    if (
+      message?.role !== 'assistant' ||
+      message.tool_calls === undefined ||
+      message.tool_calls.length < 10 ||
+      result[index + 1]?.role !== 'tool'
+    )
+      continue
+    for (let i = index - 1; i >= 0; i--) {
+      const previous = result[i]
+      if (!previous || previous.role === 'system' || previous.role === 'developer') continue
+      const marked = markMessage(previous)
+      if (marked !== previous) {
+        result[i] = marked
+        break
+      }
+    }
+    break
   }
   for (let i = end - 1; i >= 0; i--) {
     const message = result[i]

@@ -189,7 +189,14 @@ describe('fork a thread and resend the last message', function () {
         timeoutMsg: 'expected the resent prompt to be appended to the transcript',
       },
     )
-    const texts = await $$('.messages-list .msg-user').map((bubble) => bubble.getText())
+    // The reply is still streaming, and a transcript re-render can replace a
+    // bubble between collecting element references and reading them. Read every
+    // bubble's text in one page call so no stale reference can be left behind.
+    const texts = await browser.execute(() =>
+      [...document.querySelectorAll<HTMLElement>('.messages-list .msg-user')].map(
+        (bubble) => bubble.innerText,
+      ),
+    )
     expect(texts[2]).toContain('Now make it fall back to the dashboard.')
 
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
