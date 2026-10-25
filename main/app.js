@@ -62955,10 +62955,16 @@ function cacheArtefact(key, artefact) {
   }
 }
 function setArtefactPreview(threadId, title, preview) {
-  if (preview) previews.set(previewKey(threadId, title), preview);
+  const key = previewKey(threadId, title);
+  if (!preview || previews.get(key) === preview) return;
+  previews.set(key, preview);
+  previewRevisions.set(threadId, (previewRevisions.get(threadId) ?? 0) + 1);
 }
 function getArtefactPreview(threadId, title) {
   return previews.get(previewKey(threadId, title));
+}
+function artefactPreviewRevision(threadId) {
+  return previewRevisions.get(threadId) ?? 0;
 }
 function setArtefactContent(projectId, threadId, artefact) {
   cacheArtefact(artefactKey(projectId, threadId, artefact.title), artefact);
@@ -63006,10 +63012,11 @@ function artefactUriFromToolResult(result) {
   const match = /\bui:\/\/[^\s)\]]+/.exec(result);
   return match ? match[0] : null;
 }
-var previews, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
+var previews, previewRevisions, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
 var init_artefact_previews = __esm({
   "src/renderer/canvas/artefact-previews.ts"() {
     previews = /* @__PURE__ */ new Map();
+    previewRevisions = /* @__PURE__ */ new Map();
     artefacts = /* @__PURE__ */ new Map();
     artefactReads = /* @__PURE__ */ new Map();
     MAX_CACHED_ARTEFACTS = 20;
@@ -107277,6 +107284,34 @@ function assistantDisplayParts(content) {
   const { body, noise } = splitCursorAcpTransportNoise(stripped);
   return { body, transportNoise: noise };
 }
+function transcriptInputs(store2, thread) {
+  return {
+    threadId: thread.id,
+    messages: thread.messages,
+    pendingMessages: thread.pendingMessages,
+    status: thread.status,
+    model: thread.model,
+    todos: thread.todos,
+    workingBrief: thread.workingBrief,
+    interruptedTurnAt: thread.interruptedTurnAt,
+    threadProposals: thread.threadProposals,
+    reviewerInputAnswers: thread.reviewerInputAnswers,
+    liveProposalTargets: (thread.threadProposals ?? []).flatMap(
+      (decision) => decision.threadId && getThreadById(store2, decision.threadId) ? [decision.threadId] : []
+    ).join("\n"),
+    needsHydration: needsHydration(thread),
+    hydrationFailed: hydrationFailed(thread.id),
+    artefactPreviewRevision: artefactPreviewRevision(thread.id)
+  };
+}
+function sameItems(a5, b5) {
+  if (a5 === b5) return true;
+  if (!a5 || !b5 || a5.length !== b5.length) return false;
+  return a5.every((item, i3) => item === b5[i3]);
+}
+function sameTranscriptInputs(a5, b5) {
+  return a5.threadId === b5.threadId && a5.status === b5.status && a5.model === b5.model && a5.todos === b5.todos && a5.workingBrief === b5.workingBrief && a5.interruptedTurnAt === b5.interruptedTurnAt && a5.liveProposalTargets === b5.liveProposalTargets && a5.needsHydration === b5.needsHydration && a5.hydrationFailed === b5.hydrationFailed && a5.artefactPreviewRevision === b5.artefactPreviewRevision && sameItems(a5.messages, b5.messages) && sameItems(a5.pendingMessages, b5.pendingMessages) && sameItems(a5.threadProposals, b5.threadProposals) && sameItems(a5.reviewerInputAnswers, b5.reviewerInputAnswers);
+}
 function summaryPreview(text2, max = 200) {
   const trimmed2 = text2.trim();
   if (trimmed2.length <= max) return trimmed2;
@@ -108959,6 +108994,7 @@ function mountConversation(root, store2, api2) {
   let lastProgrammaticScrollTop = -1;
   let userScrolledUpAt = 0;
   let renderedThreadId = null;
+  let renderedInputs = null;
   let stickyImagePrompt = null;
   let stickyImageFullHeight = 0;
   let backfillGeneration = 0;
@@ -110115,7 +110151,10 @@ function mountConversation(root, store2, api2) {
       queuedHost.replaceChildren();
       queuedHost.hidden = true;
     }
-    list.insertBefore(activityBar, firstTrailingCard());
+    const trailingCard = firstTrailingCard();
+    if (activityBar.parentNode !== list || activityBar.nextSibling !== trailingCard) {
+      list.insertBefore(activityBar, trailingCard);
+    }
     updateScrollButton();
   }
   function backfillOlderMessages(thread, cursor, generation) {
@@ -110144,6 +110183,15 @@ function mountConversation(root, store2, api2) {
   function rebuildForThread() {
     const thread = getActiveThread(store2);
     const rebuildingSameThread = thread !== void 0 && thread.id === renderedThreadId;
+    const inputs = thread ? transcriptInputs(store2, thread) : null;
+    if (rebuildingSameThread && inputs && renderedInputs) {
+      if (sameTranscriptInputs(inputs, renderedInputs)) {
+        finishThreadChrome(thread);
+        syncModelLabels();
+        syncUserActions();
+        return;
+      }
+    }
     const preservedScrollTop = rebuildingSameThread && !pinnedToBottom ? list.scrollTop : null;
     if (!rebuildingSameThread) {
       pinnedToBottom = true;
@@ -110158,6 +110206,7 @@ function mountConversation(root, store2, api2) {
     stickyImagePrompt = null;
     backfillGeneration++;
     renderedThreadId = thread?.id ?? null;
+    renderedInputs = inputs;
     if (!thread) {
       finishThreadChrome(null);
       return;
