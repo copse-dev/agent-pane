@@ -385,6 +385,9 @@ async function boot(): Promise<void> {
   const mobileReady = new Promise<void>((resolve) => {
     mobileRestored = resolve
   })
+  // The preload exposes this bridge only in test-enabled E2E sessions.
+  // Keep harness state out of the product ApiClient/protocol.
+  attachAutomationAppearance(Object.hasOwn(window, '__copseE2e'))
   // A pop-out window is a secondary view of the same workspace; let the main
   // window own the agent loop and config autosave so the two don't race.
   if (!popoutMode) {
@@ -398,7 +401,6 @@ async function boot(): Promise<void> {
       openThreadModelPicker: () => focusThreadModelPicker?.(),
     })
     attachAutomationController(store, api)
-    attachAutomationAppearance(store, api.appIcon)
     // When `gh_pr_create` turns the diff you're reading into a PR, move the
     // Changes panel on to it. Only the main window: a pop-out is pinned to the
     // one pane it was opened for.
