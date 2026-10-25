@@ -441,8 +441,9 @@ Rules for anything that lands in a captured frame:
   workspace-relative paths.
 - **Randomness.** No `Math.random()` / `randomUUID()` in rendered output. Derive
   visible ids/order from fixture data. Background task ids are the one product
-  id that reaches the transcript (the completion wake names the task), so under
-  `COPSE_E2E` they come from a counter (`nextBackgroundOperationId`).
+  id that reaches an expanded tool card (the completion wake's transcript text
+  stays id-free), so under `COPSE_E2E` they come from a counter
+  (`nextBackgroundOperationId`).
 - **The checkout itself.** Prefer `seedStableWorkspace()` over
   `seedEmptyProject(process.cwd(), …)` for a spec that needs a project but not
   this repository. The checkout leaks into frames three ways: the Changes rail
