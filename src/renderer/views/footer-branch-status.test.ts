@@ -617,6 +617,51 @@ describe('footer branch status', () => {
     assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/two')
   })
 
+  it('does not show the previous thread branch while a real thread switch is still resolving', async () => {
+    // thread-2 has no gitBranch/worktree binding of its own, so its display
+    // falls through to `status.currentBranch` - the field that is shared
+    // across threads rather than keyed per thread.
+    const second = { ...thread(undefined, true), id: 'thread-2' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread('main', true), second],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    let resolveSecond: (status: GitBranchStatus) => void = () => {
+      throw new Error('expected the second thread read to still be pending')
+    }
+    const base = createApi({ currentBranch: 'main', pr: null })
+    mountFooterBranchStatus(host, store, {
+      ...base,
+      git: {
+        ...base['git'],
+        branchStatus: async (_projectId, threadId) => {
+          if (threadId === 'thread-1') return { currentBranch: 'main', pr: null }
+          return new Promise<GitBranchStatus>((resolve) => {
+            resolveSecond = resolve
+          })
+        },
+      },
+    })
+    await settle()
+    assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'main')
+
+    store.setState({ activeThreadId: 'thread-2' })
+    store.emit('threads_changed')
+    await settle()
+
+    // thread-2's own branch status is still in flight - the widget must hide
+    // rather than keep advertising thread-1's branch (#regression: flickered
+    // to the previous thread's branch across a real thread switch).
+    assert.equal(qsRequired(host, '.branch-picker').hidden, true)
+    resolveSecond({ currentBranch: 'feature/second', pr: null })
+    await settle()
+    assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/second')
+  })
+
   it('copies the thread branch on click for existing chats', async () => {
     let copiedBranch: string | null = null
     installClipboard(async (text) => {

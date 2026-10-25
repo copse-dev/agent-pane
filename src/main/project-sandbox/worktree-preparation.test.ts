@@ -81,7 +81,7 @@ it(
     symlinkSync(target, join(cache, 'pnpm-store'), 'dir')
     try {
       assert.throws(() => preparationCacheRoots(env, true), /must not be a symlink/)
-      assert.equal(existsSync(join(cache, 'socket-firewall')), false)
+      assert.equal(existsSync(join(cache, 'package-firewall')), false)
     } finally {
       rmSync(join(cache, 'pnpm-store'))
     }
@@ -368,12 +368,6 @@ console.log(process.env.TMPDIR)`,
     const installOutside = join(parent, 'install-escape')
     const fakeBin = join(root, 'bin')
     const fixtureEnv = { ...env, PATH: `${fakeBin}:${env['PATH'] ?? ''}` }
-    const firewall = join(profile, 'cache/socket-firewall/bin/sfw')
-    write(
-      firewall,
-      '#!/bin/sh\nif [ "$1" = --version ]; then echo 2.0.6; else exec "$@"; fi\n',
-      true,
-    )
     write(
       join(fakeBin, 'corepack'),
       `#!/usr/bin/env node
@@ -485,34 +479,20 @@ console.log(process.env.TMPDIR)`,
     assert.equal((await prepareWorktree(other, options)).state, 'ready')
     assert.equal((await prepareWorktree(other, options)).state, 'ready')
   })
-  it('adapts the legacy Yarn CA setting while retaining the firewall proxy and Node trust', async () => {
-    const other = join(parent, 'yarn-compatibility')
+  it('runs an offline install straight from the managed caches, without the firewall', async () => {
+    const other = join(parent, 'yarn-offline')
     const bin = join(other, 'bin')
-    const certificate = join(other, 'test-ca.pem')
     write(join(other, 'package.json'), '{"packageManager":"yarn@3.8.7"}')
     write(join(other, 'yarn.lock'), '__metadata:\n  version: 6')
-    write(certificate, '')
-    write(
-      join(profile, 'cache/socket-firewall/bin/sfw'),
-      `#!/bin/sh
-if [ "$1" = --version ]; then echo 2.0.6; exit 0; fi
-export YARN_HTTPS_CA_FILE_PATH=legacy-unsupported
-export NODE_EXTRA_CA_CERTS=${JSON.stringify(certificate)}
-export HTTPS_PROXY=http://127.0.0.1:12345
-exec "$@"
-`,
-      true,
-    )
     write(
       join(bin, 'corepack'),
       `#!/usr/bin/env node
 if(process.argv.includes('--version')) console.log('3.8.7');
 else {
   const assert=require('node:assert/strict');
-  assert.equal(process.env.YARN_HTTPS_CA_FILE_PATH,undefined);
-  assert.equal(process.env.NODE_EXTRA_CA_CERTS,${JSON.stringify(certificate)});
-  assert.equal(process.env.HTTPS_PROXY,'http://127.0.0.1:12345');
-  require('node:fs').writeFileSync('compatibility-checked','yes');
+  assert.equal(process.env.ELECTRON_RUN_AS_NODE,undefined);
+  assert.doesNotMatch(process.env.HTTPS_PROXY ?? '',/copse:/);
+  require('node:fs').writeFileSync('offline-install-ran','yes');
 }
 `,
       true,
@@ -524,6 +504,6 @@ else {
       signal: new AbortController().signal,
     }
     assert.equal((await prepareWorktree(other, options)).state, 'ready')
-    assert.equal(readFileSync(join(other, 'compatibility-checked'), 'utf8'), 'yes')
+    assert.equal(readFileSync(join(other, 'offline-install-ran'), 'utf8'), 'yes')
   })
 })

@@ -115,8 +115,10 @@ For suspected drift or recurring candidates:
   Its default mode modifies files; use `--dry-run` in an isolated checkout if needed. Do not raise
   ignore thresholds, weaken assertions, mask real UI defects, or accept oscillating baselines to
   make review pass. Inspect raw shard artifacts when filtered evidence cannot answer the concern.
-- Accumulated stable drift belongs in a deliberate re-baseline PR. `update-screenshots` requests a
-  full regeneration; it is not an acceptance action. Even that PR must review every candidate.
+- Accumulated stable drift belongs in the nightly drift refresh PR (head `screenshot-refresh/main`,
+  see `docs/agent-development.md` → **Nightly screenshot drift refresh**) or a deliberate
+  re-baseline PR. `update-screenshots` requests a full regeneration; it is not an acceptance action.
+  Both must review every candidate, and known unstable captures stay uncommitted there too.
 
 ## 3. Choose the repository action
 

@@ -91,6 +91,17 @@ test('derives repos, deduplicated links, subagents and side chats for a thread',
               model: 'acp:claude-acp#haiku',
             },
           },
+          // An ACP agent's own subagent dispatch (e.g. Claude Code's `Agent`
+          // tool) carries no session, only this one tool call.
+          {
+            id: 'acp-agent-1',
+            name: 'Agent',
+            kind: 'think',
+            title: 'Panel registration research',
+            args: { subagent_type: 'Explore', prompt: 'Find the panel registry\nmore' },
+            status: 'running',
+            result: null,
+          },
         ],
       }),
     ],
@@ -133,6 +144,12 @@ test('derives repos, deduplicated links, subagents and side chats for a thread',
       status: 'running',
       prompt: 'Find the flaky wait',
       model: 'acp:claude-acp#haiku',
+    },
+    {
+      id: 'acp-agent-1',
+      kind: 'explore',
+      status: 'running',
+      prompt: 'Panel registration research',
     },
   ])
   // Active side chats first, archived after.
