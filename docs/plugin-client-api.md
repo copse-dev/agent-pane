@@ -1,7 +1,7 @@
 # Interactive client approval API (experimental)
 
 Enable **copse.plugin-client-api** in Settings → Customise → Plugins to connect local interactive
-clients to real pending approvals and recent chat activity. This plugin starts disabled on fresh and upgraded profiles.
+clients to real pending approvals and recent chat activity and desktop-offered follow-up actions. This plugin starts disabled on fresh and upgraded profiles.
 Enabling permits pairing requests; it does not grant a client access until the desktop user
 confirms its matching code. This is a session-only preview of the generic capability API.
 
@@ -12,7 +12,7 @@ loopback port. A client must not read private settings or assume a fixed port.
 POST `/v1/pair` with JSON `{version:1,label}`. Display the returned `{id,code}` and ask the user to
 verify it in Copse's **Connect interactive client** prompt. Poll GET `/v1/pair/<id>` until approved
 or denied. The approved reply contains a one-time-delivered bearer token; retain it only in memory.
-Pairing expires after two minutes. Each desktop pairing prompt is shown alone: it temporarily hides pending thread approvals, and restores the unanswered thread prompts when it completes, is rejected or expires. Pairings never share an approve/reject action with commands or other pairings. Connecting grants viewing, decision submission, recent chat titles/text and opening those chats together for this session. The prompt makes that authority explicit; there is no read-only pairing mode. Access covers approval requests across all projects and may reveal sensitive chat text and command arguments. Pairing requests themselves never appear in the remote approval feed.
+Pairing expires after two minutes. Each desktop pairing prompt is shown alone: it temporarily hides pending thread approvals, and restores the unanswered thread prompts when it completes, is rejected or expires. Pairings never share an approve/reject action with commands or other pairings. Connecting grants viewing, decision submission, recent chat titles/text, opening those chats and invoking their offered follow-up actions together for this session. The prompt makes that authority explicit; there is no read-only pairing mode. Access covers approval requests across all projects and may reveal sensitive chat text and command arguments. Pairing requests themselves never appear in the remote approval feed.
 
 GET `/v1/events` with `Authorization: Bearer <token>` streams complete snapshots over SSE. POST
 `/v1/decisions` carries `{version:1, submissionId, sessionId, projectId, threadId, requestId,
@@ -49,6 +49,29 @@ and authority are checked again before navigation; deleted, archived, wrong-proj
 targets fail. Request fields are closed: clients cannot supply a URL, path, command or app.
 Navigation uses the desktop's existing ready-window path and preserves the exact project even
 when thread IDs are ambiguous. It is unavailable to agent tools and plugin worker runtimes.
+
+GET `/v1/actions` returns `{version:1,sessionId,offer}`. An offer is null unless the desktop
+has choices for its current finished chat. Otherwise it contains `projectId`, `threadId`, a UUID
+`revision`, and up to eight `{id,label,kind}` choices. The Tab next-step suggestion (`next-step`)
+comes before follow-up chips (`follow-up`). Existing drafts, attachments, running chats and open
+dialogs withdraw the offer. Pending human decisions take priority, including decisions this
+preview does not support. Polling does not generate new suggestions or call a model.
+
+POST `/v1/actions` with `{version:1,sessionId,submissionId,projectId,threadId,revision,actionId}`
+invokes only an exact currently offered choice. No prompt, URL, executable, filesystem path or
+permission grant may be supplied. The authenticated host consumes the offer before dispatch;
+submission UUIDs deduplicate concurrent retries, with conflicting reuse rejected. The desktop
+claims the short-lived dispatch under current authority and rechecks the exact chat, turn, offer,
+draft and dialog state before using the same callback as its visible control. Reload/close clears
+publication. Unsupported/stale actions fail rather than falling back to an approval or another
+suggestion. Clients must bind presses to the action identity that finished rendering.
+
+The Tab action **inserts the suggestion into the desktop draft**; it does not send it. Prompt
+chips send their offered message, Review starts the existing review flow, Changes opens the
+reviewer pane, and Create PR opens the existing dialog for desktop completion. Pairing explicitly
+discloses these actions; upgrading to this expanded scope requires restarting and pairing again.
+Only the desktop's current chat publishes choices. Other recent chats can be opened in Copse to
+load their own choices; browsing the device does not change the desktop selection.
 
 Browser clients must be served from an explicit `http://127.0.0.1:<port>` origin; remote origins
 are rejected. Tokens are bound to the origin that paired, including the absence of an Origin

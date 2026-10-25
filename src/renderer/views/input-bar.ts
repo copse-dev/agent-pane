@@ -1,3 +1,5 @@
+import { mountClientActionOffers, type OfferedClientAction } from './client-action-offers.ts'
+import { lastExchange } from './last-exchange.ts'
 import { mountThreadPlanControl } from './thread-plan-dialog.ts'
 import { el, clear } from '../dom/helpers.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
@@ -759,10 +761,18 @@ export function mountInputBar(
   const portraitPanelHost = opts.portraitPanelHost ?? root
   portraitPanelHost.append(portraitPanelControls.element)
 
-  const followUps = mountFollowUpSuggestions(store, api, (prompt) => {
-    composer.value = prompt
-    void submit()
-  })
+  let refreshClientActions: () => void = () => {}
+  const followUps = mountFollowUpSuggestions(
+    store,
+    api,
+    (prompt) => {
+      composer.value = prompt
+      void submit()
+    },
+    () => {
+      refreshClientActions()
+    },
+  )
   root.insertBefore(followUps.root, inputRow)
   // Directly above the draft, below the suggestions: attachments are part of
   // the message being composed, not chrome for the whole composer.
@@ -772,6 +782,7 @@ export function mountInputBar(
 
   const nextStepHint = mountNextStepHint(store, api, () => {
     updateComposerPlaceholder()
+    refreshClientActions()
   })
 
   // The one writer for the composer placeholder: a Tab-completable next step
@@ -1941,6 +1952,66 @@ export function mountInputBar(
     true,
   )
 
+  function acceptNextStep(hint: string): void {
+    composer.value = hint
+    nextStepHint.clear()
+    updateComposerPlaceholder()
+    composer.focus()
+    composer.el.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  const clientActionOffers = mountClientActionOffers(
+    api,
+    () => {
+      const { activeProjectId, activeThreadId } = store.getState()
+      if (
+        !activeProjectId ||
+        !activeThreadId ||
+        composer.value.trim() ||
+        attachedFiles.length +
+          attachedImages.length +
+          attachedVideos.length +
+          attachedArchives.length +
+          attachedThreads.length +
+          attachedShells.length >
+          0 ||
+        document.querySelector('dialog[open]') ||
+        isAutocompletePickerOpen()
+      )
+        return null
+      const thread = getThreadById(store, activeThreadId)
+      const exchange = lastExchange(store, activeThreadId)
+      if (!thread || thread.status !== 'idle' || !exchange) return null
+      const hint = nextStepHint.current()
+      const actions: OfferedClientAction[] =
+        hint === null
+          ? []
+          : [
+              {
+                id: 'next-step',
+                label: hint.slice(0, 500),
+                kind: 'next-step',
+                run: (): void => {
+                  acceptNextStep(hint)
+                },
+              },
+            ]
+      actions.push(...followUps.available())
+      return {
+        projectId: activeProjectId,
+        threadId: activeThreadId,
+        turnKey: exchange.turnKey,
+        actions,
+      }
+    },
+    root,
+  )
+  refreshClientActions = clientActionOffers.refresh
+  composer.el.addEventListener('input', refreshClientActions)
+  const stopClientActions = [
+    store.on('threads_changed', refreshClientActions),
+    store.on('thread_status_changed', refreshClientActions),
+  ]
+
   let sendNowChordAt = 0
   composer.el.addEventListener('keydown', (e) => {
     if (e.isComposing) return
@@ -1966,13 +2037,7 @@ export function mountInputBar(
       const hint = nextStepHint.current()
       if (hint !== null && !composer.value.trim() && !isAutocompletePickerOpen()) {
         e.preventDefault()
-        composer.value = hint
-        nextStepHint.clear()
-        updateComposerPlaceholder()
-        composer.focus()
-        // The value setter is silent; drafts and the context estimate listen
-        // for input, and an accepted hint is exactly a typed message.
-        composer.el.dispatchEvent(new Event('input', { bubbles: true }))
+        acceptNextStep(hint)
         return
       }
     }
@@ -2992,6 +3057,10 @@ export function mountInputBar(
       topEdgeObserver.disconnect()
       followUps.destroy()
       nextStepHint.destroy()
+      clientActionOffers.destroy()
+      stopClientActions.forEach((stop) => {
+        stop()
+      })
       unbindDrop()
       unregisterAttachments()
       imageDescriptionSeq++

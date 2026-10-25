@@ -1,3 +1,5 @@
+import { clientActionSubmissionSchema } from '@shared/client-actions.ts'
+import type { ClientActions } from '../clients/client-actions.ts'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import {
@@ -34,6 +36,7 @@ function localOrigin(origin: string): boolean {
 export async function startPluginClientServer(options: {
   decisions: HumanDecisions
   enabled: () => boolean
+  actions?: ClientActions
   activity?: { read: (fresh?: boolean) => Promise<ClientActivityData> }
   readThread?: (projectId: string, threadId: string) => Promise<ClientThreadText>
   openThread?: (projectId: string, threadId: string) => boolean
@@ -58,6 +61,10 @@ export async function startPluginClientServer(options: {
   let activitySequence = 0
   let activityFingerprint = ''
   const streams = new Set<ServerResponse>()
+  const actionDeliveries = new Map<
+    string,
+    { fingerprint: string; result: Promise<{ ok: boolean; reason: string }> }
+  >()
   const deliveries = new Map<
     string,
     { fingerprint: string; result: { ok: boolean; reason: string } }
@@ -181,6 +188,55 @@ export async function startPluginClientServer(options: {
     const client = clients.principal(req.headers.authorization, origin, 'control')
     if (!client) {
       json(res, 401, { error: 'Pair in Copse first' })
+      return
+    }
+    if (req.method === 'GET' && path === '/v1/actions') {
+      json(res, 200, {
+        version: 1,
+        sessionId: options.decisions.snapshot().sessionId,
+        offer:
+          options.decisions.snapshot().requests.length === 0
+            ? (options.actions?.snapshot() ?? null)
+            : null,
+      })
+      return
+    }
+    if (req.method === 'POST' && path === '/v1/actions') {
+      const input = safeJsonParse(await body(req), decodeWithSchema(clientActionSubmissionSchema))
+      if (!input) {
+        json(res, 400, { error: 'Invalid action reference' })
+        return
+      }
+      const authorized = (): boolean =>
+        active() &&
+        Boolean(clients.principal(req.headers.authorization, origin, 'control')) &&
+        input.sessionId === options.decisions.snapshot().sessionId &&
+        options.decisions.snapshot().requests.length === 0
+      if (!authorized()) {
+        json(res, 403, { error: 'Action unavailable' })
+        return
+      }
+      const key = `${client.id}:${input.submissionId}`
+      const fingerprint = JSON.stringify(input)
+      const previous = actionDeliveries.get(key)
+      if (previous) {
+        if (previous.fingerprint !== fingerprint) {
+          json(res, 409, { ok: false, reason: 'Conflicting action identity' })
+          return
+        }
+        json(res, 200, await previous.result)
+        return
+      }
+      if (actionDeliveries.size >= 4096) {
+        json(res, 429, { error: 'Too many submissions' })
+        return
+      }
+      const result = (async (): Promise<{ ok: boolean; reason: string }> => {
+        const ok = (await options.actions?.perform(input, authorized)) ?? false
+        return { ok, reason: ok ? 'Action accepted in Copse' : 'Action changed or unavailable' }
+      })()
+      actionDeliveries.set(key, { fingerprint, result })
+      json(res, 200, await result)
       return
     }
     if (req.method === 'GET' && path === '/v1/activity') {

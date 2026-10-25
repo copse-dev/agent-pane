@@ -180,6 +180,14 @@ export interface DetectedEnvKey {
 }
 
 export interface ApiClient {
+  clientActions: {
+    claim: (id: string) => Promise<boolean>
+    publish: (offer: import('@shared/client-actions.ts').ClientActionOffer | null) => Promise<void>
+    onInvoke: (
+      handler: (command: import('@shared/client-actions.ts').ClientActionCommand) => void,
+    ) => () => void
+    reply: (id: string, accepted: boolean) => Promise<void>
+  }
   threadPrompts: {
     revokeAccess: (threadId: string, access: 'read' | 'send') => Promise<void>
     onPrompt: (

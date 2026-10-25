@@ -1,3 +1,5 @@
+import { clientActionSnapshotSchema } from '../../src/shared/client-actions.ts'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
@@ -18,7 +20,11 @@ import {
   seedStableWorkspace,
   writeSeedConfig,
 } from './helpers/seed-config.ts'
-import { prepareMockToolTurn, expectAssistantReply } from './helpers/mock-scenario.ts'
+import {
+  prepareMockToolTurn,
+  prepareMockTurn,
+  expectAssistantReply,
+} from './helpers/mock-scenario.ts'
 import { submitComposer } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { saveElementScreenshot, saveAppScreenshot } from './helpers/screenshot.ts'
@@ -45,6 +51,7 @@ describe('interactive client live approvals', function () {
     await browser.reloadSession()
   })
   after(() => {
+    writeE2eEnv({})
     resetUserData()
   })
 
@@ -481,5 +488,97 @@ describe('interactive client live approvals', function () {
       ).status,
       404,
     )
+  })
+  it('offers Tab before chips, fills the draft through the same desktop action and rejects a stale press', async () => {
+    writeE2eEnv({ COPSE_PANEL_MOCK_NEXT_STEP: '1' })
+    resetUserData()
+    seedEmptyProject(seedStableWorkspace(), 'e2e-plugin-actions', {
+      model: 'claude-sonnet-4-6',
+      subagentsEnabled: false,
+      mockFollowUps: true,
+    })
+    await browser.reloadSession()
+    await $('.prompt-input').waitForExist({ timeout: 30000 })
+    await browser.execute(async () => {
+      await window.api.plugins.setEnabled('copse.plugin-client-api', true)
+    })
+    const path = join(copseDataRoot(), 'plugin-client-api.json')
+    await browser.waitUntil(() => existsSync(path), { timeout: 15000 })
+    const service = safeJsonParse(readFileSync(path, 'utf8'), decodeWithSchema(discoverySchema))
+    assert.ok(service)
+    const pairing = await json(
+      await fetch(service.origin + '/v1/pair', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version: 1, label: 'Action desk test' }),
+      }),
+      pairSchema,
+    )
+    await $('#approval-dialog').waitForDisplayed({ timeout: 15000 })
+    assert.ok((await $('#approval-dialog .approval-body').getText()).includes(pairing.code))
+    await $('#approval-dialog .approval-approve').click()
+    const paired = await json(await fetch(service.origin + '/v1/pair/' + pairing.id), pairedSchema)
+    assert.ok(paired.token)
+    const headers = { Authorization: `Bearer ${paired.token}`, 'Content-Type': 'application/json' }
+    const scenario = await prepareMockTurn('Review the finished fix.', [
+      { text: 'The fix is ready for verification.' },
+    ])
+    await submitComposer()
+    await waitForAgentIdle()
+    await scenario.assertComplete()
+    await browser.waitUntil(
+      async () => {
+        const state = await json(
+          await fetch(service.origin + '/v1/actions', { headers }),
+          clientActionSnapshotSchema,
+        )
+        return state.offer?.actions[0]?.kind === 'next-step'
+      },
+      { timeout: 30000 },
+    )
+    let state = await json(
+      await fetch(service.origin + '/v1/actions', { headers }),
+      clientActionSnapshotSchema,
+    )
+    assert.ok(state.offer)
+    assert.equal(state.offer.actions[0]?.label, 'Run the test suite to verify the fix')
+    assert.ok(state.offer.actions.some((action) => action.kind === 'follow-up'))
+    await saveElementScreenshot('#input-bar', 'plugin-client-actions.png')
+    state = await json(
+      await fetch(service.origin + '/v1/actions', { headers }),
+      clientActionSnapshotSchema,
+    )
+    assert.ok(state.offer)
+    const post = (submissionId: string): Promise<Response> =>
+      fetch(service.origin + '/v1/actions', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          version: 1,
+          sessionId: state.sessionId,
+          submissionId,
+          projectId: state.offer?.projectId,
+          threadId: state.offer?.threadId,
+          revision: state.offer?.revision,
+          actionId: 'next-step',
+        }),
+      })
+    const submissionId = randomUUID()
+    assert.equal((await json(await post(submissionId), resultSchema)).ok, true)
+    await expect($('.prompt-input')).toHaveText('Run the test suite to verify the fix')
+    await expect($('.prompt-input')).not.toHaveAttribute('data-next-step')
+    assert.equal(
+      (
+        await json(
+          await fetch(service.origin + '/v1/actions', { headers }),
+          clientActionSnapshotSchema,
+        )
+      ).offer,
+      null,
+    )
+    assert.equal((await json(await post(submissionId), resultSchema)).ok, true)
+    assert.equal((await json(await post(randomUUID()), resultSchema)).ok, false)
+    await saveElementScreenshot('#input-bar', 'plugin-client-action-draft.png')
+    writeE2eEnv({})
   })
 })

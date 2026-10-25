@@ -1,3 +1,5 @@
+import { ClientActions } from '../clients/client-actions.ts'
+import { clientActionSnapshotSchema } from '@shared/client-actions.ts'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { request } from 'node:http'
@@ -577,4 +579,94 @@ it('reads only exact recent completions and rechecks revocation and eligibility 
       await server.close()
     }
   }
+})
+
+describe('interactive client desktop actions', () => {
+  it('authenticates exact offered actions, blocks approvals, and deduplicates submissions', async () => {
+    const decisions = new HumanDecisions(),
+      actions = new ClientActions()
+    let enabled = true,
+      calls = 0
+    const revision = randomUUID()
+    const offer = {
+      projectId: 'p',
+      threadId: 't',
+      revision,
+      actions: [{ id: 'next-step', label: 'Run tests', kind: 'next-step' }],
+    } satisfies import('@shared/client-actions.ts').ClientActionOffer
+    actions.publish(1, offer, async (_ref, authorized) => {
+      if (!authorized()) return false
+      calls++
+      return true
+    })
+    const server = await startPluginClientServer({
+      decisions,
+      actions,
+      enabled: () => enabled,
+      approvePair: async () => true,
+    })
+    try {
+      assert.equal((await fetch(server.origin + '/v1/actions')).status, 401)
+      const token = await pair(server.origin),
+        headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+      const state = await read(
+        await fetch(server.origin + '/v1/actions', { headers }),
+        clientActionSnapshotSchema,
+      )
+      assert.deepEqual(state.offer, offer)
+      const input = {
+        version: 1,
+        sessionId: state.sessionId,
+        submissionId: randomUUID(),
+        projectId: 'p',
+        threadId: 't',
+        revision,
+        actionId: 'next-step',
+      }
+      const post = (data: unknown): Promise<Response> =>
+        fetch(server.origin + '/v1/actions', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(data),
+        })
+      assert.equal((await post({ ...input, prompt: 'unoffered prompt' })).status, 400)
+      assert.equal((await post({ ...input, sessionId: randomUUID() })).status, 403)
+      const cancel = decisions.register(
+        'p',
+        't',
+        { id: randomUUID(), kind: 'approval', title: 'Wait', body: 'command' },
+        () => {},
+      )
+      assert.equal(
+        (
+          await read(
+            await fetch(server.origin + '/v1/actions', { headers }),
+            clientActionSnapshotSchema,
+          )
+        ).offer,
+        null,
+      )
+      assert.equal((await post(input)).status, 403)
+      assert.equal(calls, 0)
+      cancel()
+      assert.equal(
+        (await read(await post({ ...input, actionId: 'stale' }), resultSchema)).ok,
+        false,
+      )
+      const valid = { ...input, submissionId: randomUUID() }
+      assert.equal((await read(await post(valid), resultSchema)).ok, true)
+      assert.equal((await read(await post(valid), resultSchema)).ok, true)
+      assert.equal(calls, 1)
+      assert.equal((await post({ ...valid, actionId: 'conflict' })).status, 409)
+      actions.publish(1, offer, async () => {
+        calls++
+        return true
+      })
+      enabled = false
+      assert.equal((await post({ ...input, submissionId: randomUUID() })).status, 403)
+      assert.equal(calls, 1)
+    } finally {
+      await server.close()
+    }
+  })
 })
