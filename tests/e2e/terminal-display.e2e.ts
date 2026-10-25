@@ -178,9 +178,9 @@ describe('integrated terminal', () => {
     it(`paints the terminal from --bg-base under Strong + Copse (${theme})`, async function () {
       this.timeout(90_000)
       // Test-session amber must not override the user's requested Copse tint.
-      await browser.execute(() =>
-        document.documentElement.removeAttribute('data-automation-active'),
-      )
+      await browser.execute(() => {
+        document.documentElement.removeAttribute('data-automation-active')
+      })
       await applyAppearanceViaSettings({
         theme,
         tintColor: COPSE_TINT_COLOR,

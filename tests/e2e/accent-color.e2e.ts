@@ -114,7 +114,9 @@ describe('custom interface colours', () => {
       await browser.execute(() => document.documentElement.hasAttribute('data-automation-active')),
     ).toBe(true)
     expect((await accentSnapshot())?.accentColor).toBe('#f3bd4d')
-    await browser.execute(() => document.documentElement.removeAttribute('data-automation-active'))
+    await browser.execute(() => {
+      document.documentElement.removeAttribute('data-automation-active')
+    })
     const defaults = await accentSnapshot()
     expect(defaults).not.toBeNull()
     expect(defaults?.accentColor).toBe('#ff93d0')
