@@ -166,7 +166,8 @@
       "dist/resources/profile-vault/**",
       "dist/resources/node/**",
       "dist/main/*-worker.js",
-      "dist/main/ssh-askpass-helper.js"
+      "dist/main/ssh-askpass-helper.js",
+      "dist/main/package-firewall.js"
     ],
     "afterPack": "scripts/after-pack.cjs",
     "generateUpdatesFilesForAllChannels": true,

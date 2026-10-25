@@ -3,19 +3,23 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { errorMessage } from '@shared/errors.ts'
 import { emitShellOutput } from '../exec/shell-output-context.ts'
+import { nodeWorkerExecutable, nodeWorkerScript } from '../node-worker-runtime.ts'
 
 /**
  * Main-process side of the package firewall (docs/plans/package-firewall.md).
  *
- * The firewall is the standalone `package-firewall.js` bundle, run as Node by
- * the app's own binary. There is nothing to install or approve first: callers
- * put the launcher in front of the command, and every package manager the
- * command starts has its registry downloads checked against public malware
- * advisories.
+ * The firewall is the standalone `package-firewall.js` bundle, run by the Node
+ * worker runtime (node-worker-runtime.ts). There is nothing to install or
+ * approve first: callers put the launcher in front of the command, and every
+ * package manager the command starts has its registry downloads checked
+ * against public malware advisories.
  */
 
 export interface PackageFirewallLauncher {
-  /** The app binary, run with `ELECTRON_RUN_AS_NODE=1`. */
+  /**
+   * The Node worker interpreter: the bundled Node in packaged macOS, otherwise
+   * the app binary run with `ELECTRON_RUN_AS_NODE=1`.
+   */
   execPath: string
   scriptPath: string
 }
@@ -29,7 +33,7 @@ let bundleVerified = false
 
 /** The launcher, or an error naming the missing bundle (a dev build that never emitted it). */
 export function packageFirewallLauncher(): PackageFirewallLauncher {
-  const scriptPath = join(__dirname, 'package-firewall.js')
+  const scriptPath = nodeWorkerScript(join(__dirname, 'package-firewall.js'))
   if (!bundleVerified && !existsSync(scriptPath)) {
     throw new Error(
       `the package install proxy is missing at ${scriptPath} — run \`pnpm run build\`, ` +
@@ -37,7 +41,7 @@ export function packageFirewallLauncher(): PackageFirewallLauncher {
     )
   }
   bundleVerified = true
-  return { execPath: process.execPath, scriptPath }
+  return { execPath: nodeWorkerExecutable(), scriptPath }
 }
 
 /** Launcher arguments for a global npm install with lifecycle scripts disabled. Pure. */
