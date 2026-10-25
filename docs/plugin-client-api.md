@@ -66,8 +66,8 @@ draft and dialog state before using the same callback as its visible control. Re
 publication. Unsupported/stale actions fail rather than falling back to an approval or another
 suggestion. Clients must bind presses to the action identity that finished rendering.
 
-The Tab action **inserts the suggestion into the desktop draft**; it does not send it. Prompt
-chips send their offered message, Review starts the existing review flow, Changes opens the
+The paired-client Tab action **submits the exact offered suggestion** through the normal composer
+submission path. Keyboard Tab still only fills the editable draft. Prompt chips send their offered message, Review starts the existing review flow, Changes opens the
 reviewer pane, and Create PR opens the existing dialog for desktop completion. Pairing explicitly
 discloses these actions; upgrading to this expanded scope requires restarting and pairing again.
 Only the desktop's current chat publishes choices. Other recent chats can be opened in Copse to

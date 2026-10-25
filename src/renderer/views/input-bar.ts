@@ -1966,6 +1966,8 @@ export function mountInputBar(
       if (
         !activeProjectId ||
         !activeThreadId ||
+        imageDescriptionInProgress ||
+        isThreadSubmitting(store, activeThreadId) ||
         composer.value.trim() ||
         attachedFiles.length +
           attachedImages.length +
@@ -1988,10 +1990,11 @@ export function mountInputBar(
           : [
               {
                 id: 'next-step',
-                label: hint.slice(0, 500),
+                label: hint,
                 kind: 'next-step',
                 run: (): void => {
                   acceptNextStep(hint)
+                  void submit()
                 },
               },
             ]

@@ -23,6 +23,7 @@ import {
   writeSeedConfig,
 } from './helpers/seed-config.ts'
 import {
+  installMockScenario,
   prepareMockToolTurn,
   prepareMockTurn,
   expectAssistantReply,
@@ -493,7 +494,7 @@ describe('interactive client live approvals', function () {
       404,
     )
   })
-  it('offers Tab before chips, fills the draft through the same desktop action and rejects a stale press', async () => {
+  it('offers Tab before chips, submits the suggested message once and rejects a stale press', async () => {
     writeE2eEnv({ COPSE_PANEL_MOCK_NEXT_STEP: '1' })
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), 'e2e-plugin-actions', {
@@ -567,22 +568,44 @@ describe('interactive client live approvals', function () {
           actionId: 'next-step',
         }),
       })
+    const hint = 'Run the test suite to verify the fix'
+    const followup = await installMockScenario({
+      title: 'Submit the offered next step from a paired client',
+      turns: [
+        {
+          user: hint,
+          responses: [{ waitFor: 'tab-submitted', text: 'The suggested message was received.' }],
+        },
+      ],
+    })
     const submissionId = randomUUID()
-    assert.equal((await json(await post(submissionId), resultSchema)).ok, true)
-    await expect($('.prompt-input')).toHaveText('Run the test suite to verify the fix')
-    await expect($('.prompt-input')).not.toHaveAttribute('data-next-step')
-    assert.equal(
-      (
-        await json(
-          await fetch(service.origin + '/v1/actions', { headers }),
-          clientActionSnapshotSchema,
-        )
-      ).offer,
-      null,
-    )
-    assert.equal((await json(await post(submissionId), resultSchema)).ok, true)
-    assert.equal((await json(await post(randomUUID()), resultSchema)).ok, false)
-    await saveElementScreenshot('#input-bar', 'plugin-client-action-draft.png')
+    try {
+      assert.equal((await json(await post(submissionId), resultSchema)).ok, true)
+      await followup.waitForHold('tab-submitted')
+      await expect($('.prompt-input')).toHaveText('')
+      await expect($('.prompt-input')).not.toHaveAttribute('data-next-step')
+      await expect($('.messages-list')).toHaveText(expect.stringContaining(hint))
+      assert.equal((await browser.$$('.msg-user')).length, 2)
+      assert.equal(
+        (
+          await json(
+            await fetch(service.origin + '/v1/actions', { headers }),
+            clientActionSnapshotSchema,
+          )
+        ).offer,
+        null,
+      )
+      assert.equal((await json(await post(submissionId), resultSchema)).ok, true)
+      assert.equal((await json(await post(randomUUID()), resultSchema)).ok, false)
+      assert.equal((await browser.$$('.msg-user')).length, 2)
+      await saveAppScreenshot('plugin-client-action-sent.png')
+      await saveElementScreenshot('#input-bar', 'plugin-client-action-draft.png')
+    } finally {
+      await followup.release('tab-submitted')
+    }
+    await waitForAgentIdle()
+    await followup.assertComplete()
+    await expectAssistantReply('The suggested message was received.')
     writeE2eEnv({})
   })
   it('shows pending questions before completion and answers through the shared desktop lifecycle', async () => {
