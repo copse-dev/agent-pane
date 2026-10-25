@@ -42,8 +42,8 @@
       "bytes": 171650
     },
     "acp-auto-install-approval.png": {
-      "sha256": "bf278b27d0bc77a58dfd2d2e9997db67ee4511f470e079abe5f6c2b1c38a63fb",
-      "bytes": 274962
+      "sha256": "d416554a15fc9d4f5db8413d7519c41a77b7b1159c139075a3f3aa3239ad65ca",
+      "bytes": 265495
     },
     "acp-catalog-model-labels.png": {
       "sha256": "323ec5edc4070742efa08957c14ccb8254da02407f04a833626083eb47412fc9",
@@ -84,6 +84,10 @@
     "acp-mcp-tool-name.png": {
       "sha256": "978b66da731ab9bcb59ec7ca70d54601c903952635c311fe298269a5c81e6c1d",
       "bytes": 259562
+    },
+    "acp-mixed-install-approval.png": {
+      "sha256": "414312c682a927b2345bbd98ff81bffbd3a9b3be93108d2b5e87cf4d99331ad1",
+      "bytes": 265971
     },
     "acp-mode-default-detected.png": {
       "sha256": "d6b3f82bb8d465089ec5e043c2b53f5e1827069ffffc78af2200612d6dc5aa29",
@@ -2030,8 +2034,8 @@
       "bytes": 310514
     },
     "install-approval-dialog.png": {
-      "sha256": "8a15b4eaf7e5ed881186bd2ab9fb567c5434fef0a02ad9062cf95d24a2932e49",
-      "bytes": 254790
+      "sha256": "50c0dcd4e89c15f814bd461b8865ebc3d9b38ffbb319d0195be28abf54c9468f",
+      "bytes": 244013
     },
     "landing-cupcake-browser.png": {
       "sha256": "e6a3dbfcfe98a116576faed70a2501b788c7a318c0c926d0741b4eb322da1a30",
@@ -2530,8 +2534,8 @@
       "bytes": 197902
     },
     "npx-approval-dialog.png": {
-      "sha256": "44edc11caff4004c06248bdfc667684bbd6cfddba20b84979f0fc769530b0000",
-      "bytes": 217097
+      "sha256": "0baeb53c0fbef066aa77d669e783e07095ccaebc25a519287ff0986bd4b8f81b",
+      "bytes": 204963
     },
     "onboarding-fallback-providers.png": {
       "sha256": "5055315bb7b4cc42231be03ed04ea720d0eff0bccac646db5bec9aaa3965fc1f",
