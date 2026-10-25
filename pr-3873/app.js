@@ -20662,6 +20662,47 @@ var init_register = __esm({
   }
 });
 
+// src/renderer/ui/pane-tabs.ts
+function uiPaneTabsShell(opts) {
+  const titleEl2 = el("span", { class: "pane-header-title" }, opts.title);
+  const listHeader = el(
+    "div",
+    { class: cx("pane-header ui-pane-tabs-header", opts.headerClassName) },
+    titleEl2
+  );
+  const tabsWrap = el("div", { class: cx("ui-pane-tabs-list", opts.listClassName) });
+  const body = el("div", { class: cx("ui-pane-tabs-body", opts.bodyClassName) });
+  return { listHeader, titleEl: titleEl2, tabsWrap, body };
+}
+function uiPaneTab(opts) {
+  opts.tabBtn.classList.add("ui-pane-tab");
+  opts.panel.classList.add("ui-pane-tab-panel");
+  opts.tabBtn.addEventListener("click", (e3) => {
+    if (e3.target instanceof Element && e3.target.closest(opts.closeSelector)) return;
+    opts.onSelect();
+  });
+  opts.tabBtn.querySelector(opts.closeSelector)?.addEventListener("click", (e3) => {
+    e3.stopPropagation();
+    opts.onClose();
+  });
+  return {
+    setActive: (active3) => {
+      opts.tabBtn.classList.toggle("is-active", active3);
+      opts.panel.classList.toggle("is-active", active3);
+    },
+    remove: () => {
+      opts.tabBtn.remove();
+      opts.panel.remove();
+    }
+  };
+}
+var init_pane_tabs = __esm({
+  "src/renderer/ui/pane-tabs.ts"() {
+    init_helpers();
+    init_cx();
+  }
+});
+
 // src/renderer/ui/index.ts
 var init_ui = __esm({
   "src/renderer/ui/index.ts"() {
@@ -20669,6 +20710,7 @@ var init_ui = __esm({
     init_cx();
     init_actions();
     init_field();
+    init_pane_tabs();
     init_register();
     registerUiKit();
   }
@@ -21420,7 +21462,7 @@ var init_disclosure_summary = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/config.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/config.js
 function activeConfig() {
   return active;
 }
@@ -21444,14 +21486,14 @@ function withConfig(config2, fn2) {
 }
 var baseDefaults, active, scopeDepth;
 var init_config = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/config.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/config.js"() {
     baseDefaults = {};
     active = baseDefaults;
     scopeDepth = 0;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
 function replaceCodePoint(codePoint) {
   if (codePoint >= 55296 && codePoint <= 57343 || codePoint > 1114111)
     return 65533;
@@ -21491,7 +21533,7 @@ function decodeHtmlEntities(text2) {
 }
 var BUILTIN_NAMED_ENTITIES, C1_REMAP, ENTITY_TOKEN_RE, cachedNamedSource, cachedEffective;
 var init_entity_decoder = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
     init_config();
     BUILTIN_NAMED_ENTITIES = Object.freeze({
       aacute: "\xE1",
@@ -21782,7 +21824,7 @@ var init_entity_decoder = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
 function nextCodeSpan(s16, from2) {
   let i3 = from2;
   while (i3 < s16.length && s16[i3] !== "`")
@@ -21863,12 +21905,12 @@ function renderInlineCode(text2) {
 }
 var ANGLE_AUTOLINK_VERBATIM_RE;
 var init_inline_code_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
     ANGLE_AUTOLINK_VERBATIM_RE = /^<(?:[a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<>\s]*|[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[^<>\s@.]+(?:\.[^<>\s@.]+)+)>/;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
 function isEscapablePunctuation(ch) {
   return /^[!-/:-@[-`{-~]$/.test(ch);
 }
@@ -21944,7 +21986,7 @@ function canonicalizeEscapedPunctuation(text2) {
 }
 var ESCAPED_BASE, ANGLE_AUTOLINK_RE, TAG_NAME, TAG_ATTR, RAW_TAG_LIKE_RE, ENTITY_CANDIDATE_RE, INCOMPLETE_ENTITY_RE, ENCODED_PUNCT_RE, DECODE_HTML_ESCAPES;
 var init_backslash_escapes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
     init_entity_decoder();
     init_inline_code_spans();
     ESCAPED_BASE = 57344;
@@ -21965,7 +22007,7 @@ var init_backslash_escapes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/link-references.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/link-references.js
 function isLinkReferencesEnabled() {
   return activeConfig().linkReferences !== false;
 }
@@ -22243,7 +22285,7 @@ function parseReferenceLabel(source, openBracketIndex, fallbackLabel) {
 }
 var TITLE_TOKEN_RES, BLANK_LINE_RE;
 var init_link_references = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
     init_entity_decoder();
     init_backslash_escapes();
     init_config();
@@ -22252,7 +22294,7 @@ var init_link_references = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/block-patterns.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/block-patterns.js
 function leadingIndentWidth(line) {
   let col = 0;
   for (let i3 = 0; i3 < line.length; i3++) {
@@ -22402,7 +22444,7 @@ function parseOpenFenceContent(source) {
 }
 var FENCE_OPEN_RE, FENCE_CLOSE_RE, ATX_HEADING_DETECT_RE, ATX_HEADING_CAPTURE_RE, BLOCKQUOTE_DETECT_RE, FENCE_INFO_BACKSLASH_RE;
 var init_block_patterns = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
     init_entity_decoder();
     FENCE_OPEN_RE = /^ {0,3}(?:(`{3,})([^\n`]*)|(~{3,})([^\n]*?))\s*$/;
     FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/;
@@ -22413,17 +22455,17 @@ var init_block_patterns = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/html-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/html-policy.js
 function getHtmlPolicy() {
   return activeConfig().htmlPolicy ?? "passthrough";
 }
 var init_html_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/escape.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/escape.js
 function escapeHtml(text2) {
   return text2.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch] ?? ch);
 }
@@ -22519,7 +22561,7 @@ function decodeSafeMarkdownEntities(text2) {
 }
 var HTML_ESCAPES, SAFE_OUTER_TAG_RE, BENIGN_RAW_INLINE_TAG_RE, BR_TAG_RE, EVENT_HANDLER_ATTR_RE, URL_ATTR_RE, DANGEROUS_HREF_SCHEME_RE, PASSTHROUGH_TAG_RE, SAFE_ANCHOR_ATTR_NAME_RE, TAG_ATTR_RE, ANCHOR_OPEN_TAG_RE, QUOTED_HREF_RE, SAFE_MARKDOWN_ENTITY_SOURCE, SAFE_MARKDOWN_ENTITY_RE, COMPLETE_SAFE_MARKDOWN_ENTITY_RE, KNOWN_SAFE_ENTITIES;
 var init_escape = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/escape.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/escape.js"() {
     init_backslash_escapes();
     init_html_policy();
     init_link_references();
@@ -22555,7 +22597,7 @@ var init_escape = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/math-block.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/math-block.js
 function onelineMathBody(trimmed2, delimiter) {
   const [open2, close2] = delimiter === "dollar" ? ["$$", "$$"] : ["\\[", "\\]"];
   if (!trimmed2.startsWith(open2) || !trimmed2.endsWith(close2))
@@ -22650,7 +22692,7 @@ function syncFormingMathBlockDom(container, source, formingClass) {
 }
 var MATH_DOLLAR_LINE_RE, MATH_BRACKET_OPEN_LINE_RE, MATH_BRACKET_CLOSE_LINE_RE, MATH_OPEN_PREFIX_RE, PARTIAL_DOLLAR_CLOSER_RE, PARTIAL_BRACKET_CLOSER_RE, PARTIAL_DOLLAR_CLOSER_LINE_RE, PARTIAL_BRACKET_CLOSER_LINE_RE;
 var init_math_block = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
     init_block_patterns();
     init_escape();
     MATH_DOLLAR_LINE_RE = /^ {0,3}\$\$\s*$/;
@@ -22664,7 +22706,7 @@ var init_math_block = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/footnotes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/footnotes.js
 function isFootnotesEnabled() {
   return activeConfig().footnotes !== false;
 }
@@ -22800,7 +22842,7 @@ function isPendingFootnoteDefLine(pending) {
 }
 var FOOTNOTE_DEF_LINE_RE, FOOTNOTE_REF_RE, activeFootnotes;
 var init_footnotes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
     init_block_patterns();
     init_escape();
     init_link_references();
@@ -22811,17 +22853,17 @@ var init_footnotes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/math-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/math-syntax.js
 function isMathSyntaxEnabled() {
   return activeConfig().mathSyntax ?? false;
 }
 var init_math_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
 function parseOrderedListMarker(line) {
   const m3 = line.match(ORDERED_LIST_MARKER_RE);
   if (!m3?.[1])
@@ -23588,7 +23630,7 @@ function isAmbiguousBlockLine(line) {
 }
 var THEMATIC_BREAK_RE, UNORDERED_LIST_ITEM_RE, ORDERED_LIST_MARKER_RE, LIST_ITEM_RE, EMPTY_LIST_ITEM_RE, BLOCKQUOTE_RE, SETEXT_UNDERLINE_RE, TABLE_SEP_RE;
 var init_block_tokenizer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
     init_link_references();
     init_block_patterns();
     init_math_block();
@@ -23605,7 +23647,7 @@ var init_block_tokenizer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/alerts.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/alerts.js
 function alertTypeFromMarker(bodyLine) {
   const word = ALERT_MARKER_RE.exec(bodyLine.trim())?.[1]?.toLowerCase();
   if (word !== void 0 && word in ALERT_TITLES)
@@ -23626,7 +23668,7 @@ function pendingBlockquoteAlertType(pendingLine) {
 }
 var ALERT_TITLES, ALERT_MARKER_RE;
 var init_alerts = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
     init_block_patterns();
     ALERT_TITLES = {
       note: "Note",
@@ -23639,7 +23681,7 @@ var init_alerts = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
 function normalizeFenceLang(lang) {
   return lang.trim().toLowerCase();
 }
@@ -23665,7 +23707,7 @@ function getFenceHandler(lang) {
 }
 var FORMING_FENCE_PRE_CLASS, mermaidFenceHandler, mathFenceHandler, BUILTIN_FENCE_HANDLERS, cachedOverrideSource, cachedOverrideMap;
 var init_fence_handlers = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
     init_config();
     init_escape();
     init_math_block();
@@ -23717,7 +23759,7 @@ var init_fence_handlers = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/highlight.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/highlight.js
 function lookup(table, key) {
   return Object.hasOwn(table, key) ? table[key] : void 0;
 }
@@ -23755,7 +23797,7 @@ function fenceCodeClass(lang) {
 }
 var KNOWN_LANGUAGES, LANG_SYNONYMS, LANG_FALLBACKS;
 var init_highlight = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
     init_config();
     init_escape();
     KNOWN_LANGUAGES = /* @__PURE__ */ new Set([
@@ -23796,7 +23838,7 @@ var init_highlight = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/indented-html.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/indented-html.js
 function leadingSpaces(line) {
   return line.match(/^ */)?.[0].length ?? 0;
 }
@@ -23818,13 +23860,13 @@ function isIndentedHtmlBlock(content) {
 }
 var HTML_BLOCK_TAGS, HTML_BLOCK_START_RE;
 var init_indented_html = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
     HTML_BLOCK_TAGS = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
     HTML_BLOCK_START_RE = new RegExp(`^</?(?:${HTML_BLOCK_TAGS})(?:[\\s/>]|$)`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/raw-images.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/raw-images.js
 function parseHtmlAttributes(tag) {
   const attrs = {};
   const decodedTag = decodeEscapedHref(tag);
@@ -23857,7 +23899,7 @@ function restoreRawImages(text2, images) {
 }
 var RAW_IMAGE_RE, PLACEHOLDER_OPEN, PLACEHOLDER_CLOSE, PLACEHOLDER_RE;
 var init_raw_images = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
     init_config();
     init_escape();
     RAW_IMAGE_RE = /(?:<img\b[\s\S]*?\/?>|&lt;img\b[\s\S]*?\/?&gt;)/gi;
@@ -23867,17 +23909,17 @@ var init_raw_images = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
 function isEmailAutolinksEnabled() {
   return activeConfig().emailAutolinks ?? true;
 }
 var init_autolink_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
 function workspaceLinkTargetFromHref(raw) {
   let pathPart = raw.trim();
   if (pathPart === "" || pathPart.startsWith("#") || pathPart.startsWith("//"))
@@ -23930,13 +23972,13 @@ function isWorkspaceMarkdownLinkHref(raw) {
 }
 var URL_SCHEME_RE, COMMONMARK_FIXTURE_SINGLE_SEGMENTS;
 var init_workspace_link_href = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
     URL_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
     COMMONMARK_FIXTURE_SINGLE_SEGMENTS = /* @__PURE__ */ new Set(["uri", "url"]);
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/inline-links.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-links.js
 function lookupWithRenderedLabels(refs, label, renderForMatch) {
   const direct = lookupLinkReference(refs, label);
   if (direct || !renderForMatch || !label.includes("<") || !isValidReferenceLabel(label)) {
@@ -24139,7 +24181,7 @@ function rangeAt(index, ranges) {
 }
 var renderedLabelIndexCache, DEFAULT_SAFE_HREF_SCHEMES, HREF_SCHEME_RE, DEFAULT_SAFE_HREF_SCHEMES_SET, cachedSchemesSource, cachedSchemes, neutralLinkDecorator, appLinkDecorator, RENDERED_ANCHOR_RE, INLINE_SHIELD_RE;
 var init_inline_links = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -24168,7 +24210,7 @@ var init_inline_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/inline-passes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-passes.js
 function getInlinePasses(stage) {
   const passes = activeConfig().inlinePasses ?? NO_PASSES;
   if (stage === void 0)
@@ -24187,7 +24229,7 @@ function restoreInlinePassHtml(text2) {
 }
 var NO_PASSES, TOKEN_OPEN, TOKEN_CLOSE, TOKEN_RE, TOKEN_CHAR_RE, emitted, nextEmitId, inlinePassContext;
 var init_inline_passes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
     init_config();
     NO_PASSES = [];
     TOKEN_OPEN = "\uE100";
@@ -24206,7 +24248,7 @@ var init_inline_passes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/inline-math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-math.js
 function inlineHtmlMask(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -24404,7 +24446,7 @@ function mathHoldStart(s16, mask) {
 }
 var ESCAPED_LPAREN, ESCAPED_RPAREN;
 var init_inline_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
     init_backslash_escapes();
     init_escape();
     init_inline_emphasis();
@@ -24415,7 +24457,7 @@ var init_inline_math = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
 function inlineHtmlMask2(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -24510,12 +24552,12 @@ function strikethroughHoldStart(s16, mask) {
   return cut2;
 }
 var init_inline_strikethrough = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
 function isFlankingWhitespace(ch) {
   return ch === "" || ch === HARD_BREAK_SENTINEL || /\s/.test(ch);
 }
@@ -24812,7 +24854,7 @@ function renderEmphasisOutsideInlineHtml(text2, linkRefs = /* @__PURE__ */ new M
 }
 var UNICODE_PUNCTUATION_RE, HARD_BREAK_SENTINEL, INLINE_HTML_SHIELD_RE;
 var init_inline_emphasis = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -24829,7 +24871,7 @@ var init_inline_emphasis = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
 function autolinkHref(raw) {
   if (!isAllowedHref(raw))
     return null;
@@ -24879,7 +24921,7 @@ function renderAngleAutolinks(text2) {
 }
 var URI_AUTOLINK_RE, EMAIL_AUTOLINK_RE;
 var init_inline_autolinks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
     init_escape();
     init_inline_emphasis();
     init_inline_links();
@@ -24889,7 +24931,7 @@ var init_inline_autolinks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/inline-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-spans.js
 function applyInlinePasses(t2, stage) {
   const passes = getInlinePasses(stage);
   if (passes.length === 0)
@@ -25108,7 +25150,7 @@ function linkifyEmailAutolinks(segment) {
 }
 var URL_SCHEME_RE2, WWW_DOMAIN_RE, AUTOLINK_TRAILING_PUNCTUATION, EMAIL_LOCAL_CHAR_RE;
 var init_inline_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
     init_autolink_syntax();
     init_backslash_escapes();
     init_config();
@@ -25128,7 +25170,7 @@ var init_inline_spans = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
 function stripHtmlComments(text2) {
   return text2.replace(/<!--[\s\S]*?-->/g, "");
 }
@@ -25224,7 +25266,7 @@ function renderProseBlock(text2, linkRefs, softBreak = "newline") {
 }
 var HARD_BREAK;
 var init_render_prose_inline = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
     init_backslash_escapes();
     init_escape();
     init_raw_images();
@@ -25234,7 +25276,7 @@ var init_render_prose_inline = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/table-wrapper.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/table-wrapper.js
 function resolveTableWrapper() {
   const value = activeConfig().tableWrapper;
   if (!value)
@@ -25279,13 +25321,13 @@ function withTableWrapperGate(config2, hostAttr = []) {
   };
 }
 var init_table_wrapper = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/table-wrapper.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/table-wrapper.js"() {
     init_config();
     init_escape();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/render-blocks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/render-blocks.js
 function renderFencedBlock(lang, code2, forming = false) {
   const handler = getFenceHandler(lang);
   if (handler) {
@@ -25752,7 +25794,7 @@ function renderFootnoteSectionItems(ctx, linkRefs, startIndex = 0) {
 }
 var MAX_BLOCK_NESTING_DEPTH, blockNestingDepth, stripBlockquoteLine, TASK_LIST_MARKER_RE, SETEXT_UNDERLINE_SLICE_RE;
 var init_render_blocks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -25771,7 +25813,7 @@ var init_render_blocks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
 function resolvedPolicy() {
   const source = activeConfig().linkImagePolicy ?? null;
   if (source !== cachedPolicySource) {
@@ -25871,7 +25913,7 @@ function applyLinkImagePolicy(node2, tagName) {
 }
 var DEFAULT_BLOCKED_LINK_CLASS, DEFAULT_BLOCKED_IMAGE_CLASS, cachedPolicySource, cachedResolved;
 var init_link_image_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
     init_config();
     DEFAULT_BLOCKED_LINK_CLASS = "blocked-link";
     DEFAULT_BLOCKED_IMAGE_CLASS = "blocked-image";
@@ -25879,16 +25921,16 @@ var init_link_image_policy = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/data-attributes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/data-attributes.js
 var DATA_ATTR_NAME_SOURCE, DATA_ATTR_NAME_RE;
 var init_data_attributes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
     DATA_ATTR_NAME_SOURCE = "data-[a-z0-9-]+";
     DATA_ATTR_NAME_RE = /* @__PURE__ */ new RegExp(`^${DATA_ATTR_NAME_SOURCE}$`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
 function isBrowserSanitizerSupported() {
   return typeof document !== "undefined" && typeof Element.prototype.setHTML === "function";
 }
@@ -25935,7 +25977,7 @@ function sanitizeIntoElement(target, html2, config2) {
 }
 var DROP_CONTENT_TAGS, browserSanitizerBackend;
 var init_sanitize_browser = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
     init_data_attributes();
     DROP_CONTENT_TAGS = /* @__PURE__ */ new Set(["script", "style", "noscript", "template", "title"]);
     browserSanitizerBackend = {
@@ -25959,26 +26001,57 @@ var init_sanitize_browser = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/sanitize.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/sanitize.js
 function getSanitizerBackend() {
   return activeConfig().sanitizerBackend ?? null;
 }
-function gateElement(node2, tagName) {
-  if (typeof node2.getAttribute === "function") {
-    const id = node2.getAttribute("id");
-    if (id !== null && !FOOTNOTE_ID_RE.test(id))
+function isolatedFootnoteId(value) {
+  const bare = value.startsWith(CONTENT_ID_PREFIX) ? value.slice(CONTENT_ID_PREFIX.length) : value;
+  return FOOTNOTE_ID_RE.test(bare) ? CONTENT_ID_PREFIX + bare : null;
+}
+function isolateNamedProperties(node2) {
+  node2.removeAttribute("name");
+  const id = node2.getAttribute("id");
+  if (id !== null) {
+    const isolated = isolatedFootnoteId(id);
+    if (isolated === null)
       node2.removeAttribute("id");
+    else
+      node2.setAttribute("id", isolated);
   }
+  const href = node2.getAttribute("href");
+  if (href?.startsWith("#")) {
+    let fragment = href.slice(1);
+    try {
+      fragment = decodeURIComponent(fragment);
+    } catch {
+    }
+    const isolated = isolatedFootnoteId(fragment);
+    if (isolated !== null)
+      node2.setAttribute("href", "#" + isolated);
+  }
+  for (const attr of ["aria-describedby", "aria-labelledby"]) {
+    const value = node2.getAttribute(attr);
+    if (value !== null) {
+      node2.setAttribute(attr, value.replace(/[^\t\n\f\r ]+/g, (token) => isolatedFootnoteId(token) ?? token));
+    }
+  }
+}
+function gateElement(node2, tagName) {
+  if (typeof node2.getAttribute !== "function")
+    return;
   if (tagName === "input") {
     if (node2.getAttribute("type") !== "checkbox") {
       node2.remove();
       return;
     }
     node2.setAttribute("disabled", "");
+    isolateNamedProperties(node2);
     return;
   }
   applyLinkImagePolicy(node2, tagName);
   activeConfig().sanitizeExtension?.onElement?.(node2, tagName);
+  isolateNamedProperties(node2);
 }
 function resolveBackend() {
   const backend = getSanitizerBackend();
@@ -26026,9 +26099,9 @@ function sanitizeRenderedMarkdownInto(target, html2) {
     normalizeDoubleEncodedNbsp(target);
   return true;
 }
-var ALLOWED_TAGS, ALLOWED_ATTR, FOOTNOTE_ID_RE, DOUBLE_ENCODED_NBSP_RE, DOUBLE_ENCODED_NBSP_DATA_RE, SHOW_TEXT;
+var ALLOWED_TAGS, ALLOWED_ATTR, FOOTNOTE_ID_RE, CONTENT_ID_PREFIX, DOUBLE_ENCODED_NBSP_RE, DOUBLE_ENCODED_NBSP_DATA_RE, SHOW_TEXT;
 var init_sanitize = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
     init_config();
     init_link_image_policy();
     init_sanitize_browser();
@@ -26093,9 +26166,8 @@ var init_sanitize = __esm({
       "checked",
       "disabled",
       // GFM footnote anchors (#72): `id="fn-…"`/`id="fnref-…"` jump targets, plus the
-      // section's `id="footnote-label"` heading. The element gate below strips any id
-      // outside that renderer-emitted shape, so sanitized fragments can never mint
-      // arbitrary page-global names.
+      // section's `id="footnote-label"` heading. The element gate strips other IDs
+      // and isolates accepted IDs and their references in `user-content-`.
       "id",
       // GFM footnote / task-list accessibility hooks (#216/#217): `aria-label` on
       // task checkboxes and backrefs, `aria-describedby` linking a ref to the
@@ -26105,13 +26177,14 @@ var init_sanitize = __esm({
       "aria-describedby"
     ];
     FOOTNOTE_ID_RE = /^(?:fn(?:ref)?-[A-Za-z0-9_-]+|[A-Za-z0-9_-]*footnote-label)$/;
+    CONTENT_ID_PREFIX = "user-content-";
     DOUBLE_ENCODED_NBSP_RE = /&amp;(?:nbsp|#160|#x0*a0);/gi;
     DOUBLE_ENCODED_NBSP_DATA_RE = /&(?:nbsp|#160|#x0*a0);/gi;
     SHOW_TEXT = 4;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/renderer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/renderer.js
 function topLevelRenderOpts() {
   return { htmlFromIndent: true, indentedCode: activeConfig().indentedCode !== false };
 }
@@ -26150,7 +26223,7 @@ ${section2}`;
   }
 }
 var init_renderer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
     init_block_tokenizer();
     init_footnotes();
     init_config();
@@ -26159,7 +26232,7 @@ var init_renderer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
 function revealFormingLink(text2) {
   if (!text2.includes("["))
     return text2;
@@ -26333,7 +26406,7 @@ function renderPendingLine(pending, options = {}) {
 }
 var COMPLETE_LINK_AT_START_RE, TOP_LEVEL_LIST_MARKER_RE;
 var init_render_pending_line = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -26347,7 +26420,7 @@ var init_render_pending_line = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/streaming-split.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-split.js
 function splitAtLastNewline(content) {
   const lastNl = content.lastIndexOf("\n");
   if (lastNl === -1)
@@ -26478,14 +26551,14 @@ function committedTailContinues(complete, blocks) {
   return continues;
 }
 var init_streaming_split = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
     init_block_tokenizer();
     init_inline_code_spans();
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
 function canExtendAcrossBlank(kind) {
   return kind === "list_item" || kind === "indented_code" || kind === "blockquote" || kind === "footnote_def";
 }
@@ -26537,7 +26610,7 @@ function advanceSafeBoundary(source, tokens, fromIdx, fromOffset, lastNonBlankKi
 }
 var IncrementalSourceScanner;
 var init_incremental_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
     init_block_tokenizer();
     IncrementalSourceScanner = class {
       tokens = [];
@@ -26722,7 +26795,7 @@ var init_incremental_scan = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/dom-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/dom-scan.js
 function childMatches(el3, tagName, cls) {
   return (tagName === null || el3.tagName === tagName) && (cls === null || el3.classList.contains(cls));
 }
@@ -26751,11 +26824,11 @@ function findDescendantByClass(root, cls, tagName) {
   return null;
 }
 var init_dom_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/html-sink.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/html-sink.js
 function resolvePolicy() {
   const hostPolicy = activeConfig().trustedTypesPolicy;
   if (hostPolicy)
@@ -26804,13 +26877,13 @@ function setHostTrustedHtml(el3, html2) {
 }
 var defaultPolicy, defaultPolicyFactory;
 var init_html_sink = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
     init_config();
     init_sanitize();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/math.js
 function readMathSource(el3) {
   return (el3.querySelector("pre.math") ?? el3).textContent ?? "";
 }
@@ -26854,13 +26927,13 @@ async function hydratePendingMath(root, options = {}) {
 }
 var PENDING_MATH_SELECTOR;
 var init_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/math.js"() {
     init_html_sink();
     PENDING_MATH_SELECTOR = ".math-block.math-block--pending, .math-inline.math-inline--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
 function decodeMermaidHtmlEntities(text2) {
   return text2.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 }
@@ -26901,11 +26974,11 @@ function mermaidSourceCandidates(raw) {
   return [...new Set([gentle, aggressive].filter(Boolean))];
 }
 var init_mermaid_source = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/mermaid.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid.js
 function readDiagramSource(container) {
   return container.querySelector("pre.mermaid")?.textContent ?? "";
 }
@@ -26955,14 +27028,14 @@ async function hydratePendingDiagrams(root, options = {}) {
 }
 var PENDING_DIAGRAM_SELECTOR;
 var init_mermaid = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
     init_mermaid_source();
     init_html_sink();
     PENDING_DIAGRAM_SELECTOR = ".mermaid-diagram.mermaid-diagram--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
 function tableLines(source) {
   const trimmed2 = dropTrailingNewline(source);
   if (trimmed2 === "")
@@ -27080,7 +27153,7 @@ function removePendingTableRow(table) {
 }
 var FORMING_TABLE_CLASS, PENDING_ROW_CLASS, SEPARATOR_ROW_CLASS;
 var init_streaming_table_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
     init_dom_scan();
     init_block_tokenizer();
     init_block_patterns();
@@ -27094,7 +27167,7 @@ var init_streaming_table_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
 function syncFormingFenceDom(container, source) {
   const parsed2 = parseOpenFenceContent(source);
   if (!parsed2) {
@@ -27131,7 +27204,7 @@ function clearFormingFenceDom(container) {
   container.replaceChildren();
 }
 var init_streaming_fence_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
     init_block_patterns();
     init_fence_handlers();
     init_dom_scan();
@@ -27141,18 +27214,18 @@ var init_streaming_fence_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
 function syncFormingMathDom(container, source) {
   syncFormingMathBlockDom(container, parseOpenMathBlock(source), FORMING_FENCE_PRE_CLASS);
 }
 var init_streaming_math_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
     init_fence_handlers();
     init_math_block();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
 function attributesEqual(a5, b5) {
   const aAttrs = a5.attributes;
   const bAttrs = b5.attributes;
@@ -27270,7 +27343,7 @@ function syncAttributes(el3, template) {
 }
 var TEXT_NODE, ELEMENT_NODE, COMMENT_NODE;
 var init_streaming_dom_morph = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
     init_fence_handlers();
     init_html_sink();
     TEXT_NODE = 3;
@@ -27279,7 +27352,7 @@ var init_streaming_dom_morph = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
 function settleClassOf(kind) {
   switch (kind) {
     case "fence":
@@ -27466,7 +27539,7 @@ function detailsBalance(html2) {
 }
 var INTRA_LIST_MIN_ITEMS, MAX_LINK_REF_PATCH_PARTS, MAY_HOLD_FENCE_RE, BENIGN_BALANCED_TAGS, VOID_HTML_TAGS, HTML_TAG_SCAN_RE, SAFE_REROOT_TAGS, PROBE_TAG, PROBE_HTML, DETAILS_OPEN_RE, DETAILS_CLOSE_RE, FrozenTailRenderer;
 var init_streaming_frozen_tail = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
     init_block_tokenizer();
     init_render_blocks();
     init_footnotes();
@@ -28737,7 +28810,7 @@ ${section2}`;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/streaming.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming.js
 function trailingFootnotesSection(completedEl) {
   const last = completedEl.lastElementChild;
   return last && last.tagName === "SECTION" && last.classList.contains("footnotes") ? last : null;
@@ -29179,7 +29252,7 @@ function clearFormingDom(container) {
 }
 var BLOCK_PENDING_CLASS, LIST_CONTINUATION_CLASS, PARAGRAPH_CONTINUATION_CLASS, PENDING_FAST_PATH_INERT_RE, StreamingMarkdownRenderer;
 var init_streaming = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
     init_alerts();
     init_block_tokenizer();
     init_render_pending_line();
@@ -29551,9 +29624,9 @@ var init_streaming = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/index.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/index.js
 var init_dist = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/index.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/index.js"() {
     init_renderer();
     init_config();
     init_streaming();
@@ -33473,7 +33546,7 @@ var init_purify_es = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
 var sanitize_dompurify_exports = {};
 __export(sanitize_dompurify_exports, {
   dompurifyBackend: () => dompurifyBackend,
@@ -33504,7 +33577,7 @@ function sanitizeDiagramSvg(svg2) {
 }
 var hookInstalled, activeOnElement, dompurifyBackend;
 var init_sanitize_dompurify = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
     init_purify_es();
     hookInstalled = false;
     dompurifyBackend = {
@@ -46103,7 +46176,7 @@ var init_acp_known_agents = __esm({
         command: "cursor-agent",
         args: ["acp"],
         // cursor-agent is its own ACP server; the binary is the gate. Not on npm, so
-        // auto-setup never installs it (Socket Firewall can't wrap `curl | bash`).
+        // auto-setup never installs it (the package firewall can't wrap `curl | bash`).
         requiresClient: "cursor-agent",
         preset: true,
         sandbox: {
@@ -46135,7 +46208,7 @@ var init_acp_known_agents = __esm({
         install: "npm install -g @agentclientprotocol/codex-acp",
         installPackage: "@agentclientprotocol/codex-acp",
         // Standalone npm adapter (bundles @openai/codex, self-authenticates) — there
-        // is no parent client to gate on, so Socket-Firewall auto-setup may install
+        // is no parent client to gate on, so package-firewall auto-setup may install
         // it directly when missing.
         autoInstall: true,
         preset: true,
@@ -60329,8 +60402,27 @@ function isCopseToolCall(call, tool) {
     (name) => typeof name === "string" && normalizeCopseToolName(name) === tool
   );
 }
+function stringArg(args, key) {
+  if (!isRecord(args)) return null;
+  const value = args[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+function isAcpDelegateToolCall(call) {
+  if (call.subagent) return false;
+  if (call.kind !== "think") return false;
+  return [call.name, call.programmaticName].some(
+    (name) => typeof name === "string" && /^(agent|task)$/i.test(name)
+  );
+}
+function acpDelegateKind(call) {
+  return stringArg(call.args, "subagent_type");
+}
+function acpDelegatePrompt(call) {
+  return call.title ?? stringArg(call.args, "prompt") ?? stringArg(call.args, "description") ?? "";
+}
 var init_copse_tool_call = __esm({
   "src/shared/tools/copse-tool-call.ts"() {
+    init_unknown_value3();
   }
 });
 
@@ -62277,16 +62369,16 @@ function getToolDisplayName(name, tense = "done") {
   if (stripped !== name) return humanizeIdentifier(stripped);
   return humanizeIdentifier(normalizeCopseToolName(name));
 }
-function stringArg(args, key) {
+function stringArg2(args, key) {
   if (!isRecord(args)) return null;
   const value = args[key];
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 function fileEditPath(args) {
-  return stringArg(args, "path");
+  return stringArg2(args, "path");
 }
 function getApplyPatchFiles(tc2) {
-  const input2 = stringArg(tc2.args, "input");
+  const input2 = stringArg2(tc2.args, "input");
   return input2 === null ? [] : summarizePatch(input2);
 }
 function getToolEditPath(tc2) {
@@ -62294,7 +62386,7 @@ function getToolEditPath(tc2) {
   if (name === "apply_patch") return getApplyPatchFiles(tc2)[0]?.path ?? null;
   const key = FILE_EDIT_PATH_ARG[name];
   if (!key) return null;
-  return stringArg(tc2.args, key);
+  return stringArg2(tc2.args, key);
 }
 function stripShellCdPrefix(command2) {
   return command2.replace(SHELL_CD_PREFIX_RE, "");
@@ -62324,7 +62416,7 @@ function getToolCallLabel(tc2) {
   const name = copseToolCallName({ ...tc2, name: mcpTitle ?? tc2.name });
   const title = tc2.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc2.title) ? tc2.title : void 0;
   if (name === "read_skill") {
-    const skillName = stringArg(tc2.args, "name");
+    const skillName = stringArg2(tc2.args, "name");
     if (skillName) {
       if (tc2.status === "running") return `Loading skill ${skillName}`;
       if (tc2.status === "error") return `Skill ${skillName}`;
@@ -62353,8 +62445,8 @@ function getToolCallLabel(tc2) {
     if (path) return tense === "running" ? `Deleting ${path}` : `Deleted ${path}`;
   }
   if (name === "rename_file") {
-    const from2 = stringArg(tc2.args, "from");
-    const to = stringArg(tc2.args, "to");
+    const from2 = stringArg2(tc2.args, "from");
+    const to = stringArg2(tc2.args, "to");
     if (from2 && to) {
       return tense === "running" ? `Renaming ${from2} \u2192 ${to}` : `Renamed ${from2} \u2192 ${to}`;
     }
@@ -62366,7 +62458,7 @@ function getToolCallLabel(tc2) {
     }
   }
   if (name === "task") {
-    const agentName = tc2.subagent?.agentName ?? stringArg(tc2.args, "subagent_type");
+    const agentName = tc2.subagent?.agentName ?? stringArg2(tc2.args, "subagent_type");
     if (agentName) {
       return tense === "running" ? `Running ${agentName}` : `Ran ${agentName}`;
     }
@@ -62377,6 +62469,10 @@ function getToolCallLabel(tc2) {
     if (title) return shellCommandLabel(title);
   }
   if (title) return title;
+  if (isAcpDelegateToolCall(tc2)) {
+    const agentKind = acpDelegateKind(tc2);
+    return tense === "running" ? `Running ${agentKind ?? "agent"}` : `Ran ${agentKind ?? "agent"}`;
+  }
   return getToolDisplayName(tc2.programmaticName ?? mcpTitle ?? tc2.name, tense);
 }
 function getToolGroupKey(name, kind) {
@@ -62776,28 +62872,44 @@ function promptProgressLabel(fraction) {
   const percent = Math.round(Math.min(1, Math.max(0, fraction)) * 100);
   return `Processing prompt\u2026 ${percent.toString()}%`;
 }
-function runningToolName(thread) {
+function findRunningActivity(thread) {
   for (let i3 = thread.messages.length - 1; i3 >= 0; i3--) {
     const m3 = thread.messages[i3];
     if (!m3) continue;
     const toolCalls = m3.toolCalls;
+    const runningDelegates = toolCalls.filter(
+      (tc2) => tc2.status === "running" && isAcpDelegateToolCall(tc2)
+    );
+    if (runningDelegates.length > 0) {
+      const kinds = new Set(runningDelegates.map((tc2) => acpDelegateKind(tc2)));
+      const [soleKind] = kinds;
+      return {
+        kind: "delegates",
+        count: runningDelegates.length,
+        soleKind: kinds.size === 1 ? soleKind ?? null : null
+      };
+    }
     for (let j5 = toolCalls.length - 1; j5 >= 0; j5--) {
       const tc2 = toolCalls[j5];
       if (!tc2) continue;
       if (tc2.status === "running") {
-        return tc2.name === "explore" ? "explore" : tc2.name;
+        return { kind: "tool", name: tc2.name === "explore" ? "explore" : tc2.name };
       }
-      if (tc2.subagent?.status === "running") return "explore";
+      if (tc2.subagent?.status === "running") return { kind: "tool", name: "explore" };
     }
   }
   return null;
 }
+function delegateActivityLabel(count, soleKind) {
+  if (count === 1) return soleKind ? `Running ${soleKind}` : getToolDisplayName("task", "running");
+  return soleKind ? `Running ${String(count)} ${soleKind} agents` : `Running ${String(count)} agents`;
+}
 function agentActivityLabel(thread, writing) {
   if (!thread || thread.status !== "running") return null;
   const todoLabel = thread.todos?.length ? formatTodoProgress(thread.todos) : null;
-  const tool = runningToolName(thread);
-  if (tool) {
-    const base2 = `${getToolDisplayName(tool, "running")}\u2026`;
+  const activity = findRunningActivity(thread);
+  if (activity) {
+    const base2 = activity.kind === "delegates" ? `${delegateActivityLabel(activity.count, activity.soleKind)}\u2026` : `${getToolDisplayName(activity.name, "running")}\u2026`;
     return todoLabel ? `${base2} (${todoLabel})` : base2;
   }
   if (writing) return todoLabel ? `Writing\u2026 (${todoLabel})` : "Writing\u2026";
@@ -62814,6 +62926,7 @@ var init_agent_activity = __esm({
   "src/renderer/agent-activity.ts"() {
     init_thread_helpers();
     init_tool_display();
+    init_copse_tool_call();
     init_todo_logic();
     CONTEXT_TRIM_ACTIVITY = "Shortened earlier messages";
   }
@@ -62884,10 +62997,16 @@ function cacheArtefact(key, artefact) {
   }
 }
 function setArtefactPreview(threadId, title, preview) {
-  if (preview) previews.set(previewKey(threadId, title), preview);
+  const key = previewKey(threadId, title);
+  if (!preview || previews.get(key) === preview) return;
+  previews.set(key, preview);
+  previewRevisions.set(threadId, (previewRevisions.get(threadId) ?? 0) + 1);
 }
 function getArtefactPreview(threadId, title) {
   return previews.get(previewKey(threadId, title));
+}
+function artefactPreviewRevision(threadId) {
+  return previewRevisions.get(threadId) ?? 0;
 }
 function setArtefactContent(projectId, threadId, artefact) {
   cacheArtefact(artefactKey(projectId, threadId, artefact.title), artefact);
@@ -62935,10 +63054,11 @@ function artefactUriFromToolResult(result) {
   const match = /\bui:\/\/[^\s)\]]+/.exec(result);
   return match ? match[0] : null;
 }
-var previews, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
+var previews, previewRevisions, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
 var init_artefact_previews = __esm({
   "src/renderer/canvas/artefact-previews.ts"() {
     previews = /* @__PURE__ */ new Map();
+    previewRevisions = /* @__PURE__ */ new Map();
     artefacts = /* @__PURE__ */ new Map();
     artefactReads = /* @__PURE__ */ new Map();
     MAX_CACHED_ARTEFACTS = 20;
@@ -73923,6 +74043,12 @@ function createPluginCatalogBrowser(options) {
     focusSearch: () => {
       search.focus();
     },
+    search: (query) => {
+      search.value = query;
+      visibleCount = PAGE_SIZE;
+      render2();
+      search.focus();
+    },
     updateInstalled: (state) => {
       cursorNames = new Set(
         [...state.cursor, ...state.bundledCursor].map((name) => name.toLocaleLowerCase())
@@ -76926,7 +77052,7 @@ function installReviewSection(heading, body) {
   section2.append(title, body);
   return section2;
 }
-function createPacksSection(overlay, api2, store2, getActiveSection, onNavigate, onMcpChanged) {
+function createPacksSection(overlay, api2, store2, readSettings, getActiveSection, onNavigate, onMcpChanged) {
   function selectControl2(form, name) {
     const control = form.elements.namedItem(name);
     if (!(control instanceof HTMLSelectElement)) throw new Error(`Missing select ${name}`);
@@ -77583,6 +77709,7 @@ function createPacksSection(overlay, api2, store2, getActiveSection, onNavigate,
     return hint;
   }
   let pluginEntries = null;
+  let offerPstackInstall = false;
   function renderPluginLists() {
     qsRequired(overlay, "#experimental-plugins-fieldset").hidden = getActiveSection() !== "experimental";
     if (!pluginEntries) return;
@@ -77595,6 +77722,22 @@ function createPacksSection(overlay, api2, store2, getActiveSection, onNavigate,
         (entry) => (getActiveSection() === "experimental" && entry.experimental) === experimental
       );
       listEl.replaceChildren();
+      if (!experimental && offerPstackInstall) {
+        const notice = document.createElement("div");
+        notice.className = "field-hint bundled-plugin-migration";
+        const text2 = document.createElement("p");
+        text2.textContent = "pstack is now an optional plugin. You previously enabled the bundled copy. Review an installation to keep using it.";
+        const browse = document.createElement("button");
+        browse.type = "button";
+        browse.className = "ui-btn ui-btn-secondary";
+        browse.textContent = "Find pstack";
+        browse.addEventListener("click", () => {
+          selectPluginView("browse");
+          pluginCatalogBrowser.search("pstack");
+        });
+        notice.append(text2, browse);
+        listEl.append(notice);
+      }
       let lastEnabled = null;
       for (const entry of entries2) {
         if (entry.enabled !== lastEnabled) {
@@ -77636,6 +77779,8 @@ function createPacksSection(overlay, api2, store2, getActiveSection, onNavigate,
       ]);
       if (generation !== pluginRefreshGeneration || signal?.aborted) return;
       managedInstalls = new Map(installs.map((record2) => [record2.pluginId, record2]));
+      const bundledOverrides = readSettings()?.bundledSkillPluginOverrides;
+      offerPstackInstall = isRecord(bundledOverrides) && bundledOverrides["pstack"] === true && !result.plugins.some((plugin) => plugin.id === "pstack") && !cursorPlugins.some((plugin) => plugin.name === "pstack") && !installs.some((plugin) => plugin.pluginId === "pstack");
       pluginCatalogBrowser.updateInstalled({
         cursor: cursorPlugins.map((plugin) => plugin.name),
         bundledCursor: bundledPlugins.map((plugin) => plugin.name),
@@ -79743,6 +79888,7 @@ function mountSettingsDialog(store2, api2) {
     overlay,
     api2,
     store2,
+    () => snapshot,
     () => nav2.active(),
     async (id) => {
       nav2.reset(id);
@@ -83944,6 +84090,30 @@ var init_demo_concise_states = __esm({
           ]
         }
       ),
+      scenario(
+        "reauth",
+        "A failed coding-agent turn offering a direct sign-in action",
+        [
+          user("reauth-user", "Continue with Claude."),
+          assistant("reauth-failed", "Claude is not signed in, so this turn could not run.")
+        ],
+        {
+          status: "running",
+          askUserRequests: [
+            {
+              id: "concise-state-reauth-request",
+              threadId: THREAD_ID2("reauth"),
+              presentation: { kind: "actions", title: "Sign in to Claude" },
+              questions: [
+                {
+                  question: "Claude is not signed in, so this turn could not run. Open a terminal and run `claude auth login` to sign in again? Finish signing in there, then re-send your message.",
+                  options: ["Sign in", "Not now"]
+                }
+              ]
+            }
+          ]
+        }
+      ),
       scenario("subagent", "A finished turn that used subagents", [
         user("subagent-user", "Find where the footer is laid out and review the auth changes."),
         assistant("subagent-work", "Delegating the search.", [
@@ -87476,6 +87646,84 @@ var init_demo_scenarios = __esm({
         )
       },
       {
+        id: "acp-subagent-visibility",
+        label: "A coding agent's own background subagents show up live",
+        project: project("demo-acp-subagents", "Widgets", "/demo/widgets"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          filesPaneOpen: true,
+          rightPanelMode: "context",
+          layout: {
+            projectsPaneWidth: 240,
+            filesPaneWidth: 680,
+            filesPaneHeight: 360,
+            fileTreeWidth: 180
+          }
+        },
+        threads: [
+          {
+            id: "acp-subagents-main",
+            title: "Add blockviz to Copse",
+            status: "running",
+            model: "acp:claude-acp#sonnet",
+            messages: [
+              {
+                id: "acp-subagents-user",
+                role: "user",
+                content: "Explore how to add the blockviz panel.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              },
+              {
+                id: "acp-subagents-assistant",
+                role: "assistant",
+                content: "All three exploration agents are running in the background.",
+                toolCalls: [
+                  // An external ACP agent's own subagent dispatch (Claude Code's
+                  // `Agent` tool): no `subagent` session, just this one tool call.
+                  {
+                    id: "acp-agent-panel",
+                    name: "Agent",
+                    kind: "think",
+                    title: "Panel/view registration and local content serving",
+                    args: { subagent_type: "Explore", prompt: "Find the panel registry" },
+                    status: "running",
+                    result: null
+                  },
+                  {
+                    id: "acp-agent-filetree",
+                    name: "Agent",
+                    kind: "think",
+                    title: "Local file-tree reading utilities",
+                    args: { subagent_type: "Explore", prompt: "Find reusable file-walking utilities" },
+                    status: "running",
+                    result: null
+                  },
+                  {
+                    id: "acp-agent-rust",
+                    name: "Agent",
+                    kind: "think",
+                    title: "Servo sidecar and Rust toolchain precedent",
+                    args: {
+                      subagent_type: "Investigate",
+                      prompt: "Check for an existing Rust toolchain"
+                    },
+                    status: "done",
+                    result: "No Rust toolchain found in the repo."
+                  }
+                ],
+                createdAt: FIXED_TIME + 1e3
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME + 1e3
+          }
+        ]
+      },
+      {
         id: "side-chat-approval",
         label: "A side chat asks for approval over its parent thread",
         project: project("demo-side-chat-approval", "Widgets", "/demo/widgets"),
@@ -87794,22 +88042,22 @@ function providerSlug(model) {
   if (colon > 0) return model.slice(0, colon);
   return firstPartyProviderOf(model) ?? void 0;
 }
-function stringArg2(args, key) {
+function stringArg3(args, key) {
   if (!isRecord(args)) return void 0;
   const value = args[key];
   return typeof value === "string" ? value : void 0;
 }
 function proposedEdit(name, args, written) {
-  const path = stringArg2(args, "path");
+  const path = stringArg3(args, "path");
   if (path === void 0) return void 0;
   const before = written.get(path) ?? "";
   if (name === "write_file") {
-    const content = stringArg2(args, "content");
+    const content = stringArg3(args, "content");
     return content === void 0 ? void 0 : { path, before, after: content };
   }
   if (name === "str_replace") {
-    const oldString = stringArg2(args, "old_string");
-    const newString = stringArg2(args, "new_string");
+    const oldString = stringArg3(args, "old_string");
+    const newString = stringArg3(args, "new_string");
     if (oldString === void 0 || newString === void 0) return void 0;
     return { path, before, after: before.replace(oldString, () => newString) };
   }
@@ -88186,6 +88434,7 @@ function createDemoApi(scenario2, options = {}) {
           const request = {
             id: askUserRequest.id,
             ...askUserRequest.threadId === void 0 ? {} : { threadId: askUserRequest.threadId },
+            ...askUserRequest.presentation === void 0 ? {} : { presentation: askUserRequest.presentation },
             questions: askUserRequest.questions.map((question) => ({
               question: question.question,
               ...question.options === void 0 ? {} : { options: [...question.options] }
@@ -89584,9 +89833,9 @@ var init_tokens = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/styles/default.css
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/styles/default.css
 var init_default = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/styles/default.css"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/styles/default.css"() {
   }
 });
 
@@ -93230,10 +93479,17 @@ function mountApprovalDialog(api2, store2, options = {}) {
     for (const listener of [...changeListeners]) listener();
   }
   function drainShowableIntoBatch() {
+    if (batch.some((req) => req.standalone)) return 0;
+    const standaloneIndex = queue.findIndex((req) => req.standalone && isShowable(req));
+    if (batch.length === 0 && standaloneIndex >= 0) {
+      const [request] = queue.splice(standaloneIndex, 1);
+      if (request) batch.push(request);
+      return request ? 1 : 0;
+    }
     let moved = 0;
     for (let i3 = 0; i3 < queue.length; ) {
       const req = queue[i3];
-      if (req && isShowable(req)) {
+      if (req && !req.standalone && isShowable(req)) {
         queue.splice(i3, 1);
         batch.push(req);
         moved++;
@@ -93399,7 +93655,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       batch.map((req) => req.threadId)
     );
     if (asker) store2.emit("side_chat_open_requested", asker.firstSideChatId);
-    const shouldShowModal = isSettingsDialogOpen() || document.documentElement.classList.contains("is-popout");
+    const shouldShowModal = soloRequest()?.standalone === true || isSettingsDialogOpen() || document.documentElement.classList.contains("is-popout");
     if (shouldShowModal) {
       dialog2.showModal();
     } else {
@@ -93449,6 +93705,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
   function removeCancelled(id) {
     const queueIdx = queue.findIndex((req) => req.id === id);
     if (queueIdx >= 0) queue.splice(queueIdx, 1);
+    const wasStandalone = batch.some((req) => req.id === id && req.standalone);
     const wasInBatch = batch.some((req) => req.id === id);
     batch = batch.filter((req) => req.id !== id);
     if (wasInBatch && active3) {
@@ -93457,6 +93714,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
         active3 = false;
         clearSettle();
         show2();
+        if (dialog2.open && (wasStandalone || batch.some((req) => req.standalone))) startSettle();
       } else {
         renderBatch();
         startSettle();
@@ -93477,6 +93735,8 @@ function mountApprovalDialog(api2, store2, options = {}) {
       void api2.approval.respond(req.id, approved, remember, grantScope);
     }
     show2();
+    if (dialog2.open && (answered.some((req) => req.standalone) || batch.some((req) => req.standalone)))
+      startSettle();
   }
   api2.agent.onApprovalRequest(
     ({
@@ -93493,6 +93753,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       collapseDetails,
       approveOnceLabel,
       showWhileSettingsOpen,
+      standalone,
       allowTurnTreeLease,
       turnTreeLeaseLabel: turnTreeLeaseLabel2,
       turnTreeLeaseDefault,
@@ -93514,6 +93775,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
         collapseDetails,
         approveOnceLabel,
         showWhileSettingsOpen,
+        standalone,
         allowTurnTreeLease,
         turnTreeLeaseLabel: turnTreeLeaseLabel2,
         turnTreeLeaseDefault,
@@ -93522,7 +93784,15 @@ function mountApprovalDialog(api2, store2, options = {}) {
         arrival: arrivals++
       };
       queue.push(pending);
-      if (active3 && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
+      if (active3 && pending.standalone && isShowable(pending) && !batch.some((req) => req.standalone)) {
+        queue.unshift(...batch);
+        batch = [];
+        closeDialog();
+        active3 = false;
+        clearSettle();
+        show2();
+        if (dialog2.open) startSettle();
+      } else if (active3 && !batch.some((req) => req.standalone) && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
         queue.unshift(...batch);
         batch = [];
         closeDialog();
@@ -93609,7 +93879,7 @@ var init_approval_dialog = __esm({
 });
 
 // packages/agent/src/ask-user-format.ts
-var askUserQuestionSchema, askUserParamsSchema, ASK_USER_ANSWER_MAX_LENGTH;
+var askUserQuestionSchema, askUserParamsSchema, ASK_USER_ANSWER_MAX_LENGTH, ASK_USER_TIMEOUT_MS;
 var init_ask_user_format = __esm({
   "packages/agent/src/ask-user-format.ts"() {
     init_zod();
@@ -93635,6 +93905,7 @@ var init_ask_user_format = __esm({
       questions: external_exports.array(askUserQuestionSchema).min(1).max(10).describe("One or more clarifying questions to ask the user before continuing.")
     });
     ASK_USER_ANSWER_MAX_LENGTH = 8192;
+    ASK_USER_TIMEOUT_MS = 30 * 60 * 1e3;
   }
 });
 
@@ -93763,9 +94034,9 @@ function createActivityView(api2, store2, sources3, deps, host) {
   function hasAnswer(requestId) {
     return (drafts.get(requestId) ?? []).some((text2) => text2.trim() !== "");
   }
-  function sendAnswer(row2) {
+  function sendAnswer(row2, chosen) {
     const requestId = row2.requestId;
-    if (!requestId || settling || !hasAnswer(requestId)) return;
+    if (!requestId || settling || chosen === void 0 && !hasAnswer(requestId)) return;
     const asked = sources3.questions.pending().find((request) => request.id === requestId);
     if (!asked) return;
     const typed = drafts.get(requestId) ?? [];
@@ -93777,13 +94048,13 @@ function createActivityView(api2, store2, sources3, deps, host) {
     }
     const sent = sources3.questions.answer(
       requestId,
-      asked.questions.map((_5, index) => typed[index] ?? "")
+      chosen === void 0 ? asked.questions.map((_5, index) => typed[index] ?? "") : [chosen]
     );
     if (sent) drafts.delete(requestId);
     status.textContent = sent ? `Answered ${row2.threadTitle}.` : "That question was already answered.";
     scheduleRender();
   }
-  function answerField(requestId, row2, question, index, options, recommendedOption, recommendationReason) {
+  function answerField(requestId, row2, question, index, options, recommendedOption, recommendationReason, actionsOnly) {
     const questionId = `${host.idPrefix}-question-${String(index)}`;
     const input2 = el("textarea", {
       class: "activity-answer-input",
@@ -93820,8 +94091,9 @@ function createActivityView(api2, store2, sources3, deps, host) {
       for (const option of options) {
         const choice = el("button", {
           type: "button",
-          class: "ui-btn ui-btn-secondary activity-option"
+          class: actionsOnly ? `ui-btn ${option === options[0] ? "ui-btn-primary" : "ui-btn-secondary"} activity-option activity-answer-action` : "ui-btn ui-btn-secondary activity-option"
         });
+        if (actionsOnly) choice.disabled = settling;
         setInlineMarkdown(choice, option);
         const answer = choice.textContent;
         if (option === recommendedOption) {
@@ -93829,6 +94101,10 @@ function createActivityView(api2, store2, sources3, deps, host) {
           choice.append(el("span", { class: "ask-user-recommended-label" }, "Recommended"));
         }
         choice.addEventListener("click", () => {
+          if (actionsOnly) {
+            sendAnswer(row2, option);
+            return;
+          }
           input2.value = answer;
           sync();
           input2.focus();
@@ -93840,7 +94116,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     if (recommendationReason) {
       field.append(el("p", { class: "ask-user-recommendation-reason" }, recommendationReason));
     }
-    field.append(input2);
+    if (!actionsOnly) field.append(input2);
     return field;
   }
   function button(className, control, label, onClick, ariaLabel) {
@@ -93928,7 +94204,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
               index,
               asked.options[index] ?? [],
               asked.recommendedOptions?.[index],
-              asked.recommendationReasons?.[index]
+              asked.recommendationReasons?.[index],
+              asked.presentation?.kind === "actions"
             )
           )
         )
@@ -93989,7 +94266,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
       );
       approve.disabled = settling;
       decide.push(approve);
-    } else if (row2.state === "needs-answer" && row2.requestId) {
+    } else if (row2.state === "needs-answer" && row2.requestId && sources3.questions.pending().find((request) => request.id === row2.requestId)?.presentation?.kind !== "actions") {
       const requestId = row2.requestId;
       const answer = button(
         "ui-btn-primary activity-answer",
@@ -94436,7 +94713,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     cancelSettle?.();
     settling = true;
     for (const control of detail.querySelectorAll(
-      ".activity-approve, .activity-answer"
+      ".activity-approve, .activity-answer, .activity-answer-action"
     )) {
       control.disabled = true;
     }
@@ -94444,7 +94721,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
       cancelSettle = null;
       settling = false;
       for (const control of detail.querySelectorAll(
-        ".activity-approve, .activity-answer"
+        ".activity-approve, .activity-answer, .activity-answer-action"
       )) {
         if (control.dataset["answered"]) continue;
         const requestId = control.dataset["requestId"];
@@ -100666,7 +100943,7 @@ var init_table_copy = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js
 function parseDiagramSize(value) {
   if (typeof value !== "object" || value === null)
     return null;
@@ -100685,14 +100962,14 @@ function parseDiagramSize(value) {
 }
 var MAX_DIAGRAM_SOURCE_LENGTH, MAX_DIAGRAM_DIMENSION, MAX_FONT_BYTES;
 var init_mermaid_frame_protocol = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js"() {
     MAX_DIAGRAM_SOURCE_LENGTH = 5e4;
     MAX_DIAGRAM_DIMENSION = 4096;
     MAX_FONT_BYTES = 4 * 1024 * 1024;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js
 function copyBytes(data) {
   if (data instanceof ArrayBuffer)
     return data.slice(0);
@@ -100777,7 +101054,7 @@ function createMermaidFrame(source, options) {
 }
 var ISOLATED_DIAGRAM_ATTRIBUTE, MOUNTABLE_SELECTOR;
 var init_mermaid_isolated = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js"() {
     init_mermaid_frame_protocol();
     ISOLATED_DIAGRAM_ATTRIBUTE = "data-isolated-diagram";
     MOUNTABLE_SELECTOR = `.mermaid-diagram.mermaid-diagram--pending:not(.stream-fence-forming):not([${ISOLATED_DIAGRAM_ATTRIBUTE}])`;
@@ -101079,7 +101356,7 @@ var init_mermaid2 = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/smoothing.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/smoothing.js
 function defaultNow() {
   const perf = globalThis.performance;
   return typeof perf?.now === "function" ? perf.now() : Date.now();
@@ -101263,7 +101540,7 @@ function createInputSmoother(options) {
 }
 var DEFAULT_CHARS_PER_SECOND3, DEFAULT_LAG_MS, VELOCITY_SMOOTHING_MS, MIN_CHARS_PER_MS, MAX_FRAME_GAP_MS, DRAIN_LAG_MS, MAX_BOUNDARY_EXTENSION, REDUCED_MOTION_QUERY, SYNTAX_CHARS;
 var init_smoothing = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
     DEFAULT_CHARS_PER_SECOND3 = 600;
     DEFAULT_LAG_MS = 120;
     VELOCITY_SMOOTHING_MS = 180;
@@ -101827,9 +102104,9 @@ var init_browser_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/host-workspace.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/host-workspace.js
 var init_host_workspace = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
     init_inline_links();
     init_workspace_link_href();
   }
@@ -107066,6 +107343,34 @@ function assistantDisplayParts(content) {
   const { body, noise } = splitCursorAcpTransportNoise(stripped);
   return { body, transportNoise: noise };
 }
+function transcriptInputs(store2, thread) {
+  return {
+    threadId: thread.id,
+    messages: thread.messages,
+    pendingMessages: thread.pendingMessages,
+    status: thread.status,
+    model: thread.model,
+    todos: thread.todos,
+    workingBrief: thread.workingBrief,
+    interruptedTurnAt: thread.interruptedTurnAt,
+    threadProposals: thread.threadProposals,
+    reviewerInputAnswers: thread.reviewerInputAnswers,
+    liveProposalTargets: (thread.threadProposals ?? []).flatMap(
+      (decision) => decision.threadId && getThreadById(store2, decision.threadId) ? [decision.threadId] : []
+    ).join("\n"),
+    needsHydration: needsHydration(thread),
+    hydrationFailed: hydrationFailed(thread.id),
+    artefactPreviewRevision: artefactPreviewRevision(thread.id)
+  };
+}
+function sameItems(a5, b5) {
+  if (a5 === b5) return true;
+  if (!a5 || !b5 || a5.length !== b5.length) return false;
+  return a5.every((item, i3) => item === b5[i3]);
+}
+function sameTranscriptInputs(a5, b5) {
+  return a5.threadId === b5.threadId && a5.status === b5.status && a5.model === b5.model && a5.todos === b5.todos && a5.workingBrief === b5.workingBrief && a5.interruptedTurnAt === b5.interruptedTurnAt && a5.liveProposalTargets === b5.liveProposalTargets && a5.needsHydration === b5.needsHydration && a5.hydrationFailed === b5.hydrationFailed && a5.artefactPreviewRevision === b5.artefactPreviewRevision && sameItems(a5.messages, b5.messages) && sameItems(a5.pendingMessages, b5.pendingMessages) && sameItems(a5.threadProposals, b5.threadProposals) && sameItems(a5.reviewerInputAnswers, b5.reviewerInputAnswers);
+}
 function summaryPreview(text2, max = 200) {
   const trimmed2 = text2.trim();
   if (trimmed2.length <= max) return trimmed2;
@@ -108748,6 +109053,7 @@ function mountConversation(root, store2, api2) {
   let lastProgrammaticScrollTop = -1;
   let userScrolledUpAt = 0;
   let renderedThreadId = null;
+  let renderedInputs = null;
   let stickyImagePrompt = null;
   let stickyImageFullHeight = 0;
   let backfillGeneration = 0;
@@ -109904,7 +110210,10 @@ function mountConversation(root, store2, api2) {
       queuedHost.replaceChildren();
       queuedHost.hidden = true;
     }
-    list.insertBefore(activityBar, firstTrailingCard());
+    const trailingCard = firstTrailingCard();
+    if (activityBar.parentNode !== list || activityBar.nextSibling !== trailingCard) {
+      list.insertBefore(activityBar, trailingCard);
+    }
     updateScrollButton();
   }
   function backfillOlderMessages(thread, cursor, generation) {
@@ -109933,6 +110242,15 @@ function mountConversation(root, store2, api2) {
   function rebuildForThread() {
     const thread = getActiveThread(store2);
     const rebuildingSameThread = thread !== void 0 && thread.id === renderedThreadId;
+    const inputs = thread ? transcriptInputs(store2, thread) : null;
+    if (rebuildingSameThread && inputs && renderedInputs) {
+      if (sameTranscriptInputs(inputs, renderedInputs)) {
+        finishThreadChrome(thread);
+        syncModelLabels();
+        syncUserActions();
+        return;
+      }
+    }
     const preservedScrollTop = rebuildingSameThread && !pinnedToBottom ? list.scrollTop : null;
     if (!rebuildingSameThread) {
       pinnedToBottom = true;
@@ -109947,6 +110265,7 @@ function mountConversation(root, store2, api2) {
     stickyImagePrompt = null;
     backfillGeneration++;
     renderedThreadId = thread?.id ?? null;
+    renderedInputs = inputs;
     if (!thread) {
       finishThreadChrome(null);
       return;
@@ -152594,6 +152913,12 @@ function mountFooterBranchStatus(host, store2, api2) {
     store2.on("workspace_changed", refreshNow),
     store2.on("threads_changed", () => {
       if (store2.getState().activeThreadId !== refreshedThreadId) {
+        status = null;
+        detached = null;
+        branches = [];
+        defaultBranch = null;
+        renderTrigger();
+        if (open2) renderMenu();
         refreshNow();
         return;
       }
@@ -168012,11 +168337,12 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
   const section2 = el("section", {
     class: "terminal-rail-section terminal-shells-section"
   });
-  const listHeader = el(
-    "div",
-    { class: "pane-header terminals-list-header terminal-rail-section-header" },
-    el("span", { class: "pane-header-title" }, "Shells")
-  );
+  const { listHeader, tabsWrap, body } = uiPaneTabsShell({
+    title: "Shells",
+    headerClassName: "terminals-list-header terminal-rail-section-header",
+    listClassName: "terminals-list terminal-rail-section-list",
+    bodyClassName: "terminals-body"
+  });
   const newBtn = el(
     "button",
     {
@@ -168032,12 +168358,8 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
     paneMaximizeButton(store2, "terminal"),
     newBtn
   );
-  const tabsWrap = el("div", {
-    class: "terminals-list terminal-rail-section-list"
-  });
   section2.append(listHeader, tabsWrap);
   listRoot.append(section2);
-  const body = el("div", { class: "terminals-body" });
   viewerRoot.append(body);
   const tabs = /* @__PURE__ */ new Map();
   let activeTabId = null;
@@ -168280,9 +168602,7 @@ ${output2}` : "Terminal output: (none)"
     if (activeTabId === tabId) return;
     activeTabId = tabId;
     for (const tab2 of tabs.values()) {
-      const active3 = tab2.id === tabId;
-      tab2.panel.classList.toggle("is-active", active3);
-      tab2.tabBtn.classList.toggle("is-active", active3);
+      tab2.tabSwitch.setActive(tab2.id === tabId);
     }
     const tab = tabs.get(tabId);
     if (tab && terminalModeActive(store2)) {
@@ -168421,20 +168741,27 @@ ${output2}` : "Terminal output: (none)"
       autoNamed: false,
       renamed: false,
       naming: false,
-      nameTimer: null
+      nameTimer: null,
+      tabSwitch: uiPaneTab({
+        tabBtn,
+        panel,
+        closeSelector: ".terminals-tab-close",
+        onSelect: () => {
+          setActiveTab(id);
+          store2.emit("shell_tab_activated");
+          const tab2 = tabs.get(id);
+          if (tab2 && terminalModeActive(store2)) {
+            requestAnimationFrame(() => {
+              fitTab(tab2);
+              focusTab(tab2);
+            });
+          }
+        },
+        onClose: () => {
+          void removeTab(id);
+        }
+      })
     };
-    tabBtn.addEventListener("click", (e3) => {
-      if (e3.target instanceof Element && e3.target.closest(".terminals-tab-close")) return;
-      setActiveTab(id);
-      store2.emit("shell_tab_activated");
-      const tab2 = tabs.get(id);
-      if (tab2 && terminalModeActive(store2)) {
-        requestAnimationFrame(() => {
-          fitTab(tab2);
-          focusTab(tab2);
-        });
-      }
-    });
     tabBtn.addEventListener("contextmenu", (e3) => {
       e3.preventDefault();
       e3.stopPropagation();
@@ -168457,10 +168784,6 @@ ${output2}` : "Terminal output: (none)"
       e3.stopPropagation();
       beginRename(tab);
     });
-    closeBtn.addEventListener("click", (e3) => {
-      e3.stopPropagation();
-      void removeTab(id);
-    });
     wireTabInput(tab);
     tabs.set(id, tab);
     tabsWrap.append(tabBtn);
@@ -168479,8 +168802,7 @@ ${output2}` : "Terminal output: (none)"
     await destroySession(tab);
     finishCodeBlockRun(tab, null);
     tab.term.dispose();
-    tab.tabBtn.remove();
-    tab.panel.remove();
+    tab.tabSwitch.remove();
     tabs.delete(tabId);
     if (activeTabId !== tabId) return;
     const remaining = visibleTabs();
@@ -168678,6 +169000,7 @@ var init_terminals_pane = __esm({
     init_rename_blur();
     init_pane_maximize_button();
     init_pane_popout_button();
+    init_pane_tabs();
     init_selection_to_chat2();
     init_terminal_file_links();
     init_terminal_web_links();
@@ -172494,14 +172817,24 @@ function deriveThreadContext(input2) {
     for (const message2 of thread.messages) {
       for (const toolCall of message2.toolCalls) {
         const session = toolCall.subagent;
-        if (!session) continue;
-        subagents.push({
-          id: session.id,
-          kind: session.kind,
-          status: session.status,
-          prompt: firstLine(session.prompt),
-          ...session.model !== void 0 ? { model: session.model } : {}
-        });
+        if (session) {
+          subagents.push({
+            id: session.id,
+            kind: session.kind,
+            status: session.status,
+            prompt: firstLine(session.prompt),
+            ...session.model !== void 0 ? { model: session.model } : {}
+          });
+          continue;
+        }
+        if (isAcpDelegateToolCall(toolCall)) {
+          subagents.push({
+            id: toolCall.id,
+            kind: acpDelegateKind(toolCall)?.toLowerCase() ?? "agent",
+            status: toolCall.status,
+            prompt: firstLine(acpDelegatePrompt(toolCall))
+          });
+        }
       }
     }
   }
@@ -172540,6 +172873,7 @@ var init_thread_context_model = __esm({
     init_github_pr_url2();
     init_side_chat2();
     init_thread_links2();
+    init_copse_tool_call();
   }
 });
 
@@ -177022,11 +177356,12 @@ function createWebview(partition, resolveWorkspacePreview) {
   return guest;
 }
 function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
-  const listHeader = el(
-    "div",
-    { class: "pane-header browser-tabs-list-header" },
-    el("span", { class: "pane-header-title" }, "Tabs")
-  );
+  const { listHeader, tabsWrap, body } = uiPaneTabsShell({
+    title: "Tabs",
+    headerClassName: "browser-tabs-list-header",
+    listClassName: "browser-tabs-list",
+    bodyClassName: "browser-body"
+  });
   const newBtn = el(
     "button",
     {
@@ -177039,9 +177374,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   );
   if (api2) listHeader.append(panePopoutButton(store2, api2, "browser", "browser"));
   listHeader.append(paneMaximizeButton(store2, "browser"), newBtn);
-  const tabsWrap = el("div", { class: "browser-tabs-list" });
   listRoot.append(listHeader, tabsWrap);
-  const body = el("div", { class: "browser-body" });
   viewerRoot.append(body);
   const tabs = /* @__PURE__ */ new Map();
   const resolveWorkspacePreview = api2 ? (url2) => workspacePreviewHtml(url2, store2, api2) : void 0;
@@ -177332,9 +177665,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     activeTabId = tabId;
     scheduleSessionSave();
     for (const tab2 of tabs.values()) {
-      const active3 = tab2.id === tabId;
-      tab2.panel.classList.toggle("is-active", active3);
-      tab2.tabBtn.classList.toggle("is-active", active3);
+      tab2.tabSwitch.setActive(tab2.id === tabId);
       syncAnnotationScroll(tab2);
     }
     const tab = tabs.get(tabId);
@@ -177668,7 +177999,18 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       annotationScroll: null,
       closeMenu: () => {
         setMenuOpen(false);
-      }
+      },
+      tabSwitch: uiPaneTab({
+        tabBtn,
+        panel,
+        closeSelector: ".browser-tabs-tab-close",
+        onSelect: () => {
+          setActiveTab(id);
+        },
+        onClose: () => {
+          removeTab(id);
+        }
+      })
     };
     const annotationLayer = () => {
       if (!tab.annotation) {
@@ -177825,14 +178167,6 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       navigateTab(tab, tab.urlInput.value);
     });
     wireToolbar(tab);
-    tabBtn.addEventListener("click", (e3) => {
-      if (e3.target instanceof Element && e3.target.closest(".browser-tabs-tab-close")) return;
-      setActiveTab(id);
-    });
-    closeBtn.addEventListener("click", (e3) => {
-      e3.stopPropagation();
-      removeTab(id);
-    });
     tabs.set(id, tab);
     tabsWrap.append(tabBtn);
     body.append(panel);
@@ -177845,10 +178179,9 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     const tab = tabs.get(tabId);
     if (!tab) return;
     tab.webview?.remove();
-    tab.tabBtn.remove();
     tab.annotationScroll?.dispose();
     tab.annotation?.dispose();
-    tab.panel.remove();
+    tab.tabSwitch.remove();
     tabs.delete(tabId);
     scheduleSessionSave();
     if (activeTabId !== tabId) return;
@@ -177901,10 +178234,9 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   function purgeAllTabs() {
     for (const tab of tabs.values()) {
       tab.webview?.remove();
-      tab.tabBtn.remove();
       tab.annotationScroll?.dispose();
       tab.annotation?.dispose();
-      tab.panel.remove();
+      tab.tabSwitch.remove();
     }
     tabs.clear();
     activeTabId = null;
@@ -178148,10 +178480,9 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     stopBrowserResizeObserver();
     for (const tab of tabs.values()) {
       tab.webview?.remove();
-      tab.tabBtn.remove();
       tab.annotationScroll?.dispose();
       tab.annotation?.dispose();
-      tab.panel.remove();
+      tab.tabSwitch.remove();
     }
     tabs.clear();
   };
@@ -178164,6 +178495,7 @@ var init_browser_pane = __esm({
     init_icons();
     init_pane_maximize_button();
     init_pane_popout_button();
+    init_pane_tabs();
     init_pane_popout_seed();
     init_browser_url();
     init_artefact();
@@ -195897,7 +196229,7 @@ function mountAskUserDialog(api2, store2) {
       el(
         "h3",
         { class: "ask-user-title" },
-        asker ? "A side chat has a question" : "The agent has a question"
+        active3.presentation?.title ?? (asker ? "A side chat has a question" : "The agent has a question")
       )
     );
     if (asker) {
@@ -195906,6 +196238,7 @@ function mountAskUserDialog(api2, store2) {
     }
     active3.questions.forEach((q4, i3) => {
       const questionId = `ask-user-question-${String(i3)}`;
+      const actionsOnly = active3?.presentation?.kind === "actions";
       const input2 = el("textarea", {
         class: "ask-user-input",
         rows: "2",
@@ -195913,7 +196246,7 @@ function mountAskUserDialog(api2, store2) {
         "data-question-index": String(i3),
         "aria-labelledby": questionId
       });
-      inputs.push(input2);
+      if (!actionsOnly) inputs.push(input2);
       const question = el("div", {
         id: questionId,
         class: "ask-user-question streaming-markdown"
@@ -195923,14 +196256,21 @@ function mountAskUserDialog(api2, store2) {
       if (q4.options && q4.options.length > 0) {
         const optionRow = el("div", { class: "ask-user-options" });
         for (const option of q4.options) {
-          const button = el("button", { type: "button", class: "ask-user-option" });
+          const button = el("button", {
+            type: "button",
+            class: actionsOnly ? `ui-btn ${option === q4.options[0] ? "ui-btn-primary" : "ui-btn-secondary"} ask-user-option ask-user-action` : "ask-user-option"
+          });
           setInlineMarkdown(button, option);
           const answer = button.textContent;
-          if (option === q4.recommendedOption) {
+          if (!actionsOnly && option === q4.recommendedOption) {
             button.classList.add("ask-user-option-recommended");
             button.append(el("span", { class: "ask-user-recommended-label" }, "Recommended"));
           }
           button.addEventListener("click", () => {
+            if (actionsOnly) {
+              respond([option]);
+              return;
+            }
             input2.value = answer;
             input2.focus();
           });
@@ -195941,9 +196281,15 @@ function mountAskUserDialog(api2, store2) {
       if (q4.recommendationReason) {
         field.append(el("p", { class: "ask-user-recommendation-reason" }, q4.recommendationReason));
       }
-      field.append(input2);
+      if (!actionsOnly) field.append(input2);
       form.append(field);
     });
+    if (active3.presentation?.kind === "actions") {
+      dialog2.showModal();
+      const actions = form.querySelectorAll(".ask-user-action");
+      actions[actions.length - 1]?.focus();
+      return;
+    }
     const cancelBtn = el("button", { type: "button", class: "ask-user-cancel" }, "Cancel");
     cancelBtn.addEventListener("click", (event) => {
       event.preventDefault();
@@ -196049,6 +196395,7 @@ function mountAskUserDialog(api2, store2) {
     return true;
   }
   function submit() {
+    if (active3?.presentation?.kind === "actions") return;
     respond(inputs.map((input2) => input2.value));
   }
   function cancel() {
@@ -196078,6 +196425,7 @@ function mountAskUserDialog(api2, store2) {
     if (active3?.id === req.id || queue.some((request) => request.id === req.id)) return;
     queue.push({
       id: req.id,
+      ...req.presentation === void 0 ? {} : { presentation: req.presentation },
       threadId: req.threadId,
       questions: req.questions,
       receivedAt: Date.now(),
@@ -196106,6 +196454,7 @@ function mountAskUserDialog(api2, store2) {
   return {
     pending: () => [...active3 ? [active3] : [], ...queue].sort((a5, b5) => a5.arrival - b5.arrival).map((req) => ({
       id: req.id,
+      ...req.presentation === void 0 ? {} : { presentation: req.presentation },
       threadId: req.threadId,
       questions: req.questions.map((q4) => q4.question),
       options: req.questions.map((q4) => q4.options ?? []),
@@ -207120,7 +207469,7 @@ var init_yaml = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
 var highlight_hljs_exports = {};
 __export(highlight_hljs_exports, {
   highlightjsHighlighter: () => highlightjsHighlighter,
@@ -207131,7 +207480,7 @@ function loadHighlightjs() {
 }
 var highlightjsHighlighter;
 var init_highlight_hljs = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
     init_core3();
     init_bash();
     init_css();
