@@ -679,10 +679,10 @@ description: Project override checkup
       setSetting('bundledSkillPluginOverrides', {})
     })
 
-    it('leaves pstack out until the user switches it on', async () => {
-      const bundledRoot = await seedBundledPlugin({})
+    it('honors an explicit bundled-plugin disable', async () => {
+      const bundledRoot = await seedBundledPlugin({ pstack: false })
       try {
-        assert.equal(getSkill('how'), null, 'pstack ships switched off')
+        assert.equal(getSkill('how'), null, 'the user disabled the bundled fixture')
         await assert.rejects(
           () => readSkill('pstack'),
           /"pstack" is a bundled plugin that is switched off.*Settings → Customise → Plugins/,
@@ -690,6 +690,20 @@ description: Project override checkup
         await assert.rejects(() => readSkill('pstack/how'), /switched off/)
       } finally {
         await rm(bundledRoot, { recursive: true, force: true })
+      }
+    })
+
+    it('loads installed pstack despite a stale bundled disable', async () => {
+      const root = await seedBundledPlugin({ pstack: false })
+      try {
+        setBundledCursorSkillsRootForTest(null)
+        setSetting('skillPluginPaths', [join(root, 'plugins', 'pstack-folder')])
+        await refreshSkillsRegistry()
+        assert.equal((await readSkill('pstack/how')).name, 'how')
+        assert.equal(getSkill('how')?.plugin, 'pstack')
+      } finally {
+        setSetting('skillPluginPaths', [])
+        await rm(root, { recursive: true, force: true })
       }
     })
 

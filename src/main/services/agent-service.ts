@@ -1365,7 +1365,9 @@ async function runAgentWithInlineCanvas(
           : await perfSpan('ttft:acp-turn-assembly', () =>
               assembleAcpTurnStart({
                 userText: promptTextForSubmit(userPrompt),
+                invokedSkills: options?.invokedSkills ?? [],
                 priorTodos: options?.priorTodos ?? [],
+                firstTurn: priorMessages.length === 0,
                 model: executorModel,
                 registry,
                 signal: controller.signal,
@@ -1987,7 +1989,9 @@ async function runAgentWithInlineCanvas(
       {
         userText: userTextForSteering,
         priorTodos,
+        firstTurn: priorMessages.length === 0,
         executor: 'local',
+        invokedSkills,
         // The resolved run model + the tool list the model will actually see, so
         // a steering hook can condition on which model is running (the
         // forced-planning plugin thresholds on its measured capability) and never

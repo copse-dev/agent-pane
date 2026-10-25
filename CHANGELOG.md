@@ -8,6 +8,13 @@ released — rather than copying every published entry.
 
 ## Unreleased
 
+- Copse no longer decodes Brotli-compressed HTTP responses itself, closing
+  CVE-2026-111497, a remote code execution flaw in the Brotli decoder of the
+  Node.js that Electron bundles. Copse now asks servers for gzip instead, and a
+  server that sends Brotli anyway fails that request. The guard lifts itself
+  once Copse ships an Electron with a fixed Node. Thread containers now start
+  from Node 24.22.1, which has the fix.
+
 ## 0.1.0-beta.15
 
 - The footer hover now reports what the classifiers did for the thread: for the

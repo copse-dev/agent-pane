@@ -1,9 +1,9 @@
 {
   "repository": "https://github.com/cursor/plugins",
   "commit": "e46364b8be46000b7df0f260550cd712afbb8d36",
-  "pluginCount": 13,
-  "skillCount": 71,
-  "contentSha256": "eb3b41eb449a59a1f7f2fb7ee058968b8156010a72cb31c273c5c039f2b38bf7",
+  "pluginCount": 12,
+  "skillCount": 35,
+  "contentSha256": "fadeba73435f332e68bd3aa836fbaa97a4505078e900fbb0a31abe162871df7b",
   "skillFiles": "referenced",
   "danglingReferences": {
     "orchestrate/orchestrate": [
