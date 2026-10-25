@@ -22,6 +22,7 @@ const EMPTY_OVERRIDES: Record<string, ToolPermissionPolicy> = {}
 
 const ALWAYS_ASK_TOOLS = new Set([
   'browser_navigate',
+  'device_hub',
   'fetch_url',
   'parallel_search',
   'prepare_worktree',

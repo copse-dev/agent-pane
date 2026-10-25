@@ -1,10 +1,20 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { runInNewContext } from 'node:vm'
+import { load } from 'js-yaml'
+import { z } from 'zod'
 import { parseScreenshotManifest } from './lib/screenshot-manifest.mts'
 import { readShardWeights } from './test-oracle.mts'
 
@@ -527,6 +537,122 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
+  it('renders the screenshot drift refresh PR in full, as a draft, without ownership scoping', () => {
+    // screenshot-refresh.yml opens a draft whose only commit is empty on main.
+    // Its evidence is worthless unless CI renders everything: the oracle would
+    // skip an empty diff, drafts skip build and e2e, and ownership scoping
+    // holds every candidate a diff does not own.
+    const precheck = jobBlock('precheck')
+    const identify = precheck.slice(
+      precheck.indexOf('      - name: Identify the screenshot drift refresh PR'),
+      precheck.indexOf('      - id: plan'),
+    )
+    assert.equal(
+      identify
+        .match(/REFRESH: >-\n((?: {12}.+\n)+)/)?.[1]
+        ?.replace(/\s+/g, ' ')
+        .trim(),
+      "${{ github.event_name == 'pull_request' && " +
+        'github.event.pull_request.head.repo.full_name == github.repository && ' +
+        "github.head_ref == 'screenshot-refresh/main' && github.base_ref == 'main' }}",
+      'only a same-repository PR from the refresh branch into main is the refresh PR',
+    )
+    assert.match(
+      precheck,
+      /^ {6}screenshot_refresh: \$\{\{ steps\.screenshot-refresh\.outputs\.refresh \}\}$/m,
+    )
+
+    const refreshDraft =
+      /github\.event\.pull_request\.draft == false \|\|\n\s+contains\(github\.event\.pull_request\.labels\.\*\.name, 'ci-full'\) \|\|\n\s+needs\.precheck\.outputs\.screenshot_refresh == 'true'\)/
+    assert.match(jobBlock('build'), refreshDraft, 'the draft refresh PR needs the dist build')
+    assert.match(jobBlock('e2e'), refreshDraft, 'the draft refresh PR needs its render')
+    assert.match(
+      jobBlock('ci-passed'),
+      /E2E_REQUIRED: [^\n]*\|\| needs\.precheck\.outputs\.screenshot_refresh == 'true'\)\) \}\}/,
+      'a refresh PR whose e2e did not run must not pass with empty evidence',
+    )
+
+    const artifacts = jobBlock('screenshot-artifacts')
+    assert.match(artifacts, /^ {4}needs: \[precheck, build, e2e\]$/m)
+    const filter = artifacts.slice(
+      artifacts.indexOf('      - name: Drop render noise from the candidate set'),
+      artifacts.indexOf('        run: |', artifacts.indexOf('Drop render noise')),
+    )
+    assert.match(
+      filter,
+      /SCREENSHOT_SCOPE: \$\{\{ needs\.precheck\.outputs\.screenshot_refresh == 'true' && 'off' \|\| '' \}\}/,
+    )
+    // The label is the only switch for the noise and flap filters.
+    assert.match(
+      filter,
+      /UPDATE_SCREENSHOTS_LABEL: >-\n {12}\$\{\{ contains\(github\.event\.pull_request\.labels\.\*\.name, 'update-screenshots'\) \}\}\n/,
+    )
+  })
+
+  it('plans the refresh PR full, but not the commit of its reviewed hashes', () => {
+    const parsed = z
+      .object({
+        jobs: z.object({
+          precheck: z.object({
+            steps: z.array(z.object({ id: z.string().optional(), run: z.string().optional() })),
+          }),
+        }),
+      })
+      .parse(load(workflow))
+    const planScript = parsed.jobs.precheck.steps.find((step) => step.id === 'plan')?.run ?? ''
+    assert.ok(
+      planScript.indexOf('only refreshes reference screenshots') <
+        planScript.indexOf('"$SCREENSHOT_REFRESH" = "true"') &&
+        planScript.indexOf('"$SCREENSHOT_REFRESH" = "true"') <
+          planScript.indexOf('node scripts/test-oracle.mts --plan'),
+      'the refresh branch sits after the screenshot-only escape and before the oracle',
+    )
+    const dir = mkdtempSync(join(tmpdir(), 'ci-refresh-plan-'))
+    const git = (...args: string[]): string =>
+      spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', ...args], {
+        cwd: dir,
+        encoding: 'utf8',
+      }).stdout.trim()
+    try {
+      git('init', '--quiet')
+      mkdirSync(join(dir, 'tests/e2e/screenshots'), { recursive: true })
+      writeFileSync(join(dir, 'tests/e2e/screenshots/manifest.json'), '{}\n')
+      git('add', '.')
+      git('commit', '--quiet', '-m', 'main')
+      git('commit', '--quiet', '--allow-empty', '-m', 'refresh')
+      const empty = git('rev-parse', 'HEAD')
+      writeFileSync(join(dir, 'tests/e2e/screenshots/manifest.json'), '{"ticked":true}\n')
+      git('commit', '--quiet', '-am', 'commit the ticked screenshots')
+      const reviewed = git('rev-parse', 'HEAD')
+      const mode = (headSha: string, refresh: string): string | undefined => {
+        const output = join(dir, '.output')
+        writeFileSync(output, '')
+        const result = spawnSync('bash', ['-c', planScript], {
+          cwd: dir,
+          encoding: 'utf8',
+          env: {
+            PATH: process.env['PATH'] ?? '',
+            GITHUB_OUTPUT: output,
+            EVENT: 'pull_request',
+            BASE_REF: 'main',
+            BASE_SHA: empty,
+            HEAD_SHA: headSha,
+            STACK_TIP: 'false',
+            UPDATE_SCREENSHOTS_LABEL: 'false',
+            CI_FULL_LABEL: 'false',
+            SCREENSHOT_REFRESH: refresh,
+          },
+        })
+        assert.equal(result.status, 0, result.stderr)
+        return /^mode=(.*)$/m.exec(readFileSync(output, 'utf8'))?.[1]
+      }
+      assert.equal(mode(empty, 'true'), 'full', 'the empty refresh commit renders everything')
+      assert.equal(mode(reviewed, 'true'), 'skip', 'committed hashes were already reviewed')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('boots the real reviewer cell when its trust boundary changes', () => {
     const precheck = jobBlock('precheck')
     assert.match(
@@ -672,6 +798,7 @@ describe('ci.yml workflow invariants', () => {
               HEAD_SHA: '',
               UPDATE_SCREENSHOTS_LABEL: 'false',
               CI_FULL_LABEL: 'false',
+              SCREENSHOT_REFRESH: 'false',
               GITHUB_OUTPUT: output,
               GITHUB_STEP_SUMMARY: join(root, 'summary'),
               RUNNER_TEMP: root,
@@ -851,7 +978,14 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
   it('separates the write-capable publisher from pull-request code execution', () => {
     assert.match(workflow, /^ {2}workflow_run:\n {4}workflows: \[CI\]\n {4}types: \[completed\]$/m)
     assert.doesNotMatch(workflow, /pull_request_target/)
-    assert.match(workflow, /github\.event\.workflow_run\.conclusion == 'success'/)
+    // A red run publishes only what it rendered (discovery checks the job);
+    // a cancelled run was superseded or stopped and never publishes.
+    assert.match(
+      workflow,
+      /\(github\.event\.workflow_run\.conclusion == 'success' \|\|\n {6}github\.event\.workflow_run\.conclusion == 'failure' \|\|\n {6}github\.event\.workflow_run\.conclusion == 'timed_out'\) &&/,
+    )
+    assert.doesNotMatch(workflow, /conclusion (?:==|!=) 'cancelled'/)
+    assert.match(workflow, /job\.name === 'screenshot-artifacts' && job\.conclusion === 'success'/)
     assert.match(
       workflow,
       /github\.event\.workflow_run\.head_repository\.full_name == github\.repository/,

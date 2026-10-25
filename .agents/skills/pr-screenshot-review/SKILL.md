@@ -36,6 +36,8 @@ coverage; it does not inspect images for you.
    to the live head. The compare branch is `screenshot-compare/pr-<N>/<head-sha12>`; resolve it to an
    immutable commit. Verify that commit has exactly one parent, the reviewed head, and changes only
    changed hashes in `tests/e2e/screenshots/manifest.json` (or legacy PNGs). Reject stale or mismatched evidence.
+   A "Waiting for CI on `<sha>`" or "No screenshots for `<sha>`" notice means the live head has no
+   evidence yet; wait for or re-run CI rather than reviewing older images.
 3. Get the complete candidate list from that commit or the matching immutable artifact
    `reference-screenshot-candidates-<run-id>`. The comment previews at most 20 candidates and lists
    at most 100 selection checkboxes. Neither is necessarily the full set. Check the artifact's run
@@ -115,8 +117,10 @@ For suspected drift or recurring candidates:
   Its default mode modifies files; use `--dry-run` in an isolated checkout if needed. Do not raise
   ignore thresholds, weaken assertions, mask real UI defects, or accept oscillating baselines to
   make review pass. Inspect raw shard artifacts when filtered evidence cannot answer the concern.
-- Accumulated stable drift belongs in a deliberate re-baseline PR. `update-screenshots` requests a
-  full regeneration; it is not an acceptance action. Even that PR must review every candidate.
+- Accumulated stable drift belongs in the nightly drift refresh PR (head `screenshot-refresh/main`,
+  see `docs/agent-development.md` → **Nightly screenshot drift refresh**) or a deliberate
+  re-baseline PR. `update-screenshots` requests a full regeneration; it is not an acceptance action.
+  Both must review every candidate, and known unstable captures stay uncommitted there too.
 
 ## 3. Choose the repository action
 

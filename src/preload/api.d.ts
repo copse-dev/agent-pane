@@ -960,7 +960,7 @@ export interface ApiClient {
     authStatus: (ids: string[]) => Promise<AcpAuthStatus[]>
     /**
      * "Just works" setup for the curated presets (Claude, Cursor): detect
-     * clients, Socket-Firewall-install missing npm adapters, register + detect
+     * clients, install missing npm adapters behind the package firewall, register + detect
      * models. Safe to call on every ACP settings-tab open (idempotent).
      */
     autoSetup: () => Promise<AcpAutoSetupResult>
@@ -1086,7 +1086,6 @@ export interface ApiClient {
   }
   appIcon: {
     apply: () => Promise<void>
-    setAutomationMode: (active: boolean) => Promise<void>
   }
   about: {
     /** The app version and the third-party licence report the build shipped. */
