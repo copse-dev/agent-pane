@@ -14,8 +14,8 @@ the underlying agent clients (`claude`, `cursor-agent`, `gemini`) — see
 
 ## Problem
 
-[`installGlobalNpmPackage`](../../src/main/services/security/socket-firewall.ts)
-runs `npm install -g --ignore-scripts <pkg>` through Socket Firewall against
+[`installGlobalNpmPackage`](../../src/main/services/security/package-firewall-launcher.ts)
+runs `npm install -g --ignore-scripts <pkg>` behind the package firewall against
 **the user's npm**, resolving whatever the `latest` dist-tag points at when the
 command runs. Four consequences:
 
@@ -93,7 +93,7 @@ sandbox profile. See [Consolidating the Claude adapters](#consolidating-the-clau
 ### Non-goals
 
 - **`cursor-agent`.** Distributed by `curl … | bash`; auto-setup already refuses
-  to install it and Socket Firewall cannot wrap it. Unchanged by this plan.
+  to install it and the package firewall cannot wrap it. Unchanged by this plan.
 - **The agent clients themselves — but only where the adapter does not already
   carry one.** This differs per adapter and the difference matters:
   - **`claude-agent-acp` pins its client transitively.** `0.70.0` declares an
@@ -156,7 +156,7 @@ Two immediate findings from that table:
   alias is unverified — but nothing in the repo would have told us either way,
   and that is exactly the drift a registry diff catches.
 - **Cursor becomes tractable.** We excluded it because it installs via
-  `curl … | bash` and Socket Firewall cannot wrap that. The registry gives
+  `curl … | bash` and the package firewall cannot wrap that. The registry gives
   per-target archive URLs and the exact `cmd`/`args`, which is a managed path
   where we previously had none.
 
@@ -352,7 +352,7 @@ upgrade atomic: stage the new version beside the old, verify, flip the registere
 command, then prune.
 
 Install is `npm ci --ignore-scripts` executed inside the staged directory, still
-wrapped by Socket Firewall. `--ignore-scripts` is retained from the current path;
+wrapped by the package firewall. `--ignore-scripts` is retained from the current path;
 `optionalDependencies` still deliver platform binaries without lifecycle scripts,
 which is exactly why the `nativeExecutables` existence check is required before an
 install is considered good.
@@ -480,7 +480,7 @@ with no escape hatch is how a CVE fix sits unmerged for a week.
   guarantee the current path lacks entirely.
 - **Blast radius.** Nothing is written outside the Copse profile root. A bad
   adapter no longer persists in the user's global prefix after Copse is removed.
-- **Socket Firewall** continues to wrap the install; the change is `ci` in a
+- **The package firewall** continues to wrap the install; the change is `ci` in a
   staged directory instead of `install -g`.
 - **No install-time script execution, enforced twice.** `--ignore-scripts` on the
   command line and `ignore-scripts=true` in the staged `.npmrc`, on the CI side
