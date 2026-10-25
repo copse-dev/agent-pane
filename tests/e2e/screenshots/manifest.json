@@ -2933,6 +2933,10 @@
       "sha256": "5bf633f6a3118aad3ac14c386fd1c28cd35a1d8f121c3b755e613043d1c8c8dd",
       "bytes": 92670
     },
+    "process-manager-thread-command.png": {
+      "sha256": "881a0019e3c9eca01a619fe12a8e6aeadc3d6c72b6908b13cb8bad68ed90ae67",
+      "bytes": 226212
+    },
     "process-manager.png": {
       "sha256": "a26e5ecd9cde44e653d91169cdbafd0e4cdf794e40a05b05de84b1292372a78c",
       "bytes": 167435
