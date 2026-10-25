@@ -108,6 +108,7 @@ jobs:
           PULL_NUMBER: ${{ steps.find.outputs.pull-number }}
           PULL_OPEN: ${{ steps.find.outputs.pull-open }}
           PULL_HEAD: ${{ steps.find.outputs.pull-head }}
+          BRANCH_SHA: ${{ steps.find.outputs.branch-sha }}
           FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force }}
         run: node scripts/screenshot-refresh.mts
 

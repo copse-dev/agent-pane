@@ -255,7 +255,7 @@ describe('screenshot refresh plan CLI', () => {
   it('reads the refresh PR head from git and emits the decision for the workflow', () => {
     const { dir, base, refresh } = repository()
     try {
-      const open = { PULL_NUMBER: '7', PULL_OPEN: 'true', PULL_HEAD: refresh }
+      const open = { PULL_NUMBER: '7', PULL_OPEN: 'true', PULL_HEAD: refresh, BRANCH_SHA: refresh }
 
       const first = plan(dir, { PULL_NUMBER: '' })
       assert.equal(first.status, 0, first.stderr)
@@ -291,9 +291,13 @@ describe('screenshot refresh plan CLI', () => {
       gitIn(dir, 'commit', '--quiet', '-am', 'chore(e2e): commit ticked screenshots')
       const reviewed = gitIn(dir, 'rev-parse', 'HEAD')
       gitIn(dir, 'checkout', '--quiet', 'main')
-      const held = plan(dir, { ...open, PULL_HEAD: reviewed, FORCE: 'true' })
+      const held = plan(dir, { ...open, PULL_HEAD: reviewed, BRANCH_SHA: reviewed, FORCE: 'true' })
       assert.equal(held.status, 0, held.stderr)
       assert.match(held.outputs, /^refresh=false\nreason=#7 carries a commit besides/)
+      // The PR head can lag a push: the tip the push would replace is what counts.
+      const lagging = plan(dir, { ...open, BRANCH_SHA: reviewed, FORCE: 'true' })
+      assert.equal(lagging.status, 0, lagging.stderr)
+      assert.match(lagging.outputs, /^refresh=false\nreason=#7 carries a commit besides/)
       const merged = plan(dir, { ...open, PULL_OPEN: 'false', PULL_HEAD: reviewed })
       assert.match(merged.outputs, /^refresh=true\n/)
     } finally {
@@ -306,6 +310,7 @@ describe('screenshot refresh plan CLI', () => {
     try {
       assert.notEqual(plan(dir, { MAIN_SHA: refresh }).status, 0)
       assert.notEqual(plan(dir, { PULL_NUMBER: '7', PULL_HEAD: 'main' }).status, 0)
+      assert.notEqual(plan(dir, { BRANCH_SHA: 'main' }).status, 0)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

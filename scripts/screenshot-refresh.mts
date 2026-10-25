@@ -42,7 +42,10 @@ export interface RefreshPull {
   open: boolean
   /** The `main` commit its head renders (merge-base of head and main), or null when unknown. */
   renderedMain: string | null
-  /** Whether its head is still the workflow's own empty commit. */
+  /**
+   * Whether its head is still the workflow's own empty commit, and is the
+   * branch tip the push will replace.
+   */
   ownHead: boolean
 }
 
@@ -146,6 +149,8 @@ function main(): void {
   if (!SHA.test(mainSha) || git(['rev-parse', 'HEAD']) !== mainSha)
     throw new Error('MAIN_SHA must be the checked-out main commit')
   const number = Number(env['PULL_NUMBER'] ?? '')
+  const tip = env['BRANCH_SHA'] ?? ''
+  if (tip !== '' && !SHA.test(tip)) throw new Error('BRANCH_SHA must be empty or one commit')
   let pull: RefreshPull | null = null
   if (number > 0) {
     const head = env['PULL_HEAD'] ?? ''
@@ -158,7 +163,9 @@ function main(): void {
       number,
       open: env['PULL_OPEN'] === 'true',
       renderedMain: present ? git(['merge-base', head, mainSha]) : null,
-      ownHead: present && isRefreshCommit(head),
+      // The push leases the branch tip, so judge that commit: a PR head read
+      // before committed screenshots landed must not vouch for a tip it never saw.
+      ownHead: present && head === tip && isRefreshCommit(head),
     }
   }
   const decision = decideRefresh({
