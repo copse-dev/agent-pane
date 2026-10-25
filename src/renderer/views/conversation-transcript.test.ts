@@ -7,6 +7,7 @@ import {
   addMessageCanvasArtefact,
   appendAcpContentBlock,
   createThread,
+  patchThreadAnywhere,
 } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
@@ -391,6 +392,13 @@ describe('assistant inline visualization references', () => {
     assert.ok(oldSurface)
     assert.equal(oldSurface.childElementCount, 0)
 
+    // Only a change to what the transcript draws from rebuilds it (see the
+    // threads_changed no-rerender tests): reload the messages as fresh objects,
+    // the way a transcript re-read from disk lands, then resync.
+    patchThreadAnywhere(store, threadId, (thread) => ({
+      ...thread,
+      messages: thread.messages.map((message) => ({ ...message })),
+    }))
     store.emit('threads_changed')
     assert.equal(oldSurface.isConnected, false)
     drag(oldSurface)
