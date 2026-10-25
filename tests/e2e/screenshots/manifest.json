@@ -1938,8 +1938,8 @@
       "bytes": 51128
     },
     "guarded-yolo-hard-deny.png": {
-      "sha256": "dacfd81549931b0800e80ba584c4c9c14247b7c583e609abb92fb104bca66a7f",
-      "bytes": 24868
+      "sha256": "cdfbc9098106f083fbcf8efaf6bdda7a3dc082d8628e9122cc02dbe00ab2186f",
+      "bytes": 24878
     },
     "guarded-yolo-harm-prompt.png": {
       "sha256": "ea5f80708583cdc710062a24e26641e8ceefc81a296e28cc5e59237b6c981588",
@@ -2404,6 +2404,14 @@
     "mobile-companion-question-light.png": {
       "sha256": "33c921f5f5e1585e526afecac4e41fd1714ea191f2c3f59a42f5b10e38a524fb",
       "bytes": 39621
+    },
+    "mobile-companion-rich-reply-dark.png": {
+      "sha256": "4a31399f0241f5e3d5cdd4ba56ea12f9f0eddd50b8cca0869df8e365ff441fcc",
+      "bytes": 34098
+    },
+    "mobile-companion-rich-reply-light.png": {
+      "sha256": "2ff6f80a649ed1f64033ce545a0a51f88ecbfc678217b77a2faaa5768e7d0522",
+      "bytes": 33642
     },
     "mobile-companion-thread-dark.png": {
       "sha256": "d9eea3892ee1395ddb139dca27b88759aa243e352db1e8f0f1e5e3e35831ea9f",
@@ -4408,6 +4416,10 @@
     "side-chat-restored-after-restart.png": {
       "sha256": "5585dc7baca3db1c63dd298c4c481f31efcae451b8165e914fd720117334818a",
       "bytes": 147557
+    },
+    "side-chat-rich-markdown.png": {
+      "sha256": "20c78e8cc2515e2a3c8bfc04b3c2fcfa83791fe9eecf6c4b189a799cf2660a31",
+      "bytes": 143333
     },
     "side-chat-unread-rollup-sidebar.png": {
       "sha256": "553b60e50166cbf9da89690597ea3614f2a04b27f0162bb24d1e850a135d29a1",
