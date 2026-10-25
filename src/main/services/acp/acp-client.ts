@@ -1094,6 +1094,21 @@ export function endsSelfStartedTurn(update: SessionUpdate): boolean {
   return isRecord(origin) && typeof origin['kind'] === 'string' && origin['kind'] !== 'human'
 }
 
+/**
+ * Stop a turn the agent started on its own. No Copse prompt is outstanding, so
+ * {@link runAcpSessionPrompt}'s abort path cannot reach it: send `session/cancel`
+ * directly, hide the trailing output as a stopped prompt would, and end the
+ * lease so the agent's bridged tool calls lose the thread's context.
+ * Returns false when there is no self-started turn to stop.
+ */
+export function cancelAgentInitiatedTurn(open: OpenAcpSession): boolean {
+  if (open.turnStop !== null || !open.agentInitiated?.isActive()) return false
+  open.suppressChunks = true
+  void open.connection.agent.notify('session/cancel', { sessionId: open.session.sessionId })
+  open.agentInitiated.end()
+  return true
+}
+
 function startAcpUpdatePump(open: OpenAcpSession): void {
   void (async (): Promise<void> => {
     for (;;) {

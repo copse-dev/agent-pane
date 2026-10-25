@@ -1,6 +1,7 @@
 import type { AcpAgentSpawnConfig, AcpTransportFactory, OpenAcpSession } from './acp-client.ts'
 import {
   agentManagedSessionOptions,
+  cancelAgentInitiatedTurn,
   openAcpSession,
   settleAcpChildShutdowns,
   willSandboxAcpAgent,
@@ -506,6 +507,15 @@ async function disposeAcpSessionUnlocked(
   await evictAcpSession(threadId, entry, options.preserveForResume === true)
   notifyThreadResourceFinished(threadId)
   return true
+}
+
+/**
+ * Stop the turn a thread's agent started on its own, if one is running. Stop
+ * otherwise only reaches runs Copse dispatched. Returns whether one was stopped.
+ */
+export function cancelAgentInitiatedAcpTurn(threadId: string): boolean {
+  const entry = pool.get(threadId)
+  return entry ? cancelAgentInitiatedTurn(entry.open) : false
 }
 
 /** Tear down every pooled session (app shutdown). */

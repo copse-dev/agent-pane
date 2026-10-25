@@ -1,4 +1,4 @@
-import { afterEach, describe, it } from 'node:test'
+import { afterEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { ndJsonStream, type SessionUpdate } from '@agentclientprotocol/sdk'
 import { buildAcpAgentApp, type AcpTurnContext, type AcpTurnRunner } from './acp-agent-server.ts'
@@ -8,7 +8,11 @@ import {
   runAcpSessionPrompt,
   type AcpClientHandlers,
 } from './acp-client.ts'
-import { acquireAcpSession, disposeAllAcpSessions } from './acp-session-pool.ts'
+import {
+  acquireAcpSession,
+  cancelAgentInitiatedAcpTurn,
+  disposeAllAcpSessions,
+} from './acp-session-pool.ts'
 import type { AgentInitiatedTurnLease } from './agent-initiated-turn.ts'
 
 const CONFIG = { command: 'unused-in-tests', cwd: '/tmp/agent-initiated-pump-test' }
@@ -34,18 +38,22 @@ function runnerTransport(runner: AcpTurnRunner): () => Promise<{
 
 function recordingLease(): { lease: AgentInitiatedTurnLease; calls: string[] } {
   const calls: string[] = []
+  let active = false
   return {
     calls,
     lease: {
       begin: (): void => {
+        active = true
         calls.push('begin')
       },
       touch: (): void => {
         calls.push('touch')
       },
       end: (): void => {
+        active = false
         calls.push('end')
       },
+      isActive: (): boolean => active,
     },
   }
 }
@@ -81,6 +89,44 @@ describe('update pump and agent-started turns', () => {
     await lateContext?.emit({ type: 'text', text: 'woke up on its own' })
     await new Promise((resolve) => setTimeout(resolve, 50))
     assert.deepEqual(calls, ['begin'])
+  })
+
+  it('lets Stop cancel a turn the agent started on its own', async () => {
+    let lateContext: AcpTurnContext | undefined
+    const runner: AcpTurnRunner = (ctx) => {
+      lateContext = ctx
+      return Promise.resolve({ stopReason: 'end_turn' })
+    }
+    const { entry } = await acquireAcpSession({
+      threadId: 'stop-thread',
+      config: CONFIG,
+      createTransport: runnerTransport(runner),
+    })
+    const { lease, calls } = recordingLease()
+    entry.open.agentInitiated = lease
+    const shown: string[] = []
+    entry.open.handlers.current = {
+      onChunk: (chunk): void => {
+        if (chunk.type === 'text') shown.push(chunk.text)
+      },
+      requestPermission: (): ReturnType<AcpClientHandlers['requestPermission']> =>
+        Promise.resolve({ outcome: { outcome: 'cancelled' as const } }),
+    }
+    const notify = mock.method(entry.open.connection.agent, 'notify')
+
+    await runAcpSessionPrompt(entry.open, 'go', undefined, undefined)
+    assert.equal(cancelAgentInitiatedAcpTurn('stop-thread'), false, 'nothing self-started yet')
+
+    await lateContext?.emit({ type: 'text', text: 'woke up on its own' })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    assert.equal(cancelAgentInitiatedAcpTurn('stop-thread'), true)
+    assert.deepEqual(calls, ['begin', 'end'])
+    assert.ok(notify.mock.calls.some((call) => call.arguments[0] === 'session/cancel'))
+
+    await lateContext?.emit({ type: 'text', text: 'trailing output' })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    assert.deepEqual(shown, ['woke up on its own'], 'output after Stop stays hidden')
+    assert.equal(cancelAgentInitiatedAcpTurn('other-thread'), false)
   })
 
   it('classifies work, state replacement and the end-of-turn marker', () => {
