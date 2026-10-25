@@ -157137,7 +157137,7 @@ ${description}
     api2,
     () => {
       const { activeProjectId, activeThreadId } = store2.getState();
-      if (!activeProjectId || !activeThreadId || composer.value.trim() || attachedFiles.length + attachedImages.length + attachedVideos.length + attachedArchives.length + attachedThreads.length + attachedShells.length > 0 || document.querySelector("dialog[open]") || isAutocompletePickerOpen())
+      if (!activeProjectId || !activeThreadId || imageDescriptionInProgress || isThreadSubmitting(store2, activeThreadId) || composer.value.trim() || attachedFiles.length + attachedImages.length + attachedVideos.length + attachedArchives.length + attachedThreads.length + attachedShells.length > 0 || document.querySelector("dialog[open]") || isAutocompletePickerOpen())
         return null;
       const thread = getThreadById(store2, activeThreadId);
       const exchange = lastExchange(store2, activeThreadId);
@@ -157146,10 +157146,11 @@ ${description}
       const actions = hint === null ? [] : [
         {
           id: "next-step",
-          label: hint.slice(0, 500),
+          label: hint,
           kind: "next-step",
           run: () => {
             acceptNextStep(hint);
+            void submit();
           }
         }
       ];
