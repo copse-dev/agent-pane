@@ -829,6 +829,41 @@
           3
         ]
       },
+      "environment-setup:apply": {
+        "api": "environmentSetup.apply",
+        "args": [
+          2,
+          2
+        ]
+      },
+      "environment-setup:dismiss": {
+        "api": "environmentSetup.dismiss",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "environment-setup:review": {
+        "api": "environmentSetup.review",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "environment-setup:status": {
+        "api": "environmentSetup.status",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "environment-setup:undo": {
+        "api": "environmentSetup.undo",
+        "args": [
+          1,
+          1
+        ]
+      },
       "fs:list-dir": {
         "api": "fs.listDir",
         "args": [

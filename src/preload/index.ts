@@ -1209,6 +1209,14 @@ const api: ApiClient = {
     uninstall: (id: string) => ipcRenderer.invoke('local-classifiers:uninstall', id),
     connect: (id: string) => ipcRenderer.invoke('local-classifiers:connect', id),
   },
+  environmentSetup: {
+    status: () => ipcRenderer.invoke('environment-setup:status'),
+    review: () => ipcRenderer.invoke('environment-setup:review'),
+    apply: (reviewId: string, suggestionIds: string[]) =>
+      ipcRenderer.invoke('environment-setup:apply', reviewId, suggestionIds),
+    undo: (undoId: string) => ipcRenderer.invoke('environment-setup:undo', undoId),
+    dismiss: (forever: boolean) => ipcRenderer.invoke('environment-setup:dismiss', forever),
+  },
   settings: {
     getSnapshot: () => ipcRenderer.invoke('settings:get-snapshot'),
     update: (changes) => ipcRenderer.invoke('settings:update', changes),

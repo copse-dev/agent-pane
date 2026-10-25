@@ -131,6 +131,7 @@ import { todosToPanelListData, type PanelListData } from '@copse/agent/plugins/p
 import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugins/todos-plugin.ts'
 import { createAppleDevelopmentPanel } from './apple-development-panel.ts'
 import { mountAppleProjectSuggestions } from './apple-project-suggestion.ts'
+import { mountEnvironmentSetupOffer } from './environment-setup.ts'
 import { createReviewCardEl } from './review-panel.ts'
 import { createComparisonCardEl } from './comparison-panel.ts'
 import { createVisualEvidenceSection } from './visual-evidence-card.ts'
@@ -2652,8 +2653,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const appleSuggestions = mountAppleProjectSuggestions(store, api, () =>
     appleDevelopmentHost.dispatchEvent(new Event('apple-development-refresh')),
   )
+  const environmentSetupOffer = mountEnvironmentSetupOffer(store, api)
   scrollArea.append(
     appleSuggestions.element,
+    environmentSetupOffer.element,
     appleDevelopmentHost,
     todoHost,
     list,
@@ -5314,6 +5317,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     unbindBrowserLinks()
     unbindCodeBlockRuns()
     appleSuggestions.destroy()
+    environmentSetupOffer.destroy()
     roadmapOrigin.destroy()
     unsubs.forEach((u) => {
       u()
