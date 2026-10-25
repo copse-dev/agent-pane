@@ -1461,6 +1461,10 @@
       "sha256": "5c54c17e7656ae584149de3aef30d4ca9bccdaf3b0bb64d1bd1482eadd272fe9",
       "bytes": 150630
     },
+    "custom-agent-skills.png": {
+      "sha256": "e87b9c160cb7eccac40bc6eb449485250689fc723028bcac9390960bc54c3b72",
+      "bytes": 120720
+    },
     "custom-agent-slash-picker.png": {
       "sha256": "e98001846c81ab481e6eacb4f99eea104c1bd11566ea9d684f98b7e890d2cc59",
       "bytes": 308159
@@ -3722,8 +3726,8 @@
       "bytes": 236565
     },
     "settings-composition-source-folders.png": {
-      "sha256": "ec8edb668fdf6a37a898e8a77a850fab2e73be342fa3f9a0726b819d4b37f874",
-      "bytes": 258858
+      "sha256": "94dc3d5257f9f2fb0c286882f18dbfd8faf5c18bb64d460af2f98bd13f9b74a4",
+      "bytes": 261147
     },
     "settings-composition-sources.png": {
       "sha256": "b27c01235a0f5bc9c4492bcb7867f3737c6b3bfc3a67d1f4f1b88d8aa3b975be",
@@ -4644,6 +4648,18 @@
     "skill-model-activation.png": {
       "sha256": "660eb015b073fd70397eac12af10dd053b12500af90f6c82ec7f9b27b26206c2",
       "bytes": 149815
+    },
+    "skill-preflight-missing-agent.png": {
+      "sha256": "b0d18fe25094b97e222555d79576c61bf1b2ded293b758a7c1a6f1eb393a83f8",
+      "bytes": 23834
+    },
+    "skill-preflight-runtime-blockers.png": {
+      "sha256": "fb9c8507822a3f1ece9f578de02193b08de3e526c3fd1c3224e8735ab156a590",
+      "bytes": 186021
+    },
+    "skill-workflow-dependency.png": {
+      "sha256": "ce2a0f2b6b2e18d5f4d3a90f96b9706c41e14de67cc722474a56cdc02f7945b7",
+      "bytes": 152460
     },
     "skills-demo-invoked.png": {
       "sha256": "2b77a138aeb6a94686d5decad72e8b611645cbe80b49af8de74fb0f25b42c91d",
