@@ -1,6 +1,7 @@
 import type { AcpAgentSpawnConfig, AcpTransportFactory, OpenAcpSession } from './acp-client.ts'
 import {
   agentManagedSessionOptions,
+  cancelAgentInitiatedTurn,
   openAcpSession,
   settleAcpChildShutdowns,
   willSandboxAcpAgent,
@@ -303,6 +304,10 @@ async function acquireAcpSessionUnlocked(
 
   const existing = pool.get(opts.threadId)
   if (existing) {
+    // A Stop on a turn the agent started itself settles before the session is
+    // reused: the agent finished that turn, or the grace ran out and it was
+    // disposed, in which case the closed session is replaced below.
+    await existing.open.agentInitiatedCancel?.settled
     // A process that ran out of file descriptors keeps answering, so nothing
     // else here would evict it — but everything it needs to open from now on
     // fails (see acp-resource-fault.ts). Replace it at this turn boundary; the
@@ -506,6 +511,15 @@ async function disposeAcpSessionUnlocked(
   await evictAcpSession(threadId, entry, options.preserveForResume === true)
   notifyThreadResourceFinished(threadId)
   return true
+}
+
+/**
+ * Stop the turn a thread's agent started on its own, if one is running. Stop
+ * otherwise only reaches runs Copse dispatched. Returns whether one was stopped.
+ */
+export function cancelAgentInitiatedAcpTurn(threadId: string): boolean {
+  const entry = pool.get(threadId)
+  return entry ? cancelAgentInitiatedTurn(entry.open) : false
 }
 
 /** Tear down every pooled session (app shutdown). */

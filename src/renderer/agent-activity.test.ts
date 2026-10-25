@@ -1,6 +1,30 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { promptProgressLabel } from './agent-activity.ts'
+import type { Thread, ToolCall } from '@shared/types'
+import { agentActivityLabel, promptProgressLabel } from './agent-activity.ts'
+
+function thread(toolCalls: ToolCall[]): Thread {
+  return {
+    id: 't',
+    title: 't',
+    status: 'running',
+    messages: [{ id: 'm1', role: 'assistant', content: '', toolCalls, createdAt: 1 }],
+    usage: { inputTokens: 0, outputTokens: 0 },
+    createdAt: 1,
+    updatedAt: 1,
+  }
+}
+
+function agentCall(id: string, subagentType: string, status: ToolCall['status']): ToolCall {
+  return {
+    id,
+    name: 'Agent',
+    kind: 'think',
+    args: { subagent_type: subagentType, prompt: 'research' },
+    status,
+    result: status === 'running' ? null : 'done',
+  }
+}
 
 describe('promptProgressLabel', () => {
   it('renders a rounded percentage', () => {
@@ -27,5 +51,42 @@ describe('promptProgressLabel', () => {
       'Processing prompt… 48%',
       'Processing prompt… 48%',
     ])
+  })
+})
+
+describe('agentActivityLabel', () => {
+  it('names a single ACP subagent dispatch by its kind', () => {
+    const t = thread([agentCall('a1', 'Explore', 'running')])
+    assert.equal(agentActivityLabel(t, false), 'Running Explore…')
+  })
+
+  it('counts several concurrent ACP subagent dispatches instead of naming only one', () => {
+    const t = thread([
+      agentCall('a1', 'Explore', 'running'),
+      agentCall('a2', 'Explore', 'running'),
+      agentCall('a3', 'Explore', 'done'),
+      agentCall('a4', 'Explore', 'running'),
+    ])
+    assert.equal(agentActivityLabel(t, false), 'Running 3 Explore agents…')
+  })
+
+  it('drops the shared kind when concurrent dispatches differ', () => {
+    const t = thread([
+      agentCall('a1', 'Explore', 'running'),
+      agentCall('a2', 'Investigate', 'running'),
+    ])
+    assert.equal(agentActivityLabel(t, false), 'Running 2 agents…')
+  })
+
+  it('falls back to the generic agent label when no subagent_type is reported', () => {
+    const t = thread([
+      { id: 'a1', name: 'Agent', kind: 'think', args: {}, status: 'running', result: null },
+    ])
+    assert.equal(agentActivityLabel(t, false), 'Running agent…')
+  })
+
+  it('keeps the existing single-tool label for non-delegate running tools', () => {
+    const t = thread([{ id: 'r1', name: 'run_shell', args: {}, status: 'running', result: null }])
+    assert.equal(agentActivityLabel(t, false), 'Running command…')
   })
 })

@@ -158,6 +158,41 @@ describe('R2 baseline cutover', () => {
     }
   })
 
+  it('does not credit a branch with the references a merge of main brought in', () => {
+    const { cwd, git, save } = fixture()
+    try {
+      const next = Buffer.concat([png, Buffer.from('next')])
+      const other = Buffer.concat([png, Buffer.from('other')])
+      const both = { 'a.png': entry(png), 'b.png': entry(png) }
+      save({ version: 1, screenshots: both })
+      const trunk = git('rev-parse', '--abbrev-ref', 'HEAD')
+      git('checkout', '-qb', 'branch')
+      save({ version: 1, screenshots: { ...both, 'a.png': entry(next) } })
+      git('checkout', '-q', trunk)
+      save({ version: 1, screenshots: { ...both, 'b.png': entry(other) } })
+      git('checkout', '-q', 'branch')
+      // Both sides changed the manifest, so the merge is a real commit in the
+      // branch's range: the shape of a PR that merged main.
+      git('merge', '-q', '-s', 'ours', '--no-commit', trunk)
+      writeFileSync(
+        join(cwd, SCREENSHOT_MANIFEST),
+        serializeScreenshotManifest({
+          version: 1,
+          screenshots: { 'a.png': entry(next), 'b.png': entry(other) },
+        }),
+      )
+      git('add', '.')
+      git('commit', '-qm', 'Merge main')
+      const mergeBase = git('merge-base', trunk, 'HEAD')
+      assert.deepEqual(
+        [...screenshotChangesInRange(`${mergeBase}..HEAD`, cwd, true)],
+        [`${SCREENSHOT_DIRECTORY}/a.png`],
+      )
+    } finally {
+      rmSync(cwd, { recursive: true, force: true })
+    }
+  })
+
   it('tracks per-image ownership and distinct history through shared manifest commits', async (context) => {
     const { cwd, git, save } = fixture()
     try {
