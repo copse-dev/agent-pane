@@ -20662,6 +20662,47 @@ var init_register = __esm({
   }
 });
 
+// src/renderer/ui/pane-tabs.ts
+function uiPaneTabsShell(opts) {
+  const titleEl2 = el("span", { class: "pane-header-title" }, opts.title);
+  const listHeader = el(
+    "div",
+    { class: cx("pane-header ui-pane-tabs-header", opts.headerClassName) },
+    titleEl2
+  );
+  const tabsWrap = el("div", { class: cx("ui-pane-tabs-list", opts.listClassName) });
+  const body = el("div", { class: cx("ui-pane-tabs-body", opts.bodyClassName) });
+  return { listHeader, titleEl: titleEl2, tabsWrap, body };
+}
+function uiPaneTab(opts) {
+  opts.tabBtn.classList.add("ui-pane-tab");
+  opts.panel.classList.add("ui-pane-tab-panel");
+  opts.tabBtn.addEventListener("click", (e3) => {
+    if (e3.target instanceof Element && e3.target.closest(opts.closeSelector)) return;
+    opts.onSelect();
+  });
+  opts.tabBtn.querySelector(opts.closeSelector)?.addEventListener("click", (e3) => {
+    e3.stopPropagation();
+    opts.onClose();
+  });
+  return {
+    setActive: (active3) => {
+      opts.tabBtn.classList.toggle("is-active", active3);
+      opts.panel.classList.toggle("is-active", active3);
+    },
+    remove: () => {
+      opts.tabBtn.remove();
+      opts.panel.remove();
+    }
+  };
+}
+var init_pane_tabs = __esm({
+  "src/renderer/ui/pane-tabs.ts"() {
+    init_helpers();
+    init_cx();
+  }
+});
+
 // src/renderer/ui/index.ts
 var init_ui = __esm({
   "src/renderer/ui/index.ts"() {
@@ -20669,6 +20710,7 @@ var init_ui = __esm({
     init_cx();
     init_actions();
     init_field();
+    init_pane_tabs();
     init_register();
     registerUiKit();
   }
@@ -46134,7 +46176,7 @@ var init_acp_known_agents = __esm({
         command: "cursor-agent",
         args: ["acp"],
         // cursor-agent is its own ACP server; the binary is the gate. Not on npm, so
-        // auto-setup never installs it (Socket Firewall can't wrap `curl | bash`).
+        // auto-setup never installs it (the package firewall can't wrap `curl | bash`).
         requiresClient: "cursor-agent",
         preset: true,
         sandbox: {
@@ -46166,7 +46208,7 @@ var init_acp_known_agents = __esm({
         install: "npm install -g @agentclientprotocol/codex-acp",
         installPackage: "@agentclientprotocol/codex-acp",
         // Standalone npm adapter (bundles @openai/codex, self-authenticates) — there
-        // is no parent client to gate on, so Socket-Firewall auto-setup may install
+        // is no parent client to gate on, so package-firewall auto-setup may install
         // it directly when missing.
         autoInstall: true,
         preset: true,
@@ -62955,10 +62997,16 @@ function cacheArtefact(key, artefact) {
   }
 }
 function setArtefactPreview(threadId, title, preview) {
-  if (preview) previews.set(previewKey(threadId, title), preview);
+  const key = previewKey(threadId, title);
+  if (!preview || previews.get(key) === preview) return;
+  previews.set(key, preview);
+  previewRevisions.set(threadId, (previewRevisions.get(threadId) ?? 0) + 1);
 }
 function getArtefactPreview(threadId, title) {
   return previews.get(previewKey(threadId, title));
+}
+function artefactPreviewRevision(threadId) {
+  return previewRevisions.get(threadId) ?? 0;
 }
 function setArtefactContent(projectId, threadId, artefact) {
   cacheArtefact(artefactKey(projectId, threadId, artefact.title), artefact);
@@ -63006,10 +63054,11 @@ function artefactUriFromToolResult(result) {
   const match = /\bui:\/\/[^\s)\]]+/.exec(result);
   return match ? match[0] : null;
 }
-var previews, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
+var previews, previewRevisions, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
 var init_artefact_previews = __esm({
   "src/renderer/canvas/artefact-previews.ts"() {
     previews = /* @__PURE__ */ new Map();
+    previewRevisions = /* @__PURE__ */ new Map();
     artefacts = /* @__PURE__ */ new Map();
     artefactReads = /* @__PURE__ */ new Map();
     MAX_CACHED_ARTEFACTS = 20;
@@ -88813,7 +88862,7 @@ function createDemoApi(scenario2, options = {}) {
       fetchProviderModels: () => resolved2({ ok: false, models: [], error: "Unavailable in demo" }),
       refreshHuggingFaceModels: () => resolved2({ ok: false, count: 0, error: "Unavailable in demo" })
     },
-    appIcon: { apply: resolvedVoid, setAutomationMode: resolvedVoid },
+    appIcon: { apply: resolvedVoid },
     about: {
       getInfo: () => resolved2({ version: "demo", report: null }),
       openLicenseFile: resolvedVoid
@@ -93814,7 +93863,7 @@ var init_approval_dialog = __esm({
 });
 
 // packages/agent/src/ask-user-format.ts
-var askUserQuestionSchema, askUserParamsSchema, ASK_USER_ANSWER_MAX_LENGTH;
+var askUserQuestionSchema, askUserParamsSchema, ASK_USER_ANSWER_MAX_LENGTH, ASK_USER_TIMEOUT_MS;
 var init_ask_user_format = __esm({
   "packages/agent/src/ask-user-format.ts"() {
     init_zod();
@@ -93840,6 +93889,7 @@ var init_ask_user_format = __esm({
       questions: external_exports.array(askUserQuestionSchema).min(1).max(10).describe("One or more clarifying questions to ask the user before continuing.")
     });
     ASK_USER_ANSWER_MAX_LENGTH = 8192;
+    ASK_USER_TIMEOUT_MS = 30 * 60 * 1e3;
   }
 });
 
@@ -107283,6 +107333,34 @@ function assistantDisplayParts(content) {
   const { body, noise } = splitCursorAcpTransportNoise(stripped);
   return { body, transportNoise: noise };
 }
+function transcriptInputs(store2, thread) {
+  return {
+    threadId: thread.id,
+    messages: thread.messages,
+    pendingMessages: thread.pendingMessages,
+    status: thread.status,
+    model: thread.model,
+    todos: thread.todos,
+    workingBrief: thread.workingBrief,
+    interruptedTurnAt: thread.interruptedTurnAt,
+    threadProposals: thread.threadProposals,
+    reviewerInputAnswers: thread.reviewerInputAnswers,
+    liveProposalTargets: (thread.threadProposals ?? []).flatMap(
+      (decision) => decision.threadId && getThreadById(store2, decision.threadId) ? [decision.threadId] : []
+    ).join("\n"),
+    needsHydration: needsHydration(thread),
+    hydrationFailed: hydrationFailed(thread.id),
+    artefactPreviewRevision: artefactPreviewRevision(thread.id)
+  };
+}
+function sameItems(a5, b5) {
+  if (a5 === b5) return true;
+  if (!a5 || !b5 || a5.length !== b5.length) return false;
+  return a5.every((item, i3) => item === b5[i3]);
+}
+function sameTranscriptInputs(a5, b5) {
+  return a5.threadId === b5.threadId && a5.status === b5.status && a5.model === b5.model && a5.todos === b5.todos && a5.workingBrief === b5.workingBrief && a5.interruptedTurnAt === b5.interruptedTurnAt && a5.liveProposalTargets === b5.liveProposalTargets && a5.needsHydration === b5.needsHydration && a5.hydrationFailed === b5.hydrationFailed && a5.artefactPreviewRevision === b5.artefactPreviewRevision && sameItems(a5.messages, b5.messages) && sameItems(a5.pendingMessages, b5.pendingMessages) && sameItems(a5.threadProposals, b5.threadProposals) && sameItems(a5.reviewerInputAnswers, b5.reviewerInputAnswers);
+}
 function summaryPreview(text2, max = 200) {
   const trimmed2 = text2.trim();
   if (trimmed2.length <= max) return trimmed2;
@@ -108965,6 +109043,7 @@ function mountConversation(root, store2, api2) {
   let lastProgrammaticScrollTop = -1;
   let userScrolledUpAt = 0;
   let renderedThreadId = null;
+  let renderedInputs = null;
   let stickyImagePrompt = null;
   let stickyImageFullHeight = 0;
   let backfillGeneration = 0;
@@ -110121,7 +110200,10 @@ function mountConversation(root, store2, api2) {
       queuedHost.replaceChildren();
       queuedHost.hidden = true;
     }
-    list.insertBefore(activityBar, firstTrailingCard());
+    const trailingCard = firstTrailingCard();
+    if (activityBar.parentNode !== list || activityBar.nextSibling !== trailingCard) {
+      list.insertBefore(activityBar, trailingCard);
+    }
     updateScrollButton();
   }
   function backfillOlderMessages(thread, cursor, generation) {
@@ -110150,6 +110232,15 @@ function mountConversation(root, store2, api2) {
   function rebuildForThread() {
     const thread = getActiveThread(store2);
     const rebuildingSameThread = thread !== void 0 && thread.id === renderedThreadId;
+    const inputs = thread ? transcriptInputs(store2, thread) : null;
+    if (rebuildingSameThread && inputs && renderedInputs) {
+      if (sameTranscriptInputs(inputs, renderedInputs)) {
+        finishThreadChrome(thread);
+        syncModelLabels();
+        syncUserActions();
+        return;
+      }
+    }
     const preservedScrollTop = rebuildingSameThread && !pinnedToBottom ? list.scrollTop : null;
     if (!rebuildingSameThread) {
       pinnedToBottom = true;
@@ -110164,6 +110255,7 @@ function mountConversation(root, store2, api2) {
     stickyImagePrompt = null;
     backfillGeneration++;
     renderedThreadId = thread?.id ?? null;
+    renderedInputs = inputs;
     if (!thread) {
       finishThreadChrome(null);
       return;
@@ -168235,11 +168327,12 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
   const section2 = el("section", {
     class: "terminal-rail-section terminal-shells-section"
   });
-  const listHeader = el(
-    "div",
-    { class: "pane-header terminals-list-header terminal-rail-section-header" },
-    el("span", { class: "pane-header-title" }, "Shells")
-  );
+  const { listHeader, tabsWrap, body } = uiPaneTabsShell({
+    title: "Shells",
+    headerClassName: "terminals-list-header terminal-rail-section-header",
+    listClassName: "terminals-list terminal-rail-section-list",
+    bodyClassName: "terminals-body"
+  });
   const newBtn = el(
     "button",
     {
@@ -168255,12 +168348,8 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
     paneMaximizeButton(store2, "terminal"),
     newBtn
   );
-  const tabsWrap = el("div", {
-    class: "terminals-list terminal-rail-section-list"
-  });
   section2.append(listHeader, tabsWrap);
   listRoot.append(section2);
-  const body = el("div", { class: "terminals-body" });
   viewerRoot.append(body);
   const tabs = /* @__PURE__ */ new Map();
   let activeTabId = null;
@@ -168503,9 +168592,7 @@ ${output2}` : "Terminal output: (none)"
     if (activeTabId === tabId) return;
     activeTabId = tabId;
     for (const tab2 of tabs.values()) {
-      const active3 = tab2.id === tabId;
-      tab2.panel.classList.toggle("is-active", active3);
-      tab2.tabBtn.classList.toggle("is-active", active3);
+      tab2.tabSwitch.setActive(tab2.id === tabId);
     }
     const tab = tabs.get(tabId);
     if (tab && terminalModeActive(store2)) {
@@ -168644,20 +168731,27 @@ ${output2}` : "Terminal output: (none)"
       autoNamed: false,
       renamed: false,
       naming: false,
-      nameTimer: null
+      nameTimer: null,
+      tabSwitch: uiPaneTab({
+        tabBtn,
+        panel,
+        closeSelector: ".terminals-tab-close",
+        onSelect: () => {
+          setActiveTab(id);
+          store2.emit("shell_tab_activated");
+          const tab2 = tabs.get(id);
+          if (tab2 && terminalModeActive(store2)) {
+            requestAnimationFrame(() => {
+              fitTab(tab2);
+              focusTab(tab2);
+            });
+          }
+        },
+        onClose: () => {
+          void removeTab(id);
+        }
+      })
     };
-    tabBtn.addEventListener("click", (e3) => {
-      if (e3.target instanceof Element && e3.target.closest(".terminals-tab-close")) return;
-      setActiveTab(id);
-      store2.emit("shell_tab_activated");
-      const tab2 = tabs.get(id);
-      if (tab2 && terminalModeActive(store2)) {
-        requestAnimationFrame(() => {
-          fitTab(tab2);
-          focusTab(tab2);
-        });
-      }
-    });
     tabBtn.addEventListener("contextmenu", (e3) => {
       e3.preventDefault();
       e3.stopPropagation();
@@ -168680,10 +168774,6 @@ ${output2}` : "Terminal output: (none)"
       e3.stopPropagation();
       beginRename(tab);
     });
-    closeBtn.addEventListener("click", (e3) => {
-      e3.stopPropagation();
-      void removeTab(id);
-    });
     wireTabInput(tab);
     tabs.set(id, tab);
     tabsWrap.append(tabBtn);
@@ -168702,8 +168792,7 @@ ${output2}` : "Terminal output: (none)"
     await destroySession(tab);
     finishCodeBlockRun(tab, null);
     tab.term.dispose();
-    tab.tabBtn.remove();
-    tab.panel.remove();
+    tab.tabSwitch.remove();
     tabs.delete(tabId);
     if (activeTabId !== tabId) return;
     const remaining = visibleTabs();
@@ -168901,6 +168990,7 @@ var init_terminals_pane = __esm({
     init_rename_blur();
     init_pane_maximize_button();
     init_pane_popout_button();
+    init_pane_tabs();
     init_selection_to_chat2();
     init_terminal_file_links();
     init_terminal_web_links();
@@ -177256,11 +177346,12 @@ function createWebview(partition, resolveWorkspacePreview) {
   return guest;
 }
 function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
-  const listHeader = el(
-    "div",
-    { class: "pane-header browser-tabs-list-header" },
-    el("span", { class: "pane-header-title" }, "Tabs")
-  );
+  const { listHeader, tabsWrap, body } = uiPaneTabsShell({
+    title: "Tabs",
+    headerClassName: "browser-tabs-list-header",
+    listClassName: "browser-tabs-list",
+    bodyClassName: "browser-body"
+  });
   const newBtn = el(
     "button",
     {
@@ -177273,9 +177364,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   );
   if (api2) listHeader.append(panePopoutButton(store2, api2, "browser", "browser"));
   listHeader.append(paneMaximizeButton(store2, "browser"), newBtn);
-  const tabsWrap = el("div", { class: "browser-tabs-list" });
   listRoot.append(listHeader, tabsWrap);
-  const body = el("div", { class: "browser-body" });
   viewerRoot.append(body);
   const tabs = /* @__PURE__ */ new Map();
   const resolveWorkspacePreview = api2 ? (url2) => workspacePreviewHtml(url2, store2, api2) : void 0;
@@ -177566,9 +177655,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     activeTabId = tabId;
     scheduleSessionSave();
     for (const tab2 of tabs.values()) {
-      const active3 = tab2.id === tabId;
-      tab2.panel.classList.toggle("is-active", active3);
-      tab2.tabBtn.classList.toggle("is-active", active3);
+      tab2.tabSwitch.setActive(tab2.id === tabId);
       syncAnnotationScroll(tab2);
     }
     const tab = tabs.get(tabId);
@@ -177902,7 +177989,18 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       annotationScroll: null,
       closeMenu: () => {
         setMenuOpen(false);
-      }
+      },
+      tabSwitch: uiPaneTab({
+        tabBtn,
+        panel,
+        closeSelector: ".browser-tabs-tab-close",
+        onSelect: () => {
+          setActiveTab(id);
+        },
+        onClose: () => {
+          removeTab(id);
+        }
+      })
     };
     const annotationLayer = () => {
       if (!tab.annotation) {
@@ -178059,14 +178157,6 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       navigateTab(tab, tab.urlInput.value);
     });
     wireToolbar(tab);
-    tabBtn.addEventListener("click", (e3) => {
-      if (e3.target instanceof Element && e3.target.closest(".browser-tabs-tab-close")) return;
-      setActiveTab(id);
-    });
-    closeBtn.addEventListener("click", (e3) => {
-      e3.stopPropagation();
-      removeTab(id);
-    });
     tabs.set(id, tab);
     tabsWrap.append(tabBtn);
     body.append(panel);
@@ -178079,10 +178169,9 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     const tab = tabs.get(tabId);
     if (!tab) return;
     tab.webview?.remove();
-    tab.tabBtn.remove();
     tab.annotationScroll?.dispose();
     tab.annotation?.dispose();
-    tab.panel.remove();
+    tab.tabSwitch.remove();
     tabs.delete(tabId);
     scheduleSessionSave();
     if (activeTabId !== tabId) return;
@@ -178135,10 +178224,9 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   function purgeAllTabs() {
     for (const tab of tabs.values()) {
       tab.webview?.remove();
-      tab.tabBtn.remove();
       tab.annotationScroll?.dispose();
       tab.annotation?.dispose();
-      tab.panel.remove();
+      tab.tabSwitch.remove();
     }
     tabs.clear();
     activeTabId = null;
@@ -178382,10 +178470,9 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     stopBrowserResizeObserver();
     for (const tab of tabs.values()) {
       tab.webview?.remove();
-      tab.tabBtn.remove();
       tab.annotationScroll?.dispose();
       tab.annotation?.dispose();
-      tab.panel.remove();
+      tab.tabSwitch.remove();
     }
     tabs.clear();
   };
@@ -178398,6 +178485,7 @@ var init_browser_pane = __esm({
     init_icons();
     init_pane_maximize_button();
     init_pane_popout_button();
+    init_pane_tabs();
     init_pane_popout_seed();
     init_browser_url();
     init_artefact();
@@ -199104,39 +199192,10 @@ var init_agent = __esm({
 });
 
 // src/renderer/controller/automation-appearance.ts
-function hasRunningAutomation(threads, backgroundThreads) {
-  return [...threads, ...backgroundThreads.map(({ thread }) => thread)].some(
-    (thread) => thread.automation !== void 0 && thread.status === "running"
-  );
-}
-function attachAutomationAppearance(store2, api2, root = document.documentElement) {
-  let active3 = null;
-  const sync = () => {
-    const state = store2.getState();
-    const next = hasRunningAutomation(state.threads, state.backgroundThreads);
-    if (next === active3) return;
-    active3 = next;
-    root.toggleAttribute(AUTOMATION_ACTIVE_ATTRIBUTE, next);
-    void api2.setAutomationMode(next).catch((error62) => {
-      console.error("[automations] Failed to apply transient appearance:", error62);
-    });
-  };
-  const unsubs = [
-    store2.on("thread_status_changed", sync),
-    store2.on("threads_changed", sync),
-    store2.on("workspace_changed", sync)
-  ];
-  sync();
+function attachAutomationAppearance(testAutomation, root = document.documentElement) {
+  root.toggleAttribute(AUTOMATION_ACTIVE_ATTRIBUTE, testAutomation);
   return () => {
-    unsubs.forEach((unsubscribe) => {
-      unsubscribe();
-    });
     root.removeAttribute(AUTOMATION_ACTIVE_ATTRIBUTE);
-    if (active3 === true) {
-      void api2.setAutomationMode(false).catch((error62) => {
-        console.error("[automations] Failed to restore the native app icon:", error62);
-      });
-    }
   };
 }
 var AUTOMATION_ACTIVE_ATTRIBUTE;
@@ -207554,6 +207613,7 @@ async function boot() {
   const mobileReady = new Promise((resolve) => {
     mobileRestored = resolve;
   });
+  attachAutomationAppearance(Object.hasOwn(window, "__copseE2e"));
   if (!popoutMode) {
     startAgentController(store, api);
     attachAutosave(store, api);
@@ -207564,7 +207624,6 @@ async function boot() {
       openSettings: openModelSettings
     });
     attachAutomationController(store, api);
-    attachAutomationAppearance(store, api.appIcon);
     attachPrPanelFollow(store, api);
     startExternalCursorAgentSync(store, api);
   } else {
