@@ -65,7 +65,6 @@
 .side-chat-msg.is-user {
   align-self: flex-end;
   background: var(--bg-selected);
-  white-space: pre-wrap;
 }
 .side-chat-msg.is-assistant {
   align-self: flex-start;
@@ -75,11 +74,18 @@
   align-self: flex-start;
   color: var(--error);
 }
-.side-chat-msg.is-assistant > :first-child {
+/* Messages render through the shared message markdown (as in the main
+   conversation); trim the outer block margins so the bubble padding holds. */
+.side-chat-msg.is-user > :first-child,
+.side-chat-msg-text > :first-child {
   margin-top: 0;
 }
-.side-chat-msg.is-assistant > :last-child {
+.side-chat-msg.is-user > :last-child,
+.side-chat-msg-text > :last-child {
   margin-bottom: 0;
+}
+.side-chat-tools:empty {
+  display: none;
 }
 .side-chat-tool {
   margin-top: 4px;
