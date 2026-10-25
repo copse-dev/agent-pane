@@ -16,7 +16,7 @@ export interface DeepLinkWindow {
 
 // Keep the last launch request until a full main renderer has restored its projects.
 export class ThreadDeepLinks {
-  private pending: string | null = null
+  private pending: ThreadDeepLinkTarget | null = null
   private readyWindows = new Set<number>()
   private sequence = 0
   private readonly getWindow: () => DeepLinkWindow | null
@@ -33,7 +33,13 @@ export class ThreadDeepLinks {
   accept(url: string): boolean {
     const id = parseThreadDeepLink(url)
     if (!id) return false
-    this.pending = id
+    return this.open({ threadId: id, projectId: null })
+  }
+
+  /** An authenticated host operation can carry an exact validated project. */
+  open(target: ThreadDeepLinkTarget): boolean {
+    if (!parseThreadDeepLink(`copse://thread/${target.threadId}`)) return false
+    this.pending = { ...target }
     this.sequence++
     void this.flush()
     return true
@@ -51,14 +57,16 @@ export class ThreadDeepLinks {
   async flush(): Promise<void> {
     const win = this.getWindow()
     if (!win || win.isDestroyed() || !this.readyWindows.has(win.webContents.id)) return
-    const threadId = this.pending
-    if (!threadId) return
+    const target = this.pending
+    if (!target) return
+    const { threadId } = target
     const sequence = this.sequence
     this.pending = null
-    const owners = await this.findOwners(threadId).catch(() => [])
+    const owners = await this.findOwners(threadId).catch((): string[] => [])
     if (sequence !== this.sequence) return
+    if (target.projectId !== null && !owners.includes(target.projectId)) return
     if (win.isDestroyed() || !this.readyWindows.has(win.webContents.id)) {
-      this.pending = threadId
+      this.pending = target
       return
     }
     if (win.isMinimized()) win.restore()
@@ -66,7 +74,7 @@ export class ThreadDeepLinks {
     win.focus()
     win.webContents.send('deep-links:open-thread', {
       threadId,
-      projectId: owners.length === 1 ? (owners[0] ?? null) : null,
+      projectId: target.projectId ?? (owners.length === 1 ? (owners[0] ?? null) : null),
     })
   }
 }

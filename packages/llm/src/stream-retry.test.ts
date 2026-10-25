@@ -1,5 +1,6 @@
 import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
+import Anthropic from '@anthropic-ai/sdk'
 import { ToolCallRequestError } from '@lmstudio/sdk'
 import OpenAI from 'openai'
 import {
@@ -48,6 +49,58 @@ function failingStream(onPull: () => void): () => AsyncIterable<string> {
         return { done: true, value: undefined }
       },
     }),
+  })
+}
+
+/**
+ * Runs a real Anthropic MessageStream over `body` (served as a 200 SSE
+ * response) and returns what it throws, so the error is built by the SDK's own
+ * parser and stream wrapper rather than by hand.
+ */
+async function anthropicStreamError(body: ReadableStream<Uint8Array>): Promise<unknown> {
+  const client = new Anthropic({
+    apiKey: 'test',
+    maxRetries: 0,
+    fetch: async (): Promise<Response> =>
+      new Response(body, { headers: { 'content-type': 'text/event-stream' } }),
+  })
+  try {
+    const stream = client.messages.stream({
+      model: 'claude-test',
+      max_tokens: 1,
+      messages: [{ role: 'user', content: 'hi' }],
+    })
+    for await (const _ of stream) {
+      // Drain until the stream fails.
+    }
+  } catch (err) {
+    return err
+  }
+  assert.fail('expected the Anthropic stream to fail')
+}
+
+/** Anthropic's mid-stream error event: an SSE `error` after an HTTP 200. */
+function anthropicErrorEvent(type: string): ReadableStream<Uint8Array> {
+  const data = JSON.stringify({
+    type: 'error',
+    error: { type, message: type },
+  })
+  return new Response(`event: error\ndata: ${data}\n\n`).body ?? assert.fail('no body')
+}
+
+/**
+ * A body that undici aborts mid-read: one event, then `TypeError('terminated')`
+ * with the socket error as its cause, exactly as fetch rejects a reset socket.
+ */
+function terminatedBody(): ReadableStream<Uint8Array> {
+  const socketError = Object.assign(new Error('other side closed'), {
+    code: 'UND_ERR_SOCKET',
+  })
+  return new ReadableStream({
+    start(controller): void {
+      controller.enqueue(new TextEncoder().encode('event: ping\ndata: {"type":"ping"}\n\n'))
+      controller.error(new TypeError('terminated', { cause: socketError }))
+    },
   })
 }
 
@@ -142,6 +195,41 @@ describe('isRetryableStreamError', () => {
 
   it('retries an overloaded_error body type', () => {
     assert.equal(isRetryableStreamError({ error: { type: 'overloaded_error' } }), true)
+  })
+
+  it('retries an in-stream Anthropic overloaded_error event', async () => {
+    const err = await anthropicStreamError(anthropicErrorEvent('overloaded_error'))
+    // The SDK throws a status-less base APIError whose body is the envelope.
+    assert.ok(err instanceof Anthropic.APIError)
+    assert.equal(err.status, undefined)
+    assert.equal(isRetryableStreamError(err), true)
+  })
+
+  it('retries an in-stream Anthropic api_error event', async () => {
+    const err = await anthropicStreamError(anthropicErrorEvent('api_error'))
+    assert.equal(isRetryableStreamError(err), true)
+  })
+
+  it('does not retry a deterministic in-stream Anthropic error event', async () => {
+    const err = await anthropicStreamError(anthropicErrorEvent('invalid_request_error'))
+    assert.equal(isRetryableStreamError(err), false)
+  })
+
+  it('retries an overloaded_error nested in the SSE error envelope', () => {
+    const body = { type: 'error', error: { type: 'overloaded_error' } }
+    assert.equal(isRetryableStreamError({ error: body }), true)
+  })
+
+  it('retries an Anthropic stream whose connection dropped mid-body', async () => {
+    const err = await anthropicStreamError(terminatedBody())
+    assert.ok(err instanceof Anthropic.AnthropicError)
+    assert.equal(err.message, 'terminated')
+    assert.equal(isRetryableStreamError(err), true)
+  })
+
+  it('does not retry other Anthropic stream protocol errors', () => {
+    const err = new Anthropic.AnthropicError('request ended without sending any chunks')
+    assert.equal(isRetryableStreamError(err), false)
   })
 
   it('retries an LM Studio WebSocket connection loss', () => {
@@ -347,6 +435,20 @@ describe('yieldStreamWithRetry', () => {
     async function* run(): AsyncGenerator<string> {
       attempts++
       if (attempts === 1) throw httpError(503)
+      yield 'ok'
+    }
+    const out: string[] = []
+    for await (const v of yieldStreamWithRetry(run, { maxAttempts: 3 })) out.push(v)
+    assert.deepEqual(out, ['ok'])
+    assert.equal(attempts, 2)
+  })
+
+  it('replays an Anthropic stream that was overloaded before its first event', async () => {
+    let attempts = 0
+    async function* run(): AsyncGenerator<string> {
+      attempts++
+      // The first attempt fails exactly as the SDK fails an overloaded stream.
+      if (attempts === 1) throw await anthropicStreamError(anthropicErrorEvent('overloaded_error'))
       yield 'ok'
     }
     const out: string[] = []
@@ -578,7 +680,11 @@ describe('yieldStreamWithRetry', () => {
 
   it('retries after only progress-shaped items were yielded (no content lost)', async () => {
     let attempts = 0
-    async function* run(): AsyncGenerator<{ type: string; fraction?: number; text?: string }> {
+    async function* run(): AsyncGenerator<{
+      type: string
+      fraction?: number
+      text?: string
+    }> {
       attempts++
       if (attempts === 1) {
         yield { type: 'prompt_progress', fraction: 0.4 }
@@ -637,7 +743,10 @@ describe('yieldStreamWithRetry', () => {
       throw httpError(503)
     })
     await assert.rejects(async () => {
-      for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 5, signal: ac.signal })) {
+      for await (const _ of yieldStreamWithRetry(run, {
+        maxAttempts: 5,
+        signal: ac.signal,
+      })) {
         // Drain until the stream raises the expected error.
       }
     })
@@ -718,7 +827,9 @@ describe('isImageUnsupportedError', () => {
   })
 
   it('ignores unrelated 400s, so images are never stripped by mistake', () => {
-    const err = Object.assign(new Error('context length exceeded'), { status: 400 })
+    const err = Object.assign(new Error('context length exceeded'), {
+      status: 400,
+    })
     assert.equal(isImageUnsupportedError(err), false)
   })
 
@@ -758,17 +869,23 @@ describe('isOutputCeilingRejectedError', () => {
   })
 
   it('ignores a 400 that names something else, so a ceiling is never dropped by mistake', () => {
-    const err = Object.assign(new Error('context length exceeded'), { status: 400 })
+    const err = Object.assign(new Error('context length exceeded'), {
+      status: 400,
+    })
     assert.equal(isOutputCeilingRejectedError(err), false)
   })
 
   it('ignores retryable statuses even when the message names the field', () => {
-    const err = Object.assign(new Error('max_tokens is too large'), { status: 500 })
+    const err = Object.assign(new Error('max_tokens is too large'), {
+      status: 500,
+    })
     assert.equal(isOutputCeilingRejectedError(err), false)
   })
 
   it('is not treated as a plain retry — the same body would be rejected again', () => {
-    const err = Object.assign(new Error('max_tokens is too large'), { status: 400 })
+    const err = Object.assign(new Error('max_tokens is too large'), {
+      status: 400,
+    })
     assert.equal(isRetryableStreamError(err), false)
   })
 })

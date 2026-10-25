@@ -7,6 +7,7 @@ import {
   compareNpmVersions,
   isNpmVersionOlder,
   npmBinBesideBinary,
+  npmViewVersionCommand,
   parseNpmVersionTuple,
   readInstalledNpmPackageVersion,
   resetAcpAdapterLatestCache,
@@ -101,5 +102,31 @@ describe('npmBinBesideBinary', () => {
     const agent = join(root, 'codex-acp')
     writeFileSync(agent, '')
     assert.equal(npmBinBesideBinary(agent), 'npm')
+  })
+})
+
+describe('npmViewVersionCommand', () => {
+  it('reads the latest version behind the package firewall', () => {
+    const view = npmViewVersionCommand('/node/bin/npm', '@scope/adapter', {
+      execPath: '/Applications/Copse.app/Contents/MacOS/Copse',
+      scriptPath: '/app/dist/main/package-firewall.js',
+    })
+    assert.equal(view.command, '/Applications/Copse.app/Contents/MacOS/Copse')
+    assert.deepEqual(view.args, [
+      '/app/dist/main/package-firewall.js',
+      '/node/bin/npm',
+      'view',
+      '@scope/adapter',
+      'version',
+    ])
+    assert.equal(view.env?.['ELECTRON_RUN_AS_NODE'], '1')
+    assert.equal(view.shell, false)
+  })
+
+  it('falls back to plain npm without the firewall bundle', () => {
+    const view = npmViewVersionCommand('npm', 'adapter', null)
+    assert.equal(view.command, 'npm')
+    assert.deepEqual(view.args, ['view', 'adapter', 'version'])
+    assert.equal(view.env, undefined)
   })
 })

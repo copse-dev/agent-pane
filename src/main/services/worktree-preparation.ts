@@ -7,7 +7,10 @@ import { errorMessage } from '@shared/errors.ts'
 import { copseCacheDir } from './storage/copse-paths.ts'
 import { emitShellOutput } from './exec/shell-output-context.ts'
 import { envForRendererChildProcess } from './exec/child-process-env.ts'
-import { sfwInstallArgs } from './security/socket-firewall.ts'
+import {
+  PACKAGE_FIREWALL_LAUNCH_ENV,
+  packageFirewallLauncher,
+} from './security/package-firewall-launcher.ts'
 import {
   requirePreparationSandbox,
   runWorktreePreparationProcess,
@@ -255,7 +258,6 @@ export function preparationEnvironment(env: NodeJS.ProcessEnv = process.env): No
     ...caches,
     CI: 'true',
     NODE_ENV: 'development',
-    SFW_SKIP_UPDATE_CHECK: '1',
     HOME: join(copseCacheDir(env), 'native-build'),
     XDG_CACHE_HOME: join(copseCacheDir(env), 'native-build', '.cache'),
     npm_config_ignore_scripts: 'true',
@@ -599,24 +601,27 @@ export async function prepareWorktree(
           !component.ready,
       )
       if (runtimeProblem) throw new Error(runtimeProblem.detail)
-      const firewallRoot = join(copseCacheDir(env), 'socket-firewall')
-      const firewall = join(firewallRoot, 'bin', 'sfw')
-      const probe = options.probe ?? sandboxProbe(root, options.signal)
-      if ((await probe(firewall, ['--version'], env)) === null) {
-        if (offline) throw new Error('Socket Firewall is not installed in the managed cache.')
-        await run({ command: 'npm', args: [...sfwInstallArgs(), '--prefix', firewallRoot] })
+      if (offline) {
+        // Offline installs read only the managed caches; with network blocked
+        // there is nothing to download, so nothing for the firewall to check.
+        await run(install, env)
+      } else {
+        const launcher = packageFirewallLauncher()
+        await run(
+          {
+            command: launcher.execPath,
+            args: [launcher.scriptPath, install.command, ...install.args],
+          },
+          { ...env, ...PACKAGE_FIREWALL_LAUNCH_ENV },
+          // The bundle and its package.json manifest, so a dev build outside the
+          // app bundle stays readable inside the preparation sandbox.
+          [
+            install.command,
+            launcher.scriptPath,
+            join(dirname(launcher.scriptPath), 'package.json'),
+          ],
+        )
       }
-      // Yarn 2/3 reject the newer Yarn CA setting emitted by SFW. Retain its
-      // proxy and NODE_EXTRA_CA_CERTS; remove only the unknown setting name.
-      const compatibility =
-        plan.manager?.modernYarn && Number(plan.manager.version?.split('.')[0]) < 4
-          ? ['/usr/bin/env', '-u', 'YARN_HTTPS_CA_FILE_PATH']
-          : []
-      await run(
-        { command: firewall, args: [...compatibility, install.command, ...install.args] },
-        env,
-        [install.command],
-      )
     }
     for (const step of plan.prepare) await run(step)
   } catch (error) {

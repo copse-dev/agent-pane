@@ -180,7 +180,7 @@ const EXTERNAL_PATTERNS: Array<{
   // Ephemeral package runners auto-fetch and execute the *latest* (typo-squattable)
   // package with no pinning or integrity check — a supply-chain RCE surface (#174).
   // Marked `ambiguous` so that, when an OS sandbox is the real boundary, they
-  // auto-run *inside* it (where Socket Firewall wraps the install and seatbelt
+  // auto-run *inside* it (where the package firewall wraps the install and seatbelt
   // confines FS/network) instead of prompting up front: a runner that only needs an
   // already-installed binary (`npx tsx scripts/x.mts`) just works, while one that
   // must fetch is blocked by the sandbox and escalates to an unsandboxed retry
