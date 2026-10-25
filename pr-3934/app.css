@@ -12485,7 +12485,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   flex-wrap: wrap;
   gap: var(--spacing-sm);
 }
-.ask-user-option:not(.ask-user-action) {
+.ask-user-option:where(:not(.ask-user-action)) {
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -12493,7 +12493,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   font-size: var(--font-size-sm);
   cursor: pointer;
 }
-.ask-user-option:not(.ask-user-action):hover {
+.ask-user-option:where(:not(.ask-user-action)):hover {
   border-color: var(--accent);
 }
 .ask-user-option-recommended {
