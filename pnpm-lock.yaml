@@ -102,8 +102,8 @@ importers:
         specifier: workspace:*
         version: link:packages/store-kit
       '@copse/streaming-markdown':
-        specifier: ^1.7.0
-        version: 1.7.0(dompurify@3.4.17)(entities@8.1.0)(highlight.js@11.12.0)(katex@0.16.47)(mermaid@11.17.2)(pele@1.6.0)
+        specifier: ^1.8.0
+        version: 1.8.0(dompurify@3.4.17)(entities@8.1.0)(highlight.js@11.12.0)(katex@0.16.47)(mermaid@11.17.2)(pele@1.6.0)
       '@copse/thread-store':
         specifier: workspace:*
         version: link:packages/thread-store
@@ -546,8 +546,8 @@ packages:
     resolution: {integrity: sha512-PXzLZ8N34rxmuo4dJg3xtOXhcBse94qGjDqsteoEYrFrrZ5FSjIGwMAuOcv64ln8rHVBBD06XeVGr+/JX+plcA==}
     engines: {node: '>= 20.12.0'}
 
-  '@copse/streaming-markdown@1.7.0':
-    resolution: {integrity: sha512-sI7F1xLfqCVZy+cnisfhQ+San0Dq0r+NCZ5kcr/tjnf5jUMvVrXluxIi6pOgtvdSia8w0BdctlSaKXa5/5z6Dw==}
+  '@copse/streaming-markdown@1.8.0':
+    resolution: {integrity: sha512-V6i73M5JsS1HxRpXWho1/TIRptTHjwK63D67Sq6ROaZjfFWf987Y2RAH1ulrQTnXG0hk+uFe3BBJM6YCa6hdrA==}
     engines: {node: '>=20'}
     peerDependencies:
       dompurify: ^3.4.13
@@ -5490,7 +5490,7 @@ snapshots:
       fast-wrap-ansi: 0.2.2
       sisteransi: 1.0.5
 
-  '@copse/streaming-markdown@1.7.0(dompurify@3.4.17)(entities@8.1.0)(highlight.js@11.12.0)(katex@0.16.47)(mermaid@11.17.2)(pele@1.6.0)':
+  '@copse/streaming-markdown@1.8.0(dompurify@3.4.17)(entities@8.1.0)(highlight.js@11.12.0)(katex@0.16.47)(mermaid@11.17.2)(pele@1.6.0)':
     optionalDependencies:
       dompurify: 3.4.17
       entities: 8.1.0

@@ -31,6 +31,18 @@ describe('CI dependency cache boundary', () => {
     assert.doesNotMatch(runtimeCache, /^\s+vendor\/gortex\/?$/m)
   })
 
+  it('caches hosted Linux package downloads per runner image, never the installed packages', () => {
+    const key = actionStep('Key hosted Linux system package downloads')
+    const restore = actionStep('Restore hosted Linux system package downloads')
+    const install = actionStep('Install hosted Linux system dependencies')
+    assert.match(key, /\$\{ImageOS:-unknown\}-\$\{ImageVersion:-unknown\}/)
+    assert.match(restore, /uses: actions\/cache@v4/)
+    assert.match(restore, /path: \$\{\{ steps\.apt-archives\.outputs\.path \}\}/)
+    assert.match(install, /apt-get install -y -o Dir::Cache::archives="\$APT_ARCHIVES\/"/)
+    const script = install.slice(install.indexOf('run: |'), install.indexOf('\n      if:'))
+    assert.doesNotMatch(script, /\$\{\{/, 'the install script reads the path from env, not inline')
+  })
+
   it('keeps later pnpm commands on the selected job-local store', () => {
     const selection = actionStep('Select pnpm content store')
     assert.ok(selection.includes('echo "npm_config_store_dir=$path" >> "$GITHUB_ENV"'))
