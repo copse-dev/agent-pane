@@ -148,6 +148,7 @@ describe('OpenRouter Claude prompt caching (#1286)', () => {
     ])
     const sent = records(second.request['messages'])
     assert.deepEqual(records(first.request['messages'])[0], sent[0])
+    assert.deepEqual(records(first.request['messages'])[1], sent[1])
     assert.deepEqual(records(sent.at(-2)?.['content']).at(-1), {
       type: 'text',
       text: 'file contents',
@@ -155,7 +156,7 @@ describe('OpenRouter Claude prompt caching (#1286)', () => {
     })
     assert.equal(sent.at(-2)?.['tool_call_id'], 'tool-11')
     assert.equal(sent.at(-1)?.['content'], 'New steering')
-    assert.ok(breakpointCount(second.request) <= 4)
+    assert.equal(breakpointCount(second.request), 4)
   })
 
   it('keeps image content and detail while caching the last reusable text block', async () => {

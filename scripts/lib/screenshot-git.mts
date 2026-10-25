@@ -101,13 +101,21 @@ export function screenshotChangesInRange(
 ): Set<string> {
   const changed = new Set<string>()
   for (const line of screenshotGit(
-    ['log', '--format=%H %an', range, '--', SCREENSHOT_DIRECTORY],
+    ['log', '--format=%H%x09%P%x09%an', range, '--', SCREENSHOT_DIRECTORY],
     cwd,
   ).split('\n')) {
-    const split = line.indexOf(' ')
-    if (split < 1 || (excludeBot && line.slice(split + 1) === 'github-actions[bot]')) continue
-    const sha = line.slice(0, split)
-    for (const path of manifestChangedPaths(`${sha}^`, sha, cwd)) changed.add(path)
+    const [sha, parentList = '', author] = line.split('\t')
+    if (!sha || (excludeBot && author === 'github-actions[bot]')) continue
+    // A merge changes only what differs from every parent. Diffing a merge of
+    // main against its first parent alone would credit the branch with each
+    // reference main changed, and the filter would then hold those back.
+    const parents = parentList ? parentList.split(' ') : [`${sha}^`]
+    let paths: string[] | null = null
+    for (const parent of parents) {
+      const fromParent = new Set(manifestChangedPaths(parent, sha, cwd))
+      paths = paths === null ? [...fromParent] : paths.filter((path) => fromParent.has(path))
+    }
+    for (const path of paths ?? []) changed.add(path)
     if (!manifestAtRef(sha, cwd)) {
       for (const path of screenshotGit(
         ['show', '--format=', '--name-only', sha, '--', SCREENSHOT_DIRECTORY],
