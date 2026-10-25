@@ -1253,6 +1253,10 @@
       "sha256": "49be78a51fc2b4df19406923541ae91a1cac560b4c580a7faa393673857e03d9",
       "bytes": 77318
     },
+    "concise-state-reauth.png": {
+      "sha256": "aa4046a0381b98a22b15b3882af0634b375fd71445b053e5884b5c1773b20eae",
+      "bytes": 79731
+    },
     "concise-state-resumed.png": {
       "sha256": "64d9e624957f77e85d9c13def5bf5b50b28c327608a90aac1a8fa9d61a2edb7d",
       "bytes": 105632
@@ -2690,12 +2694,20 @@
       "bytes": 243629
     },
     "plugin-client-api-settings.png": {
-      "sha256": "c56c4328acb1b4849069f7c122cf417f671b2ab613d94205e74819a6869ccb8d",
-      "bytes": 42738
+      "sha256": "7eff46e2b27af00384afd541c020c4321f617e93a2b5eecb0a73398756263e47",
+      "bytes": 44140
+    },
+    "plugin-client-pairing-interrupt.png": {
+      "sha256": "2d0a6301b5b63c7c9994c95140b58bb0696200c79bbe6bd4abcf03ff46fb4f2c",
+      "bytes": 88387
     },
     "plugin-client-pairing.png": {
-      "sha256": "baed287fe0efffbb2f32f0079d8439e197b6a889a20201cdea5c5d40c45d351d",
-      "bytes": 63569
+      "sha256": "91317b112b58a93d0defc95adee211a9771f7666ed550db63375ff20b0c06c84",
+      "bytes": 88461
+    },
+    "plugin-client-recent-thread-open.png": {
+      "sha256": "336703c57f3346ac4d96eb407dc467f2c9c43f2e81a62dc769f3904617ec8b35",
+      "bytes": 286975
     },
     "plugin-hook-loading.png": {
       "sha256": "c104bb3b1c4a9a90a7441137b5d88a308a6ec8c932aeb568e96b4d7376ec00dd",
@@ -2936,6 +2948,10 @@
     "process-manager-network.png": {
       "sha256": "5bf633f6a3118aad3ac14c386fd1c28cd35a1d8f121c3b755e613043d1c8c8dd",
       "bytes": 92670
+    },
+    "process-manager-thread-command.png": {
+      "sha256": "881a0019e3c9eca01a619fe12a8e6aeadc3d6c72b6908b13cb8bad68ed90ae67",
+      "bytes": 226212
     },
     "process-manager.png": {
       "sha256": "a26e5ecd9cde44e653d91169cdbafd0e4cdf794e40a05b05de84b1292372a78c",
@@ -3698,8 +3714,8 @@
       "bytes": 260156
     },
     "settings-composition-packs.png": {
-      "sha256": "7e432112f3674c2d170f3a801b92a2f96aff86bf7a901bc089bd3f82fddd2023",
-      "bytes": 234779
+      "sha256": "dd40a414eb355f235db91dcee1550f61eeb02716f3f3b62858c96c79eb5a32c1",
+      "bytes": 236565
     },
     "settings-composition-source-folders.png": {
       "sha256": "ec8edb668fdf6a37a898e8a77a850fab2e73be342fa3f9a0726b819d4b37f874",

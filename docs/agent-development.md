@@ -294,6 +294,12 @@ lists blind spots and `broad` calls for the full tier. Every commit runs at leas
 full-check surfaces are defined in
 [`testing-strategy.md`](testing-strategy.md#choose-the-local-gate-by-risk).
 
+The full `npm run check` routinely runs past a silent `run_shell`'s timeout once `tsc` or the unit
+suite is mid-run (same timeout as [launching Copse](#launching-copse-from-a-copse-agent-session)) —
+run it through `run_background` with `wake_on_completion`, not a foreground call, and read its
+result against [`host-environment-test-noise.md`](host-environment-test-noise.md) before treating
+every non-zero exit as a regression.
+
 ### Remote validation
 
 Prefer the ordinary remote e2e loop when a cloud host is configured:
