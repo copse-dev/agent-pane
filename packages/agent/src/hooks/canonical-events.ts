@@ -36,6 +36,8 @@ import type { CommandHookRunner } from './command-executor.ts'
 export interface TurnStartPayload {
   /** Raw user message text used for steering decisions (redaction-independent). */
   userText: string
+  /** Explicit user skill invocations; steering may yield to their workflow instructions. */
+  invokedSkills?: readonly string[]
   /** Todos carried over from prior turns (drives the prior-todos pin). */
   priorTodos: readonly TodoItem[]
   /**
@@ -61,6 +63,15 @@ export interface TurnStartPayload {
    * tool list.
    */
   toolNames?: readonly string[]
+  /**
+   * True when the thread had no prior messages before this one — the same
+   * signal `fireSessionStartHook`'s `firstTurn` already uses. Lets a steering
+   * hook contribute its guidance once per thread instead of on every turn (the
+   * engineering-workflows hook). Absent when the fire site has not computed
+   * thread history (pure package tests); treat absent as "unknown", not "not
+   * first", so those callers keep their prior always-inject behavior.
+   */
+  firstTurn?: boolean
 }
 
 /**
