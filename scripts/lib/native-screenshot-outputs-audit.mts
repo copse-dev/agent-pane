@@ -60,7 +60,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['markdown-ordered-list-after.png', 'markdown-ordered-list-before.png'],
   },
   'tests/e2e/mermaid-parity.e2e.ts': {
-    sourceSha256: '3a180b3692bedbd1d04ad848bf579d0e4ca91cafe3eafaa525ed92fcca8fa569',
+    sourceSha256: '659277b0160d3cf4ec08df4c1c9c9a2eda41f44480456d0fb83d92b56401a81d',
     filenames: [
       'mermaid-parity-class.png',
       'mermaid-parity-flowchart.png',

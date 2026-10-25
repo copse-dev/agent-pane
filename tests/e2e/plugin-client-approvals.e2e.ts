@@ -89,9 +89,11 @@ describe('interactive client live approvals', function () {
     assert.ok((await dialog.$('.approval-body').getText()).includes(pairing.code))
     assert.ok((await dialog.getText()).includes('agent questions'))
     assert.ok((await dialog.getText()).includes('pending request titles'))
+    assert.ok((await dialog.getText()).includes('worktree preparation'))
+    assert.ok((await dialog.getText()).includes('Follow-ups can send the offered message'))
     await expect(dialog.$('.approval-remember')).not.toBeDisplayed()
     // Normalize only the random display code for deterministic visual evidence.
-    await saveElementScreenshot('#approval-dialog', 'plugin-client-pairing.png', {
+    await saveElementScreenshot('#approval-dialog', 'plugin-client-pairing-expanded-scope.png', {
       beforeCapture: async () => {
         await browser.execute(() => {
           const body = document.querySelector('#approval-dialog .approval-body')
@@ -221,14 +223,19 @@ describe('interactive client live approvals', function () {
     await expect(dialog.$('.approval-remember')).not.toBeDisplayed()
     await expect(dialog.$('.approval-approve')).toHaveText('Connect client')
     await dialog.$('.approval-approve').waitForEnabled()
-    await saveElementScreenshot('#approval-dialog', 'plugin-client-pairing-interrupt.png', {
-      beforeCapture: async () => {
-        await browser.execute(() => {
-          const body = document.querySelector('#approval-dialog .approval-body')
-          if (body?.textContent) body.textContent = body.textContent.replace(/\d{6}/g, '123456')
-        })
+    assert.ok((await dialog.getText()).includes('Follow-ups can send the offered message'))
+    await saveElementScreenshot(
+      '#approval-dialog',
+      'plugin-client-pairing-expanded-scope-interrupt.png',
+      {
+        beforeCapture: async () => {
+          await browser.execute(() => {
+            const body = document.querySelector('#approval-dialog .approval-body')
+            if (body?.textContent) body.textContent = body.textContent.replace(/\d{6}/g, '123456')
+          })
+        },
       },
-    })
+    )
     await dialog.$('.approval-approve').click()
     const paired = await json(await fetch(`${service.origin}/v1/pair/${pairing.id}`), pairedSchema)
     assert.equal(paired.state, 'approved')
@@ -599,7 +606,7 @@ describe('interactive client live approvals', function () {
       assert.equal((await json(await post(randomUUID()), resultSchema)).ok, false)
       assert.equal((await browser.$$('.msg-user')).length, 2)
       await saveAppScreenshot('plugin-client-action-sent.png')
-      await saveElementScreenshot('#input-bar', 'plugin-client-action-draft.png')
+      await saveElementScreenshot('#input-bar', 'plugin-client-submitted-composer.png')
     } finally {
       await followup.release('tab-submitted')
     }
