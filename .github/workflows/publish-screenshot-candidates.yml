@@ -1014,14 +1014,16 @@ jobs:
 
             // Evidence or a decision an earlier run published for this head
             // still stands; a later red re-run (a label re-runs CI) renders
-            // nothing new and must not replace it.
+            // nothing new and must not replace it. A failed publication's
+            // `error` status (newest first) is neither, so report over it.
             const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
               owner,
               repo,
               ref: sha,
               per_page: 100,
             });
-            if (statuses.some((status) => status.context === 'Screenshot review')) {
+            const latest = statuses.find((status) => status.context === 'Screenshot review');
+            if (latest && latest.state !== 'error') {
               core.info('This head already has a screenshot review; keeping it.');
               return;
             }

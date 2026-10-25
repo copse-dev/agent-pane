@@ -1363,7 +1363,7 @@ describe('parent screenshot evidence comment', () => {
 async function report(
   scenario: {
     reason?: string
-    statuses?: { context: string }[]
+    statuses?: { context: string; state: string }[]
     comments?: { id: number; user: { type: string }; body: string }[]
     parent?: Parent
     removeLabel?: Error
@@ -1453,9 +1453,28 @@ describe('reporting a run that rendered no screenshots', () => {
   })
 
   it('keeps evidence or a decision an earlier run recorded for this head', async () => {
-    const { bodies, removed } = await report({ statuses: [{ context: 'Screenshot review' }] })
-    assert.deepEqual(bodies, [])
-    assert.deepEqual(removed, [])
+    for (const state of ['pending', 'success']) {
+      const { bodies, removed } = await report({
+        statuses: [
+          { context: 'CLA', state: 'success' },
+          { context: 'Screenshot review', state },
+        ],
+      })
+      assert.deepEqual(bodies, [], state)
+      assert.deepEqual(removed, [])
+    }
+  })
+
+  it('reports over a failed publication, which recorded no evidence', async () => {
+    // Newest first: the fail-closed `error` replaced an older pending review.
+    const { bodies } = await report({
+      statuses: [
+        { context: 'Screenshot review', state: 'error' },
+        { context: 'Screenshot review', state: 'pending' },
+      ],
+    })
+    assert.equal(bodies.length, 1)
+    assert.match(bodies[0] ?? '', /\*\*No screenshots for `abc123abc123`\.\*\*/)
   })
 
   it('opens no comment, and leaves a moved or closed parent to a later run', async () => {
