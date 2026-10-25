@@ -281,7 +281,7 @@ export const CONCISE_STATE_SCENARIOS: readonly DemoScenario[] = [
   ),
   scenario(
     'reauth',
-    'A failed ACP turn offering a direct sign-in action',
+    'A failed coding-agent turn offering a direct sign-in action',
     [
       user('reauth-user', 'Continue with Claude.'),
       assistant('reauth-failed', 'Claude is not signed in, so this turn could not run.'),
