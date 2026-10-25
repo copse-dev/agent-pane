@@ -83985,6 +83985,30 @@ var init_demo_concise_states = __esm({
           ]
         }
       ),
+      scenario(
+        "reauth",
+        "A failed coding-agent turn offering a direct sign-in action",
+        [
+          user("reauth-user", "Continue with Claude."),
+          assistant("reauth-failed", "Claude is not signed in, so this turn could not run.")
+        ],
+        {
+          status: "running",
+          askUserRequests: [
+            {
+              id: "concise-state-reauth-request",
+              threadId: THREAD_ID2("reauth"),
+              presentation: { kind: "actions", title: "Sign in to Claude" },
+              questions: [
+                {
+                  question: "Claude is not signed in, so this turn could not run. Open a terminal and run `claude auth login` to sign in again? Finish signing in there, then re-send your message.",
+                  options: ["Sign in", "Not now"]
+                }
+              ]
+            }
+          ]
+        }
+      ),
       scenario("subagent", "A finished turn that used subagents", [
         user("subagent-user", "Find where the footer is laid out and review the auth changes."),
         assistant("subagent-work", "Delegating the search.", [
@@ -88227,6 +88251,7 @@ function createDemoApi(scenario2, options = {}) {
           const request = {
             id: askUserRequest.id,
             ...askUserRequest.threadId === void 0 ? {} : { threadId: askUserRequest.threadId },
+            ...askUserRequest.presentation === void 0 ? {} : { presentation: askUserRequest.presentation },
             questions: askUserRequest.questions.map((question) => ({
               question: question.question,
               ...question.options === void 0 ? {} : { options: [...question.options] }
@@ -93804,9 +93829,9 @@ function createActivityView(api2, store2, sources3, deps, host) {
   function hasAnswer(requestId) {
     return (drafts.get(requestId) ?? []).some((text2) => text2.trim() !== "");
   }
-  function sendAnswer(row2) {
+  function sendAnswer(row2, chosen) {
     const requestId = row2.requestId;
-    if (!requestId || settling || !hasAnswer(requestId)) return;
+    if (!requestId || settling || chosen === void 0 && !hasAnswer(requestId)) return;
     const asked = sources3.questions.pending().find((request) => request.id === requestId);
     if (!asked) return;
     const typed = drafts.get(requestId) ?? [];
@@ -93818,13 +93843,13 @@ function createActivityView(api2, store2, sources3, deps, host) {
     }
     const sent = sources3.questions.answer(
       requestId,
-      asked.questions.map((_5, index) => typed[index] ?? "")
+      chosen === void 0 ? asked.questions.map((_5, index) => typed[index] ?? "") : [chosen]
     );
     if (sent) drafts.delete(requestId);
     status.textContent = sent ? `Answered ${row2.threadTitle}.` : "That question was already answered.";
     scheduleRender();
   }
-  function answerField(requestId, row2, question, index, options, recommendedOption, recommendationReason) {
+  function answerField(requestId, row2, question, index, options, recommendedOption, recommendationReason, actionsOnly) {
     const questionId = `${host.idPrefix}-question-${String(index)}`;
     const input2 = el("textarea", {
       class: "activity-answer-input",
@@ -93861,8 +93886,9 @@ function createActivityView(api2, store2, sources3, deps, host) {
       for (const option of options) {
         const choice = el("button", {
           type: "button",
-          class: "ui-btn ui-btn-secondary activity-option"
+          class: actionsOnly ? `ui-btn ${option === options[0] ? "ui-btn-primary" : "ui-btn-secondary"} activity-option activity-answer-action` : "ui-btn ui-btn-secondary activity-option"
         });
+        if (actionsOnly) choice.disabled = settling;
         setInlineMarkdown(choice, option);
         const answer = choice.textContent;
         if (option === recommendedOption) {
@@ -93870,6 +93896,10 @@ function createActivityView(api2, store2, sources3, deps, host) {
           choice.append(el("span", { class: "ask-user-recommended-label" }, "Recommended"));
         }
         choice.addEventListener("click", () => {
+          if (actionsOnly) {
+            sendAnswer(row2, option);
+            return;
+          }
           input2.value = answer;
           sync();
           input2.focus();
@@ -93881,7 +93911,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     if (recommendationReason) {
       field.append(el("p", { class: "ask-user-recommendation-reason" }, recommendationReason));
     }
-    field.append(input2);
+    if (!actionsOnly) field.append(input2);
     return field;
   }
   function button(className, control, label, onClick, ariaLabel) {
@@ -93969,7 +93999,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
               index,
               asked.options[index] ?? [],
               asked.recommendedOptions?.[index],
-              asked.recommendationReasons?.[index]
+              asked.recommendationReasons?.[index],
+              asked.presentation?.kind === "actions"
             )
           )
         )
@@ -94030,7 +94061,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
       );
       approve.disabled = settling;
       decide.push(approve);
-    } else if (row2.state === "needs-answer" && row2.requestId) {
+    } else if (row2.state === "needs-answer" && row2.requestId && sources3.questions.pending().find((request) => request.id === row2.requestId)?.presentation?.kind !== "actions") {
       const requestId = row2.requestId;
       const answer = button(
         "ui-btn-primary activity-answer",
@@ -94477,7 +94508,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     cancelSettle?.();
     settling = true;
     for (const control of detail.querySelectorAll(
-      ".activity-approve, .activity-answer"
+      ".activity-approve, .activity-answer, .activity-answer-action"
     )) {
       control.disabled = true;
     }
@@ -94485,7 +94516,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
       cancelSettle = null;
       settling = false;
       for (const control of detail.querySelectorAll(
-        ".activity-approve, .activity-answer"
+        ".activity-approve, .activity-answer, .activity-answer-action"
       )) {
         if (control.dataset["answered"]) continue;
         const requestId = control.dataset["requestId"];
@@ -195944,7 +195975,7 @@ function mountAskUserDialog(api2, store2) {
       el(
         "h3",
         { class: "ask-user-title" },
-        asker ? "A side chat has a question" : "The agent has a question"
+        active3.presentation?.title ?? (asker ? "A side chat has a question" : "The agent has a question")
       )
     );
     if (asker) {
@@ -195953,6 +195984,7 @@ function mountAskUserDialog(api2, store2) {
     }
     active3.questions.forEach((q4, i3) => {
       const questionId = `ask-user-question-${String(i3)}`;
+      const actionsOnly = active3?.presentation?.kind === "actions";
       const input2 = el("textarea", {
         class: "ask-user-input",
         rows: "2",
@@ -195960,7 +195992,7 @@ function mountAskUserDialog(api2, store2) {
         "data-question-index": String(i3),
         "aria-labelledby": questionId
       });
-      inputs.push(input2);
+      if (!actionsOnly) inputs.push(input2);
       const question = el("div", {
         id: questionId,
         class: "ask-user-question streaming-markdown"
@@ -195970,14 +196002,21 @@ function mountAskUserDialog(api2, store2) {
       if (q4.options && q4.options.length > 0) {
         const optionRow = el("div", { class: "ask-user-options" });
         for (const option of q4.options) {
-          const button = el("button", { type: "button", class: "ask-user-option" });
+          const button = el("button", {
+            type: "button",
+            class: actionsOnly ? `ui-btn ${option === q4.options[0] ? "ui-btn-primary" : "ui-btn-secondary"} ask-user-option ask-user-action` : "ask-user-option"
+          });
           setInlineMarkdown(button, option);
           const answer = button.textContent;
-          if (option === q4.recommendedOption) {
+          if (!actionsOnly && option === q4.recommendedOption) {
             button.classList.add("ask-user-option-recommended");
             button.append(el("span", { class: "ask-user-recommended-label" }, "Recommended"));
           }
           button.addEventListener("click", () => {
+            if (actionsOnly) {
+              respond([option]);
+              return;
+            }
             input2.value = answer;
             input2.focus();
           });
@@ -195988,9 +196027,15 @@ function mountAskUserDialog(api2, store2) {
       if (q4.recommendationReason) {
         field.append(el("p", { class: "ask-user-recommendation-reason" }, q4.recommendationReason));
       }
-      field.append(input2);
+      if (!actionsOnly) field.append(input2);
       form.append(field);
     });
+    if (active3.presentation?.kind === "actions") {
+      dialog2.showModal();
+      const actions = form.querySelectorAll(".ask-user-action");
+      actions[actions.length - 1]?.focus();
+      return;
+    }
     const cancelBtn = el("button", { type: "button", class: "ask-user-cancel" }, "Cancel");
     cancelBtn.addEventListener("click", (event) => {
       event.preventDefault();
@@ -196096,6 +196141,7 @@ function mountAskUserDialog(api2, store2) {
     return true;
   }
   function submit() {
+    if (active3?.presentation?.kind === "actions") return;
     respond(inputs.map((input2) => input2.value));
   }
   function cancel() {
@@ -196125,6 +196171,7 @@ function mountAskUserDialog(api2, store2) {
     if (active3?.id === req.id || queue.some((request) => request.id === req.id)) return;
     queue.push({
       id: req.id,
+      ...req.presentation === void 0 ? {} : { presentation: req.presentation },
       threadId: req.threadId,
       questions: req.questions,
       receivedAt: Date.now(),
@@ -196153,6 +196200,7 @@ function mountAskUserDialog(api2, store2) {
   return {
     pending: () => [...active3 ? [active3] : [], ...queue].sort((a5, b5) => a5.arrival - b5.arrival).map((req) => ({
       id: req.id,
+      ...req.presentation === void 0 ? {} : { presentation: req.presentation },
       threadId: req.threadId,
       questions: req.questions.map((q4) => q4.question),
       options: req.questions.map((q4) => q4.options ?? []),
