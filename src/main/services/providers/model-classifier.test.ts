@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { getModelInfo, TRACKED_MODELS } from '@copse/llm/model-catalog.ts'
-import { intellectBand, modelIntellect } from '@copse/llm/model-intellect.ts'
+import {
+  BAND_REPRESENTATIVE_MODEL,
+  intellectBand,
+  modelIntellect,
+} from '@copse/llm/model-intellect.ts'
+import { supersedingModel } from '@copse/llm/model-version-suppression.ts'
 import {
   BAND_CANDIDATES,
   classifyModelForTask,
@@ -129,6 +134,21 @@ describe('pickCheapestFittingModel', () => {
       .toSorted((left, right) => (left.usdPerMTok ?? Infinity) - (right.usdPerMTok ?? Infinity))[0]
     assert.ok(expected)
     assert.deepEqual({ model: pick.model, usdPerMTok: pick.usdPerMTok }, expected)
+  })
+
+  it('never picks a candidate a newer same-lineage candidate in the pool supersedes', () => {
+    for (const band of ['low', 'mid', 'top'] as const) {
+      const pick = pickCheapestFittingModel(
+        BAND_CANDIDATES[band],
+        0,
+        BAND_REPRESENTATIVE_MODEL[band],
+      )
+      assert.equal(
+        supersedingModel(pick.model, BAND_CANDIDATES[band]),
+        null,
+        `${pick.model} (${band} band) has a superseding candidate in its own band`,
+      )
+    }
   })
 })
 

@@ -53,6 +53,7 @@ it('renders friendly Copse names and Markdown, and moves an open disabled pack b
       },
     },
     createStore(),
+    () => null,
     () => 'customise',
     () => Promise.resolve(new AbortController().signal),
     () => {},
