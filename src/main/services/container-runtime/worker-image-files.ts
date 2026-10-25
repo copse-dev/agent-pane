@@ -30,7 +30,7 @@ import { EGRESS_TOKEN_STDIN_FLAG, GUEST_EGRESS_PROXY, GUEST_EGRESS_USER } from '
  * `Digest:` line.
  */
 export const WORKER_BASE_IMAGE =
-  'node:24-trixie-slim@sha256:8ec5d7557396cfe32d21c3f9c13072355ceab22b584578ca4bb28af31120cffe'
+  'node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea'
 
 /**
  * The pnpm baked into the image for a carried-in project's install. A project
