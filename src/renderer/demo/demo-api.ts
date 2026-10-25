@@ -833,6 +833,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           const request = {
             id: askUserRequest.id,
             ...(askUserRequest.threadId === undefined ? {} : { threadId: askUserRequest.threadId }),
+            ...(askUserRequest.presentation === undefined
+              ? {}
+              : { presentation: askUserRequest.presentation }),
             questions: askUserRequest.questions.map((question) => ({
               question: question.question,
               ...(question.options === undefined ? {} : { options: [...question.options] }),
