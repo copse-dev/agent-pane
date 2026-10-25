@@ -429,6 +429,7 @@ export interface ApiClient {
         id: string
         threadId?: string
         questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
+        presentation?: import('@shared/types/ask-user.ts').AskUserActionsPresentation
       }) => void,
     ) => () => void
     onAskUserCancelled: (handler: (req: { id: string }) => void) => () => void
