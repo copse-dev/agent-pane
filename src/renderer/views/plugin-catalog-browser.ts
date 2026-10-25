@@ -21,6 +21,7 @@ export interface PluginCatalogBrowserOptions {
 export interface PluginCatalogBrowser {
   readonly element: HTMLElement
   focusSearch(): void
+  search(query: string): void
   updateInstalled(state: PluginCatalogInstalledState): void
 }
 
@@ -298,6 +299,12 @@ export function createPluginCatalogBrowser(
   return {
     element: root,
     focusSearch: (): void => {
+      search.focus()
+    },
+    search: (query): void => {
+      search.value = query
+      visibleCount = PAGE_SIZE
+      render()
       search.focus()
     },
     updateInstalled: (state): void => {

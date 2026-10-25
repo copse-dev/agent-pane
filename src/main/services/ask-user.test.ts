@@ -93,10 +93,12 @@ describe('requestUserAnswers pluggable transport', () => {
 
 function fakeWindowDeps(): {
   sent: string[]
+  requests: object[]
   answer: (answers: string[]) => void
   deps: Parameters<typeof createWindowAskUserHandler>[0]
 } {
   const sent: string[] = []
+  const requests: object[] = []
   const pending = new Map<string, (result: AskUserResult) => void>()
   const settle = (id: string, result: AskUserResult): void => {
     const resolve = pending.get(id)
@@ -106,12 +108,14 @@ function fakeWindowDeps(): {
   }
   return {
     sent,
+    requests,
     answer: (answers): void => {
       for (const id of [...pending.keys()]) settle(id, { answers })
     },
     deps: {
-      send: (channel): void => {
+      send: (channel, payload): void => {
         sent.push(channel)
+        if (channel === 'agent:ask-user-request') requests.push(payload)
       },
       register: (id, resolve): void => {
         pending.set(id, resolve)
@@ -136,6 +140,23 @@ describe('window ask_user handler', () => {
 
     assert.deepEqual(await pending, { answers: ['Postgres', 'Yes'] })
     assert.deepEqual(window.sent, ['agent:ask-user-request', 'agent:ask-user-cancelled'])
+  })
+
+  it('sends a host-authored action presentation through the window event', async () => {
+    const window = fakeWindowDeps()
+    setAskUserHandler(createWindowAskUserHandler(window.deps))
+    const pending = requestUserAnswers({
+      presentation: { kind: 'actions', title: 'Sign in to Claude' },
+      questions: [{ question: 'Sign in?', options: ['Sign in', 'Not now'] }],
+    })
+
+    assert.equal(window.requests.length, 1)
+    assert.partialDeepStrictEqual(window.requests[0], {
+      questions: [{ question: 'Sign in?', options: ['Sign in', 'Not now'] }],
+      presentation: { kind: 'actions', title: 'Sign in to Claude' },
+    })
+    window.answer(['Not now'])
+    assert.deepEqual(await pending, { answers: ['Not now'] })
   })
 
   it('withdraws an open question as cancelled when the run stops', async () => {
