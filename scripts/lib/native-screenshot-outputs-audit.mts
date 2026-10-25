@@ -31,7 +31,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['context-wheel-classifier-configured.png', 'context-wheel-classifier-none.png'],
   },
   'tests/e2e/file-viewer-changes.e2e.ts': {
-    sourceSha256: '522bd0c11e02352b85247a035cfbefff8866d2d44b40b18f04cf8f5a2793ddd5',
+    sourceSha256: '72bb1930430f0fc3cfcfc91334d2e5cfabdc815077ba0c2f7f7ec249c3e79d9c',
     filenames: ['file-viewer-copse-strong-dark.png', 'file-viewer-copse-strong-light.png'],
   },
   'tests/e2e/footer-branch-picker.e2e.ts': {
@@ -177,7 +177,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['sidebar-unopened-activity-1600.png', 'sidebar-unopened-activity-800.png'],
   },
   'tests/e2e/terminal-display.e2e.ts': {
-    sourceSha256: '50459641070bc6c2c4db648016f6345d95817acd1e277e737d779a943d519d5e',
+    sourceSha256: 'fc84593f0beb78a50d18b41d739149af0fae651d2a236b5fa821a5a131ebdde4',
     filenames: ['terminal-copse-strong-dark.png', 'terminal-copse-strong-light.png'],
   },
   'tests/e2e/thread-explainer-drawing.e2e.ts': {
