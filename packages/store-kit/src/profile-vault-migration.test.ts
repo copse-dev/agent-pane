@@ -333,7 +333,13 @@ describe('vault startup downgrade prevention', () => {
       const directory = mkdtempSync(join(tmpdir(), 'copse-vault-linked-ssh-'))
       try {
         const { key, manifest, legacy, plain } = fixture()
-        const migrated = migrateVaultStores({ apiKey: { openai: plain } }, {}, legacy, key, manifest)
+        const migrated = migrateVaultStores(
+          { apiKey: { openai: plain } },
+          {},
+          legacy,
+          key,
+          manifest,
+        )
         commitVaultMigration(directory, migrated, manifest)
         const outside = join(directory, 'outside-ssh.json')
         writeFileSync(outside, JSON.stringify({ hosts: {} }))
