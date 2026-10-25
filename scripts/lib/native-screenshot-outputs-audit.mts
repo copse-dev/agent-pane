@@ -90,7 +90,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/pane-popout.e2e.ts': {
-    sourceSha256: '6ea4096df0017141f14ac4a393119a281b0df3508f03462c329c8e2d3c0124c0',
+    sourceSha256: 'f5f19eb5e8fee96a434b779b9b73636deed7ee1ea5d0e6c1cc9f11ba6a98ef7a',
     filenames: [
       'pane-popout-browser.png',
       'pane-popout-changes.png',

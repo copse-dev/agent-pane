@@ -85,7 +85,15 @@ describe('footer branch status for a detached thread worktree', function () {
   let worktreeRoot = ''
 
   function git(cwd: string, args: string[]): string {
-    return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
+    return execFileSync('git', args, {
+      cwd,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z',
+        GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z',
+      },
+    }).trim()
   }
 
   /** The repair button shares the branch's line instead of wrapping beneath it. */
