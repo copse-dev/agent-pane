@@ -70,10 +70,30 @@ const GIT_VALUE_OPTIONS: ReadonlySet<string> = new Set([
  */
 const SHELL_INLINE_CODE_FLAG = /^-[a-z]*c$/
 
-/** The command string a shell interpreter's argv runs with `-c`, or null. */
+/** Shell options whose value is a separate argument (`bash -o pipefail -c …`). */
+const SHELL_VALUE_OPTIONS: ReadonlySet<string> = new Set([
+  '-o',
+  '+o',
+  '-O',
+  '+O',
+  '--rcfile',
+  '--init-file',
+])
+
+/**
+ * The command string a shell interpreter's argv runs with `-c`, or null. A shell
+ * reads its own options only up to the first operand, so in `bash script.sh -c x`
+ * the `-c` is an argument to the script and no inline code runs.
+ */
 function shellInlineBody(argv: readonly string[]): string | null {
   for (let index = 1; index < argv.length - 1; index += 1) {
-    if (SHELL_INLINE_CODE_FLAG.test(argv[index] ?? '')) return argv[index + 1] ?? null
+    const token = argv[index] ?? ''
+    if (SHELL_INLINE_CODE_FLAG.test(token)) return argv[index + 1] ?? null
+    if (SHELL_VALUE_OPTIONS.has(token)) {
+      index += 1
+      continue
+    }
+    if (token === '--' || !/^[-+]/.test(token)) return null
   }
   return null
 }

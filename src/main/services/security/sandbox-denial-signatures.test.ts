@@ -151,6 +151,7 @@ describe('operationDescriptorForCommand', () => {
     )
     assert.equal(operationDescriptorForCommand("sh -ec 'git push origin HEAD'"), 'git push')
     assert.equal(operationDescriptorForCommand("bash -e -c 'git fetch'"), 'git fetch')
+    assert.equal(operationDescriptorForCommand("bash -o pipefail -c 'git fetch'"), 'git fetch')
     assert.equal(operationDescriptorForCommand("zsh -lc 'gh pr view 42'"), 'read ~/.config/gh')
     assert.equal(operationDescriptorForCommand('pnpm build; gh pr view 42'), 'read ~/.config/gh')
     assert.equal(operationDescriptorForCommand('env GH_PAGER= gh pr list'), 'read ~/.config/gh')
@@ -162,6 +163,12 @@ describe('operationDescriptorForCommand', () => {
     assert.equal(operationDescriptorForCommand("rg 'gh pr' src"), null)
     assert.equal(operationDescriptorForCommand('echo git push'), null)
     assert.equal(operationDescriptorForCommand('git log --grep fetch'), null)
+  })
+
+  it('does not read a -c after the script operand as inline shell code', () => {
+    // Options end at the first operand: here `-c` and `git fetch` are arguments to the script.
+    assert.equal(operationDescriptorForCommand("bash script.sh -c 'git fetch'"), null)
+    assert.equal(operationDescriptorForCommand("sh -- -c 'git push'"), null)
   })
 
   it('returns null for a command shape with no predicted operation', () => {
