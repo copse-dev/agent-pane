@@ -58,12 +58,38 @@ runs:
       shell: bash
 
     # GitHub-hosted Linux images need the runtime search/font dependencies.
-    - name: Install hosted Linux system dependencies
-      run: >-
-        sudo apt-get update && sudo apt-get install -y ripgrep
-        fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji
+    # The Azure Ubuntu mirror sometimes serves them at tens of kB/s, and its
+    # 76 MB of fonts then outlasts a job's timeout. Keep the downloaded .deb
+    # files (inputs, never the installed packages) per runner image, so only
+    # the first job on a new image reaches the mirror.
+    - name: Key hosted Linux system package downloads
+      id: apt-archives
       if: runner.environment == 'github-hosted' && runner.os == 'Linux'
       shell: bash
+      run: |
+        echo "path=$HOME/.cache/apt-archives" >> "$GITHUB_OUTPUT"
+        echo "key=apt-archives-v1-${RUNNER_ARCH}-${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+
+    - name: Restore hosted Linux system package downloads
+      if: runner.environment == 'github-hosted' && runner.os == 'Linux'
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.apt-archives.outputs.path }}
+        key: ${{ steps.apt-archives.outputs.key }}
+
+    - name: Install hosted Linux system dependencies
+      run: |
+        mkdir -p "$APT_ARCHIVES/partial"
+        sudo apt-get update
+        sudo apt-get install -y -o Dir::Cache::archives="$APT_ARCHIVES/" ripgrep \
+          fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji
+        # apt leaves its lock and partial directory root-owned; the cache step
+        # saves this directory as the runner user after the job.
+        sudo chown -R "$(id -u):$(id -g)" "$APT_ARCHIVES"
+      if: runner.environment == 'github-hosted' && runner.os == 'Linux'
+      shell: bash
+      env:
+        APT_ARCHIVES: ${{ steps.apt-archives.outputs.path }}
 
     # Self-hosted macOS runners do not have apt. coreutils supplies gtimeout,
     # which the e2e shard uses to cap a wedged run.

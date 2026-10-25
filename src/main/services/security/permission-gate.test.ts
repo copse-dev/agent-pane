@@ -2570,14 +2570,14 @@ describe('formatInstallPromptParts', () => {
     assert.equal(parts.bodyFooter, 'Allow this install?')
   })
 
-  it('mentions Socket Firewall scanning and (for JS) disabled scripts', () => {
+  it('states that JS install scripts are disabled and makes no scanning claim', () => {
     const parts = formatInstallPromptParts('npm install', {
       outsideSandbox: false,
       safeInstall: true,
       jsManager: true,
     })
-    assert.ok(parts.bodyAdvice?.includes('Socket Firewall (sfw)'))
-    assert.ok(parts.bodyAdvice?.includes('install lifecycle scripts are disabled'))
+    assert.ok(parts.bodyAdvice?.includes('Install lifecycle scripts are disabled.'))
+    assert.doesNotMatch(parts.bodyAdvice ?? '', /firewall|malware|advisor|scan/i)
   })
 
   it('omits the scripts note for non-JS managers', () => {
@@ -2586,8 +2586,7 @@ describe('formatInstallPromptParts', () => {
       safeInstall: true,
       jsManager: false,
     })
-    assert.ok(parts.bodyAdvice?.includes('Socket Firewall (sfw)'))
-    assert.ok(!parts.bodyAdvice?.includes('install lifecycle scripts'))
+    assert.ok(!parts.bodyAdvice?.includes('lifecycle scripts'))
   })
 
   it('explains the sandbox exit only when running outside it', () => {
@@ -2607,14 +2606,13 @@ describe('formatInstallPromptParts', () => {
     assert.ok(!inside.bodyAdvice?.includes('project sandbox'))
   })
 
-  it('warns when package scanning is disabled in Settings', () => {
+  it('drops the scripts note when safe install is off in Settings', () => {
     const parts = formatInstallPromptParts('npm install', {
       outsideSandbox: false,
       safeInstall: false,
       jsManager: true,
     })
-    assert.ok(parts.bodyAdvice?.includes('off in Settings'))
-    assert.ok(!parts.bodyAdvice?.includes('Socket Firewall (sfw) scans'))
+    assert.ok(!parts.bodyAdvice?.includes('lifecycle scripts'))
   })
 })
 
@@ -2665,7 +2663,6 @@ describe('formatEphemeralRunnerPromptParts', () => {
   it('describes fetch-and-run rather than installing project dependencies', () => {
     const parts = formatEphemeralRunnerPromptParts('npx tsc --noEmit', {
       outsideSandbox: true,
-      safeInstall: true,
     })
     assert.equal(parts.command, 'npx tsc --noEmit')
     assert.ok(parts.bodyAdvice?.includes('download and run code from the network'))
@@ -2674,22 +2671,9 @@ describe('formatEphemeralRunnerPromptParts', () => {
     assert.ok(!parts.bodyFooter.includes('Allow this install?'))
   })
 
-  it('mentions Socket Firewall scanning when enabled', () => {
-    const parts = formatEphemeralRunnerPromptParts('npx eslint .', {
-      outsideSandbox: false,
-      safeInstall: true,
-    })
-    assert.ok(parts.bodyAdvice?.includes('Socket Firewall (sfw)'))
-    assert.ok(!parts.bodyAdvice?.includes('install lifecycle scripts'))
-  })
-
-  it('warns when package scanning is disabled in Settings', () => {
-    const parts = formatEphemeralRunnerPromptParts('npx tsc --noEmit', {
-      outsideSandbox: false,
-      safeInstall: false,
-    })
-    assert.ok(parts.bodyAdvice?.includes('off in Settings'))
-    assert.ok(!parts.bodyAdvice?.includes('Socket Firewall (sfw) scans'))
+  it('makes no scanning claim', () => {
+    const parts = formatEphemeralRunnerPromptParts('npx eslint .', { outsideSandbox: false })
+    assert.doesNotMatch(parts.bodyAdvice ?? '', /firewall|malware|advisor|scan|lifecycle/i)
   })
 })
 

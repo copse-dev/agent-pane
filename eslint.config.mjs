@@ -75,12 +75,14 @@ export default ts.config(
   {
     // Adapter implementations must accept every input their shared contract
     // permits. Method signatures bypass strictFunctionTypes' parameter checks;
-    // function properties retain them. Start with these three adapter seams
-    // rather than changing unrelated interface and overload declarations (#1323).
+    // function properties retain them. Start with these adapter seams rather
+    // than changing unrelated interface and overload declarations (#1323).
     files: [
       'packages/hooks-dialects/src/dialect-adapter.ts',
       'src/main/services/github/backend/backend.ts',
       'src/main/services/workspace-fs/workspace-fs.ts',
+      'packages/llm/src/wire-types.ts',
+      'src/main/services/supervisor/task-store.ts',
     ],
     rules: {
       '@typescript-eslint/method-signature-style': ['error', 'property'],
