@@ -60360,8 +60360,27 @@ function isCopseToolCall(call, tool) {
     (name) => typeof name === "string" && normalizeCopseToolName(name) === tool
   );
 }
+function stringArg(args, key) {
+  if (!isRecord(args)) return null;
+  const value = args[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+function isAcpDelegateToolCall(call) {
+  if (call.subagent) return false;
+  if (call.kind !== "think") return false;
+  return [call.name, call.programmaticName].some(
+    (name) => typeof name === "string" && /^(agent|task)$/i.test(name)
+  );
+}
+function acpDelegateKind(call) {
+  return stringArg(call.args, "subagent_type");
+}
+function acpDelegatePrompt(call) {
+  return call.title ?? stringArg(call.args, "prompt") ?? stringArg(call.args, "description") ?? "";
+}
 var init_copse_tool_call = __esm({
   "src/shared/tools/copse-tool-call.ts"() {
+    init_unknown_value3();
   }
 });
 
@@ -62308,16 +62327,16 @@ function getToolDisplayName(name, tense = "done") {
   if (stripped !== name) return humanizeIdentifier(stripped);
   return humanizeIdentifier(normalizeCopseToolName(name));
 }
-function stringArg(args, key) {
+function stringArg2(args, key) {
   if (!isRecord(args)) return null;
   const value = args[key];
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 function fileEditPath(args) {
-  return stringArg(args, "path");
+  return stringArg2(args, "path");
 }
 function getApplyPatchFiles(tc2) {
-  const input2 = stringArg(tc2.args, "input");
+  const input2 = stringArg2(tc2.args, "input");
   return input2 === null ? [] : summarizePatch(input2);
 }
 function getToolEditPath(tc2) {
@@ -62325,7 +62344,7 @@ function getToolEditPath(tc2) {
   if (name === "apply_patch") return getApplyPatchFiles(tc2)[0]?.path ?? null;
   const key = FILE_EDIT_PATH_ARG[name];
   if (!key) return null;
-  return stringArg(tc2.args, key);
+  return stringArg2(tc2.args, key);
 }
 function stripShellCdPrefix(command2) {
   return command2.replace(SHELL_CD_PREFIX_RE, "");
@@ -62355,7 +62374,7 @@ function getToolCallLabel(tc2) {
   const name = copseToolCallName({ ...tc2, name: mcpTitle ?? tc2.name });
   const title = tc2.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc2.title) ? tc2.title : void 0;
   if (name === "read_skill") {
-    const skillName = stringArg(tc2.args, "name");
+    const skillName = stringArg2(tc2.args, "name");
     if (skillName) {
       if (tc2.status === "running") return `Loading skill ${skillName}`;
       if (tc2.status === "error") return `Skill ${skillName}`;
@@ -62384,8 +62403,8 @@ function getToolCallLabel(tc2) {
     if (path) return tense === "running" ? `Deleting ${path}` : `Deleted ${path}`;
   }
   if (name === "rename_file") {
-    const from2 = stringArg(tc2.args, "from");
-    const to = stringArg(tc2.args, "to");
+    const from2 = stringArg2(tc2.args, "from");
+    const to = stringArg2(tc2.args, "to");
     if (from2 && to) {
       return tense === "running" ? `Renaming ${from2} \u2192 ${to}` : `Renamed ${from2} \u2192 ${to}`;
     }
@@ -62397,7 +62416,7 @@ function getToolCallLabel(tc2) {
     }
   }
   if (name === "task") {
-    const agentName = tc2.subagent?.agentName ?? stringArg(tc2.args, "subagent_type");
+    const agentName = tc2.subagent?.agentName ?? stringArg2(tc2.args, "subagent_type");
     if (agentName) {
       return tense === "running" ? `Running ${agentName}` : `Ran ${agentName}`;
     }
@@ -62408,6 +62427,10 @@ function getToolCallLabel(tc2) {
     if (title) return shellCommandLabel(title);
   }
   if (title) return title;
+  if (isAcpDelegateToolCall(tc2)) {
+    const agentKind = acpDelegateKind(tc2);
+    return tense === "running" ? `Running ${agentKind ?? "agent"}` : `Ran ${agentKind ?? "agent"}`;
+  }
   return getToolDisplayName(tc2.programmaticName ?? mcpTitle ?? tc2.name, tense);
 }
 function getToolGroupKey(name, kind) {
@@ -62807,28 +62830,44 @@ function promptProgressLabel(fraction) {
   const percent = Math.round(Math.min(1, Math.max(0, fraction)) * 100);
   return `Processing prompt\u2026 ${percent.toString()}%`;
 }
-function runningToolName(thread) {
+function findRunningActivity(thread) {
   for (let i3 = thread.messages.length - 1; i3 >= 0; i3--) {
     const m3 = thread.messages[i3];
     if (!m3) continue;
     const toolCalls = m3.toolCalls;
+    const runningDelegates = toolCalls.filter(
+      (tc2) => tc2.status === "running" && isAcpDelegateToolCall(tc2)
+    );
+    if (runningDelegates.length > 0) {
+      const kinds = new Set(runningDelegates.map((tc2) => acpDelegateKind(tc2)));
+      const [soleKind] = kinds;
+      return {
+        kind: "delegates",
+        count: runningDelegates.length,
+        soleKind: kinds.size === 1 ? soleKind ?? null : null
+      };
+    }
     for (let j5 = toolCalls.length - 1; j5 >= 0; j5--) {
       const tc2 = toolCalls[j5];
       if (!tc2) continue;
       if (tc2.status === "running") {
-        return tc2.name === "explore" ? "explore" : tc2.name;
+        return { kind: "tool", name: tc2.name === "explore" ? "explore" : tc2.name };
       }
-      if (tc2.subagent?.status === "running") return "explore";
+      if (tc2.subagent?.status === "running") return { kind: "tool", name: "explore" };
     }
   }
   return null;
 }
+function delegateActivityLabel(count, soleKind) {
+  if (count === 1) return soleKind ? `Running ${soleKind}` : getToolDisplayName("task", "running");
+  return soleKind ? `Running ${String(count)} ${soleKind} agents` : `Running ${String(count)} agents`;
+}
 function agentActivityLabel(thread, writing) {
   if (!thread || thread.status !== "running") return null;
   const todoLabel = thread.todos?.length ? formatTodoProgress(thread.todos) : null;
-  const tool = runningToolName(thread);
-  if (tool) {
-    const base2 = `${getToolDisplayName(tool, "running")}\u2026`;
+  const activity = findRunningActivity(thread);
+  if (activity) {
+    const base2 = activity.kind === "delegates" ? `${delegateActivityLabel(activity.count, activity.soleKind)}\u2026` : `${getToolDisplayName(activity.name, "running")}\u2026`;
     return todoLabel ? `${base2} (${todoLabel})` : base2;
   }
   if (writing) return todoLabel ? `Writing\u2026 (${todoLabel})` : "Writing\u2026";
@@ -62845,6 +62884,7 @@ var init_agent_activity = __esm({
   "src/renderer/agent-activity.ts"() {
     init_thread_helpers();
     init_tool_display();
+    init_copse_tool_call();
     init_todo_logic();
     CONTEXT_TRIM_ACTIVITY = "Shortened earlier messages";
   }
@@ -87541,6 +87581,84 @@ var init_demo_scenarios = __esm({
         )
       },
       {
+        id: "acp-subagent-visibility",
+        label: "A coding agent's own background subagents show up live",
+        project: project("demo-acp-subagents", "Widgets", "/demo/widgets"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          filesPaneOpen: true,
+          rightPanelMode: "context",
+          layout: {
+            projectsPaneWidth: 240,
+            filesPaneWidth: 680,
+            filesPaneHeight: 360,
+            fileTreeWidth: 180
+          }
+        },
+        threads: [
+          {
+            id: "acp-subagents-main",
+            title: "Add blockviz to Copse",
+            status: "running",
+            model: "acp:claude-acp#sonnet",
+            messages: [
+              {
+                id: "acp-subagents-user",
+                role: "user",
+                content: "Explore how to add the blockviz panel.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              },
+              {
+                id: "acp-subagents-assistant",
+                role: "assistant",
+                content: "All three exploration agents are running in the background.",
+                toolCalls: [
+                  // An external ACP agent's own subagent dispatch (Claude Code's
+                  // `Agent` tool): no `subagent` session, just this one tool call.
+                  {
+                    id: "acp-agent-panel",
+                    name: "Agent",
+                    kind: "think",
+                    title: "Panel/view registration and local content serving",
+                    args: { subagent_type: "Explore", prompt: "Find the panel registry" },
+                    status: "running",
+                    result: null
+                  },
+                  {
+                    id: "acp-agent-filetree",
+                    name: "Agent",
+                    kind: "think",
+                    title: "Local file-tree reading utilities",
+                    args: { subagent_type: "Explore", prompt: "Find reusable file-walking utilities" },
+                    status: "running",
+                    result: null
+                  },
+                  {
+                    id: "acp-agent-rust",
+                    name: "Agent",
+                    kind: "think",
+                    title: "Servo sidecar and Rust toolchain precedent",
+                    args: {
+                      subagent_type: "Investigate",
+                      prompt: "Check for an existing Rust toolchain"
+                    },
+                    status: "done",
+                    result: "No Rust toolchain found in the repo."
+                  }
+                ],
+                createdAt: FIXED_TIME + 1e3
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME + 1e3
+          }
+        ]
+      },
+      {
         id: "side-chat-approval",
         label: "A side chat asks for approval over its parent thread",
         project: project("demo-side-chat-approval", "Widgets", "/demo/widgets"),
@@ -87859,22 +87977,22 @@ function providerSlug(model) {
   if (colon > 0) return model.slice(0, colon);
   return firstPartyProviderOf(model) ?? void 0;
 }
-function stringArg2(args, key) {
+function stringArg3(args, key) {
   if (!isRecord(args)) return void 0;
   const value = args[key];
   return typeof value === "string" ? value : void 0;
 }
 function proposedEdit(name, args, written) {
-  const path = stringArg2(args, "path");
+  const path = stringArg3(args, "path");
   if (path === void 0) return void 0;
   const before = written.get(path) ?? "";
   if (name === "write_file") {
-    const content = stringArg2(args, "content");
+    const content = stringArg3(args, "content");
     return content === void 0 ? void 0 : { path, before, after: content };
   }
   if (name === "str_replace") {
-    const oldString = stringArg2(args, "old_string");
-    const newString = stringArg2(args, "new_string");
+    const oldString = stringArg3(args, "old_string");
+    const newString = stringArg3(args, "new_string");
     if (oldString === void 0 || newString === void 0) return void 0;
     return { path, before, after: before.replace(oldString, () => newString) };
   }
@@ -172593,14 +172711,24 @@ function deriveThreadContext(input2) {
     for (const message2 of thread.messages) {
       for (const toolCall of message2.toolCalls) {
         const session = toolCall.subagent;
-        if (!session) continue;
-        subagents.push({
-          id: session.id,
-          kind: session.kind,
-          status: session.status,
-          prompt: firstLine(session.prompt),
-          ...session.model !== void 0 ? { model: session.model } : {}
-        });
+        if (session) {
+          subagents.push({
+            id: session.id,
+            kind: session.kind,
+            status: session.status,
+            prompt: firstLine(session.prompt),
+            ...session.model !== void 0 ? { model: session.model } : {}
+          });
+          continue;
+        }
+        if (isAcpDelegateToolCall(toolCall)) {
+          subagents.push({
+            id: toolCall.id,
+            kind: acpDelegateKind(toolCall)?.toLowerCase() ?? "agent",
+            status: toolCall.status,
+            prompt: firstLine(acpDelegatePrompt(toolCall))
+          });
+        }
       }
     }
   }
@@ -172639,6 +172767,7 @@ var init_thread_context_model = __esm({
     init_github_pr_url2();
     init_side_chat2();
     init_thread_links2();
+    init_copse_tool_call();
   }
 });
 
