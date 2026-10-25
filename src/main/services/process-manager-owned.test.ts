@@ -5,6 +5,7 @@ import {
   ownedProcessRows,
   parseProcessArgs,
   parseProcessTable,
+  sandboxFsServerRoots,
   selfHelperLabel,
   type OwnedProcessRoot,
 } from './process-manager-owned.ts'
@@ -159,4 +160,66 @@ test('names Copse-as-Node helpers after their worker script', () => {
   assert.equal(selfHelperLabel(args.get(8) ?? ''), 'custom-worker')
   assert.equal(selfHelperLabel(args.get(9) ?? ''), 'Copse helper')
   assert.equal(selfHelperLabel(''), 'Copse helper')
+})
+
+test("attributes a run_shell command's whole tree to the thread that ran it", () => {
+  const samples = parseProcessTable(
+    [
+      ' 100 1 1.0 4096 /Applications/Copse.app/Contents/MacOS/Copse',
+      ' 200 100 0.0 1024 /bin/bash',
+      ' 201 200 80.0 1048576 node',
+    ].join('\n'),
+  )
+  const command: OwnedProcessRoot = {
+    pid: 200,
+    label: 'pnpm run typecheck',
+    type: 'Command',
+    threadId: 'thread-a',
+    projectId: 'project-a',
+  }
+  assert.deepEqual(copseChildRoots(samples, 100, new Set([100]), new Set([200])), [])
+  assert.deepEqual(
+    ownedProcessRows([command], samples).map(({ pid, label, type, threadId, memoryMiB }) => ({
+      pid,
+      label,
+      type,
+      threadId,
+      memoryMiB,
+    })),
+    [
+      {
+        pid: 200,
+        label: 'pnpm run typecheck',
+        type: 'Command',
+        threadId: 'thread-a',
+        memoryMiB: 1,
+      },
+      { pid: 201, label: 'node', type: 'Command', threadId: 'thread-a', memoryMiB: 1024 },
+    ],
+  )
+})
+
+test('gives a sandbox file server to the thread whose worktree it serves', () => {
+  const owners = new Map([
+    ['/worktrees/project-a/thread-a', { projectId: 'project-a', threadId: 'thread-a' }],
+  ])
+  assert.deepEqual(
+    sandboxFsServerRoots(
+      [
+        { pid: 300, root: '/worktrees/project-a/thread-a' },
+        { pid: 301, root: '/repos/project-a' },
+      ],
+      (root) => owners.get(root) ?? null,
+    ),
+    [
+      {
+        pid: 300,
+        label: 'Sandbox file server',
+        type: 'Subprocess',
+        threadId: 'thread-a',
+        projectId: 'project-a',
+      },
+      { pid: 301, label: 'Sandbox file server', type: 'Subprocess', threadId: null },
+    ],
+  )
 })

@@ -181,6 +181,18 @@ Those categories are mandatory because the oracle only knows imports and selecto
 reached through dynamic dispatch, string keys, generated artifacts, or external workflow wiring can
 be invisible to it. When classification is unclear, take the full path.
 
+That mandate is about catching failures the oracle would have missed, not about clearing a
+locally-unachievable zero-failure bar. Some unit tests fail for reasons that have nothing to do
+with the diff — a local sandbox blocking `/tmp` or loopback TCP, a `/private/tmp` realpath
+mismatch, hook-dispatch timeouts under suite load — and reproduce on an unmodified checkout. Triage
+a full check's result against
+[`host-environment-test-noise.md`](host-environment-test-noise.md): a failure outside that
+signature, or one that only reproduces with the diff applied, is yours to fix; one that matches it
+and reproduces on a clean checkout too isn't grounds to call the gate failed, but also isn't grounds
+to skip it silently — name which you saw in the PR's Validation section. Required PR CI runs this
+same full unit suite on a clean runner on every normal PR regardless of oracle output, so it remains
+the backstop either way.
+
 ## What stays e2e
 
 E2E is for **broad validation** and for assertions that need a real runtime.
@@ -441,8 +453,9 @@ Rules for anything that lands in a captured frame:
   workspace-relative paths.
 - **Randomness.** No `Math.random()` / `randomUUID()` in rendered output. Derive
   visible ids/order from fixture data. Background task ids are the one product
-  id that reaches the transcript (the completion wake names the task), so under
-  `COPSE_E2E` they come from a counter (`nextBackgroundOperationId`).
+  id that reaches an expanded tool card (the completion wake's transcript text
+  stays id-free), so under `COPSE_E2E` they come from a counter
+  (`nextBackgroundOperationId`).
 - **The checkout itself.** Prefer `seedStableWorkspace()` over
   `seedEmptyProject(process.cwd(), …)` for a spec that needs a project but not
   this repository. The checkout leaks into frames three ways: the Changes rail
@@ -611,8 +624,10 @@ Two consequences of running e2e on those PRs, both intended:
   PR touches (reference PNGs it changes, or names its changed specs mention)
   lead the preview, so unrelated drift cannot crowd them out. A `GITHUB_TOKEN`
   push starts no workflows, so that branch runs no CI. It is never merged. A
-  newer successful head deletes it, and so does closing the parent. No run
-  opens a PR for screenshots. Accepting references means committing them to
+  newer successful head deletes it, and so does closing the parent. No CI run
+  opens a PR for screenshots; the only screenshot PR is the nightly
+  [drift refresh](agent-development.md#nightly-screenshot-drift-refresh), which
+  carries `main`'s accumulated drift so feature PRs need not. Accepting references means committing them to
   the PR branch, so no write credential ever reaches the job that executed PR
   code. The publisher sets a `Screenshot review` status on the head that stays
   pending until a maintainer decides with `accept-screenshots` or
@@ -633,7 +648,8 @@ Two escape hatches on a `main`-targeted PR, both labels:
   branch like any other run. Remove the label after that run to avoid
   repeating the full refresh. It is not needed just to _see_ changed
   screenshots: every same-repository run with candidates already links a
-  compare view.
+  compare view. It also turns off the noise and flap filters; the nightly
+  drift refresh PR renders everything with them on.
 
 **What this costs.** Broad and LOW-confidence PRs pay for the complete Electron
 suite. That is intentional: those are the changes for which a selector-derived

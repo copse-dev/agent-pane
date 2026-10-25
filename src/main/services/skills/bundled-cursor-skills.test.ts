@@ -74,15 +74,15 @@ describe('bundled-cursor-skills', () => {
     }
 
     beforeEach(async () => {
-      await seedPlugin('pstack', ['how', 'why'])
+      await seedPlugin('teaching', ['how', 'why'])
       await seedPlugin('cursor-team-kit', ['fix-ci'])
       setBundledCursorSkillsRootForTest(tempRoot)
     })
 
-    it('ships pstack off, with a reason, and every other plugin on', async () => {
-      assert.equal(isBundledSkillPluginEnabled('pstack'), false)
+    it('enables bundled plugins by default', async () => {
+      assert.equal(isBundledSkillPluginEnabled('teaching'), true)
       assert.equal(isBundledSkillPluginEnabled('cursor-team-kit'), true)
-      const [teamKit, pstack] = await listBundledSkillPlugins()
+      const [teamKit, teaching] = await listBundledSkillPlugins()
       assert.deepEqual(teamKit, {
         name: 'cursor-team-kit',
         description: 'cursor-team-kit skills',
@@ -92,23 +92,23 @@ describe('bundled-cursor-skills', () => {
         defaultEnabled: true,
         suppressed: false,
       })
-      assert.ok(pstack)
-      assert.equal(pstack.enabled, false)
-      assert.equal(pstack.defaultEnabled, false)
-      assert.equal(pstack.skillCount, 2)
-      assert.match(pstack.offByDefaultReason ?? '', /Written for Cursor/)
+      assert.ok(teaching)
+      assert.equal(teaching.enabled, true)
+      assert.equal(teaching.defaultEnabled, true)
+      assert.equal(teaching.skillCount, 2)
+      assert.equal(teaching.offByDefaultReason, undefined)
     })
 
-    it("follows the user's choice over either default", async () => {
-      setSetting('bundledSkillPluginOverrides', { pstack: true, 'cursor-team-kit': false })
-      assert.equal(isBundledSkillPluginEnabled('pstack'), true)
+    it("follows the user's choice over the default", async () => {
+      setSetting('bundledSkillPluginOverrides', { teaching: true, 'cursor-team-kit': false })
+      assert.equal(isBundledSkillPluginEnabled('teaching'), true)
       assert.equal(isBundledSkillPluginEnabled('cursor-team-kit'), false)
       const summaries = await listBundledSkillPlugins()
       assert.deepEqual(
         summaries.map(({ name, enabled }) => ({ name, enabled })),
         [
           { name: 'cursor-team-kit', enabled: false },
-          { name: 'pstack', enabled: true },
+          { name: 'teaching', enabled: true },
         ],
       )
     })
