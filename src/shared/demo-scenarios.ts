@@ -3394,6 +3394,84 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ),
   },
   {
+    id: 'acp-subagent-visibility',
+    label: "A coding agent's own background subagents show up live",
+    project: project('demo-acp-subagents', 'Widgets', '/demo/widgets'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      filesPaneOpen: true,
+      rightPanelMode: 'context',
+      layout: {
+        projectsPaneWidth: 240,
+        filesPaneWidth: 680,
+        filesPaneHeight: 360,
+        fileTreeWidth: 180,
+      },
+    },
+    threads: [
+      {
+        id: 'acp-subagents-main',
+        title: 'Add blockviz to Copse',
+        status: 'running',
+        model: 'acp:claude-acp#sonnet',
+        messages: [
+          {
+            id: 'acp-subagents-user',
+            role: 'user',
+            content: 'Explore how to add the blockviz panel.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+          {
+            id: 'acp-subagents-assistant',
+            role: 'assistant',
+            content: 'All three exploration agents are running in the background.',
+            toolCalls: [
+              // An external ACP agent's own subagent dispatch (Claude Code's
+              // `Agent` tool): no `subagent` session, just this one tool call.
+              {
+                id: 'acp-agent-panel',
+                name: 'Agent',
+                kind: 'think',
+                title: 'Panel/view registration and local content serving',
+                args: { subagent_type: 'Explore', prompt: 'Find the panel registry' },
+                status: 'running',
+                result: null,
+              },
+              {
+                id: 'acp-agent-filetree',
+                name: 'Agent',
+                kind: 'think',
+                title: 'Local file-tree reading utilities',
+                args: { subagent_type: 'Explore', prompt: 'Find reusable file-walking utilities' },
+                status: 'running',
+                result: null,
+              },
+              {
+                id: 'acp-agent-rust',
+                name: 'Agent',
+                kind: 'think',
+                title: 'Servo sidecar and Rust toolchain precedent',
+                args: {
+                  subagent_type: 'Investigate',
+                  prompt: 'Check for an existing Rust toolchain',
+                },
+                status: 'done',
+                result: 'No Rust toolchain found in the repo.',
+              },
+            ],
+            createdAt: FIXED_TIME + 1_000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME + 1_000,
+      },
+    ],
+  },
+  {
     id: 'side-chat-approval',
     label: 'A side chat asks for approval over its parent thread',
     project: project('demo-side-chat-approval', 'Widgets', '/demo/widgets'),

@@ -262,6 +262,7 @@ import {
   requestAcpPackageInstallApproval,
   revalidateStaleAcpModels,
   runAcpAutoSetup,
+  type AcpPackageChange,
 } from '../services/acp/acp-auto-setup.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import { requestCloseConfirmation } from '../services/close-confirm.ts'
@@ -3966,24 +3967,23 @@ export function registerAllHandlers(
       const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex-acp')
       if (!codex) throw new IpcValidationError('The Codex agent preset is missing')
       // Fixture at the detection boundary; no global package mutation runs here.
-      const scenario = parseIpcArgs(
-        z.enum(['install', 'firewall-bootstrap', 'mixed-bootstrap']).default('install'),
-        [rawScenario],
-      )
-      if (scenario === 'mixed-bootstrap') {
+      const scenario = parseIpcArgs(z.enum(['install', 'upgrade', 'mixed']).default('install'), [
+        rawScenario,
+      ])
+      const upgrade: AcpPackageChange = {
+        agent: codex,
+        action: 'upgrade',
+        fromVersion: '1.1.0',
+        toVersion: '1.1.7',
+      }
+      if (scenario === 'mixed') {
         const claude = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'claude-acp')
         if (!claude) throw new IpcValidationError('The Claude agent preset is missing')
-        return requestAcpPackageInstallApproval(
-          [
-            { agent: claude, action: 'install' },
-            { agent: codex, action: 'upgrade', fromVersion: '1.1.0', toVersion: '1.1.7' },
-          ],
-          false,
-        )
+        return requestAcpPackageInstallApproval([{ agent: claude, action: 'install' }, upgrade])
       }
-      return scenario === 'firewall-bootstrap'
-        ? requestAcpPackageInstallApproval([{ agent: codex, action: 'upgrade' }], false)
-        : requestAcpPackageInstallApproval([{ agent: codex, action: 'install' }])
+      return requestAcpPackageInstallApproval(
+        scenario === 'upgrade' ? [upgrade] : [{ agent: codex, action: 'install' }],
+      )
     })
     ipcMain.handle('test:setPortRows', (event, raw: unknown) => {
       assertMainFrameSender(event, win)

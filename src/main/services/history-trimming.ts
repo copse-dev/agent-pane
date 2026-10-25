@@ -27,9 +27,14 @@ export function prepareAgentHistory(
   compaction?: CompactionIdentity,
 ): PreparedAgentHistory {
   const historyBudget = historyTokenBudget(contextWindow, { reserveTokens: toolSchemaReserve })
+  // Turn start: no request of this turn has been measured yet. The loop-global
+  // measurement is left over from whatever ran last, possibly another thread or
+  // model, so trimming against it would cut a history that fits or keep one that
+  // does not. runAgentLoop discards it for the same reason.
   const { messages: trimmed, trimmed: wasTrimmed } = trimHistory(messages, contextWindow, {
     reserveTokens: toolSchemaReserve,
     compaction,
+    measuredInputTokens: null,
   })
   const conversationBudget = conversationTokenBudget(trimmed, contextWindow, {
     reserveTokens: toolSchemaReserve,

@@ -1883,9 +1883,7 @@ if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
     openWorkspace(root: string) {
       return ipcRenderer.invoke('test:openWorkspace', root)
     },
-    requestAcpPackageInstallApproval(
-      scenario: 'install' | 'firewall-bootstrap' | 'mixed-bootstrap' = 'install',
-    ) {
+    requestAcpPackageInstallApproval(scenario: 'install' | 'upgrade' | 'mixed' = 'install') {
       return ipcRenderer.invoke('test:requestAcpPackageInstallApproval', scenario)
     },
     emitAgentChunks(threadId: string, chunks: unknown[]) {
