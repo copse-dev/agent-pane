@@ -1,16 +1,27 @@
 import assert from 'node:assert/strict'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject, seedE2eViewport } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedEmptyProject,
+  seedE2eViewport,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
 import { maskProcessManagerLiveValues } from './helpers/process-manager-capture.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
+import { approveShellCommandIfPrompted } from './helpers/shell-approval.ts'
+import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
+import { submitComposer } from './helpers/composer.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 describe('Process manager', function () {
   this.timeout(90_000)
 
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-process-manager')
+    // A fixed repo with a real `main`: CI's checkout is a detached PR ref, and
+    // the agent turn below fails with `invalid reference: main` against it.
+    seedEmptyProject(seedStableWorkspace(), 'e2e-process-manager')
     seedE2eViewport()
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
@@ -261,5 +272,63 @@ describe('Process manager', function () {
       timeout: 10_000,
     })
     await expect($('.xterm-rows')).toHaveText(expect.stringContaining('Terminal stopped'))
+  })
+
+  it("groups an agent's run_shell command under its thread, not Shared", async () => {
+    // The previous case ends with the dialog still open over the composer.
+    const dialog = $('#process-manager-dialog')
+    if (await dialog.isDisplayed()) {
+      await dialog.$('[aria-label="Close process manager"]').click()
+      await dialog.waitForDisplayed({ reverse: true, timeout: 5_000 })
+    }
+    const threadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+    assert.ok(threadId)
+    // Long enough to outlast the 15s no-prompt wait on sandboxed Linux CI.
+    const command = 'sleep 45'
+    await prepareMockToolTurn(
+      'Run a slow command for the process manager.',
+      { name: 'run_shell', args: { command } },
+      'The slow command was stopped.',
+      true,
+    )
+    await submitComposer()
+    await approveShellCommandIfPrompted()
+
+    await $('.prompt-input').click()
+    await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'Shift', 'p'])
+    await dialog.waitForDisplayed({ timeout: 10_000 })
+    const commandSelector = `.process-manager-rows tr[data-thread-id="${threadId}"][data-kind="Command"]`
+    await browser.waitUntil(
+      async () =>
+        await browser.execute(
+          (selector, text) =>
+            [...document.querySelectorAll(`${selector} .process-manager-name`)].some((name) =>
+              name.textContent.includes(text),
+            ),
+          commandSelector,
+          command,
+        ),
+      { timeout: 15_000, timeoutMsg: 'expected the run_shell command under its thread' },
+    )
+    const sharedCommands = await browser.execute(
+      (text) =>
+        [
+          ...document.querySelectorAll(
+            '#process-manager-dialog .process-manager-rows tr[data-thread-id=""] .process-manager-name',
+          ),
+        ].filter((name) => name.textContent.includes(text)).length,
+      command,
+    )
+    assert.equal(sharedCommands, 0, 'the run_shell command must not also be listed as Shared')
+    const toggle = dialog.$(`.process-manager-group-toggle[data-group-key="${threadId}"]`)
+    if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
+    await dialog.$(commandSelector).waitForDisplayed({ timeout: 10_000 })
+    await maskProcessManagerLiveValues()
+    await saveAppScreenshot('process-manager-thread-command.png')
+
+    await dialog.$('[aria-label="Close process manager"]').click()
+    await dialog.waitForDisplayed({ reverse: true, timeout: 5_000 })
+    await $('.stop-btn').click()
+    await waitForAgentIdle(20_000)
   })
 })

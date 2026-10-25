@@ -20,6 +20,7 @@ const MODEL_B = 'gpt-5'
 interface Mounted {
   store: AppStore
   host: HTMLElement
+  threadId: string
   unmount: () => void
 }
 
@@ -39,7 +40,7 @@ function mountThread(turns: number): Mounted {
   const host = document.createElement('div')
   document.body.append(host)
   const unmount = mountConversation(host, store, createFakeApi())
-  return { store, host, unmount }
+  return { store, host, threadId, unmount }
 }
 
 /**
@@ -135,12 +136,18 @@ describe('conversation transcript rebuild', () => {
 
   it('does not scale rebuild DOM queries with thread length', () => {
     const small = mountThread(30)
+    // The active thread's own object reference must actually change for a
+    // rebuild to run at all (see the unrelated-threads_changed no-rerender
+    // test) — mirror how this is really triggered rather than re-emitting on
+    // an already-rendered, untouched thread.
+    addMessage(small.store, small.threadId, 'user', 'one more prompt')
     const smallCalls = countBlockingQuerySelectorCalls(() => {
       small.store.emit('threads_changed')
     })
     small.unmount()
 
     const large = mountThread(120)
+    addMessage(large.store, large.threadId, 'user', 'one more prompt')
     const largeCalls = countBlockingQuerySelectorCalls(() => {
       large.store.emit('threads_changed')
     })

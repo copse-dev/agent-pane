@@ -255,6 +255,13 @@ export async function requestViaServer(
   return sendToWorker(worker, request)
 }
 
+/** Each live worker's pid and the root it serves, for attributing it to that root's thread. */
+export function listSandboxFsServerProcesses(): { pid: number; root: string }[] {
+  return [...liveByRoot.values()].flatMap(({ proc, root, alive }) =>
+    alive && proc.pid !== undefined && proc.pid > 0 ? [{ pid: proc.pid, root }] : [],
+  )
+}
+
 /** Tear all workers down, across every root (app shutdown / sandbox reset). */
 export function shutdownSandboxFsServer(): void {
   for (const w of [...liveByRoot.values()]) retire(w)

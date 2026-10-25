@@ -447,7 +447,7 @@ describe('analyzeShellCommand', () => {
   })
 
   it('flags ephemeral package runners (npx/dlx/bunx/uvx/pipx) as ambiguous (#500)', () => {
-    // Ambiguous: auto-run inside an OS sandbox (Socket Firewall + seatbelt), prompt
+    // Ambiguous: auto-run inside an OS sandbox (package firewall + seatbelt), prompt
     // without one. A network fetch is blocked by the sandbox and escalates, so no
     // unpinned code is fetched unprompted.
     for (const cmd of [
