@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { ndJsonStream, type SessionUpdate } from '@agentclientprotocol/sdk'
 import { buildAcpAgentApp, type AcpTurnContext, type AcpTurnRunner } from './acp-agent-server.ts'
 import {
+  cancelAgentInitiatedTurn,
   endsSelfStartedTurn,
   isAgentWorkUpdate,
   runAcpSessionPrompt,
@@ -127,6 +128,61 @@ describe('update pump and agent-started turns', () => {
     await new Promise((resolve) => setTimeout(resolve, 50))
     assert.deepEqual(shown, ['woke up on its own'], 'output after Stop stays hidden')
     assert.equal(cancelAgentInitiatedAcpTurn('other-thread'), false)
+  })
+
+  it('disposes an agent that keeps a stopped self-started turn going past the grace window', async () => {
+    const { entry } = await acquireAcpSession({
+      threadId: 'stuck-thread',
+      config: CONFIG,
+      createTransport: runnerTransport(() => Promise.resolve({ stopReason: 'end_turn' })),
+    })
+    const { lease } = recordingLease()
+    entry.open.agentInitiated = lease
+    lease.begin()
+
+    assert.equal(cancelAgentInitiatedTurn(entry.open, 20), true)
+    await entry.open.agentInitiatedCancel?.settled
+    assert.equal(entry.open.isClosed(), true, 'an agent that never ends the turn is disposed')
+
+    // The next prompt gets a fresh process rather than the one still working.
+    const next = await acquireAcpSession({
+      threadId: 'stuck-thread',
+      config: CONFIG,
+      createTransport: runnerTransport(() => Promise.resolve({ stopReason: 'end_turn' })),
+    })
+    assert.equal(next.fresh, true)
+    assert.notEqual(next.entry.open, entry.open)
+  })
+
+  it('keeps the session when the agent ends a stopped self-started turn in time', async () => {
+    const { entry } = await acquireAcpSession({
+      threadId: 'prompt-thread',
+      config: CONFIG,
+      createTransport: runnerTransport(() => Promise.resolve({ stopReason: 'end_turn' })),
+    })
+    const { lease } = recordingLease()
+    entry.open.agentInitiated = lease
+    lease.begin()
+
+    assert.equal(cancelAgentInitiatedTurn(entry.open, 60_000), true)
+    // The agent's own end-of-turn marker acknowledges the cancel.
+    entry.open.updates.enqueue({
+      sessionUpdate: 'usage_update',
+      used: 1,
+      size: 2,
+      _meta: { '_claude/origin': { kind: 'task-notification' } },
+    })
+    await entry.open.agentInitiatedCancel?.settled
+    assert.equal(entry.open.isClosed(), false)
+    assert.equal(entry.open.agentInitiatedCancel, undefined)
+
+    const next = await acquireAcpSession({
+      threadId: 'prompt-thread',
+      config: CONFIG,
+      createTransport: runnerTransport(() => Promise.resolve({ stopReason: 'end_turn' })),
+    })
+    assert.equal(next.fresh, false)
+    assert.equal(next.entry.open, entry.open)
   })
 
   it('classifies work, state replacement and the end-of-turn marker', () => {
