@@ -689,33 +689,6 @@ export async function promptGuiAppLaunch(
   return approved
 }
 
-/**
- * Prompt to install Socket Firewall before running a package install. Declining
- * cancels the install rather than running it unscanned.
- */
-export async function promptInstallSocketFirewall(
-  command: string,
-  signal?: AbortSignal,
-): Promise<boolean> {
-  const { approved } = await requestApproval(
-    {
-      title: 'Install Socket Firewall?',
-      cause: 'shell-package-install',
-      body: [
-        'This command installs packages and will be scanned by Socket Firewall (sfw)',
-        'to block known-malicious packages — but sfw is not installed yet.',
-        '',
-        'Install it now (npm install -g sfw) and continue? Declining cancels the install.',
-        '',
-        command,
-      ].join('\n'),
-      type: 'shell',
-    },
-    signal,
-  )
-  return approved
-}
-
 async function promptExplicitToolAsk(
   toolName: string,
   args: unknown,
@@ -1714,7 +1687,6 @@ export async function ensureShellCommandPermitted(
             ...shellPromptToApprovalFields(
               formatEphemeralRunnerPromptParts(command, {
                 outsideSandbox: outsideSandbox || !sandboxEnabled,
-                safeInstall,
               }),
             ),
             subject: SHELL_DECISION_SUBJECT,

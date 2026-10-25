@@ -1642,10 +1642,10 @@
                 title: 'Package install',
                 sub: 'extra hardening',
                 summary:
-                  'Detected package managers always surface approval and can be wrapped with Socket Firewall while JavaScript install lifecycle scripts are disabled.',
+                  'Detected package managers always surface approval and run with JavaScript install lifecycle scripts disabled; their registry downloads go through a local proxy that refuses packages on public malware lists.',
                 files: [
                   'src/main/services/security/safe-install.ts',
-                  'src/main/services/security/socket-firewall.ts',
+                  'src/main/services/security/package-firewall/proxy.ts',
                 ],
               },
               {

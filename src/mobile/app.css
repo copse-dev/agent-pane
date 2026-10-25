@@ -200,6 +200,9 @@ h1 {
 /* The activity panel's own row list keeps needs-approval/needs-answer neutral
    (only the detail badge and glyph carry colour) — match that restraint here
    instead of a loud warning-coloured label (docs/ui-taste.md). */
+.state.working {
+  color: var(--info);
+}
 .state.finished {
   color: var(--change-added);
 }
@@ -375,6 +378,33 @@ h1 {
 }
 .message-content > :last-child {
   margin-bottom: 0;
+}
+.working {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 0;
+  color: var(--info);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+.working-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--info);
+  animation: working-pulse 1.1s ease-in-out infinite;
+}
+@keyframes working-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 .error {
   padding: 12px 14px;

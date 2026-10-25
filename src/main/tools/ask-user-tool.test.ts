@@ -1,5 +1,6 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { formatTimedOutResult } from '@copse/agent/ask-user-format.ts'
 import { askUserTool } from './ask-user-tool.ts'
 import { setAskUserHandler, type AskUserRequest } from '../services/ask-user.ts'
 
@@ -64,6 +65,12 @@ describe('askUserTool', () => {
       await assert.rejects(async () => await pending, /stopped before the user answered/)
     },
   )
+
+  it('tells the agent the user is away when the question timed out', async () => {
+    setAskUserHandler(async () => ({ answers: [''], timedOut: true }))
+    const result = await askUserTool.execute({ questions: [{ question: 'Which DB?' }] }, signal)
+    assert.equal(result, formatTimedOutResult())
+  })
 
   it('keeps an answer that arrived before the run stopped', async () => {
     const controller = new AbortController()
