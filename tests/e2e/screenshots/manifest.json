@@ -173,6 +173,10 @@
       "sha256": "515ee4c682a1f77d28688f83eaeb83466db8ee6932e380f755e2fdc569772451",
       "bytes": 155502
     },
+    "acp-subagent-visibility.png": {
+      "sha256": "ca0c8e6e4316d785fbc597d1780014c1c896005a39b68958e727dee909bc38de",
+      "bytes": 110526
+    },
     "acp-tool-diff.png": {
       "sha256": "b0cae7c5dc526e2bfe2d7e37ba1143a0ddae79674fb6cef04248966410abd0bf",
       "bytes": 285536
