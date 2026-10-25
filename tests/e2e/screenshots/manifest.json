@@ -1253,6 +1253,10 @@
       "sha256": "49be78a51fc2b4df19406923541ae91a1cac560b4c580a7faa393673857e03d9",
       "bytes": 77318
     },
+    "concise-state-reauth.png": {
+      "sha256": "aa4046a0381b98a22b15b3882af0634b375fd71445b053e5884b5c1773b20eae",
+      "bytes": 79731
+    },
     "concise-state-resumed.png": {
       "sha256": "64d9e624957f77e85d9c13def5bf5b50b28c327608a90aac1a8fa9d61a2edb7d",
       "bytes": 105632
