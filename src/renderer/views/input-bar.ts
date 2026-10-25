@@ -53,7 +53,11 @@ import {
   type PromptArchiveAttachment,
   type PromptVideoAttachment,
 } from '../attachments/prompt-attachments.ts'
-import { bindFileDropTarget, attachFiles } from '../attachments/handle-file-drop.ts'
+import {
+  bindFileDropTarget,
+  attachFiles,
+  UNSUPPORTED_IMAGE_MESSAGE,
+} from '../attachments/handle-file-drop.ts'
 import {
   initMentionPicker,
   relativeDate,
@@ -2726,10 +2730,7 @@ export function mountInputBar(
     if (img) {
       e.preventDefault()
       if (isUnrenderableImageMime(img.type)) {
-        showToast(
-          "Can't attach this image — its format isn't supported here. Save it as PNG or JPEG and try again.",
-          { variant: 'error' },
-        )
+        showToast(UNSUPPORTED_IMAGE_MESSAGE, { variant: 'error' })
         return
       }
       const blob = img.getAsFile()

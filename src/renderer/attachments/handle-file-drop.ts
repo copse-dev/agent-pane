@@ -4,10 +4,15 @@ import { isArchiveFile } from '@shared/archive/archive-media.ts'
 import type { PromptAttachmentHandlers } from './prompt-attachments.ts'
 import type { ActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
-import { imageMimeType, isRasterImagePath } from '@shared/fs/image-path.ts'
+import { imageMimeType, isRasterImagePath, isUnrenderableImageMime } from '@shared/fs/image-path.ts'
 import { workspaceRelativePath } from '@shared/fs/workspace-path.ts'
+import { showToast } from '../views/toast.ts'
 
 export const WORKSPACE_PATH_MIME = 'application/x-copse-panel-path'
+
+/** Shown instead of a broken chip for an image the composer cannot render, pasted or dropped. */
+export const UNSUPPORTED_IMAGE_MESSAGE =
+  "Can't attach this image — its format isn't supported here. Save it as PNG or JPEG and try again."
 
 /** A dropped or picked file's on-disk path, or null for one with none (a pasted blob). */
 function diskPathOf(file: File): string | null {
@@ -89,6 +94,10 @@ async function attachDroppedFile(
   owner: ActiveThreadOwner | null = null,
 ): Promise<void> {
   const imageMime = file.type.startsWith('image/') ? file.type : imageMimeType(file.name)
+  if (imageMime && isUnrenderableImageMime(imageMime)) {
+    showToast(UNSUPPORTED_IMAGE_MESSAGE, { variant: 'error' })
+    return
+  }
   if (imageMime) {
     const dataUrl = await readAsDataUrl(file)
     const separator = dataUrl.indexOf(',')
