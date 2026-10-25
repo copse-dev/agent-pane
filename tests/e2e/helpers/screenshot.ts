@@ -353,7 +353,21 @@ export async function waitForImagesSettled(
           // while the list is still blank. Callers that know the settled pane
           // must contain icons pass `minImages` to close that hole.
           if (images.length < min) return false
-          return images.every((img) => img.complete && img.naturalWidth > 0)
+          // A lazy image scrolled outside the host's visible area is never
+          // fetched until it nears the viewport, so waiting on it would time
+          // out; it is also outside any capture of the host. Visible and eager
+          // images must still load, and a broken one still fails.
+          const view = host.getBoundingClientRect()
+          const top = Math.max(view.top, 0)
+          const bottom = Math.min(view.bottom, window.innerHeight)
+          const left = Math.max(view.left, 0)
+          const right = Math.min(view.right, window.innerWidth)
+          const offscreenLazy = (img: HTMLImageElement): boolean => {
+            if (img.loading !== 'lazy' || img.complete) return false
+            const box = img.getBoundingClientRect()
+            return box.bottom <= top || box.top >= bottom || box.right <= left || box.left >= right
+          }
+          return images.every((img) => (img.complete && img.naturalWidth > 0) || offscreenLazy(img))
         },
         selector,
         minImages,
