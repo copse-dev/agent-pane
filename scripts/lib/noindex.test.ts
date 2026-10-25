@@ -51,7 +51,10 @@ describe('withNoindexMeta', () => {
     const script = '<script>const html = "<head></head>"</script>'
     const style = '<style>/* </head> */</style>'
     const html = `<head>${script}${style}</head><body></body>`
-    assert.equal(withNoindexMeta(html), `<head>${script}${style}${NOINDEX_META}</head><body></body>`)
+    assert.equal(
+      withNoindexMeta(html),
+      `<head>${script}${style}${NOINDEX_META}</head><body></body>`,
+    )
   })
 
   it('throws when there is no head to inject into', () => {

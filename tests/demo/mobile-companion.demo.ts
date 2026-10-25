@@ -544,8 +544,7 @@ describe('Mobile Companion at phone width', () => {
         await expect($('#messages .message:nth-child(1) .message-content br')).toExist()
         const frameHeight = await browser.execute(
           () =>
-            document.querySelector('#messages .mermaid-frame')?.getBoundingClientRect().height ??
-            0,
+            document.querySelector('#messages .mermaid-frame')?.getBoundingClientRect().height ?? 0,
         )
         assert.ok(frameHeight > 80, `diagram frame height: ${String(frameHeight)}`)
         await browser.execute(() => {

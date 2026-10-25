@@ -28,7 +28,10 @@ export function mobileAssetRoutes(): Map<
   return new Map([
     ['/', { path: 'index.html', headers: mobileResponseHeaders(html) }],
     ['/app.css', { path: 'app.css', headers: mobileResponseHeaders('text/css; charset=utf-8') }],
-    ['/app.js', { path: 'app.js', headers: mobileResponseHeaders('text/javascript; charset=utf-8') }],
+    [
+      '/app.js',
+      { path: 'app.js', headers: mobileResponseHeaders('text/javascript; charset=utf-8') },
+    ],
     [
       '/mermaid-frame.html',
       {

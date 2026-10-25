@@ -7,10 +7,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { isPrivateOrLinkLocalHost } from '@copse/llm/credential-url.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
-import {
-  mobileAssetRoutes,
-  mobileResponseHeaders,
-} from '../../../shared/mobile-asset-routes.ts'
+import { mobileAssetRoutes, mobileResponseHeaders } from '../../../shared/mobile-asset-routes.ts'
 import { MobileActionRequests, mobileActionSchema, performMobileAction } from './mobile-actions.ts'
 import {
   mobileActivity,

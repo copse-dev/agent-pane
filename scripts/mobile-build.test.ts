@@ -168,10 +168,7 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
       content.querySelector('a[href="https://example.com"]')?.getAttribute('target'),
       '_blank',
     )
-    assert.equal(
-      content.querySelector('script, [onclick], a[href^="javascript:"], img[src]'),
-      null,
-    )
+    assert.equal(content.querySelector('script, [onclick], a[href^="javascript:"], img[src]'), null)
     // The desktop transcript's rendering, shared through message-markdown.ts.
     assert.ok(content.querySelector('pre code .hljs-keyword'), 'highlighted code')
     assert.ok(content.querySelector('.code-block-copy'), 'code copy button')

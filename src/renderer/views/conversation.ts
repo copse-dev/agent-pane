@@ -808,9 +808,15 @@ function setAssistantMarkdown(
   api: ApiClient,
 ): void {
   const { body: display, transportNoise } = assistantDisplayParts(content)
-  paintAssistantMarkdown(el, display, streaming, desktopMessageHost(api, { runCommands: true }), () => {
-    syncAcpTransportNoiseDisclosure(el, transportNoise)
-  })
+  paintAssistantMarkdown(
+    el,
+    display,
+    streaming,
+    desktopMessageHost(api, { runCommands: true }),
+    () => {
+      syncAcpTransportNoiseDisclosure(el, transportNoise)
+    },
+  )
   // While live, demote as soon as the trailing line is complete; keep collapsed.
   // A paced settle syncs again after its final render (above).
   syncAcpTransportNoiseDisclosure(el, transportNoise)

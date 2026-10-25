@@ -13,6 +13,7 @@ import {
   renderSideChat,
   resolveSideChatSelection,
   SIDE_CHAT_SUGGESTIONS,
+  type SideChatMessageNodes,
 } from './side-chat-panel.ts'
 
 function message(id: string, role: Message['role'], content: string): Message {
@@ -153,7 +154,7 @@ test('renders prompts and replies with the main conversation’s message markdow
 test('a settled reply and its diagram stay mounted while a later reply streams', () => {
   const body = document.createElement('div')
   document.body.append(body)
-  const messageNodes = new Map()
+  const messageNodes: SideChatMessageNodes = new Map()
   const draw = (partial: string): void => {
     renderSideChat({
       side: thread('s', {
