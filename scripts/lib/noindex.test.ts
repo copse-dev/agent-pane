@@ -45,6 +45,15 @@ describe('withNoindexMeta', () => {
     )
   })
 
+  it('leaves a </head> inside an inline script or style alone', () => {
+    // The Mermaid frame inlines its bundle under a hash-pinned CSP; patching the
+    // script text would stop it from running.
+    const script = '<script>const html = "<head></head>"</script>'
+    const style = '<style>/* </head> */</style>'
+    const html = `<head>${script}${style}</head><body></body>`
+    assert.equal(withNoindexMeta(html), `<head>${script}${style}${NOINDEX_META}</head><body></body>`)
+  })
+
   it('throws when there is no head to inject into', () => {
     assert.throws(() => withNoindexMeta('<html><body>hi</body></html>'), /no <\/head>/)
   })

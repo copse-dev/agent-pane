@@ -805,6 +805,53 @@ const SIDE_CHATS_THREADS: Thread[] = [
   },
 ]
 
+/**
+ * The side-chats fixture with a reply that uses what the main transcript renders
+ * (a Mermaid diagram, a table, highlighted code) and a multi-line prompt, so a
+ * side chat can be checked against the shared message markdown.
+ */
+const SIDE_CHAT_RICH_THREADS: Thread[] = SIDE_CHATS_THREADS.map((thread) =>
+  thread.id === 'sc-side-1'
+    ? {
+        ...thread,
+        title: 'Why does the wait matter?',
+        messages: [
+          {
+            id: 'sc-rich-user',
+            role: 'user',
+            content: 'Why does the wait matter?\nDraw the sequence.',
+            toolCalls: [],
+            createdAt: FIXED_TIME + 3_100,
+          },
+          {
+            id: 'sc-rich-assistant',
+            role: 'assistant',
+            content: [
+              'The svg only exists after Mermaid finishes:',
+              '',
+              '```mermaid',
+              'graph TD',
+              '  A[Navigate] --> B[Empty svg]',
+              '  B --> C[Rendered diagram]',
+              '```',
+              '',
+              '| Wait | Passes on |',
+              '| --- | --- |',
+              '| waitForExist | Empty svg |',
+              '| waitForDisplayed | Rendered diagram |',
+              '',
+              '```ts',
+              "await $('.mermaid svg').waitForDisplayed()",
+              '```',
+            ].join('\n'),
+            toolCalls: [],
+            createdAt: FIXED_TIME + 3_900,
+          },
+        ],
+      }
+    : thread,
+)
+
 function approvalRiskScenario(
   id: string,
   request: NonNullable<DemoScenario['approvalRequests']>[number],
@@ -3289,6 +3336,23 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     },
     threads: SIDE_CHATS_THREADS,
+  },
+  {
+    id: 'side-chat-rich-markdown',
+    label: 'A side chat reply with a diagram, a table and code',
+    project: project('demo-side-chat-rich', 'Widgets', '/demo/widgets'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      layout: {
+        projectsPaneWidth: 240,
+        filesPaneWidth: 680,
+        filesPaneHeight: 360,
+        fileTreeWidth: 180,
+      },
+    },
+    threads: SIDE_CHAT_RICH_THREADS,
   },
   {
     id: 'side-chats-restored',
