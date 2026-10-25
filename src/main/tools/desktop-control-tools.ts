@@ -104,7 +104,7 @@ export const desktopAppsTool = defineTool({
     const gaps = [
       permissionGap(permissions, 'accessibility'),
       permissionGap(permissions, 'screenRecording'),
-    ].filter((gap): gap is string => gap !== null)
+    ].filter((gap) => gap !== null)
     return [...gaps, ...(gaps.length ? [''] : []), 'Running apps:', ...lines].join('\n')
   },
 })
