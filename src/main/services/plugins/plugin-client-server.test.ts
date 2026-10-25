@@ -15,6 +15,7 @@ import {
 import { startPluginClientServer } from './plugin-client-server.ts'
 import {
   clientSnapshotSchema,
+  clientQuestionSnapshotSchema,
   clientActivitySnapshotSchema,
   clientThreadContentSchema,
 } from '../../../shared/plugin-client-protocol.ts'
@@ -653,6 +654,18 @@ describe('interactive client desktop actions', () => {
         (await read(await post({ ...input, actionId: 'stale' }), resultSchema)).ok,
         false,
       )
+      // Rejected stale references must not exhaust the session's 4096-entry delivery budget.
+      for (let attempt = 0; attempt < 4096; attempt++) {
+        assert.equal(
+          (
+            await read(
+              await post({ ...input, actionId: 'stale', submissionId: randomUUID() }),
+              resultSchema,
+            )
+          ).ok,
+          false,
+        )
+      }
       const valid = { ...input, submissionId: randomUUID() }
       assert.equal((await read(await post(valid), resultSchema)).ok, true)
       assert.equal((await read(await post(valid), resultSchema)).ok, true)
@@ -666,6 +679,145 @@ describe('interactive client desktop actions', () => {
       assert.equal((await post({ ...input, submissionId: randomUUID() })).status, 403)
       assert.equal(calls, 1)
     } finally {
+      await server.close()
+    }
+  })
+})
+
+describe('interactive client questions', () => {
+  it('shows pending questions outside recent completions, opens them, settles exact answers once, and withdraws on timeout', async () => {
+    const decisions = new HumanDecisions()
+    const id = randomUUID()
+    const answers: unknown[] = []
+    const opened: string[] = []
+    const withdraw = decisions.register(
+      'p',
+      'new-chat',
+      {
+        id,
+        kind: 'question',
+        questions: [
+          {
+            question: 'Which database?',
+            options: ['SQLite', 'Postgres', 'Other'],
+            recommendedOption: 'SQLite',
+            recommendationReason: 'Local data',
+          },
+          { question: 'Anything else?' },
+        ],
+      },
+      (answer, principal) => answers.push({ answer, principal }),
+    )
+    let enabled = true
+    const server = await startPluginClientServer({
+      decisions,
+      enabled: () => enabled,
+      approvePair: async () => true,
+      activity: { read: async () => ({ recentThreads: [], runningCount: 0, waitingCount: 1 }) },
+      openThread: (p, t) => {
+        opened.push(p + '/' + t)
+        return true
+      },
+    })
+    try {
+      assert.equal((await fetch(server.origin + '/v1/questions')).status, 401)
+      const token = await pair(server.origin)
+      const headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }
+      const snapshot = await read(
+        await fetch(server.origin + '/v1/questions', { headers }),
+        clientQuestionSnapshotSchema,
+      )
+      const row = snapshot.requests[0]
+      assert.ok(row)
+      assert.equal(row.threadId, 'new-chat')
+      assert.equal(row.questions[0]?.recommendedOption, 'SQLite')
+      const open = await fetch(server.origin + '/v1/threads/open', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ version: 1, projectId: 'p', threadId: 'new-chat' }),
+      })
+      assert.equal(open.status, 200)
+      assert.deepEqual(opened, ['p/new-chat'])
+      const input = {
+        version: 1,
+        sessionId: snapshot.sessionId,
+        submissionId: randomUUID(),
+        projectId: row.projectId,
+        threadId: row.threadId,
+        requestId: row.requestId,
+        revision: row.revision,
+        answers: ['SQLite', 'Typed answer'],
+      }
+      const post = (value: unknown): Promise<Response> =>
+        fetch(server.origin + '/v1/questions', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(value),
+        })
+      for (const patch of [
+        { sessionId: randomUUID() },
+        { projectId: 'other' },
+        { threadId: 'other' },
+        { revision: row.revision + 1 },
+        { requestId: randomUUID() },
+        { answers: [] },
+      ]) {
+        const response = await post({ ...input, ...patch, submissionId: randomUUID() })
+        if (response.status === 200) assert.equal((await read(response, resultSchema)).ok, false)
+        else assert.equal(response.status, 400)
+        assert.equal(answers.length, 0)
+      }
+      assert.equal((await post({ ...input, answers: ['x'.repeat(8193), ''] })).status, 400)
+      assert.equal((await read(await post(input), resultSchema)).ok, true)
+      assert.equal((await read(await post(input), resultSchema)).ok, true)
+      assert.equal(
+        (await read(await post({ ...input, submissionId: randomUUID() }), resultSchema)).ok,
+        false,
+      )
+      assert.equal((await post({ ...input, answers: ['Postgres', ''] })).status, 409)
+      assert.equal(answers.length, 1)
+      assert.equal(
+        (
+          await read(
+            await fetch(server.origin + '/v1/questions', { headers }),
+            clientQuestionSnapshotSchema,
+          )
+        ).requests.length,
+        0,
+      )
+      withdraw()
+      const expired = randomUUID()
+      const stop = decisions.register(
+        'p',
+        'new-chat',
+        { id: expired, kind: 'question', questions: [{ question: 'Expired?', options: ['Yes'] }] },
+        () => answers.push('unexpected'),
+      )
+      const pending = await read(
+        await fetch(server.origin + '/v1/questions', { headers }),
+        clientQuestionSnapshotSchema,
+      )
+      stop()
+      assert.equal(
+        (
+          await read(
+            await post({
+              ...input,
+              requestId: expired,
+              revision: pending.requests[0]?.revision,
+              answers: ['Yes'],
+              submissionId: randomUUID(),
+            }),
+            resultSchema,
+          )
+        ).ok,
+        false,
+      )
+      enabled = false
+      assert.equal((await post({ ...input, submissionId: randomUUID() })).status, 403)
+      assert.equal(answers.length, 1)
+    } finally {
+      withdraw()
       await server.close()
     }
   })

@@ -72,9 +72,11 @@ describe('desktop action offer lifecycle', () => {
     await flush()
     assert.equal(calls, 0)
     claimed = false
+    const beforeFailedClaim = reference().revision
     command(reference())
     await flush()
     assert.equal(calls, 0)
+    assert.notEqual(reference().revision, beforeFailedClaim)
     claimed = true
     const good = reference()
     command(good)

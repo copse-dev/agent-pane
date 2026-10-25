@@ -99,3 +99,18 @@ This preview supplies only standard `run_shell` approvals with host-verified app
 per-project grants, durable pairing and per-client management remain stages of
 [the generic capability plan](plans/plugin-capability-api.md). Questions stay on existing desktop
 and mobile surfaces. The service is not exposed to agent-invoked plugin runtimes or model tools.
+
+## Pending questions
+
+Authenticated GET `/v1/questions` returns `{version:1, sessionId, sequence, requests}` from the
+same live human-decision registry. Each request carries `projectId`, `threadId`, `requestId`,
+`revision` and `questions` (question text, optional options and recommendation). Questions are
+available while waiting, independently of the 20 finished chats; timeout, cancellation or an answer
+on another surface withdraws them. They do not enter the legacy shell-only approval feed.
+Clients can refresh on the shared decision sequence from `/v1/events`, with periodic polling as
+reconciliation. POST `/v1/questions` submits the exact session/scope/request/revision,
+`version:1`, a fresh `submissionId` and one string in `answers` for each question (at most 8192
+characters each). Existing origin-bound authentication, revocation and exactly-once settlement
+apply. The standard question lifecycle records the paired client as the human answer source.
+Open accepts pending question chats even when absent from recent completions. Devices that cannot
+type should offer Open in Copse rather than fabricate an answer to a free-text question.

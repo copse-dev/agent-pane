@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { clientLabelSchema } from './client-auth.ts'
+import { askUserQuestionSchema, ASK_USER_ANSWER_MAX_LENGTH } from '@copse/agent/ask-user-format.ts'
 
 const id = z.string().regex(/^[\w-]{1,128}$/)
 export const clientPairSchema = z.strictObject({
@@ -35,6 +36,26 @@ export const clientSnapshotSchema = z.strictObject({
   ),
 })
 export type ClientSnapshot = z.infer<typeof clientSnapshotSchema>
+
+export const clientQuestionSnapshotSchema = z.strictObject({
+  version: z.literal(1),
+  sessionId: z.uuid(),
+  sequence: z.number().int().nonnegative(),
+  requests: z
+    .array(
+      z.strictObject({
+        projectId: id,
+        threadId: id,
+        requestId: z.uuid(),
+        revision: z.number().int().positive(),
+        questions: z.array(askUserQuestionSchema).min(1).max(10),
+      }),
+    )
+    .max(1000),
+})
+export const clientQuestionAnswerSchema = clientDecisionSchema.omit({ approved: true }).extend({
+  answers: z.array(z.string().max(ASK_USER_ANSWER_MAX_LENGTH)).min(1).max(10),
+})
 
 /** Metadata only; never includes messages, paths, tool arguments or provider state. */
 export const clientRecentThreadSchema = z.strictObject({

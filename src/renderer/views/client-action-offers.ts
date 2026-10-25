@@ -66,6 +66,12 @@ export function mountClientActionOffers(
           }
         }
       } finally {
+        if (!accepted) {
+          // The host consumes before dispatch. If delivery expires or the claim fails,
+          // republish the current UI instead of leaving its unchanged choices stranded.
+          fingerprint = ''
+          refresh()
+        }
         await api.clientActions.reply(command.id, accepted)
       }
     })().catch(() => {})

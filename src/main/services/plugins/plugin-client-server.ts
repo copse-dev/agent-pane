@@ -5,6 +5,7 @@ import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import {
   clientPairSchema,
   clientDecisionSchema,
+  clientQuestionAnswerSchema,
   clientActivityDataSchema,
   clientOpenThreadSchema,
   clientReadThreadSchema,
@@ -201,6 +202,28 @@ export async function startPluginClientServer(options: {
       })
       return
     }
+    if (req.method === 'GET' && path === '/v1/questions') {
+      const state = options.decisions.snapshot()
+      json(res, 200, {
+        version: 1,
+        sessionId: state.sessionId,
+        sequence: state.sequence,
+        requests: state.requests.flatMap(({ projectId, threadId, revision, decision }) =>
+          decision.kind === 'question'
+            ? [
+                {
+                  projectId,
+                  threadId,
+                  revision,
+                  requestId: decision.id,
+                  questions: decision.questions,
+                },
+              ]
+            : [],
+        ),
+      })
+      return
+    }
     if (req.method === 'POST' && path === '/v1/actions') {
       const input = safeJsonParse(await body(req), decodeWithSchema(clientActionSubmissionSchema))
       if (!input) {
@@ -225,6 +248,17 @@ export async function startPluginClientServer(options: {
           return
         }
         json(res, 200, await previous.result)
+        return
+      }
+      const offer = options.actions?.snapshot()
+      if (
+        !offer ||
+        offer.projectId !== input.projectId ||
+        offer.threadId !== input.threadId ||
+        offer.revision !== input.revision ||
+        !offer.actions.some((action) => action.id === input.actionId)
+      ) {
+        json(res, 200, { ok: false, reason: 'Action changed or unavailable' })
         return
       }
       if (actionDeliveries.size >= 4096) {
@@ -346,7 +380,7 @@ export async function startPluginClientServer(options: {
           .snapshot()
           .requests.some(
             (row) =>
-              row.interactiveClientSupported &&
+              (row.interactiveClientSupported === true || row.decision.kind === 'question') &&
               row.projectId === input.projectId &&
               row.threadId === input.threadId,
           )
@@ -383,8 +417,12 @@ export async function startPluginClientServer(options: {
       })
       return
     }
-    if (req.method === 'POST' && path === '/v1/decisions') {
-      const input = safeJsonParse(await body(req), decodeWithSchema(clientDecisionSchema))
+    if (req.method === 'POST' && (path === '/v1/decisions' || path === '/v1/questions')) {
+      const text = await body(req)
+      const input =
+        path === '/v1/questions'
+          ? safeJsonParse(text, decodeWithSchema(clientQuestionAnswerSchema))
+          : safeJsonParse(text, decodeWithSchema(clientDecisionSchema))
       if (!input) {
         json(res, 400, { error: 'Invalid decision' })
         return
@@ -415,21 +453,28 @@ export async function startPluginClientServer(options: {
         .snapshot()
         .requests.some(
           (entry) =>
-            entry.decision.id === input.requestId && entry.interactiveClientSupported === true,
+            entry.decision.id === input.requestId &&
+            ('answers' in input
+              ? entry.decision.kind === 'question'
+              : entry.decision.kind === 'approval' && entry.interactiveClientSupported === true),
         )
       const ok =
         supported &&
         options.decisions.respond(
           input,
-          { kind: 'approval', approved: input.approved },
+          'answers' in input
+            ? { kind: 'question', answers: input.answers }
+            : { kind: 'approval', approved: input.approved },
           { id: client.id, label: client.label, source: 'plugin-client' },
         )
       const result = {
         ok,
         reason: ok
-          ? input.approved
-            ? 'Approved once'
-            : 'Denied'
+          ? 'answers' in input
+            ? 'Answers submitted'
+            : input.approved
+              ? 'Approved once'
+              : 'Denied'
           : 'Request changed or was answered elsewhere',
       }
       deliveries.set(key, { fingerprint, result })

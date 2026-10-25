@@ -49,9 +49,9 @@ export function syncPluginClientApi(): Promise<void> {
           const result = await requestApproval(
             {
               title: 'Connect interactive client',
-              body: `Client: ${label}\nPairing code: ${code}\nScope: shell-command approvals, recent chat titles and text, opening those chats and using their offered follow-up actions across all projects`,
+              body: `Client: ${label}\nPairing code: ${code}\nScope: shell-command approvals, agent questions, recent chat titles and text, opening those chats and using their offered follow-up actions across all projects`,
               bodyAdvice:
-                'Verify this code in the client you opened. Connecting allows this client to view and answer shell-command approval requests, read recent chat titles and recent user/assistant message text, open those chats and use their offered follow-up actions across all projects. Follow-ups can fill a draft, send a message, start a review or open a dialog. Chat text and approval details may contain sensitive information. Reasoning, tool output and attachments are not shared. Access ends when this plugin is disabled or Copse quits.',
+                'Verify this code in the client you opened. Connecting allows this client to view and answer shell-command approval requests and agent questions, read recent chat titles and recent user/assistant message text, open those chats and use their offered follow-up actions across all projects. Follow-ups can fill a draft, send a message, start a review or open a dialog. Chat text, questions and approval details may contain sensitive information. Reasoning, tool output and attachments are not shared. Access ends when this plugin is disabled or Copse quits.',
               type: 'mcp',
               subject: 'Pair interactive client',
               approveLabel: 'Connect client',
