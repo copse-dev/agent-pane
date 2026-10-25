@@ -21,7 +21,7 @@
       __defProp(target, name, { get: all[name], enumerable: true });
   };
 
-  // node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
+  // node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
   function decodeMermaidHtmlEntities(text2) {
     return text2.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
   }
@@ -66,11 +66,11 @@
     return [...new Set([gentle, aggressive].filter(Boolean))];
   }
   var init_mermaid_source = __esm({
-    "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
+    "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
     }
   });
 
-  // node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js
+  // node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js
   function own(value, key) {
     return Object.hasOwn(value, key) ? Reflect.get(value, key) : void 0;
   }
@@ -107,7 +107,7 @@
   }
   var MAX_DIAGRAM_SOURCE_LENGTH, MERMAID_THEMES, MAX_FONT_BYTES, FONT_FAMILY_LIST, FONT_FAMILY_NAME;
   var init_mermaid_frame_protocol = __esm({
-    "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js"() {
+    "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js"() {
       MAX_DIAGRAM_SOURCE_LENGTH = 5e4;
       MERMAID_THEMES = ["default", "dark", "forest", "neutral"];
       MAX_FONT_BYTES = 4 * 1024 * 1024;
@@ -116,7 +116,7 @@
     }
   });
 
-  // node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/mermaid-frame-runtime.js
+  // node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-frame-runtime.js
   function createMermaidRunner(mermaid, options = {}) {
     let initialized = false;
     return async (root) => {
@@ -235,7 +235,7 @@
     };
   }
   var init_mermaid_frame_runtime = __esm({
-    "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/mermaid-frame-runtime.js"() {
+    "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-frame-runtime.js"() {
       init_mermaid_source();
       init_mermaid_frame_protocol();
     }
@@ -20817,7 +20817,7 @@ but found: '${Qt(ve)}'`); (nr[tt[ve]] & qf) !== 0; ) ve++;
     }
   });
 
-  // node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/mermaid-pele.js
+  // node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-pele.js
   function createPeleDiagramRenderer(options = {}) {
     const settings = { ...options };
     return {
@@ -20835,7 +20835,7 @@ but found: '${Qt(ve)}'`); (nr[tt[ve]] & qf) !== 0; ) ve++;
   }
   var diagramSeq, peleDiagramRenderer;
   var init_mermaid_pele = __esm({
-    "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/mermaid-pele.js"() {
+    "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-pele.js"() {
       diagramSeq = 0;
       peleDiagramRenderer = createPeleDiagramRenderer();
     }
