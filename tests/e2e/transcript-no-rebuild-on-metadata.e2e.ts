@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs'
-import { $, browser, expect } from '@wdio/globals'
+import { browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import {
   resetUserData,
@@ -17,26 +17,31 @@ import {
 const LINK = '[data-message-id="msg-rebuild-assistant"] a.file-reference-link'
 
 async function renameThread(from: string, to: string): Promise<void> {
-  // Electron/WDIO doubleClick() does not reliably synthesize a DOM dblclick;
-  // dispatch the event the sidebar title listens for.
-  await browser.execute((title) => {
-    const row = Array.from(document.querySelectorAll<HTMLElement>('.chat-row')).find((r) =>
-      (r.querySelector('.chat-title')?.textContent ?? '').includes(title),
-    )
-    const el = row?.querySelector('.chat-title')
-    if (!(el instanceof HTMLElement)) throw new Error(`chat title not found for ${title}`)
-    el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }))
-  }, from)
-  const input = await $('.chat-title-rename').getElement()
-  await input.waitForExist({ timeout: 5_000 })
-  await browser.execute(() => {
-    const field = document.querySelector<HTMLInputElement>('.chat-title-rename')
-    if (!field) throw new Error('rename input missing before focus')
-    field.focus()
-    field.select()
-  })
-  await input.setValue(to)
-  await browser.keys('Enter')
+  // Open, fill and commit the rename in one task, through the same dblclick,
+  // input and Enter handlers a user drives. Electron/WDIO doubleClick() does
+  // not reliably synthesize a DOM dblclick, and across separate WebDriver
+  // calls a slow runner can move focus off the fresh input after its blur
+  // grace: the rename then commits the old title and the input is gone before
+  // setValue reaches it, which waits out the test timeout.
+  await browser.execute(
+    (title, next) => {
+      const row = Array.from(document.querySelectorAll<HTMLElement>('.chat-row')).find((r) =>
+        (r.querySelector('.chat-title')?.textContent ?? '').includes(title),
+      )
+      const el = row?.querySelector('.chat-title')
+      if (!(el instanceof HTMLElement)) throw new Error(`chat title not found for ${title}`)
+      el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }))
+      const field = document.querySelector<HTMLInputElement>('.chat-title-rename')
+      if (!field) throw new Error(`rename input did not open for ${title}`)
+      field.value = next
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+      field.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+      )
+    },
+    from,
+    to,
+  )
   await browser.waitUntil(
     async () =>
       browser.execute(
