@@ -648,7 +648,11 @@ Rules of thumb:
   hiding. A tall opaque slab makes a long page look like it has ended when it has only scrolled
   under the bar. Prefer a frosted panel: a gradient wash plus `backdrop-filter`, both carried on a
   masked `::before` so the effect ramps in rather than starting at a hard line, and no `border-top`
-  (a hairline across a see-through bar reads as the cut the fade exists to avoid). See
+  (a hairline across a see-through bar reads as the cut the fade exists to avoid). Run the ramp
+  _above_ the bar (extend the `::before` upward by the fade length) so the bar itself, buttons
+  included, sits on full-strength frost; a ramp inside the bar leaves the actions in its half-clear
+  part. Reserve the fade's depth as well as the bar's (in `scroll-padding-bottom` and the bar's top
+  margin), or a scrolled-to control and the last row stop inside the ramp and render blurred. See
   `.settings-buttons` in `settings.css`.
 - An absolutely positioned `::before` paints in the **positioned** layer, i.e. _above_ the bar's
   in-flow children. Give the buttons `position: relative; z-index: 1` or they come out blurred
@@ -1561,6 +1565,8 @@ than the card. Differences from the overlay are listed under each point below.
   scope and nothing is remembered, which is why it can live here while Approve stays the only
   in-place grant. Quick answers fill the field and never send. Cmd/Ctrl+Enter sends, as in the
   ask dialog.
+  Host-authored recovery actions, such as ACP sign-in, are direct buttons: they
+  answer on click and show no free-text field or Send answer control.
 - **Approve is the only in-place grant, and only beside the full request.** The detail
   renders the request with the prompt's own advice / body / footer classes and never
   truncates. Broader answers stay on the prompt in the thread.

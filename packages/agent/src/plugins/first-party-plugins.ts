@@ -114,6 +114,7 @@ import { claudeMdPlugin } from './claude-md-plugin.ts'
 import { agentsMdPlugin } from './agents-md-plugin.ts'
 import { cursorRulesPlugin } from './cursor-rules-plugin.ts'
 import { pluginClientApiPlugin } from './plugin-client-api-plugin.ts'
+import { engineeringPlugin } from './engineering-plugin.ts'
 
 /**
  * Every plugin Copse ships. Order is preserved as the Settings plugin-list
@@ -151,6 +152,7 @@ export const FIRST_PARTY_PLUGINS: readonly RegisteredPlugin[] = [
   reviewerInputPlugin,
   siteBuildingPlugin,
   pluginClientApiPlugin,
+  engineeringPlugin,
 ]
 
 /**
