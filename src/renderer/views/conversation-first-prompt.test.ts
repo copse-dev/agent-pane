@@ -12,7 +12,10 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-function fixture(count = 97): {
+function fixture(
+  count = 97,
+  roleAt = (index: number): 'user' | 'assistant' => (index % 2 === 0 ? 'user' : 'assistant'),
+): {
   host: HTMLElement
   list: HTMLElement
   first: HTMLButtonElement
@@ -23,7 +26,7 @@ function fixture(count = 97): {
   const store = createStore()
   const threadId = createThread(store)
   for (let i = 0; i < count; i++) {
-    addMessage(store, threadId, i % 2 === 0 ? 'user' : 'assistant', `Message ${String(i)}`)
+    addMessage(store, threadId, roleAt(i), `Message ${String(i)}`)
   }
   const host = document.createElement('div')
   document.body.append(host)
@@ -62,6 +65,42 @@ describe('first prompt navigation', () => {
     back.click()
     assert.equal(list.scrollTop, 935)
     assert.equal(back.textContent, 'Back to latest')
+  })
+
+  it('jumps to a sole prompt that sticks at the top while its answer is read', () => {
+    const { list, first } = fixture(40, (index) => (index === 0 ? 'user' : 'assistant'))
+    list.style.paddingTop = '16px'
+    list.style.rowGap = '8px'
+    const prompt = list.querySelector<HTMLElement>('.msg-user')
+    assert.ok(prompt)
+    // The latest human prompt sticks, so its box stays at the top however far
+    // the list scrolls; here it is also the first prompt.
+    prompt.style.position = 'sticky'
+    prompt.getBoundingClientRect = (): DOMRect => new DOMRect(0, -16, 600, 100)
+    scroll(list, 1_900)
+    first.click()
+    assert.equal(list.scrollTop, 16)
+  })
+
+  it('keeps the way back while a stream the reader scrolled down to glides on', (t) => {
+    t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 })
+    const { list, first, back } = fixture()
+    scroll(list, 935)
+    first.click()
+    // Past the scroll-up debounce, the reader scrolls back to the live end by hand.
+    t.mock.timers.tick(1_000)
+    scroll(list, 9_400)
+    // The answer grows, and frames now arrive one at a time as in a browser.
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => 12_000 })
+    const frames: Array<() => void> = []
+    t.mock.method(globalThis, 'requestAnimationFrame', (callback: () => void) =>
+      frames.push(callback),
+    )
+    list.dispatchEvent(new CustomEvent('copse:stream-paint'))
+    frames.shift()?.()
+    assert.ok(list.scrollTop > 9_400, 'the stream follow glides toward the new end')
+    assert.equal(back.hidden, false)
+    assert.equal(back.textContent, 'Back to where you were')
   })
 
   it('hides navigation when the entire thread fits in the viewport', () => {

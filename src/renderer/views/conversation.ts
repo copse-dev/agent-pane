@@ -3308,9 +3308,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       )
       if (target) {
         pendingFirstPromptId = null
-        setScrollTopProgrammatically(
-          list.scrollTop + target.getBoundingClientRect().top - list.getBoundingClientRect().top,
-        )
+        // The latest prompt sticks while read past, so when the first prompt is
+        // also the latest its box is already at the top: use its place in the flow.
+        const top =
+          window.getComputedStyle(target).position === 'sticky'
+            ? naturalRowTop(target)
+            : target.getBoundingClientRect().top
+        setScrollTopProgrammatically(list.scrollTop + top - list.getBoundingClientRect().top)
       }
     }
     firstPromptBtn.hidden =
@@ -3321,6 +3325,17 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       scrollToBottomBtn.setAttribute('aria-label', label)
     }
     scrollToBottomBtn.hidden = returnPosition === null && isNearBottom()
+  }
+
+  /** Where a row's top would be without a sticky offset, in viewport pixels. */
+  function naturalRowTop(row: HTMLElement): number {
+    const listStyle = window.getComputedStyle(list)
+    const previous = row.previousElementSibling
+    // The previous row stays in normal flow while this one sticks. Its bottom
+    // tells us where this row would be without the sticky offset.
+    return previous
+      ? previous.getBoundingClientRect().bottom + Number.parseFloat(listStyle.rowGap)
+      : list.getBoundingClientRect().top + Number.parseFloat(listStyle.paddingTop) - list.scrollTop
   }
 
   function syncStickyImagePreview(releaseOnScrollUp = false): void {
@@ -3334,12 +3349,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
     const listRect = list.getBoundingClientRect()
     const listStyle = window.getComputedStyle(list)
-    const previous = prompt.previousElementSibling
-    // The previous row stays in normal flow while this prompt sticks. Its
-    // bottom tells us where the prompt would be without the sticky offset.
-    const naturalTop = previous
-      ? previous.getBoundingClientRect().bottom + Number.parseFloat(listStyle.rowGap)
-      : listRect.top + Number.parseFloat(listStyle.paddingTop) - list.scrollTop
+    const naturalTop = naturalRowTop(prompt)
     const stickyTop =
       listRect.top + Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top)
     const compact = prompt.classList.contains('is-preview-compact')
@@ -3495,7 +3505,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       list.scrollTop + Math.ceil(gap * (1 - Math.exp(-dt / STREAM_FOLLOW_EASE_MS))),
     )
     // Still following: the view is pinned, only a few pixels short mid-glide.
-    scrollToBottomBtn.hidden = true
+    // A saved reading position keeps its return button, as updateScrollButton does.
+    if (returnPosition === null) scrollToBottomBtn.hidden = true
     return true
   })
   list.addEventListener(STREAM_PAINT_EVENT, () => {
