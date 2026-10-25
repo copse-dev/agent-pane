@@ -498,8 +498,8 @@
       "bytes": 27353
     },
     "approval-chat-scoped.png": {
-      "sha256": "e0dbc7b8b5b2d698f1ba1a5cd762e7f37e1561d2399e6a89d41059184ef4ac95",
-      "bytes": 258189
+      "sha256": "f6a05915a2861d13172292774e2251ccaf9bb90594a079630cf26be3e9954a3d",
+      "bytes": 246922
     },
     "approval-grouped-shell-commands.png": {
       "sha256": "48135affc8701c5c4038a38d1ca8e94b9922b6ed3ad7449734f6b95d9d6bc9aa",
@@ -2682,8 +2682,8 @@
       "bytes": 227283
     },
     "plain-language-install-approval.png": {
-      "sha256": "873db060a52217669008b28938aac46844a79530d780b74c50cd21ac87d42744",
-      "bytes": 280198
+      "sha256": "4482ff022973de8badb645298c4fcf963942539f6916c557024eddbb6633e17c",
+      "bytes": 267208
     },
     "plain-language-settings-codex-agent.png": {
       "sha256": "000d079a8cacb6f05d570a51c6277e37bd19760524c8bcee654420297e221f7f",
@@ -5418,8 +5418,8 @@
       "bytes": 279733
     },
     "worktree-preparation-approval.png": {
-      "sha256": "c57303b69f8ab50bdba9621ab068f77600642c5662c22776fc52a11a58576c14",
-      "bytes": 264756
+      "sha256": "7ee4369b4470767782b64419183c3b6fbeda68c944be6103716c8b79f678959c",
+      "bytes": 265501
     },
     "worktree-preparation-cargo.png": {
       "sha256": "18e81d6b6c71abdb271cde425331e7cda0cb9de0e422a61a27b3c8cd7c4bb4ad",
