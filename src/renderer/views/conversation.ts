@@ -41,6 +41,7 @@ import {
 import type { HookRunDetail } from '@shared/types/hooks.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import {
+  artefactPreviewRevision,
   artefactUriFromToolResult,
   getArtefactPreview,
   requestArtefactShow,
@@ -755,6 +756,10 @@ interface TranscriptInputs {
   // Tracked outside the Thread object (thread-hydration.ts), so it can flip
   // without any thread field changing.
   readonly hydrationFailed: boolean
+  // Canvas cards read their thumbnail when built, and thumbnails also live
+  // outside the Thread (artefact-previews.ts): thread hydration loads them
+  // after the transcript and repaints with a bare threads_changed.
+  readonly artefactPreviewRevision: number
 }
 
 function transcriptInputs(store: AppStore, thread: Thread): TranscriptInputs {
@@ -776,6 +781,7 @@ function transcriptInputs(store: AppStore, thread: Thread): TranscriptInputs {
       .join('\n'),
     needsHydration: needsHydration(thread),
     hydrationFailed: hydrationFailed(thread.id),
+    artefactPreviewRevision: artefactPreviewRevision(thread.id),
   }
 }
 
@@ -796,6 +802,7 @@ function sameTranscriptInputs(a: TranscriptInputs, b: TranscriptInputs): boolean
     a.liveProposalTargets === b.liveProposalTargets &&
     a.needsHydration === b.needsHydration &&
     a.hydrationFailed === b.hydrationFailed &&
+    a.artefactPreviewRevision === b.artefactPreviewRevision &&
     sameItems(a.messages, b.messages) &&
     sameItems(a.pendingMessages, b.pendingMessages) &&
     sameItems(a.threadProposals, b.threadProposals) &&

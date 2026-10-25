@@ -4,12 +4,14 @@ import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import {
   addMessage,
+  addMessageCanvasArtefact,
   createThread,
   patchThreadAnywhere,
   setThreadGitBranch,
   setThreadTitle,
 } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { resetArtefactPreviewsForTest, setArtefactPreview } from '../canvas/artefact-previews.ts'
 import { mountConversation } from './conversation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
@@ -54,6 +56,7 @@ const unmounts: (() => void)[] = []
 afterEach(() => {
   for (const unmount of unmounts.splice(0)) unmount()
   document.body.replaceChildren()
+  resetArtefactPreviewsForTest()
 })
 
 describe('conversation does not rebuild on an unrelated thread_changed (component)', () => {
@@ -168,5 +171,25 @@ describe('conversation does not rebuild when only the active thread metadata cha
     assert.ok(after)
     assert.ok(after !== before, 'expected a fresh message node after the transcript changed')
     assert.match(after.textContent, /Edited\./)
+  })
+
+  it('still rebuilds when a canvas thumbnail arrives for the thread', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Here is the dashboard.')
+    addMessageCanvasArtefact(store, messageId, { title: 'Sales dashboard' })
+    const host = document.createElement('div')
+    document.body.append(host)
+    unmounts.push(mountConversation(host, store, fakeApi()))
+    const image = (): Element | null =>
+      document.querySelector(`[data-message-id="${messageId}"] .canvas-preview-image`)
+    assert.equal(image(), null, 'no thumbnail is known yet')
+
+    // Thread hydration reads saved thumbnails after the transcript and
+    // announces them with a bare threads_changed: no thread field moves.
+    setArtefactPreview(threadId, 'Sales dashboard', 'data:image/png;base64,AAAA')
+    store.emit('threads_changed')
+
+    assert.equal(image()?.getAttribute('src'), 'data:image/png;base64,AAAA')
   })
 })
