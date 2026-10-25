@@ -333,7 +333,7 @@
   },
   {
     "id": "concise-state-reauth",
-    "label": "A failed ACP turn offering a direct sign-in action"
+    "label": "A failed coding-agent turn offering a direct sign-in action"
   },
   {
     "id": "concise-state-subagent",
