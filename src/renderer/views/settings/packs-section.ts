@@ -3,6 +3,7 @@ import { showConfirmDialog } from '../confirm-dialog.ts'
 import type { PluginInstallRecord, PluginInstallReview } from '@shared/types/plugin-installs.ts'
 import type { ApiClient } from '../../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import type { SettingsSnapshot } from '@shared/settings-contract.ts'
 import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -68,6 +69,7 @@ export function createPacksSection(
   overlay: HTMLElement,
   api: ApiClient,
   store: AppStore,
+  readSettings: () => SettingsSnapshot | null,
   getActiveSection: () => SettingsSection,
   onNavigate: (section: SettingsSection) => Promise<AbortSignal | undefined>,
   onMcpChanged: () => void,
@@ -919,6 +921,7 @@ export function createPacksSection(
   // element ids. Move experimental rows into the active section instead of
   // mounting duplicate controls, and return them to Customise on navigation.
   let pluginEntries: { enabled: boolean; experimental: boolean; row: HTMLElement }[] | null = null
+  let offerPstackInstall = false
 
   function renderPluginLists(): void {
     // Cross-section search should only collect the fieldset holding the rows.
@@ -934,6 +937,23 @@ export function createPacksSection(
         (entry) => (getActiveSection() === 'experimental' && entry.experimental) === experimental,
       )
       listEl.replaceChildren()
+      if (!experimental && offerPstackInstall) {
+        const notice = document.createElement('div')
+        notice.className = 'field-hint bundled-plugin-migration'
+        const text = document.createElement('p')
+        text.textContent =
+          'pstack is now an optional plugin. You previously enabled the bundled copy. Review an installation to keep using it.'
+        const browse = document.createElement('button')
+        browse.type = 'button'
+        browse.className = 'ui-btn ui-btn-secondary'
+        browse.textContent = 'Find pstack'
+        browse.addEventListener('click', () => {
+          selectPluginView('browse')
+          pluginCatalogBrowser.search('pstack')
+        })
+        notice.append(text, browse)
+        listEl.append(notice)
+      }
       let lastEnabled: boolean | null = null
       for (const entry of entries) {
         if (entry.enabled !== lastEnabled) {
@@ -983,6 +1003,13 @@ export function createPacksSection(
       ])
       if (generation !== pluginRefreshGeneration || signal?.aborted) return
       managedInstalls = new Map(installs.map((record) => [record.pluginId, record]))
+      const bundledOverrides = readSettings()?.bundledSkillPluginOverrides
+      offerPstackInstall =
+        isRecord(bundledOverrides) &&
+        bundledOverrides['pstack'] === true &&
+        !result.plugins.some((plugin) => plugin.id === 'pstack') &&
+        !cursorPlugins.some((plugin) => plugin.name === 'pstack') &&
+        !installs.some((plugin) => plugin.pluginId === 'pstack')
       pluginCatalogBrowser.updateInstalled({
         cursor: cursorPlugins.map((plugin) => plugin.name),
         bundledCursor: bundledPlugins.map((plugin) => plugin.name),

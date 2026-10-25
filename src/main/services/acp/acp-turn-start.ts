@@ -9,7 +9,10 @@ import { getThreadExecutionContext, isThreadCheckoutDeferred } from '../thread-e
 
 export interface AssembleAcpTurnStartOptions {
   userText: string
+  invokedSkills?: readonly string[]
   priorTodos: readonly TodoItem[]
+  /** Whether the thread had no prior messages before this one; see `TurnStartPayload.firstTurn`. */
+  firstTurn: boolean
   model: string
   registry: ToolRegistry
   signal: AbortSignal
@@ -51,7 +54,9 @@ export async function assembleAcpTurnStart(
     'turnStart',
     {
       userText: options.userText,
+      ...(options.invokedSkills ? { invokedSkills: options.invokedSkills } : {}),
       priorTodos: options.priorTodos,
+      firstTurn: options.firstTurn,
       executor: 'acp',
       model: options.model,
       toolNames: bridgedTools.map((tool) => tool.name),

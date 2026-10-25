@@ -64,6 +64,7 @@ const forced =
   env['STACK_TIP'] === 'true' ||
   env['CI_FULL_LABEL'] === 'true' ||
   env['UPDATE_SCREENSHOTS_LABEL'] === 'true' ||
+  env['SCREENSHOT_REFRESH'] === 'true' ||
   env['EVENT'] === 'schedule' ||
   (env['EVENT'] === 'push' &&
     (env['GITHUB_REF'] === 'refs/heads/release' ||

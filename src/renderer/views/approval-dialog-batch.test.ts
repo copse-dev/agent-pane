@@ -22,6 +22,8 @@ interface EmitReq {
   bodyAdvice?: string
   bodyFooter?: string
   type?: 'shell' | 'mcp' | 'web'
+  standalone?: boolean
+  showWhileSettingsOpen?: boolean
   allowRemember?: boolean
   rememberLabel?: string
   collapseDetails?: boolean
@@ -83,6 +85,8 @@ function makeApi(): {
         bodyAdvice: req.bodyAdvice,
         bodyFooter: req.bodyFooter,
         type: req.type ?? 'shell',
+        standalone: req.standalone,
+        showWhileSettingsOpen: req.showWhileSettingsOpen,
         allowRemember: req.allowRemember,
         rememberLabel: req.rememberLabel,
         collapseDetails: req.collapseDetails,
@@ -112,6 +116,13 @@ function shimDialog(dialog: HTMLDialogElement): { showCalls: number } {
   let open = false
   Object.defineProperties(dialog, {
     show: {
+      configurable: true,
+      value: () => {
+        open = true
+        spy.showCalls += 1
+      },
+    },
+    showModal: {
       configurable: true,
       value: () => {
         open = true
@@ -193,6 +204,59 @@ describe('approval dialog coalescing', () => {
     [...dialog.querySelectorAll('.approval-body')].map((n) => n.textContent)
   const rowTitles = (): (string | null)[] =>
     [...dialog.querySelectorAll('.approval-item-title')].map((n) => n.textContent)
+
+  it('interrupts a shell batch for standalone pairing, requires only its own consent, and resumes the shell', () => {
+    emit({ id: 'shell', threadId: 'focused' })
+    fireWindow()
+    emit({
+      id: 'pair',
+      title: 'Connect interactive client',
+      body: 'Code 123456',
+      type: 'mcp',
+      standalone: true,
+      approveLabel: 'Connect client',
+    })
+    assert.equal(heading(), 'Connect interactive client')
+    assert.deepEqual(bodies(), ['Code 123456'])
+    assert.equal(qsRequired(dialog, '.approval-remember').hidden, true)
+    assert.equal(approve().textContent, 'Connect client')
+    assert.equal(approve().disabled, true)
+    approve().click()
+    assert.equal(responses.length, 0)
+    fireSettle()
+    approve().click()
+    assert.deepEqual(
+      responses.map(({ id, approved, remember }) => ({ id, approved, remember })),
+      [{ id: 'pair', approved: true, remember: false }],
+    )
+    assert.deepEqual(bodies(), ['body-shell'])
+    assert.equal(approve().disabled, true)
+    qsRequired<HTMLButtonElement>(dialog, '.approval-reject').click()
+    assert.equal(responses.at(-1)?.id, 'shell')
+    assert.equal(responses.at(-1)?.approved, false)
+  })
+
+  it('keeps multiple pairings separate and holds later shell arrivals until each pairing finishes', () => {
+    emit({ id: 'shell', threadId: 'focused' })
+    emit({ id: 'pair1', standalone: true })
+    emit({ id: 'pair2', standalone: true })
+    fireWindow()
+    assert.deepEqual(bodies(), ['body-pair1'])
+    emit({ id: 'later', threadId: 'focused' })
+    assert.deepEqual(bodies(), ['body-pair1'])
+    qsRequired<HTMLButtonElement>(dialog, '.approval-reject').click()
+    assert.deepEqual(
+      responses.map((r) => r.id),
+      ['pair1'],
+    )
+    assert.deepEqual(bodies(), ['body-pair2'])
+    cancel('pair2')
+    assert.deepEqual(bodies(), ['body-shell', 'body-later'])
+    assert.deepEqual(
+      responses.map((r) => r.id),
+      ['pair1'],
+    )
+  })
 
   it('waits for the window before opening, then pops once', () => {
     emit({ id: 'a' })

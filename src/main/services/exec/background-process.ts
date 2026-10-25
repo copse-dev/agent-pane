@@ -83,11 +83,12 @@ export interface BackgroundProcessInfo {
 const processes = new Map<string, BackgroundProcess>()
 
 /**
- * Operation ids are quoted back to the model and rendered in the transcript
- * ("Background task <id> exited with code 0 …" on the completion wake). A
- * random UUID there makes every reference screenshot of that message differ
- * per run, so under e2e ids come from a counter instead. Still unique for the
- * life of the main process, which is all `processes` needs.
+ * Operation ids are quoted back to the model and surfaced in tool-call detail
+ * (the completion wake's transcript text stays id-free — see
+ * `backgroundCompletionPrompt` — but the raw id still reaches an expanded
+ * tool card). A random UUID there makes every reference screenshot of that
+ * card differ per run, so under e2e ids come from a counter instead. Still
+ * unique for the life of the main process, which is all `processes` needs.
  */
 let e2eOperationSequence = 0
 
