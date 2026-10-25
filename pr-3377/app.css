@@ -9170,7 +9170,8 @@ dialog.settings-overlay::backdrop {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  scroll-padding-bottom: calc(var(--action-min-height) + var(--spacing-lg) + var(--spacing-xl) + var(--spacing-lg) + var(--spacing-md));
+  --settings-footer-fade: calc(var(--spacing-xl) * 2);
+  scroll-padding-bottom: calc(var(--action-min-height) + var(--spacing-lg) + var(--spacing-xl) + var(--spacing-lg) + var(--spacing-md) + var(--settings-footer-fade));
   padding: calc(var(--spacing-xl) * 2) var(--spacing-xl) 0;
 }
 .settings-section,
@@ -9260,7 +9261,7 @@ dialog.settings-overlay::backdrop {
   display: flex;
   gap: var(--spacing-md);
   justify-content: flex-end;
-  margin-top: var(--spacing-xl);
+  margin-top: var(--settings-footer-fade);
   padding-top: var(--spacing-lg);
   padding-bottom: calc(var(--spacing-xl) + var(--spacing-lg));
   position: sticky;
@@ -9273,25 +9274,25 @@ dialog.settings-overlay::backdrop {
 .settings-buttons::before {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: calc(-1 * var(--settings-footer-fade)) 0 0;
   pointer-events: none;
   background:
     linear-gradient(
       to bottom,
-      transparent 0%,
-      color-mix(in srgb, var(--bg-base) 55%, transparent) 40%,
+      transparent 0,
+      color-mix(in srgb, var(--bg-base) 55%, transparent) var(--settings-footer-fade),
       color-mix(in srgb, var(--bg-base) 88%, transparent) 100%);
   backdrop-filter: blur(10px);
   -webkit-mask-image:
     linear-gradient(
       to bottom,
-      transparent 0%,
-      #000 45%);
+      transparent 0,
+      #000 var(--settings-footer-fade));
   mask-image:
     linear-gradient(
       to bottom,
-      transparent 0%,
-      #000 45%);
+      transparent 0,
+      #000 var(--settings-footer-fade));
 }
 .settings-buttons button,
 #settings-save-status {

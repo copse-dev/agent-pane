@@ -153044,6 +153044,12 @@ function mountFooterBranchStatus(host, store2, api2) {
     store2.on("workspace_changed", refreshNow),
     store2.on("threads_changed", () => {
       if (store2.getState().activeThreadId !== refreshedThreadId) {
+        status = null;
+        detached = null;
+        branches = [];
+        defaultBranch = null;
+        renderTrigger();
+        if (open2) renderMenu();
         refreshNow();
         return;
       }
