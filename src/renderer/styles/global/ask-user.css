@@ -27,7 +27,9 @@
   flex-wrap: wrap;
   gap: var(--spacing-sm);
 }
-.ask-user-option:not(.ask-user-action) {
+/* :where keeps these rules at the specificity of .ask-user-option alone, so the
+   recommended option's accent border below still wins over the plain border. */
+.ask-user-option:where(:not(.ask-user-action)) {
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -35,7 +37,7 @@
   font-size: var(--font-size-sm);
   cursor: pointer;
 }
-.ask-user-option:not(.ask-user-action):hover {
+.ask-user-option:where(:not(.ask-user-action)):hover {
   border-color: var(--accent);
 }
 .ask-user-option-recommended {
