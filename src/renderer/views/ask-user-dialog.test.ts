@@ -288,6 +288,8 @@ describe('ask_user dialog (component)', () => {
     const run = document.querySelector<HTMLButtonElement>('.ask-user-action')
     assert.ok(run)
     assert.equal(run.textContent, 'Sign in')
+    // The dialog can open mid-typing: a stray Enter or Space declines.
+    assert.equal(document.activeElement?.textContent, 'Not now')
     run.click()
     assert.deepEqual(harness.responses, [{ id: 'reauth', answers: ['Sign in'] }])
     assert.equal(dialog().open, false)

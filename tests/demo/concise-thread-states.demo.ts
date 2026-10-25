@@ -173,6 +173,8 @@ describe('concise thread view states', () => {
     await expect(dialog.$('.ask-user-submit')).not.toExist()
     await expect(dialog.$('.ask-user-action:first-child')).toHaveText('Sign in')
     await expect(dialog.$('.ask-user-action:last-child')).toHaveText('Not now')
+    // It can open mid-typing, so focus starts on the action that declines.
+    await expect(dialog.$('.ask-user-action:last-child')).toBeFocused()
     await saveAppScreenshot('concise-state-reauth.png')
   })
 

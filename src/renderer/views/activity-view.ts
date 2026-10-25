@@ -407,8 +407,12 @@ export function createActivityView(
       for (const option of options) {
         const choice = el('button', {
           type: 'button',
-          class: `ui-btn ${actionsOnly && option === options[0] ? 'ui-btn-primary' : 'ui-btn-secondary'} activity-option`,
+          class: actionsOnly
+            ? `ui-btn ${option === options[0] ? 'ui-btn-primary' : 'ui-btn-secondary'} activity-option activity-answer-action`
+            : 'ui-btn ui-btn-secondary activity-option',
         })
+        // A direct action answers on click, so it waits out the settle like Send.
+        if (actionsOnly) choice.disabled = settling
         setInlineMarkdown(choice, option)
         const answer = choice.textContent
         if (option === recommendedOption) {
@@ -1149,10 +1153,10 @@ export function createActivityView(
   function armSettle(): void {
     cancelSettle?.()
     settling = true
-    // Approve and Send answer are the two controls that release an agent, so both
-    // wait out a change of what the pane shows.
+    // Approve, Send answer and a direct answer action are the controls that
+    // release an agent, so all wait out a change of what the pane shows.
     for (const control of detail.querySelectorAll<HTMLButtonElement>(
-      '.activity-approve, .activity-answer',
+      '.activity-approve, .activity-answer, .activity-answer-action',
     )) {
       control.disabled = true
     }
@@ -1160,7 +1164,7 @@ export function createActivityView(
       cancelSettle = null
       settling = false
       for (const control of detail.querySelectorAll<HTMLButtonElement>(
-        '.activity-approve, .activity-answer',
+        '.activity-approve, .activity-answer, .activity-answer-action',
       )) {
         // A request already answered keeps its inert buttons.
         if (control.dataset['answered']) continue

@@ -182,7 +182,11 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
 
     if (active.presentation?.kind === 'actions') {
       dialog.showModal()
-      form.querySelector<HTMLButtonElement>('.ask-user-action')?.focus()
+      // The dialog can open while the user is typing elsewhere, so a stray
+      // Enter or Space lands on the focused action: give focus to the last,
+      // declining one rather than the primary that runs something.
+      const actions = form.querySelectorAll<HTMLButtonElement>('.ask-user-action')
+      actions[actions.length - 1]?.focus()
       return
     }
 
