@@ -3993,6 +3993,10 @@
       "sha256": "15034eb849194d90d8a2122c8de7948895df76e255a503e9146cce7e6820d133",
       "bytes": 287431
     },
+    "settings-pstack-install-offer.png": {
+      "sha256": "c8f29b9da31db11de14f429334e2c02651620739b164a4c373543b94003c63ba",
+      "bytes": 14422
+    },
     "settings-qwen-code.png": {
       "sha256": "799fba2b12ed3ab6ab0e8e913451fecfde5dc7aa3f30c565a0a1a77c0b7cb4d7",
       "bytes": 272447
