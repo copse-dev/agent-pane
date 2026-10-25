@@ -843,6 +843,17 @@ export function mountFooterBranchStatus(
       // updates are the noisy path during first-message checkout and can share
       // the existing working-tree debounce.
       if (store.getState().activeThreadId !== refreshedThreadId) {
+        // `status` describes the thread we just left, not the one we are
+        // switching to. Clear it (and the picker's branch list) before
+        // repainting so the label falls through to the new thread's own
+        // store-owned fields - or hides - instead of flashing the previous
+        // thread's branch until the async refresh below resolves.
+        status = null
+        detached = null
+        branches = []
+        defaultBranch = null
+        renderTrigger()
+        if (open) renderMenu()
         refreshNow()
         return
       }
