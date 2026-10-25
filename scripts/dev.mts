@@ -31,6 +31,9 @@ await buildMobileAssets()
 cpSync('src/main/services/simulator-desktop/native', 'dist/resources/apple-simulator', {
   recursive: true,
 })
+cpSync('src/main/services/desktop-control/native', 'dist/resources/desktop-control', {
+  recursive: true,
+})
 copyFileSync('assets/icons/rose/icon-32.png', 'dist/renderer/favicon.png')
 cpSync('src/renderer/icon-previews', 'dist/renderer/icon-previews', { recursive: true })
 

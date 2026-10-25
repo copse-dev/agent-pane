@@ -304,6 +304,7 @@ import {
   pluginEnableRefusal,
   registerSkillTools,
   syncAppleDevelopmentTools,
+  syncComputerUseTools,
   syncAdvisorStrategyTools,
   syncCiInvestigatorTools,
   syncLongHorizonTasksTools,
@@ -339,6 +340,8 @@ import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { AUTOMATION_FAILURE_CODES } from '@shared/types/automations.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
+import { COMPUTER_USE_PLUGIN_ID } from '@copse/agent/plugins/computer-use-plugin.ts'
+import { disposeDesktopControlService } from '../services/desktop-control/desktop-control-service.ts'
 import { getAutomationService } from '../services/automations/automation-service.ts'
 import { getBranchCiAutomationService } from '../services/automations/branch-ci-automation-service.ts'
 import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-sensor.ts'
@@ -2837,6 +2840,10 @@ export function registerAllHandlers(
       getTaskSupervisor().syncCronTasks()
       await getAutomationService().sync()
       await getBranchCiAutomationService().sync()
+    }
+    if (id === COMPUTER_USE_PLUGIN_ID) {
+      syncComputerUseTools(registry)
+      if (!enabled) disposeDesktopControlService()
     }
     if (id === APPLE_DEVELOPMENT_PLUGIN_ID) {
       syncAppleDevelopmentTools(registry)

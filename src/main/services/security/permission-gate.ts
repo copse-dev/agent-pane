@@ -53,6 +53,7 @@ import { decideContainedShellEffect } from '@copse/shell-guard/container-effects
 import { detectCheckoutDetachingCommand } from '@copse/shell-guard/checkout-detach.ts'
 import { isInsideManagedThreadWorktree } from '../worktree-manager.ts'
 import { requestApproval, type ApprovalRequest } from '../approval.ts'
+import { checkDesktopAppPermission, isDesktopControlTool } from './desktop-app-permission.ts'
 import { recordDecision } from './decision-log-store.ts'
 import { getSetting, updateSetting, resolveApiKey } from '../storage/settings.ts'
 import {
@@ -2255,6 +2256,8 @@ export async function ensureToolPermitted(
       signal,
       explicitPolicy,
     )
+  } else if (isDesktopControlTool(toolName)) {
+    permitted = await checkDesktopAppPermission(toolName, args, signal, explicitPolicy)
   } else if (toolName === 'device_hub') {
     // Host device access (including screenshots) is not project-sandboxed.
     permitted = explicitPolicy === 'allow' || (await promptExplicitToolAsk(toolName, args, signal))

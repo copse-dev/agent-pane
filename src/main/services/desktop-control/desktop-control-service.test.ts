@@ -1,0 +1,85 @@
+import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
+import { afterEach, describe, it } from 'node:test'
+import { DesktopControlService } from './desktop-control-service.ts'
+
+// A stand-in for the Swift helper that speaks the same line protocol, so the
+// service's process handling is exercised across a real pipe.
+const FAKE_HELPER = String.raw`
+const rl = require('node:readline').createInterface({ input: process.stdin })
+const out = (value) => process.stdout.write(JSON.stringify(value) + '\n')
+out({ ready: true, permissions: { accessibility: true, screenRecording: false } })
+rl.on('line', (line) => {
+  const { id, method, params } = JSON.parse(line)
+  if (method === 'permissions') return out({ id, ok: true, result: { accessibility: true, screenRecording: false } })
+  if (method === 'apps') return out({ id, ok: true, result: [{ pid: 42, name: 'Notes', bundleId: 'com.apple.Notes', active: false, hidden: false }] })
+  if (method === 'screenshot') return out({ id, ok: true, result: { path: params.path, width: 200, height: 100, frame: { x: 1000, y: 500, width: 400, height: 200 } } })
+  if (method === 'click') { process.stderr.write('click ' + JSON.stringify(params) + '\n'); return out({ id, ok: true, result: {} }) }
+  if (method === 'press') return out({ id, ok: false, error: 'Unknown or stale ref ' + params.ref })
+  if (method === 'snapshot') { process.stderr.write('gone'); process.exit(3) }
+  out({ id, ok: true, result: 'not a snapshot' })
+})
+`
+
+let services: DesktopControlService[] = []
+
+function fakeService(): { service: DesktopControlService; launches: () => number } {
+  let count = 0
+  const service = new DesktopControlService(() => {
+    count++
+    return Promise.resolve(
+      spawn(process.execPath, ['-e', FAKE_HELPER], { stdio: ['pipe', 'pipe', 'pipe'] }),
+    )
+  })
+  services.push(service)
+  return { service, launches: () => count }
+}
+
+afterEach(() => {
+  for (const service of services) service.dispose()
+  services = []
+})
+
+describe('DesktopControlService', () => {
+  it('matches responses to requests and validates their shape', async () => {
+    const { service, launches } = fakeService()
+    assert.deepEqual(await service.permissions(), { accessibility: true, screenRecording: false })
+    const app = await service.resolveApp('com.apple.Notes')
+    assert.equal(app.pid, 42)
+    await assert.rejects(service.resolveApp('com.apple.Mail'), /not running/)
+    assert.equal(launches(), 1)
+  })
+
+  it('surfaces helper errors as tool errors', async () => {
+    const { service } = fakeService()
+    await assert.rejects(service.press(42, 'e9', undefined), /stale ref e9/)
+  })
+
+  it('rejects a result that does not match the schema', async () => {
+    const { service } = fakeService()
+    await assert.rejects(service.windows(undefined), /unexpected windows result/)
+  })
+
+  it('maps screenshot pixels to screen points and refuses clicks without a capture', async () => {
+    const { service } = fakeService()
+    await assert.rejects(service.clickInCapture(42, 7, 10, 10), /desktop_screenshot/)
+    await service.screenshot(7, '/tmp/unused.png')
+    // 200×100 image of a 400×200-point window at (1000, 500): pixels are 2× points.
+    assert.deepEqual(await service.clickInCapture(42, 7, 50, 25), { x: 1100, y: 550 })
+    await assert.rejects(service.clickInCapture(42, 7, 201, 10), /outside/)
+  })
+
+  it('fails pending requests when the helper dies and restarts on the next call', async () => {
+    const { service, launches } = fakeService()
+    await assert.rejects(service.snapshot(42, {}), /exited \(3\): gone/)
+    assert.deepEqual(await service.permissions(), { accessibility: true, screenRecording: false })
+    assert.equal(launches(), 2)
+  })
+
+  it('honours abort before the helper answers', async () => {
+    const { service } = fakeService()
+    const controller = new AbortController()
+    controller.abort(new Error('stop'))
+    await assert.rejects(service.apps(controller.signal), /stop/)
+  })
+})
