@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { type IncomingMessage, type ServerResponse } from 'node:http'
 import { createServer, type Server } from 'node:https'
@@ -7,7 +7,10 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { isPrivateOrLinkLocalHost } from '@copse/llm/credential-url.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
-import { MOBILE_CONTENT_SECURITY_POLICY } from '../../../shared/mobile-content-security-policy.ts'
+import {
+  mobileAssetRoutes,
+  mobileResponseHeaders,
+} from '../../../shared/mobile-asset-routes.ts'
 import { MobileActionRequests, mobileActionSchema, performMobileAction } from './mobile-actions.ts'
 import {
   mobileActivity,
@@ -74,19 +77,8 @@ export function mobileRequestAllowed(
   return true
 }
 
-function headers(contentType: string): Record<string, string> {
-  return {
-    'Content-Type': contentType,
-    'Cache-Control': 'no-store',
-    'Content-Security-Policy': MOBILE_CONTENT_SECURITY_POLICY,
-    'X-Frame-Options': 'DENY',
-    'X-Content-Type-Options': 'nosniff',
-    'Referrer-Policy': 'no-referrer',
-  }
-}
-
 function send(res: ServerResponse, status: number, value: unknown): void {
-  res.writeHead(status, headers('application/json; charset=utf-8'))
+  res.writeHead(status, mobileResponseHeaders('application/json; charset=utf-8'))
   res.end(JSON.stringify(value))
 }
 
@@ -126,21 +118,15 @@ export async function startMobileServer(options: {
     throw new Error('Choose an active private IPv4 interface')
   const identity = mobileCertificate(options.address)
   const assets = options.assetsDir ?? join(__dirname, '..', 'mobile')
-  const files = new Map([
-    ['/', { path: 'index.html', type: 'text/html; charset=utf-8' }],
-    ['/app.css', { path: 'app.css', type: 'text/css; charset=utf-8' }],
-    ['/app.js', { path: 'app.js', type: 'text/javascript; charset=utf-8' }],
-  ])
+  const files = mobileAssetRoutes()
   // Read once, before binding, so a missing package asset cannot yield a
   // half-working listener. The map is fixed and contains no user path.
   const staticFiles = new Map(
-    [...files].map(([route, file]) => [
-      route,
-      {
-        body: readFileSync(join(assets, file.path)),
-        type: file.type,
-      },
-    ]),
+    [...files].map(([route, file]) => {
+      const body = readFileSync(join(assets, file.path))
+      const etag = `"${createHash('sha256').update(body).digest('base64url')}"`
+      return [route, { body, etag, headers: { ...file.headers, ETag: etag } }]
+    }),
   )
   const actions = new MobileActionRequests(randomUUID())
   const failedAuth = new Map<string, { attempts: number; blockedUntil: number }>()
@@ -174,7 +160,12 @@ export async function startMobileServer(options: {
         if (req.method === 'GET') {
           const file = staticFiles.get(path.pathname)
           if (file) {
-            res.writeHead(200, headers(file.type))
+            if (req.headers['if-none-match'] === file.etag) {
+              res.writeHead(304, file.headers)
+              res.end()
+              return
+            }
+            res.writeHead(200, file.headers)
             res.end(file.body)
             return
           }

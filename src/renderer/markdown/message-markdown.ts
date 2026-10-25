@@ -1,7 +1,7 @@
 import {
   renderMarkdown,
   StreamingMarkdownRenderer,
-  type RenderMarkdownOptions,
+  type MarkdownConfig,
 } from '@copse/streaming-markdown'
 import { createInputSmoother, type InputSmoother } from '@copse/streaming-markdown/smoothing'
 import { attachCodeBlockCopyButtons } from './code-block-copy.ts'
@@ -21,8 +21,11 @@ export interface MessageMarkdownHost {
   runCommands?: boolean
   /** Host-only passes over a settled render, such as workspace file links and artifact images. */
   decorate?: (el: HTMLElement) => void
-  /** Per-surface render config, such as the mobile sanitizer and footnote ids. */
-  renderOptions?: RenderMarkdownOptions
+  /**
+   * Per-surface render config, such as the mobile sanitizer and footnote ids.
+   * Applies to the streamed scaffold and the settled render alike.
+   */
+  renderOptions?: MarkdownConfig
 }
 
 /** A paced frame of streamed text landed in a message element. Bubbles. */
@@ -42,7 +45,7 @@ const streamSmoothers = new WeakMap<HTMLElement, InputSmoother>()
 function paintStreamingMarkdown(el: HTMLElement, display: string, host: MessageMarkdownHost): void {
   let renderer = streamingRenderers.get(el)
   if (!renderer) {
-    renderer = new StreamingMarkdownRenderer(el)
+    renderer = new StreamingMarkdownRenderer(el, host.renderOptions)
     streamingRenderers.set(el, renderer)
   }
   renderer.update(display)
@@ -149,7 +152,7 @@ function hardBreakSingleNewlines(text: string): string {
 export function paintUserMarkdown(
   el: HTMLElement,
   content: string,
-  renderOptions?: RenderMarkdownOptions,
+  renderOptions?: MarkdownConfig,
 ): void {
   if (!content) {
     el.replaceChildren()
@@ -169,13 +172,17 @@ export function paintUserMarkdown(
  * Settled user prompt: markdown like assistant replies. Long prompts get a
  * mid-fold accordion — opening and closing stay visible; the middle collapses.
  */
-export function renderUserPromptMarkdown(el: HTMLElement, content: string): void {
+export function renderUserPromptMarkdown(
+  el: HTMLElement,
+  content: string,
+  renderOptions?: MarkdownConfig,
+): void {
   const parts = splitUserPromptForFold(content)
   if (!parts) {
-    paintUserMarkdown(el, content)
+    paintUserMarkdown(el, content, renderOptions)
     return
   }
   fillUserPromptFold(el, parts, (region, text) => {
-    paintUserMarkdown(region, text)
+    paintUserMarkdown(region, text, renderOptions)
   })
 }

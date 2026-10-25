@@ -2,7 +2,7 @@ import { attachMobileChat } from './controller/mobile-chat.ts'
 import './styles/tokens.css'
 // Shared markdown styling lives in the renderer package; agent-pane maps its
 // theme tokens onto the sheet's `--sm-*` knobs (see the bridge in
-// styles/global/conversation.css). Imported before global.css so app rules win
+// styles/global/markdown.css). Imported before global.css so app rules win
 // ties. The `.streaming-markdown` scope class is added to each render sink.
 import '@copse/streaming-markdown/styles/default.css'
 import './styles/global.css'
