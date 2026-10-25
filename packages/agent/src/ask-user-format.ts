@@ -54,6 +54,9 @@ export const askUserParamsSchema = z.object({
  */
 export const ASK_USER_ANSWER_MAX_LENGTH = 8192
 
+/** How long a question waits for the user before it gives up as timed out. */
+export const ASK_USER_TIMEOUT_MS = 30 * 60 * 1000
+
 export type AskUserQuestion = z.infer<typeof askUserQuestionSchema>
 export type AskUserParams = z.infer<typeof askUserParamsSchema>
 
@@ -106,6 +109,17 @@ export function formatAnswersResult(answers: AskUserAnswer[]): string {
     lines.push(`- ${question} → ${normalize(answer)}`)
   }
   return lines.join('\n')
+}
+
+/**
+ * The tool result when nobody answered within {@link ASK_USER_TIMEOUT_MS}. In
+ * an unattended run a plain "(no answer)" reads like a deliberate blank, and the
+ * model tends to ask again and wait out another timeout, so this says the user
+ * is away and tells it to carry on with its own pick.
+ */
+export function formatTimedOutResult(): string {
+  const minutes = String(Math.round(ASK_USER_TIMEOUT_MS / 60_000))
+  return `No answer arrived after ${minutes} minutes; the user is likely away. Proceed with your recommended or default option, state the assumption you made, and do not ask this question again.`
 }
 
 /**
