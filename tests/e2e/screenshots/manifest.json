@@ -1549,6 +1549,14 @@
       "sha256": "f2a0c7f68f2b9e73afc1c513559c736cec6822310033a6c7e359fdea97b58cc8",
       "bytes": 78223
     },
+    "environment-setup-offer.png": {
+      "sha256": "6f7e55c4c1e92ef82c974fc2fb395419418923087edd35e73c8bb4b6a99ffde6",
+      "bytes": 55671
+    },
+    "environment-setup-review.png": {
+      "sha256": "c1b1c5ed23fd2d0e4814410970518cc40591a97f1bc796cf2cf42ac6b2455ec0",
+      "bytes": 126866
+    },
     "explainer-drawing-1-player.png": {
       "sha256": "30a3d9e98f4e3910be17ad0b43891db60dbbb98aac91150bd88fbcac821dc01e",
       "bytes": 97147
@@ -3789,6 +3797,10 @@
       "sha256": "8f606c898ed20345643336a711f5207a6b99077f8acf56844902b503eb923fee",
       "bytes": 73676
     },
+    "settings-environment-setup-review.png": {
+      "sha256": "a0fdda4ce4170803d9b3816ee3c2ae3c3b1e791453b8f67f84738b8379117ee9",
+      "bytes": 18410
+    },
     "settings-experimental-desktop-copy.png": {
       "sha256": "516612d537685a9189144d5a159951631096602578825cbd2c9bf79617e61839",
       "bytes": 20497
@@ -3862,8 +3874,8 @@
       "bytes": 271091
     },
     "settings-mcp-permission-group-blocked.png": {
-      "sha256": "9f5b8c89e15fa3b8d1ee58ede155dd62c7a8689587adeaace5fcfae4455431e1",
-      "bytes": 287943
+      "sha256": "7ab5efe786a3357a6c3df37d36779b469a7a1cd9ad206ae01b5639298bb78477",
+      "bytes": 291112
     },
     "settings-mcp-server-row.png": {
       "sha256": "52dc455ca8b33972f9185832a3b5b7802ef8c7d67d82363a104edd2aa1e10884",
@@ -4001,6 +4013,10 @@
       "sha256": "741aad66c64a0b1f3d935e54fb2b5ebd0bc12b098b363c0c2c282f9268e5a349",
       "bytes": 218328
     },
+    "settings-production-targets.png": {
+      "sha256": "51e2aaf9eeeee4ea629d82745c1292e51252b2bf42d6f8c184df24371d672344",
+      "bytes": 37212
+    },
     "settings-provider-host-approval.png": {
       "sha256": "70fd24f06321af450f8f8adbd2133ee95acb452612c0de3069e11352ea7ef3a8",
       "bytes": 286459
@@ -4046,8 +4062,8 @@
       "bytes": 54472
     },
     "settings-shell-security.png": {
-      "sha256": "0be68f158079c69ec668e7e59684680815ee5c40666ed9939b6c0bce9811da9b",
-      "bytes": 177593
+      "sha256": "ce3f4519351c0fd2057bbe5f0646ab53beefcf9a26d33719feda5b0bf72af9e5",
+      "bytes": 135879
     },
     "settings-site-building-plugin.png": {
       "sha256": "2b696dab2a0c14b86796e38ba772582f7dc8ee0b33c4d7c0365c104325f3435c",
@@ -4232,6 +4248,10 @@
     "settings-tool-permissions.png": {
       "sha256": "469db0b6bcaea00732762effd742eac83589dc158e5b3530b70f6c4c7b34fbf9",
       "bytes": 133344
+    },
+    "settings-trusted-package-registries.png": {
+      "sha256": "b32c94b67f927d0e705e84e291524238be06a8c47c652b4221a149c1ca7227bf",
+      "bytes": 41648
     },
     "settings-trusted-ssh-hosts.png": {
       "sha256": "baaccf295e3c5c68ef070b4be58a6076973f779d38ace3d13700b8cbafac2b7a",
