@@ -46134,7 +46134,7 @@ var init_acp_known_agents = __esm({
         command: "cursor-agent",
         args: ["acp"],
         // cursor-agent is its own ACP server; the binary is the gate. Not on npm, so
-        // auto-setup never installs it (Socket Firewall can't wrap `curl | bash`).
+        // auto-setup never installs it (the package firewall can't wrap `curl | bash`).
         requiresClient: "cursor-agent",
         preset: true,
         sandbox: {
@@ -46166,7 +46166,7 @@ var init_acp_known_agents = __esm({
         install: "npm install -g @agentclientprotocol/codex-acp",
         installPackage: "@agentclientprotocol/codex-acp",
         // Standalone npm adapter (bundles @openai/codex, self-authenticates) — there
-        // is no parent client to gate on, so Socket-Firewall auto-setup may install
+        // is no parent client to gate on, so package-firewall auto-setup may install
         // it directly when missing.
         autoInstall: true,
         preset: true,
