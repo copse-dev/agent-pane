@@ -103,6 +103,7 @@ import {
 } from '@shared/git/thread-branch.ts'
 import { syncThreadGitBranchIfChanged } from '@shared/git/sync-thread-branch.ts'
 import { showErrorToast, showToast } from './toast.ts'
+import { isUnrenderableImageMime } from '@shared/fs/image-path.ts'
 import { type VideoAttachmentRef } from '@shared/video/video-media.ts'
 import { type ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 import { formatByteSize } from '@shared/file-bytes.ts'
@@ -2724,6 +2725,13 @@ export function mountInputBar(
     const img = items.find((i) => i.type.startsWith('image/'))
     if (img) {
       e.preventDefault()
+      if (isUnrenderableImageMime(img.type)) {
+        showToast(
+          "Can't attach this image — its format isn't supported here. Save it as PNG or JPEG and try again.",
+          { variant: 'error' },
+        )
+        return
+      }
       const blob = img.getAsFile()
       if (!blob) return
       void readAsDataUrl(blob).then((dataUrl) => {

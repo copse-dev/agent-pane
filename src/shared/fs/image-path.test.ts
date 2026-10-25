@@ -1,6 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { imageMimeType, isImagePath, isRasterImagePath } from './image-path.ts'
+import {
+  imageMimeType,
+  isImagePath,
+  isRasterImagePath,
+  isUnrenderableImageMime,
+} from './image-path.ts'
 
 describe('image-path', () => {
   it('detects common raster image extensions', () => {
@@ -39,5 +44,21 @@ describe('image-path', () => {
       ['C:\\shots\\a.PNG', 'image/png'],
     ]
     for (const [path, expected] of cases) assert.equal(imageMimeType(path), expected, path)
+  })
+
+  it('flags HEIC/HEIF/TIFF as unrenderable by the browser <img> element', () => {
+    assert.equal(isUnrenderableImageMime('image/heic'), true)
+    assert.equal(isUnrenderableImageMime('image/heic-sequence'), true)
+    assert.equal(isUnrenderableImageMime('image/heif'), true)
+    assert.equal(isUnrenderableImageMime('image/tiff'), true)
+    // Case-insensitive: some clipboard sources report the MIME type in mixed case.
+    assert.equal(isUnrenderableImageMime('image/HEIC'), true)
+  })
+
+  it('does not flag formats the browser can render', () => {
+    assert.equal(isUnrenderableImageMime('image/png'), false)
+    assert.equal(isUnrenderableImageMime('image/jpeg'), false)
+    assert.equal(isUnrenderableImageMime('image/webp'), false)
+    assert.equal(isUnrenderableImageMime('image/gif'), false)
   })
 })

@@ -27,3 +27,18 @@ export function isRasterImagePath(path: string): boolean {
   const mime = imageMimeType(path)
   return mime !== null && mime !== 'image/svg+xml'
 }
+
+// Chromium's <img> has no decoder for these, so a pasted/dropped blob of one
+// of these types renders as a broken image — e.g. an iPhone photo pasted via
+// Universal Clipboard, which arrives as HEIC/HEIF rather than PNG/JPEG.
+const UNRENDERABLE_IMAGE_MIME = new Set([
+  'image/heic',
+  'image/heic-sequence',
+  'image/heif',
+  'image/heif-sequence',
+  'image/tiff',
+])
+
+export function isUnrenderableImageMime(mime: string): boolean {
+  return UNRENDERABLE_IMAGE_MIME.has(mime.toLowerCase())
+}
