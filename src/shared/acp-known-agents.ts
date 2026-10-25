@@ -27,7 +27,7 @@ export interface KnownAcpAgent {
   /** Shell command that installs the agent binary (e.g. an `npm install -g …`). */
   install?: string
   /**
-   * npm package spec to install for auto-setup (Socket-Firewall-wrapped). Present
+   * npm package spec to install for auto-setup (behind the package firewall). Present
    * only for agents distributed on npm; absent for script-installed binaries such
    * as `cursor-agent` (which auto-setup will never install — see {@link autoInstall}).
    */
@@ -40,7 +40,7 @@ export interface KnownAcpAgent {
   requiresClient?: string
   /**
    * Whether auto-setup may install {@link installPackage} for the user (through
-   * Socket Firewall) when {@link requiresClient} is present but the agent isn't.
+   * the package firewall) when {@link requiresClient} is present but the agent isn't.
    * Only true for npm-distributed agents; never for `curl | bash` installers.
    */
   autoInstall?: boolean
@@ -314,7 +314,7 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     command: 'cursor-agent',
     args: ['acp'],
     // cursor-agent is its own ACP server; the binary is the gate. Not on npm, so
-    // auto-setup never installs it (Socket Firewall can't wrap `curl | bash`).
+    // auto-setup never installs it (the package firewall can't wrap `curl | bash`).
     requiresClient: 'cursor-agent',
     preset: true,
     sandbox: {
@@ -346,7 +346,7 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     install: 'npm install -g @agentclientprotocol/codex-acp',
     installPackage: '@agentclientprotocol/codex-acp',
     // Standalone npm adapter (bundles @openai/codex, self-authenticates) — there
-    // is no parent client to gate on, so Socket-Firewall auto-setup may install
+    // is no parent client to gate on, so package-firewall auto-setup may install
     // it directly when missing.
     autoInstall: true,
     preset: true,

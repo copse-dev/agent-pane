@@ -1367,6 +1367,7 @@ async function runAgentWithInlineCanvas(
                 userText: promptTextForSubmit(userPrompt),
                 invokedSkills: options?.invokedSkills ?? [],
                 priorTodos: options?.priorTodos ?? [],
+                firstTurn: priorMessages.length === 0,
                 model: executorModel,
                 registry,
                 signal: controller.signal,
@@ -1987,6 +1988,7 @@ async function runAgentWithInlineCanvas(
       {
         userText: userTextForSteering,
         priorTodos,
+        firstTurn: priorMessages.length === 0,
         executor: 'local',
         invokedSkills,
         // The resolved run model + the tool list the model will actually see, so

@@ -329,11 +329,11 @@ export function createActivityView(
    * control goes inert at once, so a second send cannot answer twice; `answer`
    * reports false when the question was already settled elsewhere.
    */
-  function sendAnswer(row: ActivityRow): void {
+  function sendAnswer(row: ActivityRow, chosen?: string): void {
     const requestId = row.requestId
     // Not while the pane is settling after a change: a Cmd+Enter must not send a
     // draft for a request the user has not looked at.
-    if (!requestId || settling || !hasAnswer(requestId)) return
+    if (!requestId || settling || (chosen === undefined && !hasAnswer(requestId))) return
     const asked = sources.questions.pending().find((request) => request.id === requestId)
     if (!asked) return
     const typed = drafts.get(requestId) ?? []
@@ -345,7 +345,7 @@ export function createActivityView(
     }
     const sent = sources.questions.answer(
       requestId,
-      asked.questions.map((_, index) => typed[index] ?? ''),
+      chosen === undefined ? asked.questions.map((_, index) => typed[index] ?? '') : [chosen],
     )
     // A draft survives a send that did not go: the controls come back on the next
     // redraw with the text still in them.
@@ -364,6 +364,7 @@ export function createActivityView(
     options: readonly string[],
     recommendedOption: string | undefined,
     recommendationReason: string | undefined,
+    actionsOnly: boolean,
   ): HTMLElement {
     const questionId = `${host.idPrefix}-question-${String(index)}`
     const input = el('textarea', {
@@ -406,18 +407,24 @@ export function createActivityView(
       for (const option of options) {
         const choice = el('button', {
           type: 'button',
-          class: 'ui-btn ui-btn-secondary activity-option',
+          class: actionsOnly
+            ? `ui-btn ${option === options[0] ? 'ui-btn-primary' : 'ui-btn-secondary'} activity-option activity-answer-action`
+            : 'ui-btn ui-btn-secondary activity-option',
         })
+        // A direct action answers on click, so it waits out the settle like Send.
+        if (actionsOnly) choice.disabled = settling
         setInlineMarkdown(choice, option)
         const answer = choice.textContent
         if (option === recommendedOption) {
           choice.classList.add('ask-user-option-recommended')
           choice.append(el('span', { class: 'ask-user-recommended-label' }, 'Recommended'))
         }
-        // Fills the answer rather than sending it: a click on a row that moved
-        // under the pointer must not release the agent. It fills the rendered label,
-        // not its Markdown source, as the dialog does.
         choice.addEventListener('click', () => {
+          if (actionsOnly) {
+            sendAnswer(row, option)
+            return
+          }
+          // General agent questions allow editing the suggested answer.
           input.value = answer
           sync()
           input.focus()
@@ -429,7 +436,7 @@ export function createActivityView(
     if (recommendationReason) {
       field.append(el('p', { class: 'ask-user-recommendation-reason' }, recommendationReason))
     }
-    field.append(input)
+    if (!actionsOnly) field.append(input)
     return field
   }
 
@@ -538,6 +545,7 @@ export function createActivityView(
               asked.options[index] ?? [],
               asked.recommendedOptions?.[index],
               asked.recommendationReasons?.[index],
+              asked.presentation?.kind === 'actions',
             ),
           ),
         ),
@@ -603,7 +611,12 @@ export function createActivityView(
       )
       approve.disabled = settling
       decide.push(approve)
-    } else if (row.state === 'needs-answer' && row.requestId) {
+    } else if (
+      row.state === 'needs-answer' &&
+      row.requestId &&
+      sources.questions.pending().find((request) => request.id === row.requestId)?.presentation
+        ?.kind !== 'actions'
+    ) {
       const requestId = row.requestId
       const answer = button(
         'ui-btn-primary activity-answer',
@@ -1140,10 +1153,10 @@ export function createActivityView(
   function armSettle(): void {
     cancelSettle?.()
     settling = true
-    // Approve and Send answer are the two controls that release an agent, so both
-    // wait out a change of what the pane shows.
+    // Approve, Send answer and a direct answer action are the controls that
+    // release an agent, so all wait out a change of what the pane shows.
     for (const control of detail.querySelectorAll<HTMLButtonElement>(
-      '.activity-approve, .activity-answer',
+      '.activity-approve, .activity-answer, .activity-answer-action',
     )) {
       control.disabled = true
     }
@@ -1151,7 +1164,7 @@ export function createActivityView(
       cancelSettle = null
       settling = false
       for (const control of detail.querySelectorAll<HTMLButtonElement>(
-        '.activity-approve, .activity-answer',
+        '.activity-approve, .activity-answer, .activity-answer-action',
       )) {
         // A request already answered keeps its inert buttons.
         if (control.dataset['answered']) continue
