@@ -2697,17 +2697,25 @@
       "sha256": "000d079a8cacb6f05d570a51c6277e37bd19760524c8bcee654420297e221f7f",
       "bytes": 243629
     },
+    "plugin-client-action-draft.png": {
+      "sha256": "e82f41bc3af779feca15f9bb7365722624a015686581d9e086f9c58b8c802c5e",
+      "bytes": 39922
+    },
+    "plugin-client-actions.png": {
+      "sha256": "a58e0ad04ce71a347f4a7607f5e97c0d56f4a37163fb096d9648753d1d8252bc",
+      "bytes": 40475
+    },
     "plugin-client-api-settings.png": {
-      "sha256": "7eff46e2b27af00384afd541c020c4321f617e93a2b5eecb0a73398756263e47",
-      "bytes": 44140
+      "sha256": "df2ad283b3e810716a7c3c6c64f90a2ee51e714e6b27005e54b00d2fddcf6fb2",
+      "bytes": 48106
     },
     "plugin-client-pairing-interrupt.png": {
-      "sha256": "2d0a6301b5b63c7c9994c95140b58bb0696200c79bbe6bd4abcf03ff46fb4f2c",
-      "bytes": 88387
+      "sha256": "6b0d3dfb7b34ebd2303a87ede69f49c2c952d5a13b7b3fb661fdff5c3fd56749",
+      "bytes": 104659
     },
     "plugin-client-pairing.png": {
-      "sha256": "91317b112b58a93d0defc95adee211a9771f7666ed550db63375ff20b0c06c84",
-      "bytes": 88461
+      "sha256": "9087214f90abe239d1422a07bf155f1fb4977e1bbabd77e0418d90ed1a8df882",
+      "bytes": 104503
     },
     "plugin-client-recent-thread-open.png": {
       "sha256": "336703c57f3346ac4d96eb407dc467f2c9c43f2e81a62dc769f3904617ec8b35",
