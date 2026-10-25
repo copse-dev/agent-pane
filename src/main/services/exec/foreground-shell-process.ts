@@ -49,6 +49,24 @@ export interface ShellRunResult {
   spawnFailed?: boolean
 }
 
+/** A running run_shell command, for attributing it back to the thread that ran it. */
+export interface ForegroundShellProcess {
+  pid: number
+  command: string
+  threadId: string
+  projectId: string
+}
+
+// Unlike background tasks these have no id or handle: they end with the tool
+// call. The Process Manager needs them anyway, because they run as direct
+// children of main and would otherwise read as Shared.
+const liveForegroundShells = new Set<ForegroundShellProcess>()
+
+/** Every running run_shell command across threads; detached ones move to the background registry. */
+export function listForegroundShellProcesses(): ForegroundShellProcess[] {
+  return [...liveForegroundShells]
+}
+
 export async function runShellOnce(
   command: string,
   cwd: string,
@@ -97,6 +115,12 @@ export async function runShellOnce(
       } finally {
         signal.removeEventListener('abort', cancelSpawn)
       }
+
+      const live =
+        owner && proc.pid !== undefined && proc.pid > 0
+          ? { pid: proc.pid, command, threadId: owner.threadId, projectId: owner.projectId }
+          : null
+      if (live) liveForegroundShells.add(live)
 
       const startedAt = Date.now()
       const ranUnsandboxed = unsandboxed || !isProjectSandboxEnabled()
@@ -149,6 +173,7 @@ export async function runShellOnce(
       })
 
       const cleanup = (): void => {
+        if (live) liveForegroundShells.delete(live)
         clearTimeout(timer)
         cancelKill?.()
         signal.removeEventListener('abort', onAbort)
