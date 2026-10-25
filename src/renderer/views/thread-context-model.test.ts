@@ -30,6 +30,41 @@ function thread(id: string, fields: Partial<Thread> = {}): Thread {
 
 const project = { name: 'Widgets', path: '/work/widgets' }
 
+test('derives only answered review questions from the thread', () => {
+  const active = thread('main', {
+    messages: [
+      message('origin', '', {
+        toolCalls: [
+          {
+            id: 'answered',
+            name: 'request_review_input',
+            status: 'done',
+            result: 'Saved',
+            args: { question: 'Fix spacing?', context: 'Footer overlap.', options: ['Yes'] },
+          },
+          {
+            id: 'pending',
+            name: 'request_review_input',
+            status: 'done',
+            result: 'Saved',
+            args: { question: 'Change title?', context: 'Title clips.', options: ['No'] },
+          },
+        ],
+      }),
+    ],
+    reviewerInputAnswers: [{ id: 'answered', text: 'Yes', answeredAt: 2, messageId: 'reply' }],
+  })
+  const context = deriveThreadContext({ thread: active, project, threads: [active] })
+  assert.deepEqual(
+    context.resolvedQuestions.map(({ request }) => request.id),
+    ['answered'],
+  )
+  const resolved = context.resolvedQuestions[0]
+  assert.ok(resolved)
+  assert.equal(resolved.request.messageId, 'origin')
+  assert.equal(resolved.answer.text, 'Yes')
+})
+
 test('derives repos, deduplicated links, subagents and side chats for a thread', () => {
   const other = thread(ID, { title: 'Release planning' })
   const main = thread('main', {
@@ -55,6 +90,17 @@ test('derives repos, deduplicated links, subagents and side chats for a thread',
               messages: [],
               model: 'acp:claude-acp#haiku',
             },
+          },
+          // An ACP agent's own subagent dispatch (e.g. Claude Code's `Agent`
+          // tool) carries no session, only this one tool call.
+          {
+            id: 'acp-agent-1',
+            name: 'Agent',
+            kind: 'think',
+            title: 'Panel registration research',
+            args: { subagent_type: 'Explore', prompt: 'Find the panel registry\nmore' },
+            status: 'running',
+            result: null,
           },
         ],
       }),
@@ -98,6 +144,12 @@ test('derives repos, deduplicated links, subagents and side chats for a thread',
       status: 'running',
       prompt: 'Find the flaky wait',
       model: 'acp:claude-acp#haiku',
+    },
+    {
+      id: 'acp-agent-1',
+      kind: 'explore',
+      status: 'running',
+      prompt: 'Panel registration research',
     },
   ])
   // Active side chats first, archived after.

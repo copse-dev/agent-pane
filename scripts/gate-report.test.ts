@@ -139,7 +139,7 @@ it('keeps known misses visible when another spec makes the run incomplete', () =
   assert.equal(report.totals.missedRealFraction, null)
 })
 
-it('collector paginates, caches checks by head, and checkpoints unavailable evidence', () => {
+it('collector deduplicates overlapping pages, preserves reruns, and checkpoints unavailable evidence', () => {
   const root = mkdtempSync(join(tmpdir(), 'gate-collector-'))
   try {
     const bin = join(root, 'bin')
@@ -151,13 +151,21 @@ it('collector paginates, caches checks by head, and checkpoints unavailable evid
 const fs = require('node:fs');
 const route = process.argv.at(-1);
 fs.appendFileSync(process.env.GATE_TEST_CALLS, route+'\\n');
-const runs = ${JSON.stringify([run, { ...run, id: 2 }])};
-console.log(JSON.stringify(route.includes('/check-runs') ? {check_runs: []} : {workflow_runs: route.includes('page=2') ? [] : runs}));
+const pages = ${JSON.stringify([
+        [run, { ...run, id: 2 }],
+        [
+          { ...run, id: 2 },
+          { ...run, id: 2, run_attempt: 2 },
+          { ...run, id: 3 },
+        ],
+      ])};
+const page = Number(new URLSearchParams(route.split('?')[1]).get('page'));
+console.log(JSON.stringify(route.includes('/check-runs') ? {check_runs: []} : {workflow_runs: pages[page-1] ?? []}));
 `,
       { mode: 0o755 },
     )
     const output = join(root, 'output')
-    execFileSync(process.execPath, [resolve('scripts/collect-gate-evidence.mts'), output, '3'], {
+    execFileSync(process.execPath, [resolve('scripts/collect-gate-evidence.mts'), output, '4'], {
       env: {
         ...process.env,
         PATH: bin + ':' + (process.env['PATH'] ?? ''),
@@ -166,10 +174,15 @@ console.log(JSON.stringify(route.includes('/check-runs') ? {check_runs: []} : {w
       stdio: 'pipe',
     })
     const manifest = readFileSync(join(output, 'manifest.json'), 'utf8')
+    const entries = gateManifestSchema.parse(JSON.parse(manifest))
+    assert.deepEqual(
+      entries.map((entry) => `${entry.runId}/${entry.attempt}`),
+      ['1/1', '2/1', '2/2', '3/1'],
+    )
     const report = buildGateReport(manifest, () => {
       throw new Error('No record should be read')
     })
-    assert.equal(report.totals.missing, 2)
+    assert.equal(report.totals.missing, 3)
     const calls = readFileSync(join(root, 'calls'), 'utf8').trim().split('\n')
     assert.equal(calls.filter((route) => route.includes('/check-runs')).length, 1)
     assert(calls.some((route) => route.endsWith('page=2')))

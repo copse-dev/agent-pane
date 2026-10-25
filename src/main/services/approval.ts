@@ -19,6 +19,7 @@ import { getActiveRunThread } from './thread-models.ts'
 import { getApprovalToolCallId, getBridgeExecutionId } from './approval-tool-call-context.ts'
 import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
 import { recordDecision } from './security/decision-log-store.ts'
+import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
 import type { PromptCause } from '@shared/threads/prompt-cause.ts'
 import {
   DeferredApprovalError,
@@ -30,10 +31,11 @@ import type { UserAlertSender } from './user-alerts.ts'
 import { resolveRendererPromptTarget } from './renderer-prompt-target.ts'
 import { getAgentExecutionRoot } from './execution-root.ts'
 import {
-  mobileDecisions,
-  mobileDecisionSource,
-  type MobilePrincipal,
-} from './mobile/mobile-decisions.ts'
+  humanDecisions,
+  humanDecisionActor,
+  humanDecisionSource,
+  type HumanDecisionPrincipal,
+} from './human-decisions.ts'
 import { getActiveProjectId } from './workspace.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -126,6 +128,8 @@ export interface ApprovalRequest {
   approveOnceLabel?: string
   /** Intentional Settings-owned flow that must prompt above the open Settings dialog. */
   showWhileSettingsOpen?: boolean
+  /** Interrupt ordinary batches and require a separate decision. */
+  standalone?: boolean
   /** Offer a bounded main-process lease for exact retries in this turn tree. */
   allowTurnTreeLease?: boolean
   /** User-facing lease scope; required whenever `allowTurnTreeLease` is true. */
@@ -185,8 +189,8 @@ export interface ApprovalRequest {
 }
 
 export interface ApprovalResponse {
-  /** Set only by the authenticated mobile decision transport. */
-  device?: MobilePrincipal
+  /** Set only by an authenticated interactive decision transport. */
+  device?: HumanDecisionPrincipal
   approved: boolean
   remember: boolean
   /** Scope selected for this approval; absent is the backwards-compatible one-shot grant. */
@@ -222,6 +226,7 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
     // things can never share one answer — and one recorded line.
     reasons: req.reasons ?? [],
     showWhileSettingsOpen: req.showWhileSettingsOpen ?? false,
+    standalone: req.standalone ?? false,
     allowTurnTreeLease: req.allowTurnTreeLease ?? false,
     turnTreeLeaseLabel: req.turnTreeLeaseLabel ?? '',
     turnTreeLeaseDefault: req.turnTreeLeaseDefault ?? false,
@@ -362,7 +367,7 @@ function recordReplayedDecision(req: ApprovalRequest, response: ApprovalResponse
     kind: req.type,
     ...(projectId ? { projectId } : {}),
     ...approvalAuditIdentities.get(req),
-    actor: response.device ? 'mobile-device' : 'user',
+    actor: response.device ? humanDecisionActor(response.device) : 'user',
     verdict: response.approved ? 'approved' : 'denied',
     subject: req.subject ?? req.title,
     ...(req.scope ? { scope: req.scope } : {}),
@@ -373,7 +378,7 @@ function recordReplayedDecision(req: ApprovalRequest, response: ApprovalResponse
     ...(req.shellContext ? { detail: { shellContext: req.shellContext } } : {}),
     remembered: response.remember,
     source: response.device
-      ? `${mobileDecisionSource(response.device)}; abandoned-call-replay`
+      ? `${humanDecisionSource(response.device)}; abandoned-call-replay`
       : 'abandoned-call-replay',
   })
 }
@@ -402,7 +407,12 @@ function recordApprovalDecision(
     kind: req.type,
     ...(projectId ? { projectId } : {}),
     ...approvalAuditIdentities.get(req),
-    actor: resolution === 'user' ? (response.device ? 'mobile-device' : 'user') : 'system',
+    actor:
+      resolution === 'user'
+        ? response.device
+          ? humanDecisionActor(response.device)
+          : 'user'
+        : 'system',
     verdict:
       resolution === 'user'
         ? response.approved
@@ -431,7 +441,7 @@ function recordApprovalDecision(
     remembered: response.remember,
     ...(resolution === 'user'
       ? response.device
-        ? { source: mobileDecisionSource(response.device) }
+        ? { source: humanDecisionSource(response.device) }
         : {}
       : { source: resolution }),
   })
@@ -637,7 +647,7 @@ async function deferInsteadOfPrompting(
   recordApprovalDecision(req, DENIED, 'deferred')
   throw new DeferredApprovalError(
     entryId,
-    deferredApprovalMessage({ title: req.title, reasons: req.reasons }),
+    deferredApprovalMessage({ id: entryId, title: req.title, reasons: req.reasons }),
   )
 }
 
@@ -717,7 +727,13 @@ function requestApprovalUnpaused(
 
   // Equal questions from different chats authorize different callers. Keep
   // independent waiters in one chat without sharing consent across chats.
-  const key = JSON.stringify([dedupePrefix, threadId, approvalDedupeKey(req)])
+  // Standalone consent belongs to one caller even if two clients happen to
+  // present identical copy (for example, the same six-digit pairing code).
+  const key = JSON.stringify([
+    dedupePrefix,
+    threadId,
+    req.standalone ? randomUUID() : approvalDedupeKey(req),
+  ])
   // Only a thread-attributed request can be parked and replayed: the ledger is
   // keyed by thread, and a headless/untracked caller has no retry to serve.
   const ledgerKey = threadId === null ? null : abandonedVerdictKey(threadId, key)
@@ -908,12 +924,14 @@ export function initApproval(
   win: BrowserWindow,
   ipcMain: IpcMain,
   alertUser: UserAlertSender,
-): void {
+): (target: object) => void {
   const pending = new Map<string, (response: ApprovalResponse) => void>()
+  const replay = new Map<string, { target: object; send: () => void }>()
   const settle = (id: string, response: ApprovalResponse): void => {
     const resolve = pending.get(id)
     if (!resolve) return
     pending.delete(id)
+    replay.delete(id)
     resolve(response)
   }
 
@@ -961,7 +979,11 @@ export function initApproval(
           resolve(DENIED)
           return
         }
-        dest.send('agent:approval-request', { id, threadId, ...req })
+        const send = (): void => {
+          if (!dest.isDestroyed()) dest.send('agent:approval-request', { id, threadId, ...req })
+        }
+        replay.set(id, { target: dest, send })
+        send()
         // Deliver the user's configured native alert channels. A repeating
         // Dock/taskbar animation stops on focus and also when this approval
         // settles for any reason. `dest` goes along so a notification click
@@ -977,9 +999,9 @@ export function initApproval(
         }
         signal?.addEventListener('abort', onAbort, { once: true })
         const projectId = getThreadExecutionContext()?.projectId ?? getActiveProjectId()
-        const removeMobile =
+        const removeDecision =
           projectId && threadId
-            ? mobileDecisions.register(
+            ? humanDecisions.register(
                 projectId,
                 threadId,
                 {
@@ -1000,10 +1022,17 @@ export function initApproval(
                       device,
                     })
                 },
+                {
+                  // Other prompts can grant persistent authority on approved alone
+                  // (for example provider-host consent). Keep them desktop/mobile-only
+                  // until their semantics have a complete interactive-client projection.
+                  interactiveClientSupported:
+                    req.type === 'shell' && req.subject === SHELL_DECISION_SUBJECT,
+                },
               )
             : (): void => {}
         pending.set(id, (response) => {
-          removeMobile()
+          removeDecision()
           if (!dest.isDestroyed()) dest.send('agent:approval-cancelled', { id })
           signal?.removeEventListener('abort', onAbort)
           stopAlert()
@@ -1011,4 +1040,9 @@ export function initApproval(
         })
       }),
   )
+  return (target): void => {
+    for (const request of replay.values()) {
+      if (request.target === target) request.send()
+    }
+  }
 }

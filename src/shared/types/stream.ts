@@ -28,6 +28,32 @@ export type { ProviderStreamChunk, ToolCallChunk } from '@copse/llm/wire-types.t
  * ever emits the `AgentStreamChunk` subset, so a loop stream is always
  * assignable to a `StreamChunk` sink.
  */
+/**
+ * What main tells the window about one `agent:chunk` it has already written to
+ * the thread store. Present only for chunks of a turn main owns the transcript
+ * for; an unstamped chunk is one the window still persists itself.
+ */
+export interface TranscriptSnapshot {
+  projectId: string
+  thread: import('./thread.ts').Thread
+  checkpoint: import('../store/transcript-reducer.ts').TranscriptCheckpoint
+}
+
+export interface TranscriptStamp {
+  /** Ids main gave the messages this chunk created, in creation order. */
+  messageIds: string[]
+}
+
+/**
+ * A label the window derived for a message main owns — a small-model summary of
+ * its tool work. Sent to main, which merges it into its copy and persists it.
+ */
+export interface TranscriptAnnotation {
+  commandSummary?: string
+  toolSummary?: string
+  runSummary?: string
+}
+
 export type StreamChunk =
   | AgentStreamChunk
   /** One v1 ACP assistant/reasoning content item, retaining message boundaries. */

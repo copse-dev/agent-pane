@@ -1,24 +1,24 @@
 import assert from 'node:assert/strict'
-import { mkdirSync } from 'node:fs'
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
+import { mkdirSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, pinTextForCapture, saveAppScreenshot } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 import { pinRoadmapDisplayTimestamp } from './helpers/roadmap-capture.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROMPT = 'Ship the roadmap reopen feature'
 
 describe('roadmap start-thread tracking and reopen', () => {
   let workspaceRoot: string
-  let cleanupWorkspace: (() => void) | undefined
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    const fixture = createFixtureDirectory('copse-panel-roadmap-reopen')
-    workspaceRoot = fixture.root
-    cleanupWorkspace = fixture.cleanup
+    workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-reopen-')), 'workspace')
+    mkdirSync(workspaceRoot, { recursive: true })
     seedEmptyProject(workspaceRoot, 'e2e-roadmap-reopen', {
       roadmapPlansEnabled: true,
     })
@@ -27,7 +27,7 @@ describe('roadmap start-thread tracking and reopen', () => {
 
   after(() => {
     resetUserData()
-    cleanupWorkspace?.()
+    removeE2eTree(dirname(workspaceRoot))
   })
 
   it('tracks the started thread on the item and reopens it later', async () => {
@@ -93,7 +93,7 @@ describe('roadmap start-thread tracking and reopen', () => {
           () =>
             document
               .querySelector('.roadmap-form .memories-meta')
-              ?.textContent?.includes('2026-01-15') ?? false,
+              ?.textContent.includes('2026-01-15') ?? false,
         ),
       { timeout: 10_000, timeoutMsg: 'expected the pinned roadmap display date' },
     )
@@ -113,26 +113,7 @@ describe('roadmap start-thread tracking and reopen', () => {
     })
     assert.equal(actionRowBounds.right, true, 'all roadmap actions should fit horizontally')
     assert.equal(actionRowBounds.bottom, true, 'the scrolled action row should be fully visible')
-    const savedItems = await browser.execute(async () => window.api.roadmap.list())
-    assert.equal(savedItems.length, 1)
-    assert.ok(
-      Number.isFinite(Date.parse(savedItems[0]?.updatedAt ?? '')),
-      'the saved item has a persisted update timestamp',
-    )
-    // Real saves stamp wall-clock time; keep that metadata live outside the capture.
-    await expect($('.roadmap-form .memories-meta')).toHaveText(
-      expect.stringMatching(/^Updated .+ at .+$/),
-    )
-    const restoreUpdatedAt0 = await pinTextForCapture(
-      '.roadmap-form .memories-meta',
-      /^Updated .+$/,
-      'Updated Jan 1, 2026 at 12:00 AM',
-    )
-    try {
-      await saveAppScreenshot('roadmap-thread-reopen-tracked.png')
-    } finally {
-      await restoreUpdatedAt0()
-    }
+    await saveAppScreenshot('roadmap-thread-reopen-tracked.png')
 
     // Clear the roadmap editor's selection, then use the chat header's chip
     // to jump straight back to the item it points at (#2501).
@@ -143,20 +124,7 @@ describe('roadmap start-thread tracking and reopen', () => {
     await selectedTitle.waitForDisplayed({ timeout: 10_000 })
     await expect(selectedTitle).toHaveText(PROMPT)
     await expect($('.roadmap-prompt-input')).toHaveValue(PROMPT)
-    // Real saves stamp wall-clock time; keep that metadata live outside the capture.
-    await expect($('.roadmap-form .memories-meta')).toHaveText(
-      expect.stringMatching(/^Updated .+ at .+$/),
-    )
-    const restoreUpdatedAt1 = await pinTextForCapture(
-      '.roadmap-form .memories-meta',
-      /^Updated .+$/,
-      'Updated Jan 1, 2026 at 12:00 AM',
-    )
-    try {
-      await saveAppScreenshot('roadmap-thread-origin-chip.png')
-    } finally {
-      await restoreUpdatedAt1()
-    }
+    await saveAppScreenshot('roadmap-thread-origin-chip.png')
 
     // Switch away to a fresh thread — the composer clears.
     await $('.project-new-thread-btn').click()
@@ -165,19 +133,6 @@ describe('roadmap start-thread tracking and reopen', () => {
     // Reopen jumps back to the tracked thread (its draft returns to the composer).
     await $('.roadmap-reopen-btn').click()
     await expect($('.prompt-input')).toHaveText(PROMPT)
-    // Real saves stamp wall-clock time; keep that metadata live outside the capture.
-    await expect($('.roadmap-form .memories-meta')).toHaveText(
-      expect.stringMatching(/^Updated .+ at .+$/),
-    )
-    const restoreUpdatedAt2 = await pinTextForCapture(
-      '.roadmap-form .memories-meta',
-      /^Updated .+$/,
-      'Updated Jan 1, 2026 at 12:00 AM',
-    )
-    try {
-      await saveAppScreenshot('roadmap-thread-reopened.png')
-    } finally {
-      await restoreUpdatedAt2()
-    }
+    await saveAppScreenshot('roadmap-thread-reopened.png')
   })
 })

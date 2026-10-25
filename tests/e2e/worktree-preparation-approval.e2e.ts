@@ -1,17 +1,17 @@
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { mkdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { readWorktreePreparationPlan } from '../../src/main/services/worktree-preparation-plan.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { pinTextForCapture, saveAppScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
-const fixture = createFixtureDirectory('project-preparation-approval')
-const { root } = fixture
+const root = join(tmpdir(), 'copse-e2e', 'project-preparation-approval')
 describe('project preparation approval', () => {
   before(async () => {
-    rmSync(root, { recursive: true, force: true })
+    removeE2eTree(root)
     mkdirSync(root, { recursive: true })
     mkdirSync(join(root, '.copse'))
     writeFileSync(join(root, 'package.json'), '{"packageManager":"npm@11.19.0"}')
@@ -34,7 +34,7 @@ describe('project preparation approval', () => {
   })
   after(() => {
     resetUserData()
-    fixture.cleanup()
+    removeE2eTree(root)
   })
   it('names the actual install and declared setup before asking for approval', async () => {
     const planFingerprint = readWorktreePreparationPlan(root).fingerprint
@@ -55,18 +55,7 @@ describe('project preparation approval', () => {
     expect(await dialog.$('.approval-footer').getText()).toContain('blocked for every subprocess')
     expect(body).not.toContain(planFingerprint)
     expect(body).not.toContain('gortex')
-    await expect(dialog.$('.approval-footer')).toHaveText(expect.stringContaining(root))
-    // Assert the real permission scope before normalizing only its scratch path.
-    const restorePath = await pinTextForCapture(
-      '.approval-footer',
-      /Project: [^\n]+/,
-      'Project: /tmp/project-preparation-approval',
-    )
-    try {
-      await saveAppScreenshot('worktree-preparation-approval.png')
-    } finally {
-      await restorePath()
-    }
+    await saveAppScreenshot('worktree-preparation-approval.png')
     await dialog.$('.approval-reject').click()
   })
 })

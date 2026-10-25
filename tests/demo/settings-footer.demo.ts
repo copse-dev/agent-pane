@@ -24,24 +24,29 @@ describe('browser-hosted settings footer geometry', () => {
   it('reframes a capture target obscured by the footer and restores the scroll', async () => {
     await prepareE2eScreenshot()
     const before = await browser.execute(() => {
-      const content = document.querySelector<HTMLElement>('.settings-content')!
-      const footer = document.querySelector<HTMLElement>('.settings-buttons')!
+      const content = document.querySelector<HTMLElement>('.settings-content')
+      if (!content) throw new Error('Missing content capture subject')
+      const footer = document.querySelector<HTMLElement>('.settings-buttons')
+      if (!footer) throw new Error('Missing footer capture subject')
       const controls = [
         ...document.querySelectorAll<HTMLElement>(
           '.settings-section.active input, .settings-section.active button',
         ),
       ]
-      const target = controls.reverse().find((control) => control.checkVisibility())!
+      const target = controls.reverse().find((control) => control.checkVisibility())
+      if (!target) throw new Error('Missing target capture subject')
       target.setAttribute('data-capture-target', '')
       // Deliberately reproduce a stale position underneath the sticky bar.
       content.scrollTop +=
         target.getBoundingClientRect().bottom - footer.getBoundingClientRect().top - 20
       const rect = target.getBoundingClientRect()
+      const app = document.getElementById('app')
+      if (!app) throw new Error('Missing app capture frame')
       return {
         top: rect.top,
         bottom: rect.bottom,
         footerTop: footer.getBoundingClientRect().top,
-        shellBottom: document.getElementById('app')!.getBoundingClientRect().bottom,
+        shellBottom: app.getBoundingClientRect().bottom,
         scrollTop: content.scrollTop,
       }
     })
@@ -50,8 +55,12 @@ describe('browser-hosted settings footer geometry', () => {
     const saved = await browser.execute(recentreClippedCapture, '[data-capture-target]', '#app')
     assert.ok(saved, 'nested clipping must trigger reframing')
     const framed = await browser.execute(() => {
-      const rect = document.querySelector('[data-capture-target]')!.getBoundingClientRect()
-      const footer = document.querySelector('.settings-buttons')!.getBoundingClientRect()
+      const rectElement = document.querySelector('[data-capture-target]')
+      if (!rectElement) throw new Error('Missing rect capture element')
+      const rect = rectElement.getBoundingClientRect()
+      const footerElement = document.querySelector('.settings-buttons')
+      if (!footerElement) throw new Error('Missing footer capture element')
+      const footer = footerElement.getBoundingClientRect()
       const atCentre = document.elementFromPoint(
         rect.left + rect.width / 2,
         rect.top + rect.height / 2,
@@ -65,9 +74,11 @@ describe('browser-hosted settings footer geometry', () => {
     assert.equal(framed.ownsCentre, true)
     await saveElementScreenshot('#settings-dialog', 'settings-capture-footer-reframed.png')
     await browser.execute(restoreScrollAfterCapture, '[data-capture-target]', saved)
-    const restored = await browser.execute(
-      () => document.querySelector<HTMLElement>('.settings-content')!.scrollTop,
-    )
+    const restored = await browser.execute(() => {
+      const content = document.querySelector<HTMLElement>('.settings-content')
+      if (!content) throw new Error('Missing settings content')
+      return content.scrollTop
+    })
     assert.equal(restored, before.scrollTop)
   })
 
@@ -197,13 +208,58 @@ describe('browser-hosted settings footer geometry', () => {
     await saveElementScreenshot('#settings-dialog', 'settings-footer-no-overlap.png')
   })
 
+  // The fade belongs above the bar, not inside it: when the masked frost ramped
+  // in from the bar's own top edge, Save and Cancel sat in its half-strength
+  // part and the content beside them read through almost unblurred.
+  it('frosts the whole action bar, with the fade ending above Save and Cancel', async () => {
+    await scrollSettingsContent(400)
+
+    const frost = await browser.execute(() => {
+      const footer = document.querySelector<HTMLElement>('.settings-buttons')
+      if (!footer) return null
+      const buttons = [...footer.querySelectorAll<HTMLElement>('button')].filter((button) =>
+        button.checkVisibility(),
+      )
+      if (buttons.length === 0) return null
+      const overlay = getComputedStyle(footer, '::before')
+      const stops = [...overlay.maskImage.matchAll(/(-?[\d.]+)px/g)].map((match) =>
+        Number.parseFloat(match[1] ?? ''),
+      )
+      const footerTop = footer.getBoundingClientRect().top
+      return {
+        mask: overlay.maskImage,
+        overlayTop: footerTop + Number.parseFloat(overlay.top),
+        opaqueFrom: footerTop + Number.parseFloat(overlay.top) + Math.max(...stops),
+        footerTop,
+        buttonsTop: Math.min(...buttons.map((button) => button.getBoundingClientRect().top)),
+      }
+    })
+
+    assert.ok(frost, 'settings footer with visible actions must exist')
+    assert.ok(
+      frost.overlayTop < frost.footerTop,
+      `frost must reach above the bar (overlay=${String(frost.overlayTop)}, bar=${String(frost.footerTop)})`,
+    )
+    assert.ok(
+      frost.opaqueFrom <= frost.footerTop + 0.5,
+      `fade must finish by the bar's top edge (opaque from ${String(frost.opaqueFrom)}, bar=${String(frost.footerTop)}, mask=${frost.mask})`,
+    )
+    assert.ok(
+      frost.opaqueFrom < frost.buttonsTop,
+      'Save and Cancel must sit on full-strength frost',
+    )
+    await saveElementScreenshot('#settings-dialog', 'settings-footer-frost-covers-actions.png')
+  })
+
   // The bar covering its scrollport edge (above) is the feature; a control
   // *parked* under it is the bug. `scroll-padding-bottom` is what separates the
   // two: it takes the bar's depth out of the landing space, so a scrolled-to
   // target stops above the bar instead of under frosted glass it cannot be
   // clicked through. Keyboard focus, `scrollIntoView` and accessibility scrolls
-  // all route through the same reserve.
-  it('reserves the action bar depth so a scrolled-to control lands above it', async () => {
+  // all route through the same reserve. The reserve also covers the frost's
+  // ramp above the bar, or a control parked just clear of the bar renders
+  // blurred inside it.
+  it('reserves the action bar and its fade so a scrolled-to control lands above both', async () => {
     const geometry = await browser.execute(() => {
       const content = document.querySelector<HTMLElement>('.settings-content')
       const footer = document.querySelector<HTMLElement>('.settings-buttons')
@@ -233,6 +289,7 @@ describe('browser-hosted settings footer geometry', () => {
 
       const targetRect = target.getBoundingClientRect()
       const footerRect = footer.getBoundingClientRect()
+      const fadeTop = footerRect.top + Number.parseFloat(getComputedStyle(footer, '::before').top)
       const centreX = targetRect.left + targetRect.width / 2
       const centreY = targetRect.top + targetRect.height / 2
       const atCentre = document.elementFromPoint(centreX, centreY)
@@ -240,9 +297,11 @@ describe('browser-hosted settings footer geometry', () => {
         reserved: Number.parseFloat(getComputedStyle(content).scrollPaddingBottom),
         footerHeight: footerRect.height,
         clearsBar: targetRect.bottom <= footerRect.top + 1,
+        clearsFade: fadeTop < footerRect.top && targetRect.bottom <= fadeTop + 1,
         controlOwnsItsCentre: atCentre === target || (atCentre ? target.contains(atCentre) : false),
         centreHitTag: atCentre?.className ?? null,
         overshoot: targetRect.bottom - footerRect.top,
+        fadeOvershoot: targetRect.bottom - fadeTop,
       }
     })
 
@@ -257,10 +316,46 @@ describe('browser-hosted settings footer geometry', () => {
       `scrolled control must stop above the bar (overshoot=${String(geometry.overshoot)}px)`,
     )
     assert.equal(
+      geometry.clearsFade,
+      true,
+      `scrolled control must stop above the frost's fade (overshoot=${String(geometry.fadeOvershoot)}px)`,
+    )
+    assert.equal(
       geometry.controlOwnsItsCentre,
       true,
       `the bar intercepted the scrolled control (hit .${String(geometry.centreHitTag)})`,
     )
     await saveElementScreenshot('#settings-dialog', 'settings-footer-scroll-reserve.png')
+  })
+
+  // Scrolled to the end, the bar rests in flow below the last row. Its top
+  // margin must cover the fade too, or that row sits in the blur ramp.
+  it('leaves the last row clear of the fade when scrolled to the end', async () => {
+    await scrollSettingsContent(99_999)
+
+    const geometry = await browser.execute(() => {
+      const footer = document.querySelector<HTMLElement>('.settings-buttons')
+      const section = document.querySelector<HTMLElement>('.settings-section.active')
+      if (!footer || !section) return null
+      const rendered = [...section.querySelectorAll<HTMLElement>('*')].filter((element) => {
+        const rect = element.getBoundingClientRect()
+        return (
+          rect.width > 0 && rect.height > 0 && element.checkVisibility({ visibilityProperty: true })
+        )
+      })
+      if (rendered.length === 0) return null
+      const footerRect = footer.getBoundingClientRect()
+      const fadeTop = footerRect.top + Number.parseFloat(getComputedStyle(footer, '::before').top)
+      const lastRowBottom = Math.max(
+        ...rendered.map((element) => element.getBoundingClientRect().bottom),
+      )
+      return { fadeTop, lastRowBottom }
+    })
+
+    assert.ok(geometry, 'settings footer and a rendered section must exist')
+    assert.ok(
+      geometry.lastRowBottom <= geometry.fadeTop + 1,
+      `last row must end above the fade (row=${String(geometry.lastRowBottom)}, fade=${String(geometry.fadeTop)})`,
+    )
   })
 })

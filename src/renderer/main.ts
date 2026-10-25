@@ -10,12 +10,8 @@ import './styles/themes.css'
 import './styles/global/popout.css'
 
 import { createStore } from '@shared/store/store.ts'
-import {
-  nextThreadId,
-  openNewThread,
-  prevThreadId,
-  switchThread,
-} from '@shared/store/thread-helpers.ts'
+import { openNewProjectThread } from './controller/projects.ts'
+import { nextThreadId, prevThreadId, switchThread } from '@shared/store/thread-helpers.ts'
 import { mountWelcome } from './views/welcome.ts'
 import { mountTitlebar } from './views/titlebar.ts'
 import { mountProjectsPane } from './views/projects-pane.ts'
@@ -275,6 +271,9 @@ async function boot(): Promise<void> {
   mountOnboardingDialog(store, api)
   const approvalRequests = mountApprovalDialog(api, store)
   const askUserRequests = mountAskUserDialog(api, store)
+  void api.agent.replayPendingDecisions().catch((error: unknown) => {
+    console.error('[agent] could not restore pending decisions:', error)
+  })
   // A clicked notification about a thread opens it here (main picks the window).
   mountAlertThreadNavigation(store, api)
   mountSshPromptDialog(api)
@@ -433,7 +432,7 @@ async function boot(): Promise<void> {
   api.menu.onNewThread(() => {
     if (!store.getState().workspaceRoot) return
     ensureLayout()
-    openNewThread(store)
+    openNewProjectThread(store, api)
   })
 
   api.menu.onToggleSidebar(() => {
@@ -697,6 +696,7 @@ function mountFullLayout(): void {
     requireElement('context-viewer-host'),
     store,
     api,
+    activitySources?.questions,
   )
   mountSideChatPane(
     requireElement('side-chat-host'),
@@ -766,7 +766,7 @@ function registerKeyboardShortcuts(): void {
     if (isAnyDialogOpen()) return
     if (meta && e.key === 't') {
       e.preventDefault()
-      openNewThread(store)
+      openNewProjectThread(store, api)
     }
     // Also handle the shortcut in the renderer when a native menu accelerator
     // is unavailable (for example, a headless Electron window).

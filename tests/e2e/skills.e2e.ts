@@ -62,7 +62,7 @@ describe('skills', () => {
       { timeout: 20_000 },
     )
 
-    const assistantText = await $('.msg-assistant .message-text')
+    const assistantText = await $('.msg-assistant .message-text').getElement()
     await expect(assistantText).toHaveText(
       'The workspace skill is active, and its instructions are available for this request.',
       {

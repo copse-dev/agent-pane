@@ -1,22 +1,22 @@
 import assert from 'node:assert/strict'
-import { mkdirSync } from 'node:fs'
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
+import { mkdirSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { assertKitButtonRow, measureKitButtonRow } from './helpers/kit-buttons.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // Roadmap editor action buttons stay content-sized (not equal-width grid columns).
 describe('roadmap form buttons', () => {
   let workspaceRoot: string
-  let cleanupWorkspace: (() => void) | undefined
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    const fixture = createFixtureDirectory('copse-panel-roadmap-buttons')
-    workspaceRoot = fixture.root
-    cleanupWorkspace = fixture.cleanup
+    workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-buttons-')), 'workspace')
+    mkdirSync(workspaceRoot, { recursive: true })
     seedEmptyProject(workspaceRoot, 'e2e-roadmap-buttons', {
       model: 'claude-sonnet-4-6',
       roadmapPlansEnabled: true,
@@ -26,7 +26,7 @@ describe('roadmap form buttons', () => {
 
   after(() => {
     resetUserData()
-    cleanupWorkspace?.()
+    removeE2eTree(dirname(workspaceRoot))
   })
 
   it('keeps action buttons compact instead of stretching across the panel', async () => {

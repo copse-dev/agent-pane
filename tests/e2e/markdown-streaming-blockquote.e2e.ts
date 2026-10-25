@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
+import { resetUserData, seedStreamingMarkdownFixture } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -10,34 +10,7 @@ describe('markdown streaming blockquote pending', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-streaming-blockquote-project', { subagentsEnabled: false })
-    // A persisted user message keeps the real conversation visible. An empty
-    // thread hides it for the Activity idle composer, even if DOM text exists.
-    writeSeedConfig({
-      projects: [
-        { id: 'e2e-streaming-blockquote-project', path: process.cwd(), name: 'workspace' },
-      ],
-      activeProjectId: 'e2e-streaming-blockquote-project',
-      expandedProjectId: 'e2e-streaming-blockquote-project',
-      activeThreadId: 'streaming-blockquote-thread',
-      'threads:e2e-streaming-blockquote-project': [
-        {
-          id: 'streaming-blockquote-thread',
-          title: 'Streaming blockquote',
-          status: 'idle',
-          createdAt: Date.UTC(2026, 6, 17, 9),
-          updatedAt: Date.UTC(2026, 6, 17, 9),
-          messages: [
-            {
-              id: 'streaming-prompt',
-              role: 'user',
-              content: 'Show the streaming blockquote state.',
-            },
-          ],
-          usage: { inputTokens: 0, outputTokens: 0 },
-        },
-      ],
-    })
+    seedStreamingMarkdownFixture(process.cwd())
     await browser.reloadSession()
   })
 
@@ -46,14 +19,15 @@ describe('markdown streaming blockquote pending', () => {
   })
 
   it('renders pending blockquotes without raw > markers', async () => {
-    await $('.messages-list').waitForDisplayed({ timeout: 30_000 })
-    await expect($('.msg-user .message-text')).toHaveText('Show the streaming blockquote state.')
+    await $('[data-message-id="streaming-markdown-message"] .message-text').waitForDisplayed({
+      timeout: 30_000,
+    })
 
     const result = await browser.execute(() => {
       const text = document.querySelector(
         '[data-message-id="streaming-markdown-message"] .message-text',
       )
-      if (!text) return { error: 'no visible assistant message' }
+      if (!text) throw new Error('no visible assistant message')
       text.classList.add('streaming-markdown', 'is-streaming')
       text.innerHTML = [
         '<div class="stream-complete">',
@@ -85,12 +59,23 @@ describe('markdown streaming blockquote pending', () => {
     expect(result.background).not.toBe('rgba(0, 0, 0, 0)')
     expect(Number.parseFloat(result.radius)).toBeGreaterThan(0)
 
-    const visibleState = $('.stream-pending-blockquote')
-    await visibleState.waitForDisplayed({ timeout: 5_000 })
-    await expect(visibleState).toHaveText(expect.stringContaining('Quoted guidance for the team.'))
-    const bounds = await visibleState.getSize()
-    expect(bounds.width).toBeGreaterThan(0)
-    expect(bounds.height).toBeGreaterThan(0)
+    const quote = $('.stream-pending-blockquote')
+    await expect(quote).toBeDisplayed()
+    const visible = await browser.execute(() => {
+      const element = document.querySelector('.stream-pending-blockquote')
+      if (!element) return false
+      const rect = element.getBoundingClientRect()
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        rect.top >= 0 &&
+        rect.bottom <= innerHeight &&
+        element.contains(
+          document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2),
+        )
+      )
+    })
+    expect(visible).toBe(true)
     await saveAppScreenshot('markdown-streaming-blockquote-pending.png')
   })
 })

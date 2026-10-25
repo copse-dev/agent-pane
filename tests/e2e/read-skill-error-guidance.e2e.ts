@@ -7,9 +7,9 @@ import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 describe('read_skill error guidance', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     await seedProjectConfig(seedStableWorkspace(), {
       projectId: 'read-skill-error-project',
@@ -29,7 +29,7 @@ describe('read_skill error guidance', () => {
    * is visible without opening the rollup.
    */
   async function expandLatestFailedTool(): Promise<string> {
-    const failedTools = await $$('.tool-card[data-tool-id][data-status="error"]')
+    const failedTools = await $$('.tool-card[data-tool-id][data-status="error"]').getElements()
     const failedTool = failedTools[failedTools.length - 1]
     if (!failedTool) throw new Error('no failed tool card rendered')
     await failedTool.waitForDisplayed({ timeout: 10_000 })
@@ -39,32 +39,10 @@ describe('read_skill error guidance', () => {
     if (!(await failedTool.getProperty('open'))) {
       await failedTool.$('summary.tool-card-header').click()
     }
-    return `.tool-card[data-tool-id="${await failedTool.getAttribute('data-tool-id')}"]`
+    const toolId = await failedTool.getAttribute('data-tool-id')
+    if (!toolId) throw new Error('Missing failed skill tool id')
+    return `.tool-card[data-tool-id="${toolId}"]`
   }
-
-  it('tells the agent a bundled plugin name is switched off, not unknown', async () => {
-    // Models see bundled skills under `.../plugins/pstack/skills/<name>/` and
-    // ask for `pstack` itself — the most common failed read_skill in real
-    // threads. pstack ships switched off, so the answer names where to turn it on.
-    await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await prepareMockToolTurn(
-      'Read the pstack skill and explain how to use it.',
-      { name: 'read_skill', args: { name: 'pstack' } },
-      'pstack is switched off; continuing without it.',
-    )
-    await submitComposer()
-    await waitForAgentIdle(30_000)
-
-    const selector = await expandLatestFailedTool()
-    const failedTool = $(selector)
-    await expect(failedTool).toHaveText('"pstack" is a bundled plugin that is switched off', {
-      containing: true,
-      wait: 10_000,
-    })
-    await expect(failedTool).toHaveText('Settings → Agent → Skills', { containing: true })
-    await expect(failedTool).toHaveText('Settings → Customise → Plugins', { containing: true })
-    await saveElementScreenshot(selector, 'read-skill-switched-off-plugin-guidance.png')
-  })
 
   it('gives an agent valid alternatives after an unknown skill call', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })

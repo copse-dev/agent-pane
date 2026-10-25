@@ -1,23 +1,25 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
+import { mkdirSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { $, $$, browser } from '@wdio/globals'
 import { assertNeutralBadge, readBadgeStyles, signalColours } from './helpers/badge-style.ts'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('roadmap category grouping and filters', () => {
   let workspaceRoot: string
-  let cleanupWorkspace: (() => void) | undefined
   let knowledgeDir: string
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    const fixture = createFixtureDirectory('copse-panel-roadmap-categories')
-    workspaceRoot = fixture.root
-    cleanupWorkspace = fixture.cleanup
+    workspaceRoot = join(
+      mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-categories-')),
+      'workspace',
+    )
+    mkdirSync(workspaceRoot, { recursive: true })
     knowledgeDir = seedRoadmapNotes('e2e-roadmap-category-filter', [
       {
         id: 'bug-high',
@@ -60,14 +62,14 @@ describe('roadmap category grouping and filters', () => {
 
   after(() => {
     resetUserData()
-    cleanupWorkspace?.()
-    rmSync(knowledgeDir, { recursive: true, force: true })
+    removeE2eTree(dirname(workspaceRoot))
+    removeE2eTree(knowledgeDir)
   })
 
   it('shows category accordions and filters category and complexity', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('.titlebar-text-btn[aria-label="Open roadmap"]').click()
-    await browser.waitUntil(async () => (await $$('.roadmap-row')).length === 4, {
+    await browser.waitUntil(async () => (await $$('.roadmap-row').getElements()).length === 4, {
       timeout: 20_000,
       timeoutMsg: 'expected four categorized roadmap rows',
     })
@@ -75,7 +77,7 @@ describe('roadmap category grouping and filters', () => {
     const bugHeader = $('[data-category="bug"] .roadmap-category-header')
     assert.equal(await bugHeader.getAttribute('aria-expanded'), 'true')
     assert.equal(await $('[data-category="bug"] .roadmap-category-count').getText(), '2')
-    assert.equal((await $$('.roadmap-category-badge')).length, 4)
+    assert.equal((await $$('.roadmap-category-badge').getElements()).length, 4)
 
     // Category is a label, not a status: every category chip is the same neutral
     // colour, and `project` no longer matches the `blocked` status beside it.
@@ -117,7 +119,7 @@ describe('roadmap category grouping and filters', () => {
       assert.ok(fit, 'every roadmap row has a title and meta slot')
       assert.ok(
         fit.width >= fit.floor - 1,
-        `"${fit.text ?? ''}" keeps a readable width (${String(fit.width)} < ${String(fit.floor)})`,
+        `"${fit.text}" keeps a readable width (${String(fit.width)} < ${String(fit.floor)})`,
       )
     }
     assert.ok(
@@ -125,7 +127,7 @@ describe('roadmap category grouping and filters', () => {
       'the blocked row wraps its chips under the title',
     )
     // The `done` toolbar toggle is gone; status is a filter facet now.
-    assert.equal((await $$('.roadmap-show-done-btn')).length, 0)
+    assert.equal((await $$('.roadmap-show-done-btn').getElements()).length, 0)
 
     await bugHeader.click()
     assert.equal(await bugHeader.getAttribute('aria-expanded'), 'false')

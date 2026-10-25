@@ -41,7 +41,7 @@ async function rows(): Promise<Row[]> {
         cards: [...node.querySelectorAll('.tool-card')].filter(
           (card) => card instanceof HTMLElement && card.checkVisibility(),
         ).length,
-        text: (node.textContent ?? '').replace(/\s+/g, ' ').trim(),
+        text: node.textContent.replace(/\s+/g, ' ').trim(),
       }
     }),
   )
@@ -163,6 +163,21 @@ describe('concise thread view states', () => {
     await saveAppScreenshot('concise-state-question.png')
   })
 
+  it('shows ACP sign-in as two direct actions without an answer form', async () => {
+    await open('reauth')
+    const dialog = $('#ask-user-dialog')
+    await dialog.waitForDisplayed()
+    await expect(dialog.$('.ask-user-title')).toHaveText('Sign in to Claude')
+    await expect(dialog.$$('.ask-user-action')).toBeElementsArrayOfSize(2)
+    await expect(dialog.$('.ask-user-input')).not.toExist()
+    await expect(dialog.$('.ask-user-submit')).not.toExist()
+    await expect(dialog.$('.ask-user-action:first-child')).toHaveText('Sign in')
+    await expect(dialog.$('.ask-user-action:last-child')).toHaveText('Not now')
+    // It can open mid-typing, so focus starts on the action that declines.
+    await expect(dialog.$('.ask-user-action:last-child')).toBeFocused()
+    await saveAppScreenshot('concise-state-reauth.png')
+  })
+
   it('hides subagent timelines behind the footer and shows them when opened', async () => {
     await open('subagent')
     const footer = $('.concise-turn-footer')
@@ -208,7 +223,8 @@ describe('concise thread view states', () => {
     await output.$('summary').click()
     await expect(output.$('.tool-result')).toHaveText(expect.stringContaining('test 400'))
     const geometry = await browser.execute(() => {
-      const list = document.querySelector<HTMLElement>('.messages-list')!
+      const list = document.querySelector<HTMLElement>('.messages-list')
+      if (!list) throw new Error('Missing transcript')
       return {
         pageOverflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
         listOverflowX: list.scrollWidth > list.clientWidth,
@@ -311,7 +327,7 @@ describe('concise thread view states', () => {
     const labels = await browser.execute(() =>
       [...document.querySelectorAll('.messages-list .msg-assistant')]
         .filter((node) => node instanceof HTMLElement && node.checkVisibility())
-        .map((node) => node.querySelector('.message-model')?.textContent?.trim() ?? ''),
+        .map((node) => node.querySelector('.message-model')?.textContent.trim() ?? ''),
     )
     expect(labels).toEqual(['Claude Opus 5.5', '', 'Claude Haiku 4.5', '', 'Claude Opus 5.5', ''])
     await saveAppScreenshot('concise-state-model-switch.png')

@@ -74,7 +74,7 @@ describe('agent coordination in Electron (scripted mock)', () => {
     }, PROJECT)
     assert.equal(threads.length, 2)
     for (const thread of threads) {
-      const calls = thread.messages.flatMap((message) => message.toolCalls ?? [])
+      const calls = thread.messages.flatMap((message) => message.toolCalls)
       assert.ok(
         calls.some(
           (call) => call.name === 'coordination_note' && call.result?.includes('read-by-peer'),
@@ -93,8 +93,8 @@ describe('agent coordination in Electron (scripted mock)', () => {
     }
     writeFileSync(join(OUTPUT, 'threads.json'), JSON.stringify(threads, null, 2))
     // Preserve the actual runtime profile for a local replay after WDIO exits.
-    const userData = process.env.COPSE_PANEL_USER_DATA
-    const workspace = process.env.COPSE_WORKSPACE_DIR
+    const userData = process.env['COPSE_PANEL_USER_DATA']
+    const workspace = process.env['COPSE_WORKSPACE_DIR']
     assert.ok(userData && workspace)
     const profile = join(OUTPUT, 'profile')
     mkdirSync(profile, { recursive: true })

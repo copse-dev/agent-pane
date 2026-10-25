@@ -12,6 +12,7 @@ import assert from 'node:assert/strict'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createStore, type AppStore } from '@shared/store/store.ts'
+import { ASK_USER_ANSWER_MAX_LENGTH } from '@copse/agent/ask-user-format.ts'
 import { mountAskUserDialog } from './ask-user-dialog.ts'
 import { isThreadAwaitingAttention, resetAttention } from '../controller/attention.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
@@ -19,6 +20,7 @@ import { createFakeApi } from '../fake-api.test-support.ts'
 interface AskUserRequest {
   id: string
   threadId?: string
+  presentation?: import('@shared/types/ask-user.ts').AskUserActionsPresentation
   questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
 }
 
@@ -62,6 +64,7 @@ function stubApi(): { api: ApiClient; harness: Harness } {
       listener({
         id: req.id,
         questions: req.questions,
+        ...(req.presentation === undefined ? {} : { presentation: req.presentation }),
         ...(req.threadId === undefined ? {} : { threadId: req.threadId }),
       })
     },
@@ -156,6 +159,19 @@ describe('ask_user dialog (component)', () => {
     // modal methods are shimmed per-mount via mount()
   })
 
+  it('keeps one decision when attachment replays a visible question', () => {
+    const { api, harness } = stubApi()
+    const requests = mountAskUserDialog(api, createStore())
+    shimModal(dialog())
+    const request = { id: 'replayed', questions: [{ question: 'Which colour?' }] }
+    harness.emit(request)
+    harness.emit(request)
+    assert.equal(requests.pending().length, 1)
+    submitForm()
+    assert.equal(harness.responses.length, 1)
+    assert.equal(requests.pending().length, 0)
+  })
+
   it('queues Claude reauthentication until Settings and its cleanup confirmation both close', async () => {
     const { api, harness } = stubApi()
     const requests = mountAskUserDialog(api, createStore())
@@ -248,6 +264,34 @@ describe('ask_user dialog (component)', () => {
     submitForm()
 
     assert.deepEqual(harness.responses, [{ id: 'q1', answers: ['Postgres'] }])
+    assert.equal(dialog().open, false)
+  })
+
+  it('runs a host-authored sign-in choice with one click and no answer field', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({
+      id: 'reauth',
+      presentation: { kind: 'actions', title: 'Sign in to Claude' },
+      questions: [
+        {
+          question: 'Claude is not signed in. Open a terminal and run `claude auth login`?',
+          options: ['Sign in', 'Not now'],
+        },
+      ],
+    })
+
+    assert.equal(document.querySelector('.ask-user-title')?.textContent, 'Sign in to Claude')
+    assert.equal(inputs().length, 0)
+    assert.equal(document.querySelector('.ask-user-submit'), null)
+    assert.equal(document.querySelector('.ask-user-cancel'), null)
+    const run = document.querySelector<HTMLButtonElement>('.ask-user-action')
+    assert.ok(run)
+    assert.equal(run.textContent, 'Sign in')
+    // The dialog can open mid-typing: a stray Enter or Space declines.
+    assert.equal(document.activeElement?.textContent, 'Not now')
+    run.click()
+    assert.deepEqual(harness.responses, [{ id: 'reauth', answers: ['Sign in'] }])
     assert.equal(dialog().open, false)
   })
 
@@ -771,6 +815,20 @@ describe('answering from another surface', () => {
     assert.deepEqual(requests.pending(), [])
     assert.equal(isThreadAwaitingAttention('other'), false)
     assert.equal(dialog().open, false)
+  })
+
+  it('sends no answer longer than main accepts, so the agent is never left waiting', () => {
+    const { api, harness } = stubApi()
+    const requests = mountHandle(api)
+    harness.emit({ id: 'q', threadId: 'focused', questions: [{ question: 'Notes?' }] })
+    assert.equal(at(inputs(), 0).maxLength, ASK_USER_ANSWER_MAX_LENGTH)
+
+    const long = 'x'.repeat(ASK_USER_ANSWER_MAX_LENGTH + 100)
+    assert.equal(requests.answer('q', [long]), true)
+
+    assert.deepEqual(harness.responses, [
+      { id: 'q', answers: [long.slice(0, ASK_USER_ANSWER_MAX_LENGTH)] },
+    ])
   })
 
   it('answers a queued question without disturbing the one on screen', () => {

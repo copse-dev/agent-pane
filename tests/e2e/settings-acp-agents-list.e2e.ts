@@ -8,12 +8,18 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
 import { saveSettingsSection } from './helpers/settings-scroll-capture.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('Coding agents list in Settings', () => {
   const originalPath = process.env['PATH']
   const originalPreservePath = process.env['COPSE_PRESERVE_PATH']
   const originalCodexHome = process.env['CODEX_HOME']
+  const originalHome = process.env['HOME']
   let fixtureBin = ''
+  let statusExecutable = ''
+  // What the adapter's bundled Codex CLI (`codex-acp cli login status`) reports;
+  // empty means it does not recognise the command.
+  let adapterStatus = ''
 
   before(async function () {
     this.timeout(90_000)
@@ -24,13 +30,27 @@ describe('Coding agents list in Settings', () => {
     fixtureBin = join(tmpdir(), 'copse-e2e-acp-agents-list-bin')
     mkdirSync(fixtureBin, { recursive: true })
     const agentModule = pathToFileURL(join(process.cwd(), 'tests/fixtures/mock-acp-agent.mjs'))
+    adapterStatus = join(fixtureBin, 'adapter-status.txt')
+    writeFileSync(adapterStatus, 'Not logged in\n')
+    // Like the real npm adapter, `codex-acp cli …` runs its bundled Codex CLI;
+    // anything else starts the (mock) ACP server.
+    const adapterModule = join(fixtureBin, 'codex-acp.mjs')
+    writeFileSync(
+      adapterModule,
+      "import { readFileSync } from 'node:fs'\n" +
+        "if (process.argv[2] === 'cli') {\n" +
+        `  const status = readFileSync(${JSON.stringify(adapterStatus)}, 'utf8')\n` +
+        "  if (!status || process.argv.slice(3).join(' ') !== 'login status') process.exit(2)\n" +
+        '  process.stderr.write(status)\n' +
+        `} else await import(${JSON.stringify(agentModule.href)})\n`,
+    )
     const windows = process.platform === 'win32'
     const executable = join(fixtureBin, windows ? 'codex-acp.cmd' : 'codex-acp')
     writeFileSync(
       executable,
       windows
-        ? `@echo off\r\n"${process.execPath}" "${join(process.cwd(), 'tests/fixtures/mock-acp-agent.mjs')}" %*\r\n`
-        : `#!${process.execPath}\nimport(${JSON.stringify(agentModule.href)})\n`,
+        ? `@echo off\r\n"${process.execPath}" "${adapterModule}" %*\r\n`
+        : `#!${process.execPath}\nimport(${JSON.stringify(pathToFileURL(adapterModule).href)})\n`,
     )
     if (!windows) chmodSync(executable, 0o755)
     // The adapter being installed does not establish CLI authentication. Give
@@ -41,7 +61,7 @@ describe('Coding agents list in Settings', () => {
       "if (process.argv.slice(2).join(' ') !== 'login status') process.exit(2)\n" +
         "process.stderr.write('Not logged in\\n')\nprocess.exitCode = 1\n",
     )
-    const statusExecutable = join(fixtureBin, windows ? 'codex.cmd' : 'codex')
+    statusExecutable = join(fixtureBin, windows ? 'codex.cmd' : 'codex')
     writeFileSync(
       statusExecutable,
       windows
@@ -49,8 +69,11 @@ describe('Coding agents list in Settings', () => {
         : `#!${process.execPath}\nrequire(${JSON.stringify(statusModule)})\n`,
     )
     if (!windows) chmodSync(statusExecutable, 0o755)
+    // Re-scan also reads shell startup files for keys: keep it off the real home.
+    mkdirSync(join(fixtureBin, 'home'), { recursive: true })
     writeE2eEnv({
       COPSE_PRESERVE_PATH: '1',
+      HOME: join(fixtureBin, 'home'),
       CODEX_HOME: join(fixtureBin, 'empty-codex-home'),
       PATH: [
         fixtureBin,
@@ -74,9 +97,10 @@ describe('Coding agents list in Settings', () => {
       COPSE_PRESERVE_PATH: originalPreservePath,
       PATH: originalPath,
       CODEX_HOME: originalCodexHome,
+      HOME: originalHome,
     })
     resetUserData()
-    if (fixtureBin) rmSync(fixtureBin, { recursive: true, force: true })
+    if (fixtureBin) removeE2eTree(fixtureBin)
   })
 
   it('lists installed agents with the chip on the name row and buries the rest under Add', async function () {
@@ -85,7 +109,7 @@ describe('Coding agents list in Settings', () => {
     await $('#settings-dialog').waitForDisplayed({ timeout: 10_000 })
     await $('.settings-nav-btn[data-section="general"]').click()
 
-    const list = $('[data-testid="acp-agents-list"]')
+    const list = $('[data-testid="models-agents-list"]')
     await list.waitForExist({ timeout: 15_000 })
     const codex = list.$('.acp-row[data-agent="codex-acp"]')
     await codex.waitForExist({ timeout: 15_000 })
@@ -131,7 +155,7 @@ describe('Coding agents list in Settings', () => {
       const out: string[] = []
       for (const row of document.querySelectorAll('.acp-row')) {
         if (row.scrollWidth > row.clientWidth)
-          out.push(`${row.getAttribute('data-agent')}: overflow`)
+          out.push(`${row.getAttribute('data-agent') ?? ''}: overflow`)
         const parts = [
           '.acp-logo',
           '.acp-row-name strong',
@@ -148,7 +172,8 @@ describe('Coding agents list in Settings', () => {
               b.r.right <= a.r.left + 0.5 ||
               a.r.bottom <= b.r.top + 0.5 ||
               b.r.bottom <= a.r.top + 0.5
-            if (!apart) out.push(`${row.getAttribute('data-agent')}: ${a.sel} overlaps ${b.sel}`)
+            if (!apart)
+              out.push(`${row.getAttribute('data-agent') ?? ''}: ${a.sel} overlaps ${b.sel}`)
           }
         }
       }
@@ -156,7 +181,7 @@ describe('Coding agents list in Settings', () => {
     })
     assert.deepEqual(collisions, [], 'row parts must not overlap or overflow')
 
-    await $('[data-testid="acp-add-toggle"]').click()
+    await $('[data-testid="connections-add-toggle"]').click()
     for (const id of ['claude-acp', 'gemini', 'cursor']) {
       await expect($(`.acp-add-row[data-agent="${id}"]`)).toBeDisplayed()
     }
@@ -167,7 +192,47 @@ describe('Coding agents list in Settings', () => {
         .map((svg) => svg.closest('.acp-add-row')?.getAttribute('data-agent') ?? '?'),
     )
     assert.deepEqual(unpainted, [], 'logos in the Add menu must render')
-    await $('[data-testid="acp-agents-fieldset"]').scrollIntoView({ block: 'center' })
-    await saveSettingsSection('[data-testid="acp-agents-fieldset"]', 'settings-acp-agents-list.png')
+    await $('[data-testid="models-agents-fieldset"]').scrollIntoView({ block: 'center' })
+    await saveSettingsSection(
+      '[data-testid="models-agents-fieldset"]',
+      'settings-acp-agents-list.png',
+    )
+    await $('[data-testid="connections-add-toggle"]').click()
+  })
+
+  it('shows Ready after Re-scan when only the adapter-bundled Codex CLI is signed in', async function () {
+    this.timeout(60_000)
+    // The npm adapter installs no `codex` on PATH; its bundled CLI is the one
+    // the agent runs on, so its signed-in answer is the one that counts.
+    rmSync(statusExecutable)
+    writeFileSync(adapterStatus, 'Logged in using ChatGPT\n')
+
+    const fieldset = $('[data-testid="models-agents-fieldset"]')
+    await fieldset.$('button=Re-scan').click()
+    const codex = $('[data-testid="models-agents-list"] .acp-row[data-agent="codex-acp"]')
+    await expect(codex.$('.acp-row-chip')).toHaveText('Ready', { wait: 15_000 })
+    await expect(codex.$('button=Sign in')).not.toExist()
+    await expect(fieldset.$('[data-testid="connections-scan-status"]')).toHaveText(
+      'Nothing new found',
+      {
+        containing: true,
+      },
+    )
+
+    await fieldset.scrollIntoView({ block: 'center' })
+    await saveSettingsSection(
+      '[data-testid="models-agents-fieldset"]',
+      'settings-acp-agents-list-codex-ready.png',
+    )
+  })
+  it('offers the bundled sign-in command when the adapter alone reports signed out', async function () {
+    this.timeout(60_000)
+    writeFileSync(adapterStatus, 'Not logged in\n')
+    const fieldset = $('[data-testid="models-agents-fieldset"]')
+    await fieldset.$('button=Re-scan').click()
+    const codex = $('[data-testid="models-agents-list"] .acp-row[data-agent="codex-acp"]')
+    await expect(codex.$('.acp-row-chip')).toHaveText('Needs sign-in', { wait: 15_000 })
+    await expect(codex.$('button=Sign in')).toHaveAttribute('title', 'codex-acp cli login')
+    // Inspect the offered command without launching login or touching credentials.
   })
 })

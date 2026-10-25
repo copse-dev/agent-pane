@@ -53,6 +53,8 @@ interface BackgroundProcess {
   timedOut: boolean
   cancelled: boolean
   completionNotified: boolean
+  /** Set once the owning agent has read this task's state after it exited. */
+  exitObserved: boolean
   completionTimer: ReturnType<typeof setTimeout> | null
   onCompletion?: (completion: BackgroundProcessCompletion) => void | Promise<void>
   /** True when the process runs without the local project sandbox. */
@@ -81,11 +83,12 @@ export interface BackgroundProcessInfo {
 const processes = new Map<string, BackgroundProcess>()
 
 /**
- * Operation ids are quoted back to the model and rendered in the transcript
- * ("Background task <id> exited with code 0 …" on the completion wake). A
- * random UUID there makes every reference screenshot of that message differ
- * per run, so under e2e ids come from a counter instead. Still unique for the
- * life of the main process, which is all `processes` needs.
+ * Operation ids are quoted back to the model and surfaced in tool-call detail
+ * (the completion wake's transcript text stays id-free — see
+ * `backgroundCompletionPrompt` — but the raw id still reaches an expanded
+ * tool card). A random UUID there makes every reference screenshot of that
+ * card differ per run, so under e2e ids come from a counter instead. Still
+ * unique for the life of the main process, which is all `processes` needs.
  */
 let e2eOperationSequence = 0
 
@@ -230,6 +233,7 @@ export function adoptBackgroundProcess(opts: AdoptBackgroundProcessOptions): Bac
     timedOut: false,
     cancelled: false,
     completionNotified: false,
+    exitObserved: false,
     completionTimer: null,
     ...(opts.onCompletion ? { onCompletion: opts.onCompletion } : {}),
   }
@@ -332,6 +336,7 @@ export async function startBackgroundProcess(
       timedOut: false,
       cancelled: false,
       completionNotified: false,
+      exitObserved: false,
       completionTimer: null,
       ...(opts.onCompletion ? { onCompletion: opts.onCompletion } : {}),
       owner,
@@ -386,10 +391,29 @@ export async function startBackgroundProcess(
   return toInfo(entry)
 }
 
+function observe(entry: BackgroundProcess): BackgroundProcess {
+  if (entry.exited) entry.exitObserved = true
+  return entry
+}
+
+/** The owner's tasks. Reading an exited task here counts as observing its exit. */
 export function listBackgroundProcesses(
   owner: ThreadExecutionOwner = requireThreadExecutionOwner(),
 ): BackgroundProcessInfo[] {
-  return [...processes.values()].filter((entry) => sameOwner(entry.owner, owner)).map(toInfo)
+  return [...processes.values()]
+    .filter((entry) => sameOwner(entry.owner, owner))
+    .map((entry) => toInfo(observe(entry)))
+}
+
+/**
+ * Whether the owner already read this task after it exited (via list or logs),
+ * so a completion wake would only repeat what the agent has seen.
+ */
+export function isBackgroundExitObserved(
+  id: string,
+  owner: ThreadExecutionOwner = requireThreadExecutionOwner(),
+): boolean {
+  return ownedProcess(id, owner)?.exitObserved === true
 }
 
 /** A running task's pid, for attributing listening ports back to the task that bound them. */
@@ -423,13 +447,16 @@ export function listBackgroundProcessPids(): BackgroundProcessPid[] {
   return out
 }
 
-/** Recent output for a process (head + tail, capped), or null when unknown. */
+/**
+ * Recent output for a process (head + tail, capped), or null when unknown.
+ * Reading an exited task here counts as observing its exit.
+ */
 export function getBackgroundProcessLogs(
   id: string,
   owner: ThreadExecutionOwner = requireThreadExecutionOwner(),
 ): string | null {
   const entry = ownedProcess(id, owner)
-  return entry ? entry.output.toString() : null
+  return entry ? observe(entry).output.toString() : null
 }
 
 /** Kill a process and forget it. Returns false when the id is unknown. */

@@ -24,14 +24,14 @@ describe('markdown job description metadata', () => {
 
     const result = await browser.execute(() => {
       const textEl = document.querySelector('.message-text')
-      if (!textEl) return { error: 'no message text' }
-      const text = textEl.textContent ?? ''
+      if (!textEl) throw new Error('no message text')
+      const text = textEl.textContent
       const metadataTables = textEl.querySelectorAll('table')
       const benefitsTable = [...metadataTables].find((table) =>
-        (table.textContent ?? '').includes('Category'),
+        table.textContent.includes('Category'),
       )
       const falsePositiveTable = [...metadataTables].find((table) =>
-        (table.textContent ?? '').includes('Department'),
+        table.textContent.includes('Department'),
       )
       return {
         text,

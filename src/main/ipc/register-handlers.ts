@@ -24,6 +24,8 @@ import { homedir } from 'node:os'
 import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 import { skillRootsSchema } from '../services/skills/skill-roots-schema.ts'
 import { z } from 'zod'
+import { syncPluginClientApi } from '../services/plugins/plugin-client-service.ts'
+import { PLUGIN_CLIENT_API_ID } from '@copse/agent/plugins/plugin-client-api-plugin.ts'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
 import {
   backgroundClassifierId,
@@ -85,7 +87,17 @@ import {
   setWorkspaceRoot,
   type WorkspaceProjectRef,
 } from '../services/workspace.ts'
-import { exportDecisionLog, readDecisionLog } from '../services/security/decision-log-store.ts'
+import {
+  exportDecisionLog,
+  readDecisionLog,
+  readThreadDecisionLog,
+} from '../services/security/decision-log-store.ts'
+import { listReadOutsideProjectGrants } from '../services/security/read-outside-grant.ts'
+import { browserSessionOrigins } from '../services/browser/browser-network-grants.ts'
+import { browserThreadScope } from '@shared/browser-session.ts'
+import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/plugins/background-tasks-plugin.ts'
+import { readPendingDeferrals } from '../services/security/deferred-approval-store.ts'
 import { getThreadClassifierUse } from '../services/security/classifier-use-report.ts'
 import { loadCanvasArtefactSummaries, readStoredCanvasArtefact } from '../services/canvas-store.ts'
 import { CANVAS_ARTEFACT_CHANNEL } from '../services/canvas-dispatch.ts'
@@ -119,6 +131,7 @@ import {
   inspectThreadCheckoutAttachment,
   inspectThreadCheckoutRoot,
   reattachThreadCheckout,
+  restoreThreadCheckout,
   resolveThreadExecutionContext,
 } from '../services/thread-execution-context.ts'
 import { expectedThreadWorktreePath, repositoryLocation } from '../services/worktree-manager.ts'
@@ -205,6 +218,7 @@ import {
 } from '../services/thread-deletion.ts'
 import { buildThreadArchive } from '../services/thread-archive.ts'
 import { archiveStoredThread, type ThreadArchivingRuntime } from '../services/thread-archiving.ts'
+import { ThreadAutoArchive } from '../services/thread-auto-archive.ts'
 import {
   getElectronAppVersion,
   getElectronBuildCommit,
@@ -300,6 +314,7 @@ import {
   syncBackgroundTasksTools,
   syncOkfMemoryTools,
   syncParallelSearchTools,
+  syncWebSearchTools,
   syncPiiTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
@@ -620,6 +635,36 @@ export function registerAllHandlers(
 ): void {
   const mobileAddressSchema = z.string().regex(/^(?:\d{1,3}\.){3}\d{1,3}$/)
   const mobileDeviceIdSchema = z.uuid()
+  const autoArchive = new ThreadAutoArchive({
+    ...threadArchivingRuntime,
+    isViewed: (projectId, threadId): boolean =>
+      BrowserWindow.getAllWindows().some((window) => {
+        if (!getMainWindowForWebContents(window.webContents)) return false
+        const navigation = getMainWindowNavigation(window.webContents)
+        return navigation.activeProjectId === projectId && navigation.activeThreadId === threadId
+      }),
+  })
+  const notifyAutoArchive = (
+    event: import('@shared/threads/auto-archive.ts').ThreadAutoArchived,
+  ): void => {
+    if (!win.isDestroyed()) win.webContents.send('threads:auto-archived', event)
+  }
+  const sweepArchives = (): void => {
+    const ids = recordArrayOrEmpty(storageGet('projects')).flatMap((project) =>
+      typeof project['id'] === 'string' && !project['sshHost'] ? [project['id']] : [],
+    )
+    void autoArchive.sweep(ids, notifyAutoArchive).catch((error: unknown) => {
+      console.warn('[auto-archive]', error)
+    })
+  }
+  const archiveStartup = setTimeout(sweepArchives, 60_000)
+  const archiveInterval = setInterval(sweepArchives, 60 * 60_000)
+  archiveStartup.unref()
+  archiveInterval.unref()
+  win.once('closed', () => {
+    clearTimeout(archiveStartup)
+    clearInterval(archiveInterval)
+  })
 
   ipcMain.handle('mobile:get-state', (event) => {
     assertMainFrameSender(event, win)
@@ -1601,6 +1646,7 @@ export function registerAllHandlers(
       registerSkillTools(registry)
     }
     if (changedKeys.has(READ_TERMINAL_ENABLED_SETTING)) syncReadTerminalTools(registry)
+    if (changedKeys.has('webSearchProvider')) syncWebSearchTools(registry)
     if (changedKeys.has(MODEL_CLASSIFIER_ENABLED_SETTING)) syncModelClassifierTools(registry)
     if (changedKeys.has(ORCHESTRATION_STRATEGY_ENABLED_SETTING))
       syncOrchestrationStrategyTools(registry)
@@ -1701,6 +1747,7 @@ export function registerAllHandlers(
     // key.
     if (p === 'artificial-analysis') invalidateLiveIntellectCache()
     if (p === 'parallel') syncParallelSearchTools(registry)
+    if (p === 'parallel' || p === 'tavily') syncWebSearchTools(registry)
     // Saving an HF token auto-populates its priced, provider-pinned model list so
     // the picker and cost estimate work without a manual fetch (fire-and-forget).
     if (p === HUGGINGFACE_SLUG && apiKey.trim()) {
@@ -1892,6 +1939,11 @@ export function registerAllHandlers(
     if (!resolved) return []
     return readDecisionLog(resolved)
   })
+  ipcMain.handle('decisions:list-thread', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return readThreadDecisionLog(pid, tid)
+  })
   ipcMain.handle('decisions:export', (event, rawProjectId: unknown) => {
     assertMainFrameSender(event, win)
     const projectId = parseIpcArgs(zProjectId.optional(), [rawProjectId])
@@ -1930,6 +1982,23 @@ export function registerAllHandlers(
     const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
     return getGuardedYoloState(id)
   })
+  ipcMain.handle(
+    'security:get-context-permissions',
+    (event, projectId: unknown, threadId: unknown, projectRoot: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, root] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, zNonEmptyString.max(4096)]),
+        [projectId, threadId, projectRoot],
+      )
+      return {
+        outsideReadPaths: listReadOutsideProjectGrants(tid),
+        browserOrigins: browserSessionOrigins(browserThreadScope(pid, tid)),
+        portBindingAllowed:
+          getDefaultPluginRegistry().isPermissionDeclared(LOOPBACK_BIND_PERMISSION) &&
+          getSetting<string[]>('portBindingAllowedRoots', []).includes(root),
+      }
+    },
+  )
   ipcMain.handle('security:enable-guarded-yolo', async (event, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
@@ -2051,6 +2120,30 @@ export function registerAllHandlers(
     // when their rows enter the visible viewport.
     return loadProjectThreadMetas(id, { includeArchived: false })
   })
+  ipcMain.handle('threads:archive-state', async (event, projectId: unknown, view: unknown) => {
+    assertMainFrameSender(event, win)
+    const [id, mode] = parseIpcArgs(z.tuple([zProjectId, z.enum(['review', 'archived'])]), [
+      projectId,
+      view,
+    ])
+    if (mode === 'review') await autoArchive.sweep([id], notifyAutoArchive, false)
+    const threads = mode === 'archived' ? await loadProjectThreadMetas(id) : []
+    return {
+      archived: threads.filter((thread) => thread.archivedAt != null && !thread.sideChat),
+      review: autoArchive.review(id),
+    }
+  })
+  ipcMain.handle(
+    'threads:archive-decision',
+    (event, projectId: unknown, threadId: unknown, decision: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, action] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.enum(['archive', 'keep', 'restore'])]),
+        [projectId, threadId, decision],
+      )
+      return autoArchive.decide(pid, tid, action)
+    },
+  )
   ipcMain.handle('threads:backfill-pr-refs', async (event, projectId: unknown, ids: unknown) => {
     assertMainFrameSender(event, win)
     const [id, threadIds] = parseIpcArgs(z.tuple([zProjectId, z.array(zThreadId).min(1).max(10)]), [
@@ -2197,6 +2290,11 @@ export function registerAllHandlers(
       return lookupThreadBacklinks(pid, linkKind, linkTarget)
     },
   )
+  ipcMain.handle('threads:pending-approvals', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return readPendingDeferrals({ projectId: pid, threadId: tid })
+  })
   // Seed a freshly created fork's provider-format history from the thread it was
   // branched off. The renderer owns the visible transcript copy; this is the
   // half it cannot do, since `agent-history.json` never leaves the main process.
@@ -2656,6 +2754,7 @@ export function registerAllHandlers(
     if (refusal) throw new IpcValidationError(refusal)
     const pluginService = getPluginService()
     await pluginService.setEnabled(id, enabled)
+    if (id === PLUGIN_CLIENT_API_ID) await syncPluginClientApi()
     if (pluginService.hasUserPlugin(id)) {
       // The plugin toggle is the portable component consent boundary. Refresh
       // both registries immediately so skills and MCP disappear atomically on
@@ -3251,6 +3350,11 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
     return reattachThreadCheckout(projectId, threadId, threadCheckoutBusy)
+  })
+  ipcMain.handle('git:restore-worktree', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    return restoreThreadCheckout(projectId, threadId, threadCheckoutBusy)
   })
   ipcMain.handle('git:prompt-state', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)

@@ -404,6 +404,44 @@ describe('activity view answering a question in place', () => {
     assert.equal(sendButton(harness).disabled, true)
   })
 
+  const SIGN_IN: PendingQuestionSummary = {
+    ...ASKED,
+    questions: ['Sign in to Claude?'],
+    options: [['Sign in', 'Not now']],
+    presentation: { kind: 'actions', title: 'Sign in to Claude' },
+  }
+
+  it('sends a host-authored sign-in action from its button without a draft', () => {
+    const { harness, fake } = showAsked([SIGN_IN])
+    const body = harness.view.body
+    assert.equal(body.querySelector('.activity-answer-input'), null)
+    assert.equal(body.querySelector('.activity-answer'), null)
+    body.querySelector<HTMLButtonElement>('.activity-option')?.click()
+    assert.deepEqual(fake.answers, [{ id: 'ask1', answers: ['Sign in'] }])
+  })
+
+  it('holds a sign-in action inert until the pane has settled', () => {
+    const fake = fakeQuestions([SIGN_IN])
+    const harness = setup([thread('t1')], fake.source)
+    document.body.append(harness.view.body, harness.view.status)
+    harness.state.shown = true
+    harness.view.show()
+    const actions = (): HTMLButtonElement[] => [
+      ...harness.view.body.querySelectorAll<HTMLButtonElement>('.activity-option'),
+    ]
+    // It answers on click, so like Send it must not look live while a click is dropped.
+    assert.deepEqual(
+      actions().map((action) => action.disabled),
+      [true, true],
+    )
+    harness.flush()
+
+    assert.deepEqual(
+      actions().map((action) => action.disabled),
+      [false, false],
+    )
+  })
+
   it('shows recommendations without appending the badge to the answer', () => {
     const { harness, fake } = showAsked([
       {
@@ -581,6 +619,23 @@ describe('activity view answering a question in place', () => {
     )
 
     assert.deepEqual(fake.answers, [])
+  })
+
+  it('keeps Send off while the pane is settling, even as the user types', () => {
+    const { harness, fake } = showAsked([ASKED, { ...ASKED, id: 'ask2', receivedAt: 2 }])
+    // Another question leaves, so the list changed under the one in view.
+    fake.settle('ask2')
+    harness.flush()
+    assert.equal(sendButton(harness).disabled, true, 'Send waits for the pane to settle')
+
+    // Typing must not light up a Send that would drop the click.
+    typeInto(field(harness, 0), 'Postgres')
+    assert.equal(sendButton(harness).disabled, true, 'still settling after a keystroke')
+
+    harness.flush()
+    assert.equal(sendButton(harness).disabled, false, 'and comes back once it has')
+    sendButton(harness).click()
+    assert.deepEqual(fake.answers, [{ id: 'ask1', answers: ['Postgres', ''] }])
   })
 
   it('forgets a draft once its question is gone', () => {

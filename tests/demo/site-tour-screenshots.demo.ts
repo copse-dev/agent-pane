@@ -1,3 +1,4 @@
+import { at } from '@copse/std/array-utils.ts'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { collectErrorToasts } from '../e2e/helpers/assert-no-error-toasts.ts'
 import { setComposerValue } from '../e2e/helpers/composer.ts'
@@ -51,7 +52,9 @@ describe('copse.dev feature tour screenshots', () => {
 
   it('offers Fork from here and Resend on the latest prompt', async () => {
     await openScenario('site-fork-resend')
-    await browser.waitUntil(async () => (await $$('.messages-list .msg-user')).length === 2)
+    await browser.waitUntil(
+      async () => (await $$('.messages-list .msg-user').getElements()).length === 2,
+    )
     // Preview the site under discussion, as a visitor would from the address bar.
     await $('.titlebar-btn[aria-label="Open browser"]').click()
     const address = $('.browser-tab-panel.is-active .browser-url-input')
@@ -67,7 +70,7 @@ describe('copse.dev feature tour screenshots', () => {
     await expect($('#signup-form')).toBeDisplayed()
     await browser.switchFrame(null)
     await settleCapture()
-    const latest = $$('.messages-list .msg-user')[1]
+    const latest = at([...(await $$('.messages-list .msg-user').getElements())], 1)
     await latest.moveTo()
     await expect(latest.$('.msg-fork')).toBeDisplayed()
     await expect(latest.$('.msg-resend')).toBeDisplayed()
@@ -112,25 +115,22 @@ describe('copse.dev feature tour screenshots', () => {
     await $('[aria-label="Settings"]').click()
     const dialog = $('#settings-dialog')
     await dialog.waitForDisplayed()
-    await dialog.$('button.settings-nav-subheading=API keys').click()
-    await dialog.$('.provider-chip=Anthropic').click()
-    // Chips re-render on selection, so look the active one up afresh.
-    await expect(dialog.$('.provider-chip.active')).toHaveText('Anthropic')
-    // Selecting the chip can interrupt the first smooth scroll. Navigate again
-    // after the provider panel has rendered, and require the actual destination
-    // before capturing rather than sampling whichever animation frame arrived.
-    await dialog.$('button.settings-nav-subheading=API keys').click()
+    await dialog.$('[data-testid="models-agents-list"] .acp-row').waitForExist()
+    await dialog.$('button.settings-nav-subheading=Models & agents').click()
     await browser.waitUntil(
       async () =>
         browser.execute(() => {
-          const panel = document.querySelector('#settings-providers-host > fieldset')
+          const panel = document.querySelector('#settings-agents-host > fieldset')
           const content = document.querySelector('#settings-dialog .settings-content')
           if (!panel || !content) return false
           return (
             Math.abs(panel.getBoundingClientRect().top - content.getBoundingClientRect().top) < 1
           )
         }),
-      { timeoutMsg: 'expected API keys navigation to reach the top of the settings scrollport' },
+      {
+        timeoutMsg:
+          'expected Models & agents navigation to reach the top of the settings scrollport',
+      },
     )
     await waitForSettledLayout('#settings-dialog .settings-content')
     await settleCapture()

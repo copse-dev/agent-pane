@@ -5,7 +5,13 @@ import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
 import { isThreadProposalCall } from '@shared/threads/thread-proposal.ts'
 import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
 import type { ToolRun, ToolRunStep } from './tool-runs.ts'
-import { copseToolCallName, isCopseToolCall, normalizeCopseToolName } from './copse-tool-call.ts'
+import {
+  acpDelegateKind,
+  copseToolCallName,
+  isAcpDelegateToolCall,
+  isCopseToolCall,
+  normalizeCopseToolName,
+} from './copse-tool-call.ts'
 
 /** Progressive while a tool is in flight; past once it settles (done/error). */
 export type ToolLabelTense = 'running' | 'done'
@@ -52,10 +58,12 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   git_diff: { running: 'Viewing git diff', done: 'Viewed git diff' },
   git_log: { running: 'Viewing git log', done: 'Viewed git log' },
   git_show: { running: 'Viewing git commit', done: 'Viewed git commit' },
+  git_fetch: { running: 'Fetching from origin', done: 'Fetched from origin' },
   gh_pr_list: { running: 'Listing pull requests', done: 'Listed pull requests' },
   gh_pr_view: { running: 'Viewing pull request', done: 'Viewed pull request' },
   gh_run_list: { running: 'Listing CI runs', done: 'Listed CI runs' },
   gh_run_view: { running: 'Viewing CI run logs', done: 'Viewed CI run logs' },
+  gh_api_read: { running: 'Reading GitHub API', done: 'Read GitHub API' },
   investigate_ci: { running: 'Investigating CI', done: 'Investigated CI' },
   delegate_step: { running: 'Delegating step', done: 'Delegated step' },
   task: { running: 'Running agent', done: 'Ran agent' },
@@ -128,10 +136,12 @@ const TOOL_GROUPS: Record<string, ToolGroupDef> = {
       'git_diff',
       'git_log',
       'git_show',
+      'git_fetch',
       'gh_pr_list',
       'gh_pr_view',
       'gh_run_list',
       'gh_run_view',
+      'gh_api_read',
       'get_ci_status',
       'wait_for_ci_checks',
       'get_ci_failure_logs',
@@ -381,6 +391,13 @@ export function getToolCallLabel(tc: ToolCall): string {
   // ACP keeps a user-facing title distinct from its programmatic identity.
   // Use it for display without sacrificing `name` for grouping and behavior.
   if (title) return title
+  // An ACP agent's own subagent dispatch (Claude Code's `Agent` tool) reports
+  // no title before it picks a task, so name it the way the native `task`
+  // tool's agentName fallback does, just above.
+  if (isAcpDelegateToolCall(tc)) {
+    const agentKind = acpDelegateKind(tc)
+    return tense === 'running' ? `Running ${agentKind ?? 'agent'}` : `Ran ${agentKind ?? 'agent'}`
+  }
   return getToolDisplayName(tc.programmaticName ?? mcpTitle ?? tc.name, tense)
 }
 

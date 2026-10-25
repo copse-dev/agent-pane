@@ -19,7 +19,11 @@ describe('reference screenshot motion', () => {
       svg.append(path)
       document.body.append(svg)
     })
-    const motion = () =>
+    const motion = (): Promise<{
+      state: AnimationPlayState | undefined
+      time: CSSNumberish | null | undefined
+      opacity: string | null
+    }> =>
       browser.execute(() => {
         const path = document.querySelector('#capture-motion-fixture path')
         const animation = path?.getAnimations()[0]

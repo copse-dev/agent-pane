@@ -3,10 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { PNG } from 'pngjs'
 import { waitForAgentIdle } from './helpers.ts'
 import { resetUserData, seedCanvasArtefactThreadFixture } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 /**
  * Quitting Copse used to throw the canvas away: the Browser pane holds each
@@ -29,107 +28,16 @@ const tabLabels = async (): Promise<string[]> =>
 
 /** The heading the active artefact guest is currently showing. */
 async function activeArtefactHeading(): Promise<string | null> {
-  return await browser.execute(async () => {
-    const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
-      executeJavaScript?: (code: string) => Promise<unknown>
-    } | null
-    const text = await webview?.executeJavaScript?.(
+  const guestResult = await browser.execute(async () => {
+    const webview = document.querySelector<Electron.WebviewTag>(
+      '.browser-tab-panel.is-active webview',
+    )
+    const text: unknown = await webview?.executeJavaScript(
       'document.getElementById("version")?.textContent ?? null',
     )
     return typeof text === 'string' ? text : null
   })
-}
-
-/** Wait after screenshot framing for the native guest to paint its heading. */
-async function waitForArtefactPaint(): Promise<void> {
-  await browser.waitUntil(
-    async () => {
-      const capture = await browser.execute(async () => {
-        const guest = document.querySelector('.browser-tab-panel.is-active webview') as
-          | (HTMLElement & {
-              executeJavaScript<T>(code: string): Promise<T>
-              capturePage(): Promise<{ toDataURL(): string }>
-            })
-          | null
-        if (!guest) return null
-        const frame = guest.getBoundingClientRect()
-        const state = await guest.executeJavaScript<{
-          ready: boolean
-          width: number
-          height: number
-          heading: { x: number; y: number; width: number; height: number } | null
-        }>(`(async () => {
-          await document.fonts.ready;
-          await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-          const heading = document.getElementById('version');
-          const rect = heading?.getBoundingClientRect();
-          return {
-            ready: document.readyState === 'complete' && heading?.textContent === 'restored',
-            width: innerWidth, height: innerHeight,
-            heading: rect ? {x: rect.x, y: rect.y, width: rect.width, height: rect.height} : null
-          };
-        })()`)
-        if (
-          !state.ready ||
-          !state.heading ||
-          Math.abs(state.width - frame.width) > 1 ||
-          Math.abs(state.height - frame.height) > 1
-        )
-          return null
-        return { ...state, png: (await guest.capturePage()).toDataURL() }
-      })
-      if (!capture?.heading || capture.width <= 0 || capture.height <= 0) return false
-      const image = PNG.sync.read(Buffer.from(capture.png.split(',')[1] ?? '', 'base64'))
-      const scaleX = image.width / capture.width
-      const scaleY = image.height / capture.height
-      const left = Math.max(0, Math.floor(capture.heading.x * scaleX))
-      const top = Math.max(0, Math.floor(capture.heading.y * scaleY))
-      const right = Math.min(
-        image.width,
-        Math.ceil((capture.heading.x + capture.heading.width) * scaleX),
-      )
-      const bottom = Math.min(
-        image.height,
-        Math.ceil((capture.heading.y + capture.heading.height) * scaleY),
-      )
-      // A populated guest DOM can still have a white native surface. Require
-      // actual dark heading pixels, without depending on exact font rasterization.
-      let darkPixels = 0
-      let lightPixels = 0
-      for (let y = top; y < bottom; y++) {
-        for (let x = left; x < right; x++) {
-          const offset = (y * image.width + x) * 4
-          if (
-            image.data[offset]! < 160 &&
-            image.data[offset + 1]! < 160 &&
-            image.data[offset + 2]! < 160 &&
-            image.data[offset + 3]! > 200
-          ) {
-            darkPixels++
-          }
-          if (
-            image.data[offset]! > 240 &&
-            image.data[offset + 1]! > 240 &&
-            image.data[offset + 2]! > 240 &&
-            image.data[offset + 3]! > 200
-          )
-            lightPixels++
-          if (darkPixels > 20 && lightPixels > 20) return true
-        }
-      }
-      return false
-    },
-    {
-      timeout: 20_000,
-      timeoutMsg: 'expected the framed canvas guest to paint the restored heading',
-    },
-  )
-  await browser.execute(
-    () =>
-      new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-      ),
-  )
+  return guestResult
 }
 
 describe('browser session restore', function () {
@@ -140,9 +48,9 @@ describe('browser session restore', function () {
     temporaryRoot = mkdtempSync(join(tmpdir(), 'copse-browser-session-'))
     projectRoot = join(temporaryRoot, 'browser-session')
     mkdirSync(projectRoot)
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = ''
-    process.env.OPENAI_API_KEY = ''
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
     resetUserData()
     seedCanvasArtefactThreadFixture(projectRoot, PROJECT_ID, ACTIVE_THREAD_ID, HISTORY_THREAD_ID)
     await browser.reloadSession()
@@ -176,9 +84,7 @@ describe('browser session restore', function () {
     })
     expect(await tabLabels()).toContain('Sales Dashboard')
     await waitForAgentIdle()
-    await saveElementScreenshot('#app', 'browser-session-restore-before-quit.png', {
-      beforeCapture: waitForArtefactPaint,
-    })
+    await saveAppScreenshot('browser-session-restore-before-quit.png')
   })
 
   it('brings the canvas tab back when Copse is reopened', async () => {
@@ -218,12 +124,12 @@ describe('browser session restore', function () {
       timeoutMsg: 'expected the restored canvas tab to close',
     })
     await browser.execute(() => {
-      for (const card of document.querySelectorAll('details.tool-card')) {
-        ;(card as HTMLDetailsElement).open = true
+      for (const card of document.querySelectorAll<HTMLDetailsElement>('details.tool-card')) {
+        card.open = true
         card.querySelector('summary')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       }
     })
-    const open = await $('.canvas-preview-card button')
+    const open = await $('.canvas-preview-card button').getElement()
     await open.waitForDisplayed({ timeout: 20_000 })
     await open.click()
 
@@ -232,8 +138,6 @@ describe('browser session restore', function () {
       timeoutMsg: 'expected preview Open to re-render the saved artefact after relaunch',
     })
     expect((await tabLabels()).filter((label) => label === 'Sales Dashboard')).toHaveLength(1)
-    await saveElementScreenshot('#app', 'browser-session-restore-after-relaunch.png', {
-      beforeCapture: waitForArtefactPaint,
-    })
+    await saveAppScreenshot('browser-session-restore-after-relaunch.png')
   })
 })

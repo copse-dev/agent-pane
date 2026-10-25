@@ -6,7 +6,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
   Record<string, { readonly sourceSha256: string; readonly filenames: readonly string[] }>
 > = {
   'tests/e2e/acp-auth-error.e2e.ts': {
-    sourceSha256: 'ebb54c9234a2ba438ac6ee76d4dce25dbb12a194b5bb9ca5b21b0ee8fa421ca7',
+    sourceSha256: '0c153023dabfc7b1f213ea0a427df4f073a6af6cdc72271aaae4ce9b1e95e05c',
     filenames: [
       'acp-auth-error.png',
       'codex-workspace-routing-auth-error.png',
@@ -14,11 +14,11 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/browser-network-policy.e2e.ts': {
-    sourceSha256: 'e9444720daa404578327d2dacfd8e501307e3e8e5ab544aed64b5340ed807ac8',
+    sourceSha256: 'a40ad6a906edce36bdd95649d98c2725fe1008a6de8eedac1444eb47c0485fb3',
     filenames: ['browser-preview-network-policy.png', 'browser-user-new-tab.png'],
   },
   'tests/e2e/composer-surface.e2e.ts': {
-    sourceSha256: '175a2f7c1cded2508e6933ac30e660e68628f15df489b2994f00ef55c75fbdd0',
+    sourceSha256: '827420e25d14f6981810507442bf21dd993d2e9cb18574b0ff214f7852df5163',
     filenames: [
       'composer-surface-card-dark.png',
       'composer-surface-card-light.png',
@@ -31,19 +31,19 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['context-wheel-classifier-configured.png', 'context-wheel-classifier-none.png'],
   },
   'tests/e2e/file-viewer-changes.e2e.ts': {
-    sourceSha256: '57ec8ebb24e9f2fb32c0b6a64304fc7470e5a00dc76600c27365ef021d109ccf',
+    sourceSha256: '522bd0c11e02352b85247a035cfbefff8866d2d44b40b18f04cf8f5a2793ddd5',
     filenames: ['file-viewer-copse-strong-dark.png', 'file-viewer-copse-strong-light.png'],
   },
   'tests/e2e/footer-branch-picker.e2e.ts': {
-    sourceSha256: '3e49b5f7af7af559ea5b882b40fb5032a9bfd04623c78ef153ff6b1be97364b5',
+    sourceSha256: '9df2346aa7c03ecdaa74539f312b62d0b08253b306e5073760d0db26368882c5',
     filenames: ['footer-branch-picker-compact-220.png', 'footer-branch-picker-compact-320.png'],
   },
   'tests/e2e/git-changes-thread-retention.e2e.ts': {
-    sourceSha256: '5957e129eb0899df8634d61ec67d4a487812d2b64de8e17730bf759686acd833',
+    sourceSha256: '242dbcc494236a37f2452dfd721e6314d41a91bf1680e5a8d990ad3e0806b6e6',
     filenames: ['git-changes-thread-retention.png'],
   },
   'tests/e2e/light-contrast-controls.e2e.ts': {
-    sourceSha256: '474715322bfb62fbc8de184deef4f5e25a928c44f8a03096506404f56645231e',
+    sourceSha256: '091f450cc1519b580790f9f7292d7a705bea55e0fa9c65a0d0e99ad75a25d0ae',
     filenames: [
       'light-contrast-changes-badge-dark.png',
       'light-contrast-changes-badge-light.png',
@@ -52,15 +52,15 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/malformed-tool-call-inspector.e2e.ts': {
-    sourceSha256: 'd34430e2f35a41a36e58b2785a4e2cebfe29f5c71472df602c4c309aa84427a3',
+    sourceSha256: 'b08933dd45acf239503deb2230a55e71df1c87b3b5c96b226ee0849d22cd927a',
     filenames: ['malformed-tool-call-inspector.png', 'truncated-tool-call-inspector.png'],
   },
   'tests/e2e/markdown-ordered-list-spacing.e2e.ts': {
-    sourceSha256: '7815a518ba2a0161993709e8399a7602a6c648ba07a06edd32213719522a8028',
+    sourceSha256: 'c4b1bef64a3ed494111ae6b06f0d61cff4f9bf7f8986eaaae0f655399eb9145f',
     filenames: ['markdown-ordered-list-after.png', 'markdown-ordered-list-before.png'],
   },
   'tests/e2e/mermaid-parity.e2e.ts': {
-    sourceSha256: '26c1e84377f59a8c7951734d4df7fb6aa791d50a2a5c00c11907188094c28f5b',
+    sourceSha256: '3a180b3692bedbd1d04ad848bf579d0e4ca91cafe3eafaa525ed92fcca8fa569',
     filenames: [
       'mermaid-parity-class.png',
       'mermaid-parity-flowchart.png',
@@ -70,7 +70,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/new-thread-default-branch.e2e.ts': {
-    sourceSha256: '16dd7f51b59f8369af6db241f68cf980aabd900019e6bb5c5fbd118bda031247',
+    sourceSha256: 'ccd0524fb2894936c273af35dbcd87a3ab0aae7d716022337159169c215116af',
     filenames: [
       'new-thread-default-branch-explicit-sent.png',
       'new-thread-default-branch-shared-picker.png',
@@ -81,7 +81,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/pane-loading.e2e.ts': {
-    sourceSha256: '8864264a7249c65aa873ff52d3843e2d3ee54a1dfdb20f4d443a9da4ba1c5dbe',
+    sourceSha256: 'a4a2f58f9e9e8414b419dea33171f14aa0ae084874dcfb12beeeefd0a3f123f9',
     filenames: [
       'pane-loading-changes.png',
       'pane-loading-memories.png',
@@ -90,7 +90,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/pane-popout.e2e.ts': {
-    sourceSha256: '178f18785ff0d4fabd7e3e67b25629545699ad6cc882c0011317c00a714d9a72',
+    sourceSha256: '6ea4096df0017141f14ac4a393119a281b0df3508f03462c329c8e2d3c0124c0',
     filenames: [
       'pane-popout-browser.png',
       'pane-popout-changes.png',
@@ -100,31 +100,35 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/pr-provenance.e2e.ts': {
-    sourceSha256: '3ee689f87f77b859b8129b7841cf5d8bc33ff2e4effd165da96c1fbecb0c3293',
+    sourceSha256: 'bd40ca6d2e5af5f3b5caa8ab826973ef3b36342debedd0db2d0f9ad69b9585b3',
     filenames: ['pr-native-provenance-offline-restart.png', 'pr-native-provenance.png'],
   },
   'tests/e2e/queued-held.e2e.ts': {
-    sourceSha256: '391828472c2359b42f020277995bbbd06372bb0381b71b38c28558c5b945ccfd',
+    sourceSha256: 'e77a734069b31da7f4c330045801eaafa4d62931c632409b70a8452ad1cdbb42',
     filenames: ['queued-held-contrast-dark.png', 'queued-held-contrast-light.png'],
   },
   'tests/e2e/queued-message-delete.e2e.ts': {
-    sourceSha256: '3f9d4bc14052283ea360dcc5b43145e5ae196ec0945c56b7311aef5fc20efc54',
+    sourceSha256: '17a68f9014690da1c32f6e8369f3cd4553d83444f7096d9f2f70c1b8042316e3',
     filenames: ['queued-actions-row-hover-dark.png', 'queued-actions-row-hover-light.png'],
   },
   'tests/e2e/scroll-to-bottom.e2e.ts': {
-    sourceSha256: '1287f43a04594be7a13c6837d3ad020a214c9c740b511f4fad82102b5d303d31',
+    sourceSha256: 'd4f4fc99dd0d5fd21520b80117afec3fef5bf2dc8090516870e03a455323b8e5',
     filenames: ['scroll-to-bottom-dark.png', 'scroll-to-bottom-light.png'],
   },
   'tests/e2e/settings-acp-agents-list.e2e.ts': {
-    sourceSha256: '3bc06240e883fa7623be248262a113bd7e5ddd69806c218b86249a5a0a7b6bbd',
-    filenames: ['settings-acp-agents-list-page-2.png', 'settings-acp-agents-list.png'],
+    sourceSha256: '71431b35f09fb252e810ddeba2ec345dae901c69c453ff59dd7ab5275e4bb304',
+    filenames: [
+      'settings-acp-agents-list-codex-ready.png',
+      'settings-acp-agents-list-page-2.png',
+      'settings-acp-agents-list.png',
+    ],
   },
   'tests/e2e/settings-automations.e2e.ts': {
-    sourceSha256: '35fd65c3fc9275c2c84d4463355b051be7a33c410543ec38957dafec2076cbb0',
+    sourceSha256: 'fbdd02764a0dfab43472813022ccbba1a7dd34c9f7406bae1afa87cccf9ff78e',
     filenames: ['settings-automation-form-page-2.png', 'settings-automation-form.png'],
   },
   'tests/e2e/settings-classifiers-install.e2e.ts': {
-    sourceSha256: 'a99502d0627e37831981782d799b2326a303aaa45c19da783529c54fdfe23237',
+    sourceSha256: 'd81e028650114e8794741a1fed1c6032747ff6ed7dd73d6bbeb0a37a79e4307d',
     filenames: [
       'settings-classifiers-install-bad-revision.png',
       'settings-classifiers-install-no-space.png',
@@ -132,7 +136,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/settings-model-parameters.e2e.ts': {
-    sourceSha256: '996e407f3891ac13179b81d7422e7faed193d86b0eb092bad5a350716184a16e',
+    sourceSha256: 'b05fbb9d1ad58fa8be306b84a44868f95ffbb856298455d048f1fb4a02288424',
     filenames: [
       'settings-model-parameters-glm-4-7-flash-page-2.png',
       'settings-model-parameters-glm-4-7-flash-page-3.png',
@@ -152,15 +156,15 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['settings-provider-hosts-page-2.png', 'settings-provider-hosts.png'],
   },
   'tests/e2e/settings-sources-cursor-hooks.e2e.ts': {
-    sourceSha256: '62b8307c1e49b33bd70325beaeaeff7997f6cbd6a52de07e116cf37600e3a7d2',
+    sourceSha256: 'dacbd35c017f031fd4aee1207bf92ee413b35033d164e5f8b04fd1166b7c20e5',
     filenames: ['settings-sources-hooks-page-2.png', 'settings-sources-hooks.png'],
   },
   'tests/e2e/settings-sources-hook-test.e2e.ts': {
-    sourceSha256: 'baa912d3538364655e7096596d0dda6607e3bfa501fce6a63e557ae29ebb3acc',
+    sourceSha256: 'b0ae06380ae54e8cc23a7aab06a8c7e96405a0384c3325ada4b674c70cd35b5c',
     filenames: ['settings-sources-hook-test-page-2.png', 'settings-sources-hook-test.png'],
   },
   'tests/e2e/settings-terminal-history-toggle.e2e.ts': {
-    sourceSha256: '5ebc854edb6963bd32849d9ecb6c2cddbedfecf2ccad2dca64c98ca5ef036167',
+    sourceSha256: '91a7fdff1cbea3d01ae0369fee4387f717101c40896467e74e3cf77bc82acb2a',
     filenames: [
       'settings-terminal-history-toggle-off-page-2.png',
       'settings-terminal-history-toggle-off.png',
@@ -169,15 +173,15 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/sidebar-other-projects-activity.e2e.ts': {
-    sourceSha256: '2ba9a41def10e16207728a1f81db8e4e1f64fb67c7a34539e171f7878ebc321b',
+    sourceSha256: 'be90e1cb2217e5eda526ab938d2279c6611addd18fe5fa82e8067e158394ff39',
     filenames: ['sidebar-unopened-activity-1600.png', 'sidebar-unopened-activity-800.png'],
   },
   'tests/e2e/terminal-display.e2e.ts': {
-    sourceSha256: '179e4b1705b942c251d264883c7d0f116659fbb384ff674578ef765853e9bfc8',
+    sourceSha256: '50459641070bc6c2c4db648016f6345d95817acd1e277e737d779a943d519d5e',
     filenames: ['terminal-copse-strong-dark.png', 'terminal-copse-strong-light.png'],
   },
   'tests/e2e/thread-explainer-drawing.e2e.ts': {
-    sourceSha256: 'aacf43c43da9df0fd3f495aff55d0196942496b6c49555cd63ae5a3437daebbc',
+    sourceSha256: 'b74fdd17867723f92331f6de0fdc7e2d3ae4ac23678836c07c25ef5a4f66245f',
     filenames: [
       'explainer-drawing-1-player.png',
       'explainer-drawing-1.png',
@@ -190,7 +194,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/thread-explainer-scenes.e2e.ts': {
-    sourceSha256: '645db4888627e83686f27fb00588e7b63cd942caee4208ff6c9c0adb3913a083',
+    sourceSha256: '77f582553f6468a160782bd34eee9595c967ec8dc4c3b0babfbcf2f270c12e1f',
     filenames: [
       'explainer-scenes-1-player.png',
       'explainer-scenes-1.png',
@@ -199,7 +203,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/thread-explainer.e2e.ts': {
-    sourceSha256: 'bd627fe12695ac19fd44ab32b002e33e2a6c7260a314b54c7e4cef21f40680c5',
+    sourceSha256: '108e6da52fc4fe67d50ce042634bb5ef862fb652cc5c17c07399b1374d8745f7',
     filenames: ['thread-explainer-player.png'],
   },
 }

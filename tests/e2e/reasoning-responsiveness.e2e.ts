@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -16,6 +16,7 @@ import {
   stopResponsivenessProbe,
   summarizeTimings,
 } from './reasoning-responsiveness/probe.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const producerSchema = z.object({
   sent: z.number().int(),
@@ -60,7 +61,7 @@ describe('reasoning responsiveness under a fixed ACP workload', () => {
   after(async () => {
     if (probing) await stopResponsivenessProbe()
     resetUserData()
-    rmSync(fixtureRoot, { recursive: true, force: true })
+    removeE2eTree(fixtureRoot)
   })
 
   it('preserves every chunk and accepts trusted typing while recording frame gaps', async function () {
@@ -84,7 +85,7 @@ describe('reasoning responsiveness under a fixed ACP workload', () => {
       {
         type: 'key',
         id: 'reasoning-probe-typing',
-        actions: [...draft].flatMap((value) => [
+        actions: Array.from(draft).flatMap((value) => [
           { type: 'keyDown', value },
           { type: 'keyUp', value },
           { type: 'pause', duration: 200 },
@@ -149,7 +150,7 @@ describe('reasoning responsiveness under a fixed ACP workload', () => {
       platform: process.platform,
       arch: process.arch,
       browser: await browser.execute(() => navigator.userAgent),
-      headless: process.env.COPSE_E2E_HEADLESS !== '0',
+      headless: process.env['COPSE_E2E_HEADLESS'] !== '0',
       gpuDisabled: true,
       producer,
       samples,

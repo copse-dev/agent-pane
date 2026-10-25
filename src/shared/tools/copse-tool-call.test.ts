@@ -1,6 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { copseToolCallName, isCopseToolCall, normalizeCopseToolName } from './copse-tool-call.ts'
+import {
+  acpDelegateKind,
+  acpDelegatePrompt,
+  copseToolCallName,
+  isAcpDelegateToolCall,
+  isCopseToolCall,
+  normalizeCopseToolName,
+} from './copse-tool-call.ts'
 
 test('normalizes Copse wrappers while preserving other servers and human titles', () => {
   for (const name of [
@@ -44,4 +51,56 @@ test('does not match an unrelated or prefix-colliding tool', () => {
     false,
   )
   assert.equal(isCopseToolCall({ name: 'mcp__other__propose_thread' }, 'propose_thread'), false)
+})
+
+test('isAcpDelegateToolCall matches a think-kind Agent/Task call with no session', () => {
+  assert.ok(isAcpDelegateToolCall({ kind: 'think', name: 'Agent' }))
+  assert.ok(isAcpDelegateToolCall({ kind: 'think', name: 'Task' }))
+  assert.ok(isAcpDelegateToolCall({ kind: 'think', name: 'delegate', programmaticName: 'Agent' }))
+})
+
+test('isAcpDelegateToolCall rejects anything that is not an unattached think-kind Agent/Task call', () => {
+  // Wrong kind.
+  assert.equal(isAcpDelegateToolCall({ kind: 'execute', name: 'Agent' }), false)
+  assert.equal(isAcpDelegateToolCall({ name: 'Agent' }), false)
+  // Wrong name.
+  assert.equal(isAcpDelegateToolCall({ kind: 'think', name: 'explore' }), false)
+  // Copse's own native dispatch tool already carries a session — never double-count it.
+  assert.equal(
+    isAcpDelegateToolCall({
+      kind: 'think',
+      name: 'Agent',
+      subagent: {
+        id: 's1',
+        kind: 'explore',
+        status: 'running',
+        prompt: 'p',
+        summary: null,
+        messages: [],
+      },
+    }),
+    false,
+  )
+})
+
+test('acpDelegateKind reads subagent_type verbatim, and acpDelegatePrompt prefers the live title', () => {
+  assert.equal(acpDelegateKind({ args: { subagent_type: 'Explore' } }), 'Explore')
+  assert.equal(acpDelegateKind({ args: {} }), null)
+  assert.equal(acpDelegateKind({ args: undefined }), null)
+  assert.equal(
+    acpDelegatePrompt({
+      title: 'Panel registration research',
+      args: { prompt: 'Find the panel registry' },
+    }),
+    'Panel registration research',
+  )
+  assert.equal(
+    acpDelegatePrompt({ args: { prompt: 'Find the panel registry' } }),
+    'Find the panel registry',
+  )
+  assert.equal(
+    acpDelegatePrompt({ args: { description: 'Local file-tree utilities' } }),
+    'Local file-tree utilities',
+  )
+  assert.equal(acpDelegatePrompt({ args: {} }), '')
 })

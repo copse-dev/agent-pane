@@ -1,4 +1,4 @@
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
+import { findAsync } from './helpers/find-async.ts'
 import {
   expectAssistantReply,
   installMockScenario,
@@ -16,14 +16,19 @@ import {
   seedGitImageChangesFixture,
 } from './helpers/seed-config.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
-import { parkPointer, saveElementScreenshot, waitForImagesSettled } from './helpers/screenshot.ts'
+import {
+  parkPointer,
+  saveElementScreenshot,
+  waitForImagesSettled,
+  withCaptureFrame,
+} from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 async function waitForWorkspace(): Promise<void> {
   await browser.waitUntil(
-    async () => (await (await $('.workspace-name')).getText()) !== 'No folder',
+    async () => (await (await $('.workspace-name').getElement()).getText()) !== 'No folder',
     { timeout: 60_000, timeoutMsg: 'expected a restored workspace before opening Changes' },
   )
 }
@@ -39,7 +44,7 @@ async function openChangesPanel(): Promise<void> {
     async () => {
       // Opening the panel can rebuild the titlebar. Reacquire the button on
       // every retry so WebDriver never reuses an element from the old frame.
-      const changesBtn = await $('.titlebar-btn[aria-label="Open changes"]')
+      const changesBtn = await $('.titlebar-btn[aria-label="Open changes"]').getElement()
       if (((await changesBtn.getAttribute('class')) ?? '').includes('active')) return true
       await changesBtn.click()
       return false
@@ -50,16 +55,17 @@ async function openChangesPanel(): Promise<void> {
   // The event-driven refresh on panel activation can race the seeded git
   // fixture; force a refresh explicitly so the change rows are populated.
   await (
-    await $('#git-changes-host .git-changes-refresh-btn[aria-label="Refresh changes"]')
+    await $('#git-changes-host .git-changes-refresh-btn[aria-label="Refresh changes"]').getElement()
   ).click()
-  await browser.waitUntil(async () => (await $$('.git-change-row')).length >= 3, {
+  await browser.waitUntil(async () => (await $$('.git-change-row').getElements()).length >= 3, {
     timeout: 30_000,
     timeoutMsg: 'expected at least 3 changed image rows',
   })
 }
 
 async function clickChange(path: string): Promise<void> {
-  const row = await $$('.git-change-row').find(
+  const row = await findAsync(
+    await $$('.git-change-row').getElements(),
     async (r) => (await r.$('.git-change-path').getText()) === path,
   )
   if (!row) throw new Error(`missing git change row for ${path}`)
@@ -81,15 +87,12 @@ describe('git changes image preview', function () {
   this.timeout(90_000)
 
   let repoRoot = ''
-  let cleanupRepo: (() => void) | undefined
   let proposedRoot = ''
 
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    const fixture = createFixtureDirectory('copse-panel-git-img')
-    cleanupRepo = fixture.cleanup
-    repoRoot = seedGitImageChangesFixture(fixture.root)
+    repoRoot = seedGitImageChangesFixture()
     // Checkout preparation needs a real default ref, independent of host Git defaults.
     execFileSync('git', ['branch', '-M', 'main'], { cwd: repoRoot, stdio: 'pipe' })
     execFileSync('git', ['config', 'init.defaultBranch', 'main'], { cwd: repoRoot, stdio: 'pipe' })
@@ -99,7 +102,7 @@ describe('git changes image preview', function () {
 
   after(() => {
     resetUserData()
-    cleanupRepo?.()
+    if (repoRoot) cleanupGitChangesFixture(dirname(repoRoot))
     if (proposedRoot) cleanupGitChangesFixture(proposedRoot)
   })
 
@@ -107,39 +110,90 @@ describe('git changes image preview', function () {
     await openChangesPanel()
 
     const paths = await $$('.git-change-path').map((e) => e.getText())
-    await expect(paths).toContain('staged.png')
-    await expect(paths).toContain('unstaged.png')
-    await expect(paths).toContain('new.png')
+    expect(paths).toContain('staged.png')
+    expect(paths).toContain('unstaged.png')
+    expect(paths).toContain('new.png')
 
-    await browser.waitUntil(
-      async () => !(await $('#git-changes-host').getText()).includes('Checking committed changes'),
-      { timeout: 30_000, timeoutMsg: 'expected the committed changes query to complete' },
+    // Rows render before the automatically selected staged image attaches.
+    await $('#git-diff-viewer-host .git-image-diff-img[alt="staged.png (after)"]').waitForDisplayed(
+      { timeout: 30_000 },
     )
-    await $('#git-diff-viewer-host .git-image-diff').waitForDisplayed({ timeout: 30_000 })
     await waitForImagesSettled('#git-diff-viewer-host', { minImages: 2 })
+    await parkPointer()
+    // A settled frame can precede the 500ms watcher debounce. Keep the
+    // expected rows visible without pending work beyond that debounce.
+    let settledSince = 0
+    await browser
+      .waitUntil(
+        async () => {
+          const settled = await browser.execute(() => {
+            const list = document.querySelector('#git-changes-host .git-changes-list')
+            const paths = [...(list?.querySelectorAll('.git-change-path') ?? [])].map(
+              (path) => path.textContent,
+            )
+            return (
+              ['staged.png', 'unstaged.png', 'new.png'].every((path) => paths.includes(path)) &&
+              !list?.querySelector('.pane-loading') &&
+              !(list?.textContent ?? '').includes('Checking committed changes')
+            )
+          })
+          if (!settled) {
+            settledSince = 0
+            return false
+          }
+          settledSince ||= Date.now()
+          return Date.now() - settledSince >= 750
+        },
+        {
+          timeout: 15_000,
+          interval: 100,
+          timeoutMsg: 'expected image change rows to remain settled beyond the watcher debounce',
+        },
+      )
+      .catch(async (error: unknown) => {
+        const snapshot = await browser.execute(() => {
+          const host = document.querySelector('#git-changes-host')
+          const list = host?.querySelector('.git-changes-list')
+          return {
+            hostPresent: Boolean(host),
+            listPresent: Boolean(list),
+            paths: [...(list?.querySelectorAll('.git-change-path') ?? [])].map(
+              (path) => path.textContent,
+            ),
+            pending: [...(list?.querySelectorAll('.pane-loading') ?? [])].map(
+              (row) => row.textContent,
+            ),
+            text: list?.textContent,
+          }
+        })
+        throw new Error(`Changes capture readiness failed: ${JSON.stringify(snapshot)}`, {
+          cause: error,
+        })
+      })
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-list.png'))
 
     await clickChange('staged.png')
-    const stagedPreview = await $('#git-diff-viewer-host .git-image-diff')
+    const stagedPreview = await $('#git-diff-viewer-host .git-image-diff').getElement()
     await stagedPreview.waitForDisplayed({ timeout: 30_000 })
     await expect($$('#git-diff-viewer-host .git-image-diff-img')).toBeElementsArrayOfSize({
       gte: 2,
     })
     await expect($('#git-diff-viewer-host .monaco-diff-editor')).not.toBeDisplayed()
     await waitForImagesSettled('#git-diff-viewer-host', { minImages: 2 })
+    await parkPointer()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-staged.png'))
 
     const stagedAfter = await $(
       '#git-diff-viewer-host .git-image-diff-img[alt="staged.png (after)"]',
-    )
+    ).getElement()
     const stagedAfterSrc = await stagedAfter.getAttribute('src')
     await stagedAfter.click()
     const expandDialog = $('dialog.attachment-preview-dialog[open]')
     await expandDialog.waitForExist({ timeout: 5_000 })
-    const expandedImg = await $('.image-expand-image')
+    const expandedImg = await $('.image-expand-image').getElement()
     await expect(expandedImg).toExist()
     await expect(expandedImg).toHaveAttribute('src', stagedAfterSrc ?? '')
-    await waitForImagesSettled('dialog.attachment-preview-dialog[open]', { minImages: 1 })
+    await parkPointer()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-expand.png'))
     await $('.attachment-preview-close').click()
     await browser.waitUntil(
@@ -149,10 +203,10 @@ describe('git changes image preview', function () {
 
     const beforeImage = await $(
       '#git-diff-viewer-host .git-image-diff-img[alt="staged.png (before)"]',
-    )
+    ).getElement()
     const afterImage = await $(
       '#git-diff-viewer-host .git-image-diff-img[alt="staged.png (after)"]',
-    )
+    ).getElement()
     await expect(beforeImage).toHaveAttribute('role', 'button')
     await expect(beforeImage).toHaveAttribute('tabindex', '0')
     await expect(afterImage).toHaveAttribute('role', 'button')
@@ -181,7 +235,7 @@ describe('git changes image preview', function () {
     await setComposerValue(user)
     await submitComposer()
     await scenario.waitForHold('preview-open')
-    const stopButton = await $('.stop-btn')
+    const stopButton = await $('.stop-btn').getElement()
     await stopButton.waitForDisplayed({ timeout: 15_000 })
 
     await browser.waitUntil(
@@ -197,12 +251,14 @@ describe('git changes image preview', function () {
       { timeout: 5_000, timeoutMsg: 'expected the current before image to receive focus' },
     )
     await browser.keys('Enter')
-    const preview = await $('dialog.attachment-preview-dialog[open]')
+    const preview = await $('dialog.attachment-preview-dialog[open]').getElement()
     await preview.waitForDisplayed({ timeout: 5_000 })
     await expect(preview.$('.attachment-preview-title')).toHaveText('staged.png (before)')
     await expect(preview.$('.image-expand-image')).toHaveAttribute('src', beforeSrc ?? '')
-    await waitForImagesSettled('dialog.attachment-preview-dialog[open]', { minImages: 1 })
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-expanded.png'))
+    await parkPointer()
+    await withCaptureFrame(async () => {
+      await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-expanded.png'))
+    })
 
     await browser.keys('Escape')
     await preview.waitForDisplayed({ reverse: true, timeout: 5_000 })
@@ -284,7 +340,7 @@ describe('git changes image preview', function () {
     await $('#git-diff-viewer-host .git-image-diff').waitForDisplayed({ timeout: 30_000 })
     await expect($$('#git-diff-viewer-host .git-image-diff-img')).toBeElementsArrayOfSize(2)
     const labels = await $$('#git-diff-viewer-host .git-image-diff-label').map((e) => e.getText())
-    await expect(labels).toEqual(['BEFORE', 'AFTER'])
+    expect(labels).toEqual(['BEFORE', 'AFTER'])
     await expect($('#git-diff-viewer-host .monaco-diff-editor')).not.toBeDisplayed()
     await expect($('#git-diff-viewer-host .diff-accept-btn')).toBeDisplayed()
     await expect($('#git-diff-viewer-host .diff-reject-btn')).toBeDisplayed()
@@ -292,7 +348,7 @@ describe('git changes image preview', function () {
     const src = await $(
       '#git-diff-viewer-host .git-image-diff-img[alt="proposed.png (after)"]',
     ).getAttribute('src')
-    await expect(src).toBe(`data:image/png;base64,${proposedBytes.toString('base64')}`)
+    expect(src).toBe(`data:image/png;base64,${proposedBytes.toString('base64')}`)
     await saveElementScreenshot('#git-diff-viewer-host', 'git-changes-image-proposed.png')
 
     await $('#git-diff-viewer-host .diff-reject-btn').click()

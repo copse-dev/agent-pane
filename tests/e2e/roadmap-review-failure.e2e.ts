@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, rmSync } from 'node:fs'
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
+import { mkdirSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { $, browser } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppViewportScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // A deep resolution check that fails has no verdict to show, so the result box
 // carries the reason instead: a short label on the lowercase-styled meta line
@@ -17,15 +19,16 @@ import { E2E_SCREENSHOT_DIR, saveAppViewportScreenshot } from './helpers/screens
 
 describe('roadmap resolution check failure', () => {
   let workspaceRoot: string
-  let cleanupWorkspace: (() => void) | undefined
   let knowledgeDir: string
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    const fixture = createFixtureDirectory('copse-panel-roadmap-review-fail')
-    workspaceRoot = fixture.root
-    cleanupWorkspace = fixture.cleanup
+    workspaceRoot = join(
+      mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-review-fail-')),
+      'workspace',
+    )
+    mkdirSync(workspaceRoot, { recursive: true })
     knowledgeDir = seedRoadmapNotes('e2e-roadmap-review-fail', [
       {
         id: 'e2e-roadmap-review-fail',
@@ -43,8 +46,8 @@ describe('roadmap resolution check failure', () => {
 
   after(() => {
     resetUserData()
-    cleanupWorkspace?.()
-    rmSync(knowledgeDir, { recursive: true, force: true })
+    removeE2eTree(dirname(workspaceRoot))
+    removeE2eTree(knowledgeDir)
   })
 
   it('reports a failed deep check without dumping it into the status line', async () => {

@@ -17,6 +17,8 @@ import {
   warningIcon,
 } from '../dom/icons.ts'
 import { switchProjectThread } from '../controller/projects.ts'
+import { createFinalReplyCache } from '../controller/activity-final-reply.ts'
+import { getThreadById } from '@shared/store/thread-helpers.ts'
 import {
   collectActivityThreads,
   deriveActivity,
@@ -35,6 +37,7 @@ import {
   type ApprovalTimer,
 } from './approval-dialog.ts'
 import type { Project } from '@shared/types'
+import { ASK_USER_ANSWER_MAX_LENGTH } from '@copse/agent/ask-user-format.ts'
 import type { AskUserRequests } from './ask-user-dialog.ts'
 
 /**
@@ -178,6 +181,12 @@ export function createActivityView(
   const now = deps.now ?? Date.now
   const setTimer = deps.setTimer ?? defaultTimer
   const timings = trackRunTimings(store, now)
+  const finalReply = createFinalReplyCache(
+    (projectId, threadId) => api.threads.loadMessages(projectId, threadId),
+    () => {
+      scheduleRender()
+    },
+  )
 
   const summary = el('p', { id: `${host.idPrefix}-summary`, class: 'activity-panel-summary' })
   const list = el('nav', { class: 'activity-list', 'aria-label': 'Threads' })
@@ -320,11 +329,11 @@ export function createActivityView(
    * control goes inert at once, so a second send cannot answer twice; `answer`
    * reports false when the question was already settled elsewhere.
    */
-  function sendAnswer(row: ActivityRow): void {
+  function sendAnswer(row: ActivityRow, chosen?: string): void {
     const requestId = row.requestId
     // Not while the pane is settling after a change: a Cmd+Enter must not send a
     // draft for a request the user has not looked at.
-    if (!requestId || settling || !hasAnswer(requestId)) return
+    if (!requestId || settling || (chosen === undefined && !hasAnswer(requestId))) return
     const asked = sources.questions.pending().find((request) => request.id === requestId)
     if (!asked) return
     const typed = drafts.get(requestId) ?? []
@@ -336,7 +345,7 @@ export function createActivityView(
     }
     const sent = sources.questions.answer(
       requestId,
-      asked.questions.map((_, index) => typed[index] ?? ''),
+      chosen === undefined ? asked.questions.map((_, index) => typed[index] ?? '') : [chosen],
     )
     // A draft survives a send that did not go: the controls come back on the next
     // redraw with the text still in them.
@@ -355,12 +364,14 @@ export function createActivityView(
     options: readonly string[],
     recommendedOption: string | undefined,
     recommendationReason: string | undefined,
+    actionsOnly: boolean,
   ): HTMLElement {
     const questionId = `${host.idPrefix}-question-${String(index)}`
     const input = el('textarea', {
       class: 'activity-answer-input',
       rows: '2',
       placeholder: 'Or type an answer…',
+      maxlength: String(ASK_USER_ANSWER_MAX_LENGTH),
       'data-control': `answer-${String(index)}`,
       'aria-labelledby': questionId,
     })
@@ -370,7 +381,9 @@ export function createActivityView(
       next[index] = input.value
       drafts.set(requestId, next)
       const send = detail.querySelector<HTMLButtonElement>('.activity-answer')
-      if (send) send.disabled = !hasAnswer(requestId)
+      // A keystroke must not light up Send while the pane settles: it would look
+      // live but `sendAnswer` drops the click. The settle timer turns it back on.
+      if (send) send.disabled = settling || !hasAnswer(requestId)
     }
     input.addEventListener('input', sync)
     // Cmd/Ctrl+Enter sends, as in the ask dialog; plain Enter stays a newline.
@@ -394,18 +407,24 @@ export function createActivityView(
       for (const option of options) {
         const choice = el('button', {
           type: 'button',
-          class: 'ui-btn ui-btn-secondary activity-option',
+          class: actionsOnly
+            ? `ui-btn ${option === options[0] ? 'ui-btn-primary' : 'ui-btn-secondary'} activity-option activity-answer-action`
+            : 'ui-btn ui-btn-secondary activity-option',
         })
+        // A direct action answers on click, so it waits out the settle like Send.
+        if (actionsOnly) choice.disabled = settling
         setInlineMarkdown(choice, option)
         const answer = choice.textContent
         if (option === recommendedOption) {
           choice.classList.add('ask-user-option-recommended')
           choice.append(el('span', { class: 'ask-user-recommended-label' }, 'Recommended'))
         }
-        // Fills the answer rather than sending it: a click on a row that moved
-        // under the pointer must not release the agent. It fills the rendered label,
-        // not its Markdown source, as the dialog does.
         choice.addEventListener('click', () => {
+          if (actionsOnly) {
+            sendAnswer(row, option)
+            return
+          }
+          // General agent questions allow editing the suggested answer.
           input.value = answer
           sync()
           input.focus()
@@ -417,7 +436,7 @@ export function createActivityView(
     if (recommendationReason) {
       field.append(el('p', { class: 'ask-user-recommendation-reason' }, recommendationReason))
     }
-    field.append(input)
+    if (!actionsOnly) field.append(input)
     return field
   }
 
@@ -526,6 +545,7 @@ export function createActivityView(
               asked.options[index] ?? [],
               asked.recommendedOptions?.[index],
               asked.recommendationReasons?.[index],
+              asked.presentation?.kind === 'actions',
             ),
           ),
         ),
@@ -539,7 +559,28 @@ export function createActivityView(
     }
     // An issue block already says what happened; repeating the row's summary under it adds nothing.
     if (row.issue) return issueBlock(row)
-    return [el('p', { class: 'activity-detail-text' }, row.want)]
+    return finalReplyContent(row) ?? [el('p', { class: 'activity-detail-text' }, row.want)]
+  }
+
+  /** A settled thread's last reply, so the pane says what it ended with rather than that it ended. */
+  function finalReplyContent(row: ActivityRow): HTMLElement[] | null {
+    if (row.state !== 'finished' && row.state !== 'failed') return null
+    if (row.fold || !row.threadId || !row.projectId) return null
+    const thread = getThreadById(store, row.threadId)
+    const reply = finalReply({
+      key: `${row.threadId}:${String(row.since)}`,
+      projectId: row.projectId,
+      threadId: row.threadId,
+      messages: thread && thread.messagesLoaded !== false ? thread.messages : null,
+    })
+    if (reply.state === 'loading') {
+      return [el('p', { class: 'activity-detail-note' }, 'Loading the final response…')]
+    }
+    if (reply.text === null) return null
+    const text = el('div', { class: 'activity-final-reply streaming-markdown' })
+    text.innerHTML = renderMarkdown(reply.text)
+    const label = row.state === 'failed' ? 'Last response' : 'Final response'
+    return [el('p', { class: 'activity-detail-label' }, label), text]
   }
 
   function detailActions(row: ActivityRow): HTMLElement {
@@ -570,7 +611,12 @@ export function createActivityView(
       )
       approve.disabled = settling
       decide.push(approve)
-    } else if (row.state === 'needs-answer' && row.requestId) {
+    } else if (
+      row.state === 'needs-answer' &&
+      row.requestId &&
+      sources.questions.pending().find((request) => request.id === row.requestId)?.presentation
+        ?.kind !== 'actions'
+    ) {
       const requestId = row.requestId
       const answer = button(
         'ui-btn-primary activity-answer',
@@ -1107,10 +1153,10 @@ export function createActivityView(
   function armSettle(): void {
     cancelSettle?.()
     settling = true
-    // Approve and Send answer are the two controls that release an agent, so both
-    // wait out a change of what the pane shows.
+    // Approve, Send answer and a direct answer action are the controls that
+    // release an agent, so all wait out a change of what the pane shows.
     for (const control of detail.querySelectorAll<HTMLButtonElement>(
-      '.activity-approve, .activity-answer',
+      '.activity-approve, .activity-answer, .activity-answer-action',
     )) {
       control.disabled = true
     }
@@ -1118,7 +1164,7 @@ export function createActivityView(
       cancelSettle = null
       settling = false
       for (const control of detail.querySelectorAll<HTMLButtonElement>(
-        '.activity-approve, .activity-answer',
+        '.activity-approve, .activity-answer, .activity-answer-action',
       )) {
         // A request already answered keeps its inert buttons.
         if (control.dataset['answered']) continue

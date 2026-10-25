@@ -15,7 +15,7 @@ describe('onboarding gating', () => {
   })
 
   it('shows on a fresh profile', async () => {
-    const overlay = await $('#onboarding-dialog')
+    const overlay = await $('#onboarding-dialog').getElement()
     await overlay.waitForDisplayed({ timeout: 30_000 })
     expect(
       await browser.execute(
@@ -58,7 +58,7 @@ describe('onboarding gating', () => {
     // The welcome screen underneath must be interactive — the New Project flow
     // is the first thing a fresh user does after dismissing setup (issue #1914's
     // regression surface).
-    const newProjectBtn = await $('.welcome-new-btn')
+    const newProjectBtn = await $('.welcome-new-btn').getElement()
     await newProjectBtn.waitForClickable({ timeout: 15_000 })
     await newProjectBtn.click()
     await browser.waitUntil(

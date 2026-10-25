@@ -1,10 +1,11 @@
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
 import { collectErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-file-open-worker-project'
 const SAMPLE_FILE = 'worker-sample.ts'
@@ -13,7 +14,7 @@ const CSS_FILE = 'worker-sample.css'
 async function waitForWorkspace(): Promise<void> {
   await browser.waitUntil(
     async () => {
-      const name = await $('.workspace-name')
+      const name = await $('.workspace-name').getElement()
       return (await name.isExisting()) && (await name.getText()) !== 'No folder'
     },
     { timeout: 30_000, timeoutMsg: 'expected workspace to be restored' },
@@ -22,13 +23,11 @@ async function waitForWorkspace(): Promise<void> {
 
 describe('Opening a code file does not surface worker error toasts', () => {
   let workspaceRoot = ''
-  let cleanupWorkspace: (() => void) | undefined
 
   before(async function () {
     this.timeout(120_000)
-    const fixture = createFixtureDirectory('copse-file-open-worker')
-    workspaceRoot = fixture.root
-    cleanupWorkspace = fixture.cleanup
+    workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-file-open-worker-')), 'workspace')
+    mkdirSync(workspaceRoot)
     writeFileSync(
       join(workspaceRoot, SAMPLE_FILE),
       [
@@ -56,19 +55,19 @@ describe('Opening a code file does not surface worker error toasts', () => {
 
   after(() => {
     resetUserData()
-    cleanupWorkspace?.()
+    if (workspaceRoot) removeE2eTree(dirname(workspaceRoot))
   })
 
   it('shows the file in Monaco with its language worker and no error toast', async () => {
-    const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]')
+    const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]').getElement()
     if (!(await $('#pane-files').isDisplayed())) await panelBtn.click()
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
 
-    const sampleRow = await $(`.tree-row[title="${SAMPLE_FILE}"]`)
+    const sampleRow = await $(`.tree-row[title="${SAMPLE_FILE}"]`).getElement()
     await sampleRow.waitForDisplayed({ timeout: 30_000 })
     await sampleRow.click()
 
-    const editor = await $('#file-viewer .monaco-editor')
+    const editor = await $('#file-viewer .monaco-editor').getElement()
     await editor.waitForDisplayed({ timeout: 30_000 })
     await $('#file-viewer .monaco-editor .view-line').waitForDisplayed({ timeout: 30_000 })
 
@@ -79,15 +78,15 @@ describe('Opening a code file does not surface worker error toasts', () => {
 
     const toasts = await collectErrorToasts()
     await saveAppScreenshot('file-open-worker-no-error.png')
-    await expect(toasts).toEqual([])
+    expect(toasts).toEqual([])
   })
 
   it('shows a CSS file in Monaco with its language worker and no error toast', async () => {
-    const cssRow = await $(`.tree-row[title="${CSS_FILE}"]`)
+    const cssRow = await $(`.tree-row[title="${CSS_FILE}"]`).getElement()
     await cssRow.waitForDisplayed({ timeout: 15_000 })
     await cssRow.click()
 
-    const editor = await $('#file-viewer .monaco-editor')
+    const editor = await $('#file-viewer .monaco-editor').getElement()
     await editor.waitForDisplayed({ timeout: 15_000 })
     await $('#file-viewer .monaco-editor .view-line').waitForDisplayed({ timeout: 15_000 })
 
@@ -95,6 +94,6 @@ describe('Opening a code file does not surface worker error toasts', () => {
 
     const toasts = await collectErrorToasts()
     await saveAppScreenshot('file-open-css-worker-no-error.png')
-    await expect(toasts).toEqual([])
+    expect(toasts).toEqual([])
   })
 })

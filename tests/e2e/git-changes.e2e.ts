@@ -8,7 +8,8 @@ import {
   resetUserData,
   seedGitChangesFixture,
 } from './helpers/seed-config.ts'
-import { parkPointer, saveElementScreenshot } from './helpers/screenshot.ts'
+import { parkPointer, saveElementScreenshot, withCaptureFrame } from './helpers/screenshot.ts'
+import { waitForGitChangesSettled } from './helpers/git-changes-settled.ts'
 import { switchTheme, tokenColour } from './helpers/theme.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -40,7 +41,7 @@ async function waitForComposer(): Promise<void> {
 
 async function waitForWorkspace(): Promise<void> {
   await browser.waitUntil(
-    async () => (await (await $('.workspace-name')).getText()) !== 'No folder',
+    async () => (await (await $('.workspace-name').getElement()).getText()) !== 'No folder',
     { timeout: 60_000, timeoutMsg: 'expected a restored workspace before opening Changes' },
   )
 }
@@ -97,18 +98,20 @@ describe('git changes viewer', function () {
     // The titlebar "Changes" shortcut opens the right panel and switches to the
     // Changes tab in one click.
     await $('.titlebar-btn[aria-label="Open changes"]').waitForExist({ timeout: 30_000 })
-    const titlebarChangesBtn = await $('.titlebar-btn[aria-label="Open changes"]')
+    const titlebarChangesBtn = await $('.titlebar-btn[aria-label="Open changes"]').getElement()
     await titlebarChangesBtn.click()
 
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
 
     await expect(titlebarChangesBtn).toHaveElementClass('active')
 
-    const changesHost = await $('#git-changes-host')
+    const changesHost = await $('#git-changes-host').getElement()
     await changesHost.waitForDisplayed({ timeout: 30_000 })
 
     await (
-      await $('#git-changes-host .git-changes-refresh-btn[aria-label="Refresh changes"]')
+      await $(
+        '#git-changes-host .git-changes-refresh-btn[aria-label="Refresh changes"]',
+      ).getElement()
     ).click()
 
     // Wait for the async git status refresh to render rows.
@@ -169,10 +172,8 @@ describe('git changes viewer', function () {
         ),
       { timeout: 15_000, timeoutMsg: 'expected the staged.ts diff to show its change' },
     )
-    await browser.waitUntil(
-      async () => !(await $('#git-changes-host').getText()).includes('Checking committed changes'),
-      { timeout: 30_000, timeoutMsg: 'expected the committed changes query to complete' },
-    )
+    await waitForGitChangesSettled()
+    await waitForDiffHoverChrome()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-list.png'))
 
     // Section titles reflect staged vs unstaged counts. CSS uppercases the text,
@@ -181,29 +182,29 @@ describe('git changes viewer', function () {
     const sectionTitles = (await $$('.git-changes-section-title').map((e) => e.getText())).map(
       (t) => t.toLowerCase(),
     )
-    await expect(sectionTitles.some((t) => t.startsWith('staged ('))).toBe(true)
-    await expect(sectionTitles.some((t) => t.startsWith('unstaged ('))).toBe(true)
+    expect(sectionTitles.some((t) => t.startsWith('staged ('))).toBe(true)
+    expect(sectionTitles.some((t) => t.startsWith('unstaged ('))).toBe(true)
     // Committing empties `git status`, so without its own section the fixture's
     // committed work would be reviewable nowhere until a PR existed.
-    await expect(sectionTitles.some((t) => t.startsWith('committed ('))).toBe(true)
+    expect(sectionTitles.some((t) => t.startsWith('committed ('))).toBe(true)
 
     // Verify the three expected files appear with status badges.
     const paths = await readGitChangePaths()
-    await expect(paths).toContain('staged.ts')
-    await expect(paths).toContain('unstaged.ts')
-    await expect(paths).toContain('untracked.ts')
-    await expect(paths).toContain('committed.ts')
-    await expect(paths).toContain('.bashrc')
+    expect(paths).toContain('staged.ts')
+    expect(paths).toContain('unstaged.ts')
+    expect(paths).toContain('untracked.ts')
+    expect(paths).toContain('committed.ts')
+    expect(paths).toContain('.bashrc')
 
     const dotfileBidi = await browser.execute(() => {
       const path = Array.from(document.querySelectorAll<HTMLElement>('.git-change-path')).find(
-        (element) => element.textContent?.trim() === '.bashrc',
+        (element) => element.textContent.trim() === '.bashrc',
       )
       if (!path) return null
       const codePoints = (content: string): number[] =>
         Array.from(content, (character) => character.codePointAt(0) ?? -1)
       return {
-        text: path.textContent?.trim() ?? '',
+        text: path.textContent.trim(),
         before: codePoints(getComputedStyle(path, '::before').content),
         after: codePoints(getComputedStyle(path, '::after').content),
       }
@@ -214,7 +215,7 @@ describe('git changes viewer', function () {
     assert.ok(dotfileBidi.after.includes(0x200e), 'dotfile needs a trailing LTR mark')
     await saveElementScreenshot('#git-changes-host', 'git-changes-dotfile-path.png')
 
-    const untrackedBadge = await $('.git-change-status-untracked')
+    const untrackedBadge = await $('.git-change-status-untracked').getElement()
     await expect(untrackedBadge).toHaveText('?')
 
     // A shell command or external editor does not register the file-viewer
@@ -229,28 +230,16 @@ describe('git changes viewer', function () {
         timeoutMsg: 'expected an unwatched external change to appear automatically',
       },
     )
-    await saveElementScreenshot('#app', 'git-changes-external-refresh.png', {
-      frame: 'document',
-      beforeCapture: async () => {
-        await parkPointer()
-        await expect($('#git-changes-host .pane-loading')).not.toExist({ wait: 30_000 })
-        const externalPath = $('#git-changes-host').$('.git-change-path*=external-change.ts')
-        await expect(externalPath).toBeDisplayed()
-        await expect(externalPath).toHaveText('external-change.ts')
-        await waitForDiffOf('staged.ts')
-        // The retained rows are available while the committed query refreshes.
-        // Check completion after the viewer wait, immediately before capture.
-        await expect($('#git-changes-host .pane-loading')).not.toExist({ wait: 30_000 })
-      },
-    })
+    await waitForGitChangesSettled()
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-external-refresh.png'))
 
     // Opening the panel auto-selects the first changed file (staged.ts).
     // Re-query after the external refresh: it replaces the row DOM, so handles
     // captured before the filesystem event are stale by design.
-    const stagedRow = await $('.git-change-row*=staged.ts')
+    const stagedRow = await $('.git-change-row*=staged.ts').getElement()
     await expect(stagedRow).toHaveElementClass('is-selected')
 
-    const diffViewer = await $('#git-diff-viewer-host .monaco-diff-editor')
+    const diffViewer = await $('#git-diff-viewer-host .monaco-diff-editor').getElement()
     await diffViewer.waitForDisplayed({ timeout: 30_000 })
 
     // The docked pane renders neither the overview-ruler "mini file" strip nor
@@ -307,21 +296,21 @@ describe('git changes viewer', function () {
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-diff-collapsed.png'))
 
-    const expandBtn = await $('.diff-hidden-lines-widget a[role="button"]')
+    const expandBtn = await $('.diff-hidden-lines-widget a[role="button"]').getElement()
     await expandBtn.click()
     await browser.pause(300)
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-diff-expanded.png'))
   })
 
   it('opens the diff of a file that was committed rather than left dirty', async () => {
-    const committedRow = await $('.git-change-row-committed')
+    const committedRow = await $('.git-change-row-committed').getElement()
     await committedRow.waitForDisplayed({ timeout: 30_000 })
     await expect(committedRow.$('.git-change-path')).toHaveText('committed.ts')
 
     await committedRow.click()
     await expect(committedRow).toHaveElementClass('is-selected')
 
-    const diffViewer = await $('#git-diff-viewer-host .monaco-diff-editor')
+    const diffViewer = await $('#git-diff-viewer-host .monaco-diff-editor').getElement()
     await diffViewer.waitForDisplayed({ timeout: 30_000 })
     // The staged.ts diff from the previous test also has inserts; wait for the
     // committed file's own models before judging its decorations.
@@ -337,9 +326,9 @@ describe('git changes viewer', function () {
       { timeout: 15_000, timeoutMsg: 'expected the committed file to diff as added lines' },
     )
 
-    // Opening the row leaves the pointer over its path. Wait for the ordinary
-    // non-hover view so timing cannot add a path tooltip to the diff capture.
+    await waitForGitChangesSettled()
     await parkPointer()
+    await waitForDiffHoverChrome()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-committed-diff.png'))
   })
 
@@ -351,7 +340,9 @@ describe('git changes viewer', function () {
     // adds an unstaged deletion beside it.
     rmSync(join(repoRoot, 'committed.ts'))
     await (
-      await $('#git-changes-host .git-changes-refresh-btn[aria-label="Refresh changes"]')
+      await $(
+        '#git-changes-host .git-changes-refresh-btn[aria-label="Refresh changes"]',
+      ).getElement()
     ).click()
     await browser.waitUntil(
       async () =>
@@ -415,7 +406,7 @@ describe('git changes viewer', function () {
           () =>
             !document
               .getElementById('git-changes-host')
-              ?.textContent?.includes('Checking committed changes'),
+              ?.textContent.includes('Checking committed changes'),
         ),
       {
         timeout: 30_000,

@@ -28,14 +28,45 @@ describe('offerAcpReauth', () => {
   }
 
   it('launches the dedicated Claude login command', async () => {
-    const command = await withAnswer(
-      () => 'Run `claude auth login`',
+    let presentation: import('@shared/types/ask-user.ts').AskUserActionsPresentation | undefined
+    let options: string[] | undefined
+    const command = await runWithAskUserHandler(
+      (req) => {
+        presentation = req.presentation
+        options = req.questions[0]?.options
+        return Promise.resolve({ answers: ['Sign in'] })
+      },
       () => offerAcpReauth({ agentId: 'claude-agent-acp', kind: 'expired' }),
     )
     assert.equal(command, 'claude auth login')
+    assert.deepEqual(presentation, { kind: 'actions', title: 'Sign in to Claude' })
+    assert.deepEqual(options, ['Sign in', 'Not now'])
     assert.deepEqual(launched, ['claude auth login'])
   })
 
+  it('offers the adapter-bundled Codex command and only launches it after acceptance', async () => {
+    let asked = ''
+    assert.equal(
+      await withAnswer(
+        (question) => {
+          asked = question
+          return 'Not now'
+        },
+        () => offerAcpReauth({ agentId: 'codex-acp', kind: 'expired' }),
+      ),
+      null,
+    )
+    assert.match(asked, /codex-acp cli login/)
+    assert.deepEqual(launched, [])
+    assert.equal(
+      await withAnswer(
+        () => 'yes',
+        () => offerAcpReauth({ agentId: 'codex-acp', kind: 'expired' }),
+      ),
+      'codex-acp cli login',
+    )
+    assert.deepEqual(launched, ['codex-acp cli login'])
+  })
   it('says which agent expired and that the sign-in finishes in the terminal', async () => {
     let asked = ''
     await withAnswer(

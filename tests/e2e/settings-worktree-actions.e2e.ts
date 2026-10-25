@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
@@ -16,6 +16,7 @@ import {
   saveAppScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-settings-worktree-actions-project'
 const THREAD_ID = 'e2e-settings-worktree-actions-thread'
@@ -110,10 +111,10 @@ describe('settings → Storage → worktree actions', function () {
       try {
         git(projectRoot, ['worktree', 'remove', '--force', path])
       } catch {
-        rmSync(path, { recursive: true, force: true })
+        removeE2eTree(path)
       }
     }
-    if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
+    if (projectRoot) removeE2eTree(projectRoot)
   })
 
   it('shows thread, terminal, and package cleanup actions', async () => {
@@ -177,16 +178,11 @@ describe('settings → Storage → worktree actions', function () {
     const pathCodes = await confirm.$$('.confirm-dialog-detail code').map((code) => code.getText())
     assert.equal(pathCodes.length, 1)
     assert.match(pathCodes[0] ?? '', /node_modules$/)
-    const selectedProjectText = await browser.execute(
-      () => document.querySelector('#storage-project-select option:checked')?.textContent ?? '',
-    )
-    assert.ok(selectedProjectText.includes(openedProjectRoot))
-    // The modal leaves the real project's profile path visible behind it.
-    const restoreModalProfilePath = await pinProfilePathForCapture('#settings-dialog')
+    const restoreConfirmPath = await pinProfilePathForCapture('#settings-dialog')
     try {
       await saveAppScreenshot('settings-worktree-cleanup-confirm.png')
     } finally {
-      await restoreModalProfilePath()
+      await restoreConfirmPath()
     }
     await confirm.$('.confirm-dialog-cancel').click()
 

@@ -218,6 +218,60 @@ describe('footer branch status', () => {
       assert.match(trigger.title, /Recovery is offered once the agent stops working in it/)
     })
 
+    it('restores a missing checkout from its own thread and clears the recovery action', async () => {
+      let restored = false
+      const calls: string[] = []
+      const store = detachedStore()
+      const checkoutChanges: string[] = []
+      store.on('thread_checkout_changed', (threadId) => checkoutChanges.push(threadId))
+      const host = mountDetached(
+        {
+          branchStatus: async () => {
+            if (!restored) throw new Error('Thread worktree is missing')
+            return { currentBranch: 'copse/thread-branch', pr: null }
+          },
+          worktreeAttachment: async () => ({
+            state: 'missing',
+            branch: 'copse/thread-branch',
+            reason: null,
+          }),
+          restoreWorktree: async (projectId, threadId) => {
+            calls.push(`${projectId}/${threadId}`)
+            restored = true
+          },
+        },
+        store,
+      )
+      await settle()
+      const button = qsRequired<HTMLButtonElement>(host, '.branch-reattach-button')
+      assert.equal(button.hidden, false)
+      assert.equal(button.textContent, 'Restore worktree')
+      assert.match(button.title, /local-only files are not restored/)
+      button.click()
+      await settle()
+      await settle()
+      assert.deepEqual(calls, ['project-1/thread-1'])
+      assert.deepEqual(checkoutChanges, ['thread-1'])
+      assert.equal(button.hidden, true)
+      assert.match(document.querySelector('.toast-info')?.textContent ?? '', /continue this chat/)
+    })
+
+    it('keeps unavailable recovery visible with a reason and disables restoration', async () => {
+      const host = mountDetached({
+        branchStatus: detachedStatus,
+        worktreeAttachment: async () => ({
+          state: 'missing',
+          branch: 'copse/thread-branch',
+          reason: 'The saved branch is no longer available.',
+        }),
+      })
+      await settle()
+      const button = qsRequired<HTMLButtonElement>(host, '.branch-reattach-button')
+      assert.equal(button.hidden, false)
+      assert.equal(button.disabled, true)
+      assert.match(button.title, /no longer available/)
+    })
+
     it('offers a reattach that puts the checkout back on its branch', async () => {
       let attached = false
       const reattachCalls: string[] = []
@@ -561,6 +615,51 @@ describe('footer branch status', () => {
     await settle()
     assert.equal(branchReads, 3, 'a visible thread switch does not wait for the debounce')
     assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/two')
+  })
+
+  it('does not show the previous thread branch while a real thread switch is still resolving', async () => {
+    // thread-2 has no gitBranch/worktree binding of its own, so its display
+    // falls through to `status.currentBranch` - the field that is shared
+    // across threads rather than keyed per thread.
+    const second = { ...thread(undefined, true), id: 'thread-2' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread('main', true), second],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    let resolveSecond: (status: GitBranchStatus) => void = () => {
+      throw new Error('expected the second thread read to still be pending')
+    }
+    const base = createApi({ currentBranch: 'main', pr: null })
+    mountFooterBranchStatus(host, store, {
+      ...base,
+      git: {
+        ...base['git'],
+        branchStatus: async (_projectId, threadId) => {
+          if (threadId === 'thread-1') return { currentBranch: 'main', pr: null }
+          return new Promise<GitBranchStatus>((resolve) => {
+            resolveSecond = resolve
+          })
+        },
+      },
+    })
+    await settle()
+    assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'main')
+
+    store.setState({ activeThreadId: 'thread-2' })
+    store.emit('threads_changed')
+    await settle()
+
+    // thread-2's own branch status is still in flight - the widget must hide
+    // rather than keep advertising thread-1's branch (#regression: flickered
+    // to the previous thread's branch across a real thread switch).
+    assert.equal(qsRequired(host, '.branch-picker').hidden, true)
+    resolveSecond({ currentBranch: 'feature/second', pr: null })
+    await settle()
+    assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/second')
   })
 
   it('copies the thread branch on click for existing chats', async () => {

@@ -7,10 +7,12 @@ import { setAttentionThreads } from '../controller/attention.ts'
 import { attentionThreadId } from '../controller/projects.ts'
 import { sideChatPromptOrigin } from '../controller/side-chat.ts'
 import { isAnyDialogOpen } from './dialog-shell.ts'
-import type { AskUserQuestion } from '@copse/agent/ask-user-format.ts'
+import { ASK_USER_ANSWER_MAX_LENGTH, type AskUserQuestion } from '@copse/agent/ask-user-format.ts'
+import type { AskUserActionsPresentation } from '@shared/types/ask-user.ts'
 
 interface AskUserRequest {
   id: string
+  presentation?: AskUserActionsPresentation
   /** Thread this question belongs to; undefined = not tied to a run (show anywhere). */
   threadId: string | undefined
   questions: AskUserQuestion[]
@@ -23,6 +25,7 @@ interface AskUserRequest {
 /** What another surface (the Activity panel) may read about one pending question. */
 export interface PendingQuestionSummary {
   id: string
+  presentation?: AskUserActionsPresentation
   threadId: string | undefined
   /** The question texts, in order, as the agent wrote them (Markdown source). */
   questions: string[]
@@ -109,7 +112,8 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
       el(
         'h3',
         { class: 'ask-user-title' },
-        asker ? 'A side chat has a question' : 'The agent has a question',
+        active.presentation?.title ??
+          (asker ? 'A side chat has a question' : 'The agent has a question'),
       ),
     )
     if (asker) {
@@ -120,13 +124,15 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
 
     active.questions.forEach((q, i) => {
       const questionId = `ask-user-question-${String(i)}`
+      const actionsOnly = active?.presentation?.kind === 'actions'
       const input = el('textarea', {
         class: 'ask-user-input',
         rows: '2',
+        maxlength: String(ASK_USER_ANSWER_MAX_LENGTH),
         'data-question-index': String(i),
         'aria-labelledby': questionId,
       })
-      inputs.push(input)
+      if (!actionsOnly) inputs.push(input)
 
       // Questions are agent-authored content, so render the same sanitized
       // Markdown as chat. In particular, commands should look like commands
@@ -141,14 +147,23 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
       if (q.options && q.options.length > 0) {
         const optionRow = el('div', { class: 'ask-user-options' })
         for (const option of q.options) {
-          const button = el('button', { type: 'button', class: 'ask-user-option' })
+          const button = el('button', {
+            type: 'button',
+            class: actionsOnly
+              ? `ui-btn ${option === q.options[0] ? 'ui-btn-primary' : 'ui-btn-secondary'} ask-user-option ask-user-action`
+              : 'ask-user-option',
+          })
           setInlineMarkdown(button, option)
           const answer = button.textContent
-          if (option === q.recommendedOption) {
+          if (!actionsOnly && option === q.recommendedOption) {
             button.classList.add('ask-user-option-recommended')
             button.append(el('span', { class: 'ask-user-recommended-label' }, 'Recommended'))
           }
           button.addEventListener('click', () => {
+            if (actionsOnly) {
+              respond([option])
+              return
+            }
             // Insert the rendered label, not its Markdown source, so selecting
             // a command does not put raw backticks back into the visible field.
             input.value = answer
@@ -161,9 +176,19 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
       if (q.recommendationReason) {
         field.append(el('p', { class: 'ask-user-recommendation-reason' }, q.recommendationReason))
       }
-      field.append(input)
+      if (!actionsOnly) field.append(input)
       form.append(field)
     })
+
+    if (active.presentation?.kind === 'actions') {
+      dialog.showModal()
+      // The dialog can open while the user is typing elsewhere, so a stray
+      // Enter or Space lands on the focused action: give focus to the last,
+      // declining one rather than the primary that runs something.
+      const actions = form.querySelectorAll<HTMLButtonElement>('.ask-user-action')
+      actions[actions.length - 1]?.focus()
+      return
+    }
 
     const cancelBtn = el('button', { type: 'button', class: 'ask-user-cancel' }, 'Cancel')
     cancelBtn.addEventListener('click', (event) => {
@@ -278,7 +303,13 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
       if (idx === -1) return
       queue.splice(idx, 1)
     }
-    void api.ask.respond(request.id, answers)
+    // Main drops an answer longer than this without telling anyone, and the agent
+    // would wait out its timeout. The fields stop there; a quick answer filled in
+    // by script does not, so clamp here too.
+    void api.ask.respond(
+      request.id,
+      answers.map((answer) => answer.slice(0, ASK_USER_ANSWER_MAX_LENGTH)),
+    )
     showNext()
     syncAttention()
   }
@@ -295,6 +326,7 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
   }
 
   function submit(): void {
+    if (active?.presentation?.kind === 'actions') return
     respond(inputs.map((input) => input.value))
   }
 
@@ -342,8 +374,10 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
   })
 
   api.agent.onAskUserRequest((req) => {
+    if (active?.id === req.id || queue.some((request) => request.id === req.id)) return
     queue.push({
       id: req.id,
+      ...(req.presentation === undefined ? {} : { presentation: req.presentation }),
       threadId: req.threadId,
       questions: req.questions,
       receivedAt: Date.now(),
@@ -383,6 +417,7 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
         .sort((a, b) => a.arrival - b.arrival)
         .map((req) => ({
           id: req.id,
+          ...(req.presentation === undefined ? {} : { presentation: req.presentation }),
           threadId: req.threadId,
           questions: req.questions.map((q) => q.question),
           options: req.questions.map((q) => q.options ?? []),

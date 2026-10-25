@@ -1,23 +1,23 @@
 import assert from 'node:assert/strict'
-import { mkdirSync } from 'node:fs'
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
+import { mkdirSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { setComposerValue } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('whitespace-only reasoning', () => {
   let workspaceRoot: string
-  let cleanupWorkspace: (() => void) | undefined
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    const fixture = createFixtureDirectory('copse-whitespace-reasoning')
-    workspaceRoot = fixture.root
-    cleanupWorkspace = fixture.cleanup
+    workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-whitespace-reasoning-')), 'workspace')
+    mkdirSync(workspaceRoot)
     seedEmptyProject(workspaceRoot, 'e2e-whitespace-reasoning', {
       model: 'claude-sonnet-4-6',
     })
@@ -26,7 +26,7 @@ describe('whitespace-only reasoning', () => {
 
   after(() => {
     resetUserData()
-    cleanupWorkspace?.()
+    removeE2eTree(dirname(workspaceRoot))
   })
 
   it('omits a blank disclosure while preserving meaningful reasoning', async () => {

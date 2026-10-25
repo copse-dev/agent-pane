@@ -37,6 +37,42 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The review sits between the transcript and the composer, so every pixel it
+   takes comes out of the transcript viewport (and a tall message plus the
+   sticky prompt must still fit above it). Keep it a compact strip: question and
+   reason stacked on the left, compact actions beside them. The transcript's
+   own bottom padding already separates it from the last message. */
+.thread-archive-review {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--spacing-md);
+  width: min(var(--chat-content-max), calc(100% - 2 * var(--spacing-xl)));
+  margin: 0 auto var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  line-height: 1.4;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  font-size: var(--font-size-sm);
+}
+.thread-archive-review > strong,
+.thread-archive-review p {
+  grid-column: 1;
+}
+.thread-archive-review p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+.thread-archive-review-actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
 .messages-list {
   flex: 1;
   overflow-y: auto;

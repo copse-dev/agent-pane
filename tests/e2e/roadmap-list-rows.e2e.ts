@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, rmSync } from 'node:fs'
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
+import { mkdirSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 /**
  * Visual eval for the quieter Roadmap list: title-first single-line rows,
@@ -12,15 +14,13 @@ import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
  */
 describe('roadmap list rows (quiet single-line layout)', () => {
   let workspaceRoot: string
-  let cleanupWorkspace: (() => void) | undefined
   let knowledgeDir: string
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    const fixture = createFixtureDirectory('copse-panel-roadmap-list')
-    workspaceRoot = fixture.root
-    cleanupWorkspace = fixture.cleanup
+    workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-panel-roadmap-list-')), 'workspace')
+    mkdirSync(workspaceRoot, { recursive: true })
     knowledgeDir = seedRoadmapNotes('e2e-roadmap-list-rows', [
       {
         id: 'e2e-roadmap-ready',
@@ -50,8 +50,8 @@ describe('roadmap list rows (quiet single-line layout)', () => {
 
   after(() => {
     resetUserData()
-    cleanupWorkspace?.()
-    rmSync(knowledgeDir, { recursive: true, force: true })
+    removeE2eTree(dirname(workspaceRoot))
+    removeE2eTree(knowledgeDir)
   })
 
   it('renders title-first rows with silent ready and exceptional status chips', async () => {
@@ -60,7 +60,7 @@ describe('roadmap list rows (quiet single-line layout)', () => {
     await roadmapButton.waitForDisplayed({ timeout: 10_000 })
     await roadmapButton.click()
 
-    await browser.waitUntil(async () => (await $$('.roadmap-row')).length === 3, {
+    await browser.waitUntil(async () => (await $$('.roadmap-row').getElements()).length === 3, {
       timeout: 20_000,
       timeoutMsg: 'expected three seeded roadmap rows',
     })

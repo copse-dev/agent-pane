@@ -8,6 +8,8 @@ export interface BackgroundCompletionWakeRequest {
   turnTreeId: string
   exitCode: number | null
   timedOut: boolean
+  /** True once the agent has read the exited task itself; the wake is then redundant. */
+  alreadyObserved?: () => boolean
 }
 
 export type BackgroundCompletionWakeHandler = (
@@ -55,5 +57,5 @@ export function backgroundCompletionPrompt(request: BackgroundCompletionWakeRequ
     : request.exitCode === null
       ? 'ended without an exit code'
       : `exited with code ${String(request.exitCode)}`
-  return `Background task ${request.operationId} ${status}. Inspect its retained output with run_background logs, then continue the original task and report the result. Do not rerun the completed command.`
+  return `The background task you started has finished — it ${status}. Check its output with run_background logs, then continue the original task and report the result. There's no need to run the command again.`
 }

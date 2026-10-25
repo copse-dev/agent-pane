@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,14 +10,11 @@ import { setComposerValue } from './helpers/composer.ts'
 import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
 import { E2E_SCREENSHOT_DIR, saveAppViewportScreenshot } from './helpers/screenshot.ts'
 import { assertBrowserAddressFieldRoomy } from './helpers/text-fit.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PLUGIN_ID = 'personal.browser-fixture'
 const MODEL_ID = 'browser'
 const PROJECT_ID = 'e2e-selected-plugin-browser'
-
-interface BrowserGuest extends HTMLElement {
-  executeJavaScript<T>(script: string): Promise<T>
-}
 
 async function closeServer(server: Server | null): Promise<void> {
   if (!server) return
@@ -42,7 +39,7 @@ describe('selected plugin browser behavior', function () {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
       response.end(`<!doctype html>
         <html>
-          <head><title>Personal reference desk</title><style>body{background:#fff;color:#222}</style></head>
+          <head><title>Personal reference desk</title></head>
           <body>
             <h1>Personal reference desk</h1>
             <p>This local page stands in for an explicitly declared website.</p>
@@ -114,7 +111,7 @@ describe('selected plugin browser behavior', function () {
 
   after(async () => {
     resetUserData()
-    if (pluginRoot) rmSync(pluginRoot, { recursive: true, force: true })
+    if (pluginRoot) removeE2eTree(pluginRoot)
     await closeServer(server)
   })
 
@@ -152,16 +149,20 @@ describe('selected plugin browser behavior', function () {
     const address = await addressInput.getValue()
     assert.match(address, /^http:\/\/127\.0\.0\.1:\d+\/reference$/)
 
-    const pageAppearance = await browser.execute(async () => {
-      const guest = document.querySelector<BrowserGuest>('.browser-tab-panel.is-active webview')
-      if (!guest) throw new Error('expected the reference page guest')
-      return guest.executeJavaScript<{ title: string; color: string; background: string }>(
-        '({title: document.querySelector("h1").textContent, color: getComputedStyle(document.body).color, background: getComputedStyle(document.body).backgroundColor})',
-      )
+    const surface = await browser.execute(() => {
+      const host = document.querySelector('.browser-tab-panel.is-active .browser-webview-host')
+      if (!host) throw new Error('Missing active browser webview host')
+      return {
+        background: getComputedStyle(host).backgroundColor,
+        canvas: host.classList.contains('is-canvas'),
+      }
     })
-    assert.equal(pageAppearance.title, 'Personal reference desk')
-    assert.equal(pageAppearance.color, 'rgb(34, 34, 34)')
-    assert.equal(pageAppearance.background, 'rgb(255, 255, 255)')
+    assert.equal(surface.canvas, false, 'a declared website is an ordinary browser page')
+    assert.equal(
+      surface.background,
+      'rgb(255, 255, 255)',
+      'default black page text needs a light browser surface',
+    )
     await waitForActiveThreadTitle()
     await assertBrowserAddressFieldRoomy()
     await saveAppViewportScreenshot('selected-plugin-browser-tab.png')

@@ -1,7 +1,7 @@
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
 import {
@@ -16,6 +16,7 @@ import {
   channelDistance,
   editorSurfacePaint,
 } from './helpers/appearance.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // The file viewer's "Changes" view (#file-viewer): opening a file with
 // uncommitted changes surfaces a Changes toggle in the viewer toolbar that
@@ -25,7 +26,27 @@ const PROJECT_ID = 'e2e-file-viewer-changes-project'
 const CHANGED_FILE = 'sample.ts'
 const CLEAN_FILE = 'clean.ts'
 
-function seedGitWorkspace(repoRoot: string): void {
+// Monaco fades its scrollbars after the pointer leaves. Capture the settled
+// state after shell sizing, rather than an arbitrary point in the fade.
+async function waitForFileViewerScrollbarsHidden(): Promise<void> {
+  await parkPointer()
+  await browser.waitUntil(
+    () =>
+      browser.execute(() => {
+        const bars = [
+          ...document.querySelectorAll(
+            '#file-viewer .monaco-scrollable-element > .scrollbar.horizontal',
+          ),
+        ]
+        return bars.length > 0 && bars.every((bar) => getComputedStyle(bar).opacity === '0')
+      }),
+    { timeout: 5_000, timeoutMsg: 'file viewer horizontal scrollbars did not finish fading' },
+  )
+}
+
+function seedGitWorkspace(): string {
+  const repoRoot = join(mkdtempSync(join(tmpdir(), 'copse-file-viewer-changes-')), 'workspace')
+  mkdirSync(repoRoot)
   const git = (...args: string[]): Buffer =>
     execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
 
@@ -59,12 +80,14 @@ function seedGitWorkspace(repoRoot: string): void {
     ].join('\n'),
     'utf8',
   )
+
+  return repoRoot
 }
 
 async function waitForWorkspace(): Promise<void> {
   await browser.waitUntil(
     async () => {
-      const name = await $('.workspace-name')
+      const name = await $('.workspace-name').getElement()
       return (await name.isExisting()) && (await name.getText()) !== 'No folder'
     },
     { timeout: 30_000, timeoutMsg: 'expected workspace to be restored' },
@@ -72,11 +95,11 @@ async function waitForWorkspace(): Promise<void> {
 }
 
 async function openFileFromTree(fileName: string): Promise<void> {
-  const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]')
+  const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]').getElement()
   if (!(await $('#pane-files').isDisplayed())) await panelBtn.click()
   await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
 
-  const row = await $(`.tree-row[title="${fileName}"]`)
+  const row = await $(`.tree-row[title="${fileName}"]`).getElement()
   await row.waitForDisplayed({ timeout: 30_000 })
   await row.click()
 
@@ -85,14 +108,10 @@ async function openFileFromTree(fileName: string): Promise<void> {
 
 describe('file viewer Changes view', () => {
   let workspaceRoot = ''
-  let cleanupWorkspace: (() => void) | undefined
 
   before(async function () {
     this.timeout(120_000)
-    const fixture = createFixtureDirectory('copse-file-viewer-changes')
-    workspaceRoot = fixture.root
-    cleanupWorkspace = fixture.cleanup
-    seedGitWorkspace(workspaceRoot)
+    workspaceRoot = seedGitWorkspace()
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
     resetUserData()
     seedE2eViewport()
@@ -104,19 +123,19 @@ describe('file viewer Changes view', () => {
 
   after(() => {
     resetUserData()
-    cleanupWorkspace?.()
+    if (workspaceRoot) removeE2eTree(dirname(workspaceRoot))
   })
 
   it('offers browser opening from the file tree before opening a file', async () => {
-    const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]')
+    const panelBtn = await $('.titlebar-btn[aria-label="Toggle right panel"]').getElement()
     if (!(await $('#pane-files').isDisplayed())) await panelBtn.click()
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
 
-    const row = await $(`.tree-row[title="${CLEAN_FILE}"]`)
+    const row = await $(`.tree-row[title="${CLEAN_FILE}"]`).getElement()
     await row.waitForDisplayed({ timeout: 30_000 })
     await row.click({ button: 'right' })
 
-    const menu = await $('.context-menu')
+    const menu = await $('.context-menu').getElement()
     await menu.waitForDisplayed({ timeout: 5_000 })
     await expect($('.context-menu-item')).toHaveText('Open in browser')
     await saveAppScreenshot('file-tree-open-in-browser-menu.png')
@@ -128,18 +147,18 @@ describe('file viewer Changes view', () => {
   it('shows a Changes toggle for a modified file and renders its diff', async () => {
     await openFileFromTree(CHANGED_FILE)
 
-    const changesBtn = await $('#file-viewer .file-viewer-changes-btn')
+    const changesBtn = await $('#file-viewer .file-viewer-changes-btn').getElement()
     await changesBtn.waitForDisplayed({ timeout: 30_000 })
     await expect(changesBtn).toHaveText('Changes')
 
-    const sourceBtn = await $('#file-viewer .file-viewer-source-btn')
+    const sourceBtn = await $('#file-viewer .file-viewer-source-btn').getElement()
     await expect(sourceBtn).toHaveText('Source')
     await expect(sourceBtn).toHaveElementClass('is-active')
 
     await changesBtn.click()
     await expect(changesBtn).toHaveElementClass('is-active')
 
-    const diffEditor = await $('#file-viewer .file-viewer-diff .monaco-diff-editor')
+    const diffEditor = await $('#file-viewer .file-viewer-diff .monaco-diff-editor').getElement()
     await diffEditor.waitForDisplayed({ timeout: 30_000 })
 
     // The uncommitted edit must surface insert decorations (added comment +
@@ -161,12 +180,12 @@ describe('file viewer Changes view', () => {
   })
 
   it('returns to the editor via the Source toggle', async () => {
-    const sourceBtn = await $('#file-viewer .file-viewer-source-btn')
+    const sourceBtn = await $('#file-viewer .file-viewer-source-btn').getElement()
     await sourceBtn.click()
     await expect(sourceBtn).toHaveElementClass('is-active')
 
     await $('#file-viewer .monaco-container .monaco-editor').waitForDisplayed({ timeout: 15_000 })
-    const diffWrap = await $('#file-viewer .file-viewer-diff')
+    const diffWrap = await $('#file-viewer .file-viewer-diff').getElement()
     await expect(diffWrap).not.toBeDisplayed()
 
     // The active side must read as selected, not only as a slightly brighter
@@ -215,10 +234,10 @@ describe('file viewer Changes view', () => {
   })
 
   it('offers to open the viewed file in the browser on right-click', async () => {
-    const editor = await $('#file-viewer .monaco-container')
+    const editor = await $('#file-viewer .monaco-container').getElement()
     await editor.click({ button: 'right' })
 
-    const menu = await $('.context-menu')
+    const menu = await $('.context-menu').getElement()
     await menu.waitForDisplayed({ timeout: 5_000 })
     await expect($('.context-menu-item')).toHaveText('Open in browser')
     await saveAppScreenshot(
@@ -236,7 +255,7 @@ describe('file viewer Changes view', () => {
 
     // The changes probe is async; give it a beat, then the toolbar must stay hidden.
     await browser.pause(1_000)
-    const toolbar = await $('#file-viewer .file-viewer-toolbar')
+    const toolbar = await $('#file-viewer .file-viewer-toolbar').getElement()
     await expect(toolbar).not.toBeDisplayed()
 
     await saveAppScreenshot('file-viewer-changes-clean-file.png')
@@ -258,7 +277,7 @@ describe('file viewer Changes view', () => {
       })
       // The first pass opens the changed file; the second re-themes the editors
       // it left mounted, which is the live path a Settings change takes.
-      const sourceBtn = await $('#file-viewer .file-viewer-source-btn')
+      const sourceBtn = await $('#file-viewer .file-viewer-source-btn').getElement()
       if (!(await sourceBtn.isDisplayed())) await openFileFromTree(CHANGED_FILE)
       await sourceBtn.waitForDisplayed({ timeout: 30_000 })
       await sourceBtn.click()
@@ -281,7 +300,7 @@ describe('file viewer Changes view', () => {
         timeoutMsg: `expected the ${theme} source editor to match --bg-base`,
       })
 
-      const changesBtn = await $('#file-viewer .file-viewer-changes-btn')
+      const changesBtn = await $('#file-viewer .file-viewer-changes-btn').getElement()
       await changesBtn.waitForDisplayed({ timeout: 30_000 })
       await changesBtn.click()
       await $('#file-viewer .file-viewer-diff .monaco-diff-editor').waitForDisplayed({

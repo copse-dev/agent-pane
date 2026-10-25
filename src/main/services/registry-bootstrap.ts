@@ -12,6 +12,7 @@ import {
 } from '../tools/git-tools.ts'
 import {
   ghPrFilesTool,
+  ghApiReadTool,
   ghPrListTool,
   ghPrViewTool,
   ghRunListTool,
@@ -29,6 +30,7 @@ import {
 import { runShellTool } from '../tools/shell-tool.ts'
 import { preflightWorktreeTool, prepareWorktreeTool } from '../tools/worktree-preparation-tool.ts'
 import { requestWriteAccessTool } from '../tools/request-write-access-tool.ts'
+import { deferredApprovalStatusTool } from '../tools/deferred-approval-status-tool.ts'
 import { writeFileTool } from '../tools/write-file-tool.ts'
 import { strReplaceTool } from '../tools/str-replace-tool.ts'
 import { applyPatchTool } from '../tools/apply-patch-tool.ts'
@@ -84,6 +86,7 @@ import { runCheckupTool } from '../tools/checkup-tool.ts'
 import { videoFramesTool } from '../tools/video-frames-tool.ts'
 import { readArchiveTool } from '../tools/read-archive-tool.ts'
 import { initSubmodulesTool } from '../tools/init-submodules-tool.ts'
+import { gitFetchTool } from '../tools/git-fetch-tool.ts'
 import {
   PARALLEL_SEARCH_PLUGIN_ID,
   PARALLEL_SEARCH_TOOL_NAME,
@@ -98,6 +101,7 @@ import {
 import { launchGuiAppTool } from '../tools/gui-app-launch-tool.ts'
 import { deviceHubTool } from '../tools/device-hub-tool.ts'
 import { IMAGE_GEN_TOOL_NAME, imageGenTool } from '../tools/image-gen-tool.ts'
+import { resolveWebSearchProvider } from '@shared/web-search.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -119,6 +123,7 @@ export function createRegistry(): ToolRegistry {
   registry.register(gitDiffTool)
   registry.register(gitLogTool)
   registry.register(gitShowTool)
+  registry.register(gitFetchTool)
   registry.register(gitCommitTool)
   syncGhTools(registry)
   registry.register(runShellTool)
@@ -129,6 +134,7 @@ export function createRegistry(): ToolRegistry {
   registry.register(prepareWorktreeTool)
   // Offered only while a deferred-worktree thread is still read-only (parentTools).
   registry.register(requestWriteAccessTool)
+  registry.register(deferredApprovalStatusTool)
   registry.register(exploreTool)
   // Experimental CI investigator subagent (off by default). Gated by the
   // `copse.ci-investigator` first-party plugin — the plugin toggle in Settings >
@@ -212,9 +218,9 @@ export function createRegistry(): ToolRegistry {
   // the schema is not free.
   registry.register(videoFramesTool)
   registry.register(readArchiveTool)
-  // Submodules in a thread worktree start empty; this fills them offline.
+  // Preserve conditional web search and offline submodule preparation.
   registry.register(initSubmodulesTool)
-  registry.register(webSearchTool)
+  syncWebSearchTools(registry)
   registry.register(fetchUrlTool)
   // Always registered, offered per turn: `parentTools` withholds it until a
   // classifier connection is saved, as `video_frames` waits for a video. Saving
@@ -396,6 +402,7 @@ export function syncGhTools(registry: ToolRegistry): void {
     if (!registry.has('gh_pr_list')) registry.register(ghPrListTool)
     if (!registry.has('gh_pr_view')) registry.register(ghPrViewTool)
     if (!registry.has('gh_pr_files')) registry.register(ghPrFilesTool)
+    if (!registry.has('gh_api_read')) registry.register(ghApiReadTool)
     if (!registry.has('get_ci_status')) registry.register(getCiStatusTool)
     if (!registry.has('wait_for_ci_checks')) registry.register(waitForCiChecksTool)
     if (!registry.has('get_ci_failure_logs')) registry.register(getCiFailureLogsTool)
@@ -403,6 +410,7 @@ export function syncGhTools(registry: ToolRegistry): void {
     registry.unregister('gh_pr_list')
     registry.unregister('gh_pr_view')
     registry.unregister('gh_pr_files')
+    registry.unregister('gh_api_read')
     registry.unregister('get_ci_status')
     registry.unregister('wait_for_ci_checks')
     registry.unregister('get_ci_failure_logs')
@@ -500,6 +508,16 @@ export function syncReadTerminalTools(registry: ToolRegistry): void {
     if (!registry.has('read_terminal')) registry.register(readTerminalTool)
   } else {
     registry.unregister('read_terminal')
+  }
+}
+
+/** Offer search only while the selected provider has a readable credential. */
+export function syncWebSearchTools(registry: ToolRegistry): void {
+  const provider = resolveWebSearchProvider(getSetting('webSearchProvider', 'none'))
+  if (provider !== 'none' && resolveApiKey(provider) !== null) {
+    if (!registry.has('web_search')) registry.register(webSearchTool)
+  } else {
+    registry.unregister('web_search')
   }
 }
 

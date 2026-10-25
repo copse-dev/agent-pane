@@ -6,7 +6,7 @@ import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
 // runs into the schedule heading's count.
 
 async function rows(): Promise<string[]> {
-  const items = await $$('.automation-schedule-runs > *')
+  const items = await $$('.automation-schedule-runs > *').getElements()
   return items.map((item) => item.getText())
 }
 

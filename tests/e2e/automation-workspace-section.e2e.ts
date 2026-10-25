@@ -54,7 +54,7 @@ async function headingAlignment(): Promise<{
 async function setUiScaleThroughSettings(value: string): Promise<void> {
   await $('[aria-label="Settings"]').click()
   await $('.settings-nav-btn[data-section="appearance"]').click()
-  const scaleInput = await $('input[name="uiScale"]')
+  const scaleInput = await $('input[name="uiScale"]').getElement()
   await scaleInput.waitForDisplayed({ timeout: 30_000 })
   await browser.waitUntil(async () => (await scaleInput.getValue()) !== '', {
     timeout: 30_000,
@@ -245,7 +245,7 @@ describe('workspace-level automations section', function () {
     await toggle.click()
 
     const rows = $$('.automation-thread-rows .chat-row')
-    await browser.waitUntil(async () => (await rows).length === 2, {
+    await browser.waitUntil(async () => (await rows.getElements()).length === 2, {
       timeout: 5_000,
       timeoutMsg: 'expected both projects’ automation rows once expanded',
     })
@@ -286,28 +286,28 @@ describe('workspace-level automations section', function () {
     assert.ok(Math.abs(childOffset) < 1, 'automation runs should align with project threads')
 
     // Not duplicated inside either project's own (collapsed) thread list.
-    assert.equal((await $$('.project-entry .chats-list .chat-row.is-automation')).length, 0)
+    assert.equal(
+      (await $$('.project-entry .chats-list .chat-row.is-automation').getElements()).length,
+      0,
+    )
 
     await saveElementScreenshot('.automation-threads-group', 'automation-workspace-section.png')
 
     // Each row still carries its own way into the in-place editor, scoped to
     // its own project. `collated` above already proved index 1 is "Ops
     // review", owned by project B.
-    const opsRow = (await rows)[1]
+    const opsRow = (await rows.getElements())[1]
     assert.ok(opsRow)
 
-    // The background project's row exposes conversation access alongside its
-    // schedule actions. Capture the transient surface itself: a screenshot of
-    // the closed sidebar would not prove that Run now is actually exposed.
+    // Capture the transient menu: a screenshot of the closed sidebar would not
+    // prove that Run now is actually exposed.
     await opsRow.click({ button: 'right' })
     const contextMenu = $('.context-menu')
     await contextMenu.waitForDisplayed({ timeout: 5_000 })
     const contextMenuLabels = await browser.execute(() =>
-      Array.from(document.querySelectorAll('.context-menu-item')).map(
-        (item) => item.textContent ?? '',
-      ),
+      Array.from(document.querySelectorAll('.context-menu-item')).map((item) => item.textContent),
     )
-    assert.deepEqual(contextMenuLabels, ['Conversation access…', 'Run now', 'Automation setup…'])
+    assert.deepEqual(contextMenuLabels, ['Run now', 'Automation setup…'])
     await saveAppScreenshot('automation-sidebar-run-now-context-menu.png')
     await browser.keys('Escape')
     await expect(contextMenu).not.toBeExisting()

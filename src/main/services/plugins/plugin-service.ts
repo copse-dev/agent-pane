@@ -32,12 +32,14 @@
 // bagged per plugin to keep the top-level key namespace clean and let the P4
 // todos plugin lift/shift its config into a single record.
 import type { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
+import { PLUGIN_CLIENT_API_ID } from '@copse/agent/plugins/plugin-client-api-plugin.ts'
 import {
   createFirstPartyPluginRegistry,
   EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS,
 } from '@copse/agent/plugins/first-party-plugins.ts'
 import { ARTIFACT_CHECKPOINT_PLUGIN_ID } from '@copse/agent/plugins/artifact-checkpoint-plugin.ts'
 import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
+import { ENGINEERING_PLUGIN_ID } from '@copse/agent/plugins/engineering-plugin.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import {
   AGENTS_MD_INSTRUCTION_FILES_SETTING_ID,
@@ -144,6 +146,7 @@ const PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.parallelSearch
 /** One-time default-off seed for the delayed artifact-checkpoint experiment. */
 const ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.artifactCheckpointEnablement'
 const REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.reviewerInputEnablement'
+const ENGINEERING_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.engineeringEnablement'
 
 /** One-time default-off seed for the dark-factory PR sensor on upgraded profiles. */
 const DARK_FACTORY_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.darkFactoryEnablement'
@@ -329,6 +332,14 @@ function migrateArtifactCheckpointEnablement(): void {
 }
 
 /** Existing profiles own their disabled list, so add this new experiment off once. */
+function migrateEngineeringEnablement(): void {
+  if (storageGet(ENGINEERING_ENABLEMENT_MIGRATION_KEY) === true) return
+  const disabled = readDisabledIds()
+  disabled.add(ENGINEERING_PLUGIN_ID)
+  storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
+  storageSet(ENGINEERING_ENABLEMENT_MIGRATION_KEY, true)
+}
+
 function migrateReviewerInputEnablement(): void {
   if (storageGet(REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY) === true) return
   const disabled = readDisabledIds()
@@ -899,6 +910,14 @@ export function getPluginService(): PluginService {
   migratePackKeysToPlugin()
   const existingPluginProfile = storageGet(PLUGIN_DISABLED_KEY) !== undefined
   seedDefaultDisabledPlugins()
+  // Existing profiles also start with this listening capability disabled. The marker
+  // is written once; subsequent enablement remains the user's explicit choice.
+  if (storageGet('pluginMigration.pluginClientApi') !== true) {
+    const disabled = readDisabledIds()
+    disabled.add(PLUGIN_CLIENT_API_ID)
+    storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
+    storageSet('pluginMigration.pluginClientApi', true)
+  }
   migrateAgentsMdInstructionFiles(existingPluginProfile)
   migrateBackgroundTasksStable()
   migratePluginModelSettings()
@@ -906,6 +925,7 @@ export function getPluginService(): PluginService {
   migrateParallelSearchEnablement()
   migrateArtifactCheckpointEnablement()
   migrateReviewerInputEnablement()
+  migrateEngineeringEnablement()
   migrateDarkFactoryEnablement()
   migrateReviewPluginFromModelComparison()
   const registry = createFirstPartyPluginRegistry()

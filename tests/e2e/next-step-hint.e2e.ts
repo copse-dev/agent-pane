@@ -9,7 +9,7 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 // Must match mockNextStepHint() in src/main/services/next-step-service.ts.
 const MOCK_HINT = 'Run the test suite to verify the fix'
 
-describe('next-step tab complete (experimental)', () => {
+describe('next-step tab complete by default', () => {
   before(async () => {
     writeE2eEnv({ COPSE_PANEL_MOCK_NEXT_STEP: '1' })
     resetUserData()
@@ -17,7 +17,6 @@ describe('next-step tab complete (experimental)', () => {
     seedEmptyProject(seedStableWorkspace(), 'e2e-next-step-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
-      nextStepSuggestionEnabled: true,
     })
     await browser.reloadSession()
   })

@@ -1,6 +1,7 @@
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
 import { $, browser, expect } from '@wdio/globals'
-import { delimiter } from 'node:path'
+import { mkdirSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { delimiter, dirname, join } from 'node:path'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import {
   completeMockTurn,
@@ -9,23 +10,19 @@ import {
 } from './helpers/follow-up-suggestions.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('CI investigator follow-up', () => {
   const originalPath = process.env['PATH']
   let workspace = ''
-  let cleanupWorkspace: (() => void) | undefined
   let fixtureBin = ''
-  let cleanupBin: (() => void) | undefined
 
   before(async function () {
     this.timeout(120_000)
     resetUserData()
-    const fixture = createFixtureDirectory('copse-follow-up-investigate-ci')
-    workspace = fixture.root
-    cleanupWorkspace = fixture.cleanup
-    const bin = createFixtureDirectory('copse-follow-up-gh')
-    fixtureBin = bin.root
-    cleanupBin = bin.cleanup
+    workspace = join(mkdtempSync(join(tmpdir(), 'copse-follow-up-investigate-ci-')), 'workspace')
+    mkdirSync(workspace)
+    fixtureBin = mkdtempSync(join(tmpdir(), 'copse-follow-up-gh-'))
     seedCleanFeatureBranch(workspace)
     writeFailingPrGhFixture(fixtureBin)
     writeE2eEnv({
@@ -47,28 +44,17 @@ describe('CI investigator follow-up', () => {
       PATH: originalPath,
     })
     resetUserData()
-    cleanupWorkspace?.()
-    cleanupBin?.()
+    if (workspace) removeE2eTree(dirname(workspace))
+    if (fixtureBin) removeE2eTree(fixtureBin)
   })
 
   it('names the available investigate_ci tool in the failing-CI bubble', async () => {
     const scenario = await completeMockTurn()
-    const ciBubble = await $('.follow-up-bubble[data-id="debug-ci"]')
+    const ciBubble = await $('.follow-up-bubble[data-id="debug-ci"]').getElement()
     await ciBubble.waitForDisplayed({ timeout: 30_000 })
     await expect(ciBubble).toHaveText('Investigate CI failure')
 
-    await browser.waitUntil(
-      async () =>
-        browser.execute(async () => {
-          const status = await window.api.index.status()
-          return (
-            status.fileIndex.phase !== 'building' &&
-            status.semantic.phase !== 'building' &&
-            document.querySelector('.footer-indexing')?.getAttribute('data-state') !== 'building'
-          )
-        }),
-      { timeout: 30_000, timeoutMsg: 'expected workspace indexing to finish before capture' },
-    )
+    await $('.footer-indexing').waitForDisplayed({ timeout: 30_000, reverse: true })
     await saveAppScreenshot('follow-up-suggestions-investigate-ci.png')
     await scenario.assertComplete()
   })

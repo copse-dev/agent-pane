@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -12,6 +12,7 @@ import {
   prepareE2eScreenshot,
   waitForImagesSettled,
 } from './helpers/screenshot.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_WORKSPACE_PREFIX = 'copse-image-expand-'
 const THREAD_SHOT = 'image-expand-thread.png'
@@ -163,7 +164,7 @@ async function assertDialogChrome(): Promise<void> {
     return {
       closeClasses: [...close.classList].sort(),
       closeIcon: close.querySelector('svg')?.getAttribute('data-icon') ?? null,
-      closeText: close.textContent?.trim() ?? '',
+      closeText: close.textContent.trim(),
       titleTag: title.tagName,
       titleFont: getComputedStyle(title).fontSize,
       headingFont: getComputedStyle(document.documentElement)
@@ -216,7 +217,7 @@ describe('Screenshot click-to-expand', () => {
 
   after(() => {
     resetUserData()
-    if (temporaryRoot) rmSync(temporaryRoot, { recursive: true, force: true })
+    if (temporaryRoot) removeE2eTree(temporaryRoot)
   })
 
   it('expands a thread-panel attachment in a modal', async () => {
@@ -290,7 +291,7 @@ describe('Screenshot click-to-expand', () => {
       return { type: blob.type, size: blob.size }
     })
     assert.equal(thumbnailClipboardImage?.type, 'image/png')
-    assert.ok((thumbnailClipboardImage?.size ?? 0) > 0)
+    assert.ok(thumbnailClipboardImage.size > 0)
 
     await thumb.click()
     const dialog = $('dialog.attachment-preview-dialog[open]')
@@ -444,7 +445,7 @@ describe('Screenshot click-to-expand', () => {
     await $('.annotation-send').click()
     await expect($('dialog.attachment-preview-dialog[open]')).not.toExist()
     await expect($('.attachment-chips .image-chip')).toExist()
-    await browser.waitUntil(async () => (await $$('.toast')).length === 0, {
+    await browser.waitUntil(async () => (await $$('.toast').getElements()).length === 0, {
       timeout: 5_000,
       timeoutMsg: 'expected annotation confirmation to clear before the next screenshot',
     })
@@ -502,7 +503,7 @@ describe('Screenshot click-to-expand', () => {
     assert.equal(clipboardText, DIFF_TEXT)
 
     await $('.attachment-preview-close').click()
-    await browser.waitUntil(async () => (await $$('.toast')).length === 0, {
+    await browser.waitUntil(async () => (await $$('.toast').getElements()).length === 0, {
       timeout: 5_000,
       timeoutMsg: 'expected copy confirmation to clear before the next screenshot',
     })
@@ -587,10 +588,13 @@ describe('Screenshot click-to-expand', () => {
     await $('.roadmap-prompt-input').setValue('Inspect this screenshot from the plan')
     await pasteFilesIntoForm([{ name: 'plan-shot.png', type: 'image/png', base64: PNG_BASE64 }])
 
-    await browser.waitUntil(async () => (await $$('.roadmap-attachment-thumb')).length === 1, {
-      timeout: 5_000,
-      timeoutMsg: 'expected the pasted plan screenshot to stage as a thumb',
-    })
+    await browser.waitUntil(
+      async () => (await $$('.roadmap-attachment-thumb').getElements()).length === 1,
+      {
+        timeout: 5_000,
+        timeoutMsg: 'expected the pasted plan screenshot to stage as a thumb',
+      },
+    )
 
     const thumb = $('.roadmap-attachment-thumb.image-expandable')
     await thumb.waitForDisplayed({ timeout: 5_000 })

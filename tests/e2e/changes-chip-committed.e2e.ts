@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -9,6 +9,7 @@ import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { saveAppViewportScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 describe('Changes chip includes committed branch work', () => {
   let temporaryRoot = ''
@@ -48,7 +49,7 @@ describe('Changes chip includes committed branch work', () => {
   after(() => {
     writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: previousMockBranch })
     resetUserData()
-    if (temporaryRoot) rmSync(temporaryRoot, { recursive: true, force: true })
+    if (temporaryRoot) removeE2eTree(temporaryRoot)
   })
 
   it('keeps accurate totals as edits move from the working tree into commits', async () => {
@@ -106,21 +107,93 @@ describe('Changes chip includes committed branch work', () => {
     await expect($('.git-change-row-committed .git-change-path')).toHaveText('example.txt')
     await expect($('.follow-up-bubble-changes .follow-up-stat-add')).toHaveText('+3')
     await expect($('.follow-up-bubble-changes .follow-up-stat-del')).toHaveText('-1')
-    // Set the capture viewport before waiting: resizing can refresh the pane.
-    await prepareE2eScreenshot()
-    await savePreparedAppScreenshot('changes-chip-committed.png', async () => {
-      // The pane can refresh again while the capture helper settles layout.
-      // Check its observable query completion at the last capture boundary.
-      // Other hidden panes share .git-changes-list and may still be fetching.
-      await expect($('#git-changes-host .git-changes-list .pane-loading')).not.toExist({
-        wait: 15_000,
+    let stableCapture = false
+    for (let attempt = 0; attempt < 3 && !stableCapture; attempt += 1) {
+      await saveAppViewportScreenshot('changes-chip-committed.png', async () => {
+        // A clean frame can precede the pane's 500ms watcher debounce. Require
+        // the committed row to stay settled beyond it, after capture framing.
+        // Viewport capture avoids element screenshot resizing after this wait.
+        let settledSince = 0
+        await browser
+          .waitUntil(
+            async () => {
+              const settled = await browser.execute(() => {
+                const list = document.querySelector('#git-changes-host .git-changes-list')
+                return (
+                  list?.querySelector('.git-change-row-committed .git-change-path')?.textContent ===
+                    'example.txt' &&
+                  !list.querySelector('.pane-loading') &&
+                  !list.textContent.includes('Checking committed changes')
+                )
+              })
+              if (!settled) {
+                settledSince = 0
+                return false
+              }
+              settledSince ||= Date.now()
+              return Date.now() - settledSince >= 750
+            },
+            {
+              timeout: 15_000,
+              interval: 100,
+              timeoutMsg:
+                'expected committed changes to remain settled beyond the watcher debounce',
+            },
+          )
+          .catch(async (error: unknown) => {
+            const snapshot = await browser.execute(() => {
+              const host = document.querySelector('#git-changes-host')
+              const list = host?.querySelector('.git-changes-list')
+              return {
+                hostPresent: Boolean(host),
+                listPresent: Boolean(list),
+                paths: [...(list?.querySelectorAll('.git-change-path') ?? [])].map(
+                  (path) => path.textContent,
+                ),
+                pending: [...(list?.querySelectorAll('.pane-loading') ?? [])].map(
+                  (row) => row.textContent,
+                ),
+                text: list?.textContent,
+              }
+            })
+            throw new Error(`Changes capture readiness failed: ${JSON.stringify(snapshot)}`, {
+              cause: error,
+            })
+          })
+        // Readiness checks before and after a screenshot can both miss a
+        // refresh that starts and finishes during ChromeDriver's capture.
+        // Observe the real list throughout capture; never hide its loading UI.
+        await browser.execute(() => {
+          const host = document.getElementById('git-changes-host')
+          if (!host) throw new Error('Changes host missing before capture')
+          host.dataset['captureChanged'] = 'false'
+          const observer = new MutationObserver(() => {
+            host.dataset['captureChanged'] = 'true'
+          })
+          observer.observe(host, { childList: true, subtree: true, characterData: true })
+          document.addEventListener(
+            'e2e-changes-capture-finished',
+            () => {
+              observer.disconnect()
+            },
+            {
+              once: true,
+            },
+          )
+        })
       })
-      await expect($('.git-change-row-committed .git-change-path')).toHaveText('example.txt')
-      await expect($('.follow-up-bubble-changes .follow-up-stat-add')).toHaveText('+3')
-      await expect($('.follow-up-bubble-changes .follow-up-stat-del')).toHaveText('-1')
-      await expect($('#git-changes-host .git-changes-list .pane-loading')).not.toExist({
-        wait: 15_000,
+      stableCapture = await browser.execute(() => {
+        document.dispatchEvent(new Event('e2e-changes-capture-finished'))
+        const host = document.getElementById('git-changes-host')
+        const stable = host?.dataset['captureChanged'] === 'false'
+        if (host) delete host.dataset['captureChanged']
+        return stable
       })
-    })
+    }
+    assert.ok(stableCapture, 'expected Changes to remain unchanged throughout screenshot capture')
+    assert.doesNotMatch(
+      await $('#git-changes-host .git-changes-list').getText(),
+      /Checking committed changes/,
+    )
   })
 })

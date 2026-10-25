@@ -1,4 +1,9 @@
-import type { Project, Thread } from '@shared/types'
+import type { Project, ReviewerInputAnswer, Thread } from '@shared/types'
+import {
+  reviewerInputAnswer,
+  reviewerInputRequests,
+  type ReviewerInputRequest,
+} from '@shared/threads/reviewer-input.ts'
 import { githubPrKey, type GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { sideChatsOf, type SideChatRow } from '@shared/threads/side-chat.ts'
 import {
@@ -6,6 +11,11 @@ import {
   mergeThreadLinks,
   type ThreadBacklink,
 } from '@shared/threads/thread-links.ts'
+import {
+  acpDelegateKind,
+  acpDelegatePrompt,
+  isAcpDelegateToolCall,
+} from '@shared/tools/copse-tool-call.ts'
 
 /**
  * What the per-thread Context panel shows (prototype #3538): the repo(s) the
@@ -60,6 +70,7 @@ export interface ThreadContextModel {
   /** Active side chats first, archived after; oldest first within each. */
   sideChats: SideChatRow[]
   subagents: ContextSubagent[]
+  resolvedQuestions: Array<{ request: ReviewerInputRequest; answer: ReviewerInputAnswer }>
 }
 
 export interface ThreadContextInput {
@@ -146,14 +157,28 @@ export function deriveThreadContext(input: ThreadContextInput): ThreadContextMod
     for (const message of thread.messages) {
       for (const toolCall of message.toolCalls) {
         const session = toolCall.subagent
-        if (!session) continue
-        subagents.push({
-          id: session.id,
-          kind: session.kind,
-          status: session.status,
-          prompt: firstLine(session.prompt),
-          ...(session.model !== undefined ? { model: session.model } : {}),
-        })
+        if (session) {
+          subagents.push({
+            id: session.id,
+            kind: session.kind,
+            status: session.status,
+            prompt: firstLine(session.prompt),
+            ...(session.model !== undefined ? { model: session.model } : {}),
+          })
+          continue
+        }
+        // An external ACP agent's own subagent dispatch (e.g. Claude Code's
+        // `Agent` tool) carries no session — just the one tool call — so it
+        // is otherwise invisible here. `kind` is lowercased to read like the
+        // native kinds above (`explore`, `custom`, ...) it sits alongside.
+        if (isAcpDelegateToolCall(toolCall)) {
+          subagents.push({
+            id: toolCall.id,
+            kind: acpDelegateKind(toolCall)?.toLowerCase() ?? 'agent',
+            status: toolCall.status,
+            prompt: firstLine(acpDelegatePrompt(toolCall)),
+          })
+        }
       }
     }
   }
@@ -161,6 +186,12 @@ export function deriveThreadContext(input: ThreadContextInput): ThreadContextMod
   const sideChats = sideChatsOf(threads, thread.id, true).sort(
     (a, b) => Number(a.archived) - Number(b.archived),
   )
+  const resolvedQuestions = loaded
+    ? reviewerInputRequests(thread).flatMap((request) => {
+        const answer = reviewerInputAnswer(thread.reviewerInputAnswers, request.id)
+        return answer ? [{ request, answer }] : []
+      })
+    : []
 
   let sideOf: ContextSideOf | undefined
   if (thread.sideChat) {
@@ -182,5 +213,6 @@ export function deriveThreadContext(input: ThreadContextInput): ThreadContextMod
     mentionedIn: [...(input.mentionedIn ?? [])],
     sideChats,
     subagents,
+    resolvedQuestions,
   }
 }

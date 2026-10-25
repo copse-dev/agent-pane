@@ -1,11 +1,12 @@
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdirSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 /**
  * A video dropped into the chat must NOT become model content. It is stored
@@ -26,7 +27,7 @@ const REPLY = 'I’ll need the final frames or a description of the failure to d
 async function waitForWorkspace(): Promise<void> {
   await browser.waitUntil(
     async () => {
-      const name = await $('.workspace-name')
+      const name = await $('.workspace-name').getElement()
       return (await name.isExisting()) && (await name.getText()) !== 'No folder'
     },
     { timeout: 30_000, timeoutMsg: 'expected workspace to be restored' },
@@ -54,11 +55,12 @@ async function dropVideoOnComposer(name: string, byteLength: number): Promise<vo
 }
 
 describe('Attaching a video to the chat', () => {
-  const fixture = createFixtureDirectory('copse-video-attachment')
-  const workspaceRoot = fixture.root
+  let workspaceRoot = ''
 
   before(async function () {
     this.timeout(120_000)
+    workspaceRoot = join(mkdtempSync(join(tmpdir(), 'copse-video-attachment-')), 'video-workspace')
+    mkdirSync(workspaceRoot)
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
     resetUserData()
     seedE2eViewport()
@@ -73,22 +75,22 @@ describe('Attaching a video to the chat', () => {
 
   after(() => {
     resetUserData()
-    fixture.cleanup()
+    if (workspaceRoot) removeE2eTree(dirname(workspaceRoot))
   })
 
   it('shows a dropped video as a film chip with its size, not an image thumbnail', async () => {
     await setComposerValue('what goes wrong at the end of this?')
     await dropVideoOnComposer(VIDEO_NAME, VIDEO_BYTE_LENGTH)
 
-    const chip = await $('.attachment-chips .video-chip')
+    const chip = await $('.attachment-chips .video-chip').getElement()
     await chip.waitForDisplayed({ timeout: 10_000 })
-    await expect(await chip.$('.attachment-chip-label').getText()).toBe(VIDEO_NAME)
+    expect(await chip.$('.attachment-chip-label').getText()).toBe(VIDEO_NAME)
     // The size is the honest cost signal — the video costs no context, but it
     // tells the user how much recording there is to read.
-    await expect(await chip.$('.attachment-chip-meta').getText()).toBe('2.0 KB')
+    expect(await chip.$('.attachment-chip-meta').getText()).toBe('2.0 KB')
     // A film icon, not the image chip's thumbnail: this is not going to the model.
-    await expect(await chip.$('svg[data-icon="video"]').isExisting()).toBe(true)
-    await expect(await $('.attachment-chips .image-chip').isExisting()).toBe(false)
+    expect(await chip.$('svg[data-icon="video"]').isExisting()).toBe(true)
+    expect(await $('.attachment-chips .image-chip').isExisting()).toBe(false)
 
     await saveAppScreenshot(COMPOSER_SCREENSHOT)
   })

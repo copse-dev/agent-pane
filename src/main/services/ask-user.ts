@@ -2,6 +2,7 @@ import type { BrowserWindow, IpcMain } from 'electron'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import type { AskUserQuestion } from '@copse/agent/ask-user-format.ts'
+import type { AskUserActionsPresentation } from '@shared/types/ask-user.ts'
 import {
   askRespondSchema,
   assertMainFrameSender,
@@ -10,7 +11,7 @@ import {
 } from '../ipc/ipc-guards.ts'
 import { getActiveRunThread } from './thread-models.ts'
 import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
-import { mobileDecisions, mobileDecisionSource } from './mobile/mobile-decisions.ts'
+import { humanDecisions, humanDecisionSource, humanDecisionActor } from './human-decisions.ts'
 import { getActiveProjectId } from './workspace.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { recordDecision } from './security/decision-log-store.ts'
@@ -18,6 +19,7 @@ import type { UserAlertSender } from './user-alerts.ts'
 
 export interface AskUserRequest {
   questions: AskUserQuestion[]
+  presentation?: AskUserActionsPresentation
 }
 
 export interface AskUserResult {
@@ -133,12 +135,21 @@ export function initAskUser(
   win: BrowserWindow,
   ipcMain: IpcMain,
   alertUser: UserAlertSender,
-): void {
+): (target: object) => void {
   const pending = new Map<string, (result: AskUserResult) => void>()
+  const replay = new Map<
+    string,
+    {
+      threadId: string | undefined
+      questions: AskUserQuestion[]
+      presentation?: AskUserActionsPresentation
+    }
+  >()
   const settle = (id: string, result: AskUserResult): void => {
     const resolve = pending.get(id)
     if (!resolve) return
     pending.delete(id)
+    replay.delete(id)
     pendingQuestionThreads.delete(id)
     resolve(result)
   }
@@ -161,6 +172,7 @@ export function initAskUser(
   win.on('closed', () => {
     for (const [id, resolve] of pending) {
       pending.delete(id)
+      replay.delete(id)
       pendingQuestionThreads.delete(id)
       resolve({ answers: [] })
     }
@@ -173,6 +185,7 @@ export function initAskUser(
       },
       register: (id, resolve, context) => {
         pending.set(id, resolve)
+        replay.set(id, context)
         if (context.threadId)
           pendingQuestionThreads.set(id, {
             threadId: context.threadId,
@@ -183,6 +196,12 @@ export function initAskUser(
       alertUser,
     }),
   )
+  return (target): void => {
+    if (target !== win.webContents) return
+    for (const [id, context] of replay) {
+      win.webContents.send('agent:ask-user-request', { id, ...context })
+    }
+  }
 }
 
 /** What the window-backed handler needs from `initAskUser`'s window and pending map. */
@@ -191,7 +210,11 @@ export interface WindowAskUserDeps {
   register: (
     id: string,
     resolve: (result: AskUserResult) => void,
-    context: { threadId: string | undefined; questions: AskUserQuestion[] },
+    context: {
+      threadId: string | undefined
+      questions: AskUserQuestion[]
+      presentation?: AskUserActionsPresentation
+    },
   ) => void
   settle: (id: string, result: AskUserResult) => void
   alertUser: UserAlertSender
@@ -229,9 +252,9 @@ export function createWindowAskUserHandler(deps: WindowAskUserDeps): AskUserHand
       }, ASK_USER_TIMEOUT_MS)
       if (typeof timer.unref === 'function') timer.unref()
       const projectId = getThreadExecutionContext()?.projectId ?? getActiveProjectId()
-      const removeMobile =
+      const removeDecision =
         projectId && threadId
-          ? mobileDecisions.register(
+          ? humanDecisions.register(
               projectId,
               threadId,
               { id, kind: 'question', questions: req.questions },
@@ -241,10 +264,10 @@ export function createWindowAskUserHandler(deps: WindowAskUserDeps): AskUserHand
                   projectId,
                   threadId,
                   kind: 'ask-user',
-                  actor: 'mobile-device',
+                  actor: humanDecisionActor(device),
                   verdict: 'approved',
                   subject: 'Answered agent questions',
-                  source: mobileDecisionSource(device),
+                  source: humanDecisionSource(device),
                 })
                 deps.settle(id, { answers: answer.answers })
               },
@@ -253,16 +276,25 @@ export function createWindowAskUserHandler(deps: WindowAskUserDeps): AskUserHand
       deps.register(
         id,
         (result) => {
-          removeMobile()
+          removeDecision()
           deps.send('agent:ask-user-cancelled', { id })
           clearTimeout(timer)
           signal?.removeEventListener('abort', onAbort)
           stopAlert()
           resolve(result)
         },
-        { threadId, questions: req.questions },
+        {
+          threadId,
+          questions: req.questions,
+          ...(req.presentation === undefined ? {} : { presentation: req.presentation }),
+        },
       )
       signal?.addEventListener('abort', onAbort, { once: true })
-      deps.send('agent:ask-user-request', { id, threadId, questions: req.questions })
+      deps.send('agent:ask-user-request', {
+        id,
+        threadId,
+        questions: req.questions,
+        ...(req.presentation === undefined ? {} : { presentation: req.presentation }),
+      })
     })
 }

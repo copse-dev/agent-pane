@@ -1,6 +1,7 @@
-import { createFixtureDirectory } from './helpers/fixture-directory.ts'
+import assert from 'node:assert/strict'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { setComposerValue } from './helpers/composer.ts'
@@ -19,7 +20,7 @@ const STDIO_SERVER = join(process.cwd(), 'tests/e2e/fixtures/mock-mcp-server.mts
 const HTTP_SERVER = join(process.cwd(), 'tests/e2e/fixtures/http-mcp-server.mts')
 const HTTP_TOKEN = 'mcp-e2e-token'
 const INITIAL_HTTP_TOKEN = process.env['MCP_HTTP_TOKEN']
-const cleanupWorkspaces: (() => void)[] = []
+const temporaryWorkspaces: string[] = []
 
 function isolatedMcpConfigPath(): string {
   const root = process.env['COPSE_PANEL_USER_DATA']
@@ -32,9 +33,9 @@ function stdioServerEntry(): Record<string, unknown> {
 }
 
 async function createWorkspace(id: string, mcpServers: Record<string, unknown>): Promise<string> {
-  const fixture = createFixtureDirectory(`copse-mcp-${id}`)
-  const workspace = fixture.root
-  cleanupWorkspaces.push(fixture.cleanup)
+  const parent = await mkdtemp(join(tmpdir(), `copse-mcp-${id}-`))
+  temporaryWorkspaces.push(parent)
+  const workspace = join(parent, 'workspace')
   await mkdir(join(workspace, '.cursor'), { recursive: true })
   await writeFile(join(workspace, '.cursor', 'mcp.json'), JSON.stringify({ mcpServers }), 'utf8')
   return workspace
@@ -76,7 +77,11 @@ async function startWorkspace(id: string, mcpServers: Record<string, unknown>): 
 
 async function cleanupMcpFixtures(): Promise<void> {
   await rm(isolatedMcpConfigPath(), { force: true })
-  for (const cleanup of cleanupWorkspaces.splice(0)) cleanup()
+  await Promise.all(
+    temporaryWorkspaces
+      .splice(0)
+      .map((workspace) => rm(workspace, { recursive: true, force: true })),
+  )
 }
 
 // Keep earlier workspaces alive while Electron shuts down between tests. Deleting
@@ -88,7 +93,7 @@ after(async () => {
 
 async function openMcpSettings(): Promise<WebdriverIO.Element> {
   await $('[aria-label="Settings"]').click()
-  const settings = await $('#settings-dialog')
+  const settings = await $('#settings-dialog').getElement()
   await settings.waitForDisplayed({ timeout: 15_000 })
   await settings.$('.settings-nav-btn[data-section="mcp"]').click()
   await settings.$('#mcp-reload-btn').click()
@@ -109,7 +114,7 @@ describe('MCP validation', () => {
     await startWorkspace('mcp-settings', { documentation: stdioServerEntry() })
 
     const settings = await openMcpSettings()
-    const row = await $('.mcp-server-row.mcp-state-connected')
+    const row = await $('.mcp-server-row.mcp-state-connected').getElement()
     await row.waitForDisplayed({ timeout: 30_000 })
     await expect(row.$('.mcp-server-summary')).toHaveText(
       expect.stringContaining('documentation (stdio)'),
@@ -117,6 +122,12 @@ describe('MCP validation', () => {
     await expect(row.$('.mcp-server-summary')).toHaveText(expect.stringContaining('connected'))
     await expect(row.$('.mcp-server-detail')).toHaveText(expect.stringContaining('echo'))
     await expect(row.$('.mcp-server-detail')).toHaveText(expect.stringContaining('danger'))
+    const statuses = await browser.execute(() => window.api.mcp.reload())
+    const discovered = statuses.find((status) => status.name === 'documentation')
+    assert.ok(discovered, 'documentation stdio server must be discovered')
+    assert.equal(discovered.state, 'connected')
+    assert.equal(discovered.toolCount, 2)
+    assert.deepEqual([...discovered.tools].sort(), ['danger', 'echo'])
     await saveAppScreenshot('mcp-settings-connected.png')
     await settings.$('#settings-close').click()
   })
@@ -153,15 +164,15 @@ describe('MCP validation', () => {
     await setComposerValue('Look up the note hello from MCP in the documentation service.')
     await $('.submit-btn').click()
 
-    const dialog = await $('#approval-dialog')
+    const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
     await dialog.$('.approval-approve').click()
     await dialog.waitForDisplayed({ reverse: true, timeout: 15_000 })
 
     await waitForAgentIdle(30_000)
-    const rollup = await $('.tool-card-rollup')
+    const rollup = await $('.tool-card-rollup').getElement()
     if (!(await rollup.getProperty('open'))) await rollup.$('.tool-card-header').click()
-    const toolCard = await $('.tool-card[data-tool-id]')
+    const toolCard = await $('.tool-card[data-tool-id]').getElement()
     await toolCard.waitForDisplayed({ timeout: 30_000 })
     await expect(toolCard.$('.tool-name')).toHaveText('Echo')
     await expect(toolCard).toHaveAttribute('data-status', 'done')
@@ -210,7 +221,7 @@ describe('MCP validation', () => {
     await setComposerValue('Ask the documentation service to echo needs approval.')
     await $('.submit-btn').click()
 
-    const dialog = await $('#approval-dialog')
+    const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
     await expect(dialog.$('.approval-heading')).toHaveText(
       expect.stringContaining('MCP tool: documentation/echo'),
@@ -223,9 +234,9 @@ describe('MCP validation', () => {
 
     await dialog.$('.approval-approve').click()
     await waitForAgentIdle(30_000)
-    const rollup = await $('.tool-card-rollup')
+    const rollup = await $('.tool-card-rollup').getElement()
     if (!(await rollup.getProperty('open'))) await rollup.$('.tool-card-header').click()
-    const toolCard = await $('.tool-card[data-tool-id]')
+    const toolCard = await $('.tool-card[data-tool-id]').getElement()
     await toolCard.waitForDisplayed({ timeout: 30_000 })
     await expect(toolCard).toHaveAttribute('data-status', 'done')
     await waitForAgentIdle(30_000)
@@ -253,6 +264,10 @@ describe('MCP HTTP transport with auth', () => {
     })
     port = await new Promise<number>((resolve, reject) => {
       const child = server
+      if (!child) {
+        reject(new Error('HTTP MCP server process was not created'))
+        return
+      }
       const stdout = child.stdout
       if (!stdout) {
         reject(new Error('HTTP MCP server did not expose stdout'))
@@ -269,13 +284,15 @@ describe('MCP HTTP transport with auth', () => {
         if (value instanceof Error) reject(value)
         else resolve(value)
       }
-      const onData = (chunk: Buffer) => {
+      const onData = (chunk: Buffer): void => {
         const match = chunk.toString().match(/PORT=(\d+)/)
         if (!match?.[1]) return
         finish(Number(match[1]))
       }
-      const onError = (error: Error) => finish(error)
-      const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
+      const onError = (error: Error): void => {
+        finish(error)
+      }
+      const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
         finish(
           new Error(
             `HTTP MCP server exited before listening (code ${String(code)}, signal ${String(signal)})`,
@@ -309,7 +326,7 @@ describe('MCP HTTP transport with auth', () => {
     })
 
     const settings = await openMcpSettings()
-    const row = await $('.mcp-server-row.mcp-state-connected')
+    const row = await $('.mcp-server-row.mcp-state-connected').getElement()
     await row.waitForDisplayed({ timeout: 30_000 })
     await expect(row.$('.mcp-server-summary')).toHaveText(expect.stringContaining('remote (http)'))
     await expect(row.$('.mcp-server-summary')).toHaveText(expect.stringContaining('connected'))
@@ -331,7 +348,7 @@ describe('MCP HTTP transport with auth', () => {
     })
 
     const settings = await openMcpSettings()
-    const row = await $('.mcp-server-row.mcp-state-error')
+    const row = await $('.mcp-server-row.mcp-state-error').getElement()
     await row.waitForDisplayed({ timeout: 30_000 })
     await expect(row.$('.mcp-server-summary')).toHaveText(expect.stringContaining('remote (http)'))
     await expect(row.$('.mcp-server-summary')).toHaveText(expect.stringContaining('error'))
@@ -345,7 +362,7 @@ describe('MCP HTTP transport with auth', () => {
     })
 
     const settings = await openMcpSettings()
-    const row = await $('.mcp-server-row.mcp-state-error')
+    const row = await $('.mcp-server-row.mcp-state-error').getElement()
     await row.waitForDisplayed({ timeout: 30_000 })
     await expect(row.$('.mcp-server-summary')).toHaveText(
       expect.stringContaining('sign-in required'),

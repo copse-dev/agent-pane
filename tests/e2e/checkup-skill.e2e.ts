@@ -67,7 +67,7 @@ describe('checkup skill', () => {
       timeout: 5_000,
       timeoutMsg: 'skill picker should close after picking /checkup',
     })
-    await expect(await composerText()).toMatch(/^\/checkup\b/)
+    expect(await composerText()).toMatch(/^\/checkup\b/)
 
     const scenario = await installMockScenario({
       title: 'Run Copse checkup',
@@ -105,9 +105,9 @@ describe('checkup skill', () => {
 
     const toolName = await browser.execute(() => {
       const el = document.querySelector('.tool-card .tool-name, .tool-card-group .tool-name')
-      return el?.textContent?.trim() ?? ''
+      return el?.textContent.trim() ?? ''
     })
-    await expect(toolName).toMatch(/checkup/i)
+    expect(toolName).toMatch(/checkup/i)
 
     await assertNoErrorToasts('after /checkup')
     await waitForAgentIdle()

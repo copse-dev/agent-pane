@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -9,12 +9,9 @@ import {
   readBadgeStyles,
   signalColours,
 } from './helpers/badge-style.ts'
-import {
-  E2E_SCREENSHOT_DIR,
-  pinTextForCapture,
-  saveElementScreenshot,
-} from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // Settings → Plugins list — P3 of docs/plans/hooks-and-feature-packs.md.
 //
@@ -31,7 +28,7 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 //
 // The removed P1 `copse.noop` skeleton must not leak into the user-facing list.
 
-function settingsSection(section: string) {
+function settingsSection(section: string): ReturnType<typeof $> {
   return $(`.settings-section[data-section="${section}"]`)
 }
 
@@ -39,31 +36,11 @@ describe('settings plugins (about:addons)', function () {
   this.timeout(60_000)
   let localPluginRoot = ''
 
-  async function saveSelectedPluginScreenshot(selector: string, filename: string): Promise<void> {
-    const details = await $(
-      '.plugin-row[data-plugin-id="personal.reference-tools"] .plugin-source-details',
-    ).$$('dd')
-    assert.equal(await details[0]?.getText(), localPluginRoot)
-    assert.match((await details[1]?.getText()) ?? '', /^sha256:[a-f0-9]{64}$/)
-    // The real source and content hash are asserted first; only the mkdtemp path is pinned.
-    const actualPath = new RegExp(localPluginRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
-    const restorePath = await pinTextForCapture(
-      selector,
-      actualPath,
-      join(tmpdir(), 'copse-e2e-selected-plugin-XXXXXX'),
-    )
-    try {
-      await saveElementScreenshot(selector, filename)
-    } finally {
-      await restorePath()
-    }
-  }
-
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     localPluginRoot = join(tmpdir(), 'copse-e2e', 'selected-plugin')
-    rmSync(localPluginRoot, { recursive: true, force: true })
+    removeE2eTree(localPluginRoot)
     mkdirSync(join(localPluginRoot, 'dist'), { recursive: true })
     writeFileSync(join(localPluginRoot, 'dist', 'index.mjs'), 'export default {}\n')
     writeFileSync(
@@ -99,7 +76,7 @@ describe('settings plugins (about:addons)', function () {
 
   after(() => {
     resetUserData()
-    if (localPluginRoot) rmSync(localPluginRoot, { recursive: true, force: true })
+    if (localPluginRoot) removeE2eTree(localPluginRoot)
   })
 
   it('lists installed plugins with an enable toggle + contribution enumeration', async () => {
@@ -288,7 +265,7 @@ describe('settings plugins (about:addons)', function () {
     const restated = await browser.execute(() =>
       [...document.querySelectorAll<HTMLElement>('.plugin-row')]
         .filter((row) => row.querySelector('.plugin-badge-first-party'))
-        .map((row) => row.querySelector('.plugin-row-desc')?.textContent?.trim() ?? '')
+        .map((row) => row.querySelector('.plugin-row-desc')?.textContent.trim() ?? '')
         .filter((desc) => /^[^—.]{1,40} — /.test(desc)),
     )
     assert.deepEqual(restated, [])
@@ -398,7 +375,7 @@ describe('settings plugins (about:addons)', function () {
     for (const family of sourceFonts.dd) assert.equal(family, sourceFonts.mono)
 
     await pluginToolRow.scrollIntoView()
-    await saveSelectedPluginScreenshot(
+    await saveElementScreenshot(
       '.plugin-row[data-plugin-id="personal.reference-tools"]',
       'settings-selected-plugin.png',
     )
@@ -446,7 +423,8 @@ describe('settings plugins (about:addons)', function () {
     assert.ok(cls.includes('plugin-row-disabled'), 'disabled row must be visually greyed')
 
     await todosRow.scrollIntoView({ block: 'center' })
-    await saveSelectedPluginScreenshot('#settings-dialog', 'settings-plugins.png')
+    await browser.pause(100)
+    await saveElementScreenshot('#settings-dialog', 'settings-plugins.png')
 
     // The same manifest metadata is represented in the thread model picker.
     // This fixture deliberately registers no handlers, so the selected route
