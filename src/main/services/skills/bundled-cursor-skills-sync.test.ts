@@ -149,14 +149,14 @@ describe('bundled-cursor-skills-sync', () => {
       sourcePath,
       JSON.stringify({
         ...original,
-        danglingReferences: { 'demo-plugin/demo-skill': ['scripts/snapshot.sh'] },
+        danglingReferences: { 'cursor-team-kit/demo-skill': ['scripts/snapshot.sh'] },
       }),
     )
     const updated = await refreshBundledSkillReferences(cacheDir)
     assert.deepEqual(updated.danglingReferences, original.danglingReferences)
     assert.equal(updated.contentSha256, original.contentSha256)
     await writeFile(
-      join(cacheDir, 'plugins/demo-plugin/skills/demo-skill/SKILL.md'),
+      join(cacheDir, 'plugins/cursor-team-kit/skills/demo-skill/SKILL.md'),
       'changed payload',
     )
     await assert.rejects(refreshBundledSkillReferences(cacheDir), /content hash mismatch/)
