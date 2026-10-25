@@ -235,9 +235,7 @@ async function removeFromList(
 }
 
 function webOrigins(current: unknown): string[] {
-  const saved = Array.isArray(current)
-    ? current.filter((entry) => typeof entry === 'string')
-    : null
+  const saved = Array.isArray(current) ? current.filter((entry) => typeof entry === 'string') : null
   return webAllowedOriginsWithDefaults(saved)
 }
 
