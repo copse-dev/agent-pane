@@ -94,6 +94,9 @@ describe('queued chats stay pinned to the bottom', function () {
 
     await saveAppScreenshot('queued-pinned-scrolled-top.png')
     await scenario.release('module-refactor')
+    // The agent can briefly read as idle after the first reply, before the
+    // queued prompt dispatches. Wait for every scripted response to be served.
+    await scenario.waitForComplete(60_000)
     await waitForAgentIdle(60_000)
     await scenario.assertComplete()
   })
