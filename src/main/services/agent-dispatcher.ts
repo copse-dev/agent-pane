@@ -480,11 +480,16 @@ export class AgentDispatcher {
         // Claim before loading or persisting machine bookkeeping. Otherwise a
         // foreground dispatch can take the thread during either await, after
         // the continuation has already consumed budget and recorded a start.
+        // Most wakes end here as stale, observed or over budget without a turn.
+        // Opening the transcript tells the window the thread is running, and
+        // only a `done` takes that back, so wait until the wake emits its first
+        // chunk (`machine_turn_start`) before opening it.
         return this.dispatchExclusively(
           request,
           key,
           (host) => this.executeClaimedMachine(request, key, host),
           this.host,
+          'on-first-chunk',
         )
       }
       try {
@@ -612,6 +617,7 @@ export class AgentDispatcher {
     key: string,
     run: (host: AgentHost<StreamChunk>) => Promise<T>,
     targetHost: AgentHost<StreamChunk>,
+    openTranscript: 'at-dispatch' | 'on-first-chunk' = 'at-dispatch',
   ): Promise<T> {
     this.assertDispatchable(request.projectId, request.threadId)
     const existing = this.active.get(key)
@@ -623,12 +629,16 @@ export class AgentDispatcher {
     // other thread's pass straight to the target host as before. A caller-supplied
     // host (an unfocused automation's headless run) assembles and persists its own
     // messages, so it bypasses the window transcript.
-    const transcript =
-      targetHost === this.host
-        ? this.transcripts?.begin(request.projectId, request.threadId)
-        : undefined
+    const transcripts = targetHost === this.host ? this.transcripts : undefined
+    let transcript: TurnTranscript | undefined
+    const open = (): TurnTranscript | undefined => {
+      transcript ??= transcripts?.begin(request.projectId, request.threadId)
+      return transcript
+    }
+    if (openTranscript === 'at-dispatch') open()
     const deliver = (threadId: string, chunk: StreamChunk): void => {
-      if (transcript && threadId === request.threadId) transcript.emit(chunk)
+      const own = threadId === request.threadId ? open() : undefined
+      if (own) own.emit(chunk)
       else targetHost.emit(threadId, chunk)
     }
     let terminalOutcome: Extract<StreamChunk, { type: 'turn_outcome' }> | undefined

@@ -248,6 +248,7 @@ import {
 } from './providers/acp-billing-fallback.ts'
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
+import { cancelAgentInitiatedAcpTurn } from './acp/acp-session-pool.ts'
 import {
   ACP_UNFINISHED_TURN_BUDGET_FALLBACK,
   ACP_UNFINISHED_TURN_FALLBACK,
@@ -1370,7 +1371,9 @@ async function runAgentWithInlineCanvas(
           : await perfSpan('ttft:acp-turn-assembly', () =>
               assembleAcpTurnStart({
                 userText: promptTextForSubmit(userPrompt),
+                invokedSkills: options?.invokedSkills ?? [],
                 priorTodos: options?.priorTodos ?? [],
+                firstTurn: priorMessages.length === 0,
                 model: executorModel,
                 registry,
                 signal: controller.signal,
@@ -1991,7 +1994,9 @@ async function runAgentWithInlineCanvas(
       {
         userText: userTextForSteering,
         priorTodos,
+        firstTurn: priorMessages.length === 0,
         executor: 'local',
+        invokedSkills,
         // The resolved run model + the tool list the model will actually see, so
         // a steering hook can condition on which model is running (the
         // forced-planning plugin thresholds on its measured capability) and never
@@ -2919,6 +2924,8 @@ async function runAgentWithInlineCanvas(
 
 export function abortAgent(threadId: string, reason?: 'send_now'): void {
   abortMap.get(threadId)?.abort(reason)
+  // A turn the coding agent resumed on its own has no entry above.
+  cancelAgentInitiatedAcpTurn(threadId)
 }
 
 const mobileRunIds = new WeakMap<AbortController, string>()

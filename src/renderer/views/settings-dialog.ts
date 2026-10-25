@@ -170,6 +170,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     overlay,
     api,
     store,
+    () => snapshot,
     () => nav.active(),
     async (id): Promise<AbortSignal | undefined> => {
       nav.reset(id)
