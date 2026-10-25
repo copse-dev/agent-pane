@@ -151,7 +151,7 @@
   --group-header-font-weight: 600;
 }
 
-/* node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/styles/core.css */
+/* node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/styles/core.css */
 .streaming-markdown {
   & .stream-pending {
     white-space: pre-wrap;
@@ -227,7 +227,7 @@
   }
 }
 
-/* node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/styles/default.css */
+/* node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/styles/default.css */
 .streaming-markdown {
   line-height: var(--sm-line-height, 1.55);
   word-break: break-word;
@@ -9108,7 +9108,8 @@ dialog.settings-overlay::backdrop {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  scroll-padding-bottom: calc(var(--action-min-height) + var(--spacing-lg) + var(--spacing-xl) + var(--spacing-lg) + var(--spacing-md));
+  --settings-footer-fade: calc(var(--spacing-xl) * 2);
+  scroll-padding-bottom: calc(var(--action-min-height) + var(--spacing-lg) + var(--spacing-xl) + var(--spacing-lg) + var(--spacing-md) + var(--settings-footer-fade));
   padding: calc(var(--spacing-xl) * 2) var(--spacing-xl) 0;
 }
 .settings-section,
@@ -9198,7 +9199,7 @@ dialog.settings-overlay::backdrop {
   display: flex;
   gap: var(--spacing-md);
   justify-content: flex-end;
-  margin-top: var(--spacing-xl);
+  margin-top: var(--settings-footer-fade);
   padding-top: var(--spacing-lg);
   padding-bottom: calc(var(--spacing-xl) + var(--spacing-lg));
   position: sticky;
@@ -9211,25 +9212,25 @@ dialog.settings-overlay::backdrop {
 .settings-buttons::before {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: calc(-1 * var(--settings-footer-fade)) 0 0;
   pointer-events: none;
   background:
     linear-gradient(
       to bottom,
-      transparent 0%,
-      color-mix(in srgb, var(--bg-base) 55%, transparent) 40%,
+      transparent 0,
+      color-mix(in srgb, var(--bg-base) 55%, transparent) var(--settings-footer-fade),
       color-mix(in srgb, var(--bg-base) 88%, transparent) 100%);
   backdrop-filter: blur(10px);
   -webkit-mask-image:
     linear-gradient(
       to bottom,
-      transparent 0%,
-      #000 45%);
+      transparent 0,
+      #000 var(--settings-footer-fade));
   mask-image:
     linear-gradient(
       to bottom,
-      transparent 0%,
-      #000 45%);
+      transparent 0,
+      #000 var(--settings-footer-fade));
 }
 .settings-buttons button,
 #settings-save-status {
@@ -12423,7 +12424,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   flex-wrap: wrap;
   gap: var(--spacing-sm);
 }
-.ask-user-option {
+.ask-user-option:where(:not(.ask-user-action)) {
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -12431,11 +12432,14 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   font-size: var(--font-size-sm);
   cursor: pointer;
 }
-.ask-user-option:hover {
+.ask-user-option:where(:not(.ask-user-action)):hover {
   border-color: var(--accent);
 }
 .ask-user-option-recommended {
   border-color: var(--accent);
+}
+.ask-user-action {
+  padding: 8px 16px;
 }
 .ask-user-recommended-label {
   margin-left: var(--spacing-sm);

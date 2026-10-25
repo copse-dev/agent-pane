@@ -32,6 +32,8 @@ import {
   TODO_STEERING_PROMPT,
   acceptRuntimeThreadMeta,
   acpConfigCategoryLabel,
+  acpDelegateKind,
+  acpDelegatePrompt,
   activateMobileProject,
   activateWorkspaceReference,
   addHookCard,
@@ -257,6 +259,7 @@ import {
   init_working_brief,
   init_zod,
   invalidateProjectThreadLoads,
+  isAcpDelegateToolCall,
   isAcpModel,
   isAnyDialogOpen,
   isApprovalStalled,
@@ -440,8 +443,8 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-OEVMJYYI.js";
-import "./chunk-MENUC6MX.js";
+} from "./chunk-CMFTAUCW.js";
+import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
   appLinkDecorator,
@@ -522,7 +525,7 @@ import {
   warningIcon,
   workspaceLinkTargetFromHref,
   zapIcon
-} from "./chunk-GE6ZNDQF.js";
+} from "./chunk-HZHR2CRE.js";
 import {
   clear,
   el,
@@ -626,9 +629,9 @@ var init_tokens = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/styles/default.css
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/styles/default.css
 var init_default = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/styles/default.css"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/styles/default.css"() {
   }
 });
 
@@ -4272,10 +4275,17 @@ function mountApprovalDialog(api2, store2, options = {}) {
     for (const listener of [...changeListeners]) listener();
   }
   function drainShowableIntoBatch() {
+    if (batch.some((req) => req.standalone)) return 0;
+    const standaloneIndex = queue.findIndex((req) => req.standalone && isShowable(req));
+    if (batch.length === 0 && standaloneIndex >= 0) {
+      const [request] = queue.splice(standaloneIndex, 1);
+      if (request) batch.push(request);
+      return request ? 1 : 0;
+    }
     let moved = 0;
     for (let i2 = 0; i2 < queue.length; ) {
       const req = queue[i2];
-      if (req && isShowable(req)) {
+      if (req && !req.standalone && isShowable(req)) {
         queue.splice(i2, 1);
         batch.push(req);
         moved++;
@@ -4441,7 +4451,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       batch.map((req) => req.threadId)
     );
     if (asker) store2.emit("side_chat_open_requested", asker.firstSideChatId);
-    const shouldShowModal = isSettingsDialogOpen() || document.documentElement.classList.contains("is-popout");
+    const shouldShowModal = soloRequest()?.standalone === true || isSettingsDialogOpen() || document.documentElement.classList.contains("is-popout");
     if (shouldShowModal) {
       dialog.showModal();
     } else {
@@ -4491,6 +4501,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
   function removeCancelled(id) {
     const queueIdx = queue.findIndex((req) => req.id === id);
     if (queueIdx >= 0) queue.splice(queueIdx, 1);
+    const wasStandalone = batch.some((req) => req.id === id && req.standalone);
     const wasInBatch = batch.some((req) => req.id === id);
     batch = batch.filter((req) => req.id !== id);
     if (wasInBatch && active) {
@@ -4499,6 +4510,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
         active = false;
         clearSettle();
         show2();
+        if (dialog.open && (wasStandalone || batch.some((req) => req.standalone))) startSettle();
       } else {
         renderBatch();
         startSettle();
@@ -4519,6 +4531,8 @@ function mountApprovalDialog(api2, store2, options = {}) {
       void api2.approval.respond(req.id, approved, remember, grantScope);
     }
     show2();
+    if (dialog.open && (answered.some((req) => req.standalone) || batch.some((req) => req.standalone)))
+      startSettle();
   }
   api2.agent.onApprovalRequest(
     ({
@@ -4535,6 +4549,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       collapseDetails,
       approveOnceLabel,
       showWhileSettingsOpen,
+      standalone,
       allowTurnTreeLease,
       turnTreeLeaseLabel: turnTreeLeaseLabel2,
       turnTreeLeaseDefault,
@@ -4556,6 +4571,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
         collapseDetails,
         approveOnceLabel,
         showWhileSettingsOpen,
+        standalone,
         allowTurnTreeLease,
         turnTreeLeaseLabel: turnTreeLeaseLabel2,
         turnTreeLeaseDefault,
@@ -4564,7 +4580,15 @@ function mountApprovalDialog(api2, store2, options = {}) {
         arrival: arrivals++
       };
       queue.push(pending);
-      if (active && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
+      if (active && pending.standalone && isShowable(pending) && !batch.some((req) => req.standalone)) {
+        queue.unshift(...batch);
+        batch = [];
+        closeDialog();
+        active = false;
+        clearSettle();
+        show2();
+        if (dialog.open) startSettle();
+      } else if (active && !batch.some((req) => req.standalone) && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
         queue.unshift(...batch);
         batch = [];
         closeDialog();
@@ -4805,9 +4829,9 @@ function createActivityView(api2, store2, sources3, deps, host) {
   function hasAnswer(requestId) {
     return (drafts.get(requestId) ?? []).some((text) => text.trim() !== "");
   }
-  function sendAnswer(row2) {
+  function sendAnswer(row2, chosen) {
     const requestId = row2.requestId;
-    if (!requestId || settling || !hasAnswer(requestId)) return;
+    if (!requestId || settling || chosen === void 0 && !hasAnswer(requestId)) return;
     const asked = sources3.questions.pending().find((request) => request.id === requestId);
     if (!asked) return;
     const typed = drafts.get(requestId) ?? [];
@@ -4819,13 +4843,13 @@ function createActivityView(api2, store2, sources3, deps, host) {
     }
     const sent = sources3.questions.answer(
       requestId,
-      asked.questions.map((_2, index) => typed[index] ?? "")
+      chosen === void 0 ? asked.questions.map((_2, index) => typed[index] ?? "") : [chosen]
     );
     if (sent) drafts.delete(requestId);
     status.textContent = sent ? `Answered ${row2.threadTitle}.` : "That question was already answered.";
     scheduleRender();
   }
-  function answerField(requestId, row2, question, index, options, recommendedOption, recommendationReason) {
+  function answerField(requestId, row2, question, index, options, recommendedOption, recommendationReason, actionsOnly) {
     const questionId = `${host.idPrefix}-question-${String(index)}`;
     const input = el("textarea", {
       class: "activity-answer-input",
@@ -4862,8 +4886,9 @@ function createActivityView(api2, store2, sources3, deps, host) {
       for (const option of options) {
         const choice = el("button", {
           type: "button",
-          class: "ui-btn ui-btn-secondary activity-option"
+          class: actionsOnly ? `ui-btn ${option === options[0] ? "ui-btn-primary" : "ui-btn-secondary"} activity-option activity-answer-action` : "ui-btn ui-btn-secondary activity-option"
         });
+        if (actionsOnly) choice.disabled = settling;
         setInlineMarkdown(choice, option);
         const answer = choice.textContent;
         if (option === recommendedOption) {
@@ -4871,6 +4896,10 @@ function createActivityView(api2, store2, sources3, deps, host) {
           choice.append(el("span", { class: "ask-user-recommended-label" }, "Recommended"));
         }
         choice.addEventListener("click", () => {
+          if (actionsOnly) {
+            sendAnswer(row2, option);
+            return;
+          }
           input.value = answer;
           sync();
           input.focus();
@@ -4882,7 +4911,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     if (recommendationReason) {
       field.append(el("p", { class: "ask-user-recommendation-reason" }, recommendationReason));
     }
-    field.append(input);
+    if (!actionsOnly) field.append(input);
     return field;
   }
   function button(className, control, label, onClick, ariaLabel) {
@@ -4970,7 +4999,8 @@ function createActivityView(api2, store2, sources3, deps, host) {
               index,
               asked.options[index] ?? [],
               asked.recommendedOptions?.[index],
-              asked.recommendationReasons?.[index]
+              asked.recommendationReasons?.[index],
+              asked.presentation?.kind === "actions"
             )
           )
         )
@@ -5031,7 +5061,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
       );
       approve.disabled = settling;
       decide.push(approve);
-    } else if (row2.state === "needs-answer" && row2.requestId) {
+    } else if (row2.state === "needs-answer" && row2.requestId && sources3.questions.pending().find((request) => request.id === row2.requestId)?.presentation?.kind !== "actions") {
       const requestId = row2.requestId;
       const answer = button(
         "ui-btn-primary activity-answer",
@@ -5478,7 +5508,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
     cancelSettle?.();
     settling = true;
     for (const control of detail.querySelectorAll(
-      ".activity-approve, .activity-answer"
+      ".activity-approve, .activity-answer, .activity-answer-action"
     )) {
       control.disabled = true;
     }
@@ -5486,7 +5516,7 @@ function createActivityView(api2, store2, sources3, deps, host) {
       cancelSettle = null;
       settling = false;
       for (const control of detail.querySelectorAll(
-        ".activity-approve, .activity-answer"
+        ".activity-approve, .activity-answer, .activity-answer-action"
       )) {
         if (control.dataset["answered"]) continue;
         const requestId = control.dataset["requestId"];
@@ -11708,7 +11738,7 @@ var init_table_copy = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js
 function parseDiagramSize(value) {
   if (typeof value !== "object" || value === null)
     return null;
@@ -11727,14 +11757,14 @@ function parseDiagramSize(value) {
 }
 var MAX_DIAGRAM_SOURCE_LENGTH, MAX_DIAGRAM_DIMENSION, MAX_FONT_BYTES;
 var init_mermaid_frame_protocol = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-frame-protocol.js"() {
     MAX_DIAGRAM_SOURCE_LENGTH = 5e4;
     MAX_DIAGRAM_DIMENSION = 4096;
     MAX_FONT_BYTES = 4 * 1024 * 1024;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js
 function copyBytes(data) {
   if (data instanceof ArrayBuffer)
     return data.slice(0);
@@ -11819,7 +11849,7 @@ function createMermaidFrame(source, options) {
 }
 var ISOLATED_DIAGRAM_ATTRIBUTE, MOUNTABLE_SELECTOR;
 var init_mermaid_isolated = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/mermaid-isolated.js"() {
     init_mermaid_frame_protocol();
     ISOLATED_DIAGRAM_ATTRIBUTE = "data-isolated-diagram";
     MOUNTABLE_SELECTOR = `.mermaid-diagram.mermaid-diagram--pending:not(.stream-fence-forming):not([${ISOLATED_DIAGRAM_ATTRIBUTE}])`;
@@ -12121,7 +12151,7 @@ var init_mermaid = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/smoothing.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/smoothing.js
 function defaultNow() {
   const perf = globalThis.performance;
   return typeof perf?.now === "function" ? perf.now() : Date.now();
@@ -12305,7 +12335,7 @@ function createInputSmoother(options) {
 }
 var DEFAULT_CHARS_PER_SECOND, DEFAULT_LAG_MS, VELOCITY_SMOOTHING_MS, MIN_CHARS_PER_MS, MAX_FRAME_GAP_MS, DRAIN_LAG_MS, MAX_BOUNDARY_EXTENSION, REDUCED_MOTION_QUERY, SYNTAX_CHARS;
 var init_smoothing = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
     DEFAULT_CHARS_PER_SECOND = 600;
     DEFAULT_LAG_MS = 120;
     VELOCITY_SMOOTHING_MS = 180;
@@ -12869,9 +12899,9 @@ var init_browser_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/host-workspace.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/host-workspace.js
 var init_host_workspace = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
     init_inline_links();
     init_workspace_link_href();
   }
@@ -63636,6 +63666,12 @@ function mountFooterBranchStatus(host, store2, api2) {
     store2.on("workspace_changed", refreshNow),
     store2.on("threads_changed", () => {
       if (store2.getState().activeThreadId !== refreshedThreadId) {
+        status = null;
+        detached = null;
+        branches = [];
+        defaultBranch = null;
+        renderTrigger();
+        if (open) renderMenu();
         refreshNow();
         return;
       }
@@ -74482,14 +74518,24 @@ function deriveThreadContext(input) {
     for (const message2 of thread.messages) {
       for (const toolCall of message2.toolCalls) {
         const session = toolCall.subagent;
-        if (!session) continue;
-        subagents.push({
-          id: session.id,
-          kind: session.kind,
-          status: session.status,
-          prompt: firstLine(session.prompt),
-          ...session.model !== void 0 ? { model: session.model } : {}
-        });
+        if (session) {
+          subagents.push({
+            id: session.id,
+            kind: session.kind,
+            status: session.status,
+            prompt: firstLine(session.prompt),
+            ...session.model !== void 0 ? { model: session.model } : {}
+          });
+          continue;
+        }
+        if (isAcpDelegateToolCall(toolCall)) {
+          subagents.push({
+            id: toolCall.id,
+            kind: acpDelegateKind(toolCall)?.toLowerCase() ?? "agent",
+            status: toolCall.status,
+            prompt: firstLine(acpDelegatePrompt(toolCall))
+          });
+        }
       }
     }
   }
@@ -74528,6 +74574,7 @@ var init_thread_context_model = __esm({
     init_github_pr_url2();
     init_side_chat();
     init_thread_links2();
+    init_copse_tool_call();
   }
 });
 
@@ -83489,7 +83536,7 @@ function mountAskUserDialog(api2, store2) {
       el(
         "h3",
         { class: "ask-user-title" },
-        asker ? "A side chat has a question" : "The agent has a question"
+        active.presentation?.title ?? (asker ? "A side chat has a question" : "The agent has a question")
       )
     );
     if (asker) {
@@ -83498,6 +83545,7 @@ function mountAskUserDialog(api2, store2) {
     }
     active.questions.forEach((q2, i2) => {
       const questionId = `ask-user-question-${String(i2)}`;
+      const actionsOnly = active?.presentation?.kind === "actions";
       const input = el("textarea", {
         class: "ask-user-input",
         rows: "2",
@@ -83505,7 +83553,7 @@ function mountAskUserDialog(api2, store2) {
         "data-question-index": String(i2),
         "aria-labelledby": questionId
       });
-      inputs.push(input);
+      if (!actionsOnly) inputs.push(input);
       const question = el("div", {
         id: questionId,
         class: "ask-user-question streaming-markdown"
@@ -83515,14 +83563,21 @@ function mountAskUserDialog(api2, store2) {
       if (q2.options && q2.options.length > 0) {
         const optionRow = el("div", { class: "ask-user-options" });
         for (const option of q2.options) {
-          const button = el("button", { type: "button", class: "ask-user-option" });
+          const button = el("button", {
+            type: "button",
+            class: actionsOnly ? `ui-btn ${option === q2.options[0] ? "ui-btn-primary" : "ui-btn-secondary"} ask-user-option ask-user-action` : "ask-user-option"
+          });
           setInlineMarkdown(button, option);
           const answer = button.textContent;
-          if (option === q2.recommendedOption) {
+          if (!actionsOnly && option === q2.recommendedOption) {
             button.classList.add("ask-user-option-recommended");
             button.append(el("span", { class: "ask-user-recommended-label" }, "Recommended"));
           }
           button.addEventListener("click", () => {
+            if (actionsOnly) {
+              respond([option]);
+              return;
+            }
             input.value = answer;
             input.focus();
           });
@@ -83533,9 +83588,15 @@ function mountAskUserDialog(api2, store2) {
       if (q2.recommendationReason) {
         field.append(el("p", { class: "ask-user-recommendation-reason" }, q2.recommendationReason));
       }
-      field.append(input);
+      if (!actionsOnly) field.append(input);
       form.append(field);
     });
+    if (active.presentation?.kind === "actions") {
+      dialog.showModal();
+      const actions = form.querySelectorAll(".ask-user-action");
+      actions[actions.length - 1]?.focus();
+      return;
+    }
     const cancelBtn = el("button", { type: "button", class: "ask-user-cancel" }, "Cancel");
     cancelBtn.addEventListener("click", (event) => {
       event.preventDefault();
@@ -83641,6 +83702,7 @@ function mountAskUserDialog(api2, store2) {
     return true;
   }
   function submit() {
+    if (active?.presentation?.kind === "actions") return;
     respond(inputs.map((input) => input.value));
   }
   function cancel() {
@@ -83670,6 +83732,7 @@ function mountAskUserDialog(api2, store2) {
     if (active?.id === req.id || queue.some((request) => request.id === req.id)) return;
     queue.push({
       id: req.id,
+      ...req.presentation === void 0 ? {} : { presentation: req.presentation },
       threadId: req.threadId,
       questions: req.questions,
       receivedAt: Date.now(),
@@ -83698,6 +83761,7 @@ function mountAskUserDialog(api2, store2) {
   return {
     pending: () => [...active ? [active] : [], ...queue].sort((a, b2) => a.arrival - b2.arrival).map((req) => ({
       id: req.id,
+      ...req.presentation === void 0 ? {} : { presentation: req.presentation },
       threadId: req.threadId,
       questions: req.questions.map((q2) => q2.question),
       options: req.questions.map((q2) => q2.options ?? []),
@@ -87948,7 +88012,7 @@ var init_artifact_image_policy = __esm({
 
 // src/renderer/markdown/sanitizer-backend.ts
 function installSanitizerBackend() {
-  ready ??= isBrowserSanitizerSupported() ? Promise.resolve() : import("./sanitize-dompurify-HE3TFKVL.js").then(({ dompurifyBackend }) => {
+  ready ??= isBrowserSanitizerSupported() ? Promise.resolve() : import("./sanitize-dompurify-ZGPAHHBP.js").then(({ dompurifyBackend }) => {
     setDefaultConfig({ sanitizerBackend: dompurifyBackend });
   });
   return ready;
@@ -87963,7 +88027,7 @@ var init_sanitizer_backend = __esm({
 
 // src/renderer/markdown/highlighter-backend.ts
 function installHighlighterBackend() {
-  ready2 ??= import("./highlight-hljs-DNZQJ7OS.js").then(
+  ready2 ??= import("./highlight-hljs-LL5I7535.js").then(
     ({ loadHighlightjs }) => loadHighlightjs().then((codeHighlighter) => {
       setDefaultConfig({ codeHighlighter });
     })

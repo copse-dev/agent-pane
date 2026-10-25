@@ -32,8 +32,8 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-OEVMJYYI.js";
-import "./chunks/chunk-MENUC6MX.js";
+} from "./chunks/chunk-CMFTAUCW.js";
+import "./chunks/chunk-D55J6ZRP.js";
 import {
   init_icons,
   init_unknown_value,
@@ -42,7 +42,7 @@ import {
   maximizeIcon,
   minimizeIcon,
   stringRecordOrEmpty
-} from "./chunks/chunk-GE6ZNDQF.js";
+} from "./chunks/chunk-HZHR2CRE.js";
 import "./chunks/chunk-EMIRHVRH.js";
 import {
   __commonJS,
@@ -1407,6 +1407,30 @@ var init_demo_concise_states = __esm({
                 {
                   question: "Which migration order should the schema bump use?",
                   options: ["Columns first", "Backfill first"]
+                }
+              ]
+            }
+          ]
+        }
+      ),
+      scenario(
+        "reauth",
+        "A failed coding-agent turn offering a direct sign-in action",
+        [
+          user("reauth-user", "Continue with Claude."),
+          assistant("reauth-failed", "Claude is not signed in, so this turn could not run.")
+        ],
+        {
+          status: "running",
+          askUserRequests: [
+            {
+              id: "concise-state-reauth-request",
+              threadId: THREAD_ID("reauth"),
+              presentation: { kind: "actions", title: "Sign in to Claude" },
+              questions: [
+                {
+                  question: "Claude is not signed in, so this turn could not run. Open a terminal and run `claude auth login` to sign in again? Finish signing in there, then re-send your message.",
+                  options: ["Sign in", "Not now"]
                 }
               ]
             }
@@ -4945,6 +4969,84 @@ var init_demo_scenarios = __esm({
         )
       },
       {
+        id: "acp-subagent-visibility",
+        label: "A coding agent's own background subagents show up live",
+        project: project("demo-acp-subagents", "Widgets", "/demo/widgets"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          filesPaneOpen: true,
+          rightPanelMode: "context",
+          layout: {
+            projectsPaneWidth: 240,
+            filesPaneWidth: 680,
+            filesPaneHeight: 360,
+            fileTreeWidth: 180
+          }
+        },
+        threads: [
+          {
+            id: "acp-subagents-main",
+            title: "Add blockviz to Copse",
+            status: "running",
+            model: "acp:claude-acp#sonnet",
+            messages: [
+              {
+                id: "acp-subagents-user",
+                role: "user",
+                content: "Explore how to add the blockviz panel.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              },
+              {
+                id: "acp-subagents-assistant",
+                role: "assistant",
+                content: "All three exploration agents are running in the background.",
+                toolCalls: [
+                  // An external ACP agent's own subagent dispatch (Claude Code's
+                  // `Agent` tool): no `subagent` session, just this one tool call.
+                  {
+                    id: "acp-agent-panel",
+                    name: "Agent",
+                    kind: "think",
+                    title: "Panel/view registration and local content serving",
+                    args: { subagent_type: "Explore", prompt: "Find the panel registry" },
+                    status: "running",
+                    result: null
+                  },
+                  {
+                    id: "acp-agent-filetree",
+                    name: "Agent",
+                    kind: "think",
+                    title: "Local file-tree reading utilities",
+                    args: { subagent_type: "Explore", prompt: "Find reusable file-walking utilities" },
+                    status: "running",
+                    result: null
+                  },
+                  {
+                    id: "acp-agent-rust",
+                    name: "Agent",
+                    kind: "think",
+                    title: "Servo sidecar and Rust toolchain precedent",
+                    args: {
+                      subagent_type: "Investigate",
+                      prompt: "Check for an existing Rust toolchain"
+                    },
+                    status: "done",
+                    result: "No Rust toolchain found in the repo."
+                  }
+                ],
+                createdAt: FIXED_TIME + 1e3
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME + 1e3
+          }
+        ]
+      },
+      {
         id: "side-chat-approval",
         label: "A side chat asks for approval over its parent thread",
         project: project("demo-side-chat-approval", "Widgets", "/demo/widgets"),
@@ -5655,6 +5757,7 @@ function createDemoApi(scenario2, options = {}) {
           const request = {
             id: askUserRequest.id,
             ...askUserRequest.threadId === void 0 ? {} : { threadId: askUserRequest.threadId },
+            ...askUserRequest.presentation === void 0 ? {} : { presentation: askUserRequest.presentation },
             questions: askUserRequest.questions.map((question) => ({
               question: question.question,
               ...question.options === void 0 ? {} : { options: [...question.options] }
@@ -6992,7 +7095,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-OTEVB63N.js").then(async (main) => {
+    void import("./chunks/main-6VWWGS4V.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(

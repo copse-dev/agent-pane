@@ -1,7 +1,7 @@
 import {
   dompurifyBackend,
   init_sanitize_dompurify
-} from "./chunk-MENUC6MX.js";
+} from "./chunk-D55J6ZRP.js";
 import {
   arrowLeftIcon,
   arrowRightIcon,
@@ -64,7 +64,7 @@ import {
   unwrapIpcErrorText,
   upsertHost,
   warningIcon
-} from "./chunk-GE6ZNDQF.js";
+} from "./chunk-HZHR2CRE.js";
 import {
   clear,
   el,
@@ -21870,8 +21870,27 @@ function isCopseToolCall(call, tool) {
     (name) => typeof name === "string" && normalizeCopseToolName(name) === tool
   );
 }
+function stringArg(args, key) {
+  if (!isRecord(args)) return null;
+  const value = args[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+function isAcpDelegateToolCall(call) {
+  if (call.subagent) return false;
+  if (call.kind !== "think") return false;
+  return [call.name, call.programmaticName].some(
+    (name) => typeof name === "string" && /^(agent|task)$/i.test(name)
+  );
+}
+function acpDelegateKind(call) {
+  return stringArg(call.args, "subagent_type");
+}
+function acpDelegatePrompt(call) {
+  return call.title ?? stringArg(call.args, "prompt") ?? stringArg(call.args, "description") ?? "";
+}
 var init_copse_tool_call = __esm({
   "src/shared/tools/copse-tool-call.ts"() {
+    init_unknown_value3();
   }
 });
 
@@ -26088,16 +26107,16 @@ function getToolDisplayName(name, tense = "done") {
   if (stripped !== name) return humanizeIdentifier(stripped);
   return humanizeIdentifier(normalizeCopseToolName(name));
 }
-function stringArg(args, key) {
+function stringArg2(args, key) {
   if (!isRecord(args)) return null;
   const value = args[key];
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 function fileEditPath(args) {
-  return stringArg(args, "path");
+  return stringArg2(args, "path");
 }
 function getApplyPatchFiles(tc) {
-  const input2 = stringArg(tc.args, "input");
+  const input2 = stringArg2(tc.args, "input");
   return input2 === null ? [] : summarizePatch(input2);
 }
 function getToolEditPath(tc) {
@@ -26105,7 +26124,7 @@ function getToolEditPath(tc) {
   if (name === "apply_patch") return getApplyPatchFiles(tc)[0]?.path ?? null;
   const key = FILE_EDIT_PATH_ARG[name];
   if (!key) return null;
-  return stringArg(tc.args, key);
+  return stringArg2(tc.args, key);
 }
 function stripShellCdPrefix(command) {
   return command.replace(SHELL_CD_PREFIX_RE, "");
@@ -26135,7 +26154,7 @@ function getToolCallLabel(tc) {
   const name = copseToolCallName({ ...tc, name: mcpTitle ?? tc.name });
   const title = tc.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc.title) ? tc.title : void 0;
   if (name === "read_skill") {
-    const skillName = stringArg(tc.args, "name");
+    const skillName = stringArg2(tc.args, "name");
     if (skillName) {
       if (tc.status === "running") return `Loading skill ${skillName}`;
       if (tc.status === "error") return `Skill ${skillName}`;
@@ -26164,8 +26183,8 @@ function getToolCallLabel(tc) {
     if (path) return tense === "running" ? `Deleting ${path}` : `Deleted ${path}`;
   }
   if (name === "rename_file") {
-    const from = stringArg(tc.args, "from");
-    const to = stringArg(tc.args, "to");
+    const from = stringArg2(tc.args, "from");
+    const to = stringArg2(tc.args, "to");
     if (from && to) {
       return tense === "running" ? `Renaming ${from} \u2192 ${to}` : `Renamed ${from} \u2192 ${to}`;
     }
@@ -26177,7 +26196,7 @@ function getToolCallLabel(tc) {
     }
   }
   if (name === "task") {
-    const agentName = tc.subagent?.agentName ?? stringArg(tc.args, "subagent_type");
+    const agentName = tc.subagent?.agentName ?? stringArg2(tc.args, "subagent_type");
     if (agentName) {
       return tense === "running" ? `Running ${agentName}` : `Ran ${agentName}`;
     }
@@ -26188,6 +26207,10 @@ function getToolCallLabel(tc) {
     if (title) return shellCommandLabel(title);
   }
   if (title) return title;
+  if (isAcpDelegateToolCall(tc)) {
+    const agentKind = acpDelegateKind(tc);
+    return tense === "running" ? `Running ${agentKind ?? "agent"}` : `Ran ${agentKind ?? "agent"}`;
+  }
   return getToolDisplayName(tc.programmaticName ?? mcpTitle ?? tc.name, tense);
 }
 function getToolGroupKey(name, kind) {
@@ -26587,28 +26610,44 @@ function promptProgressLabel(fraction) {
   const percent = Math.round(Math.min(1, Math.max(0, fraction)) * 100);
   return `Processing prompt\u2026 ${percent.toString()}%`;
 }
-function runningToolName(thread) {
+function findRunningActivity(thread) {
   for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
     const m2 = thread.messages[i2];
     if (!m2) continue;
     const toolCalls = m2.toolCalls;
+    const runningDelegates = toolCalls.filter(
+      (tc) => tc.status === "running" && isAcpDelegateToolCall(tc)
+    );
+    if (runningDelegates.length > 0) {
+      const kinds = new Set(runningDelegates.map((tc) => acpDelegateKind(tc)));
+      const [soleKind] = kinds;
+      return {
+        kind: "delegates",
+        count: runningDelegates.length,
+        soleKind: kinds.size === 1 ? soleKind ?? null : null
+      };
+    }
     for (let j3 = toolCalls.length - 1; j3 >= 0; j3--) {
       const tc = toolCalls[j3];
       if (!tc) continue;
       if (tc.status === "running") {
-        return tc.name === "explore" ? "explore" : tc.name;
+        return { kind: "tool", name: tc.name === "explore" ? "explore" : tc.name };
       }
-      if (tc.subagent?.status === "running") return "explore";
+      if (tc.subagent?.status === "running") return { kind: "tool", name: "explore" };
     }
   }
   return null;
 }
+function delegateActivityLabel(count, soleKind) {
+  if (count === 1) return soleKind ? `Running ${soleKind}` : getToolDisplayName("task", "running");
+  return soleKind ? `Running ${String(count)} ${soleKind} agents` : `Running ${String(count)} agents`;
+}
 function agentActivityLabel(thread, writing) {
   if (!thread || thread.status !== "running") return null;
   const todoLabel = thread.todos?.length ? formatTodoProgress(thread.todos) : null;
-  const tool = runningToolName(thread);
-  if (tool) {
-    const base = `${getToolDisplayName(tool, "running")}\u2026`;
+  const activity = findRunningActivity(thread);
+  if (activity) {
+    const base = activity.kind === "delegates" ? `${delegateActivityLabel(activity.count, activity.soleKind)}\u2026` : `${getToolDisplayName(activity.name, "running")}\u2026`;
     return todoLabel ? `${base} (${todoLabel})` : base;
   }
   if (writing) return todoLabel ? `Writing\u2026 (${todoLabel})` : "Writing\u2026";
@@ -26625,6 +26664,7 @@ var init_agent_activity = __esm({
   "src/renderer/agent-activity.ts"() {
     init_thread_helpers();
     init_tool_display();
+    init_copse_tool_call();
     init_todo_logic();
     CONTEXT_TRIM_ACTIVITY = "Shortened earlier messages";
   }
@@ -28000,7 +28040,7 @@ async function addProject(store, api) {
   return true;
 }
 async function addRemoteProject(store, api) {
-  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-MINRPA3C.js");
+  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-BE5HGUWH.js");
   const picked = await openRemoteFolderDialog(api);
   if (!picked) return false;
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path);
@@ -62816,6 +62856,12 @@ function createPluginCatalogBrowser(options) {
     focusSearch: () => {
       search.focus();
     },
+    search: (query) => {
+      search.value = query;
+      visibleCount = PAGE_SIZE;
+      render();
+      search.focus();
+    },
     updateInstalled: (state) => {
       cursorNames = new Set(
         [...state.cursor, ...state.bundledCursor].map((name) => name.toLocaleLowerCase())
@@ -65443,7 +65489,7 @@ function installReviewSection(heading, body) {
   section.append(title, body);
   return section;
 }
-function createPacksSection(overlay, api, store, getActiveSection, onNavigate, onMcpChanged) {
+function createPacksSection(overlay, api, store, readSettings, getActiveSection, onNavigate, onMcpChanged) {
   function selectControl2(form, name) {
     const control = form.elements.namedItem(name);
     if (!(control instanceof HTMLSelectElement)) throw new Error(`Missing select ${name}`);
@@ -66100,6 +66146,7 @@ function createPacksSection(overlay, api, store, getActiveSection, onNavigate, o
     return hint;
   }
   let pluginEntries = null;
+  let offerPstackInstall = false;
   function renderPluginLists() {
     qsRequired(overlay, "#experimental-plugins-fieldset").hidden = getActiveSection() !== "experimental";
     if (!pluginEntries) return;
@@ -66112,6 +66159,22 @@ function createPacksSection(overlay, api, store, getActiveSection, onNavigate, o
         (entry) => (getActiveSection() === "experimental" && entry.experimental) === experimental
       );
       listEl.replaceChildren();
+      if (!experimental && offerPstackInstall) {
+        const notice = document.createElement("div");
+        notice.className = "field-hint bundled-plugin-migration";
+        const text = document.createElement("p");
+        text.textContent = "pstack is now an optional plugin. You previously enabled the bundled copy. Review an installation to keep using it.";
+        const browse = document.createElement("button");
+        browse.type = "button";
+        browse.className = "ui-btn ui-btn-secondary";
+        browse.textContent = "Find pstack";
+        browse.addEventListener("click", () => {
+          selectPluginView("browse");
+          pluginCatalogBrowser.search("pstack");
+        });
+        notice.append(text, browse);
+        listEl.append(notice);
+      }
       let lastEnabled = null;
       for (const entry of entries) {
         if (entry.enabled !== lastEnabled) {
@@ -66153,6 +66216,8 @@ function createPacksSection(overlay, api, store, getActiveSection, onNavigate, o
       ]);
       if (generation !== pluginRefreshGeneration || signal?.aborted) return;
       managedInstalls = new Map(installs.map((record2) => [record2.pluginId, record2]));
+      const bundledOverrides = readSettings()?.bundledSkillPluginOverrides;
+      offerPstackInstall = isRecord(bundledOverrides) && bundledOverrides["pstack"] === true && !result.plugins.some((plugin) => plugin.id === "pstack") && !cursorPlugins.some((plugin) => plugin.name === "pstack") && !installs.some((plugin) => plugin.pluginId === "pstack");
       pluginCatalogBrowser.updateInstalled({
         cursor: cursorPlugins.map((plugin) => plugin.name),
         bundledCursor: bundledPlugins.map((plugin) => plugin.name),
@@ -68159,6 +68224,7 @@ function mountSettingsDialog(store, api) {
     overlay,
     api,
     store,
+    () => snapshot,
     () => nav.active(),
     async (id) => {
       nav.reset(id);
@@ -71147,6 +71213,9 @@ export {
   findThreadProposalDecision,
   threadProposalFileSummary,
   isCopseToolCall,
+  isAcpDelegateToolCall,
+  acpDelegateKind,
+  acpDelegatePrompt,
   init_copse_tool_call,
   isThreadProposalCall,
   init_thread_proposal2 as init_thread_proposal,

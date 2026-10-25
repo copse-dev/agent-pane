@@ -6755,13 +6755,13 @@ var init_yaml = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
 function loadHighlightjs() {
   return Promise.resolve(highlightjsHighlighter);
 }
 var highlightjsHighlighter;
 var init_highlight_hljs = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
     init_core();
     init_bash();
     init_css();

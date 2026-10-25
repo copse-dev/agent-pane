@@ -2064,7 +2064,7 @@ var init_purify_es = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
 function installHook() {
   if (hookInstalled)
     return;
@@ -2090,7 +2090,7 @@ function sanitizeDiagramSvg(svg2) {
 }
 var hookInstalled, activeOnElement, dompurifyBackend;
 var init_sanitize_dompurify = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.7.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_164967bee76912f055f76923348f3445/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
     init_purify_es();
     hookInstalled = false;
     dompurifyBackend = {
