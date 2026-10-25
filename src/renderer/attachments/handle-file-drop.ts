@@ -4,7 +4,12 @@ import { isArchiveFile } from '@shared/archive/archive-media.ts'
 import type { PromptAttachmentHandlers } from './prompt-attachments.ts'
 import type { ActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
-import { imageMimeType, isRasterImagePath, isUnrenderableImageMime } from '@shared/fs/image-path.ts'
+import {
+  imageMimeType,
+  isRasterImagePath,
+  isUnrenderableImageMime,
+  isUnrenderableImagePath,
+} from '@shared/fs/image-path.ts'
 import { workspaceRelativePath } from '@shared/fs/workspace-path.ts'
 import { showToast } from '../views/toast.ts'
 
@@ -66,6 +71,12 @@ async function attachWorkspacePath(
     await handlers.attachArchive({ name, path })
     return
   }
+  // An image the composer cannot render would otherwise fall through to the
+  // text read below and inline its bytes.
+  if (isUnrenderableImagePath(name)) {
+    showToast(UNSUPPORTED_IMAGE_MESSAGE, { variant: 'error' })
+    return
+  }
   if (!owner) return
   try {
     const imageMime = isRasterImagePath(name) ? imageMimeType(name) : null
@@ -94,7 +105,7 @@ async function attachDroppedFile(
   owner: ActiveThreadOwner | null = null,
 ): Promise<void> {
   const imageMime = file.type.startsWith('image/') ? file.type : imageMimeType(file.name)
-  if (imageMime && isUnrenderableImageMime(imageMime)) {
+  if ((imageMime && isUnrenderableImageMime(imageMime)) || isUnrenderableImagePath(file.name)) {
     showToast(UNSUPPORTED_IMAGE_MESSAGE, { variant: 'error' })
     return
   }

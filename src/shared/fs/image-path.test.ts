@@ -5,6 +5,7 @@ import {
   isImagePath,
   isRasterImagePath,
   isUnrenderableImageMime,
+  isUnrenderableImagePath,
 } from './image-path.ts'
 
 describe('image-path', () => {
@@ -60,5 +61,12 @@ describe('image-path', () => {
     assert.equal(isUnrenderableImageMime('image/jpeg'), false)
     assert.equal(isUnrenderableImageMime('image/webp'), false)
     assert.equal(isUnrenderableImageMime('image/gif'), false)
+  })
+
+  it('flags the same formats by extension, for files with no MIME type', () => {
+    for (const path of ['IMG_0412.HEIC', 'photo.heif', 'scans/page.tif', 'C:\\scans\\page.TIFF'])
+      assert.equal(isUnrenderableImagePath(path), true, path)
+    for (const path of ['chart.png', 'photo.jpeg', 'heic', 'notes.heic.txt'])
+      assert.equal(isUnrenderableImagePath(path), false, path)
   })
 })
