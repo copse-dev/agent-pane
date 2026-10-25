@@ -80698,11 +80698,14 @@ var init_panels = __esm({
 });
 
 // src/shared/fs/image-path.ts
-function imageMimeType(path) {
+function extensionOf(path) {
   const name = path.split(/[\\/]/).pop()?.toLowerCase() ?? "";
   const dot = name.lastIndexOf(".");
-  if (dot < 0) return null;
-  return IMAGE_MIME_BY_EXT.get(name.slice(dot + 1)) ?? null;
+  return dot < 0 ? null : name.slice(dot + 1);
+}
+function imageMimeType(path) {
+  const ext = extensionOf(path);
+  return ext === null ? null : IMAGE_MIME_BY_EXT.get(ext) ?? null;
 }
 function isImagePath(path) {
   return imageMimeType(path) !== null;
@@ -80714,7 +80717,11 @@ function isRasterImagePath(path) {
 function isUnrenderableImageMime(mime) {
   return UNRENDERABLE_IMAGE_MIME.has(mime.toLowerCase());
 }
-var IMAGE_MIME_BY_EXT, UNRENDERABLE_IMAGE_MIME;
+function isUnrenderableImagePath(path) {
+  const ext = extensionOf(path);
+  return ext !== null && UNRENDERABLE_IMAGE_EXT.has(ext);
+}
+var IMAGE_MIME_BY_EXT, UNRENDERABLE_IMAGE_MIME, UNRENDERABLE_IMAGE_EXT;
 var init_image_path = __esm({
   "src/shared/fs/image-path.ts"() {
     IMAGE_MIME_BY_EXT = /* @__PURE__ */ new Map([
@@ -80735,6 +80742,7 @@ var init_image_path = __esm({
       "image/heif-sequence",
       "image/tiff"
     ]);
+    UNRENDERABLE_IMAGE_EXT = /* @__PURE__ */ new Set(["heic", "heif", "tif", "tiff"]);
   }
 });
 
@@ -121115,6 +121123,10 @@ async function attachWorkspacePath(path, handlers4, api2, workspaceRoot, owner) 
     await handlers4.attachArchive({ name, path });
     return;
   }
+  if (isUnrenderableImagePath(name)) {
+    showToast(UNSUPPORTED_IMAGE_MESSAGE, { variant: "error" });
+    return;
+  }
   if (!owner) return;
   try {
     const imageMime = isRasterImagePath(name) ? imageMimeType(name) : null;
@@ -121134,7 +121146,7 @@ async function attachWorkspacePath(path, handlers4, api2, workspaceRoot, owner) 
 }
 async function attachDroppedFile(file2, handlers4, api2, workspaceRoot, owner = null) {
   const imageMime = file2.type.startsWith("image/") ? file2.type : imageMimeType(file2.name);
-  if (imageMime && isUnrenderableImageMime(imageMime)) {
+  if (imageMime && isUnrenderableImageMime(imageMime) || isUnrenderableImagePath(file2.name)) {
     showToast(UNSUPPORTED_IMAGE_MESSAGE, { variant: "error" });
     return;
   }
