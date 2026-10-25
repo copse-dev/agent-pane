@@ -637,6 +637,9 @@ async function refreshThread() {
         : runId
           ? 'Running · Saved output refreshes automatically.'
           : 'Send a message to continue this chat.'
+    // Toggled every poll, independent of the message-signature gate below, so it
+    // reflects the live run even while the agent hasn't saved a new message yet.
+    document.getElementById('working').hidden = !runId
     const promptArrived = renderDecisions(data, row)
     // Approvals sit below the messages: scroll to a newly arrived prompt only
     // after messages settle, and not on every refresh of a visible one.
@@ -677,6 +680,7 @@ async function openThread(row, addHistory = true) {
   messageSignature = ''
   composer.hidden = true
   document.getElementById('stop').hidden = true
+  document.getElementById('working').hidden = true
   document.getElementById('attention').replaceChildren()
   messageInput.value = drafts.get(row.threadId) || ''
   show(thread)

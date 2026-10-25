@@ -20,6 +20,12 @@ import type { CanvasArtefact } from '@shared/types/canvas.ts'
 const previews = new Map<string, string>()
 
 /**
+ * Thread id -> count of thumbnail changes. Cards read their thumbnail once,
+ * when built, so the transcript compares this to know they need rebuilding.
+ */
+const previewRevisions = new Map<string, number>()
+
+/**
  * A small LRU of complete documents that have just crossed the live artefact
  * channel or were requested for an inline card. The canvas store remains the
  * source of truth; this cache closes the short race where the renderer receives
@@ -59,11 +65,19 @@ export function setArtefactPreview(
   title: string,
   preview: string | undefined,
 ): void {
-  if (preview) previews.set(previewKey(threadId, title), preview)
+  const key = previewKey(threadId, title)
+  if (!preview || previews.get(key) === preview) return
+  previews.set(key, preview)
+  previewRevisions.set(threadId, (previewRevisions.get(threadId) ?? 0) + 1)
 }
 
 export function getArtefactPreview(threadId: string, title: string): string | undefined {
   return previews.get(previewKey(threadId, title))
+}
+
+/** Changes whenever a thumbnail for `threadId` is added or replaced. */
+export function artefactPreviewRevision(threadId: string): number {
+  return previewRevisions.get(threadId) ?? 0
 }
 
 /** Remember a live artefact so its presentation reference can render immediately. */
@@ -158,6 +172,7 @@ export function requestArtefactShow(threadId: string, title: string): void {
 /** @internal test helper — drop previews and the handler. */
 export function resetArtefactPreviewsForTest(): void {
   previews.clear()
+  previewRevisions.clear()
   artefacts.clear()
   artefactReads.clear()
   showHandler = null

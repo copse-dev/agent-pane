@@ -41,6 +41,7 @@ import {
 import type { HookRunDetail } from '@shared/types/hooks.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import {
+  artefactPreviewRevision,
   artefactUriFromToolResult,
   getArtefactPreview,
   requestArtefactShow,
@@ -731,6 +732,86 @@ function assistantDisplayParts(content: string): {
   const stripped = stripInlineVisualizationReferences(stripTextToolCallBlocks(content))
   const { body, noise } = splitCursorAcpTransportNoise(stripped)
   return { body, transportNoise: noise }
+}
+
+/**
+ * The parts of the store a full transcript rebuild draws from. Everything else
+ * on the thread (title, branch, PR refs, read state) is either chrome synced
+ * without a rebuild or has its own event. Arrays are compared item by item
+ * because store updates replace them even when every entry is untouched.
+ *
+ * A card or recovery row that starts reading another thread field must add it
+ * here, or a change to that field will not reach the transcript.
+ */
+interface TranscriptInputs {
+  readonly threadId: string
+  readonly messages: readonly Message[]
+  readonly pendingMessages: readonly QueuedUserMessage[] | undefined
+  readonly status: Thread['status']
+  readonly model: Thread['model']
+  readonly todos: Thread['todos']
+  readonly workingBrief: Thread['workingBrief']
+  readonly interruptedTurnAt: Thread['interruptedTurnAt']
+  readonly threadProposals: Thread['threadProposals']
+  readonly reviewerInputAnswers: Thread['reviewerInputAnswers']
+  // A started proposal's card links to its thread only while that thread exists.
+  readonly liveProposalTargets: string
+  readonly needsHydration: boolean
+  // Tracked outside the Thread object (thread-hydration.ts), so it can flip
+  // without any thread field changing.
+  readonly hydrationFailed: boolean
+  // Canvas cards read their thumbnail when built, and thumbnails also live
+  // outside the Thread (artefact-previews.ts): thread hydration loads them
+  // after the transcript and repaints with a bare threads_changed.
+  readonly artefactPreviewRevision: number
+}
+
+function transcriptInputs(store: AppStore, thread: Thread): TranscriptInputs {
+  return {
+    threadId: thread.id,
+    messages: thread.messages,
+    pendingMessages: thread.pendingMessages,
+    status: thread.status,
+    model: thread.model,
+    todos: thread.todos,
+    workingBrief: thread.workingBrief,
+    interruptedTurnAt: thread.interruptedTurnAt,
+    threadProposals: thread.threadProposals,
+    reviewerInputAnswers: thread.reviewerInputAnswers,
+    liveProposalTargets: (thread.threadProposals ?? [])
+      .flatMap((decision) =>
+        decision.threadId && getThreadById(store, decision.threadId) ? [decision.threadId] : [],
+      )
+      .join('\n'),
+    needsHydration: needsHydration(thread),
+    hydrationFailed: hydrationFailed(thread.id),
+    artefactPreviewRevision: artefactPreviewRevision(thread.id),
+  }
+}
+
+function sameItems<T>(a: readonly T[] | undefined, b: readonly T[] | undefined): boolean {
+  if (a === b) return true
+  if (!a || !b || a.length !== b.length) return false
+  return a.every((item, i) => item === b[i])
+}
+
+function sameTranscriptInputs(a: TranscriptInputs, b: TranscriptInputs): boolean {
+  return (
+    a.threadId === b.threadId &&
+    a.status === b.status &&
+    a.model === b.model &&
+    a.todos === b.todos &&
+    a.workingBrief === b.workingBrief &&
+    a.interruptedTurnAt === b.interruptedTurnAt &&
+    a.liveProposalTargets === b.liveProposalTargets &&
+    a.needsHydration === b.needsHydration &&
+    a.hydrationFailed === b.hydrationFailed &&
+    a.artefactPreviewRevision === b.artefactPreviewRevision &&
+    sameItems(a.messages, b.messages) &&
+    sameItems(a.pendingMessages, b.pendingMessages) &&
+    sameItems(a.threadProposals, b.threadProposals) &&
+    sameItems(a.reviewerInputAnswers, b.reviewerInputAnswers)
+  )
 }
 
 function summaryPreview(text: string, max = 200): string {
@@ -3038,6 +3119,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   let lastProgrammaticScrollTop = -1
   let userScrolledUpAt = 0
   let renderedThreadId: string | null = null
+  // What the last full rebuild drew the transcript from (see TranscriptInputs).
+  let renderedInputs: TranscriptInputs | null = null
   let stickyImagePrompt: HTMLElement | null = null
   let stickyImageFullHeight = 0
   // Bumped on every rebuildForThread (and on unmount) so a backward-fill step
@@ -4748,7 +4831,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
     // Activity is transcript content, not composer chrome. Keep it beneath the
     // messages but above the trailing cards, which remain last.
-    list.insertBefore(activityBar, firstTrailingCard())
+    // Only move it when it is out of place: re-inserting a connected node
+    // detaches it first, which restarts the activity avatar's animation.
+    const trailingCard = firstTrailingCard()
+    if (activityBar.parentNode !== list || activityBar.nextSibling !== trailingCard) {
+      list.insertBefore(activityBar, trailingCard)
+    }
     updateScrollButton()
   }
 
@@ -4801,6 +4889,22 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   function rebuildForThread(): void {
     const thread = getActiveThread(store)
     const rebuildingSameThread = thread !== undefined && thread.id === renderedThreadId
+    // threads_changed carries no thread id and fires for any thread's rename,
+    // archive, read mark, branch or PR ref, sidebar reorder — including this
+    // thread's own metadata, which the transcript never draws. Tearing the
+    // list down for those replaces every message node: file-reference links
+    // drop back to plain code until their async resolve lands, hover actions
+    // restart their fade and the scroll position jostles. When nothing the
+    // transcript is drawn from moved, refresh the chrome and keep the nodes.
+    const inputs = thread ? transcriptInputs(store, thread) : null
+    if (rebuildingSameThread && inputs && renderedInputs) {
+      if (sameTranscriptInputs(inputs, renderedInputs)) {
+        finishThreadChrome(thread)
+        syncModelLabels()
+        syncUserActions()
+        return
+      }
+    }
     const preservedScrollTop = rebuildingSameThread && !pinnedToBottom ? list.scrollTop : null
     if (!rebuildingSameThread) {
       pinnedToBottom = true
@@ -4815,6 +4919,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     stickyImagePrompt = null
     backfillGeneration++
     renderedThreadId = thread?.id ?? null
+    renderedInputs = inputs
     if (!thread) {
       finishThreadChrome(null)
       return
