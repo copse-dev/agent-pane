@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
-import { runShellOnce } from './foreground-shell-process.ts'
+import { listForegroundShellProcesses, runShellOnce } from './foreground-shell-process.ts'
 import { setShellOutputSink } from './shell-output-context.ts'
 import {
   getBackgroundProcessLogs,
@@ -117,6 +117,23 @@ describe('foreground shell interruption', () => {
     const output = getBackgroundProcessLogs(result.backgroundId, OWNER) ?? ''
     assert.match(output, /src\/core\/parse.ts:88:13 - error TS2345: bad argument/)
     assert.match(output, /dropped \d+ bytes/)
+  })
+
+  it('lists a running command under its thread until it exits or moves to the background', async () => {
+    const finished = start(`echo ready $$; sleep 0.3`)
+    const pid = Number(/ready (\d+)/.exec(await finished.ready)?.[1])
+    assert.deepEqual(listForegroundShellProcesses(), [
+      { pid, command: 'echo ready $$; sleep 0.3', ...OWNER },
+    ])
+    await finished.result
+    assert.deepEqual(listForegroundShellProcesses(), [])
+
+    const detached = start()
+    await detached.ready
+    assert.equal(listForegroundShellProcesses().length, 1)
+    detached.controller.abort('send_now')
+    assert.ok((await detached.result).backgroundId)
+    assert.deepEqual(listForegroundShellProcesses(), [])
   })
 
   it('Stop cancels the foreground command instead of adopting it', async () => {
