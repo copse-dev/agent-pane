@@ -7,6 +7,7 @@ import {
   addMessageCanvasArtefact,
   appendAcpContentBlock,
   createThread,
+  setThreadTitle,
 } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
@@ -391,7 +392,12 @@ describe('assistant inline visualization references', () => {
     assert.ok(oldSurface)
     assert.equal(oldSurface.childElementCount, 0)
 
-    store.emit('threads_changed')
+    // A thread's own object reference must actually change for a rebuild to
+    // run at all (see the unrelated-threads_changed no-rerender test) —
+    // mutate the thread before resyncing, mirroring how this is really
+    // triggered rather than re-emitting on an already-rendered, untouched
+    // thread.
+    setThreadTitle(store, threadId, 'Chart saved')
     assert.equal(oldSurface.isConnected, false)
     drag(oldSurface)
     assert.equal(oldSurface.childElementCount, 0, 'the removed surface no longer handles input')

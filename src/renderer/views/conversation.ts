@@ -3135,6 +3135,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   let lastProgrammaticScrollTop = -1
   let userScrolledUpAt = 0
   let renderedThreadId: string | null = null
+  // The exact thread object last fully rendered. Thread updates are immutable
+  // (patchThreadAnywhere spreads a new object), so an unrelated threads_changed
+  // firing (another thread reordering the sidebar, say) leaves this thread's
+  // object reference untouched — a cheap, reliable "nothing to redraw" signal
+  // that saves the active thread a teardown/rebuild it had no part in.
+  let renderedThread: Thread | undefined
+  // hydrationFailed(threadId) alongside it: the one piece of this render that
+  // lives outside the Thread object (failedThreadIds in thread-hydration.ts),
+  // so the reference check above can't see it change on its own.
+  let renderedHydrationFailed = false
   let stickyImagePrompt: HTMLElement | null = null
   let stickyImageFullHeight = 0
   // Bumped on every rebuildForThread (and on unmount) so a backward-fill step
@@ -4898,6 +4908,21 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   function rebuildForThread(): void {
     const thread = getActiveThread(store)
     const rebuildingSameThread = thread !== undefined && thread.id === renderedThreadId
+    // threads_changed carries no thread id — it fires for any thread's status,
+    // rename, archive or sidebar-reorder. When it's this thread's own object
+    // reference still on screen *and* the one external flag this render also
+    // depends on (hydrationFailed — tracked outside the Thread object; see
+    // thread-hydration.ts) hasn't flipped either, nothing about it changed, so
+    // skip the teardown/rebuild: it would otherwise flash the reply's hover
+    // actions (fresh DOM nodes restart their opacity transition) and jostle
+    // the scroll position (the rebuild briefly renders only the newest render
+    // window) every time an unrelated thread does something in the background.
+    if (
+      rebuildingSameThread &&
+      thread === renderedThread &&
+      hydrationFailed(thread.id) === renderedHydrationFailed
+    )
+      return
     const preservedScrollTop = rebuildingSameThread && !pinnedToBottom ? list.scrollTop : null
     if (!rebuildingSameThread) {
       pinnedToBottom = true
@@ -4912,6 +4937,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     stickyImagePrompt = null
     backfillGeneration++
     renderedThreadId = thread?.id ?? null
+    renderedThread = thread
+    renderedHydrationFailed = thread !== undefined && hydrationFailed(thread.id)
     if (!thread) {
       finishThreadChrome(null)
       return
