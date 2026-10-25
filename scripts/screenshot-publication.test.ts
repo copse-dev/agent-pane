@@ -70,6 +70,7 @@ interface Parent {
   body: string | null
   labels: { name: string }[]
   head: { ref: string; sha: string; repo: { full_name: string } }
+  base: { ref: string }
 }
 
 function parent(
@@ -80,6 +81,7 @@ function parent(
     repo?: string
     ref?: string
     body?: string
+    base?: string
   } = {},
 ): Parent {
   return {
@@ -91,6 +93,7 @@ function parent(
       sha: overrides.sha ?? SHA,
       repo: { full_name: overrides.repo ?? 'copse-dev/agent-pane' },
     },
+    base: { ref: overrides.base ?? 'main' },
   }
 }
 
@@ -281,7 +284,7 @@ describe('screenshot publication', () => {
   })
 
   it('publishes a red run that rendered its screenshots like a green one', async () => {
-    // `screenshot-artifacts` needs only build and e2e; a lint or unit failure
+    // `screenshot-artifacts` needs only precheck, build and e2e; a lint or unit failure
     // must not leave the head without evidence.
     for (const conclusion of ['failure', 'timed_out']) {
       const outputs = await discover(parent(), undefined, SHA, assert.fail, [], {
@@ -1049,6 +1052,24 @@ describe('parent screenshot evidence comment', () => {
     assert.doesNotMatch(body, /review PR|screenshot PR/i)
   })
 
+  it('tells the nightly drift refresh PR to commit stable drift, not to avoid it', async () => {
+    const body = (await publish({}, parent({ ref: 'screenshot-refresh/main' }))).bodies[0] ?? ''
+    assert.match(body, /This is the nightly screenshot drift refresh/)
+    assert.match(body, /no ownership scoping/)
+    assert.match(body, /Commit only stable, intended screenshots/)
+    assert.doesNotMatch(
+      body,
+      /Do not refresh references merely to absorb unrelated rendering drift/,
+    )
+    assert.doesNotMatch(body, /add `update-screenshots`/)
+    assert.ok(body.includes(`git cherry-pick ${COMPARE_COMMIT}`))
+    // The same branch name into another base is an ordinary PR.
+    const stacked =
+      (await publish({}, parent({ ref: 'screenshot-refresh/main', base: 'release' }))).bodies[0] ??
+      ''
+    assert.match(stacked, /Do not refresh references merely to absorb unrelated rendering drift/)
+  })
+
   it('uses neutral retention wording when artifact expiry metadata is absent', async () => {
     const body = (await publish({ ARTIFACT_EXPIRES_AT: '' })).bodies[0] ?? ''
     assert.match(body, /Artifact expiry is governed by repository retention/)
@@ -1522,7 +1543,7 @@ describe('reporting a run that rendered no screenshots', () => {
     const job = ci.jobs['screenshot-artifacts']
     assert.ok(job)
     assert.equal(job.name, undefined)
-    assert.deepEqual(job.needs, ['build', 'e2e'])
+    assert.deepEqual(job.needs, ['precheck', 'build', 'e2e'])
     assert.match(
       readFileSync('.github/workflows/ci.yml', 'utf8'),
       /name: reference-screenshot-candidates-\$\{\{ github\.run_id \}\}/,

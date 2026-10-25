@@ -299,4 +299,33 @@ describe('compactAtTodoBoundary', () => {
 
     assert.equal(compactAtTodoBoundary(messages, todos, { keepRecentPairs: 1 }), true)
   })
+
+  it('keeps the newest keepRecentPairs assistant turns, however many user messages there are', () => {
+    const todos: TodoItem[] = [{ id: '1', content: 'Next step', status: 'in_progress' }]
+    const pair = (id: string): LLMMessage[] => [
+      { role: 'assistant', content: [{ id, name: 'run_shell', args: { command: id } }] },
+      { role: 'tool', toolResults: [{ toolCallId: id, result: `${id} ok` }] },
+    ]
+    const messages: LLMMessage[] = [
+      { role: 'system', content: 'You are helpful.' },
+      { role: 'user', content: 'Do the refactor' },
+      ...pair('tc1'),
+      { role: 'user', content: 'continue' },
+      ...pair('tc2'),
+      { role: 'user', content: 'keep going' },
+      ...pair('tc3'),
+      ...pair('tc4'),
+      // The in-flight update_todos call, whose result is not in history yet.
+      { role: 'assistant', content: [{ id: 'tc5', name: 'update_todos', args: {} }] },
+    ]
+
+    assert.equal(compactAtTodoBoundary(messages, todos, { keepRecentPairs: 2 }), true)
+
+    const callIds = messages.flatMap((m) =>
+      m.role === 'assistant' && Array.isArray(m.content) ? m.content.map((c) => c.id) : [],
+    )
+    assert.deepEqual(callIds, ['tc3', 'tc4', 'tc5'])
+    assert.equal(messages.filter((m) => m.role === 'user').length, 3)
+    assert.equal(messages.filter((m) => m.role === 'tool').length, 2)
+  })
 })

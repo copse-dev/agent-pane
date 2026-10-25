@@ -66,7 +66,7 @@ const jobsSchema = z.object({
 
 /**
  * Whether a run's candidate job passed. The publisher also publishes a red run
- * whose `screenshot-artifacts` job passed: it needs only build and e2e, so the
+ * whose `screenshot-artifacts` job passed: it needs only precheck, build and e2e, so the
  * screenshots rendered even if lint or a unit test failed.
  */
 function renderedScreenshots(jobs: string): boolean {

@@ -4,7 +4,9 @@ name: Publish screenshot candidates
 # uploads verified immutable R2 objects, and publishes a view-only compare branch
 # with manifest hashes and corresponding README image URL updates. The parent
 # comment displays R2 before/after previews. Accepting commits metadata, while
-# the compare branch is never merged. No path opens a PR or mints an App token.
+# the compare branch is never merged. No path opens a PR or mints an App token;
+# the one screenshot PR, screenshot-refresh.yml's nightly drift refresh, is
+# opened there and published here like any other.
 #
 # Review is blocking. Every eligible head gets a `Screenshot review` commit
 # status, which the default-branch ruleset requires: pending while candidates
@@ -17,7 +19,7 @@ name: Publish screenshot candidates
 # head while this head renders.
 #
 # A red run still publishes what it rendered: `screenshot-artifacts` needs only
-# build and e2e, so a failure elsewhere (lint, a unit test) must not leave the
+# precheck, build and e2e, so a failure elsewhere (lint, a unit test) must not leave the
 # PR without evidence for its head. A red run that rendered nothing says so in
 # the comment and writes no status. Stacked PRs keep publishing only from green
 # runs, because stack coverage is attested from one.
@@ -137,7 +139,7 @@ jobs:
             }
 
             // A red run can still have rendered this head: `screenshot-artifacts`
-            // needs only build and e2e. Publish that rather than leave the PR on
+            // needs only precheck, build and e2e. Publish that rather than leave the PR on
             // a notice; when nothing rendered, the report step says so instead.
             // Stacked PRs publish only from a green run, which attests coverage.
             if (!green) {
@@ -842,11 +844,22 @@ jobs:
               (comment) => comment.user?.type === 'Bot' && comment.body?.includes(marker),
             );
             const labelled = parent.labels.some((label) => label.name === 'update-screenshots');
-            const refreshGuidance = labelled
-              ? 'This run rendered every reference because `update-screenshots` is set. ' +
-                'Remove the label now to avoid repeating full runs.'
-              : 'To re-render every reference into the compare branch, add `update-screenshots`, ' +
-                'then remove it after that run to avoid repeating full runs.';
+            // The nightly drift refresh PR (screenshot-refresh.yml) exists to
+            // review main's accumulated drift, so the usual advice inverts.
+            const driftRefresh =
+              parent.head.ref === 'screenshot-refresh/main' && parent.base?.ref === 'main';
+            const refreshGuidance = driftRefresh
+              ? 'This is the nightly screenshot drift refresh: CI rendered every reference against `main`, ' +
+                'with the noise and flap filters but no ownership scoping. The next nightly refresh moves ' +
+                'this branch to the latest `main` and starts a new review.'
+              : labelled
+                ? 'This run rendered every reference because `update-screenshots` is set. ' +
+                  'Remove the label now to avoid repeating full runs.'
+                : 'To re-render every reference into the compare branch, add `update-screenshots`, ' +
+                  'then remove it after that run to avoid repeating full runs.';
+            const driftGuidance = driftRefresh
+              ? 'Commit only stable, intended screenshots: leave unstable captures for a fix that makes them deterministic.'
+              : 'Do not refresh references merely to absorb unrelated rendering drift.';
             const commit = process.env.COMPARE_COMMIT || '';
             const acceptable = compareUrl !== '' && /^[0-9a-f]{40}$/.test(commit);
             // The blocking gate's state for this head, from the gate step.
@@ -962,7 +975,7 @@ jobs:
                 `${expiry} its presence does not mean the visual changes have been accepted.`,
                 '',
                 refreshGuidance,
-                'Do not refresh references merely to absorb unrelated rendering drift.',
+                driftGuidance,
               ].join('\n');
             } else {
               if (!previous) return;
