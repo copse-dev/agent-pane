@@ -46,7 +46,8 @@ The standard scripts live in `package.json`; use `dev`, `build`, `start`, `typec
 `format:check`, `test`, `test:e2e`, and `check` rather than recreating their behavior. Reach for
 `dev` over `make run` when you want watch mode rather than a single build.
 
-The repo pins the Node 24 LTS release in `.nvmrc` and requires Node `>=24` plus
+The repo pins the Node 24 LTS release in `.nvmrc` and requires a Node release with the
+CVE-2026-111497 fix (24.22.1+ on the 24 line, 26.12.1+ on the 26 line, or a newer major) plus
 pnpm (`packageManager`: `pnpm@10.34.5`; enable with `corepack enable`). Both nvm
 and fnm read `.nvmrc`. Tooling under `scripts/*.mts` uses native TypeScript type
 stripping.
@@ -293,6 +294,12 @@ lists blind spots and `broad` calls for the full tier. Every commit runs at leas
 full-check surfaces are defined in
 [`testing-strategy.md`](testing-strategy.md#choose-the-local-gate-by-risk).
 
+The full `npm run check` routinely runs past a silent `run_shell`'s timeout once `tsc` or the unit
+suite is mid-run (same timeout as [launching Copse](#launching-copse-from-a-copse-agent-session)) —
+run it through `run_background` with `wake_on_completion`, not a foreground call, and read its
+result against [`host-environment-test-noise.md`](host-environment-test-noise.md) before treating
+every non-zero exit as a regression.
+
 ### Remote validation
 
 Prefer the ordinary remote e2e loop when a cloud host is configured:
@@ -386,14 +393,50 @@ applies every candidate, and `git checkout <compare-commit> -- tests/e2e/screens
 after the fetch takes only some. When the whole reference set should be re-rendered, add
 `update-screenshots`: CI runs the complete e2e reference set and the publisher pushes all of it to
 the compare branch, previewing up to 20 in the comment, touched screenshots first. Remove the label after that run to avoid
-repeating the full refresh. Committed references are CI's Linux renders. A dedicated
-re-baseline PR with this label is the one place to accept accumulated drift: review every
-candidate for regressions before committing it, and never overwrite references with local macOS
-renders. Nothing opens a PR for screenshots. Do not accept unrelated drift just
-because CI captured it. Forks and promotion PRs whose source is an integration branch get no compare
+repeating the full refresh. Committed references are CI's Linux renders. Accumulated drift is
+accepted only on the nightly drift refresh PR (below) or a dedicated re-baseline PR with this
+label: review every candidate for regressions before committing it, and never overwrite references
+with local macOS renders. Do not accept unrelated drift on a feature PR just because CI captured
+it. Forks and promotion PRs whose source is an integration branch get no compare
 branch; download the artifact and commit the reviewed PNGs manually. Local filtering is implemented
 by `scripts/lib/screenshot-scope.mts`; fixture determinism and tier selection are documented in
 [`testing-strategy.md`](testing-strategy.md).
+
+### Nightly screenshot drift refresh
+
+One bot PR exists for screenshots, and only this one: the draft **Review accumulated screenshot
+drift on main** PR from `screenshot-refresh/main`. It replaces the hand-made re-baseline PR (#3875).
+Without it, every PR whose oracle selection is broad (it touches `tests/demo/`,
+`src/shared/demo-scenarios.ts`, the lockfile, ...) re-renders everything and shows all of `main`'s
+drift as unrelated candidates, and maintainers decline the same set on PR after PR. The refresh PR
+carries that set instead, so it is reviewed once. No CI run or publisher opens a PR, and nothing
+anywhere accepts or merges screenshots.
+
+- **How it renders.** `.github/workflows/screenshot-refresh.yml` runs nightly (and on dispatch from
+  `main`). Its branch is one empty commit on `main`. CI keys on that head branch on a same-repository
+  PR into `main`: build and e2e run although the PR is a draft, the plan is `full` although the diff
+  is empty, and `screenshot-artifacts` sets `SCREENSHOT_SCOPE=off`, because an empty diff owns no
+  screenshot. The noise and flap filters stay on, so known render noise and oscillating shots are
+  not offered. (`update-screenshots` turns every filter off: #3875 got 668 candidates, of which 183
+  were substantive.) The branch name, not a label, marks the PR: it is present on the first `opened`
+  run, and a label could be added to a feature PR and turn off its ownership scoping.
+- **Why a bot PR.** The branch push and the PR use the release App token, because a `GITHUB_TOKEN`
+  push or PR starts no workflow and the refresh is useless without its CI render. The token is
+  minted in a job that checks out nothing.
+- **How it is reviewed.** The publisher posts the usual evidence comment. Review it with
+  [`pr-screenshot-review`](../.agents/skills/pr-screenshot-review/SKILL.md) and the triage steps
+  below, tick the stable, intended shots and then **Commit the ticked screenshots** (or use the
+  labels), then mark the PR ready and merge it. The screenshot-only commit skips e2e. Close the PR if
+  nothing is committed. Known unstable captures recur every night until their capture is made
+  deterministic; leave them unticked rather than raising filter thresholds.
+- **When it moves.** At most one refresh PR is open. Each night `scripts/screenshot-refresh.mts`
+  moves the branch to a new empty commit on the latest `main` under the open PR (a new head starts
+  a new review), or opens a new draft when none is open. It skips the night when the `main` commit
+  the newest refresh PR rendered is current, or when nothing since it reaches a render: no committed
+  hash changed and the test oracle plans `skip`, the same answer that runs no e2e on a PR. It never
+  moves the branch while the open PR carries anything but its own empty commit, so committed
+  screenshots are never discarded: merge or close the PR first. If its CI failed, re-run it, or
+  dispatch the workflow with `force`.
 
 ### Triage a recurring candidate before re-baselining
 

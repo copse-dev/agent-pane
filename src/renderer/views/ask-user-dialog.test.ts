@@ -20,6 +20,7 @@ import { createFakeApi } from '../fake-api.test-support.ts'
 interface AskUserRequest {
   id: string
   threadId?: string
+  presentation?: import('@shared/types/ask-user.ts').AskUserActionsPresentation
   questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
 }
 
@@ -63,6 +64,7 @@ function stubApi(): { api: ApiClient; harness: Harness } {
       listener({
         id: req.id,
         questions: req.questions,
+        ...(req.presentation === undefined ? {} : { presentation: req.presentation }),
         ...(req.threadId === undefined ? {} : { threadId: req.threadId }),
       })
     },
@@ -262,6 +264,34 @@ describe('ask_user dialog (component)', () => {
     submitForm()
 
     assert.deepEqual(harness.responses, [{ id: 'q1', answers: ['Postgres'] }])
+    assert.equal(dialog().open, false)
+  })
+
+  it('runs a host-authored sign-in choice with one click and no answer field', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({
+      id: 'reauth',
+      presentation: { kind: 'actions', title: 'Sign in to Claude' },
+      questions: [
+        {
+          question: 'Claude is not signed in. Open a terminal and run `claude auth login`?',
+          options: ['Sign in', 'Not now'],
+        },
+      ],
+    })
+
+    assert.equal(document.querySelector('.ask-user-title')?.textContent, 'Sign in to Claude')
+    assert.equal(inputs().length, 0)
+    assert.equal(document.querySelector('.ask-user-submit'), null)
+    assert.equal(document.querySelector('.ask-user-cancel'), null)
+    const run = document.querySelector<HTMLButtonElement>('.ask-user-action')
+    assert.ok(run)
+    assert.equal(run.textContent, 'Sign in')
+    // The dialog can open mid-typing: a stray Enter or Space declines.
+    assert.equal(document.activeElement?.textContent, 'Not now')
+    run.click()
+    assert.deepEqual(harness.responses, [{ id: 'reauth', answers: ['Sign in'] }])
     assert.equal(dialog().open, false)
   })
 
