@@ -69,6 +69,14 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
     entry: 'src/main/services/plugins/plugin-tool-worker.ts',
     outfile: 'dist/main/plugin-tool-worker.js',
   },
+  // The package firewall wrapper every package install runs behind
+  // (docs/plans/package-firewall.md). Worktree preparation execs it inside its
+  // sandbox, so it gets the same package.json manifest as the sandbox-fs worker.
+  {
+    entry: 'src/main/services/security/package-firewall/firewall-cli.ts',
+    outfile: 'dist/main/package-firewall.js',
+    manifest: { type: 'commonjs' },
+  },
   // Runs the ACP model/mode probe under its OWN SandboxManager so a background
   // probe cannot widen the app's process-global network allowlist (see
   // docs/plans/sandbox-network-scope-isolation.md). Must bundle free of electron
