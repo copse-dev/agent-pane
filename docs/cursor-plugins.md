@@ -100,9 +100,10 @@ one:
    Each bundled plugin has its own switch in Settings → Customise → Plugins,
    saved per plugin in `bundledSkillPluginOverrides`; the Agent → Skills
    checkbox (`bundledCursorSkillsEnabled`) still turns all of them off at once.
-   Most default on. `pstack` defaults off: its workflows call Cursor's `Task`
-   subagents and model slugs, and its autonomy guidance conflicts with Copse's
-   approval model (`OFF_BY_DEFAULT` in `bundled-cursor-skills.ts`).
+   Bundled plugins default on. `pstack` is an optional marketplace installation,
+   independent of the bundled switches. Profiles that enabled its former bundled
+   copy receive an offer to review installation in Settings; nothing is installed
+   automatically. Explicit bundle selection prevents a later sync from reintroducing it.
    `pnpm sync:cursor-skills` vendors each skill's `SKILL.md` plus the files
    under its directory that its text names (followed transitively), except
    files inside a JS/TS project within the skill. `SOURCE.json` lists every
