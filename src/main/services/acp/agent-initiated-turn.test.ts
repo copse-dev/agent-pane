@@ -189,4 +189,13 @@ describe('agent-initiated turn lease', () => {
     assert.deepEqual(t.claimCalls, [false])
     t.lease.end()
   })
+
+  it('reports whether a self-started turn is in progress', () => {
+    const t = setup({ claims: [granted([])] })
+    assert.equal(t.lease.isActive(), false)
+    t.lease.begin()
+    assert.equal(t.lease.isActive(), true)
+    t.lease.end()
+    assert.equal(t.lease.isActive(), false)
+  })
 })
