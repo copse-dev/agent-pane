@@ -1,8 +1,13 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { detectPackageInstall, posixQuote, wrapWithSocketFirewall } from './safe-install.ts'
+import { detectPackageInstall, posixQuote, wrapWithPackageFirewall } from './safe-install.ts'
 
 const SH = { path: '/bin/sh', cArg: '-c' }
+const LAUNCHER = {
+  execPath: '/Apps/Copse.app/Contents/MacOS/Copse',
+  scriptPath: '/Apps/dist/package-firewall.js',
+}
+const LAUNCH = `ELECTRON_RUN_AS_NODE=1 '${LAUNCHER.execPath}' '${LAUNCHER.scriptPath}'`
 
 describe('detectPackageInstall', () => {
   it('detects npm/pnpm/yarn installs as JS managers', () => {
@@ -72,11 +77,7 @@ describe('detectPackageInstall', () => {
     assert.equal(detectPackageInstall('sudo npm install -g typescript').jsManager, true)
   })
 
-  it('does not re-detect an already sfw-wrapped command', () => {
-    assert.equal(detectPackageInstall('sfw npm install').isInstall, false)
-  })
-
-  // --- #581: obfuscation must not dodge the sfw wrap / ignore_scripts ----------
+  // --- #581: obfuscation must not dodge the firewall wrap / ignore_scripts -----
 
   it('sees through quote-splitting obfuscation of the manager token', () => {
     for (const cmd of ['n""pm install', `n''pm install`, 'p""npm add react', 'y\\arn add react']) {
@@ -105,26 +106,39 @@ describe('posixQuote', () => {
   })
 })
 
-describe('wrapWithSocketFirewall', () => {
-  it('wraps the whole command through sfw + a shell', () => {
+describe('wrapWithPackageFirewall', () => {
+  it('runs the whole command through the firewall launcher + a shell', () => {
     assert.equal(
-      wrapWithSocketFirewall('npm install lodash', SH),
-      `sfw /bin/sh -c 'npm install lodash'`,
+      wrapWithPackageFirewall('npm install lodash', SH, LAUNCHER),
+      `${LAUNCH} /bin/sh -c 'npm install lodash'`,
     )
   })
 
   it('keeps compound commands intact inside the quoted shell string', () => {
     assert.equal(
-      wrapWithSocketFirewall('npm install && npm test', SH),
-      `sfw /bin/sh -c 'npm install && npm test'`,
+      wrapWithPackageFirewall('npm install && npm test', SH, LAUNCHER),
+      `${LAUNCH} /bin/sh -c 'npm install && npm test'`,
     )
   })
 
-  it('supports a custom quoter for other shells', () => {
+  it('quotes launcher paths that contain spaces', () => {
+    const spaced = { execPath: '/Apps/My Copse.app/Copse', scriptPath: '/Apps/My Copse.app/fw.js' }
+    assert.equal(
+      wrapWithPackageFirewall('pip install six', SH, spaced),
+      `ELECTRON_RUN_AS_NODE=1 '/Apps/My Copse.app/Copse' '/Apps/My Copse.app/fw.js' /bin/sh -c 'pip install six'`,
+    )
+  })
+
+  it('sets the run-as-Node switch with cmd syntax on Windows', () => {
     const winQuote = (v: string): string => `"${v.replace(/"/g, '""')}"`
     assert.equal(
-      wrapWithSocketFirewall('npm install', { path: 'cmd', cArg: '/c' }, winQuote),
-      `sfw cmd /c "npm install"`,
+      wrapWithPackageFirewall(
+        'npm install',
+        { path: 'cmd', cArg: '/c' },
+        { execPath: 'C:\\Copse\\Copse.exe', scriptPath: 'C:\\Copse\\fw.js' },
+        winQuote,
+      ),
+      `set "ELECTRON_RUN_AS_NODE=1" && "C:\\Copse\\Copse.exe" "C:\\Copse\\fw.js" cmd /c "npm install"`,
     )
   })
 })

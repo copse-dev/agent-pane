@@ -69,10 +69,18 @@ interface Parent {
   state: string
   labels: { name: string }[]
   head: { ref: string; sha: string; repo: { full_name: string } }
+  base: { ref: string }
 }
 
 function parent(
-  overrides: { labels?: string[]; sha?: string; state?: string; repo?: string; ref?: string } = {},
+  overrides: {
+    labels?: string[]
+    sha?: string
+    state?: string
+    repo?: string
+    ref?: string
+    base?: string
+  } = {},
 ): Parent {
   return {
     state: overrides.state ?? 'open',
@@ -82,6 +90,7 @@ function parent(
       sha: overrides.sha ?? SHA,
       repo: { full_name: overrides.repo ?? 'copse-dev/agent-pane' },
     },
+    base: { ref: overrides.base ?? 'main' },
   }
 }
 
@@ -948,6 +957,24 @@ describe('parent screenshot evidence comment', () => {
     assert.match(body, /Remove the label now to avoid repeating full runs/)
     assert.ok(body.includes(`git cherry-pick ${COMPARE_COMMIT}`))
     assert.doesNotMatch(body, /review PR|screenshot PR/i)
+  })
+
+  it('tells the nightly drift refresh PR to commit stable drift, not to avoid it', async () => {
+    const body = (await publish({}, parent({ ref: 'screenshot-refresh/main' }))).bodies[0] ?? ''
+    assert.match(body, /This is the nightly screenshot drift refresh/)
+    assert.match(body, /no ownership scoping/)
+    assert.match(body, /Commit only stable, intended screenshots/)
+    assert.doesNotMatch(
+      body,
+      /Do not refresh references merely to absorb unrelated rendering drift/,
+    )
+    assert.doesNotMatch(body, /add `update-screenshots`/)
+    assert.ok(body.includes(`git cherry-pick ${COMPARE_COMMIT}`))
+    // The same branch name into another base is an ordinary PR.
+    const stacked =
+      (await publish({}, parent({ ref: 'screenshot-refresh/main', base: 'release' }))).bodies[0] ??
+      ''
+    assert.match(stacked, /Do not refresh references merely to absorb unrelated rendering drift/)
   })
 
   it('uses neutral retention wording when artifact expiry metadata is absent', async () => {
