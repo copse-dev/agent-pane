@@ -71,8 +71,9 @@ export async function offerAcpReauth(offer: AcpReauthOffer): Promise<string | nu
   if (!launch) return null
   const display = target ? `${command} (on ${target.hostId})` : command
 
-  const accept = `Run \`${display}\``
+  const accept = 'Sign in'
   const { answers } = await requestUserAnswers({
+    presentation: { kind: 'actions', title: `Sign in to ${known?.title ?? offer.agentId}` },
     questions: [
       {
         question: offerQuestion(known?.title ?? offer.agentId, offer.kind, command, target?.hostId),

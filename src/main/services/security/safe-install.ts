@@ -1,14 +1,15 @@
 /**
- * Safe-install detection + Socket Firewall wrapping for the `run_shell` tool.
+ * Safe-install detection + package firewall wrapping for the `run_shell` tool.
  *
  * The agent can emit package-manager commands (npm/pnpm/yarn/pip/uv/cargo/npx).
  * Run raw, these fetch and execute arbitrary third-party code with the user's
  * privileges — the npm-style supply-chain risk. When we detect an install, the
- * whole command is run once through Socket Firewall (`sfw`), which proxies the
- * package manager and blocks confirmed-malicious packages (and malicious
- * transitive deps). Rather than rewriting the command, we wrap the shell:
+ * whole command is run once behind the package firewall
+ * (`package-firewall/`), which proxies the package manager and blocks packages
+ * public advisories list as malicious (and malicious transitive deps). Rather
+ * than rewriting the command, we wrap the shell:
  *
- *     sfw /bin/sh -c '<original command>'
+ *     ELECTRON_RUN_AS_NODE=1 <app> <package-firewall.js> /bin/sh -c '<original command>'
  *
  * so any package manager the command invokes inherits the firewall proxy — no
  * brittle per-command string surgery, and aliases / `$()` inside the command
@@ -20,6 +21,7 @@
  * Command substitution / unusual quoting can evade detection.
  */
 
+import type { PackageFirewallLauncher } from './package-firewall-launcher.ts'
 import { normalizeShellCommandForAnalysis } from './shell-scope.ts'
 
 // Split on top-level shell operators so each segment can be classified on its own.
@@ -91,7 +93,6 @@ function classifySegment(rawSegment: string): SegmentSpec | null {
   const body = rawSegment.replace(PREFIX_RE, '')
   const tokens = body.trim().split(/\s+/).filter(Boolean)
   if (tokens.length === 0) return null
-  if (tokens[0] === 'sfw') return null // already wrapped
   return classify(tokens)
 }
 
@@ -137,13 +138,27 @@ export interface ShellInvocation {
 }
 
 /**
- * Wrap a command so it runs through Socket Firewall: `sfw <shell> <cArg> <quoted command>`.
- * The package manager invoked inside the command inherits the firewall proxy.
+ * Wrap a command so it runs behind the package firewall:
+ * `ELECTRON_RUN_AS_NODE=1 <app> <package-firewall.js> <shell> <cArg> <quoted command>`.
+ * Every package manager the command invokes inherits the firewall's proxy. The
+ * run-as-Node switch is part of the command line rather than the spawn
+ * environment, so only the launcher sees it; the firewall drops it again for
+ * the command it runs.
  */
-export function wrapWithSocketFirewall(
+export function wrapWithPackageFirewall(
   command: string,
   shell: ShellInvocation,
+  launcher: PackageFirewallLauncher,
   quote: (value: string) => string = posixQuote,
 ): string {
-  return `sfw ${shell.path} ${shell.cArg} ${quote(command)}`
+  const launch = [
+    quote(launcher.execPath),
+    quote(launcher.scriptPath),
+    shell.path,
+    shell.cArg,
+    quote(command),
+  ].join(' ')
+  return shell.path === 'cmd'
+    ? `set "ELECTRON_RUN_AS_NODE=1" && ${launch}`
+    : `ELECTRON_RUN_AS_NODE=1 ${launch}`
 }

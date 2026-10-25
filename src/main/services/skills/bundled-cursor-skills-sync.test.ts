@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
@@ -37,35 +37,44 @@ describe('bundled-cursor-skills-sync', () => {
       if (url.endsWith('/marketplace.json')) {
         return new Response(
           JSON.stringify({
-            plugins: [{ name: 'demo-plugin', source: 'demo-plugin' }],
+            plugins: [
+              { name: 'cursor-team-kit', source: 'cursor-team-kit' },
+              { name: 'pstack', source: 'pstack' },
+            ],
           }),
           { status: 200 },
         )
       }
       if (url.includes('/git/trees/')) {
         const skillPaths = ['SKILL.md', ...Object.keys(SKILL_FILES)].map((path) => ({
-          path: `demo-plugin/skills/demo-skill/${path}`,
+          path: `cursor-team-kit/skills/demo-skill/${path}`,
           type: 'blob',
         }))
-        return new Response(JSON.stringify({ truncated: false, tree: skillPaths }), {
-          status: 200,
-        })
+        return new Response(
+          JSON.stringify({
+            truncated: false,
+            tree: [...skillPaths, { path: 'pstack/skills/poteto-mode/SKILL.md', type: 'blob' }],
+          }),
+          {
+            status: 200,
+          },
+        )
       }
-      const skillFilePrefix = '/demo-plugin/skills/demo-skill/'
+      const skillFilePrefix = '/cursor-team-kit/skills/demo-skill/'
       const skillFile = url.slice(url.indexOf(skillFilePrefix) + skillFilePrefix.length)
       if (url.includes(skillFilePrefix) && Object.hasOwn(SKILL_FILES, skillFile)) {
         return new Response(SKILL_FILES[skillFile], { status: 200 })
       }
-      if (url.endsWith('/demo-plugin/.cursor-plugin/plugin.json')) {
+      if (url.endsWith('/cursor-team-kit/.cursor-plugin/plugin.json')) {
         return new Response(
-          JSON.stringify({ name: 'demo-plugin', license: 'MIT', skills: 'skills' }),
+          JSON.stringify({ name: 'cursor-team-kit', license: 'MIT', skills: 'skills' }),
           { status: 200 },
         )
       }
-      if (url.endsWith('/demo-plugin/skills/demo-skill/SKILL.md')) {
+      if (url.endsWith('/cursor-team-kit/skills/demo-skill/SKILL.md')) {
         return new Response(SKILL_BODY, { status: 200 })
       }
-      if (url.endsWith('/demo-plugin/LICENSE')) {
+      if (url.endsWith('/cursor-team-kit/LICENSE')) {
         return new Response('MIT License\n\nCopyright Cursor', { status: 200 })
       }
       return new Response('not found', { status: 404 })
@@ -81,16 +90,17 @@ describe('bundled-cursor-skills-sync', () => {
   it('writes a licensed, content-addressed snapshot', async () => {
     const source = await syncBundledCursorSkills(cacheDir)
     assert.equal(source.skillCount, 1)
+    assert.ok(fetchMock.mock.calls.every((call) => !String(call.arguments[0]).includes('/pstack/')))
     assert.equal(source.skillFiles, 'referenced')
     assert.equal(source.commit, BUNDLED_CURSOR_PLUGINS_COMMIT)
 
     const skillBody = await readFile(
-      join(cacheDir, 'plugins', 'demo-plugin', 'skills', 'demo-skill', 'SKILL.md'),
+      join(cacheDir, 'plugins', 'cursor-team-kit', 'skills', 'demo-skill', 'SKILL.md'),
       'utf8',
     )
     assert.match(skillBody, /# Demo/)
     assert.match(
-      await readFile(join(cacheDir, 'plugins', 'demo-plugin', 'LICENSE'), 'utf8'),
+      await readFile(join(cacheDir, 'plugins', 'cursor-team-kit', 'LICENSE'), 'utf8'),
       /MIT License/,
     )
 
@@ -105,7 +115,7 @@ describe('bundled-cursor-skills-sync', () => {
 
   it('vendors the files a skill names, transitively, and records what stays missing', async () => {
     const source = await syncBundledCursorSkills(cacheDir)
-    const skillDir = join(cacheDir, 'plugins', 'demo-plugin', 'skills', 'demo-skill')
+    const skillDir = join(cacheDir, 'plugins', 'cursor-team-kit', 'skills', 'demo-skill')
     const exists = async (path: string): Promise<boolean> =>
       access(join(skillDir, path)).then(
         () => true,
@@ -118,7 +128,7 @@ describe('bundled-cursor-skills-sync', () => {
     assert.equal(await exists('references/unreferenced.md'), false, 'never named')
     assert.equal(await exists('scripts/cli.ts'), false, 'one file of a script project')
     assert.deepEqual(source.danglingReferences, {
-      'demo-plugin/demo-skill': ['playbooks/absent.md', 'scripts/cli.ts'],
+      'cursor-team-kit/demo-skill': ['playbooks/absent.md', 'scripts/cli.ts'],
     })
   })
 
@@ -140,10 +150,19 @@ describe('bundled-cursor-skills-sync', () => {
     assert.deepEqual(mentionedSkillFiles('playbooks/c.md and a.md', candidates), [])
   })
 
+  it('rejects an optional plugin reintroduced into the release snapshot', async () => {
+    await syncBundledCursorSkills(cacheDir)
+    await mkdir(join(cacheDir, 'plugins', 'pstack'))
+    await assert.rejects(
+      assertBundledCursorSkillsSnapshot(cacheDir),
+      /not selected for bundling: pstack/,
+    )
+  })
+
   it('rejects a modified vendored skill', async () => {
     await syncBundledCursorSkills(cacheDir)
     await writeFile(
-      join(cacheDir, 'plugins', 'demo-plugin', 'skills', 'demo-skill', 'SKILL.md'),
+      join(cacheDir, 'plugins', 'cursor-team-kit', 'skills', 'demo-skill', 'SKILL.md'),
       '# modified after sync',
       'utf8',
     )

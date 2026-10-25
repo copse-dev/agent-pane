@@ -3,12 +3,17 @@ import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import {
   clientPairSchema,
   clientDecisionSchema,
+  clientActivityDataSchema,
+  clientOpenThreadSchema,
+  clientReadThreadSchema,
+  clientThreadTextSchema,
+  type ClientThreadText,
+  type ClientActivityData,
   type ClientSnapshot,
 } from '../../../shared/plugin-client-protocol.ts'
 import type { HumanDecisions } from '../human-decisions.ts'
-import { ClientCredentials, type ClientPrincipal } from '../clients/client-credentials.ts'
+import { ClientCredentials } from '../clients/client-credentials.ts'
 import { ClientPairings } from '../clients/client-pairings.ts'
-import type { ClientAccess } from '../../../shared/client-auth.ts'
 
 /** Loopback browser clients must be local, and every paired token is bound to its origin. */
 function localOrigin(origin: string): boolean {
@@ -29,7 +34,10 @@ function localOrigin(origin: string): boolean {
 export async function startPluginClientServer(options: {
   decisions: HumanDecisions
   enabled: () => boolean
-  approvePair: (label: string, code: string, signal: AbortSignal) => Promise<ClientAccess | null>
+  activity?: { read: (fresh?: boolean) => Promise<ClientActivityData> }
+  readThread?: (projectId: string, threadId: string) => Promise<ClientThreadText>
+  openThread?: (projectId: string, threadId: string) => boolean
+  approvePair: (label: string, code: string, signal: AbortSignal) => Promise<boolean>
 }): Promise<{ origin: string; close: () => Promise<void> }> {
   let authority = ''
   let stopped = false
@@ -43,8 +51,12 @@ export async function startPluginClientServer(options: {
     revoke: (id): void => {
       clients.revoke(id)
     },
-    approve: options.approvePair,
+    approve: async (label, code, signal): Promise<'control' | null> =>
+      (await options.approvePair(label, code, signal)) ? 'control' : null,
   })
+  let contentReads = 0
+  let activitySequence = 0
+  let activityFingerprint = ''
   const streams = new Set<ServerResponse>()
   const deliveries = new Map<
     string,
@@ -59,13 +71,13 @@ export async function startPluginClientServer(options: {
     })
     res.end(JSON.stringify(value))
   }
-  function snapshot(client: ClientPrincipal): ClientSnapshot {
+  function snapshot(): ClientSnapshot {
     const state = options.decisions.snapshot()
     return {
       version: 1,
       sessionId: state.sessionId,
       sequence: state.sequence,
-      canRespond: client.access === 'control',
+      canRespond: true,
       requests: state.requests.flatMap(
         ({ projectId, threadId, revision, decision, interactiveClientSupported }) =>
           decision.kind === 'approval' && interactiveClientSupported
@@ -85,12 +97,12 @@ export async function startPluginClientServer(options: {
       ),
     }
   }
-  function publish(res: ServerResponse, client: ClientPrincipal): void {
+  function publish(res: ServerResponse): void {
     if (!active()) {
       res.end()
       return
     }
-    const data = JSON.stringify(snapshot(client))
+    const data = JSON.stringify(snapshot())
     // Never silently truncate the meaning of an approval, or queue behind a slow reader.
     if (Buffer.byteLength(data) > 1024 * 1024 || !res.write(`data: ${data}\n\n`)) res.destroy()
   }
@@ -166,9 +178,127 @@ export async function startPluginClientServer(options: {
       json(res, 200, { version: 1, ...pairing })
       return
     }
-    const client = clients.principal(req.headers.authorization, origin)
+    const client = clients.principal(req.headers.authorization, origin, 'control')
     if (!client) {
       json(res, 401, { error: 'Pair in Copse first' })
+      return
+    }
+    if (req.method === 'GET' && path === '/v1/activity') {
+      if (!options.activity) {
+        json(res, 404, { error: 'Activity unavailable' })
+        return
+      }
+      const data = clientActivityDataSchema.parse(await options.activity.read())
+      if (!active() || !clients.principal(req.headers.authorization, origin, 'control')) {
+        json(res, 403, { error: 'Client API disabled' })
+        return
+      }
+      const fingerprint = JSON.stringify(data)
+      if (fingerprint !== activityFingerprint) {
+        activityFingerprint = fingerprint
+        activitySequence++
+      }
+      json(res, 200, {
+        version: 1,
+        sessionId: options.decisions.snapshot().sessionId,
+        sequence: activitySequence,
+        ...data,
+      })
+      return
+    }
+    if (req.method === 'POST' && path === '/v1/threads/content') {
+      const input = safeJsonParse(await body(req), decodeWithSchema(clientReadThreadSchema))
+      if (!input) {
+        json(res, 400, { error: 'Invalid thread reference' })
+        return
+      }
+      const authorized = (): boolean =>
+        active() && Boolean(clients.principal(req.headers.authorization, origin, 'control'))
+      if (!authorized()) {
+        json(res, 403, { error: 'Client API disabled' })
+        return
+      }
+      if (!options.activity || !options.readThread) {
+        json(res, 404, { error: 'Chat text unavailable' })
+        return
+      }
+      if (contentReads >= 4) {
+        json(res, 429, { error: 'Too many content reads' })
+        return
+      }
+      contentReads++
+      try {
+        const eligible = async (): Promise<boolean> => {
+          const activity = await options.activity?.read(true)
+          return (
+            activity?.recentThreads.some(
+              (row) =>
+                row.projectId === input.projectId &&
+                row.threadId === input.threadId &&
+                row.settledAt === input.settledAt,
+            ) ?? false
+          )
+        }
+        const known = await eligible()
+        if (!authorized()) {
+          json(res, 403, { error: 'Client API disabled' })
+          return
+        }
+        if (!known) {
+          json(res, 404, { error: 'Chat is no longer available' })
+          return
+        }
+        const text = clientThreadTextSchema.parse(
+          await options.readThread(input.projectId, input.threadId),
+        )
+        const stillKnown = await eligible()
+        if (!authorized()) {
+          json(res, 403, { error: 'Client API disabled' })
+          return
+        }
+        if (!stillKnown) {
+          json(res, 404, { error: 'Chat is no longer available' })
+          return
+        }
+        json(res, 200, { ...input, sessionId: options.decisions.snapshot().sessionId, ...text })
+      } finally {
+        contentReads--
+      }
+      return
+    }
+    if (req.method === 'POST' && path === '/v1/threads/open') {
+      const input = safeJsonParse(await body(req), decodeWithSchema(clientOpenThreadSchema))
+      if (!input) {
+        json(res, 400, { error: 'Invalid thread reference' })
+        return
+      }
+      if (!active() || !clients.principal(req.headers.authorization, origin, 'control')) {
+        json(res, 403, { error: 'Client API disabled' })
+        return
+      }
+      const activity = options.activity ? await options.activity.read(true) : undefined
+      if (!active() || !clients.principal(req.headers.authorization, origin, 'control')) {
+        json(res, 403, { error: 'Client API disabled' })
+        return
+      }
+      const known =
+        (activity?.recentThreads.some(
+          (row) => row.projectId === input.projectId && row.threadId === input.threadId,
+        ) ??
+          false) ||
+        options.decisions
+          .snapshot()
+          .requests.some(
+            (row) =>
+              row.interactiveClientSupported &&
+              row.projectId === input.projectId &&
+              row.threadId === input.threadId,
+          )
+      if (!known || !options.openThread?.(input.projectId, input.threadId)) {
+        json(res, 404, { ok: false, reason: 'Thread is no longer available' })
+        return
+      }
+      json(res, 200, { ok: true, reason: 'Opening in Copse' })
       return
     }
     if (req.method === 'GET' && path === '/v1/events') {
@@ -183,7 +313,7 @@ export async function startPluginClientServer(options: {
       })
       streams.add(res)
       const unsubscribe = options.decisions.subscribe(() => {
-        publish(res, client)
+        publish(res)
       })
       const heartbeat = setInterval(() => {
         if (options.enabled()) res.write(': heartbeat\n\n')
@@ -198,10 +328,6 @@ export async function startPluginClientServer(options: {
       return
     }
     if (req.method === 'POST' && path === '/v1/decisions') {
-      if (client.access !== 'control') {
-        json(res, 403, { error: 'Viewing permission only' })
-        return
-      }
       const input = safeJsonParse(await body(req), decodeWithSchema(clientDecisionSchema))
       if (!input) {
         json(res, 400, { error: 'Invalid decision' })

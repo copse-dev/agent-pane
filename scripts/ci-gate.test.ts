@@ -86,7 +86,7 @@ describe('required CI gate bindings', () => {
       QUEUE_BASE_REF: '${{ github.event.merge_group.base_ref }}',
       BENCH_RESULT: '${{ needs.bench.result }}',
       E2E_REQUIRED:
-        "${{ github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full'))) }}",
+        "${{ github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full') || needs.precheck.outputs.screenshot_refresh == 'true')) }}",
       E2E_SHARD_TOTAL: '${{ needs.precheck.outputs.e2e_shard_total }}',
       E2E_RESULT: '${{ needs.e2e.result }}',
       NEEDS_JSON: '${{ toJSON(needs) }}',
