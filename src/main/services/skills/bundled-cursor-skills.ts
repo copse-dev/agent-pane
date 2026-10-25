@@ -63,17 +63,6 @@ export const BUNDLED_CURSOR_SKILLS_SETTING = 'bundledCursorSkillsEnabled'
 /** Setting: the user's per-plugin choices, `{ [pluginName]: enabled }`. Absent → the default. */
 export const BUNDLED_SKILL_PLUGIN_OVERRIDES_SETTING = 'bundledSkillPluginOverrides'
 
-/**
- * Bundled plugins that ship switched off, and why. A plugin lands here when its
- * skills are written for another harness closely enough that they misfire in
- * Copse rather than merely going unused.
- */
-const OFF_BY_DEFAULT: Readonly<Record<string, string>> = {
-  pstack:
-    'Written for Cursor: its workflows call Cursor subagents and model names, and its ' +
-    'autonomy guidance ("just do it") conflicts with how Copse asks before acting.',
-}
-
 function bundledSkillPluginOverrides(): ReadonlyMap<string, boolean> {
   const raw: unknown = getSetting(BUNDLED_SKILL_PLUGIN_OVERRIDES_SETTING, {})
   const overrides = new Map<string, boolean>()
@@ -86,7 +75,7 @@ function bundledSkillPluginOverrides(): ReadonlyMap<string, boolean> {
 
 /** Whether one bundled plugin's skills load, ignoring the all-bundled-skills switch. */
 export function isBundledSkillPluginEnabled(name: string): boolean {
-  return bundledSkillPluginOverrides().get(name) ?? !Object.hasOwn(OFF_BY_DEFAULT, name)
+  return bundledSkillPluginOverrides().get(name) ?? true
 }
 
 function countSkillDirs(skillsDir: string): number {
@@ -104,15 +93,13 @@ export async function listBundledSkillPlugins(): Promise<BundledSkillPluginSumma
       readCursorPluginName(pluginRoot),
       resolvePluginSkillsDir(pluginRoot),
     ])
-    const offByDefaultReason = OFF_BY_DEFAULT[name]
     summaries.push({
       name,
       ...(manifest?.description ? { description: manifest.description } : {}),
       ...(manifest?.version ? { version: manifest.version } : {}),
       skillCount: skillsDir ? countSkillDirs(skillsDir) : 0,
       enabled: isBundledSkillPluginEnabled(name),
-      defaultEnabled: offByDefaultReason === undefined,
-      ...(offByDefaultReason ? { offByDefaultReason } : {}),
+      defaultEnabled: true,
       suppressed,
     })
   }

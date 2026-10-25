@@ -5,7 +5,13 @@ import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
 import { isThreadProposalCall } from '@shared/threads/thread-proposal.ts'
 import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
 import type { ToolRun, ToolRunStep } from './tool-runs.ts'
-import { copseToolCallName, isCopseToolCall, normalizeCopseToolName } from './copse-tool-call.ts'
+import {
+  acpDelegateKind,
+  copseToolCallName,
+  isAcpDelegateToolCall,
+  isCopseToolCall,
+  normalizeCopseToolName,
+} from './copse-tool-call.ts'
 
 /** Progressive while a tool is in flight; past once it settles (done/error). */
 export type ToolLabelTense = 'running' | 'done'
@@ -385,6 +391,13 @@ export function getToolCallLabel(tc: ToolCall): string {
   // ACP keeps a user-facing title distinct from its programmatic identity.
   // Use it for display without sacrificing `name` for grouping and behavior.
   if (title) return title
+  // An ACP agent's own subagent dispatch (Claude Code's `Agent` tool) reports
+  // no title before it picks a task, so name it the way the native `task`
+  // tool's agentName fallback does, just above.
+  if (isAcpDelegateToolCall(tc)) {
+    const agentKind = acpDelegateKind(tc)
+    return tense === 'running' ? `Running ${agentKind ?? 'agent'}` : `Ran ${agentKind ?? 'agent'}`
+  }
   return getToolDisplayName(tc.programmaticName ?? mcpTitle ?? tc.name, tense)
 }
 
