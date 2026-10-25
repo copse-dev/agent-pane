@@ -3395,7 +3395,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   },
   {
     id: 'acp-subagent-visibility',
-    label: 'Background ACP subagents show up live',
+    label: "A coding agent's own background subagents show up live",
     project: project('demo-acp-subagents', 'Widgets', '/demo/widgets'),
     settings: {
       onboardingCompleted: true,
