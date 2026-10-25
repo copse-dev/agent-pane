@@ -45,7 +45,8 @@ not update the running application's bridge code; verification requires the upda
 Refreshing an old catalog alone cannot fix the original hardcoded omission.
 
 The reported `env: npm: No such file or directory` is not explained by tool exposure.
-Preparation can bootstrap Socket Firewall with `npm` even for a pnpm project. This is a
+Preparation used to bootstrap a third-party firewall with `npm` even for a pnpm project; the
+built-in package firewall ([plan](package-firewall.md)) removed that step. This is a
 separate runtime/sandbox-path hypothesis pending reproduction through supported preparation;
 no ad-hoc installation or relaxation of containment is part of this change.
 
