@@ -332,6 +332,10 @@
     "label": "A running turn waiting for an answer"
   },
   {
+    "id": "concise-state-reauth",
+    "label": "A failed coding-agent turn offering a direct sign-in action"
+  },
+  {
     "id": "concise-state-subagent",
     "label": "A finished turn that used subagents"
   },
