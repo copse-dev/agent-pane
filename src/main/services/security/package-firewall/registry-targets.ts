@@ -1,11 +1,11 @@
 /**
- * Which registry downloads the package firewall inspects, and how a download URL
- * maps to the package version it fetches.
+ * Which registry requests the package firewall inspects, and what each one is.
  *
- * Only artifact downloads are classified (npm tarballs, Python distributions,
- * crates). Metadata — packuments, simple indexes, the sparse crates index — is
- * forwarded untouched, so resolution behaves exactly as without the firewall and
- * a listed package fails at the download that would have delivered its code.
+ * Artifact downloads (npm tarballs, Python distributions, crates) map to the
+ * package version they fetch, so a listed package fails at the download that
+ * would have delivered its code. Package metadata (npm packuments, PyPI simple
+ * indexes, the sparse crates index) maps to the package it describes, so the
+ * firewall can leave out versions too recent to install (`release-age.ts`).
  */
 
 /** OSV ecosystem names (https://ossf.github.io/osv-schema/#affectedpackage-field). */
@@ -25,7 +25,9 @@ export interface PackageCoordinates {
 export const INTERCEPTED_REGISTRY_HOSTS: ReadonlyMap<string, PackageEcosystem> = new Map([
   ['registry.npmjs.org', 'npm'],
   ['registry.yarnpkg.com', 'npm'],
+  ['pypi.org', 'PyPI'],
   ['files.pythonhosted.org', 'PyPI'],
+  ['index.crates.io', 'crates.io'],
   ['static.crates.io', 'crates.io'],
   ['crates.io', 'crates.io'],
 ])
@@ -142,15 +144,63 @@ function crateDownload(host: string, pathname: string): PackageCoordinates | nul
 
 /** The package version a registry request downloads, or null for metadata and anything else. */
 export function packageForDownload(host: string, path: string): PackageCoordinates | null {
-  const ecosystem = interceptedEcosystem(host)
   const pathname = decodedPathname(path)
-  if (!ecosystem || pathname === null) return null
-  switch (ecosystem) {
-    case 'npm':
+  if (pathname === null) return null
+  switch (normalizeHost(host)) {
+    case 'registry.npmjs.org':
+    case 'registry.yarnpkg.com':
       return npmTarball(pathname)
-    case 'PyPI':
+    case 'files.pythonhosted.org':
       return pythonFile(pathname)
+    case 'static.crates.io':
+      return crateDownload('static.crates.io', pathname)
     case 'crates.io':
-      return crateDownload(normalizeHost(host), pathname)
+      return crateDownload('crates.io', pathname)
+    default:
+      return null
+  }
+}
+
+/** The package whose version list a registry metadata request returns. */
+export interface MetadataTarget {
+  ecosystem: PackageEcosystem
+  name: string
+}
+
+/** `/<name>` or `/@scope/<name>` (the slash usually encoded as `%2f`), never a `/-/` endpoint. */
+function npmPackument(pathname: string): MetadataTarget | null {
+  const match = /^\/((?:@[^/@]+\/)?[^/@][^/]*)$/.exec(pathname)
+  const name = match?.[1]
+  if (!name || name.startsWith('-')) return null
+  return { ecosystem: 'npm', name }
+}
+
+/** `/simple/<name>/` on pypi.org (PEP 503 / PEP 691). */
+function pythonSimpleIndex(pathname: string): MetadataTarget | null {
+  const match = /^\/simple\/([^/]+)\/?$/.exec(pathname)
+  return match?.[1] ? { ecosystem: 'PyPI', name: normalizePythonName(match[1]) } : null
+}
+
+/** `/1/<name>`, `/2/<name>`, `/3/<c>/<name>` and `/<ab>/<cd>/<name>` on index.crates.io. */
+function cratesIndexFile(pathname: string): MetadataTarget | null {
+  const match = /^\/(?:[12]|3\/[^/]|[^/]{2}\/[^/]{2})\/([^/]+)$/.exec(pathname)
+  const name = match?.[1]
+  return name && name !== 'config.json' ? { ecosystem: 'crates.io', name } : null
+}
+
+/** The package a registry metadata request describes, or null for downloads and anything else. */
+export function metadataForRequest(host: string, path: string): MetadataTarget | null {
+  const pathname = decodedPathname(path)
+  if (pathname === null) return null
+  switch (normalizeHost(host)) {
+    case 'registry.npmjs.org':
+    case 'registry.yarnpkg.com':
+      return npmPackument(pathname)
+    case 'pypi.org':
+      return pythonSimpleIndex(pathname)
+    case 'index.crates.io':
+      return cratesIndexFile(pathname)
+    default:
+      return null
   }
 }

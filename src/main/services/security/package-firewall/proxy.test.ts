@@ -1,5 +1,6 @@
 import { after, before, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { safeJsonParse } from '@shared/safe-json.ts'
 import { request as httpRequest, type IncomingHttpHeaders } from 'node:http'
 import {
   Agent as HttpsAgent,
@@ -14,13 +15,18 @@ import {
 } from 'node:net'
 import type { Duplex } from 'node:stream'
 import { connect as tlsConnect } from 'node:tls'
+import { gzipSync } from 'node:zlib'
 import type { PackageVerdict } from './advisories.ts'
 import {
   startPackageFirewallProxy,
   type FirewallDecision,
   type RunningFirewallProxy,
 } from './proxy.ts'
-import { INTERCEPTED_REGISTRY_HOSTS, type PackageCoordinates } from './registry-targets.ts'
+import {
+  INTERCEPTED_REGISTRY_HOSTS,
+  type MetadataTarget,
+  type PackageCoordinates,
+} from './registry-targets.ts'
 import { createCertificateAuthority } from './x509.ts'
 
 const TOKEN = 'invocation-token'
@@ -64,10 +70,16 @@ interface Reply {
   body: string
 }
 
-function getOverTls(socket: Socket, host: string, path: string, ca: string): Promise<Reply> {
+function getOverTls(
+  socket: Socket,
+  host: string,
+  path: string,
+  ca: string,
+  headers: Record<string, string> = {},
+): Promise<Reply> {
   const secure = tlsConnect({ socket, servername: host, ca })
   return new Promise((resolve, reject) => {
-    const request = httpsRequest({ host, path, createConnection: () => secure })
+    const request = httpsRequest({ host, path, headers, createConnection: () => secure })
     request.once('response', (response) => {
       let body = ''
       response.setEncoding('utf8')
@@ -291,5 +303,190 @@ describe('package firewall proxy', () => {
     })
     assert.equal(reply.status, 403)
     assert.deepEqual(tunnels, [])
+  })
+})
+
+describe('package firewall proxy — release-age limit', () => {
+  const NOW = Date.parse('2026-10-24T12:00:00Z')
+  const OLD = '2026-09-01T00:00:00.000Z'
+  const RECENT = '2026-10-24T09:00:00.000Z'
+  const firewallCa = createCertificateAuthority({
+    permittedHosts: [...INTERCEPTED_REGISTRY_HOSTS.keys()],
+  })
+  const registryCa = createCertificateAuthority({ permittedHosts: ['registry.npmjs.org'] })
+  const seen: { host: string; path: string; headers: IncomingHttpHeaders }[] = []
+  const recent: { target: MetadataTarget; hidden: readonly string[] }[] = []
+  let registry: Server
+  let proxy: RunningFirewallProxy
+
+  const documents: Record<string, (headers: IncomingHttpHeaders) => string> = {
+    'registry.npmjs.org /demo': (headers) =>
+      headers.accept === 'application/json'
+        ? JSON.stringify({
+            name: 'demo',
+            'dist-tags': { latest: '1.1.0' },
+            versions: { '1.0.0': {}, '1.1.0': {} },
+            time: { modified: RECENT, '1.0.0': OLD, '1.1.0': RECENT },
+          })
+        : JSON.stringify({
+            name: 'demo',
+            'dist-tags': { latest: '1.1.0' },
+            versions: { '1.0.0': {}, '1.1.0': {} },
+            modified: RECENT,
+          }),
+    'registry.npmjs.org /settled': () =>
+      JSON.stringify({
+        'dist-tags': { latest: '1.0.0' },
+        versions: { '1.0.0': {} },
+        modified: OLD,
+      }),
+    'pypi.org /simple/demo/': () =>
+      JSON.stringify({
+        meta: { 'api-version': '1.4' },
+        files: [
+          { filename: 'demo-1.0.tar.gz', 'upload-time': OLD },
+          { filename: 'demo-1.1.tar.gz', 'upload-time': RECENT },
+        ],
+      }),
+    'index.crates.io /de/mo/demo': () =>
+      [
+        JSON.stringify({ name: 'demo', vers: '1.0.0', pubtime: OLD }),
+        JSON.stringify({ name: 'demo', vers: '1.1.0', pubtime: RECENT }),
+        '',
+      ].join('\n'),
+  }
+
+  before(async () => {
+    const leaf = registryCa.issue('registry.npmjs.org')
+    registry = createHttpsServer({ cert: leaf.certPem, key: leaf.keyPem }, (request, response) => {
+      const host = request.headers.host ?? ''
+      const path = request.url ?? ''
+      seen.push({ host, path, headers: request.headers })
+      const document = documents[`${host} ${path}`]
+      if (!document) {
+        response.writeHead(404, { 'content-type': 'text/plain' })
+        response.end('not found')
+        return
+      }
+      const body = gzipSync(document(request.headers))
+      response.writeHead(200, {
+        'content-type': 'application/json',
+        'content-encoding': 'gzip',
+        'content-length': body.length,
+        etag: '"upstream"',
+        'cache-control': 'public, max-age=300',
+      })
+      response.end(body)
+    })
+    const registryPort = await listen(registry)
+    class LocalRegistryAgent extends HttpsAgent {
+      override createConnection(): Duplex {
+        return tlsConnect({
+          host: '127.0.0.1',
+          port: registryPort,
+          servername: 'registry.npmjs.org',
+          ca: registryCa.certPem,
+        })
+      }
+    }
+    proxy = await startPackageFirewallProxy({
+      authority: firewallCa,
+      token: TOKEN,
+      check: (): Promise<PackageVerdict> => Promise.resolve({ status: 'allowed', advisories: [] }),
+      connectTunnel: () => Promise.reject(new Error('no tunnels in this test')),
+      registryAgent: new LocalRegistryAgent(),
+      releaseAge: { minAgeMs: 48 * 60 * 60 * 1000, now: () => NOW },
+      onRecentVersions: (target, hidden) => recent.push({ target, hidden }),
+    })
+  })
+
+  after(async () => {
+    await proxy.close()
+    registry.close()
+  })
+
+  beforeEach(() => {
+    seen.length = 0
+    recent.length = 0
+  })
+
+  async function get(
+    host: string,
+    path: string,
+    headers: Record<string, string> = {},
+  ): Promise<Reply> {
+    const { socket } = await connectVia(proxy.port, `${host}:443`, AUTH)
+    return getOverTls(socket, host, path, firewallCa.certPem, headers)
+  }
+
+  it('serves an npm packument without recent versions, fetching publish times for an abbreviated one', async () => {
+    const reply = await get('registry.npmjs.org', '/demo', {
+      accept: 'application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*',
+      'if-none-match': '"cached"',
+    })
+    assert.equal(reply.status, 200)
+    const doc = safeJsonParse(reply.body)
+    assert.deepEqual(doc, {
+      name: 'demo',
+      'dist-tags': { latest: '1.0.0' },
+      versions: { '1.0.0': {} },
+      modified: RECENT,
+    })
+    assert.equal(
+      reply.headers['etag'],
+      undefined,
+      'a rewritten document drops the registry validator',
+    )
+    assert.equal(reply.headers['content-encoding'], undefined)
+    assert.equal(reply.headers['cache-control'], 'no-store', 'nor may it be cached')
+    assert.deepEqual(
+      seen.map((request) => [
+        request.path,
+        request.headers.accept,
+        request.headers['if-none-match'],
+      ]),
+      [
+        [
+          '/demo',
+          'application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*',
+          undefined,
+        ],
+        ['/demo', 'application/json', undefined],
+      ],
+    )
+    assert.deepEqual(recent, [{ target: { ecosystem: 'npm', name: 'demo' }, hidden: ['1.1.0'] }])
+  })
+
+  it('serves a packument with nothing recent unchanged, without a second fetch', async () => {
+    const reply = await get('registry.npmjs.org', '/settled')
+    assert.equal(reply.status, 200)
+    assert.equal(reply.headers['etag'], '"upstream"')
+    assert.equal(reply.headers['cache-control'], 'public, max-age=300')
+    assert.equal(seen.length, 1)
+    assert.deepEqual(recent, [])
+  })
+
+  it('leaves recent files out of a PyPI simple index', async () => {
+    const reply = await get('pypi.org', '/simple/demo/')
+    const doc = safeJsonParse(reply.body)
+    assert.deepEqual(doc, {
+      meta: { 'api-version': '1.4' },
+      files: [{ filename: 'demo-1.0.tar.gz', 'upload-time': OLD }],
+    })
+    assert.deepEqual(recent, [{ target: { ecosystem: 'PyPI', name: 'demo' }, hidden: ['1.1'] }])
+  })
+
+  it('leaves recent versions out of a sparse crates index file', async () => {
+    const reply = await get('index.crates.io', '/de/mo/demo')
+    assert.equal(reply.body, `${JSON.stringify({ name: 'demo', vers: '1.0.0', pubtime: OLD })}\n`)
+    assert.deepEqual(recent, [
+      { target: { ecosystem: 'crates.io', name: 'demo' }, hidden: ['1.1.0'] },
+    ])
+  })
+
+  it('passes a registry error through', async () => {
+    const reply = await get('registry.npmjs.org', '/missing')
+    assert.equal(reply.status, 404)
+    assert.equal(reply.body, 'not found')
   })
 })

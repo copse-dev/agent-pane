@@ -92,10 +92,10 @@ third-party firewall binary Copse used to bootstrap globally.
 
 - A per-command wrapper starts an authenticated loopback CONNECT proxy and
   points npm, pnpm, Yarn, pip, uv and cargo at it. TLS for the public registries
-  (`registry.npmjs.org`, `registry.yarnpkg.com`, `files.pythonhosted.org`,
-  `static.crates.io`, `crates.io`) is terminated with an ephemeral,
-  name-constrained CA whose key never leaves memory. All other hosts are tunnelled
-  untouched.
+  (`registry.npmjs.org`, `registry.yarnpkg.com`, `pypi.org`,
+  `files.pythonhosted.org`, `index.crates.io`, `static.crates.io`, `crates.io`)
+  is terminated with an ephemeral, name-constrained CA whose key never leaves
+  memory. All other hosts are tunnelled untouched.
 - Each tarball, wheel or crate download is checked against
   [OSV.dev](https://osv.dev)'s `MAL-` advisories (OpenSSF Malicious Packages and
   GitHub malware advisories), plus a daily-cached copy of the DataDog
@@ -104,8 +104,14 @@ third-party firewall binary Copse used to bootstrap globally.
 - Package names and versions of downloaded packages are sent to `api.osv.dev`.
   If no advisory source can answer, the download proceeds (fail open, by design;
   see the plan's decisions).
-- UI copy names no product and makes no scanning claim; only refused downloads are
-  reported.
+- Versions published in the last 48 hours are left out of the package metadata
+  (npm packuments, PyPI JSON simple indexes, the sparse crates index) the
+  install resolves from, by the registry's own publish times, so a range settles
+  on the newest older version. This covers the window before any malware list
+  knows about a package. Lockfile installs fetch by URL and are not affected
+  ([decision 12](plans/package-firewall.md#decisions)).
+- UI copy names no product and makes no scanning claim; only refused downloads,
+  and packages whose recent versions were left out, are reported.
 - Not covered: private registries and mirrors, git/URL dependencies, `curl | sh`
   installers, and installs on SSH hosts.
 

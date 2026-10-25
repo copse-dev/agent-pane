@@ -8,7 +8,8 @@ import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { CLOSED_PROXY_URL } from './child-env.ts'
 import type { FirewallDecision } from './proxy.ts'
-import { blockedLogLine, runPackageFirewall } from './run.ts'
+import type { MetadataTarget } from './registry-targets.ts'
+import { blockedLogLine, recentVersionsLogLine, runPackageFirewall } from './run.ts'
 
 function decision(name: string, status: FirewallDecision['verdict']['status']): FirewallDecision {
   return {
@@ -24,6 +25,40 @@ describe('blockedLogLine', () => {
       '[safe-install] Blocked npm package evil@1.0.0: listed as malicious by MAL-2026-7 ' +
         '(https://osv.dev/vulnerability/MAL-2026-7)',
     )
+  })
+})
+
+describe('recentVersionsLogLine', () => {
+  const entry = (
+    ecosystem: MetadataTarget['ecosystem'],
+    name: string,
+    hidden: string[],
+  ): [string, { target: MetadataTarget; hidden: string[] }] => [
+    `${ecosystem}:${name}`,
+    { target: { ecosystem, name }, hidden },
+  ]
+  const DAY2 = 48 * 60 * 60 * 1000
+
+  it('prints nothing when no version was left out', () => {
+    assert.equal(recentVersionsLogLine(new Map(), DAY2), null)
+  })
+
+  it('names each package with its newest left-out version', () => {
+    const recent = new Map([
+      entry('npm', 'demo', ['2.1.0', '2.0.1']),
+      entry('PyPI', 'boto3', ['1.43.118']),
+    ])
+    assert.equal(
+      recentVersionsLogLine(recent, DAY2),
+      '[safe-install] Ignored versions published in the last 48 hours: demo@2.1.0, boto3@1.43.118',
+    )
+  })
+
+  it('summarises past eight packages', () => {
+    const recent = new Map(
+      Array.from({ length: 10 }, (_, index) => entry('npm', `p${String(index)}`, ['1.0.0'])),
+    )
+    assert.match(recentVersionsLogLine(recent, DAY2) ?? '', /p7@1\.0\.0 and 2 more packages$/)
   })
 })
 

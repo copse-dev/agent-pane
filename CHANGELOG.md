@@ -18,6 +18,10 @@ released — rather than copying every published entry.
   is nothing extra to approve before an install, and updating a coding-agent
   adapter that is already installed no longer asks. A package that public
   malware lists flag is refused when it is downloaded.
+- Package installs an agent runs no longer pick up versions published to npm,
+  PyPI or crates.io in the last 48 hours; they install the newest older version
+  instead, and say which packages had newer versions left out. Installs from a
+  lockfile, and installs you run yourself in a terminal, are unaffected.
 
 ## 0.1.0-beta.15
 
