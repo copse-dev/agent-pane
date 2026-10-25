@@ -1,5 +1,5 @@
 import { $, browser, expect } from '@wdio/globals'
-import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
+import { parkPointer, saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
 describe('Side chat replies render like the main conversation', () => {
   before(async () => {
@@ -25,6 +25,9 @@ describe('Side chat replies render like the main conversation', () => {
     await expect(reply.$('.code-block-run')).not.toExist()
     await expect(body.$('.side-chat-msg.is-user br')).toExist()
 
+    // The chip click leaves the pointer on the main reply, whose hover actions
+    // (Side chat, Copy) would otherwise sit over its text in the capture.
+    await parkPointer()
     await saveElementScreenshot('#body', 'side-chat-rich-markdown.png')
   })
 })
