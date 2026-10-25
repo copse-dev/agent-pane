@@ -53,9 +53,10 @@ describe('package install approval', () => {
 
     const body = await dialog.$('.approval-body').getText()
     expect(body).toContain('npm install')
-    expect(body).not.toContain('Socket Firewall')
+    expect(body).not.toContain('Socket')
     const advice = await dialog.$('.approval-advice').getText()
-    expect(advice).toContain('Socket Firewall (sfw)')
+    expect(advice).toContain('Install lifecycle scripts are disabled.')
+    expect(advice).not.toContain('firewall')
     expect(advice).toContain('This installs packages')
     const footer = await dialog.$('.approval-footer').getText()
     expect(footer).toContain('Allow this install?')

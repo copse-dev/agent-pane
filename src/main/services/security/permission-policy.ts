@@ -579,7 +579,8 @@ export function formatGuardedYoloHarmPromptAdvice(reasons: string[]): string {
  * Approval body for a detected package install. Installs always need the network,
  * so the generic "external command" reason list (and its nested parentheticals)
  * just adds noise — this states plainly that it's an install, where it runs, and
- * whether Socket Firewall will scan it.
+ * whether install scripts are disabled. Download checks are deliberately not
+ * advertised: they block known-bad packages but promise nothing more.
  */
 export function formatInstallPromptParts(
   command: string,
@@ -588,15 +589,12 @@ export function formatInstallPromptParts(
   const access = opts.outsideSandbox
     ? 'It runs once outside the project sandbox with network access.'
     : 'It fetches packages over the network.'
-  const scan = opts.safeInstall
-    ? `Socket Firewall (sfw) scans the packages for known-malicious code${
-        opts.jsManager ? ', and install lifecycle scripts are disabled' : ''
-      }.`
-    : 'Package scanning (Socket Firewall) is off in Settings, so packages run unscanned.'
+  const scripts =
+    opts.safeInstall && opts.jsManager ? '\n\nInstall lifecycle scripts are disabled.' : ''
   return {
     command: command.trim(),
     bodyAdvice:
-      `This installs packages. ${access}\n\n${scan}` +
+      `This installs packages. ${access}${scripts}` +
       (opts.outsideSandbox ? `\n\n${UNSANDBOXED_ACCESS_WARNING}` : ''),
     bodyFooter: 'Allow this install?',
   }
@@ -609,18 +607,15 @@ export function formatInstallPromptParts(
  */
 export function formatEphemeralRunnerPromptParts(
   command: string,
-  opts: { outsideSandbox: boolean; safeInstall: boolean },
+  opts: { outsideSandbox: boolean },
 ): ShellPromptParts {
   const access = opts.outsideSandbox
     ? 'It runs once outside the project sandbox with network access.'
     : 'It may reach the network.'
-  const scan = opts.safeInstall
-    ? 'Socket Firewall (sfw) scans packages for known-malicious code.'
-    : 'Package scanning (Socket Firewall) is off in Settings, so packages run unscanned.'
   return {
     command: command.trim(),
     bodyAdvice:
-      `This may download and run code from the network. ${access}\n\n${scan}` +
+      `This may download and run code from the network. ${access}` +
       (opts.outsideSandbox ? `\n\n${UNSANDBOXED_ACCESS_WARNING}` : ''),
     bodyFooter: 'Allow this command?',
   }
