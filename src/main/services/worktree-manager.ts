@@ -436,6 +436,21 @@ export function expectedThreadWorktreePath(projectId: string, threadId: string):
   return target
 }
 
+/**
+ * The thread a managed worktree path belongs to, read back from the
+ * `<worktrees>/<projectId>/<threadId>` layout; null for any other path,
+ * including the project checkout itself.
+ */
+export function threadWorktreeOwner(path: string): { projectId: string; threadId: string } | null {
+  for (const base of new Set([worktreesRoot(), resolve(copseWorktreesDir())])) {
+    const [projectId, threadId, ...rest] = relative(base, resolve(path)).split(sep)
+    // OWNER_ID has no `.`, so a path outside the root (`../…`) never matches.
+    if (rest.length > 0 || !projectId || !threadId) continue
+    if (OWNER_ID.test(projectId) && OWNER_ID.test(threadId)) return { projectId, threadId }
+  }
+  return null
+}
+
 /** A repo-controlled symlink must not turn a checkout grant into a host-directory grant. */
 async function assertManagedWorktreePath(projectId: string, path: string): Promise<void> {
   const expectedParent = join(worktreesRoot(), projectId)

@@ -236,11 +236,11 @@ export interface AcpAuthStatus {
 
 /** Outcome of the one-shot ACP preset auto-setup (install/register/detect). */
 export interface AcpAutoSetupResult {
-  /** Preset ids whose npm adapter was installed via Socket Firewall. */
+  /** Preset ids whose npm adapter was installed behind the package firewall. */
   installed: string[]
   /**
    * Preset ids whose already-installed npm adapter was upgraded to the registry
-   * latest (same Socket-Firewall path as a fresh install).
+   * latest (same package-firewall path as a fresh install).
    */
   upgraded: string[]
   /** Preset ids newly registered as usable agents. */

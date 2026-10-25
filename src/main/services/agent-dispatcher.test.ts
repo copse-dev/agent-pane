@@ -1579,6 +1579,44 @@ describe('AgentDispatcher', () => {
     assert.equal(ended, true)
   })
 
+  it('opens no window transcript for a machine wake that never starts a turn', async () => {
+    const begun: string[] = []
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        run: async (threadId, _input, messages, turnHost) => {
+          turnHost.emit(threadId, { type: 'done' })
+          return { usage: { inputTokens: 0, outputTokens: 0 }, messages }
+        },
+      }),
+      {
+        begin: (_projectId, threadId): ReturnType<TurnTranscriptSink['begin']> => {
+          begun.push(threadId)
+          return { emit: (): void => {}, end: (): void => {} }
+        },
+      },
+    )
+    const wake = {
+      ...request(),
+      operationId: 'background-stale',
+      turnTreeId: 'tree-not-on-disk',
+      payload: { userContent: 'wake', invokedSkills: [], priorTodos: [] },
+    }
+    assert.equal(await dispatcher.dispatchMachine(wake), 'stale')
+    assert.deepEqual(begun, [], 'a stale wake must not mark the thread running')
+
+    assert.equal(
+      await dispatcher.dispatchMachine({
+        ...wake,
+        operationId: 'background-live',
+        turnTreeId: 'thread-1',
+      }),
+      'completed',
+    )
+    assert.deepEqual(begun, ['thread-1'])
+  })
+
   it('warns when a turn starts with an empty history but a full transcript', async () => {
     const emitted: StreamChunk[] = []
     const dispatcher = new AgentDispatcher(

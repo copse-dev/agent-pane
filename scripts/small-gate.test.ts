@@ -310,3 +310,30 @@ it('release and version-tag pushes keep full shadow coverage even with an empty 
     if (ref !== 'refs/heads/main') assert.deepEqual(result.proposed.specs, listCiSpecs())
   }
 })
+
+it('the screenshot drift refresh PR keeps full shadow coverage with its empty diff', () => {
+  for (const refresh of ['true', 'false']) {
+    execFileSync(process.execPath, ['scripts/small-gate-shadow.mts'], {
+      env: {
+        ...process.env,
+        BASE_SHA: 'HEAD',
+        EVENT: 'pull_request',
+        GITHUB_REF: 'refs/pull/1/merge',
+        BASE_REF: 'main',
+        ACTUAL_MODE: refresh === 'true' ? 'full' : 'skip',
+        STACK_TIP: 'false',
+        CI_FULL_LABEL: 'false',
+        UPDATE_SCREENSHOTS_LABEL: 'false',
+        SCREENSHOT_REFRESH: refresh,
+        GITHUB_RUN_ID: '1',
+        GITHUB_RUN_ATTEMPT: '1',
+        HEAD_SHA: '',
+        GITHUB_OUTPUT: '',
+        GITHUB_STEP_SUMMARY: '',
+      },
+      stdio: 'pipe',
+    })
+    const result = parseGatePlan(read('e2e-evidence/plan.json'))
+    assert.equal(result.proposed.mode, refresh === 'true' ? 'full' : 'skip')
+  }
+})

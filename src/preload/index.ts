@@ -419,6 +419,8 @@ const api: ApiClient = {
         collapseDetails?: boolean
         approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
+        /** Interrupt ordinary batches and require a separate decision. */
+        standalone?: boolean
         allowTurnTreeLease?: boolean
         turnTreeLeaseLabel?: string
         turnTreeLeaseSubject?: string
@@ -439,6 +441,8 @@ const api: ApiClient = {
           approveLabel?: string
           collapseDetails?: boolean
           approveOnceLabel?: string
+          showWhileSettingsOpen?: boolean
+          standalone?: boolean
           allowTurnTreeLease?: boolean
           turnTreeLeaseLabel?: string
           turnTreeLeaseDefault?: boolean
@@ -466,6 +470,7 @@ const api: ApiClient = {
         id: string
         threadId?: string
         questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
+        presentation?: import('@shared/types/ask-user.ts').AskUserActionsPresentation
       }) => void,
     ) => {
       const listener = (
@@ -474,6 +479,7 @@ const api: ApiClient = {
           id: string
           threadId?: string
           questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
+          presentation?: import('@shared/types/ask-user.ts').AskUserActionsPresentation
         },
       ): void => {
         handler(req)
@@ -1879,9 +1885,7 @@ if (__COPSE_TEST_SCENARIOS__ && process.env['COPSE_E2E'] === '1') {
     openWorkspace(root: string) {
       return ipcRenderer.invoke('test:openWorkspace', root)
     },
-    requestAcpPackageInstallApproval(
-      scenario: 'install' | 'firewall-bootstrap' | 'mixed-bootstrap' = 'install',
-    ) {
+    requestAcpPackageInstallApproval(scenario: 'install' | 'upgrade' | 'mixed' = 'install') {
       return ipcRenderer.invoke('test:requestAcpPackageInstallApproval', scenario)
     },
     emitAgentChunks(threadId: string, chunks: unknown[]) {
