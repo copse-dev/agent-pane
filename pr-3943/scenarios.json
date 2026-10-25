@@ -224,6 +224,10 @@
     "label": "Context identifies a dedicated worktree and its branch"
   },
   {
+    "id": "acp-subagent-visibility",
+    "label": "A coding agent's own background subagents show up live"
+  },
+  {
     "id": "side-chat-approval",
     "label": "A side chat asks for approval over its parent thread"
   },
