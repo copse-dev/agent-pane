@@ -541,6 +541,43 @@ describe('tool-display', () => {
     assert.equal(getToolCallLabel(tc('1', 'task')), 'Ran agent')
   })
 
+  it('labels an ACP agent\'s own subagent dispatch, not just a bare "Agent"', () => {
+    // Claude Code's `Agent` tool streams a `title` once it has one; before that
+    // (or for an agent that never sends one), the dispatched subagent_type is
+    // the next-best thing — mirroring the native `task` tool's agentName label.
+    const withTitle = getToolCallLabel({
+      ...tc('1', 'Agent', 'running'),
+      kind: 'think',
+      title: 'Panel registration research',
+      args: { subagent_type: 'Explore', prompt: 'Find the panel registry' },
+    })
+    assert.equal(withTitle, 'Panel registration research')
+
+    const noTitleRunning = getToolCallLabel({
+      ...tc('1', 'Agent', 'running'),
+      kind: 'think',
+      args: { subagent_type: 'Explore', prompt: 'Find the panel registry' },
+    })
+    assert.equal(noTitleRunning, 'Running Explore')
+
+    const noTitleDone = getToolCallLabel({
+      ...tc('1', 'Agent'),
+      kind: 'think',
+      args: { subagent_type: 'Explore', prompt: 'Find the panel registry' },
+    })
+    assert.equal(noTitleDone, 'Ran Explore')
+
+    const noSubagentType = getToolCallLabel({ ...tc('1', 'Agent', 'running'), kind: 'think' })
+    assert.equal(noSubagentType, 'Running agent')
+  })
+
+  it('does not relabel a think-kind call that is not actually an Agent/Task dispatch', () => {
+    assert.equal(
+      getToolCallLabel({ ...tc('1', 'explore', 'running'), kind: 'think' }),
+      'Exploring files',
+    )
+  })
+
   it('maps delegate_step to a human-readable name and keeps it ungrouped', () => {
     assert.equal(getToolDisplayName('delegate_step'), 'Delegated step')
     assert.equal(getToolGroupKey('delegate_step'), null)
