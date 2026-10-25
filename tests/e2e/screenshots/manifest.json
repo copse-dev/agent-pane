@@ -5153,6 +5153,10 @@
       "sha256": "ec821f92cf375ab65c3bdf00adb85d857af3a111cf3706ecc8c5946c32de6cb3",
       "bytes": 209458
     },
+    "transcript-no-rebuild-file-link.png": {
+      "sha256": "47b87d2adb5325563849839ede4411d342b9e7e40eb76ff47ed36b2d00f95c64",
+      "bytes": 91196
+    },
     "transcript-quote-autofocus-context-menu.png": {
       "sha256": "b2c36e1304fd0e7498a54c6f6de5d5fd3aaa74959e04a923fc644f05d8c98231",
       "bytes": 286078
