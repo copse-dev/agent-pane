@@ -12,7 +12,7 @@ issues #128 and #174).
 
 | Surface                            | Where                                                                                                   | Trust                                                                                                                     | Real boundary                                                                                                              |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Agent `run_shell` package installs | `src/main/tools/shell-tool.ts`, `src/main/services/shell-scope.ts`, `src/main/services/safe-install.ts` | Untrusted (agent-emitted)                                                                                                 | macOS seatbelt sandbox; prompt + Socket Firewall elsewhere                                                                 |
+| Agent `run_shell` package installs | `src/main/tools/shell-tool.ts`, `src/main/services/shell-scope.ts`, `src/main/services/safe-install.ts` | Untrusted (agent-emitted)                                                                                                 | macOS seatbelt sandbox; prompt + package firewall elsewhere                                                                |
 | MCP stdio/http servers             | `src/main/services/mcp-registry.ts`, `mcp.json`                                                         | Project-local config is **attacker-controllable** (a cloned repo can ship `.mcp.json`); user-global config is trusted     | Per-server trust gate (tracked in #100), env-interpolation allowlist                                                       |
 | Auto-discovered skills             | `src/main/services/skills-registry.ts`, `parse-skill-frontmatter.ts`, `skill-prompt.ts`                 | `user` source = trusted; `project`/`plugin`/`plugin-path` = **untrusted**                                                 | Frontmatter is parsed defensively; untrusted skill text is delimited as data in the prompt                                 |
 | Cursor plugin MCP                  | `src/main/services/cursor-plugins.ts`, `mcp-registry.ts`                                                | User-installed via Cursor marketplace (trusted for env interpolation; same tier as `~/.cursor/mcp.json`)                  | Merged before project configs; see `docs/cursor-plugins.md`                                                                |
@@ -23,9 +23,10 @@ issues #128 and #174).
 ### Policy axis per surface
 
 - **Agent package installs** — _prompt on all platforms_ (do not rely on the
-  macOS seatbelt alone). Detected installs are additionally routed through
-  Socket Firewall with install lifecycle scripts disabled
-  (`npm_config_ignore_scripts`) for JS managers (`safe-install.ts`).
+  macOS seatbelt alone). Detected installs additionally run behind the built-in
+  package firewall, with install lifecycle scripts disabled
+  (`npm_config_ignore_scripts`) for JS managers (`safe-install.ts`). See
+  "Package firewall" below.
 - **MCP project-local config** — _prompt on first use_ (owned by #100's trust
   gate); env interpolation from project configs uses an empty allowlist so a
   cloned repo cannot read process env into a server's `url`/`headers`/`args`/`env`.
@@ -76,9 +77,43 @@ issues #128 and #174).
   `npm_config_registry`, pip `--index-url`/`--extra-index-url`, and cargo
   `--registry` so installs pointed at a non-default (possibly attacker-
   controlled) registry are surfaced for approval.
-- Existing infrastructure already covered: Socket Firewall wrapping of detected
+- Existing infrastructure already covered: firewall wrapping of detected
   installs and `npm_config_ignore_scripts` for JS managers (`safe-install.ts`,
   `shell-tool.ts`).
+
+### Package firewall
+
+Every detected agent install, every ACP adapter install and every online
+worktree-preparation install runs behind the package firewall
+(`src/main/services/security/package-firewall/`,
+[plan](plans/package-firewall.md)). It is our own code, run by the app binary as
+Node, so there is nothing to install or approve first. It replaced the
+third-party firewall binary Copse used to bootstrap globally.
+
+- A per-command wrapper starts an authenticated loopback CONNECT proxy and
+  points npm, pnpm, Yarn, pip, uv and cargo at it. TLS for the public registries
+  (`registry.npmjs.org`, `registry.yarnpkg.com`, `pypi.org`,
+  `files.pythonhosted.org`, `index.crates.io`, `static.crates.io`, `crates.io`)
+  is terminated with an ephemeral, name-constrained CA whose key never leaves
+  memory. All other hosts are tunnelled untouched.
+- Each tarball, wheel or crate download is checked against
+  [OSV.dev](https://osv.dev)'s `MAL-` advisories (OpenSSF Malicious Packages and
+  GitHub malware advisories), plus a daily-cached copy of the DataDog
+  malicious-software-packages-dataset. A listed package gets a 403 that names
+  the advisory; the install fails.
+- Package names and versions of downloaded packages are sent to `api.osv.dev`.
+  If no advisory source can answer, the download proceeds (fail open, by design;
+  see the plan's decisions).
+- Versions published in the last 48 hours are left out of the package metadata
+  (npm packuments, PyPI JSON simple indexes, the sparse crates index) the
+  install resolves from, by the registry's own publish times, so a range settles
+  on the newest older version. This covers the window before any malware list
+  knows about a package. Lockfile installs fetch by URL and are not affected
+  ([decision 12](plans/package-firewall.md#decisions)).
+- UI copy names no product and makes no scanning claim; only refused downloads,
+  and packages whose recent versions were left out, are reported.
+- Not covered: private registries and mirrors, git/URL dependencies, `curl | sh`
+  installers, and installs on SSH hosts.
 
 ### Skill external-link warnings & sandbox confinement
 

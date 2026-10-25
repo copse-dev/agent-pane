@@ -56,6 +56,8 @@ export interface AgentInitiatedTurnLease {
   touch: () => void
   /** The self-started turn finished, a Copse turn took over, or the session closed. */
   end: () => void
+  /** A self-started turn is in progress (between `begin` and `end`). */
+  isActive: () => boolean
 }
 
 /** Nothing ends a self-started turn on agents that do not mark it, so bound the binding. */
@@ -150,5 +152,6 @@ export function createAgentInitiatedTurnLease<TContext>(
       if (abort) armIdle()
     },
     end,
+    isActive: (): boolean => abort !== null,
   }
 }

@@ -233,6 +233,46 @@ describe('AnthropicProvider prompt caching (#582)', () => {
     ])
   })
 
+  it('repeats the cached prefix before twelve parallel tool calls', async () => {
+    const provider = new AnthropicProvider('claude-test', { apiKey: 'test' })
+    const capture = withFakeStream(provider, doneEvents)
+    const opening: LLMMessage[] = [
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'Read these files' },
+    ]
+    for await (const _ of provider.stream(opening, [])) {
+      // Capture the prefix that the next request should reuse.
+    }
+    assert.ok(capture.params)
+    const firstMessage = recordAt(capture.params['messages'], 0)
+    const calls = Array.from({ length: 12 }, (_, index) => ({
+      id: `call-${String(index)}`,
+      name: 'read',
+      args: { path: `file-${String(index)}` },
+    }))
+    for await (const _ of provider.stream(
+      [
+        ...opening,
+        { role: 'assistant', content: calls },
+        {
+          role: 'tool',
+          toolResults: calls.map((call) => ({ toolCallId: call.id, result: 'contents' })),
+        },
+      ],
+      [],
+    )) {
+      // Capture the large round's request.
+    }
+    assert.ok(capture.params)
+    const messages = capture.params['messages']
+    assert.deepEqual(recordAt(messages, 0), firstMessage)
+    assert.ok(Array.isArray(messages))
+    const tail = recordAt(messages, messages.length - 1)
+    const tailContent = tail['content']
+    assert.ok(Array.isArray(tailContent))
+    assert.deepEqual(recordAt(tailContent, 11)['cache_control'], { type: 'ephemeral' })
+  })
+
   it('markTrailingCacheBreakpoint handles block-array and empty inputs', () => {
     const toolResult = [
       {

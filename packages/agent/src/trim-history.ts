@@ -296,6 +296,13 @@ export function trimMessagesInPlace(
      * only spends the turns that follow it.
      */
     compaction?: CompactionIdentity | undefined
+    /**
+     * Provider-measured input size of this conversation's previous request.
+     * Defaults to the running loop's measurement. Pass `null` when trimming
+     * outside a loop: the module-level value then belongs to whichever loop
+     * (another thread, a reviewer subagent) streamed last, not to `messages`.
+     */
+    measuredInputTokens?: number | null
   },
 ): boolean {
   const minTail = opts?.minTailMessages ?? 5
@@ -315,7 +322,10 @@ export function trimMessagesInPlace(
   // estimate), otherwise from the estimated total, then decrement by our per-message
   // estimates on every drop. `estimates` stays index-aligned with `messages`; the
   // system prompt is never a drop target.
-  const measured = getLastMeasuredInputTokens()
+  const measured =
+    opts?.measuredInputTokens === undefined
+      ? getLastMeasuredInputTokens()
+      : opts.measuredInputTokens
   const anchor = compactionReplayStart(messages, opts?.compaction)
   const estimates = messages.map((message, i) =>
     i < anchor && message.role !== 'system' && message.role !== 'developer'
@@ -353,6 +363,7 @@ export function trimHistory(
     minTailMessages?: number
     completionReserveTokens?: number
     compaction?: CompactionIdentity | undefined
+    measuredInputTokens?: number | null
   },
 ): { messages: LLMMessage[]; trimmed: boolean } {
   const copy = [...messages]
