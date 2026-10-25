@@ -4,6 +4,7 @@ import {
   askUserParamsSchema,
   formatAnswersResult,
   formatQuestionsBody,
+  formatTimedOutResult,
   pairQuestionsWithAnswers,
 } from './ask-user-format.ts'
 
@@ -108,6 +109,28 @@ describe('formatAnswersResult', () => {
 
   it('handles an empty answer list without throwing', () => {
     assert.equal(formatAnswersResult([]), 'The user did not answer.')
+  })
+})
+
+describe('formatTimedOutResult', () => {
+  // A timeout must not read like a deliberate blank, or an unattended agent asks
+  // again and waits out another 30 minutes.
+  it('says the user is away and tells the agent to proceed without asking again', () => {
+    assert.equal(
+      formatTimedOutResult(),
+      'No answer arrived after 30 minutes; the user is likely away. Proceed with your recommended or default option, state the assumption you made, and do not ask this question again.',
+    )
+  })
+
+  it('leaves answers the user really left blank as (no answer)', () => {
+    assert.notEqual(formatTimedOutResult(), formatAnswersResult([{ question: 'Q?', answer: '' }]))
+    assert.equal(
+      formatAnswersResult([
+        { question: 'Which DB?', answer: '' },
+        { question: 'Async?', answer: 'Yes' },
+      ]),
+      'The user answered:\n- Which DB? → (no answer)\n- Async? → Yes',
+    )
   })
 })
 
