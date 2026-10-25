@@ -10,7 +10,6 @@ describe('npx package command approval', () => {
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), 'e2e-npx-approval-project', {
       subagentsEnabled: false,
-      // Exercise the package-command approval before the optional firewall setup.
       model: 'claude-sonnet-4-6',
       // `npx` is an *ambiguous* external matcher (shell-scope.ts, #500 option 1):
       // when an OS sandbox is the real boundary it deliberately auto-runs inside
@@ -18,9 +17,8 @@ describe('npx package command approval', () => {
       // actually blocks it. So this dialog exists only where auto-run does not
       // apply — and this spec used to get that for free on Linux CI, because
       // there was no sandbox to auto-run into. Since the ASRT Linux backend was
-      // enabled there is one, `npx tsc --noEmit` is allowed outright, and the
-      // first dialog to appear is the unrelated "Install Socket Firewall?"
-      // prompt from `prepareCommand`.
+      // enabled there is one, and `npx tsc --noEmit` is allowed outright with
+      // no dialog at all.
       //
       // Seed the setting that reaches this prompt on every platform rather than
       // keying on host capability. The dialog's wording is this spec's subject;
