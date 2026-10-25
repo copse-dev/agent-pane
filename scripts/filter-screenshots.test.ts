@@ -151,7 +151,7 @@ it('walks each contested range once for a batch while preserving manual, main an
     assert.match(output, /keep\s+tests\/e2e\/screenshots\/new\.png/)
     const walks = readFileSync(trace, 'utf8')
       .split('\n')
-      .filter((line) => line.includes('--format=%H %an'))
+      .filter((line) => line.includes('--format=%H%x09%P%x09%an'))
     assert.equal(walks.length, 2, 'range traversal must be independent of the screenshot count')
     const histories = readFileSync(trace, 'utf8')
       .split('\n')

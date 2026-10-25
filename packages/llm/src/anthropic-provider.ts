@@ -53,6 +53,7 @@ export class AnthropicProvider implements LLMProvider {
     // will not resend (#1286).
     const operatorStart = trailingSystemStart(conversation)
     const apiMessages = toAnthropicMessages(conversation.slice(0, operatorStart))
+    markPreviousToolRoundCacheBreakpoint(apiMessages)
     markTrailingCacheBreakpoint(apiMessages)
     apiMessages.push(...toAnthropicMessages(conversation.slice(operatorStart)))
     // A caller-supplied ceiling (e.g. the advisor's fixed output budget) can only
@@ -254,6 +255,30 @@ export function markTrailingCacheBreakpoint(apiMessages: Anthropic.MessageParam[
   // shape this provider emits (text, image, tool_use, tool_result) can.
   if (!block || block.type === 'thinking' || block.type === 'redacted_thinking') return
   block.cache_control = { type: 'ephemeral' }
+}
+
+/**
+ * A parallel tool round can put more than 20 content blocks between the last
+ * cached user message and the rolling tail. Repeat that previous request's
+ * breakpoint explicitly so Anthropic can find it without walking back from
+ * the tail. This uses the fourth slot only when the round is large enough to
+ * exhaust the lookback window.
+ */
+function markPreviousToolRoundCacheBreakpoint(apiMessages: Anthropic.MessageParam[]): void {
+  for (let index = apiMessages.length - 2; index > 0; index--) {
+    const message = apiMessages[index]
+    const next = apiMessages[index + 1]
+    if (message?.role !== 'assistant' || !Array.isArray(message.content)) continue
+    if (message.content.filter((block) => block.type === 'tool_use').length < 10) continue
+    if (
+      next?.role !== 'user' ||
+      !Array.isArray(next.content) ||
+      !next.content.some((block) => block.type === 'tool_result')
+    )
+      continue
+    markTrailingCacheBreakpoint(apiMessages.slice(0, index))
+    return
+  }
 }
 
 function toAnthropicMessages(messages: LLMMessage[]): Anthropic.MessageParam[] {

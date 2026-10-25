@@ -14,6 +14,14 @@ released — rather than copying every published entry.
   server that sends Brotli anyway fails that request. The guard lifts itself
   once Copse ships an Electron with a fixed Node. Thread containers now start
   from Node 24.22.1, which has the fix.
+- Package installs no longer need a third-party tool installed first, so there
+  is nothing extra to approve before an install, and updating a coding-agent
+  adapter that is already installed no longer asks. A package that public
+  malware lists flag is refused when it is downloaded.
+- Package installs an agent runs no longer pick up versions published to npm,
+  PyPI or crates.io in the last 48 hours; they install the newest older version
+  instead, and say which packages had newer versions left out. Installs from a
+  lockfile, and installs you run yourself in a terminal, are unaffected.
 
 ## 0.1.0-beta.15
 
