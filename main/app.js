@@ -93296,10 +93296,17 @@ function mountApprovalDialog(api2, store2, options = {}) {
     for (const listener of [...changeListeners]) listener();
   }
   function drainShowableIntoBatch() {
+    if (batch.some((req) => req.standalone)) return 0;
+    const standaloneIndex = queue.findIndex((req) => req.standalone && isShowable(req));
+    if (batch.length === 0 && standaloneIndex >= 0) {
+      const [request] = queue.splice(standaloneIndex, 1);
+      if (request) batch.push(request);
+      return request ? 1 : 0;
+    }
     let moved = 0;
     for (let i3 = 0; i3 < queue.length; ) {
       const req = queue[i3];
-      if (req && isShowable(req)) {
+      if (req && !req.standalone && isShowable(req)) {
         queue.splice(i3, 1);
         batch.push(req);
         moved++;
@@ -93465,7 +93472,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       batch.map((req) => req.threadId)
     );
     if (asker) store2.emit("side_chat_open_requested", asker.firstSideChatId);
-    const shouldShowModal = isSettingsDialogOpen() || document.documentElement.classList.contains("is-popout");
+    const shouldShowModal = soloRequest()?.standalone === true || isSettingsDialogOpen() || document.documentElement.classList.contains("is-popout");
     if (shouldShowModal) {
       dialog2.showModal();
     } else {
@@ -93515,6 +93522,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
   function removeCancelled(id) {
     const queueIdx = queue.findIndex((req) => req.id === id);
     if (queueIdx >= 0) queue.splice(queueIdx, 1);
+    const wasStandalone = batch.some((req) => req.id === id && req.standalone);
     const wasInBatch = batch.some((req) => req.id === id);
     batch = batch.filter((req) => req.id !== id);
     if (wasInBatch && active3) {
@@ -93523,6 +93531,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
         active3 = false;
         clearSettle();
         show2();
+        if (dialog2.open && (wasStandalone || batch.some((req) => req.standalone))) startSettle();
       } else {
         renderBatch();
         startSettle();
@@ -93543,6 +93552,8 @@ function mountApprovalDialog(api2, store2, options = {}) {
       void api2.approval.respond(req.id, approved, remember, grantScope);
     }
     show2();
+    if (dialog2.open && (answered.some((req) => req.standalone) || batch.some((req) => req.standalone)))
+      startSettle();
   }
   api2.agent.onApprovalRequest(
     ({
@@ -93559,6 +93570,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       collapseDetails,
       approveOnceLabel,
       showWhileSettingsOpen,
+      standalone,
       allowTurnTreeLease,
       turnTreeLeaseLabel: turnTreeLeaseLabel2,
       turnTreeLeaseDefault,
@@ -93580,6 +93592,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
         collapseDetails,
         approveOnceLabel,
         showWhileSettingsOpen,
+        standalone,
         allowTurnTreeLease,
         turnTreeLeaseLabel: turnTreeLeaseLabel2,
         turnTreeLeaseDefault,
@@ -93588,7 +93601,15 @@ function mountApprovalDialog(api2, store2, options = {}) {
         arrival: arrivals++
       };
       queue.push(pending);
-      if (active3 && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
+      if (active3 && pending.standalone && isShowable(pending) && !batch.some((req) => req.standalone)) {
+        queue.unshift(...batch);
+        batch = [];
+        closeDialog();
+        active3 = false;
+        clearSettle();
+        show2();
+        if (dialog2.open) startSettle();
+      } else if (active3 && !batch.some((req) => req.standalone) && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
         queue.unshift(...batch);
         batch = [];
         closeDialog();
