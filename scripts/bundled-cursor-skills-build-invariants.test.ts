@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { BUNDLED_PLUGIN_CATALOG } from '../src/shared/plugin-catalog.generated.ts'
 import { describe, it } from 'node:test'
 import {
   BUNDLED_CURSOR_PLUGINS_COMMIT,
@@ -35,7 +36,16 @@ describe('hermetic bundled Cursor skills', () => {
   it('ships a complete snapshot at the source-pinned commit', async () => {
     const source = await assertBundledCursorSkillsSnapshot()
     assert.equal(source.commit, BUNDLED_CURSOR_PLUGINS_COMMIT)
-    assert.equal(source.pluginCount, 13)
-    assert.equal(source.skillCount, 71)
+    assert.equal(source.pluginCount, 12)
+    assert.equal(source.skillCount, 35)
+  })
+
+  it('keeps pstack an optional install, independent of bundle selection', () => {
+    assert.equal(existsSync('vendor/bundled-cursor-skills/plugins/pstack'), false)
+    const entry = BUNDLED_PLUGIN_CATALOG.entries.find(
+      (entry) => entry.id === 'https://github.com/cursor/plugins#pstack',
+    )
+    assert.ok(entry?.revision, 'the catalogue must retain a pinned installable pstack entry')
+    assert.equal(entry.path, 'pstack')
   })
 })
