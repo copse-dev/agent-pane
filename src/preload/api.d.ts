@@ -419,6 +419,8 @@ export interface ApiClient {
         collapseDetails?: boolean
         approveOnceLabel?: string
         showWhileSettingsOpen?: boolean
+        /** Interrupt ordinary batches and require a separate decision. */
+        standalone?: boolean
         allowTurnTreeLease?: boolean
         turnTreeLeaseLabel?: string
         turnTreeLeaseDefault?: boolean
@@ -431,6 +433,7 @@ export interface ApiClient {
         id: string
         threadId?: string
         questions: import('@copse/agent/ask-user-format.ts').AskUserQuestion[]
+        presentation?: import('@shared/types/ask-user.ts').AskUserActionsPresentation
       }) => void,
     ) => () => void
     onAskUserCancelled: (handler: (req: { id: string }) => void) => () => void

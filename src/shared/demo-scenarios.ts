@@ -152,6 +152,7 @@ export interface DemoScenario {
     id: string
     /** The thread the question belongs to, as on a real ask-user event. */
     threadId?: string
+    presentation?: import('./types/ask-user.ts').AskUserActionsPresentation
     questions: readonly { question: string; options?: readonly string[] }[]
   }[]
   /** Browser-hosted state for the first-party Apple Development panel. */

@@ -1565,6 +1565,8 @@ than the card. Differences from the overlay are listed under each point below.
   scope and nothing is remembered, which is why it can live here while Approve stays the only
   in-place grant. Quick answers fill the field and never send. Cmd/Ctrl+Enter sends, as in the
   ask dialog.
+  Host-authored recovery actions, such as ACP sign-in, are direct buttons: they
+  answer on click and show no free-text field or Send answer control.
 - **Approve is the only in-place grant, and only beside the full request.** The detail
   renders the request with the prompt's own advice / body / footer classes and never
   truncates. Broader answers stay on the prompt in the thread.

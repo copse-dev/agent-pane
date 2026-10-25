@@ -26,6 +26,13 @@ ordinary language. Explicit workflow selection can be offered through the existi
 invocation surface once there is a demonstrated need. Avoid adding a model call
 solely to classify every request into a workflow.
 
+The guidance contributes once per thread — on the turn with no prior messages —
+rather than on every turn, using `TurnStartPayload.firstTurn` (hooks-and-feature-packs
+decision 20). A long thread that already received the block keeps following it from
+prior context; re-injecting identical guidance on every later turn only adds load
+without changing behavior. A fire site that has not computed thread history leaves
+`firstTurn` absent, which the hook treats as "unknown" and still injects.
+
 When a user explicitly invokes an alternative engineering workflow such as pstack,
 Copse engineering guidance abstains for that invocation. Existing permission checks,
 project instructions, read-only mode, spend approval, cancellation and continuation

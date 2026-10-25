@@ -28,11 +28,19 @@ describe('offerAcpReauth', () => {
   }
 
   it('launches the dedicated Claude login command', async () => {
-    const command = await withAnswer(
-      () => 'Run `claude auth login`',
+    let presentation: import('@shared/types/ask-user.ts').AskUserActionsPresentation | undefined
+    let options: string[] | undefined
+    const command = await runWithAskUserHandler(
+      (req) => {
+        presentation = req.presentation
+        options = req.questions[0]?.options
+        return Promise.resolve({ answers: ['Sign in'] })
+      },
       () => offerAcpReauth({ agentId: 'claude-agent-acp', kind: 'expired' }),
     )
     assert.equal(command, 'claude auth login')
+    assert.deepEqual(presentation, { kind: 'actions', title: 'Sign in to Claude' })
+    assert.deepEqual(options, ['Sign in', 'Not now'])
     assert.deepEqual(launched, ['claude auth login'])
   })
 
