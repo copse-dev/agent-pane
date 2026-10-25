@@ -10,6 +10,7 @@ import {
   requestViaServer,
   shutdownSandboxFsServer,
   isSandboxFsServerLive,
+  listSandboxFsServerProcesses,
   setWorkerSpawnerForTest,
   setWorkerSandboxReleaseForTest,
   SandboxFsServerUnavailable,
@@ -136,6 +137,14 @@ describe('sandbox-fs-server', () => {
       // Root A must still be served by its original worker, not respawned.
       await requestViaServer({ op: 'statDir', path: dirA }, dirA)
       assert.equal(spawnCount, 2, 'root A did not need to respawn after root B was served')
+      assert.deepEqual(
+        listSandboxFsServerProcesses()
+          .map(({ root }) => root)
+          .sort(),
+        [dirA, dirB].sort(),
+      )
+      shutdownSandboxFsServer()
+      assert.deepEqual(listSandboxFsServerProcesses(), [])
     } finally {
       await rm(dirA, { recursive: true, force: true })
       await rm(dirB, { recursive: true, force: true })

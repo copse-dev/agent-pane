@@ -49,13 +49,50 @@ function streamedErrorStatus(err: unknown): number | undefined {
     : undefined
 }
 
-/** Duck-typed `{ error: { type } }` body used by Anthropic-style overloaded responses. */
+/**
+ * The provider's error type, e.g. `overloaded_error`.
+ *
+ * Anthropic's SDK records it as `type` on every APIError, and that is the only
+ * place it is unambiguous for an in-stream SSE `event: error`: the SDK throws a
+ * status-less base APIError whose `error` is the whole envelope
+ * (`{ type: 'error', error: { type: 'overloaded_error' } }`). Duck-typed bodies
+ * from proxies may carry the type flat (`{ error: { type } }`) or in that same
+ * envelope.
+ */
 function errorBodyType(err: unknown): string | undefined {
+  if (err instanceof Anthropic.APIError && err.type !== null) return err.type
   if (!isRecord(err)) return undefined
   const body = err['error']
   if (!isRecord(body)) return undefined
-  const type = body['type']
+  const nested = body['error']
+  const type = body['type'] === 'error' && isRecord(nested) ? nested['type'] : body['type']
   return typeof type === 'string' ? type : undefined
+}
+
+/**
+ * Anthropic error types whose HTTP form we already retry: `overloaded_error` is
+ * a 529 and `api_error` a 500. Mid-stream, after a 200, the same failures arrive
+ * as an SSE error event with no status, so the type is the only signal.
+ */
+const RETRYABLE_ERROR_TYPES = new Set(['overloaded_error', 'api_error'])
+
+/**
+ * The connection dropped while the response body was streaming.
+ *
+ * Undici rejects the body read with `TypeError('terminated')` (its cause is the
+ * socket-level error: a `SocketError` for a reset, a `BodyTimeoutError` for the
+ * body timeout), and Anthropic's MessageStream rewraps any non-SDK error as a
+ * plain AnthropicError carrying the same message. That is neither an
+ * APIConnectionError nor anything with a status, so it is matched on the exact
+ * message of that exact class. Retried only before the stream commits, so it
+ * cannot duplicate output.
+ */
+function isAnthropicBodyTerminatedError(err: unknown): boolean {
+  return (
+    err instanceof Anthropic.AnthropicError &&
+    !(err instanceof Anthropic.APIError) &&
+    err.message === 'terminated'
+  )
 }
 
 function errorHeaders(err: unknown): Headers | undefined {
@@ -203,6 +240,7 @@ export function isRetryableStreamError(err: unknown): boolean {
   if (err instanceof Anthropic.RateLimitError) return true
   if (err instanceof Anthropic.APIConnectionError) return true
   if (err instanceof Anthropic.InternalServerError) return true
+  if (isAnthropicBodyTerminatedError(err)) return true
 
   if (err instanceof OpenAI.RateLimitError) return true
   if (err instanceof OpenAI.APIConnectionError) return true
@@ -219,7 +257,8 @@ export function isRetryableStreamError(err: unknown): boolean {
   if (status === 408 || status === 409 || status === 429 || status === 529) return true
   if (status !== undefined && status >= 500 && status < 600) return true
 
-  if (errorBodyType(err) === 'overloaded_error') return true
+  const type = errorBodyType(err)
+  if (type !== undefined && RETRYABLE_ERROR_TYPES.has(type)) return true
 
   return false
 }

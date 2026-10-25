@@ -173,37 +173,31 @@ export function compactAtTodoBoundary(
     return false
   }
 
-  let removed = false
-  while (messages.length - start > keepRecent + 1) {
-    let dropIndex = -1
-    for (let i = start; i < messages.length; i++) {
-      const m = messages[i]
-      if (!m || m.role === 'user') continue
-      if (m.role === 'assistant' && Array.isArray(m.content)) {
-        const next = messages[i + 1]
-        if (next?.role === 'tool') {
-          dropIndex = i
-          break
-        }
-      }
-      if (m.role === 'assistant' && typeof m.content === 'string') {
-        dropIndex = i
-        break
-      }
-    }
-    if (dropIndex < 0) break
-    const dropMsg = messages[dropIndex]
+  // A droppable unit is one assistant turn: a tool-calling message with its
+  // results, or a plain reply. The newest `keepRecent` units survive so the work
+  // that just finished the item stays in context. Counting raw messages instead
+  // let user messages and the in-flight call use up the allowance, so every
+  // completed pair was dropped.
+  const units: { index: number; span: number }[] = []
+  for (let i = start; i < messages.length; i++) {
+    const m = messages[i]
+    if (m?.role !== 'assistant') continue
+    if (typeof m.content === 'string') units.push({ index: i, span: 1 })
+    else if (Array.isArray(m.content) && messages[i + 1]?.role === 'tool')
+      units.push({ index: i, span: 2 })
+  }
+  const dropped = units.slice(0, Math.max(0, units.length - keepRecent))
+  for (const { index } of dropped) {
+    const dropMsg = messages[index]
     if (dropMsg)
       touchedFiles = mergeTouchedFiles(touchedFiles, touchedFilesFromDroppedMessage(dropMsg))
-    const span =
-      dropMsg?.role === 'assistant' &&
-      Array.isArray(dropMsg.content) &&
-      messages[dropIndex + 1]?.role === 'tool'
-        ? 2
-        : 1
-    messages.splice(dropIndex, span)
-    removed = true
   }
+  // Newest first, so the indices of the units still to drop stay valid.
+  for (let i = dropped.length - 1; i >= 0; i--) {
+    const unit = dropped[i]
+    if (unit) messages.splice(unit.index, unit.span)
+  }
+  const removed = dropped.length > 0
 
   writePinnedBlocks(removed)
 
