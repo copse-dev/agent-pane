@@ -226,6 +226,47 @@ var init_register = __esm({
   }
 });
 
+// src/renderer/ui/pane-tabs.ts
+function uiPaneTabsShell(opts) {
+  const titleEl2 = el("span", { class: "pane-header-title" }, opts.title);
+  const listHeader = el(
+    "div",
+    { class: cx("pane-header ui-pane-tabs-header", opts.headerClassName) },
+    titleEl2
+  );
+  const tabsWrap = el("div", { class: cx("ui-pane-tabs-list", opts.listClassName) });
+  const body = el("div", { class: cx("ui-pane-tabs-body", opts.bodyClassName) });
+  return { listHeader, titleEl: titleEl2, tabsWrap, body };
+}
+function uiPaneTab(opts) {
+  opts.tabBtn.classList.add("ui-pane-tab");
+  opts.panel.classList.add("ui-pane-tab-panel");
+  opts.tabBtn.addEventListener("click", (e2) => {
+    if (e2.target instanceof Element && e2.target.closest(opts.closeSelector)) return;
+    opts.onSelect();
+  });
+  opts.tabBtn.querySelector(opts.closeSelector)?.addEventListener("click", (e2) => {
+    e2.stopPropagation();
+    opts.onClose();
+  });
+  return {
+    setActive: (active2) => {
+      opts.tabBtn.classList.toggle("is-active", active2);
+      opts.panel.classList.toggle("is-active", active2);
+    },
+    remove: () => {
+      opts.tabBtn.remove();
+      opts.panel.remove();
+    }
+  };
+}
+var init_pane_tabs = __esm({
+  "src/renderer/ui/pane-tabs.ts"() {
+    init_helpers();
+    init_cx();
+  }
+});
+
 // src/renderer/ui/index.ts
 var init_ui = __esm({
   "src/renderer/ui/index.ts"() {
@@ -233,6 +274,7 @@ var init_ui = __esm({
     init_cx();
     init_actions();
     init_field();
+    init_pane_tabs();
     init_register();
     registerUiKit();
   }
@@ -24355,10 +24397,16 @@ function cacheArtefact(key, artefact) {
   }
 }
 function setArtefactPreview(threadId, title, preview) {
-  if (preview) previews.set(previewKey(threadId, title), preview);
+  const key = previewKey(threadId, title);
+  if (!preview || previews.get(key) === preview) return;
+  previews.set(key, preview);
+  previewRevisions.set(threadId, (previewRevisions.get(threadId) ?? 0) + 1);
 }
 function getArtefactPreview(threadId, title) {
   return previews.get(previewKey(threadId, title));
+}
+function artefactPreviewRevision(threadId) {
+  return previewRevisions.get(threadId) ?? 0;
 }
 function setArtefactContent(projectId, threadId, artefact) {
   cacheArtefact(artefactKey(projectId, threadId, artefact.title), artefact);
@@ -24406,10 +24454,11 @@ function artefactUriFromToolResult(result) {
   const match = /\bui:\/\/[^\s)\]]+/.exec(result);
   return match ? match[0] : null;
 }
-var previews, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
+var previews, previewRevisions, artefacts, artefactReads, MAX_CACHED_ARTEFACTS, showHandler;
 var init_artefact_previews = __esm({
   "src/renderer/canvas/artefact-previews.ts"() {
     previews = /* @__PURE__ */ new Map();
+    previewRevisions = /* @__PURE__ */ new Map();
     artefacts = /* @__PURE__ */ new Map();
     artefactReads = /* @__PURE__ */ new Map();
     MAX_CACHED_ARTEFACTS = 20;
@@ -42048,7 +42097,7 @@ var init_acp_known_agents = __esm({
         command: "cursor-agent",
         args: ["acp"],
         // cursor-agent is its own ACP server; the binary is the gate. Not on npm, so
-        // auto-setup never installs it (Socket Firewall can't wrap `curl | bash`).
+        // auto-setup never installs it (the package firewall can't wrap `curl | bash`).
         requiresClient: "cursor-agent",
         preset: true,
         sandbox: {
@@ -42080,7 +42129,7 @@ var init_acp_known_agents = __esm({
         install: "npm install -g @agentclientprotocol/codex-acp",
         installPackage: "@agentclientprotocol/codex-acp",
         // Standalone npm adapter (bundles @openai/codex, self-authenticates) — there
-        // is no parent client to gate on, so Socket-Firewall auto-setup may install
+        // is no parent client to gate on, so package-firewall auto-setup may install
         // it directly when missing.
         autoInstall: true,
         preset: true,
@@ -71070,6 +71119,9 @@ export {
   init_actions,
   uiField,
   registerUiKit,
+  uiPaneTabsShell,
+  uiPaneTab,
+  init_pane_tabs,
   init_ui,
   mountProductAnnouncements,
   init_product_announcement_dialog,
@@ -71350,6 +71402,7 @@ export {
   init_perf,
   setArtefactPreview,
   getArtefactPreview,
+  artefactPreviewRevision,
   setArtefactContent,
   getArtefactContent,
   loadArtefactContent,

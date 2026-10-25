@@ -58,6 +58,7 @@ import {
   applyUiTint,
   archiveCachedSidebarThread,
   archiveThread,
+  artefactPreviewRevision,
   artefactUriFromToolResult,
   at,
   attachAnnotation,
@@ -219,6 +220,7 @@ import {
   init_model_parameters,
   init_model_picker,
   init_nullish as init_nullish2,
+  init_pane_tabs,
   init_panels,
   init_paste_key_form,
   init_pending_submissions,
@@ -436,6 +438,8 @@ import {
   transcriptMeta,
   uiActions,
   uiField,
+  uiPaneTab,
+  uiPaneTabsShell,
   updateContextSnapshot,
   updateQueuedMessageModel,
   updateQueuedMessageText,
@@ -443,7 +447,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-CMFTAUCW.js";
+} from "./chunk-LZLGH2CA.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -4675,7 +4679,7 @@ var init_approval_dialog = __esm({
 });
 
 // packages/agent/src/ask-user-format.ts
-var askUserQuestionSchema, askUserParamsSchema, ASK_USER_ANSWER_MAX_LENGTH;
+var askUserQuestionSchema, askUserParamsSchema, ASK_USER_ANSWER_MAX_LENGTH, ASK_USER_TIMEOUT_MS;
 var init_ask_user_format = __esm({
   "packages/agent/src/ask-user-format.ts"() {
     init_zod();
@@ -4701,6 +4705,7 @@ var init_ask_user_format = __esm({
       questions: external_exports.array(askUserQuestionSchema).min(1).max(10).describe("One or more clarifying questions to ask the user before continuing.")
     });
     ASK_USER_ANSWER_MAX_LENGTH = 8192;
+    ASK_USER_TIMEOUT_MS = 30 * 60 * 1e3;
   }
 });
 
@@ -18138,6 +18143,34 @@ function assistantDisplayParts(content) {
   const { body, noise } = splitCursorAcpTransportNoise(stripped);
   return { body, transportNoise: noise };
 }
+function transcriptInputs(store2, thread) {
+  return {
+    threadId: thread.id,
+    messages: thread.messages,
+    pendingMessages: thread.pendingMessages,
+    status: thread.status,
+    model: thread.model,
+    todos: thread.todos,
+    workingBrief: thread.workingBrief,
+    interruptedTurnAt: thread.interruptedTurnAt,
+    threadProposals: thread.threadProposals,
+    reviewerInputAnswers: thread.reviewerInputAnswers,
+    liveProposalTargets: (thread.threadProposals ?? []).flatMap(
+      (decision) => decision.threadId && getThreadById(store2, decision.threadId) ? [decision.threadId] : []
+    ).join("\n"),
+    needsHydration: needsHydration(thread),
+    hydrationFailed: hydrationFailed(thread.id),
+    artefactPreviewRevision: artefactPreviewRevision(thread.id)
+  };
+}
+function sameItems(a, b2) {
+  if (a === b2) return true;
+  if (!a || !b2 || a.length !== b2.length) return false;
+  return a.every((item, i2) => item === b2[i2]);
+}
+function sameTranscriptInputs(a, b2) {
+  return a.threadId === b2.threadId && a.status === b2.status && a.model === b2.model && a.todos === b2.todos && a.workingBrief === b2.workingBrief && a.interruptedTurnAt === b2.interruptedTurnAt && a.liveProposalTargets === b2.liveProposalTargets && a.needsHydration === b2.needsHydration && a.hydrationFailed === b2.hydrationFailed && a.artefactPreviewRevision === b2.artefactPreviewRevision && sameItems(a.messages, b2.messages) && sameItems(a.pendingMessages, b2.pendingMessages) && sameItems(a.threadProposals, b2.threadProposals) && sameItems(a.reviewerInputAnswers, b2.reviewerInputAnswers);
+}
 function summaryPreview(text, max = 200) {
   const trimmed2 = text.trim();
   if (trimmed2.length <= max) return trimmed2;
@@ -19820,6 +19853,7 @@ function mountConversation(root, store2, api2) {
   let lastProgrammaticScrollTop = -1;
   let userScrolledUpAt = 0;
   let renderedThreadId = null;
+  let renderedInputs = null;
   let stickyImagePrompt = null;
   let stickyImageFullHeight = 0;
   let backfillGeneration = 0;
@@ -20976,7 +21010,10 @@ function mountConversation(root, store2, api2) {
       queuedHost.replaceChildren();
       queuedHost.hidden = true;
     }
-    list.insertBefore(activityBar, firstTrailingCard());
+    const trailingCard = firstTrailingCard();
+    if (activityBar.parentNode !== list || activityBar.nextSibling !== trailingCard) {
+      list.insertBefore(activityBar, trailingCard);
+    }
     updateScrollButton();
   }
   function backfillOlderMessages(thread, cursor, generation) {
@@ -21005,6 +21042,15 @@ function mountConversation(root, store2, api2) {
   function rebuildForThread() {
     const thread = getActiveThread(store2);
     const rebuildingSameThread = thread !== void 0 && thread.id === renderedThreadId;
+    const inputs = thread ? transcriptInputs(store2, thread) : null;
+    if (rebuildingSameThread && inputs && renderedInputs) {
+      if (sameTranscriptInputs(inputs, renderedInputs)) {
+        finishThreadChrome(thread);
+        syncModelLabels();
+        syncUserActions();
+        return;
+      }
+    }
     const preservedScrollTop = rebuildingSameThread && !pinnedToBottom ? list.scrollTop : null;
     if (!rebuildingSameThread) {
       pinnedToBottom = true;
@@ -21019,6 +21065,7 @@ function mountConversation(root, store2, api2) {
     stickyImagePrompt = null;
     backfillGeneration++;
     renderedThreadId = thread?.id ?? null;
+    renderedInputs = inputs;
     if (!thread) {
       finishThreadChrome(null);
       return;
@@ -69981,11 +70028,12 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
   const section2 = el("section", {
     class: "terminal-rail-section terminal-shells-section"
   });
-  const listHeader = el(
-    "div",
-    { class: "pane-header terminals-list-header terminal-rail-section-header" },
-    el("span", { class: "pane-header-title" }, "Shells")
-  );
+  const { listHeader, tabsWrap, body } = uiPaneTabsShell({
+    title: "Shells",
+    headerClassName: "terminals-list-header terminal-rail-section-header",
+    listClassName: "terminals-list terminal-rail-section-list",
+    bodyClassName: "terminals-body"
+  });
   const newBtn = el(
     "button",
     {
@@ -70001,12 +70049,8 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
     paneMaximizeButton(store2, "terminal"),
     newBtn
   );
-  const tabsWrap = el("div", {
-    class: "terminals-list terminal-rail-section-list"
-  });
   section2.append(listHeader, tabsWrap);
   listRoot.append(section2);
-  const body = el("div", { class: "terminals-body" });
   viewerRoot.append(body);
   const tabs = /* @__PURE__ */ new Map();
   let activeTabId = null;
@@ -70252,9 +70296,7 @@ ${output}` : "Terminal output: (none)"
     if (activeTabId === tabId) return;
     activeTabId = tabId;
     for (const tab2 of tabs.values()) {
-      const active = tab2.id === tabId;
-      tab2.panel.classList.toggle("is-active", active);
-      tab2.tabBtn.classList.toggle("is-active", active);
+      tab2.tabSwitch.setActive(tab2.id === tabId);
     }
     const tab = tabs.get(tabId);
     if (tab && terminalModeActive(store2)) {
@@ -70418,20 +70460,27 @@ ${output}` : "Terminal output: (none)"
       autoNamed: false,
       renamed: false,
       naming: false,
-      nameTimer: null
+      nameTimer: null,
+      tabSwitch: uiPaneTab({
+        tabBtn,
+        panel,
+        closeSelector: ".terminals-tab-close",
+        onSelect: () => {
+          setActiveTab(id);
+          store2.emit("shell_tab_activated");
+          const tab2 = tabs.get(id);
+          if (tab2 && terminalModeActive(store2)) {
+            requestAnimationFrame(() => {
+              fitTab(tab2);
+              focusTab(tab2);
+            });
+          }
+        },
+        onClose: () => {
+          void removeTab(id);
+        }
+      })
     };
-    tabBtn.addEventListener("click", (e) => {
-      if (e.target instanceof Element && e.target.closest(".terminals-tab-close")) return;
-      setActiveTab(id);
-      store2.emit("shell_tab_activated");
-      const tab2 = tabs.get(id);
-      if (tab2 && terminalModeActive(store2)) {
-        requestAnimationFrame(() => {
-          fitTab(tab2);
-          focusTab(tab2);
-        });
-      }
-    });
     tabBtn.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -70454,10 +70503,6 @@ ${output}` : "Terminal output: (none)"
       e.stopPropagation();
       beginRename(tab);
     });
-    closeBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      void removeTab(id);
-    });
     wireTabInput(tab);
     tabs.set(id, tab);
     tabsWrap.append(tabBtn);
@@ -70476,8 +70521,7 @@ ${output}` : "Terminal output: (none)"
     await destroySession(tab);
     finishCodeBlockRun(tab, null);
     tab.term.dispose();
-    tab.tabBtn.remove();
-    tab.panel.remove();
+    tab.tabSwitch.remove();
     tabs.delete(tabId);
     if (activeTabId !== tabId) return;
     const remaining = visibleTabs();
@@ -70701,6 +70745,7 @@ var init_terminals_pane = __esm({
     init_rename_blur();
     init_pane_maximize_button();
     init_pane_popout_button();
+    init_pane_tabs();
     init_selection_to_chat2();
     init_terminal_file_links();
     init_terminal_web_links();
@@ -79057,11 +79102,12 @@ function createWebview(partition, resolveWorkspacePreview) {
   return guest;
 }
 function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
-  const listHeader = el(
-    "div",
-    { class: "pane-header browser-tabs-list-header" },
-    el("span", { class: "pane-header-title" }, "Tabs")
-  );
+  const { listHeader, tabsWrap, body } = uiPaneTabsShell({
+    title: "Tabs",
+    headerClassName: "browser-tabs-list-header",
+    listClassName: "browser-tabs-list",
+    bodyClassName: "browser-body"
+  });
   const newBtn = el(
     "button",
     {
@@ -79074,9 +79120,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   );
   if (api2) listHeader.append(panePopoutButton(store2, api2, "browser", "browser"));
   listHeader.append(paneMaximizeButton(store2, "browser"), newBtn);
-  const tabsWrap = el("div", { class: "browser-tabs-list" });
   listRoot.append(listHeader, tabsWrap);
-  const body = el("div", { class: "browser-body" });
   viewerRoot.append(body);
   const tabs = /* @__PURE__ */ new Map();
   const resolveWorkspacePreview = api2 ? (url) => workspacePreviewHtml(url, store2, api2) : void 0;
@@ -79367,9 +79411,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     activeTabId = tabId;
     scheduleSessionSave();
     for (const tab2 of tabs.values()) {
-      const active = tab2.id === tabId;
-      tab2.panel.classList.toggle("is-active", active);
-      tab2.tabBtn.classList.toggle("is-active", active);
+      tab2.tabSwitch.setActive(tab2.id === tabId);
       syncAnnotationScroll(tab2);
     }
     const tab = tabs.get(tabId);
@@ -79703,7 +79745,18 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       annotationScroll: null,
       closeMenu: () => {
         setMenuOpen(false);
-      }
+      },
+      tabSwitch: uiPaneTab({
+        tabBtn,
+        panel,
+        closeSelector: ".browser-tabs-tab-close",
+        onSelect: () => {
+          setActiveTab(id);
+        },
+        onClose: () => {
+          removeTab(id);
+        }
+      })
     };
     const annotationLayer = () => {
       if (!tab.annotation) {
@@ -79860,14 +79913,6 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       navigateTab(tab, tab.urlInput.value);
     });
     wireToolbar(tab);
-    tabBtn.addEventListener("click", (e) => {
-      if (e.target instanceof Element && e.target.closest(".browser-tabs-tab-close")) return;
-      setActiveTab(id);
-    });
-    closeBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      removeTab(id);
-    });
     tabs.set(id, tab);
     tabsWrap.append(tabBtn);
     body.append(panel);
@@ -79880,10 +79925,9 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     const tab = tabs.get(tabId);
     if (!tab) return;
     tab.webview?.remove();
-    tab.tabBtn.remove();
     tab.annotationScroll?.dispose();
     tab.annotation?.dispose();
-    tab.panel.remove();
+    tab.tabSwitch.remove();
     tabs.delete(tabId);
     scheduleSessionSave();
     if (activeTabId !== tabId) return;
@@ -79936,10 +79980,9 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   function purgeAllTabs() {
     for (const tab of tabs.values()) {
       tab.webview?.remove();
-      tab.tabBtn.remove();
       tab.annotationScroll?.dispose();
       tab.annotation?.dispose();
-      tab.panel.remove();
+      tab.tabSwitch.remove();
     }
     tabs.clear();
     activeTabId = null;
@@ -80183,10 +80226,9 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     stopBrowserResizeObserver();
     for (const tab of tabs.values()) {
       tab.webview?.remove();
-      tab.tabBtn.remove();
       tab.annotationScroll?.dispose();
       tab.annotation?.dispose();
-      tab.panel.remove();
+      tab.tabSwitch.remove();
     }
     tabs.clear();
   };
@@ -80199,6 +80241,7 @@ var init_browser_pane = __esm({
     init_icons();
     init_pane_maximize_button();
     init_pane_popout_button();
+    init_pane_tabs();
     init_pane_popout_seed();
     init_browser_url();
     init_artefact();
