@@ -108877,9 +108877,8 @@ function mountConversation(root, store2, api2) {
       );
       if (target) {
         pendingFirstPromptId = null;
-        setScrollTopProgrammatically(
-          list.scrollTop + target.getBoundingClientRect().top - list.getBoundingClientRect().top
-        );
+        const top = window.getComputedStyle(target).position === "sticky" ? naturalRowTop(target) : target.getBoundingClientRect().top;
+        setScrollTopProgrammatically(list.scrollTop + top - list.getBoundingClientRect().top);
       }
     }
     firstPromptBtn.hidden = !firstPrompt || list.scrollTop <= SCROLL_PIN_THRESHOLD_PX || returnPosition !== null;
@@ -108889,6 +108888,11 @@ function mountConversation(root, store2, api2) {
       scrollToBottomBtn.setAttribute("aria-label", label);
     }
     scrollToBottomBtn.hidden = returnPosition === null && isNearBottom();
+  }
+  function naturalRowTop(row2) {
+    const listStyle = window.getComputedStyle(list);
+    const previous = row2.previousElementSibling;
+    return previous ? previous.getBoundingClientRect().bottom + Number.parseFloat(listStyle.rowGap) : list.getBoundingClientRect().top + Number.parseFloat(listStyle.paddingTop) - list.scrollTop;
   }
   function syncStickyImagePreview(releaseOnScrollUp = false) {
     const prompt = stickyImagePrompt;
@@ -108901,8 +108905,7 @@ function mountConversation(root, store2, api2) {
     }
     const listRect = list.getBoundingClientRect();
     const listStyle = window.getComputedStyle(list);
-    const previous = prompt.previousElementSibling;
-    const naturalTop = previous ? previous.getBoundingClientRect().bottom + Number.parseFloat(listStyle.rowGap) : listRect.top + Number.parseFloat(listStyle.paddingTop) - list.scrollTop;
+    const naturalTop = naturalRowTop(prompt);
     const stickyTop = listRect.top + Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top);
     const compact = prompt.classList.contains("is-preview-compact");
     const releaseOffset = compact ? Math.max(0, stickyImageFullHeight - prompt.getBoundingClientRect().height) : 0;
@@ -109014,7 +109017,7 @@ function mountConversation(root, store2, api2) {
     setScrollTopProgrammatically(
       list.scrollTop + Math.ceil(gap * (1 - Math.exp(-dt3 / STREAM_FOLLOW_EASE_MS)))
     );
-    scrollToBottomBtn.hidden = true;
+    if (returnPosition === null) scrollToBottomBtn.hidden = true;
     return true;
   });
   list.addEventListener(STREAM_PAINT_EVENT, () => {
