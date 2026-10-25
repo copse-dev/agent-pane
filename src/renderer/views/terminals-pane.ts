@@ -7,6 +7,7 @@ import { showContextMenu } from '../dom/context-menu.ts'
 import { bindRenameBlur } from '../dom/rename-blur.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
+import { uiPaneTab, uiPaneTabsShell, type UiPaneTab } from '../ui/pane-tabs.ts'
 import { registerTerminalSelectionToChatShortcut } from '../terminal/selection-to-chat.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { CodeBlockRunRequest } from '@shared/store/events.ts'
@@ -80,6 +81,8 @@ interface TerminalTab {
   /** True while a naming request is in flight. */
   naming: boolean
   nameTimer: ReturnType<typeof setTimeout> | null
+  /** Shared select/close/active wiring for `tabBtn` + `panel` (ui/pane-tabs.ts). */
+  tabSwitch: UiPaneTab
 }
 
 function terminalModeActive(store: AppStore): boolean {
@@ -96,11 +99,12 @@ export function mountTerminalsPane(
   const section = el('section', {
     class: 'terminal-rail-section terminal-shells-section',
   })
-  const listHeader = el(
-    'div',
-    { class: 'pane-header terminals-list-header terminal-rail-section-header' },
-    el('span', { class: 'pane-header-title' }, 'Shells'),
-  )
+  const { listHeader, tabsWrap, body } = uiPaneTabsShell({
+    title: 'Shells',
+    headerClassName: 'terminals-list-header terminal-rail-section-header',
+    listClassName: 'terminals-list terminal-rail-section-list',
+    bodyClassName: 'terminals-body',
+  })
   const newBtn = el(
     'button',
     {
@@ -117,13 +121,8 @@ export function mountTerminalsPane(
     newBtn,
   )
 
-  const tabsWrap = el('div', {
-    class: 'terminals-list terminal-rail-section-list',
-  })
   section.append(listHeader, tabsWrap)
   listRoot.append(section)
-
-  const body = el('div', { class: 'terminals-body' })
   viewerRoot.append(body)
 
   const tabs = new Map<string, TerminalTab>()
@@ -409,9 +408,7 @@ export function mountTerminalsPane(
     if (activeTabId === tabId) return
     activeTabId = tabId
     for (const tab of tabs.values()) {
-      const active = tab.id === tabId
-      tab.panel.classList.toggle('is-active', active)
-      tab.tabBtn.classList.toggle('is-active', active)
+      tab.tabSwitch.setActive(tab.id === tabId)
     }
     const tab = tabs.get(tabId)
     if (tab && terminalModeActive(store)) {
@@ -604,23 +601,31 @@ export function mountTerminalsPane(
       renamed: false,
       naming: false,
       nameTimer: null,
+      tabSwitch: uiPaneTab({
+        tabBtn,
+        panel,
+        closeSelector: '.terminals-tab-close',
+        onSelect: () => {
+          setActiveTab(id)
+          // Reclaim the viewer from any agent-task panel that was showing. Done
+          // after setActiveTab so a same-tab click (which setActiveTab skips)
+          // still returns to the live terminal and re-fits it once the panel is
+          // hidden.
+          store.emit('shell_tab_activated')
+          const tab = tabs.get(id)
+          if (tab && terminalModeActive(store)) {
+            requestAnimationFrame(() => {
+              fitTab(tab)
+              focusTab(tab)
+            })
+          }
+        },
+        onClose: () => {
+          void removeTab(id)
+        },
+      }),
     }
 
-    tabBtn.addEventListener('click', (e) => {
-      if (e.target instanceof Element && e.target.closest('.terminals-tab-close')) return
-      setActiveTab(id)
-      // Reclaim the viewer from any agent-task panel that was showing. Done after
-      // setActiveTab so a same-tab click (which setActiveTab skips) still returns
-      // to the live terminal and re-fits it once the panel is hidden.
-      store.emit('shell_tab_activated')
-      const tab = tabs.get(id)
-      if (tab && terminalModeActive(store)) {
-        requestAnimationFrame(() => {
-          fitTab(tab)
-          focusTab(tab)
-        })
-      }
-    })
     tabBtn.addEventListener('contextmenu', (e) => {
       e.preventDefault()
       e.stopPropagation()
@@ -642,10 +647,6 @@ export function mountTerminalsPane(
     labelSpan.addEventListener('dblclick', (e) => {
       e.stopPropagation()
       beginRename(tab)
-    })
-    closeBtn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      void removeTab(id)
     })
 
     wireTabInput(tab)
@@ -672,8 +673,7 @@ export function mountTerminalsPane(
     // partial result with an unavailable exit code.
     finishCodeBlockRun(tab, null)
     tab.term.dispose()
-    tab.tabBtn.remove()
-    tab.panel.remove()
+    tab.tabSwitch.remove()
     tabs.delete(tabId)
 
     if (activeTabId !== tabId) return

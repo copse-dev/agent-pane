@@ -324,6 +324,22 @@ describe('tool permissions', () => {
     assert.equal(await setToolPermissionForExecution('launch_gui_app', 'allow'), false)
   })
 
+  it('shows device hub as ask by default and lets allow persist', async () => {
+    const registry = new ToolRegistry()
+    registerTool(registry, 'device_hub')
+    const id = copseToolPermissionId('device_hub')
+    const initial = listToolPermissionCatalog(registry, []).groups[0]?.tools[0]
+
+    assert.ok(initial)
+    assert.equal(initial.defaultPolicy, 'ask')
+    assert.equal(initial.policy, 'ask')
+    assert.deepEqual(initial.disabledPolicies ?? [], [])
+
+    await updateToolPermissions(registry, [], { toolIds: [id], policy: 'allow' })
+    assert.deepEqual(overrides(), { [id]: 'allow' })
+    assert.deepEqual(resolveToolPermission('device_hub'), { id, policy: 'allow' })
+  })
+
   it('defaults custom tools to ask and disables allow when the tool requires approval', async () => {
     const registry = new ToolRegistry()
     registerTool(registry, 'custom__lookup')
