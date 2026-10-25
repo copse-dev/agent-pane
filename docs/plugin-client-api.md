@@ -125,3 +125,13 @@ supported projections. Desktop-only permissions are discoverable and can be open
 but remain unanswerable through the decision API. Opening an exact currently waiting chat does
 not grant permission to answer it. Settlement withdraws attention. Pairing discloses pending
 request titles. Clients refresh on the shared event sequence and reconcile periodically.
+
+Native worktree preparation also supports approve-once/deny decisions. Its host producer explicitly
+certifies bounded one-request semantics via `interactiveClientApproval: 'once'`, with remembering
+disabled and no default turn-tree lease. Eligibility is not inferred from display titles or tool
+labels. The ordinary supported-approval feed carries the complete install/setup commands, advice
+and scope footer. Answering still uses the exact session/project/thread/request/revision and the
+existing callback/audit source; preparation revalidates the reviewed plan fingerprint before
+execution and retains its ordinary containment. Other permission prompts remain desktop-only
+until their producer supports a complete bounded projection. Pairing discloses worktree
+preparation alongside shell-command approvals.
