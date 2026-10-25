@@ -22,6 +22,7 @@ User experience and maintainability are acceptance concerns. Profiling, prototyp
 /** Shared local/ACP policy; explicit skills own their invocation's workflow. */
 export function buildEngineeringGuidance(payload: TurnStartPayload): string | undefined {
   if (!payload.userText.trim() || payload.invokedSkills?.length) return undefined
+  if (payload.firstTurn === false) return undefined
   const review = payload.toolNames?.find((name) => name === 'review_changes')
   return review
     ? `${ENGINEERING_GUIDANCE}\nWhen review is appropriate, use the available ${review} tool rather than building a competing review pipeline.`
