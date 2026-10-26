@@ -1,5 +1,5 @@
 import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
-import RFB from '@novnc/novnc'
+import type RFB from '@novnc/novnc'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { attachAnnotation } from '../drawing/attach-annotation.ts'
 import { mountAnnotationLayer, type AnnotationLayer } from '../drawing/annotation-layer.ts'
@@ -1438,6 +1438,13 @@ function mountVncSession(
       submittedPassword = rememberedPassword === null && enteredPassword ? enteredPassword : null
       usedRememberedPassword = false
       forgetLoginButton.hidden = rememberedPassword === null
+      // noVNC is loaded on the first connect, not at app start: its module
+      // body runs a WebCodecs H.264 decode probe behind a top-level `await`,
+      // which in the eager bundle stalled every module after it until the
+      // probe settled. Loaded before the connection opens so a load failure
+      // leaves nothing to close.
+      const { default: NoVncRfb } = await import('@novnc/novnc')
+      if (generation !== connectGeneration) return
       const connection = await api.vnc.open(target)
       if (generation !== connectGeneration) {
         await api.vnc.close(connection.id)
@@ -1445,7 +1452,7 @@ function mountVncSession(
       }
       const nextChannel = new VncIpcChannel(connection.id, api)
       channel = nextChannel
-      const nextRfb = new RFB(screen, nextChannel, { shared: true })
+      const nextRfb = new NoVncRfb(screen, nextChannel, { shared: true })
       rfb = nextRfb
       activeTarget = target
       connectedAtLeastOnce = false

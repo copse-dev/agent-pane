@@ -634,7 +634,6 @@ describe('ACP bridge exposure decisions', () => {
       'update_todos',
       'update_thread_plan',
       'report_plan_completion',
-      'read_skill',
       'request_write_access',
       'read_terminal',
       'run_checkup',
@@ -656,6 +655,7 @@ describe('ACP bridge exposure decisions', () => {
           !nativeOnly.has(name),
       )
     assert.deepEqual(undecided, [], 'review ACP exposure when adding a core tool')
+    assert.ok(BRIDGE_TOOL_NAMES.includes('read_skill'), 'skill reads use an explicit run binding')
     for (const name of nativeOnly) {
       assert.ok(!BRIDGE_TOOL_NAMES.includes(name), `${name} must stay out of the ACP bridge`)
     }

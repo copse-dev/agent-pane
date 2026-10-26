@@ -3,7 +3,10 @@ import * as fsp from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from './lib/safe-json.mts'
-import { extractSkillFileReferences } from '../src/shared/skills/extract-skill-references.mts'
+import {
+  extractSkillFileReferences,
+  skillSupportingReferenceText,
+} from '../src/shared/skills/extract-skill-references.mts'
 
 /** Pinned upstream commit from https://github.com/cursor/plugins. */
 export const BUNDLED_CURSOR_PLUGINS_COMMIT = 'e46364b8be46000b7df0f260550cd712afbb8d36'
@@ -215,9 +218,11 @@ function pathPatterns(text: string): RegExp[] {
 
 /** Skill-relative candidate paths a text names, literally or through a glob/placeholder. */
 export function mentionedSkillFiles(text: string, candidates: readonly string[]): string[] {
-  const patterns = pathPatterns(text)
+  const references = skillSupportingReferenceText(text)
+  const patterns = pathPatterns(references)
   return candidates.filter(
-    (candidate) => text.includes(candidate) || patterns.some((pattern) => pattern.test(candidate)),
+    (candidate) =>
+      references.includes(candidate) || patterns.some((pattern) => pattern.test(candidate)),
   )
 }
 
@@ -362,7 +367,7 @@ export async function readBundledCursorSkillsSource(
 }
 
 /** Validate provenance, inventory, and every vendored payload byte. */
-export async function assertBundledCursorSkillsSnapshot(
+async function assertBundledCursorSkillsPayload(
   root = BUNDLED_CURSOR_SKILLS_VENDOR_DIR,
 ): Promise<BundledCursorSkillsSource> {
   await fsp.access(resolve(root, 'README.md'))
@@ -390,6 +395,13 @@ export async function assertBundledCursorSkillsSnapshot(
         `SOURCE.json records ${source.contentSha256}`,
     )
   }
+  return source
+}
+
+export async function assertBundledCursorSkillsSnapshot(
+  root = BUNDLED_CURSOR_SKILLS_VENDOR_DIR,
+): Promise<BundledCursorSkillsSource> {
+  const source = await assertBundledCursorSkillsPayload(root)
   const dangling = await findDanglingSkillReferences(root)
   if (JSON.stringify(dangling) !== JSON.stringify(source.danglingReferences)) {
     throw new Error(
@@ -398,6 +410,16 @@ export async function assertBundledCursorSkillsSnapshot(
     )
   }
   return source
+}
+
+/** Recompute generated diagnostics only after verifying the pinned payload is unchanged. */
+export async function refreshBundledSkillReferences(
+  root: string,
+): Promise<BundledCursorSkillsSource> {
+  const source = await assertBundledCursorSkillsPayload(root)
+  const updated = { ...source, danglingReferences: await findDanglingSkillReferences(root) }
+  await fsp.writeFile(join(root, 'SOURCE.json'), `${JSON.stringify(updated, null, 2)}\n`, 'utf8')
+  return assertBundledCursorSkillsSnapshot(root)
 }
 
 /** Download the pinned plugin snapshot for an explicit source update. */

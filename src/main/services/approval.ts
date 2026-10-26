@@ -626,19 +626,26 @@ export function pendingApprovalRequestsForThread(
 async function deferInsteadOfPrompting(
   req: ApprovalRequest,
   threadId: string,
+  projectId: string | undefined,
   prompt: () => Promise<ApprovalResponse>,
 ): Promise<ApprovalResponse> {
   let entryId: string
   try {
-    const entry = await deferApproval({
-      threadId,
-      kind: req.type,
-      title: req.title,
-      subject: req.subject ?? req.title,
-      ...(req.cause !== undefined ? { cause: req.cause } : {}),
-      ...(req.reasons?.length ? { reasons: req.reasons } : {}),
-      ...(req.scope !== undefined ? { scope: req.scope } : {}),
-    })
+    const entry = await deferApproval(
+      {
+        threadId,
+        kind: req.type,
+        title: req.title,
+        subject: req.subject ?? req.title,
+        ...(req.cause !== undefined ? { cause: req.cause } : {}),
+        ...(req.reasons?.length ? { reasons: req.reasons } : {}),
+        ...(req.scope !== undefined ? { scope: req.scope } : {}),
+      },
+      // The run's own project, not whichever one the window has open: a
+      // schedule can fire in a background project, and Context and the status
+      // tool read the queue by the thread's project.
+      projectId !== undefined ? { projectId } : {},
+    )
     entryId = entry.id
   } catch (error) {
     console.warn('[approval] could not queue a deferral; prompting instead:', error)
@@ -676,7 +683,7 @@ export function requestApproval(
   // them growing a second code path — and without a gate being able to forget.
   const deferringThread = getActiveRunThread()
   if (deferringThread !== null && isDeferralModeActive(deferringThread)) {
-    return deferInsteadOfPrompting(req, deferringThread, () =>
+    return deferInsteadOfPrompting(req, deferringThread, context?.projectId, () =>
       requestApprovalInteractive(req, signal),
     )
   }

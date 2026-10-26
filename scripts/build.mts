@@ -282,14 +282,23 @@ const browserOpts = {
 const rendererOutDir = isDemo ? 'dist/demo' : 'dist/renderer'
 const rendererEntry = isDemo ? 'src/renderer/demo/main.ts' : 'src/renderer/main.ts'
 
+// The renderer is code-split. Without `splitting`, esbuild inlines every
+// `import()` into app.js, so the "lazy" highlight.js, DOMPurify and dialog
+// modules were all parsed and evaluated on the eager path, and any top-level
+// `await` inside them stalled the whole bundle's evaluation. With it, each
+// dynamic import becomes a chunk under `chunks/` that loads on first use.
+// Chunk names carry a content hash, so clear the directory first: `dist/` is
+// not cleaned between builds and a stale chunk would otherwise ship.
+rmSync(`${rendererOutDir}/chunks`, { recursive: true, force: true })
 await bundle({
   ...browserOpts,
-  entryPoints: [rendererEntry],
-  // noVNC 1.7 performs an asynchronous WebCodecs capability probe at module
-  // initialization. Preserve its top-level await instead of forcing the app
-  // bundle into esbuild's default IIFE format.
+  entryPoints: { app: rendererEntry },
+  // Code splitting is ESM-only, and the entry keeps the `app.js` name
+  // index.html loads; chunks go beside it.
   format: 'esm',
-  outfile: `${rendererOutDir}/app.js`,
+  splitting: true,
+  chunkNames: 'chunks/[name]-[hash]',
+  outdir: rendererOutDir,
 })
 assertModuleParses(`${rendererOutDir}/app.js`)
 // Monaco is bundled on its own and injected lazily by monaco/setup.ts, keeping
