@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess, type SpawnOptionsWithoutStdio } from 'node:child_process'
+import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
 import { PassThrough } from 'node:stream'
 import { posixQuote } from '../security/safe-install.ts'
 import { leaseSshAskpassEnv } from './askpass.ts'
@@ -19,7 +19,7 @@ export interface RemoteSpawnOptions {
   remoteRoot: string
   env?: NodeJS.ProcessEnv
   signal?: AbortSignal
-  stdio: SpawnOptionsWithoutStdio['stdio']
+  stdio: SpawnOptions['stdio']
 }
 
 /** Wrap a shell command to run under setsid and print its PGID on the first line. */
@@ -82,7 +82,9 @@ export async function spawnRemoteShellCommand(
   }
   proc.on('close', release)
   proc.on('error', release)
-  if (opts.stdio === 'pipe') {
+  // The PGID line arrives on stdout, so parse it whenever stdout is piped, including
+  // when stdin is ignored (`['ignore', 'pipe', 'pipe']`).
+  if (opts.stdio === 'pipe' || (Array.isArray(opts.stdio) && opts.stdio[1] === 'pipe')) {
     attachPgidParser(proc, opts.hostId, stdout)
     Object.defineProperty(proc, 'stdout', { value: stdout })
   }

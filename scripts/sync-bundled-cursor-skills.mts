@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import {
   BUNDLED_CURSOR_SKILLS_VENDOR_DIR,
   syncBundledCursorSkills,
+  refreshBundledSkillReferences,
 } from './bundled-cursor-skills-sync.mts'
 
 async function pathExists(path: string): Promise<boolean> {
@@ -55,7 +56,11 @@ const isCli =
 
 if (isCli) {
   try {
-    await updateBundledCursorSkills()
+    if (process.argv.includes('--refresh-references')) {
+      await refreshBundledSkillReferences(BUNDLED_CURSOR_SKILLS_VENDOR_DIR)
+    } else {
+      await updateBundledCursorSkills()
+    }
   } catch (error) {
     console.error('[sync-bundled-cursor-skills]', error instanceof Error ? error.message : error)
     process.exitCode = 1
