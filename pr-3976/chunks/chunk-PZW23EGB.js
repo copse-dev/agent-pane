@@ -69553,7 +69553,6 @@ function syncFilesPaneDom(store) {
 function setRightPanelMaximized(store, maximized) {
   if (store.getState().rightPanelMaximized === maximized) return;
   store.setState({ rightPanelMaximized: maximized });
-  store.emit("right_panel_maximized_changed");
 }
 function toggleRightPanelMaximized(store) {
   setRightPanelMaximized(store, !store.getState().rightPanelMaximized);
@@ -69565,11 +69564,9 @@ function isRightPanelMaximized(store) {
 function clearMaximizedOnClose(store) {
   if (!store.getState().rightPanelMaximized) return;
   store.setState({ rightPanelMaximized: false });
-  store.emit("right_panel_maximized_changed");
 }
 function toggleProjectsPane(store) {
   store.setState({ projectsPaneOpen: !store.getState().projectsPaneOpen });
-  store.emit("projects_pane_changed");
 }
 function toggleFilesPane(store) {
   const open2 = !store.getState().filesPaneOpen;
