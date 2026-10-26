@@ -7,6 +7,7 @@ import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.
 import {
   readSeededSettings,
   resetUserData,
+  seedStableWorkspace,
   writeSeedConfig,
   writeSettings,
 } from './helpers/seed-config.ts'
@@ -34,7 +35,9 @@ describe('context wheel counts the classifier tool', function () {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     writeSeedConfig({
-      projects: [{ id: PROJECT_ID, path: process.cwd(), name: 'workspace' }],
+      // Not this checkout: its AGENTS.md and skills are part of the estimate,
+      // so a docs edit on main would move every figure in the popover.
+      projects: [{ id: PROJECT_ID, path: seedStableWorkspace(), name: 'workspace' }],
       activeProjectId: PROJECT_ID,
       [`threads:${PROJECT_ID}`]: [
         {

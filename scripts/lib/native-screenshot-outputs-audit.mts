@@ -27,7 +27,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/context-wheel-classifier.e2e.ts': {
-    sourceSha256: '42f16de57f14520051bb4937e4bc14a40dfc7dd6848c317c719cfef5545531cc',
+    sourceSha256: 'd20c34a2a47d6564112bdb052a32edec216a2173150a8e87e31787bbb05d9372',
     filenames: ['context-wheel-classifier-configured.png', 'context-wheel-classifier-none.png'],
   },
   'tests/e2e/file-viewer-changes.e2e.ts': {

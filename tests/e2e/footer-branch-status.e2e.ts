@@ -84,8 +84,17 @@ describe('footer branch status for a detached thread worktree', function () {
   let projectRoot = ''
   let worktreeRoot = ''
 
+  // A recovery command names the picked commit's SHA, and the machine-originated
+  // continue turn shows that command in the transcript, so this fixture's
+  // commits must not take their dates from the wall clock: every run would
+  // otherwise render a different SHA in footer-branch-restored-composer.png.
+  const commitDate = '2026-01-01T00:00:00Z'
   function git(cwd: string, args: string[]): string {
-    return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
+    return execFileSync('git', args, {
+      cwd,
+      encoding: 'utf8',
+      env: { ...process.env, GIT_AUTHOR_DATE: commitDate, GIT_COMMITTER_DATE: commitDate },
+    }).trim()
   }
 
   /** The repair button shares the branch's line instead of wrapping beneath it. */

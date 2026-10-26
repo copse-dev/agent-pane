@@ -454,7 +454,11 @@ of the shot, see `scripts/filter-screenshots.mts`); anything larger is either a 
 spec that is not deterministic, and re-baselining fixes neither.
 
 1. **Is it recurring?** The same shot appearing on PRs that do not touch its spec is unowned drift.
-   Compare the before/after images of two unrelated PRs' evidence comments.
+   Compare the before/after images of two unrelated PRs' evidence comments. Every full run renders
+   the same drift; the filter only shows it to PRs whose diff owns the shot, so a PR touching a
+   widely imported `src/` file shows all of it and a lockfile bump shows none. Find the merged
+   change that moved the pixels without owning them, such as a spec that seeds `process.cwd()` and
+   so renders this checkout's `AGENTS.md`, skills or branch.
 2. **Measure it.** Diff the pair with `pixelmatch` (threshold 0.1) for the differing-pixel count and
    percentage, and compare dimensions. A changed height or width is a state race, never noise.
 3. **Look at both images.** Name what differs before deciding:
