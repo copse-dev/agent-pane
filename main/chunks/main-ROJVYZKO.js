@@ -451,7 +451,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-SMEQYWAB.js";
+} from "./chunk-E7GFSWPO.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -722,8 +722,6 @@ function createStore(initial) {
     projects_changed: /* @__PURE__ */ new Set(),
     files_pane_changed: /* @__PURE__ */ new Set(),
     right_panel_mode_changed: /* @__PURE__ */ new Set(),
-    right_panel_maximized_changed: /* @__PURE__ */ new Set(),
-    projects_pane_changed: /* @__PURE__ */ new Set(),
     sidebar_project_filter_changed: /* @__PURE__ */ new Set(),
     git_change_navigate: /* @__PURE__ */ new Set(),
     roadmap_reveal: /* @__PURE__ */ new Set(),
@@ -770,10 +768,28 @@ function createStore(initial) {
       handler(...args);
     });
   }
+  const selections = /* @__PURE__ */ new Set();
+  function select(selector, listener, equals = Object.is) {
+    let value = selector(state);
+    const check = () => {
+      const next = selector(state);
+      const prev = value;
+      if (equals(prev, next)) return;
+      value = next;
+      listener(next, prev);
+    };
+    selections.add(check);
+    return () => {
+      selections.delete(check);
+    };
+  }
   function setState(partial) {
     state = { ...state, ...partial };
+    for (const check of [...selections]) {
+      if (selections.has(check)) check();
+    }
   }
-  return { getState: () => state, setState, on: on2, emit };
+  return { getState: () => state, setState, on: on2, emit, select };
 }
 var init_store = __esm({
   "src/shared/store/store.ts"() {
@@ -2736,7 +2752,7 @@ function mountTitlebar(root, store2, api2) {
   syncName();
   syncBranch();
   const unsubs = [
-    store2.on("projects_pane_changed", syncSidebar),
+    store2.select((s) => s.projectsPaneOpen, syncSidebar),
     store2.on("workspace_changed", () => {
       syncName();
       syncBranchNow();
@@ -63587,7 +63603,6 @@ function mountFooterBranchStatus(host, store2, api2) {
     }
   }
   async function refresh() {
-    refreshedThreadId = store2.getState().activeThreadId;
     const token = ++refreshToken;
     pruneBaseBranches();
     if (!store2.getState().workspaceRoot) {
@@ -63641,7 +63656,6 @@ function mountFooterBranchStatus(host, store2, api2) {
     renderTrigger();
     if (open) renderMenu();
   }
-  let refreshedThreadId = store2.getState().activeThreadId;
   function refreshNow() {
     if (refreshTimer) {
       clearTimeout(refreshTimer);
@@ -63656,12 +63670,16 @@ function mountFooterBranchStatus(host, store2, api2) {
       void refresh();
     }, 500);
   }
-  function scheduleStoreRefresh() {
+  function renderStoreState() {
     pruneBaseBranches();
     renderTrigger();
     if (open) renderMenu();
+  }
+  function scheduleStoreRefresh() {
+    renderStoreState();
     scheduleRefresh();
   }
+  let switchedThisTask = false;
   function copyBranchName() {
     const branch = branchToCopy;
     if (!branch) return;
@@ -63735,8 +63753,11 @@ function mountFooterBranchStatus(host, store2, api2) {
       refreshNow();
     }),
     store2.on("workspace_changed", refreshNow),
-    store2.on("threads_changed", () => {
-      if (store2.getState().activeThreadId !== refreshedThreadId) {
+    // A real thread switch repaints immediately, whichever writer made it and
+    // whether or not it emitted anything (#3928).
+    store2.select(
+      (s) => s.activeThreadId,
+      () => {
         status = null;
         detached = null;
         branches = [];
@@ -63744,9 +63765,15 @@ function mountFooterBranchStatus(host, store2, api2) {
         renderTrigger();
         if (open) renderMenu();
         refreshNow();
-        return;
+        switchedThisTask = true;
+        queueMicrotask(() => {
+          switchedThisTask = false;
+        });
       }
-      scheduleStoreRefresh();
+    ),
+    store2.on("threads_changed", () => {
+      if (switchedThisTask) renderStoreState();
+      else scheduleStoreRefresh();
     }),
     store2.on("thread_status_changed", scheduleStoreRefresh),
     store2.on("message_added", () => {
@@ -69780,10 +69807,9 @@ function mountRightPanelLayout(store2) {
   syncLayout();
   syncMaximized();
   const unsubs = [
-    store2.on("right_panel_mode_changed", syncLayout),
-    store2.on("files_pane_changed", syncLayout),
-    store2.on("files_pane_changed", syncMaximized),
-    store2.on("right_panel_maximized_changed", syncMaximized)
+    store2.select((s) => s.rightPanelMode, syncLayout),
+    store2.select((s) => s.filesPaneOpen, syncLayout),
+    store2.select(() => isRightPanelMaximized(store2), syncMaximized)
   ];
   return () => {
     unsubs.forEach((u3) => {
@@ -80217,7 +80243,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     store2.on("workspace_changed", onThreadMaybeChanged),
     store2.on("right_panel_mode_changed", onBrowserModeChange),
     store2.on("files_pane_changed", onBrowserModeChange),
-    store2.on("right_panel_maximized_changed", onRightPanelMaximizedChanged),
+    store2.select((s) => s.rightPanelMaximized, onRightPanelMaximizedChanged),
     store2.on("browser_url_requested", openRequestedBrowserUrl),
     store2.on("browser_url_bar_focus_requested", focusUrlBar),
     store2.on("canvas_artefact_requested", openArtefact),
@@ -87992,7 +88018,7 @@ function mountPopoutTitlebar(host, store2, api2) {
     title.textContent = panelModeLabel(store2.getState().rightPanelMode);
   }
   syncTitle();
-  const unsub = store2.on("right_panel_mode_changed", syncTitle);
+  const unsub = store2.select((s) => s.rightPanelMode, syncTitle);
   return () => {
     unsub();
     destroy();
