@@ -70623,7 +70623,8 @@ ${output}` : "Terminal output: (none)"
     for (const tab2 of visible) setTabVisible(tab2, true);
     if (activeTabId && !visible.some((t) => t.id === activeTabId)) activeTabId = null;
     if (needsNew) {
-      if (terminalModeActive(store2) && !scopeHasTab()) void ensureScopeTab({ focus: false, automatic: true });
+      if (terminalModeActive(store2) && !scopeHasTab())
+        void ensureScopeTab({ focus: false, automatic: true });
       return;
     }
     if (!activeTabId && visible.length > 0) setActiveTab(at(visible, 0).id, { focus: false });
