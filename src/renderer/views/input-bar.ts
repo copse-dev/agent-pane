@@ -179,6 +179,7 @@ export function mountInputBar(
   opts: MountInputBarOptions = {},
 ): {
   handleStopShortcut: (key: 'Escape' | 'Enter', target?: EventTarget | null) => boolean
+  openModelPicker: () => void
   unmount: () => void
 } {
   const chips = el('div', { class: 'attachment-chips' })
@@ -2972,6 +2973,15 @@ export function mountInputBar(
   window.addEventListener('beforeunload', stopContextEstimates)
   return {
     handleStopShortcut,
+    openModelPicker: (): void => {
+      // Called from outside any click handler on the picker's own subtree
+      // (e.g. a confirm dialog's resolved promise). Opening synchronously would
+      // let that same click event's bubble phase reach the picker's own
+      // outside-click closer after the menu opens, closing it right back.
+      setTimeout(() => {
+        modelPicker.openMenu()
+      }, 0)
+    },
     unmount(): void {
       window.removeEventListener('beforeunload', stopContextEstimates)
       stopContextEstimates()

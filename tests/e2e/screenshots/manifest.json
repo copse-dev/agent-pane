@@ -4969,6 +4969,14 @@
       "sha256": "04575c63d48f1055be113887c9d2c89a1a63c26ea07454b354c80300d541798d",
       "bytes": 27260
     },
+    "thread-model-override-picker.png": {
+      "sha256": "4ff1b0da4b88069b08acbdbf05a21de8a375423e5f5cb74e4c83028193975a61",
+      "bytes": 15396
+    },
+    "thread-model-override-warning.png": {
+      "sha256": "f3fd316e5a38ae8178dac2098303b8f6f0eed4080638f453c41b2715abfcd8c6",
+      "bytes": 46356
+    },
     "thread-multiple-related-prs.png": {
       "sha256": "6365208dac24e07eeab976744ed20332822618ea2df90e01eb2f478d0d55ece7",
       "bytes": 42973
