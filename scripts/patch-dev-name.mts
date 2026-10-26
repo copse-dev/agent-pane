@@ -57,6 +57,25 @@ const ELECTRON_DIST = join(electronRoot, 'dist')
 const SOURCE_APP = join(ELECTRON_DIST, 'Electron.app')
 const TARGET_APP = join(ELECTRON_DIST, APP_BUNDLE)
 const sourcePlist = join(SOURCE_APP, 'Contents', 'Info.plist')
+const ICNS = join('assets', 'icons', 'app.icns')
+
+function icnsFingerprint(path: string): string {
+  return createHash('sha256').update(readFileSync(path)).digest('hex').slice(0, 12)
+}
+
+/**
+ * True once the bundle carries today's icon (or there's no icon to compare
+ * against — iconutil isn't available everywhere, so that can't force a
+ * repatch it could never satisfy). Without this, a bundle patched before
+ * `assets/icons/app.icns` existed stays on Electron's stock icns forever:
+ * `isPatchApplied`/`adoptSharedCopseApp` only looked at path.txt + the
+ * Electron dist version, neither of which changes when the icon shows up.
+ */
+function bundleIconIsCurrent(): boolean {
+  if (!existsSync(ICNS)) return true
+  const iconBase = `copse-panel-${icnsFingerprint(ICNS)}.icns`
+  return existsSync(join(TARGET_APP, 'Contents', 'Resources', iconBase))
+}
 
 function readElectronPackageVersion(): string {
   const packageJson = expectRecord(
@@ -173,7 +192,8 @@ function isPatchApplied(): boolean {
   if (!existsSync(PATH_TXT) || !existsSync(TARGET_APP)) return false
   if (readFileSync(PATH_TXT, 'utf8').trim() !== EXEC_REL) return false
   const distVersion = readDistVersion()
-  return distVersion !== undefined && distVersion === readElectronPackageVersion()
+  if (distVersion === undefined || distVersion !== readElectronPackageVersion()) return false
+  return bundleIconIsCurrent()
 }
 
 /** Shared cache already has Copse.app — only need per-worktree path.txt. */
@@ -181,6 +201,7 @@ function adoptSharedCopseApp(): boolean {
   if (!existsSync(TARGET_APP)) return false
   const distVersion = readDistVersion()
   if (distVersion === undefined || distVersion !== readElectronPackageVersion()) return false
+  if (!bundleIconIsCurrent()) return false
   writeFileSync(PATH_TXT, EXEC_REL)
   return true
 }
@@ -240,11 +261,10 @@ try {
   )
 }
 
-const ICNS = join('assets', 'icons', 'app.icns')
 const resourcesDir = join(TARGET_APP, 'Contents', 'Resources')
 let icnsHash: string | undefined
 if (existsSync(ICNS)) {
-  icnsHash = createHash('sha256').update(readFileSync(ICNS)).digest('hex').slice(0, 12)
+  icnsHash = icnsFingerprint(ICNS)
   const iconBase = `copse-panel-${icnsHash}`
   for (const name of readdirSync(resourcesDir)) {
     if (name.startsWith('copse-panel') && name.endsWith('.icns')) {
