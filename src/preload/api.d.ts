@@ -13,6 +13,7 @@ import type {
 import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
 import type { ClassifierClient } from '@copse/llm/classifiers/types.ts'
 import type { LocalClassifierClient } from '@shared/local-classifiers.ts'
+import type { EnvironmentSetupClient } from '@shared/environment-setup.ts'
 import type {
   ContextBreakdown,
   MachineAgentRunRequest,
@@ -987,6 +988,7 @@ export interface ApiClient {
   }
   classifiers: ClassifierClient
   localClassifiers: LocalClassifierClient
+  environmentSetup: EnvironmentSetupClient
   settings: {
     getSnapshot: () => Promise<SettingsSnapshot>
     update: (changes: SettingsUpdate) => Promise<void>
@@ -1086,7 +1088,6 @@ export interface ApiClient {
   }
   appIcon: {
     apply: () => Promise<void>
-    setAutomationMode: (active: boolean) => Promise<void>
   }
   about: {
     /** The app version and the third-party licence report the build shipped. */

@@ -1265,6 +1265,13 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       uninstall: unsupported,
       connect: unsupported,
     },
+    environmentSetup: {
+      status: () => resolved({ offer: false, promptCount: 0 }),
+      review: unsupported,
+      apply: unsupported,
+      undo: unsupported,
+      dismiss: resolvedVoid,
+    },
     chatGptPlan: {
       status: () => resolved(scenario.chatGptPlan ?? { accounts: [], activeClientId: null }),
       signIn: unsupported,
@@ -1326,7 +1333,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       refreshHuggingFaceModels: () =>
         resolved({ ok: false, count: 0, error: 'Unavailable in demo' }),
     },
-    appIcon: { apply: resolvedVoid, setAutomationMode: resolvedVoid },
+    appIcon: { apply: resolvedVoid },
     about: {
       getInfo: () => resolved({ version: 'demo', report: null }),
       openLicenseFile: resolvedVoid,
