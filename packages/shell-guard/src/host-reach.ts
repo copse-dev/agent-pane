@@ -7,7 +7,8 @@ import {
   shellSegments,
   unwrapWrappers,
 } from './shell-argv.ts'
-import { remoteChangeReasons } from './remote-change.ts'
+import { productionTargetReason } from './production-targets.ts'
+import { packageRegistryOrigins, remoteChangeReasons } from './remote-change.ts'
 import { secretFileExposure, tokenPrinterReason } from './secrets.ts'
 import { dangerousInSandboxReasons } from './shell-scope.ts'
 import { normalizeSshHost } from './trusted-ssh-hosts.ts'
@@ -28,6 +29,17 @@ export interface HostReachContext {
    * files, lower-case. `ssh`/`scp`/`rsync`/`sftp` to any other host prompts.
    */
   trustedSshHosts?: readonly string[]
+  /**
+   * Package registry origins the user trusts installs from (`https://npm.corp.example`).
+   * An install pointed at any other non-default registry prompts.
+   */
+  trustedPackageRegistries?: readonly string[]
+  /**
+   * Cluster contexts, namespaces, cloud projects or hosts the user marks as
+   * production. Any infrastructure, remote-shell or database command naming one
+   * prompts, reads included.
+   */
+  productionTargets?: readonly string[]
   /** Whether a path exists; lets `npx <tool>` run a project dependency's binary. */
   pathExists?: (path: string) => boolean
 }
@@ -720,6 +732,37 @@ function historySearchReason(command: string): string | null {
   return null
 }
 
+/**
+ * The hosts a command's `ssh`/`scp`/`rsync`/`sftp`/`mosh` invocations name, in the
+ * same normalized form {@link HostReachContext.trustedSshHosts} is compared in.
+ * Lets a caller ask "would trusting these hosts have removed this prompt?" by
+ * re-running the harm gate with them added, rather than reading reason text.
+ */
+export function sshDestinationHosts(command: string): string[] {
+  const hosts = new Set<string>()
+  for (const rawArgv of shellSegments(command)) {
+    const argv = unwrapWrappers(rawArgv)
+    const head = commandName(argv[0])
+    if (!SSH_CLIENTS.has(head)) continue
+    for (const host of parseSshClient(head, argv.slice(1)).hosts) if (host) hosts.add(host)
+  }
+  return [...hosts]
+}
+
+/**
+ * The package registry origins a command's installs select, beyond the public
+ * defaults, in the form {@link HostReachContext.trustedPackageRegistries} holds.
+ */
+export function commandPackageRegistries(command: string): string[] {
+  const origins = new Set<string>()
+  for (const rawArgv of shellSegments(command)) {
+    for (const origin of packageRegistryOrigins(rawArgv, unwrapWrappers(rawArgv))) {
+      origins.add(origin)
+    }
+  }
+  return [...origins]
+}
+
 /** Every host-reach reason for a shell command line, deduplicated. */
 export function hostReachReasons(command: string, context: HostReachContext): string[] {
   const reasons = new Set<string>(secretOverNetworkReasons(command))
@@ -733,7 +776,8 @@ export function hostReachReasons(command: string, context: HostReachContext): st
       ...secretReasons(rawArgv, argv),
       ...hostControlReasons(argv),
       ...fetchedCodeReasons(argv, context),
-      ...remoteChangeReasons(rawArgv, argv),
+      ...remoteChangeReasons(rawArgv, argv, context.trustedPackageRegistries),
+      productionTargetReason(rawArgv, argv, head, context.productionTargets ?? []),
       privilegeReason(rawArgv, argv),
       tokenPrinterReason(argv),
       secretFileExposure(argv),

@@ -135,6 +135,14 @@ import {
   TRUSTED_SSH_HOSTS_SETTING,
   sanitizeTrustedSshHosts,
 } from '@copse/shell-guard/trusted-ssh-hosts.ts'
+import {
+  sanitizeTrustedPackageRegistries,
+  TRUSTED_PACKAGE_REGISTRIES_SETTING,
+} from '@copse/shell-guard/trusted-package-registries.ts'
+import {
+  PRODUCTION_TARGETS_SETTING,
+  sanitizeProductionTargets,
+} from '@copse/shell-guard/production-targets.ts'
 import { currentRunUsesGuardedYolo } from './guarded-yolo.ts'
 import { recordPermissionDecision } from './permission-audit.ts'
 import { resolveToolPermission } from './tool-permissions.ts'
@@ -1243,9 +1251,18 @@ function sandboxCommandNormallyAllowed(command: string, workspaceRoot: string): 
 }
 
 /** The user's trusted SSH hosts and a filesystem probe, for the harm gate's host-reach rules. */
-function harmHostReachContext(): Pick<ShellHarmContext, 'trustedSshHosts' | 'pathExists'> {
+function harmHostReachContext(): Pick<
+  ShellHarmContext,
+  'trustedSshHosts' | 'trustedPackageRegistries' | 'productionTargets' | 'pathExists'
+> {
   return {
     trustedSshHosts: sanitizeTrustedSshHosts(getSetting<unknown>(TRUSTED_SSH_HOSTS_SETTING, [])),
+    trustedPackageRegistries: sanitizeTrustedPackageRegistries(
+      getSetting<unknown>(TRUSTED_PACKAGE_REGISTRIES_SETTING, []),
+    ),
+    productionTargets: sanitizeProductionTargets(
+      getSetting<unknown>(PRODUCTION_TARGETS_SETTING, []),
+    ),
     pathExists: existsSync,
   }
 }

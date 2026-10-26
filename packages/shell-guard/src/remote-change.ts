@@ -1,4 +1,5 @@
 import { commandName } from './shell-argv.ts'
+import { packageRegistryOrigin } from './trusted-package-registries.ts'
 
 /**
  * Commands that change something a person relies on beyond this checkout:
@@ -640,7 +641,60 @@ const REGISTRY_VARIABLE =
 const REGISTRY_FLAG =
   /^--(?:registry|index-url|extra-index-url|trusted-host|index|default-index)(?:=(.*))?$/
 
-function registryReason(rawArgv: readonly string[], argv: readonly string[]): string | null {
+/**
+ * Settings that choose where packages come from. A user can trust these by
+ * origin (Settings → Permissions → Trusted package registries). The others in
+ * {@link REGISTRY_VARIABLE} / {@link REGISTRY_FLAG} switch verification off or
+ * trust a host's TLS blindly, and always ask.
+ */
+const REGISTRY_SELECTING_VARIABLES: ReadonlySet<string> = new Set([
+  'GOPROXY',
+  'NPM_CONFIG_REGISTRY',
+  'npm_config_registry',
+  'YARN_REGISTRY',
+  'YARN_NPM_REGISTRY_SERVER',
+  'PIP_INDEX_URL',
+  'PIP_EXTRA_INDEX_URL',
+  'UV_INDEX_URL',
+  'UV_EXTRA_INDEX_URL',
+  'UV_INDEX',
+])
+const REGISTRY_SELECTING_FLAGS: ReadonlySet<string> = new Set([
+  '--registry',
+  '--index-url',
+  '--extra-index-url',
+  '--index',
+  '--default-index',
+])
+
+/**
+ * The non-default registry origins a value names, or null when any part is not a
+ * URL that can be compared. Lists (`GOPROXY=a,b|c`) and uv's `name=url` form are
+ * split; Go's `off` names no registry, while `direct` fetches from each module's
+ * own host and so is never comparable.
+ */
+function registryValueOrigins(value: string): string[] | null {
+  const origins: string[] = []
+  for (const part of value.split(/[,|]/).map((entry) => entry.trim())) {
+    if (part === '' || part === 'off') continue
+    const url = /^[\w.-]+=(.+)$/.exec(part)?.[1] ?? part
+    if (DEFAULT_REGISTRIES.test(url)) continue
+    const origin = packageRegistryOrigin(url)
+    if (origin === null) return null
+    origins.push(origin)
+  }
+  return origins
+}
+
+interface RegistrySetting {
+  label: string
+  /** Null when the setting cannot be trusted by origin. */
+  origins: string[] | null
+}
+
+/** Every non-default registry setting one segment makes. `argv` is unwrapped; `rawArgv` is not. */
+function registrySettings(rawArgv: readonly string[], argv: readonly string[]): RegistrySetting[] {
+  const settings: RegistrySetting[] = []
   for (const token of rawArgv) {
     const match = REGISTRY_VARIABLE.exec(token)
     if (!match) continue
@@ -649,16 +703,49 @@ function registryReason(rawArgv: readonly string[], argv: readonly string[]): st
     if (name === 'GOFLAGS' && !/insecure/i.test(value)) continue
     if (name === 'GOPRIVATE') continue
     if (DEFAULT_REGISTRIES.test(value)) continue
-    return `installs from a package registry other than the default (${name})`
+    settings.push({
+      label: name,
+      origins: REGISTRY_SELECTING_VARIABLES.has(name) ? registryValueOrigins(value) : null,
+    })
   }
   for (let i = 1; i < argv.length; i++) {
     const match = REGISTRY_FLAG.exec(argv[i] ?? '')
     if (!match) continue
     const value = match[1] ?? argv[i + 1] ?? ''
     if (DEFAULT_REGISTRIES.test(value)) continue
-    return `installs from a package registry other than the default (${(argv[i] ?? '').split('=')[0] ?? ''})`
+    const flag = (argv[i] ?? '').split('=')[0] ?? ''
+    settings.push({
+      label: flag,
+      origins: REGISTRY_SELECTING_FLAGS.has(flag) ? registryValueOrigins(value) : null,
+    })
+  }
+  return settings
+}
+
+function registryReason(
+  rawArgv: readonly string[],
+  argv: readonly string[],
+  trusted: ReadonlySet<string>,
+): string | null {
+  for (const setting of registrySettings(rawArgv, argv)) {
+    // An empty list (`GOPROXY=off`) names nothing to trust, so it keeps asking.
+    const origins = setting.origins ?? []
+    if (origins.length > 0 && origins.every((origin) => trusted.has(origin))) continue
+    return `installs from a package registry other than the default (${setting.label})`
   }
   return null
+}
+
+/**
+ * The registry origins one segment selects that trusting would cover. Settings
+ * that can never be trusted by origin are left out: trusting anything would not
+ * clear them.
+ */
+export function packageRegistryOrigins(
+  rawArgv: readonly string[],
+  argv: readonly string[],
+): string[] {
+  return registrySettings(rawArgv, argv).flatMap((setting) => setting.origins ?? [])
 }
 
 // ---------------------------------------------------------------------------
@@ -831,8 +918,15 @@ function databaseLoadReason(head: string, argv: readonly string[]): string | nul
 
 // ---------------------------------------------------------------------------
 
-/** Every remote-change reason for one segment. `argv` is unwrapped; `rawArgv` is not. */
-export function remoteChangeReasons(rawArgv: readonly string[], argv: readonly string[]): string[] {
+/**
+ * Every remote-change reason for one segment. `argv` is unwrapped; `rawArgv` is not.
+ * `trustedRegistries` are origins the user trusts packages from.
+ */
+export function remoteChangeReasons(
+  rawArgv: readonly string[],
+  argv: readonly string[],
+  trustedRegistries: readonly string[] = [],
+): string[] {
   const head = commandName(argv[0])
   const words = nonFlagWords(argv)
   const kubeWords =
@@ -849,7 +943,7 @@ export function remoteChangeReasons(rawArgv: readonly string[], argv: readonly s
     paymentReason(head, words),
     databaseReason(head, argv),
     containerReason(head, containerWords, argv),
-    registryReason(rawArgv, argv),
+    registryReason(rawArgv, argv, new Set(trustedRegistries)),
     uploadReason(head, argv),
     listenerReason(head, argv),
     remoteTestReason(head, argv),
