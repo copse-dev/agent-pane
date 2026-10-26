@@ -9,11 +9,11 @@ describe('Agent connection verification', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await browser.execute(() => {
       const get = window.api.settings.get
-      window.api.settings.get = async (key) =>
+      window.api.settings.get = async (key): ReturnType<typeof get> =>
         key === 'registeredAcpAgents'
           ? [{ id: 'claude-acp', title: 'Claude', command: 'claude-agent-acp', enabled: true }]
           : get(key)
-      window.api.acp.detectAgents = async () => [
+      window.api.acp.detectAgents = async (): ReturnType<typeof window.api.acp.detectAgents> => [
         {
           id: 'claude-acp',
           title: 'Claude',
@@ -24,8 +24,10 @@ describe('Agent connection verification', () => {
           running: false,
         },
       ]
-      window.api.acp.authStatus = async () => [{ id: 'claude-acp', state: 'signed-in' }]
-      window.api.acp.probeAgent = async () => {
+      window.api.acp.authStatus = async (): ReturnType<typeof window.api.acp.authStatus> => [
+        { id: 'claude-acp', state: 'signed-in' },
+      ]
+      window.api.acp.probeAgent = async (): ReturnType<typeof window.api.acp.probeAgent> => {
         throw new Error('Internal error')
       }
     })
@@ -50,7 +52,10 @@ describe('Agent connection verification', () => {
       'demo-agent-verification-failed.png',
     )
     await browser.execute(() => {
-      window.api.acp.probeAgent = async () => ({ models: null, modes: null })
+      window.api.acp.probeAgent = async (): ReturnType<typeof window.api.acp.probeAgent> => ({
+        models: null,
+        modes: null,
+      })
     })
     await row.$('button=Verify connection').click()
     await expect(row.$('.acp-row-chip')).toHaveText('Ready')
