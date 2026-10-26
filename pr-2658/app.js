@@ -2531,7 +2531,7 @@ function handleIntersectionResults(result, left, right) {
   const unrecKeys = /* @__PURE__ */ new Map();
   let unrecIssue;
   const keyIssues = /* @__PURE__ */ new Map();
-  const collect2 = (iss, side) => {
+  const collect4 = (iss, side) => {
     let keys2;
     if (iss.code === "unrecognized_keys" && !iss.path?.length) {
       unrecIssue ?? (unrecIssue = iss);
@@ -2552,11 +2552,11 @@ function handleIntersectionResults(result, left, right) {
     return true;
   };
   for (const iss of left.issues) {
-    if (!collect2(iss, "l"))
+    if (!collect4(iss, "l"))
       result.issues.push(iss);
   }
   for (const iss of right.issues) {
-    if (!collect2(iss, "r"))
+    if (!collect4(iss, "r"))
       result.issues.push(iss);
   }
   const bothKeys = [...unrecKeys].filter(([, f5]) => f5.l && f5.r).map(([k3]) => k3);
@@ -57811,9 +57811,520 @@ var init_trusted_ssh_hosts2 = __esm({
   }
 });
 
+// packages/shell-guard/src/trusted-package-registries.ts
+function packageRegistryOrigin(value) {
+  const trimmed2 = value.trim();
+  if (!trimmed2 || /\s/.test(trimmed2)) return null;
+  let url2;
+  try {
+    url2 = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed2) ? trimmed2 : `https://${trimmed2}`);
+  } catch {
+    return null;
+  }
+  if (url2.username || url2.password) return null;
+  const loopback = LOOPBACK_HOST.test(url2.hostname);
+  if (!loopback && !url2.hostname.includes(".")) return null;
+  if (url2.protocol === "http:" && !loopback) return null;
+  if (url2.protocol !== "https:" && url2.protocol !== "http:") return null;
+  return url2.origin.toLowerCase();
+}
+function collect2(entries2) {
+  const out = [];
+  for (const entry of entries2) {
+    if (typeof entry !== "string") continue;
+    const origin = packageRegistryOrigin(entry);
+    if (origin === null || out.includes(origin)) continue;
+    out.push(origin);
+  }
+  return out;
+}
+function parseTrustedPackageRegistries(text2) {
+  return collect2(
+    text2.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"))
+  );
+}
+function sanitizeTrustedPackageRegistries(value) {
+  return Array.isArray(value) ? collect2(value) : [];
+}
+var LOOPBACK_HOST;
+var init_trusted_package_registries = __esm({
+  "packages/shell-guard/src/trusted-package-registries.ts"() {
+    LOOPBACK_HOST = /^(?:localhost|127(?:\.\d{1,3}){3}|\[::1\]|[\w.-]+\.localhost)$/i;
+  }
+});
+
+// src/shared/trusted-package-registries.ts
+var init_trusted_package_registries2 = __esm({
+  "src/shared/trusted-package-registries.ts"() {
+    init_trusted_package_registries();
+  }
+});
+
+// packages/shell-guard/src/production-targets.ts
+function normalizeProductionTarget(target) {
+  return target.trim().toLowerCase();
+}
+function collect3(entries2) {
+  const out = [];
+  for (const entry of entries2) {
+    if (typeof entry !== "string") continue;
+    const target = normalizeProductionTarget(entry);
+    if (!target || out.includes(target) || !VALID_TARGET.test(target)) continue;
+    out.push(target);
+  }
+  return out;
+}
+function parseProductionTargets(text2) {
+  return collect3(
+    text2.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"))
+  );
+}
+function sanitizeProductionTargets(value) {
+  return Array.isArray(value) ? collect3(value) : [];
+}
+var VALID_TARGET;
+var init_production_targets = __esm({
+  "packages/shell-guard/src/production-targets.ts"() {
+    VALID_TARGET = /^[a-z0-9][a-z0-9._:/-]{0,252}$/;
+  }
+});
+
+// src/shared/production-targets.ts
+var init_production_targets2 = __esm({
+  "src/shared/production-targets.ts"() {
+    init_production_targets();
+  }
+});
+
+// src/renderer/views/toast.ts
+function ensureHost() {
+  let host = document.getElementById(TOAST_HOST_ID);
+  if (!host) {
+    host = document.createElement("div");
+    host.id = TOAST_HOST_ID;
+    host.className = "toast-host";
+    host.setAttribute("role", "status");
+    host.setAttribute("aria-live", "polite");
+    document.body.append(host);
+  }
+  return host;
+}
+function normalizeMessage(error62) {
+  if (error62 instanceof Error) return error62.message;
+  if (typeof error62 === "string") return error62;
+  if (typeof ErrorEvent !== "undefined" && error62 instanceof ErrorEvent) {
+    return describeErrorEvent(error62);
+  }
+  if (typeof Event !== "undefined" && error62 instanceof Event) {
+    return describeEvent(error62);
+  }
+  return String(error62);
+}
+function describeErrorEvent(event) {
+  if (event.error instanceof Error && event.error.message) return event.error.message;
+  const location = formatSourceLocation(event.filename, event.lineno, event.colno);
+  if (event.message) return location ? `${event.message} (${location})` : event.message;
+  if (location) return `script error at ${location}`;
+  return describeEvent(event);
+}
+function describeEvent(event) {
+  const target = event.target;
+  if (typeof Element !== "undefined" && target instanceof Element) {
+    const tag = target.tagName.toLowerCase();
+    const src = target.getAttribute("src") ?? target.getAttribute("href");
+    return src ? `failed to load <${tag}> ${src}` : `<${tag}> ${event.type} event`;
+  }
+  return `${event.type} event`;
+}
+function formatSourceLocation(filename, lineno, colno) {
+  if (!filename) return "";
+  const parts = [filename];
+  if (lineno) parts.push(String(lineno));
+  if (colno) parts.push(String(colno));
+  return parts.join(":");
+}
+function showToast(message2, opts = {}) {
+  const host = ensureHost();
+  const variant = opts.variant ?? "info";
+  const duration3 = opts.durationMs ?? DEFAULT_DURATION_MS;
+  const existing = opts.action ? null : findVisibleToast(message2, variant);
+  if (existing) {
+    existing.refresh(duration3);
+    return existing.dismiss;
+  }
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${variant}`;
+  toast.textContent = message2;
+  host.append(toast);
+  let timer = setTimeout(() => {
+    toast.remove();
+  }, duration3);
+  const dismiss = () => {
+    clearTimeout(timer);
+    toast.remove();
+  };
+  const refresh = (ms2) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      toast.remove();
+    }, ms2);
+  };
+  toastControls.set(toast, { dismiss, refresh });
+  toast.addEventListener("click", dismiss);
+  if (opts.action) {
+    const action = opts.action;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ui-btn toast-action";
+    button.textContent = action.label;
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      dismiss();
+      action.onClick();
+    });
+    toast.append(button);
+  }
+  return dismiss;
+}
+function findVisibleToast(message2, variant) {
+  const host = document.getElementById(TOAST_HOST_ID);
+  if (!host) return null;
+  for (const node2 of host.querySelectorAll(`.toast-${variant}`)) {
+    if (node2.textContent === message2) return toastControls.get(node2) ?? null;
+  }
+  return null;
+}
+function showErrorToast(prefix, error62) {
+  const message2 = `${prefix}: ${normalizeMessage(error62)}`;
+  console.error(message2, error62);
+  const e2e = window.__copseE2e;
+  e2e?.pushErrorToast?.(message2);
+  showToast(message2, { variant: "error" });
+}
+var TOAST_HOST_ID, DEFAULT_DURATION_MS, toastControls;
+var init_toast = __esm({
+  "src/renderer/views/toast.ts"() {
+    TOAST_HOST_ID = "toast-host";
+    DEFAULT_DURATION_MS = 6e3;
+    toastControls = /* @__PURE__ */ new WeakMap();
+  }
+});
+
+// src/renderer/views/environment-setup.ts
+function times(count) {
+  return count === 1 ? "once" : `${String(count)} times`;
+}
+function lastSeen(at4, now = Date.now()) {
+  const days = Math.floor((now - at4) / DAY_MS);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  return `${String(days)} days ago`;
+}
+function suggestionEvidence(suggestion, now) {
+  const threads = suggestion.threads === 1 ? "1 thread" : `${String(suggestion.threads)} threads`;
+  return `You approved this ${times(suggestion.approvals)} in ${threads}, most recently ${lastSeen(suggestion.lastAt, now)}.`;
+}
+function suggestionRow(suggestion, onToggle) {
+  const box = el("input", {
+    type: "checkbox",
+    class: "environment-setup-check",
+    "data-suggestion-id": suggestion.id,
+    "aria-describedby": `environment-setup-evidence-${suggestion.id}`
+  });
+  box.checked = suggestion.checked && !suggestion.declined;
+  box.disabled = suggestion.declined;
+  box.addEventListener("change", onToggle);
+  const examples = el("details", { class: "environment-setup-examples" });
+  examples.append(
+    el("summary", {}, suggestion.kind === "web-origin" ? "Origin" : "Recent commands"),
+    ...suggestion.examples.map(
+      (example) => el("code", { class: "environment-setup-example" }, example)
+    )
+  );
+  const evidence = el(
+    "p",
+    {
+      class: "environment-setup-evidence",
+      id: `environment-setup-evidence-${suggestion.id}`
+    },
+    suggestion.declined ? `${suggestionEvidence(suggestion)} You also said no to a prompt this would allow, so it is not offered.` : suggestionEvidence(suggestion)
+  );
+  const label = el(
+    "label",
+    { class: "environment-setup-label" },
+    box,
+    el("span", { class: "environment-setup-title" }, suggestion.label)
+  );
+  const row2 = el(
+    "li",
+    {
+      class: suggestion.declined ? "environment-setup-row environment-setup-row-declined" : "environment-setup-row",
+      "data-kind": suggestion.kind
+    },
+    label,
+    evidence,
+    el("p", { class: "environment-setup-risk" }, suggestion.risk),
+    examples
+  );
+  return { row: row2, box };
+}
+function changeSummary(changes) {
+  return changes.length === 1 ? changes[0]?.label ?? "Updated 1 setting" : `Updated ${String(changes.length)} permission settings`;
+}
+async function openEnvironmentSetupReview(api2, onApplied = () => void 0) {
+  const { dialog: dialog2, open: open2, close: close2 } = createOverlayDialog({ id: "environment-setup-dialog" });
+  dialog2.setAttribute("aria-labelledby", "environment-setup-heading");
+  dialog2.append(
+    el("h2", { id: "environment-setup-heading" }, "Stop asking about what you always approve"),
+    el("p", { class: "environment-setup-lede" }, "Looking at the prompts you answered\u2026")
+  );
+  open2();
+  let review;
+  try {
+    review = await api2.environmentSetup.review();
+  } catch (error62) {
+    close2();
+    dialog2.remove();
+    showErrorToast("Could not review your prompts", error62);
+    return;
+  }
+  const boxes = [];
+  const status = el("p", { class: "environment-setup-status", role: "status" });
+  const cancel = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Cancel");
+  const apply4 = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary environment-setup-apply" },
+    "Apply"
+  );
+  const refreshApply = () => {
+    const count = boxes.filter((box) => box.checked).length;
+    apply4.textContent = count === 1 ? "Apply 1 change" : count === 0 ? "Apply" : `Apply ${String(count)} changes`;
+    apply4.disabled = count === 0;
+  };
+  const body = [];
+  if (review.suggestions.length === 0) {
+    body.push(
+      el(
+        "p",
+        { class: "environment-setup-lede environment-setup-empty" },
+        `Nothing to suggest yet. A suggestion appears once you approve the same kind of prompt at least 3 times, in at least 2 threads, within ${String(review.windowDays)} days.`
+      )
+    );
+  } else {
+    body.push(
+      el(
+        "p",
+        { class: "environment-setup-lede" },
+        `Each change below would have removed prompts you approved in this project over the last ${String(review.windowDays)} days. They update Settings \u2192 Permissions, which applies to every project, and you can change them there later.`
+      )
+    );
+    for (const section2 of SECTIONS) {
+      const items = review.suggestions.filter((s16) => s16.kind === section2.kind);
+      if (items.length === 0) continue;
+      const list = el("ul", { class: "environment-setup-list" });
+      for (const suggestion of items) {
+        const { row: row2, box } = suggestionRow(suggestion, refreshApply);
+        if (!suggestion.declined) boxes.push(box);
+        list.append(row2);
+      }
+      body.push(
+        el(
+          "section",
+          { class: "environment-setup-section", "data-kind": section2.kind },
+          el("h3", {}, section2.title),
+          list
+        )
+      );
+    }
+  }
+  const content = el("div", { class: "environment-setup-content" }, ...body);
+  dialog2.querySelector(".environment-setup-lede")?.remove();
+  dialog2.append(
+    content,
+    status,
+    uiActions(cancel, apply4, { className: "environment-setup-actions" })
+  );
+  refreshApply();
+  await new Promise((resolve) => {
+    cancel.addEventListener("click", () => {
+      close2();
+    });
+    apply4.addEventListener("click", () => {
+      const ids = boxes.filter((box) => box.checked).map((box) => box.dataset["suggestionId"] ?? "");
+      apply4.disabled = true;
+      status.textContent = "";
+      void api2.environmentSetup.apply(review.reviewId, ids).then(
+        (result) => {
+          close2();
+          if (result.applied.length === 0) return;
+          onApplied();
+          const { undoId } = result;
+          showToast(changeSummary(result.applied), {
+            durationMs: 12e3,
+            ...undoId ? {
+              action: {
+                label: "Undo",
+                onClick: () => {
+                  void api2.environmentSetup.undo(undoId).then(
+                    (undone) => {
+                      onApplied();
+                      if (undone.length > 0) showToast("Undone");
+                    },
+                    (error62) => {
+                      showErrorToast("Could not undo", error62);
+                    }
+                  );
+                }
+              }
+            } : {}
+          });
+        },
+        (error62) => {
+          status.textContent = ipcErrorMessage(error62, "Could not apply these changes.");
+          refreshApply();
+        }
+      );
+    });
+    dialog2.addEventListener(
+      "close",
+      () => {
+        dialog2.remove();
+        resolve();
+      },
+      { once: true }
+    );
+    const firstTicked = boxes.find((box) => box.checked);
+    if (firstTicked) firstTicked.focus();
+    else cancel.focus();
+  });
+}
+function mountEnvironmentSetupOffer(store2, api2) {
+  const text2 = el("span", { class: "environment-setup-notice-text" });
+  const review = el(
+    "button",
+    { type: "button", class: "environment-setup-notice-review" },
+    "Review"
+  );
+  const notNow = el(
+    "button",
+    { type: "button", class: "environment-setup-notice-dismiss" },
+    "Not now"
+  );
+  const never2 = el(
+    "button",
+    { type: "button", class: "environment-setup-notice-dismiss environment-setup-notice-never" },
+    "Don\u2019t suggest again"
+  );
+  const host = el(
+    "div",
+    { class: "environment-setup-notice", role: "status", hidden: true },
+    shieldIcon("ui-icon"),
+    text2,
+    review,
+    notNow,
+    never2
+  );
+  let destroyed = false;
+  let timer = null;
+  let generation = 0;
+  const evaluate = async () => {
+    const current = ++generation;
+    let status;
+    try {
+      status = await api2.environmentSetup.status();
+    } catch {
+      return;
+    }
+    if (destroyed || current !== generation) return;
+    host.hidden = !status.offer;
+    text2.textContent = `Copse asked you ${String(status.promptCount)} times this week about things you always approve.`;
+  };
+  const schedule = () => {
+    if (timer !== null) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      void evaluate();
+    }, RECHECK_DELAY_MS);
+  };
+  const dismiss = (forever) => {
+    host.hidden = true;
+    generation++;
+    void api2.environmentSetup.dismiss(forever).catch((error62) => {
+      showErrorToast("Could not save your answer", error62);
+    });
+  };
+  review.addEventListener("click", () => {
+    host.hidden = true;
+    generation++;
+    void openEnvironmentSetupReview(api2);
+  });
+  notNow.addEventListener("click", () => {
+    dismiss(false);
+  });
+  never2.addEventListener("click", () => {
+    dismiss(true);
+  });
+  const unsubscribeWorkspace = store2.on("workspace_changed", () => {
+    void evaluate();
+  });
+  const unsubscribeStatus = store2.on("thread_status_changed", schedule);
+  void evaluate();
+  return {
+    element: host,
+    destroy: () => {
+      destroyed = true;
+      if (timer !== null) clearTimeout(timer);
+      unsubscribeWorkspace();
+      unsubscribeStatus();
+      host.remove();
+    }
+  };
+}
+var SECTIONS, RECHECK_DELAY_MS, DAY_MS;
+var init_environment_setup = __esm({
+  "src/renderer/views/environment-setup.ts"() {
+    init_helpers();
+    init_icons();
+    init_ipc_error_message();
+    init_actions();
+    init_dialog_shell();
+    init_toast();
+    SECTIONS = [
+      { kind: "auto-approval-level", title: "Shell commands" },
+      { kind: "web-origin", title: "Web origins" },
+      { kind: "trusted-command", title: "Trusted commands" },
+      { kind: "trusted-ssh-host", title: "Trusted SSH hosts" },
+      { kind: "trusted-package-registry", title: "Trusted package registries" }
+    ];
+    RECHECK_DELAY_MS = 3e4;
+    DAY_MS = 24 * 60 * 60 * 1e3;
+  }
+});
+
 // src/renderer/views/settings/security-section.ts
 function createSecuritySection(form, api2, readModels, getLocalUrl) {
   wireSafetySliders(form);
+  const refreshSuggestedSettings = async () => {
+    const snapshot = await api2.settings.getSnapshot();
+    textareaControl(form, "webAllowedOrigins").value = (snapshot.webAllowedOrigins?.length ? snapshot.webAllowedOrigins : DEFAULT_WEB_ALLOWED_ORIGINS).join("\n");
+    textareaControl(form, "trustedShellCommands").value = formatTrustedCommands(
+      sanitizeTrustedCommands(snapshot.trustedShellCommands)
+    );
+    textareaControl(form, "trustedSshHosts").value = sanitizeTrustedSshHosts(
+      snapshot.trustedSshHosts
+    ).join("\n");
+    textareaControl(form, "trustedPackageRegistries").value = sanitizeTrustedPackageRegistries(
+      snapshot.trustedPackageRegistries
+    ).join("\n");
+    selectControl(form, "shellAutoApprovalLevel").value = sanitizeAutoApprovalLevel(
+      snapshot.shellAutoApprovalLevel
+    );
+  };
+  form.querySelector("#environment-setup-review")?.addEventListener("click", () => {
+    void openEnvironmentSetupReview(api2, () => {
+      void refreshSuggestedSettings();
+    });
+  });
   const names = [
     "localServerUrl",
     "safetyModel",
@@ -57840,6 +58351,12 @@ function createSecuritySection(form, api2, readModels, getLocalUrl) {
       );
       textareaControl(form, "trustedSshHosts").value = sanitizeTrustedSshHosts(
         snapshot.trustedSshHosts
+      ).join("\n");
+      textareaControl(form, "trustedPackageRegistries").value = sanitizeTrustedPackageRegistries(
+        snapshot.trustedPackageRegistries
+      ).join("\n");
+      textareaControl(form, "productionTargets").value = sanitizeProductionTargets(
+        snapshot.productionTargets
       ).join("\n");
       selectControl(form, "shellAutoApprovalLevel").value = sanitizeAutoApprovalLevel(
         snapshot.shellAutoApprovalLevel
@@ -57894,6 +58411,16 @@ function createSecuritySection(form, api2, readModels, getLocalUrl) {
           "trustedSshHosts",
           parseTrustedSshHosts(formDataString(data, "trustedSshHosts"))
         );
+      if (dirty.has("trustedPackageRegistries"))
+        await api2.settings.set(
+          "trustedPackageRegistries",
+          parseTrustedPackageRegistries(formDataString(data, "trustedPackageRegistries"))
+        );
+      if (dirty.has("productionTargets"))
+        await api2.settings.set(
+          "productionTargets",
+          parseProductionTargets(formDataString(data, "productionTargets"))
+        );
     }
   };
 }
@@ -57904,7 +58431,10 @@ var init_security_section = __esm({
     init_auto_approval();
     init_command_routing();
     init_trusted_ssh_hosts2();
+    init_trusted_package_registries2();
+    init_production_targets2();
     init_lm_studio_defaults();
+    init_environment_setup();
   }
 });
 
@@ -63674,120 +64204,6 @@ var init_project_view_state = __esm({
       rightPanelMode: "explorer",
       panelTab: "file"
     };
-  }
-});
-
-// src/renderer/views/toast.ts
-function ensureHost() {
-  let host = document.getElementById(TOAST_HOST_ID);
-  if (!host) {
-    host = document.createElement("div");
-    host.id = TOAST_HOST_ID;
-    host.className = "toast-host";
-    host.setAttribute("role", "status");
-    host.setAttribute("aria-live", "polite");
-    document.body.append(host);
-  }
-  return host;
-}
-function normalizeMessage(error62) {
-  if (error62 instanceof Error) return error62.message;
-  if (typeof error62 === "string") return error62;
-  if (typeof ErrorEvent !== "undefined" && error62 instanceof ErrorEvent) {
-    return describeErrorEvent(error62);
-  }
-  if (typeof Event !== "undefined" && error62 instanceof Event) {
-    return describeEvent(error62);
-  }
-  return String(error62);
-}
-function describeErrorEvent(event) {
-  if (event.error instanceof Error && event.error.message) return event.error.message;
-  const location = formatSourceLocation(event.filename, event.lineno, event.colno);
-  if (event.message) return location ? `${event.message} (${location})` : event.message;
-  if (location) return `script error at ${location}`;
-  return describeEvent(event);
-}
-function describeEvent(event) {
-  const target = event.target;
-  if (typeof Element !== "undefined" && target instanceof Element) {
-    const tag = target.tagName.toLowerCase();
-    const src = target.getAttribute("src") ?? target.getAttribute("href");
-    return src ? `failed to load <${tag}> ${src}` : `<${tag}> ${event.type} event`;
-  }
-  return `${event.type} event`;
-}
-function formatSourceLocation(filename, lineno, colno) {
-  if (!filename) return "";
-  const parts = [filename];
-  if (lineno) parts.push(String(lineno));
-  if (colno) parts.push(String(colno));
-  return parts.join(":");
-}
-function showToast(message2, opts = {}) {
-  const host = ensureHost();
-  const variant = opts.variant ?? "info";
-  const duration3 = opts.durationMs ?? DEFAULT_DURATION_MS;
-  const existing = opts.action ? null : findVisibleToast(message2, variant);
-  if (existing) {
-    existing.refresh(duration3);
-    return existing.dismiss;
-  }
-  const toast = document.createElement("div");
-  toast.className = `toast toast-${variant}`;
-  toast.textContent = message2;
-  host.append(toast);
-  let timer = setTimeout(() => {
-    toast.remove();
-  }, duration3);
-  const dismiss = () => {
-    clearTimeout(timer);
-    toast.remove();
-  };
-  const refresh = (ms2) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-      toast.remove();
-    }, ms2);
-  };
-  toastControls.set(toast, { dismiss, refresh });
-  toast.addEventListener("click", dismiss);
-  if (opts.action) {
-    const action = opts.action;
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "ui-btn toast-action";
-    button.textContent = action.label;
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      dismiss();
-      action.onClick();
-    });
-    toast.append(button);
-  }
-  return dismiss;
-}
-function findVisibleToast(message2, variant) {
-  const host = document.getElementById(TOAST_HOST_ID);
-  if (!host) return null;
-  for (const node2 of host.querySelectorAll(`.toast-${variant}`)) {
-    if (node2.textContent === message2) return toastControls.get(node2) ?? null;
-  }
-  return null;
-}
-function showErrorToast(prefix, error62) {
-  const message2 = `${prefix}: ${normalizeMessage(error62)}`;
-  console.error(message2, error62);
-  const e2e = window.__copseE2e;
-  e2e?.pushErrorToast?.(message2);
-  showToast(message2, { variant: "error" });
-}
-var TOAST_HOST_ID, DEFAULT_DURATION_MS, toastControls;
-var init_toast = __esm({
-  "src/renderer/views/toast.ts"() {
-    TOAST_HOST_ID = "toast-host";
-    DEFAULT_DURATION_MS = 6e3;
-    toastControls = /* @__PURE__ */ new WeakMap();
   }
 });
 
@@ -78600,6 +79016,15 @@ var init_permissions_markup = __esm({
 
             <fieldset>
               <legend>Shell commands</legend>
+              <div class="environment-setup-settings-row">
+                <button type="button" class="ui-btn ui-btn-secondary" id="environment-setup-review">
+                  Review suggestions
+                </button>
+                <span class="field-hint">
+                  Suggests changes to these settings from prompts you keep approving in this
+                  project. Nothing changes until you choose.
+                </span>
+              </div>
               <label class="checkbox-label">
                 <input type="checkbox" name="autoRunSandboxCommands" />
                 Run commands without asking when they stay inside the project folder
@@ -78676,6 +79101,39 @@ var init_permissions_markup = __esm({
                   <code>ssh</code>, <code>scp</code>, and <code>rsync</code> to these hosts run
                   without asking; any other host asks first. A destructive remote command still
                   asks.
+                </span>
+              </label>
+              <label>
+                Trusted package registries
+                <textarea
+                  class="settings-code-input"
+                  name="trustedPackageRegistries"
+                  rows="3"
+                  spellcheck="false"
+                  placeholder="https://npm.example.com"
+                ></textarea>
+                <span class="field-hint">
+                  One registry URL per line. In Guarded YOLO, an install pointed at one of these
+                  with <code>--registry</code>, <code>--index-url</code> or a variable such as
+                  <code>GOPROXY</code> runs without asking; any other registry asks first.
+                  Turning off checksum or TLS checks (<code>--trusted-host</code>,
+                  <code>GOSUMDB=off</code>) still asks.
+                </span>
+              </label>
+              <label>
+                Production targets
+                <textarea
+                  class="settings-code-input"
+                  name="productionTargets"
+                  rows="3"
+                  spellcheck="false"
+                  placeholder="prod-eu-cluster"
+                ></textarea>
+                <span class="field-hint">
+                  Cluster contexts or namespaces, cloud projects or profiles, and database or SSH
+                  hosts that count as production, one per line. In Guarded YOLO, any
+                  <code>kubectl</code>, cloud, <code>ssh</code> or database command that names one
+                  asks first, reads included. Matches whole names only.
                 </span>
               </label>
             </fieldset>
@@ -88968,6 +89426,13 @@ function createDemoApi(scenario2, options = {}) {
       uninstall: unsupported,
       connect: unsupported
     },
+    environmentSetup: {
+      status: () => resolved2({ offer: false, promptCount: 0 }),
+      review: unsupported,
+      apply: unsupported,
+      undo: unsupported,
+      dismiss: resolvedVoid
+    },
     chatGptPlan: {
       status: () => resolved2(scenario2.chatGptPlan ?? { accounts: [], activeClientId: null }),
       signIn: unsupported,
@@ -91830,7 +92295,7 @@ function mountKeyboardShortcutsDialog() {
   dialog2.className = "keyboard-shortcuts-overlay";
   const isMac2 = isMacPlatform();
   const grid = el("div", { class: "keyboard-shortcuts-grid" });
-  for (const section2 of SECTIONS) {
+  for (const section2 of SECTIONS2) {
     const group = el("div", { class: "keyboard-shortcuts-group" });
     group.append(el("h4", { class: "keyboard-shortcuts-group-title" }, section2.title));
     for (const shortcut of section2.shortcuts) {
@@ -91863,11 +92328,11 @@ function mountKeyboardShortcutsDialog() {
     if (e3.target === dialog2) closeKeyboardShortcutsDialog();
   });
 }
-var SECTIONS, dialogEl3;
+var SECTIONS2, dialogEl3;
 var init_keyboard_shortcuts_dialog = __esm({
   "src/renderer/views/keyboard-shortcuts-dialog.ts"() {
     init_helpers();
-    SECTIONS = [
+    SECTIONS2 = [
       {
         title: "General",
         shortcuts: [
@@ -108822,8 +109287,10 @@ function mountConversation(root, store2, api2) {
     api2,
     () => appleDevelopmentHost.dispatchEvent(new Event("apple-development-refresh"))
   );
+  const environmentSetupOffer = mountEnvironmentSetupOffer(store2, api2);
   scrollArea.append(
     appleSuggestions.element,
+    environmentSetupOffer.element,
     appleDevelopmentHost,
     todoHost,
     list,
@@ -110763,6 +111230,7 @@ function mountConversation(root, store2, api2) {
     unbindBrowserLinks();
     unbindCodeBlockRuns();
     appleSuggestions.destroy();
+    environmentSetupOffer.destroy();
     roadmapOrigin.destroy();
     unsubs.forEach((u4) => {
       u4();
@@ -110856,6 +111324,7 @@ var init_conversation = __esm({
     init_todos_plugin();
     init_apple_development_panel();
     init_apple_project_suggestion();
+    init_environment_setup();
     init_review_panel();
     init_comparison_panel();
     init_visual_evidence_card();
@@ -147518,7 +147987,7 @@ var init_dist33 = __esm({
         const tags = /* @__PURE__ */ new Set();
         try {
           const schema = getSchema(this.baseExtensions);
-          const collect2 = (spec) => {
+          const collect4 = (spec) => {
             const parseDOM = spec === null || spec === void 0 ? void 0 : spec.parseDOM;
             if (!Array.isArray(parseDOM)) return;
             parseDOM.forEach((rule) => {
@@ -147528,8 +147997,8 @@ var init_dist33 = __esm({
               }
             });
           };
-          Object.values(schema.nodes).forEach((type) => collect2(type.spec));
-          Object.values(schema.marks).forEach((type) => collect2(type.spec));
+          Object.values(schema.nodes).forEach((type) => collect4(type.spec));
+          Object.values(schema.marks).forEach((type) => collect4(type.spec));
         } catch {
         }
         this.schemaParseDomTagsCache = tags;
