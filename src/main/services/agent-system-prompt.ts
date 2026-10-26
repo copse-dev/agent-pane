@@ -48,6 +48,7 @@ import {
 } from '@shared/terminal/read-terminal.ts'
 import { hasTerminalSessions } from './exec/terminal-service.ts'
 import { isProjectSandboxActive } from '../project-sandbox/state.ts'
+import { skillPreflightEnvironment } from './skills/skills-registry.ts'
 import type { UserContent } from '@shared/types'
 import { userContentToText } from '@shared/remote-agent-stream.ts'
 
@@ -195,6 +196,7 @@ export async function buildSystemPromptWithMetadata(
   const opus5 = opts.model != null && isOpus5Model(opts.model)
   const invokedSkillsBlock = await buildInvokedSkillsBlock(invokedSkills, {
     sandboxActive: isProjectSandboxActive(),
+    preflight: skillPreflightEnvironment(opts.availableToolNames, 'native'),
     ...(threadId ? { threadId } : {}),
   })
   const prompt =
@@ -218,7 +220,7 @@ export async function buildSystemPromptWithMetadata(
     (readTerminalEnabled ? READ_TERMINAL_BLOCK : '') +
     (okfMemoriesEnabled ? MEMORY_TOOLS_BLOCK : '') +
     (piiRedactionEnabled ? PII_REDACTION_BLOCK : '') +
-    buildSkillsCatalogBlock(opts.availableToolNames) +
+    buildSkillsCatalogBlock(opts.availableToolNames, 'native') +
     invokedSkillsBlock +
     agentRulesCatalog +
     buildSemanticSearchPromptBlock() +

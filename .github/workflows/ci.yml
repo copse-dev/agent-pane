@@ -1518,7 +1518,7 @@ jobs:
            && (vars.SELF_HOSTED_E2E == 'copse-e2e'
                && fromJSON('["self-hosted", "copse-e2e"]')
                || fromJSON('["ubuntu-24.04"]'))) }}
-    timeout-minutes: 45
+    timeout-minutes: 55
     # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
     # whole gate finishes well inside the runner window. Each shard runs a disjoint
     # duration-balanced slice of specs. The shared `dist` artifact
@@ -1530,10 +1530,16 @@ jobs:
     # launches too many Electron/gortex processes; a later unrelated spec then
     # fails to boot or OOM-crashes ("shutdown signal"). #339's data showed that
     # 8 shards stays under that limit even in the densest spec range.
-    # The per-attempt `timeout` is 720s (step cap 26 min: two attempts plus
+    # The per-attempt `timeout` is 840s (step cap 31 min: two attempts plus
     # cleanup and diagnostics). The ten-minute budget interrupted otherwise
-    # passing 44-spec shards at the tail (exit 124), so twelve minutes gives
-    # the growing suite bounded headroom without changing individual test caps.
+    # passing 44-spec shards at the tail (exit 124); by October 2026 full
+    # 51-53-spec shards took 11:35-11:58 against the twelve-minute budget and
+    # timed out with no failing assertion. Spec bodies matched their recorded
+    # weights and the LPT split was already within seconds across shards, so
+    # the suite total itself had outgrown 8 x 720s. Fourteen minutes restores
+    # bounded headroom without changing individual test caps. The job's
+    # 55-minute timeout covers that 31-minute step plus setup, which took 18-20
+    # minutes on slow hosted runners, so a retried shard still reaches its digest.
     # Keep eight shards as the memory ceiling (#339). Shards are balanced by
     # recorded spec durations; refresh them with `pnpm run e2e:shard-weights`
     # (and speed up specs) before raising this budget.
@@ -1701,7 +1707,7 @@ jobs:
         if: >-
           needs.precheck.outputs.mode == 'full' ||
           needs.precheck.outputs.mode == 'subset'
-        timeout-minutes: 26
+        timeout-minutes: 31
         env:
           PLAN_MODE: ${{ needs.precheck.outputs.mode }}
           PLAN_SPECS: ${{ needs.precheck.outputs.specs }}
@@ -2056,11 +2062,11 @@ jobs:
             echo "::group::e2e shard ${{ matrix.shard }} attempt $attempt"
             # Tee so the reporter output can be re-read for the digest below.
             # PIPESTATUS, not $?, or we would read tee's status instead.
-            # Full shards can exceed ten minutes as the native suite grows. Keep
-            # a bounded twelve-minute attempt watchdog; the enclosing step allows
+            # Full shards can exceed twelve minutes as the native suite grows. Keep
+            # a bounded fourteen-minute attempt watchdog; the enclosing step allows
             # both attempts plus cleanup without changing individual test caps.
             COPSE_E2E_OUTCOMES_DIR="$GITHUB_WORKSPACE/e2e-evidence/outcomes" COPSE_E2E_ATTEMPT="$attempt" SHARD_INDEX="${{ matrix.shard }}" \
-            ${TIMEOUT:+$TIMEOUT -k 15 720} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS 2>&1 \
+            ${TIMEOUT:+$TIMEOUT -k 15 840} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS 2>&1 \
               | tee "$run_log"
             attempt_status=${PIPESTATUS[0]}
             echo "::endgroup::"

@@ -179,6 +179,10 @@ export const trustedShellCommandsSchema = z.array(z.string().min(1).max(128)).ma
 
 /** Hosts trusted with ssh/scp/rsync under Guarded YOLO (see @copse/shell-guard/trusted-ssh-hosts.ts). */
 export const trustedSshHostsSchema = z.array(z.string().min(1).max(253)).max(200)
+/** Registry origins trusted for installs under Guarded YOLO (see @copse/shell-guard/trusted-package-registries.ts). */
+export const trustedPackageRegistriesSchema = z.array(z.string().min(1).max(2048)).max(100)
+/** Production targets that make Guarded YOLO ask (see @copse/shell-guard/production-targets.ts). */
+export const productionTargetsSchema = z.array(z.string().min(1).max(253)).max(200)
 
 /** Highest auto-approval tier honoured for shell commands (see @shared/auto-approval.ts). */
 export const autoApprovalLevelSchema = z.enum(AUTO_APPROVAL_LEVELS)
@@ -389,6 +393,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // The MCP-UI artefacts (canvas) gate moved to the `copse.mcp-ui-canvas`
   // first-party plugin's `mcp-ui-canvas` capability (Settings > Plugins), so the
   // former `mcpUiArtefactsEnabled` top-level boolean is retired.
+  remoteSystemOneModelsEnabled: z.boolean(),
   modelClassifierEnabled: z.boolean(),
   // Default-on next-step tab complete: after a turn, a small-tasks model may
   // offer one obvious next step as composer placeholder text the user accepts
@@ -458,6 +463,12 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // Permissions). Written on its own through `settings:set`, not the security
   // bundle, so the IPC protocol does not change shape.
   trustedSshHosts: trustedSshHostsSchema,
+  // Registry origins Guarded YOLO may install from without a confirmation,
+  // written the same way as the SSH host list.
+  trustedPackageRegistries: trustedPackageRegistriesSchema,
+  // Production contexts, projects and hosts that make Guarded YOLO ask, written
+  // the same way.
+  productionTargets: productionTargetsSchema,
 } as const satisfies Record<string, z.ZodType>
 
 export type RendererWritableSettingKey = keyof typeof RENDERER_WRITABLE_SETTING_SCHEMAS
@@ -486,6 +497,7 @@ export const isRendererWritableSettingKey = keyOf(RENDERER_WRITABLE_SETTING_SCHE
  * generic settings API.
  */
 export function isSecretSettingKey(key: string): boolean {
+  if (key === 'machineConnections' || key.startsWith('machineConnections.')) return true
   return (
     key === 'apiKey' ||
     key === 'chatgptPlanCredentials' ||
