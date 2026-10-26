@@ -9,7 +9,7 @@
  * command's stdout/stderr to grant an escape). But not every denial in this
  * codebase trips that counter. A `git fetch` blocked by the container's network
  * egress broker, `gh` failing to read its own config outside the workspace, and
- * Socket Firewall failing to stage its own binary are three *different*
+ * a package install unable to download from inside the sandbox are three *different*
  * subsystems, none of which increments the seatbelt/ASRT violation count, so
  * `detectSandboxFailure` never fires for them and no retry is ever offered.
  *
@@ -251,18 +251,20 @@ export const SANDBOX_DENIAL_SIGNATURES: readonly SandboxDenialSignature[] = [
     }),
   },
   {
-    // Observed (issue #1436): `npx prettier` failed with
-    //   "[sfw] Failed to prepare firewall binary: EPERM"
-    // Socket Firewall could not stage its own binary from inside the sandbox.
-    // It worked on retry, so this is a one-time setup step, not a blocked
-    // network or a broken environment.
-    id: 'sfw-firewall-binary-eperm',
-    pattern: /\[sfw]\s*Failed to prepare firewall binary: EPERM/,
+    // The package firewall wraps every detected install. Inside the contained
+    // sandbox it either cannot open its loopback proxy (macOS: it then runs the
+    // command with registry downloads disabled, package-firewall/run.ts) or can
+    // open it but reach nothing upstream (Linux: a private network namespace).
+    // If the command then fails, it needed a download — which only a run
+    // outside the sandbox can make, still behind the firewall.
+    id: 'package-firewall-loopback-denied',
+    pattern:
+      /\[safe-install] (?:cannot listen on loopback here \((?:EPERM|EACCES)\)|could not reach \S+)/,
     classify: () => ({
-      operation: 'prepare firewall binary (sfw)',
+      operation: 'download packages',
       advice:
-        'Socket Firewall could not prepare its firewall binary from inside the sandbox (EPERM) — ' +
-        'this is a one-time setup step for the install scanner, not a blocked network.',
+        'Packages cannot be downloaded from inside the sandbox — this command needs to ' +
+        'download packages, which needs network access outside the sandbox.',
     }),
   },
 ]

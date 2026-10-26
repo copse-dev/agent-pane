@@ -854,6 +854,13 @@ export interface OpenAcpSession {
    * its own (see agent-initiated-turn.ts). The update pump drives it.
    */
   agentInitiated?: AgentInitiatedTurnLease
+  /**
+   * A Stop on a self-started turn ({@link cancelAgentInitiatedTurn}) waiting for
+   * the agent to wind it down. `settled` resolves once the agent marks the turn
+   * finished, or once the grace window ran out and the session was disposed;
+   * the pool waits on it before reusing the session. Absent otherwise.
+   */
+  agentInitiatedCancel?: { settled: Promise<void>; acknowledge: () => void }
   /** True once the connection closed or the agent process died. */
   isClosed: () => boolean
   /**
@@ -1094,6 +1101,48 @@ export function endsSelfStartedTurn(update: SessionUpdate): boolean {
   return isRecord(origin) && typeof origin['kind'] === 'string' && origin['kind'] !== 'human'
 }
 
+/**
+ * Stop a turn the agent started on its own. No Copse prompt is outstanding, so
+ * {@link runAcpSessionPrompt}'s abort path cannot reach it: send `session/cancel`
+ * directly, hide the trailing output as a stopped prompt would, and end the
+ * lease so the agent's bridged tool calls lose the thread's context.
+ *
+ * Like a stopped prompt, the agent then has {@link ACP_CANCEL_GRACE_MS} to mark
+ * the turn finished. One that does not is disposed, so it can neither keep
+ * working unseen nor write into the next prompt's turn once that turn clears
+ * the suppression. Returns false when there is no self-started turn to stop.
+ */
+export function cancelAgentInitiatedTurn(
+  open: OpenAcpSession,
+  cancelGraceMs: number = ACP_CANCEL_GRACE_MS,
+): boolean {
+  if (open.turnStop !== null || !open.agentInitiated?.isActive()) return false
+  open.suppressChunks = true
+  void open.connection.agent.notify('session/cancel', { sessionId: open.session.sessionId })
+  open.agentInitiated.end()
+  if (!open.agentInitiatedCancel) {
+    let acknowledge = (): void => {}
+    const acknowledged = new Promise<'acknowledged'>((resolve) => {
+      acknowledge = (): void => {
+        resolve('acknowledged')
+      }
+    })
+    let graceTimer: ReturnType<typeof setTimeout> | undefined
+    const graceExpired = new Promise<'grace-expired'>((resolve) => {
+      graceTimer = setTimeout(() => {
+        resolve('grace-expired')
+      }, cancelGraceMs)
+    })
+    const settled = Promise.race([acknowledged, graceExpired]).then(async (outcome) => {
+      clearTimeout(graceTimer)
+      if (outcome === 'grace-expired') await open.dispose()
+      delete open.agentInitiatedCancel
+    })
+    open.agentInitiatedCancel = { settled, acknowledge }
+  }
+  return true
+}
+
 function startAcpUpdatePump(open: OpenAcpSession): void {
   void (async (): Promise<void> => {
     for (;;) {
@@ -1107,6 +1156,10 @@ function startAcpUpdatePump(open: OpenAcpSession): void {
       }
       noteAcpSessionActivity(open, update)
       refreshAcpSessionState(open, update)
+      // A stopped self-started turn is acknowledged by the agent ending it.
+      if (open.agentInitiatedCancel && endsSelfStartedTurn(update)) {
+        open.agentInitiatedCancel.acknowledge()
+      }
       if (open.suppressChunks) continue
       if (open.turnStop === null && open.agentInitiated) {
         // No prompt is outstanding, so this is the agent working on its own.

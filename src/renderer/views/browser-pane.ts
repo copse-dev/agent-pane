@@ -16,6 +16,7 @@ import {
 } from '../dom/icons.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
+import { uiPaneTab, uiPaneTabsShell, type UiPaneTab } from '../ui/pane-tabs.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
@@ -104,6 +105,8 @@ interface BrowserTab {
    * overlay, and running only while {@link syncAnnotationScroll} says so.
    */
   annotationScroll: GuestScrollTracker | null
+  /** Shared select/close/active wiring for `tabBtn` + `panel` (ui/pane-tabs.ts). */
+  tabSwitch: UiPaneTab
 }
 
 /** The current page URL when it is a real http(s) address (not about:blank or a
@@ -474,11 +477,12 @@ export function mountBrowserPane(
   store: AppStore,
   api?: ApiClient,
 ): () => void {
-  const listHeader = el(
-    'div',
-    { class: 'pane-header browser-tabs-list-header' },
-    el('span', { class: 'pane-header-title' }, 'Tabs'),
-  )
+  const { listHeader, tabsWrap, body } = uiPaneTabsShell({
+    title: 'Tabs',
+    headerClassName: 'browser-tabs-list-header',
+    listClassName: 'browser-tabs-list',
+    bodyClassName: 'browser-body',
+  })
   const newBtn = el(
     'button',
     {
@@ -492,10 +496,7 @@ export function mountBrowserPane(
   if (api) listHeader.append(panePopoutButton(store, api, 'browser', 'browser'))
   listHeader.append(paneMaximizeButton(store, 'browser'), newBtn)
 
-  const tabsWrap = el('div', { class: 'browser-tabs-list' })
   listRoot.append(listHeader, tabsWrap)
-
-  const body = el('div', { class: 'browser-body' })
   viewerRoot.append(body)
 
   const tabs = new Map<string, BrowserTab>()
@@ -919,9 +920,7 @@ export function mountBrowserPane(
     activeTabId = tabId
     scheduleSessionSave()
     for (const tab of tabs.values()) {
-      const active = tab.id === tabId
-      tab.panel.classList.toggle('is-active', active)
-      tab.tabBtn.classList.toggle('is-active', active)
+      tab.tabSwitch.setActive(tab.id === tabId)
       syncAnnotationScroll(tab)
     }
     const tab = tabs.get(tabId)
@@ -1376,6 +1375,17 @@ export function mountBrowserPane(
       closeMenu: () => {
         setMenuOpen(false)
       },
+      tabSwitch: uiPaneTab({
+        tabBtn,
+        panel,
+        closeSelector: '.browser-tabs-tab-close',
+        onSelect: () => {
+          setActiveTab(id)
+        },
+        onClose: () => {
+          removeTab(id)
+        },
+      }),
     }
 
     // The overlay is built on the first click so tabs that never annotate
@@ -1560,15 +1570,6 @@ export function mountBrowserPane(
     })
     wireToolbar(tab)
 
-    tabBtn.addEventListener('click', (e) => {
-      if (e.target instanceof Element && e.target.closest('.browser-tabs-tab-close')) return
-      setActiveTab(id)
-    })
-    closeBtn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      removeTab(id)
-    })
-
     tabs.set(id, tab)
     tabsWrap.append(tabBtn)
     body.append(panel)
@@ -1583,10 +1584,9 @@ export function mountBrowserPane(
     const tab = tabs.get(tabId)
     if (!tab) return
     tab.webview?.remove()
-    tab.tabBtn.remove()
     tab.annotationScroll?.dispose()
     tab.annotation?.dispose()
-    tab.panel.remove()
+    tab.tabSwitch.remove()
     tabs.delete(tabId)
     scheduleSessionSave()
 
@@ -1655,10 +1655,9 @@ export function mountBrowserPane(
   function purgeAllTabs(): void {
     for (const tab of tabs.values()) {
       tab.webview?.remove()
-      tab.tabBtn.remove()
       tab.annotationScroll?.dispose()
       tab.annotation?.dispose()
-      tab.panel.remove()
+      tab.tabSwitch.remove()
     }
     tabs.clear()
     activeTabId = null
@@ -1975,10 +1974,9 @@ export function mountBrowserPane(
     stopBrowserResizeObserver()
     for (const tab of tabs.values()) {
       tab.webview?.remove()
-      tab.tabBtn.remove()
       tab.annotationScroll?.dispose()
       tab.annotation?.dispose()
-      tab.panel.remove()
+      tab.tabSwitch.remove()
     }
     tabs.clear()
   }
