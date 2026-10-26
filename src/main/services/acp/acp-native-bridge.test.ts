@@ -1,3 +1,12 @@
+import { mkdirSync } from 'node:fs'
+import { readSkillTool } from '../../tools/read-skill-tool.ts'
+import { setSkillsForTest } from '../skills/skills-registry.ts'
+import {
+  createSkillActivationTurn,
+  MAX_MODEL_SKILL_CONTEXT_BYTES,
+  runWithSkillActivationTurn,
+} from '../skills/skill-activation.ts'
+import { clearThreadReadRoots, threadReadRoots } from '../security/thread-read-roots.ts'
 import { queueInlineCanvasReference, runWithInlineCanvas } from '../inline-canvas-context.ts'
 import type { StreamChunk } from '@shared/types'
 import { afterEach, describe, it } from 'node:test'
@@ -247,6 +256,100 @@ function initialized(): unknown[] {
 }
 
 describe('startAcpNativeBridge', () => {
+  it('serves progressive skills through real authenticated HTTP with isolated prompt budgets and no stale access', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'copse-acp-skills-'))
+    const skillRoot = join(root, 'tiny')
+    mkdirSync(skillRoot)
+    writeFileSync(
+      join(skillRoot, 'SKILL.md'),
+      '---\nname: tiny\ndescription: Tiny workflow\n---\nRead reference.md.',
+    )
+    writeFileSync(join(skillRoot, 'reference.md'), 'ACP-TINY-RESULT')
+    setSkillsForTest([
+      {
+        name: 'tiny',
+        description: 'Tiny workflow',
+        source: 'project',
+        skillRoot,
+        skillPath: join(skillRoot, 'SKILL.md'),
+        disableModelInvocation: false,
+        paths: [],
+        externalLinks: [],
+        missingReferences: [],
+      },
+    ])
+    const registry = new ToolRegistry()
+    registry.register(readSkillTool)
+    const parent = createSkillActivationTurn([], ['read_skill'], MAX_MODEL_SKILL_CONTEXT_BYTES)
+    const controller = new AbortController()
+    const first = await runWithSkillActivationTurn(parent, () =>
+      startAcpNativeBridge(registry, controller.signal, { threadId: 'skills-one' }),
+    )
+    const second = await startAcpNativeBridge(registry, controller.signal, {
+      threadId: 'skills-two',
+    })
+    assert.ok(first)
+    assert.ok(second)
+    const read = (target: AcpNativeBridge, path?: string): ReturnType<typeof rpc> =>
+      rpc(target, {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: { name: 'read_skill', arguments: { name: 'tiny', ...(path ? { path } : {}) } },
+      })
+    try {
+      first.setExecutionContext({
+        ...worktreeContext('skills-one', root),
+        projectId: 'skill-boundaries',
+      })
+      second.setExecutionContext({
+        ...worktreeContext('skills-two', root),
+        projectId: 'skill-boundaries',
+      })
+      assert.match(
+        contentText(await read(first)) ?? '',
+        /unavailable outside a supported coding-agent turn/,
+      )
+      first.setSkillActivationTurn(createSkillActivationTurn([], first.toolNames))
+      second.setSkillActivationTurn(createSkillActivationTurn([], second.toolNames))
+      const listed = recordArrayOrEmpty(rpcResult(await rpc(first, LIST_TOOLS))['tools'])
+      assert.ok(listed.some((tool) => tool['name'] === 'read_skill'))
+      assert.match(contentText(await read(first)) ?? '', /Read reference.md/)
+      assert.match(contentText(await read(first, 'reference.md')) ?? '', /ACP-TINY-RESULT/)
+      assert.match(contentText(await read(second, 'reference.md')) ?? '', /before loading/)
+      assert.match(contentText(await read(second)) ?? '', /Read reference.md/)
+      assert.equal(rpcResult(await read(first, '../outside.md'))['isError'], true)
+      assert.equal(rpcResult(await read(first, '/etc/passwd'))['isError'], true)
+      first.setSkillActivationTurn(
+        createSkillActivationTurn([], first.toolNames, MAX_MODEL_SKILL_CONTEXT_BYTES),
+      )
+      assert.match(contentText(await read(first)) ?? '', /context limit/)
+      assert.match(contentText(await read(second, 'reference.md')) ?? '', /ACP-TINY-RESULT/)
+      first.setExecutionContext(null)
+      first.setExecutionContext({
+        ...worktreeContext('skills-one', root),
+        projectId: 'skill-boundaries',
+      })
+      assert.match(
+        contentText(await read(first)) ?? '',
+        /unavailable outside a supported coding-agent turn/,
+      )
+      first.setSkillActivationTurn(createSkillActivationTurn([], first.toolNames))
+      const turnAbort = new AbortController()
+      turnAbort.abort()
+      first.setTurnSignal(turnAbort.signal)
+      assert.equal(rpcResult(await read(first))['isError'], true)
+      assert.deepEqual(threadReadRoots('skills-one'), [])
+      assert.deepEqual(threadReadRoots('skills-two'), [])
+    } finally {
+      await first.close()
+      await second.close()
+      setSkillsForTest([])
+      clearThreadReadRoots()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   let bridge: AcpNativeBridge | null = null
 
   afterEach(async () => {
