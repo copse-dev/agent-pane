@@ -127,16 +127,27 @@ describe('modern CSS adoptions', () => {
       )
     }
 
-    const readingSelector = '.msg-assistant > .message-body > .message-text'
-    assert.ok(
-      declares(read('conversation.css'), readingSelector, /--sm-line-height:\s*1\.6;/),
-      'assistant prose must define the Reading rhythm for pending and completed markdown',
-    )
-    assert.ok(
-      declares(read('conversation.css'), readingSelector, /line-height:\s*var\(--sm-line-height\)/),
-      'assistant prose must use its markdown reading rhythm',
-    )
-    const readingRule = /\.msg-assistant\s*>\s*\.message-body\s*>\s*\.message-text\s*\{[^}]*\}/g
+    // Assistant prose reads on the Reading rhythm wherever a reply is shown: the
+    // main transcript and the side-chat reply bubble (docs/ui-taste.md →
+    // "Assistant reading rhythm"). Only each surface's root prose rule is exempt
+    // below; its descendants (fenced code, tool rows) stay on the shared rhythm.
+    const readingSurfaces = [
+      ['conversation.css', '.msg-assistant > .message-body > .message-text'],
+      ['side-chat.css', '.side-chat-msg.is-assistant'],
+    ] as const
+    const readingRules = new Map<string, RegExp>()
+    for (const [file, selector] of readingSurfaces) {
+      assert.ok(
+        declares(read(file), selector, /--sm-line-height:\s*1\.6;/),
+        `${selector} must define the Reading rhythm for pending and completed markdown`,
+      )
+      assert.ok(
+        declares(read(file), selector, /line-height:\s*var\(--sm-line-height\)/),
+        `${selector} must use its markdown reading rhythm`,
+      )
+      const exact = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s*')
+      readingRules.set(file, new RegExp(`${exact}\\s*\\{[^}]*\\}`, 'g'))
+    }
 
     const allowedCompactValues = new Set([
       '1',
@@ -150,7 +161,8 @@ describe('modern CSS adoptions', () => {
     const nonUniform: string[] = []
     for (const file of readdirSync(STYLES).filter((name) => name.endsWith('.css'))) {
       const css = read(file)
-      const chrome = file === 'conversation.css' ? css.replace(readingRule, '') : css
+      const readingRule = readingRules.get(file)
+      const chrome = readingRule ? css.replace(readingRule, '') : css
       chrome.split('\n').forEach((line, index) => {
         const value = line.match(/line-height:\s*([^;]+);/)?.[1]?.trim()
         if (

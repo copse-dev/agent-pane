@@ -9,6 +9,7 @@ import {
 import { initThreadPrompts } from './services/thread-prompts.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
+import { startMachineService, stopMachineService } from './services/machines/machine-service.ts'
 import {
   armPerfTrace,
   flushPerfTrace,
@@ -540,6 +541,12 @@ app
     // Watch the main event loop for stalls from here on. Startup is exactly when
     // a synchronous hang (migrations, sandbox init, indexing) is most likely and
     // most expensive to diagnose after the fact (issue #995).
+    void startMachineService().catch((error: unknown) => {
+      console.warn(
+        '[machines] Sharing could not start:',
+        error instanceof Error ? error.message : 'unavailable',
+      )
+    })
     startEventLoopWatchdog()
     recordStartupPhase('app-ready')
     perfMark('main:app-ready')
@@ -1395,6 +1402,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   stopWorkspaceIndexWatcher()
   await clearSshWorkspaceFsCache()
   shutdownBrowserSession()
+  await stopMachineService()
   await shutdownStaticPreviewServers()
   await drainWriteQueue()
   // Reap the detached gortex daemon too — left running it accumulates multi-GB

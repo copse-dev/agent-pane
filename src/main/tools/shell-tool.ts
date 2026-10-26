@@ -131,8 +131,21 @@ interface UnsandboxedRetryOptions {
   readonly threadId: string | null
 }
 
+/**
+ * `rawCommand` is the raw model-authored command: every authorization decision
+ * and the prompt text use it, so the retry is judged on the same text the
+ * up-front gate judged. `executedCommand` is what actually ran (sfw-wrapped,
+ * with any injected pipefail); it is only used to attribute violations and to
+ * re-run. Named fields, not two positional `string`s, so a future call site
+ * cannot silently swap which text authorizes the retry and which one re-runs.
+ */
+interface UnsandboxedRetryCommandText {
+  readonly rawCommand: string
+  readonly executedCommand: string
+}
+
 async function maybeRetryUnsandboxed(
-  command: string,
+  commandText: UnsandboxedRetryCommandText,
   cwd: string,
   timeout_ms: number,
   signal: AbortSignal,
@@ -141,8 +154,9 @@ async function maybeRetryUnsandboxed(
   options: UnsandboxedRetryOptions,
   onDetach: () => () => Promise<void>,
 ): Promise<UnsandboxedRetryResult | 'declined' | null> {
+  const { rawCommand, executedCommand } = commandText
   if (!isProjectSandboxEnabled()) return null
-  if (!shellSandboxFailureShouldOfferUnsandboxedRetry(command, cwd, options.ranOutsideSandbox)) {
+  if (!shellSandboxFailureShouldOfferUnsandboxedRetry(rawCommand, cwd, options.ranOutsideSandbox)) {
     if (options.outsideRootPath !== null && !options.ranOutsideSandbox) {
       recordRetryWithheld(RETRY_WITHHELD_REASONS.notEligible)
     }
@@ -152,7 +166,8 @@ async function maybeRetryUnsandboxed(
   // spawn failure) — never from the command's own stdout/stderr (issue #104).
   const runnerDetection = detectSandboxFailure({
     exitCode: result.exitCode,
-    violationCount: result.sandboxViolationCount ?? sandboxViolationCountForCommand(command),
+    violationCount:
+      result.sandboxViolationCount ?? sandboxViolationCountForCommand(executedCommand),
     spawnFailed: result.spawnFailed ?? false,
   })
   // Some denials never touch the OS sandbox's own violation counter — a network
@@ -163,7 +178,7 @@ async function maybeRetryUnsandboxed(
   // approval prompt below, never skip it — see sandbox-denial-signatures.ts.
   const signatureMatch = runnerDetection.likely
     ? null
-    : sandboxDenialRetryClassification(result.output, command)
+    : sandboxDenialRetryClassification(result.output, rawCommand)
   const detection = runnerDetection.likely
     ? runnerDetection
     : signatureMatch
@@ -178,7 +193,7 @@ async function maybeRetryUnsandboxed(
   const evidence = runnerDetection.likely ? 'runner' : 'signature'
   const approved =
     sandboxRetryMaySkipApproval(evidence, options.guardedYolo, options.unattendedContainer) ||
-    (await promptUnsandboxedShell(command, detection.reasons, signal, {
+    (await promptUnsandboxedShell(rawCommand, detection.reasons, signal, {
       readGrantApplied: options.readGrantApplied,
       requireInteractiveApproval: evidence === 'signature',
     }))
@@ -191,12 +206,21 @@ async function maybeRetryUnsandboxed(
       approved,
       options.threadId,
       signatureMatch.operation,
-      command,
+      rawCommand,
       signatureMatch.advice,
     )
   }
   if (!approved) return 'declined'
-  const retryResult = await runShellOnce(command, cwd, timeout_ms, signal, true, env, [], onDetach)
+  const retryResult = await runShellOnce(
+    executedCommand,
+    cwd,
+    timeout_ms,
+    signal,
+    true,
+    env,
+    [],
+    onDetach,
+  )
   return { result: retryResult, retryNote: signatureMatch ? SANDBOX_DENIAL_RETRY_NOTE : null }
 }
 
@@ -327,7 +351,9 @@ export const runShellTool = defineTool({
     // retry offer. Only injected where the shell honors pipefail (see
     // maybeEnablePipefail): remote and non-macOS shells preserve current behavior.
     // The same transformed command is used for the sandboxed run and any approved
-    // unsandboxed retry so both share one shell, command, and violation attribution.
+    // unsandboxed retry so both share one shell, command, and violation attribution;
+    // the retry's approval is still decided from the RAW command (pipefail only
+    // changes exit status, and the agent never wrote the injected `set` line).
     const isRemote = isActiveSshWorkspace() || resolveSshExecutionTargetForCwd(cwd) !== null
     const executedCommand = maybeEnablePipefail(finalCommand, {
       platform: process.platform,
@@ -535,9 +561,11 @@ export const runShellTool = defineTool({
         return skippedProbeViaCache ? prefixWithSandboxCacheSkipNote(success) : success
       }
 
-      if (!suppressUnsandboxedRetry) {
+      // A Stop kills the child, which now reports its signal as a non-zero exit;
+      // that is the user's cancel, not a sandbox denial to offer a retry for.
+      if (!suppressUnsandboxedRetry && !signal.aborted) {
         const retry = await maybeRetryUnsandboxed(
-          executedCommand,
+          { rawCommand: command, executedCommand },
           cwd,
           timeout_ms,
           signal,

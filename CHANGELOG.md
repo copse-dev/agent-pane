@@ -8,6 +8,8 @@ released — rather than copying every published entry.
 
 ## Unreleased
 
+## 0.1.0-beta.16
+
 - Copse no longer decodes Brotli-compressed HTTP responses itself, closing
   CVE-2026-111497, a remote code execution flaw in the Brotli decoder of the
   Node.js that Electron bundles. Copse now asks servers for gzip instead, and a
@@ -22,28 +24,6 @@ released — rather than copying every published entry.
   PyPI or crates.io in the last 48 hours; they install the newest older version
   instead, and say which packages had newer versions left out. Installs from a
   lockfile, and installs you run yourself in a terminal, are unaffected.
-
-## 0.1.0-beta.15
-
-- The footer hover now reports what the classifiers did for the thread: for the
-  shell guard, the shell approval tier and the terminal-read screen, how many
-  checks ran on which model or classifier connection, what they decided, how
-  long they took on average, and the tokens they used. Calls that never reached
-  a classifier (screening off, a missing model) are not counted, and no command
-  text is stored.
-
-- Settings → About has an update channel. Beta gets new features first; switch
-  to Stable and Copse keeps installing betas until the next stable release,
-  then installs only stable releases. It never moves you back to an older
-  version. Copse remembers the channel you installed from, so beta testers stay
-  on beta after the first stable release unless they choose Stable.
-- The footer's context ring no longer drops to about 0% when a run starts and
-  then jumps back up after the first model call: its first reading now counts
-  the system prompt and tools, as the readings that follow do. Its label also
-  quotes the same figures as the hover beside it. The hover's Subagents line
-  now says "N running" for runs still going and "no usage reported" or "N
-  without usage" for runs that ended without reporting tokens, instead of
-  "no usage yet" beside a run already marked done.
 
 ## Release-note process
 

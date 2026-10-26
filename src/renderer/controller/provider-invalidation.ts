@@ -14,6 +14,8 @@ type InvalidationApi = {
 interface InvalidationUi {
   warn: (request: ConfirmDialogRequest) => Promise<boolean>
   openSettings: (target: ModelSettingsTarget) => void
+  /** Focuses the active thread's own model picker; nothing in Settings covers it. */
+  openThreadModelPicker: () => void
   isActive?: () => boolean
 }
 
@@ -31,20 +33,30 @@ function settingsTarget(invalid: ModelInvalidation): ModelSettingsTarget {
       return invalid.target
   }
 }
-function acknowledgement(
+/**
+ * Startup creates a blank chat from the saved default after settings load, so
+ * that inherited, unedited selection is really the default-model setting, not
+ * a choice this thread made. Once the thread has history or its own
+ * `modelSelections`, its model is a genuine per-thread override that Settings
+ * cannot reach.
+ */
+function isInheritedDefaultThreadModel(
   store: AppStore,
   invalid: Pick<ModelInvalidation, 'target' | 'model'>,
-): string {
+): boolean {
   const thread = getActiveThread(store)
-  // Startup creates a blank chat from the saved default after settings load.
-  // The default warning already covers that inherited, unedited selection.
-  if (
+  return (
     invalid.target === 'thread' &&
     thread?.messages.length === 0 &&
     !thread.modelSelections?.length &&
     store.getState().settings?.model === invalid.model
   )
-    return JSON.stringify(['model', invalid.model])
+}
+function acknowledgement(
+  store: AppStore,
+  invalid: Pick<ModelInvalidation, 'target' | 'model'>,
+): string {
+  if (isInheritedDefaultThreadModel(store, invalid)) return JSON.stringify(['model', invalid.model])
   return JSON.stringify(
     invalid.target === 'thread'
       ? [store.getState().activeProjectId, getActiveThread(store)?.id, invalid.model]
@@ -94,8 +106,14 @@ export async function checkProviderInvalidation(
   const first = pending[0]
   if (!first) return []
   const hasFallback = pending.some((entry) => entry.fallback)
+  // Only the first entry drives the confirm action, so only its own nature
+  // (not the rest of the batch) decides whether that action is Settings or
+  // this thread's own model picker.
+  const threadOverride = first.target === 'thread' && !isInheritedDefaultThreadModel(store, first)
   const open = await ui.warn({
-    message: 'Model settings need attention',
+    message: threadOverride
+      ? 'This thread’s model needs attention'
+      : 'Model settings need attention',
     detail: pending
       .map(
         (entry) =>
@@ -106,12 +124,17 @@ export async function checkProviderInvalidation(
           }`,
       )
       .join('\n\n'),
-    confirmLabel: 'Open Settings',
+    confirmLabel: threadOverride ? 'Change Model' : 'Open Settings',
     cancelLabel: hasFallback ? 'Use local models' : 'Dismiss',
   })
   if (!alive()) return keys
   if (open) {
-    if (first.target !== 'thread' || stillSelected()) ui.openSettings(settingsTarget(first))
+    if (stillSelected()) {
+      if (threadOverride) ui.openThreadModelPicker()
+      else ui.openSettings(settingsTarget(first))
+    } else if (first.target !== 'thread') {
+      ui.openSettings(settingsTarget(first))
+    }
     return keys
   }
   for (const entry of pending) {
