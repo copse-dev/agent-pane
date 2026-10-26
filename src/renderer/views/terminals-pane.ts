@@ -773,7 +773,8 @@ export function mountTerminalsPane(
     if (activeTabId && !visible.some((t) => t.id === activeTabId)) activeTabId = null
 
     if (needsNew) {
-      if (terminalModeActive(store) && !scopeHasTab()) void ensureScopeTab({ focus: false, automatic: true })
+      if (terminalModeActive(store) && !scopeHasTab())
+        void ensureScopeTab({ focus: false, automatic: true })
       return
     }
     if (!activeTabId && visible.length > 0) setActiveTab(at(visible, 0).id, { focus: false })
