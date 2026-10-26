@@ -2425,6 +2425,14 @@
       "sha256": "85e9b082b3f73acb61543af0153a335c7fad58f8eef150b65ae87b5f09c4bef3",
       "bytes": 44305
     },
+    "mobile-companion-rich-reply-dark.png": {
+      "sha256": "4a31399f0241f5e3d5cdd4ba56ea12f9f0eddd50b8cca0869df8e365ff441fcc",
+      "bytes": 34098
+    },
+    "mobile-companion-rich-reply-light.png": {
+      "sha256": "2ff6f80a649ed1f64033ce545a0a51f88ecbfc678217b77a2faaa5768e7d0522",
+      "bytes": 33642
+    },
     "mobile-companion-thread-dark.png": {
       "sha256": "d1ef414c23abc17e39e5a2c1648b441f9efe39ca8e379337370c98805c488424",
       "bytes": 41130
@@ -4492,6 +4500,10 @@
     "side-chat-restored-after-restart.png": {
       "sha256": "d80b50e2f1d20ca398f1ca870182eaea99a4d2a17b574d3fae0189608669c885",
       "bytes": 147546
+    },
+    "side-chat-rich-markdown.png": {
+      "sha256": "20c78e8cc2515e2a3c8bfc04b3c2fcfa83791fe9eecf6c4b189a799cf2660a31",
+      "bytes": 143333
     },
     "side-chat-unread-rollup-sidebar.png": {
       "sha256": "da3a30607a141ddb263425d4ce2935eb88bbbde908b87bbb3fe3f3183b911b48",
