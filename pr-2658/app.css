@@ -3974,13 +3974,37 @@ html.is-popout .thread-context-close {
   background: var(--bg-selected);
   white-space: pre-wrap;
 }
-.side-chat-msg.is-assistant {
-  align-self: flex-start;
-  background: var(--bg-subtle);
-}
 .side-chat-msg.is-error {
   align-self: flex-start;
   color: var(--error);
+}
+.side-chat-msg.is-assistant {
+  align-self: flex-start;
+  background: var(--bg-subtle);
+  --sm-line-height: 1.6;
+  font-family: var(--font-prose);
+  font-size: var(--font-size-md);
+  line-height: var(--sm-line-height);
+  color: var(--text-prose);
+}
+.side-chat-msg.is-assistant :is(strong, b) {
+  font-weight: 600;
+  color: var(--text-prose-strong);
+}
+.side-chat-msg.is-assistant a :is(strong, b) {
+  color: inherit;
+}
+.side-chat-msg.is-assistant :is(h1, h2, h3) {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+.side-chat-msg.is-assistant pre {
+  font-size: var(--sm-font-size-sm);
+  line-height: var(--line-height-base);
+}
+.side-chat-msg.is-assistant :is(li + li) {
+  margin-top: var(--spacing-xs);
 }
 .side-chat-msg.is-assistant > :first-child {
   margin-top: 0;
@@ -9324,6 +9348,7 @@ dialog.settings-overlay::backdrop {
 .settings-section > fieldset,
 .settings-section > .settings-mount > fieldset,
 .settings-search-results > fieldset,
+.machines-settings > fieldset,
 .usage-section-root > fieldset {
   background: none;
   padding: 0;
@@ -9341,6 +9366,7 @@ dialog.settings-overlay::backdrop {
 .settings-section > fieldset > legend,
 .settings-section > .settings-mount > fieldset > legend,
 .settings-search-results > fieldset > legend,
+.machines-settings > fieldset > legend,
 .usage-section-root > fieldset > legend {
   font-family: var(--font-display);
   font-size: calc(20px * var(--ui-scale));
@@ -9348,13 +9374,13 @@ dialog.settings-overlay::backdrop {
   line-height: var(--line-height-base);
   margin-bottom: var(--spacing-md);
 }
-.settings-content fieldset:not(.settings-section > fieldset, .settings-section > .settings-mount > fieldset, .settings-search-results > fieldset, .usage-section-root > fieldset) > legend {
+.settings-content fieldset:not(.settings-section > fieldset, .settings-section > .settings-mount > fieldset, .settings-search-results > fieldset, .machines-settings > fieldset, .usage-section-root > fieldset) > legend {
   float: left;
   width: 100%;
   padding: 0;
   margin-bottom: var(--spacing-md);
 }
-.settings-content fieldset:not(.settings-section > fieldset, .settings-section > .settings-mount > fieldset, .settings-search-results > fieldset, .usage-section-root > fieldset) > legend ~ * {
+.settings-content fieldset:not(.settings-section > fieldset, .settings-section > .settings-mount > fieldset, .settings-search-results > fieldset, .machines-settings > fieldset, .usage-section-root > fieldset) > legend ~ * {
   clear: both;
 }
 .settings-content fieldset label {
@@ -11901,6 +11927,32 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 .settings-content .profile-vault-choice[hidden] {
   display: none;
+}
+.machines-settings textarea {
+  width: min(100%, 38rem);
+  min-height: 5rem;
+  resize: vertical;
+}
+.machine-row {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.machine-row h4 {
+  margin: 0 0 6px;
+  overflow-wrap: anywhere;
+}
+.machine-client-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0;
+}
+.machine-share-models {
+  margin: 12px 0;
+}
+.machine-status {
+  margin: 12px 0;
 }
 #settings-save-status {
   margin-right: auto;
