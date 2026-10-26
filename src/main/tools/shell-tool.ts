@@ -125,14 +125,20 @@ interface UnsandboxedRetryOptions {
 }
 
 /**
- * `command` is the raw model-authored command: every authorization decision and
- * the prompt text use it, so the retry is judged on the same text the up-front
- * gate judged. `executedCommand` is what actually ran (sfw-wrapped, with any
- * injected pipefail); it is only used to attribute violations and to re-run.
+ * `rawCommand` is the raw model-authored command: every authorization decision
+ * and the prompt text use it, so the retry is judged on the same text the
+ * up-front gate judged. `executedCommand` is what actually ran (sfw-wrapped,
+ * with any injected pipefail); it is only used to attribute violations and to
+ * re-run. Named fields, not two positional `string`s, so a future call site
+ * cannot silently swap which text authorizes the retry and which one re-runs.
  */
+interface UnsandboxedRetryCommandText {
+  readonly rawCommand: string
+  readonly executedCommand: string
+}
+
 async function maybeRetryUnsandboxed(
-  command: string,
-  executedCommand: string,
+  commandText: UnsandboxedRetryCommandText,
   cwd: string,
   timeout_ms: number,
   signal: AbortSignal,
@@ -141,8 +147,9 @@ async function maybeRetryUnsandboxed(
   options: UnsandboxedRetryOptions,
   onDetach: () => () => Promise<void>,
 ): Promise<UnsandboxedRetryResult | 'declined' | null> {
+  const { rawCommand, executedCommand } = commandText
   if (!isProjectSandboxEnabled()) return null
-  if (!shellSandboxFailureShouldOfferUnsandboxedRetry(command, cwd, options.ranOutsideSandbox)) {
+  if (!shellSandboxFailureShouldOfferUnsandboxedRetry(rawCommand, cwd, options.ranOutsideSandbox)) {
     if (options.outsideRootPath !== null && !options.ranOutsideSandbox) {
       recordRetryWithheld(RETRY_WITHHELD_REASONS.notEligible)
     }
@@ -164,7 +171,7 @@ async function maybeRetryUnsandboxed(
   // approval prompt below, never skip it — see sandbox-denial-signatures.ts.
   const signatureMatch = runnerDetection.likely
     ? null
-    : sandboxDenialRetryClassification(result.output, command)
+    : sandboxDenialRetryClassification(result.output, rawCommand)
   const detection = runnerDetection.likely
     ? runnerDetection
     : signatureMatch
@@ -179,7 +186,7 @@ async function maybeRetryUnsandboxed(
   const evidence = runnerDetection.likely ? 'runner' : 'signature'
   const approved =
     sandboxRetryMaySkipApproval(evidence, options.guardedYolo, options.unattendedContainer) ||
-    (await promptUnsandboxedShell(command, detection.reasons, signal, {
+    (await promptUnsandboxedShell(rawCommand, detection.reasons, signal, {
       readGrantApplied: options.readGrantApplied,
       requireInteractiveApproval: evidence === 'signature',
     }))
@@ -192,7 +199,7 @@ async function maybeRetryUnsandboxed(
       approved,
       options.threadId,
       signatureMatch.operation,
-      command,
+      rawCommand,
       signatureMatch.advice,
     )
   }
@@ -527,8 +534,7 @@ export const runShellTool = defineTool({
 
       if (!suppressUnsandboxedRetry) {
         const retry = await maybeRetryUnsandboxed(
-          command,
-          executedCommand,
+          { rawCommand: command, executedCommand },
           cwd,
           timeout_ms,
           signal,
