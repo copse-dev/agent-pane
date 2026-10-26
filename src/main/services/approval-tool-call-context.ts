@@ -24,13 +24,30 @@ export function getApprovalToolCallId(): string | undefined {
   return toolCallIdStorage.getStore()
 }
 
-const bridgeExecutionIdStorage = new AsyncLocalStorage<string>()
+const bridgeExecutionIdStorage = new AsyncLocalStorage<{ id: string; operationKey?: string }>()
 
 /** A bridge execution has its own identity, not a guessed ACP transcript ID. */
-export function runWithBridgeExecutionId<T>(id: string, fn: () => T): T {
-  return bridgeExecutionIdStorage.run(id, () => toolCallIdStorage.run(undefined, fn))
+export function runWithBridgeExecutionId<T>(
+  id: string,
+  fn: () => T,
+  operation?: { toolName: string; arguments: unknown },
+): T {
+  return bridgeExecutionIdStorage.run(
+    {
+      id,
+      ...(operation
+        ? { operationKey: JSON.stringify([operation.toolName, operation.arguments]) }
+        : {}),
+    },
+    () => toolCallIdStorage.run(undefined, fn),
+  )
 }
 
 export function getBridgeExecutionId(): string | undefined {
-  return bridgeExecutionIdStorage.getStore()
+  return bridgeExecutionIdStorage.getStore()?.id
+}
+
+/** Private in-memory approval identity; never rendered or written to the audit log. */
+export function getApprovalOperationKey(): string | undefined {
+  return bridgeExecutionIdStorage.getStore()?.operationKey
 }

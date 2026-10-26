@@ -116,6 +116,7 @@ import {
 import {
   requestApproval,
   cancelApprovalsForThread,
+  discardApprovalsForThread,
   pendingApprovalParkedToolCallIds,
   releaseParkedApprovalsForThread,
 } from './approval.ts'
@@ -263,6 +264,7 @@ import {
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
 import { cancelAgentInitiatedAcpTurn } from './acp/acp-session-pool.ts'
+import { AcpTurnEnded } from './acp/turn-end.ts'
 import {
   ACP_UNFINISHED_TURN_BUDGET_FALLBACK,
   ACP_UNFINISHED_TURN_FALLBACK,
@@ -1281,9 +1283,10 @@ async function runAgentWithInlineCanvas(
     // (and other host-side waits) are open so a long user think cannot abort the
     // ACP turn underneath the still-visible prompt.
     registerRunDeadline(threadId, runAbort.deadline)
-    // Aborted in finally so bridged tools / orphaned approval modals cancel when
-    // the external agent finishes the turn without waiting for them.
+    // End execution at the turn boundary, but retain unanswered approvals on
+    // normal completion so an exact retry can consume the user's later answer.
     const bridgeTurn = new AbortController()
+    let bridgeTurnCompleted = false
     // The advisor works both ways for ACP: an external executor can consult it
     // through the native-tool bridge. Unlike the native loop (context set around
     // each call), bridged calls arrive over HTTP at any point in the turn, so
@@ -1457,6 +1460,13 @@ async function runAgentWithInlineCanvas(
 
       await finishInlineVisualizations()
 
+      // Park pending questions before settling tool cards, regardless of
+      // whether the MCP client disconnected before or after its turn response.
+      bridgeTurnCompleted = normalizeStopReason(result.stopReason.toLowerCase()) === 'end_turn'
+      if (bridgeTurnCompleted && !controller.signal.aborted) {
+        bridgeTurn.abort(new AcpTurnEnded('completed'))
+      }
+
       // A stop response is terminal for every foreground tool call the agent
       // opened during this turn. If one never sent a final result/update, leave
       // an explicit interrupted verdict instead of persisting a spinner after
@@ -1596,7 +1606,23 @@ async function runAgentWithInlineCanvas(
     } finally {
       // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
       fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
-      bridgeTurn.abort()
+      bridgeTurn.abort(
+        new AcpTurnEnded(
+          controller.signal.aborted
+            ? isAgentRunTimeoutAbort(controller.signal)
+              ? 'idle-timeout'
+              : 'stopped'
+            : bridgeTurnCompleted
+              ? 'completed'
+              : 'failed',
+        ),
+      )
+      if (controller.signal.aborted) {
+        discardApprovalsForThread(
+          threadId,
+          isAgentRunTimeoutAbort(controller.signal) ? 'run-timeout' : 'stopped',
+        )
+      }
       cancelApprovalsForThread(threadId)
       // Approvals that survived the turn (parked when the agent abandoned the
       // bridged call, then kept by the skips above) are re-detached from the
@@ -3058,6 +3084,7 @@ async function runAgentWithInlineCanvas(
 }
 
 export function abortAgent(threadId: string, reason?: 'send_now'): void {
+  discardApprovalsForThread(threadId, reason === 'send_now' ? 'send-now' : 'stopped')
   abortMap.get(threadId)?.abort(reason)
   // A turn the coding agent resumed on its own has no entry above.
   cancelAgentInitiatedAcpTurn(threadId)

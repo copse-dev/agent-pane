@@ -58,6 +58,7 @@ import {
   isBridgedNativeToolTitle,
 } from './acp-native-bridge.ts'
 import type { AcpNativeBridge } from './acp-native-bridge.ts'
+import { AcpTurnEnded } from './turn-end.ts'
 import { expectRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { at } from '@shared/array-utils.ts'
 import { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
@@ -745,6 +746,48 @@ describe('startAcpNativeBridge', () => {
       finish()
       t.mock.timers.reset()
     }
+  })
+
+  it('keeps a live HTTP approval when its turn completes before the client disconnects', async () => {
+    const executed: string[] = []
+    const gate = promptingGate()
+    const owner = new AbortController()
+    bridge = await startAcpNativeBridge(testRegistry(executed), new AbortController().signal, {
+      threadId: 'bridge-turn-complete',
+    })
+    assert.ok(bridge)
+    const context = worktreeContext('bridge-turn-complete', '/worktrees/bridge-turn-complete')
+    bridge.setExecutionContext(context)
+    bridge.setTurnSignal(owner.signal)
+    for (const init of initialized()) await rpc(bridge, init)
+    const started = gate.started()
+    const pending = rpc(bridge, SHELL_CALL)
+    await started
+
+    owner.abort(new AcpTurnEnded('completed'))
+    bridge.setExecutionContext(null)
+    bridge.setTurnSignal(null)
+    const detached = await pending
+    assert.equal(rpcResult(detached)['isError'], true)
+    assert.match(contentText(detached) ?? '', /Approval is still pending/)
+    assert.equal(gate.handlerSignal()?.aborted, false)
+    assert.equal(parkedApprovalCount(), 1)
+    assert.deepEqual(executed, [])
+
+    gate.release({ approved: true, remember: false, resolution: 'user' })
+    await Promise.resolve()
+    assert.deepEqual(executed, [], 'a late answer must not resume the old HTTP caller')
+    assert.equal(
+      rpcResult(await rpc(bridge, SHELL_CALL))['isError'],
+      true,
+      'the expired context stays unusable',
+    )
+
+    bridge.setExecutionContext(context)
+    bridge.setTurnSignal(new AbortController().signal)
+    assert.equal(contentText(await rpc(bridge, SHELL_CALL)), 'ran git worktree list --porcelain')
+    assert.equal(gate.handlerCalls(), 1, 'the exact retry reuses the decision once')
+    assert.deepEqual(executed, ['run_shell:git worktree list --porcelain'])
   })
 
   it('parks the approval when the client drops the HTTP call, and replays it to the retry', async () => {

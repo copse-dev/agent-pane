@@ -467,7 +467,7 @@ async function acquireAcpSessionUnlocked(
     lastUsedAt: Date.now(),
     dispose: () => {
       if (disposal) return disposal
-      open.agentInitiated?.end()
+      open.agentInitiated?.end('session-closed')
       const agentDisposal = open.dispose()
       bridgeAbort.abort()
       disposal = Promise.all([agentDisposal, bridge?.close() ?? Promise.resolve()])

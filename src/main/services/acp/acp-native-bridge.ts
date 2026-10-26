@@ -634,7 +634,11 @@ function buildMcpServer(
             return runWithThreadExecutionContext(executionContext, () =>
               runWithSkillActivationTurn(
                 skillTurn ?? createSkillActivationTurn([], [], 0, 'acp'),
-                () => runWithBridgeExecutionId(bridgeExecutionId, withPermissionContext),
+                () =>
+                  runWithBridgeExecutionId(bridgeExecutionId, withPermissionContext, {
+                    toolName: name,
+                    arguments: request.params.arguments ?? {},
+                  }),
               ),
             )
           }),
