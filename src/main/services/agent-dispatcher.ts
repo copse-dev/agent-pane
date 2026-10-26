@@ -81,7 +81,7 @@ export interface AgentDispatchRequest {
 export interface MachineAgentDispatchRequest extends AgentDispatchRequest {
   operationId: string
   turnTreeId: string
-  display?: MachineTurnDisplay
+  display?: MachineTurnDisplay | 'hidden'
   /**
    * Checked once the thread is claimed: true when the agent already saw what
    * this wake would report, so it is recorded without a turn or budget charge.
@@ -539,9 +539,11 @@ export class AgentDispatcher {
     try {
       await this.dependencies.saveEpoch(request.projectId, request.threadId, nextEpoch)
       this.epochs.set(key, nextEpoch)
-      const display = request.display
+      const hidden = request.display === 'hidden'
+      const display = request.display === 'hidden' ? undefined : request.display
       host.emit(request.threadId, {
         type: 'machine_turn_start',
+        ...(hidden ? { hidden: true as const } : {}),
         content: display?.content ?? request.payload.userContent,
         origin: { kind: 'machine', operationId: request.operationId },
         ...(display?.attachments ? { attachments: display.attachments } : {}),

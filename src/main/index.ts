@@ -114,6 +114,7 @@ import { initSshAskpassServer } from './services/ssh-workspace/askpass.ts'
 import { initSshWorkspaceIpc } from './services/ssh-workspace/ssh-workspace-ipc.ts'
 import { clearSshWorkspaceFsCache } from './services/workspace-fs/ssh-workspace-fs.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
+import { diffAcceptancePrompt, setDiffAcceptanceHandler } from './services/diff-acceptance-wake.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
 import {
@@ -736,6 +737,23 @@ app
     perfMark('main:register-handlers')
     const agentDispatcher = new AgentDispatcher(agentHost, registry, undefined, transcriptWriter)
     setAgentInitiatedTurnAuthority(agentDispatcher)
+    setDiffAcceptanceHandler((acceptance) =>
+      agentDispatcher.dispatchMachine({
+        projectId: acceptance.owner.projectId,
+        threadId: acceptance.owner.threadId,
+        operationId: acceptance.operationId,
+        turnTreeId: acceptance.turnTreeId,
+        display: 'hidden',
+        payload: {
+          userContent: diffAcceptancePrompt(acceptance),
+          invokedSkills: [],
+          priorTodos: [],
+        },
+      }),
+    )
+    win.once('closed', () => {
+      setDiffAcceptanceHandler(null)
+    })
     registerAllHandlers(
       win,
       registry,
