@@ -77,6 +77,7 @@ describe('Pane pop-out (mock gh)', () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     writeE2eEnv({ COPSE_PANEL_MOCK_GH: '1', COPSE_PANEL_MOCK_GH_STATUS: 'ready' })
     resetUserData()
+    // The explorer pop-out lists the project root: a fixed tree, never this checkout.
     seedPrPanelChatFixture(seedStableWorkspace(), { roadmapPlansEnabled: true })
     server = createServer((_request, response) => {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })

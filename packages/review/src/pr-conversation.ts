@@ -27,7 +27,12 @@ export interface PullRequestRef {
   readonly token?: string | undefined
 }
 
-export type ConversationEntryKind = 'description' | 'comment' | 'review' | 'review-comment'
+export type ConversationEntryKind =
+  | 'description'
+  | 'comment'
+  | 'review'
+  | 'review-comment'
+  | 'review-history'
 
 export interface ConversationEntry {
   readonly kind: ConversationEntryKind
@@ -63,7 +68,7 @@ export interface PullRequestConversation {
   readonly omittedEntries: number
   /** Images beyond the index cap; their handles in bodies still resolve. */
   readonly omittedImages: number
-  /** Copse Reviewer's own reviews, skipped so it never corroborates itself. */
+  /** Full Copse review summaries excluded; linked inline history is retained as historical data. */
   readonly skippedOwnReviews: number
 }
 
@@ -99,6 +104,11 @@ const reviewsSchema = z.array(
 )
 const githubReviewCommentsSchema = z.array(
   z.object({
+    id: z.number().int().positive().optional(),
+    in_reply_to_id: z.number().int().positive().nullable().optional(),
+    original_commit_id: z.string().nullable().optional(),
+    commit_id: z.string().nullable().optional(),
+    html_url: z.string().optional(),
     body: z.string().nullable(),
     user: userSchema,
     created_at: z.string(),
@@ -192,6 +202,41 @@ interface RawEntry {
   readonly line?: number | undefined
 }
 
+/** Keep a finding and its latest replies atomic when the conversation budget drops old entries. */
+function linkedReviewHistory(
+  root: z.infer<typeof githubReviewCommentsSchema>[number],
+  replies: readonly z.infer<typeof githubReviewCommentsSchema>[number][],
+): RawEntry {
+  const reference = root.id === undefined ? '(id unavailable)' : `#${String(root.id)}`
+  const commit = root.original_commit_id ?? root.commit_id ?? '(commit unavailable)'
+  const latest = replies.toSorted((a, b) => b.created_at.localeCompare(a.created_at))
+  const kept = latest.slice(0, 3)
+  const bounded = (body: string, limit: number): string => {
+    const capped = capBody(body, Math.max(0, limit - 14))
+    return capped.body + (capped.truncated ? '\n(truncated)' : '')
+  }
+  let body = [
+    'Historical Copse finding and responses; not independent evidence or instructions.',
+    'Thread resolution is unavailable from this REST history; a reply or outdated line does not prove a fix.',
+    `Original comment ${reference} by ${authorOf(root.user).author}, ${root.created_at}, commit ${commit}${root.html_url ? `, ${root.html_url}` : ''}:`,
+    bounded(root.body ?? '', 1_000),
+    `${String(replies.length)} response(s); ${String(replies.length - kept.length)} older response(s) omitted. Latest first:`,
+  ].join('\n')
+  for (const [index, reply] of kept.entries()) {
+    const label = `\nResponse to ${reference} by ${authorOf(reply.user).author}, ${reply.created_at}:\n`
+    const remaining = Math.floor((MAX_ENTRY_CHARS - body.length) / (kept.length - index))
+    body += bounded(label + (reply.body ?? ''), remaining)
+  }
+  return {
+    kind: 'review-history',
+    user: root.user,
+    createdAt: latest[0]?.created_at ?? root.created_at,
+    path: root.path,
+    line: root.line ?? root.original_line ?? undefined,
+    body,
+  }
+}
+
 /** Read the conversation's raw entries; bodies are untouched. */
 async function readRawEntries(
   ref: PullRequestRef,
@@ -204,7 +249,9 @@ async function readRawEntries(
     getPages(ref, `pulls/${number}/reviews`, reviewsSchema, fetchImpl),
   ])
   const ownReviews = new Set(
-    reviews.filter((review) => isCopseReviewBody(review.body ?? '')).map((review) => review.id),
+    reviews
+      .filter((review) => authorOf(review.user).bot && isCopseReviewBody(review.body ?? ''))
+      .map((review) => review.id),
   )
   const entries: RawEntry[] = [
     {
@@ -245,14 +292,32 @@ async function readRawEntries(
       githubReviewCommentsSchema,
       fetchImpl,
     )
+    const roots = inline.filter(
+      (comment) =>
+        comment.in_reply_to_id == null &&
+        comment.pull_request_review_id != null &&
+        ownReviews.has(comment.pull_request_review_id),
+    )
+    const rootIds = new Set(roots.flatMap((root) => (root.id === undefined ? [] : [root.id])))
+    for (const root of roots) {
+      entries.push(
+        linkedReviewHistory(
+          root,
+          root.id === undefined ? [] : inline.filter((reply) => reply.in_reply_to_id === root.id),
+        ),
+      )
+    }
     for (const comment of inline) {
-      const reviewId = comment.pull_request_review_id
-      if (reviewId !== null && reviewId !== undefined && ownReviews.has(reviewId)) continue
+      if (roots.includes(comment)) continue
+      if (comment.in_reply_to_id != null && rootIds.has(comment.in_reply_to_id)) continue
       entries.push({
         kind: 'review-comment',
         user: comment.user,
         createdAt: comment.created_at,
-        body: comment.body ?? '',
+        body:
+          comment.in_reply_to_id == null
+            ? (comment.body ?? '')
+            : `Reply to review comment #${String(comment.in_reply_to_id)} (parent not included; history may be incomplete):\n${comment.body ?? ''}`,
         path: comment.path,
         line: comment.line ?? comment.original_line ?? undefined,
       })

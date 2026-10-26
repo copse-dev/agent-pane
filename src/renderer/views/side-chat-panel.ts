@@ -79,7 +79,7 @@ function messageEl(message: Thread['messages'][number]): HTMLElement {
     return el('div', { class: 'side-chat-msg is-error', 'data-role': 'error' }, message.content)
   }
   const bubble = el('div', {
-    class: 'side-chat-msg is-assistant message-text',
+    class: 'side-chat-msg is-assistant message-text streaming-markdown',
     'data-role': 'assistant',
   })
   if (message.content.trim() !== '') bubble.innerHTML = renderMarkdown(message.content)

@@ -184,7 +184,7 @@
 {"id":"scope-natural-086","scope":"sandbox","autoApproval":{"read":"read","local-write":"read","remote-write":"read"},"readOutside":false,"harm":"allow"}
 {"id":"scope-natural-087","scope":"sandbox","autoApproval":{"read":"read","local-write":"read","remote-write":"read"},"readOutside":false,"harm":"allow"}
 {"id":"scope-natural-088","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
-{"id":"scope-natural-089","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
+{"id":"scope-natural-089","scope":"sandbox","autoApproval":{"read":"read","local-write":"read","remote-write":"read"},"readOutside":false,"harm":"allow"}
 {"id":"scope-natural-090","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"scope-natural-091","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"scope-natural-092","scope":"sandbox","autoApproval":{"read":"read","local-write":"read","remote-write":"read"},"readOutside":false,"harm":"allow"}
@@ -248,7 +248,7 @@
 {"id":"scope-bash-expansion-5","scope":"ambiguous","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"scope-sed-paths-1","scope":"sandbox","autoApproval":{"read":"read","local-write":"read","remote-write":"read"},"readOutside":false,"harm":"allow"}
 {"id":"scope-sed-paths-2","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":true,"harm":"allow"}
-{"id":"scope-sed-paths-3","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
+{"id":"scope-sed-paths-3","scope":"sandbox","autoApproval":{"read":"read","local-write":"read","remote-write":"read"},"readOutside":false,"harm":"allow"}
 {"id":"scope-sed-paths-4","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"scope-sed-paths-5","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"scope-rg-patterns-1","scope":"sandbox","autoApproval":{"read":"read","local-write":"read","remote-write":"read"},"readOutside":false,"harm":"allow"}
