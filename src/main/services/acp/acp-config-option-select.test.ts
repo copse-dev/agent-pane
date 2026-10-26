@@ -7,7 +7,8 @@ import {
   type AgentApp,
   type SessionConfigOption,
 } from '@agentclientprotocol/sdk'
-import type { AcpTransportFactory } from './acp-client.ts'
+import type { StreamChunk } from '@shared/types'
+import type { AcpClientHandlers, AcpTransportFactory } from './acp-client.ts'
 import {
   configOptionsFrom,
   modelSelectorFrom,
@@ -254,6 +255,65 @@ describe('config options switch live between turns', () => {
       open.desiredConfigOptions = { thinking: 'ludicrous' }
       await runAcpSessionPrompt(open, 'one', undefined)
       assert.deepEqual(calls, [])
+    } finally {
+      await open.dispose()
+    }
+  })
+})
+
+describe('runAcpSessionPrompt and a stale per-turn model pick', () => {
+  function captureHandlers(): { chunks: StreamChunk[]; current: AcpClientHandlers } {
+    const chunks: StreamChunk[] = []
+    return {
+      chunks,
+      current: {
+        onChunk: (chunk) => chunks.push(chunk),
+        requestPermission: (): ReturnType<AcpClientHandlers['requestPermission']> => {
+          throw new Error('not used by this test')
+        },
+      },
+    }
+  }
+
+  it('degrades to the agent’s current model and says so in the transcript', async () => {
+    const { calls, open } = await openWith(undefined)
+    const { chunks, current } = captureHandlers()
+    open.handlers.current = current
+    try {
+      await runAcpSessionPrompt(open, 'hello', 'opus-9000')
+
+      // Never attempts to apply a value the agent doesn't offer.
+      assert.deepEqual(calls, [])
+
+      const [notice] = chunks
+      assert.equal(notice?.type, 'text')
+      assert.match(notice.text, /opus-9000/)
+      assert.match(notice.text, /no longer offered/)
+    } finally {
+      await open.dispose()
+    }
+  })
+
+  it('notices once, not on every turn that keeps asking for the same stale model', async () => {
+    const { open } = await openWith(undefined)
+    const { chunks, current } = captureHandlers()
+    open.handlers.current = current
+    try {
+      await runAcpSessionPrompt(open, 'one', 'opus-9000')
+      await runAcpSessionPrompt(open, 'two', 'opus-9000')
+      assert.equal(chunks.length, 1)
+    } finally {
+      await open.dispose()
+    }
+  })
+
+  it('says nothing when the per-turn model is known and current', async () => {
+    const { open } = await openWith(undefined)
+    const { chunks, current } = captureHandlers()
+    open.handlers.current = current
+    try {
+      await runAcpSessionPrompt(open, 'hello', 'sonnet')
+      assert.deepEqual(chunks, [])
     } finally {
       await open.dispose()
     }

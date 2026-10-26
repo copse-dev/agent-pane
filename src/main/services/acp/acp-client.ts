@@ -39,7 +39,7 @@ import type {
   AcpModelChoice,
   AcpModelSelector,
 } from '@shared/types/acp.ts'
-import { acpConfigCategory, acpConfigCategoryLabel } from '@shared/acp.ts'
+import { acpConfigCategory, acpConfigCategoryLabel, acpModelChoiceLabel } from '@shared/acp.ts'
 import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
@@ -256,6 +256,22 @@ export function modelSelectorFrom(response: {
     ...(choice.description ? { description: choice.description } : {}),
   }))
   return { configId: option.configId, currentValue: option.currentValue, choices }
+}
+
+/**
+ * Markdown notice for when a thread's chosen model has dropped off the
+ * agent's own list (e.g. after an agent version bump): the turn still runs,
+ * on whichever model `selector.currentValue` names, but silently is wrong —
+ * say so once in the transcript rather than leaving it to the picker's
+ * easy-to-miss "(not currently advertised)" label.
+ */
+export function acpStaleModelNotice(selector: AcpModelSelector, requestedModel: string): string {
+  const current = selector.choices.find((choice) => choice.value === selector.currentValue)
+  const currentLabel = current ? acpModelChoiceLabel(current) : selector.currentValue
+  return (
+    `_This thread's model (**${requestedModel}**) is no longer offered by this agent — ` +
+    `continuing on **${currentLabel}** instead. Pick another model in the footer._\n\n`
+  )
 }
 
 /**
@@ -1605,9 +1621,9 @@ export async function runAcpSessionPrompt(
       const selector = modelSelectorFrom(session.response)
       // Only switch when the value is a model the agent still offers and it
       // isn't already current. A stale/removed value (e.g. after an agent
-      // version bump) is skipped, and a rejected set is swallowed, so a bad
-      // model selection degrades to the agent's default instead of failing
-      // the whole turn.
+      // version bump) is skipped with a transcript notice, and a rejected set
+      // is swallowed, so a bad model selection degrades to the agent's
+      // default instead of failing the whole turn.
       const isKnown = selector?.choices.some((choice) => choice.value === model) ?? false
       if (selector && isKnown && model !== selector.currentValue) {
         try {
@@ -1621,6 +1637,12 @@ export async function runAcpSessionPrompt(
           // Fall back to the agent's current model for this turn.
         }
       } else {
+        if (selector && !isKnown) {
+          open.handlers.current?.onChunk({
+            type: 'text',
+            text: acpStaleModelNotice(selector, model),
+          })
+        }
         open.appliedModel = model
       }
     }
