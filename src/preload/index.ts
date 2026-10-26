@@ -1365,6 +1365,11 @@ const api: ApiClient = {
       }
     },
   },
+  codeMap: {
+    getFiles: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('codemap:get-files', projectId, threadId),
+    getPreviewUrl: () => ipcRenderer.invoke('codemap:get-preview-url'),
+  },
   simulatorDesktop: {
     list: () => ipcRenderer.invoke('simulator-desktop:list'),
     open: (udid: string) => ipcRenderer.invoke('simulator-desktop:open', udid),

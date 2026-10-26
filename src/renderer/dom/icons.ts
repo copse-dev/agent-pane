@@ -204,6 +204,26 @@ export function minusIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('minus', ['M5 12h14'], className)
 }
 
+export function homeIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'home',
+    [
+      'M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8',
+      'M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',
+    ],
+    className,
+  )
+}
+
+/** Branching-to-trunk glyph — a "merge separate lines into one" toggle. */
+export function trunkIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'split',
+    ['M16 3h5v5', 'M8 3H3v5', 'M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3', 'm15 9 6-6'],
+    className,
+  )
+}
+
 export function warningIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon(
     'triangle-alert',

@@ -22,6 +22,7 @@ export type PanelControlId =
   | 'roadmap'
   | 'browser'
   | 'vnc'
+  | 'codemap'
 
 interface PanelControlDef {
   id: PanelControlId
@@ -95,6 +96,14 @@ function browserIcon(): SVGSVGElement {
 
 function desktopIcon(): SVGSVGElement {
   return outlineIcon('desktop', ['M2 3h20v14H2V3Z', 'M8 21h8', 'M12 17v4'], 'titlebar-btn-icon')
+}
+
+function codeMapIcon(): SVGSVGElement {
+  return outlineIcon(
+    'code-map',
+    ['M3 3h7v7H3V3Z', 'M14 3h7v4h-7V3Z', 'M14 11h7v10h-7V11Z', 'M3 14h7v7H3v-7Z'],
+    'titlebar-btn-icon',
+  )
 }
 
 function prsIcon(): SVGSVGElement {
@@ -202,6 +211,13 @@ const PANEL_CONTROL_DEFS: readonly PanelControlDef[] = [
     label: 'Desktop',
     icon: desktopIcon,
     enabledSetting: 'vncEnabled',
+  },
+  {
+    id: 'codemap',
+    mode: 'codemap',
+    ariaLabel: 'Open code map',
+    label: 'Code Map',
+    icon: codeMapIcon,
   },
 ]
 

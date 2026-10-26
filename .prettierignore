@@ -27,6 +27,10 @@ tests/fixtures/job-description-metadata.md
 # Vendored upstream hook schemas (G3) — pinned byte-identical to upstream; never
 # reformatted so the drift detector compares against exactly what was published.
 schemas/vendor/*.json
+# blockviz (vendor/blockviz/README.md) — its own npm/vite/cargo project, built
+# and formatted independently of this repo; its test fixtures are other
+# projects' sample code and must stay byte-identical to upstream.
+vendor/blockviz/
 # Pinned Cursor plugin snapshot — upstream manifests, licenses, and skills are
 # content-addressed and must remain byte-identical to the downloaded commit.
 vendor/bundled-cursor-skills/plugins/

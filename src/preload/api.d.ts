@@ -1150,6 +1150,13 @@ export interface ApiClient {
     onData: (handler: (connectionId: string, bytes: Uint8Array) => void) => () => void
     onStatus: (handler: (event: VncStatusEvent) => void) => () => void
   }
+  codeMap: {
+    getFiles: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<{ name: string; files: { path: string; content: string }[] }>
+    getPreviewUrl: () => Promise<string>
+  }
   simulatorDesktop: {
     list: () => Promise<SimulatorDesktopDevice[]>
     open: (udid: string) => Promise<SimulatorDesktopConnection>

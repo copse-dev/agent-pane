@@ -67,6 +67,12 @@ export default ts.config(
       // Byte-exact, hash-verified upstream Cursor plugin files (pnpm sync:cursor-skills);
       // a skill's referenced scripts are its authors' code, not ours to lint.
       'vendor/bundled-cursor-skills/**',
+      // blockviz (vendor/blockviz/README.md): its own npm/vite project, built and
+      // linted independently of this repo's pnpm workspace. Its test fixtures
+      // under crates/blockviz-core/tests/fixtures/ are other projects' sample
+      // code (e.g. a turborepo-basic app with its own eslint.config.js resolving
+      // packages this repo never installs) — not ours to lint either way.
+      'vendor/blockviz/**',
     ],
   },
   js.configs.recommended,

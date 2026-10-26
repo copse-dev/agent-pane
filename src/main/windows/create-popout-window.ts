@@ -25,6 +25,7 @@ const TITLES: Record<PopoutMode, string> = {
   roadmap: 'Roadmap — Copse',
   browser: 'Browser — Copse',
   vnc: 'Desktop — Copse',
+  codemap: 'Code Map — Copse',
 }
 
 /** Landscape default — pop-outs are auxiliary workspaces, not tall portrait strips. */

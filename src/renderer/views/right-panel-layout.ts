@@ -22,9 +22,13 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     const isRoadmap = mode === 'roadmap'
     const isBrowser = mode === 'browser'
     const isVnc = mode === 'vnc'
+    const isCodemap = mode === 'codemap'
 
     const sidebar = document.getElementById('right-sidebar')
-    if (sidebar) sidebar.hidden = isContext
+    // Code Map has no file/connection list to pick from — blockviz is one
+    // unified canvas — so, like Context, it gets the sidebar's width back
+    // instead of carrying an empty rail beside it.
+    if (sidebar) sidebar.hidden = isContext || isCodemap
 
     const treeHost = document.getElementById('file-tree-host')
     const contextHost = document.getElementById('context-host')
@@ -47,6 +51,7 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     const roadmapViewer = document.getElementById('roadmap-viewer-host')
     const browserViewer = document.getElementById('browser-viewer-host')
     const vncViewer = document.getElementById('vnc-viewer-host')
+    const codemapViewer = document.getElementById('codemap-viewer-host')
 
     if (treeHost) treeHost.hidden = !isExplorer
     if (contextHost) contextHost.hidden = !isContext
@@ -68,6 +73,7 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     if (roadmapViewer) roadmapViewer.hidden = !isRoadmap
     if (browserViewer) browserViewer.hidden = !isBrowser
     if (vncViewer) vncViewer.hidden = !isVnc
+    if (codemapViewer) codemapViewer.hidden = !isCodemap
     if (treeResizer) treeResizer.hidden = isContext || !store.getState().filesPaneOpen
   }
 

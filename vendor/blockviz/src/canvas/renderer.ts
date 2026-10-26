@@ -1,0 +1,1245 @@
+import type { Edge, EdgeKind, SceneNode } from '../core/types';
+import { boxOf, clamp, intersects, rectLine, smoothstep, visibleRuns, type Box, type Xf } from './geometry';
+import type { RemovedEdge, SceneDiff, Status } from './diff';
+import type { SceneModel } from './model';
+import { swatch, type Flow, type FlowRole, type Theme } from './theme';
+
+/** A block drawn this frame. `clear` when the reader can see what it is (its
+ * name is legible, or the box is large), so clicks never land on a block
+ * too small to make out. `face` when its name is on its face: it is closed,
+ * or what is drawn inside it is only a thumbnail. */
+export interface Hit { id: number; box: Box; parent: number; clear: boolean; face?: boolean }
+
+/** An edge drawn this frame: its container (`owner`), the hit of the box
+ * whose interior it is in (-1 for the root), and its route on screen. */
+export interface EdgeHit { edge: Edge; owner: number; container: number; pts: number[] }
+
+/** A value being followed: the diagrams it is traced in and the edges carrying it. */
+export interface Trace { scope: ReadonlySet<number>; edges: ReadonlySet<Edge> }
+
+export interface Paint {
+  width: number;
+  height: number;
+  hover: number | null;
+  selected: number | null;
+  /** Anchor path (root first) and the interior transform of each element. */
+  path: number[];
+  xfs: Xf[];
+  /** Blocks that use the one in focus (calls of a component or function), outlined. */
+  related?: ReadonlySet<number>;
+  /** A value followed through its diagram: its edges lit, the rest faded. */
+  trace?: Trace | null;
+  /** The edge under the pointer. */
+  hoverEdge?: Edge | null;
+  /** How the code differs from a base version (a pull request): what changed is colored, the rest faded. */
+  diff?: SceneDiff | null;
+}
+
+/** How faint what a change did not touch is drawn. */
+const UNTOUCHED = 0.4;
+
+const ROW_H = 17;
+/** Largest on-screen size of a table's rows, as for names. */
+const ROW_MAX = 15;
+const HEADING_H = 22;
+/** Interior scale at which a box starts / finishes opening. */
+const OPEN_FROM = 0.028;
+const OPEN_TO = 0.075;
+
+/** The smallest name, in pixels, a reader can make out. */
+const LEGIBLE = 7;
+
+/** The most lines a name is broken over. */
+const MAX_LINES = 4;
+
+/** The shortest side, in pixels, of a block drawn as more than a spot of its color. */
+const SPECK = 2;
+
+/** How far past the screen a line is kept: far enough that the corners of what is cut off stay out of sight. */
+const CUT = 24;
+
+const CODE_KINDS = new Set(['op', 'loop', 'branch']);
+
+/** The band at the top of a loop or a branch that holds its title: the layout's region header. */
+const FLOW_BAND = 26;
+
+/** Keywords that open a loop's or a branch's title, and what they do. A keyword that starts another (`else if`, `else`) comes first. */
+const FLOW_KEYWORDS: [string, FlowRole][] = [
+  ['else if', 'branch'], ['for', 'loop'], ['while', 'loop'], ['repeat', 'loop'], ['loop', 'loop'],
+  ['if', 'branch'], ['elif', 'branch'], ['else', 'branch'], ['unless', 'branch'], ['match', 'branch'], ['switch', 'branch'],
+  ['select', 'branch'], ['case', 'branch'], ['default', 'branch'], ['otherwise', 'branch'],
+  ['try', 'attempt'], ['finally', 'attempt'], ['except', 'catch'], ['catch', 'catch'],
+];
+
+/** A loop's or a branch's title as its keyword, what follows it and what it does: `for block in blocks` is `for`, `block in blocks`, a loop. */
+export function flowKeyword(title: string): { keyword: string; rest: string; role: FlowRole } | null {
+  for (const [keyword, role] of FLOW_KEYWORDS) {
+    if (!title.startsWith(keyword)) continue;
+    const rest = title.slice(keyword.length);
+    if (!rest || rest.startsWith(' ')) return { keyword, rest: rest.trimStart(), role };
+  }
+  return null;
+}
+
+/** What a word of code on the diagram is, for its color: `keyword` joins a condition's or a loop's parts (`in`, `is not`). */
+export type Tok = 'plain' | 'keyword' | 'literal' | 'string';
+
+/** Words that join the parts of a condition or a loop's header, in the languages read. */
+const JOINERS = new Set(['in', 'of', 'is', 'not', 'and', 'or', 'if', 'else', 'for', 'as', 'await', 'instanceof', 'typeof', 'let', 'unless', 'until']);
+const LITERALS = new Set(['None', 'True', 'False', 'true', 'false', 'null', 'nil', 'undefined', 'NaN', 'Infinity']);
+
+/** Code cut into the runs drawn in one color each. */
+export function codeTokens(text: string): [string, Tok][] {
+  const runs: [string, Tok][] = [];
+  const word = /[\p{L}\p{N}_]/u;
+  const chars = Array.from(text);
+  let i = 0;
+  while (i < chars.length) {
+    const start = i;
+    const c = chars[i++];
+    let tok: Tok = 'plain';
+    if (c === '"' || c === "'" || c === '`') {
+      let escaped = false;
+      while (i < chars.length) {
+        const d = chars[i++];
+        if (escaped) escaped = false;
+        else if (d === '\\') escaped = true;
+        else if (d === c) break;
+      }
+      tok = 'string';
+    } else if (word.test(c)) {
+      while (i < chars.length && word.test(chars[i])) i++;
+      const w = chars.slice(start, i).join('');
+      tok = /[0-9]/.test(c) || LITERALS.has(w) ? 'literal' : JOINERS.has(w) ? 'keyword' : 'plain';
+    }
+    const part = chars.slice(start, i).join('');
+    const last = runs[runs.length - 1];
+    if (last && tok === 'plain' && last[1] === 'plain') last[0] += part;
+    else runs.push([part, tok]);
+  }
+  return runs;
+}
+
+/** Where a caption's guards (`if ready`, `unless user`) have their keyword, as ranges of its UTF-16 offsets. */
+export function guardKeywords(caption: string): [number, number][] {
+  const out: [number, number][] = [];
+  let at = 0;
+  for (const part of caption.split(' · ')) {
+    const k = ['if ', 'unless '].find(k => part.startsWith(k));
+    if (k) out.push([at, at + k.length - 1]);
+    at += part.length + ' · '.length;
+  }
+  return out;
+}
+/** Boxes whose names are navigation landmarks and stay readable longest. */
+const NAMED_KINDS = new Set(['file', 'notebook', 'dir', 'class', 'function', 'section', 'artifact', 'doc', 'table']);
+
+/** What the renderer draws with: a canvas's 2D context, or what draws as one does (an SVG, see `SvgPen`). */
+export type Pen = Pick<CanvasRenderingContext2D,
+  'fillStyle' | 'strokeStyle' | 'globalAlpha' | 'lineWidth' | 'lineJoin' | 'lineDashOffset' | 'font' | 'textAlign'
+  | 'save' | 'restore' | 'scale' | 'setLineDash' | 'beginPath' | 'moveTo' | 'lineTo' | 'arc' | 'arcTo' | 'roundRect' | 'closePath'
+  | 'fill' | 'stroke' | 'clip' | 'fillRect' | 'fillText' | 'strokeText'> & { measureText(text: string): { width: number } };
+
+/**
+ * Immediate-mode renderer for nested diagrams. Every frame walks only what is
+ * visible: containers are culled against the viewport, interiors are entered
+ * only when they are large enough to show something, and text fades in by its
+ * on-screen size. Hit regions are recorded as a side effect of drawing.
+ */
+export class Renderer {
+  hits: Hit[] = [];
+  edgeHits: EdgeHit[] = [];
+  /** How many closed blocks the one being drawn is in the thumbnail of. */
+  private thumbnails = 0;
+  /** How many faded (untouched) blocks the one being drawn is in. */
+  private faded = 0;
+  /** Widths of text, by its font as set and the text. */
+  private widths = new Map<string, number>();
+  /** Names broken over lines, by font and name, for each number of lines (see `balance`). */
+  private wraps = new Map<string, { lines: string[]; width: number }[]>();
+  /** The font as set (at a size on the ladder), and how much it is scaled to the size asked for. */
+  private fontKey = '';
+  private fontScale = 1;
+  private edgeBounds = new WeakMap<Edge, [number, number, number, number]>();
+
+  constructor(private ctx: Pen, private model: SceneModel, public theme: Theme) {}
+
+  draw(p: Paint) {
+    const ctx = this.ctx;
+    ctx.fillStyle = this.theme.background;
+    ctx.fillRect(0, 0, p.width, p.height);
+    this.hits = [];
+    this.edgeHits = [];
+    this.thumbnails = 0;
+    this.faded = 0;
+    const root = this.model.node(this.model.root);
+    this.interior(root, p.xfs[0], -1, 0, p, [root.id], 1);
+  }
+
+  /** Draws block `n` alone, as `draw` would draw it in a diagram with transform `t`. */
+  drawBlock(n: SceneNode, t: Xf, p: Paint) {
+    this.hits = [];
+    this.edgeHits = [];
+    this.thumbnails = 0;
+    this.faded = 0;
+    this.node(n, boxOf(t, n), t, -1, -1, p, [], 1);
+  }
+
+  // ----- containers ----------------------------------------------------------------
+
+  private interior(owner: SceneNode, t: Xf, parentHit: number, pathPos: number, p: Paint, chain: number[], alpha: number) {
+    if (owner.rows?.length) {
+      this.rows(owner, t, p, alpha);
+      return;
+    }
+    const kids = owner.children ?? [];
+    const edgeAlpha = alpha * smoothstep(0.035, 0.12, t.s);
+    const lw = clamp(1.3 * Math.sqrt(t.s), 0.45, 1.45);
+    const focus = p.hover ?? p.selected;
+    const focused = focus !== null && kids.includes(focus);
+    // A value followed here outshines the block in focus.
+    const traced = p.trace?.scope.has(owner.id) ? p.trace.edges : null;
+    const lit = (e: Edge): boolean | null => {
+      if (e === p.hoverEdge) return true;
+      if (traced) return traced.has(e);
+      return focused ? e.from === focus || e.to === focus : null;
+    };
+    const diff = p.diff;
+    // A connection the change made is green; one between blocks it did not touch fades with them.
+    const change = (e: Edge): 'added' | 'faded' | null => !diff ? null : diff.added.has(e) ? 'added' : !this.faded && !diff.touched(e.from) && !diff.touched(e.to) ? 'faded' : null;
+    if (edgeAlpha > 0.02) {
+      for (const e of owner.edges ?? []) this.edge(e, t, p, edgeAlpha, lw, lit(e), owner.id, parentHit, change(e));
+      for (const r of diff?.removed.get(owner.id) ?? []) this.removedEdge(r, t, edgeAlpha, lw, p);
+    }
+    for (const id of kids) {
+      const n = this.model.node(id);
+      const b = boxOf(t, n);
+      if (!intersects(b, p.width, p.height, 2) || (b.w < 1 && b.h < 1)) continue;
+      const nextPos = pathPos >= 0 && p.path[pathPos + 1] === id ? pathPos + 1 : -1;
+      this.node(n, b, t, parentHit, nextPos, p, chain, alpha);
+    }
+    if (edgeAlpha > 0.02 && t.s * 11 >= 4.5) {
+      const placed: Box[] = [];
+      // Labels of lit edges are placed first, so they are the ones shown.
+      const all = owner.edges ?? [];
+      const order = focused || traced || p.hoverEdge ? [...all].sort((a, b) => Number(!!lit(b)) - Number(!!lit(a))) : all;
+      for (const e of order) this.edgeLabel(e, t, p, edgeAlpha * smoothstep(4.5, 7, t.s * 11), lit(e), placed, change(e));
+    }
+  }
+
+  private node(n: SceneNode, b: Box, t: Xf, parentHit: number, pathPos: number, p: Paint, chain: number[], alpha: number) {
+    if (n.shape !== 'port' && Math.min(b.w, b.h) < SPECK) {
+      this.speck(n, b, t, alpha, p);
+      return;
+    }
+    switch (n.shape) {
+      case 'port':
+        this.port(n, b, t, alpha, p.diff?.status(n.id) ?? null);
+        return;
+      case 'glyph':
+        this.glyph(n, b, t, p.diff && !this.faded && !p.diff.touched(n.id) ? alpha * UNTOUCHED : alpha, p);
+        this.hit(n, b, parentHit, Math.min(b.w, b.h) >= 12);
+        return;
+      case 'region':
+        this.region(n, b, t, parentHit, pathPos, p, chain, alpha);
+        return;
+      default:
+        this.box(n, b, t, parentHit, pathPos, p, chain, alpha);
+    }
+  }
+
+  private hit(n: SceneNode, b: Box, parent: number, clear = false): number {
+    if (b.w < 5 || b.h < 4) return parent;
+    this.hits.push({ id: n.id, box: b, parent, clear: clear || (b.w >= 160 && b.h >= 100) });
+    return this.hits.length - 1;
+  }
+
+  /** Marks the hit just recorded for `n` as one the reader can make out. */
+  private seen(at: number, n: SceneNode, size: number, alpha: number) {
+    const h = this.hits[at];
+    if (h?.id === n.id && size >= LEGIBLE && alpha >= 0.5) h.clear = true;
+  }
+
+  private box(n: SceneNode, b: Box, t: Xf, parentHit: number, pathPos: number, p: Paint, chain: number[], alpha: number) {
+    const ctx = this.ctx;
+    const owner = this.model.owner(n);
+    const recursive = !!owner && owner !== n && chain.includes(owner.id);
+    const inner = owner && !recursive ? (pathPos >= 0 ? p.xfs[pathPos] : this.model.interior(t, n, owner)) : null;
+    const open = inner ? smoothstep(OPEN_FROM, OPEN_TO, inner.s) * smoothstep(40, 90, b.w) : 0;
+    const sw = swatch(this.theme, n.category);
+    const radius = clamp(6 * t.s, 1.2, 10);
+    const selected = p.selected === n.id;
+    const hovered = p.hover === n.id;
+    // A change colors what it added or changed; what it did not touch fades.
+    const diff = p.diff;
+    const status = diff?.status(n.id) ?? null;
+    const unfaded = this.faded ? Math.min(1, alpha / UNTOUCHED) : alpha;
+    const fade = !!diff && !this.faded && !diff.touched(n.id);
+    if (fade) {
+      alpha *= UNTOUCHED;
+      this.faded++;
+    }
+    const fill = fillOf(this.theme, n, status);
+    // Opened, a changed block keeps its color on the header band; the diagram inside stays plain.
+    const tint = status ? mix(sw.tint, this.theme.change[status].tint, 0.12) : sw.tint;
+
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.roundRect(b.x, b.y, b.w, b.h, radius);
+    ctx.fillStyle = open > 0 ? mix(fill, tint, open) : fill;
+    ctx.fill();
+    if (open > 0.01) {
+      // Header band keeps the box's identity once it is open.
+      const hh = Math.min(30 * t.s, b.h);
+      ctx.save();
+      ctx.clip();
+      ctx.globalAlpha = alpha * open;
+      ctx.fillStyle = fill;
+      ctx.fillRect(b.x, b.y, b.w, hh);
+      ctx.restore();
+      ctx.globalAlpha = alpha;
+    }
+    const lw = clamp(1.25 * Math.sqrt(t.s), 0.5, 1.4);
+    ctx.lineWidth = selected ? 2.2 : status ? Math.max(lw + 0.5, 1.5) + (hovered ? 0.5 : 0) : hovered ? lw + 0.6 : lw;
+    ctx.strokeStyle = selected ? this.theme.accent : status ? this.theme.change[status].ink : n.category === 'op' ? this.theme.opOutline : this.theme.outline;
+    ctx.stroke();
+    this.ring(n, b, radius, p);
+    const me = this.hit(n, b, parentHit);
+
+    // While the header is too small to read, the name stays centered on a
+    // pill over the faint interior; it moves to the header once legible.
+    const legible = smoothstep(9, 10.5, 13 * t.s);
+    const faceAlpha = Math.max(1 - open, open * (1 - legible));
+    const thumbnail = faceAlpha >= 0.5;
+    if (this.hits[me]?.id === n.id) this.hits[me].face = thumbnail;
+    if (open > 0.01 && inner && owner) {
+      this.seen(me, n, Math.min(13 * t.s, 19), alpha * open * legible * smoothstep(4.2, 7, Math.min(13 * t.s, 19)));
+      this.header(n, b, t, alpha * open * legible);
+      const shown = owner.rows?.length ? alpha * open * legible : alpha * open;
+      if (thumbnail) this.thumbnails++;
+      this.interior(owner, inner, me, pathPos, p, owner === n ? chain : [...chain, owner.id], shown);
+      if (thumbnail) this.thumbnails--;
+    }
+    if (faceAlpha > 0.01) {
+      const [size, shown] = this.face(n, b, t, alpha * faceAlpha, !!owner && !recursive, open > 0.2);
+      this.seen(me, n, size, shown);
+    }
+    this.effectsMark(n, b, t, alpha);
+    if (diff) this.changeMarks(n, b, t, alpha, unfaded, diff, status, p);
+    if (fade) this.faded--;
+    ctx.globalAlpha = 1;
+  }
+
+  /** Rings a block in focus: the one selected, or a use of the one in focus. */
+  private ring(n: SceneNode, b: Box, radius: number, p: Paint) {
+    const ctx = this.ctx;
+    if (p.selected === n.id) {
+      ctx.beginPath();
+      ctx.roundRect(b.x - 4, b.y - 4, b.w + 8, b.h + 8, radius + 4);
+      ctx.strokeStyle = this.theme.accentSoft;
+      ctx.lineWidth = 6;
+      ctx.stroke();
+    } else if (p.related?.has(n.id)) {
+      // A use of the block in focus: outlined so the reader sees where it is used.
+      ctx.strokeStyle = this.theme.accent;
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([5, 3]);
+      this.outline({ x: b.x - 3, y: b.y - 3, w: b.w + 6, h: b.h + 6 }, radius + 3, p);
+      ctx.setLineDash([]);
+    }
+  }
+
+  /** A block too small to make out: a spot of its color, with no outline, name,
+   * marks or interior; ringed while it is in focus, so it can still be found. */
+  private speck(n: SceneNode, b: Box, t: Xf, alpha: number, p: Paint) {
+    const ctx = this.ctx;
+    ctx.globalAlpha = p.diff && !this.faded && !p.diff.touched(n.id) ? alpha * UNTOUCHED : alpha;
+    ctx.fillStyle = fillOf(this.theme, n, p.diff?.status(n.id) ?? null);
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    this.ring(n, b, clamp(6 * t.s, 1.2, 10), p);
+    ctx.globalAlpha = 1;
+  }
+
+  /**
+   * How many changes a block holds, on a badge at its top edge; a block that
+   * holds changes without changing itself (a folder) is ringed. A block that
+   * leads into changed code (a call of a changed function) gets a dashed ring
+   * and an arrowed count, drawn even where its surroundings are faded.
+   */
+  private changeMarks(n: SceneNode, b: Box, t: Xf, alpha: number, unfaded: number, diff: SceneDiff, status: Status | null, p: Paint) {
+    const inside = diff.inside(n.id);
+    const through = inside || status === 'added' ? 0 : diff.through(n.id);
+    // In a thumbnail the tint shows where changes are; the closed block's badge counts them.
+    if ((!inside && !through) || b.w < 14 || b.h < 10 || this.thumbnails) return;
+    const ctx = this.ctx;
+    const ink = this.theme.change.changed.ink;
+    const radius = clamp(6 * t.s, 1.2, 10) + 3;
+    if (!status || through) {
+      ctx.globalAlpha = through ? unfaded : alpha;
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = 1.5;
+      if (through) ctx.setLineDash([4, 3]);
+      this.outline({ x: b.x - 3, y: b.y - 3, w: b.w + 6, h: b.h + 6 }, radius, p);
+      ctx.setLineDash([]);
+    }
+    const count = inside || through;
+    const words = b.w >= 130 ? ` change${count === 1 ? '' : 's'}` : '';
+    const text = through ? `→ ${count}${words}` : `${count}${words}`;
+    this.font(10, this.theme.sans, 600);
+    const w = this.width(text) + 10;
+    const h = 15;
+    const x = Math.max(b.x + 2, b.x + b.w - w - 6);
+    const y = b.y - h / 2 - (status ? 0 : 3);
+    ctx.globalAlpha = through ? unfaded : alpha;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, h / 2);
+    ctx.fillStyle = through ? this.theme.paper : ink;
+    ctx.fill();
+    if (through) {
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    ctx.fillStyle = through ? ink : this.theme.paper;
+    ctx.textAlign = 'center';
+    this.text(text, x + w / 2, y + 11);
+    ctx.textAlign = 'left';
+  }
+
+  /** Draws a closed box's name; returns the title's size and opacity. */
+  private face(n: SceneNode, b: Box, t: Xf, alpha: number, deep: boolean, overlay: boolean): [number, number] {
+    if (alpha < 0.02) return [0, 0];
+    const ctx = this.ctx;
+    // An operation's title is code; a table's is a name ("External packages").
+    const code = n.kind === 'op';
+    // Names of boxes big enough to hold them stay readable at any zoom.
+    const natural = (code ? 12 : 13) * t.s;
+    const named = NAMED_KINDS.has(n.kind);
+    const family = code ? this.theme.mono : this.theme.sans;
+    const weight = code ? 400 : n.kind === 'call' || n.kind === 'symbol' ? 500 : 600;
+    const at10 = (text: string) => {
+      this.font(10, family, weight);
+      return this.width(text);
+    };
+    // Readable minimum, but never larger than what fits the box.
+    const room = b.w - 14 * Math.min(t.s, 1);
+    const sizeFor = (text: string, share: number) => {
+      const fits = room / Math.max(at10(text) / 10, 1);
+      return clamp(natural, Math.min(11.5, b.h * share, Math.max(fits, natural)), 18);
+    };
+    // A box with room keeps a readable name; so does a landmark (a file, a
+    // class, a file on disk) whose name still fits it at a legible size,
+    // however narrow it is, unless it is in the thumbnail of a closed block
+    // (whose own name is the landmark there). Other names grow and shrink
+    // with the zoom, so they are never measured.
+    const roomy = b.w >= (named ? 44 : 70) && b.h >= 18;
+    const landmark = named && !this.thumbnails && b.h >= 14;
+    const prominent = t.s >= (named ? 0.08 : 0.14) && (roomy || landmark);
+    let lines = [n.title];
+    let size = prominent ? sizeFor(n.title, 0.55) : natural;
+    if (prominent && size < 10) {
+      // A long name in a narrow box goes over as many lines as the box is
+      // tall enough for, broken between its words, rather than shrinking.
+      const wraps = this.wrapped(n.title, family, weight);
+      for (let k = 2; k <= wraps.length; k++) {
+        const s = clamp(natural, Math.min(11.5, (b.h * 0.6) / k, Math.max(room / (wraps[k - 1].width / 10), natural)), 18);
+        if (s > size + 0.5) {
+          lines = wraps[k - 1].lines;
+          size = s;
+        }
+      }
+    }
+    if (prominent && size < LEGIBLE && !this.thumbnails) {
+      // Still too long to read whole: what the box holds of it at a size
+      // that can be read, its end cut short, rather than all of it at one that can't.
+      size = LEGIBLE;
+      this.font(size, family, weight);
+      lines = this.fill(nameParts(n.title), room, clamp(Math.floor((b.h * 0.6) / size), 1, MAX_LINES));
+    } else if (!roomy && size < LEGIBLE) {
+      // A landmark whose name no longer fits at a legible size is not one.
+      lines = [n.title];
+      size = natural;
+    }
+    if (size < 4.2) return [0, 0];
+    const meta = [n.subtitle, ...(n.badges ?? [])].filter(Boolean).join(' · ');
+    const textAlpha = alpha * smoothstep(4.2, 7, size);
+    // The caption under a name is always smaller than the name.
+    const ms = Math.min(size * 0.82, Math.max(10.5 * t.s, 10));
+    const lh = size * 1.15;
+    const extra = (lines.length - 1) * lh;
+    const twoLines = !!meta && b.h >= size + extra + ms + 10;
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    const maxW = room;
+    this.font(size, family, weight);
+    const titles = lines.map(l => this.fit(l, maxW));
+    const title = titles.join(' ').trim();
+    if (overlay && title) {
+      // A soft backing keeps the name legible over the interior preview.
+      const w = Math.max(...titles.map(l => this.width(l))) + size * 1.1;
+      const h = (twoLines ? size + extra + ms + 6 : size + extra) + size * 0.7;
+      ctx.globalAlpha = alpha * 0.92;
+      ctx.fillStyle = this.theme.paper;
+      ctx.beginPath();
+      ctx.roundRect(cx - w / 2, cy - h / 2, w, h, Math.min(h, size * 1.7) / 2.6);
+      ctx.fill();
+    }
+    ctx.globalAlpha = textAlpha;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = this.theme.ink;
+    const titleY = (twoLines ? cy - ms * 0.15 : cy + size * 0.35) - extra / 2;
+    titles.forEach((l, i) => this.text(l, cx, titleY + i * lh));
+    if (twoLines) {
+      this.font(ms, this.theme.sans);
+      this.caption(this.fit(meta, maxW), cx, titleY + extra + ms + 3, ms, this.theme.muted, true);
+    }
+    if (deep && !overlay && b.w > 46 && size > 6) {
+      // Something lives inside: a small corner mark invites zooming.
+      const s = clamp(4 * t.s, 2, 5);
+      ctx.globalAlpha = textAlpha * 0.6;
+      ctx.strokeStyle = this.theme.muted;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(b.x + b.w - 3 * s, b.y + s);
+      ctx.lineTo(b.x + b.w - s, b.y + s);
+      ctx.lineTo(b.x + b.w - s, b.y + 3 * s);
+      ctx.stroke();
+    }
+    ctx.textAlign = 'left';
+    return [title ? size : 0, textAlpha];
+  }
+
+  private header(n: SceneNode, b: Box, t: Xf, alpha: number) {
+    const size = Math.min(13 * t.s, 19);
+    if (size < 4.2 || alpha < 0.02) return;
+    const ctx = this.ctx;
+    ctx.globalAlpha = alpha * smoothstep(4.2, 7, size);
+    const band = 30 * t.s;
+    const x = b.x + Math.min(9 * t.s, 14);
+    const y = b.y + Math.min(band / 2 + size * 0.36, band - 4);
+    const maxW = b.w - 18 * t.s;
+    this.font(size, this.theme.sans, 600);
+    ctx.fillStyle = this.theme.ink;
+    const title = this.fit(n.title, maxW);
+    this.text(title, x, y);
+    const used = this.width(title) + 8 * t.s;
+    const meta = [n.subtitle, ...(n.badges ?? [])].filter(Boolean).join(' · ');
+    if (meta && used < maxW - 20 * t.s) {
+      this.font(size * 0.82, this.theme.sans);
+      this.caption(this.fit(meta, maxW - used), x + used, y, size * 0.82, this.theme.muted, false);
+    }
+  }
+
+  private effectsMark(n: SceneNode, b: Box, t: Xf, alpha: number) {
+    if (b.w < 30 || !marked(n)) return;
+    const ctx = this.ctx;
+    const r = clamp(3 * t.s, 1.5, 4);
+    ctx.globalAlpha = alpha * 0.9;
+    ctx.fillStyle = this.theme.effect;
+    ctx.beginPath();
+    ctx.arc(b.x + b.w - r * 2.2, b.y + b.h - r * 2.2, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  private region(n: SceneNode, b: Box, t: Xf, parentHit: number, pathPos: number, p: Paint, chain: number[], alpha: number) {
+    const ctx = this.ctx;
+    const lane = n.kind === 'lane';
+    const radius = clamp(9 * t.s, 1.5, 14);
+    const diff = p.diff;
+    const status = diff?.status(n.id) ?? null;
+    const unfaded = this.faded ? Math.min(1, alpha / UNTOUCHED) : alpha;
+    const fade = !!diff && !this.faded && !diff.touched(n.id);
+    if (fade) {
+      alpha *= UNTOUCHED;
+      this.faded++;
+    }
+    // A loop, a branch's arm, a try's handler has its title on a band
+    // across its top in the color of what it does.
+    const theme = this.theme;
+    const role = this.flowRole(n);
+    const flow = role ? theme.flow[role] : null;
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.roundRect(b.x, b.y, b.w, b.h, radius);
+    ctx.fillStyle = fillOf(theme, n, status);
+    ctx.fill();
+    if (flow && n.title) {
+      ctx.save();
+      ctx.clip();
+      ctx.fillStyle = status ? mix(flow.fill, theme.change[status].tint, 0.5) : flow.fill;
+      ctx.fillRect(b.x, b.y, b.w, Math.min(FLOW_BAND * t.s, b.h));
+      ctx.restore();
+      ctx.globalAlpha = alpha;
+      // The clip's path was the region's outline: draw it again for the stroke.
+      ctx.beginPath();
+      ctx.roundRect(b.x, b.y, b.w, b.h, radius);
+    }
+    ctx.lineWidth = p.selected === n.id ? 2 : status ? 1.5 : clamp(1.1 * Math.sqrt(t.s), 0.45, 1.2);
+    ctx.strokeStyle = p.selected === n.id ? theme.accent : status ? theme.change[status].ink : lane ? theme.laneOutline : theme.regionOutline;
+    if (!lane) ctx.stroke();
+    else if (4 * t.s < 1) {
+      // Dashes finer than a pixel blend into a fainter line: drawn as one.
+      ctx.globalAlpha = (alpha * 4) / 7;
+      ctx.stroke();
+      ctx.globalAlpha = alpha;
+    } else {
+      ctx.setLineDash([4 * t.s, 3 * t.s]);
+      this.outline(b, radius, p);
+      ctx.setLineDash([]);
+    }
+    const me = this.hit(n, b, parentHit);
+    const size = 11.5 * t.s;
+    if (n.title) this.seen(me, n, size, alpha * smoothstep(4.2, 7, size));
+    // A loop's or a branch's title is drawn over what is inside it, below.
+    const titledFlow = !!n.title && !!flow;
+    if (!titledFlow && n.title && size >= 4.2) {
+      ctx.globalAlpha = alpha * smoothstep(4.2, 7, size);
+      const code = CODE_KINDS.has(n.kind);
+      const badges = (n.badges ?? []).join('  ');
+      let reserve = 0;
+      if (badges) {
+        this.font(12 * t.s, this.theme.sans, 700);
+        reserve = this.width(badges) + 18 * t.s;
+        ctx.fillStyle = this.theme.ink;
+        ctx.textAlign = 'right';
+        this.text(badges, b.x + b.w - 10 * t.s, b.y + 17 * t.s);
+        ctx.textAlign = 'left';
+      }
+      this.font(size, code ? this.theme.mono : this.theme.sans, code ? 400 : 600);
+      ctx.fillStyle = this.theme.muted;
+      this.text(this.fit(n.title, b.w - 20 * t.s - reserve), b.x + 10 * t.s, b.y + 17 * t.s);
+    }
+    const inner = pathPos >= 0 ? p.xfs[pathPos] : this.model.interior(t, n, n);
+    if (inner) this.interior(n, inner, me, pathPos, p, chain, alpha);
+    // Over the lines that come in through its top, which pass behind it.
+    if (flow && titledFlow) this.flowTitle(n, b, t, alpha, flow);
+    if (diff) this.changeMarks(n, b, t, alpha, unfaded, diff, status, p);
+    if (fade) this.faded--;
+    ctx.globalAlpha = 1;
+  }
+
+  /** What a loop's, a branch's or an arm's keyword says it does. Null for other blocks, and for an untitled branch, which has no band (its arms do). */
+  private flowRole(n: SceneNode): FlowRole | null {
+    if (!n.title) return null;
+    const role = flowKeyword(n.title)?.role;
+    return n.kind === 'loop' ? role ?? 'loop' : n.kind === 'lane' || n.kind === 'branch' ? role ?? 'branch' : null;
+  }
+
+  /**
+   * A loop's or a branch's title on its band: its keyword in the band's ink
+   * (a loop's after a circling arrow), then the rest as code, its own
+   * keywords in the same ink; a loop's count at the right. The code is
+   * haloed in the band's color, so lines it is drawn over pass behind it.
+   */
+  private flowTitle(n: SceneNode, b: Box, t: Xf, alpha: number, flow: Flow) {
+    const band = Math.min(FLOW_BAND * t.s, b.h);
+    // Text grows with the zoom only so far: past that, more of it fits.
+    const size = Math.min(12 * t.s, 16);
+    const shown = alpha * smoothstep(4.2, 7, size);
+    if (shown < 0.01) return;
+    const ctx = this.ctx;
+    const pad = Math.min(10 * t.s, 14);
+    const left = b.x + pad;
+    const right = b.x + b.w - pad;
+    const mid = b.y + band / 2;
+    const y = mid + size * 0.36;
+    const split = flowKeyword(n.title);
+    ctx.globalAlpha = shown;
+    let end = right;
+    if (n.badges?.length) {
+      const badges = n.badges.join('  ');
+      this.font(size * 0.92, this.theme.sans, 700);
+      const w = this.width(badges);
+      if (right - w > left + 6 * size) {
+        ctx.fillStyle = flow.ink;
+        this.text(badges, right - w, mid + size * 0.92 * 0.36);
+        end = right - w - size * 0.8;
+      }
+    }
+    let x = left;
+    if (split) {
+      if (split.role === 'loop') {
+        this.loopMark(x + size * 0.36, mid, size * 0.36, flow.ink, shown);
+        x += size * 1.05;
+      }
+      this.font(size, this.theme.sans, 700);
+      ctx.globalAlpha = shown;
+      ctx.fillStyle = flow.ink;
+      const k = this.fit(split.keyword, end - x);
+      this.text(k, x, y);
+      x += this.width(k) + size * 0.5;
+    }
+    const rest = split ? split.rest : n.title;
+    if (rest) {
+      this.font(size * 0.95, this.theme.mono);
+      this.code(this.fit(rest, end - x), x, y, flow.ink, shown, flow.fill);
+    }
+  }
+
+  /** A circling arrow around (cx, cy): the mark of a loop. */
+  private loopMark(cx: number, cy: number, r: number, color: string, alpha: number) {
+    const ctx = this.ctx;
+    const from = -Math.PI * 0.35;
+    const to = Math.PI * 1.25;
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = r * 0.36;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, from, to);
+    ctx.stroke();
+    // The head points the way the arc turns.
+    const px = cx + r * Math.cos(to);
+    const py = cy + r * Math.sin(to);
+    const [dx, dy] = [-Math.sin(to), Math.cos(to)];
+    const [nx, ny] = [Math.cos(to), Math.sin(to)];
+    const s = r * 0.62;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(px + dx * s, py + dy * s);
+    ctx.lineTo(px + nx * s * 0.8, py + ny * s * 0.8);
+    ctx.lineTo(px - nx * s * 0.8, py - ny * s * 0.8);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  /** Code at (x, y) in the current font, its words colored by what they are: the words joining its parts in `keyword`; over a `halo` of a color. */
+  private code(text: string, x: number, y: number, keyword: string, alpha: number, halo?: string) {
+    const ctx = this.ctx;
+    ctx.globalAlpha = alpha;
+    if (halo) {
+      ctx.strokeStyle = halo;
+      ctx.lineWidth = 3;
+      ctx.lineJoin = 'round';
+      this.text(text, x, y, true);
+    }
+    for (const [part, tok] of codeTokens(text)) {
+      if (part.trim()) {
+        ctx.fillStyle = tok === 'keyword' ? keyword : tok === 'literal' ? this.theme.literal : tok === 'string' ? this.theme.string : this.theme.ink;
+        this.text(part, x, y);
+      }
+      x += this.width(part);
+    }
+  }
+
+  /** A caption in `px` pixels of sans and `color`, from `x` or centered on it: the keyword of a guard in it (`if ready`) in the color of a branch. */
+  private caption(text: string, x: number, y: number, px: number, color: string, center: boolean) {
+    const ctx = this.ctx;
+    const keywords = guardKeywords(text);
+    if (!keywords.length) {
+      this.font(px, this.theme.sans);
+      ctx.fillStyle = color;
+      this.text(text, x, y);
+      return;
+    }
+    const runs: [string, boolean][] = [];
+    let at = 0;
+    for (const [a, b] of keywords) {
+      runs.push([text.slice(at, a), false], [text.slice(a, b), true]);
+      at = b;
+    }
+    runs.push([text.slice(at), false]);
+    const widths = runs.map(([run, keyword]) => {
+      this.font(px, this.theme.sans, keyword ? 600 : 400);
+      return this.width(run);
+    });
+    if (center) x -= widths.reduce((a, b) => a + b, 0) / 2;
+    ctx.textAlign = 'left';
+    runs.forEach(([run, keyword], i) => {
+      this.font(px, this.theme.sans, keyword ? 600 : 400);
+      ctx.fillStyle = keyword ? this.theme.flow.branch.ink : color;
+      this.text(run, x, y);
+      x += widths[i];
+    });
+    if (center) ctx.textAlign = 'center';
+  }
+
+  private glyph(n: SceneNode, b: Box, t: Xf, alpha: number, p: Paint) {
+    const ctx = this.ctx;
+    const r = Math.min(b.w, b.h) / 2;
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = this.theme.paper;
+    ctx.fill();
+    const status = p.diff?.status(n.id) ?? null;
+    ctx.lineWidth = clamp(1.25 * Math.sqrt(t.s), 0.5, 1.4) + (status ? 0.5 : 0);
+    ctx.strokeStyle = p.selected === n.id ? this.theme.accent : status ? this.theme.change[status].ink : this.theme.outline;
+    ctx.stroke();
+    if (r < 2.5) return;
+    if (n.title === '+') {
+      const a = r * 0.55;
+      ctx.beginPath();
+      ctx.moveTo(cx - a, cy);
+      ctx.lineTo(cx + a, cy);
+      ctx.moveTo(cx, cy - a);
+      ctx.lineTo(cx, cy + a);
+      ctx.stroke();
+    } else {
+      this.font(r * 1.15, this.theme.sans, 600);
+      ctx.fillStyle = this.theme.ink;
+      ctx.textAlign = 'center';
+      this.text(n.title, cx, cy + r * 0.4);
+      ctx.textAlign = 'left';
+    }
+  }
+
+  private port(n: SceneNode, b: Box, t: Xf, alpha: number, status: Status | null) {
+    if (n.kind === 'unused') {
+      this.stop(n, b, t, alpha);
+      return;
+    }
+    if (b.h === 0 || !n.title) return;
+    const size = Math.min(11.5 * t.s, 15);
+    if (size < 4.2) return;
+    const ctx = this.ctx;
+    ctx.globalAlpha = alpha * smoothstep(4.2, 7, size);
+    this.font(size, this.theme.mono);
+    // A new input or result is named in the color of what was added.
+    ctx.fillStyle = status ? this.theme.change[status].ink : this.theme.muted;
+    ctx.textAlign = 'center';
+    this.text(this.fit(n.title, Math.max(b.w + 60 * t.s, 40)), b.x + b.w / 2, b.y + b.h / 2 + size * 0.35);
+    ctx.textAlign = 'left';
+    ctx.globalAlpha = 1;
+  }
+
+  /** Where a value nothing reads ends: a bar across the end of its line, and the word under it. */
+  private stop(n: SceneNode, b: Box, t: Xf, alpha: number) {
+    const ctx = this.ctx;
+    const x = b.x + b.w / 2;
+    const half = 6 * t.s;
+    if (half < 1) return;
+    ctx.globalAlpha = alpha * 0.95;
+    ctx.strokeStyle = this.theme.faintEdge;
+    ctx.lineWidth = clamp(1.3 * Math.sqrt(t.s), 0.45, 1.45);
+    ctx.beginPath();
+    ctx.moveTo(x - half, b.y);
+    ctx.lineTo(x + half, b.y);
+    ctx.stroke();
+    const size = Math.min(10.5 * t.s, 13);
+    if (size >= 4.2) {
+      ctx.globalAlpha = alpha * smoothstep(4.2, 7, size);
+      this.font(size, this.theme.sans);
+      ctx.fillStyle = this.theme.faint;
+      ctx.textAlign = 'center';
+      this.text(n.title, x, b.y + 3 * t.s + size * 0.9);
+      ctx.textAlign = 'left';
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  private rows(owner: SceneNode, t: Xf, p: Paint, alpha: number) {
+    const ctx = this.ctx;
+    // Rows read at most at the size names do, however far the table is
+    // zoomed or however few rows give it a large scale beside its neighbors.
+    const size = Math.min(11.5 * t.s, ROW_MAX);
+    if (size < 3) return;
+    const f = size / 11.5;
+    let y = t.y + 6 * f;
+    const x = t.x + 10 * f;
+    const textAlpha = alpha * smoothstep(3.5, 6.5, size);
+    for (const r of owner.rows ?? []) {
+      const h = (r.heading ? HEADING_H : ROW_H) * f;
+      if (y > p.height) break;
+      if (y + h >= 0) {
+        if (size < 4.5) {
+          // Too small to read: a texture of lines that hints at the content.
+          ctx.globalAlpha = alpha * 0.35;
+          ctx.fillStyle = r.heading ? this.theme.headingTexture : this.theme.faint;
+          ctx.fillRect(x, y + h * 0.45, Math.min((r.key.length + (r.value?.length ?? 0) + 3) * size * 0.6, (owner.cw ?? 100) * t.s - 20 * f), Math.max(size * 0.35, 0.6));
+        } else if (r.heading) {
+          ctx.globalAlpha = textAlpha;
+          this.font(10.5 * f, this.theme.sans, 700);
+          ctx.fillStyle = this.theme.heading;
+          this.text(r.key.toUpperCase(), x, y + h * 0.72);
+        } else {
+          ctx.globalAlpha = textAlpha;
+          this.font(size, this.theme.mono);
+          ctx.fillStyle = this.theme.ink;
+          this.text(r.key, x, y + h * 0.72);
+          if (r.value) {
+            const kw = this.width(r.key);
+            ctx.fillStyle = this.theme.muted;
+            this.text(this.fit(` = ${r.value}`, (owner.cw ?? 300) * t.s - kw - 20 * f), x + kw, y + h * 0.72);
+          }
+        }
+      }
+      y += h;
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ----- edges -----------------------------------------------------------------------
+
+  private bounds(e: Edge): [number, number, number, number] {
+    let b = this.edgeBounds.get(e);
+    if (!b) {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (let i = 0; i < e.points.length; i += 2) {
+        x0 = Math.min(x0, e.points[i]);
+        x1 = Math.max(x1, e.points[i]);
+        y0 = Math.min(y0, e.points[i + 1]);
+        y1 = Math.max(y1, e.points[i + 1]);
+      }
+      b = [x0, y0, x1, y1];
+      this.edgeBounds.set(e, b);
+    }
+    return b;
+  }
+
+  /** Draws an edge; `state` is true when lit, false when faded beside lit ones; `change` says
+   * whether a change being read added it or left it untouched. */
+  private edge(e: Edge, t: Xf, p: Paint, alpha: number, lw: number, state: boolean | null, owner: number, container: number, change: 'added' | 'faded' | null = null) {
+    const pts = e.points;
+    if (pts.length < 4) return;
+    const [x0, y0, x1, y1] = this.bounds(e);
+    if (!intersects({ x: t.x + x0 * t.s, y: t.y + y0 * t.s, w: (x1 - x0) * t.s + 1, h: (y1 - y0) * t.s + 1 }, p.width, p.height, 10)) return;
+    const ctx = this.ctx;
+    const lit = state === true;
+    const dim = state === false;
+    const screen = new Array<number>(pts.length);
+    for (let i = 0; i < pts.length; i += 2) {
+      screen[i] = t.x + pts[i] * t.s;
+      screen[i + 1] = t.y + pts[i + 1] * t.s;
+    }
+    // Edges can be pointed at once their diagram is legible.
+    if (alpha > 0.3 && t.s * 11 >= 6 && (x1 - x0 + y1 - y0) * t.s > 6) this.edgeHits.push({ edge: e, owner, container, pts: screen });
+    // Settings and sizes are faint; conditions are dotted: neither is the data itself.
+    // Nor is a value nothing reads, which fades as its line ends.
+    const control = e.kind === 'control';
+    let color = control ? this.theme.context : e.kind === 'artifact' ? this.theme.artifact : e.kind === 'exec' || this.unread(e) ? this.theme.faintEdge : this.theme.edge;
+    let a = alpha * (control ? 0.8 : 0.95) * (dim ? 0.35 : 1);
+    let width = control ? lw * 0.85 : lw;
+    if (lit) {
+      color = this.theme.accent;
+      a = Math.max(alpha, 0.9);
+      width = lw + 0.7;
+    } else if (change === 'added') {
+      color = this.theme.change.added.ink;
+      a = Math.max(a, 0.9);
+      width = lw + 0.6;
+    } else if (change === 'faded') {
+      a *= UNTOUCHED;
+    }
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineJoin = 'round';
+    ctx.setLineDash(e.kind === 'exec' ? [5, 4] : e.kind === 'artifact' ? [6, 3] : control ? [1.5, 2.5].map(d => d * Math.max(width, 1)) : []);
+    const n = pts.length / 2;
+    const head = e.open ? 0 : clamp(7 * Math.sqrt(t.s), 3, 8) * (control ? 0.8 : 1);
+    const ex = screen[2 * n - 2];
+    const ey = screen[2 * n - 1];
+    const dx = ex - screen[2 * n - 4];
+    const dy = ey - screen[2 * n - 3];
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len;
+    const uy = dy / len;
+    const r = clamp(7 * t.s, 0, 10);
+    const radii = new Array<number>(n).fill(0);
+    for (let i = 1; i < n - 1; i++) {
+      const lenIn = Math.hypot(screen[2 * i] - screen[2 * i - 2], screen[2 * i + 1] - screen[2 * i - 1]);
+      const lenOut = Math.hypot(screen[2 * i + 2] - screen[2 * i], screen[2 * i + 3] - screen[2 * i + 1]);
+      radii[i] = Math.min(r, lenIn / 2, lenOut / 2);
+    }
+    // Shorten the last segment so the line ends at the arrow's base.
+    const line = screen.slice();
+    line[2 * n - 2] = ex - ux * head * 0.8;
+    line[2 * n - 1] = ey - uy * head * 0.8;
+    this.line(line, radii, p);
+    ctx.setLineDash([]);
+    if (head > 0) {
+      ctx.beginPath();
+      ctx.moveTo(ex, ey);
+      ctx.lineTo(ex - ux * head - uy * head * 0.42, ey - uy * head + ux * head * 0.42);
+      ctx.lineTo(ex - ux * head + uy * head * 0.42, ey - uy * head - ux * head * 0.42);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  private edgeLabel(e: Edge, t: Xf, p: Paint, alpha: number, state: boolean | null, placed: Box[], change: 'added' | 'faded' | null = null) {
+    if (!e.label || !e.labelAt || alpha < 0.03) return;
+    const x = t.x + e.labelAt[0] * t.s;
+    const y = t.y + e.labelAt[1] * t.s;
+    if (x < -200 || y < -20 || x > p.width + 20 || y > p.height + 20) return;
+    const ctx = this.ctx;
+    const lit = state === true;
+    const size = Math.min(11 * t.s, 13.5);
+    this.font(size, this.theme.mono);
+    // Labels never overprint each other; the one for a highlighted edge wins.
+    const r = { x: x - 1, y: y - size, w: this.width(e.label) + 2, h: size + 2 };
+    if (!lit && placed.some(q => r.x < q.x + q.w && q.x < r.x + r.w && r.y < q.y + q.h && q.y < r.y + r.h)) return;
+    placed.push(r);
+    ctx.globalAlpha = state === false ? alpha * 0.4 : change === 'faded' && !lit ? alpha * UNTOUCHED : alpha;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = this.theme.labelHalo;
+    ctx.lineJoin = 'round';
+    this.text(e.label, x, y, true);
+    // Values read in ink; conditions and values nothing reads stay muted like their lines.
+    ctx.fillStyle = lit ? this.theme.accent : change === 'added' ? this.theme.change.added.ink : e.kind === 'control' || this.unread(e) ? this.theme.muted : this.theme.labelInk;
+    this.text(e.label, x, y);
+    ctx.globalAlpha = 1;
+  }
+
+  /** Whether an edge carries values nothing reads to their stop. */
+  private unread(e: Edge): boolean {
+    return this.model.node(e.to).kind === 'unused';
+  }
+
+  /** A connection the change removed: a dashed red curve from the bottom of one block to the top of the other. */
+  private removedEdge(r: RemovedEdge, t: Xf, alpha: number, lw: number, p: Paint) {
+    const a = boxOf(t, this.model.node(r.from));
+    const b = boxOf(t, this.model.node(r.to));
+    const x0 = a.x + a.w / 2;
+    const y0 = a.y + a.h;
+    const x1 = b.x + b.w / 2;
+    const y1 = b.y;
+    if (!intersects({ x: Math.min(x0, x1), y: Math.min(y0, y1), w: Math.abs(x1 - x0) + 1, h: Math.abs(y1 - y0) + 1 }, p.width, p.height, 20)) return;
+    const ctx = this.ctx;
+    const bend = Math.max(24 * t.s, Math.abs(y1 - y0) / 2);
+    const head = clamp(7 * Math.sqrt(t.s), 3, 8);
+    ctx.globalAlpha = Math.max(alpha, 0.85);
+    ctx.strokeStyle = this.theme.change.removed.ink;
+    ctx.fillStyle = this.theme.change.removed.ink;
+    ctx.lineWidth = lw + 0.3;
+    ctx.setLineDash([5, 4]);
+    // The curve in steps fine enough to look smooth, so it can be cut to the screen.
+    const ye = y1 - head * 0.8;
+    const k = clamp(Math.ceil((Math.abs(x1 - x0) + Math.abs(ye - y0) + 2 * bend) / 8), 12, 512);
+    const pts: number[] = [];
+    for (let i = 0; i <= k; i++) {
+      const u = i / k;
+      const v = 1 - u;
+      pts.push((v * v * v + 3 * v * v * u) * x0 + (3 * v * u * u + u * u * u) * x1, v * v * v * y0 + 3 * v * v * u * (y0 + bend) + 3 * v * u * u * (y1 - bend) + u * u * u * ye);
+    }
+    this.line(pts, new Array<number>(k + 1).fill(0), p);
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x1 - head * 0.42, y1 - head);
+    ctx.lineTo(x1 + head * 0.42, y1 - head);
+    ctx.closePath();
+    ctx.fill();
+    if (r.label && t.s * 11 >= 4.5) {
+      const size = Math.min(11 * t.s, 13.5);
+      this.font(size, this.theme.mono);
+      const mx = (x0 + x1) / 2;
+      const my = (y0 + y1) / 2;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = this.theme.labelHalo;
+      this.text(r.label, mx + 4, my, true);
+      this.text(r.label, mx + 4, my);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /** Strokes a line with rounded corners where it is on screen: a canvas dashes
+   * the whole of a line, and one many screens long costs a dash every few pixels. */
+  private line(pts: number[], radii: number[], p: Paint) {
+    const ctx = this.ctx;
+    for (const run of visibleRuns(pts, radii, -CUT, -CUT, p.width + CUT, p.height + CUT)) {
+      const q = run.pts;
+      ctx.beginPath();
+      ctx.moveTo(q[0], q[1]);
+      for (let i = 2; i < q.length - 2; i += 2) ctx.arcTo(q[i], q[i + 1], q[i + 2], q[i + 3], run.radii[i / 2]);
+      ctx.lineTo(q[q.length - 2], q[q.length - 1]);
+      ctx.lineDashOffset = run.at;
+      ctx.stroke();
+    }
+    ctx.lineDashOffset = 0;
+  }
+
+  /** Strokes a rounded rectangle's outline where it is on screen. */
+  private outline(b: Box, radius: number, p: Paint) {
+    const r = rectLine(b, radius);
+    this.line(r.pts, r.radii, p);
+  }
+
+  // ----- text ------------------------------------------------------------------------
+
+  /**
+   * Sets the font to `px` pixels of `family`. Text is laid out only at the
+   * sizes of a ladder (`fontSize`) and scaled to its own size as it is drawn:
+   * laid out at the size it has in each frame of a zoom, every name on
+   * screen would be shaped and measured anew in every frame.
+   */
+  private font(px: number, family: string, weight = 400) {
+    const size = fontSize(px);
+    this.fontKey = `${weight} ${size}px ${family}`;
+    this.fontScale = px / size;
+    this.ctx.font = this.fontKey;
+  }
+
+  /** The width of `text` in the current font. */
+  private width(text: string): number {
+    const key = `${this.fontKey}|${text}`;
+    let w = this.widths.get(key);
+    if (w === undefined) {
+      w = this.ctx.measureText(text).width;
+      if (this.widths.size > 8000) this.widths.clear();
+      this.widths.set(key, w);
+    }
+    return w * this.fontScale;
+  }
+
+  /** Draws `text` at (x, y) in the current font: filled, or outlined when `stroke`. */
+  private text(text: string, x: number, y: number, stroke = false) {
+    const ctx = this.ctx;
+    const k = this.fontScale;
+    ctx.save();
+    ctx.scale(k, k);
+    if (stroke) {
+      ctx.lineWidth /= k;
+      ctx.strokeText(text, x / k, y / k);
+    } else ctx.fillText(text, x / k, y / k);
+    ctx.restore();
+  }
+
+  /** A name broken over 1…MAX_LINES lines in `family` at `weight`, each as evenly as its words allow, with its widest line's width at 10 px. */
+  private wrapped(title: string, family: string, weight: number): { lines: string[]; width: number }[] {
+    const key = `${weight} ${family}|${title}`;
+    let out = this.wraps.get(key);
+    if (!out) {
+      this.font(10, family, weight);
+      const parts = nameParts(title);
+      out = [];
+      for (let k = 1; k <= Math.min(MAX_LINES, parts.length); k++) out.push(balance(parts, k, t => this.width(t)));
+      if (this.wraps.size > 4000) this.wraps.clear();
+      this.wraps.set(key, out);
+    }
+    return out;
+  }
+
+  /** `parts` laid into at most `lines` lines of `max` pixels in the current font, each as full as it can be; the last takes what is left. */
+  private fill(parts: string[], max: number, lines: number): string[] {
+    const out = [''];
+    for (const p of parts) {
+      const line = out[out.length - 1];
+      if (line && out.length < lines && this.width((line + p).trimEnd()) > max) out.push(p);
+      else out[out.length - 1] = line + p;
+    }
+    return out.map(l => l.trim());
+  }
+
+  /** Ellipsizes `text` to `max` pixels in the current font. Text sized to
+   * fill `max` fits, whatever the rounding in working out its size. */
+  private fit(text: string, max: number): string {
+    if (max <= 4) return '';
+    const room = max * (1 + 1e-9);
+    if (this.width(text) <= room) return text;
+    let lo = 0;
+    let hi = text.length;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (this.width(text.slice(0, mid) + '…') <= room) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo > 0 ? text.slice(0, lo).trimEnd() + '…' : '';
+  }
+}
+
+/** The size text of `px` pixels is laid out at: one of a ladder of sizes a
+ * quarter of an octave apart, 10 px among them, so a name passes through a
+ * few of them as the view zooms rather than a new one each frame. */
+export const fontSize = (px: number) => 10 * 2 ** (Math.round(4 * Math.log2(px / 10)) / 4);
+
+/** Whether a block's side effects are marked with a dot: ones that reach outside it. */
+const marked = (n: SceneNode) => !!n.effects?.some(e => /write|network|exec|mutat|distributed|process|raises|reads|filesystem|state/.test(e));
+
+/** What a scene draws, for its legend: the roles blocks are colored by, the kinds of arrow, and whether there are adds and marked side effects. */
+export interface Drawn { roles: Set<string>; edges: Set<EdgeKind>; add: boolean; effects: boolean }
+
+export function drawnIn(nodes: SceneNode[]): Drawn {
+  const out: Drawn = { roles: new Set(), edges: new Set(), add: false, effects: false };
+  for (const n of nodes) {
+    // As `fillOf` colors them: boxes by their role, tables as settings.
+    if (n.shape === 'box') out.roles.add(n.category);
+    else if (n.shape === 'region' && n.kind === 'table') out.roles.add('config');
+    if (n.shape === 'glyph' && n.title === '+') out.add = true;
+    if (marked(n)) out.effects = true;
+    for (const e of n.edges ?? []) out.edges.add(e.kind);
+  }
+  return out;
+}
+
+/** A block's color, tinted by how a change touched it. */
+function fillOf(theme: Theme, n: SceneNode, status: Status | null): string {
+  if (n.shape === 'glyph') return theme.paper;
+  if (n.shape === 'region') {
+    const fill = n.kind === 'table' ? swatch(theme, 'config').tint : swatch(theme, n.kind === 'lane' ? 'lane' : 'region').fill;
+    return status ? mix(fill, theme.change[status].tint, 0.5) : fill;
+  }
+  const fill = swatch(theme, n.category).fill;
+  return status ? mix(fill, theme.change[status].tint, 0.7) : fill;
+}
+
+function mix(a: string, b: string, t: number): string {
+  const pa = parse(a);
+  const pb = parse(b);
+  // Hex, so a mixed color can be mixed again.
+  return `#${pa.map((v, i) => Math.round(v + (pb[i] - v) * t).toString(16).padStart(2, '0')).join('')}`;
+}
+
+const parsed = new Map<string, number[]>();
+function parse(hex: string): number[] {
+  let v = parsed.get(hex);
+  if (!v) {
+    const h = hex.replace('#', '');
+    v = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16));
+    parsed.set(hex, v);
+  }
+  return v;
+}
+
+/**
+ * Where a name may break across lines: after a space, `_`, `-`, `/` or `.`,
+ * and before a capital after a lowercase letter (`get|User`); never before
+ * a file's extension, nor between separators and nothing (`__init__`).
+ */
+export function nameParts(title: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  for (let i = 1; i < title.length; i++) {
+    const before = title[i - 1];
+    const at = title[i];
+    const word = /[A-Za-z0-9]/.test(at) && /[A-Za-z0-9]/.test(title.slice(start, i));
+    const joint = ' _-/'.includes(before) || (before === '.' && /[ _\-/.]/.test(title.slice(i))) || (/[a-z]/.test(before) && /[A-Z]/.test(at));
+    if (word && joint) {
+      parts.push(title.slice(start, i));
+      start = i;
+    }
+  }
+  parts.push(title.slice(start));
+  return parts;
+}
+
+/** `parts` in at most `k` lines, the widest as narrow as it can be (by `widthOf`): the lines, trimmed, and that width. */
+export function balance(parts: string[], k: number, widthOf: (text: string) => number): { lines: string[]; width: number } {
+  const n = parts.length;
+  const span = (i: number, j: number) => widthOf(parts.slice(i, j).join('').trim());
+  // best[j][i]: the narrowest widest line for the first i parts in j lines, and where its last line starts.
+  const best: { width: number; from: number }[][] = [Array.from({ length: n + 1 }, (_, i) => ({ width: i ? Infinity : 0, from: 0 }))];
+  for (let j = 1; j <= k; j++) {
+    const row = [{ width: 0, from: 0 }];
+    for (let i = 1; i <= n; i++) {
+      let cell = { width: Infinity, from: 0 };
+      for (let f = j - 1; f < i; f++) {
+        const w = Math.max(best[j - 1][f].width, span(f, i));
+        if (w < cell.width) cell = { width: w, from: f };
+      }
+      row.push(cell);
+    }
+    best.push(row);
+  }
+  const lines: string[] = [];
+  for (let j = k, i = n; j > 0 && i > 0; j--) {
+    const from = best[j][i].from;
+    lines.unshift(parts.slice(from, i).join('').trim());
+    i = from;
+  }
+  return { lines, width: best[k][n].width };
+}

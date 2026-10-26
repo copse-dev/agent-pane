@@ -15,6 +15,7 @@ export type RightPanelMode =
   | 'memories'
   | 'roadmap'
   | 'vnc'
+  | 'codemap'
 // Where the right panel sits relative to chat. `auto` keeps the legacy behaviour
 // (vertical/side, auto-stacking on tall portrait windows); `side` and `bottom`
 // pin the panel so users can force a readable terminal on any screen.

@@ -54,6 +54,14 @@ export const VENDORED_COMPONENTS: readonly VendoredComponent[] = [
     licenseFiles: ['src/renderer/drawing/drauu/LICENSE'],
   },
   {
+    // Modified; see vendor/blockviz/README.md.
+    name: 'blockviz',
+    version: '0.2.0 (modified)',
+    license: 'MIT',
+    source: 'https://github.com/BlueBlazin/blockviz',
+    licenseFiles: ['vendor/blockviz/LICENSE'],
+  },
+  {
     // The Simulator capture/input helpers, compiled from source on the user's Mac.
     name: 'claude-sim',
     version: 'adapted',

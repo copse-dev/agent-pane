@@ -1405,6 +1405,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       list: () => resolved({ rows: [], tool: 'demo' }),
       kill: () => resolved({ killed: false, reason: 'Ports are not available in the demo.' }),
     },
+    codeMap: {
+      getFiles: unsupported,
+      getPreviewUrl: unsupported,
+    },
     vnc: {
       open: unsupported,
       list: emptyArray,

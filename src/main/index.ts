@@ -52,6 +52,7 @@ import {
   shouldDetachOnClose,
 } from './windows/window-detach.ts'
 import { isWorktreeDeferralPending } from '@shared/git/worktree-policy.ts'
+import { CODE_MAP_SESSION_PARTITION } from '@shared/code-map-session.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
 import { THEME_BACKGROUND } from '@shared/theme.ts'
 import {
@@ -123,6 +124,7 @@ import {
 import { stopLocalClassifierServers } from './services/classifiers/local-classifiers.ts'
 import { initTerminal } from './ipc/terminal.ts'
 import { initVnc } from './ipc/vnc.ts'
+import { initCodeMap } from './ipc/code-map.ts'
 import { initSimulatorDesktop } from './ipc/simulator-desktop.ts'
 import { initAppRun } from './ipc/app-run.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
@@ -446,7 +448,13 @@ app.on('web-contents-created', (_event, contents) => {
   }
   attachWebContentsLockdown(contents)
   contents.on('will-attach-webview', (event, _preferences, params) => {
-    if (!getBrowserSessionForPartition(params['partition'] ?? '')) event.preventDefault()
+    const partition = params['partition'] ?? ''
+    // The Code Map guest only ever loads the vendored blockviz build off a
+    // loopback server (code-map-server.ts) — first-party content, never an
+    // agent- or user-chosen page — so it doesn't go through the Browser
+    // pane's untrusted-content session policy below.
+    if (partition === CODE_MAP_SESSION_PARTITION) return
+    if (!getBrowserSessionForPartition(partition)) event.preventDefault()
   })
 })
 
@@ -714,6 +722,7 @@ app
     initFsWatcher(win)
     const disposeTerminalHandlers = initTerminal(win)
     const disposeVncHandlers = initVnc(win)
+    initCodeMap(win)
     const disposeAppRunHandlers = initAppRun(win)
     win.once('closed', disposeAppRunHandlers)
     const disposeSimulatorDesktopHandlers = initSimulatorDesktop(win)

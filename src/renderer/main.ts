@@ -33,6 +33,7 @@ import { mountTerminalRailResizers } from './views/terminal-rail-resizer.ts'
 import { mountRoadmapPane } from './views/roadmap-pane.ts'
 import { mountBrowserPane } from './views/browser-pane.ts'
 import { mountVncPane } from './views/vnc-pane.ts'
+import { mountCodeMapPane } from './views/code-map-pane.ts'
 import { isAnyDialogOpen } from './views/dialog-shell.ts'
 import {
   mountSettingsDialog,
@@ -689,6 +690,7 @@ function mountFullLayout(): void {
     api,
   )
   mountVncPane(requireElement('vnc-controls-host'), requireElement('vnc-viewer-host'), store, api)
+  mountCodeMapPane(requireElement('codemap-viewer-host'), store, api)
   mountThreadContextPane(
     requireElement('context-host'),
     requireElement('context-viewer-host'),

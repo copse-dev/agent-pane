@@ -1,0 +1,57 @@
+/* Overrides the shared .vnc-viewer-host row direction: Code Map stacks its
+   own full-width pane-header above the canvas instead of sitting beside a
+   sidebar (right-panel-layout.ts hides #right-sidebar for this mode). */
+.codemap-viewer-host {
+  flex-direction: column;
+}
+
+/* Groups the search and expand buttons as the header's one trailing flex
+   item, so .pane-header's space-between keeps them together at the right
+   edge instead of spreading a 3rd child out evenly with the title. */
+.pane-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+/* A plain icon button in a pane header — same treatment as .pane-maximize-btn,
+   kept separate so right-panel-layout.ts's maximize-button sync (which
+   targets that class by name) never touches this one. */
+.pane-header-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+.pane-header-icon-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.code-map-body {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.code-map-webview {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: none;
+  display: inline-flex;
+}
+
+.code-map-status {
+  position: absolute;
+  top: var(--spacing-md);
+  left: var(--spacing-md);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}

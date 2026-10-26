@@ -1,0 +1,1437 @@
+//! The repository level: directory tree, cross-file relations, artifacts.
+//!
+//! Files connect through imports, `exec`, string references, and artifacts
+//! written by one program and read by another (`prepare.py → train.bin →
+//! train.py`). Relations between files in different directories are lifted
+//! through directory ports, the same mechanism function diagrams use.
+
+use crate::ir::*;
+use crate::outline::{self, Class};
+use crate::code;
+use crate::python::{self, PyInput};
+use crate::text::clip;
+use crate::hash::{Map, Set};
+use std::collections::{BTreeMap, BTreeSet};
+
+pub struct InFile {
+    pub path: String,
+    pub text: Option<String>,
+    pub bytes: u64,
+}
+
+/// Keep in step with `IGNORED` in src/core/loaders.ts.
+const IGNORED_DIRS: &[&str] = &[".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox", ".idea", ".vscode", ".ipynb_checkpoints", "dist", "build", "target", ".next", ".cache", "site-packages", ".eggs", ".turbo", ".nuxt", ".svelte-kit", ".output", ".vercel", ".parcel-cache", ".yarn", "bower_components", "storybook-static"];
+const MAX_TEXT: usize = 2_000_000;
+
+/// Test code: `tests/…`, `test_*.py`, `*_test.py`, `conftest.py`.
+pub fn is_test_path(path: &str) -> bool {
+    let base = path.rsplit('/').next().unwrap_or(path);
+    path.split('/').rev().skip(1).any(|d| matches!(d, "tests" | "test" | "testing" | "__tests__" | "spec" | "specs" | "e2e" | "__mocks__" | "test-d"))
+        || base.starts_with("test_")
+        || base.ends_with("_test.py")
+        || base.ends_with("_test.go")
+        || base == "conftest.py"
+        || base.contains(".test.")
+        || base.contains(".spec.")
+        || base.contains("-spec.")
+        || base.contains(".e2e.")
+}
+
+pub fn ignored(path: &str) -> bool {
+    let parts: Vec<&str> = path.split('/').collect();
+    parts[..parts.len().saturating_sub(1)].iter().any(|p| IGNORED_DIRS.contains(p) || p.ends_with(".egg-info"))
+        || matches!(parts.last().copied(), Some(".DS_Store") | Some("Thumbs.db"))
+        || path.ends_with(".pyc")
+}
+
+struct FileEntry {
+    path: String,
+    class: Class,
+    language: &'static str,
+    node: Id,
+    /// What the repository level reads of its text, unless a front end took it.
+    read: Option<Read>,
+    /// Written by a tool (migrations, protobuf stubs, generated clients):
+    /// shown as a file, never opened, and left out of relations.
+    generated: bool,
+    /// Not drawn at all (an empty package marker).
+    hidden: bool,
+    /// A Go `package main` with `func main`.
+    program: bool,
+}
+
+/// What the repository level reads of a file's text, read as files are
+/// classified so that the text is not kept through analysis.
+struct Read {
+    len: usize,
+    /// Commands in it that run project files.
+    runs: Vec<crate::invocations::Run>,
+    /// Its outline, with each symbol's first and last line (not for assets).
+    outline: Option<(outline::Outline, Vec<(u32, u32)>)>,
+    /// A compose file's services.
+    services: Vec<crate::compose::Service>,
+}
+
+impl Read {
+    fn new(path: &str, class: Class, language: &'static str, text: &str) -> Self {
+        let line_of = |at: usize| text[..at.min(text.len())].matches('\n').count() as u32 + 1;
+        let outline = (!matches!(class, Class::Asset | Class::Meta | Class::Other)).then(|| {
+            let o = outline::outline(language, text);
+            let lines = o.symbols.iter().map(|s| (line_of(s.start), line_of(s.end))).collect();
+            (o, lines)
+        });
+        let base = path.rsplit('/').next().unwrap_or(path).to_ascii_lowercase();
+        let compose = language == "YAML" && base.contains("compose") && (base.ends_with(".yml") || base.ends_with(".yaml"));
+        let services = if compose { crate::compose::services(text) } else { vec![] };
+        Read { len: text.len(), runs: crate::invocations::runs(language, path, text), outline, services }
+    }
+}
+
+pub fn build(name: &str, files: Vec<InFile>) -> Scene {
+    build_with(name, files, crate::layout::Options::default())
+}
+
+pub fn build_with(name: &str, files: Vec<InFile>, opts: crate::layout::Options) -> Scene {
+    build_inner(name, files, opts, None)
+}
+
+/// `build_with`, keeping what the front ends made of each file in `cache`
+/// for the next analysis of the same project: a file whose text is
+/// unchanged, and whose lowering reads nothing else that changed (how its
+/// imports resolve), is not parsed again. The scene is the one `build_with` makes.
+pub fn build_cached(name: &str, files: Vec<InFile>, opts: crate::layout::Options, cache: &mut Cache) -> Scene {
+    build_inner(name, files, opts, Some(cache))
+}
+
+/// What the front ends made of each file, by path, kept between analyses (`build_cached`).
+#[derive(Default)]
+pub struct Cache {
+    files: Map<String, Cached>,
+    /// Files the last analysis took from the cache.
+    reused: usize,
+}
+
+struct Cached {
+    /// Which front end made it, and a digest of what its lowering read besides the file.
+    front_end: u8,
+    context: u64,
+    module: code::Module,
+    header: String,
+    diagnostics: Vec<String>,
+    used: bool,
+}
+
+impl Cache {
+    /// Files the last analysis took from the cache instead of parsing them.
+    pub fn reused(&self) -> usize {
+        self.reused
+    }
+
+    /// Files kept.
+    pub fn len(&self) -> usize {
+        self.files.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.files.is_empty()
+    }
+}
+
+/// A file handed to a front end.
+trait FrontEndInput {
+    fn file(&self) -> u32;
+    fn path(&self) -> &str;
+    fn text(&self) -> &str;
+}
+
+macro_rules! front_end_input {
+    ($($t:ty),*) => {$(
+        impl FrontEndInput for $t {
+            fn file(&self) -> u32 { self.file }
+            fn path(&self) -> &str { &self.path }
+            fn text(&self) -> &str { &self.text }
+        }
+    )*};
+}
+front_end_input!(PyInput, crate::js::JsInput, crate::rust::RsInput);
+
+type FrontEndOut = (Vec<code::Module>, Vec<String>, Vec<code::CodeFile>);
+
+/// Runs a front end over `inputs`, taking unchanged files from `cache`. With a
+/// cache, files go through the front end one at a time, in order, so that what
+/// it adds to the scene (nodes for files it could not read) and says comes out
+/// as it would for all of them at once.
+#[allow(clippy::too_many_arguments)]
+fn front_end<I: FrontEndInput>(
+    cache: Option<&mut Cache>,
+    front_end: u8,
+    context: u64,
+    b: &mut Builder,
+    inputs: Vec<I>,
+    diagnostics: &mut Vec<String>,
+    mut run: impl FnMut(&mut Builder, Vec<I>, &mut Vec<String>) -> FrontEndOut,
+) -> FrontEndOut {
+    let Some(cache) = cache else { return run(b, inputs, diagnostics) };
+    let (mut modules, mut headers, mut failed) = (vec![], vec![], vec![]);
+    for input in inputs {
+        let kept = cache.files.get_mut(input.path()).filter(|c| c.front_end == front_end && c.context == context && c.module.src.text == input.text());
+        if let Some(c) = kept {
+            c.used = true;
+            cache.reused += 1;
+            let mut m = c.module.clone();
+            m.file = input.file();
+            m.src.file = input.file();
+            modules.push(m);
+            headers.push(c.header.clone());
+            diagnostics.extend(c.diagnostics.iter().cloned());
+            continue;
+        }
+        let path = input.path().to_string();
+        let mut said = vec![];
+        let (m, h, f) = run(b, vec![input], &mut said);
+        // A file the front end could not read is a node in this scene: made again each time.
+        if let ([one], [header], []) = (&m[..], &h[..], &f[..]) {
+            cache.files.insert(path, Cached { front_end, context, module: one.clone(), header: header.clone(), diagnostics: said.clone(), used: true });
+        }
+        diagnostics.extend(said);
+        modules.extend(m);
+        headers.extend(h);
+        failed.extend(f);
+    }
+    (modules, headers, failed)
+}
+
+fn build_inner(name: &str, files: Vec<InFile>, opts: crate::layout::Options, mut cache: Option<&mut Cache>) -> Scene {
+    crate::timing::start();
+    if let Some(c) = cache.as_deref_mut() {
+        c.reused = 0;
+        for f in c.files.values_mut() {
+            f.used = false;
+        }
+    }
+    let mut diagnostics = vec![];
+    let mut files: Vec<InFile> = files
+        .into_iter()
+        .map(|mut f| {
+            f.path = f.path.trim_start_matches("./").trim_start_matches('/').replace('\\', "/");
+            f
+        })
+        .filter(|f| !f.path.is_empty() && !ignored(&f.path))
+        .collect();
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+    // A single wrapping directory (an extracted archive) becomes the repo name.
+    let mut title = name.to_string();
+    if let Some(first) = files.first().and_then(|f| f.path.split_once('/').map(|(d, _)| d.to_string())) {
+        let prefix = format!("{first}/");
+        if files.len() > 1 && files.iter().all(|f| f.path.starts_with(&prefix)) {
+            for f in &mut files {
+                f.path = f.path[first.len() + 1..].to_string();
+            }
+            if title.is_empty() {
+                title = first;
+            }
+        }
+    }
+    if title.is_empty() {
+        title = "project".into();
+    }
+
+    let mut metas: Vec<FileMeta> = vec![];
+    let mut entries: Vec<FileEntry> = vec![];
+    let mut py_inputs = vec![];
+    let mut js_inputs = vec![];
+    let mut rs_inputs = vec![];
+    // Import resolution reads TypeScript configs and package manifests.
+    let resolver = {
+        let listing: Vec<(&str, Option<&str>)> = files
+            .iter()
+            .map(|f| {
+                let base = f.path.rsplit('/').next().unwrap_or(&f.path);
+                let config = (base.starts_with("tsconfig") && base.ends_with(".json")) || base == "jsconfig.json" || base == "package.json";
+                (f.path.as_str(), if config { f.text.as_deref() } else { None })
+            })
+            .collect();
+        crate::js::Resolver::new(&listing)
+    };
+    // Rust modules are placed by their crates' manifests and `mod` declarations.
+    let rs_resolver = {
+        let listing: Vec<(&str, Option<&str>)> = files
+            .iter()
+            .map(|f| {
+                let rust = f.path.ends_with(".rs") || f.path.rsplit('/').next() == Some("Cargo.toml");
+                (f.path.as_str(), if rust { f.text.as_deref() } else { None })
+            })
+            .collect();
+        crate::rust::Resolver::new(&listing)
+    };
+    // Go packages are placed by `go.mod` modules.
+    let go_resolver = {
+        let listing: Vec<(&str, Option<&str>)> = files
+            .iter()
+            .filter(|f| f.path.ends_with(".go") || matches!(f.path.rsplit('/').next(), Some("go.mod" | "go.work")))
+            .map(|f| (f.path.as_str(), if f.path.ends_with(".go") { None } else { f.text.as_deref() }))
+            .collect();
+        crate::go::Resolver::new(&listing)
+    };
+    let mut go_inputs = vec![];
+    for (i, f) in files.into_iter().enumerate() {
+        let (class, language) = outline::classify(&f.path);
+        let text = f.text.filter(|t| t.len() <= MAX_TEXT && !t.contains('\0'));
+        if text.is_none() && matches!(class, Class::Python | Class::Notebook | Class::Code | Class::Config) && f.bytes as usize > MAX_TEXT {
+            diagnostics.push(format!("Skipped {} ({} KB is over the per-file limit).", f.path, f.bytes / 1024));
+        }
+        let lines = text.as_ref().map(|t| t.lines().count() as u32).unwrap_or(0);
+        let analyzed = text.is_some() && class != Class::Asset;
+        let generated = text.as_deref().is_some_and(|t| is_generated(&f.path, t));
+        let hidden = f.path.rsplit('/').next() == Some("__init__.py") && text.as_deref().is_some_and(is_empty_python);
+        let program = f.path.ends_with(".go") && text.as_deref().is_some_and(go_program);
+        // Code is handed to its front end, which keeps the text from here on;
+        // the repository level reads the rest now.
+        let mut source = None;
+        let mut kept = None;
+        let minified = f.path.contains(".min.") || f.path.ends_with(".bundle.js");
+        match (class, text) {
+            (Class::Python, Some(t)) => py_inputs.push(PyInput { file: i as u32, path: f.path.clone(), text: t, notebook: false }),
+            (Class::Code, Some(t)) if crate::js::lang_of(&f.path).is_some() && !minified => js_inputs.push(crate::js::JsInput { file: i as u32, path: f.path.clone(), text: t }),
+            (Class::Code, Some(t)) if f.path.ends_with(".rs") => rs_inputs.push(crate::rust::RsInput { file: i as u32, path: f.path.clone(), text: t }),
+            (Class::Code, Some(t)) if f.path.ends_with(".go") && !crate::go::resolve::ignored(&f.path) => go_inputs.push(crate::go::GoInput { file: i as u32, path: f.path.clone(), text: t }),
+            (Class::Notebook, Some(t)) => {
+                match crate::notebook::to_python(&t) {
+                    Some(py) => {
+                        source = Some(py.clone());
+                        py_inputs.push(PyInput { file: i as u32, path: f.path.clone(), text: py, notebook: true });
+                    }
+                    None => {
+                        diagnostics.push(format!("Could not read notebook {}.", f.path));
+                        kept = Some(t);
+                    }
+                }
+            }
+            (_, t) => kept = t,
+        }
+        metas.push(FileMeta {
+            path: f.path.clone(),
+            language: language.to_string(),
+            bytes: f.bytes,
+            lines,
+            analyzed,
+            source,
+        });
+        let read = kept.map(|t| Read::new(&f.path, class, language, &t));
+        entries.push(FileEntry { path: f.path, class, language, node: 0, read, generated, hidden, program });
+    }
+
+    crate::timing::stage("classify files");
+    let mut b = Builder::default();
+    let root = b.add(None, Kind::Repo, Shape::Box, title.clone());
+    b.get_mut(root).category = "repo";
+    let (mut modules, mut headers, mut failed) = front_end(cache.as_deref_mut(), 0, 0, &mut b, py_inputs, &mut diagnostics, |b, i, d| python::parse(b, i, d));
+    crate::timing::stage("parse Python");
+    let context = if cache.is_some() { resolver.fingerprint() } else { 0 };
+    let (js_modules, js_headers, js_failed) = front_end(cache.as_deref_mut(), 1, context, &mut b, js_inputs, &mut diagnostics, |b, i, d| crate::js::parse(b, i, &resolver, d));
+    crate::timing::stage("parse JavaScript");
+    modules.extend(js_modules);
+    headers.extend(js_headers);
+    failed.extend(js_failed);
+    let context = if cache.is_some() { rs_resolver.fingerprint() } else { 0 };
+    let (rs_modules, rs_headers, rs_failed) = front_end(cache.as_deref_mut(), 2, context, &mut b, rs_inputs, &mut diagnostics, |b, i, d| crate::rust::parse(b, i, &rs_resolver, d));
+    crate::timing::stage("parse Rust");
+    modules.extend(rs_modules);
+    headers.extend(rs_headers);
+    failed.extend(rs_failed);
+    let (go_modules, go_headers, go_failed) = crate::go::front_end(&mut b, go_inputs, &go_resolver, &mut diagnostics);
+    crate::timing::stage("parse Go");
+    modules.extend(go_modules);
+    headers.extend(go_headers);
+    failed.extend(go_failed);
+    let (b2, py) = code::analyze(b, modules, headers, failed);
+    let mut b = b2;
+    let mut py_by_file: Map<u32, &code::CodeFile> = Map::default();
+    for pf in &py.files {
+        py_by_file.insert(pf.file, pf);
+    }
+
+    // File nodes.
+    let mut runs: Vec<(usize, Vec<crate::invocations::Run>)> = vec![];
+    let mut code_imports: Vec<(usize, Vec<String>)> = vec![];
+    for (i, e) in entries.iter_mut().enumerate() {
+        let base = e.path.rsplit('/').next().unwrap_or(&e.path).to_string();
+        if let Some(pf) = py_by_file.get(&(i as u32)) {
+            e.node = pf.node;
+            let n = b.get_mut(pf.node);
+            n.title = base;
+            if n.category == "neutral" {
+                n.category = "file";
+            }
+            continue;
+        }
+        let (kind, category) = match e.class {
+            Class::Code | Class::Python | Class::Notebook => (Kind::File, "file"),
+            Class::Config => (Kind::File, "config"),
+            Class::Doc => (Kind::Doc, "doc"),
+            Class::Asset => (Kind::Asset, "asset"),
+            Class::Meta | Class::Other => (Kind::Asset, "meta"),
+        };
+        let id = b.add(None, kind, Shape::Box, base);
+        e.node = id;
+        {
+            let n = b.get_mut(id);
+            n.category = category;
+            n.subtitle = e.language.to_string();
+            n.span = e.read.as_ref().map(|r| Span { file: i as u32, start: 0, end: r.len as u32, line: 1, end_line: metas[i].lines.max(1) });
+        }
+        let Some(read) = e.read.as_mut() else {
+            let bytes = metas[i].bytes;
+            b.get_mut(id).subtitle = format!("{} · {}", e.language, human_size(bytes));
+            continue;
+        };
+        let found = std::mem::take(&mut read.runs);
+        if !found.is_empty() {
+            runs.push((i, found));
+        }
+        let Some((o, lines)) = read.outline.take() else { continue };
+        b.get_mut(id).doc = o.doc.clone();
+        if !o.imports.is_empty() {
+            b.get_mut(id).inputs = o.imports.clone();
+            code_imports.push((i, o.imports.clone()));
+        }
+        if !o.symbols.is_empty() {
+            b.get_mut(id).badges.push("outline".into());
+            let mut by_name: Map<String, Id> = Map::default();
+            for (s, &(line, end_line)) in o.symbols.iter().zip(&lines) {
+                let sid = b.add(Some(id), Kind::Symbol, Shape::Box, s.name.clone());
+                let n = b.get_mut(sid);
+                n.subtitle = s.kind.to_string();
+                n.category = match s.kind {
+                    "function" | "target" => "function",
+                    "kernel" => "kernel",
+                    _ => "class",
+                };
+                n.span = Some(Span { file: i as u32, start: s.start as u32, end: s.end.min(read.len) as u32, line, end_line });
+                by_name.entry(s.name.clone()).or_insert(sid);
+            }
+            for s in &o.symbols {
+                let caller = by_name[&s.name];
+                for c in &s.calls {
+                    if let Some(&callee) = by_name.get(c) {
+                        b.connect(callee, caller, EdgeKind::Uses, "");
+                    }
+                }
+            }
+        } else if !o.rows.is_empty() && (e.class != Class::Doc || o.rows.len() >= 2) {
+            b.get_mut(id).rows = o.rows;
+        }
+    }
+    // Commands in scripts and manifests that run project files.
+    let paths: Map<&str, usize> = entries.iter().enumerate().map(|(i, e)| (e.path.as_str(), i)).collect();
+    let mut invocations: Vec<(usize, usize, String)> = vec![];
+    for (runner, found) in &runs {
+        let mut steps: Vec<(usize, &crate::invocations::Run)> = vec![];
+        for r in found {
+            if let Some(t) = resolve_run(&entries[*runner].path, r, &paths) {
+                if t == *runner || entries[t].generated {
+                    continue;
+                }
+                steps.push((t, r));
+                if !invocations.iter().any(|(a, b, _)| a == runner && *b == t) {
+                    invocations.push((*runner, t, r.label.clone()));
+                }
+            }
+        }
+        // A script that runs several programs is a pipeline: its steps, in order.
+        if steps.len() >= 2 && matches!(entries[*runner].language, "Shell" | "PowerShell" | "Makefile" | "YAML") {
+            pipeline(&mut b, &entries, *runner, &steps);
+        }
+    }
+    let run_targets: Set<u32> = invocations.iter().map(|(_, t, _)| *t as u32).collect();
+    // Python file roles: an entry point is run (main guard, `__main__.py`,
+    // an application object, or top-level actions in a file nobody imports);
+    // tests, configuration and framework handlers say what they are; everything
+    // else is a module.
+    let imported: Set<u32> = py.files.iter().flat_map(|f| f.imports.iter().map(|(t, _)| *t)).collect();
+    for pf in &py.files {
+        let node = pf.node;
+        let path = entries[pf.file as usize].path.as_str();
+        let base = path.rsplit('/').next().unwrap_or(path);
+        let kids: Vec<Kind> = b.get(node).children.iter().map(|&c| b.get(c).kind).collect();
+        let notebook = b.get(node).kind == Kind::Notebook;
+        let only_settings = !kids.is_empty() && kids.iter().all(|k| *k == Kind::Table);
+        let acts = b.get(node).effects.iter().any(|e| ["prints", "reads file", "writes file", "network", "executes code", "spawns process", "distributed", "logs"].iter().any(|a| e.starts_with(a)));
+        let test = is_test_path(path);
+        let settings = !test && (base.starts_with("settings") || path.contains("/settings/") || base == "conf.py" || base == "config.py" || base.ends_with("_settings.py")) && kids.iter().all(|k| matches!(k, Kind::Table | Kind::Op | Kind::Call | Kind::Branch | Kind::Section));
+        let main = base == "__main__.py";
+        let runs = !test && (pf.entry || main || pf.app || run_targets.contains(&pf.file) || (acts && !imported.contains(&pf.file) && !kids.iter().all(|k| matches!(k, Kind::Class | Kind::Function | Kind::Table))));
+        let handlers = |h: code::frameworks::Handler| pf.handlers.contains(&h);
+        let route_table = b.get(node).children.iter().any(|&c| b.get(c).kind == Kind::Table && b.get(c).category == "endpoint");
+        use code::frameworks::Handler;
+        let js = pf.lang.is_js();
+        // Tool configuration in code: `vite.config.ts`, `.eslintrc.js`, `jest.config.js`.
+        let tool_config = js && (base.contains(".config.") || base.starts_with(".eslintrc") || base.starts_with(".prettierrc") || base.starts_with("babel.config") || base == "gulpfile.js" || base == "Gruntfile.js");
+        let file_role = if js { framework_file_role(path) } else { None };
+        // A Rust file's role is its crate's: a binary or example runs, a
+        // library root is the library, `build.rs` builds.
+        let krate = (pf.lang == code::syntax::Lang::Rust).then(|| rs_resolver.module(path)).flatten().map(|(c, _)| c.clone());
+        let rust_root = krate.as_ref().filter(|c| c.root == path).map(|c| c.kind);
+        use crate::rust::resolve::CrateKind;
+        let go_main = entries[pf.file as usize].program;
+        let runs = runs || matches!(rust_root, Some(CrateKind::Bin | CrateKind::Example)) || go_main && !test;
+        let file_role = file_role.or_else(|| {
+            Some(match rust_root? {
+                CrateKind::Lib => "library",
+                CrateKind::Bin => "binary",
+                CrateKind::Example => "example",
+                CrateKind::Test => "tests",
+                CrateKind::Bench => "benchmarks",
+                CrateKind::Build => "build script",
+            })
+            .map(str::to_string)
+        });
+        let file_role = file_role.or_else(|| (go_main && !test).then(|| "binary".to_string()));
+        let role = if pf.error.is_some() {
+            pf.lang.name()
+        } else if notebook {
+            "notebook"
+        } else if tool_config {
+            "config"
+        } else if test {
+            "tests"
+        } else if let Some(r) = file_role.as_deref() {
+            r
+        } else if pf.app {
+            "app"
+        } else if route_table {
+            "routes"
+        } else if (only_settings || settings) && !imported.contains(&pf.file) || (settings && only_settings) {
+            "config"
+        } else if handlers(Handler::Route) {
+            "routes"
+        } else if handlers(Handler::Command) {
+            "commands"
+        } else if handlers(Handler::Task) {
+            "tasks"
+        } else if handlers(Handler::Component) && !runs {
+            "components"
+        } else if runs {
+            "script"
+        } else {
+            "module"
+        };
+        let n = b.get_mut(node);
+        n.subtitle = role.to_string();
+        if role == "config" {
+            n.category = "config";
+        }
+        if runs && !notebook && role != "config" {
+            n.badges.insert(0, "entry point".into());
+        }
+    }
+
+    // Directory tree.
+    let mut dirs: BTreeMap<String, Id> = BTreeMap::new();
+    // What generated files define is not drawn, so nothing leads into it.
+    let mut hidden_defs: Set<Id> = Set::default();
+    for e in entries.iter().filter(|e| e.generated && !e.hidden) {
+        let mut stack: Vec<Id> = b.get(e.node).children.clone();
+        while let Some(id) = stack.pop() {
+            if hidden_defs.insert(id) {
+                stack.extend(b.get(id).children.iter().copied());
+            }
+        }
+    }
+    if !hidden_defs.is_empty() {
+        for i in 0..b.len() {
+            let n = b.get_mut(i as Id);
+            if n.reference.is_some_and(|r| hidden_defs.contains(&r)) {
+                n.reference = None;
+            }
+            if n.link.is_some_and(|r| hidden_defs.contains(&r)) {
+                n.link = None;
+            }
+            n.used_by.retain(|u| !hidden_defs.contains(u));
+        }
+    }
+    for e in &entries {
+        if e.hidden {
+            continue;
+        }
+        if e.generated {
+            let n = b.get_mut(e.node);
+            n.children.clear();
+            n.edges.clear();
+            n.category = "meta";
+            n.subtitle = "generated".into();
+            n.badges.retain(|b| b != "entry point");
+            n.badges.push("generated".into());
+        }
+        let parent = match e.path.rsplit_once('/') {
+            Some((dir, _)) => ensure_dir(&mut b, &mut dirs, root, dir),
+            None => root,
+        };
+        crate::code::flow::attach(&mut b, parent, e.node);
+    }
+    // READMEs describe their directory.
+    let mut description = String::new();
+    let containers: Vec<Id> = std::iter::once(root).chain(dirs.values().copied()).collect();
+    for &c in &containers {
+        let readme = b.get(c).children.iter().copied().find(|&k| {
+            let t = b.get(k).title.to_ascii_lowercase();
+            b.get(k).kind == Kind::Doc && t.starts_with("readme")
+        });
+        if let Some(r) = readme {
+            let doc = b.get(r).doc.clone();
+            if c == root {
+                description = doc;
+            } else {
+                if b.get(c).doc.is_empty() {
+                    b.get_mut(c).doc = doc;
+                }
+                b.remove(r);
+            }
+        }
+    }
+    // Compose files show their services, each zooming into the code it builds.
+    for e in entries.iter().filter(|e| !e.hidden) {
+        let Some(read) = e.read.as_ref().filter(|r| !r.services.is_empty()) else { continue };
+        let dir = e.path.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+        compose_services(&mut b, e.node, dir, &read.services, &dirs, root);
+    }
+    // A directory of generated files (migrations) is one block.
+    let generated_nodes: Set<Id> = entries.iter().filter(|e| e.generated).map(|e| e.node).collect();
+    for &c in dirs.values() {
+        let mut files = vec![];
+        if b.get(c).parent.is_some() && all_generated(&b, c, &generated_nodes, &mut files) && files.len() >= 2 {
+            let n = b.get_mut(c);
+            n.children.clear();
+            n.edges.clear();
+            n.category = "meta";
+            n.subtitle = format!("{} generated files", files.len());
+            n.badges.push("generated".into());
+        }
+    }
+    // Build and tooling configuration gathers into one group per directory.
+    for &c in &containers {
+        let tooling: Vec<Id> = b
+            .get(c)
+            .children
+            .iter()
+            .copied()
+            .filter(|&k| {
+                let n = b.get(k);
+                let t = n.title.to_ascii_lowercase();
+                // A compose file's services are the system's architecture: it stays in view.
+                let services = n.subtitle.ends_with(" services");
+                (n.kind == Kind::File && n.category == "config" && !services)
+                    || matches!(t.as_str(), "setup.py" | "noxfile.py" | "fabfile.py" | "setup.cfg" | "manifest.in")
+                    // Hidden directories hold tooling: CI, editors, agents.
+                    || (n.kind == Kind::Dir && t.starts_with('.'))
+                    || (n.kind == Kind::Asset && n.category == "meta")
+            })
+            .collect();
+        let has_other = b.get(c).children.len() > tooling.len() + 1;
+        if tooling.len() >= 3 && has_other {
+            let g = b.add(Some(c), Kind::Dir, Shape::Box, "Build & tooling");
+            b.get_mut(g).category = "dir";
+            b.get_mut(g).hints.pack = 9;
+            for k in tooling {
+                crate::code::flow::attach(&mut b, g, k);
+            }
+        }
+    }
+    // Docs, assets and repo metadata gather into one group per directory.
+    for &c in &containers {
+        let others: Vec<Id> = b
+            .get(c)
+            .children
+            .iter()
+            .copied()
+            .filter(|&k| {
+                let n = b.get(k);
+                matches!(n.kind, Kind::Doc | Kind::Asset) || (n.kind == Kind::Dir && subtree_is_static(&b, k))
+            })
+            .collect();
+        let has_code = b.get(c).children.iter().any(|&k| !others.contains(&k) && b.get(k).title != "Build & tooling");
+        if others.len() >= 2 && has_code {
+            let g = b.add(Some(c), Kind::Dir, Shape::Box, "Docs & assets");
+            b.get_mut(g).category = "dir";
+            b.get_mut(g).hints.pack = 10;
+            for k in others {
+                crate::code::flow::attach(&mut b, g, k);
+            }
+        }
+    }
+    // A directory holding a single item reads better as that item.
+    let mut replaced: Map<Id, Id> = Map::default();
+    collapse_single_children(&mut b, root, &mut replaced);
+    // References to directories folded into their only child follow the child.
+    if !replaced.is_empty() {
+        let follow = |mut id: Id| {
+            while let Some(&r) = replaced.get(&id) {
+                id = r;
+            }
+            id
+        };
+        for i in 0..b.len() {
+            let n = b.get_mut(i as Id);
+            n.reference = n.reference.map(follow);
+            n.link = n.link.map(follow);
+        }
+    }
+
+    // Relations.
+    let mut ports: Map<(Id, String, bool), Id> = Map::default();
+    let all_paths: Map<&str, usize> = entries.iter().enumerate().map(|(i, e)| (e.path.as_str(), i)).collect();
+    let node_of_file = |f: u32| entries[f as usize].node;
+    let mut linked: Set<(Id, Id)> = Set::default();
+    let skip = |f: u32| entries[f as usize].generated || entries[f as usize].hidden;
+    for pf in &py.files {
+        for (target, names) in &pf.uses {
+            if skip(*target) || skip(pf.file) {
+                continue;
+            }
+            let (from, to) = (node_of_file(*target), pf.node);
+            let mut names: Vec<String> = names.clone();
+            names.dedup();
+            let module = b.get(from).title.clone();
+            lift_titled(&mut b, from, to, EdgeKind::Uses, &clip(&names.join(", "), 30), &module, &mut ports);
+            linked.insert((from, to));
+        }
+    }
+    // Stylesheets, data and images a module imports.
+    for pf in &py.files {
+        for path in &pf.assets {
+            if let Some(&t) = all_paths.get(path.as_str()) {
+                if skip(t as u32) || skip(pf.file) {
+                    continue;
+                }
+                let (a, c) = (entries[t].node, pf.node);
+                if linked.insert((a, c)) {
+                    let module = b.get(a).title.clone();
+                    lift_titled(&mut b, a, c, EdgeKind::Uses, "", &module, &mut ports);
+                }
+            }
+        }
+    }
+    for (from, to) in &py.execs {
+        if skip(*from) || skip(*to) {
+            continue;
+        }
+        let (a, c) = (node_of_file(*to), node_of_file(*from));
+        if linked.insert((a, c)) {
+            lift(&mut b, a, c, EdgeKind::Exec, "exec", &mut ports);
+        }
+    }
+    for (runner, target, label) in &invocations {
+        if skip(*runner as u32) || skip(*target as u32) {
+            continue;
+        }
+        let (a, c) = (entries[*runner].node, entries[*target].node);
+        if linked.insert((a, c)) {
+            let title = b.get(c).title.clone();
+            lift_titled(&mut b, a, c, EdgeKind::Exec, label, &title, &mut ports);
+        }
+    }
+    // Templates a view renders, found under a templates directory.
+    for (module, name) in &py.templates {
+        if skip(*module) {
+            continue;
+        }
+        let name = name.trim_start_matches('/');
+        let (templates, nested) = (format!("templates/{name}"), format!("/{name}"));
+        let hits: Vec<usize> = entries.iter().enumerate().filter(|(_, e)| e.path.ends_with(&templates) || (name.contains('/') && e.path.ends_with(&nested))).map(|(i, _)| i).collect();
+        let module_dir = entries[*module as usize].path.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+        // Prefer the template next to the view (a Flask app or Django app directory).
+        let t = match hits.as_slice() {
+            [one] => Some(*one),
+            many => many.iter().copied().find(|&h| entries[h].path.starts_with(module_dir)),
+        };
+        if let Some(t) = t {
+            let (a, c) = (entries[t].node, entries[*module as usize].node);
+            if !entries[t].hidden && linked.insert((a, c)) {
+                lift(&mut b, a, c, EdgeKind::Uses, "template", &mut ports);
+            }
+        }
+    }
+    // Imports in other languages, resolved to files.
+    for (i, specs) in &code_imports {
+        if skip(*i as u32) {
+            continue;
+        }
+        for spec in specs {
+            if let Some(t) = resolve_import(&entries[*i].path, entries[*i].language, spec, &all_paths) {
+                if t != *i && !skip(t as u32) {
+                    let (a, c) = (entries[t].node, entries[*i].node);
+                    if linked.insert((a, c)) {
+                        let module = b.get(a).title.clone();
+                        lift_titled(&mut b, a, c, EdgeKind::Uses, "", &module, &mut ports);
+                    }
+                }
+            }
+        }
+    }
+    let artifact_uses: Vec<(u32, String, bool)> = py.artifacts.iter().filter(|(f, _, _)| !skip(*f)).cloned().collect();
+    artifacts(&mut b, &artifact_uses, &entries, &mut ports);
+    // Files list what they import, before redundant lines are dropped.
+    for pf in &py.files {
+        let mut deps: Vec<String> = pf.imports.iter().map(|(t, _)| entries[*t as usize].path.clone()).collect();
+        deps.sort();
+        if !deps.is_empty() {
+            b.get_mut(pf.node).inputs = deps;
+        }
+    }
+    let structural: Vec<Id> = std::iter::once(root).chain(b.nodes.iter().filter(|n| n.kind == Kind::Dir).map(|n| n.id)).collect();
+    for &c in &structural {
+        transitive_reduction(&mut b, c);
+        // A folder exporting to (or importing from) many places says so with
+        // its outer edges; per-module port wiring inside would be noise.
+        let import_ports: Vec<Id> = b.get(c).children.iter().copied().filter(|&k| b.get(k).is_port() && b.get(c).edges.iter().any(|e| (e.from == k || e.to == k) && e.kind == EdgeKind::Uses)).collect();
+        if import_ports.len() > 4 {
+            for p in import_ports {
+                b.remove(p);
+            }
+        }
+    }
+
+    // External packages, for orientation.
+    let mut externals: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
+    for pf in &py.files {
+        for e in &pf.externals {
+            if !e.is_empty() && !is_stdlib(e) {
+                externals.entry(e.clone()).or_default().insert(pf.file);
+            }
+        }
+    }
+    if !externals.is_empty() {
+        let t = b.add(Some(root), Kind::Table, Shape::Box, "External packages");
+        let n = b.get_mut(t);
+        n.category = "library";
+        n.hints.pack = 20;
+        n.rows = externals
+            .iter()
+            .map(|(k, files)| Row { key: k.clone(), value: format!("{} file{}", files.len(), if files.len() == 1 { "" } else { "s" }), note: String::new(), heading: false })
+            .collect();
+        n.doc = "Third-party packages the code imports.".into();
+    }
+
+    aggregate_effects(&mut b, root);
+    // A one-file project opens directly on that file.
+    let mut scene_root = root;
+    let top: Vec<Id> = b.get(root).children.clone();
+    let code_files: Vec<Id> = top.iter().copied().filter(|&c| matches!(b.get(c).kind, Kind::File | Kind::Notebook)).collect();
+    if entries.len() == 1 && code_files.len() == 1 && b.get(code_files[0]).has_interior() {
+        scene_root = code_files[0];
+        b.get_mut(scene_root).parent = None;
+    }
+    crate::timing::stage("repository level");
+    crate::layout::layout(&mut b, scene_root, opts);
+    crate::timing::stage("layout");
+    let python_files = py.files.len() as u32;
+    let lines: u32 = metas.iter().map(|m| m.lines).sum();
+    let max_depth = b.nodes.iter().map(|n| n.id).filter(|&id| b.get(id).parent.is_some()).map(|id| b.depth(id)).max().unwrap_or(0);
+    let (nodes, scene_root) = b.finish(scene_root);
+    diagnostics.push("Static analysis: arrows show likely dataflow and dependencies inferred from source, not a runtime trace. Dynamic dispatch and code passed through strings may be missed.".into());
+    let stats = Stats { files: metas.len() as u32, python_files, lines, nodes: nodes.len() as u32, max_depth };
+    if let Some(c) = cache {
+        // What no file read this time belongs to a file that is gone or changed.
+        c.files.retain(|_, f| f.used);
+    }
+    crate::timing::stage("finish");
+    Scene { version: 2, title, description, root: scene_root, nodes, files: metas, diagnostics, stats }
+}
+
+/// Roles a JavaScript framework gives a file by where it is: Next.js App
+/// Router pages, layouts and route handlers, and Pages Router pages and API
+/// routes.
+fn framework_file_role(path: &str) -> Option<String> {
+    let (dir, base) = path.rsplit_once('/').unwrap_or(("", path));
+    let stem = base.split('.').next().unwrap_or(base);
+    let app = code::frameworks::app_path(dir).filter(|_| dir.split('/').any(|p| p == "app"));
+    if let Some(route) = app {
+        return match stem {
+            "page" => Some(format!("page {route}")),
+            "layout" | "template" => Some(format!("layout {route}")),
+            "loading" | "error" | "not-found" | "global-error" | "default" => Some(stem.replace('-', " ")),
+            "route" => Some(format!("routes {route}")),
+            "middleware" => Some("middleware".into()),
+            _ => None,
+        };
+    }
+    let parts: Vec<&str> = dir.split('/').collect();
+    if let Some(at) = parts.iter().position(|p| *p == "pages") {
+        if stem.starts_with('_') {
+            return Some(format!("{stem} page"));
+        }
+        let mut route: Vec<&str> = parts[at + 1..].to_vec();
+        if stem != "index" {
+            route.push(stem);
+        }
+        let route = format!("/{}", route.join("/"));
+        return Some(if route.starts_with("/api") { format!("API route {route}") } else { format!("page {route}") });
+    }
+    if matches!(stem, "middleware" | "instrumentation") && !dir.contains('/') {
+        return Some(stem.to_string());
+    }
+    None
+}
+
+/// Drops a dependency A→C when A→…→C already holds through other siblings,
+/// so dependency diagrams show their layering instead of a hairball.
+fn transitive_reduction(b: &mut Builder, container: Id) {
+    let edges = &b.get(container).edges;
+    // Template edges say which view renders what; they are not dependencies to thin out.
+    let uses: Vec<(Id, Id)> = edges.iter().filter(|e| e.kind == EdgeKind::Uses && e.label != "template" && !b.get(e.from).is_port() && !b.get(e.to).is_port()).map(|e| (e.from, e.to)).collect();
+    if uses.len() < 3 {
+        return;
+    }
+    let mut adj: Map<Id, Vec<Id>> = Map::default();
+    for &(a, c) in &uses {
+        adj.entry(a).or_default().push(c);
+    }
+    let reaches_without = |from: Id, to: Id| -> bool {
+        // Is `to` reachable from `from` by a path of length ≥ 2?
+        let mut stack: Vec<Id> = adj.get(&from).map(|v| v.iter().copied().filter(|&n| n != to).collect()).unwrap_or_default();
+        let mut seen: Set<Id> = stack.iter().copied().collect();
+        while let Some(n) = stack.pop() {
+            if n == to {
+                return true;
+            }
+            for &m in adj.get(&n).map(|v| v.as_slice()).unwrap_or(&[]) {
+                if m == to {
+                    return true;
+                }
+                if seen.insert(m) && seen.len() < 4000 {
+                    stack.push(m);
+                }
+            }
+        }
+        false
+    };
+    let redundant: Set<(Id, Id)> = uses.iter().copied().filter(|&(a, c)| reaches_without(a, c)).collect();
+    if redundant.is_empty() {
+        return;
+    }
+    b.get_mut(container).edges.retain(|e| !(e.kind == EdgeKind::Uses && redundant.contains(&(e.from, e.to))));
+}
+
+/// Maps an import specifier to a repo file, per language convention.
+fn resolve_import(from: &str, lang: &str, spec: &str, paths: &Map<&str, usize>) -> Option<usize> {
+    let dir = from.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+    let join = |base: &str, rel: &str| -> String {
+        let mut parts: Vec<&str> = if base.is_empty() { vec![] } else { base.split('/').collect() };
+        for p in rel.split('/') {
+            match p {
+                "." | "" => {}
+                ".." => {
+                    parts.pop();
+                }
+                p => parts.push(p),
+            }
+        }
+        parts.join("/")
+    };
+    let find = |candidates: &[String]| candidates.iter().find_map(|c| paths.get(c.as_str()).copied());
+    match lang {
+        "JavaScript" | "TypeScript" | "Vue" | "Svelte" => {
+            if !spec.starts_with('.') && !spec.starts_with('/') {
+                return None;
+            }
+            let base = join(dir, spec.trim_start_matches('/'));
+            let stem = base.trim_end_matches(".js").trim_end_matches(".jsx").to_string();
+            let mut c = vec![base.clone()];
+            for ext in ["ts", "tsx", "js", "jsx", "mjs", "cjs", "vue", "svelte", "d.ts"] {
+                c.push(format!("{stem}.{ext}"));
+            }
+            for ext in ["ts", "tsx", "js", "jsx"] {
+                c.push(format!("{base}/index.{ext}"));
+            }
+            find(&c)
+        }
+        _ => {
+            let c = vec![join(dir, spec), spec.to_string()];
+            find(&c).or_else(|| {
+                let base = spec.rsplit('/').next().unwrap_or(spec);
+                let hits: Vec<usize> = paths.iter().filter(|(p, _)| p.rsplit('/').next() == Some(base)).map(|(_, &i)| i).collect();
+                (hits.len() == 1).then(|| hits[0])
+            })
+        }
+    }
+}
+
+fn human_size(bytes: u64) -> String {
+    if bytes >= 1 << 20 {
+        format!("{:.1} MB", bytes as f64 / (1 << 20) as f64)
+    } else if bytes >= 1024 {
+        format!("{} KB", bytes / 1024)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+fn ensure_dir(b: &mut Builder, dirs: &mut BTreeMap<String, Id>, root: Id, dir: &str) -> Id {
+    if let Some(&d) = dirs.get(dir) {
+        return d;
+    }
+    let (parent, name) = match dir.rsplit_once('/') {
+        Some((p, n)) => (ensure_dir(b, dirs, root, p), n),
+        None => (root, dir),
+    };
+    let id = b.add(Some(parent), Kind::Dir, Shape::Box, format!("{name}/"));
+    b.get_mut(id).category = "dir";
+    dirs.insert(dir.to_string(), id);
+    id
+}
+
+fn subtree_is_static(b: &Builder, id: Id) -> bool {
+    b.get(id).children.iter().all(|&c| {
+        let n = b.get(c);
+        matches!(n.kind, Kind::Doc | Kind::Asset) || (n.kind == Kind::Dir && subtree_is_static(b, c))
+    })
+}
+
+/// A compose file's services: built ones zoom into the directory they are
+/// built from; image ones (databases, proxies) are plain blocks. Arrows run
+/// from a dependency to what depends on it, and from a proxy to what it routes to.
+fn compose_services(b: &mut Builder, node: Id, dir: &str, services: &[crate::compose::Service], dirs: &BTreeMap<String, Id>, root: Id) {
+    let norm = |p: &str| -> String {
+        let mut parts: Vec<&str> = dir.split('/').filter(|x| !x.is_empty()).collect();
+        for x in p.split('/') {
+            match x {
+                "" | "." => {}
+                ".." => {
+                    parts.pop();
+                }
+                x => parts.push(x),
+            }
+        }
+        parts.join("/")
+    };
+    b.get_mut(node).rows.clear();
+    let mut ids: Map<&str, Id> = Map::default();
+    for s in services {
+        let id = b.add(Some(node), Kind::Call, Shape::Box, s.name.clone());
+        // The code a service is built from: its Dockerfile's directory, else its context.
+        let code = match (&s.context, &s.dockerfile) {
+            (Some(c), Some(d)) => Some(norm(&format!("{c}/{d}")).rsplit_once('/').map(|(d, _)| d.to_string()).unwrap_or_default()),
+            (Some(c), None) => Some(norm(c)),
+            (None, _) => None,
+        };
+        let target = code.as_deref().and_then(|c| if c.is_empty() { Some(root) } else { dirs.get(c).copied() });
+        let image = s.image.split(':').next().unwrap_or("").rsplit('/').next().unwrap_or("");
+        let n = b.get_mut(id);
+        n.subtitle = match (&code, s.image.is_empty()) {
+            (Some(c), _) if !c.is_empty() => format!("build {c}/"),
+            (_, false) => s.image.clone(),
+            _ => "service".into(),
+        };
+        n.category = if target.is_some() && target != Some(root) {
+            "component"
+        } else if matches!(image, "postgres" | "postgis" | "mysql" | "mariadb" | "mongo" | "redis" | "valkey" | "memcached" | "elasticsearch" | "opensearch" | "rabbitmq" | "kafka" | "minio" | "qdrant" | "clickhouse") {
+            "io"
+        } else {
+            "library"
+        };
+        if let Some(t) = target.filter(|&t| t != root) {
+            n.reference = Some(t);
+            n.link = Some(t);
+        }
+        ids.insert(s.name.as_str(), id);
+    }
+    let proxy = services.iter().find(|s| ["traefik", "nginx", "caddy", "haproxy", "envoy"].iter().any(|p| s.image.contains(p))).map(|s| ids[s.name.as_str()]);
+    for s in services {
+        let to = ids[s.name.as_str()];
+        for d in &s.depends_on {
+            if let Some(&from) = ids.get(d.as_str()) {
+                b.connect(from, to, EdgeKind::Uses, "");
+            }
+        }
+        if let (Some(p), true) = (proxy, s.routed) {
+            b.connect(p, to, EdgeKind::Data, "routes");
+        }
+    }
+    let n = b.get_mut(node);
+    n.subtitle = format!("{} services", services.len());
+}
+
+/// Replaces a script's outline with its pipeline: one step per program it
+/// runs, in order, each showing that program's diagram when zoomed into.
+fn pipeline(b: &mut Builder, entries: &[FileEntry], runner: usize, steps: &[(usize, &crate::invocations::Run)]) {
+    let node = entries[runner].node;
+    for c in std::mem::take(&mut b.get_mut(node).children) {
+        b.get_mut(c).parent = None;
+    }
+    b.get_mut(node).edges.clear();
+    b.get_mut(node).badges.retain(|x| x != "outline");
+    let mut prev: Option<Id> = None;
+    for (target, run) in steps {
+        let t = entries[*target].node;
+        let title = b.get(t).title.clone();
+        let category = if b.get(t).category == "config" { "config" } else { "function" };
+        let id = b.add(Some(node), Kind::Call, Shape::Box, title);
+        let n = b.get_mut(id);
+        n.subtitle = clip(&run.summary, 40);
+        n.code = run.command.clone();
+        n.category = category;
+        n.reference = Some(t);
+        n.link = Some(t);
+        if let Some(p) = prev {
+            b.connect(p, id, EdgeKind::Exec, "");
+        }
+        prev = Some(id);
+    }
+    b.get_mut(node).subtitle = format!("{} · {} steps", entries[runner].language, steps.len());
+}
+
+/// The file a command runs: relative to the directory it runs in, the
+/// runner's directory or the root, else by a unique path suffix (container
+/// paths like `/app/scripts/prestart.sh` rarely match the repository's).
+fn resolve_run(runner: &str, run: &crate::invocations::Run, paths: &Map<&str, usize>) -> Option<usize> {
+    use crate::invocations::Target;
+    let dir = runner.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+    let join = |a: &str, b: &str| if a.is_empty() { b.to_string() } else if b.is_empty() { a.to_string() } else { format!("{a}/{b}") };
+    let rels: Vec<String> = match &run.target {
+        Target::Path(p) => vec![p.trim_start_matches("./").to_string()],
+        Target::Module(m) => {
+            let p = m.replace('.', "/");
+            vec![format!("{p}.py"), format!("{p}/__main__.py"), format!("{p}/__init__.py")]
+        }
+        Target::Any(v) => v.clone(),
+    };
+    let bases = [join(dir, &run.cwd), run.cwd.clone(), dir.to_string(), String::new()];
+    for rel in &rels {
+        if rel.starts_with('/') || rel.contains('$') {
+            continue;
+        }
+        for base in &bases {
+            if let Some(&i) = paths.get(join(base, rel).as_str()) {
+                return Some(i);
+            }
+        }
+    }
+    for rel in &rels {
+        let parts: Vec<&str> = rel.split('/').filter(|p| !p.is_empty() && *p != "." && !p.contains('$')).collect();
+        for k in 0..parts.len() {
+            let suffix = parts[k..].join("/");
+            let nested = format!("/{suffix}");
+            let hits: Vec<usize> = paths.iter().filter(|(p, _)| **p == suffix || p.ends_with(&nested)).map(|(_, &i)| i).collect();
+            if hits.len() == 1 {
+                return Some(hits[0]);
+            }
+            if !hits.is_empty() {
+                break;
+            }
+        }
+    }
+    None
+}
+
+/// A Go file of the `main` package that defines `main`.
+fn go_program(text: &str) -> bool {
+    let mut package_main = false;
+    for line in text.lines() {
+        let l = line.trim_start();
+        if let Some(rest) = l.strip_prefix("package ") {
+            package_main = rest.split_whitespace().next() == Some("main");
+            if !package_main {
+                return false;
+            }
+        }
+        if package_main && l.starts_with("func main()") {
+            return true;
+        }
+    }
+    false
+}
+
+/// Code written by a tool rather than a person: migrations, protobuf stubs,
+/// generated API clients. Judged by name and by a header comment saying so.
+fn is_generated(path: &str, text: &str) -> bool {
+    let base = path.rsplit('/').next().unwrap_or(path);
+    if base.ends_with("_pb2.py") || base.ends_with("_pb2_grpc.py") || base.ends_with("_pb2.pyi") || base.ends_with(".pb.go") || base.contains(".gen.") || base.ends_with(".g.dart") || base.ends_with(".generated.ts") {
+        return true;
+    }
+    let mut in_doc = false;
+    for line in text.lines().take(15) {
+        let t = line.trim();
+        let comment = t.starts_with('#') || t.starts_with("//") || t.starts_with("/*") || t.starts_with('*') || t.starts_with("<!--");
+        let quote = |l: &str| l.starts_with("\"\"\"") || l.starts_with("'''");
+        let ends = |l: &str| l.ends_with("\"\"\"") || l.ends_with("'''");
+        let doc_line = in_doc || quote(t);
+        if quote(t) && !(t.len() >= 6 && ends(t)) {
+            in_doc = !in_doc;
+        } else if in_doc && ends(t) {
+            in_doc = false;
+        }
+        if !(comment || doc_line) {
+            continue;
+        }
+        let l = t.to_ascii_lowercase();
+        if l.contains("auto-generated") || l.contains("autogenerated") || l.contains("generated by") || l.contains("do not edit") || l.contains("@generated") || l.contains("code generated") || l.starts_with("revision id:") {
+            return true;
+        }
+    }
+    false
+}
+
+/// Python with nothing in it: blank, comments, or only a docstring.
+fn is_empty_python(text: &str) -> bool {
+    let mut in_doc: Option<&str> = None;
+    for line in text.lines() {
+        let t = line.trim();
+        if let Some(q) = in_doc {
+            if t.contains(q) {
+                in_doc = None;
+            }
+            continue;
+        }
+        if t.is_empty() || t.starts_with('#') {
+            continue;
+        }
+        for q in ["\"\"\"", "'''"] {
+            if let Some(rest) = t.strip_prefix(q) {
+                if !rest.contains(q) {
+                    in_doc = Some(q);
+                }
+            }
+        }
+        if t.starts_with("\"\"\"") || t.starts_with("'''") {
+            continue;
+        }
+        return false;
+    }
+    true
+}
+
+/// Whether every file below `id` is generated (collecting them).
+fn all_generated(b: &Builder, id: Id, generated: &Set<Id>, files: &mut Vec<Id>) -> bool {
+    let n = b.get(id);
+    if n.children.is_empty() {
+        return false;
+    }
+    n.children.iter().all(|&k| {
+        let c = b.get(k);
+        if c.kind == Kind::Dir {
+            all_generated(b, k, generated, files)
+        } else if c.is_port() {
+            true
+        } else if generated.contains(&k) {
+            files.push(k);
+            true
+        } else {
+            false
+        }
+    })
+}
+
+fn collapse_single_children(b: &mut Builder, id: Id, replaced: &mut Map<Id, Id>) {
+    let kids = b.get(id).children.clone();
+    for k in kids {
+        collapse_single_children(b, k, replaced);
+    }
+    for k in b.get(id).children.clone() {
+        let n = b.get(k);
+        if n.kind != Kind::Dir || n.children.len() != 1 || n.title == "Docs & assets" || n.title == "Build & tooling" {
+            continue;
+        }
+        let only = n.children[0];
+        let dir_title = n.title.clone();
+        let dir_doc = n.doc.clone();
+        let pos = b.get(id).children.iter().position(|&c| c == k).unwrap();
+        let child = b.get_mut(only);
+        child.title = format!("{}{}", dir_title, child.title);
+        if child.doc.is_empty() {
+            child.doc = dir_doc;
+        }
+        child.parent = Some(id);
+        let order = b.get(k).hints.order;
+        b.get_mut(only).hints.order = order;
+        b.get_mut(id).children[pos] = only;
+        b.get_mut(k).children.clear();
+        b.get_mut(k).parent = None;
+        replaced.insert(k, only);
+    }
+}
+
+/// Connects two nodes anywhere in the tree, adding ports on every container crossed.
+fn lift(b: &mut Builder, from: Id, to: Id, kind: EdgeKind, label: &str, ports: &mut Map<(Id, String, bool), Id>) {
+    lift_titled(b, from, to, kind, label, "", ports)
+}
+
+/// Like `lift`, with an explicit title for the ports it creates.
+fn lift_titled(b: &mut Builder, from: Id, to: Id, kind: EdgeKind, label: &str, title: &str, ports: &mut Map<(Id, String, bool), Id>) {
+    let chain = |b: &Builder, mut x: Id| {
+        let mut v = vec![x];
+        while let Some(p) = b.get(x).parent {
+            v.push(p);
+            x = p;
+        }
+        v
+    };
+    let ca = chain(b, from);
+    let cb = chain(b, to);
+    let Some(&lca) = ca.iter().find(|n| cb.contains(n)) else { return };
+    if lca == from || lca == to {
+        return;
+    }
+    let ia = ca.iter().position(|&n| n == lca).unwrap();
+    let ib = cb.iter().position(|&n| n == lca).unwrap();
+    let port_title = if !title.is_empty() {
+        title.to_string()
+    } else if label.is_empty() || label == "exec" {
+        b.get(from).title.clone()
+    } else {
+        label.to_string()
+    };
+    let mut src = from;
+    for &container in &ca[1..ia] {
+        let key = (container, format!("{port_title}|{kind:?}"), true);
+        let port = match ports.get(&key) {
+            Some(&p) => p,
+            None => {
+                let p = b.add(Some(container), Kind::Output, Shape::Port, port_title.clone());
+                b.get_mut(p).category = "port";
+                ports.insert(key, p);
+                p
+            }
+        };
+        b.connect(src, port, kind, label);
+        src = container;
+    }
+    let mut dst = to;
+    for &container in &cb[1..ib] {
+        let key = (container, format!("{port_title}|{kind:?}"), false);
+        let port = match ports.get(&key) {
+            Some(&p) => p,
+            None => {
+                let p = b.add(Some(container), Kind::Input, Shape::Port, port_title.clone());
+                b.get_mut(p).category = "port";
+                ports.insert(key, p);
+                p
+            }
+        };
+        b.connect(port, dst, kind, label);
+        dst = container;
+    }
+    b.connect(src, dst, kind, label);
+}
+
+fn glob_match(pattern: &str, name: &str) -> bool {
+    match pattern.split_once('*') {
+        None => pattern == name,
+        Some((pre, post)) => name.len() >= pre.len() + post.len() && name.starts_with(pre) && name.ends_with(post),
+    }
+}
+
+/// Files written by one program and read by another become nodes between them.
+fn artifacts(b: &mut Builder, uses: &[(u32, String, bool)], entries: &[FileEntry], ports: &mut Map<(Id, String, bool), Id>) {
+    let concrete: BTreeSet<String> = uses.iter().filter(|(_, n, _)| !n.contains('*')).map(|(_, n, _)| n.clone()).collect();
+    let mut writers: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
+    let mut readers: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
+    const CODE: &[&str] = &[".py", ".sh", ".ipynb", ".js", ".ts", ".cfg", ".ini", ".toml", ".yaml", ".yml"];
+    for (f, name, write) in uses {
+        if CODE.iter().any(|ext| name.ends_with(ext)) {
+            continue;
+        }
+        let names: Vec<String> = if name.contains('*') { concrete.iter().filter(|c| glob_match(name, c)).cloned().collect() } else { vec![name.clone()] };
+        for n in names {
+            if *write {
+                writers.entry(n).or_default().insert(*f);
+            } else {
+                readers.entry(n).or_default().insert(*f);
+            }
+        }
+    }
+    // Merge artifacts that connect exactly the same files.
+    let mut grouped: BTreeMap<(Vec<u32>, Vec<u32>), Vec<String>> = BTreeMap::new();
+    for (name, ws) in &writers {
+        let Some(rs) = readers.get(name) else { continue };
+        let rs: BTreeSet<u32> = rs.difference(ws).copied().collect();
+        if rs.is_empty() {
+            continue;
+        }
+        grouped.entry((ws.iter().copied().collect(), rs.iter().copied().collect())).or_default().push(name.clone());
+    }
+    for ((ws, rs), names) in grouped {
+        // Place the artifact at the deepest container holding all its users.
+        let all: Vec<Id> = ws.iter().chain(&rs).map(|&f| entries[f as usize].node).collect();
+        let chains: Vec<Vec<Id>> = all
+            .iter()
+            .map(|&n| {
+                let mut v = vec![];
+                let mut x = n;
+                while let Some(p) = b.get(x).parent {
+                    v.push(p);
+                    x = p;
+                }
+                v
+            })
+            .collect();
+        let Some(home) = chains[0].iter().copied().find(|c| chains.iter().all(|ch| ch.contains(c))) else { continue };
+        let id = b.add(Some(home), Kind::Artifact, Shape::Box, names.join(", "));
+        let n = b.get_mut(id);
+        n.category = "data";
+        n.subtitle = "file on disk".into();
+        n.doc = format!("Written by {} and read by {}.", list(entries, &ws), list(entries, &rs));
+        let title = names.join(", ");
+        for &w in &ws {
+            lift_titled(b, entries[w as usize].node, id, EdgeKind::Artifact, "", &title, ports);
+        }
+        for &r in &rs {
+            lift_titled(b, id, entries[r as usize].node, EdgeKind::Artifact, "", &title, ports);
+        }
+    }
+}
+
+fn list(entries: &[FileEntry], files: &[u32]) -> String {
+    files.iter().map(|&f| entries[f as usize].path.clone()).collect::<Vec<_>>().join(", ")
+}
+
+/// Every container shows the effects of what it contains.
+fn aggregate_effects(b: &mut Builder, id: Id) -> Vec<String> {
+    let kids = b.get(id).children.clone();
+    let mut all: BTreeSet<String> = b.get(id).effects.iter().cloned().collect();
+    for k in kids {
+        all.extend(aggregate_effects(b, k));
+    }
+    let out: Vec<String> = all.into_iter().filter(|e| !e.starts_with("__")).collect();
+    let n = b.get_mut(id);
+    if n.has_interior() || n.kind == Kind::Repo || n.kind == Kind::Dir {
+        // Containers summarize: "reads files" rather than every file name.
+        let mut generic: Vec<String> = out.iter().map(|e| generic_effect(e)).collect();
+        generic.sort();
+        generic.dedup();
+        n.effects = generic;
+    }
+    out
+}
+
+fn generic_effect(e: &str) -> String {
+    if e.starts_with("reads file") {
+        "reads files".into()
+    } else if e.starts_with("writes file") {
+        "writes files".into()
+    } else if e.starts_with("mutates global") {
+        "mutates globals".into()
+    } else if e.starts_with("mutates ") {
+        // `mutates self.count`, `mutates this.#count`: the object's state.
+        "mutates state".into()
+    } else if e.starts_with("logs metrics") {
+        "network".into()
+    } else {
+        e.to_string()
+    }
+}
+
+const STDLIB: &[&str] = &[
+    "calendar", "filecmp", "netrc", "select", "ssl", "winreg", "_typeshed", "StringIO", "cStringIO", "BaseHTTPServer", "SimpleHTTPServer", "Queue", "urlparse", "urllib2", "cookielib", "httplib", "Cookie", "ConfigParser", "cPickle", "_thread", "__builtin__", "imp", "mimetypes", "binascii", "zlib", "lzma", "bz2", "cmath", "difflib", "getopt", "optparse", "readline", "rlcompleter", "sched", "selectors", "smtplib", "socketserver", "stat", "symtable", "sysconfig", "termios", "tty", "venv", "webbrowser", "wsgiref", "xmlrpc", "zipimport", "posixpath", "ntpath", "genericpath", "encodings", "errno", "fcntl", "grp", "pwd", "resource", "posix", "nt", "msvcrt", "marshal", "ipaddress", "hmac", "string", "graphlib", "tracemalloc", "faulthandler", "trace", "pydoc", "doctest", "configparser", "contextvars", "dataclasses",
+    "os", "sys", "re", "math", "json", "time", "datetime", "pickle", "random", "collections", "itertools", "functools", "typing", "dataclasses", "pathlib", "subprocess", "shutil", "logging", "argparse", "inspect", "contextlib", "copy", "abc", "enum", "io", "glob", "tempfile", "threading", "multiprocessing", "asyncio", "unittest", "string", "struct", "hashlib", "base64", "uuid", "csv", "gzip", "zipfile", "tarfile", "urllib", "http", "socket", "signal", "traceback", "warnings", "weakref", "heapq", "bisect", "operator", "statistics", "textwrap", "pprint", "queue", "platform", "getpass", "secrets", "ast", "dis", "importlib", "pkgutil", "types", "decimal", "fractions", "numbers", "array", "codecs", "locale", "unicodedata", "concurrent", "sqlite3", "xml", "html", "email", "ctypes", "gc", "atexit", "builtins", "__future__", "tomllib", "zoneinfo", "shlex", "fnmatch", "timeit", "cProfile", "pdb",
+];
+
+fn is_stdlib(name: &str) -> bool {
+    // Go's standard library: a path whose first element has no dot (`database/sql`).
+    let go_std = name.contains('/') && !name.starts_with('@') && !name.split('/').next().unwrap_or("").contains('.');
+    STDLIB.contains(&name) || NODE_BUILTINS.contains(&name) || go_std
+}
+
+/// Node.js built-in modules (`node:fs` is reported as `fs`).
+const NODE_BUILTINS: &[&str] = &[
+    "fs", "path", "http", "https", "http2", "url", "os", "crypto", "child_process", "events", "stream", "util", "zlib", "net", "dns", "assert", "buffer", "readline", "worker_threads", "cluster", "process", "timers", "querystring", "tty", "v8", "vm", "perf_hooks", "module", "async_hooks", "string_decoder", "inspector", "diagnostics_channel", "dgram", "punycode", "constants", "test", "sqlite",
+];

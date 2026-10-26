@@ -1,0 +1,456 @@
+//! Borrowing traversals over the shared syntax tree.
+
+use super::syntax::*;
+use crate::hash::Set;
+use std::collections::BTreeSet;
+
+/// Immediate sub-expressions of an expression, in order. A function
+/// expression's body is a scope of its own and is not included (see
+/// `loads_deep`).
+pub fn children<'a>(e: &'a Expr, f: &mut impl FnMut(&'a Expr)) {
+    match e {
+        Expr::BoolOp(x) => x.values.iter().for_each(f),
+        Expr::Named(x) => {
+            f(&x.target);
+            f(&x.value)
+        }
+        Expr::BinOp(x) => {
+            f(&x.left);
+            f(&x.right)
+        }
+        Expr::UnaryOp(x) => f(&x.operand),
+        Expr::Lambda(x) => {
+            x.params.iter().filter_map(|p| p.default.as_ref()).for_each(&mut *f);
+            f(&x.body)
+        }
+        Expr::Function(x) => x.params.iter().filter_map(|p| p.default.as_ref()).for_each(f),
+        Expr::If(x) => {
+            f(&x.test);
+            f(&x.body);
+            f(&x.orelse)
+        }
+        Expr::Dict(x) => {
+            for item in &x.items {
+                item.key.iter().for_each(&mut *f);
+                f(&item.value);
+            }
+        }
+        Expr::Set(x) | Expr::List(x) | Expr::Tuple(x) => x.elts.iter().for_each(f),
+        Expr::Comp(x) => {
+            f(&x.elt);
+            x.value.as_deref().into_iter().for_each(&mut *f);
+            for g in &x.generators {
+                f(&g.target);
+                f(&g.iter);
+                g.ifs.iter().for_each(&mut *f);
+            }
+        }
+        Expr::Await(x) | Expr::YieldFrom(x) | Expr::Starred(x) => f(&x.value),
+        Expr::Yield(x) => x.value.as_deref().into_iter().for_each(f),
+        Expr::Compare(x) => x.operands.iter().for_each(f),
+        Expr::Call(x) => {
+            f(&x.func);
+            x.arguments.args.iter().for_each(&mut *f);
+            x.arguments.keywords.iter().map(|k| &k.value).for_each(f)
+        }
+        Expr::Template(x) => {
+            x.tag.as_deref().into_iter().for_each(&mut *f);
+            for p in &x.parts {
+                if let TemplatePart::Hole { expr, spec } = p {
+                    f(expr);
+                    spec.iter().for_each(&mut *f);
+                }
+            }
+        }
+        Expr::Attribute(x) => f(&x.value),
+        Expr::Subscript(x) => {
+            f(&x.value);
+            f(&x.slice)
+        }
+        Expr::Slice(x) => {
+            x.lower.as_deref().into_iter().for_each(&mut *f);
+            x.upper.as_deref().into_iter().for_each(&mut *f);
+            x.step.as_deref().into_iter().for_each(f)
+        }
+        Expr::StringLiteral(_) | Expr::BytesLiteral(_) | Expr::NumberLiteral(_) | Expr::BooleanLiteral(_) | Expr::NoneLiteral(_) | Expr::EllipsisLiteral(_) | Expr::Name(_) | Expr::Other(_) => {}
+    }
+}
+
+/// Pre-order walk of an expression tree.
+pub fn walk<'a>(e: &'a Expr, f: &mut impl FnMut(&'a Expr)) {
+    f(e);
+    children(e, &mut |c| walk(c, f));
+}
+
+/// The free names that functions and lambdas written anywhere in a
+/// statement list read: a closure reads them when it runs, which may be
+/// after any statement of the list, even one written below it.
+pub fn closure_reads<'a>(stmts: &'a [Stmt], reads: &mut Reads<'a>) {
+    for s in stmts {
+        if let Stmt::FunctionDef(f) = s {
+            reads.body(f.params.iter().map(|p| p.name.as_str()), &f.body);
+            continue;
+        }
+        parts(s, &mut |p| match p {
+            Part::Body(body, _) => closure_reads(body, reads),
+            Part::Expr(e) => walk(e, &mut |x| match x {
+                Expr::Function(f) => reads.body(f.params.iter().map(|p| p.name.as_str()), &f.body),
+                Expr::Lambda(_) => reads.expr(x),
+                _ => {}
+            }),
+        });
+    }
+}
+
+/// Names bound inside comprehensions and lambdas are local to them.
+fn local_binders<'a>(e: &'a Expr, out: &mut Set<&'a str>) {
+    match e {
+        Expr::Comp(x) => {
+            for g in &x.generators {
+                walk(&g.target, &mut |t| {
+                    if let Expr::Name(n) = t {
+                        out.insert(&n.id);
+                    }
+                });
+            }
+        }
+        Expr::Lambda(x) => {
+            for p in &x.params {
+                out.insert(&p.name);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// All parameter names, in declaration order.
+pub fn param_names(p: &[Param]) -> Vec<String> {
+    p.iter().map(|a| a.name.clone()).collect()
+}
+
+/// Free names loaded by an expression, in first-use order.
+pub fn loads(e: &Expr) -> Vec<&str> {
+    let mut reads = Reads::default();
+    reads.expr(e);
+    reads.names
+}
+
+/// Free names read, each once, in the order first read: one buffer for
+/// every expression of a statement, class or function.
+#[derive(Default)]
+pub struct Reads<'a> {
+    pub names: Vec<&'a str>,
+    seen: Set<&'a str>,
+}
+
+impl<'a> Reads<'a> {
+    /// The free names an expression loads.
+    pub fn expr(&mut self, e: &'a Expr) {
+        self.scan(e, &mut vec![]);
+    }
+
+    /// The free names an expression reads, including inside the functions
+    /// it contains (a callback reads what it closes over when it runs).
+    pub fn expr_deep(&mut self, e: &'a Expr) {
+        let mut fns = vec![];
+        self.scan(e, &mut fns);
+        for f in fns {
+            self.body(f.params.iter().map(|p| p.name.as_str()), &f.body);
+        }
+    }
+
+    /// The free names a function-like body reads: what it loads, less its
+    /// parameters and local bindings.
+    pub fn body<'b>(&mut self, params: impl IntoIterator<Item = &'b str>, body: &'a [Stmt]) {
+        let mut local: BTreeSet<String> = params.into_iter().map(str::to_string).collect();
+        let mut declared_global: BTreeSet<String> = BTreeSet::new();
+        collect_bindings(body, &mut local, &mut declared_global);
+        for g in &declared_global {
+            local.remove(g);
+        }
+        let start = self.names.len();
+        stmt_exprs(body, true, &mut |e| self.expr_deep(e));
+        self.forget(start, |n| local.contains(n));
+    }
+
+    /// The names read so far, starting over.
+    pub fn take(&mut self) -> std::vec::Drain<'_, &'a str> {
+        self.seen.clear();
+        self.names.drain(..)
+    }
+
+    /// Adds what `e` loads, and collects the function expressions in it,
+    /// in one walk.
+    fn scan(&mut self, e: &'a Expr, fns: &mut Vec<&'a FunctionDef>) {
+        let start = self.names.len();
+        let mut bound = Set::default();
+        walk(e, &mut |x| match x {
+            Expr::Name(n) => {
+                if n.ctx == Ctx::Load && self.seen.insert(n.id.as_str()) {
+                    self.names.push(n.id.as_str());
+                }
+            }
+            Expr::Function(f) => fns.push(f),
+            _ => local_binders(x, &mut bound),
+        });
+        if !bound.is_empty() {
+            self.forget(start, |n| bound.contains(n));
+        }
+    }
+
+    /// Takes back the names read since `start` that are bound where they
+    /// were read: not free there, they may be elsewhere.
+    fn forget(&mut self, start: usize, bound: impl Fn(&str) -> bool) {
+        let mut kept = start;
+        for i in start..self.names.len() {
+            let n = self.names[i];
+            if bound(n) {
+                self.seen.remove(n);
+            } else {
+                self.names[kept] = n;
+                kept += 1;
+            }
+        }
+        self.names.truncate(kept);
+    }
+}
+
+/// Names a store target binds (`a`, `a, b`, `(a, *b)`).
+pub fn target_names(t: &Expr, out: &mut Vec<String>) {
+    match t {
+        Expr::Name(n) => out.push(n.id.to_string()),
+        Expr::Tuple(x) | Expr::List(x) => x.elts.iter().for_each(|e| target_names(e, out)),
+        Expr::Starred(x) => target_names(&x.value, out),
+        _ => {}
+    }
+}
+
+/// What a statement is made of, in source order.
+pub enum Part<'a> {
+    Expr(&'a Expr),
+    /// A statement list in it, and whether it is a function's or class's body.
+    Body(&'a [Stmt], bool),
+}
+
+/// Visits every expression rooted in a statement list, descending into nested
+/// statements; nested function and class bodies are included when `deep`.
+pub fn stmt_exprs<'a>(stmts: &'a [Stmt], deep: bool, f: &mut impl FnMut(&'a Expr)) {
+    for s in stmts {
+        stmt_expr(s, deep, f);
+    }
+}
+
+pub fn stmt_expr<'a>(s: &'a Stmt, deep: bool, f: &mut impl FnMut(&'a Expr)) {
+    parts(s, &mut |p| match p {
+        Part::Expr(e) => f(e),
+        Part::Body(body, def) => {
+            if deep || !def {
+                stmt_exprs(body, deep, f)
+            }
+        }
+    });
+}
+
+/// A statement's own expressions and the statement lists nested in it.
+pub fn parts<'a>(s: &'a Stmt, f: &mut impl FnMut(Part<'a>)) {
+    use Part::{Body, Expr as E};
+    match s {
+        Stmt::FunctionDef(x) => {
+            x.decorators.iter().for_each(|d| f(E(&d.expression)));
+            for a in &x.params {
+                if let Some(d) = &a.default {
+                    f(E(d));
+                }
+            }
+            f(Body(&x.body, true))
+        }
+        Stmt::ClassDef(x) => {
+            x.bases.iter().for_each(|b| f(E(b)));
+            x.keywords.iter().for_each(|k| f(E(&k.value)));
+            x.decorators.iter().for_each(|d| f(E(&d.expression)));
+            f(Body(&x.body, true))
+        }
+        Stmt::Return(x) => {
+            if let Some(v) = &x.value {
+                f(E(v))
+            }
+        }
+        Stmt::Delete(x) => x.targets.iter().for_each(|t| f(E(t))),
+        Stmt::TypeAlias(x) => {
+            f(E(&x.name));
+            f(E(&x.value))
+        }
+        Stmt::Assign(x) => {
+            x.targets.iter().for_each(|t| f(E(t)));
+            f(E(&x.value))
+        }
+        Stmt::AugAssign(x) => {
+            f(E(&x.target));
+            f(E(&x.value))
+        }
+        Stmt::AnnAssign(x) => {
+            f(E(&x.target));
+            if let Some(v) = &x.value {
+                f(E(v))
+            }
+        }
+        Stmt::For(x) => {
+            f(E(&x.target));
+            f(E(&x.iter));
+            f(Body(&x.body, false));
+            f(Body(&x.orelse, false))
+        }
+        Stmt::While(x) => {
+            f(E(&x.test));
+            f(Body(&x.body, false));
+            f(Body(&x.orelse, false))
+        }
+        Stmt::If(x) => {
+            f(E(&x.test));
+            f(Body(&x.body, false));
+            for c in &x.elif_else_clauses {
+                if let Some(t) = &c.test {
+                    f(E(t));
+                }
+                f(Body(&c.body, false));
+            }
+        }
+        Stmt::With(x) => {
+            for i in &x.items {
+                f(E(&i.context_expr));
+                if let Some(v) = &i.optional_vars {
+                    f(E(v));
+                }
+            }
+            f(Body(&x.body, false))
+        }
+        Stmt::Match(x) => {
+            f(E(&x.subject));
+            for c in &x.cases {
+                if let Some(g) = &c.guard {
+                    f(E(g));
+                }
+                f(Body(&c.body, false));
+            }
+        }
+        Stmt::Raise(x) => {
+            if let Some(v) = &x.exc {
+                f(E(v))
+            }
+            if let Some(v) = &x.cause {
+                f(E(v))
+            }
+        }
+        Stmt::Try(x) => {
+            f(Body(&x.body, false));
+            for h in &x.handlers {
+                if let Some(t) = &h.type_ {
+                    f(E(t));
+                }
+                f(Body(&h.body, false));
+            }
+            f(Body(&x.orelse, false));
+            f(Body(&x.finalbody, false))
+        }
+        Stmt::Assert(x) => {
+            f(E(&x.test));
+            if let Some(m) = &x.msg {
+                f(E(m))
+            }
+        }
+        Stmt::Expr(x) => f(E(&x.value)),
+        Stmt::Import(_) | Stmt::ImportFrom(_) | Stmt::Global(_) | Stmt::Nonlocal(_) | Stmt::Pass(_) | Stmt::Break(_) | Stmt::Continue(_) | Stmt::Export(_) | Stmt::Other(_) => {}
+    }
+}
+
+/// Names bound at the top level of a body (not inside nested functions).
+pub fn collect_bindings(body: &[Stmt], out: &mut BTreeSet<String>, globals: &mut BTreeSet<String>) {
+    for s in body {
+        let mut targets = vec![];
+        match s {
+            Stmt::FunctionDef(x) => {
+                out.insert(x.name.to_string());
+            }
+            Stmt::ClassDef(x) => {
+                out.insert(x.name.to_string());
+            }
+            Stmt::TypeAlias(x) => target_names(&x.name, &mut targets),
+            Stmt::Assign(x) => x.targets.iter().for_each(|t| target_names(t, &mut targets)),
+            Stmt::AugAssign(x) => target_names(&x.target, &mut targets),
+            Stmt::AnnAssign(x) => target_names(&x.target, &mut targets),
+            Stmt::For(x) => {
+                target_names(&x.target, &mut targets);
+                collect_bindings(&x.body, out, globals);
+                collect_bindings(&x.orelse, out, globals);
+            }
+            Stmt::While(x) => {
+                collect_bindings(&x.body, out, globals);
+                collect_bindings(&x.orelse, out, globals);
+            }
+            Stmt::If(x) => {
+                collect_bindings(&x.body, out, globals);
+                for c in &x.elif_else_clauses {
+                    collect_bindings(&c.body, out, globals);
+                }
+            }
+            Stmt::With(x) => {
+                for i in &x.items {
+                    if let Some(v) = &i.optional_vars {
+                        target_names(v, &mut targets);
+                    }
+                }
+                collect_bindings(&x.body, out, globals);
+            }
+            Stmt::Try(x) => {
+                collect_bindings(&x.body, out, globals);
+                for h in &x.handlers {
+                    if let Some(n) = &h.name {
+                        out.insert(n.to_string());
+                    }
+                    collect_bindings(&h.body, out, globals);
+                }
+                collect_bindings(&x.orelse, out, globals);
+                collect_bindings(&x.finalbody, out, globals);
+            }
+            Stmt::Match(x) => {
+                for c in &x.cases {
+                    collect_bindings(&c.body, out, globals);
+                }
+            }
+            Stmt::Import(x) => {
+                for a in &x.names {
+                    match (&a.asname, x.style) {
+                        (Some(n), _) => {
+                            out.insert(n.to_string());
+                        }
+                        (None, ModuleStyle::Dotted) => {
+                            out.insert(a.name.split('.').next().unwrap_or("").to_string());
+                        }
+                        (None, ModuleStyle::Path) => {}
+                    }
+                }
+            }
+            Stmt::ImportFrom(x) => {
+                for a in &x.names {
+                    out.insert(a.asname.as_ref().unwrap_or(&a.name).to_string());
+                }
+            }
+            Stmt::Global(x) => x.names.iter().for_each(|n| {
+                globals.insert(n.to_string());
+            }),
+            Stmt::Nonlocal(x) => x.names.iter().for_each(|n| {
+                globals.insert(n.to_string());
+            }),
+            _ => {}
+        }
+        // Walrus targets bind in the enclosing scope.
+        stmt_expr(s, false, &mut |e| {
+            walk(e, &mut |x| {
+                if let Expr::Named(n) = x {
+                    target_names(&n.target, &mut targets);
+                }
+            })
+        });
+        out.extend(targets);
+    }
+}
