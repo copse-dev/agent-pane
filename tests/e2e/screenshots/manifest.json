@@ -2122,8 +2122,8 @@
       "bytes": 293250
     },
     "long-prompt-scroll-submit.png": {
-      "sha256": "369797850a6e21250d75d2e686eef1b5fcaaa5c9d4e8449b0077469771b9d066",
-      "bytes": 151237
+      "sha256": "10fde008d601a072aca669bb8316397e1fd978f8ed937fb433f62b873311124c",
+      "bytes": 148228
     },
     "machine-turn-attribution.png": {
       "sha256": "a4a394d8a9bc5c95062e5c013782d9d9aa6c1c6697f546b1f2a91cee9df8f9e8",
@@ -2734,8 +2734,8 @@
       "bytes": 291691
     },
     "paste-unsupported-image-toast.png": {
-      "sha256": "c6db4a3c21679f4624041e059cc8b9a3ba755b4fbbba61bb80847d31332064ce",
-      "bytes": 307260
+      "sha256": "9404f3c0fd0d4f7f9eaf18c6d6cccd328a1e66a8326e4f785b97465e8592ddad",
+      "bytes": 324645
     },
     "personal-plugin-thread-model-picker.png": {
       "sha256": "f8bf696b5897870068d5b172367586628d535356b815c242c732e4005b9b2445",
@@ -3306,8 +3306,8 @@
       "bytes": 124299
     },
     "review-checker-inconclusive.png": {
-      "sha256": "360504541b021996308debf749c3daf99ecb3f97962e13cc0fe31d731707b567",
-      "bytes": 343341
+      "sha256": "71cd0f361b4e145681304a9093596910b2633e3351e95fc1108923dab01e0002",
+      "bytes": 369564
     },
     "review-findings-card-dismissed.png": {
       "sha256": "351347592741c20fc419a6b657f1cdc86f60ebe48c427a7163d7915cb6e680a6",
@@ -3962,8 +3962,8 @@
       "bytes": 318991
     },
     "settings-mcp-permission-group-blocked.png": {
-      "sha256": "fbd654f0ec80c39c59d806dcb843a890a1d9f9f99525a4a4b50cb0e360ee49e3",
-      "bytes": 339814
+      "sha256": "2094d3df498f2d61cbd061f2f56d05c3665a26f4cbee04e50e22e300c147d3a2",
+      "bytes": 337380
     },
     "settings-mcp-server-row.png": {
       "sha256": "5576e78ae4e104f097b037b2483014454f65405e58cc6f67d716d074a6675094",
@@ -4150,8 +4150,8 @@
       "bytes": 61975
     },
     "settings-shell-security.png": {
-      "sha256": "783af13ede65900a8b9a32d8e7e39a6b06228d574b39da6f50375c2445de74a9",
-      "bytes": 209737
+      "sha256": "712c0a86f6207a28db58a80de1db592ab2975deabd364a28bbe5efbfa1bd54d9",
+      "bytes": 161701
     },
     "settings-site-building-plugin.png": {
       "sha256": "6b4a3a99ce9d4518664ff151b057dd8cd2246f9542476996a2b999ec2e6a5adf",
@@ -4338,8 +4338,8 @@
       "bytes": 136932
     },
     "settings-trusted-package-registries.png": {
-      "sha256": "b32c94b67f927d0e705e84e291524238be06a8c47c652b4221a149c1ca7227bf",
-      "bytes": 41648
+      "sha256": "2270becbe27914f51e79a2ccb78fba3f70bdc992998ef29ded67d61197acc74c",
+      "bytes": 47614
     },
     "settings-trusted-ssh-hosts.png": {
       "sha256": "d3e54160fc408f2f94b7eb224754b714c7050b0ee82e5f396a82248a70dac715",
