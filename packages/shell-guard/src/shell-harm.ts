@@ -45,6 +45,10 @@ export interface ShellHarmContext {
    * `rsync`, and `sftp`, lower-case. Any other host prompts. Empty by default.
    */
   trustedSshHosts?: readonly string[]
+  /** Package registry origins the user trusts installs from. Any other non-default registry prompts. */
+  trustedPackageRegistries?: readonly string[]
+  /** Production contexts, projects or hosts; any infrastructure command naming one prompts. */
+  productionTargets?: readonly string[]
   /** Whether a path exists; lets `npx <tool>` run a project dependency's own binary. */
   pathExists?: (path: string) => boolean
 }

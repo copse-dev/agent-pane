@@ -179,6 +179,10 @@ export const trustedShellCommandsSchema = z.array(z.string().min(1).max(128)).ma
 
 /** Hosts trusted with ssh/scp/rsync under Guarded YOLO (see @copse/shell-guard/trusted-ssh-hosts.ts). */
 export const trustedSshHostsSchema = z.array(z.string().min(1).max(253)).max(200)
+/** Registry origins trusted for installs under Guarded YOLO (see @copse/shell-guard/trusted-package-registries.ts). */
+export const trustedPackageRegistriesSchema = z.array(z.string().min(1).max(2048)).max(100)
+/** Production targets that make Guarded YOLO ask (see @copse/shell-guard/production-targets.ts). */
+export const productionTargetsSchema = z.array(z.string().min(1).max(253)).max(200)
 
 /** Highest auto-approval tier honoured for shell commands (see @shared/auto-approval.ts). */
 export const autoApprovalLevelSchema = z.enum(AUTO_APPROVAL_LEVELS)
@@ -462,6 +466,12 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // Permissions). Written on its own through `settings:set`, not the security
   // bundle, so the IPC protocol does not change shape.
   trustedSshHosts: trustedSshHostsSchema,
+  // Registry origins Guarded YOLO may install from without a confirmation,
+  // written the same way as the SSH host list.
+  trustedPackageRegistries: trustedPackageRegistriesSchema,
+  // Production contexts, projects and hosts that make Guarded YOLO ask, written
+  // the same way.
+  productionTargets: productionTargetsSchema,
 } as const satisfies Record<string, z.ZodType>
 
 export type RendererWritableSettingKey = keyof typeof RENDERER_WRITABLE_SETTING_SCHEMAS

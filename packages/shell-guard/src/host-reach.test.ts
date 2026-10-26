@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { hostReachReasons, type HostReachContext } from './host-reach.ts'
+import {
+  commandPackageRegistries,
+  hostReachReasons,
+  sshDestinationHosts,
+  type HostReachContext,
+} from './host-reach.ts'
 
 const base: HostReachContext = { workspaceRoot: '/work/project' }
 
@@ -394,5 +399,63 @@ describe('hostReachReasons — shell history', () => {
     assert.ok(!reaches('history; rg token src'))
     assert.ok(!reaches('history && grep -rn PASSWORD src'))
     assert.ok(reaches('history 50 | tail -20 | grep -i secret'))
+  })
+})
+
+describe('sshDestinationHosts', () => {
+  it('lists the normalized hosts each SSH-family client names', () => {
+    assert.deepEqual(sshDestinationHosts('ssh deploy@Build-Box.local uptime'), ['build-box.local'])
+    assert.deepEqual(sshDestinationHosts('scp a.txt box:/tmp/ && rsync -a dir/ other:/srv/'), [
+      'box',
+      'other',
+    ])
+    assert.deepEqual(sshDestinationHosts('ssh -J jump target true'), ['jump', 'target'])
+    assert.deepEqual(sshDestinationHosts('grep ssh notes.md'), [])
+  })
+})
+
+describe('trusted package registries', () => {
+  const REGISTRY = /package registry other than the default/
+  const trusted: HostReachContext = {
+    workspaceRoot: '/w',
+    trustedPackageRegistries: ['https://npm.corp.example', 'https://proxy.corp.example'],
+  }
+  const untrusted: HostReachContext = { workspaceRoot: '/w' }
+  const asks = (command: string, context: HostReachContext): boolean =>
+    hostReachReasons(command, context).some((reason) => REGISTRY.test(reason))
+
+  it('lets an install from a trusted registry through', () => {
+    for (const command of [
+      'npm install left-pad --registry https://npm.corp.example/',
+      'npm install left-pad --registry=npm.corp.example',
+      'GOPROXY=https://proxy.corp.example go mod download',
+      'GOPROXY=https://proxy.corp.example|https://npm.corp.example go mod download',
+    ]) {
+      assert.equal(asks(command, untrusted), true, command)
+      assert.equal(asks(command, trusted), false, command)
+    }
+  })
+
+  it('keeps asking when any registry is untrusted or verification is turned off', () => {
+    for (const command of [
+      'npm install x --registry https://evil.example',
+      'GOPROXY=https://proxy.corp.example,direct go mod download',
+      'GOPROXY=off go build',
+      'GOSUMDB=off go mod download',
+      'pip install x --trusted-host npm.corp.example',
+      'npm install x --registry http://npm.corp.example',
+    ]) {
+      assert.equal(asks(command, trusted), true, command)
+    }
+  })
+
+  it('lists the registry origins a command selects', () => {
+    assert.deepEqual(
+      commandPackageRegistries(
+        'npm i a --registry https://npm.corp.example/x && pip install b --index-url https://pypi.corp.example/simple --trusted-host pypi.corp.example',
+      ),
+      ['https://npm.corp.example', 'https://pypi.corp.example'],
+    )
+    assert.deepEqual(commandPackageRegistries('npm install left-pad'), [])
   })
 })

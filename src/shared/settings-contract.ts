@@ -167,6 +167,8 @@ export interface SettingsValues {
     forwardAgent?: boolean | undefined
   }>
   trustedSshHosts: Array<string>
+  trustedPackageRegistries: Array<string>
+  productionTargets: Array<string>
   classifierProviders: { version: 1; profiles: ClassifierProfile[] }
   safetyScreeningClassifier: string
   backgroundClassifier: string
@@ -228,6 +230,8 @@ export type SettingsSnapshot = { [K in keyof SettingsValues]?: SettingsValues[K]
 /** Dedicated credential, security and host-owned values are never ordinary updates. */
 type DedicatedSettingKey =
   | 'trustedSshHosts'
+  | 'trustedPackageRegistries'
+  | 'productionTargets'
   | 'classifierProviders'
   | 'safetyScreeningClassifier'
   | 'backgroundClassifier'

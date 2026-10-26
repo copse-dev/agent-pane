@@ -117,3 +117,15 @@ condition = "AND"
 regexTarget = "match"
 regexes = ['''ghp_DesktopTokenForTheFakeGitHub''']
 paths = ['''^src/main/project-sandbox/github-reads-sandbox\.test\.ts$''']
+
+[[allowlists]]
+# The environment-setup redaction test first carried an inert `API_TOKEN=` value
+# as a literal (commit 4a4a1866358a on PR #3950). The test now assembles its
+# fake value at run time; this entry clears only that exact literal in the one
+# file's history, so any other credential-shaped value there is still reported.
+description = "Inert environment-setup redaction fixture (history only)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''API_TOKEN=abcdef123456''']
+paths = ['''^src/main/services/security/environment-suggestions\.test\.ts$''']

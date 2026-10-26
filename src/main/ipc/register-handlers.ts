@@ -40,6 +40,13 @@ import {
 } from '../services/classifiers/classifier-service.ts'
 import { recordClassifierResultUsage } from '../services/classifiers/classifier-usage.ts'
 import { localClassifiers } from '../services/classifiers/local-classifiers.ts'
+import {
+  applyEnvironmentSetup,
+  dismissEnvironmentSetup,
+  environmentSetupStatus,
+  reviewEnvironmentSetup,
+  undoEnvironmentSetup,
+} from '../services/security/environment-setup.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { scaffoldProject } from '../services/project-scaffold.ts'
 import { createProcessManagerSampler } from '../services/process-manager.ts'
@@ -464,7 +471,7 @@ import {
   mockScenarioStatus,
   parseMockScenario,
 } from '@copse/llm/mock-script.ts'
-import { applyAppIcon, setAutomationAppIconMode } from '../app-icon.ts'
+import { applyAppIcon } from '../app-icon.ts'
 import {
   createMainWindow,
   freezeMainWindowStateForQuit,
@@ -1570,6 +1577,33 @@ export function registerAllHandlers(
     return localClassifiers().connect(parseIpcArgs(keyProviderSchema.max(53), [raw]))
   })
 
+  // Environment setup: the renderer sends only which issued suggestion ids were
+  // ticked; main applies the values it computed (docs/plans/environment-setup.md).
+  ipcMain.handle('environment-setup:status', (event) => {
+    assertMainFrameSender(event, win)
+    return environmentSetupStatus()
+  })
+  ipcMain.handle('environment-setup:review', (event) => {
+    assertMainFrameSender(event, win)
+    return reviewEnvironmentSetup()
+  })
+  ipcMain.handle('environment-setup:apply', (event, rawReview: unknown, rawIds: unknown) => {
+    assertMainFrameSender(event, win)
+    const [reviewId, ids] = parseIpcArgs(z.tuple([z.uuid(), z.array(z.uuid()).max(64)]), [
+      rawReview,
+      rawIds,
+    ])
+    return applyEnvironmentSetup(reviewId, ids)
+  })
+  ipcMain.handle('environment-setup:undo', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return undoEnvironmentSetup(parseIpcArgs(z.uuid(), [raw]))
+  })
+  ipcMain.handle('environment-setup:dismiss', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return dismissEnvironmentSetup(parseIpcArgs(z.boolean(), [raw]))
+  })
+
   ipcMain.handle('chat-gpt-plan:status', (event) => {
     assertMainFrameSender(event, win)
     return getChatGptPlanService().status()
@@ -1905,12 +1939,6 @@ export function registerAllHandlers(
   ipcMain.handle('app-icon:apply', () => {
     const mainWin = getMainWindow()
     applyAppIcon(mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
-  })
-  ipcMain.handle('app-icon:set-automation-mode', (event, active: unknown) => {
-    assertMainFrameSender(event, win)
-    const enabled = parseIpcArgs(z.boolean(), [active])
-    const mainWin = getMainWindow()
-    setAutomationAppIconMode(enabled, mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
   })
   ipcMain.handle('usage:get-summary', () => getUsageSummary())
   // What the classifiers (shell guard, tier screen, terminal-read screen) did for one
