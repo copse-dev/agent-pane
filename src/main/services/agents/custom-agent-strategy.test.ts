@@ -41,7 +41,7 @@ const PARENT = tools(
 const names = (list: LLMTool[]): string[] => list.map((t) => t.name)
 
 describe('resolveCustomAgentTools', () => {
-  it('withholds parent-scoped skill activation even when a profile explicitly allows it', () => {
+  it('allows independently budgeted skill activation when the profile allows it', () => {
     for (const allowed of [null, ['read_file', 'read_skill']]) {
       assert.deepEqual(
         names(
@@ -50,7 +50,7 @@ describe('resolveCustomAgentTools', () => {
             disallowedTools: [],
           }),
         ),
-        ['read_file'],
+        ['read_file', 'read_skill'],
       )
     }
   })

@@ -101,6 +101,32 @@ describe('verifyFindings', () => {
     }
   }
 
+  it('gives the challenger independent causal and historical evidence requirements', async () => {
+    const provider = new ScriptedProvider([
+      {
+        type: 'tool_call',
+        name: 'verdict',
+        args: {
+          status: 'undetermined',
+          reason: 'The process boundary was not established by the available evidence.',
+        },
+      },
+    ])
+    const result = await verifyFindings({
+      ...options([candidate('boundary', 'security', 1)], {}),
+      challenger: { model: 'challenger', provider },
+    })
+    const message = provider.calls[0]?.find((entry) => entry.role === 'system')
+    const system = message && 'content' in message ? message.content : ''
+    assert.equal(typeof system, 'string')
+    assert.match(system, /its existing authority, and the additional authority or access obtained/)
+    assert.match(system, /actual process and sandbox boundaries/)
+    assert.match(system, /earlier Copse verdict is not independent evidence/)
+    assert.match(system, /Address rebuttals with new evidence/)
+    assert.match(system, /explicitly identify the unsupported part/)
+    assert.equal(result.records[0]?.result, 'undetermined')
+  })
+
   it(
     'overlaps at most two findings and keeps result order when they finish out of order',
     { timeout: 5000 },

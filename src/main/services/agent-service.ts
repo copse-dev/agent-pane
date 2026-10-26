@@ -1956,6 +1956,7 @@ async function runAgentWithInlineCanvas(
       invokedSkills,
       parentLoopTools.map((tool) => tool.name),
       systemPromptBuild.invokedSkillContextBytes,
+      'native',
     )
     const activeNestedInstructionPaths = new Set(
       systemPromptBuild.instructionMetadata.activeNestedPaths,

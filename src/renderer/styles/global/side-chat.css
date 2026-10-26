@@ -67,13 +67,40 @@
   background: var(--bg-selected);
   white-space: pre-wrap;
 }
-.side-chat-msg.is-assistant {
-  align-self: flex-start;
-  background: var(--bg-subtle);
-}
 .side-chat-msg.is-error {
   align-self: flex-start;
   color: var(--error);
+}
+/* Mirrors the main transcript's prose tier (conversation.css), minus its
+   reading-column width and wider block spacing, which a narrow bubble can't use.
+   docs/ui-taste.md → "Assistant reading rhythm". */
+.side-chat-msg.is-assistant {
+  align-self: flex-start;
+  background: var(--bg-subtle);
+  --sm-line-height: 1.6;
+  font-family: var(--font-prose);
+  font-size: var(--font-size-md);
+  line-height: var(--sm-line-height);
+  color: var(--text-prose);
+}
+.side-chat-msg.is-assistant :is(strong, b) {
+  font-weight: 600;
+  color: var(--text-prose-strong);
+}
+.side-chat-msg.is-assistant a :is(strong, b) {
+  color: inherit;
+}
+.side-chat-msg.is-assistant :is(h1, h2, h3) {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+.side-chat-msg.is-assistant pre {
+  font-size: var(--sm-font-size-sm);
+  line-height: var(--line-height-base);
+}
+.side-chat-msg.is-assistant :is(li + li) {
+  margin-top: var(--spacing-xs);
 }
 .side-chat-msg.is-assistant > :first-child {
   margin-top: 0;

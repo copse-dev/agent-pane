@@ -71,7 +71,7 @@ export function threadProjectExecutionTarget(): ExecutionTarget | null {
   const host = findConfiguredSshHost(sshHost)
   if (!host) {
     throw new ExecutionTargetMismatchError(
-      `SSH host "${sshHost}" is not configured. Add it in Settings → SSH.`,
+      `SSH host "${sshHost}" is not configured. Add it in Settings → Machines.`,
     )
   }
   return {
@@ -118,7 +118,7 @@ export function getActiveExecutionTarget(): ExecutionTarget {
   const host = findConfiguredSshHost(sshHost)
   if (!host) {
     throw new ExecutionTargetMismatchError(
-      `SSH host "${sshHost}" is not configured. Add it in Settings → SSH.`,
+      `SSH host "${sshHost}" is not configured. Add it in Settings → Machines.`,
     )
   }
 

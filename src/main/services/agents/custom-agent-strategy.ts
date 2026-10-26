@@ -35,9 +35,6 @@ export const CUSTOM_AGENT_FORBIDDEN_TOOLS: readonly string[] = [
   // A worker reports findings; the parent owns the shared thread plan.
   'update_thread_plan',
   'report_plan_completion',
-  // Skill activation is parent-run scoped. Children have no catalog/budget;
-  // do not advertise a tool that would fail or inherit the parent's allowance.
-  'read_skill',
 ]
 
 /** Steps a custom agent may take when its definition sets no `maxTurns`. */

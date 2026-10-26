@@ -10,6 +10,7 @@ export interface SkillSummary {
 }
 
 export interface SkillMetadata extends SkillSummary {
+  requirements?: import('../skills/skill-requirements.ts').SkillRequirements
   /** Absence in legacy snapshots means manually invocable. */
   userInvocable?: boolean
   license?: string
@@ -20,6 +21,8 @@ export interface SkillMetadata extends SkillSummary {
   skillRoot: string
   disableModelInvocation: boolean
   paths: string[]
+  /** Explicit same-container dependencies; only user-invoked workflows grant access. */
+  dependencies?: string[]
   /**
    * Name of the plugin that ships this skill (a bundled or installed Cursor
    * plugin, or an Agent Plugins package). Absent for skills installed directly
@@ -37,7 +40,14 @@ export interface SkillMetadata extends SkillSummary {
 }
 
 export interface SkillDiagnostic {
-  kind: 'invalid' | 'shadowed' | 'compatibility' | 'unsupported'
+  kind:
+    | 'invalid'
+    | 'shadowed'
+    | 'compatibility'
+    | 'unsupported'
+    | 'unavailable'
+    | 'disabled'
+    | 'untested'
   skillPath: string
   source: SkillSource
   name: string
