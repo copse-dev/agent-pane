@@ -27,6 +27,13 @@
  * same trust level as the model's own `expects_sandbox_block` hint.
  */
 
+import {
+  SHELL_LANGUAGE_INTERPRETERS,
+  commandName,
+  shellSegments,
+  unwrapWrappers,
+} from './shell-argv.ts'
+
 export interface SandboxDenialClassification {
   /** Stable operation descriptor, independent of which tool ran the command (issue #1436 point 2). */
   operation: string
@@ -43,13 +50,154 @@ interface SandboxDenialSignature {
   classify: (command: string) => SandboxDenialClassification
 }
 
-const GIT_SUBCOMMAND = /(?:^|[\s;&|])git\s+(fetch|push|pull|clone|ls-remote|submodule)\b/
+const GIT_NETWORK_SUBCOMMANDS: ReadonlySet<string> = new Set([
+  'fetch',
+  'push',
+  'pull',
+  'clone',
+  'ls-remote',
+  'submodule',
+])
 
-/** `git fetch` / `git push` / … from the command line, or a generic fallback. */
-function gitNetworkOperation(command: string): string {
-  const match = GIT_SUBCOMMAND.exec(command)
-  return match?.[1] ? `git ${match[1]}` : 'git network access'
+/** Git global options whose value is a separate argument (`git -C dir fetch`). */
+const GIT_VALUE_OPTIONS: ReadonlySet<string> = new Set([
+  '-c',
+  '-C',
+  '--git-dir',
+  '--work-tree',
+  '--namespace',
+])
+
+/**
+ * A shell's `-c`, alone or ending a cluster of single-letter options (`bash -lc`,
+ * `sh -ec`). The shared `inlineCodeBody` matches only the exact flag, and its
+ * `-e` means inline code to node, not errexit to a shell.
+ */
+const SHELL_INLINE_CODE_FLAG = /^-[a-z]*c$/
+
+/** PowerShell's inline-code flag — not a single-letter bundle, so `SHELL_INLINE_CODE_FLAG` misses it. */
+const POWERSHELL_INLINE_CODE_FLAG = /^-command$/i
+
+/** Shell options whose value is a separate argument (`bash -o pipefail -c …`). */
+const SHELL_VALUE_OPTIONS: ReadonlySet<string> = new Set([
+  '-o',
+  '+o',
+  '-O',
+  '+O',
+  '--rcfile',
+  '--init-file',
+])
+
+/**
+ * The command string a shell interpreter's argv runs with `-c`, or null. A shell
+ * reads its own options only up to the first operand, so in `bash script.sh -c x`
+ * the `-c` is an argument to the script and no inline code runs.
+ */
+function shellInlineBody(argv: readonly string[]): string | null {
+  for (let index = 1; index < argv.length - 1; index += 1) {
+    const token = argv[index] ?? ''
+    if (SHELL_INLINE_CODE_FLAG.test(token) || POWERSHELL_INLINE_CODE_FLAG.test(token)) {
+      return argv[index + 1] ?? null
+    }
+    if (SHELL_VALUE_OPTIONS.has(token)) {
+      index += 1
+      continue
+    }
+    if (token === '--' || !/^[-+]/.test(token)) return null
+  }
+  return null
 }
+
+/**
+ * Reserved words that only introduce a conditional or loop branch, never a
+ * command in their own right. The shell parser has no notion of these — they
+ * surface as an ordinary argv[0] once a keyword lands at the start of its own
+ * segment (its own line, or right after `;`/`)`), which is exactly where a
+ * shell itself only recognises them as reserved words. Their presence means
+ * at least one segment in this command might not run, so `commandArgvs` can
+ * no longer promise every argv it returns actually executes.
+ */
+const CONDITIONAL_KEYWORDS: ReadonlySet<string> = new Set([
+  'if',
+  'then',
+  'elif',
+  'else',
+  'fi',
+  'case',
+  'esac',
+  'for',
+  'while',
+  'until',
+  'do',
+  'done',
+  'select',
+])
+
+/**
+ * Every argv that runs as a command, after wrapper unwrapping (`env FOO=1 git
+ * push`, `timeout 5 gh …`), including the body of `sh -c '…'`. Built from the
+ * shell parser alone — never the raw-text fallback — so a program name inside a
+ * quoted argument (`grep -rn "then git fetch" docs`) or after another command
+ * (`echo git push`) is data, not a command, and predicts no operation.
+ *
+ * Returns no argvs at all once a conditional/loop keyword shows up as a
+ * segment's own head (`if ...; then\n  git fetch\nfi`, `case $1 in start)
+ * git fetch ;; esac`): this module cannot know which branch would actually
+ * run without executing it, and for a cache that preemptively fronts an
+ * "outside the sandbox?" prompt, a missed match is a quiet no-op while a
+ * false one is the exact bug (#1436) this predicts around. Reactive
+ * classification of an already-failed command degrades the same way, to the
+ * generic egress-proxy label.
+ */
+function commandArgvs(command: string): string[][] {
+  const argvs: string[][] = []
+  for (const segment of shellSegments(command, false)) {
+    const argv = unwrapWrappers(segment)
+    if (argv.length === 0) continue
+    if (CONDITIONAL_KEYWORDS.has(commandName(argv[0]))) return []
+    argvs.push(argv)
+    if (SHELL_LANGUAGE_INTERPRETERS.has(commandName(argv[0]))) {
+      const body = shellInlineBody(argv)
+      if (body !== null) argvs.push(...commandArgvs(body))
+    }
+  }
+  return argvs
+}
+
+/** The subcommand of a `git` argv, skipping global options and their values. */
+function gitSubcommand(argv: readonly string[]): string | undefined {
+  for (let index = 1; index < argv.length; index++) {
+    const token = argv[index] ?? ''
+    if (GIT_VALUE_OPTIONS.has(token)) {
+      index++
+      continue
+    }
+    if (token.startsWith('-')) continue
+    return token
+  }
+  return undefined
+}
+
+/**
+ * `git fetch` / `git push` / … for a git network subcommand in command position,
+ * `git network access` for any other git invocation, or null when no git
+ * command runs at all.
+ */
+function gitNetworkOperation(command: string): string | null {
+  let ranGit = false
+  for (const argv of commandArgvs(command)) {
+    if (commandName(argv[0]) !== 'git') continue
+    ranGit = true
+    const subcommand = gitSubcommand(argv)
+    if (subcommand !== undefined && GIT_NETWORK_SUBCOMMANDS.has(subcommand)) {
+      return `git ${subcommand}`
+    }
+  }
+  return ranGit ? 'git network access' : null
+}
+
+/** Operation name for a CONNECT-tunnel denial whose command runs no git. */
+const EGRESS_NETWORK_OPERATION = 'network access through the egress proxy'
 
 /**
  * Named table of known sandbox-denial signatures. Each entry cites the exact
@@ -69,6 +217,14 @@ export const SANDBOX_DENIAL_SIGNATURES: readonly SandboxDenialSignature[] = [
     pattern: /CONNECT tunnel failed, response 403/,
     classify: (command: string): SandboxDenialClassification => {
       const operation = gitNetworkOperation(command)
+      if (operation === null) {
+        return {
+          operation: EGRESS_NETWORK_OPERATION,
+          advice:
+            'This command needs network access that was denied (CONNECT tunnel failed, response ' +
+            '403). This is specific to the host it tried to reach, not a general network outage.',
+        }
+      }
       return {
         operation,
         advice:
@@ -196,8 +352,6 @@ export function prefixWithSandboxCacheSkipNote(output: string): string {
   return `[${SANDBOX_DENIAL_CACHE_SKIP_NOTE}]\n${output}`
 }
 
-const GH_INVOCATION = /(?:^|[\s;&|])gh\s+\S/
-
 /**
  * Best-effort operation descriptor derived from the COMMAND alone (never its
  * output), for the cases where the shape of the command already predicts which
@@ -208,7 +362,10 @@ const GH_INVOCATION = /(?:^|[\s;&|])gh\s+\S/
  * are only ever classified reactively, from an actual failure's output.
  */
 export function operationDescriptorForCommand(command: string): string | null {
-  if (GIT_SUBCOMMAND.test(command)) return gitNetworkOperation(command)
-  if (GH_INVOCATION.test(command)) return 'read ~/.config/gh'
+  const gitOperation = gitNetworkOperation(command)
+  if (gitOperation !== null && gitOperation !== 'git network access') return gitOperation
+  if (commandArgvs(command).some((argv) => commandName(argv[0]) === 'gh')) {
+    return 'read ~/.config/gh'
+  }
   return null
 }

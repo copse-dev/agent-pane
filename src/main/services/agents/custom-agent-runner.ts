@@ -1,3 +1,8 @@
+import { buildSkillsCatalogBlock } from '../skills/skill-prompt.ts'
+import {
+  createSkillActivationTurn,
+  runWithSkillActivationTurn,
+} from '../skills/skill-activation.ts'
 import { runSubagent } from '@copse/agent/run-subagent.ts'
 import { conversationTokenBudget } from '@copse/agent/trim-history.ts'
 import { readFileLimitsForSubagent } from '@copse/agent/read-file-limits.ts'
@@ -108,7 +113,11 @@ export async function runCustomAgent(
         })),
   )
   const tools = resolveCustomAgentTools(available, agent)
-  const systemPrompt = buildCustomAgentSystemPrompt(agent)
+  const toolNames = tools.map((tool) => tool.name)
+  // A child owns its allowance, even when launched inside a parent activation scope.
+  const skillTurn = createSkillActivationTurn([], toolNames, 0, 'subagent')
+  const systemPrompt =
+    buildCustomAgentSystemPrompt(agent) + buildSkillsCatalogBlock(toolNames, 'subagent')
   const userTask = buildCustomAgentTask({ prompt, parentGoal: ctx.parentGoal, workspace })
 
   const subagentMessages: LLMMessage[] = [
@@ -149,10 +158,12 @@ export async function runCustomAgent(
     return summary
   }
 
-  return runWithAgentRunReadFileLimits(readLimits, () =>
-    // `readonly: true` (Cursor) / `permissionMode: plan` (Claude Code) map onto
-    // Copse's existing no-mutations scope. This only ever narrows: a parent turn
-    // already in read-only mode stays read-only for the agent too.
-    agent.readonly ? runWithAgentRunReadonly(true, run) : run(),
+  return runWithSkillActivationTurn(skillTurn, () =>
+    runWithAgentRunReadFileLimits(readLimits, () =>
+      // `readonly: true` (Cursor) / `permissionMode: plan` (Claude Code) map onto
+      // Copse's existing no-mutations scope. This only ever narrows: a parent turn
+      // already in read-only mode stays read-only for the agent too.
+      agent.readonly ? runWithAgentRunReadonly(true, run) : run(),
+    ),
   )
 }

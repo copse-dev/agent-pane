@@ -249,6 +249,9 @@ let layoutMounted = false
 let unmountPopoutTitlebar: (() => void) | null = null
 let handleStopShortcut: ((key: 'Escape' | 'Enter', target: EventTarget | null) => boolean) | null =
   null
+// Set once the full layout mounts; the invalidation warning can be wired up
+// before the input bar (and its model picker) exist.
+let focusThreadModelPicker: (() => void) | null = null
 let openProcessManager: (() => void) | null = null
 // The two request queues the Activity views read; set once the dialogs are mounted.
 let activitySources: ActivitySources | null = null
@@ -395,6 +398,7 @@ async function boot(): Promise<void> {
     attachProviderInvalidationWarning(store, api, {
       warn: showConfirmDialog,
       openSettings: openModelSettings,
+      openThreadModelPicker: () => focusThreadModelPicker?.(),
     })
     attachAutomationController(store, api)
     // When `gh_pr_create` turns the diff you're reading into a PR, move the
@@ -655,6 +659,7 @@ function mountFullLayout(): void {
     portraitPanelHost: requireElement('pane-chat'),
   })
   handleStopShortcut = inputBar.handleStopShortcut
+  focusThreadModelPicker = inputBar.openModelPicker
   const conversationRoot = requireElement('conversation')
   mountConversation(conversationRoot, store, api)
   mountConversationSearch(conversationRoot)
