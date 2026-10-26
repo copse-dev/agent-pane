@@ -6,7 +6,7 @@ import { getRegisteredSetting, setSettings } from './settings.ts'
 
 export const settingsUpdateSchema = z
   .strictObject(RENDERER_WRITABLE_SETTING_SCHEMAS)
-  .omit({ trustedSshHosts: true })
+  .omit({ trustedSshHosts: true, trustedPackageRegistries: true, productionTargets: true })
   .extend({
     roleAssignments: RENDERER_WRITABLE_SETTING_SCHEMAS.roleModels,
   })

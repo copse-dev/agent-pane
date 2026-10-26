@@ -1,7 +1,6 @@
 import { runCommand } from '../exec/command-runner.ts'
 import { readOnlyWorkspaceSandboxOverlay } from '../../project-sandbox/config.ts'
 import { runGh, parseGhJson } from './gh-service.ts'
-import { getWorkspaceRoot } from '../workspace.ts'
 import { isGitAvailableForTarget, isGhAvailable } from '../tool-availability.ts'
 import {
   isInsideGitWorkTree,
@@ -151,7 +150,7 @@ async function runGit(
  * shared tree's stale `+1 -1` chip.
  */
 export async function getPrWorkspaceContext(
-  root: string | null = getWorkspaceRoot(),
+  root: string | null,
   dependencies: { runGh: typeof runGh } = { runGh },
 ): Promise<PrWorkspaceContext> {
   const empty: PrWorkspaceContext = {
@@ -235,8 +234,8 @@ async function canOpenPrForBranch(
 /** Branch name and open PR (when `gh` is available) for the status bar. */
 export async function getGitBranchStatus(
   projectId: string,
-  forBranch?: string,
-  root: string | null = getWorkspaceRoot(),
+  forBranch: string | undefined,
+  root: string | null,
   dependencies: { runGh: typeof runGh } = { runGh },
 ): Promise<GitBranchStatus> {
   const empty: GitBranchStatus = { currentBranch: null, pr: null }

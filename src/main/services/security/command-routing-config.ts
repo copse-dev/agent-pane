@@ -1,5 +1,5 @@
 import { getSetting, updateSetting } from '../storage/settings.ts'
-import { getWorkspaceRoot } from '../workspace.ts'
+import { getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { isWorkspaceTrusted } from './workspace-trust.ts'
 import {
@@ -38,17 +38,19 @@ function trustedCommandSet(): Set<string> {
  *
  * Both the permission gate (does it prompt?) and the shell tool / todo checks
  * (does it run unsandboxed?) call this on the SAME raw command, so the prompt
- * decision and the execution context can never disagree.
+ * decision and the execution context can never disagree. Trust is read from the
+ * run's project and paths are judged against the run's execution root, the same
+ * roots the gate uses, so a worktree or background thread is not judged against
+ * whichever checkout the window happens to show.
  */
 export function routeShellCommand(command: string): CommandRouting {
   if (!getSetting<boolean>('autoRunSandboxCommands', true)) {
     return { outcome: 'defer', reasons: ['auto-run disabled'] }
   }
-  const root = getWorkspaceRoot()
-  if (!isWorkspaceTrusted(root)) {
+  if (!isWorkspaceTrusted(getAgentProjectRoot())) {
     return { outcome: 'defer', reasons: ['workspace not trusted'] }
   }
-  return resolveCommandRouting(command, root, trustedCommandSet())
+  return resolveCommandRouting(command, getAgentExecutionRoot(), trustedCommandSet())
 }
 
 /**
@@ -59,7 +61,7 @@ export function routeShellCommand(command: string): CommandRouting {
  */
 export function shellRunsOutsideSandbox(command: string): boolean {
   if (routeShellCommand(command).outcome === 'allow') return true
-  return shellRequiresOutsideSandbox(command, getWorkspaceRoot(), isProjectSandboxEnabled())
+  return shellRequiresOutsideSandbox(command, getAgentExecutionRoot(), isProjectSandboxEnabled())
 }
 
 /**
@@ -99,7 +101,7 @@ export function shellReadGrantTargets(
  * would store, so the prompt label and the stored grant can't drift apart.
  */
 export function offerableTrustedCommand(command: string): string | null {
-  if (!isWorkspaceTrusted(getWorkspaceRoot())) return null
+  if (!isWorkspaceTrusted(getAgentProjectRoot())) return null
   const head = trustableCommandHead(command)
   if (!head) return null
   return trustedCommandSet().has(head) ? null : head
