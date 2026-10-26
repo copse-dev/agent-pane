@@ -1,0 +1,22 @@
+# copse.dev — crawl everything.
+#
+# Note for whoever gets here after finding a /demo/ URL in a search index:
+# DO NOT add `Disallow: /demo/`. It would make things worse, not better.
+#
+# Everything under /demo/ is machine-published build output — the browser demos
+# (/demo/main/, /demo/release/, /demo/pr-<n>/) and the marketing-site bundles
+# beside them (/demo/main/preview/, /demo/pr-<n>-preview/) — and every page of it
+# already carries <meta name="robots" content="noindex, nofollow">, injected at
+# publish time by build.mts and .github/workflows/demo-preview.yml (see
+# scripts/lib/noindex.mts). That tag is what actually removes them from the index.
+#
+# A crawler only sees that tag if it is allowed to fetch the page. Disallowing
+# /demo/ here would stop the fetch, leave the noindex unread, and let the URLs
+# stay indexed — title-less, from the links in public PR comments — with no way
+# left to drop them. Crawling is the mechanism; blocking it breaks it.
+#
+# GitHub Pages cannot send an X-Robots-Tag header, which is why this is a meta
+# tag rather than server config.
+
+User-agent: *
+Allow: /
