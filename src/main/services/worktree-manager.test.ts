@@ -35,6 +35,7 @@ import {
   allocateThreadWorktree,
   canAdoptThreadWorktree,
   expectedThreadWorktreePath,
+  threadWorktreeOwner,
   inspectManagedThreadWorktreePath,
   inspectThreadWorktreeAttachment,
   isSandboxMountArtifact,
@@ -1990,5 +1991,16 @@ describe('inspectManagedThreadWorktreePath', () => {
     await mkdir(join(managed, '..'), { recursive: true })
     await symlink(outside, managed)
     assert.equal(await inspectManagedThreadWorktreePath('project-1', 'thread-1', managed), null)
+  })
+})
+
+describe('threadWorktreeOwner', () => {
+  it('reads the owning thread back from a managed worktree path only', () => {
+    const managed = expectedThreadWorktreePath('project-1', 'thread-1')
+    assert.deepEqual(threadWorktreeOwner(managed), { projectId: 'project-1', threadId: 'thread-1' })
+    assert.equal(threadWorktreeOwner(join(managed, 'src')), null)
+    assert.equal(threadWorktreeOwner(dirname(managed)), null)
+    assert.equal(threadWorktreeOwner(join(dirname(dirname(managed)), '..', 'p', 't')), null)
+    assert.equal(threadWorktreeOwner(tmpdir()), null)
   })
 })

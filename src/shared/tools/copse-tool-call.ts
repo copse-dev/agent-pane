@@ -1,4 +1,5 @@
 import type { ToolCall } from '@shared/types'
+import { isRecord } from '@shared/unknown-value.ts'
 
 /**
  * Display/behavior identity only; never rewrite the persisted execution name.
@@ -33,4 +34,38 @@ export function isCopseToolCall(
   return [call.name, call.programmaticName].some(
     (name) => typeof name === 'string' && normalizeCopseToolName(name) === tool,
   )
+}
+
+function stringArg(args: unknown, key: string): string | null {
+  if (!isRecord(args)) return null
+  const value = args[key]
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+/**
+ * An external ACP agent's own internal subagent dispatch (e.g. Claude Code's
+ * `Agent`/`Task` tool), as opposed to Copse's native `task` tool, which
+ * instead carries a `subagent` session. ACP gives no structured session for
+ * these — just the one tool call, tagged `kind: 'think'` — so name plus kind
+ * is the only signal available to tell "a background agent is running" apart
+ * from any other reasoning-shaped tool call.
+ */
+export function isAcpDelegateToolCall(
+  call: Pick<ToolCall, 'kind' | 'name' | 'programmaticName' | 'subagent'>,
+): boolean {
+  if (call.subagent) return false
+  if (call.kind !== 'think') return false
+  return [call.name, call.programmaticName].some(
+    (name) => typeof name === 'string' && /^(agent|task)$/i.test(name),
+  )
+}
+
+/** The subagent type the delegate dispatched (e.g. `"Explore"`), as the calling agent reported it. */
+export function acpDelegateKind(call: Pick<ToolCall, 'args'>): string | null {
+  return stringArg(call.args, 'subagent_type')
+}
+
+/** The delegated task's own description: ACP's live title first, else the dispatch prompt/description. */
+export function acpDelegatePrompt(call: Pick<ToolCall, 'title' | 'args'>): string {
+  return call.title ?? stringArg(call.args, 'prompt') ?? stringArg(call.args, 'description') ?? ''
 }

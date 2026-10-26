@@ -420,7 +420,7 @@ const E2E_WORKSPACE_FILES: Record<string, string> = {
 }
 
 /** Commit date for the fixture's one commit; fixed so the hash never moves. */
-const E2E_WORKSPACE_COMMIT_DATE = '2026-01-01T00:00:00Z'
+export const E2E_WORKSPACE_COMMIT_DATE = '2026-01-01T00:00:00Z'
 
 export function seedStableWorkspace(options: { files?: Record<string, string> } = {}): string {
   const root = E2E_WORKSPACE_ROOT
@@ -1373,6 +1373,65 @@ export function seedMarkdownWorkspaceLinkFixture(workspaceRoot: string): void {
       },
     ],
   })
+}
+
+/**
+ * Two threads; the active one's reply names a workspace file in inline code so
+ * it resolves into a file-reference link. Renaming either thread fires
+ * `threads_changed` without touching the transcript.
+ */
+export const TRANSCRIPT_REBUILD_FILE = 'src/renderer/views/command-palette.ts'
+
+export function seedTranscriptRebuildFixture(workspaceRoot: string): {
+  activeTitle: string
+  otherTitle: string
+} {
+  const projectId = 'e2e-transcript-rebuild-project'
+  const activeTitle = 'Palette ordering'
+  const otherTitle = 'Background thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: 'e2e-transcript-rebuild-active',
+    [`threads:${projectId}`]: [
+      {
+        id: 'e2e-transcript-rebuild-active',
+        title: activeTitle,
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-rebuild-user',
+            role: 'user',
+            content: 'Should projects come first in the palette?',
+            createdAt: now - 2000,
+          },
+          {
+            id: 'msg-rebuild-assistant',
+            role: 'assistant',
+            content: `The palette builds entries in \`${TRANSCRIPT_REBUILD_FILE}\` and renders them in the order they are added.`,
+            createdAt: now - 1000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now - 2000,
+        updatedAt: now,
+      },
+      {
+        id: 'e2e-transcript-rebuild-other',
+        title: otherTitle,
+        status: 'idle',
+        messages: [
+          { id: 'msg-rebuild-other', role: 'user', content: 'Unrelated.', createdAt: now - 5000 },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now - 5000,
+        updatedAt: now - 5000,
+      },
+    ],
+  })
+  return { activeTitle, otherTitle }
 }
 
 /** Thematic breaks (spaced marker runs) + multi-backtick / multi-line code spans. */

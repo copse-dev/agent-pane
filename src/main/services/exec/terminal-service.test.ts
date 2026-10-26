@@ -486,7 +486,7 @@ describe('terminal history sharing (#2433)', () => {
   after(async () => {
     if (prevWorkspaceDir === undefined) delete process.env['COPSE_WORKSPACE_DIR']
     else process.env['COPSE_WORKSPACE_DIR'] = prevWorkspaceDir
-    await rm(historyRoot, { recursive: true, force: true })
+    await rm(historyRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
   })
 
   it('gives two threads of the same project the same HISTFILE, creating the directory', () => {
@@ -690,8 +690,25 @@ describe('terminal history sharing (#2433)', () => {
     } finally {
       if (previousShell === undefined) delete process.env['SHELL']
       else process.env['SHELL'] = previousShell
-      if (session1) destroyTerminalSession(session1, OWNER)
-      if (session2) destroyTerminalSession(session2, OTHER_OWNER)
+      // Exit the shells rather than only destroying them: a killed bash writes
+      // its HISTFILE while it dies, after destroy has already detached the exit
+      // listener, and that late write races the suite's temp-directory removal.
+      const exitShell = async (
+        sessionId: string,
+        ownerId: number,
+        win: ReturnType<typeof mockWindow>,
+      ): Promise<void> => {
+        if (!sessionId) return
+        try {
+          writeTerminalSession(sessionId, ownerId, 'exit\n')
+          await waitForTerminalExit(win, sessionId)
+        } catch {
+          // The shell already exited and left the session map; nothing to exit.
+        }
+        destroyTerminalSession(sessionId, ownerId)
+      }
+      await exitShell(session1, OWNER, win1)
+      await exitShell(session2, OTHER_OWNER, win2)
     }
   })
 })

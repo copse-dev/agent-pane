@@ -128,6 +128,8 @@ export interface ApprovalRequest {
   approveOnceLabel?: string
   /** Intentional Settings-owned flow that must prompt above the open Settings dialog. */
   showWhileSettingsOpen?: boolean
+  /** Interrupt ordinary batches and require a separate decision. */
+  standalone?: boolean
   /** Offer a bounded main-process lease for exact retries in this turn tree. */
   allowTurnTreeLease?: boolean
   /** User-facing lease scope; required whenever `allowTurnTreeLease` is true. */
@@ -224,6 +226,7 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
     // things can never share one answer — and one recorded line.
     reasons: req.reasons ?? [],
     showWhileSettingsOpen: req.showWhileSettingsOpen ?? false,
+    standalone: req.standalone ?? false,
     allowTurnTreeLease: req.allowTurnTreeLease ?? false,
     turnTreeLeaseLabel: req.turnTreeLeaseLabel ?? '',
     turnTreeLeaseDefault: req.turnTreeLeaseDefault ?? false,
@@ -623,19 +626,26 @@ export function pendingApprovalRequestsForThread(
 async function deferInsteadOfPrompting(
   req: ApprovalRequest,
   threadId: string,
+  projectId: string | undefined,
   prompt: () => Promise<ApprovalResponse>,
 ): Promise<ApprovalResponse> {
   let entryId: string
   try {
-    const entry = await deferApproval({
-      threadId,
-      kind: req.type,
-      title: req.title,
-      subject: req.subject ?? req.title,
-      ...(req.cause !== undefined ? { cause: req.cause } : {}),
-      ...(req.reasons?.length ? { reasons: req.reasons } : {}),
-      ...(req.scope !== undefined ? { scope: req.scope } : {}),
-    })
+    const entry = await deferApproval(
+      {
+        threadId,
+        kind: req.type,
+        title: req.title,
+        subject: req.subject ?? req.title,
+        ...(req.cause !== undefined ? { cause: req.cause } : {}),
+        ...(req.reasons?.length ? { reasons: req.reasons } : {}),
+        ...(req.scope !== undefined ? { scope: req.scope } : {}),
+      },
+      // The run's own project, not whichever one the window has open: a
+      // schedule can fire in a background project, and Context and the status
+      // tool read the queue by the thread's project.
+      projectId !== undefined ? { projectId } : {},
+    )
     entryId = entry.id
   } catch (error) {
     console.warn('[approval] could not queue a deferral; prompting instead:', error)
@@ -673,7 +683,7 @@ export function requestApproval(
   // them growing a second code path — and without a gate being able to forget.
   const deferringThread = getActiveRunThread()
   if (deferringThread !== null && isDeferralModeActive(deferringThread)) {
-    return deferInsteadOfPrompting(req, deferringThread, () =>
+    return deferInsteadOfPrompting(req, deferringThread, context?.projectId, () =>
       requestApprovalInteractive(req, signal),
     )
   }
@@ -724,7 +734,13 @@ function requestApprovalUnpaused(
 
   // Equal questions from different chats authorize different callers. Keep
   // independent waiters in one chat without sharing consent across chats.
-  const key = JSON.stringify([dedupePrefix, threadId, approvalDedupeKey(req)])
+  // Standalone consent belongs to one caller even if two clients happen to
+  // present identical copy (for example, the same six-digit pairing code).
+  const key = JSON.stringify([
+    dedupePrefix,
+    threadId,
+    req.standalone ? randomUUID() : approvalDedupeKey(req),
+  ])
   // Only a thread-attributed request can be parked and replayed: the ledger is
   // keyed by thread, and a headless/untracked caller has no retry to serve.
   const ledgerKey = threadId === null ? null : abandonedVerdictKey(threadId, key)

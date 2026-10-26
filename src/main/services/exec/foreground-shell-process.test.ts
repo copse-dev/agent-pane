@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
-import { runShellOnce } from './foreground-shell-process.ts'
+import { listForegroundShellProcesses, runShellOnce } from './foreground-shell-process.ts'
 import { setShellOutputSink } from './shell-output-context.ts'
 import {
   getBackgroundProcessLogs,
@@ -119,6 +119,23 @@ describe('foreground shell interruption', () => {
     assert.match(output, /dropped \d+ bytes/)
   })
 
+  it('lists a running command under its thread until it exits or moves to the background', async () => {
+    const finished = start(`echo ready $$; sleep 0.3`)
+    const pid = Number(/ready (\d+)/.exec(await finished.ready)?.[1])
+    assert.deepEqual(listForegroundShellProcesses(), [
+      { pid, command: 'echo ready $$; sleep 0.3', ...OWNER },
+    ])
+    await finished.result
+    assert.deepEqual(listForegroundShellProcesses(), [])
+
+    const detached = start()
+    await detached.ready
+    assert.equal(listForegroundShellProcesses().length, 1)
+    detached.controller.abort('send_now')
+    assert.ok((await detached.result).backgroundId)
+    assert.deepEqual(listForegroundShellProcesses(), [])
+  })
+
   it('Stop cancels the foreground command instead of adopting it', async () => {
     const run = start()
     await run.ready
@@ -185,5 +202,41 @@ describe('foreground shell interruption', () => {
       runShellOnce('echo unexpected', root, 5_000, controller.signal, true, process.env),
     )
     assert.deepEqual(listBackgroundProcesses(OWNER), [])
+  })
+})
+
+describe('foreground shell completion', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'copse-foreground-'))
+  })
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const run = (command: string, timeout: number): ReturnType<typeof runShellOnce> =>
+    runShellOnce(command, root, timeout, new AbortController().signal, true, process.env)
+
+  it('gives a command that reads stdin EOF instead of hanging until the timeout', async () => {
+    const startedAt = Date.now()
+    const result = await run('read x; echo got:$x', 5_000)
+    assert.match(result.output, /got:/)
+    assert.ok(Date.now() - startedAt < 4_000)
+  })
+
+  it('keeps the output captured before a timeout and points at run_background', async () => {
+    await assert.rejects(run('echo started; sleep 5', 1_000), (error: unknown) => {
+      assert.ok(error instanceof Error)
+      assert.match(error.message, /timed out after 1000ms/)
+      assert.match(error.message, /started/)
+      assert.match(error.message, /run_background with wake_on_completion/)
+      return true
+    })
+  })
+
+  it('reports a signal-killed command as a failure', async () => {
+    const result = await run('kill -9 $$', 5_000)
+    assert.equal(result.exitCode, 137)
   })
 })

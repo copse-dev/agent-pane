@@ -2,6 +2,7 @@ import { runShellOnce, type ShellRunResult } from '../services/exec/foreground-s
 import { homedir } from 'node:os'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
+import { errorMessage } from '@shared/errors.ts'
 import { getAgentExecutionRoot } from '../services/execution-root.ts'
 import { isThreadCheckoutDeferred } from '../services/thread-execution-context.ts'
 import { REQUEST_WRITE_ACCESS_TOOL } from '@shared/tools/readonly-tools.ts'
@@ -9,6 +10,7 @@ import {
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
 } from '../project-sandbox/index.ts'
+import { spawnRunsOnSshTarget } from '../project-sandbox/spawn.ts'
 import {
   shellReadGrantTargets,
   shellRunsOutsideSandbox,
@@ -34,7 +36,6 @@ import {
 } from '../services/security/denied-operations.ts'
 import {
   promptExpectedSandboxBlock,
-  promptInstallSocketFirewall,
   promptUnsandboxedShell,
 } from '../services/security/permission-gate.ts'
 import {
@@ -53,11 +54,11 @@ import {
   resolveSshExecutionTargetForCwd,
 } from '../services/ssh-workspace/execution-target.ts'
 import { getSetting } from '../services/storage/settings.ts'
-import { detectPackageInstall, wrapWithSocketFirewall } from '../services/security/safe-install.ts'
+import { detectPackageInstall, wrapWithPackageFirewall } from '../services/security/safe-install.ts'
 import {
-  installSocketFirewall,
-  isSocketFirewallAvailable,
-} from '../services/security/socket-firewall.ts'
+  packageFirewallLauncher,
+  type PackageFirewallLauncher,
+} from '../services/security/package-firewall-launcher.ts'
 import { stripTerminalControlSequences } from '../services/exec/subprocess-output-cap.ts'
 import { adoptWorktreeChangesSince, captureWorktreeBaseline } from '../services/diff-queue.ts'
 import { beginWorktreeWriter } from '../services/worktree-writers.ts'
@@ -124,8 +125,21 @@ interface UnsandboxedRetryOptions {
   readonly threadId: string | null
 }
 
+/**
+ * `rawCommand` is the raw model-authored command: every authorization decision
+ * and the prompt text use it, so the retry is judged on the same text the
+ * up-front gate judged. `executedCommand` is what actually ran (sfw-wrapped,
+ * with any injected pipefail); it is only used to attribute violations and to
+ * re-run. Named fields, not two positional `string`s, so a future call site
+ * cannot silently swap which text authorizes the retry and which one re-runs.
+ */
+interface UnsandboxedRetryCommandText {
+  readonly rawCommand: string
+  readonly executedCommand: string
+}
+
 async function maybeRetryUnsandboxed(
-  command: string,
+  commandText: UnsandboxedRetryCommandText,
   cwd: string,
   timeout_ms: number,
   signal: AbortSignal,
@@ -134,8 +148,9 @@ async function maybeRetryUnsandboxed(
   options: UnsandboxedRetryOptions,
   onDetach: () => () => Promise<void>,
 ): Promise<UnsandboxedRetryResult | 'declined' | null> {
+  const { rawCommand, executedCommand } = commandText
   if (!isProjectSandboxEnabled()) return null
-  if (!shellSandboxFailureShouldOfferUnsandboxedRetry(command, cwd, options.ranOutsideSandbox)) {
+  if (!shellSandboxFailureShouldOfferUnsandboxedRetry(rawCommand, cwd, options.ranOutsideSandbox)) {
     if (options.outsideRootPath !== null && !options.ranOutsideSandbox) {
       recordRetryWithheld(RETRY_WITHHELD_REASONS.notEligible)
     }
@@ -145,18 +160,19 @@ async function maybeRetryUnsandboxed(
   // spawn failure) — never from the command's own stdout/stderr (issue #104).
   const runnerDetection = detectSandboxFailure({
     exitCode: result.exitCode,
-    violationCount: result.sandboxViolationCount ?? sandboxViolationCountForCommand(command),
+    violationCount:
+      result.sandboxViolationCount ?? sandboxViolationCountForCommand(executedCommand),
     spawnFailed: result.spawnFailed ?? false,
   })
   // Some denials never touch the OS sandbox's own violation counter — a network
-  // egress broker, or a tool (gh, sfw) failing to reach its own files outside the
+  // egress broker, a tool (gh) failing to reach its own files outside the
   // workspace — so the runner signal is silent and the command would otherwise be
   // handed back to the model as a raw, opaque failure (issue #1436). Only consulted
   // when the runner signal itself is silent, and it can only ever earn the SAME
   // approval prompt below, never skip it — see sandbox-denial-signatures.ts.
   const signatureMatch = runnerDetection.likely
     ? null
-    : sandboxDenialRetryClassification(result.output, command)
+    : sandboxDenialRetryClassification(result.output, rawCommand)
   const detection = runnerDetection.likely
     ? runnerDetection
     : signatureMatch
@@ -171,7 +187,7 @@ async function maybeRetryUnsandboxed(
   const evidence = runnerDetection.likely ? 'runner' : 'signature'
   const approved =
     sandboxRetryMaySkipApproval(evidence, options.guardedYolo, options.unattendedContainer) ||
-    (await promptUnsandboxedShell(command, detection.reasons, signal, {
+    (await promptUnsandboxedShell(rawCommand, detection.reasons, signal, {
       readGrantApplied: options.readGrantApplied,
       requireInteractiveApproval: evidence === 'signature',
     }))
@@ -184,12 +200,21 @@ async function maybeRetryUnsandboxed(
       approved,
       options.threadId,
       signatureMatch.operation,
-      command,
+      rawCommand,
       signatureMatch.advice,
     )
   }
   if (!approved) return 'declined'
-  const retryResult = await runShellOnce(command, cwd, timeout_ms, signal, true, env, [], onDetach)
+  const retryResult = await runShellOnce(
+    executedCommand,
+    cwd,
+    timeout_ms,
+    signal,
+    true,
+    env,
+    [],
+    onDetach,
+  )
   return { result: retryResult, retryNote: signatureMatch ? SANDBOX_DENIAL_RETRY_NOTE : null }
 }
 
@@ -203,12 +228,16 @@ type PreparedCommand =
   | { refused: string }
 
 /**
- * When a command performs a package install, route the whole command through
- * Socket Firewall once (installing sfw first if needed) so the package manager
- * it invokes is proxied. JS managers additionally get `npm_config_ignore_scripts`
- * to block install lifecycle scripts. Non-install commands pass through untouched.
+ * When a command performs a package install, run the whole command behind the
+ * package firewall so every package manager it invokes is proxied and listed
+ * malicious packages are refused. JS managers additionally get
+ * `npm_config_ignore_scripts` to block install lifecycle scripts, which the
+ * banner states. Download checks are not announced: a refusal speaks for
+ * itself. Non-install commands pass through untouched. A command bound for an
+ * SSH workspace runs on the remote host, where this machine's proxy cannot
+ * reach, so it is left unwrapped.
  */
-async function prepareCommand(command: string, signal: AbortSignal): Promise<PreparedCommand> {
+function prepareCommand(command: string, cwd: string): PreparedCommand {
   const baseEnv = process.env
   if (!getSetting<boolean>('safeInstallEnabled', true)) {
     return { command, env: baseEnv, banner: '' }
@@ -217,32 +246,27 @@ async function prepareCommand(command: string, signal: AbortSignal): Promise<Pre
   const detection = detectPackageInstall(command)
   if (!detection.isInstall) return { command, env: baseEnv, banner: '' }
 
-  if (!isSocketFirewallAvailable()) {
-    const approved = await promptInstallSocketFirewall(command, signal)
-    if (!approved) {
-      return {
-        refused:
-          'Package install cancelled: Socket Firewall (sfw) is required to scan packages and was not installed.',
-      }
-    }
-    const installed = await installSocketFirewall(signal)
-    if (!installed) {
-      return { refused: 'Package install cancelled: Socket Firewall (sfw) installation failed.' }
-    }
-  }
-
-  const quote = process.platform === 'win32' ? winQuote : undefined
-  const wrapped = wrapWithSocketFirewall(command, SHELL_INVOCATION, quote)
   const env: NodeJS.ProcessEnv = detection.jsManager
     ? { ...baseEnv, npm_config_ignore_scripts: 'true' }
     : baseEnv
-  const notes = [
-    'scanned by Socket Firewall (sfw)',
-    ...(detection.jsManager ? ['install scripts disabled (npm_config_ignore_scripts)'] : []),
-  ]
-  const banner = `[safe-install] ${notes.join('; ')}\n$ ${wrapped}\n`
-  emitShellOutput(banner)
-  return { command: wrapped, env, banner }
+  const banner = detection.jsManager
+    ? '[safe-install] install scripts disabled (npm_config_ignore_scripts)\n'
+    : ''
+  if (banner) emitShellOutput(banner)
+  if (spawnRunsOnSshTarget(cwd)) return { command, env, banner }
+
+  let launcher: PackageFirewallLauncher
+  try {
+    launcher = packageFirewallLauncher()
+  } catch (error) {
+    return { refused: `Package install cancelled: ${errorMessage(error)}.` }
+  }
+  const quote = process.platform === 'win32' ? winQuote : undefined
+  return {
+    command: wrapWithPackageFirewall(command, SHELL_INVOCATION, launcher, quote),
+    env,
+    banner,
+  }
 }
 
 function formatShellSuccess(result: ShellRunResult): string {
@@ -267,10 +291,11 @@ export const runShellTool = defineTool({
     'Output is streamed to the conversation. ' +
     'Commands contained within the sandbox auto-run; network or outside-workspace access (e.g. gh, curl, git push) prompts for approval and runs outside the sandbox when the macOS project sandbox is active. ' +
     'If a sandbox-contained command fails because the sandbox blocks filesystem/process access (e.g. Playwright), the user may approve running it once outside the sandbox. ' +
-    'A sandbox-contained failure recognized as one of a known set of sandbox denials (e.g. gh reading its own config, Socket Firewall staging its binary) may be retried once with elevation, subject to the same approval as expects_sandbox_block; the result is prefixed with a one-line note when that happens, and the denial is remembered for that specific operation for the rest of this thread — a denied `git fetch` never implies `git push` or anything else is blocked too. ' +
+    'A sandbox-contained failure recognized as one of a known set of sandbox denials (e.g. gh reading its own config, a package install unable to download from inside the sandbox) may be retried once with elevation, subject to the same approval as expects_sandbox_block; the result is prefixed with a one-line note when that happens, and the denial is remembered for that specific operation for the rest of this thread — a denied `git fetch` never implies `git push` or anything else is blocked too. ' +
     'If you already expect a command to need the network or files outside the workspace (e.g. gh, cloud CLIs), set expects_sandbox_block so the user is asked up front instead of after a failed sandboxed attempt. ' +
     'Do not read credential files — .env and its variants, ~/.ssh, ~/.aws, keychains — inside or outside the workspace; ask the user for the value you need instead. ' +
-    'Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) are automatically run through Socket Firewall to scan for malicious packages, with install lifecycle scripts disabled. ' +
+    'Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) run with install lifecycle scripts disabled, and a download of a package on a known-malware list is refused with a 403. ' +
+    'Versions published to the public npm, PyPI and crates.io registries in the last 48 hours are not offered to these installs: a version range resolves to an older version, and an exact pin to a newer one fails as not found. ' +
     'A foreground command may run up to 30 minutes (timeout_ms). Use run_background for dev servers and watchers, and for bounded work expected to leave you waiting (long builds, test suites, evals, data generation, migrations, and similar jobs); arm wake_on_completion and end the turn instead of polling. ' +
     "Piping a command through `tail`/`head` normally masks the earlier command's exit code; run_shell enables pipefail so a failing pipeline is still reported as failed, while a producer that only stopped because `head` closed the pipe early still counts as success.",
   parameters: z.object({
@@ -309,7 +334,7 @@ export const runShellTool = defineTool({
     // unsandboxed in that checkout.
     const readonlyCheckout = isThreadCheckoutDeferred()
 
-    const prepared = await prepareCommand(command, signal)
+    const prepared = prepareCommand(command, cwd)
     if ('refused' in prepared) return prepared.refused
     const { command: finalCommand, env, banner } = prepared
     const withBanner = (output: string): string => (banner ? `${banner}\n${output}` : output)
@@ -320,7 +345,9 @@ export const runShellTool = defineTool({
     // retry offer. Only injected where the shell honors pipefail (see
     // maybeEnablePipefail): remote and non-macOS shells preserve current behavior.
     // The same transformed command is used for the sandboxed run and any approved
-    // unsandboxed retry so both share one shell, command, and violation attribution.
+    // unsandboxed retry so both share one shell, command, and violation attribution;
+    // the retry's approval is still decided from the RAW command (pipefail only
+    // changes exit status, and the agent never wrote the injected `set` line).
     const isRemote = isActiveSshWorkspace() || resolveSshExecutionTargetForCwd(cwd) !== null
     const executedCommand = maybeEnablePipefail(finalCommand, {
       platform: process.platform,
@@ -328,7 +355,7 @@ export const runShellTool = defineTool({
     })
     const pipefailInjected = pipefailWasInjected(finalCommand, executedCommand)
 
-    // Decide sandbox vs unsandboxed from the RAW command (not the sfw-wrapped
+    // Decide sandbox vs unsandboxed from the RAW command (not the firewall-wrapped
     // finalCommand) so this matches the permission gate's decision exactly: a
     // trusted allow-listed command runs unsandboxed with no prompt, otherwise the
     // existing external-command heuristic applies. shellRunsOutsideSandbox is the
@@ -506,9 +533,11 @@ export const runShellTool = defineTool({
         return skippedProbeViaCache ? prefixWithSandboxCacheSkipNote(success) : success
       }
 
-      if (!suppressUnsandboxedRetry) {
+      // A Stop kills the child, which now reports its signal as a non-zero exit;
+      // that is the user's cancel, not a sandbox denial to offer a retry for.
+      if (!suppressUnsandboxedRetry && !signal.aborted) {
         const retry = await maybeRetryUnsandboxed(
-          executedCommand,
+          { rawCommand: command, executedCommand },
           cwd,
           timeout_ms,
           signal,

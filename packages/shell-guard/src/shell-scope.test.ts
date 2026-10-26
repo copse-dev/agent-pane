@@ -447,7 +447,7 @@ describe('analyzeShellCommand', () => {
   })
 
   it('flags ephemeral package runners (npx/dlx/bunx/uvx/pipx) as ambiguous (#500)', () => {
-    // Ambiguous: auto-run inside an OS sandbox (Socket Firewall + seatbelt), prompt
+    // Ambiguous: auto-run inside an OS sandbox (package firewall + seatbelt), prompt
     // without one. A network fetch is blocked by the sandbox and escalates, so no
     // unpinned code is fetched unprompted.
     for (const cmd of [
@@ -1134,6 +1134,59 @@ describe('analyzeShellCommand — text that names no file', () => {
     assert.equal(verdict('echo /etc/passwd | xargs cat'), 'external')
     assert.equal(verdict('echo "/tmp/x" > /tmp/x'), 'external')
     assert.equal(verdict('grep "`cat /etc/hosts`" src'), 'external')
+  })
+
+  it('does not treat ../ in a search pattern as climbing out of the workspace', () => {
+    assert.equal(
+      verdict(
+        `rg -n -C 5 "from '../services/storage/settings.ts'" src/main/ipc/register-handlers.ts`,
+      ),
+      'sandbox',
+    )
+  })
+
+  it('keeps ../ when any word the command opens climbs, or an expansion may', () => {
+    assert.equal(verdict("rg '../x' ../other"), 'external')
+    assert.equal(verdict("rg '../' src ../x"), 'external')
+    assert.equal(verdict("grep -e '../' -r ../.."), 'external')
+    assert.equal(verdict("grep -rn '../' .."), 'external')
+    assert.equal(verdict("rg --pre ../tool '../' src"), 'external')
+    assert.equal(verdict('grep x a > ../out'), 'external')
+    assert.equal(verdict("rg '../' src ${X:-../../etc}"), 'external')
+  })
+
+  it('does not treat an escaped sed address or grep pattern as an absolute path', () => {
+    assert.equal(verdict("sed -n '/https:\\/\\//p' docs/guide.txt"), 'sandbox')
+    assert.equal(verdict("sed -n '/^\\/api\\//p' a.ts"), 'sandbox')
+    assert.equal(verdict("grep '/^\\/api\\//' a.ts"), 'sandbox')
+  })
+
+  it('keeps an escaped path a sed script may open, or a live word holds', () => {
+    assert.equal(verdict("sed -n '/x\\/y/w /tmp/out' a"), 'external')
+    assert.equal(verdict("sed '/\\/etc\\//e' a"), 'external')
+    assert.equal(verdict("sed -i '/^\\/api\\//d' a.ts"), 'external')
+    assert.equal(verdict("grep '/etc\\/passwd' /etc/passwd"), 'external')
+    assert.equal(verdict("grep '/etc/*' /etc/*"), 'external')
+    assert.equal(verdict("grep '/etc/x\\ y' f; cat /etc/x\\ y"), 'external')
+    assert.equal(verdict("grep '/etc/x\\' f; cat /etc/x\\\\"), 'external')
+  })
+
+  it('does not treat open in a search pattern as launching a host app', () => {
+    assert.equal(verdict("rg -n 'close|open' src"), 'ambiguous')
+    assert.equal(verdict('rg "(open" src'), 'ambiguous')
+  })
+
+  it('keeps open hard wherever it runs', () => {
+    for (const command of [
+      'open http://x',
+      'nohup open x',
+      'grep x a | open -f',
+      'cat a; open b',
+      'echo x | xargs open',
+      "rg 'open' src | xargs open",
+    ]) {
+      assert.equal(verdict(command), 'external', command)
+    }
   })
 })
 

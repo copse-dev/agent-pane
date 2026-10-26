@@ -306,7 +306,7 @@ describe('every catalog agent, not just Claude', () => {
         // Opted in, so the remote installer will run npm for it — the package
         // must come from the catalog, never from the agent's command name.
         assert.ok(known.installPackage, 'autoInstall requires an explicit installPackage')
-        // A remote install has no Socket Firewall in front of npm, so it only
+        // A remote install has no package firewall in front of npm, so it only
         // ever fetches the reviewed container or remote-only version.
         const spec = remoteAcpInstallSpec(known)
         assert.ok(spec, `${known.id}: a remote auto-install needs a pinned version`)
@@ -323,7 +323,7 @@ describe('every catalog agent, not just Claude', () => {
         assert.ok(!/\b(fnm|nvm|asdf|volta)\b/.test(script), 'no version-manager mutation')
       } else {
         // Not opted in (Gemini has no installPackage; Cursor is `curl | bash`,
-        // which Socket Firewall cannot wrap) — the user gets the catalog's own
+        // which the package firewall cannot wrap) — the user gets the catalog's own
         // install line in the error, not a Claude-flavoured one.
         assert.ok(
           !known.install || !known.install.includes('claude'),
@@ -625,7 +625,7 @@ describe('remote adapter install', () => {
     }
   })
 
-  it('discloses the Socket Firewall gap and the untouched default in the approval', () => {
+  it('discloses the unchecked remote downloads and the untouched default in the approval', () => {
     const { title, body } = formatRemoteAcpInstallApproval({
       pkg: '@agentclientprotocol/claude-agent-acp',
       hostLabel: 'Dev',
@@ -635,9 +635,10 @@ describe('remote adapter install', () => {
     assert.ok(body.includes('@agentclientprotocol/claude-agent-acp'))
     assert.ok(body.includes('v22.21.1'), 'the target Node prefix must be shown')
     assert.ok(body.includes('default Node version unchanged'))
-    // The local path installs through Socket Firewall; a remote install cannot.
+    // A local install's downloads are checked; a remote install's cannot be.
     // That divergence must be stated, never silently accepted for the user.
-    assert.ok(body.includes('Socket Firewall'))
+    assert.ok(body.includes('not checked against known-malware lists'))
+    assert.doesNotMatch(body, /Socket|firewall/i)
     assert.ok(body.includes('--ignore-scripts'))
   })
 
