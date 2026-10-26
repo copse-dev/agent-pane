@@ -27713,7 +27713,7 @@ async function finishActivate(store, api, id, path, sshHost, gen, outgoingId, ou
         id,
         gen,
         outgoingId,
-        new Error("Enable SSH workspaces in Settings \u2192 SSH before opening a remote folder.")
+        new Error("Enable SSH workspaces in Settings \u2192 Machines before opening a remote folder.")
       );
       return;
     }
@@ -27946,7 +27946,7 @@ async function addProjectFromPath(store, api, path) {
 async function addProjectFromRemotePath(store, api, hostId, path) {
   const enabled = await api.settings.get("sshWorkspaceEnabled");
   if (enabled !== true) {
-    throw new Error("Enable SSH workspaces in Settings \u2192 SSH before opening a remote folder.");
+    throw new Error("Enable SSH workspaces in Settings \u2192 Machines before opening a remote folder.");
   }
   const canonical = await api.sshWorkspace.registerRoot(hostId, path);
   const existing = findProjectByKey(store.getState().projects, hostId, canonical);
@@ -29365,7 +29365,7 @@ function createClassifiersSection(api) {
     clear(screening);
     screening.append(el("option", { value: "" }, "Instruct / safety model"));
     for (const { profile } of profiles) {
-      if (profile.connection.type !== "http") continue;
+      if (profile.connection.type === "semif") continue;
       screening.append(el("option", { value: profile.id }, profile.label));
     }
     screening.value = profiles.some((item) => item.profile.id === screeningId) ? screeningId ?? "" : "";
@@ -29576,7 +29576,7 @@ function createClassifiersSection(api) {
         el("label", {}, "Authentication", auth),
         envField
       );
-    } else {
+    } else if (profile.connection.type === "semif") {
       const connection = profile.connection;
       const backend = select("Backend", connection.backend, BACKEND_CHOICES);
       const gguf = el("label", {}, "GGUF model path", input2("Gguf", connection.gguf ?? ""));
@@ -29595,6 +29595,16 @@ function createClassifiersSection(api) {
           "span",
           { class: "field-hint" },
           "Uses your installed SemIf scorer and cached or local weights. Test does not install a runtime or download models."
+        )
+      );
+    }
+    if (profile.connection.type === "machine") {
+      model.readOnly = true;
+      form.append(
+        el(
+          "p",
+          { class: "field-hint" },
+          "Calls use a paired Copse machine. Manage the machine and choose shared models in Settings \u2192 Machines."
         )
       );
     }
@@ -29669,7 +29679,7 @@ function createClassifiersSection(api) {
           baseUrl: read("Url"),
           auth: read("Auth") === "none" ? "none" : "bearer",
           ...read("KeyEnv") ? { apiKeyEnv: read("KeyEnv") } : {}
-        } : {
+        } : profile.connection.type === "machine" ? profile.connection : {
           type: "semif",
           executable: read("Executable"),
           ...profile.connection.device ? { device: profile.connection.device } : {},
@@ -29838,6 +29848,352 @@ var init_classifiers_section = __esm({
       { value: "serial", label: "Serial" },
       { value: "shared", label: "Shared" }
     ];
+  }
+});
+
+// src/renderer/views/setup/machines-section.ts
+function createMachinesSection(api) {
+  const status = el("div", { class: "machine-status", role: "status" });
+  const sharingFeedback = el("div", { class: "machine-sharing-feedback", role: "status" });
+  const list = el("div", { class: "machine-list" });
+  const invitationInput = el("textarea", {
+    name: "machineInvitation",
+    rows: "3",
+    placeholder: "copse-machine1-\u2026",
+    spellcheck: "false"
+  });
+  const pair = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary machine-pair" },
+    "Connect machine"
+  );
+  const enabled = el("input", { type: "checkbox", name: "machineSharingEnabled" });
+  const address = el("select", { name: "machineSharingAddress" });
+  const port = el("input", {
+    type: "number",
+    name: "machineSharingPort",
+    min: "0",
+    max: "65535",
+    value: "4319"
+  });
+  const models = el("div", { class: "machine-share-models" });
+  const apply = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary machine-sharing-save" },
+    "Apply sharing settings"
+  );
+  const invite = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary machine-invite", disabled: true },
+    "Create pairing invitation"
+  );
+  const code = el("textarea", {
+    name: "machineSharingInvitation",
+    rows: "3",
+    readonly: true,
+    hidden: true,
+    "aria-label": "Pairing invitation for this machine"
+  });
+  const hostingStatus = el("p", { class: "field-hint machine-sharing-status" });
+  const clients = el("div", { class: "machine-client-list" });
+  const secure = el("p", { class: "field-hint machine-secure-storage" });
+  const featureHint = el(
+    "p",
+    { class: "field-hint machine-feature-hint" },
+    "Remote System One models are off. Enable them in Settings \u2192 Experimental to connect Copse computers. SSH settings are available below."
+  );
+  const sharingControls = el(
+    "div",
+    { class: "machine-sharing-controls", hidden: true },
+    el("label", { class: "checkbox-label" }, enabled, " Share models on my network"),
+    el("label", {}, "Network", address),
+    el("label", {}, "Port", port),
+    models,
+    el("div", { class: "provider-actions" }, apply, invite),
+    code,
+    el(
+      "p",
+      { class: "field-hint" },
+      "Invitations expire after ten minutes and connect one client. Create a new invitation for each client."
+    )
+  );
+  const sharing = el(
+    "fieldset",
+    { class: "machine-sharing-section", hidden: true },
+    el("legend", {}, "Share models from this machine"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Allow paired Copse clients to call the local System One connections you select below. Copse must stay open and this computer must stay awake."
+    ),
+    sharingControls,
+    hostingStatus,
+    clients,
+    sharingFeedback
+  );
+  const pairControls = el(
+    "div",
+    { class: "machine-pair-controls", hidden: true },
+    el("label", {}, "Pairing invitation", invitationInput),
+    el("div", { class: "provider-actions" }, pair),
+    secure
+  );
+  const paired = el(
+    "fieldset",
+    { hidden: true },
+    el("legend", {}, "Paired Copse machines"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Use System One models on another computer on the same network. Open Copse there, share a local model, and paste its invitation here. SSH is not required."
+    ),
+    list,
+    pairControls,
+    status
+  );
+  const root = el("div", { class: "machines-settings" }, featureHint, paired, sharing);
+  let state;
+  let initialized = false;
+  let busy = false;
+  let refreshing = false;
+  let rendered = "";
+  let sharingRendered = "";
+  const selectedModels = /* @__PURE__ */ new Map();
+  function show(next, resetSharing = false) {
+    state = next;
+    featureHint.hidden = next.featureEnabled;
+    pairControls.hidden = !next.featureEnabled;
+    sharingControls.hidden = !next.featureEnabled;
+    paired.hidden = !next.featureEnabled && !next.machines.length;
+    sharing.hidden = !next.featureEnabled && !next.clients.length;
+    if (!next.featureEnabled) {
+      code.hidden = true;
+      code.value = "";
+    }
+    pair.disabled = busy || !next.featureEnabled || !next.secureStorage;
+    apply.disabled = busy || !next.featureEnabled || !next.secureStorage && enabled.checked;
+    invite.disabled = busy || !next.featureEnabled || !next.sharing.listening;
+    secure.textContent = next.secureStorage ? "Pairing credentials are encrypted on this computer." : "Unlock the system keyring to pair machines or enable sharing.";
+    hostingStatus.textContent = !next.featureEnabled ? "Remote System One models are off." : next.sharing.listening ? `Sharing on ${next.sharing.address}:${String(next.sharing.port)}` : next.sharing.error ?? "Model sharing is off.";
+    if (!initialized || resetSharing) {
+      enabled.checked = next.sharing.enabled;
+      clear(address);
+      for (const item of next.addresses)
+        address.append(el("option", { value: item.address }, item.label));
+      if (!next.addresses.some((item) => item.address === next.sharing.address))
+        address.append(
+          el("option", { value: next.sharing.address }, `${next.sharing.address} (unavailable)`)
+        );
+      address.value = initialized || next.sharing.enabled ? next.sharing.address : next.addresses.find((entry) => entry.address !== "127.0.0.1")?.address ?? next.sharing.address;
+      port.value = String(next.sharing.port);
+      initialized = true;
+    }
+    const modelKey = JSON.stringify(next.shareableModels);
+    if (sharingRendered !== modelKey || resetSharing) {
+      sharingRendered = modelKey;
+      clear(models);
+      if (!next.shareableModels.length)
+        models.append(
+          el(
+            "p",
+            { class: "field-hint" },
+            "Add a local System One connection in Settings \u2192 Classifiers first."
+          )
+        );
+      for (const model of next.shareableModels) {
+        const input2 = el("input", {
+          type: "checkbox",
+          name: "machineSharedProfile",
+          value: model.id
+        });
+        input2.checked = next.sharing.profileIds.includes(model.id);
+        models.append(
+          el("label", { class: "checkbox-label" }, input2, ` ${model.label} \xB7 ${model.model}`)
+        );
+      }
+    }
+    const key = JSON.stringify([next.featureEnabled, next.machines, next.clients]);
+    if (rendered === key) return;
+    rendered = key;
+    clear(list);
+    if (!next.machines.length)
+      list.append(el("p", { class: "field-hint" }, "No paired machines yet."));
+    for (const machine of next.machines) {
+      const choose = el("select", {
+        "aria-label": `Model on ${machine.name}`,
+        disabled: machine.status !== "connected"
+      });
+      for (const model of machine.models)
+        choose.append(el("option", { value: model.id }, `${model.label} \xB7 ${model.model}`));
+      choose.value = selectedModels.get(machine.id) ?? machine.models[0]?.id ?? "";
+      choose.addEventListener("change", () => selectedModels.set(machine.id, choose.value));
+      const use = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-secondary machine-use-model",
+          hidden: !next.featureEnabled,
+          disabled: machine.status !== "connected" || !machine.models.length
+        },
+        "Use this model"
+      );
+      const remove = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary machine-remove" },
+        "Disconnect"
+      );
+      const row = el(
+        "div",
+        { class: "machine-row", "data-machine-id": machine.id },
+        el("h4", {}, machine.name),
+        el(
+          "p",
+          { class: "field-hint machine-connection-status" },
+          `${machine.address} \xB7 ${machine.detail}`
+        ),
+        el("label", { hidden: !next.featureEnabled }, "Shared model", choose),
+        el("div", { class: "provider-actions" }, use, remove)
+      );
+      use.addEventListener("click", () => {
+        void action(async () => {
+          const model = machine.models.find((entry) => entry.id === choose.value);
+          if (!model) throw new Error("Choose a shared model first.");
+          const configured = await api.classifiers.list();
+          const existing = configured.find(
+            ({ profile }) => profile.connection.type === "machine" && profile.connection.machineId === machine.id && profile.connection.profileId === model.id
+          );
+          await api.classifiers.save({
+            id: existing?.profile.id ?? `machine-${crypto.randomUUID()}`,
+            label: `${machine.name} \xB7 ${model.label}`.slice(0, 120),
+            model: model.model,
+            timeoutMs: model.timeoutMs,
+            connection: { type: "machine", machineId: machine.id, profileId: model.id }
+          });
+          setInlineStatus(
+            status,
+            "ok",
+            "Model connection saved. Open Classifiers to test it or select it for safety screening."
+          );
+        });
+      });
+      remove.addEventListener("click", () => {
+        void action(async () => {
+          show(await api.machines.remove(machine.id));
+          setInlineStatus(
+            status,
+            "ok",
+            "Machine disconnected. Its saved model connections will report unavailable until you pair it again."
+          );
+        });
+      });
+      list.append(row);
+    }
+    clear(clients);
+    for (const client of next.clients) {
+      const revoke = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary machine-revoke" },
+        "Revoke access"
+      );
+      revoke.addEventListener("click", () => {
+        void action(async () => {
+          show(await api.machines.revoke(client.id));
+          code.hidden = true;
+          code.value = "";
+          setInlineStatus(sharingFeedback, "ok", `Access revoked for ${client.name}.`);
+        }, sharingFeedback);
+      });
+      clients.append(
+        el("div", { class: "machine-client-row" }, el("span", {}, client.name), revoke)
+      );
+    }
+  }
+  async function action(run, feedback = status) {
+    if (busy) return;
+    busy = true;
+    for (const control of root.querySelectorAll("button")) control.disabled = true;
+    try {
+      await run();
+    } catch (error62) {
+      setInlineStatus(
+        feedback,
+        "error",
+        error62 instanceof Error ? error62.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "") : "Machine request failed."
+      );
+    } finally {
+      busy = false;
+      rendered = "";
+      if (state) show(state);
+    }
+  }
+  pair.addEventListener("click", () => {
+    void action(async () => {
+      show(await api.machines.pair(invitationInput.value.trim()));
+      invitationInput.value = "";
+      setInlineStatus(status, "ok", "Machine connected. Choose a shared model below its name.");
+    });
+  });
+  enabled.addEventListener("change", () => {
+    apply.disabled = busy || !state?.featureEnabled || !state.secureStorage && enabled.checked;
+  });
+  apply.addEventListener("click", () => {
+    void action(async () => {
+      const profileIds = Array.from(models.querySelectorAll("input:checked")).map(
+        (input2) => input2.value
+      );
+      show(
+        await api.machines.share({
+          enabled: enabled.checked,
+          address: address.value,
+          port: Number(port.value),
+          profileIds
+        }),
+        true
+      );
+      code.hidden = true;
+      code.value = "";
+      setInlineStatus(
+        sharingFeedback,
+        "ok",
+        enabled.checked ? "Sharing enabled for the selected models." : "Sharing stopped."
+      );
+    }, sharingFeedback);
+  });
+  invite.addEventListener("click", () => {
+    void action(async () => {
+      code.value = await api.machines.invitation();
+      code.hidden = false;
+      code.select();
+      setInlineStatus(
+        sharingFeedback,
+        "ok",
+        "Copy this invitation to the other computer. It expires in ten minutes."
+      );
+    }, sharingFeedback);
+  });
+  async function refresh(signal) {
+    if (refreshing || busy) return;
+    refreshing = true;
+    try {
+      const state2 = await api.machines.state();
+      if (!signal?.aborted) show(state2);
+    } catch (error62) {
+      if (signal?.aborted) return;
+      setInlineStatus(
+        status,
+        "error",
+        error62 instanceof Error ? error62.message : "Could not load machines."
+      );
+    } finally {
+      refreshing = false;
+    }
+  }
+  return { root, refresh };
+}
+var init_machines_section = __esm({
+  "src/renderer/views/setup/machines-section.ts"() {
+    init_helpers();
+    init_inline_status();
   }
 });
 
@@ -68168,11 +68524,11 @@ var init_ssh_markup = __esm({
   "src/renderer/views/settings/ssh-markup.ts"() {
     sshMarkup = `
           <section class="settings-section" data-section="ssh">
-            <h3>SSH</h3>
+            <h3>Machines</h3>
             <p class="settings-section-desc">
-              Work on a remote Linux machine over SSH. Commands, git, search, and files all run
-              on the host; Copse stays on your computer.
+              Connect other computers to use their models, or manage SSH hosts for remote projects and agents.
             </p>
+            <div id="settings-machines-host" class="settings-mount"></div>
             <div id="settings-ssh-workspace-host" class="settings-mount"></div>
 
             <fieldset>
@@ -68233,6 +68589,18 @@ var init_experimental_markup = __esm({
               </div>
             </fieldset>
 
+            <fieldset>
+              <legend>Remote System One models</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="remoteSystemOneModelsEnabled" />
+                Connect Copse computers to share local models
+              </label>
+              <p class="field-hint">
+                After saving, open Machines to pair computers on the same network and choose which
+                models to share. No SSH is needed. Turning this off stops sharing and remote calls;
+                saved pairings stay available to reconnect or remove.
+              </p>
+            </fieldset>
             <div id="settings-mobile-companion-host" class="settings-mount"></div>
 
             <fieldset>
@@ -68342,6 +68710,7 @@ var init_experimental_markup = __esm({
           </section>
 `;
     experimentalFields = [
+      { name: "remoteSystemOneModelsEnabled", kind: "checkbox", default: false, save: true },
       { name: "vncEnabled", kind: "checkbox", default: false, save: true },
       { name: "modelClassifierEnabled", kind: "checkbox", default: false, save: true },
       { name: "deferredWorktreesEnabled", kind: "checkbox", default: false, save: true },
@@ -68397,7 +68766,7 @@ var init_registry = __esm({
       { id: "customise", label: "Customise", markup: customiseMarkup, fields: customiseFields },
       { id: "storage", label: "Storage", markup: storageMarkup, fields: storageFields },
       { id: "appearance", label: "Appearance", markup: appearanceMarkup, fields: appearanceFields },
-      { id: "ssh", label: "SSH", markup: sshMarkup, fields: sshFields },
+      { id: "ssh", label: "Machines", markup: sshMarkup, fields: sshFields },
       {
         id: "experimental",
         label: "Experimental",
@@ -68681,6 +69050,9 @@ function mountSettingsDialog(store, api) {
   qsRequired(overlay, "#settings-classifiers-host").append(classifiersSection.root);
   const webSearchSection = createWebSearchSection(api);
   qsRequired(overlay, "#settings-web-search-host").append(webSearchSection.root);
+  const machinesSection = createMachinesSection(api);
+  qsRequired(overlay, "#settings-machines-host").append(machinesSection.root);
+  let machineRefreshTimer;
   const sshWorkspaceSection = createSshWorkspaceSection(api, {
     deferOrdinaryWrites: true,
     // Dedicated host edits wake project-menu listeners immediately.
@@ -68803,7 +69175,20 @@ function mountSettingsDialog(store, api) {
         refresh: (_values, signal) => toolPermissionsPanel.refresh(signal)
       },
       ssh: {
-        refresh: (_values, signal) => sshWorkspaceSection.refresh(signal)
+        refresh: async (_values, signal) => {
+          await Promise.all([sshWorkspaceSection.refresh(signal), machinesSection.refresh(signal)]);
+          if (signal.aborted) return;
+          machineRefreshTimer = setInterval(() => {
+            if (!overlay.isConnected || !overlay.open || signal.aborted) {
+              clearInterval(machineRefreshTimer);
+              return;
+            }
+            void machinesSection.refresh(signal);
+          }, 3e3);
+        },
+        deactivate: () => {
+          clearInterval(machineRefreshTimer);
+        }
       },
       about: { refresh: (_values, signal) => aboutSection.refresh(signal) },
       customise: {
@@ -69030,6 +69415,7 @@ var init_settings_dialog = __esm({
     init_icons();
     init_ipc_error_message();
     init_classifiers_section();
+    init_machines_section();
     init_web_search_section();
     init_ssh_workspace_section();
     init_tool_permissions_panel();
