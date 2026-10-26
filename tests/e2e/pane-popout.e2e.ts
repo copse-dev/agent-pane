@@ -9,6 +9,7 @@ import {
   seedE2eThreePaneLayout,
   seedE2eViewport,
   seedPrPanelChatFixture,
+  seedStableWorkspace,
 } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, waitForImagesSettled } from './helpers/screenshot.ts'
 import { assertPopoutModesAllShown } from './helpers/popout-panel-bar.ts'
@@ -70,7 +71,8 @@ describe('Pane pop-out (mock gh)', () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     writeE2eEnv({ COPSE_PANEL_MOCK_GH: '1', COPSE_PANEL_MOCK_GH_STATUS: 'ready' })
     resetUserData()
-    seedPrPanelChatFixture(process.cwd(), { roadmapPlansEnabled: true })
+    // The explorer pop-out lists the project root: a fixed tree, never this checkout.
+    seedPrPanelChatFixture(seedStableWorkspace(), { roadmapPlansEnabled: true })
     seedE2eViewport()
     seedE2eThreePaneLayout()
     await browser.reloadSession()
