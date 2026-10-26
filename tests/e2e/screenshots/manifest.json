@@ -4421,6 +4421,10 @@
       "sha256": "5c51137b020d7ee9765f243d216a28f74a85ee1e967bbfbbb9d3c2532c41bbae",
       "bytes": 48358
     },
+    "side-chat-reply-prose.png": {
+      "sha256": "f7f3249ebc40801ffeb4ae9e25478288a9c91d7a65966acfc43174f33d3f720b",
+      "bytes": 29148
+    },
     "side-chat-restored-after-restart.png": {
       "sha256": "d80b50e2f1d20ca398f1ca870182eaea99a4d2a17b574d3fae0189608669c885",
       "bytes": 147546
