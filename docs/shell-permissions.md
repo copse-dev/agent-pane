@@ -32,6 +32,7 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 | MCP/custom grants                | Exact tools; MCP identity includes origin, source, server and name. Custom requiresApproval tools cannot remember consent. Neither grant establishes a project OS sandbox for the handler/server.                                                                                                                                                                                                        |
 | Automation grants                | Exact schedule-owned MCP tools or eligible project-repository GitHub actions. No ambient shell, file, web-origin, ACP, sensitive-reveal or model-spend authority.                                                                                                                                                                                                                                        |
 | Guarded YOLO                     | Session-only, thread-scoped; routine shell scope prompts waived subject to the harm gate. Keeps containment where applicable, permits external routing and retains hard denials/one-time confirmations.                                                                                                                                                                                                  |
+| Environment setup                | Suggests values for the auto-approval level, trusted commands, web origins, trusted SSH hosts and trusted package registries from prompts a person approved in the active project. Applies only what the user ticks, through the same settings; adds no grant path. See [Environment setup](#environment-setup).                                                                                         |
 | Deferral mode                    | Session-only, thread-scoped; approval requests queue instead of blocking. Changes prompt handling, not authorization.                                                                                                                                                                                                                                                                                    |
 | Unattended container             | Explicitly armed run on an attested disposable guest. Contained shell effects allow, outward effects defer or deny, host escapes deny; budgets required. Experimental, off by default, mutually exclusive with Guarded YOLO.                                                                                                                                                                             |
 | ACP permission mode              | Agent-specific session mode, additional to Copse's gate and sandbox. Sandboxed Claude presets may default to acceptEdits; unsandboxed/SSH presets do not receive that default.                                                                                                                                                                                                                           |
@@ -490,6 +491,7 @@ exact command line, byte for byte, to the current human turn tree in this thread
 root, so an agent rerunning the same browser demo or harness after each fix is not asked again.
 Any other command, a changed command, another turn tree or another thread asks again. The same
 outside-sandbox lease, with the same bounds, is offered when a verified sandbox block escalates.
+A block recognised only from command output, or a forced ask, never offers or spends it.
 
 The prompt is titled “Agent requests sandbox escape” and describes this as the agent's
 expectation, not a confirmed sandbox failure. A cached denial instead retains “Run outside
@@ -509,7 +511,9 @@ approved outside is never repeated under a misleading second “outside the sand
 A recognised denial is remembered in memory for that exact operation and thread only after its
 escalation was approved; declining leaves no cache entry. A later matching operation can move the
 same approval question before the sandboxed probe; it does not authorize the command, persist across
-app restarts, or generalise from (for example) `git fetch` to `git push`. Because the cache originated
+app restarts, or generalise from (for example) `git fetch` to `git push`. The operation is read from
+the parsed command, after wrapper unwrapping, never from raw text: `grep -rn "git fetch" docs` or
+`echo git push` runs no git and is never matched to a cached `git fetch`/`git push` denial. Because the cache originated
 in forgeable command output, Guarded YOLO and deterministic shell auto-approval must still show that
 question; only an unattended container may advance it without a person while staying inside the same
 guest.
@@ -852,7 +856,16 @@ While active:
     Docker socket), stopping or removing containers, and the payload of `docker exec` or
     `kubectl exec`, which is inspected as a command;
   - installing from a registry other than the default (`GOPROXY`, `GOSUMDB=off`,
-    `--registry`, `--index-url`, …);
+    `--registry`, `--index-url`, …), unless every registry the command selects is listed under
+    Settings → Permissions → Trusted package registries (empty by default). Trust is by origin
+    and covers only settings that choose a registry; ones that switch off checksum or TLS checks
+    (`--trusted-host`, `GOSUMDB=off`, `GOINSECURE`, `GOFLAGS=-insecure`), Go's `direct`, and
+    `GOPROXY=off` still ask;
+  - any infrastructure, remote-shell or database program (`kubectl`, `helm`, `terraform`, cloud
+    CLIs, `ssh`, `psql`, …) that names a cluster context, namespace, cloud project or profile, or
+    host listed under Settings → Permissions → Production targets (empty by default), reads
+    included. Matching is on whole words the command passes (`--context=prod-eu`,
+    `deploy@db.prod.example`, a URL's host), never substrings. The list can only add prompts;
   - sending a request body or upload to a host other than loopback (`curl -d`, `-T`, `-X POST`,
     `wget --post-file`), opening a listener or relay (`nc -l`, `nc -e`, `socat`), and mail;
   - test and load runners pointed at a non-loopback URL (`pytest --base-url https://…`,
@@ -903,8 +916,13 @@ Text that names no file is not a path. The pattern of a `grep`/`rg` search and t
 `grep -v "//"` is not a read of the filesystem root and `echo "/tmp/x"` does not leave the
 workspace. Recognition is an allow-list (`inert-operands.ts`): one unknown search flag, any
 substitution, or a head that turns text into commands or paths (`xargs`, a shell, an interpreter)
-disables it, and a masked path that appears in any other word stays visible. `sed` and `awk` scripts
-are not masked: they can read and write files.
+disables it, and a masked path that appears in any other word stays visible. A `sed` script is
+masked only when the whole `sed` is a read-only filter (no `-i`, script file, or `r`/`w`/`e`
+command), so `sed -n '/^\/api\//p' a.ts` reads `a.ts`; an escaped path is kept when any other word
+holds it with or without its escapes. `awk` scripts are not masked: they can read and write files.
+A `../` in a pattern (`rg "from '../lib'" src`) is text only when no other word holds `..` and the
+command has no `$` expansion, so `rg '../x' ../other` still leaves the workspace. A program name in
+a pattern (`rg 'close|open' src`) is not that program running: it is ambiguous and runs contained.
 
 `~/…` and `$HOME/…` (either spelling) that resolve inside the workspace are the workspace. `$HOME`
 is trusted only when nothing else in the command mentions `HOME`, so `HOME=/ …` and `unset HOME`
@@ -918,6 +936,34 @@ Interpreter inspection recognizes Node's `.mts` and `.cts` launchers as well as 
 configuration-file argument cannot accidentally be inspected in place of the launcher.
 
 Update this document and the Guarded YOLO / harm / read-outside tests with any intentional change.
+
+## Environment setup
+
+Environment setup ([plan](plans/environment-setup.md)) reviews the prompts a person answered in the
+active project and suggests values for settings this contract already defines: the shell
+auto-approval level, trusted commands, web origins, trusted SSH hosts and trusted package
+registries. It changes no rule. An applied suggestion has exactly the effect of the same value
+typed into Settings → Permissions.
+
+- **Evidence is the user's own answers.** Main reads the decision log's `user` and
+  `mobile-device` verdicts from the last 30 days and joins each shell decision to its `run_shell`
+  or `run_background` call (durable shell decisions omit the command). Classifier, hook and system
+  verdicts, timeouts and repository content are never evidence.
+- **Every suggestion is a counterfactual.** The deterministic rule that raised each prompt runs
+  again with the candidate value added (`assessAutoApproval`, `resolveCommandRouting`,
+  `assessShellHarm`); a candidate is kept only when it would have removed the prompt. A command
+  auto-approval recognises as a shape never counts toward trusting its binary, so `git push` can
+  suggest a tier but never trusting `git`. A candidate needs 3 approvals from at least 2 threads,
+  and any refused prompt it would also have removed marks it declined.
+- **Main owns the values.** A review is issued under an opaque id; the renderer sends back only the
+  ticked suggestion ids. Trusted commands, SSH hosts and package registries never start ticked.
+- **Scope.** Offered only in a trusted workspace with auto-run on, at most every 14 days, and never
+  to an agent: there is no tool for it, so read-only runs, automations, unattended containers, ACP
+  agents and paired clients cannot open or apply it. The auto-approval suggestion is left out where
+  the sandbox is inactive.
+- **Record and undo.** Each applied or undone value is appended to
+  `user-data/environment-setup.jsonl`. Undo, offered until the app restarts, removes exactly the
+  values one apply added and restores a raised level only if nobody has changed it since.
 
 ## Automation-scoped tool grants
 
@@ -997,6 +1043,10 @@ the registry still fails contained and offers to run outside.
   are additionally capped at `read` if a caller reaches the level helper without a sandbox. A
   segment that names a secret file (`secrets.ts`) is never approved, even inside the workspace,
   and `gh auth status --show-token` is not the `gh auth status` read.
+- `environment-suggestions.ts` (pure counterfactual builder), `environment-evidence.ts` (decision
+  log and tool-call join) and `environment-setup.ts` (offer, review, apply, undo): environment
+  setup, above. `trusted-package-registries.ts` and `production-targets.ts` in `@copse/shell-guard`
+  hold the two Guarded YOLO lists the harm gate reads through `host-reach.ts`.
 - `tier-screening.ts`: the classifier second opinion. In Guarded YOLO it may add the confirmation
   above. In standard mode it only records a `tier-shadow` decision, in the background, for each
   shell prompt: what a local-write blend (deterministic tiers, or P(`read`/`local-write`) ≥ 0.95

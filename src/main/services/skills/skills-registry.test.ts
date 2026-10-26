@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 import {
   refreshSkillsRegistry,
+  runWithDiscoveredSkills,
   listSkills,
   listSkillSources,
   listModelInvocableSkills,
@@ -16,7 +17,10 @@ import {
   userSkillRoots,
   SKILL_CONTAINER_DIRS,
   SKILL_READ_MAX_BYTES,
+  skillPreflightEnvironment,
 } from './skills-registry.ts'
+import { preflightSkill } from './skill-preflight.ts'
+import { buildInvokedSkillsBlock } from './skill-prompt.ts'
 import { setSetting } from '../storage/settings.test-shim.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import {
@@ -79,6 +83,63 @@ description: Demo skill for tests
     const demo = skills.find((skill) => skill.name === 'demo-skill' && skill.source === 'project')
     assert.ok(demo, 'expected demo-skill from project .cursor/skills')
     assert.deepEqual(demo.externalLinks, [], 'link-free skill reports no external links')
+  })
+
+  it('uses discovered explicit requirements for Sources and native turn preflight', async () => {
+    await writeFile(
+      join(tempRoot, '.cursor/skills/demo-skill/SKILL.md'),
+      `---
+name: demo-skill
+description: Demo
+copse-requirements:
+  tools: [missing_tool]
+  agents: [missing-reviewer]
+  executors: [acp]
+copse-dependencies: [absent-leaf]
+---
+Read references/actual.md.
+`,
+    )
+    await refreshSkillsRegistry()
+    const meta = getSkill('demo-skill')
+    assert.ok(meta)
+    const result = preflightSkill(meta, skillPreflightEnvironment(['read_skill'], 'native'))
+    assert.equal(result.status, 'blocked')
+    assert.deepEqual(
+      result.checks.map((check) => check.state),
+      ['unavailable', 'unavailable', 'unavailable', 'unsupported', 'unavailable'],
+    )
+    const diagnostics = listSkillSources().diagnostics.filter(
+      (entry) => entry.name === 'demo-skill',
+    )
+    assert.ok(
+      diagnostics.some(
+        (entry) => entry.kind === 'unavailable' && entry.reason.includes('missing-reviewer'),
+      ),
+    )
+    assert.ok(
+      diagnostics.some(
+        (entry) => entry.kind === 'untested' && entry.reason.includes('missing_tool'),
+      ),
+    )
+    assert.ok(
+      diagnostics.some(
+        (entry) => entry.kind === 'unavailable' && entry.reason.includes('absent-leaf'),
+      ),
+    )
+  })
+
+  it('distinguishes a live disabled dependency from a missing catalog entry without granting access', async () => {
+    await refreshSkillsRegistry()
+    const meta = getSkill('demo-skill')
+    assert.ok(meta)
+    const parent = { ...meta, dependencies: ['demo-skill'] }
+    assert.equal(preflightSkill(parent, skillPreflightEnvironment()).checks[0]?.state, 'supported')
+    setSetting('skillsEnabled', false)
+    const result = preflightSkill(parent, skillPreflightEnvironment())
+    assert.equal(result.status, 'blocked')
+    assert.equal(result.checks[0]?.state, 'disabled')
+    assert.match(result.checks[0].reason, /disabled.*Settings → Customise/)
   })
 
   it('discovers project skills under .codex/skills (Codex CLI layout)', async () => {
@@ -395,7 +456,12 @@ description: Portable Agent Plugin skill
     assert.ok(portable)
     assert.equal(portable.source, 'plugin')
 
-    await service.setEnabled('acme.skills', false)
+    await runWithDiscoveredSkills(async () => {
+      assert.ok(getSkill('portable'))
+      await service.setEnabled('acme.skills', false)
+      assert.equal(getSkill('portable'), null)
+      await assert.rejects(readSkill('portable'), /switched off/)
+    })
     await refreshSkillsRegistry()
     assert.equal(
       listSkills().some((skill) => skill.name === 'portable'),
@@ -724,6 +790,10 @@ description: Bundled skill for tests
       false,
     )
     await assert.rejects(readSkill('demo-plugin'), /bundled plugin that is switched off/)
+    assert.match(
+      await buildInvokedSkillsBlock(['demo-plugin/bundled-skill']),
+      /bundled plugin that is switched off/,
+    )
 
     await rm(bundledRoot, { recursive: true, force: true })
   })

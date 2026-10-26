@@ -1465,6 +1465,10 @@
       "sha256": "f88b3fb348efb475cc1d2ff235dd20f16cdce6b7095494cfc03629cfa4ce6978",
       "bytes": 156499
     },
+    "custom-agent-skills.png": {
+      "sha256": "e87b9c160cb7eccac40bc6eb449485250689fc723028bcac9390960bc54c3b72",
+      "bytes": 120720
+    },
     "custom-agent-slash-picker.png": {
       "sha256": "01c093b489de396a1300bbc717ac9eb0ab0413964b2b9be91b09c057695214dc",
       "bytes": 328014
@@ -1556,6 +1560,14 @@
     "empty-mcp-tool-details.png": {
       "sha256": "f546871b0307213e28678c5ce2e418ce9a60c8cc17a03d2f95ccfa214041eb02",
       "bytes": 74374
+    },
+    "environment-setup-offer.png": {
+      "sha256": "6f7e55c4c1e92ef82c974fc2fb395419418923087edd35e73c8bb4b6a99ffde6",
+      "bytes": 55671
+    },
+    "environment-setup-review.png": {
+      "sha256": "c1b1c5ed23fd2d0e4814410970518cc40591a97f1bc796cf2cf42ac6b2455ec0",
+      "bytes": 126866
     },
     "explainer-drawing-1-player.png": {
       "sha256": "30a3d9e98f4e3910be17ad0b43891db60dbbb98aac91150bd88fbcac821dc01e",
@@ -2634,8 +2646,8 @@
       "bytes": 47187
     },
     "pane-popout-explorer.png": {
-      "sha256": "095dfd15f785951e4eae18a0a1a5f5fc34281ef0fcc3756e711b5b4e2ea6f46e",
-      "bytes": 115617
+      "sha256": "c6f0d8a30a744ac6418992e16863f393af3e05564b200e5822e0e1211b6a4990",
+      "bytes": 51197
     },
     "pane-popout-main.png": {
       "sha256": "99d501548efa646fecfb6efa15489bdd7543dbc65fa0484aaa63554e3439436c",
@@ -2684,6 +2696,10 @@
     "paste-attachment-transcript.png": {
       "sha256": "7f40dd86799b611ff9f45b65f7bb467a5e0925785c221384b5b1d18764e1b139",
       "bytes": 291691
+    },
+    "paste-unsupported-image-toast.png": {
+      "sha256": "c6db4a3c21679f4624041e059cc8b9a3ba755b4fbbba61bb80847d31332064ce",
+      "bytes": 307260
     },
     "personal-plugin-thread-model-picker.png": {
       "sha256": "f8bf696b5897870068d5b172367586628d535356b815c242c732e4005b9b2445",
@@ -3257,6 +3273,10 @@
       "sha256": "ac27cc4b0106cde57430340fb5017c77ddd3e16efcbf3963ccf1e461cf4e1b6e",
       "bytes": 124299
     },
+    "review-checker-inconclusive.png": {
+      "sha256": "360504541b021996308debf749c3daf99ecb3f97962e13cc0fe31d731707b567",
+      "bytes": 343341
+    },
     "review-findings-card-dismissed.png": {
       "sha256": "351347592741c20fc419a6b657f1cdc86f60ebe48c427a7163d7915cb6e680a6",
       "bytes": 467220
@@ -3801,6 +3821,10 @@
       "sha256": "8c614b533db3a0323dd5da685c199e3eb61fae48c1ffdf9e3b19f2021332f67c",
       "bytes": 83438
     },
+    "settings-environment-setup-review.png": {
+      "sha256": "a0fdda4ce4170803d9b3816ee3c2ae3c3b1e791453b8f67f84738b8379117ee9",
+      "bytes": 18410
+    },
     "settings-experimental-desktop-copy.png": {
       "sha256": "516612d537685a9189144d5a159951631096602578825cbd2c9bf79617e61839",
       "bytes": 20497
@@ -3868,6 +3892,38 @@
     "settings-local-server-detect.png": {
       "sha256": "75761164620763acd3f852c7065d2994e04545e7bcbe0711fbd851993060416f",
       "bytes": 304010
+    },
+    "settings-machines-classifier.png": {
+      "sha256": "d00176967ecb78798d0b2ce323b9fb567625ebd6e9a1db860ca850c33b11099c",
+      "bytes": 202764
+    },
+    "settings-machines-connected.png": {
+      "sha256": "34d761803edc008da6dd07b88c95c36f525dca994df22a152c1e987d7ff7fa0c",
+      "bytes": 208673
+    },
+    "settings-machines-disabled.png": {
+      "sha256": "dcd582384427ee64f61c1de9e32f853e93bbedb9d232077aaf04394060af1707",
+      "bytes": 215022
+    },
+    "settings-machines-experimental.png": {
+      "sha256": "61392cd5d15f048aa7767d9e62cf869410ff0e1e8410e93859155ca3cdafd9ad",
+      "bytes": 37774
+    },
+    "settings-machines-locked.png": {
+      "sha256": "e3879156d63dc047eb89d7af6c21b93deff93e37b16da4f8f0bb7224509cec9e",
+      "bytes": 226707
+    },
+    "settings-machines-offline.png": {
+      "sha256": "fa1f818a10f3c2c133511372abc4c8c37c1384f4b572d0b503f25798d20a7227",
+      "bytes": 214443
+    },
+    "settings-machines-paused.png": {
+      "sha256": "fd840dc9009ad4438d0af25edd1cd3cfd4fe076e54c8deb589d1e7d26e1375f5",
+      "bytes": 245366
+    },
+    "settings-machines-sharing.png": {
+      "sha256": "c2f6cebc2cb38c031ee28fea40801557fd66b0fca05451fab77f856fb6002799",
+      "bytes": 92464
     },
     "settings-mcp-lens.png": {
       "sha256": "973778b03b3908ba46a1a4891f82e97cc2baba1ab81b690c665bcb288f9272ac",
@@ -4012,6 +4068,10 @@
     "settings-plugins.png": {
       "sha256": "0fc200cd109fd97017fa9875b280b994c0caaa5b233e250640a34b7fbdead0a2",
       "bytes": 258267
+    },
+    "settings-production-targets.png": {
+      "sha256": "51e2aaf9eeeee4ea629d82745c1292e51252b2bf42d6f8c184df24371d672344",
+      "bytes": 37212
     },
     "settings-provider-host-approval.png": {
       "sha256": "ead2e4a9a02a6c2c530f60907117f1c34d5a6b43459a765439b3ee342dd4a777",
@@ -4245,6 +4305,10 @@
       "sha256": "4d9a74e4772790650f884d6fb80478f0a09ecdc2fa36df93a63211abd5a33616",
       "bytes": 136932
     },
+    "settings-trusted-package-registries.png": {
+      "sha256": "b32c94b67f927d0e705e84e291524238be06a8c47c652b4221a149c1ca7227bf",
+      "bytes": 41648
+    },
     "settings-trusted-ssh-hosts.png": {
       "sha256": "d3e54160fc408f2f94b7eb224754b714c7050b0ee82e5f396a82248a70dac715",
       "bytes": 35973
@@ -4424,6 +4488,10 @@
     "side-chat-reply-actions-top-right.png": {
       "sha256": "5c51137b020d7ee9765f243d216a28f74a85ee1e967bbfbbb9d3c2532c41bbae",
       "bytes": 48358
+    },
+    "side-chat-reply-prose.png": {
+      "sha256": "f7f3249ebc40801ffeb4ae9e25478288a9c91d7a65966acfc43174f33d3f720b",
+      "bytes": 29148
     },
     "side-chat-restored-after-restart.png": {
       "sha256": "d80b50e2f1d20ca398f1ca870182eaea99a4d2a17b574d3fae0189608669c885",
@@ -4652,6 +4720,18 @@
     "skill-model-activation.png": {
       "sha256": "574bdc29e3316bd6a198fd121bdc71d702e12816878e6e1a24d4bdf801f7c412",
       "bytes": 161523
+    },
+    "skill-preflight-missing-agent.png": {
+      "sha256": "b0d18fe25094b97e222555d79576c61bf1b2ded293b758a7c1a6f1eb393a83f8",
+      "bytes": 23834
+    },
+    "skill-preflight-runtime-blockers.png": {
+      "sha256": "fb9c8507822a3f1ece9f578de02193b08de3e526c3fd1c3224e8735ab156a590",
+      "bytes": 186021
+    },
+    "skill-workflow-dependency.png": {
+      "sha256": "ce2a0f2b6b2e18d5f4d3a90f96b9706c41e14de67cc722474a56cdc02f7945b7",
+      "bytes": 152460
     },
     "skills-demo-invoked.png": {
       "sha256": "b5ce90046f74aa425e1eb86fc1316bfe8f2f6b087425649ac682416328e4ecea",
@@ -4932,6 +5012,14 @@
     "thread-manual-title-preserved.png": {
       "sha256": "04575c63d48f1055be113887c9d2c89a1a63c26ea07454b354c80300d541798d",
       "bytes": 27260
+    },
+    "thread-model-override-picker.png": {
+      "sha256": "4ff1b0da4b88069b08acbdbf05a21de8a375423e5f5cb74e4c83028193975a61",
+      "bytes": 15396
+    },
+    "thread-model-override-warning.png": {
+      "sha256": "f3fd316e5a38ae8178dac2098303b8f6f0eed4080638f453c41b2715abfcd8c6",
+      "bytes": 46356
     },
     "thread-multiple-related-prs.png": {
       "sha256": "6365208dac24e07eeab976744ed20332822618ea2df90e01eb2f478d0d55ece7",

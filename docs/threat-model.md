@@ -333,6 +333,12 @@ The target runtime, egress, credential, lifecycle, and checkpoint architecture i
   containment, because they run repository git hooks. No model verdict
   participates. Every grant is recorded to the decision log. See
   [`plans/auto-approval-classifier.md`](plans/auto-approval-classifier.md).
+- **Environment setup.** Suggests values for the settings above from prompts a person answered,
+  each one a counterfactual re-run of the deterministic rule that raised the prompt. It never
+  reads repository content, has no agent tool, applies only what the user ticks, and adds no grant
+  path; under Guarded YOLO, trusted package registries can only remove a registry prompt and
+  production targets can only add prompts. See
+  [`plans/environment-setup.md`](plans/environment-setup.md).
 - **Approval and mutation gates.** Risky/external shell commands ask for explicit
   approval; custom tools prompt or use their documented remembered-grant path. File
   mutations flow through workspace guards, the diff queue, hooks, and recoverability
