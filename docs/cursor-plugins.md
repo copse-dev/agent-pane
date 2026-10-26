@@ -148,6 +148,11 @@ metadata:
   version: '1.0'
 # Descriptive only: does not authorize these tools.
 allowed-tools: Bash(python:*) Read
+# Optional Copse preflight facts; grants no tools, agents, or permissions.
+copse-requirements:
+  tools: [read_skill, run_shell]
+  agents: [reviewer]
+  executors: [native]
 # Optional: extra read-only entries, relative to this directory.
 paths:
   - data
@@ -179,6 +184,34 @@ paths:
   model eligibility. Both invocation controls default to manual/model on; setting
   manual and model invocation both disabled leaves the skill visible only as a
   Sources entry.
+- `copse-requirements` is an explicit, bounded preflight declaration. `tools` names
+  exact Copse tools, `agents` names discovered custom agent definitions, and
+  `executors` lists permitted runner kinds (`native`, `acp`, `subagent`). Tools and
+  agents have at most 32 names of at most 128 characters; unknown requirement
+  fields are rejected. This does not infer a dependency graph from prose or from
+  `compatibility`/`allowed-tools`. Skill dependencies use the separate shared
+  `copse-dependencies` contract (at most 16 sibling skill names in the same
+  source/plugin container), whose authorization policy remains authoritative.
+  Sources shows missing agents/files and unresolved turn-specific checks; native
+  invocation/activation checks actual offered tools before loading instructions.
+  Known blockers stop skill instruction injection and new read grants. A missing
+  supporting file named in SKILL.md prose is a warning, not a blocker: the skill
+  still loads with a note to continue without it. Missing,
+  disabled, excluded executors and untested facts have distinct diagnostics.
+  A `supported` capability means only that the declared requirement is available;
+  workflow/model compatibility stays **untested**, including for ACP/child runners
+  until they supply actual toolset and executor facts. No declaration grants
+  permissions, enables plugins, installs dependencies, or changes model budgets.
+  Host integrations pass the executor as the activation constructor's optional
+  fourth argument and the catalog builder's optional second argument. Omitting it
+  keeps executor checks untested; the native parent supplies `native` explicitly.
+- Fenced TSV audit records with timestamp (`ts`/`timestamp`), `evidence` and `result`
+  columns are data;
+  paths inside them are not supporting-file references. Prose references and
+  executable code fences still count. After changing the reference classifier,
+  `pnpm sync:cursor-skills --refresh-references` regenerates only `SOURCE.json`
+  diagnostics after verifying the pinned payload hash, inventory and provenance.
+  The ordinary sync command remains the reviewed path for changing vendor bytes.
 - `disable-model-invocation` keeps a skill out of the model's catalog; the
   user can still invoke it with `/name`.
 - `paths` declares extra read-only entries for `run_shell`. When a skill is

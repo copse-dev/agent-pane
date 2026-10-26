@@ -1,3 +1,8 @@
+import {
+  createSkillActivationTurn,
+  runWithSkillActivationTurn,
+  type SkillActivationTurn,
+} from '../skills/skill-activation.ts'
 import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
 import { captureInlineCanvasScope } from '../inline-canvas-context.ts'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
@@ -60,10 +65,10 @@ export { BRIDGE_MCP_SERVER_NAME }
  * context-free workspace tools so ACP and native model runs share the same
  * schemas, permission policy, sandbox escape flow, diff queue, and Git/GitHub
  * implementations. Orchestration tools that depend on native-loop context
- * (ask_user, explore subagents, todos, memories, etc.) stay private. The one
- * context-dependent exception is `advisor`: agent-service scopes an advisor
- * context to the whole ACP turn (Copse's view of the transcript), so an
- * external executor can consult the advisor exactly like a native run.
+ * (ask_user, explore subagents, todos, memories, etc.) stay private. The
+ * context-dependent exceptions have explicit per-turn bindings: `advisor`
+ * receives Copse's transcript, and `read_skill` receives an independent bounded
+ * activation allowance. Neither inherits a parent run's AsyncLocalStorage state.
  * Requests must carry the per-session bearer token; the server binds 127.0.0.1
  * on an ephemeral port and lives only for the pooled ACP session.
  */
@@ -77,6 +82,7 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // Workspace reads, searches, and diff-queued edits. Offering these lets an
   // ACP agent opt into the exact same path validation and edit approval model
   // as a native run instead of relying on adapter-specific implementations.
+  'read_skill',
   'read_file',
   'write_file',
   'str_replace',
@@ -283,6 +289,8 @@ export interface AcpNativeBridge {
   token: string
   /** Set only while this bridge's owning thread is running an ACP turn. */
   setAdvisorContext: (context: AdvisorRunnerContext | null) => void
+  /** Independent run-owned allowance; cleared between prompts. Never capture a parent ALS store. */
+  setSkillActivationTurn: (turn: SkillActivationTurn | null) => void
   /**
    * Bind the turn's already-resolved execution context so bridged tools resolve
    * paths against the same root as the turn itself — in worktree checkout mode
@@ -360,6 +368,7 @@ interface BridgeExecuteContext {
   getPendingExecutionContext: () => Promise<ThreadExecutionContext | null> | null
   getInlineCanvasScope: () => ReturnType<typeof captureInlineCanvasScope>
   getTurnTreeId: () => ReturnType<typeof getActiveRunTurnTreeId>
+  getSkillActivationTurn: () => SkillActivationTurn | null
   networkScopeAlreadyApplies: boolean
   /** The bridge was started for a deferred-worktree thread: offer `request_write_access`. */
   offerWriteAccess: boolean
@@ -521,6 +530,19 @@ function buildMcpServer(
         isError: true,
       }
     }
+    // Capture once: a request must never spend the allowance of a later prompt.
+    const skillTurn = ctx.getSkillActivationTurn()
+    if (name === 'read_skill' && !skillTurn) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: 'Skill reading is unavailable outside a supported coding-agent turn.',
+          },
+        ],
+        isError: true,
+      }
+    }
     const requestKey = String(extra.requestId)
     // MCP request numbers can repeat across sessions/retries and are not ACP
     // transcript IDs. Own the identity of this execution at the host boundary.
@@ -610,7 +632,10 @@ function buildMcpServer(
             // must use that human epoch, never a guessed thread-id fallback.
             if (turnTreeId !== null) setActiveRunTurnTreeId(turnTreeId)
             return runWithThreadExecutionContext(executionContext, () =>
-              runWithBridgeExecutionId(bridgeExecutionId, withPermissionContext),
+              runWithSkillActivationTurn(
+                skillTurn ?? createSkillActivationTurn([], [], 0, 'acp'),
+                () => runWithBridgeExecutionId(bridgeExecutionId, withPermissionContext),
+              ),
             )
           }),
         )
@@ -732,6 +757,7 @@ export async function startAcpNativeBridge(
   // Capture it at request start and bind it with AsyncLocalStorage during the
   // advisor call; simultaneous bridges can never see one another's transcript.
   const advisorContext: { current: AdvisorRunnerContext | null } = { current: null }
+  let skillTurn: SkillActivationTurn | null = null
   let turnSignal: AbortSignal | null = null
   let executionContext: ThreadExecutionContext | null = null
   let pendingExecutionContext: Promise<ThreadExecutionContext | null> | null = null
@@ -778,6 +804,7 @@ export async function startAcpNativeBridge(
         getPendingExecutionContext: () => pendingExecutionContext,
         getInlineCanvasScope: () => inlineCanvasScope,
         getTurnTreeId: () => turnTreeId,
+        getSkillActivationTurn: () => skillTurn,
         networkScopeAlreadyApplies,
         offerWriteAccess,
         recordWorkspaceWrite: (path) => workspaceWriteObserver?.(path),
@@ -822,7 +849,11 @@ export async function startAcpNativeBridge(
     setAdvisorContext: (context): void => {
       advisorContext.current = context
     },
+    setSkillActivationTurn: (turn): void => {
+      skillTurn = turn
+    },
     setExecutionContext: (context): void => {
+      if (context === null) skillTurn = null
       executionContext = context
       inlineCanvasScope = captureInlineCanvasScope()
       turnTreeId =
