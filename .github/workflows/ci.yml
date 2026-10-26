@@ -174,6 +174,9 @@ jobs:
       unit_specs: ${{ steps.plan.outputs.unit_specs }}
       # Whether the real Docker reviewer cell needs its focused conformance job.
       review_cell_required: ${{ steps.review-cell-plan.outputs.required }}
+      # Whether this is the nightly screenshot drift refresh PR, which renders
+      # everything even as a draft and reviews it without ownership scoping.
+      screenshot_refresh: ${{ steps.screenshot-refresh.outputs.refresh }}
     steps:
       - name: Verify merge-queue GitHub client methods
         uses: actions/github-script@v9
@@ -468,6 +471,21 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # The nightly drift refresh PR (screenshot-refresh.yml): one empty commit
+      # on `main` from `screenshot-refresh/main`, opened as a draft by the
+      # release App. Its evidence must be a full render of `main`, so it is
+      # keyed on the head branch, which the PR's first `opened` run already
+      # has; a label would arrive as a second event, and could be added to a
+      # feature PR, turning off its ownership scoping.
+      - name: Identify the screenshot drift refresh PR
+        id: screenshot-refresh
+        env:
+          REFRESH: >-
+            ${{ github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository &&
+            github.head_ref == 'screenshot-refresh/main' && github.base_ref == 'main' }}
+        run: echo "refresh=$REFRESH" >> "$GITHUB_OUTPUT"
+
       - id: plan
         env:
           STACK_TIP: ${{ steps.screenshot-stack.outputs.tip }}
@@ -488,6 +506,8 @@ jobs:
           # than waiting for the nightly net (e.g. infra/runner changes whose
           # blast radius the selector-vocabulary map cannot see).
           CI_FULL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'ci-full') }}
+          # The drift refresh PR's diff is empty, so the oracle would skip it.
+          SCREENSHOT_REFRESH: ${{ steps.screenshot-refresh.outputs.refresh }}
         run: |
           BASE_REF="${BASE_REF#refs/heads/}"
           if [ "$EVENT" = "schedule" ]; then
@@ -538,6 +558,13 @@ jobs:
             { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # After the screenshot-only escape, like the label: committing the
+          # reviewed hashes must not render everything again.
+          if [ "$SCREENSHOT_REFRESH" = "true" ]; then
+            echo "Screenshot drift refresh PR -> full e2e suite (render all of main)"
+            { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ "$CI_FULL_LABEL" = "true" ]; then
             echo "ci-full label -> full e2e suite (oracle bypassed on request)"
             { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
@@ -576,6 +603,7 @@ jobs:
           STACK_TIP: ${{ steps.screenshot-stack.outputs.tip }}
           CI_FULL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'ci-full') }}
           UPDATE_SCREENSHOTS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }}
+          SCREENSHOT_REFRESH: ${{ steps.screenshot-refresh.outputs.refresh }}
         run: node scripts/small-gate-shadow.mts
       - name: Preserve selected CI plan
         if: always()
@@ -1334,11 +1362,13 @@ jobs:
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.draft == false ||
-       contains(github.event.pull_request.labels.*.name, 'ci-full'))
+       contains(github.event.pull_request.labels.*.name, 'ci-full') ||
+       needs.precheck.outputs.screenshot_refresh == 'true')
     # Draft PRs skip the heavy tier. Drafts cannot merge, so the expensive
     # signal has no consumer until the PR is promoted — and `ready_for_review`
     # (see the trigger block) dispatches the full tier the moment it is. The
     # `ci-full` label forces it earlier for a draft that genuinely wants it.
+    # The draft screenshot drift refresh PR is rendered for its evidence.
     # `precheck` / `check` / `autoformat` still run on drafts, so lint, types,
     # unit tests and the autofixer keep giving fast feedback.
     # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
@@ -1435,7 +1465,8 @@ jobs:
        contains(github.event.pull_request.labels.*.name, 'update-screenshots')) &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.draft == false ||
-       contains(github.event.pull_request.labels.*.name, 'ci-full'))
+       contains(github.event.pull_request.labels.*.name, 'ci-full') ||
+       needs.precheck.outputs.screenshot_refresh == 'true')
     # Zero-shard plans (oracle mode=skip / empty subset) skip this job via
     # `e2e_shard_total != 0` — an empty matrix is a GHA **failure**, not a skip
     # (see the precheck shards step).
@@ -1451,6 +1482,7 @@ jobs:
     # Draft PRs skip e2e for the same reason as `build` above; `build` is also
     # gated, so on a draft this job's `needs` are unsatisfied and it would skip
     # regardless — the explicit clause keeps the intent readable at this job.
+    # Both make the same exception for the draft screenshot drift refresh PR.
     # e2e runs on GitHub-hosted ubuntu-24.04 by default, for every event.
     # The self-hosted Docker fleet (see ci-runners/) is opt-in via
     # SELF_HOSTED_E2E=copse-e2e. The fleet was the default while this repo was
@@ -1486,7 +1518,7 @@ jobs:
            && (vars.SELF_HOSTED_E2E == 'copse-e2e'
                && fromJSON('["self-hosted", "copse-e2e"]')
                || fromJSON('["ubuntu-24.04"]'))) }}
-    timeout-minutes: 45
+    timeout-minutes: 55
     # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
     # whole gate finishes well inside the runner window. Each shard runs a disjoint
     # duration-balanced slice of specs. The shared `dist` artifact
@@ -1498,10 +1530,16 @@ jobs:
     # launches too many Electron/gortex processes; a later unrelated spec then
     # fails to boot or OOM-crashes ("shutdown signal"). #339's data showed that
     # 8 shards stays under that limit even in the densest spec range.
-    # The per-attempt `timeout` is 720s (step cap 26 min: two attempts plus
+    # The per-attempt `timeout` is 840s (step cap 31 min: two attempts plus
     # cleanup and diagnostics). The ten-minute budget interrupted otherwise
-    # passing 44-spec shards at the tail (exit 124), so twelve minutes gives
-    # the growing suite bounded headroom without changing individual test caps.
+    # passing 44-spec shards at the tail (exit 124); by October 2026 full
+    # 51-53-spec shards took 11:35-11:58 against the twelve-minute budget and
+    # timed out with no failing assertion. Spec bodies matched their recorded
+    # weights and the LPT split was already within seconds across shards, so
+    # the suite total itself had outgrown 8 x 720s. Fourteen minutes restores
+    # bounded headroom without changing individual test caps. The job's
+    # 55-minute timeout covers that 31-minute step plus setup, which took 18-20
+    # minutes on slow hosted runners, so a retried shard still reaches its digest.
     # Keep eight shards as the memory ceiling (#339). Shards are balanced by
     # recorded spec durations; refresh them with `pnpm run e2e:shard-weights`
     # (and speed up specs) before raising this budget.
@@ -1669,7 +1707,7 @@ jobs:
         if: >-
           needs.precheck.outputs.mode == 'full' ||
           needs.precheck.outputs.mode == 'subset'
-        timeout-minutes: 26
+        timeout-minutes: 31
         env:
           PLAN_MODE: ${{ needs.precheck.outputs.mode }}
           PLAN_SPECS: ${{ needs.precheck.outputs.specs }}
@@ -2024,11 +2062,11 @@ jobs:
             echo "::group::e2e shard ${{ matrix.shard }} attempt $attempt"
             # Tee so the reporter output can be re-read for the digest below.
             # PIPESTATUS, not $?, or we would read tee's status instead.
-            # Full shards can exceed ten minutes as the native suite grows. Keep
-            # a bounded twelve-minute attempt watchdog; the enclosing step allows
+            # Full shards can exceed twelve minutes as the native suite grows. Keep
+            # a bounded fourteen-minute attempt watchdog; the enclosing step allows
             # both attempts plus cleanup without changing individual test caps.
             COPSE_E2E_OUTCOMES_DIR="$GITHUB_WORKSPACE/e2e-evidence/outcomes" COPSE_E2E_ATTEMPT="$attempt" SHARD_INDEX="${{ matrix.shard }}" \
-            ${TIMEOUT:+$TIMEOUT -k 15 720} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS 2>&1 \
+            ${TIMEOUT:+$TIMEOUT -k 15 840} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS 2>&1 \
               | tee "$run_log"
             attempt_status=${PIPESTATUS[0]}
             echo "::endgroup::"
@@ -2168,7 +2206,7 @@ jobs:
   # them to the PR branch, for example by cherry-picking the compare commit.
   # Forks retain the artifact-only/manual path.
   screenshot-artifacts:
-    needs: [build, e2e]
+    needs: [precheck, build, e2e]
     if: >-
       !cancelled() && needs.build.result == 'success' && needs.e2e.result == 'success' &&
       github.event_name == 'pull_request'
@@ -2232,6 +2270,9 @@ jobs:
           # everything", including sub-threshold micro-diffs.
           UPDATE_SCREENSHOTS_LABEL: >-
             ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }}
+          # The drift refresh PR's empty diff owns no screenshot, so scoping
+          # would hold every candidate. It keeps the noise and flap filters.
+          SCREENSHOT_SCOPE: ${{ needs.precheck.outputs.screenshot_refresh == 'true' && 'off' || '' }}
         run: |
           set -euo pipefail
           shots='candidates/tests/e2e/screenshots'
@@ -2416,7 +2457,7 @@ jobs:
           REVIEW_CELL_REQUIRED: ${{ needs.precheck.outputs.review_cell_required }}
           REVIEW_CELL_RESULT: ${{ needs.review-cell.result }}
           BUILD_RESULT: ${{ needs.build.result }}
-          E2E_REQUIRED: ${{ github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full'))) }}
+          E2E_REQUIRED: ${{ github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full') || needs.precheck.outputs.screenshot_refresh == 'true')) }}
           E2E_SHARD_TOTAL: ${{ needs.precheck.outputs.e2e_shard_total }}
           E2E_RESULT: ${{ needs.e2e.result }}
           NEEDS_JSON: ${{ toJSON(needs) }}

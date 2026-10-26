@@ -1,4 +1,9 @@
-import { spawn, type ChildProcess, type SpawnOptionsWithoutStdio } from 'node:child_process'
+import {
+  spawn,
+  type ChildProcess,
+  type SpawnOptions,
+  type SpawnOptionsWithoutStdio,
+} from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
@@ -241,7 +246,7 @@ export async function spawnShellInProjectSandbox(
      */
     violationId?: string
     executionTarget?: ExecutionTarget
-  } & Pick<SpawnOptionsWithoutStdio, 'stdio'>,
+  } & Pick<SpawnOptions, 'stdio'>,
 ): Promise<ChildProcess> {
   const target = resolveSpawnTarget(opts.executionTarget, opts.cwd)
   if (opts.readonlyCheckout && (isSshExecutionTarget(target) || opts.unsandboxed)) {

@@ -325,3 +325,39 @@ describe('foreground shell sandbox violation attribution', () => {
     )
   })
 })
+
+describe('foreground shell completion', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'copse-foreground-'))
+  })
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const run = (command: string, timeout: number): ReturnType<typeof runShellOnce> =>
+    runShellOnce(command, root, timeout, new AbortController().signal, true, process.env)
+
+  it('gives a command that reads stdin EOF instead of hanging until the timeout', async () => {
+    const startedAt = Date.now()
+    const result = await run('read x; echo got:$x', 5_000)
+    assert.match(result.output, /got:/)
+    assert.ok(Date.now() - startedAt < 4_000)
+  })
+
+  it('keeps the output captured before a timeout and points at run_background', async () => {
+    await assert.rejects(run('echo started; sleep 5', 1_000), (error: unknown) => {
+      assert.ok(error instanceof Error)
+      assert.match(error.message, /timed out after 1000ms/)
+      assert.match(error.message, /started/)
+      assert.match(error.message, /run_background with wake_on_completion/)
+      return true
+    })
+  })
+
+  it('reports a signal-killed command as a failure', async () => {
+    const result = await run('kill -9 $$', 5_000)
+    assert.equal(result.exitCode, 137)
+  })
+})

@@ -40,17 +40,17 @@ export interface LoadedSupervisedTasks {
 }
 
 export interface SupervisedTaskStore {
-  loadAll(): Promise<LoadedSupervisedTasks>
-  loadProject(projectId: string): Promise<LoadedSupervisedTasks>
-  get(projectId: string, taskId: string): Promise<SupervisedTaskMeta | null>
+  loadAll: () => Promise<LoadedSupervisedTasks>
+  loadProject: (projectId: string) => Promise<LoadedSupervisedTasks>
+  get: (projectId: string, taskId: string) => Promise<SupervisedTaskMeta | null>
   /** Strict identity lookup: corrupt/missing metadata in an existing slot must throw. */
-  findPersisted(
+  findPersisted: (
     projectId: string,
     taskId: string,
-  ): Promise<SupervisedTaskMeta | SupervisedTaskArchive | null>
-  saveTransition(meta: SupervisedTaskMeta, audit: SupervisedTaskAuditEvent): Promise<void>
-  compactTerminalTasks(before: number): Promise<number>
-  loadTaskArchive(projectId: string): Promise<SupervisedTaskArchive[]>
+  ) => Promise<SupervisedTaskMeta | SupervisedTaskArchive | null>
+  saveTransition: (meta: SupervisedTaskMeta, audit: SupervisedTaskAuditEvent) => Promise<void>
+  compactTerminalTasks: (before: number) => Promise<number>
+  loadTaskArchive: (projectId: string) => Promise<SupervisedTaskArchive[]>
 }
 
 function safeRead(path: string): string | null {

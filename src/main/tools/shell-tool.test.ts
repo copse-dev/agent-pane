@@ -1,12 +1,19 @@
-import { afterEach, describe, it } from 'node:test'
+import { afterEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   COMMAND_OUTPUT_MAX_BYTES,
   COMMAND_OUTPUT_TRUNCATED_MARKER,
 } from '../services/exec/subprocess-output-cap.ts'
+import { SandboxManager, type WrapWithSandboxOptions } from '@anthropic-ai/sandbox-runtime'
+import { AUTO_APPROVAL_LEVEL_SETTING } from '@shared/auto-approval.ts'
+import { setProjectSandboxEnabled } from '../project-sandbox/enabled.ts'
+import { setApprovalHandler, type ApprovalRequest } from '../services/approval.ts'
+import { clearGitRemotesCache } from '../services/security/git-remotes.ts'
+import { setWorkspaceTrusted } from '../services/security/workspace-trust.ts'
+import { setSetting } from '../services/storage/settings.test-shim.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
 import {
   runWithThreadExecutionContext,
@@ -139,5 +146,141 @@ describe('run_shell over-cap output', () => {
       assert.ok(Buffer.byteLength(err.message, 'utf8') <= COMMAND_OUTPUT_MAX_BYTES + 64)
       return true
     })
+  })
+})
+
+describe('run_shell unsandboxed retry of a piped command (pipefail)', () => {
+  const cleanups: Array<() => void | Promise<void>> = []
+  afterEach(async () => {
+    for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
+  })
+
+  const SANDBOXED_OUTPUT = 'sandboxed attempt denied'
+
+  /**
+   * Run `command` on macOS-shaped state (pipefail is injected for pipelines)
+   * with an active project sandbox whose attempt exits non-zero and records a
+   * violation against the command that actually ran, so the runner-verified
+   * retry is offered. Returns every approval prompt shown and the tool result.
+   */
+  async function runFailingSandboxedPipeline(
+    command: string,
+  ): Promise<{ prompts: ApprovalRequest[]; outcome: string }> {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'copse-shell-retry-')))
+    cleanups.push(async () => rm(root, { recursive: true, force: true }))
+    await mkdir(join(root, '.git'))
+    await writeFile(
+      join(root, '.git', 'config'),
+      '[remote "origin"]\n\turl = https://example.com/x.git\n',
+    )
+    clearGitRemotesCache()
+    cleanups.push(clearGitRemotesCache)
+    cleanups.push(setWorkspaceRootForTest(root))
+    setWorkspaceTrusted(root, true)
+    cleanups.push(() => {
+      setWorkspaceTrusted(root, false)
+    })
+    setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'read')
+    setSetting('autoRunSandboxCommands', true)
+    await setSetting('safetyClassifierEnabled', false)
+    cleanups.push(() => {
+      setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+    })
+
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')
+    Object.defineProperty(process, 'platform', { value: 'darwin' })
+    cleanups.push(() => {
+      if (platform) Object.defineProperty(process, 'platform', platform)
+    })
+
+    const executed = `set -o pipefail\n${command}`
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    mock.method(SandboxManager, 'cleanupAfterCommand', () => undefined)
+    // The denial lands on the sandboxed attempt of `executed`, keyed as ASRT keys it:
+    // the run's own commandId when the wrapper is given one, else the command text.
+    let deniedRunKey: string | undefined
+    mock.method(
+      SandboxManager,
+      'wrapWithSandboxArgv',
+      (
+        wrapped: string,
+        _binShell?: unknown,
+        _customConfig?: unknown,
+        _abortSignal?: AbortSignal,
+        _cwd?: string,
+        options?: WrapWithSandboxOptions,
+      ) => {
+        if (wrapped.includes(executed)) deniedRunKey ??= options?.commandId ?? wrapped
+        return Promise.resolve({
+          argv: ['/bin/sh', '-c', `echo '${SANDBOXED_OUTPUT}'; exit 1`],
+          env: { ...process.env },
+        })
+      },
+    )
+    mock.method(
+      SandboxManager.getSandboxViolationStore(),
+      'getViolationsForCommand',
+      (c: string) =>
+        c === deniedRunKey ? [{ line: 'deny(1) network-outbound', timestamp: new Date() }] : [],
+    )
+    setProjectSandboxEnabled(true)
+    cleanups.push(() => {
+      setProjectSandboxEnabled(false)
+      mock.restoreAll()
+    })
+
+    const prompts: ApprovalRequest[] = []
+    setApprovalHandler((request) => {
+      prompts.push(request)
+      return Promise.resolve({ approved: false, remember: false })
+    })
+    cleanups.push(() => {
+      setApprovalHandler(null)
+    })
+
+    const context: ThreadExecutionContext = {
+      projectId: 'shell-retry',
+      threadId: 'shell-retry',
+      projectRoot: root,
+      root,
+      checkoutMode: 'shared',
+      branch: null,
+    }
+    const signal = new AbortController().signal
+    const outcome = await runWithThreadExecutionContext(context, async () =>
+      runShellTool.execute({ command, timeout_ms: 30_000 }, signal),
+    ).then(
+      (result) => (typeof result === 'string' ? result : result.result),
+      (err: unknown) => (err instanceof Error ? err.message : String(err)),
+    )
+    return { prompts, outcome }
+  }
+
+  it('auto-approves the retry from the raw command, not the injected pipefail line', async () => {
+    // `git fetch origin` alone is a read-tier shape; the retry used to be judged
+    // on `set -o pipefail\n…`, which no tier recognises, so it prompted.
+    const { prompts, outcome } = await runFailingSandboxedPipeline(
+      'git fetch origin 2>&1 | tail -5',
+    )
+    assert.deepEqual(
+      prompts.map((p) => p.title),
+      [],
+    )
+    assert.notEqual(outcome, 'User declined to run outside the sandbox.')
+    // The retry replaced the sandboxed attempt's result.
+    assert.ok(!outcome.includes(SANDBOXED_OUTPUT), outcome)
+  })
+
+  it('shows the agent-authored command, without pipefail, when the retry prompts', async () => {
+    const command = 'git fetch https://example.com/other.git 2>&1 | tail -5'
+    const { prompts, outcome } = await runFailingSandboxedPipeline(command)
+    assert.equal(outcome, 'User declined to run outside the sandbox.')
+    assert.equal(prompts.length, 1)
+    const [prompt] = prompts
+    assert.ok(prompt)
+    assert.equal(prompt.cause, 'shell-sandbox-retry')
+    const text = [prompt.body, prompt.bodyAdvice ?? '', prompt.bodyFooter ?? ''].join('\n')
+    assert.ok(text.includes(command), text)
+    assert.ok(!text.includes('pipefail'), text)
   })
 })

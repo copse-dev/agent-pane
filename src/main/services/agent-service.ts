@@ -248,6 +248,7 @@ import {
 } from './providers/acp-billing-fallback.ts'
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
+import { cancelAgentInitiatedAcpTurn } from './acp/acp-session-pool.ts'
 import {
   ACP_UNFINISHED_TURN_BUDGET_FALLBACK,
   ACP_UNFINISHED_TURN_FALLBACK,
@@ -1941,6 +1942,7 @@ async function runAgentWithInlineCanvas(
       invokedSkills,
       parentLoopTools.map((tool) => tool.name),
       systemPromptBuild.invokedSkillContextBytes,
+      'native',
     )
     const activeNestedInstructionPaths = new Set(
       systemPromptBuild.instructionMetadata.activeNestedPaths,
@@ -2911,6 +2913,8 @@ async function runAgentWithInlineCanvas(
 
 export function abortAgent(threadId: string, reason?: 'send_now'): void {
   abortMap.get(threadId)?.abort(reason)
+  // A turn the coding agent resumed on its own has no entry above.
+  cancelAgentInitiatedAcpTurn(threadId)
 }
 
 const mobileRunIds = new WeakMap<AbortController, string>()

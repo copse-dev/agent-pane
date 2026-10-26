@@ -1430,7 +1430,7 @@ describe('browser pane webview size sync', () => {
 
     try {
       assert.equal(recorder.observed.length, 1)
-      assert.equal(recorder.observed[0]?.className, 'browser-body')
+      assert.ok(recorder.observed[0]?.classList.contains('browser-body'))
 
       const host = qsRequired(viewer, '.browser-tab-panel.is-active .browser-webview-host')
       const webview = qsRequired<FakeWebview>(host, '.browser-webview')

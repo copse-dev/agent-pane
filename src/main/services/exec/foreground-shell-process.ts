@@ -1,5 +1,6 @@
 import { errorMessage } from '@shared/errors.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { constants } from 'node:os'
 import {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
@@ -7,7 +8,11 @@ import {
   sandboxViolationCountForRun,
   spawnShellInProjectSandbox,
 } from '../../project-sandbox/index.ts'
-import { CappedOutputAccumulator, COMMAND_OUTPUT_MAX_BYTES } from './subprocess-output-cap.ts'
+import {
+  CappedOutputAccumulator,
+  COMMAND_OUTPUT_MAX_BYTES,
+  stripTerminalControlSequences,
+} from './subprocess-output-cap.ts'
 import { terminateProcessTree } from './subprocess-kill.ts'
 import { emitShellOutput } from './shell-output-context.ts'
 import { adoptSupervisedBackgroundProcess } from './supervised-background-process.ts'
@@ -16,6 +21,25 @@ import { getThreadExecutionContext } from '../thread-execution-context.ts'
 /** Tells the model how to reach output dropped from the middle of an over-cap run. */
 const RUN_SHELL_TRUNCATION_HINT =
   'Re-run with a narrower command (grep -n, sed -n, head/tail, or redirect to a file) to see the dropped part.'
+
+/** Steers a timed-out run toward the background path instead of a blind rerun. */
+const RUN_SHELL_TIMEOUT_HINT =
+  'For long builds, test suites, or other slow work, use run_background with wake_on_completion instead of rerunning in the foreground.'
+
+/** Keep what the command printed before the deadline so the model is not left rerunning it blind. */
+function timeoutError(timeoutMs: number, output: string): Error {
+  const clean = stripTerminalControlSequences(output).trim()
+  const captured = clean ? `Output before the timeout:\n${clean}` : '(no output before the timeout)'
+  return new Error(
+    `Command timed out after ${String(timeoutMs)}ms.\n${captured}\n\n${RUN_SHELL_TIMEOUT_HINT}`,
+  )
+}
+
+/** Shell convention for a signal death (128 + signal number), so it never reads as success. */
+function exitCodeFor(code: number | null, signal: NodeJS.Signals | null): number {
+  if (code !== null) return code
+  return signal ? 128 + constants.signals[signal] : 1
+}
 
 export interface ShellRunResult {
   output: string
@@ -71,7 +95,10 @@ export async function runShellOnce(
         proc = await spawnShellInProjectSandbox(command, {
           cwd,
           env,
-          stdio: 'pipe',
+          // Nothing writes to the child's stdin, so a command that reads it
+          // (`read`, a confirmation prompt, an editor) gets EOF instead of
+          // hanging until the timeout.
+          stdio: ['ignore', 'pipe', 'pipe'],
           unsandboxed,
           violationId,
           readGrantTargets,
@@ -161,7 +188,7 @@ export async function runShellOnce(
         if (!settled) {
           settled = true
           signal.removeEventListener('abort', onAbort)
-          reject(new Error(`Command timed out after ${String(timeout_ms)}ms`))
+          reject(timeoutError(timeout_ms, outputAcc.toString()))
         }
       }, timeout_ms)
 
@@ -202,7 +229,7 @@ export async function runShellOnce(
         reject(err instanceof Error ? err : new Error(String(err)))
       })
 
-      proc.on('close', (code) => {
+      proc.on('close', (code, closeSignal) => {
         cleanup()
         const violationCount = sandboxViolationCount()
         finish()
@@ -210,7 +237,7 @@ export async function runShellOnce(
         settled = true
         resolve({
           output: outputAcc.toString(),
-          exitCode: code ?? 0,
+          exitCode: exitCodeFor(code, closeSignal),
           sandboxViolationCount: violationCount,
         })
       })
