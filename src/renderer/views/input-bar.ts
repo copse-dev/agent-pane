@@ -53,7 +53,11 @@ import {
   type PromptArchiveAttachment,
   type PromptVideoAttachment,
 } from '../attachments/prompt-attachments.ts'
-import { bindFileDropTarget, attachFiles } from '../attachments/handle-file-drop.ts'
+import {
+  bindFileDropTarget,
+  attachFiles,
+  UNSUPPORTED_IMAGE_MESSAGE,
+} from '../attachments/handle-file-drop.ts'
 import {
   initMentionPicker,
   relativeDate,
@@ -103,6 +107,7 @@ import {
 } from '@shared/git/thread-branch.ts'
 import { syncThreadGitBranchIfChanged } from '@shared/git/sync-thread-branch.ts'
 import { showErrorToast, showToast } from './toast.ts'
+import { isUnrenderableImageMime } from '@shared/fs/image-path.ts'
 import { type VideoAttachmentRef } from '@shared/video/video-media.ts'
 import { type ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 import { formatByteSize } from '@shared/file-bytes.ts'
@@ -2725,6 +2730,10 @@ export function mountInputBar(
     const img = items.find((i) => i.type.startsWith('image/'))
     if (img) {
       e.preventDefault()
+      if (isUnrenderableImageMime(img.type)) {
+        showToast(UNSUPPORTED_IMAGE_MESSAGE, { variant: 'error' })
+        return
+      }
       const blob = img.getAsFile()
       if (!blob) return
       void readAsDataUrl(blob).then((dataUrl) => {

@@ -2697,6 +2697,10 @@
       "sha256": "7f40dd86799b611ff9f45b65f7bb467a5e0925785c221384b5b1d18764e1b139",
       "bytes": 291691
     },
+    "paste-unsupported-image-toast.png": {
+      "sha256": "c6db4a3c21679f4624041e059cc8b9a3ba755b4fbbba61bb80847d31332064ce",
+      "bytes": 307260
+    },
     "personal-plugin-thread-model-picker.png": {
       "sha256": "f8bf696b5897870068d5b172367586628d535356b815c242c732e4005b9b2445",
       "bytes": 13732
