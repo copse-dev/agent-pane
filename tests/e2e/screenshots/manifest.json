@@ -1114,8 +1114,8 @@
       "bytes": 43438
     },
     "claude-login-deferred-settings.png": {
-      "sha256": "4e807afa8cfcd3a2d990abd47c139bffdbc464907ea5fd2a467f929ecb81dcce",
-      "bytes": 285705
+      "sha256": "1b71fa4d42d5435255bdc64b46089effd039f22dba5448b8dd48ea933a71962a",
+      "bytes": 282875
     },
     "claude-opus-5-5-effort.png": {
       "sha256": "1a68ed511ada2649b6e1e26b7e3dfaa4e611acfb79779326e9ae96b4553ec7d4",
@@ -3554,8 +3554,8 @@
       "bytes": 68521
     },
     "settings-auto-archive.png": {
-      "sha256": "4adeca9115a1298de902536578db3fe92161dbdc3e4b88dc842f0d87aaed4ac1",
-      "bytes": 288633
+      "sha256": "a49b48f4cdfb83391e501e682ee826add3b427591a9148f3cf3ef0fa68f04ce0",
+      "bytes": 289532
     },
     "settings-automation-form-page-2.png": {
       "sha256": "9c5e4af74d45ec88eab1c09415b16710e9a4b21628ac745219c1814d0d7aa7a3",
@@ -4170,20 +4170,20 @@
       "bytes": 117570
     },
     "settings-storage-project-a-worktrees.png": {
-      "sha256": "4dc343ab0131b60ad9405cabe88b93c5842e744f380bfaa0a1013b33eb1540ca",
-      "bytes": 316873
+      "sha256": "a61c4f90f814da2c832d48e2f82539537800efb8152730590301589041100f30",
+      "bytes": 298163
     },
     "settings-storage-project-b-worktrees.png": {
-      "sha256": "7ba9dd2d03894dadfba2438524e94fcca5e640e2b9732ea4afded71dda4b2157",
-      "bytes": 316465
+      "sha256": "3dd6b2286d2dd52c338c2ea302d628dccfd7b9f7610b88117a2e42eb3ffed315",
+      "bytes": 299029
     },
     "settings-storage-project-picker.png": {
       "sha256": "a2d3633fd8e1b78d67d1d88d1a6f4d4cf0b50424578243a5911f47c084200115",
       "bytes": 101364
     },
     "settings-storage.png": {
-      "sha256": "02ae7187b1d5354484fa0a3012159ccfa8e6ae7a96380356f6c1f5e0db06879d",
-      "bytes": 285844
+      "sha256": "11e42efea589446544826b3862563307d68506ce5a368fc1d2bb26b576c5963b",
+      "bytes": 282834
     },
     "settings-styling-appearance.png": {
       "sha256": "02aab289badd8de644ced13c0e7ae29707a40e3a4cc21a1f5e90c141919babf7",
@@ -4370,8 +4370,8 @@
       "bytes": 77065
     },
     "settings-worktree-actions.png": {
-      "sha256": "9871bad5be1ca9689d0df3718c8812ec6a119ab053421a494b8fe1c24ec28453",
-      "bytes": 311734
+      "sha256": "60d64274c383f3cd6f882f3e8f30b46de3758ebaeb140a2548cb91b28ebc410a",
+      "bytes": 317674
     },
     "settings-worktree-bulk-selection.png": {
       "sha256": "1b8466951a00b39365b2ef4b141a3098497d23715d3019ed2301ecbc20e30ec5",
@@ -4386,12 +4386,12 @@
       "bytes": 135733
     },
     "settings-worktree-cleanup-confirm.png": {
-      "sha256": "73429996ff6fd9d1ed9e42787f03d72654ee78a01524ba08933db898346d2b1f",
-      "bytes": 278072
+      "sha256": "7e56a0787aa2ca5983ca439128075d0fd5af4df6896207d036f720e29a2aab70",
+      "bytes": 283632
     },
     "settings-worktree-cleanup-pending.png": {
-      "sha256": "c0e8720e4eff35f38006533523a7dbb55ee5d7293e353a34291cea8d172f3d51",
-      "bytes": 280965
+      "sha256": "a2ae86d5887599440754b8e4821446b72036805086fdd984dbadd8fc377246d8",
+      "bytes": 286278
     },
     "settings-worktree-cleanup-stopped.png": {
       "sha256": "d12582426311d1d0c6c50fd5dac2b53a5b342e675edd849d1e73c9af52ca914c",
