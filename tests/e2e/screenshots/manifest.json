@@ -2721,14 +2721,6 @@
       "sha256": "faebcebe9d8640fd02ee5484979ab064418ac0368d23a8124190a0c6b0d81e2e",
       "bytes": 121553
     },
-    "plugin-client-pairing-interrupt.png": {
-      "sha256": "18215f5524fb83737ede59978c45ade8e27a6c7b04e64895f8073e8c8a7a5349",
-      "bytes": 95129
-    },
-    "plugin-client-pairing.png": {
-      "sha256": "c63cb325de8b3bc41c549bed6fccaef1a254866458cd434c8e0483a637bb5f59",
-      "bytes": 95241
-    },
     "plugin-client-pending-question.png": {
       "sha256": "6525cb67aad99e7067961b938f93dfa02f2fea0b89f65126ebc2a8f876a91fb2",
       "bytes": 42666
