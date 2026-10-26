@@ -1,15 +1,16 @@
-import { mobileDeviceAccessArgsSchema, mobilePairingArgsSchema } from './mobile-companion-args.ts'
 import { networkActivity } from '../services/diagnostics/network-activity.ts'
-import { inspectStorageMaintenance, saveStorageRetention } from '../services/storage-maintenance.ts'
 import { readOpenAiArtifact } from '../services/remote/openai-agents-client.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
-import { storageCleanup } from '../services/storage-cleanup.ts'
-import { storageAreaSchema, storageRetentionSchema } from '../../shared/types/storage-cleanup.ts'
 import { registerPlanHandlers } from './plan-handlers.ts'
+import { registerChatGptPlanHandlers } from './chat-gpt-plan-handlers.ts'
+import { registerClassifierHandlers } from './classifier-handlers.ts'
+import { registerDecisionHandlers } from './decision-handlers.ts'
+import { registerMobileHandlers } from './mobile-handlers.ts'
+import { registerStorageHandlers } from './storage-handlers.ts'
+import { registerUsageHandlers } from './usage-handlers.ts'
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
 import { getSettingsSnapshot, updateSettings } from '../services/storage/settings-transaction.ts'
 import { modelInvalidationService } from '../services/providers/model-invalidation.ts'
-import { getChatGptPlanService } from '../services/providers/chatgpt-plan-service.ts'
 import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
 import { LICENSE_FILE_KINDS, type AboutInfo } from '@shared/third-party-licenses.mts'
 import {
@@ -26,20 +27,6 @@ import { skillRootsSchema } from '../services/skills/skill-roots-schema.ts'
 import { z } from 'zod'
 import { syncPluginClientApi } from '../services/plugins/plugin-client-service.ts'
 import { PLUGIN_CLIENT_API_ID } from '@copse/agent/plugins/plugin-client-api-plugin.ts'
-import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
-import {
-  backgroundClassifierId,
-  getClassifierProfile,
-  listClassifierProfiles,
-  saveClassifierProfile,
-  removeClassifierProfile,
-  screeningClassifierId,
-  setBackgroundClassifier,
-  setScreeningClassifier,
-  testClassifierProfile,
-} from '../services/classifiers/classifier-service.ts'
-import { recordClassifierResultUsage } from '../services/classifiers/classifier-usage.ts'
-import { localClassifiers } from '../services/classifiers/local-classifiers.ts'
 import {
   applyEnvironmentSetup,
   dismissEnvironmentSetup,
@@ -57,14 +44,6 @@ import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boun
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
-import {
-  disableMobileCompanion,
-  enableMobileCompanion,
-  getMobileCompanionState,
-  respondToMobilePairing,
-  revokeMobileDevice,
-  setMobileDeviceAccess,
-} from '../services/mobile/mobile-companion-service.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 import { browserPartitionForContents } from '../windows/browser-web-contents.ts'
 import { isVisibleBrowserSessionPartition } from '@shared/browser-session.ts'
@@ -94,25 +73,18 @@ import {
   setWorkspaceRoot,
   type WorkspaceProjectRef,
 } from '../services/workspace.ts'
-import {
-  exportDecisionLog,
-  readDecisionLog,
-  readThreadDecisionLog,
-} from '../services/security/decision-log-store.ts'
 import { listReadOutsideProjectGrants } from '../services/security/read-outside-grant.ts'
 import { browserSessionOrigins } from '../services/browser/browser-network-grants.ts'
 import { browserThreadScope } from '@shared/browser-session.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { readPendingDeferrals } from '../services/security/deferred-approval-store.ts'
-import { getThreadClassifierUse } from '../services/security/classifier-use-report.ts'
 import { loadCanvasArtefactSummaries, readStoredCanvasArtefact } from '../services/canvas-store.ts'
 import { CANVAS_ARTEFACT_CHANNEL } from '../services/canvas-dispatch.ts'
 import {
   assertFsWriteContent,
   isIndexQueryPattern,
   assertMainFrameSender,
-  assertStorageKey,
   IpcValidationError,
   keyProviderSchema,
   modelCardIdsSchema,
@@ -197,7 +169,7 @@ import { resolveModelPricing } from '../services/providers/model-pricing-store.t
 import { fetchOpenAiCompatibleModelsForSettings } from '../services/providers/provider-models.ts'
 import { resolveBestValueChatModel } from '../services/providers/best-value-model.ts'
 import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
-import { storageGet, storageSet } from '../services/storage/storage.ts'
+import { storageGet } from '../services/storage/storage.ts'
 import {
   getMainWindowBrowserSession,
   getMainWindowForWebContents,
@@ -487,12 +459,6 @@ import {
   isProviderKeyUsable,
   recordProviderKeyValidation,
 } from '../services/providers/provider-key-status.ts'
-import { getUsageSummary } from '../services/storage/usage-ledger.ts'
-import {
-  getPlanWorthItPayload,
-  loadPlanUsageSnapshotAndSample,
-  setClaudePlanMonthlyFeeUsd,
-} from '../services/storage/plan-window-history.ts'
 import {
   fetchLiveIntellectModels,
   invalidateLiveIntellectCache,
@@ -641,8 +607,6 @@ export function registerAllHandlers(
   threadHistoryEditRuntime: ThreadHistoryEditRuntime,
   threadArchivingRuntime: ThreadArchivingRuntime,
 ): void {
-  const mobileAddressSchema = z.string().regex(/^(?:\d{1,3}\.){3}\d{1,3}$/)
-  const mobileDeviceIdSchema = z.uuid()
   const autoArchive = new ThreadAutoArchive({
     ...threadArchivingRuntime,
     isViewed: (projectId, threadId): boolean =>
@@ -674,39 +638,7 @@ export function registerAllHandlers(
     clearInterval(archiveInterval)
   })
 
-  ipcMain.handle('mobile:get-state', (event) => {
-    assertMainFrameSender(event, win)
-    return getMobileCompanionState()
-  })
-  ipcMain.handle('mobile:enable', async (event, rawAddress: unknown) => {
-    assertMainFrameSender(event, win)
-    const address = parseIpcArgs(mobileAddressSchema, [rawAddress])
-    await enableMobileCompanion(address)
-  })
-  ipcMain.handle('mobile:disable', async (event) => {
-    assertMainFrameSender(event, win)
-    await disableMobileCompanion()
-  })
-  ipcMain.handle('mobile:set-device-access', (event, ...args) => {
-    assertMainFrameSender(event, win)
-    const [id, access] = parseIpcArgs(mobileDeviceAccessArgsSchema, args)
-    setMobileDeviceAccess(id, access)
-  })
-  ipcMain.handle('mobile:revoke-device', (event, rawId: unknown) => {
-    assertMainFrameSender(event, win)
-    const id = parseIpcArgs(mobileDeviceIdSchema, [rawId])
-    revokeMobileDevice(id)
-  })
-  ipcMain.handle('mobile:respond-pairing', (event, ...args) => {
-    assertMainFrameSender(event, win)
-    const [decision, code, pairingId] = parseIpcArgs(mobilePairingArgsSchema, args)
-    respondToMobilePairing(decision, code, pairingId)
-  })
-  ipcMain.handle('mobile:reveal-certificate', (event) => {
-    assertMainFrameSender(event, win)
-    const path = getMobileCompanionState().rootCertificatePath
-    if (path) shell.showItemInFolder(path)
-  })
+  registerMobileHandlers(win)
 
   // Read once: Electron throws on `win.webContents` after the boot window is
   // closed, and a second main window can outlive it.
@@ -1515,67 +1447,7 @@ export function registerAllHandlers(
     }
   })
 
-  ipcMain.handle('classifiers:list', (event) => {
-    assertMainFrameSender(event, win)
-    return listClassifierProfiles()
-  })
-  ipcMain.handle('classifiers:save', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return saveClassifierProfile(parseIpcArgs(classifierProfileSchema, [raw]))
-  })
-  ipcMain.handle('classifiers:remove', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return removeClassifierProfile(parseIpcArgs(keyProviderSchema.max(53), [raw]))
-  })
-  ipcMain.handle('classifiers:test', async (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    const id = parseIpcArgs(keyProviderSchema.max(53), [raw])
-    const result = await testClassifierProfile(id)
-    // The sample is a real call: tokens a provider reports for it count like any other.
-    recordClassifierResultUsage(getClassifierProfile(id).label, result)
-    return result
-  })
-  ipcMain.handle('classifiers:screening', (event) => {
-    assertMainFrameSender(event, win)
-    return screeningClassifierId()
-  })
-  ipcMain.handle('classifiers:set-screening', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return setScreeningClassifier(parseIpcArgs(keyProviderSchema.max(53).nullable(), [raw]))
-  })
-  ipcMain.handle('classifiers:background', (event) => {
-    assertMainFrameSender(event, win)
-    return backgroundClassifierId()
-  })
-  ipcMain.handle('classifiers:set-background', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return setBackgroundClassifier(parseIpcArgs(keyProviderSchema.max(53).nullable(), [raw]))
-  })
-
-  ipcMain.handle('local-classifiers:status', (event) => {
-    assertMainFrameSender(event, win)
-    return localClassifiers().overview()
-  })
-  ipcMain.handle('local-classifiers:install', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return localClassifiers().install(parseIpcArgs(keyProviderSchema.max(53), [raw]))
-  })
-  ipcMain.handle('local-classifiers:start', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return localClassifiers().start(parseIpcArgs(keyProviderSchema.max(53), [raw]))
-  })
-  ipcMain.handle('local-classifiers:stop', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return localClassifiers().stop(parseIpcArgs(keyProviderSchema.max(53), [raw]))
-  })
-  ipcMain.handle('local-classifiers:uninstall', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return localClassifiers().uninstall(parseIpcArgs(keyProviderSchema.max(53), [raw]))
-  })
-  ipcMain.handle('local-classifiers:connect', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return localClassifiers().connect(parseIpcArgs(keyProviderSchema.max(53), [raw]))
-  })
+  registerClassifierHandlers(win)
 
   // Environment setup: the renderer sends only which issued suggestion ids were
   // ticked; main applies the values it computed (docs/plans/environment-setup.md).
@@ -1604,36 +1476,7 @@ export function registerAllHandlers(
     return dismissEnvironmentSetup(parseIpcArgs(z.boolean(), [raw]))
   })
 
-  ipcMain.handle('chat-gpt-plan:status', (event) => {
-    assertMainFrameSender(event, win)
-    return getChatGptPlanService().status()
-  })
-  ipcMain.handle('chat-gpt-plan:sign-in', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return getChatGptPlanService().signIn(
-      parseIpcArgs(z.string().min(1).max(256).optional(), [raw]),
-    )
-  })
-  ipcMain.handle('chat-gpt-plan:refresh-account', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return getChatGptPlanService().refreshAccount(parseIpcArgs(z.string().min(1).max(256), [raw]))
-  })
-  ipcMain.handle('chat-gpt-plan:cancel-sign-in', (event) => {
-    assertMainFrameSender(event, win)
-    getChatGptPlanService().cancelSignIn()
-  })
-  ipcMain.handle('chat-gpt-plan:select-account', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return getChatGptPlanService().selectAccount(parseIpcArgs(z.string().min(1).max(256), [raw]))
-  })
-  ipcMain.handle('chat-gpt-plan:sign-out', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return getChatGptPlanService().signOut(parseIpcArgs(z.string().min(1).max(256), [raw]))
-  })
-  ipcMain.handle('chat-gpt-plan:models', (event) => {
-    assertMainFrameSender(event, win)
-    return getChatGptPlanService().models()
-  })
+  registerChatGptPlanHandlers(win)
 
   ipcMain.handle('settings:get', (event, key: unknown) => {
     assertMainFrameSender(event, win)
@@ -1940,76 +1783,9 @@ export function registerAllHandlers(
     const mainWin = getMainWindow()
     applyAppIcon(mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
   })
-  ipcMain.handle('usage:get-summary', () => getUsageSummary())
-  // What the classifiers (shell guard, tier screen, terminal-read screen) did for one
-  // thread: calls, verdicts, latency and tokens, from the thread's decision log.
-  ipcMain.handle('usage:get-thread-classifier-use', (event, ...rawArgs: unknown[]) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), rawArgs)
-    return getThreadClassifierUse(projectId, threadId)
-  })
-  ipcMain.handle('usage:get-plan-usage', async (_event, force: unknown) => {
-    const refresh = parseIpcArgs(z.boolean().optional(), [force])
-    return loadPlanUsageSnapshotAndSample({ force: refresh === true })
-  })
-  ipcMain.handle('usage:get-plan-worth-it', () => getPlanWorthItPayload())
-  ipcMain.handle('usage:set-claude-plan-monthly-fee', async (event, fee: unknown) => {
-    assertMainFrameSender(event, win)
-    if (fee === null || fee === undefined || fee === '') {
-      await setClaudePlanMonthlyFeeUsd(null)
-      return getPlanWorthItPayload()
-    }
-    if (typeof fee !== 'number' || !Number.isFinite(fee)) {
-      throw new Error('Claude plan monthly fee must be a positive number or null')
-    }
-    await setClaudePlanMonthlyFeeUsd(fee)
-    return getPlanWorthItPayload()
-  })
-  // Durable permission-decision audit log (#656). `projectId` is optional — an
-  // empty/absent value falls back to the active project.
-  ipcMain.handle('decisions:list', (event, rawProjectId: unknown) => {
-    assertMainFrameSender(event, win)
-    const projectId = parseIpcArgs(zProjectId.optional(), [rawProjectId])
-    const resolved = projectId ?? getActiveProjectId()
-    if (!resolved) return []
-    return readDecisionLog(resolved)
-  })
-  ipcMain.handle('decisions:list-thread', (event, projectId: unknown, threadId: unknown) => {
-    assertMainFrameSender(event, win)
-    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
-    return readThreadDecisionLog(pid, tid)
-  })
-  ipcMain.handle('decisions:export', (event, rawProjectId: unknown) => {
-    assertMainFrameSender(event, win)
-    const projectId = parseIpcArgs(zProjectId.optional(), [rawProjectId])
-    const resolved = projectId ?? getActiveProjectId()
-    if (!resolved) throw new Error('No project to export decisions for.')
-    return exportDecisionLog(resolved)
-  })
-  ipcMain.handle('storage:maintenance', (event) => {
-    assertMainFrameSender(event, win)
-    return inspectStorageMaintenance()
-  })
-  ipcMain.handle('storage:cleanup', (event, area: unknown) => {
-    assertMainFrameSender(event, win)
-    return storageCleanup().clean(parseIpcArgs(storageAreaSchema, [area]))
-  })
-  ipcMain.handle('storage:retention', (event, policy: unknown) => {
-    assertMainFrameSender(event, win)
-    saveStorageRetention(parseIpcArgs(storageRetentionSchema, [policy]))
-  })
-  ipcMain.handle('storage:get', (event, key: unknown) => {
-    assertMainFrameSender(event, win)
-    const k = parseIpcArgs(zNonEmptyString.max(256), [key])
-    assertStorageKey(k)
-    return storageGet(k)
-  })
-  ipcMain.handle('storage:set', (event, key: unknown, value: unknown) => {
-    assertMainFrameSender(event, win)
-    const k = parseIpcArgs(zNonEmptyString.max(256), [key])
-    assertStorageKey(k)
-    storageSet(k, value)
-  })
+  registerUsageHandlers(win)
+  registerDecisionHandlers(win)
+  registerStorageHandlers(win)
 
   const zGuardedYoloThreadId = zNonEmptyString.max(256)
   ipcMain.handle('security:get-guarded-yolo', (event, threadId: unknown) => {
