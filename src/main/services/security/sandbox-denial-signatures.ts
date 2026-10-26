@@ -27,7 +27,12 @@
  * same trust level as the model's own `expects_sandbox_block` hint.
  */
 
-import { SHELL_INTERPRETERS, commandName, shellSegments, unwrapWrappers } from './shell-argv.ts'
+import {
+  SHELL_LANGUAGE_INTERPRETERS,
+  commandName,
+  shellSegments,
+  unwrapWrappers,
+} from './shell-argv.ts'
 
 export interface SandboxDenialClassification {
   /** Stable operation descriptor, independent of which tool ran the command (issue #1436 point 2). */
@@ -70,6 +75,9 @@ const GIT_VALUE_OPTIONS: ReadonlySet<string> = new Set([
  */
 const SHELL_INLINE_CODE_FLAG = /^-[a-z]*c$/
 
+/** PowerShell's inline-code flag — not a single-letter bundle, so `SHELL_INLINE_CODE_FLAG` misses it. */
+const POWERSHELL_INLINE_CODE_FLAG = /^-command$/i
+
 /** Shell options whose value is a separate argument (`bash -o pipefail -c …`). */
 const SHELL_VALUE_OPTIONS: ReadonlySet<string> = new Set([
   '-o',
@@ -88,7 +96,9 @@ const SHELL_VALUE_OPTIONS: ReadonlySet<string> = new Set([
 function shellInlineBody(argv: readonly string[]): string | null {
   for (let index = 1; index < argv.length - 1; index += 1) {
     const token = argv[index] ?? ''
-    if (SHELL_INLINE_CODE_FLAG.test(token)) return argv[index + 1] ?? null
+    if (SHELL_INLINE_CODE_FLAG.test(token) || POWERSHELL_INLINE_CODE_FLAG.test(token)) {
+      return argv[index + 1] ?? null
+    }
     if (SHELL_VALUE_OPTIONS.has(token)) {
       index += 1
       continue
@@ -99,19 +109,54 @@ function shellInlineBody(argv: readonly string[]): string | null {
 }
 
 /**
+ * Reserved words that only introduce a conditional or loop branch, never a
+ * command in their own right. The shell parser has no notion of these — they
+ * surface as an ordinary argv[0] once a keyword lands at the start of its own
+ * segment (its own line, or right after `;`/`)`), which is exactly where a
+ * shell itself only recognises them as reserved words. Their presence means
+ * at least one segment in this command might not run, so `commandArgvs` can
+ * no longer promise every argv it returns actually executes.
+ */
+const CONDITIONAL_KEYWORDS: ReadonlySet<string> = new Set([
+  'if',
+  'then',
+  'elif',
+  'else',
+  'fi',
+  'case',
+  'esac',
+  'for',
+  'while',
+  'until',
+  'do',
+  'done',
+  'select',
+])
+
+/**
  * Every argv that runs as a command, after wrapper unwrapping (`env FOO=1 git
  * push`, `timeout 5 gh …`), including the body of `sh -c '…'`. Built from the
  * shell parser alone — never the raw-text fallback — so a program name inside a
  * quoted argument (`grep -rn "then git fetch" docs`) or after another command
  * (`echo git push`) is data, not a command, and predicts no operation.
+ *
+ * Returns no argvs at all once a conditional/loop keyword shows up as a
+ * segment's own head (`if ...; then\n  git fetch\nfi`, `case $1 in start)
+ * git fetch ;; esac`): this module cannot know which branch would actually
+ * run without executing it, and for a cache that preemptively fronts an
+ * "outside the sandbox?" prompt, a missed match is a quiet no-op while a
+ * false one is the exact bug (#1436) this predicts around. Reactive
+ * classification of an already-failed command degrades the same way, to the
+ * generic egress-proxy label.
  */
 function commandArgvs(command: string): string[][] {
   const argvs: string[][] = []
   for (const segment of shellSegments(command, false)) {
     const argv = unwrapWrappers(segment)
     if (argv.length === 0) continue
+    if (CONDITIONAL_KEYWORDS.has(commandName(argv[0]))) return []
     argvs.push(argv)
-    if (SHELL_INTERPRETERS.has(commandName(argv[0]))) {
+    if (SHELL_LANGUAGE_INTERPRETERS.has(commandName(argv[0]))) {
       const body = shellInlineBody(argv)
       if (body !== null) argvs.push(...commandArgvs(body))
     }

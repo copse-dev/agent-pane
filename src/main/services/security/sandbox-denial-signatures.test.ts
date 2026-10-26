@@ -72,6 +72,15 @@ describe('classifySandboxDenial (issue #1436)', () => {
       'git network access',
     )
   })
+
+  it('degrades to the generic egress label when the git command sits in an unresolved branch', () => {
+    const output = "fatal: unable to access '...': CONNECT tunnel failed, response 403"
+    const command = 'if [ -f lockfile ]; then\n  echo skip\nelse\n  git fetch origin\nfi'
+    const match = classifySandboxDenial(output, command)
+    assert.ok(match)
+    assert.equal(match.operation, 'network access through the egress proxy')
+    assert.doesNotMatch(match.operation, /git/)
+  })
 })
 
 describe('sandboxDenialRetryClassification (issue #1436 point 1)', () => {
@@ -155,6 +164,29 @@ describe('operationDescriptorForCommand', () => {
     assert.equal(operationDescriptorForCommand("zsh -lc 'gh pr view 42'"), 'read ~/.config/gh')
     assert.equal(operationDescriptorForCommand('pnpm build; gh pr view 42'), 'read ~/.config/gh')
     assert.equal(operationDescriptorForCommand('env GH_PAGER= gh pr list'), 'read ~/.config/gh')
+    assert.equal(operationDescriptorForCommand("pwsh -Command 'git fetch origin'"), 'git fetch')
+    assert.equal(
+      operationDescriptorForCommand("powershell -Command 'gh pr view 42'"),
+      'read ~/.config/gh',
+    )
+  })
+
+  it('returns null when a matched git/gh invocation sits in an unresolved conditional or loop branch', () => {
+    // The git fetch here only runs on the `else` branch — this module cannot know which
+    // branch would actually execute without running it, so it must not confidently claim one.
+    assert.equal(
+      operationDescriptorForCommand(
+        'if [ -f lockfile ]; then\n  echo skip\nelse\n  git fetch origin\nfi',
+      ),
+      null,
+    )
+    assert.equal(
+      operationDescriptorForCommand(
+        'case "$1" in\n  start) git fetch ;;\n  stop) echo stop ;;\nesac',
+      ),
+      null,
+    )
+    assert.equal(operationDescriptorForCommand('for f in *.git; do git -C "$f" fetch; done'), null)
   })
 
   it('does not derive a git or gh operation from program names that are only data', () => {
