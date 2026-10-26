@@ -1635,3 +1635,34 @@ Review's: `REVIEW.md` from the base branch, never from the pull request.
 
 A change to these files takes effect from the next pull request after it merges. Reviewing a
 pull request whose purpose is to change them uses the old version, by design.
+
+### October 25: checker failures and linked review history
+
+Checker termination, resource exhaustion, timeout and unavailable command/setup are inconclusive,
+not confirmed product regressions. Stage 0 preserves the termination signal, recognizes conventional
+shell signal exits (including 134 and 137), and requires a TypeScript diagnostic for a type finding.
+An inconclusive head does not spend another execution on base or test confirmation. An inconclusive
+base cannot prove that a genuine head failure is new. Ordinary compiler diagnostics and stable test
+failures still use the existing differential rules. This is a confidence boundary, not a claim that
+resource exhaustion cannot be caused by code: a model can investigate and establish a separate
+causal finding. Imported legacy reports receive the same downgrade and lose the corresponding
+automatic Stage 0 findings; independently raised model findings are retained. No report-version bump
+is needed: the signal is optional for older reports.
+
+GitHub conversation collection retains each prior Copse inline finding with its original commit,
+location, URL and latest three replies as one bounded historical entry. Conversation trimming drops
+that whole entry, never just its claim. Full Copse review summaries remain excluded to avoid
+self-corroboration. Bot authorship and a recognized review body identify this history; a human copy
+of the marker is ordinary review data. Missing parents and omitted replies are explicit. REST does
+not supply thread resolution here, so it is explicitly unknown; neither an outdated line nor a
+reply proves a fix. Forgejo retains its existing conversation behavior; linked inline history is
+currently GitHub-only. Findings folded into full review bodies have no inline parent/reply link and
+are not recovered by this mechanism.
+
+Reviewer and challenger prompts require reachable triggers, causal novelty, evidence addressing
+historical rebuttals, and platform API grounding. Security challenges identify existing authority
+and any additional capability across the actual process/sandbox boundary. Missing coverage alone
+is not a finding. Historical claims and replies stay inside the external-content envelope: they
+cannot issue instructions, independently corroborate themselves, or automatically suppress a bug.
+The app renders an inconclusive check with a question mark and a verification caveat rather than
+calling a no-finding report clean. Prompt contract tests do not measure real-model precision.
