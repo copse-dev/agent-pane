@@ -1501,6 +1501,14 @@
       "sha256": "7d7abcb720be26a6636630c2620a964bf129360e13d8f37aa84ef2f7d022fadc",
       "bytes": 29689
     },
+    "demo-agent-verification-failed.png": {
+      "sha256": "84b9175befef4ac206dcf20118e1d0cf1b75f5d8c1b369cc8b69ce2bfc66d783",
+      "bytes": 16085
+    },
+    "demo-agent-verification-ready.png": {
+      "sha256": "464427acc6dbd90007616947cde73ab79c974ff528ff026d56b577312151debe",
+      "bytes": 8513
+    },
     "demo-models-agents-add.png": {
       "sha256": "a039c0175440cb4b43da4c2078d2a7e51471e2a572891ca34ca1bc1f57f0e733",
       "bytes": 10867
@@ -2754,12 +2762,12 @@
       "bytes": 226955
     },
     "plain-language-install-approval.png": {
-      "sha256": "afad108952c5f4e6bb92162721fffdee034dce02e3c6e8e51e1fc7ca91c12e6d",
-      "bytes": 306604
+      "sha256": "9716c852fdf4f538c4b3d1a55543704a9dfd8eeb8fd852b90572632e3a0c23f3",
+      "bytes": 309937
     },
     "plain-language-settings-codex-agent.png": {
-      "sha256": "3d52b14c843bafeb85685ca60de9cb2feabd1d0cbf1892893661b960c812edbe",
-      "bytes": 270732
+      "sha256": "95d8469d2e39ec92509f11dc65cd3bd057dd17a15bd5b70fc069f6ae0e3dedd4",
+      "bytes": 280586
     },
     "plugin-client-action-sent.png": {
       "sha256": "7da2bfb39a02b1428011a48dfb44ac4785c19eb3f46ebdc055b9dac23395847c",
