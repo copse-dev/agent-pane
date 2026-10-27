@@ -3,6 +3,7 @@ import {
   resetUserData,
   seedClassifierCalls,
   seedContextWheelFixture,
+  seedStableWorkspace,
 } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -17,7 +18,7 @@ describe('footer classifier use hover', () => {
     process.env['ANTHROPIC_API_KEY'] = ''
     process.env['OPENAI_API_KEY'] = ''
     resetUserData()
-    seedContextWheelFixture(process.cwd())
+    seedContextWheelFixture(seedStableWorkspace())
     seedClassifierCalls('e2e-context-wheel-project', 'e2e-context-wheel-thread', [
       {
         subject: 'shell-scope',
