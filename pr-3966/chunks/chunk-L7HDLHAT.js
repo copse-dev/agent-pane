@@ -35263,6 +35263,54 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-30"
         }
       ],
+      "gpt-6-1-terra": [
+        {
+          value: 48.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra', fetched 2026-10-27",
+          asOf: "2026-10-27"
+        }
+      ],
+      "gpt-6-1-terra-high": [
+        {
+          value: 43.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-high', fetched 2026-10-27",
+          asOf: "2026-10-27"
+        }
+      ],
+      "gpt-6-1-terra-low": [
+        {
+          value: 36.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-low', fetched 2026-10-27",
+          asOf: "2026-10-27"
+        }
+      ],
+      "gpt-6-1-terra-medium": [
+        {
+          value: 41.3,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-medium', fetched 2026-10-27",
+          asOf: "2026-10-27"
+        }
+      ],
+      "gpt-6-1-terra-non-reasoning": [
+        {
+          value: 33.5,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-non-reasoning', fetched 2026-10-27",
+          asOf: "2026-10-27"
+        }
+      ],
+      "gpt-6-1-terra-xhigh": [
+        {
+          value: 45.4,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-xhigh', fetched 2026-10-27",
+          asOf: "2026-10-27"
+        }
+      ],
       "gpt-6-astra": [
         {
           value: 52.7,
@@ -36667,6 +36715,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "kimi-k3-1-pro": [
+        {
+          value: 55.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'kimi-k3-1-pro', fetched 2026-10-27",
+          asOf: "2026-10-27"
+        }
+      ],
       "kimi-k3-low": [
         {
           value: 48.3,
@@ -36927,6 +36983,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'ling-3-1-flash', fetched 2026-10-06",
           asOf: "2026-10-06"
+        }
+      ],
+      "ling-3-1-flash-1019": [
+        {
+          value: 43.9,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis API (index v4.3), model 'ling-3-1-flash-1019', fetched 2026-10-27",
+          asOf: "2026-10-27"
         }
       ],
       "ling-flash-2-0": [
@@ -37981,8 +38045,8 @@ var init_model_intellect_generated = __esm({
         {
           value: 6.7,
           indexVersion: "v4.3",
-          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-20",
-          asOf: "2026-10-20"
+          source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-27",
+          asOf: "2026-10-27"
         }
       ],
       "mixtral-8x7b-instruct": [
