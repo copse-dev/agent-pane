@@ -263,6 +263,7 @@ describe('prepare_worktree permission', () => {
     setApprovalHandler(async (request) => {
       prompts += 1
       assert.equal(request.title, 'Prepare this worktree?')
+      assert.equal(request.interactiveClientApproval, 'once')
       assert.equal(request.cause, 'shell-package-install')
       assert.equal(request.allowRemember, false)
       assert.match(request.bodyAdvice ?? '', /lifecycle scripts disabled/)
