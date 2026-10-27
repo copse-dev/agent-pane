@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
@@ -361,6 +361,25 @@ describe('footer branch status for a detached thread worktree', function () {
         baseBranch,
       ]),
     ).toThrow()
+    // Git 2.56 stops on the pick as it does for a conflict, so the plain
+    // `Continue rebase` commits it. Recreate the rescheduled stop older Git
+    // leaves, before the footer's debounced refresh reads it, so this
+    // recovery stays covered on every Git.
+    const rebaseState = (name: string): string =>
+      git(worktreeRoot, [
+        'rev-parse',
+        '--path-format=absolute',
+        '--git-path',
+        `rebase-merge/${name}`,
+      ])
+    const todoPath = rebaseState('git-rebase-todo')
+    const todo = readFileSync(todoPath, 'utf8')
+    if (!todo.split('\n').some((line) => line.startsWith(`pick ${picked}`))) {
+      writeFileSync(todoPath, `pick ${picked} thread file\n${todo}`)
+      rmSync(rebaseState('stopped-sha'), { force: true })
+      rmSync(rebaseState('message'), { force: true })
+      git(worktreeRoot, ['update-ref', '--no-deref', 'CHERRY_PICK_HEAD', picked])
+    }
 
     const button = await $('.branch-reattach-button').getElement()
     await expect(button).toHaveText('Commit and continue', { wait: 20_000 })
