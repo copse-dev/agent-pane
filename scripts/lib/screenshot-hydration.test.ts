@@ -131,6 +131,38 @@ describe('R2 baseline cutover', () => {
     }
   })
 
+  it('retries a download that times out or drops its connection', async (context) => {
+    const { cwd, save } = fixture()
+    try {
+      save({ version: 1, screenshots: { 'a.png': entry(png) } })
+      const failures = [
+        new DOMException('The operation was aborted due to timeout', 'TimeoutError'),
+        new TypeError('fetch failed'),
+      ]
+      const fetchMock = context.mock.method(globalThis, 'fetch', async () => {
+        const failure = failures.shift()
+        if (failure) throw failure
+        return new Response(png)
+      })
+      // Skip the real backoff: advance mocked timers until hydration settles.
+      context.mock.timers.enable({ apis: ['setTimeout'] })
+      const hydrated: Promise<'hydrated'> = hydrateScreenshots({ cwd }).then(() => 'hydrated')
+      const nextTurn = (): Promise<'pending'> =>
+        new Promise((resolve) => {
+          setImmediate(() => {
+            resolve('pending')
+          })
+        })
+      while ((await Promise.race([hydrated, nextTurn()])) === 'pending') {
+        context.mock.timers.tick(30_000)
+      }
+      assert.equal(fetchMock.mock.callCount(), 3)
+      assert.deepEqual(readFileSync(join(cwd, SCREENSHOT_DIRECTORY, 'a.png')), png)
+    } finally {
+      rmSync(cwd, { recursive: true, force: true })
+    }
+  })
+
   it('does not install corrupt or oversized objects and never overwrites a rendered candidate', async (context) => {
     const { cwd, save } = fixture()
     try {
@@ -141,6 +173,7 @@ describe('R2 baseline cutover', () => {
         async () => new Response(Buffer.alloc(png.length)),
       )
       await assert.rejects(hydrateScreenshots({ cwd }), /integrity/)
+      assert.equal(fetchMock.mock.callCount(), 1, 'an integrity mismatch is not retried')
       assert.equal(existsSync(join(cwd, SCREENSHOT_DIRECTORY, 'a.png')), false)
       fetchMock.mock.mockImplementation(async () => new Response(Buffer.concat([png, png])))
       await assert.rejects(hydrateScreenshots({ cwd }), /exceeds/)
