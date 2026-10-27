@@ -86094,6 +86094,7 @@ function createTranscriptReducer(store2, hooks = {}) {
       case "machine_turn_start": {
         hooks.turnStarted?.(threadId);
         setThreadStatus(store2, threadId, "running");
+        if (chunk.hidden) break;
         const id = hooks.createMessageId?.(threadId);
         addMessage(
           store2,
