@@ -288,6 +288,32 @@ describe('AgentDispatcher', () => {
     ])
   })
 
+  it('tells the run when it is a long-horizon task wake', async () => {
+    const seen: Array<true | undefined> = []
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        run: async (_threadId, userContent, priorMessages, _host, _registry, options) => {
+          seen.push(options.longTaskWake)
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+
+    await dispatcher.dispatch(
+      request({
+        payload: { userContent: 'continue', invokedSkills: [], priorTodos: [], longTaskWake: true },
+      }),
+    )
+    await dispatcher.dispatch(request())
+
+    assert.deepEqual(seen, [true, undefined])
+  })
+
   it('rebuilds history from the transcript when the sidecar is empty', async () => {
     const recovered: LLMMessage[] = [
       { role: 'user', content: 'the question a dead turn lost' },
