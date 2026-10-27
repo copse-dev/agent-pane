@@ -94,8 +94,8 @@
       "bytes": 188277
     },
     "acp-network-scope-approval.png": {
-      "sha256": "87c270c355628eae4c321385a83d1bb9c2b4b1111497f39e08aed5e34866b334",
-      "bytes": 55141
+      "sha256": "72344c3d448bc0090fe53f97e18ed4c068ec157ec12e634a10fd6e37548baff2",
+      "bytes": 55076
     },
     "acp-prompt-interruption-collapsed.png": {
       "sha256": "001bb249bb025fa2b7862b7cca8423fdc6019ca39d9d51b65370859840a5bc3f",
@@ -498,8 +498,8 @@
       "bytes": 27380
     },
     "approval-cancel-settling.png": {
-      "sha256": "a860448f706574d12c38b18fdec061ba3b2bd54e6ea335abbf85601bc2c665f9",
-      "bytes": 28676
+      "sha256": "7f2be7939788dd95d2eae8990a3c7ea8ab87432c481845fd9dd4e7e03448e6c0",
+      "bytes": 29411
     },
     "approval-chat-scoped.png": {
       "sha256": "3e8b5709fb953a05f652eb871bebc63c897ff84a5c6f18bdac6d5d811d0bd69d",
@@ -2794,8 +2794,8 @@
       "bytes": 40651
     },
     "plugin-client-worktree-preparation.png": {
-      "sha256": "05aedc7134c19942b0a128c01320d67a88fdf30df6bf28deb76eabf8721ccf90",
-      "bytes": 287738
+      "sha256": "408a3b23729358b866a4d1ca11e1bbe73a9573bf8f0efc8f0a4df3ad808f1e05",
+      "bytes": 340421
     },
     "plugin-hook-loading.png": {
       "sha256": "c104bb3b1c4a9a90a7441137b5d88a308a6ec8c932aeb568e96b4d7376ec00dd",
