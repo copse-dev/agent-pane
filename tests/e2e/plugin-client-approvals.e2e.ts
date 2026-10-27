@@ -1,3 +1,5 @@
+import { clientActionSnapshotSchema } from '../../src/shared/client-actions.ts'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
@@ -8,6 +10,8 @@ import { decodeWithSchema, safeJsonParse } from '../../packages/std/src/safe-jso
 import type { Thread } from '@shared/types'
 import {
   clientSnapshotSchema,
+  clientQuestionSnapshotSchema,
+  clientAttentionSnapshotSchema,
   clientActivitySnapshotSchema,
   clientThreadContentSchema,
 } from '../../src/shared/plugin-client-protocol.ts'
@@ -18,7 +22,12 @@ import {
   seedStableWorkspace,
   writeSeedConfig,
 } from './helpers/seed-config.ts'
-import { prepareMockToolTurn, expectAssistantReply } from './helpers/mock-scenario.ts'
+import {
+  installMockScenario,
+  prepareMockToolTurn,
+  prepareMockTurn,
+  expectAssistantReply,
+} from './helpers/mock-scenario.ts'
 import { submitComposer } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { saveElementScreenshot, saveAppScreenshot } from './helpers/screenshot.ts'
@@ -45,6 +54,7 @@ describe('interactive client live approvals', function () {
     await browser.reloadSession()
   })
   after(() => {
+    writeE2eEnv({})
     resetUserData()
   })
 
@@ -77,9 +87,13 @@ describe('interactive client live approvals', function () {
     await dialog.waitForDisplayed({ timeout: 15_000 })
     await expect(dialog.$('.approval-heading')).toHaveText('Connect interactive client')
     assert.ok((await dialog.$('.approval-body').getText()).includes(pairing.code))
+    assert.ok((await dialog.getText()).includes('agent questions'))
+    assert.ok((await dialog.getText()).includes('pending request titles'))
+    assert.ok((await dialog.getText()).includes('worktree preparation'))
+    assert.ok((await dialog.getText()).includes('Follow-ups can send the offered message'))
     await expect(dialog.$('.approval-remember')).not.toBeDisplayed()
     // Normalize only the random display code for deterministic visual evidence.
-    await saveElementScreenshot('#approval-dialog', 'plugin-client-pairing.png', {
+    await saveElementScreenshot('#approval-dialog', 'plugin-client-pairing-expanded-scope.png', {
       beforeCapture: async () => {
         await browser.execute(() => {
           const body = document.querySelector('#approval-dialog .approval-body')
@@ -209,14 +223,19 @@ describe('interactive client live approvals', function () {
     await expect(dialog.$('.approval-remember')).not.toBeDisplayed()
     await expect(dialog.$('.approval-approve')).toHaveText('Connect client')
     await dialog.$('.approval-approve').waitForEnabled()
-    await saveElementScreenshot('#approval-dialog', 'plugin-client-pairing-interrupt.png', {
-      beforeCapture: async () => {
-        await browser.execute(() => {
-          const body = document.querySelector('#approval-dialog .approval-body')
-          if (body?.textContent) body.textContent = body.textContent.replace(/\d{6}/g, '123456')
-        })
+    assert.ok((await dialog.getText()).includes('Follow-ups can send the offered message'))
+    await saveElementScreenshot(
+      '#approval-dialog',
+      'plugin-client-pairing-expanded-scope-interrupt.png',
+      {
+        beforeCapture: async () => {
+          await browser.execute(() => {
+            const body = document.querySelector('#approval-dialog .approval-body')
+            if (body?.textContent) body.textContent = body.textContent.replace(/\d{6}/g, '123456')
+          })
+        },
       },
-    })
+    )
     await dialog.$('.approval-approve').click()
     const paired = await json(await fetch(`${service.origin}/v1/pair/${pairing.id}`), pairedSchema)
     assert.equal(paired.state, 'approved')
@@ -480,6 +499,235 @@ describe('interactive client live approvals', function () {
         })
       ).status,
       404,
+    )
+  })
+  it('offers Tab before chips, submits the suggested message once and rejects a stale press', async () => {
+    writeE2eEnv({ COPSE_PANEL_MOCK_NEXT_STEP: '1' })
+    resetUserData()
+    seedEmptyProject(seedStableWorkspace(), 'e2e-plugin-actions', {
+      model: 'claude-sonnet-4-6',
+      subagentsEnabled: false,
+      mockFollowUps: true,
+    })
+    await browser.reloadSession()
+    await $('.prompt-input').waitForExist({ timeout: 30000 })
+    await browser.execute(async () => {
+      await window.api.plugins.setEnabled('copse.plugin-client-api', true)
+    })
+    const path = join(copseDataRoot(), 'plugin-client-api.json')
+    await browser.waitUntil(() => existsSync(path), { timeout: 15000 })
+    const service = safeJsonParse(readFileSync(path, 'utf8'), decodeWithSchema(discoverySchema))
+    assert.ok(service)
+    const pairing = await json(
+      await fetch(service.origin + '/v1/pair', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version: 1, label: 'Action desk test' }),
+      }),
+      pairSchema,
+    )
+    await $('#approval-dialog').waitForDisplayed({ timeout: 15000 })
+    assert.ok((await $('#approval-dialog .approval-body').getText()).includes(pairing.code))
+    await $('#approval-dialog .approval-approve').click()
+    const paired = await json(await fetch(service.origin + '/v1/pair/' + pairing.id), pairedSchema)
+    assert.ok(paired.token)
+    const headers = { Authorization: `Bearer ${paired.token}`, 'Content-Type': 'application/json' }
+    const scenario = await prepareMockTurn('Review the finished fix.', [
+      { text: 'The fix is ready for verification.' },
+    ])
+    await submitComposer()
+    await waitForAgentIdle()
+    await scenario.assertComplete()
+    await browser.waitUntil(
+      async () => {
+        const state = await json(
+          await fetch(service.origin + '/v1/actions', { headers }),
+          clientActionSnapshotSchema,
+        )
+        return state.offer?.actions[0]?.kind === 'next-step'
+      },
+      { timeout: 30000 },
+    )
+    let state = await json(
+      await fetch(service.origin + '/v1/actions', { headers }),
+      clientActionSnapshotSchema,
+    )
+    assert.ok(state.offer)
+    assert.equal(state.offer.actions[0]?.label, 'Run the test suite to verify the fix')
+    assert.ok(state.offer.actions.some((action) => action.kind === 'follow-up'))
+    await saveElementScreenshot('#input-bar', 'plugin-client-actions.png')
+    state = await json(
+      await fetch(service.origin + '/v1/actions', { headers }),
+      clientActionSnapshotSchema,
+    )
+    assert.ok(state.offer)
+    const post = (submissionId: string): Promise<Response> =>
+      fetch(service.origin + '/v1/actions', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          version: 1,
+          sessionId: state.sessionId,
+          submissionId,
+          projectId: state.offer?.projectId,
+          threadId: state.offer?.threadId,
+          revision: state.offer?.revision,
+          actionId: 'next-step',
+        }),
+      })
+    const hint = 'Run the test suite to verify the fix'
+    const followup = await installMockScenario({
+      title: 'Submit the offered next step from a paired client',
+      turns: [
+        {
+          user: hint,
+          responses: [{ waitFor: 'tab-submitted', text: 'The suggested message was received.' }],
+        },
+      ],
+    })
+    const submissionId = randomUUID()
+    try {
+      assert.equal((await json(await post(submissionId), resultSchema)).ok, true)
+      await followup.waitForHold('tab-submitted')
+      await expect($('.prompt-input')).toHaveText('')
+      await expect($('.prompt-input')).not.toHaveAttribute('data-next-step')
+      await expect($('.messages-list')).toHaveText(expect.stringContaining(hint))
+      assert.equal((await browser.$$('.msg-user')).length, 2)
+      assert.equal(
+        (
+          await json(
+            await fetch(service.origin + '/v1/actions', { headers }),
+            clientActionSnapshotSchema,
+          )
+        ).offer,
+        null,
+      )
+      assert.equal((await json(await post(submissionId), resultSchema)).ok, true)
+      assert.equal((await json(await post(randomUUID()), resultSchema)).ok, false)
+      assert.equal((await browser.$$('.msg-user')).length, 2)
+      await saveAppScreenshot('plugin-client-action-sent.png')
+      await saveElementScreenshot('#input-bar', 'plugin-client-submitted-composer.png')
+    } finally {
+      await followup.release('tab-submitted')
+    }
+    await waitForAgentIdle()
+    await followup.assertComplete()
+    await expectAssistantReply('The suggested message was received.')
+    writeE2eEnv({})
+  })
+  it('shows pending questions before completion and answers through the shared desktop lifecycle', async () => {
+    await $('.prompt-input').waitForExist({ timeout: 30000 })
+    await browser.execute(async () => {
+      await window.api.plugins.setEnabled('copse.plugin-client-api', true)
+    })
+    const path = join(copseDataRoot(), 'plugin-client-api.json')
+    await browser.waitUntil(() => existsSync(path), { timeout: 15000 })
+    const service = safeJsonParse(readFileSync(path, 'utf8'), decodeWithSchema(discoverySchema))
+    assert.ok(service)
+    const pairing = await json(
+      await fetch(service.origin + '/v1/pair', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version: 1, label: 'Question desk test' }),
+      }),
+      pairSchema,
+    )
+    await $('#approval-dialog').waitForDisplayed({ timeout: 15000 })
+    assert.ok((await $('#approval-dialog').getText()).includes('agent questions'))
+    assert.ok((await $('#approval-dialog').getText()).includes(pairing.code))
+    await $('#approval-dialog .approval-approve').click()
+    const paired = await json(await fetch(service.origin + '/v1/pair/' + pairing.id), pairedSchema)
+    assert.ok(paired.token)
+    const headers = { Authorization: `Bearer ${paired.token}`, 'Content-Type': 'application/json' }
+    const scenario = await prepareMockTurn('Ask which database to use.', [
+      {
+        toolCalls: [
+          {
+            name: 'ask_user',
+            args: {
+              questions: [
+                {
+                  question: 'Which database should this fresh chat use?',
+                  options: ['SQLite', 'Postgres', 'Other'],
+                  recommendedOption: 'SQLite',
+                  recommendationReason: 'Local storage is enough.',
+                },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        text: 'The database answer was received.',
+        expectToolResults: [{ name: 'ask_user', includes: 'Postgres' }],
+      },
+    ])
+    await submitComposer()
+    await browser.waitUntil(
+      async () =>
+        (
+          await json(
+            await fetch(service.origin + '/v1/questions', { headers }),
+            clientQuestionSnapshotSchema,
+          )
+        ).requests.length === 1,
+      { timeout: 30000 },
+    )
+    const state = await json(
+      await fetch(service.origin + '/v1/questions', { headers }),
+      clientQuestionSnapshotSchema,
+    )
+    const row = state.requests[0]
+    assert.ok(row)
+    const attention = await json(
+      await fetch(service.origin + '/v1/attention', { headers }),
+      clientAttentionSnapshotSchema,
+    )
+    assert.equal(attention.requests[0]?.requestId, row.requestId)
+    assert.equal(attention.requests[0].title, 'Which database should this fresh chat use?')
+    assert.equal(attention.requests[0].canRespond, true)
+    const activity = await json(
+      await fetch(service.origin + '/v1/activity', { headers }),
+      clientActivitySnapshotSchema,
+    )
+    assert.equal(
+      activity.recentThreads.some((t) => t.threadId === row.threadId),
+      false,
+    )
+    await expect($('#ask-user-dialog')).toBeDisplayed()
+    await expect($('#ask-user-dialog')).toHaveText(
+      expect.stringContaining('Which database should this fresh chat use?'),
+    )
+    await saveElementScreenshot('#ask-user-dialog', 'plugin-client-pending-question.png')
+    const input = {
+      version: 1,
+      submissionId: randomUUID(),
+      sessionId: state.sessionId,
+      projectId: row.projectId,
+      threadId: row.threadId,
+      requestId: row.requestId,
+      revision: row.revision,
+      answers: ['Postgres'],
+    }
+    const post = (): Promise<Response> =>
+      fetch(service.origin + '/v1/questions', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(input),
+      })
+    assert.equal((await json(await post(), resultSchema)).ok, true)
+    assert.equal((await json(await post(), resultSchema)).ok, true)
+    await waitForAgentIdle()
+    await scenario.assertComplete()
+    await expectAssistantReply('The database answer was received.')
+    assert.equal(
+      (
+        await json(
+          await fetch(service.origin + '/v1/questions', { headers }),
+          clientQuestionSnapshotSchema,
+        )
+      ).requests.length,
+      0,
     )
   })
 })

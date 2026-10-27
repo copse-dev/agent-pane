@@ -1,8 +1,11 @@
+import { clientActionSubmissionSchema } from '@shared/client-actions.ts'
+import type { ClientActions } from '../clients/client-actions.ts'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import {
   clientPairSchema,
   clientDecisionSchema,
+  clientQuestionAnswerSchema,
   clientActivityDataSchema,
   clientOpenThreadSchema,
   clientReadThreadSchema,
@@ -34,6 +37,7 @@ function localOrigin(origin: string): boolean {
 export async function startPluginClientServer(options: {
   decisions: HumanDecisions
   enabled: () => boolean
+  actions?: ClientActions
   activity?: { read: (fresh?: boolean) => Promise<ClientActivityData> }
   readThread?: (projectId: string, threadId: string) => Promise<ClientThreadText>
   openThread?: (projectId: string, threadId: string) => boolean
@@ -58,6 +62,10 @@ export async function startPluginClientServer(options: {
   let activitySequence = 0
   let activityFingerprint = ''
   const streams = new Set<ServerResponse>()
+  const actionDeliveries = new Map<
+    string,
+    { fingerprint: string; result: Promise<{ ok: boolean; reason: string }> }
+  >()
   const deliveries = new Map<
     string,
     { fingerprint: string; result: { ok: boolean; reason: string } }
@@ -183,6 +191,113 @@ export async function startPluginClientServer(options: {
       json(res, 401, { error: 'Pair in Copse first' })
       return
     }
+    if (req.method === 'GET' && path === '/v1/actions') {
+      json(res, 200, {
+        version: 1,
+        sessionId: options.decisions.snapshot().sessionId,
+        offer:
+          options.decisions.snapshot().requests.length === 0
+            ? (options.actions?.snapshot() ?? null)
+            : null,
+      })
+      return
+    }
+    if (req.method === 'GET' && path === '/v1/questions') {
+      const state = options.decisions.snapshot()
+      json(res, 200, {
+        version: 1,
+        sessionId: state.sessionId,
+        sequence: state.sequence,
+        requests: state.requests.flatMap(({ projectId, threadId, revision, decision }) =>
+          decision.kind === 'question'
+            ? [
+                {
+                  projectId,
+                  threadId,
+                  revision,
+                  requestId: decision.id,
+                  questions: decision.questions,
+                },
+              ]
+            : [],
+        ),
+      })
+      return
+    }
+    if (req.method === 'GET' && path === '/v1/attention') {
+      const state = options.decisions.snapshot()
+      json(res, 200, {
+        version: 1,
+        sessionId: state.sessionId,
+        sequence: state.sequence,
+        requests: state.requests.map(
+          ({ projectId, threadId, revision, decision, interactiveClientSupported }) => ({
+            projectId,
+            threadId,
+            revision,
+            requestId: decision.id,
+            kind: decision.kind,
+            title: (decision.kind === 'question'
+              ? (decision.questions[0]?.question ?? 'Agent question')
+              : decision.title
+            )
+              .replace(/[\r\n\t]/g, ' ')
+              .slice(0, 200),
+            canRespond: decision.kind === 'question' || interactiveClientSupported === true,
+          }),
+        ),
+      })
+      return
+    }
+    if (req.method === 'POST' && path === '/v1/actions') {
+      const input = safeJsonParse(await body(req), decodeWithSchema(clientActionSubmissionSchema))
+      if (!input) {
+        json(res, 400, { error: 'Invalid action reference' })
+        return
+      }
+      const authorized = (): boolean =>
+        active() &&
+        Boolean(clients.principal(req.headers.authorization, origin, 'control')) &&
+        input.sessionId === options.decisions.snapshot().sessionId &&
+        options.decisions.snapshot().requests.length === 0
+      if (!authorized()) {
+        json(res, 403, { error: 'Action unavailable' })
+        return
+      }
+      const key = `${client.id}:${input.submissionId}`
+      const fingerprint = JSON.stringify(input)
+      const previous = actionDeliveries.get(key)
+      if (previous) {
+        if (previous.fingerprint !== fingerprint) {
+          json(res, 409, { ok: false, reason: 'Conflicting action identity' })
+          return
+        }
+        json(res, 200, await previous.result)
+        return
+      }
+      const offer = options.actions?.snapshot()
+      if (
+        !offer ||
+        offer.projectId !== input.projectId ||
+        offer.threadId !== input.threadId ||
+        offer.revision !== input.revision ||
+        !offer.actions.some((action) => action.id === input.actionId)
+      ) {
+        json(res, 200, { ok: false, reason: 'Action changed or unavailable' })
+        return
+      }
+      if (actionDeliveries.size >= 4096) {
+        json(res, 429, { error: 'Too many submissions' })
+        return
+      }
+      const result = (async (): Promise<{ ok: boolean; reason: string }> => {
+        const ok = (await options.actions?.perform(input, authorized)) ?? false
+        return { ok, reason: ok ? 'Action accepted in Copse' : 'Action changed or unavailable' }
+      })()
+      actionDeliveries.set(key, { fingerprint, result })
+      json(res, 200, await result)
+      return
+    }
     if (req.method === 'GET' && path === '/v1/activity') {
       if (!options.activity) {
         json(res, 404, { error: 'Activity unavailable' })
@@ -289,10 +404,7 @@ export async function startPluginClientServer(options: {
         options.decisions
           .snapshot()
           .requests.some(
-            (row) =>
-              row.interactiveClientSupported &&
-              row.projectId === input.projectId &&
-              row.threadId === input.threadId,
+            (row) => row.projectId === input.projectId && row.threadId === input.threadId,
           )
       if (!known || !options.openThread?.(input.projectId, input.threadId)) {
         json(res, 404, { ok: false, reason: 'Thread is no longer available' })
@@ -327,8 +439,12 @@ export async function startPluginClientServer(options: {
       })
       return
     }
-    if (req.method === 'POST' && path === '/v1/decisions') {
-      const input = safeJsonParse(await body(req), decodeWithSchema(clientDecisionSchema))
+    if (req.method === 'POST' && (path === '/v1/decisions' || path === '/v1/questions')) {
+      const text = await body(req)
+      const input =
+        path === '/v1/questions'
+          ? safeJsonParse(text, decodeWithSchema(clientQuestionAnswerSchema))
+          : safeJsonParse(text, decodeWithSchema(clientDecisionSchema))
       if (!input) {
         json(res, 400, { error: 'Invalid decision' })
         return
@@ -359,21 +475,28 @@ export async function startPluginClientServer(options: {
         .snapshot()
         .requests.some(
           (entry) =>
-            entry.decision.id === input.requestId && entry.interactiveClientSupported === true,
+            entry.decision.id === input.requestId &&
+            ('answers' in input
+              ? entry.decision.kind === 'question'
+              : entry.decision.kind === 'approval' && entry.interactiveClientSupported === true),
         )
       const ok =
         supported &&
         options.decisions.respond(
           input,
-          { kind: 'approval', approved: input.approved },
+          'answers' in input
+            ? { kind: 'question', answers: input.answers }
+            : { kind: 'approval', approved: input.approved },
           { id: client.id, label: client.label, source: 'plugin-client' },
         )
       const result = {
         ok,
         reason: ok
-          ? input.approved
-            ? 'Approved once'
-            : 'Denied'
+          ? 'answers' in input
+            ? 'Answers submitted'
+            : input.approved
+              ? 'Approved once'
+              : 'Denied'
           : 'Request changed or was answered elsewhere',
       }
       deliveries.set(key, { fingerprint, result })
