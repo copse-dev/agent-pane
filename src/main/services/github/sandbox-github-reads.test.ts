@@ -353,6 +353,47 @@ describe('SandboxGitHubReads', () => {
     assert.equal(seen.length, 0)
   })
 
+  it(
+    'refuses a read that declares a body on both routes, and sends reads with no framing',
+    { timeout: 10_000 },
+    async () => {
+      const access = await reads.spawnFor('thread-a')
+      const alias = aliasFrom(access.env({}))
+      const secret = secretFrom(access.env({}))
+      // Node's client frames a GET body only when told its length.
+      const body = 'x'.repeat(60)
+      const length = { 'Content-Length': String(body.length) }
+      const gh = await send(access.allowUnixSockets[0] ?? '', {
+        path: '/repos/o/r',
+        headers: { Host: 'api.github.com', Authorization: `token ${secret}`, ...length },
+        body,
+      })
+      assert.equal(gh.status, 400)
+      assert.match(gh.body, /a GET request cannot carry a body/)
+      const git = await send(reads.gitSocketPath, {
+        path: `http://${alias}/o/r.git/info/refs?service=git-upload-pack`,
+        headers: { Host: alias, [SANDBOX_GITHUB_SESSION_HEADER]: secret, ...length },
+        body,
+      })
+      assert.equal(git.status, 400)
+      assert.match(git.body, /a GET request cannot carry a body/)
+      assert.equal(seen.length, 0)
+
+      const read = await send(access.allowUnixSockets[0] ?? '', {
+        path: '/repos/o/r',
+        headers: {
+          Host: 'api.github.com',
+          Authorization: `token ${secret}`,
+          'Content-Length': '0',
+        },
+      })
+      assert.equal(read.status, 200, read.body)
+      assert.equal(seen[0]?.headers['content-length'], undefined)
+      assert.equal(seen[0]?.headers['transfer-encoding'], undefined)
+      assert.equal(seen[0]?.headers.connection, 'close')
+    },
+  )
+
   it('refuses CONNECT and the bare alias outside a session', async () => {
     const connect = await new Promise<number>((resolveStatus, reject) => {
       const req = httpRequest({
