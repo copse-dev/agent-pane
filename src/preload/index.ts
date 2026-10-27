@@ -16,6 +16,23 @@ exposePerfBridge()
 // missing, extra, or mistyped member fails typecheck here, and the API protocol
 // schema (`pnpm run gen:api-protocol`) is generated from this binding.
 const api: ApiClient = {
+  clientActions: {
+    claim: (id) => ipcRenderer.invoke('client-actions:claim', id),
+    publish: (offer) => ipcRenderer.invoke('client-actions:publish', offer),
+    reply: (id, accepted) => ipcRenderer.invoke('client-actions:reply', id, accepted),
+    onInvoke: (handler) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        command: import('@shared/client-actions.ts').ClientActionCommand,
+      ): void => {
+        handler(command)
+      }
+      ipcRenderer.on('client-actions:invoke', listener)
+      return () => {
+        ipcRenderer.off('client-actions:invoke', listener)
+      }
+    },
+  },
   threadPrompts: {
     revokeAccess: (threadId, access) =>
       ipcRenderer.invoke('thread-prompts:revoke-access', threadId, access),
@@ -1190,6 +1207,15 @@ const api: ApiClient = {
     probeAgent: (agentId: string) => ipcRenderer.invoke('acp:probe-agent', agentId),
     authStatus: (ids: string[]) => ipcRenderer.invoke('acp:auth-status', ids),
     autoSetup: () => ipcRenderer.invoke('acp:auto-setup'),
+  },
+  machines: {
+    state: () => ipcRenderer.invoke('machines:state'),
+    pair: (code: string) => ipcRenderer.invoke('machines:pair', code),
+    remove: (id: string) => ipcRenderer.invoke('machines:remove', id),
+    share: (config: import('@shared/machines.ts').MachineSharing) =>
+      ipcRenderer.invoke('machines:share', config),
+    invitation: () => ipcRenderer.invoke('machines:invitation'),
+    revoke: (id: string) => ipcRenderer.invoke('machines:revoke', id),
   },
   classifiers: {
     list: () => ipcRenderer.invoke('classifiers:list'),
