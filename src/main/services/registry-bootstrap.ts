@@ -37,6 +37,8 @@ import { applyPatchTool } from '../tools/apply-patch-tool.ts'
 import { readStagedDiffTool, stagedDiffsTool } from '../tools/staged-diff-tools.ts'
 import { deleteFileTool, renameFileTool, makeDirectoryTool } from '../tools/file-ops-tools.ts'
 import { exploreTool } from '../tools/explore-tool.ts'
+import { isolatedWorkersTool } from '../tools/isolated-workers-tool.ts'
+import { readonlyWorkersTool } from '../tools/readonly-workers-tool.ts'
 import { readSkillTool } from '../tools/read-skill-tool.ts'
 import { updateTodosTool } from '../tools/todo-tool.ts'
 import { askUserTool } from '../tools/ask-user-tool.ts'
@@ -141,6 +143,8 @@ export function createRegistry(): ToolRegistry {
   registry.register(requestWriteAccessTool)
   registry.register(deferredApprovalStatusTool)
   registry.register(exploreTool)
+  registry.register(readonlyWorkersTool)
+  registry.register(isolatedWorkersTool)
   // Experimental CI investigator subagent (off by default). Gated by the
   // `copse.ci-investigator` first-party plugin — the plugin toggle in Settings >
   // Plugins is the atomic master switch. Registration also requires `gh` (the
