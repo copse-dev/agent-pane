@@ -256,11 +256,36 @@ describe('review findings card', () => {
 
   it('is one line when the review is clean', () => {
     const card = createReviewFindingsCardEl(
-      report({ findings: [], appendix: 0, refuted: 0, verification: null }),
+      report({ findings: [], notChecked: [], appendix: 0, refuted: 0, verification: null }),
     )
     assert.equal(card.querySelector('.review-report-clean')?.textContent, 'Clean.')
     assert.equal(card.querySelector('.review-report-findings'), null)
     assert.equal(card.querySelector('.review-report-footer'), null)
+  })
+
+  it('shows inconclusive checks as unknown and does not describe the review as clean', () => {
+    const card = createReviewFindingsCardEl(
+      report({
+        findings: [],
+        appendix: 0,
+        refuted: 0,
+        verification: null,
+        checks: [{ kind: 'typecheck', verdict: 'undetermined' }],
+        notChecked: [
+          'typecheck: the checker terminated with exit 134 without a completed check on head; a code regression was not established',
+        ],
+      }),
+    )
+    assert.equal(
+      card.querySelector('.review-report-check')?.textContent,
+      'typecheck ? undetermined',
+    )
+    assert.equal(
+      card.querySelector('.review-report-clean')?.textContent,
+      'No findings. Some checks could not be verified.',
+    )
+    assert.match(card.querySelector('.review-report-ground-note')?.textContent ?? '', /exit 134/)
+    assert.equal(card.querySelector('.review-finding'), null)
   })
 
   it('carries a note in place of "Clean." when there was nothing to review', () => {

@@ -6,7 +6,7 @@ import {
   sanitizeAutoApprovalLevel,
 } from '@shared/auto-approval.ts'
 import { getSetting } from '../storage/settings.ts'
-import { getWorkspaceRoot } from '../workspace.ts'
+import { getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
 import { isWorkspaceTrusted } from './workspace-trust.ts'
 import { configuredGitRemotes } from './git-remotes.ts'
 import { assessAutoApproval, type AutoApprovalDecision } from './auto-approval.ts'
@@ -39,7 +39,7 @@ export { AUTO_APPROVAL_LEVEL_SETTING } from '@shared/auto-approval.ts'
  * path is the default.
  *
  * @param executionRoot the resolved execution root for this run, when the caller
- *   already knows it. Falls back to the workspace root.
+ *   already knows it. Falls back to the active run's root, then the workspace root.
  * @param sandboxEnabled whether an OS sandbox is actually confining this session.
  *   Defaults to `false` (fail closed). Every tier prompts when it is not `true`.
  */
@@ -54,18 +54,20 @@ export function resolveAutoApproval(
   if (!sandboxEnabled) {
     return { action: 'prompt', reasons: ['project sandbox not active'] }
   }
-  const workspaceRoot = getWorkspaceRoot()
-  if (!isWorkspaceTrusted(workspaceRoot)) {
+  // Trust belongs to the run's project, not whichever checkout the window shows:
+  // a background or automation thread acts on its own project.
+  const projectRoot = getAgentProjectRoot()
+  if (!isWorkspaceTrusted(projectRoot)) {
     return { action: 'prompt', reasons: ['workspace not trusted'] }
   }
-  const root = executionRoot ?? workspaceRoot
+  const root = executionRoot ?? getAgentExecutionRoot()
   return assessAutoApproval(command, {
     workspaceRoot: root,
     level: effectiveAutoApprovalLevel(autoApprovalLevel(), sandboxEnabled),
-    // Remotes come from the workspace root's repository: that is the checkout the
-    // user opened and trusted. An execution root inside it (a worktree) shares the
+    // Remotes come from the project's repository: that is the checkout the user
+    // opened and trusted. An execution root inside it (a worktree) shares the
     // same common config, which `configuredGitRemotes` resolves.
-    configuredRemotes: configuredGitRemotes(workspaceRoot),
+    configuredRemotes: configuredGitRemotes(projectRoot),
     canonicalizePath: realpathSync.native,
   })
 }

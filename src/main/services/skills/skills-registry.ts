@@ -36,6 +36,14 @@ import { extractSkillFileReferences } from '@shared/skills/extract-skill-referen
 import { notifyRefreshContextEstimate } from '../context-estimate-notify.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
+import { getAgent } from '../agents/agents-registry.ts'
+import {
+  preflightSkill,
+  requiredSkillTools,
+  type SkillPreflightEnvironment,
+} from './skill-preflight.ts'
+import type { SkillCapabilityState, SkillExecutor } from '@shared/skills/skill-requirements.ts'
+import { isSkillDependencyInScope } from './skill-dependencies.ts'
 
 /** Max bytes read from a skill file (auto-approved, outside workspace). */
 export const SKILL_READ_MAX_BYTES = READ_FILE_LIMITS_CEILING.maxChars * 4
@@ -515,11 +523,70 @@ export function listSkills(): SkillSummary[] {
 }
 
 export function listSkillSources(): SkillsSourcesResult {
+  const preflightDiagnostics = activeSkills().flatMap((skill): SkillDiagnostic[] => {
+    if (
+      !skill.requirements &&
+      !requiredSkillTools(skill).length &&
+      !skill.dependencies?.length &&
+      !skill.missingReferences.length
+    )
+      return []
+    const result = preflightSkill(skill, skillPreflightEnvironment())
+    return [
+      ...result.checks
+        .filter((check) => check.state !== 'supported')
+        .map((check): SkillDiagnostic => ({
+          kind: check.state === 'supported' ? 'compatibility' : check.state,
+          name: skill.name,
+          skillPath: skill.skillPath,
+          source: skill.source,
+          reason: check.reason,
+        })),
+      {
+        kind: 'untested',
+        name: skill.name,
+        skillPath: skill.skillPath,
+        source: skill.source,
+        reason:
+          'Workflow/model compatibility is untested. Requirements are declarations, not verification or permissions.',
+      },
+    ]
+  })
   return {
     skills: [...activeSkills()],
-    diagnostics: [...(scopedSkills.getStore()?.diagnostics ?? cachedSkillDiagnostics)],
+    diagnostics: [
+      ...(scopedSkills.getStore()?.diagnostics ?? cachedSkillDiagnostics),
+      ...preflightDiagnostics,
+    ],
     extraRoots: getSetting<string[]>('skillPluginPaths', []),
     reload: 'manual',
+  }
+}
+
+/** Live facts for diagnostics only. This lookup neither loads nor authorizes dependencies. */
+export function skillPreflightEnvironment(
+  tools?: readonly string[],
+  executor?: SkillExecutor,
+): SkillPreflightEnvironment {
+  return {
+    ...(tools === undefined ? {} : { tools }),
+    ...(executor === undefined ? {} : { executor }),
+    agentState: (name): SkillCapabilityState => {
+      if (!getAgent(name)) return 'unavailable'
+      if (tools === undefined) return 'untested'
+      if (!tools.includes('task')) return 'disabled'
+      return 'supported'
+    },
+    dependencyState: (parent, name): SkillCapabilityState => {
+      const state = getSkillAvailability(name)
+      if (state !== 'supported') return state
+      const candidate = getSkill(name)
+      return candidate && isSkillDependencyInScope(parent, candidate) ? 'supported' : 'unavailable'
+    },
+    dependencySkill: (parent, name): SkillMetadata | null => {
+      const candidate = getSkill(name)
+      return candidate && isSkillDependencyInScope(parent, candidate) ? candidate : null
+    },
   }
 }
 
@@ -562,7 +629,7 @@ function splitQualifiedSkillName(name: string): { plugin: string; skill: string 
  * plugin skills under a `.../plugins/<plugin>/skills/<skill>/` path and
  * sometimes ask for them qualified that way.
  */
-export function getSkill(name: string): SkillMetadata | null {
+function findSkill(name: string): SkillMetadata | null {
   const skills = activeSkills()
   const exact = skills.find((skill) => skill.name === name)
   if (exact) return exact
@@ -572,6 +639,44 @@ export function getSkill(name: string): SkillMetadata | null {
     skills.find((skill) => skill.name === qualified.skill && skill.plugin === qualified.plugin) ??
     null
   )
+}
+
+/** Live off-switches also govern a run's otherwise frozen discovery snapshot. */
+function skillIsEnabled(skill: SkillMetadata): boolean {
+  if (!skillsEnabled()) return false
+  if (skill.source === 'bundled' && skill.plugin) {
+    return (
+      getSetting<boolean>(BUNDLED_CURSOR_SKILLS_SETTING, true) &&
+      isBundledSkillPluginEnabled(skill.plugin)
+    )
+  }
+  if (skill.source === 'plugin' && skill.plugin) {
+    const service = getPluginService()
+    if (service.hasUserPlugin(skill.plugin))
+      return service
+        .enabledUserPlugins()
+        .some((plugin) => plugin.skillFiles.includes(skill.skillPath))
+  }
+  return true
+}
+
+export function getSkill(name: string): SkillMetadata | null {
+  const skill = findSkill(name)
+  return skill && skillIsEnabled(skill) ? skill : null
+}
+
+/** Read-only availability for diagnostics, never a grant of invocation authority. */
+export function getSkillAvailability(name: string): 'supported' | 'disabled' | 'unavailable' {
+  if (!skillsEnabled()) return 'disabled'
+  const skill = findSkill(name)
+  if (skill) return skillIsEnabled(skill) ? 'supported' : 'disabled'
+  const plugin = splitQualifiedSkillName(name)?.plugin ?? name
+  if (
+    activeSwitchedOffPlugins().includes(plugin) ||
+    activeSkills().some((candidate) => candidate.plugin === plugin && !skillIsEnabled(candidate))
+  )
+    return 'disabled'
+  return 'unavailable'
 }
 
 /** How many available skill names `unknownSkillError` lists before summarizing the rest. */
@@ -692,6 +797,16 @@ function pluginNameError(name: string): Error | null {
 }
 
 function unknownSkillError(name: string): Error {
+  if (!skillsEnabled())
+    return new Error(
+      'Skills are switched off. Continue without skills, or ask the user to enable them in Settings → Agent → Skills.',
+    )
+  const installed = findSkill(name)
+  if (installed && getSkillAvailability(name) === 'disabled')
+    return new Error(
+      `Skill "${installed.name}" belongs to plugin "${installed.plugin ?? ''}" which is switched off. Continue without it; the user can enable the plugin in Settings → Customise → Plugins and reload skills.`,
+    )
+
   // A name that discovery found but could not load (bad frontmatter, or a
   // frontmatter name/folder mismatch) is a registry bug, not a missing
   // skill — say so distinctly rather than telling the model no such skill

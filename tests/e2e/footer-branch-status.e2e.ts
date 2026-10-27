@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
+  E2E_WORKSPACE_COMMIT_DATE,
   resetUserData,
   seedFooterBranchFixture,
   seedFooterBranchMismatchFixture,
@@ -84,16 +85,17 @@ describe('footer branch status for a detached thread worktree', function () {
   let projectRoot = ''
   let worktreeRoot = ''
 
-  // A recovery command names the picked commit's SHA, and the machine-originated
-  // continue turn shows that command in the transcript, so this fixture's
-  // commits must not take their dates from the wall clock: every run would
-  // otherwise render a different SHA in footer-branch-restored-composer.png.
-  const commitDate = '2026-01-01T00:00:00Z'
+  // Fixed dates make every commit here hash the same on each run: the
+  // Commit and continue run names the picked commit's SHA in the transcript.
   function git(cwd: string, args: string[]): string {
     return execFileSync('git', args, {
       cwd,
       encoding: 'utf8',
-      env: { ...process.env, GIT_AUTHOR_DATE: commitDate, GIT_COMMITTER_DATE: commitDate },
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: E2E_WORKSPACE_COMMIT_DATE,
+        GIT_COMMITTER_DATE: E2E_WORKSPACE_COMMIT_DATE,
+      },
     }).trim()
   }
 

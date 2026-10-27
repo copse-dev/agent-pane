@@ -3,7 +3,11 @@ import { mkdirSync } from 'node:fs'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { CLASSIFIER_PRESETS } from '@copse/llm/classifiers/presets.ts'
 import { join } from 'node:path'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  pinTextForCapture,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import {
   readSeededSettings,
   resetUserData,
@@ -23,6 +27,31 @@ const RESULT = JSON.stringify({
 })
 
 /**
+ * What a capture shows for the parts of the estimate that measure Copse itself:
+ * its system prompt, tool schemas and bundled skills. Any product change moves
+ * those figures and no fixture reaches them, so the capture pins them and the
+ * total; the assertions read the live estimate. Conversation is the seeded
+ * thread and stays live.
+ */
+interface CapturedFigures {
+  total: string
+  system: string
+  tools: string
+  skills: string
+}
+const WITHOUT_CLASSIFIER: CapturedFigures = {
+  total: '21.7k / 128.0k (17%)',
+  system: '3.6k · 3%',
+  tools: '11.8k · 9%',
+  skills: '6.2k · 5%',
+}
+const WITH_CLASSIFIER: CapturedFigures = {
+  ...WITHOUT_CLASSIFIER,
+  total: '22.3k / 128.0k (17%)',
+  tools: '12.4k · 10%',
+}
+
+/**
  * The context wheel counts the classifier tool: its schema under Tools once a
  * classifier is configured (and not before), and its results as part of the
  * conversation the next send carries. Nothing here is mocked in the product:
@@ -35,8 +64,8 @@ describe('context wheel counts the classifier tool', function () {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     writeSeedConfig({
-      // Not this checkout: its AGENTS.md and skills are part of the estimate,
-      // so a docs edit on main would move every figure in the popover.
+      // A fixed project: this checkout's AGENTS.md, skills and uncommitted
+      // files would otherwise count towards the estimate and show in the frame.
       projects: [{ id: PROJECT_ID, path: seedStableWorkspace(), name: 'workspace' }],
       activeProjectId: PROJECT_ID,
       [`threads:${PROJECT_ID}`]: [
@@ -119,7 +148,7 @@ describe('context wheel counts the classifier tool', function () {
     assert.ok(without['Conversation'], 'the thread, with its classifier result, is counted')
     const toolsWithout = tokens(without['Tools'])
     await $('.context-wheel').moveTo()
-    await saveWheel('context-wheel-classifier-none.png')
+    await saveWheel('context-wheel-classifier-none.png', WITHOUT_CLASSIFIER)
 
     // Configure Kev (a saved connection) and restart: the tool is now offered to the model.
     const kev = CLASSIFIER_PRESETS.find((profile) => profile.id === 'kev')
@@ -136,7 +165,7 @@ describe('context wheel counts the classifier tool', function () {
       `Tools should grow by the classifier tool schemas: ${String(toolsWithout)} -> ${String(toolsWith)}`,
     )
     await expect($('.context-wheel-popover')).toBeDisplayed()
-    await saveWheel('context-wheel-classifier-configured.png')
+    await saveWheel('context-wheel-classifier-configured.png', WITH_CLASSIFIER)
 
     const rollup = $('.tool-card-rollup')
     if (await rollup.isExisting()) {
@@ -153,10 +182,42 @@ describe('context wheel counts the classifier tool', function () {
     )
   })
 
-  async function saveWheel(name: string): Promise<void> {
+  async function saveWheel(name: string, figures: CapturedFigures): Promise<void> {
     await $('.context-wheel').moveTo()
     await $('.context-wheel-popover').waitForDisplayed()
-    // The whole window, not saveElementScreenshot: that parks the pointer first, which closes the hover.
-    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, name))
+    // Rows follow the header in this order, so each pin can address its row by position.
+    const order = await browser.execute(() =>
+      [...document.querySelectorAll('.context-wheel-popover > *')]
+        .slice(0, 5)
+        .map(
+          (child) =>
+            child.querySelector('.context-wheel-popover-name')?.textContent ?? child.className,
+        ),
+    )
+    assert.deepEqual(order, [
+      'context-wheel-popover-header',
+      'System prompt',
+      'Tools',
+      'Skills',
+      'Conversation',
+    ])
+    const value = (child: number): string =>
+      `.context-wheel-popover > :nth-child(${String(child)}) .context-wheel-popover-value`
+    const restores = [
+      await pinTextForCapture(
+        '.context-wheel-popover-header',
+        /^Context · .+$/,
+        `Context · ${figures.total}`,
+      ),
+      await pinTextForCapture(value(2), /.+/, figures.system),
+      await pinTextForCapture(value(3), /.+/, figures.tools),
+      await pinTextForCapture(value(4), /.+/, figures.skills),
+    ]
+    try {
+      // The whole window, not saveElementScreenshot: that parks the pointer first, which closes the hover.
+      await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, name))
+    } finally {
+      for (const restore of restores) await restore()
+    }
   }
 })

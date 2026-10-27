@@ -22,7 +22,6 @@ import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-re
 import { isInvestigateCiOffered } from './github/ci-investigator-availability.ts'
 import { REVIEW_FOLLOW_UP_ID } from '@copse/agent/plugins/review-plugin.ts'
 import { getPrWorkspaceContext } from './github/pr-context-service.ts'
-import { getWorkspaceRoot } from './workspace.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
@@ -333,7 +332,7 @@ export function mockFollowUpSuggestions(): FollowUpSuggestion[] {
 /** Build follow-up bubbles: deterministic PR/git signals first, then model picks. */
 export async function suggestFollowUps(
   context: FollowUpContext,
-  root: string | null = getWorkspaceRoot(),
+  root: string | null,
   executor: FollowUpExecutor = NATIVE_EXECUTOR,
 ): Promise<FollowUpSuggestion[]> {
   if (
