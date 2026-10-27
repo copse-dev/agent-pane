@@ -52,6 +52,51 @@ export interface GitHubCapabilityOptions {
 /** Largest GraphQL body checked; a read query is a few kilobytes. */
 const GRAPHQL_BODY_LIMIT = 1024 * 1024
 
+/**
+ * How long the upstream connection may sit idle (nothing sent or received)
+ * before it is abandoned. Idle, not total: a log download or a large fetch
+ * keeps bytes moving and may take as long as it needs.
+ */
+export const GITHUB_UPSTREAM_IDLE_TIMEOUT_MS = 120_000
+
+/**
+ * The body framing the guest declared, from its original headers. The host
+ * never copies these headers through: it frames every upstream request itself
+ * from this, and only a `stream` decision forwards a guest body at all.
+ */
+type RequestFraming =
+  | { kind: 'empty' }
+  | { kind: 'length'; length: number }
+  | { kind: 'chunked' }
+  | { kind: 'invalid'; reason: string }
+
+export function requestFraming(headers: ReadonlyArray<readonly [string, string]>): RequestFraming {
+  const lengths = headers.filter(([name]) => name.toLowerCase() === 'content-length')
+  const encodings = headers.filter(([name]) => name.toLowerCase() === 'transfer-encoding')
+  if (lengths.length > 0 && encodings.length > 0) {
+    return {
+      kind: 'invalid',
+      reason: 'the request declares both Content-Length and Transfer-Encoding',
+    }
+  }
+  if (encodings.length > 0) {
+    const only = encodings.length === 1 ? encodings[0]?.[1].trim().toLowerCase() : undefined
+    if (only !== 'chunked') {
+      return { kind: 'invalid', reason: 'the request Transfer-Encoding is not plain chunked' }
+    }
+    return { kind: 'chunked' }
+  }
+  if (lengths.length > 0) {
+    const only = lengths.length === 1 ? lengths[0]?.[1].trim() : undefined
+    if (only === undefined || !/^\d{1,15}$/.test(only)) {
+      return { kind: 'invalid', reason: 'the request Content-Length is malformed' }
+    }
+    const length = Number(only)
+    return length === 0 ? { kind: 'empty' } : { kind: 'length', length }
+  }
+  return { kind: 'empty' }
+}
+
 /** Request headers never passed on: the hop's own, and anything carrying identity. */
 const DROP_REQUEST_HEADERS = new Set([
   'host',
@@ -68,7 +113,21 @@ const DROP_REQUEST_HEADERS = new Set([
   'accept-encoding',
   'content-length',
   'expect',
+  'http2-settings',
 ])
+
+/** Header names the guest's `Connection` header marks as hop-by-hop, lowercased. */
+function connectionNamed(headers: ReadonlyArray<readonly [string, string]>): Set<string> {
+  const named = new Set<string>()
+  for (const [name, value] of headers) {
+    if (name.toLowerCase() !== 'connection') continue
+    for (const token of value.split(',')) {
+      const trimmed = token.trim().toLowerCase()
+      if (trimmed !== '') named.add(trimmed)
+    }
+  }
+  return named
+}
 
 /** Headers some servers honour to run a request as a different method. */
 const METHOD_OVERRIDE_HEADERS = new Set([
@@ -259,6 +318,19 @@ export class GitHubCapability {
       return
     }
 
+    const framing = requestFraming(head.headers)
+    if (framing.kind === 'invalid') {
+      this.respondRefusal(stream, 400, framing.reason, label)
+      return
+    }
+    // A GET or HEAD goes upstream with no body and no framing headers. One
+    // that declares a body is refused rather than trimmed, so nothing the
+    // guest chose about framing can reach the token-bearing connection.
+    if (decision.body === 'none' && framing.kind !== 'empty') {
+      this.respondRefusal(stream, 400, `a ${head.method} request cannot carry a body`, label)
+      return
+    }
+
     let body: Buffer | null = null
     if (decision.body === 'graphql') {
       body = await readBody(stream, rest, GRAPHQL_BODY_LIMIT)
@@ -282,10 +354,11 @@ export class GitHubCapability {
       }
     }
 
+    const hopByHop = connectionNamed(head.headers)
     const headers: OutgoingHttpHeaders = {}
     for (const [name, value] of head.headers) {
       const lower = name.toLowerCase()
-      if (DROP_REQUEST_HEADERS.has(lower)) continue
+      if (DROP_REQUEST_HEADERS.has(lower) || hopByHop.has(lower)) continue
       const existing = headers[lower]
       headers[lower] =
         existing === undefined
@@ -297,14 +370,16 @@ export class GitHubCapability {
     headers['host'] = decision.host
     // Identity, so the body can be scanned for the token as it streams.
     headers['accept-encoding'] = 'identity'
+    // Framing is the host's: the GraphQL body's own length, the guest's
+    // validated length for a streamed body (enforced below), or chunked.
+    // A bodyless decision sends neither header.
+    let streamLength: number | null = null
     if (body !== null) headers['content-length'] = String(body.length)
-    else {
-      const length = head.headers.find(([name]) => name.toLowerCase() === 'content-length')?.[1]
-      const chunked = head.headers.some(
-        ([name, value]) => name.toLowerCase() === 'transfer-encoding' && /chunked/i.test(value),
-      )
-      if (length !== undefined && !chunked) headers['content-length'] = length
-      else if (decision.body === 'stream') headers['transfer-encoding'] = 'chunked'
+    else if (decision.body === 'stream') {
+      if (framing.kind === 'length') {
+        streamLength = framing.length
+        headers['content-length'] = String(framing.length)
+      } else headers['transfer-encoding'] = 'chunked'
     }
 
     const token = await this.options.token().catch(() => null)
@@ -351,6 +426,12 @@ export class GitHubCapability {
         path: decision.path,
         headers,
         servername: decision.host,
+        // A connection of its own, closed after the answer: never pooled, so
+        // no request can share a token-bearing connection with another.
+        agent: false,
+      })
+      outbound.setTimeout(GITHUB_UPSTREAM_IDLE_TIMEOUT_MS, () => {
+        outbound.destroy(new Error('GitHub did not answer in time'))
       })
       const stop = (): void => {
         outbound.destroy()
@@ -420,26 +501,37 @@ export class GitHubCapability {
         return
       }
       if (decision.body === 'stream') {
-        if (rest.length > 0) {
-          bytesToOrigin += rest.length
-          outbound.write(rest)
-        }
-        stream.on('data', (chunk: Buffer) => {
-          bytesToOrigin += chunk.length
-          if (!outbound.write(chunk)) {
-            stream.pause()
-            outbound.once('drain', () => {
-              stream.resume()
-            })
+        // With a declared length, exactly that many bytes go upstream: more
+        // or fewer abandons the request instead of mis-framing it.
+        const forward = (chunk: Buffer): boolean => {
+          if (streamLength !== null && bytesToOrigin + chunk.length > streamLength) {
+            outbound.destroy(new Error('the request body is longer than its Content-Length'))
+            stream.destroy()
+            return false
           }
+          bytesToOrigin += chunk.length
+          return outbound.write(chunk)
+        }
+        if (rest.length > 0 && !forward(rest) && outbound.destroyed) return
+        stream.on('data', (chunk: Buffer) => {
+          if (forward(chunk) || outbound.destroyed) return
+          stream.pause()
+          outbound.once('drain', () => {
+            stream.resume()
+          })
         })
         stream.on('end', () => {
+          if (streamLength !== null && bytesToOrigin !== streamLength) {
+            outbound.destroy(new Error('the request body is shorter than its Content-Length'))
+            return
+          }
           outbound.end()
         })
         stream.resume()
         return
       }
-      // GET/HEAD: no body is forwarded, whatever the guest sent.
+      // GET/HEAD: no body and no framing go upstream. A body was refused
+      // above if declared; undeclared stray bytes are drained, never sent.
       outbound.end()
       stream.resume()
     })

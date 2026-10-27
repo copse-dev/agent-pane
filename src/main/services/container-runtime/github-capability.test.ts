@@ -12,15 +12,25 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { connect } from 'node:net'
-import { PassThrough } from 'node:stream'
+import { Duplex, PassThrough } from 'node:stream'
 import { gzipSync } from 'node:zlib'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { EgressBroker } from './egress-broker.ts'
 import { EgressLink } from './egress-link.ts'
 import { parseEgressRule } from './egress-rules.ts'
-import { authorizationFor, GitHubCapability } from './github-capability.ts'
-import { HOST_GITHUB_TARGET } from './github-capability-wire.ts'
+import {
+  authorizationFor,
+  GitHubCapability,
+  GITHUB_UPSTREAM_IDLE_TIMEOUT_MS,
+  requestFraming,
+} from './github-capability.ts'
+import {
+  encodeHead,
+  githubResponseHeadSchema,
+  HOST_GITHUB_TARGET,
+  type GitHubRequestHead,
+} from './github-capability-wire.ts'
 import { startGuestGitHubBridge, type GuestGitHubBridge } from './guest-github-bridge.ts'
 
 /**
@@ -45,6 +55,11 @@ interface Seen {
 function startFakeGitHub(): Promise<{ server: Server; port: number; seen: Seen[] }> {
   const seen: Seen[] = []
   const server = createServer((req, res) => {
+    if (req.url === '/hang') {
+      // Never answers; only an upstream timeout ends this request.
+      seen.push({ method: req.method ?? '', url: req.url, headers: req.headers, body: '' })
+      return
+    }
     const parts: Buffer[] = []
     req.on('data', (chunk: Buffer) => {
       parts.push(chunk)
@@ -120,12 +135,57 @@ function send(options: RequestOptions, body?: string): Promise<Answer> {
   })
 }
 
+/** Resolve once `check` holds, polling briefly; fails the test after two seconds. */
+async function until(check: () => boolean): Promise<void> {
+  const deadline = Date.now() + 2000
+  while (!check()) {
+    if (Date.now() > deadline) assert.fail('timed out waiting for the condition')
+    await new Promise((resolveTick) => setTimeout(resolveTick, 5))
+  }
+}
+
+/**
+ * Serve one request straight into the host handler, bypassing the guest
+ * bridge: a head and body bytes that need not agree, as a worker that does
+ * not frame honestly could send them.
+ */
+async function serveDirect(
+  capability: GitHubCapability,
+  head: GitHubRequestHead,
+  body: Buffer,
+): Promise<{ status: number | null; text: string }> {
+  const written: Buffer[] = []
+  const stream = new Duplex({
+    read(): void {},
+    write(chunk: Buffer, _encoding, callback): void {
+      written.push(chunk)
+      callback()
+    },
+  })
+  stream.push(Buffer.from(encodeHead(head)))
+  stream.push(body)
+  stream.push(null)
+  await capability.serve(stream)
+  if (!stream.destroyed && !stream.writableFinished) {
+    await new Promise<void>((resolveDone) => {
+      stream.once('finish', resolveDone)
+      stream.once('close', resolveDone)
+    })
+  }
+  const all = Buffer.concat(written).toString('utf8')
+  const newline = all.indexOf('\n')
+  if (newline === -1) return { status: null, text: '' }
+  const parsed = safeJsonParse(all.slice(0, newline), decodeWithSchema(githubResponseHeadSchema))
+  return { status: parsed?.status ?? null, text: all.slice(newline + 1) }
+}
+
 describe('GitHub read capability, guest bridge to fake GitHub', () => {
   let fake: { server: Server; port: number; seen: Seen[] }
   let broker: EgressBroker
   let bridge: GuestGitHubBridge
   let socketDir: string
   let token: string | null = REAL_TOKEN
+  const upstreamOptions: RequestOptions[] = []
 
   /** The `index`th request the fake GitHub received. */
   const seenAt = (index: number): Seen => {
@@ -175,8 +235,10 @@ describe('GitHub read capability, guest bridge to fake GitHub', () => {
     const capability = new GitHubCapability({
       token: (): Promise<string | null> => Promise.resolve(token),
       placeholder: PLACEHOLDER,
-      upstream: (options): ClientRequest =>
-        httpRequest({ ...options, host: '127.0.0.1', port: fake.port }),
+      upstream: (options): ClientRequest => {
+        upstreamOptions.push(options)
+        return httpRequest({ ...options, host: '127.0.0.1', port: fake.port })
+      },
       onLog: (entry): void => {
         broker.record(entry)
       },
@@ -207,6 +269,7 @@ describe('GitHub read capability, guest bridge to fake GitHub', () => {
         broker.stop()
       },
       (): void => {
+        fake.server.closeAllConnections()
         fake.server.close()
       },
       (): void => {
@@ -224,6 +287,7 @@ describe('GitHub read capability, guest bridge to fake GitHub', () => {
 
   beforeEach(() => {
     fake.seen.length = 0
+    upstreamOptions.length = 0
     token = REAL_TOKEN
   })
 
@@ -371,6 +435,143 @@ describe('GitHub read capability, guest bridge to fake GitHub', () => {
     assert.equal(seenAt(0).headers.authorization, undefined)
   })
 
+  it(
+    'refuses a read that declares a body, so no framing reaches the token-bearing request',
+    { timeout: 10_000 },
+    async () => {
+      // Before the fix the guest's Content-Length went upstream on a GET that
+      // then sent no body, leaving GitHub waiting on bytes that never came.
+      // Node's client frames a GET body only when told its length.
+      const body = 'x'.repeat(60)
+      const length = { 'Content-Length': String(body.length) }
+      const get = await gh('GET', '/user', 'api.github.com', body, length)
+      assert.equal(get.status, 400)
+      assert.match(messageOf(get.body), /a GET request cannot carry a body/)
+      const refs = await send(
+        {
+          host: '127.0.0.1',
+          port: bridge.gitProxyPort,
+          method: 'GET',
+          path: 'http://github.copse.internal/o/r.git/info/refs?service=git-upload-pack',
+          headers: { Host: 'github.copse.internal', ...length },
+        },
+        body,
+      )
+      assert.equal(refs.status, 400)
+      assert.equal(fake.seen.length, 0)
+    },
+  )
+
+  it('sends a bodyless read with no framing headers, on a connection of its own', async () => {
+    const answer = await gh('GET', '/user', 'api.github.com', undefined, {
+      'Content-Length': '0',
+    })
+    assert.equal(answer.status, 200)
+    const seen = seenAt(0)
+    assert.equal(seen.headers['content-length'], undefined)
+    assert.equal(seen.headers['transfer-encoding'], undefined)
+    assert.equal(seen.headers.connection, 'close')
+    assert.equal(upstreamOptions.at(0)?.agent, false)
+  })
+
+  it('forwards a streamed fetch body with exactly its declared length', async () => {
+    const body = '0032want abc\n0000'
+    const pack = await git('POST', '/o/private.git/git-upload-pack', body)
+    assert.equal(pack.status, 200)
+    assert.equal(seenAt(0).headers['content-length'], String(Buffer.byteLength(body)))
+    assert.equal(seenAt(0).body, body)
+  })
+
+  it(
+    'abandons a streamed body longer than its Content-Length before sending it',
+    { timeout: 10_000 },
+    async () => {
+      const capability = new GitHubCapability({
+        token: (): Promise<string | null> => Promise.resolve(REAL_TOKEN),
+        placeholder: PLACEHOLDER,
+        upstream: (options): ClientRequest =>
+          httpRequest({ ...options, host: '127.0.0.1', port: fake.port }),
+      })
+      const answer = await serveDirect(
+        capability,
+        {
+          method: 'POST',
+          target: 'http://github.copse.internal/o/r.git/git-upload-pack',
+          headers: [
+            ['Host', 'github.copse.internal'],
+            ['Content-Length', '4'],
+          ],
+        },
+        Buffer.from(`0000${'x'.repeat(60)}`),
+      )
+      assert.equal(answer.status, null)
+      // Give a stray request time to arrive if one had been sent.
+      await new Promise((resolveTick) => setTimeout(resolveTick, 50))
+      assert.equal(
+        fake.seen.some((seen) => seen.body.includes('x')),
+        false,
+      )
+    },
+  )
+
+  it(
+    'abandons a streamed body shorter than its Content-Length instead of hanging',
+    { timeout: 10_000 },
+    async () => {
+      const capability = new GitHubCapability({
+        token: (): Promise<string | null> => Promise.resolve(REAL_TOKEN),
+        placeholder: PLACEHOLDER,
+        upstream: (options): ClientRequest =>
+          httpRequest({ ...options, host: '127.0.0.1', port: fake.port }),
+      })
+      const answer = await serveDirect(
+        capability,
+        {
+          method: 'POST',
+          target: 'http://github.copse.internal/o/r.git/git-upload-pack',
+          headers: [
+            ['Host', 'github.copse.internal'],
+            ['Content-Length', '60'],
+          ],
+        },
+        Buffer.from('0000'),
+      )
+      assert.equal(answer.status, 502)
+      assert.match(messageOf(answer.text), /shorter than its Content-Length/)
+    },
+  )
+
+  it('answers 502 when the upstream goes idle', { timeout: 10_000 }, async () => {
+    const requests: ClientRequest[] = []
+    const capability = new GitHubCapability({
+      token: (): Promise<string | null> => Promise.resolve(REAL_TOKEN),
+      placeholder: PLACEHOLDER,
+      upstream: (options): ClientRequest => {
+        const request = httpRequest({
+          ...options,
+          host: '127.0.0.1',
+          port: fake.port,
+        })
+        requests.push(request)
+        return request
+      },
+    })
+    const served = serveDirect(
+      capability,
+      { method: 'GET', target: '/hang', headers: [['Host', 'api.github.com']] },
+      Buffer.alloc(0),
+    )
+    await until(() => fake.seen.some((seen) => seen.url === '/hang'))
+    const request = requests.at(0)
+    if (request === undefined) assert.fail('no upstream request was made')
+    assert.equal(request.socket?.timeout, GITHUB_UPSTREAM_IDLE_TIMEOUT_MS)
+    // What the socket does once it has been idle that long.
+    request.emit('timeout')
+    const answer = await served
+    assert.equal(answer.status, 502)
+    assert.match(messageOf(answer.text), /did not answer in time/)
+  })
+
   it('refuses CONNECT on the bridge', async () => {
     const reply = await new Promise<string>((resolveReply, reject) => {
       const socket = connect(bridge.gitProxyPort, '127.0.0.1', () => {
@@ -387,6 +588,45 @@ describe('GitHub read capability, guest bridge to fake GitHub', () => {
     })
     assert.match(reply, /^HTTP\/1\.1 405 /)
     assert.equal(fake.seen.length, 0)
+  })
+})
+
+describe('requestFraming', () => {
+  it('reads a single plain length or chunked, and treats a zero length as no body', () => {
+    assert.deepEqual(requestFraming([]), { kind: 'empty' })
+    assert.deepEqual(requestFraming([['Content-Length', '0']]), {
+      kind: 'empty',
+    })
+    assert.deepEqual(requestFraming([['content-length', '12']]), {
+      kind: 'length',
+      length: 12,
+    })
+    assert.deepEqual(requestFraming([['Transfer-Encoding', 'Chunked']]), {
+      kind: 'chunked',
+    })
+  })
+
+  it('refuses framing that could be read two ways', () => {
+    for (const headers of [
+      [
+        ['Content-Length', '4'],
+        ['Transfer-Encoding', 'chunked'],
+      ],
+      [
+        ['Content-Length', '4'],
+        ['Content-Length', '4'],
+      ],
+      [['Content-Length', '4, 4']],
+      [['Content-Length', '-1']],
+      [['Content-Length', '0x10']],
+      [['Transfer-Encoding', 'gzip, chunked']],
+      [
+        ['Transfer-Encoding', 'chunked'],
+        ['Transfer-Encoding', 'chunked'],
+      ],
+    ] satisfies Array<Array<[string, string]>>) {
+      assert.equal(requestFraming(headers).kind, 'invalid', JSON.stringify(headers))
+    }
   })
 })
 
