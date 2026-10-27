@@ -5574,6 +5574,15 @@ function createDemoApi(scenario2, options = {}) {
     typeof scenarioModel === "string" ? scenarioModel : void 0
   );
   const api = {
+    clientActions: {
+      claim: () => Promise.resolve(false),
+      publish: async () => {
+      },
+      reply: async () => {
+      },
+      onInvoke: () => () => {
+      }
+    },
     threadPrompts: {
       onPrompt: () => () => {
       },
@@ -7188,7 +7197,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-4QDFKRYZ.js").then(async (main) => {
+    void import("./chunks/main-ZZE5ITQN.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
