@@ -788,8 +788,6 @@ does not grant a whole fnm registry, installation parent, manager data root, or 
 bubblewrap bind-mounts a granted file through its symlink, which turns fnm's `bin/npm` into a copy
 whose relative requires break, so on Linux the contained process finds these commands first through
 private symlinks in its scratch directory that point at the canonical executables.
-Preflight separately checks npm when managed Socket Firewall needs bootstrapping,
-even for pnpm, Yarn, and Bun projects.
 Runtime installation/version switching and Windows sandbox support remain separate capabilities.
 
 ## Guarded YOLO

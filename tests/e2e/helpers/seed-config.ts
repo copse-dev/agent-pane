@@ -4458,7 +4458,7 @@ export function seedWorktreePreparationFixture(workspaceRoot: string): void {
                 args: { offline: false },
                 status: 'done',
                 result:
-                  'Worktree preparation: absent\nProject: /workspace/customer-app\nPackage manager: npm@11.19.0\n- not ready — Socket Firewall bootstrap: npm is required to bootstrap Socket Firewall but is unavailable in preparation confinement.\n- not ready — Dependencies: missing package.json: example\nRemediation: Run prepare_worktree once with this plan fingerprint.',
+                  'Worktree preparation: absent\nProject: /workspace/customer-app\nPackage manager: npm@11.19.0\n- not ready — Dependencies: missing package.json: example\nRemediation: Run prepare_worktree once with this plan fingerprint.',
               },
             ],
             createdAt: now + 1,

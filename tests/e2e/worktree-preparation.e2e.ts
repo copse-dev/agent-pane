@@ -33,12 +33,6 @@ describe('worktree preparation tool cards', () => {
     await expect(preflight.$('.tool-result')).toHaveText('Worktree preparation: absent', {
       containing: true,
     })
-    await expect(preflight.$('.tool-result')).toHaveText(
-      'npm is required to bootstrap Socket Firewall but is unavailable in preparation confinement.',
-      {
-        containing: true,
-      },
-    )
     await expect(preflight.$('.tool-result')).toHaveText('Run prepare_worktree once', {
       containing: true,
     })
