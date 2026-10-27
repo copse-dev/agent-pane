@@ -1213,15 +1213,29 @@ describe('worktree manager', () => {
         '-S',
         'main',
       ])
+      // Up to Git 2.55 the failed commit reschedules the pick, and the plain
+      // `--continue` then refuses the staged changes. Git 2.56 stops on the
+      // pick as it does for a conflict, so the plain `--continue` commits
+      // them and no separate recovery is offered.
+      const todo = await readFile(
+        git(path, [
+          'rev-parse',
+          '--path-format=absolute',
+          '--git-path',
+          'rebase-merge/git-rebase-todo',
+        ]).trim(),
+        'utf8',
+      )
+      const rescheduled = todo.split('\n').some((line) => line.startsWith(`pick ${picked}`))
 
       assert.deepEqual(await inspectThreadWorktreeAttachment(input), {
         state: 'detached',
         branch: input.worktree.branch,
         recovery: 'rebase',
-        uncommittedPick: { commit: picked, signOption: '-S' },
+        uncommittedPick: rescheduled ? { commit: picked, signOption: '-S' } : null,
       })
 
-      // The offered recovery finishes the rebase: the rescheduled pick is
+      // The offered recovery finishes the rebase: a rescheduled pick is
       // dropped as already applied and the checkout is back on its branch.
       git(path, ['-c', 'commit.gpgsign=false', 'commit', '-q', '-C', picked])
       git(path, ['-c', 'commit.gpgsign=false', 'rebase', '--continue'])
