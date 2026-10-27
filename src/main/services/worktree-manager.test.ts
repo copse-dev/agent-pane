@@ -1197,6 +1197,30 @@ describe('worktree manager', () => {
       assert.ok(git(path, ['status']).includes('rebase in progress'))
     }
 
+    const rebaseState = (path: string, name: string): string =>
+      git(path, [
+        'rev-parse',
+        '--path-format=absolute',
+        '--git-path',
+        `rebase-merge/${name}`,
+      ]).trim()
+
+    /** Up to Git 2.55 a pick whose commit failed is rescheduled as the next todo. */
+    async function pickRescheduled(path: string, picked: string): Promise<boolean> {
+      const todo = await readFile(rebaseState(path, 'git-rebase-todo'), 'utf8')
+      return todo.split('\n').some((line) => line.startsWith(`pick ${picked}`))
+    }
+
+    /** Turn Git 2.56's stop on a failed pick into the rescheduled stop older Git leaves. */
+    async function rescheduleStoppedPick(path: string, picked: string): Promise<void> {
+      const todoPath = rebaseState(path, 'git-rebase-todo')
+      const subject = git(path, ['log', '-1', '--format=%s', picked]).trim()
+      await writeFile(todoPath, `pick ${picked} ${subject}\n${await readFile(todoPath, 'utf8')}`)
+      await rm(rebaseState(path, 'stopped-sha'), { force: true })
+      await rm(rebaseState(path, 'message'), { force: true })
+      git(path, ['update-ref', '--no-deref', 'CHERRY_PICK_HEAD', picked])
+    }
+
     it('recognises a rebase pick whose commit failed to sign', async () => {
       const { input, path } = await detachedWorktree()
       const repo = input.projectRoot
@@ -1213,29 +1237,27 @@ describe('worktree manager', () => {
         '-S',
         'main',
       ])
-      // Up to Git 2.55 the failed commit reschedules the pick, and the plain
-      // `--continue` then refuses the staged changes. Git 2.56 stops on the
-      // pick as it does for a conflict, so the plain `--continue` commits
-      // them and no separate recovery is offered.
-      const todo = await readFile(
-        git(path, [
-          'rev-parse',
-          '--path-format=absolute',
-          '--git-path',
-          'rebase-merge/git-rebase-todo',
-        ]).trim(),
-        'utf8',
-      )
-      const rescheduled = todo.split('\n').some((line) => line.startsWith(`pick ${picked}`))
+      if (!(await pickRescheduled(path, picked))) {
+        // Git 2.56 stops on the pick as it does for a conflict, recording its
+        // message, so the plain `--continue` commits it and no recovery is
+        // offered. Recreate the rescheduled stop older Git leaves.
+        assert.deepEqual(await inspectThreadWorktreeAttachment(input), {
+          state: 'detached',
+          branch: input.worktree.branch,
+          recovery: 'rebase',
+          uncommittedPick: null,
+        })
+        await rescheduleStoppedPick(path, picked)
+      }
 
       assert.deepEqual(await inspectThreadWorktreeAttachment(input), {
         state: 'detached',
         branch: input.worktree.branch,
         recovery: 'rebase',
-        uncommittedPick: rescheduled ? { commit: picked, signOption: '-S' } : null,
+        uncommittedPick: { commit: picked, signOption: '-S' },
       })
 
-      // The offered recovery finishes the rebase: a rescheduled pick is
+      // The offered recovery finishes the rebase: the rescheduled pick is
       // dropped as already applied and the checkout is back on its branch.
       git(path, ['-c', 'commit.gpgsign=false', 'commit', '-q', '-C', picked])
       git(path, ['-c', 'commit.gpgsign=false', 'rebase', '--continue'])
