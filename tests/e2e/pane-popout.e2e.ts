@@ -1,9 +1,12 @@
 import { at } from '@copse/std/array-utils.ts'
 import { mkdirSync } from 'node:fs'
+import { createServer, type Server } from 'node:http'
+import type { WebviewTag } from 'electron'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { navigateActiveBrowserTab } from './helpers/browser-address.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
+import { listenOnFixturePort } from './helpers/fixture-server.ts'
 import {
   resetUserData,
   seedE2eThreePaneLayout,
@@ -65,6 +68,9 @@ const PANES = [
 
 describe('Pane pop-out (mock gh)', () => {
   let mainHandle: string
+  let server: Server
+  let fixtureOrigin = ''
+  const fixtureTitle = 'Pane pop-out fixture'
 
   before(async function () {
     this.timeout(120_000)
@@ -73,6 +79,15 @@ describe('Pane pop-out (mock gh)', () => {
     resetUserData()
     // The explorer pop-out lists the project root: a fixed tree, never this checkout.
     seedPrPanelChatFixture(seedStableWorkspace(), { roadmapPlansEnabled: true })
+    server = createServer((_request, response) => {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      response.end(
+        '<!doctype html><meta charset="utf-8"><title>Pane pop-out fixture</title>' +
+          '<style>body{font:20px system-ui;margin:48px;color:#222;background:#fff}h1{font-size:32px}</style>' +
+          '<h1>Pane pop-out fixture</h1><p>This local page stays open when the Browser pane moves to its own window.</p>',
+      )
+    })
+    fixtureOrigin = await listenOnFixturePort(server, 43132)
     seedE2eViewport()
     seedE2eThreePaneLayout()
     await browser.reloadSession()
@@ -89,6 +104,12 @@ describe('Pane pop-out (mock gh)', () => {
       // session already gone — nothing to do
     }
     resetUserData()
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) reject(error)
+        else resolve()
+      })
+    })
   })
 
   it('detaches each right-panel pane into its own window', async function () {
@@ -106,17 +127,15 @@ describe('Pane pop-out (mock gh)', () => {
       await popoutBtn.waitForClickable({ timeout: 10_000 })
 
       if (pane.mode === 'browser') {
-        await navigateActiveBrowserTab('https://example.com')
-        // The submit reached navigation: the tab leaves "New tab" for the
-        // host (or the page title once it loads), before any network answer.
+        await navigateActiveBrowserTab(`${fixtureOrigin}/popout`)
         await browser.waitUntil(
           async () =>
-            (await $('.browser-tabs-tab.is-active .browser-tabs-tab-label').getText()) !==
-            'New tab',
-          { timeout: 20_000, timeoutMsg: 'browser tab did not navigate before pop-out' },
+            (await $('.browser-tabs-tab.is-active .browser-tabs-tab-label').getText()) ===
+            fixtureTitle,
+          { timeout: 20_000, timeoutMsg: 'local browser fixture did not load before pop-out' },
         )
         await browser.waitUntil(
-          async () => (await $('.browser-url-input').getValue()).includes('example.com'),
+          async () => (await $('.browser-url-input').getValue()) === `${fixtureOrigin}/popout`,
           { timeout: 20_000, timeoutMsg: 'browser address bar did not update before pop-out' },
         )
       }
@@ -188,8 +207,18 @@ describe('Pane pop-out (mock gh)', () => {
           },
         )
         await browser.waitUntil(
-          async () => (await $('.browser-url-input').getValue()).includes('example.com'),
+          async () => (await $('.browser-url-input').getValue()) === `${fixtureOrigin}/popout`,
           { timeout: 20_000, timeoutMsg: 'pop-out browser did not inherit the active tab URL' },
+        )
+        await browser.waitUntil(
+          async () =>
+            await browser.execute((title) => {
+              const view = document.querySelector<WebviewTag>(
+                '.browser-tab-panel.is-active webview',
+              )
+              return view?.getTitle() === title && !view.isLoading()
+            }, fixtureTitle),
+          { timeout: 20_000, timeoutMsg: 'pop-out browser did not retain the loaded fixture page' },
         )
       }
 

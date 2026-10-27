@@ -1059,6 +1059,7 @@ async function checkWorktreePreparationPermission(
     {
       title: 'Prepare this worktree?',
       ...formatPreparationApproval(plan, parsed.offline === true),
+      interactiveClientApproval: 'once',
       type: 'shell',
       cause: 'shell-package-install',
       allowRemember: false,
