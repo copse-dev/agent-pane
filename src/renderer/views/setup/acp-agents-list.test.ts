@@ -26,7 +26,9 @@ describe('agentChip', () => {
   it('maps sign-in state and never claims a state it could not read', () => {
     assert.equal(agentChip('signed-in'), 'unverified')
     assert.equal(agentChip('signed-in', true), 'ready')
-    assert.equal(agentChip('signed-out', true), 'needs-sign-in')
+    // An API key can work while the CLI reports signed out, so a verified session wins.
+    assert.equal(agentChip('signed-out', true), 'ready')
+    assert.equal(agentChip('unknown', true), 'ready')
     assert.equal(agentChip('signed-out'), 'needs-sign-in')
     assert.equal(agentChip('unknown'), 'unverified')
     assert.equal(agentChip(undefined), 'unverified')

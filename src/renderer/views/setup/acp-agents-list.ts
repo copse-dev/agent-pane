@@ -24,9 +24,11 @@ export interface AgentRowModel {
 
 /** What a row shows, from the device scan and the agent's own sign-in check. */
 export function agentChip(auth: AcpAuthState | undefined, verified = false): AgentChip {
+  // A working session outranks the CLI's status: an API-key user can be "signed out" of the CLI.
+  if (verified) return 'ready'
   if (auth === 'signed-out') return 'needs-sign-in'
   // Local credentials and CLI status do not establish a working connection.
-  return verified ? 'ready' : 'unverified'
+  return 'unverified'
 }
 
 /**

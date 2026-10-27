@@ -278,6 +278,43 @@ describe('Models & agents list', () => {
     list.reset()
   })
 
+  it('keeps a verified agent Ready when the window regains focus', async () => {
+    // API-key users: `claude auth status` reports signed out, Gemini reports unknown, and a
+    // custom agent is never scanned. A working session must outlast the focus re-check.
+    state.installed = new Set(['claude-acp', 'gemini'])
+    state.auth = new Map([['claude-acp', 'signed-out']])
+    state.agents = [{ id: 'mine', title: 'Mine', command: 'mine', enabled: true }]
+    const base = stubApi(state)
+    const list = createModelsAgentsList({
+      ...base,
+      acp: { ...base.acp, probeAgent: async () => ({ models: null, modes: null }) },
+    })
+    document.body.append(list.root)
+    await list.refresh()
+    const chipOf = (id: string): string | null | undefined =>
+      rowEl(list.root, `agent:${id}`).querySelector('.acp-row-chip')?.textContent
+    const ids = ['claude-acp', 'gemini', 'mine']
+    for (const id of ids) {
+      button(rowEl(list.root, `agent:${id}`), 'Verify connection').click()
+      await settle()
+      assert.equal(chipOf(id), 'Ready', id)
+    }
+    window.dispatchEvent(new Event('focus'))
+    await settle()
+    for (const id of ids) assert.equal(chipOf(id), 'Ready', `${id} after focus`)
+    // A later scan that reports a different status than at verify time invalidates it.
+    state.auth = new Map([
+      ['claude-acp', 'signed-out'],
+      ['gemini', 'signed-out'],
+    ])
+    window.dispatchEvent(new Event('focus'))
+    await settle()
+    assert.equal(chipOf('gemini'), 'Needs sign-in')
+    assert.equal(chipOf('claude-acp'), 'Ready')
+    assert.equal(chipOf('mine'), 'Ready')
+    list.reset()
+  })
+
   it('keeps sign-in available when status cannot be determined', async () => {
     state.installed = new Set(['claude-acp'])
     const list = await mount({ runInTerminal: () => undefined })

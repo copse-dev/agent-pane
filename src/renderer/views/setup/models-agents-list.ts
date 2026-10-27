@@ -130,7 +130,9 @@ export function createModelsAgentsList(
   let detected = new Map<string, DetectedAcpAgent>()
   let auth = new Map<string, AcpAuthState>()
   // Session probes are explicit: opening Settings never starts an agent loop.
-  const verified = new Set<string>()
+  // Each verified agent maps to the CLI's sign-in status when it was verified;
+  // `auth` keeps what the CLI reports, which an API-key user may see as signed out.
+  const verified = new Map<string, AcpAuthState | undefined>()
   const verifying = new Map<string, symbol>()
   const verificationErrors = new Set<string>()
   /** Providers with a key stored in Settings. */
@@ -430,9 +432,7 @@ export function createModelsAgentsList(
       void api.acp.probeAgent(model.id).then(
         () => {
           if (verifying.get(model.id) !== request || activeSignal?.aborted) return
-          // A working session is stronger evidence than the CLI's cached status.
-          auth.set(model.id, 'signed-in')
-          verified.add(model.id)
+          verified.set(model.id, auth.get(model.id))
           verifying.delete(model.id)
           repaint()
         },
@@ -821,7 +821,13 @@ export function createModelsAgentsList(
       renderMenu(new Set())
       return
     }
-    const agents = listedAgents(KNOWN_ACP_AGENTS, detected, configured, auth, verified)
+    const agents = listedAgents(
+      KNOWN_ACP_AGENTS,
+      detected,
+      configured,
+      auth,
+      new Set(verified.keys()),
+    )
     const agentById = new Map(agents.map((model) => [model.id, model]))
     const servers = serverIds()
     for (const entry of connectionRows(
@@ -846,9 +852,11 @@ export function createModelsAgentsList(
   async function scanDevice(): Promise<void> {
     try {
       const found = await api.acp.detectAgents()
-      for (const id of new Set([...verified, ...verifying.keys()])) {
+      for (const id of new Set([...verified.keys(), ...verifying.keys()])) {
         const next = found.find((agent) => agent.id === id)
-        if (!next?.installed || next.path !== detected.get(id)?.path) {
+        const prev = detected.get(id)
+        // Only a change invalidates: custom agents are never in the device scan.
+        if (next?.installed !== prev?.installed || next?.path !== prev?.path) {
           verified.delete(id)
           verifying.delete(id)
         }
@@ -863,8 +871,8 @@ export function createModelsAgentsList(
     try {
       const statuses = ids.length ? await api.acp.authStatus(ids) : []
       const next = new Map(statuses.map((s) => [s.id, s.state]))
-      for (const id of verified) {
-        if (next.get(id) !== auth.get(id)) verified.delete(id)
+      for (const [id, seen] of verified) {
+        if (next.get(id) !== seen) verified.delete(id)
       }
       auth = next
     } catch {
