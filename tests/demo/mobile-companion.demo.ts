@@ -537,7 +537,9 @@ describe('Mobile Companion at phone width', () => {
         await reply.$('.mermaid-frame[data-rendered="true"]').waitForExist({ timeout: 40_000 })
         await expect(reply.$('.mermaid-fallback-title')).not.toExist()
         await expect(reply.$('pre code .hljs-string')).toExist()
-        expect(await browser.execute(() => matchMedia('(hover: none)').matches)).toBe(true)
+        expect(
+          await browser.execute(() => matchMedia('(hover: none) and (pointer: coarse)').matches),
+        ).toBe(true)
         await expect(reply.$('.code-block-copy')).toBeDisplayed()
         await expect(reply.$('.table-copy')).toBeDisplayed()
         await expect(reply.$('.code-block-run')).not.toExist()

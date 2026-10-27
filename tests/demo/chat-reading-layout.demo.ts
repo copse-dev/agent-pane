@@ -127,6 +127,47 @@ describe('assistant Reading layout in the real renderer', () => {
     await scrollToStart()
   })
 
+  it('keeps code and table controls hidden at rest on desktop and visible on a touch screen', async () => {
+    const touchScreen = '(hover: none) and (pointer: coarse)'
+    const readControls = (): Promise<string[]> =>
+      browser.execute(
+        (selector) =>
+          [...document.querySelectorAll(selector)].map(
+            (control) => `${control.className} ${getComputedStyle(control).opacity}`,
+          ),
+        `${PROSE} .code-block-actions > button, ${PROSE} .table-copy`,
+      )
+    // Headless Chrome reports no pointing device (hover: none, pointer: none),
+    // which is not a touch screen: the frames captured above must not show
+    // Run/Copy over the code and table they belong to.
+    await parkPointer()
+    expect(await browser.execute((query) => matchMedia(query).matches, touchScreen)).toBe(false)
+    expect(await readControls()).toEqual(['code-block-run 0', 'code-block-copy 0', 'table-copy 0'])
+
+    // A touch screen has no hover, so the controls show without one (markdown.css).
+    await browser.sendCommand('Emulation.setTouchEmulationEnabled', {
+      enabled: true,
+      maxTouchPoints: 5,
+    })
+    try {
+      expect(await browser.execute((query) => matchMedia(query).matches, touchScreen)).toBe(true)
+      // They fade in over their opacity transition.
+      await browser.waitUntil(
+        async () =>
+          JSON.stringify(await readControls()) ===
+          JSON.stringify(['code-block-run 1', 'code-block-copy 1', 'table-copy 1']),
+        { timeout: 2_000, timeoutMsg: 'code and table controls should show on a touch screen' },
+      )
+      await $(`${PROSE} table`).scrollIntoView({ block: 'center', inline: 'nearest' })
+      await saveElementScreenshot(`${PROSE} table`, 'chat-reading-layout-table-touch.png')
+      await $(`${PROSE} pre`).scrollIntoView({ block: 'center', inline: 'nearest' })
+      await saveElementScreenshot(`${PROSE} pre`, 'chat-reading-layout-code-touch.png')
+    } finally {
+      await browser.sendCommand('Emulation.setTouchEmulationEnabled', { enabled: false })
+    }
+    await scrollToStart()
+  })
+
   it('marks the user prompt with its tinted fill alone, without a hairline border', async () => {
     const readBubble = (): Promise<
       Record<'borderWidth' | 'borderStyle' | 'background' | 'listBackground', string>
