@@ -49625,28 +49625,33 @@ var init_agent_logos = __esm({
 });
 
 // src/renderer/views/setup/acp-agents-list.ts
-function agentChip(auth) {
-  if (auth === "signed-in") return "ready";
+function agentChip(auth, verified = false) {
+  if (verified) return "ready";
   if (auth === "signed-out") return "needs-sign-in";
-  return null;
+  return "unverified";
 }
-function listedAgents(known, detected, configured, auth) {
+function listedAgents(known, detected, configured, auth, verified = /* @__PURE__ */ new Set()) {
   const configuredIds = new Set(configured.map((a4) => a4.id));
   const rows = [];
   for (const k2 of known) {
     if (!configuredIds.has(k2.id) && !detected.get(k2.id)?.installed) continue;
-    const chip = agentChip(auth.get(k2.id));
+    const chip = agentChip(auth.get(k2.id), verified.has(k2.id));
     rows.push({
       id: k2.id,
       title: k2.title,
       chip,
-      signInCommand: chip === "needs-sign-in" ? acpReauthCommand(k2) : null
+      signInCommand: chip !== "ready" ? acpReauthCommand(k2) : null
     });
   }
   const knownIds = new Set(known.map((k2) => k2.id));
   for (const a4 of configured) {
     if (knownIds.has(a4.id)) continue;
-    rows.push({ id: a4.id, title: a4.title, chip: null, signInCommand: null });
+    rows.push({
+      id: a4.id,
+      title: a4.title,
+      chip: agentChip(auth.get(a4.id), verified.has(a4.id)),
+      signInCommand: null
+    });
   }
   return rows;
 }
@@ -52044,6 +52049,9 @@ function createModelsAgentsList(api, opts = {}) {
   let configured = [];
   let detected = /* @__PURE__ */ new Map();
   let auth = /* @__PURE__ */ new Map();
+  const verified = /* @__PURE__ */ new Map();
+  const verifying = /* @__PURE__ */ new Map();
+  const verificationErrors = /* @__PURE__ */ new Set();
   const storedKeys = /* @__PURE__ */ new Set();
   const encrypted = /* @__PURE__ */ new Map();
   let running = /* @__PURE__ */ new Set();
@@ -52247,6 +52255,8 @@ function createModelsAgentsList(api, opts = {}) {
     b2.addEventListener("click", () => {
       launched.add(command);
       if (opts.runInTerminal) {
+        verified.clear();
+        verifying.clear();
         b2.textContent = pendingLabel;
         opts.runInTerminal(command);
       } else {
@@ -52267,6 +52277,38 @@ function createModelsAgentsList(api, opts = {}) {
       }
     });
     const actions = [];
+    const verify = el(
+      "button",
+      {
+        type: "button",
+        class: "ui-btn",
+        title: "Open a temporary agent session without sending a prompt."
+      },
+      verifying.has(model.id) ? "Verifying\u2026" : "Verify connection"
+    );
+    verify.disabled = verifying.has(model.id);
+    verify.addEventListener("click", () => {
+      const request = /* @__PURE__ */ Symbol();
+      verifying.set(model.id, request);
+      verified.delete(model.id);
+      verificationErrors.delete(model.id);
+      render();
+      void api.acp.probeAgent(model.id).then(
+        () => {
+          if (verifying.get(model.id) !== request || activeSignal?.aborted) return;
+          verified.set(model.id, auth.get(model.id));
+          verifying.delete(model.id);
+          repaint();
+        },
+        () => {
+          if (verifying.get(model.id) !== request || activeSignal?.aborted) return;
+          verificationErrors.add(model.id);
+          verifying.delete(model.id);
+          repaint();
+        }
+      );
+    });
+    actions.push(verify);
     if (model.signInCommand) {
       actions.push(
         commandButton(
@@ -52279,7 +52321,7 @@ function createModelsAgentsList(api, opts = {}) {
     }
     actions.push(options);
     const known = KNOWN_ACP_AGENTS.find((k2) => k2.id === model.id);
-    const chips = model.chip === "ready" ? [chip("Ready", "ok")] : model.chip === "needs-sign-in" ? [chip("Needs sign-in", "warn")] : [];
+    const chips = model.chip === "ready" ? [chip("Ready", "ok")] : model.chip === "needs-sign-in" ? [chip("Needs sign-in", "warn")] : [chip("Not verified", "warn")];
     const r2 = row(
       rowId,
       logoTile(model.id, model.title),
@@ -52293,6 +52335,15 @@ function createModelsAgentsList(api, opts = {}) {
       }
     );
     r2.dataset["agent"] = model.id;
+    if (verificationErrors.has(model.id)) {
+      r2.append(
+        el(
+          "p",
+          { class: "field-hint", role: "status" },
+          "Connection could not be verified. Check that the agent is enabled, signed in and able to reach its provider, then try again."
+        )
+      );
+    }
     return r2;
   }
   function planRow() {
@@ -52580,7 +52631,13 @@ function createModelsAgentsList(api, opts = {}) {
       renderMenu(/* @__PURE__ */ new Set());
       return;
     }
-    const agents = listedAgents(KNOWN_ACP_AGENTS, detected, configured, auth);
+    const agents = listedAgents(
+      KNOWN_ACP_AGENTS,
+      detected,
+      configured,
+      auth,
+      new Set(verified.keys())
+    );
     const agentById = new Map(agents.map((model) => [model.id, model]));
     const servers = serverIds();
     for (const entry of connectionRows(
@@ -52601,16 +52658,31 @@ function createModelsAgentsList(api, opts = {}) {
   async function scanDevice() {
     try {
       const found = await api.acp.detectAgents();
+      for (const id of /* @__PURE__ */ new Set([...verified.keys(), ...verifying.keys()])) {
+        const next = found.find((agent) => agent.id === id);
+        const prev = detected.get(id);
+        if (next?.installed !== prev?.installed || next?.path !== prev?.path) {
+          verified.delete(id);
+          verifying.delete(id);
+        }
+      }
       detected = new Map(found.map((d2) => [d2.id, d2]));
     } catch {
       detected = /* @__PURE__ */ new Map();
+      verified.clear();
+      verifying.clear();
     }
     const ids = KNOWN_ACP_AGENTS.filter((k2) => detected.get(k2.id)?.installed).map((k2) => k2.id);
     try {
       const statuses = ids.length ? await api.acp.authStatus(ids) : [];
-      auth = new Map(statuses.map((s2) => [s2.id, s2.state]));
+      const next = new Map(statuses.map((s2) => [s2.id, s2.state]));
+      for (const [id, seen] of verified) {
+        if (next.get(id) !== seen) verified.delete(id);
+      }
+      auth = next;
     } catch {
       auth = /* @__PURE__ */ new Map();
+      verified.clear();
     }
   }
   async function readKeyStatus() {
@@ -52670,6 +52742,9 @@ function createModelsAgentsList(api, opts = {}) {
     if (changed && !openId && !addForm) repaint();
   }
   async function refresh(snapshot, signal) {
+    verified.clear();
+    verifying.clear();
+    verificationErrors.clear();
     activeSignal = signal;
     const mine = ++generation;
     if (signal?.aborted) return;
@@ -52697,8 +52772,9 @@ function createModelsAgentsList(api, opts = {}) {
   }
   function signature() {
     return JSON.stringify([
-      [...detected.values()].map((d2) => [d2.id, d2.installed]),
-      [...auth.entries()]
+      [...detected.values()].map((d2) => [d2.id, d2.installed, d2.path]),
+      [...auth.entries()],
+      [...verified]
     ]);
   }
   let quietScanRunning = false;
@@ -52738,6 +52814,9 @@ function createModelsAgentsList(api, opts = {}) {
   };
   window.addEventListener("focus", onFocus);
   function reset() {
+    verified.clear();
+    verifying.clear();
+    verificationErrors.clear();
     generation += 1;
     activeSignal = void 0;
     loaded = false;
