@@ -65,6 +65,8 @@ export interface AgentDispatchPayload {
   continuationBudgetUsed?: number
   /** Summary of reviews the user ran since the model's last reply (#2519). */
   reviewContext?: string
+  /** Set by the long-horizon task wake; never parsed from a renderer payload. */
+  longTaskWake?: true
 }
 
 /** Opens the main-owned transcript of one dispatched turn. */
@@ -767,6 +769,7 @@ export class AgentDispatcher {
         ? { continuationBudgetUsed: payload.continuationBudgetUsed }
         : {}),
       ...(payload.reviewContext !== undefined ? { reviewContext: payload.reviewContext } : {}),
+      ...(payload.longTaskWake ? { longTaskWake: true as const } : {}),
     }
     let result: Awaited<ReturnType<AgentDispatcherDependencies['run']>>
     // A deferred-worktree turn may allocate mid-run; the renderer re-roots as
