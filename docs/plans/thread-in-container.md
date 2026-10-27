@@ -1230,6 +1230,16 @@ which never asks for it.
   github.com (`token` gets a 401 there). Other github.com paths get no token. The host never
   follows a redirect; the guest's client does, and a redirect to another host is a new request
   the policy decides afresh, so a token never goes anywhere the guest did not name.
+- **Request framing** (review fix, October 27). The host frames every upstream request itself
+  and never copies the guest's `Content-Length`, `Transfer-Encoding` or other hop-by-hop
+  headers (including any the guest's `Connection` header names). A GET or HEAD goes upstream
+  with no body and no framing headers, and one that declares a body is refused with a 400. A
+  GraphQL body is sent with its own length. A streamed `upload-pack` body keeps the guest's
+  validated `Content-Length` and is abandoned if more or fewer bytes arrive, or is sent
+  chunked when no length was declared. Ambiguous framing (both headers, a repeated or
+  malformed value, a coding other than `chunked`) is refused. Each request gets its own
+  HTTPS connection, closed after the answer, so no two requests share a token-bearing
+  connection. An upstream connection idle for 120 s is abandoned with a 502.
 - **Responses.** Re-originated HTTPS from the host process, streamed back unbuffered. The
   upstream is asked for `identity` encoding, and a compressed answer is decoded anyway, so the
   body can be scanned: the token (and its Basic form) is redacted from headers and from the
