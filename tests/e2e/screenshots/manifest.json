@@ -161,6 +161,10 @@
       "sha256": "f1682a085ae5ce0053412770fbbeee032e238eeea44dc3b8528e56dbc41c1d08",
       "bytes": 106541
     },
+    "acp-stale-model-notice.png": {
+      "sha256": "14e8022203647446017a697ee71cd23526c2b0d70fee81db274630c218eb6ca5",
+      "bytes": 243364
+    },
     "acp-stale-model-picker.png": {
       "sha256": "662336550810cedce24aa4057f47a2d0b3d0b1fa2b0a7c57a23b3c9c9e729ac0",
       "bytes": 19239
