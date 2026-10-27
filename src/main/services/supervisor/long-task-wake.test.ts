@@ -6,6 +6,7 @@ import type {
   SupervisedTaskArchive,
   SupervisedTaskMeta,
 } from '@shared/supervisor/task-schema.ts'
+import type { TodoItem } from '@shared/types/todo.ts'
 import type { LongTask } from '../storage/long-task-tracker.ts'
 import type { ProjectStoreScope } from '../storage/project-namespace.ts'
 import { storageSet } from '../storage/storage.ts'
@@ -122,6 +123,7 @@ function dependencies(overrides: Partial<LongTaskWakeDependencies> = {}): LongTa
     projectSandboxEnabled: () => true,
     workspaceTarget: () => ({ kind: 'local' }),
     loadTasks: () => [longTask],
+    loadThreadTodos: () => Promise.resolve([]),
     now: () => 100,
     abortThread: (): void => {},
     ...overrides,
@@ -163,7 +165,55 @@ describe('long-task supervised wake', () => {
       if (typeof prompt !== 'string') assert.fail('expected a text continuation prompt')
       assert.match(prompt, /Clear the backlog/)
       assert.match(prompt, /exactly one next wake/)
+      assert.deepEqual(dispatched.payload.priorTodos, [])
       assert.equal(store.tasks.get(first.taskId)?.state, 'completed')
+    } finally {
+      dispose()
+      await supervisor.shutdown()
+    }
+  })
+
+  // A human submission carries `thread.todos`; a self-wake must too, or the woken
+  // turn resumes with no "Current plan" and only the one-line checklist prompt.
+  it("carries the woken thread's stored todos into the continuation", async () => {
+    const store = new MemoryStore()
+    const clock = new FixedClock(100)
+    const supervisor = new TaskSupervisor({
+      store,
+      clock,
+      createId: (): string => 'supervised-todos',
+    })
+    const storedTodos: TodoItem[] = [
+      { id: 'a', content: 'Fix lint', status: 'completed' },
+      { id: 'b', content: 'Run checks', status: 'in_progress' },
+    ]
+    const reads: [string, string][] = []
+    const requests: Parameters<LongTaskWakeDispatcher['dispatchMachine']>[0][] = []
+    const dispose = installLongTaskWakeConsumer(
+      supervisor,
+      {
+        dispatchMachine: (request): Promise<'completed'> => {
+          requests.push(request)
+          return Promise.resolve('completed')
+        },
+      },
+      dependencies({
+        loadThreadTodos: (projectId, threadId) => {
+          reads.push([projectId, threadId])
+          return Promise.resolve(storedTodos)
+        },
+      }),
+    )
+
+    try {
+      await scheduleLongTaskWake({ context, turnTreeId, longTaskId: 't1', delayMs: 100 })
+      clock.fire()
+      await supervisor.waitForIdle()
+
+      assert.deepEqual(reads, [['project-1', 'thread-1']])
+      assert.equal(requests.length, 1)
+      assert.deepEqual(requests[0]?.payload.priorTodos, storedTodos)
+      assert.equal(requests[0].payload.longTaskWake, true)
     } finally {
       dispose()
       await supervisor.shutdown()
