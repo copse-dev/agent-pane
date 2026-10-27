@@ -451,7 +451,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-SMEQYWAB.js";
+} from "./chunk-E7GFSWPO.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -722,8 +722,6 @@ function createStore(initial) {
     projects_changed: /* @__PURE__ */ new Set(),
     files_pane_changed: /* @__PURE__ */ new Set(),
     right_panel_mode_changed: /* @__PURE__ */ new Set(),
-    right_panel_maximized_changed: /* @__PURE__ */ new Set(),
-    projects_pane_changed: /* @__PURE__ */ new Set(),
     sidebar_project_filter_changed: /* @__PURE__ */ new Set(),
     git_change_navigate: /* @__PURE__ */ new Set(),
     roadmap_reveal: /* @__PURE__ */ new Set(),
@@ -770,10 +768,28 @@ function createStore(initial) {
       handler(...args);
     });
   }
+  const selections = /* @__PURE__ */ new Set();
+  function select(selector, listener, equals = Object.is) {
+    let value = selector(state);
+    const check = () => {
+      const next = selector(state);
+      const prev = value;
+      if (equals(prev, next)) return;
+      value = next;
+      listener(next, prev);
+    };
+    selections.add(check);
+    return () => {
+      selections.delete(check);
+    };
+  }
   function setState(partial) {
     state = { ...state, ...partial };
+    for (const check of [...selections]) {
+      if (selections.has(check)) check();
+    }
   }
-  return { getState: () => state, setState, on: on2, emit };
+  return { getState: () => state, setState, on: on2, emit, select };
 }
 var init_store = __esm({
   "src/shared/store/store.ts"() {
@@ -2676,8 +2692,8 @@ function mountTitlebar(root, store2, api2) {
     syncProjectPicker();
     setTooltip(workspaceName, workspaceRoot);
     if (project?.sshHost) {
-      void api2.sshWorkspace.listHosts().then((hosts) => {
-        const host = hosts.find((h2) => h2.id === project.sshHost);
+      void api2.sshWorkspace.listHosts().then((hosts2) => {
+        const host = hosts2.find((h2) => h2.id === project.sshHost);
         if (!host) {
           sshTarget.hidden = true;
           return;
@@ -2736,7 +2752,7 @@ function mountTitlebar(root, store2, api2) {
   syncName();
   syncBranch();
   const unsubs = [
-    store2.on("projects_pane_changed", syncSidebar),
+    store2.select((s) => s.projectsPaneOpen, syncSidebar),
     store2.on("workspace_changed", () => {
       syncName();
       syncBranchNow();
@@ -11700,50 +11716,200 @@ var init_code_block_copy = __esm({
   }
 });
 
-// src/renderer/markdown/table-copy.ts
-function tableToTsv(table) {
-  return Array.from(table.querySelectorAll("tr")).map(
-    (row2) => Array.from(row2.querySelectorAll("th, td")).map((cell) => cell.textContent.replace(/\s+/g, " ").trim()).join("	")
-  ).join("\n");
+// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/smoothing.js
+function defaultNow() {
+  const perf = globalThis.performance;
+  return typeof perf?.now === "function" ? perf.now() : Date.now();
 }
-function attachTableCopyButtons(root) {
-  const tables = root.querySelectorAll(
-    "table:not(.stream-table-forming):not([data-copy-attached])"
-  );
-  for (const table of tables) {
-    const parent = table.parentNode;
-    if (!parent) continue;
-    table.dataset["copyAttached"] = "true";
-    const shell2 = el("div", { class: "table-copy-shell" });
-    parent.insertBefore(shell2, table);
-    const scroll = el("div", { class: "table-copy-scroll" });
-    scroll.append(table);
-    shell2.append(scroll);
-    const copyBtn = el(
-      "button",
-      { type: "button", class: "table-copy", "aria-label": "Copy table as TSV" },
-      COPY_LABEL2
-    );
-    copyBtn.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      void navigator.clipboard.writeText(tableToTsv(table)).then(() => {
-        copyBtn.textContent = COPIED_LABEL2;
-        setTimeout(() => {
-          copyBtn.textContent = COPY_LABEL2;
-        }, FEEDBACK_MS2);
-      });
-    });
-    shell2.prepend(copyBtn);
+function defaultRequestFrame(callback) {
+  const raf = globalThis.requestAnimationFrame;
+  if (typeof raf === "function")
+    return raf(() => callback());
+  return setTimeout(callback, 16);
+}
+function defaultCancelFrame(handle) {
+  const caf = globalThis.cancelAnimationFrame;
+  if (typeof caf === "function")
+    caf(handle);
+  else
+    clearTimeout(handle);
+}
+function prefersReducedMotion(matchMedia2) {
+  const mm = matchMedia2 ?? globalThis.matchMedia;
+  if (typeof mm !== "function")
+    return false;
+  return mm(REDUCED_MOTION_QUERY).matches;
+}
+function documentHidden() {
+  const doc3 = globalThis.document;
+  return doc3?.visibilityState === "hidden";
+}
+function endsUndecided(text, end) {
+  const last = text[end - 1];
+  return last !== void 0 && (SYNTAX_CHARS.has(last) || /\s/.test(last));
+}
+function revealBoundary(text, count) {
+  if (count <= 0)
+    return 0;
+  if (count >= text.length)
+    return text.length;
+  let end = count;
+  const limit = Math.min(text.length, count + MAX_BOUNDARY_EXTENSION);
+  while (end < limit && endsUndecided(text, end))
+    end++;
+  if (end >= text.length)
+    return text.length;
+  const code2 = text.charCodeAt(end - 1);
+  if (code2 >= 55296 && code2 <= 56319)
+    return end - 1;
+  return end;
+}
+function createInputSmoother(options) {
+  const { update, cadence = "fixed", charsPerSecond = DEFAULT_CHARS_PER_SECOND, lagMs = DEFAULT_LAG_MS, initial = "", disabled = false, respectReducedMotion = true, now = defaultNow, requestFrame = defaultRequestFrame, cancelFrame = defaultCancelFrame, matchMedia: matchMedia2 } = options;
+  const enabled = !disabled && !(respectReducedMotion && prefersReducedMotion(matchMedia2));
+  let target = initial;
+  let revealed = initial.length;
+  let emitted = initial;
+  let velocity = 0;
+  let lastTick = 0;
+  let handle = null;
+  let disposed = false;
+  let settle = null;
+  let requesting = false;
+  let synchronousFrames = false;
+  function emit(text) {
+    if (text === emitted)
+      return;
+    emitted = text;
+    update(text);
   }
+  function settleNow() {
+    const done = settle;
+    settle = null;
+    done?.();
+  }
+  function rate(dtMs, backlog) {
+    let perMs;
+    if (cadence === "adaptive") {
+      const desired = Math.max(backlog / lagMs, MIN_CHARS_PER_MS);
+      velocity += (desired - velocity) * (1 - Math.exp(-dtMs / VELOCITY_SMOOTHING_MS));
+      perMs = velocity;
+    } else {
+      perMs = charsPerSecond / 1e3;
+    }
+    if (settle)
+      perMs = Math.max(perMs, backlog / DRAIN_LAG_MS, MIN_CHARS_PER_MS);
+    return perMs;
+  }
+  function frame() {
+    handle = null;
+    if (disposed)
+      return;
+    if (requesting)
+      synchronousFrames = true;
+    const nowMs = now();
+    const dtMs = Math.max(0, nowMs - lastTick);
+    lastTick = nowMs;
+    const backlog = target.length - revealed;
+    const catchUp = synchronousFrames || cadence === "adaptive" && dtMs > MAX_FRAME_GAP_MS;
+    if (catchUp)
+      revealed = target.length;
+    else if (backlog > 0)
+      revealed = Math.min(target.length, revealed + rate(dtMs, backlog) * dtMs);
+    const end = revealBoundary(target, Math.floor(revealed));
+    revealed = Math.max(revealed, end);
+    emit(target.slice(0, end));
+    if (end < target.length)
+      schedule();
+    else
+      settleNow();
+  }
+  function schedule() {
+    if (disposed || handle !== null || synchronousFrames)
+      return;
+    requesting = true;
+    const requested = requestFrame(frame);
+    requesting = false;
+    if (!synchronousFrames)
+      handle = requested;
+  }
+  function cancel() {
+    if (handle !== null) {
+      cancelFrame(handle);
+      handle = null;
+    }
+  }
+  function releaseAll() {
+    cancel();
+    revealed = target.length;
+    emit(target);
+    settleNow();
+  }
+  function push(text) {
+    if (disposed)
+      return;
+    settle = null;
+    target = text;
+    if (revealed > target.length)
+      revealed = target.length;
+    if (!enabled || synchronousFrames) {
+      revealed = target.length;
+      emitted = target;
+      update(target);
+      return;
+    }
+    if (handle === null)
+      lastTick = now();
+    schedule();
+  }
+  function finish(onSettled) {
+    if (disposed)
+      return;
+    settle = onSettled ?? null;
+    if (!enabled || synchronousFrames || emitted === target || documentHidden()) {
+      releaseAll();
+      return;
+    }
+    if (handle === null)
+      lastTick = now();
+    schedule();
+  }
+  function flush() {
+    if (disposed)
+      return;
+    cancel();
+    revealed = target.length;
+    emitted = target;
+    update(target);
+    settleNow();
+  }
+  function dispose() {
+    disposed = true;
+    settle = null;
+    cancel();
+  }
+  return {
+    push,
+    finish,
+    flush,
+    dispose,
+    get enabled() {
+      return enabled;
+    }
+  };
 }
-var COPY_LABEL2, COPIED_LABEL2, FEEDBACK_MS2;
-var init_table_copy = __esm({
-  "src/renderer/markdown/table-copy.ts"() {
-    init_helpers();
-    COPY_LABEL2 = "Copy";
-    COPIED_LABEL2 = "Copied";
-    FEEDBACK_MS2 = 1200;
+var DEFAULT_CHARS_PER_SECOND, DEFAULT_LAG_MS, VELOCITY_SMOOTHING_MS, MIN_CHARS_PER_MS, MAX_FRAME_GAP_MS, DRAIN_LAG_MS, MAX_BOUNDARY_EXTENSION, REDUCED_MOTION_QUERY, SYNTAX_CHARS;
+var init_smoothing = __esm({
+  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
+    DEFAULT_CHARS_PER_SECOND = 600;
+    DEFAULT_LAG_MS = 120;
+    VELOCITY_SMOOTHING_MS = 180;
+    MIN_CHARS_PER_MS = 0.06;
+    MAX_FRAME_GAP_MS = 250;
+    DRAIN_LAG_MS = 60;
+    MAX_BOUNDARY_EXTENSION = 32;
+    REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+    SYNTAX_CHARS = new Set("`*_~[]()|#>!-+=.:<\\0123456789");
   }
 });
 
@@ -12138,15 +12304,16 @@ async function renderMermaidIn(root) {
       if (!container) return;
       node.dataset["processed"] = "true";
       const source = node.textContent;
-      const style2 = getComputedStyle(node);
-      const layoutWidth = node.clientWidth - parseFloat(style2.paddingLeft) - parseFloat(style2.paddingRight);
-      const frame = createMermaidFrame2(source, layoutWidth);
-      node.replaceChildren(frame.element);
+      let frame = null;
       try {
+        const style2 = getComputedStyle(node);
+        const layoutWidth = node.clientWidth - parseFloat(style2.paddingLeft) - parseFloat(style2.paddingRight);
+        frame = createMermaidFrame2(source, layoutWidth);
+        node.replaceChildren(frame.element);
         await frame.ready;
         attachMermaidExpand(container.parentElement ?? root);
       } catch {
-        frame.dispose();
+        frame?.dispose();
         renderMermaidFallback(container, source);
       }
     })
@@ -12160,253 +12327,159 @@ var init_mermaid = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/smoothing.js
-function defaultNow() {
-  const perf = globalThis.performance;
-  return typeof perf?.now === "function" ? perf.now() : Date.now();
+// src/renderer/markdown/table-copy.ts
+function tableToTsv(table) {
+  return Array.from(table.querySelectorAll("tr")).map(
+    (row2) => Array.from(row2.querySelectorAll("th, td")).map((cell) => cell.textContent.replace(/\s+/g, " ").trim()).join("	")
+  ).join("\n");
 }
-function defaultRequestFrame(callback) {
-  const raf = globalThis.requestAnimationFrame;
-  if (typeof raf === "function")
-    return raf(() => callback());
-  return setTimeout(callback, 16);
+function attachTableCopyButtons(root) {
+  const tables = root.querySelectorAll(
+    "table:not(.stream-table-forming):not([data-copy-attached])"
+  );
+  for (const table of tables) {
+    const parent = table.parentNode;
+    if (!parent) continue;
+    table.dataset["copyAttached"] = "true";
+    const shell2 = el("div", { class: "table-copy-shell" });
+    parent.insertBefore(shell2, table);
+    const scroll = el("div", { class: "table-copy-scroll" });
+    scroll.append(table);
+    shell2.append(scroll);
+    const copyBtn = el(
+      "button",
+      { type: "button", class: "table-copy", "aria-label": "Copy table as TSV" },
+      COPY_LABEL2
+    );
+    copyBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void navigator.clipboard.writeText(tableToTsv(table)).then(() => {
+        copyBtn.textContent = COPIED_LABEL2;
+        setTimeout(() => {
+          copyBtn.textContent = COPY_LABEL2;
+        }, FEEDBACK_MS2);
+      });
+    });
+    shell2.prepend(copyBtn);
+  }
 }
-function defaultCancelFrame(handle) {
-  const caf = globalThis.cancelAnimationFrame;
-  if (typeof caf === "function")
-    caf(handle);
-  else
-    clearTimeout(handle);
-}
-function prefersReducedMotion(matchMedia2) {
-  const mm = matchMedia2 ?? globalThis.matchMedia;
-  if (typeof mm !== "function")
-    return false;
-  return mm(REDUCED_MOTION_QUERY).matches;
-}
-function documentHidden() {
-  const doc3 = globalThis.document;
-  return doc3?.visibilityState === "hidden";
-}
-function endsUndecided(text, end) {
-  const last = text[end - 1];
-  return last !== void 0 && (SYNTAX_CHARS.has(last) || /\s/.test(last));
-}
-function revealBoundary(text, count) {
-  if (count <= 0)
-    return 0;
-  if (count >= text.length)
-    return text.length;
-  let end = count;
-  const limit = Math.min(text.length, count + MAX_BOUNDARY_EXTENSION);
-  while (end < limit && endsUndecided(text, end))
-    end++;
-  if (end >= text.length)
-    return text.length;
-  const code2 = text.charCodeAt(end - 1);
-  if (code2 >= 55296 && code2 <= 56319)
-    return end - 1;
-  return end;
-}
-function createInputSmoother(options) {
-  const { update, cadence = "fixed", charsPerSecond = DEFAULT_CHARS_PER_SECOND, lagMs = DEFAULT_LAG_MS, initial = "", disabled = false, respectReducedMotion = true, now = defaultNow, requestFrame = defaultRequestFrame, cancelFrame = defaultCancelFrame, matchMedia: matchMedia2 } = options;
-  const enabled = !disabled && !(respectReducedMotion && prefersReducedMotion(matchMedia2));
-  let target = initial;
-  let revealed = initial.length;
-  let emitted = initial;
-  let velocity = 0;
-  let lastTick = 0;
-  let handle = null;
-  let disposed = false;
-  let settle = null;
-  let requesting = false;
-  let synchronousFrames = false;
-  function emit(text) {
-    if (text === emitted)
-      return;
-    emitted = text;
-    update(text);
-  }
-  function settleNow() {
-    const done = settle;
-    settle = null;
-    done?.();
-  }
-  function rate(dtMs, backlog) {
-    let perMs;
-    if (cadence === "adaptive") {
-      const desired = Math.max(backlog / lagMs, MIN_CHARS_PER_MS);
-      velocity += (desired - velocity) * (1 - Math.exp(-dtMs / VELOCITY_SMOOTHING_MS));
-      perMs = velocity;
-    } else {
-      perMs = charsPerSecond / 1e3;
-    }
-    if (settle)
-      perMs = Math.max(perMs, backlog / DRAIN_LAG_MS, MIN_CHARS_PER_MS);
-    return perMs;
-  }
-  function frame() {
-    handle = null;
-    if (disposed)
-      return;
-    if (requesting)
-      synchronousFrames = true;
-    const nowMs = now();
-    const dtMs = Math.max(0, nowMs - lastTick);
-    lastTick = nowMs;
-    const backlog = target.length - revealed;
-    const catchUp = synchronousFrames || cadence === "adaptive" && dtMs > MAX_FRAME_GAP_MS;
-    if (catchUp)
-      revealed = target.length;
-    else if (backlog > 0)
-      revealed = Math.min(target.length, revealed + rate(dtMs, backlog) * dtMs);
-    const end = revealBoundary(target, Math.floor(revealed));
-    revealed = Math.max(revealed, end);
-    emit(target.slice(0, end));
-    if (end < target.length)
-      schedule();
-    else
-      settleNow();
-  }
-  function schedule() {
-    if (disposed || handle !== null || synchronousFrames)
-      return;
-    requesting = true;
-    const requested = requestFrame(frame);
-    requesting = false;
-    if (!synchronousFrames)
-      handle = requested;
-  }
-  function cancel() {
-    if (handle !== null) {
-      cancelFrame(handle);
-      handle = null;
-    }
-  }
-  function releaseAll() {
-    cancel();
-    revealed = target.length;
-    emit(target);
-    settleNow();
-  }
-  function push(text) {
-    if (disposed)
-      return;
-    settle = null;
-    target = text;
-    if (revealed > target.length)
-      revealed = target.length;
-    if (!enabled || synchronousFrames) {
-      revealed = target.length;
-      emitted = target;
-      update(target);
-      return;
-    }
-    if (handle === null)
-      lastTick = now();
-    schedule();
-  }
-  function finish(onSettled) {
-    if (disposed)
-      return;
-    settle = onSettled ?? null;
-    if (!enabled || synchronousFrames || emitted === target || documentHidden()) {
-      releaseAll();
-      return;
-    }
-    if (handle === null)
-      lastTick = now();
-    schedule();
-  }
-  function flush() {
-    if (disposed)
-      return;
-    cancel();
-    revealed = target.length;
-    emitted = target;
-    update(target);
-    settleNow();
-  }
-  function dispose() {
-    disposed = true;
-    settle = null;
-    cancel();
-  }
-  return {
-    push,
-    finish,
-    flush,
-    dispose,
-    get enabled() {
-      return enabled;
-    }
-  };
-}
-var DEFAULT_CHARS_PER_SECOND, DEFAULT_LAG_MS, VELOCITY_SMOOTHING_MS, MIN_CHARS_PER_MS, MAX_FRAME_GAP_MS, DRAIN_LAG_MS, MAX_BOUNDARY_EXTENSION, REDUCED_MOTION_QUERY, SYNTAX_CHARS;
-var init_smoothing = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
-    DEFAULT_CHARS_PER_SECOND = 600;
-    DEFAULT_LAG_MS = 120;
-    VELOCITY_SMOOTHING_MS = 180;
-    MIN_CHARS_PER_MS = 0.06;
-    MAX_FRAME_GAP_MS = 250;
-    DRAIN_LAG_MS = 60;
-    MAX_BOUNDARY_EXTENSION = 32;
-    REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
-    SYNTAX_CHARS = new Set("`*_~[]()|#>!-+=.:<\\0123456789");
+var COPY_LABEL2, COPIED_LABEL2, FEEDBACK_MS2;
+var init_table_copy = __esm({
+  "src/renderer/markdown/table-copy.ts"() {
+    init_helpers();
+    COPY_LABEL2 = "Copy";
+    COPIED_LABEL2 = "Copied";
+    FEEDBACK_MS2 = 1200;
   }
 });
 
-// src/renderer/views/frame-loop.ts
-function prefersReducedMotion2() {
-  return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+// src/renderer/markdown/message-markdown.ts
+function paintStreamingMarkdown(el2, display, host) {
+  let renderer = streamingRenderers.get(el2);
+  if (!renderer) {
+    renderer = new StreamingMarkdownRenderer(el2, host.renderOptions);
+    streamingRenderers.set(el2, renderer);
+  }
+  renderer.update(display);
+  attachCodeBlockCopyButtons(el2, { runCommands: host.runCommands === true });
 }
-function createFrameLoop(step, frames = browserFrames) {
-  let handle = null;
-  let lastTick = 0;
-  let requesting = false;
-  let framesRun = 0;
-  const frame = () => {
-    framesRun++;
-    handle = null;
-    const now = frames.now();
-    const gap = now - lastTick;
-    lastTick = now;
-    const dt = requesting || gap > MAX_FRAME_GAP_MS2 || !frames.canAnimate() ? Infinity : gap;
-    if (step(dt) && dt !== Infinity) schedule();
-  };
-  const schedule = () => {
-    const before = framesRun;
-    requesting = true;
-    const requested = frames.request(frame);
-    requesting = false;
-    if (framesRun === before) handle = requested;
-  };
-  return {
-    start: () => {
-      if (handle !== null) return;
-      lastTick = frames.now();
-      if (frames.canAnimate()) schedule();
-      else step(Infinity);
+function streamSmootherFor(el2, display, host) {
+  const existing = streamSmoothers.get(el2);
+  if (existing) return existing;
+  const shown = el2.hasChildNodes() ? display : "";
+  if (shown) paintStreamingMarkdown(el2, shown, host);
+  const smoother = createInputSmoother({
+    update: (text) => {
+      paintStreamingMarkdown(el2, text, host);
+      el2.dispatchEvent(new CustomEvent(STREAM_PAINT_EVENT, { bubbles: true }));
     },
-    stop: () => {
-      if (handle !== null) frames.cancel(handle);
-      handle = null;
-    }
-  };
+    // Follow the provider's own rate: a steady reveal a little behind it.
+    cadence: "adaptive",
+    initial: shown
+  });
+  streamSmoothers.set(el2, smoother);
+  return smoother;
 }
-var MAX_FRAME_GAP_MS2, browserFrames;
-var init_frame_loop = __esm({
-  "src/renderer/views/frame-loop.ts"() {
-    MAX_FRAME_GAP_MS2 = 250;
-    browserFrames = {
-      now: () => performance.now(),
-      request: (callback) => requestAnimationFrame(callback),
-      cancel: (handle) => {
-        cancelAnimationFrame(handle);
-      },
-      canAnimate: () => document.visibilityState !== "hidden" && !prefersReducedMotion2()
-    };
+function renderSettledMessageMarkdown(el2, markdown, host = {}) {
+  el2.classList.remove("is-streaming");
+  streamingRenderers.delete(el2);
+  el2.innerHTML = renderMarkdown(markdown, host.renderOptions);
+  attachCodeBlockCopyButtons(el2, { runCommands: host.runCommands === true });
+  attachTableCopyButtons(el2);
+  host.decorate?.(el2);
+  void renderMermaidIn(el2);
+}
+function paintAssistantMarkdown(el2, display, streaming, host = {}, onSettled) {
+  if (streaming) {
+    el2.classList.add("is-streaming");
+    streamSmootherFor(el2, display, host).push(display);
+    return;
+  }
+  const smoother = streamSmoothers.get(el2);
+  if (smoother) {
+    smoother.push(display);
+    smoother.finish(() => {
+      smoother.dispose();
+      streamSmoothers.delete(el2);
+      renderSettledMessageMarkdown(el2, display, host);
+      onSettled?.();
+      el2.dispatchEvent(new CustomEvent(STREAM_SETTLED_EVENT, { bubbles: true }));
+    });
+    return;
+  }
+  renderSettledMessageMarkdown(el2, display, host);
+}
+function userPromptMarkdown(source) {
+  const parts = [];
+  const fenceRe = /```[\s\S]*?```/g;
+  let last = 0;
+  let match;
+  while ((match = fenceRe.exec(source)) !== null) {
+    parts.push(hardBreakSingleNewlines(source.slice(last, match.index)));
+    parts.push(match[0]);
+    last = match.index + match[0].length;
+  }
+  parts.push(hardBreakSingleNewlines(source.slice(last)));
+  return parts.join("");
+}
+function hardBreakSingleNewlines(text) {
+  return text.replace(/(?<!\n)\n(?!\n)/g, "  \n");
+}
+function paintUserMarkdown(el2, content, renderOptions) {
+  if (!content) {
+    el2.replaceChildren();
+    return;
+  }
+  el2.innerHTML = renderMarkdown(userPromptMarkdown(content), {
+    ...renderOptions,
+    htmlPolicy: "escape-all"
+  });
+  attachCodeBlockCopyButtons(el2);
+}
+function renderUserPromptMarkdown(el2, content, renderOptions) {
+  const parts = splitUserPromptForFold(content);
+  if (!parts) {
+    paintUserMarkdown(el2, content, renderOptions);
+    return;
+  }
+  fillUserPromptFold(el2, parts, (region, text) => {
+    paintUserMarkdown(region, text, renderOptions);
+  });
+}
+var STREAM_PAINT_EVENT, STREAM_SETTLED_EVENT, streamingRenderers, streamSmoothers;
+var init_message_markdown = __esm({
+  "src/renderer/markdown/message-markdown.ts"() {
+    init_dist();
+    init_smoothing();
+    init_code_block_copy();
+    init_mermaid();
+    init_table_copy();
+    init_user_prompt_fold();
+    STREAM_PAINT_EVENT = "copse:stream-paint";
+    STREAM_SETTLED_EVENT = "copse:stream-settled";
+    streamingRenderers = /* @__PURE__ */ new WeakMap();
+    streamSmoothers = /* @__PURE__ */ new WeakMap();
   }
 });
 
@@ -12565,6 +12638,131 @@ var init_file_links = __esm({
     init_toast();
     SKIP_SELECTOR = "a, button, textarea, select, pre, svg, .mermaid-diagram";
     TREE_WALKER_SHOW_TEXT = 4;
+  }
+});
+
+// src/renderer/markdown/remote-artifact-images.ts
+function threadAgentId(container) {
+  const scope = container.closest(".messages-list") ?? container;
+  for (const link of scope.querySelectorAll("a[href]")) {
+    const match = link.href.match(CURSOR_AGENT_URL_RE);
+    if (match?.[1]) return match[1];
+  }
+  return null;
+}
+function hydrateRemoteArtifactImages(container, api2) {
+  let agentIdFromThread = null;
+  let threadScanned = false;
+  const fallbackAgentId = () => {
+    if (!threadScanned) {
+      agentIdFromThread = threadAgentId(container);
+      threadScanned = true;
+    }
+    return agentIdFromThread;
+  };
+  for (const img of container.querySelectorAll(
+    "img[data-remote-artifact-path]"
+  )) {
+    if (img.dataset["remoteArtifactState"] === "loading" || img.dataset["remoteArtifactState"] === "loaded") {
+      continue;
+    }
+    const path = img.dataset["remoteArtifactPath"];
+    const agentId = img.dataset["remoteArtifactAgentId"] ?? fallbackAgentId();
+    if (!path || !agentId) {
+      img.dataset["remoteArtifactState"] = "missing-agent";
+      continue;
+    }
+    img.dataset["remoteArtifactState"] = "loading";
+    void api2.remoteAgent.artifactImageDataUrl(agentId, path).then((dataUrl) => {
+      img.src = dataUrl;
+      attachImageCopyMenu(img);
+      img.dataset["remoteArtifactState"] = "loaded";
+    }).catch((err) => {
+      img.dataset["remoteArtifactState"] = "error";
+      console.warn("[remote-agent] artifact image load failed:", err);
+    });
+  }
+}
+var CURSOR_AGENT_URL_RE;
+var init_remote_artifact_images = __esm({
+  "src/renderer/markdown/remote-artifact-images.ts"() {
+    init_image_expand();
+    CURSOR_AGENT_URL_RE = /cursor\.com\/agents\/(bc-[\w-]+)/;
+  }
+});
+
+// src/renderer/markdown/desktop-message-host.ts
+function desktopMessageHost(api2, options = {}) {
+  let cached = hosts.get(api2);
+  if (!cached) {
+    const decorate = (el2) => {
+      void annotateFileReferences(el2, api2);
+      hydrateRemoteArtifactImages(el2, api2);
+    };
+    cached = { plain: { decorate }, runnable: { decorate, runCommands: true } };
+    hosts.set(api2, cached);
+  }
+  return options.runCommands === true ? cached.runnable : cached.plain;
+}
+var hosts;
+var init_desktop_message_host = __esm({
+  "src/renderer/markdown/desktop-message-host.ts"() {
+    init_file_links();
+    init_remote_artifact_images();
+    hosts = /* @__PURE__ */ new WeakMap();
+  }
+});
+
+// src/renderer/views/frame-loop.ts
+function prefersReducedMotion2() {
+  return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+function createFrameLoop(step, frames = browserFrames) {
+  let handle = null;
+  let lastTick = 0;
+  let requesting = false;
+  let framesRun = 0;
+  const frame = () => {
+    framesRun++;
+    handle = null;
+    const now = frames.now();
+    const gap = now - lastTick;
+    lastTick = now;
+    const dt = requesting || gap > MAX_FRAME_GAP_MS2 || !frames.canAnimate() ? Infinity : gap;
+    if (step(dt) && dt !== Infinity) schedule();
+  };
+  const schedule = () => {
+    const before = framesRun;
+    requesting = true;
+    const requested = frames.request(frame);
+    requesting = false;
+    if (framesRun === before) handle = requested;
+  };
+  return {
+    start: () => {
+      if (handle !== null) return;
+      lastTick = frames.now();
+      if (frames.canAnimate()) schedule();
+      else step(Infinity);
+    },
+    stop: () => {
+      if (handle !== null) frames.cancel(handle);
+      handle = null;
+    }
+  };
+}
+var MAX_FRAME_GAP_MS2, browserFrames;
+var init_frame_loop = __esm({
+  "src/renderer/views/frame-loop.ts"() {
+    MAX_FRAME_GAP_MS2 = 250;
+    browserFrames = {
+      now: () => performance.now(),
+      request: (callback) => requestAnimationFrame(callback),
+      cancel: (handle) => {
+        cancelAnimationFrame(handle);
+      },
+      canAnimate: () => document.visibilityState !== "hidden" && !prefersReducedMotion2()
+    };
   }
 });
 
@@ -12995,56 +13193,6 @@ var init_workspace_links = __esm({
     init_active_thread_owner();
     init_files();
     init_toast();
-  }
-});
-
-// src/renderer/markdown/remote-artifact-images.ts
-function threadAgentId(container) {
-  const scope = container.closest(".messages-list") ?? container;
-  for (const link of scope.querySelectorAll("a[href]")) {
-    const match = link.href.match(CURSOR_AGENT_URL_RE);
-    if (match?.[1]) return match[1];
-  }
-  return null;
-}
-function hydrateRemoteArtifactImages(container, api2) {
-  let agentIdFromThread = null;
-  let threadScanned = false;
-  const fallbackAgentId = () => {
-    if (!threadScanned) {
-      agentIdFromThread = threadAgentId(container);
-      threadScanned = true;
-    }
-    return agentIdFromThread;
-  };
-  for (const img of container.querySelectorAll(
-    "img[data-remote-artifact-path]"
-  )) {
-    if (img.dataset["remoteArtifactState"] === "loading" || img.dataset["remoteArtifactState"] === "loaded") {
-      continue;
-    }
-    const path = img.dataset["remoteArtifactPath"];
-    const agentId = img.dataset["remoteArtifactAgentId"] ?? fallbackAgentId();
-    if (!path || !agentId) {
-      img.dataset["remoteArtifactState"] = "missing-agent";
-      continue;
-    }
-    img.dataset["remoteArtifactState"] = "loading";
-    void api2.remoteAgent.artifactImageDataUrl(agentId, path).then((dataUrl) => {
-      img.src = dataUrl;
-      attachImageCopyMenu(img);
-      img.dataset["remoteArtifactState"] = "loaded";
-    }).catch((err) => {
-      img.dataset["remoteArtifactState"] = "error";
-      console.warn("[remote-agent] artifact image load failed:", err);
-    });
-  }
-}
-var CURSOR_AGENT_URL_RE;
-var init_remote_artifact_images = __esm({
-  "src/renderer/markdown/remote-artifact-images.ts"() {
-    init_image_expand();
-    CURSOR_AGENT_URL_RE = /cursor\.com\/agents\/(bc-[\w-]+)/;
   }
 });
 
@@ -18230,92 +18378,21 @@ function flushPendingAcpTransportNoise(messageTextEl) {
   if (pending === void 0) return;
   syncAcpTransportNoiseDisclosure(messageTextEl, pending);
 }
-function paintStreamingMarkdown(el2, display) {
-  let renderer = streamingRenderers.get(el2);
-  if (!renderer) {
-    renderer = new StreamingMarkdownRenderer(el2);
-    streamingRenderers.set(el2, renderer);
-  }
-  renderer.update(display);
-  attachCodeBlockCopyButtons(el2, { runCommands: true });
-}
-function streamSmootherFor(el2, display) {
-  const existing = streamSmoothers.get(el2);
-  if (existing) return existing;
-  const shown = el2.hasChildNodes() ? display : "";
-  if (shown) paintStreamingMarkdown(el2, shown);
-  const smoother = createInputSmoother({
-    update: (text) => {
-      paintStreamingMarkdown(el2, text);
-      el2.dispatchEvent(new CustomEvent(STREAM_PAINT_EVENT, { bubbles: true }));
-    },
-    // Follow the provider's own rate: a steady reveal a little behind it.
-    cadence: "adaptive",
-    initial: shown
-  });
-  streamSmoothers.set(el2, smoother);
-  return smoother;
-}
 function setAssistantMarkdown(el2, content, streaming, api2) {
   const { body: display, transportNoise } = assistantDisplayParts(content);
-  if (streaming) {
-    el2.classList.add("is-streaming");
-    streamSmootherFor(el2, display).push(display);
-    syncAcpTransportNoiseDisclosure(el2, transportNoise);
-    return;
-  }
-  const smoother = streamSmoothers.get(el2);
-  if (smoother) {
-    smoother.push(display);
-    smoother.finish(() => {
-      smoother.dispose();
-      streamSmoothers.delete(el2);
-      setAssistantMarkdown(el2, content, false, api2);
-      el2.dispatchEvent(new CustomEvent(STREAM_SETTLED_EVENT, { bubbles: true }));
-    });
-    return;
-  }
-  el2.classList.remove("is-streaming");
-  streamingRenderers.delete(el2);
-  el2.innerHTML = renderMarkdown(display);
-  attachCodeBlockCopyButtons(el2, { runCommands: true });
-  attachTableCopyButtons(el2);
-  void annotateFileReferences(el2, api2);
-  hydrateRemoteArtifactImages(el2, api2);
-  void renderMermaidIn(el2);
+  paintAssistantMarkdown(
+    el2,
+    display,
+    streaming,
+    desktopMessageHost(api2, { runCommands: true }),
+    () => {
+      syncAcpTransportNoiseDisclosure(el2, transportNoise);
+    }
+  );
   syncAcpTransportNoiseDisclosure(el2, transportNoise);
 }
-function userPromptMarkdown(source) {
-  const parts = [];
-  const fenceRe = /```[\s\S]*?```/g;
-  let last = 0;
-  let match;
-  while ((match = fenceRe.exec(source)) !== null) {
-    parts.push(hardBreakSingleNewlines(source.slice(last, match.index)));
-    parts.push(match[0]);
-    last = match.index + match[0].length;
-  }
-  parts.push(hardBreakSingleNewlines(source.slice(last)));
-  return parts.join("");
-}
-function hardBreakSingleNewlines(text) {
-  return text.replace(/(?<!\n)\n(?!\n)/g, "  \n");
-}
-function paintUserMarkdown(el2, content) {
-  if (!content) {
-    el2.replaceChildren();
-    return;
-  }
-  el2.innerHTML = renderMarkdown(userPromptMarkdown(content), { htmlPolicy: "escape-all" });
-  attachCodeBlockCopyButtons(el2);
-}
 function setUserMarkdown(el2, content) {
-  const parts = splitUserPromptForFold(content);
-  if (!parts) {
-    paintUserMarkdown(el2, content);
-    return;
-  }
-  fillUserPromptFold(el2, parts, paintUserMarkdown);
+  renderUserPromptMarkdown(el2, content);
 }
 function createSubagentMessageEl(content, streaming, api2) {
   const textEl = el("div", {
@@ -21451,7 +21528,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var userInterruptedCalls, markedTranscripts, PATCH_OP_LABEL, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, streamSmoothers, STREAM_PAINT_EVENT, STREAM_SETTLED_EVENT, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE;
+var userInterruptedCalls, markedTranscripts, PATCH_OP_LABEL, lazyToolCardBodies, toolResultContentSignatures, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -21470,11 +21547,10 @@ var init_conversation = __esm({
     init_container_run_card();
     init_unknown_value2();
     init_code_block_copy();
-    init_table_copy();
     init_dist();
-    init_mermaid();
     init_dist();
-    init_smoothing();
+    init_message_markdown();
+    init_desktop_message_host();
     init_frame_loop();
     init_file_links();
     init_browser_links();
@@ -21545,10 +21621,6 @@ var init_conversation = __esm({
     PATCH_OP_LABEL = { add: "Added", update: "Edited", delete: "Deleted", move: "Moved" };
     lazyToolCardBodies = /* @__PURE__ */ new WeakMap();
     toolResultContentSignatures = /* @__PURE__ */ new WeakMap();
-    streamingRenderers = /* @__PURE__ */ new WeakMap();
-    streamSmoothers = /* @__PURE__ */ new WeakMap();
-    STREAM_PAINT_EVENT = "copse:stream-paint";
-    STREAM_SETTLED_EVENT = "copse:stream-settled";
     showAcpTransportNoiseDisclosure = () => false;
     subagentMessageCommitted = /* @__PURE__ */ new WeakMap();
     subagentInnerToolsSig = /* @__PURE__ */ new WeakMap();
@@ -63587,7 +63659,6 @@ function mountFooterBranchStatus(host, store2, api2) {
     }
   }
   async function refresh() {
-    refreshedThreadId = store2.getState().activeThreadId;
     const token = ++refreshToken;
     pruneBaseBranches();
     if (!store2.getState().workspaceRoot) {
@@ -63641,7 +63712,6 @@ function mountFooterBranchStatus(host, store2, api2) {
     renderTrigger();
     if (open) renderMenu();
   }
-  let refreshedThreadId = store2.getState().activeThreadId;
   function refreshNow() {
     if (refreshTimer) {
       clearTimeout(refreshTimer);
@@ -63656,12 +63726,16 @@ function mountFooterBranchStatus(host, store2, api2) {
       void refresh();
     }, 500);
   }
-  function scheduleStoreRefresh() {
+  function renderStoreState() {
     pruneBaseBranches();
     renderTrigger();
     if (open) renderMenu();
+  }
+  function scheduleStoreRefresh() {
+    renderStoreState();
     scheduleRefresh();
   }
+  let switchedThisTask = false;
   function copyBranchName() {
     const branch = branchToCopy;
     if (!branch) return;
@@ -63735,8 +63809,11 @@ function mountFooterBranchStatus(host, store2, api2) {
       refreshNow();
     }),
     store2.on("workspace_changed", refreshNow),
-    store2.on("threads_changed", () => {
-      if (store2.getState().activeThreadId !== refreshedThreadId) {
+    // A real thread switch repaints immediately, whichever writer made it and
+    // whether or not it emitted anything (#3928).
+    store2.select(
+      (s) => s.activeThreadId,
+      () => {
         status = null;
         detached = null;
         branches = [];
@@ -63744,9 +63821,15 @@ function mountFooterBranchStatus(host, store2, api2) {
         renderTrigger();
         if (open) renderMenu();
         refreshNow();
-        return;
+        switchedThisTask = true;
+        queueMicrotask(() => {
+          switchedThisTask = false;
+        });
       }
-      scheduleStoreRefresh();
+    ),
+    store2.on("threads_changed", () => {
+      if (switchedThisTask) renderStoreState();
+      else scheduleStoreRefresh();
     }),
     store2.on("thread_status_changed", scheduleStoreRefresh),
     store2.on("message_added", () => {
@@ -69780,10 +69863,9 @@ function mountRightPanelLayout(store2) {
   syncLayout();
   syncMaximized();
   const unsubs = [
-    store2.on("right_panel_mode_changed", syncLayout),
-    store2.on("files_pane_changed", syncLayout),
-    store2.on("files_pane_changed", syncMaximized),
-    store2.on("right_panel_maximized_changed", syncMaximized)
+    store2.select((s) => s.rightPanelMode, syncLayout),
+    store2.select((s) => s.filesPaneOpen, syncLayout),
+    store2.select(() => isRightPanelMaximized(store2), syncMaximized)
   ];
   return () => {
     unsubs.forEach((u3) => {
@@ -71063,7 +71145,12 @@ var init_agent_tasks = __esm({
 });
 
 // src/renderer/views/supervised-tasks.ts
-function taskLabel(handler) {
+function taskLabel(task) {
+  const { handler } = task;
+  if (handler.startsWith("native_readonly_worker:"))
+    return task.agentId ? `${task.agentId} (read-only)` : "Read-only worker";
+  if (handler.startsWith("native_isolated_worker:"))
+    return task.agentId ? `${task.agentId} (isolated)` : "Isolated worker";
   if (handler === "long_horizon_continue") return "Long task continuation";
   return handler.replaceAll("_", " ");
 }
@@ -71104,7 +71191,7 @@ function mountSupervisedTasks(listRoot, store2, api2) {
           );
         }
         if (value.resultRef) detail.append(el("p", {}, value.resultRef.ref));
-        if ((value.state === "blocked" || value.state === "failed") && value.handler !== "shell_process") {
+        if ((value.state === "blocked" || value.state === "failed") && value.handler !== "shell_process" && !value.handler.startsWith("native_readonly_worker:") && !value.handler.startsWith("native_isolated_worker:")) {
           const resume = el(
             "button",
             {
@@ -71134,7 +71221,7 @@ function mountSupervisedTasks(listRoot, store2, api2) {
       const label = el(
         "summary",
         { class: "supervised-task-summary" },
-        el("span", { class: "supervised-task-label" }, taskLabel(task.handler)),
+        el("span", { class: "supervised-task-label" }, taskLabel(task)),
         el("span", { class: "supervised-task-state" }, task.state)
       );
       const detail = el("div", { class: "supervised-task-detail" });
@@ -71156,7 +71243,7 @@ function mountSupervisedTasks(listRoot, store2, api2) {
           type: "button",
           class: "supervised-task-cancel",
           title: "Cancel task",
-          "aria-label": `Cancel ${taskLabel(task.handler)}`
+          "aria-label": `Cancel ${taskLabel(task)}`
         },
         closeIcon("ui-icon ui-icon-sm")
       );
@@ -75615,22 +75702,37 @@ function resolveSideChatSelection(threads, activeThreadId, remembered) {
   const own = active?.sideChat ? rows.find((row2) => row2.id === active.id) : void 0;
   return { mainId, rows, selectedId: (own ?? selected ?? rows[0])?.id ?? null };
 }
-function messageEl(message2) {
+function messageEl(message2, streaming, host, nodes) {
+  const tools = message2.toolCalls.map((call) => call.name).join("\n");
+  const cached = nodes?.get(message2.id);
+  if (cached && cached.role === message2.role && cached.content === message2.content && cached.streaming === streaming && cached.tools === tools)
+    return cached.node;
+  let node;
   if (message2.role === "user") {
-    return el("div", { class: "side-chat-msg is-user", "data-role": "user" }, message2.content);
+    node = el("div", { class: "side-chat-msg is-user message-text", "data-role": "user" });
+    renderUserPromptMarkdown(node, message2.content);
+  } else if (message2.role === "error") {
+    node = el("div", { class: "side-chat-msg is-error", "data-role": "error" }, message2.content);
+  } else {
+    const reused = cached?.role === message2.role ? cached.node : void 0;
+    node = reused ?? el(
+      "div",
+      { class: "side-chat-msg is-assistant", "data-role": "assistant" },
+      el("div", { class: "side-chat-msg-text message-text streaming-markdown" }),
+      el("div", { class: "side-chat-tools" })
+    );
+    const text = node.querySelector(".side-chat-msg-text");
+    const changed = cached?.content !== message2.content || cached.streaming !== streaming;
+    if (text && (reused === void 0 || changed))
+      paintAssistantMarkdown(text, message2.content, streaming, host);
+    node.querySelector(".side-chat-tools")?.replaceChildren(
+      ...message2.toolCalls.map(
+        (call) => el("div", { class: "side-chat-tool", "data-tool": call.name }, call.name)
+      )
+    );
   }
-  if (message2.role === "error") {
-    return el("div", { class: "side-chat-msg is-error", "data-role": "error" }, message2.content);
-  }
-  const bubble = el("div", {
-    class: "side-chat-msg is-assistant message-text streaming-markdown",
-    "data-role": "assistant"
-  });
-  if (message2.content.trim() !== "") bubble.innerHTML = renderMarkdown(message2.content);
-  for (const call of message2.toolCalls) {
-    bubble.append(el("div", { class: "side-chat-tool", "data-tool": call.name }, call.name));
-  }
-  return bubble;
+  nodes?.set(message2.id, { node, role: message2.role, content: message2.content, streaming, tools });
+  return node;
 }
 function renderSideChat(input) {
   const { side, parent } = input;
@@ -75666,9 +75768,10 @@ function renderSideChat(input) {
   header.querySelector("button")?.addEventListener("click", () => {
     if (!archiveBlocked) input.onArchive(archived);
   });
-  const body = el("div", { class: "side-chat-body" });
+  const body = input.body ?? el("div", { class: "side-chat-body" });
+  const children = [];
   if (needsHydration(side)) {
-    body.append(
+    children.push(
       el(
         "div",
         { class: "side-chat-empty", "data-side-chat-loading": "" },
@@ -75680,7 +75783,7 @@ function renderSideChat(input) {
       )
     );
   } else if (side.messages.length === 0) {
-    body.append(
+    children.push(
       el(
         "div",
         { class: "side-chat-empty" },
@@ -75703,11 +75806,21 @@ function renderSideChat(input) {
       )
     );
   } else {
-    for (const message2 of side.messages) body.append(messageEl(message2));
+    const host = input.host ?? {};
+    const last = side.messages.at(-1);
+    for (const message2 of side.messages) {
+      const streaming = side.status === "running" && message2 === last && message2.role === "assistant";
+      children.push(messageEl(message2, streaming, host, input.messageNodes));
+    }
+    const kept = new Set(side.messages.map((message2) => message2.id));
+    for (const id of input.messageNodes?.keys() ?? []) {
+      if (!kept.has(id)) input.messageNodes?.delete(id);
+    }
   }
   if (side.status === "running") {
-    body.append(el("div", { class: "side-chat-typing", role: "status" }, "Copse is thinking\u2026"));
+    children.push(el("div", { class: "side-chat-typing", role: "status" }, "Copse is thinking\u2026"));
   }
+  patchChildren(body, children);
   return { header, body };
 }
 function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
@@ -75761,6 +75874,13 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
     el("div", { class: "side-chat-foot" }, promote)
   );
   viewerRoot.append(headerHost, bodyHost, emptyState, form);
+  const messageHost = desktopMessageHost(api2);
+  const messageNodes = /* @__PURE__ */ new Map();
+  const unbindLinks = [
+    bindFileReferenceClicks(bodyHost, store2, api2),
+    bindWorkspaceLinkClicks(bodyHost, store2, api2),
+    bindBrowserLinkClicks(bodyHost, store2, api2)
+  ];
   let selectedId = null;
   let frame = 0;
   function paneVisible() {
@@ -75828,12 +75948,13 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
     clear(headerHost);
     const bodyScroll = bodyHost;
     const atBottom = bodyScroll.scrollHeight - bodyScroll.scrollTop - bodyScroll.clientHeight < 32 || bodyScroll.childElementCount === 0;
-    clear(bodyHost);
     emptyState.hidden = side !== void 0;
     form.hidden = side === void 0;
     headerHost.hidden = side === void 0;
     bodyHost.hidden = side === void 0;
     if (!side) {
+      bodyHost.replaceChildren();
+      messageNodes.clear();
       emptyState.textContent = selection.mainId === null ? "Open a thread to start a side chat." : "Branch a question off any message without touching this thread.";
       return;
     }
@@ -75844,6 +75965,9 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
       side,
       parent,
       loadFailed,
+      host: messageHost,
+      body: bodyHost,
+      messageNodes,
       onSuggestion: ask,
       onArchive: (archived) => {
         if (archived) restoreThread(store2, side.id);
@@ -75851,7 +75975,6 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
       }
     });
     headerHost.append(view.header);
-    bodyHost.append(...Array.from(view.body.childNodes));
     if (atBottom) bodyHost.scrollTop = bodyHost.scrollHeight;
     const unloaded = needsHydration(side);
     input.disabled = side.archivedAt != null || unloaded;
@@ -75907,20 +76030,26 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
   return () => {
     showSideChatTranscript(null);
     for (const off of offs) off();
+    for (const unbind of unbindLinks) unbind();
     if (frame !== 0) cancelAnimationFrame(frame);
   };
 }
 var SIDE_CHAT_SUGGESTIONS;
 var init_side_chat_panel = __esm({
   "src/renderer/views/side-chat-panel.ts"() {
-    init_dist();
     init_helpers();
+    init_patch_children();
     init_icons();
     init_thread_helpers();
     init_side_chat();
     init_panels();
     init_side_chat2();
     init_thread_hydration();
+    init_desktop_message_host();
+    init_browser_links();
+    init_file_links();
+    init_message_markdown();
+    init_workspace_links();
     init_pane_maximize_button();
     init_pane_popout_button();
     init_toast();
@@ -80217,7 +80346,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     store2.on("workspace_changed", onThreadMaybeChanged),
     store2.on("right_panel_mode_changed", onBrowserModeChange),
     store2.on("files_pane_changed", onBrowserModeChange),
-    store2.on("right_panel_maximized_changed", onRightPanelMaximizedChanged),
+    store2.select((s) => s.rightPanelMaximized, onRightPanelMaximizedChanged),
     store2.on("browser_url_requested", openRequestedBrowserUrl),
     store2.on("browser_url_bar_focus_requested", focusUrlBar),
     store2.on("canvas_artefact_requested", openArtefact),
@@ -87992,7 +88121,7 @@ function mountPopoutTitlebar(host, store2, api2) {
     title.textContent = panelModeLabel(store2.getState().rightPanelMode);
   }
   syncTitle();
-  const unsub = store2.on("right_panel_mode_changed", syncTitle);
+  const unsub = store2.select((s) => s.rightPanelMode, syncTitle);
   return () => {
     unsub();
     destroy();
