@@ -11,7 +11,7 @@ be a blocker. Required CI and screenshot acceptance workflows remain authoritati
 
 ## Collect
 
-First identify the successful CI run from the trusted screenshot evidence comment.
+First identify the CI run linked from the trusted screenshot evidence comment.
 With authenticated `gh`, a same-repository PR with a published compare branch needs:
 
 ```bash
@@ -21,8 +21,9 @@ pnpm screenshots:review collect --repo copse-dev/agent-pane --pr 3702 \
 ```
 
 The example run ID is a placeholder. Use the actual run linked by the publisher.
-The command reads PR/run metadata, checks that the run is successful current-head
-CI, fetches the compare branch and base/head commits, and verifies that the compare
+The command reads PR/run metadata, checks that the run is current-head CI that
+rendered the screenshots (a green run, or a red one whose `screenshot-artifacts` job
+passed), fetches the compare branch and base/head commits, and verifies that the compare
 commit has exactly one parent (the head) and only screenshot evidence changes.
 It does not execute code from those commits or change the checkout.
 

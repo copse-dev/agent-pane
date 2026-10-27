@@ -44,6 +44,12 @@ describe('settings usage panel plans that are not set up', () => {
     // Not a credential failure, so no sign-in recovery is offered.
     assert.equal((await $$('.usage-plan-signin-btn').getElements()).length, 0)
 
+    // The worth-it card, the ledger and the value map load after the plan cards.
+    // They set the page's height, which the scrollbar and the content under the
+    // action bar show, so capture once all three have drawn.
+    await expect($('.usage-worth-section .usage-worth-card')).toBeExisting()
+    await expect($('.usage-period-body .usage-headline')).toBeExisting()
+    await expect($('.frontier-fieldset .frontier-chart > *')).toBeExisting()
     await prepareE2eScreenshot()
     await saveElementScreenshot('#settings-dialog', 'settings-usage-plan-unconfirmed.png')
   })
