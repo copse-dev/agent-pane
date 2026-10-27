@@ -49562,8 +49562,9 @@ var init_agent_logos = __esm({
 
 // src/renderer/views/setup/acp-agents-list.ts
 function agentChip(auth, verified = false) {
+  if (verified) return "ready";
   if (auth === "signed-out") return "needs-sign-in";
-  return verified ? "ready" : "unverified";
+  return "unverified";
 }
 function listedAgents(known, detected, configured, auth, verified = /* @__PURE__ */ new Set()) {
   const configuredIds = new Set(configured.map((a4) => a4.id));
@@ -51984,7 +51985,7 @@ function createModelsAgentsList(api, opts = {}) {
   let configured = [];
   let detected = /* @__PURE__ */ new Map();
   let auth = /* @__PURE__ */ new Map();
-  const verified = /* @__PURE__ */ new Set();
+  const verified = /* @__PURE__ */ new Map();
   const verifying = /* @__PURE__ */ new Map();
   const verificationErrors = /* @__PURE__ */ new Set();
   const storedKeys = /* @__PURE__ */ new Set();
@@ -52231,8 +52232,7 @@ function createModelsAgentsList(api, opts = {}) {
       void api.acp.probeAgent(model.id).then(
         () => {
           if (verifying.get(model.id) !== request || activeSignal?.aborted) return;
-          auth.set(model.id, "signed-in");
-          verified.add(model.id);
+          verified.set(model.id, auth.get(model.id));
           verifying.delete(model.id);
           repaint();
         },
@@ -52567,7 +52567,13 @@ function createModelsAgentsList(api, opts = {}) {
       renderMenu(/* @__PURE__ */ new Set());
       return;
     }
-    const agents = listedAgents(KNOWN_ACP_AGENTS, detected, configured, auth, verified);
+    const agents = listedAgents(
+      KNOWN_ACP_AGENTS,
+      detected,
+      configured,
+      auth,
+      new Set(verified.keys())
+    );
     const agentById = new Map(agents.map((model) => [model.id, model]));
     const servers = serverIds();
     for (const entry of connectionRows(
@@ -52588,9 +52594,10 @@ function createModelsAgentsList(api, opts = {}) {
   async function scanDevice() {
     try {
       const found = await api.acp.detectAgents();
-      for (const id of /* @__PURE__ */ new Set([...verified, ...verifying.keys()])) {
+      for (const id of /* @__PURE__ */ new Set([...verified.keys(), ...verifying.keys()])) {
         const next = found.find((agent) => agent.id === id);
-        if (!next?.installed || next.path !== detected.get(id)?.path) {
+        const prev = detected.get(id);
+        if (next?.installed !== prev?.installed || next?.path !== prev?.path) {
           verified.delete(id);
           verifying.delete(id);
         }
@@ -52605,8 +52612,8 @@ function createModelsAgentsList(api, opts = {}) {
     try {
       const statuses = ids.length ? await api.acp.authStatus(ids) : [];
       const next = new Map(statuses.map((s2) => [s2.id, s2.state]));
-      for (const id of verified) {
-        if (next.get(id) !== auth.get(id)) verified.delete(id);
+      for (const [id, seen] of verified) {
+        if (next.get(id) !== seen) verified.delete(id);
       }
       auth = next;
     } catch {

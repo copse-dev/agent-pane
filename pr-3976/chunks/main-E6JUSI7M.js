@@ -451,7 +451,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-PZW23EGB.js";
+} from "./chunk-YWDS7CBX.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -32578,6 +32578,126 @@ var init_file_tree = __esm({
     init_pane_popout_seed();
     init_active_thread_owner();
     init_toast();
+  }
+});
+
+// src/renderer/views/client-action-offers.ts
+function mountClientActionOffers(api2, read, composerRoot = document.body) {
+  let current = null;
+  let fingerprint = "";
+  let destroyed = false;
+  function refresh() {
+    if (destroyed) return;
+    const next = read();
+    const actions = next?.actions.slice(0, 8).map(({ id, label, kind }) => ({ id, label, kind })) ?? [];
+    const key = JSON.stringify(next && actions.length ? { ...next, actions } : null);
+    if (key === fingerprint) return;
+    fingerprint = key;
+    current = next && actions.length ? {
+      projectId: next.projectId,
+      threadId: next.threadId,
+      revision: crypto.randomUUID(),
+      actions
+    } : null;
+    void api2.clientActions.publish(current).catch(() => {
+    });
+  }
+  const unsubscribe = api2.clientActions.onInvoke((command2) => {
+    void (async () => {
+      let accepted = false;
+      try {
+        if (await api2.clientActions.claim(command2.id)) {
+          refresh();
+          const next = read();
+          const action = next?.actions.find((candidate) => candidate.id === command2.actionId);
+          if (action && current && command2.expiresAt > Date.now() && current.projectId === command2.projectId && current.threadId === command2.threadId && current.revision === command2.revision) {
+            current = null;
+            fingerprint = "";
+            void api2.clientActions.publish(null).catch(() => {
+            });
+            action.run();
+            accepted = true;
+            refresh();
+          }
+        }
+      } finally {
+        if (!accepted) {
+          fingerprint = "";
+          refresh();
+        }
+        await api2.clientActions.reply(command2.id, accepted);
+      }
+    })().catch(() => {
+    });
+  });
+  const observer = new MutationObserver(refresh);
+  observer.observe(document.body, { attributes: true, subtree: true, attributeFilter: ["open"] });
+  const composerObserver = new MutationObserver(refresh);
+  composerObserver.observe(composerRoot, { childList: true, subtree: true });
+  refresh();
+  return {
+    refresh,
+    destroy: () => {
+      destroyed = true;
+      observer.disconnect();
+      composerObserver.disconnect();
+      unsubscribe();
+      void api2.clientActions.publish(null).catch(() => {
+      });
+    }
+  };
+}
+var init_client_action_offers = __esm({
+  "src/renderer/views/client-action-offers.ts"() {
+  }
+});
+
+// src/shared/follow-ups/types.ts
+function normalizeFollowUpOpenTodos(contents) {
+  const normalized = [];
+  for (const content of contents) {
+    const item = content.trim().slice(0, MAX_FOLLOW_UP_OPEN_TODO_CHARS);
+    if (!item) continue;
+    normalized.push(item);
+    if (normalized.length >= MAX_FOLLOW_UP_OPEN_TODOS) break;
+  }
+  return normalized;
+}
+var MAX_FOLLOW_UP_OPEN_TODOS, MAX_FOLLOW_UP_OPEN_TODO_CHARS;
+var init_types2 = __esm({
+  "src/shared/follow-ups/types.ts"() {
+    MAX_FOLLOW_UP_OPEN_TODOS = 20;
+    MAX_FOLLOW_UP_OPEN_TODO_CHARS = 500;
+  }
+});
+
+// src/renderer/views/last-exchange.ts
+function lastExchange(store2, threadId) {
+  const thread = getThreadById(store2, threadId);
+  if (!thread) return null;
+  const userMessages = thread.messages.filter((m2) => m2.role === "user");
+  const assistantMessages = thread.messages.filter((m2) => m2.role === "assistant");
+  const lastUser = userMessages.at(-1);
+  const lastAssistant = assistantMessages.at(-1);
+  if (!lastUser?.content.trim() || !lastAssistant) return null;
+  const toolNames = lastAssistant.toolCalls.map((tc) => tc.name);
+  const openTodos = normalizeFollowUpOpenTodos(
+    (thread.todos ?? []).filter((t) => t.status === "pending" || t.status === "in_progress").map((t) => t.content)
+  );
+  return {
+    turnKey: `${threadId}:${lastUser.id}:${lastAssistant.id}`,
+    context: {
+      userMessage: lastUser.content,
+      assistantMessage: lastAssistant.content,
+      toolNames,
+      ...openTodos.length > 0 ? { openTodos } : {}
+    }
+  };
+}
+var init_last_exchange = __esm({
+  "src/renderer/views/last-exchange.ts"() {
+    init_types2();
+    init_thread_helpers();
   }
 });
 
@@ -65017,55 +65137,6 @@ var init_create_pr_dialog = __esm({
   }
 });
 
-// src/shared/follow-ups/types.ts
-function normalizeFollowUpOpenTodos(contents) {
-  const normalized = [];
-  for (const content of contents) {
-    const item = content.trim().slice(0, MAX_FOLLOW_UP_OPEN_TODO_CHARS);
-    if (!item) continue;
-    normalized.push(item);
-    if (normalized.length >= MAX_FOLLOW_UP_OPEN_TODOS) break;
-  }
-  return normalized;
-}
-var MAX_FOLLOW_UP_OPEN_TODOS, MAX_FOLLOW_UP_OPEN_TODO_CHARS;
-var init_types2 = __esm({
-  "src/shared/follow-ups/types.ts"() {
-    MAX_FOLLOW_UP_OPEN_TODOS = 20;
-    MAX_FOLLOW_UP_OPEN_TODO_CHARS = 500;
-  }
-});
-
-// src/renderer/views/last-exchange.ts
-function lastExchange(store2, threadId) {
-  const thread = getThreadById(store2, threadId);
-  if (!thread) return null;
-  const userMessages = thread.messages.filter((m2) => m2.role === "user");
-  const assistantMessages = thread.messages.filter((m2) => m2.role === "assistant");
-  const lastUser = userMessages.at(-1);
-  const lastAssistant = assistantMessages.at(-1);
-  if (!lastUser?.content.trim() || !lastAssistant) return null;
-  const toolNames = lastAssistant.toolCalls.map((tc) => tc.name);
-  const openTodos = normalizeFollowUpOpenTodos(
-    (thread.todos ?? []).filter((t) => t.status === "pending" || t.status === "in_progress").map((t) => t.content)
-  );
-  return {
-    turnKey: `${threadId}:${lastUser.id}:${lastAssistant.id}`,
-    context: {
-      userMessage: lastUser.content,
-      assistantMessage: lastAssistant.content,
-      toolNames,
-      ...openTodos.length > 0 ? { openTodos } : {}
-    }
-  };
-}
-var init_last_exchange = __esm({
-  "src/renderer/views/last-exchange.ts"() {
-    init_types2();
-    init_thread_helpers();
-  }
-});
-
 // src/renderer/views/follow-up-suggestions.ts
 function openChangesReviewer(store2) {
   store2.setState({ rightPanelMode: "changes", filesPaneOpen: true });
@@ -65113,13 +65184,15 @@ function settlePrCard(store2, card, status, message2) {
   setMessageContent(store2, card.messageId, message2);
   updateToolCall(store2, card.messageId, card.toolCallId, { status, result: message2 });
 }
-function mountFollowUpSuggestions(store2, api2, onSelect) {
+function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
+}) {
   const root = el("div", {
     class: "follow-up-suggestions",
     role: "group",
     "aria-label": "Suggested follow-ups",
     hidden: ""
   });
+  let offered = [];
   const fetchTokens = /* @__PURE__ */ new Map();
   const nextFetchToken = (threadId) => {
     const token = (fetchTokens.get(threadId) ?? 0) + 1;
@@ -65145,15 +65218,19 @@ function mountFollowUpSuggestions(store2, api2, onSelect) {
     if (store2.getState().activeThreadId === threadId) clearSuggestions();
   }
   function clearSuggestions() {
+    offered = [];
     clear(root);
     root.hidden = true;
     displayedThreadId = null;
+    onChanged();
   }
   function renderSuggestions(threadId, suggestions) {
     clear(root);
+    offered = [];
     if (suggestions.length === 0) {
       root.hidden = true;
       displayedThreadId = null;
+      onChanged();
       return;
     }
     for (const suggestion of suggestions) {
@@ -65181,7 +65258,7 @@ function mountFollowUpSuggestions(store2, api2, onSelect) {
         btn.textContent = suggestion.label;
       }
       if (suggestion.action === "create-pr") btn.classList.add("follow-up-bubble-create-pr");
-      btn.addEventListener("click", () => {
+      const run4 = () => {
         if (suggestion.action === "open-changes") {
           openChangesReviewer(store2);
           return;
@@ -65203,11 +65280,19 @@ function mountFollowUpSuggestions(store2, api2, onSelect) {
         }
         clearSuggestions();
         if (suggestion.prompt) onSelect(suggestion.prompt);
+      };
+      btn.addEventListener("click", run4);
+      offered.push({
+        id: `follow-up-${String(offered.length)}`,
+        label: suggestion.label,
+        kind: "follow-up",
+        run: run4
       });
       root.append(btn);
     }
     root.hidden = false;
     displayedThreadId = threadId;
+    onChanged();
   }
   async function maybeFetchSuggestions(threadId) {
     const exchange = lastExchange(store2, threadId);
@@ -65321,6 +65406,7 @@ function mountFollowUpSuggestions(store2, api2, onSelect) {
   ];
   return {
     root,
+    available: () => offered,
     clearSuggestions,
     destroy: () => {
       fetchTokens.clear();
@@ -67157,16 +67243,26 @@ ${context}` : text;
   );
   const portraitPanelHost = opts.portraitPanelHost ?? root;
   portraitPanelHost.append(portraitPanelControls.element);
-  const followUps = mountFollowUpSuggestions(store2, api2, (prompt) => {
-    composer.value = prompt;
-    void submit();
-  });
+  let refreshClientActions = () => {
+  };
+  const followUps = mountFollowUpSuggestions(
+    store2,
+    api2,
+    (prompt) => {
+      composer.value = prompt;
+      void submit();
+    },
+    () => {
+      refreshClientActions();
+    }
+  );
   root.insertBefore(followUps.root, inputRow);
   root.insertBefore(chips, inputRow);
   const defaultPlaceholder = "Message\u2026";
   const followUpPlaceholder = "Send follow-up";
   const nextStepHint = mountNextStepHint(store2, api2, () => {
     updateComposerPlaceholder();
+    refreshClientActions();
   });
   function updateComposerPlaceholder() {
     const hint = nextStepHint.current();
@@ -68036,6 +68132,50 @@ ${description}
     },
     true
   );
+  function acceptNextStep(hint) {
+    composer.value = hint;
+    nextStepHint.clear();
+    updateComposerPlaceholder();
+    composer.focus();
+    composer.el.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  const clientActionOffers = mountClientActionOffers(
+    api2,
+    () => {
+      const { activeProjectId, activeThreadId } = store2.getState();
+      if (!activeProjectId || !activeThreadId || imageDescriptionInProgress || isThreadSubmitting(store2, activeThreadId) || composer.value.trim() || attachedFiles.length + attachedImages.length + attachedVideos.length + attachedArchives.length + attachedThreads.length + attachedShells.length > 0 || document.querySelector("dialog[open]") || isAutocompletePickerOpen())
+        return null;
+      const thread = getThreadById(store2, activeThreadId);
+      const exchange = lastExchange(store2, activeThreadId);
+      if (!thread || thread.status !== "idle" || !exchange) return null;
+      const hint = nextStepHint.current();
+      const actions = hint === null ? [] : [
+        {
+          id: "next-step",
+          label: hint,
+          kind: "next-step",
+          run: () => {
+            acceptNextStep(hint);
+            void submit();
+          }
+        }
+      ];
+      actions.push(...followUps.available());
+      return {
+        projectId: activeProjectId,
+        threadId: activeThreadId,
+        turnKey: exchange.turnKey,
+        actions
+      };
+    },
+    root
+  );
+  refreshClientActions = clientActionOffers.refresh;
+  composer.el.addEventListener("input", refreshClientActions);
+  const stopClientActions = [
+    store2.on("threads_changed", refreshClientActions),
+    store2.on("thread_status_changed", refreshClientActions)
+  ];
   let sendNowChordAt = 0;
   composer.el.addEventListener("keydown", (e) => {
     if (e.isComposing) return;
@@ -68051,11 +68191,7 @@ ${description}
       const hint = nextStepHint.current();
       if (hint !== null && !composer.value.trim() && !isAutocompletePickerOpen()) {
         e.preventDefault();
-        composer.value = hint;
-        nextStepHint.clear();
-        updateComposerPlaceholder();
-        composer.focus();
-        composer.el.dispatchEvent(new Event("input", { bubbles: true }));
+        acceptNextStep(hint);
         return;
       }
     }
@@ -68871,6 +69007,10 @@ ${reply}`);
       topEdgeObserver.disconnect();
       followUps.destroy();
       nextStepHint.destroy();
+      clientActionOffers.destroy();
+      stopClientActions.forEach((stop) => {
+        stop();
+      });
       unbindDrop();
       unregisterAttachments();
       imageDescriptionSeq++;
@@ -68892,6 +69032,8 @@ ${reply}`);
 var IMAGE_DETAIL_LABELS, STOP_PENDING_TIMEOUT_MS, STOP_SHORTCUT_PASSTHROUGH_KEYS;
 var init_input_bar = __esm({
   "src/renderer/views/input-bar.ts"() {
+    init_client_action_offers();
+    init_last_exchange();
     init_thread_plan_dialog();
     init_helpers();
     init_ipc_error_message();
