@@ -812,6 +812,11 @@ export interface RunAgentOptions {
    * kept in the thread's history with the prompt it arrived on.
    */
   reviewContext?: string
+  /**
+   * A long-horizon task wake (decision 5). Its plan is open by design and the
+   * next wake resumes it, so the pre-review todo gate is skipped.
+   */
+  longTaskWake?: true
 }
 
 export interface RunAgentResult {
@@ -2773,7 +2778,14 @@ async function runAgentWithInlineCanvas(
 
         // Pre-review gate: if the plan still has open todos, give the parent a couple
         // of deterministic continuation turns to reconcile them before review runs.
-        if (!isPlanningRun() && getAgentRunTodos().length > 0 && hasOpenTodos(getAgentRunTodos())) {
+        // A long-task wake skips it: those turns would spend the wake chain's shared
+        // budget and nudge the agent to cancel items the next wake will resume.
+        if (
+          !isPlanningRun() &&
+          !options?.longTaskWake &&
+          getAgentRunTodos().length > 0 &&
+          hasOpenTodos(getAgentRunTodos())
+        ) {
           await runWithAgentRunReadFileLimits(runReadLimits, async () => {
             await runWithAgentRunExploreMode(subagentsEnabled, async () => {
               await runPreReviewTodoGate(parentContinuationBase)
