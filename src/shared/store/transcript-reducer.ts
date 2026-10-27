@@ -208,6 +208,7 @@ export function createTranscriptReducer(
       case 'machine_turn_start': {
         hooks.turnStarted?.(threadId)
         setThreadStatus(store, threadId, 'running')
+        if (chunk.hidden) break
         const id = hooks.createMessageId?.(threadId)
         addMessage(
           store,

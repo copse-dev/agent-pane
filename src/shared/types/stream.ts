@@ -71,6 +71,8 @@ export type StreamChunk =
   /** A host-native continuation began without a human submit. */
   | {
       type: 'machine_turn_start'
+      /** Internal notification: start the turn without adding a chat prompt. */
+      hidden?: true
       content: UserContent
       origin: MachineMessageOrigin
       attachments?: TranscriptAttachment[]
