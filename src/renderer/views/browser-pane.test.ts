@@ -1481,7 +1481,6 @@ describe('browser pane webview size sync', () => {
 
       stubHostBox(host, 1100, 800)
       store.setState({ rightPanelMaximized: true })
-      store.emit('right_panel_maximized_changed')
       assert.equal(webview.style.width, '1100px')
       assert.equal(webview.style.height, '800px')
     } finally {

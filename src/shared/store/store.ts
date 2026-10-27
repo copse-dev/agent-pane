@@ -10,6 +10,17 @@ export interface AppStore {
   setState(partial: Partial<AppState>): void
   on<K extends keyof StoreEvents>(event: K, handler: EventHandler<K>): Unsubscribe
   emit<K extends keyof StoreEvents>(event: K, ...args: StoreEvents[K]): void
+  /**
+   * Call `listener` after any `setState` that changes what `selector` reads, as
+   * judged by `equals` (default `Object.is`). Subscribe to the state a view
+   * renders rather than to an event its writer has to remember to emit. Not
+   * called on subscribe; read the current value with `getState()` to paint once.
+   */
+  select<T>(
+    selector: (state: AppState) => T,
+    listener: (next: T, prev: T) => void,
+    equals?: (a: T, b: T) => boolean,
+  ): Unsubscribe
 }
 
 export function createStore(initial?: Partial<AppState>): AppStore {
@@ -73,8 +84,6 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     projects_changed: new Set(),
     files_pane_changed: new Set(),
     right_panel_mode_changed: new Set(),
-    right_panel_maximized_changed: new Set(),
-    projects_pane_changed: new Set(),
     sidebar_project_filter_changed: new Set(),
     git_change_navigate: new Set(),
     roadmap_reveal: new Set(),
@@ -124,9 +133,36 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     })
   }
 
-  function setState(partial: Partial<AppState>): void {
-    state = { ...state, ...partial }
+  const selections = new Set<() => void>()
+
+  function select<T>(
+    selector: (state: AppState) => T,
+    listener: (next: T, prev: T) => void,
+    equals: (a: T, b: T) => boolean = Object.is,
+  ): Unsubscribe {
+    let value = selector(state)
+    const check = (): void => {
+      const next = selector(state)
+      const prev = value
+      if (equals(prev, next)) return
+      // Record before notifying so a listener that writes state again sees a
+      // settled baseline and is not re-notified for the same change.
+      value = next
+      listener(next, prev)
+    }
+    selections.add(check)
+    return () => {
+      selections.delete(check)
+    }
   }
 
-  return { getState: () => state, setState, on, emit }
+  function setState(partial: Partial<AppState>): void {
+    state = { ...state, ...partial }
+    // Snapshot: a listener may subscribe or unsubscribe while we notify.
+    for (const check of [...selections]) {
+      if (selections.has(check)) check()
+    }
+  }
+
+  return { getState: () => state, setState, on, emit, select }
 }

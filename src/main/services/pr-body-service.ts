@@ -4,7 +4,6 @@ import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
 import { getSetting } from './storage/settings.ts'
 import { getGitChangeStats, getCommittedChanges } from './github/git-service.ts'
-import { getWorkspaceRoot } from './workspace.ts'
 
 /** Keep a proposed body reviewable in a dialog field, and bounded over IPC. */
 const MAX_PR_BODY_CHARS = 2000
@@ -31,7 +30,7 @@ export function mockPrBody(): string {
  */
 export async function suggestPrBody(
   context: FollowUpContext,
-  root: string | null = getWorkspaceRoot(),
+  root: string | null,
 ): Promise<string | null> {
   if (
     process.env['COPSE_PANEL_MOCK_FOLLOW_UPS'] === '1' ||
@@ -64,9 +63,10 @@ export async function suggestPrBody(
 /**
  * The deterministic half of the prompt: what actually changed on disk. The turn
  * transcript says what the agent *meant* to do; the file list says what it did,
- * and a body that names the wrong files is worse than a terse one.
+ * and a body that names the wrong files is worse than a terse one. Exported for
+ * tests: the model sees this summary, so it is the root-dependent half.
  */
-async function describeChanges(root: string | null): Promise<string> {
+export async function describeChanges(root: string | null): Promise<string> {
   const lines: string[] = []
   const stats = await getGitChangeStats(root)
   if (stats) lines.push(`Uncommitted: +${String(stats.additions)} -${String(stats.deletions)}`)

@@ -574,6 +574,12 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   )
 
   const api: ApiClient = {
+    clientActions: {
+      claim: () => Promise.resolve(false),
+      publish: async () => {},
+      reply: async () => {},
+      onInvoke: () => () => {},
+    },
     threadPrompts: {
       onPrompt: () => () => {},
       reply: async () => {},
@@ -1247,6 +1253,30 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onUiScaleZoomOut: subscribe,
       onUiScaleReset: subscribe,
     },
+    machines: {
+      state: () =>
+        resolved({
+          featureEnabled: false,
+          machines: [],
+          addresses: [],
+          sharing: {
+            enabled: false,
+            address: '127.0.0.1',
+            port: 4319,
+            profileIds: [],
+            listening: false,
+            error: null,
+          },
+          shareableModels: [],
+          clients: [],
+          secureStorage: false,
+        }),
+      pair: unsupported,
+      remove: unsupported,
+      share: unsupported,
+      invitation: unsupported,
+      revoke: unsupported,
+    },
     classifiers: {
       list: emptyArray,
       save: unsupported,
@@ -1264,6 +1294,13 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       stop: unsupported,
       uninstall: unsupported,
       connect: unsupported,
+    },
+    environmentSetup: {
+      status: () => resolved({ offer: false, promptCount: 0 }),
+      review: unsupported,
+      apply: unsupported,
+      undo: unsupported,
+      dismiss: resolvedVoid,
     },
     chatGptPlan: {
       status: () => resolved(scenario.chatGptPlan ?? { accounts: [], activeClientId: null }),
@@ -1326,7 +1363,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       refreshHuggingFaceModels: () =>
         resolved({ ok: false, count: 0, error: 'Unavailable in demo' }),
     },
-    appIcon: { apply: resolvedVoid, setAutomationMode: resolvedVoid },
+    appIcon: { apply: resolvedVoid },
     about: {
       getInfo: () => resolved({ version: 'demo', report: null }),
       openLicenseFile: resolvedVoid,

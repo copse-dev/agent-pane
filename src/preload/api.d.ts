@@ -13,6 +13,7 @@ import type {
 import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
 import type { ClassifierClient } from '@copse/llm/classifiers/types.ts'
 import type { LocalClassifierClient } from '@shared/local-classifiers.ts'
+import type { EnvironmentSetupClient } from '@shared/environment-setup.ts'
 import type {
   ContextBreakdown,
   MachineAgentRunRequest,
@@ -180,6 +181,14 @@ export interface DetectedEnvKey {
 }
 
 export interface ApiClient {
+  clientActions: {
+    claim: (id: string) => Promise<boolean>
+    publish: (offer: import('@shared/client-actions.ts').ClientActionOffer | null) => Promise<void>
+    onInvoke: (
+      handler: (command: import('@shared/client-actions.ts').ClientActionCommand) => void,
+    ) => () => void
+    reply: (id: string, accepted: boolean) => Promise<void>
+  }
   threadPrompts: {
     revokeAccess: (threadId: string, access: 'read' | 'send') => Promise<void>
     onPrompt: (
@@ -985,8 +994,10 @@ export interface ApiClient {
     onUiScaleZoomOut: (handler: () => void) => () => void
     onUiScaleReset: (handler: () => void) => () => void
   }
+  machines: import('@shared/machines.ts').MachinesClient
   classifiers: ClassifierClient
   localClassifiers: LocalClassifierClient
+  environmentSetup: EnvironmentSetupClient
   settings: {
     getSnapshot: () => Promise<SettingsSnapshot>
     update: (changes: SettingsUpdate) => Promise<void>
@@ -1086,7 +1097,6 @@ export interface ApiClient {
   }
   appIcon: {
     apply: () => Promise<void>
-    setAutomationMode: (active: boolean) => Promise<void>
   }
   about: {
     /** The app version and the third-party licence report the build shipped. */

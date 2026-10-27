@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
+  E2E_WORKSPACE_COMMIT_DATE,
   resetUserData,
   seedFooterBranchFixture,
   seedFooterBranchMismatchFixture,
@@ -84,8 +85,18 @@ describe('footer branch status for a detached thread worktree', function () {
   let projectRoot = ''
   let worktreeRoot = ''
 
+  // Fixed dates make every commit here hash the same on each run: the
+  // Commit and continue run names the picked commit's SHA in the transcript.
   function git(cwd: string, args: string[]): string {
-    return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
+    return execFileSync('git', args, {
+      cwd,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: E2E_WORKSPACE_COMMIT_DATE,
+        GIT_COMMITTER_DATE: E2E_WORKSPACE_COMMIT_DATE,
+      },
+    }).trim()
   }
 
   /** The repair button shares the branch's line instead of wrapping beneath it. */

@@ -26,6 +26,18 @@ export const experimentalMarkup = `
               </div>
             </fieldset>
 
+            <fieldset>
+              <legend>Remote System One models</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="remoteSystemOneModelsEnabled" />
+                Connect Copse computers to share local models
+              </label>
+              <p class="field-hint">
+                After saving, open Machines to pair computers on the same network and choose which
+                models to share. No SSH is needed. Turning this off stops sharing and remote calls;
+                saved pairings stay available to reconnect or remove.
+              </p>
+            </fieldset>
             <div id="settings-mobile-companion-host" class="settings-mount"></div>
 
             <fieldset>
@@ -136,6 +148,7 @@ export const experimentalMarkup = `
 `
 
 export const experimentalFields: readonly SettingField[] = [
+  { name: 'remoteSystemOneModelsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'vncEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'deferredWorktreesEnabled', kind: 'checkbox', default: false, save: true },

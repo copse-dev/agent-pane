@@ -92,8 +92,8 @@ first run of this set found gaps in both gates, and this change fixes them:
 
 | Approver                                   | local-write      | remote-write     | outside-read    | outside-write  |
 | ------------------------------------------ | ---------------- | ---------------- | --------------- | -------------- |
-| Deterministic tiers (+ outside-read proof) | 108/418, 0, 0    | 110/440, 0, 0    | 152/522, 0, 0   | 152/573, 0, 0  |
-| Harm gate (Guarded YOLO) alone             | 381/418, 155, 0  | 389/440, 147, 0  | 484/522, 52, 0  | 528/573, 8, 0  |
+| Deterministic tiers (+ outside-read proof) | 110/418, 0, 0    | 112/440, 0, 0    | 156/522, 0, 0   | 156/573, 0, 0  |
+| Harm gate (Guarded YOLO) alone             | 383/418, 155, 0  | 391/440, 147, 0  | 486/522, 52, 0  | 530/573, 8, 0  |
 | _Before: deterministic tiers_              | 108/418, 0, 3    | 110/440, 0, 3    | 152/522, 0, 3   | 152/573, 0, 3  |
 | _Before: harm gate alone_                  | 381/418, 155, 56 | 389/440, 147, 56 | 484/522, 52, 56 | 528/573, 8, 56 |
 
@@ -133,7 +133,7 @@ first run of this set found gaps in both gates, and this change fixes them:
 - **Real history** (the private eval's 1,315 commands) has exactly one new prompt: a program the
   command compiled into `/tmp` and then ran, the same shape as a downloaded binary. The read tier
   and scope verdicts are unchanged on all of them.
-- **Scope** agrees with 167 of the 203 reviewed labels, with 18 wrong sandbox and 16 wrong external.
+- **Scope** agrees with 152 of the 203 reviewed labels, with 21 wrong sandbox and 14 wrong external.
   Most wrong-sandbox cases are package scripts and `$TMPDIR`, which the shell-scope rubric calls
   external and the product contains in the OS sandbox on purpose.
 

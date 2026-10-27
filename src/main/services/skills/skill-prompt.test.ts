@@ -13,6 +13,7 @@ import {
   refreshSkillsRegistry,
   setSkillsForTest,
   setUserSkillsHomeForTest,
+  listSkillSources,
 } from './skills-registry.ts'
 import { clearThreadReadRoots, threadReadRoots } from '../security/thread-read-roots.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
@@ -48,6 +49,11 @@ description: Demo
 })
 
 describe('buildSkillsCatalogBlock', () => {
+  it('filters explicit required tools using the current toolset', () => {
+    setSkillsForTest([{ ...demoSkill, requirements: { tools: ['special_tool'] } }])
+    assert.equal(buildSkillsCatalogBlock(['read_skill']), '')
+    assert.match(buildSkillsCatalogBlock(['read_skill', 'special_tool']), /demo-skill/)
+  })
   it('returns empty string when no skills are registered', () => {
     setSkillsForTest([])
     assert.equal(buildSkillsCatalogBlock(), '')
@@ -68,6 +74,8 @@ describe('buildSkillsCatalogBlock', () => {
   })
 
   it('leads each entry with the name read_skill takes, and names the owning plugin', () => {
+    setSetting('bundledCursorSkillsEnabled', true)
+    setSetting('bundledSkillPluginOverrides', { pstack: true })
     setSkillsForTest([
       demoSkill,
       {
@@ -82,6 +90,7 @@ describe('buildSkillsCatalogBlock', () => {
     assert.match(block, /<agent_skill name="demo-skill" fullPath=/)
     assert.match(block, /<agent_skill name="how" plugin="pstack" fullPath=/)
     assert.match(block, /its name is not a skill name/)
+    setSetting('bundledSkillPluginOverrides', {})
   })
 
   it('excludes disable-model-invocation skills from the catalog but keeps model-invocable ones', () => {
@@ -106,6 +115,11 @@ describe('buildSkillsCatalogBlock', () => {
 
     assert.equal(buildSkillsCatalogBlock([]), '')
     assert.match(buildSkillsCatalogBlock(['read_skill', 'image_gen']), /Demo skill for tests/)
+    assert.ok(
+      listSkillSources().diagnostics.some(
+        (diagnostic) => diagnostic.kind === 'untested' && diagnostic.reason.includes('image_gen'),
+      ),
+    )
   })
 
   it('does not advertise activation when read_skill is absent from the actual turn toolset', () => {
@@ -223,6 +237,46 @@ paths:
 
   it('returns empty string when no skills were invoked', async () => {
     assert.equal(await buildInvokedSkillsBlock([]), '')
+  })
+
+  it('reports blockers before loading instructions or granting read roots', async () => {
+    setSkillsForTest([
+      { ...demoSkill, requirements: { tools: ['missing_tool'], executors: ['acp'] } },
+    ])
+    const block = await buildInvokedSkillsBlock(['demo-skill'], {
+      threadId: 'blocked-thread',
+      preflight: { tools: ['read_skill'], executor: 'native' },
+    })
+    assert.match(block, /Required tool "missing_tool" is not offered/)
+    assert.match(block, /Executor "native" is excluded/)
+    assert.doesNotMatch(block, /# Demo|Readable by run_shell/)
+    assert.deepEqual(threadReadRoots('blocked-thread'), [])
+  })
+
+  it('still injects instructions when SKILL.md names a supporting file that is missing', async () => {
+    await writeFile(
+      join(tempRoot, '.cursor', 'skills', 'demo-skill', 'SKILL.md'),
+      `---
+name: demo-skill
+description: Demo skill for tests
+---
+
+# Demo instructions
+
+Write results to scripts/report.json.`,
+      'utf-8',
+    )
+    await refreshSkillsRegistry()
+    assert.match(buildSkillsCatalogBlock(['read_skill']), /demo-skill/)
+    const block = await buildInvokedSkillsBlock(['demo-skill'], {
+      preflight: { tools: ['read_skill'], executor: 'native' },
+    })
+    assert.match(block, /# Demo instructions/)
+    assert.match(
+      block,
+      /Supporting file "scripts\/report\.json" is missing\. The skill still loads/,
+    )
+    assert.doesNotMatch(block, /Do not start this workflow/)
   })
 
   it('injects tier-2 skill body without frontmatter', async () => {
