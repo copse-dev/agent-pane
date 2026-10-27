@@ -208,6 +208,10 @@
     "label": "Side chats beside the main thread"
   },
   {
+    "id": "side-chat-rich-markdown",
+    "label": "A side chat reply with a diagram, a table and code"
+  },
+  {
     "id": "side-chats-restored",
     "label": "Side chats after an app restart"
   },
