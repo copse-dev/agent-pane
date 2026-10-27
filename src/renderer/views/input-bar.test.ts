@@ -11,6 +11,7 @@ import {
 import type { ContextBreakdown, Thread, ThreadCatalogHit, StreamChunk } from '@shared/types'
 import type { ContainerRunProgress } from '@shared/types/container-run.ts'
 import { containerRunToolCall } from '@shared/store/container-run-card.ts'
+import type { ClientActionCommand, ClientActionOffer } from '@shared/client-actions.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { startAgentController } from '../controller/agent.ts'
 import { mountInputBar } from './input-bar.ts'
@@ -4600,9 +4601,13 @@ describe('input bar context wheel across a model change', () => {
 })
 
 describe('next-step tab complete in the composer', () => {
-  function mountWithHint(hint: string | null): {
+  function mountWithHint(
+    hint: string | null,
+    clientActions?: ApiClient['clientActions'],
+  ): {
     host: HTMLElement
     store: ReturnType<typeof createStore>
+    runs: Array<Parameters<ApiClient['agent']['run']>>
   } {
     const store = createStore({
       workspaceRoot: '/repo',
@@ -4611,9 +4616,16 @@ describe('next-step tab complete in the composer', () => {
       activeThreadId: 'thread-1',
       threads: [thread()],
     })
-    const base = createApi({ currentBranch: 'main' })
+    const runs: Array<Parameters<ApiClient['agent']['run']>> = []
+    const base = createApi({
+      currentBranch: 'main',
+      onRun: async (...args) => {
+        runs.push(args)
+      },
+    })
     const api: ApiClient = {
       ...base,
+      clientActions: clientActions ?? base.clientActions,
       settings: {
         ...base['settings'],
         get: (key: string) =>
@@ -4627,7 +4639,7 @@ describe('next-step tab complete in the composer', () => {
     const host = document.createElement('div')
     document.body.append(host)
     mountInputBar(host, store, api)
-    return { host, store }
+    return { host, store, runs }
   }
 
   function finishTurn(store: ReturnType<typeof createStore>): void {
@@ -4652,8 +4664,8 @@ describe('next-step tab complete in the composer', () => {
     )
   })
 
-  it('Tab inserts the hint into the empty composer and spends the offer', async () => {
-    const { host, store } = mountWithHint('Run the tests to verify the fix')
+  it('keyboard Tab inserts the hint without sending and spends the offer', async () => {
+    const { host, store, runs } = mountWithHint('Run the tests to verify the fix')
     await settle()
     finishTurn(store)
     await flush()
@@ -4666,8 +4678,60 @@ describe('next-step tab complete in the composer', () => {
     await flush()
 
     assert.equal(composer.textContent, 'Run the tests to verify the fix')
+    assert.equal(runs.length, 0)
     assert.equal(composer.getAttribute('data-placeholder'), 'Message…')
     assert.equal(composer.hasAttribute('data-next-step'), false)
+  })
+
+  it('a paired Tab action submits its exact suggestion once through the normal composer path', async () => {
+    const hint = 'Run the tests to verify the fix'
+    let offered: ClientActionOffer | null = null
+    let invoke: (command: ClientActionCommand) => void = () => {}
+    const replies: boolean[] = []
+    const { host, store, runs } = mountWithHint(hint, {
+      publish: async (value) => {
+        offered = value
+      },
+      claim: async () => true,
+      reply: async (_id, accepted) => {
+        replies.push(accepted)
+      },
+      onInvoke: (handler) => {
+        invoke = handler
+        return (): void => {}
+      },
+    })
+    await settle()
+    finishTurn(store)
+    await flush()
+    const reference = (): ClientActionCommand => {
+      assert.ok(offered)
+      return {
+        id: crypto.randomUUID(),
+        expiresAt: Date.now() + 3000,
+        projectId: offered.projectId,
+        threadId: offered.threadId,
+        revision: offered.revision,
+        actionId: 'next-step',
+      }
+    }
+    const command = reference()
+    invoke(command)
+    await flush()
+    await flush()
+    assert.equal(runs.length, 1)
+    assert.deepEqual(runs[0]?.slice(0, 2), ['project-1', 'thread-1'])
+    assert.deepEqual(
+      getThreadById(store, 'thread-1')
+        ?.messages.filter((m) => m.role === 'user')
+        .map((m) => m.content),
+      ['fix the parser bug', hint],
+    )
+    assert.equal(host.querySelector('.prompt-input')?.textContent, '')
+    invoke(command)
+    await flush()
+    assert.equal(runs.length, 1)
+    assert.deepEqual(replies, [true, false])
   })
 
   it('Tab in a composer with typed text keeps its default behavior', async () => {

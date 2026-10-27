@@ -49,13 +49,14 @@ function containerOf(root: string): AgentContainer | null {
   return AGENT_CONTAINERS.find((known) => known === container) ?? null
 }
 
-export async function collectDiscoveryRoots(): Promise<DiscoveryRoot[]> {
+export async function collectDiscoveryRoots(
+  workspace = getWorkspaceRoot(),
+): Promise<DiscoveryRoot[]> {
   const roots: DiscoveryRoot[] = []
 
   // Project scope first, and only when the workspace is trusted — a definition
   // is a system prompt plus a tool list, so a cloned repo's agents are armed by
   // the same act that arms its hooks and MCP servers, not by opening the folder.
-  const workspace = getWorkspaceRoot()
   if (workspace && isWorkspaceTrusted(workspace)) {
     const found = new Set<string>()
     await walkForContainerRoots(

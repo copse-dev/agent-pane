@@ -30,7 +30,7 @@ export function mountPopoutTitlebar(
     title.textContent = panelModeLabel(store.getState().rightPanelMode)
   }
   syncTitle()
-  const unsub = store.on('right_panel_mode_changed', syncTitle)
+  const unsub = store.select((s) => s.rightPanelMode, syncTitle)
 
   return () => {
     unsub()
