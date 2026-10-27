@@ -1,4 +1,5 @@
 import { renderMessageContent } from './message-content.js'
+import { installHighlighterBackend } from '../renderer/markdown/highlighter-backend.ts'
 import { installComposerFocus } from './composer-focus.js'
 
 const pair = document.getElementById('pair')
@@ -9,6 +10,7 @@ const groups = document.getElementById('groups')
 const inlineDecision = document.getElementById('inline-decision')
 const messages = document.getElementById('messages')
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
+const highlighterReady = installHighlighterBackend().catch(() => {})
 
 function applyTheme() {
   document.documentElement.dataset.theme = systemTheme.matches ? 'dark' : 'light'
@@ -582,7 +584,10 @@ function renderMessages(list) {
       content = element('div', 'message-content')
       card.append(content)
     }
-    renderMessageContent(content, message, index)
+    // The newest reply of a running chat is still arriving: pace it like the
+    // desktop does, and settle it (diagrams, table copy) once the run ends.
+    const live = Boolean(runId) && index === list.length - 1 && message.role === 'assistant'
+    renderMessageContent(content, message, index, live)
     let gallery = card.querySelector('.message-images')
     const imageCount = Number.isSafeInteger(message.imageCount) ? message.imageCount : 0
     if (gallery?.dataset.imageCount !== String(imageCount)) {
@@ -642,9 +647,14 @@ async function refreshThread() {
       if (promptArrived)
         document.getElementById('attention').scrollIntoView({ block: 'end', behavior: 'smooth' })
     }
-    const signature = JSON.stringify(data.messages)
+    // A run ending changes how the last reply renders even when no text changed.
+    const signature = JSON.stringify([runId, data.messages])
     if (signature === messageSignature) return revealPrompt()
     messageSignature = signature
+    // Code is highlighted as on the desktop; a highlighter that fails to load
+    // leaves plain code rather than blocking the transcript.
+    await highlighterReady
+    if (selected !== row) return
     renderMessages(data.messages)
     if (document.activeElement === messageInput) revealComposer()
     revealPrompt()

@@ -1,6 +1,8 @@
 import { networkActivity } from '../services/diagnostics/network-activity.ts'
 import { readOpenAiArtifact } from '../services/remote/openai-agents-client.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
+import { machineManager, syncMachineService } from '../services/machines/machine-service.ts'
+import { machineSharingSchema, REMOTE_SYSTEM_ONE_MODELS_SETTING } from '@shared/machines.ts'
 import { registerPlanHandlers } from './plan-handlers.ts'
 import { registerChatGptPlanHandlers } from './chat-gpt-plan-handlers.ts'
 import { registerClassifierHandlers } from './classifier-handlers.ts'
@@ -1447,6 +1449,33 @@ export function registerAllHandlers(
     }
   })
 
+  ipcMain.handle('machines:state', async (event) => {
+    assertMainFrameSender(event, win)
+    const manager = machineManager()
+    await manager.refresh()
+    return manager.snapshot()
+  })
+  ipcMain.handle('machines:pair', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return machineManager().pair(parseIpcArgs(z.string().min(1).max(2048), [raw]))
+  })
+  ipcMain.handle('machines:remove', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return machineManager().remove(parseIpcArgs(z.uuid(), [raw]))
+  })
+  ipcMain.handle('machines:share', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return machineManager().share(parseIpcArgs(machineSharingSchema, [raw]))
+  })
+  ipcMain.handle('machines:invitation', (event) => {
+    assertMainFrameSender(event, win)
+    return machineManager().invitation()
+  })
+  ipcMain.handle('machines:revoke', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return machineManager().revoke(parseIpcArgs(z.uuid(), [raw]))
+  })
+
   registerClassifierHandlers(win)
 
   // Environment setup: the renderer sends only which issued suggestion ids were
@@ -1518,6 +1547,7 @@ export function registerAllHandlers(
     alert('thread-finished', `${title} is ready.`, threadId)
   })
   async function syncChangedSettings(changedKeys: ReadonlySet<string>): Promise<void> {
+    if (changedKeys.has(REMOTE_SYSTEM_ONE_MODELS_SETTING)) await syncMachineService()
     if (changedKeys.has('alertOnInteraction')) refreshNeedsInputBadge()
     if ([...changedKeys].some((key) => SKILLS_RELOAD_KEYS.has(key))) {
       await initSkillsRegistry()
