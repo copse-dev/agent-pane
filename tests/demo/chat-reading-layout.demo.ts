@@ -1,5 +1,6 @@
 import { $, $$, browser, expect } from '@wdio/globals'
 import { parkPointer, saveAppScreenshot, saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
+import { buildDemoFixturePage } from './helpers/demo-fixture-page.ts'
 
 const PROSE = '.messages-list > .msg-assistant > .message-body > .message-text'
 
@@ -67,7 +68,9 @@ async function scrollToStart(): Promise<void> {
 }
 
 describe('assistant Reading layout in the real renderer', () => {
+  let toolCheckpointPage = ''
   before(async () => {
+    toolCheckpointPage = await buildDemoFixturePage('reading-layout-tool-checkpoint-fixture')
     await browser.url('/?scenario=chat-reading-layout&autoplay=0')
     await $(PROSE).waitForExist()
     await browser.execute(async () => {
@@ -213,6 +216,13 @@ describe('assistant Reading layout in the real renderer', () => {
   })
 
   it('keeps the reading size through a real composer submission, tools, and stream completion', async () => {
+    // Same scenario, with its trace held after the read result: the streaming
+    // capture has one tool state, not whichever the 800ms read had reached.
+    await browser.url(toolCheckpointPage)
+    await $(PROSE).waitForExist()
+    await browser.execute(async () => {
+      await document.fonts.ready
+    })
     expect(await $$('.msg-user').length).toBe(1)
     expect(await $$(`${PROSE}.is-streaming`).length).toBe(0)
     await browser.execute(() => {
@@ -243,7 +253,31 @@ describe('assistant Reading layout in the real renderer', () => {
     expect(mixed.proseSize).toBe('15px')
     expect(mixed.proseLineHeight).toBe('24px')
     expect(parseFloat(mixed.toolSize)).toBeLessThan(16)
-    await saveAppScreenshot('chat-reading-layout-streaming.png')
+    try {
+      await browser.waitUntil(
+        () =>
+          browser.execute(() => {
+            const state: unknown = Reflect.get(window, '__copseToolCheckpoint')
+            return (
+              state !== null && typeof state === 'object' && Reflect.get(state, 'paused') === true
+            )
+          }),
+        { timeout: 15_000, timeoutMsg: 'The trace should pause after the read result' },
+      )
+      await expect($('.tool-card[data-status="done"]')).toHaveText(
+        expect.stringContaining('Read file'),
+      )
+      await expect($('.agent-activity-label')).toHaveText('Reasoning…')
+      await expect($(liveProse)).toHaveText('I will inspect the sample before explaining it.')
+      await saveAppScreenshot('chat-reading-layout-streaming.png')
+    } finally {
+      await browser.execute(() => {
+        const state: unknown = Reflect.get(window, '__copseToolCheckpoint')
+        if (state === null || typeof state !== 'object') return
+        const release: unknown = Reflect.get(state, 'release')
+        if (typeof release === 'function') Reflect.apply(release, state, [])
+      })
+    }
     await browser.waitUntil(async () => (await $$(liveProse).length) === 0, {
       timeout: 30_000,
       timeoutMsg: 'Response should finish streaming',

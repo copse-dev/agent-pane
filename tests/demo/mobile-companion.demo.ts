@@ -135,6 +135,55 @@ async function expectComposerVisible(id: 'message' | 'new-message'): Promise<voi
   )
 }
 
+/**
+ * Frame the thread composer where focusing it puts it: from the top of the
+ * page, its reveal scrolls the submit button to 12px above the viewport bottom.
+ * Opening the thread smooth-scrolls to the waiting approval and focuses the
+ * composer, and that reveal only scrolls as far as it must, so a capture
+ * otherwise inherited whichever offset those left behind.
+ */
+async function frameThreadComposer(): Promise<void> {
+  await browser.waitUntil(
+    () =>
+      browser.execute(() => {
+        const preview = document.querySelector<HTMLImageElement>('#message-image-preview img')
+        return (
+          preview?.complete === true &&
+          preview.naturalWidth > 0 &&
+          document.querySelectorAll('#messages .message').length === 4 &&
+          document.querySelector('#attention .decision-actions') !== null
+        )
+      }),
+    { timeoutMsg: 'The thread, its approval and the image preview should finish rendering' },
+  )
+  await browser.execute(() => {
+    const input = document.getElementById('message')
+    if (!input) throw new Error('Missing thread composer')
+    // An instant scroll also ends the smooth scroll to the approval.
+    window.scrollTo({ top: 0, behavior: 'instant' })
+    input.blur()
+    input.focus({ preventScroll: true })
+  })
+  await browser.waitUntil(
+    () =>
+      browser.execute(() => {
+        const send = document.getElementById('send')?.getBoundingClientRect()
+        const viewport = window.visualViewport
+        const bottom = (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight) - 12
+        // Frames near the viewport load their image once; capture them loaded.
+        const loading = [...document.querySelectorAll('#messages .message-image-loading')].some(
+          (label) => {
+            const rect = label.getBoundingClientRect()
+            return rect.bottom > 0 && rect.top < window.innerHeight
+          },
+        )
+        return !!send && Math.abs(send.bottom - bottom) < 1 && !loading
+      }),
+    { timeoutMsg: 'The composer reveal should place Queue message above the viewport bottom' },
+  )
+  await expectComposerVisible('message')
+}
+
 describe('Mobile Companion at phone width', () => {
   beforeEach(async () => {
     await browser.sendCommand('Emulation.setEmulatedMedia', {
@@ -317,6 +366,7 @@ describe('Mobile Companion at phone width', () => {
       await browser.execute(async () => {
         await document.fonts.ready
       })
+      await frameThreadComposer()
       await screenshot('mobile-companion-image-preview.png')
       await $('#message').setValue('What is in this image?')
       await $('#send').click()
