@@ -739,20 +739,22 @@ app
     perfMark('main:register-handlers')
     const agentDispatcher = new AgentDispatcher(agentHost, registry, undefined, transcriptWriter)
     setAgentInitiatedTurnAuthority(agentDispatcher)
-    setDiffAcceptanceHandler((acceptance) =>
-      agentDispatcher.dispatchMachine({
-        projectId: acceptance.owner.projectId,
-        threadId: acceptance.owner.threadId,
-        operationId: acceptance.operationId,
-        turnTreeId: acceptance.turnTreeId,
-        display: 'hidden',
-        payload: {
-          userContent: diffAcceptancePrompt(acceptance),
-          invokedSkills: [],
-          priorTodos: [],
-        },
-      }),
-    )
+    setDiffAcceptanceHandler({
+      waitForIdle: (owner) => agentDispatcher.waitForIdle(owner.projectId, owner.threadId),
+      wake: (acceptance) =>
+        agentDispatcher.dispatchMachine({
+          projectId: acceptance.owner.projectId,
+          threadId: acceptance.owner.threadId,
+          operationId: acceptance.operationId,
+          turnTreeId: acceptance.turnTreeId,
+          display: 'hidden',
+          payload: {
+            userContent: diffAcceptancePrompt(acceptance),
+            invokedSkills: [],
+            priorTodos: [],
+          },
+        }),
+    })
     win.once('closed', () => {
       setDiffAcceptanceHandler(null)
     })

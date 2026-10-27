@@ -78,10 +78,13 @@ revisiting this document, not silently diverging in an implementation PR.
    path exists for async hooks; late results are therefore safe by construction.
 5. **One auto-continuation budget.** A single counter per **turn tree** (everything
    descending from one human-originated submission). Change acceptance wakes the
-   proposing thread after successful GUI application, once per approval batch and
-   originating epoch. It uses `dispatchMachine` with the same stale-epoch and budget
-   checks, but its internal prompt adds no chat message. An ACP write already
-   waiting for its approval response receives no duplicate wake.
+   proposing thread after successful GUI application, at most once per approval batch
+   and originating epoch. The wake waits until the thread runs no turn and no machine
+   wake already dispatched to it; approvals for the same epoch made while it waits
+   join it, so accepting files one at a time while the thread is busy costs one
+   continuation rather than one per file. It uses `dispatchMachine` with the same
+   stale-epoch and budget checks, but its internal prompt adds no chat message. An ACP
+   write already waiting for its approval response receives no duplicate wake.
    The ledger counts
    **machine-initiated new model turns** only: hook send-now, `stop`/`subagentStop`
    follow-ups, bounded background-task completion wakes, change-acceptance wakes, durable CI status-change wakes,
