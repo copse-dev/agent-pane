@@ -451,7 +451,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-E7GFSWPO.js";
+} from "./chunk-L7HDLHAT.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -4482,6 +4482,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       chatScrim.hidden = false;
       dialog.show();
     }
+    rejectButton.focus({ preventScroll: true });
     active = true;
     syncAttention();
   }
