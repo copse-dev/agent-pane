@@ -988,16 +988,17 @@ async function runAcpAgentTurn(
 /**
  * Probe a configured ACP agent for the models and session modes it offers (for
  * the settings picker, issue #607). Resolves the agent + workspace, then probes
- * it via {@link probeAcpAgent}. Returns `{ models: null, modes: null }` when the
- * agent is unknown/disabled; otherwise each selector is `null` when the agent
- * exposes none of that kind.
+ * it via {@link probeAcpAgent}. Rejects unknown/disabled agents so connection
+ * verification cannot mistake an unattempted probe for success. Each selector
+ * is `null` when a connected agent exposes none of that kind.
  */
 export async function probeAcpAgentForSettings(agentId: string): Promise<AcpAgentProbe> {
   if (isActiveSshWorkspace() && !isAcpOverSshEnabled()) {
     throw new Error(ACP_UNSUPPORTED_ON_SSH_MESSAGE)
   }
   const agent = getAcpAgent(agentId)
-  if (!agent) return { models: null, modes: null }
+  if (!agent)
+    throw new Error('Enable this coding agent in Options before verifying its connection.')
   const cwd = getActiveProjectRoot() ?? getWorkspaceRoot()
   if (!cwd) {
     throw new Error('Open a folder before detecting a coding agent’s models.')
