@@ -56,11 +56,15 @@ import {
   bindCodeBlockRunRequests,
   setCodeBlockRunOutcome,
 } from '../markdown/code-block-copy.ts'
-import { attachTableCopyButtons } from '../markdown/table-copy.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
-import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { StreamingMarkdownRenderer } from '@copse/streaming-markdown'
-import { createInputSmoother, type InputSmoother } from '@copse/streaming-markdown/smoothing'
+import {
+  paintAssistantMarkdown,
+  renderUserPromptMarkdown,
+  STREAM_PAINT_EVENT,
+  STREAM_SETTLED_EVENT,
+} from '../markdown/message-markdown.ts'
+import { desktopMessageHost } from '../markdown/desktop-message-host.ts'
 import { createFrameLoop } from './frame-loop.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
@@ -832,19 +836,6 @@ function createInnerToolCard(tc: ToolCall, api: ApiClient): HTMLDetailsElement {
   return entry
 }
 
-// Per-message incremental renderers for the active streaming pass. Keyed by the
-// `.message-text` element so re-entrant token events reuse the same DOM regions
-// instead of rebuilding the whole message innerHTML each token (O(n²)).
-const streamingRenderers = new WeakMap<HTMLElement, StreamingMarkdownRenderer>()
-// Streamed text reaches `.message-text` through the package's input smoother,
-// one frame at a time, so the transcript learns about each paint and the
-// deferred final render through these events rather than at the call site.
-const streamSmoothers = new WeakMap<HTMLElement, InputSmoother>()
-/** A paced frame of streamed text landed in this `.message-text`. Bubbles. */
-const STREAM_PAINT_EVENT = 'copse:stream-paint'
-/** A paced stream finished revealing and took its final render. Bubbles. */
-const STREAM_SETTLED_EVENT = 'copse:stream-settled'
-
 /**
  * Cursor ACP may append a trailing `Error: RetriableError: …` transport line
  * after useful output. Keep it out of the primary markdown for everyone. In
@@ -892,36 +883,6 @@ function flushPendingAcpTransportNoise(messageTextEl: HTMLElement): void {
   syncAcpTransportNoiseDisclosure(messageTextEl, pending)
 }
 
-function paintStreamingMarkdown(el: HTMLElement, display: string): void {
-  let renderer = streamingRenderers.get(el)
-  if (!renderer) {
-    renderer = new StreamingMarkdownRenderer(el)
-    streamingRenderers.set(el, renderer)
-  }
-  renderer.update(display)
-  attachCodeBlockCopyButtons(el, { runCommands: true })
-}
-
-function streamSmootherFor(el: HTMLElement, display: string): InputSmoother {
-  const existing = streamSmoothers.get(el)
-  if (existing) return existing
-  // Text already on screen — a message rebuilt mid-stream — stays put; only
-  // what arrives from now on is paced. A fresh bubble paces from its start.
-  const shown = el.hasChildNodes() ? display : ''
-  if (shown) paintStreamingMarkdown(el, shown)
-  const smoother = createInputSmoother({
-    update: (text) => {
-      paintStreamingMarkdown(el, text)
-      el.dispatchEvent(new CustomEvent(STREAM_PAINT_EVENT, { bubbles: true }))
-    },
-    // Follow the provider's own rate: a steady reveal a little behind it.
-    cadence: 'adaptive',
-    initial: shown,
-  })
-  streamSmoothers.set(el, smoother)
-  return smoother
-}
-
 function setAssistantMarkdown(
   el: HTMLElement,
   content: string,
@@ -929,71 +890,18 @@ function setAssistantMarkdown(
   api: ApiClient,
 ): void {
   const { body: display, transportNoise } = assistantDisplayParts(content)
-  if (streaming) {
-    el.classList.add('is-streaming')
-    streamSmootherFor(el, display).push(display)
-    // Demote as soon as the trailing line is complete; keep collapsed while live.
-    syncAcpTransportNoiseDisclosure(el, transportNoise)
-    return
-  }
-  const smoother = streamSmoothers.get(el)
-  if (smoother) {
-    // Let the reveal catch up before the final render replaces the scaffold,
-    // so the end of the answer doesn't arrive in one pop. A later call pushes
-    // again, which voids this settle in favour of its own content.
-    smoother.push(display)
-    smoother.finish(() => {
-      smoother.dispose()
-      streamSmoothers.delete(el)
-      setAssistantMarkdown(el, content, false, api)
-      el.dispatchEvent(new CustomEvent(STREAM_SETTLED_EVENT, { bubbles: true }))
-    })
-    return
-  }
-  // Final render: replace the incremental scaffold with the finished markdown.
-  el.classList.remove('is-streaming')
-  streamingRenderers.delete(el)
-  el.innerHTML = renderMarkdown(display)
-  attachCodeBlockCopyButtons(el, { runCommands: true })
-  // Tables only on the committed final render — during streaming they are
-  // patched with pending rows, so wrapping them then would fight the DOM sync.
-  attachTableCopyButtons(el)
-  void annotateFileReferences(el, api)
-  hydrateRemoteArtifactImages(el, api)
-  void renderMermaidIn(el)
+  paintAssistantMarkdown(
+    el,
+    display,
+    streaming,
+    desktopMessageHost(api, { runCommands: true }),
+    () => {
+      syncAcpTransportNoiseDisclosure(el, transportNoise)
+    },
+  )
+  // While live, demote as soon as the trailing line is complete; keep collapsed.
+  // A paced settle syncs again after its final render (above).
   syncAcpTransportNoiseDisclosure(el, transportNoise)
-}
-
-/** Turn composer single newlines into CommonMark hard breaks; skip fenced code. */
-function userPromptMarkdown(source: string): string {
-  const parts: string[] = []
-  const fenceRe = /```[\s\S]*?```/g
-  let last = 0
-  let match: RegExpExecArray | null
-  while ((match = fenceRe.exec(source)) !== null) {
-    parts.push(hardBreakSingleNewlines(source.slice(last, match.index)))
-    parts.push(match[0])
-    last = match.index + match[0].length
-  }
-  parts.push(hardBreakSingleNewlines(source.slice(last)))
-  return parts.join('')
-}
-
-function hardBreakSingleNewlines(text: string): string {
-  return text.replace(/(?<!\n)\n(?!\n)/g, '  \n')
-}
-
-/** Render markdown into a user-prompt sink (full bubble or one fold region). */
-function paintUserMarkdown(el: HTMLElement, content: string): void {
-  if (!content) {
-    el.replaceChildren()
-    return
-  }
-  // escape-all: angle-bracketed examples (`<cd … && npm test>`) must stay literal.
-  // Default passthrough emits raw tags; the sink sanitizer then strips unknown
-  // elements and the command vanishes from the transcript.
-  el.innerHTML = renderMarkdown(userPromptMarkdown(content), { htmlPolicy: 'escape-all' })
-  attachCodeBlockCopyButtons(el)
 }
 
 /**
@@ -1001,12 +909,7 @@ function paintUserMarkdown(el: HTMLElement, content: string): void {
  * get a mid-fold accordion — opening + closing stay visible; middle collapses.
  */
 function setUserMarkdown(el: HTMLElement, content: string): void {
-  const parts = splitUserPromptForFold(content)
-  if (!parts) {
-    paintUserMarkdown(el, content)
-    return
-  }
-  fillUserPromptFold(el, parts, paintUserMarkdown)
+  renderUserPromptMarkdown(el, content)
 }
 
 function createSubagentMessageEl(content: string, streaming: boolean, api: ApiClient): HTMLElement {

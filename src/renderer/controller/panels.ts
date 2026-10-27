@@ -18,7 +18,6 @@ export function syncFilesPaneDom(store: AppStore): void {
 export function setRightPanelMaximized(store: AppStore, maximized: boolean): void {
   if (store.getState().rightPanelMaximized === maximized) return
   store.setState({ rightPanelMaximized: maximized })
-  store.emit('right_panel_maximized_changed')
 }
 
 export function toggleRightPanelMaximized(store: AppStore): void {
@@ -39,12 +38,10 @@ export function isRightPanelMaximized(store: AppStore): boolean {
 function clearMaximizedOnClose(store: AppStore): void {
   if (!store.getState().rightPanelMaximized) return
   store.setState({ rightPanelMaximized: false })
-  store.emit('right_panel_maximized_changed')
 }
 
 export function toggleProjectsPane(store: AppStore): void {
   store.setState({ projectsPaneOpen: !store.getState().projectsPaneOpen })
-  store.emit('projects_pane_changed')
 }
 
 export function toggleFilesPane(store: AppStore): void {
