@@ -1,3 +1,4 @@
+import { runWithWorkerDispatchSlots } from './agents/isolated-worker-scope.ts'
 import { runWithThreadPlan } from './thread-plan-context.ts'
 import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
@@ -64,6 +65,8 @@ export interface AgentDispatchPayload {
   continuationBudgetUsed?: number
   /** Summary of reviews the user ran since the model's last reply (#2519). */
   reviewContext?: string
+  /** Set by the long-horizon task wake; never parsed from a renderer payload. */
+  longTaskWake?: true
 }
 
 /** Opens the main-owned transcript of one dispatched turn. */
@@ -766,6 +769,7 @@ export class AgentDispatcher {
         ? { continuationBudgetUsed: payload.continuationBudgetUsed }
         : {}),
       ...(payload.reviewContext !== undefined ? { reviewContext: payload.reviewContext } : {}),
+      ...(payload.longTaskWake ? { longTaskWake: true as const } : {}),
     }
     let result: Awaited<ReturnType<AgentDispatcherDependencies['run']>>
     // A deferred-worktree turn may allocate mid-run; the renderer re-roots as
@@ -787,13 +791,20 @@ export class AgentDispatcher {
       result = await runWithThreadExecutionContext(executionContext, () =>
         runWithThreadPlan(plan, () =>
           runWithActiveRunIdentity(threadId, () =>
-            this.dependencies.run(
-              threadId,
-              payload.userContent,
-              priorMessages,
-              host,
-              this.registry,
-              options,
+            runWithWorkerDispatchSlots(
+              {
+                run: (owner, execute) =>
+                  this.withExclusiveHistory(owner.projectId, owner.threadId, execute),
+              },
+              () =>
+                this.dependencies.run(
+                  threadId,
+                  payload.userContent,
+                  priorMessages,
+                  host,
+                  this.registry,
+                  options,
+                ),
             ),
           ),
         ),

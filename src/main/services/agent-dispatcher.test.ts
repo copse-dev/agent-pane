@@ -1,3 +1,4 @@
+import { withIsolatedWorkerDispatchSlot } from './agents/isolated-worker-scope.ts'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
@@ -119,6 +120,55 @@ describe('AgentDispatcher', () => {
     assert.equal(isDeferralModeActive(context.threadId), false)
   })
 
+  it('reserves the primary-turn slot for workers until execution and cleanup settle', async () => {
+    await assert.rejects(
+      withIsolatedWorkerDispatchSlot(
+        { projectId: 'project-1', threadId: 'worker' },
+        async () => undefined,
+      ),
+      /owning dispatcher/,
+    )
+    let entered = (): void => {
+      throw new Error('uninitialized')
+    }
+    let release = (): void => {
+      throw new Error('uninitialized')
+    }
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const pendingCleanup = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        run: async (threadId) => {
+          if (threadId === 'thread-1') {
+            await withIsolatedWorkerDispatchSlot(
+              { projectId: 'project-1', threadId: 'worker' },
+              async () => {
+                entered()
+                await pendingCleanup
+              },
+            )
+          }
+          return { usage: { inputTokens: 0, outputTokens: 0 }, messages: [] }
+        },
+      }),
+    )
+    const parent = dispatcher.dispatch(request())
+    await started
+    assert.equal(dispatcher.isActive('project-1', 'worker'), true)
+    assert.equal(dispatcher.beginThreadHistoryEdit('project-1', 'worker'), false)
+    await assert.rejects(dispatcher.dispatch(request({ threadId: 'worker' })), /already running/)
+    release()
+    await parent
+    assert.equal(dispatcher.isActive('project-1', 'worker'), false)
+    await dispatcher.dispatch(request({ threadId: 'worker' }))
+  })
+
   it('uses the dispatch slot as an exclusive history-edit fence', async () => {
     const dispatcher = new AgentDispatcher(host, registry, dependencies())
 
@@ -236,6 +286,32 @@ describe('AgentDispatcher', () => {
       { userContent: 'fix it', reviewContext: '<copse_review_report>…</copse_review_report>' },
       { userContent: 'continue', reviewContext: undefined },
     ])
+  })
+
+  it('tells the run when it is a long-horizon task wake', async () => {
+    const seen: Array<true | undefined> = []
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        run: async (_threadId, userContent, priorMessages, _host, _registry, options) => {
+          seen.push(options.longTaskWake)
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+
+    await dispatcher.dispatch(
+      request({
+        payload: { userContent: 'continue', invokedSkills: [], priorTodos: [], longTaskWake: true },
+      }),
+    )
+    await dispatcher.dispatch(request())
+
+    assert.deepEqual(seen, [true, undefined])
   })
 
   it('rebuilds history from the transcript when the sidecar is empty', async () => {

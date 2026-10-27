@@ -90,7 +90,10 @@ revisiting this document, not silently diverging in an implementation PR.
    invocation, already bounded by `maxSteps` / `DEFAULT_MAX_LLM_CALLS` and the run
    deadline). Hard cap default 5; existing per-mechanism caps (todo closeout 3,
    pre-review todo attempts 2, remediation cycles 2) remain as local tighteners inside
-   the shared cap. Cursor per-script `loop_limit` bounds _that script's_ contributions to
+   the shared cap. A long-horizon task wake carries the thread's open plan and skips the
+   pre-review todo gate: the next wake resumes that plan, so reconciling it would spend
+   up to two more units per wake and nudge the agent to cancel work it means to continue.
+   Cursor per-script `loop_limit` bounds _that script's_ contributions to
    `min(loop_limit, global remaining)`; `loop_limit: null` (unlimited) is clamped to the
    global cap with a warning — human-in-the-loop is the floor. Continuations are granted
    first-come in completion order. Each granted turn is a fresh run with its own
