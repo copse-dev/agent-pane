@@ -1146,12 +1146,16 @@
       "bytes": 7467
     },
     "code-block-run-hover.png": {
-      "sha256": "3b9318efe9414a3ba5b1f8cdfead2bb3455e70355330fe62668c6dbfc61aa1d6",
-      "bytes": 259466
+      "sha256": "caade14db558e4bc42e0ed031789a8b99e9223bad6d1f8ad434e3d664b72a8d5",
+      "bytes": 283075
     },
     "code-block-run-output-sent.png": {
-      "sha256": "137e9057b5c30c3a73a5206955af6ea946dab2b19da9a3e4111eaad2bea63244",
-      "bytes": 308958
+      "sha256": "defcccbe14f4d40eea963613a360d9d6513e07ed7d0cd42b20d2ead797c92c2c",
+      "bytes": 331086
+    },
+    "code-block-run-unlabelled-command.png": {
+      "sha256": "4171318370bfe9b83ae739213071820f89c4535cf955512cdce040c6f881eec6",
+      "bytes": 283100
     },
     "codex-workspace-routing-auth-error.png": {
       "sha256": "18c9afc2704b5536178b1b155d3b51e27a6014378b4652bc9513656532276239",
