@@ -4482,6 +4482,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       chatScrim.hidden = false;
       dialog.show();
     }
+    rejectButton.focus({ preventScroll: true });
     active = true;
     syncAttention();
   }
