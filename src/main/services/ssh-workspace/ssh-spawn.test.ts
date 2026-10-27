@@ -1,5 +1,8 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { getSetting, setSetting } from '../storage/settings.ts'
 import {
   getSshConnectionManager,
@@ -7,7 +10,9 @@ import {
   setSshTransportFactory,
 } from './connection-manager.ts'
 import { FakeSshTransport } from './fake-ssh-transport.ts'
-import { buildRemotePtyLaunch } from './ssh-spawn.ts'
+import { REMOTE_PGID_PREFIX } from './remote-env.ts'
+import { takeRemoteProcessMeta } from './remote-process-meta.ts'
+import { buildRemotePtyLaunch, spawnRemoteShellCommand } from './ssh-spawn.ts'
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 
 const TEST_HOST: SshWorkspaceHost = {
@@ -91,6 +96,56 @@ describe('buildRemotePtyLaunch', () => {
       assert.ok(remoteCmd)
       assert.match(remoteCmd, /exec '\/bin\/bash' -l/)
       launch.release()
+    })
+  })
+})
+
+describe('spawnRemoteShellCommand', () => {
+  const probes = (): FakeSshTransport =>
+    new FakeSshTransport([
+      { when: /^uname -s$/, stdout: 'Linux\n' },
+      { when: /^uname -m$/, stdout: 'x86_64\n' },
+      { when: /printf %s "\$SHELL"/, stdout: '/bin/bash' },
+      { when: /command -v git$/, stdout: '/usr/bin/git\n' },
+      { when: /command -v rg$/, stdout: '/usr/bin/rg\n' },
+    ])
+  let binDir: string
+  let previousPath: string | undefined
+
+  beforeEach(() => {
+    resetSshConnectionManagerForTests()
+    // A stand-in `ssh` that answers like the remote PGID wrapper does.
+    binDir = mkdtempSync(join(tmpdir(), 'copse-fake-ssh-'))
+    const fakeSsh = join(binDir, 'ssh')
+    writeFileSync(fakeSsh, `#!/bin/sh\nprintf '${REMOTE_PGID_PREFIX}4242\\nhello\\n'\n`)
+    chmodSync(fakeSsh, 0o755)
+    previousPath = process.env['PATH']
+    process.env['PATH'] = `${binDir}:${previousPath ?? ''}`
+  })
+
+  afterEach(() => {
+    if (previousPath === undefined) delete process.env['PATH']
+    else process.env['PATH'] = previousPath
+    rmSync(binDir, { recursive: true, force: true })
+    resetSshConnectionManagerForTests()
+  })
+
+  it('strips the PGID line when stdin is ignored but stdout is piped', async () => {
+    await withTestHost(async () => {
+      setSshTransportFactory(probes)
+      await getSshConnectionManager().connect('dev-box')
+      const proc = await spawnRemoteShellCommand('echo hello', {
+        hostId: 'dev-box',
+        remoteRoot: '/srv/app',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+      let output = ''
+      proc.stdout?.on('data', (chunk: Buffer) => {
+        output += chunk.toString()
+      })
+      await new Promise((resolve) => proc.on('close', resolve))
+      assert.equal(output, 'hello\n')
+      assert.equal(takeRemoteProcessMeta(proc)?.pgid, 4242)
     })
   })
 })

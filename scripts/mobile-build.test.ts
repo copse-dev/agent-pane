@@ -8,9 +8,16 @@ import { buildMobileAssets } from './mobile-build.mts'
 it('bundles the mobile entry and renders saved Markdown through activity navigation', async () => {
   const output = await mkdtemp('dist-mobile-test-')
   let dom: JSDOM | undefined
+  const channels: MessageChannel[] = []
   try {
     await buildMobileAssets(output)
+    const frameHtml = await readFile(join(output, 'mermaid-frame.html'), 'utf8')
+    assert.match(frameHtml, /http-equiv="Content-Security-Policy"[^>]*script-src 'sha256-/)
+    await assert.rejects(readFile(join(output, 'mermaid-frame.js')), 'the frame script is inlined')
     const css = await readFile(join(output, 'app.css'), 'utf8')
+    // The desktop's shared message styles ride along (copy controls, diagrams).
+    for (const selector of ['.code-block-copy', '.table-copy', '.mermaid-frame', '.hljs-'])
+      assert.ok(css.includes(selector), selector)
     assert.match(css, /\.topbar\s*\{[^}]*position: fixed/)
     assert.match(css, /\.topbar\s*\{[^}]*top: var\(--viewport-offset/)
     dom = new JSDOM(await readFile(join(output, 'index.html'), 'utf8'), {
@@ -25,6 +32,16 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
         observe(): void {}
         unobserve(): void {}
         disconnect(): void {}
+      },
+    })
+    // The Mermaid frame talks over a MessageChannel, which JSDOM lacks. Node's
+    // ports hold the process open, so each is closed when the test ends.
+    Object.defineProperty(window, 'MessageChannel', {
+      value: class extends MessageChannel {
+        constructor() {
+          super()
+          channels.push(this)
+        }
       },
     })
     const viewport = new window.EventTarget()
@@ -67,7 +84,7 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
     }
     let access = 'control'
     let streamedContent =
-      '# Heading\n\n**Bold** and `code`\n\n- First\n- Second\n\n> Quote\n\n```js\nconst x = 1\n```\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n[Docs](https://example.com)\n\n![Remote](https://example.com/image.png)\n\n<script>alert(1)</script>\n\n[Bad](javascript:alert(1))'
+      '# Heading\n\n**Bold** and `code`\n\n- First\n- Second\n\n> Quote\n\n```js\nconst x = 1\n```\n\n```mermaid\ngraph TD; A-->B\n```\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n[Docs](https://example.com)\n\n![Remote](https://example.com/image.png)\n\n<script>alert(1)</script>\n\n[Bad](javascript:alert(1))'
     window.localStorage.setItem('copse-mobile-token', 'test-token')
     Object.defineProperty(window, 'matchMedia', {
       value: (): { matches: boolean; addEventListener(): void } => ({
@@ -152,6 +169,21 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
       '_blank',
     )
     assert.equal(content.querySelector('script, [onclick], a[href^="javascript:"], img[src]'), null)
+    // The desktop transcript's rendering, shared through message-markdown.ts.
+    assert.ok(content.querySelector('pre code .hljs-keyword'), 'highlighted code')
+    assert.ok(content.querySelector('.code-block-copy'), 'code copy button')
+    assert.equal(content.querySelector('.code-block-run'), null, 'no Run on the phone')
+    assert.ok(content.querySelector('.table-copy'), 'table copy button')
+    const diagram = content.querySelector<HTMLIFrameElement>('pre.mermaid iframe')
+    assert.equal(diagram?.getAttribute('sandbox'), 'allow-scripts')
+    assert.equal(diagram.src, 'https://192.168.1.41:4000/mermaid-frame.html')
+    poll()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(
+      content.querySelector('pre.mermaid iframe'),
+      diagram,
+      'an unchanged poll leaves the rendered diagram alone',
+    )
     assert.ok(content.textContent.includes('<script>alert(1)</script>'))
     assert.equal(
       window.document.querySelectorAll('.message-content')[1]?.querySelector('strong')?.textContent,
@@ -234,6 +266,10 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
     assert.equal(window.document.getElementById('composer')?.hidden, false)
     assert.equal(window.document.activeElement, input, 'focuses when control reveals the composer')
   } finally {
+    for (const channel of channels) {
+      channel.port1.close()
+      channel.port2.close()
+    }
     dom?.window.close()
     await rm(output, { recursive: true, force: true })
   }

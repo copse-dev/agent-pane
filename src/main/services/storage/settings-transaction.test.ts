@@ -11,9 +11,12 @@ import { runWithExplicitSettings } from './settings-context.ts'
 type ReadableSchemas = typeof MAIN_ONLY_SETTING_SCHEMAS & typeof RENDERER_WRITABLE_SETTING_SCHEMAS
 type SchemaSnapshot = { [K in keyof ReadableSchemas]?: z.output<ReadableSchemas[K]> | undefined }
 type SchemaUpdate = {
-  -readonly [K in Exclude<keyof typeof RENDERER_WRITABLE_SETTING_SCHEMAS, 'trustedSshHosts'>]?:
-    | z.output<(typeof RENDERER_WRITABLE_SETTING_SCHEMAS)[K]>
-    | undefined
+  -readonly [
+    K in Exclude<
+      keyof typeof RENDERER_WRITABLE_SETTING_SCHEMAS,
+      'trustedSshHosts' | 'trustedPackageRegistries' | 'productionTargets'
+    >
+  ]?: z.output<(typeof RENDERER_WRITABLE_SETTING_SCHEMAS)[K]> | undefined
 } & { roleAssignments?: Record<string, string> | undefined }
 
 // Both directions catch narrowed values as well as missing or extra wire fields.
@@ -83,6 +86,8 @@ describe('ordinary Settings transaction boundary', () => {
     for (const key of [
       'localServerUrl',
       'trustedSshHosts',
+      'trustedPackageRegistries',
+      'productionTargets',
       'autoRunSandboxCommands',
       'apiKey.openai',
       'unknown',

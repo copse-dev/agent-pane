@@ -121,7 +121,7 @@ const AA_BODY_TEXT = 4.5
 /**
  * The light theme's code-block background, derived the way the browser does.
  *
- * `conversation.css` maps the markdown package's `--sm-code-bg` onto
+ * `markdown.css` maps the markdown package's `--sm-code-bg` onto
  * `--bg-elevated`, and light re-derives that surface as the whole-app tint mixed
  * into a light grey. Reading the numbers out of the stylesheets rather than
  * hard-coding them is deliberate: change the tint or the light boost and this
