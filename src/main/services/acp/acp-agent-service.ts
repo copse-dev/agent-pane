@@ -39,6 +39,7 @@ import {
 } from '@copse/llm/stream-retry.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import {
+  ACP_CANCEL_GRACE_MS,
   runAcpSessionPrompt,
   willSandboxAcpAgent,
   type AcpAgentProbe,
@@ -788,6 +789,18 @@ async function runAcpAgentTurn(
   // bridge tools. Retries reuse the same bytes and authorization identities.
   let invokedSkillsBlock: string | undefined
 
+  // The thread's model has dropped off the agent's list: say so in the thread.
+  // Like the handover note, straight to the caller's sink rather than
+  // `onChunk`, so it is not replayed to the agent as its own words and does
+  // not count as progress that blocks a retry. A retry runs on a fresh
+  // session, which would notice again; once per turn is enough.
+  let staleModelNoticed = false
+  const onStaleModel = (notice: string): void => {
+    if (staleModelNoticed) return
+    staleModelNoticed = true
+    options.onChunk({ type: 'text', text: notice })
+  }
+
   // One attempt = acquire (reuse the thread's live session, or open a fresh
   // one), install this turn's handlers, prompt. History is replayed only into
   // a FRESH session — a reused or resumed one already has its own memory of
@@ -869,7 +882,14 @@ async function runAcpAgentTurn(
     lastPrompt = promptBlocks.map((block) => (block.type === 'text' ? block.text : '')).join('')
     try {
       perfMark('ttft:acp-prompt-start', { fresh })
-      return await runAcpSessionPrompt(entry.open, promptBlocks, model, options.signal)
+      return await runAcpSessionPrompt(
+        entry.open,
+        promptBlocks,
+        model,
+        options.signal,
+        ACP_CANCEL_GRACE_MS,
+        { onStaleModel },
+      )
     } catch (err) {
       await disposeAcpSession(options.threadId, {
         preserveForResume: isAcpConnectionDropped(err),

@@ -142,6 +142,7 @@ function makeConfigAgent(opts: {
   calls: SetConfigCall[]
   prompts: number[]
 }): AgentApp {
+  let advertised = opts.configOptions
   return agent({ name: 'config-option-test-agent' })
     .onRequest('initialize', () => ({
       protocolVersion: PROTOCOL_VERSION,
@@ -149,12 +150,18 @@ function makeConfigAgent(opts: {
     }))
     .onRequest('session/new', () => ({
       sessionId: 'sess-1',
-      configOptions: opts.configOptions,
+      configOptions: advertised,
     }))
     .onRequest('session/set_config_option', (ctx) => {
-      opts.calls.push({ configId: ctx.params.configId, value: ctx.params.value })
+      const { configId, value } = ctx.params
+      opts.calls.push({ configId, value })
       // ACP has the agent echo the full, updated option set back.
-      return { configOptions: opts.configOptions }
+      advertised = advertised.map((option) =>
+        option.id === configId && option.type === 'select' && typeof value === 'string'
+          ? { ...option, currentValue: value }
+          : option,
+      )
+      return { configOptions: advertised }
     })
     .onRequest('session/prompt', () => {
       opts.prompts.push(1)
@@ -262,33 +269,23 @@ describe('config options switch live between turns', () => {
 })
 
 describe('runAcpSessionPrompt and a stale per-turn model pick', () => {
-  function captureHandlers(): { chunks: StreamChunk[]; current: AcpClientHandlers } {
-    const chunks: StreamChunk[] = []
-    return {
-      chunks,
-      current: {
-        onChunk: (chunk) => chunks.push(chunk),
-        requestPermission: (): ReturnType<AcpClientHandlers['requestPermission']> => {
-          throw new Error('not used by this test')
-        },
-      },
-    }
+  function captureNotices(): { notices: string[]; onStaleModel: (notice: string) => void } {
+    const notices: string[] = []
+    return { notices, onStaleModel: (notice) => notices.push(notice) }
   }
 
-  it('degrades to the agent’s current model and says so in the transcript', async () => {
+  it('degrades to the agent’s current model and tells a caller that asked', async () => {
     const { calls, open } = await openWith(undefined)
-    const { chunks, current } = captureHandlers()
-    open.handlers.current = current
+    const { notices, onStaleModel } = captureNotices()
     try {
-      await runAcpSessionPrompt(open, 'hello', 'opus-9000')
+      await runAcpSessionPrompt(open, 'hello', 'opus-9000', undefined, undefined, { onStaleModel })
 
       // Never attempts to apply a value the agent doesn't offer.
       assert.deepEqual(calls, [])
 
-      const [notice] = chunks
-      assert.equal(notice?.type, 'text')
-      assert.match(notice.text, /opus-9000/)
-      assert.match(notice.text, /no longer offered/)
+      assert.equal(notices.length, 1)
+      assert.match(notices[0] ?? '', /\(\*\*opus-9000\*\*\) is no longer offered/)
+      assert.match(notices[0] ?? '', /continuing on \*\*Sonnet\*\*/)
     } finally {
       await open.dispose()
     }
@@ -296,12 +293,11 @@ describe('runAcpSessionPrompt and a stale per-turn model pick', () => {
 
   it('notices once, not on every turn that keeps asking for the same stale model', async () => {
     const { open } = await openWith(undefined)
-    const { chunks, current } = captureHandlers()
-    open.handlers.current = current
+    const { notices, onStaleModel } = captureNotices()
     try {
-      await runAcpSessionPrompt(open, 'one', 'opus-9000')
-      await runAcpSessionPrompt(open, 'two', 'opus-9000')
-      assert.equal(chunks.length, 1)
+      await runAcpSessionPrompt(open, 'one', 'opus-9000', undefined, undefined, { onStaleModel })
+      await runAcpSessionPrompt(open, 'two', 'opus-9000', undefined, undefined, { onStaleModel })
+      assert.equal(notices.length, 1)
     } finally {
       await open.dispose()
     }
@@ -309,11 +305,48 @@ describe('runAcpSessionPrompt and a stale per-turn model pick', () => {
 
   it('says nothing when the per-turn model is known and current', async () => {
     const { open } = await openWith(undefined)
-    const { chunks, current } = captureHandlers()
-    open.handlers.current = current
+    const { notices, onStaleModel } = captureNotices()
     try {
-      await runAcpSessionPrompt(open, 'hello', 'sonnet')
+      await runAcpSessionPrompt(open, 'hello', 'sonnet', undefined, undefined, { onStaleModel })
+      assert.deepEqual(notices, [])
+    } finally {
+      await open.dispose()
+    }
+  })
+
+  it('puts nothing in the turn’s own output: the notice is opt-in', async () => {
+    // The advisor reads a turn's text as its result, so a caller that did not
+    // ask must not find the notice among the agent's chunks.
+    const { open } = await openWith(undefined)
+    const chunks: StreamChunk[] = []
+    const handlers: AcpClientHandlers = {
+      onChunk: (chunk) => chunks.push(chunk),
+      requestPermission: () => {
+        throw new Error('not used by this test')
+      },
+    }
+    open.handlers.current = handlers
+    try {
+      await runAcpSessionPrompt(open, 'hello', 'opus-9000')
       assert.deepEqual(chunks, [])
+    } finally {
+      await open.dispose()
+    }
+  })
+
+  it('names the model an earlier switch left the session on', async () => {
+    // Turn one switches to Opus; the agent never sends `config_option_update`,
+    // only the `set_config_option` reply. Turn two asks for a dropped model, so
+    // the notice must say the session continues on Opus, not on the Sonnet
+    // that `session/new` reported.
+    const { calls, open } = await openWith(undefined)
+    const { notices, onStaleModel } = captureNotices()
+    try {
+      await runAcpSessionPrompt(open, 'one', 'opus', undefined, undefined, { onStaleModel })
+      assert.deepEqual(calls, [{ configId: 'model', value: 'opus' }])
+      await runAcpSessionPrompt(open, 'two', 'opus-9000', undefined, undefined, { onStaleModel })
+      assert.equal(notices.length, 1)
+      assert.match(notices[0] ?? '', /continuing on \*\*Opus\*\*/)
     } finally {
       await open.dispose()
     }
