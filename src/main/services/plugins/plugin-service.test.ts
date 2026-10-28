@@ -7,9 +7,9 @@
 //  - Plugin settings persist under a plugin-scoped bag, keyed by field id.
 //  - The list snapshot reflects the current registry state + persisted values.
 //
-// electron-store is replaced by the shared test-shim (`storage.test-shim.ts`,
-// wired in `scripts/run-tests.mts`), so writes go through the same
-// write-queue used in production but land in an in-memory Map.
+// Unit tests install no electron-store backend, so the real `storage.ts` runs
+// over the in-memory store `@copse/store-kit` uses headless: writes go through
+// the same write-queue and cache as production but land in a Map.
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises'

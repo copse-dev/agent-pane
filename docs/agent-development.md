@@ -229,7 +229,7 @@ the regex script bridge are retired; the fixture source guard rejects them in ex
 Everything Copse persists lives under one root, `~/.copse/` (`COPSE_DIR` moves the whole profile).
 Keep `config.json` small: every `storage:set` makes the main process rewrite the whole file
 synchronously, so large or append-only data (logs, ledgers) belongs in its own file next to it —
-see `storageAppendFile` / `storageWriteFile` in `src/main/services/storage/storage.ts`.
+see `storageAppendFile` / `storageWriteFile` in `src/main/services/storage/user-data-files.ts`.
 
 | Path                                                                                 | Contents                                                              |
 | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
