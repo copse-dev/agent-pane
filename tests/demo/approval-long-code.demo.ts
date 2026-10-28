@@ -8,6 +8,7 @@ describe('long code approval in a short window', () => {
     await browser.url('/?scenario=approval-long-code')
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed()
+    await expect(dialog.$('.approval-reject')).toBeFocused()
     await prepareE2eScreenshot({ width: 1100, height: 400 })
     await expect(dialog.$('.approval-heading')).toHaveText('Run outside sandbox?')
     await expect(dialog.$('.approval-body')).toHaveText(
@@ -81,6 +82,9 @@ describe('long code approval in a short window', () => {
     assert.ok(scroll.itemsGap <= 1, 'request details reach the end')
     assert.ok(scroll.bodyGap <= 1, 'code body reaches the last line')
     assert.ok(scroll.footerBottom <= scroll.itemsBottom, 'footer becomes visible above the actions')
+    await expect(dialog.$('.approval-reject')).toBeFocused()
     await saveAppScreenshot('approval-long-code-short.png', { width: 1100, height: 400 })
+    await browser.keys('Enter')
+    await expect(dialog).not.toBeDisplayed()
   })
 })

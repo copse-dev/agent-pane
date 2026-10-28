@@ -219,7 +219,7 @@ describe('Models & agents list', () => {
     assert.equal(codex.querySelector('.acp-row-chip')?.textContent, 'Needs sign-in')
     assert.equal(
       rowEl(list.root, 'agent:claude-acp').querySelector('.acp-row-chip')?.textContent,
-      'Ready',
+      'Not verified',
     )
     const openai = rowEl(list.root, 'key:openai')
     assert.match(openai.textContent, /OpenAI API key/)
@@ -229,6 +229,127 @@ describe('Models & agents list', () => {
     assert.match(rowEl(list.root, 'server:ollama').textContent, /Running/)
     // Secrets never reach the renderer, so nothing key-like is shown.
     assert.doesNotMatch(list.root.textContent, /sk-/)
+  })
+
+  it('requires a successful session probe before Ready and supports retry after failure', async () => {
+    state.installed = new Set(['claude-acp'])
+    state.auth = new Map([['claude-acp', 'signed-out']])
+    const base = stubApi(state)
+    let accept = false
+    let calls = 0
+    const list = createModelsAgentsList(
+      {
+        ...base,
+        acp: {
+          ...base.acp,
+          probeAgent: async (id) => {
+            assert.equal(id, 'claude-acp')
+            calls += 1
+            if (!accept) throw new Error('Internal error')
+            return { models: null, modes: null }
+          },
+        },
+      },
+      { runInTerminal: () => undefined },
+    )
+    document.body.append(list.root)
+    await list.refresh()
+    assert.equal(calls, 0, 'opening Settings does not start an agent')
+    assert.match(rowEl(list.root, 'agent:claude-acp').textContent, /Needs sign-in/)
+    button(rowEl(list.root, 'agent:claude-acp'), 'Verify connection').click()
+    assert.equal(button(rowEl(list.root, 'agent:claude-acp'), 'Verifying…').disabled, true)
+    await settle()
+    let row = rowEl(list.root, 'agent:claude-acp')
+    assert.doesNotMatch(row.textContent, /Ready/)
+    assert.match(row.querySelector('[role="status"]')?.textContent ?? '', /could not be verified/)
+    assert.ok(button(row, 'Sign in'))
+    accept = true
+    button(row, 'Verify connection').click()
+    await settle()
+    row = rowEl(list.root, 'agent:claude-acp')
+    assert.equal(row.querySelector('.acp-row-chip')?.textContent, 'Ready')
+    assert.equal(row.querySelector('[role="status"]'), null)
+    assert.equal(
+      [...row.querySelectorAll('button')].some((b) => b.textContent === 'Sign in'),
+      false,
+    )
+    await list.refresh()
+    assert.doesNotMatch(rowEl(list.root, 'agent:claude-acp').textContent, /Ready/)
+    list.reset()
+  })
+
+  it('keeps a verified agent Ready when the window regains focus', async () => {
+    // API-key users: `claude auth status` reports signed out, Gemini reports unknown, and a
+    // custom agent is never scanned. A working session must outlast the focus re-check.
+    state.installed = new Set(['claude-acp', 'gemini'])
+    state.auth = new Map([['claude-acp', 'signed-out']])
+    state.agents = [{ id: 'mine', title: 'Mine', command: 'mine', enabled: true }]
+    const base = stubApi(state)
+    const list = createModelsAgentsList({
+      ...base,
+      acp: { ...base.acp, probeAgent: async () => ({ models: null, modes: null }) },
+    })
+    document.body.append(list.root)
+    await list.refresh()
+    const chipOf = (id: string): string | null | undefined =>
+      rowEl(list.root, `agent:${id}`).querySelector('.acp-row-chip')?.textContent
+    const ids = ['claude-acp', 'gemini', 'mine']
+    for (const id of ids) {
+      button(rowEl(list.root, `agent:${id}`), 'Verify connection').click()
+      await settle()
+      assert.equal(chipOf(id), 'Ready', id)
+    }
+    window.dispatchEvent(new Event('focus'))
+    await settle()
+    for (const id of ids) assert.equal(chipOf(id), 'Ready', `${id} after focus`)
+    // A later scan that reports a different status than at verify time invalidates it.
+    state.auth = new Map([
+      ['claude-acp', 'signed-out'],
+      ['gemini', 'signed-out'],
+    ])
+    window.dispatchEvent(new Event('focus'))
+    await settle()
+    assert.equal(chipOf('gemini'), 'Needs sign-in')
+    assert.equal(chipOf('claude-acp'), 'Ready')
+    assert.equal(chipOf('mine'), 'Ready')
+    list.reset()
+  })
+
+  it('keeps sign-in available when status cannot be determined', async () => {
+    state.installed = new Set(['claude-acp'])
+    const list = await mount({ runInTerminal: () => undefined })
+    const row = rowEl(list.root, 'agent:claude-acp')
+    assert.equal(row.querySelector('.acp-row-chip')?.textContent, 'Not verified')
+    assert.ok(button(row, 'Sign in'))
+    assert.ok(button(row, 'Verify connection'))
+    list.reset()
+  })
+
+  it('ignores verification completing after Settings closes', async () => {
+    state.installed = new Set(['claude-acp'])
+    const base = stubApi(state)
+    let complete = (): void => undefined
+    const list = createModelsAgentsList({
+      ...base,
+      acp: {
+        ...base.acp,
+        probeAgent: () =>
+          new Promise((resolve) => {
+            complete = (): void => {
+              resolve({ models: null, modes: null })
+            }
+          }),
+      },
+    })
+    document.body.append(list.root)
+    await list.refresh()
+    button(rowEl(list.root, 'agent:claude-acp'), 'Verify connection').click()
+    list.reset()
+    complete()
+    await settle()
+    await list.refresh()
+    assert.doesNotMatch(rowEl(list.root, 'agent:claude-acp').textContent, /Ready/)
+    list.reset()
   })
 
   it('lists a saved key as Saved even when its at-rest state is unknown', async () => {

@@ -28,17 +28,25 @@ describe('code block actions', () => {
     const codeBlocks = await $$(
       '[data-message-id="msg-assistant-code-blocks"] pre.code-block',
     ).getElements()
-    expect(codeBlocks).toHaveLength(2)
+    expect(codeBlocks).toHaveLength(3)
     await expect($('[data-message-id="msg-assistant-code-blocks"] .hljs-keyword')).toExist()
 
     const copyButtons = await $$(
       '[data-message-id="msg-assistant-code-blocks"] .code-block-copy',
     ).getElements()
-    expect(copyButtons).toHaveLength(2)
+    expect(copyButtons).toHaveLength(3)
     const runButtons = await $$(
       '[data-message-id="msg-assistant-code-blocks"] .code-block-run',
     ).getElements()
-    expect(runButtons).toHaveLength(1)
+    expect(runButtons).toHaveLength(2)
+
+    // An unlabelled fence starting with a common POSIX utility (`find`) still
+    // offers Run, same as an explicit ```bash fence.
+    const unlabelledRunButton = at([...runButtons], 1)
+    await at([...codeBlocks], 2).moveTo()
+    await expect(unlabelledRunButton).toHaveAttribute('aria-label', 'Run command')
+    await expect(unlabelledRunButton.$('svg[data-icon="play"]')).toExist()
+    await saveAppScreenshot('code-block-run-unlabelled-command.png')
 
     const firstBlock = at([...codeBlocks], 0)
     const firstCopy = at([...copyButtons], 0)

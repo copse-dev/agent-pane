@@ -27,10 +27,32 @@ describe('probeAcpAuth', () => {
     assert.equal(await probeAcpAuth('claude-acp', deps()), 'unknown')
   })
 
-  it('counts an API key in the agent environment as signed in', async () => {
+  it('does not treat configured credentials as a working sign-in', async () => {
+    for (const name of ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN']) {
+      const env = { [name]: 'invalid-test-credential' }
+      assert.equal(await probeAcpAuth('claude-acp', deps({ env })), 'unknown')
+      assert.equal(
+        await probeAcpAuth(
+          'claude-acp',
+          deps({
+            env,
+            exec: async () => '{"loggedIn":false}',
+          }),
+        ),
+        'signed-out',
+      )
+    }
     assert.equal(
-      await probeAcpAuth('claude-acp', deps({ env: { ANTHROPIC_API_KEY: 'sk-ant-x' } })),
-      'signed-in',
+      await probeAcpAuth('codex-acp', deps({ env: { OPENAI_API_KEY: 'invalid' } })),
+      'unknown',
+    )
+    assert.equal(
+      await probeAcpAuth('cursor', deps({ env: { CURSOR_API_KEY: 'invalid' } })),
+      'unknown',
+    )
+    assert.equal(
+      await probeAcpAuth('gemini', deps({ env: { GEMINI_API_KEY: 'invalid' } })),
+      'unknown',
     )
     assert.equal(await probeAcpAuth('gemini', deps({ env: { GEMINI_API_KEY: ' ' } })), 'signed-out')
   })

@@ -733,6 +733,10 @@ describe('ACP on SSH workspaces', () => {
 
   it('lifts the SSH block once remote ACP is opted in', async () => {
     await setSetting('acpOverSshEnabled', true)
+    await assert.rejects(
+      () => probeAcpAgentForSettings('unregistered-auth-test'),
+      /Enable this coding agent in Options/,
+    )
     // The agent isn't registered here, so it now fails PAST the SSH guard with a
     // different error — proving the guard no longer short-circuits on SSH.
     await assert.rejects(
