@@ -682,6 +682,27 @@
           1
         ]
       },
+      "client-actions:claim": {
+        "api": "clientActions.claim",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "client-actions:publish": {
+        "api": "clientActions.publish",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "client-actions:reply": {
+        "api": "clientActions.reply",
+        "args": [
+          2,
+          2
+        ]
+      },
       "close-confirm:respond": {
         "api": "closeConfirm.respond",
         "args": [
@@ -2921,6 +2942,13 @@
       },
       "canvas:show-artefact": {
         "api": "canvas.onShowArtefact",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "client-actions:invoke": {
+        "api": "clientActions.onInvoke",
         "args": [
           1,
           1

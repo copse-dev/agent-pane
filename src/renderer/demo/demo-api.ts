@@ -575,6 +575,12 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   )
 
   const api: ApiClient = {
+    clientActions: {
+      claim: () => Promise.resolve(false),
+      publish: async () => {},
+      reply: async () => {},
+      onInvoke: () => () => {},
+    },
     threadPrompts: {
       onPrompt: () => () => {},
       reply: async () => {},

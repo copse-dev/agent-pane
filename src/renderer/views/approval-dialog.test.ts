@@ -132,6 +132,7 @@ describe('approval dialog vs settings (issue #501)', () => {
     assert.equal(approvalSpy.showCalls, 1)
     assert.equal(approvalSpy.showModalCalls, 0)
     assert.equal(approvalDialog.open, true)
+    assert.equal(document.activeElement, qsRequired(approvalDialog, '.approval-reject'))
     assert.equal(approvalDialog.parentElement?.id, 'pane-chat')
     assert.equal(qsRequired(document, '.approval-chat-scrim').hidden, false)
   })
@@ -146,6 +147,7 @@ describe('approval dialog vs settings (issue #501)', () => {
     closeSettingsDialog()
     assert.equal(approvalSpy.showCalls, 1)
     assert.equal(approvalDialog.open, true)
+    assert.equal(document.activeElement, qsRequired(approvalDialog, '.approval-reject'))
   })
 
   it('shows a provider-host approval above settings without surfacing unrelated requests', () => {
@@ -156,6 +158,7 @@ describe('approval dialog vs settings (issue #501)', () => {
     assert.equal(approvalSpy.showModalCalls, 1)
     assert.equal(approvalSpy.showCalls, 0)
     assert.equal(approvalDialog.open, true)
+    assert.equal(document.activeElement, qsRequired(approvalDialog, '.approval-reject'))
     assert.equal(qsRequired(approvalDialog, '.approval-heading').textContent, 'Provider host')
     assert.equal(qsRequired(approvalDialog, '.approval-body').textContent, 'provider.example')
 

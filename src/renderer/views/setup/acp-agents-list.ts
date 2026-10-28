@@ -9,25 +9,26 @@ import { AGENT_LOGO_SVG } from './agent-logos.ts'
 
 // Coding-agent rows for the Models & agents list in Settings
 // (models-agents-list.ts): one row per agent that is on this device (or already
-// added), with a Ready / Needs sign-in chip beside its name. Agents that are not
+// added), with a connection/sign-in chip beside its name. Agents that are not
 // installed live behind "+ Add".
 
-export type AgentChip = 'ready' | 'needs-sign-in' | null
+export type AgentChip = 'ready' | 'needs-sign-in' | 'unverified'
 
 export interface AgentRowModel {
   id: string
   title: string
   chip: AgentChip
-  /** Command to copy when the agent needs signing in. */
+  /** Recovery remains available until a session probe succeeds. */
   signInCommand: string | null
 }
 
 /** What a row shows, from the device scan and the agent's own sign-in check. */
-export function agentChip(auth: AcpAuthState | undefined): AgentChip {
-  if (auth === 'signed-in') return 'ready'
+export function agentChip(auth: AcpAuthState | undefined, verified = false): AgentChip {
+  // A working session outranks the CLI's status: an API-key user can be "signed out" of the CLI.
+  if (verified) return 'ready'
   if (auth === 'signed-out') return 'needs-sign-in'
-  // `unknown` is "could not tell", so it must not claim either state.
-  return null
+  // Local credentials and CLI status do not establish a working connection.
+  return 'unverified'
 }
 
 /**
@@ -39,23 +40,29 @@ export function listedAgents(
   detected: ReadonlyMap<string, DetectedAcpAgent>,
   configured: readonly AcpAgentConfig[],
   auth: ReadonlyMap<string, AcpAuthState>,
+  verified: ReadonlySet<string> = new Set(),
 ): AgentRowModel[] {
   const configuredIds = new Set(configured.map((a) => a.id))
   const rows: AgentRowModel[] = []
   for (const k of known) {
     if (!configuredIds.has(k.id) && !detected.get(k.id)?.installed) continue
-    const chip = agentChip(auth.get(k.id))
+    const chip = agentChip(auth.get(k.id), verified.has(k.id))
     rows.push({
       id: k.id,
       title: k.title,
       chip,
-      signInCommand: chip === 'needs-sign-in' ? acpReauthCommand(k) : null,
+      signInCommand: chip !== 'ready' ? acpReauthCommand(k) : null,
     })
   }
   const knownIds = new Set(known.map((k) => k.id))
   for (const a of configured) {
     if (knownIds.has(a.id)) continue
-    rows.push({ id: a.id, title: a.title, chip: null, signInCommand: null })
+    rows.push({
+      id: a.id,
+      title: a.title,
+      chip: agentChip(auth.get(a.id), verified.has(a.id)),
+      signInCommand: null,
+    })
   }
   return rows
 }
