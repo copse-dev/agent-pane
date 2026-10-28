@@ -34,7 +34,7 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-U4WFJVOO.js";
+} from "./chunks/chunk-PRSXV62T.js";
 import "./chunks/chunk-D55J6ZRP.js";
 import {
   init_icons,
@@ -2097,7 +2097,7 @@ function approvalRiskScenario(id, request) {
     approvalRequests: [request]
   };
 }
-var FIXED_TIME, SIDE_CHATS_MAIN_ID, SIDE_CHATS_OTHER_ID, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, MOBILE_COMPANION_DEMO_URL, MOBILE_COMPANION_DEMO_QR_SVG, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, SIDE_CHATS_THREADS, DEMO_SCENARIOS;
+var FIXED_TIME, SIDE_CHATS_MAIN_ID, SIDE_CHATS_OTHER_ID, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, MOBILE_COMPANION_DEMO_URL, MOBILE_COMPANION_DEMO_QR_SVG, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, SIDE_CHATS_THREADS, SIDE_CHAT_RICH_THREADS, DEMO_SCENARIOS;
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
@@ -2450,6 +2450,45 @@ var init_demo_scenarios = __esm({
         updatedAt: FIXED_TIME + 1e3
       }
     ];
+    SIDE_CHAT_RICH_THREADS = SIDE_CHATS_THREADS.map(
+      (thread) => thread.id === "sc-side-1" ? {
+        ...thread,
+        title: "Why does the wait matter?",
+        messages: [
+          {
+            id: "sc-rich-user",
+            role: "user",
+            content: "Why does the wait matter?\nDraw the sequence.",
+            toolCalls: [],
+            createdAt: FIXED_TIME + 3100
+          },
+          {
+            id: "sc-rich-assistant",
+            role: "assistant",
+            content: [
+              "The svg only exists after Mermaid finishes:",
+              "",
+              "```mermaid",
+              "graph TD",
+              "  A[Navigate] --> B[Empty svg]",
+              "  B --> C[Rendered diagram]",
+              "```",
+              "",
+              "| Wait | Passes on |",
+              "| --- | --- |",
+              "| waitForExist | Empty svg |",
+              "| waitForDisplayed | Rendered diagram |",
+              "",
+              "```ts",
+              "await $('.mermaid svg').waitForDisplayed()",
+              "```"
+            ].join("\n"),
+            toolCalls: [],
+            createdAt: FIXED_TIME + 3900
+          }
+        ]
+      } : thread
+    );
     DEMO_SCENARIOS = [
       // The first scenario remains the marketing landing walkthrough.
       {
@@ -4877,6 +4916,23 @@ var init_demo_scenarios = __esm({
         threads: SIDE_CHATS_THREADS
       },
       {
+        id: "side-chat-rich-markdown",
+        label: "A side chat reply with a diagram, a table and code",
+        project: project("demo-side-chat-rich", "Widgets", "/demo/widgets"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          layout: {
+            projectsPaneWidth: 240,
+            filesPaneWidth: 680,
+            filesPaneHeight: 360,
+            fileTreeWidth: 180
+          }
+        },
+        threads: SIDE_CHAT_RICH_THREADS
+      },
+      {
         id: "side-chats-restored",
         label: "Side chats after an app restart",
         project: project("demo-side-chats-restored", "Widgets", "/demo/widgets"),
@@ -5520,6 +5576,15 @@ function createDemoApi(scenario2, options = {}) {
     typeof scenarioModel === "string" ? scenarioModel : void 0
   );
   const api = {
+    clientActions: {
+      claim: () => Promise.resolve(false),
+      publish: async () => {
+      },
+      reply: async () => {
+      },
+      onInvoke: () => () => {
+      }
+    },
     threadPrompts: {
       onPrompt: () => () => {
       },
@@ -7137,7 +7202,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-KTKY7RRK.js").then(async (main) => {
+    void import("./chunks/main-TQKKNWWG.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(

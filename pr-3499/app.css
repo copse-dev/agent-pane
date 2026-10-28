@@ -3972,7 +3972,6 @@ html.is-popout .thread-context-close {
 .side-chat-msg.is-user {
   align-self: flex-end;
   background: var(--bg-selected);
-  white-space: pre-wrap;
 }
 .side-chat-msg.is-error {
   align-self: flex-start;
@@ -4006,11 +4005,16 @@ html.is-popout .thread-context-close {
 .side-chat-msg.is-assistant :is(li + li) {
   margin-top: var(--spacing-xs);
 }
-.side-chat-msg.is-assistant > :first-child {
+.side-chat-msg.is-user > :first-child,
+.side-chat-msg-text > :first-child {
   margin-top: 0;
 }
-.side-chat-msg.is-assistant > :last-child {
+.side-chat-msg.is-user > :last-child,
+.side-chat-msg-text > :last-child {
   margin-bottom: 0;
+}
+.side-chat-tools:empty {
+  display: none;
 }
 .side-chat-tool {
   margin-top: 4px;
@@ -5817,31 +5821,6 @@ label {
   font-weight: 400;
   letter-spacing: -0.02em;
 }
-.streaming-markdown {
-  --sm-space-xs: var(--spacing-xs);
-  --sm-space-sm: var(--spacing-sm);
-  --sm-space-md: var(--spacing-md);
-  --sm-radius: var(--radius);
-  --sm-font-mono: var(--font-mono);
-  --sm-font-size-sm: var(--font-size-sm);
-  --sm-fg-muted: var(--text-secondary);
-  --sm-border: var(--border);
-  --sm-accent: var(--accent);
-  --sm-link: var(--link);
-  --sm-code-bg: var(--bg-elevated);
-  --sm-error: var(--error);
-  --sm-alert-note: var(--info);
-  --sm-alert-tip: var(--success);
-  --sm-alert-important: var(--important);
-  --sm-alert-warning: var(--warning);
-  --sm-alert-caution: var(--danger);
-}
-.streaming-markdown a {
-  color: var(--link);
-}
-.streaming-markdown a:hover {
-  color: var(--link-hover);
-}
 .message-text:empty {
   display: none;
 }
@@ -6251,125 +6230,6 @@ span.acp-resource-title {
   color: var(--text-muted);
   font-style: italic;
 }
-.message-text .remote-artifact-image {
-  display: block;
-  max-width: 100%;
-  max-height: min(520px, 60vh);
-  margin: var(--spacing-sm) 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-elevated);
-  object-fit: contain;
-}
-.message-text .code-block-shell {
-  position: relative;
-}
-.code-block-actions {
-  position: absolute;
-  top: var(--spacing-xs);
-  right: var(--spacing-xs);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  z-index: 1;
-}
-.code-block-copy,
-.code-block-run {
-  opacity: 0;
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 2px 8px;
-  transition: opacity 0.1s;
-}
-.code-block-run {
-  display: inline-grid;
-  min-width: 24px;
-  min-height: 22px;
-  place-items: center;
-  padding: 2px 5px;
-}
-.code-block-run.is-running .ui-icon {
-  animation: ui-inline-status-spin 0.9s linear infinite;
-}
-.message-text .code-block-shell:hover .code-block-actions > button,
-.message-text .code-block-shell:focus-within .code-block-actions > button {
-  opacity: 1;
-}
-.message-text:has(.code-block-shell:hover) .code-block-shell:not(:hover):not(:focus-within) .code-block-actions > button,
-.message-text:has(.code-block-shell:focus-within) .code-block-shell:not(:focus-within):not(:hover) .code-block-actions > button {
-  opacity: 0;
-}
-@media (prefers-reduced-motion: reduce) {
-  .code-block-run.is-running .ui-icon {
-    animation: none;
-  }
-}
-.code-block-output {
-  margin-top: var(--spacing-xs);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius);
-  background: var(--bg-base);
-  font-size: var(--font-size-sm);
-}
-.code-block-output-summary {
-  padding: 4px var(--spacing-sm);
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  cursor: pointer;
-}
-.code-block-output[data-run-state=failed] > .code-block-output-summary {
-  color: var(--error);
-}
-.code-block-output-text,
-.code-block-output-empty {
-  max-height: 240px;
-  overflow: auto;
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border-top: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  white-space: pre;
-}
-.code-block-output-empty {
-  color: var(--text-muted);
-  font-style: italic;
-}
-.message-text .table-copy-shell {
-  position: relative;
-  margin: var(--spacing-sm) 0;
-}
-.message-text table:not(.table-copy-scroll > table) {
-  margin-block: var(--spacing-sm);
-}
-.message-text .table-copy-scroll {
-  overflow-x: auto;
-  max-width: 100%;
-}
-.message-text .table-copy-scroll > table {
-  margin: 0;
-  overflow: hidden;
-}
-.table-copy {
-  position: absolute;
-  top: var(--spacing-xs);
-  right: var(--spacing-xs);
-  opacity: 0;
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 2px 8px;
-  transition: opacity 0.1s;
-  z-index: 1;
-}
-.message-text .table-copy-shell:hover .table-copy,
-.message-text .table-copy-shell:focus-within .table-copy {
-  opacity: 1;
-}
 .transcript-attachment-chip {
   display: inline-flex;
   align-items: center;
@@ -6552,6 +6412,31 @@ span.acp-resource-title {
 /* src/renderer/styles/global/markdown.css */
 .streaming-markdown {
   text-wrap: pretty;
+}
+.streaming-markdown {
+  --sm-space-xs: var(--spacing-xs);
+  --sm-space-sm: var(--spacing-sm);
+  --sm-space-md: var(--spacing-md);
+  --sm-radius: var(--radius);
+  --sm-font-mono: var(--font-mono);
+  --sm-font-size-sm: var(--font-size-sm);
+  --sm-fg-muted: var(--text-secondary);
+  --sm-border: var(--border);
+  --sm-accent: var(--accent);
+  --sm-link: var(--link);
+  --sm-code-bg: var(--bg-elevated);
+  --sm-error: var(--error);
+  --sm-alert-note: var(--info);
+  --sm-alert-tip: var(--success);
+  --sm-alert-important: var(--important);
+  --sm-alert-warning: var(--warning);
+  --sm-alert-caution: var(--danger);
+}
+.streaming-markdown a {
+  color: var(--link);
+}
+.streaming-markdown a:hover {
+  color: var(--link-hover);
 }
 .streaming-markdown :is(pre, code, table) {
   text-wrap-style: auto;
@@ -6859,6 +6744,131 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .message-text .mermaid-frame {
   max-width: 100%;
+}
+.message-text .remote-artifact-image {
+  display: block;
+  max-width: 100%;
+  max-height: min(520px, 60vh);
+  margin: var(--spacing-sm) 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  object-fit: contain;
+}
+.message-text .code-block-shell {
+  position: relative;
+}
+.code-block-actions {
+  position: absolute;
+  top: var(--spacing-xs);
+  right: var(--spacing-xs);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 1;
+}
+.code-block-copy,
+.code-block-run {
+  opacity: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px 8px;
+  transition: opacity 0.1s;
+}
+.code-block-run {
+  display: inline-grid;
+  min-width: 24px;
+  min-height: 22px;
+  place-items: center;
+  padding: 2px 5px;
+}
+.code-block-run.is-running .ui-icon {
+  animation: ui-inline-status-spin 0.9s linear infinite;
+}
+.message-text .code-block-shell:hover .code-block-actions > button,
+.message-text .code-block-shell:focus-within .code-block-actions > button {
+  opacity: 1;
+}
+.message-text:has(.code-block-shell:hover) .code-block-shell:not(:hover):not(:focus-within) .code-block-actions > button,
+.message-text:has(.code-block-shell:focus-within) .code-block-shell:not(:focus-within):not(:hover) .code-block-actions > button {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .code-block-run.is-running .ui-icon {
+    animation: none;
+  }
+}
+.code-block-output {
+  margin-top: var(--spacing-xs);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  font-size: var(--font-size-sm);
+}
+.code-block-output-summary {
+  padding: 4px var(--spacing-sm);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+.code-block-output[data-run-state=failed] > .code-block-output-summary {
+  color: var(--error);
+}
+.code-block-output-text,
+.code-block-output-empty {
+  max-height: 240px;
+  overflow: auto;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  white-space: pre;
+}
+.code-block-output-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.message-text .table-copy-shell {
+  position: relative;
+  margin: var(--spacing-sm) 0;
+}
+.message-text table:not(.table-copy-scroll > table) {
+  margin-block: var(--spacing-sm);
+}
+.message-text .table-copy-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.message-text .table-copy-scroll > table {
+  margin: 0;
+  overflow: hidden;
+}
+.table-copy {
+  position: absolute;
+  top: var(--spacing-xs);
+  right: var(--spacing-xs);
+  opacity: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px 8px;
+  transition: opacity 0.1s;
+  z-index: 1;
+}
+.message-text .table-copy-shell:hover .table-copy,
+.message-text .table-copy-shell:focus-within .table-copy {
+  opacity: 1;
+}
+@media (hover: none) {
+  .message-text .code-block-actions > button,
+  .message-text .table-copy {
+    opacity: 1;
+  }
 }
 
 /* src/renderer/styles/global/tool-cards.css */
