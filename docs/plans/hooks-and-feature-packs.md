@@ -77,9 +77,17 @@ revisiting this document, not silently diverging in an implementation PR.
    deadline. Explicit Stop still cancels foreground work. No mid-turn injection
    path exists for async hooks; late results are therefore safe by construction.
 5. **One auto-continuation budget.** A single counter per **turn tree** (everything
-   descending from one human-originated submission). The ledger counts
+   descending from one human-originated submission). Change acceptance wakes the
+   proposing thread after successful GUI application, at most once per approval batch
+   and originating epoch. The wake waits until the thread runs no turn and no machine
+   wake already dispatched to it; approvals for the same epoch made while it waits
+   join it, so accepting files one at a time while the thread is busy costs one
+   continuation rather than one per file. It uses `dispatchMachine` with the same
+   stale-epoch and budget checks, but its internal prompt adds no chat message. An ACP
+   write already waiting for its approval response receives no duplicate wake.
+   The ledger counts
    **machine-initiated new model turns** only: hook send-now, `stop`/`subagentStop`
-   follow-ups, bounded background-task completion wakes, durable CI status-change wakes,
+   follow-ups, bounded background-task completion wakes, change-acceptance wakes, durable CI status-change wakes,
    long-horizon task wakes (`long-task-wake.ts`, dispatched through `dispatchMachine` on the
    originating turn tree), ACP agent self-resumes (below), ACP unfinished-turn recovery, post-turn remediation cycles,
    pre-review todo attempts, and todo-closeout turns. Agent-managed external-agent
@@ -90,7 +98,10 @@ revisiting this document, not silently diverging in an implementation PR.
    invocation, already bounded by `maxSteps` / `DEFAULT_MAX_LLM_CALLS` and the run
    deadline). Hard cap default 5; existing per-mechanism caps (todo closeout 3,
    pre-review todo attempts 2, remediation cycles 2) remain as local tighteners inside
-   the shared cap. Cursor per-script `loop_limit` bounds _that script's_ contributions to
+   the shared cap. A long-horizon task wake carries the thread's open plan and skips the
+   pre-review todo gate: the next wake resumes that plan, so reconciling it would spend
+   up to two more units per wake and nudge the agent to cancel work it means to continue.
+   Cursor per-script `loop_limit` bounds _that script's_ contributions to
    `min(loop_limit, global remaining)`; `loop_limit: null` (unlimited) is clamped to the
    global cap with a warning — human-in-the-loop is the floor. Continuations are granted
    first-come in completion order. Each granted turn is a fresh run with its own

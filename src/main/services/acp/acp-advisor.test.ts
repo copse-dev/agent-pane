@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { ndJsonStream } from '@agentclientprotocol/sdk'
+import { agent, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { buildAcpAgentApp, type AcpTurnRunner } from './acp-agent-server.ts'
 import type { AcpTransportFactory } from './acp-client.ts'
@@ -78,6 +78,66 @@ describe('runAcpAdvisorSession', () => {
 
     assert.deepEqual(decisions, ['reject'])
     assert.equal(result.text, 'Advice without tools.')
+  })
+
+  it('returns only the advice when its model is no longer offered', async () => {
+    // An `acp:<agent>` advisor whose stored model dropped off the agent's list.
+    // The thread's stale-model notice is copy for the person reading the
+    // transcript; the advice is a tool result the executor model reads, and a
+    // consultation opens a fresh session every time, so any notice here would
+    // ride on every single answer.
+    const setConfigCalls: unknown[] = []
+    const app = agent({ name: 'stale-model-advisor' })
+      .onRequest('initialize', () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: { loadSession: false },
+      }))
+      .onRequest('session/new', () => ({
+        sessionId: 'advisor-1',
+        configOptions: [
+          {
+            id: 'model',
+            name: 'Model',
+            category: 'model',
+            type: 'select',
+            currentValue: 'sonnet',
+            options: [{ value: 'sonnet', name: 'Sonnet' }],
+          },
+        ],
+      }))
+      .onRequest('session/set_config_option', (ctx) => {
+        setConfigCalls.push(ctx.params.value)
+        return { configOptions: [] }
+      })
+      .onRequest('session/prompt', async (ctx) => {
+        await ctx.client.notify(methods.client.session.update, {
+          sessionId: ctx.params.sessionId,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'Advice: split the migration.' },
+          },
+        })
+        return { stopReason: 'end_turn' }
+      })
+    const c2a = new TransformStream<Uint8Array, Uint8Array>()
+    const a2c = new TransformStream<Uint8Array, Uint8Array>()
+    app.connect(ndJsonStream(a2c.writable, c2a.readable))
+
+    const result = await runAcpAdvisorSession(
+      { command: 'unused', cwd: '/tmp/project' },
+      'opus-9000',
+      'transcript',
+      new AbortController().signal,
+      () =>
+        Promise.resolve({
+          stream: ndJsonStream(c2a.writable, a2c.readable),
+          dispose: (): void => {},
+        }),
+    )
+
+    assert.equal(result.text, 'Advice: split the migration.')
+    // Still never asks for a model the agent does not offer.
+    assert.deepEqual(setConfigCalls, [])
   })
 })
 

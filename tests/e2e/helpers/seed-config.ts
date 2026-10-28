@@ -2589,6 +2589,12 @@ export function seedCodeBlockCopyFixture(workspaceRoot: string): void {
     '```bash',
     'node -e "console.log(424242)"',
     '```',
+    '',
+    'Or clean up stale profiles first:',
+    '',
+    '```',
+    "find . -maxdepth 1 -name '.wdio-profile-*' -exec rm -rf {} +",
+    '```',
   ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
