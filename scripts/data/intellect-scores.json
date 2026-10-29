@@ -9406,6 +9406,569 @@
       "indexVersion": "v4.3",
       "source": "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-high', fetched 2026-10-27",
       "asOf": "2026-10-27"
+    },
+    {
+      "modelId": "claude-sonnet-5-5-medium",
+      "value": 30.3,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-medium', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "claude-fable-5-1-low",
+      "value": 38.5,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'claude-fable-5-1-low', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-1-sol-xhigh",
+      "value": 52.3,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-1-sol-xhigh', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gemini-3-5-flash-lite",
+      "value": 11.7,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gemini-3-5-flash-lite', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "step-5",
+      "value": 28.5,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'step-5', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-1-terra-non-reasoning",
+      "value": 30.4,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-1-terra-non-reasoning', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "inkling",
+      "value": 12.5,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'inkling', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "mimo-v2-6-flash",
+      "value": 26.7,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'mimo-v2-6-flash', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-luna-xhigh",
+      "value": 23.3,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-luna-xhigh', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-astra-xhigh",
+      "value": 55.3,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-astra-xhigh', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "claude-haiku-5-5-high",
+      "value": 29.6,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'claude-haiku-5-5-high', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "grok-4-7-low",
+      "value": 30.9,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'grok-4-7-low', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "mimo-v2-6-pro",
+      "value": 29.9,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'mimo-v2-6-pro', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "claude-sonnet-5-5-high",
+      "value": 41.1,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-high', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "grok-4-7-high",
+      "value": 35,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'grok-4-7-high', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "MiniMaxAI/MiniMax-M3",
+      "value": 18.7,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'minimax-m3', fetched 2026-10-29",
+      "asOf": "2026-10-29",
+      "aliases": ["MiniMax-M3", "minimax/minimax-m3", "minimax-m3"]
+    },
+    {
+      "modelId": "mistral-large-4-medium",
+      "value": 23.1,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'mistral-large-4-medium', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "command-a-plus",
+      "value": 6.2,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'command-a-plus', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-astra",
+      "value": 56.9,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-astra', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "claude-opus-5-5",
+      "value": 58.4,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'claude-opus-5-5', fetched 2026-10-29",
+      "asOf": "2026-10-29",
+      "aliases": ["Opus 5.5", "anthropic/claude-opus-5-5", "claude-opus-5-5-latest"]
+    },
+    {
+      "modelId": "mistral-large-4-preview",
+      "value": 25.3,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'mistral-large-4-preview', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "muse-spark-open",
+      "value": 24.7,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'muse-spark-open', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-luna-medium",
+      "value": 18.3,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-luna-medium', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "claude-fable-5-1-medium",
+      "value": 43,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'claude-fable-5-1-medium', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-1-sol-high",
+      "value": 50.2,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-1-sol-high', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "claude-fable-5-1",
+      "value": 49,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'claude-fable-5-1', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "claude-haiku-5-5-xhigh",
+      "value": 34.3,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'claude-haiku-5-5-xhigh', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "claude-haiku-5-5-low",
+      "value": 18.6,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'claude-haiku-5-5-low', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "claude-opus-5-5-low",
+      "value": 34.5,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'claude-opus-5-5-low', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "ling-3-1-flash-1019",
+      "value": 29.5,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'ling-3-1-flash-1019', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "muse-glimmer",
+      "value": 6.3,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'muse-glimmer', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "grok-4-7",
+      "value": 34.3,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'grok-4-7', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "nvidia-nemotron-3-ultra-550b-a55b",
+      "value": 11.8,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'nvidia-nemotron-3-ultra-550b-a55b', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-luna-non-reasoning",
+      "value": 9.4,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-luna-non-reasoning', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "kimi-k3-1-pro",
+      "value": 46,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'kimi-k3-1-pro', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "reflection-beam",
+      "value": 17.7,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'reflection-beam', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-luna",
+      "value": 27.8,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-luna', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "inkling-small",
+      "value": 12.9,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'inkling-small', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gemini-3-8-flash-medium",
+      "value": 30,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gemini-3-8-flash-medium', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "claude-haiku-5-5",
+      "value": 36.2,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'claude-haiku-5-5', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-luna-high",
+      "value": 21.4,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-luna-high', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "deepseek-v4-pro",
+      "value": 23.1,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'deepseek-v4-pro', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gemini-3-8-flash",
+      "value": 30.5,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gemini-3-8-flash', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gemini-4-carbon",
+      "value": 59.4,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gemini-4-carbon', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "claude-sonnet-5-5-xhigh",
+      "value": 49.6,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-xhigh', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "muse-spark-1-3",
+      "value": 36.4,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'muse-spark-1-3', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "claude-fable-5-1-xhigh",
+      "value": 49.7,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'claude-fable-5-1-xhigh', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "claude-fable-5-1-high",
+      "value": 47,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'claude-fable-5-1-high', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "nvidia-nemotron-3-nano-4b",
+      "value": 1.8,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'nvidia-nemotron-3-nano-4b', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-1-sol-medium",
+      "value": 46.1,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-1-sol-medium', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-astra-low",
+      "value": 43,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-astra-low', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "claude-haiku-5-5-medium",
+      "value": 24.6,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'claude-haiku-5-5-medium', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "qwen3-8-27b",
+      "value": 20.1,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'qwen3-8-27b', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-1-terra",
+      "value": 51,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-1-terra', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "qwen3-8-max",
+      "value": 33.6,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'qwen3-8-max', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "claude-sonnet-5-5",
+      "value": 54.2,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'claude-sonnet-5-5', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-1-sol",
+      "value": 54.5,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-1-sol', fetched 2026-10-29",
+      "asOf": "2026-10-29",
+      "aliases": ["GPT-6.1 Sol", "gpt-6.1-sol", "openai/gpt-6.1-sol"]
+    },
+    {
+      "modelId": "k2-horizon-375b-a23b",
+      "value": 17.8,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'k2-horizon-375b-a23b', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "claude-sonnet-5-5-low",
+      "value": 25.3,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-low', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-luna-low",
+      "value": 9.7,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-luna-low', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-1-terra-medium",
+      "value": 38.1,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-1-terra-medium', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-1-terra-low",
+      "value": 29.2,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-1-terra-low', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "glm-5-3-low",
+      "value": 23.1,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'glm-5-3-low', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "glm-5-3",
+      "value": 31.7,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'glm-5-3', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gemini-4-argon",
+      "value": 50.4,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gemini-4-argon', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "minimax-m3-1-flash",
+      "value": 28.9,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'minimax-m3-1-flash', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "claude-opus-5-5-xhigh",
+      "value": 57,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'claude-opus-5-5-xhigh', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-astra-high",
+      "value": 54.8,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-astra-high', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "nemotron-3-5-super-vl",
+      "value": 13.6,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'nemotron-3-5-super-vl', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-1-sol-low",
+      "value": 34.5,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-1-sol-low', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-1-terra-xhigh",
+      "value": 45,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-1-terra-xhigh', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-astra-medium",
+      "value": 51.5,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-astra-medium', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "muse-wonder-full",
+      "value": 49.7,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'muse-wonder-full', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gpt-6-1-terra-high",
+      "value": 42.3,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gpt-6-1-terra-high', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "mistral-large-4",
+      "value": 26,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'mistral-large-4', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "claude-opus-5-5-medium",
+      "value": 48.1,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'claude-opus-5-5-medium', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "deepseek-v4-1-flash-1017",
+      "value": 32.5,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "claude-opus-5-5-high",
+      "value": 51.7,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'claude-opus-5-5-high', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "gemini-3-8-flash-low",
+      "value": 22.3,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gemini-3-8-flash-low', fetched 2026-10-29",
+      "asOf": "2026-10-29"
+    },
+    {
+      "modelId": "muse-wonder",
+      "value": 43.3,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'muse-wonder', fetched 2026-10-29",
+      "asOf": "2026-10-29"
     }
   ],
   "wanted": [
