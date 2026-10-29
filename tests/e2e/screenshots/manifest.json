@@ -3841,6 +3841,18 @@
       "sha256": "911feb807cca57d81bd25e315e29a599d2e12becbece9d1a9773a0c69481a31e",
       "bytes": 39270
     },
+    "settings-container-storage-busy.png": {
+      "sha256": "eb5fde43d9d71f0be730aa27bc47875aeb213fee8821d7ea3189713d7d22064b",
+      "bytes": 67814
+    },
+    "settings-container-storage-confirm.png": {
+      "sha256": "d013a4f5436d27c490b1b929a6020dc49b9f31c7fc55279922a966780e97b41c",
+      "bytes": 19312
+    },
+    "settings-container-storage.png": {
+      "sha256": "c085664d40715c87c97ba43497c26a5c5ca9abd176b227a1437e9b57830498d3",
+      "bytes": 71914
+    },
     "settings-content-full-width-scroll.png": {
       "sha256": "3bc92ad8728b44d50a77fcb300fc6589ce06b7e23d250353a0786de5cf4b52c0",
       "bytes": 102410
