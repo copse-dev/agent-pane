@@ -300,6 +300,25 @@ describe('settings automations plugin', function () {
     assert.match(await detail.$('.automation-permissions').getText(), /Allowed without asking/)
     assert.match(await detail.$('.automation-permissions').getText(), /Copse action/)
     const filter = detail.$('.automation-permission-filter')
+    for (const tool of [
+      'git_push',
+      'gh_pr_merge',
+      'gh_pr_comment',
+      'gh_pr_resolve_review_thread',
+    ]) {
+      const row = detail.$(`.automation-permission-row[title="${tool}"]`)
+      await expect(row).toExist()
+      await expect(row.$('input')).not.toBeChecked()
+    }
+    await filter.setValue('git_push')
+    await browser.waitUntil(
+      async () => (await detail.$$('.automation-permission-row')).length === 1,
+    )
+    await detail
+      .$('.automation-permission-row[title="git_push"] .automation-permission-switch')
+      .click()
+    await expect(detail.$('.automation-permission-row[title="git_push"] input')).toBeChecked()
+    await saveElementScreenshot('.automation-permissions', 'settings-automation-push-grant.png')
     await filter.setValue('publish_weekly')
     await browser.waitUntil(
       async () => (await detail.$$('.automation-permission-row').getElements()).length === 1,
@@ -325,6 +344,13 @@ describe('settings automations plugin', function () {
     assert.ok(formActions.buttons[0]?.classes.includes('ui-btn-primary'), 'Save is the primary')
     assert.ok(formActions.buttons[1]?.classes.includes('ui-btn-secondary'), 'Cancel is secondary')
     await saveSettingsSection('.automation-form', 'settings-automation-form.png')
+    await detail.$('.automation-save-btn').click()
+    await expect(detail.$('.automation-form')).not.toExist()
+    await detail.$('.automation-row .automation-row-btn').click()
+    await expect(detail.$('.automation-permission-row[title="git_push"] input')).toBeChecked()
+    await expect(
+      detail.$('.automation-permission-row[title="gh_pr_merge"] input'),
+    ).not.toBeChecked()
     await detail.$('.automation-cancel-btn').click()
     await expect(dialog.$('.settings-buttons')).toBeDisplayed()
   })

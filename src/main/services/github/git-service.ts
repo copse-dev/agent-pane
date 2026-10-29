@@ -1246,20 +1246,27 @@ export interface GitPushResult {
 export async function pushBranchToOrigin(
   branch: string,
   root: string | null = getAgentExecutionRoot(),
+  expectedRemoteSha?: string,
 ): Promise<GitPushResult> {
   if (!root) return { ok: false, message: 'No workspace open.' }
+  if (expectedRemoteSha !== undefined && !/^[a-f0-9]{40}$/i.test(expectedRemoteSha)) {
+    return { ok: false, message: 'Expected remote SHA must be a full 40-character commit SHA.' }
+  }
   if (!(await localBranchExists(root, branch))) {
     return { ok: false, message: `Local branch ${branch} does not exist.` }
   }
 
   const ref = `refs/heads/${branch}`
+  const lease =
+    expectedRemoteSha === undefined ? [] : [`--force-with-lease=${ref}:${expectedRemoteSha}`]
   const { stdout, stderr, code } = await runCommand(
     'git',
-    ['push', '--set-upstream', 'origin', `${ref}:${ref}`],
+    ['push', '--set-upstream', ...lease, 'origin', `${ref}:${ref}`],
     {
       cwd: root,
-      // This is called only after the user approved `gh_pr_create` / `gh_push` or confirmed
-      // the composer dialog. A sandboxed push cannot reach the remote.
+      // Callers require an approved `gh_pr_create` / `gh_push` / `git_push` action (or an
+      // exact automation grant), or a confirmed composer dialog. A sandboxed push
+      // cannot reach the remote.
       unsandboxed: true,
       timeout_ms: 120_000,
     },

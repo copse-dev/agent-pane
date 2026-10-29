@@ -1000,6 +1000,14 @@ the current thread. Later user turns use ordinary interactive approval.
 Resolving a queued request records the human decision; it does not prove that
 the original action ran.
 
+PR maintenance also offers separate grants for `git_push`, `gh_pr_merge`, `gh_pr_comment`,
+and `gh_pr_resolve_review_thread`. Push publishes one branch to origin and only replaces
+rewritten history with an explicit full remote SHA lease. Merge uses the repository's
+merge strategy and requires an expected head SHA; it never requests administrator bypass.
+Review-thread resolution checks the thread's repository and PR before mutation. The three
+PR maintenance actions require the host GitHub CLI. These grants do not authorize shell
+scripts, general network access, or tool calls from unrelated threads.
+
 ## Implementation map
 
 Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, and zsh's

@@ -5,6 +5,8 @@ import {
   getCurrentBranchName,
   pushBranchToOrigin,
 } from '../services/github/git-service.ts'
+import { getAgentExecutionRoot } from '../services/execution-root.ts'
+import { createPrMaintenanceService } from '../services/github/pr-maintenance-service.ts'
 import {
   approvePr,
   enablePrAutoMerge,
@@ -167,6 +169,64 @@ export const ghEnableAutoMergeTool = defineTool({
   execute: async (args) => runAction(args, enablePrAutoMerge),
 })
 
+const commitSha = z.string().regex(/^[a-f0-9]{40}$/i)
+const maintenance = createPrMaintenanceService()
+
+export const gitPushTool = defineTool({
+  name: 'git_push',
+  description:
+    'Push one local branch to the same branch on origin. Requires approval or an exact automation grant. For rebased history, supply the previously observed remote commit SHA; Copse uses a pinned force-with-lease. Never uses bare force.',
+  parameters: z.object({
+    branch: z.string().min(1).describe('Existing local branch to publish to origin.'),
+    expected_remote_sha: commitSha
+      .optional()
+      .describe(
+        'Previously observed remote head. Required to replace rewritten history; omit for a normal fast-forward push.',
+      ),
+  }),
+  execute: async ({ branch, expected_remote_sha }) => {
+    const outcome = await pushBranchToOrigin(branch, getAgentExecutionRoot(), expected_remote_sha)
+    return `${outcome.ok ? 'Done' : 'Failed'}: ${outcome.message}`
+  },
+})
+
+export const ghMergePrTool = defineTool({
+  name: 'gh_pr_merge',
+  description:
+    'Request a pull request merge with the GitHub CLI, using repository merge policy and a required head-SHA guard. Does not bypass branch protection. Review checks, feedback, and visual evidence first; re-read PR state afterward to distinguish merged from queued.',
+  parameters: prActionParams.extend({ expected_head_sha: commitSha }),
+  execute: async (args) => {
+    const ref = await resolveRef(args)
+    return ref
+      ? maintenance.merge(ref, args.expected_head_sha)
+      : 'Failed: could not resolve repository.'
+  },
+})
+
+export const ghCommentPrTool = defineTool({
+  name: 'gh_pr_comment',
+  description:
+    'Post a markdown comment on a pull request using the GitHub CLI. Requires approval or an exact automation grant.',
+  parameters: prActionParams.extend({ body: z.string().min(1).max(65536) }),
+  execute: async (args) => {
+    const ref = await resolveRef(args)
+    return ref ? maintenance.comment(ref, args.body) : 'Failed: could not resolve repository.'
+  },
+})
+
+export const ghResolveReviewThreadTool = defineTool({
+  name: 'gh_pr_resolve_review_thread',
+  description:
+    'Resolve a verified stale review thread using the GitHub CLI. Verifies the thread belongs to the specified repository and PR. Inspect the finding and confirm the fix before calling.',
+  parameters: prActionParams.extend({ thread_id: z.string().min(1).max(512) }),
+  execute: async (args) => {
+    const ref = await resolveRef(args)
+    return ref
+      ? maintenance.resolveReviewThread(ref, args.thread_id)
+      : 'Failed: could not resolve repository.'
+  },
+})
+
 /**
  * All PR lifecycle write tools. `ToolDefinition<TArgs>` is invariant in TArgs,
  * so the heterogeneous list is only usable where names suffice (unregister);
@@ -180,7 +240,14 @@ export const ghPrActionTools = [
   ghApprovePrTool,
   ghMarkPrReadyTool,
   ghEnableAutoMergeTool,
+  gitPushTool,
+  ghMergePrTool,
+  ghCommentPrTool,
+  ghResolveReviewThreadTool,
 ]
+
+/** These actions currently require the host CLI, rather than the token-only backend. */
+export const ghCliMaintenanceTools = [ghMergePrTool, ghCommentPrTool, ghResolveReviewThreadTool]
 
 /** Register every PR lifecycle write tool (idempotent — register overwrites). */
 export function registerGhPrActionTools(registry: ToolRegistry): void {
@@ -190,4 +257,8 @@ export function registerGhPrActionTools(registry: ToolRegistry): void {
   registry.register(ghApprovePrTool)
   registry.register(ghMarkPrReadyTool)
   registry.register(ghEnableAutoMergeTool)
+  registry.register(gitPushTool)
+  registry.register(ghMergePrTool)
+  registry.register(ghCommentPrTool)
+  registry.register(ghResolveReviewThreadTool)
 }

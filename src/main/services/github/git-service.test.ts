@@ -281,7 +281,7 @@ describe('pushBranchToOrigin', { skip: !gitOk && 'git not installed' }, () => {
     }
   })
 
-  it('does not overwrite a remote branch that has diverged', async () => {
+  it('rejects divergent pushes unless the explicitly observed remote head still matches', async () => {
     const parent = await mkdtemp(join(tmpdir(), 'copse-git-push-diverged-'))
     const repo = join(parent, 'repo')
     const peer = join(parent, 'peer')
@@ -321,6 +321,10 @@ describe('pushBranchToOrigin', { skip: !gitOk && 'git not installed' }, () => {
         cwd: peer,
         encoding: 'utf8',
       }).stdout.trim()
+      const staleHead = spawnSync('git', ['rev-parse', 'HEAD'], {
+        cwd: repo,
+        encoding: 'utf8',
+      }).stdout.trim()
 
       await writeFile(join(repo, 'local.txt'), 'local work\n')
       spawnSync('git', ['add', 'local.txt'], { cwd: repo })
@@ -342,11 +346,23 @@ describe('pushBranchToOrigin', { skip: !gitOk && 'git not installed' }, () => {
 
       assert.equal(result.ok, false)
       assert.match(result.message, /fetch first|non-fast-forward/i)
+      // Even a background fetch must not silently refresh the caller's lease.
+      spawnSync('git', ['fetch', 'origin'], { cwd: repo })
+      const staleLease = await pushBranchToOrigin('feature/publish', repo, staleHead)
+      assert.equal(staleLease.ok, false)
       assert.equal(
         spawnSync('git', ['--git-dir', remote, 'rev-parse', 'refs/heads/feature/publish'], {
           encoding: 'utf8',
         }).stdout.trim(),
         remoteHead,
+      )
+      const explicitLease = await pushBranchToOrigin('feature/publish', repo, remoteHead)
+      assert.equal(explicitLease.ok, true)
+      assert.equal(
+        spawnSync('git', ['--git-dir', remote, 'rev-parse', 'refs/heads/feature/publish'], {
+          encoding: 'utf8',
+        }).stdout.trim(),
+        spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).stdout.trim(),
       )
     } finally {
       await rm(parent, { recursive: true, force: true })
