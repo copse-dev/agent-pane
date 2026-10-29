@@ -561,6 +561,8 @@ export function seedEmptyProject(
     nextStepSuggestionEnabled?: boolean
     /** Opt into the experimental unattended container runs (off by default). */
     containerRunsEnabled?: boolean
+    /** Opt into the experimental "Start planning" composer control (off by default). */
+    planModeEnabled?: boolean
     model?: string
     advisorModel?: string
     localServerUrl?: string
@@ -714,6 +716,9 @@ export function seedEmptyProject(
   }
   if (options?.containerRunsEnabled !== undefined) {
     settings['containerRunsEnabled'] = options.containerRunsEnabled
+  }
+  if (options?.planModeEnabled !== undefined) {
+    settings['planModeEnabled'] = options.planModeEnabled
   }
   if (options?.model) {
     settings['model'] = options.model
