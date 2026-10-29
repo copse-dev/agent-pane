@@ -78,12 +78,13 @@ describe('Side chats beside the main thread', () => {
   })
 
   it("sets a side-chat reply's markdown in the main transcript's prose type", async () => {
-    const reply = $('.side-chat-msg.is-assistant')
+    // The reply's markdown renders into the bubble's text node, as in the main conversation.
+    const reply = $('.side-chat-msg.is-assistant .side-chat-msg-text')
     await reply.waitForDisplayed({ timeout: 10_000 })
     await expect(reply).toHaveElementClass('streaming-markdown')
     await expect(reply.$$('ul > li')).toBeElementsArrayOfSize(2)
     const type = await browser.execute(() => {
-      const side = document.querySelector('.side-chat-msg.is-assistant')
+      const side = document.querySelector('.side-chat-msg.is-assistant .side-chat-msg-text')
       const main = document.querySelector(
         '[data-message-id="sc-assistant-1"] .message-body > .message-text',
       )

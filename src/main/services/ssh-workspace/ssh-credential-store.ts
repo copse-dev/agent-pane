@@ -11,14 +11,14 @@ import { createHash } from 'node:crypto'
 import { VaultError } from '@copse/store-kit/profile-vault-crypto.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { getSecretCipher, isSecretEncryptionAvailable } from '../storage/secret-cipher.ts'
-import { openPersistentStore } from '../storage/persistent-store.ts'
+import { lazyPersistentStore } from '../storage/persistent-store.ts'
 
 interface StoredCredential {
   v: 1
   enc: string
 }
 
-const store = openPersistentStore({ name: 'ssh-credentials' })
+const store = lazyPersistentStore({ name: 'ssh-credentials' })
 const HOSTS_KEY = 'hosts'
 
 function promptKey(prompt: string): string {

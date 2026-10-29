@@ -3372,6 +3372,19 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   display: none;
 }
 
+#storage-container-breakdown {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--spacing-sm) var(--spacing-lg);
+  font-size: var(--font-size-sm);
+}
+#storage-container-breakdown dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+#storage-container-images {
+  overflow-wrap: anywhere;
+}
 /* Machine connections share the Settings field and button recipes. */
 .machines-settings textarea {
   width: min(100%, 38rem);

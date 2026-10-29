@@ -5,6 +5,7 @@ export interface SupervisedTaskSummary {
   projectId: string
   threadId: string
   handler: string
+  agentId?: string
   state: TaskState
   updatedAt: number
   lastError?: string
