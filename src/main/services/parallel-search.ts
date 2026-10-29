@@ -1,9 +1,9 @@
 import { z } from 'zod'
-import type { ParallelSearchMode } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { truncateCommandOutput } from './exec/subprocess-output-cap.ts'
 
+export type ParallelSearchMode = 'turbo' | 'basic' | 'advanced'
+
 export const PARALLEL_SEARCH_API_URL = 'https://api.parallel.ai/v1/search'
-export const PARALLEL_SEARCH_PROVIDER_ID = 'parallel'
 export const PARALLEL_SEARCH_OUTPUT_MAX_BYTES = 25_000
 const PARALLEL_SEARCH_TIMEOUT_MS = 15_000
 
@@ -35,7 +35,7 @@ export type ParallelSearchResponse = z.infer<typeof parallelSearchResponseSchema
 
 function parallelSearchHttpError(status: number): string {
   if (status === 401 || status === 403) {
-    return 'Parallel rejected the API key. Update it in Settings → Plugins → copse.parallel-search.'
+    return 'Parallel rejected the API key. Update it in Settings → Web search.'
   }
   if (status === 402) {
     return 'Parallel reported insufficient credits. Add funds to the account linked to this API key.'
