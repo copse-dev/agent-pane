@@ -3,7 +3,7 @@
 // cross-version equating maps. Source of truth: scripts/data/intellect-scores.json.
 // Absent models mean "no sourced measurement yet", not zero.
 // Intelligence Index data from Artificial Analysis (https://artificialanalysis.ai)
-// Last synced: 2026-10-20
+// Last synced: 2026-10-27
 
 import type { EquatingMap } from './intellect-equating.ts'
 
@@ -4264,6 +4264,58 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-09-30',
     },
   ],
+  'gpt-6-1-terra': [
+    {
+      value: 48.1,
+      indexVersion: 'v4.3',
+      source: "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra', fetched 2026-10-27",
+      asOf: '2026-10-27',
+    },
+  ],
+  'gpt-6-1-terra-high': [
+    {
+      value: 43.9,
+      indexVersion: 'v4.3',
+      source:
+        "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-high', fetched 2026-10-27",
+      asOf: '2026-10-27',
+    },
+  ],
+  'gpt-6-1-terra-low': [
+    {
+      value: 36.2,
+      indexVersion: 'v4.3',
+      source: "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-low', fetched 2026-10-27",
+      asOf: '2026-10-27',
+    },
+  ],
+  'gpt-6-1-terra-medium': [
+    {
+      value: 41.3,
+      indexVersion: 'v4.3',
+      source:
+        "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-medium', fetched 2026-10-27",
+      asOf: '2026-10-27',
+    },
+  ],
+  'gpt-6-1-terra-non-reasoning': [
+    {
+      value: 33.5,
+      indexVersion: 'v4.3',
+      source:
+        "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-non-reasoning', fetched 2026-10-27",
+      asOf: '2026-10-27',
+    },
+  ],
+  'gpt-6-1-terra-xhigh': [
+    {
+      value: 45.4,
+      indexVersion: 'v4.3',
+      source:
+        "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-xhigh', fetched 2026-10-27",
+      asOf: '2026-10-27',
+    },
+  ],
   'gpt-6-astra': [
     {
       value: 52.7,
@@ -5721,6 +5773,14 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-09-11',
     },
   ],
+  'kimi-k3-1-pro': [
+    {
+      value: 55.1,
+      indexVersion: 'v4.3',
+      source: "Artificial Analysis API (index v4.3), model 'kimi-k3-1-pro', fetched 2026-10-27",
+      asOf: '2026-10-27',
+    },
+  ],
   'kimi-k3-low': [
     {
       value: 48.3,
@@ -5988,6 +6048,15 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       indexVersion: 'v4.3',
       source: "Artificial Analysis API (index v4.3), model 'ling-3-1-flash', fetched 2026-10-06",
       asOf: '2026-10-06',
+    },
+  ],
+  'ling-3-1-flash-1019': [
+    {
+      value: 43.9,
+      indexVersion: 'v4.3',
+      source:
+        "Artificial Analysis API (index v4.3), model 'ling-3-1-flash-1019', fetched 2026-10-27",
+      asOf: '2026-10-27',
     },
   ],
   'ling-flash-2-0': [
@@ -7105,8 +7174,8 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
     {
       value: 6.7,
       indexVersion: 'v4.3',
-      source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-20",
-      asOf: '2026-10-20',
+      source: "Artificial Analysis API (index v4.3), model 'mistral-small-3', fetched 2026-10-27",
+      asOf: '2026-10-27',
     },
   ],
   'mixtral-8x7b-instruct': [

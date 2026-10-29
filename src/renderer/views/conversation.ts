@@ -176,6 +176,7 @@ import {
 import { createReviewerInputToolCard } from './reviewer-input.ts'
 import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
 import { renderSignature } from './render-signature.ts'
+import { createDisclosureModel } from './disclosure-model.ts'
 import {
   drainMessageQueue,
   isHeldMessage,
@@ -2710,7 +2711,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     details.dataset['userToggled'] = '1'
     details.open = true
     const key = details.dataset['disclosureKey']
-    if (key) disclosurePreferences.set(key, true)
+    const threadId = store.getState().activeThreadId
+    if (key && threadId) disclosures.choose(threadId, key, true)
     details.scrollIntoView({ block: 'nearest' })
   })
   activityBar.addEventListener('keydown', (event) => {
@@ -3150,29 +3152,48 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // instead of touching a list that has since been cleared/rebuilt again.
   let backfillGeneration = 0
 
-  // Disclosure presentation is deliberately independent from execution status.
-  // A brief done -> running gap must not close and reopen the same rollup, and a
-  // user's explicit choice must survive status updates and mounted thread switches.
-  const disclosurePreferences = new Map<string, boolean>()
+  // Disclosure presentation is deliberately independent from execution status:
+  // `disclosures` owns auto / user-open / user-closed per key, plus the reveal
+  // and compaction timers. A brief done -> running gap must not close and
+  // reopen the same rollup, and a user's explicit choice must survive status
+  // updates and mounted thread switches. The DOM only renders that state.
   // Once a live message starts as a rollup, keep that wrapper shape for this
   // mounted session so a one-tool update cannot turn into a different card type.
   const liveRollupMessages = new Set<string>()
-  const autoOpenedDisclosures = new Set<string>()
-  const autoOpenedAt = new Map<string, number>()
-  const runningDisclosures = new Set<string>()
   const disclosureElements = new Map<string, HTMLDetailsElement>()
   const wiredDisclosureSummaries = new WeakSet<HTMLElement>()
-  const revealTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  const compactTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  const deferredCompactions = new Set<string>()
+  const disclosures = createDisclosureModel(
+    {
+      canReveal: () => pinnedToBottom,
+      canCompact: (threadId) => threadId !== store.getState().activeThreadId || pinnedToBottom,
+      reveal(key) {
+        const details = disclosureElements.get(key)
+        if (!details?.isConnected) return false
+        details.open = true
+        ensureToolCardBodyRendered(details)
+        scrollToBottom()
+        return true
+      },
+      collapse(key) {
+        const details = disclosureElements.get(key)
+        if (details?.isConnected) details.open = false
+      },
+      compacted(threadId) {
+        if (threadId === store.getState().activeThreadId) scrollToBottom()
+      },
+    },
+    {
+      revealDelayMs: TOOL_AUTO_REVEAL_DELAY_MS,
+      minDwellMs: TOOL_AUTO_REVEAL_MIN_DWELL_MS,
+      compactDelayMs: TOOL_AUTO_COMPACT_DELAY_MS,
+    },
+  )
 
-  function cancelReveal(key: string): void {
-    const timer = revealTimers.get(key)
-    if (timer !== undefined) clearTimeout(timer)
-    revealTimers.delete(key)
-  }
-
-  function wireDisclosurePreference(details: HTMLDetailsElement, key: string): void {
+  function wireDisclosurePreference(
+    details: HTMLDetailsElement,
+    threadId: string,
+    key: string,
+  ): void {
     const summary = details.querySelector<HTMLElement>(':scope > summary')
     if (!summary || wiredDisclosureSummaries.has(summary)) return
     wiredDisclosureSummaries.add(summary)
@@ -3183,13 +3204,17 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       // the toggle so the stored preference always matches the visible state.
       event.preventDefault()
       details.open = !details.open
-      disclosurePreferences.set(key, details.open)
+      disclosures.choose(threadId, key, details.open)
       details.dataset['userToggled'] = '1'
-      autoOpenedDisclosures.delete(key)
-      autoOpenedAt.delete(key)
-      cancelReveal(key)
       if (details.open) ensureToolCardBodyRendered(details)
     })
+  }
+
+  /** Register a disclosure's element under its model key and wire user toggles. */
+  function bindDisclosure(details: HTMLDetailsElement, threadId: string, key: string): void {
+    details.dataset['disclosureKey'] = key
+    disclosureElements.set(key, details)
+    wireDisclosurePreference(details, threadId, key)
   }
 
   function registerReasoningDisclosures(msgEl: HTMLElement): void {
@@ -3200,80 +3225,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const step = details.closest<HTMLElement>('.tool-card-step[data-step-message-id]')
       const messageId = step?.dataset['stepMessageId'] ?? fallbackMessageId
       const key = `${threadId}:${messageId}:reasoning`
-      details.dataset['disclosureKey'] = key
-      disclosureElements.set(key, details)
-      wireDisclosurePreference(details, key)
-      const preference = disclosurePreferences.get(key)
+      bindDisclosure(details, threadId, key)
+      const preference = disclosures.userChoice(key)
       if (preference !== undefined) {
         details.dataset['userToggled'] = '1'
         details.open = preference
       }
     })
-  }
-
-  function cancelThreadCompaction(threadId: string): void {
-    const timer = compactTimers.get(threadId)
-    if (timer !== undefined) clearTimeout(timer)
-    compactTimers.delete(threadId)
-  }
-
-  function revealAfterDelay(key: string): void {
-    if (revealTimers.has(key) || autoOpenedDisclosures.has(key)) return
-    const timer = setTimeout(() => {
-      revealTimers.delete(key)
-      if (!runningDisclosures.has(key) || disclosurePreferences.has(key) || !pinnedToBottom) return
-      const details = disclosureElements.get(key)
-      if (!details?.isConnected) return
-      autoOpenedDisclosures.add(key)
-      autoOpenedAt.set(key, Date.now())
-      details.open = true
-      ensureToolCardBodyRendered(details)
-      scrollToBottom()
-    }, TOOL_AUTO_REVEAL_DELAY_MS)
-    revealTimers.set(key, timer)
-  }
-
-  function compactThreadDisclosures(threadId: string): void {
-    compactTimers.delete(threadId)
-    if (threadId === store.getState().activeThreadId && !pinnedToBottom) {
-      deferredCompactions.add(threadId)
-      return
-    }
-    deferredCompactions.delete(threadId)
-    const prefix = `${threadId}:`
-    const now = Date.now()
-    let dwellRemaining = 0
-    for (const key of autoOpenedDisclosures) {
-      if (!key.startsWith(prefix)) continue
-      const details = disclosureElements.get(key)
-      if (details?.dataset['status'] === 'error') continue
-      const openedAt = autoOpenedAt.get(key) ?? 0
-      dwellRemaining = Math.max(dwellRemaining, TOOL_AUTO_REVEAL_MIN_DWELL_MS - (now - openedAt))
-    }
-    if (dwellRemaining > 0) {
-      const timer = setTimeout(() => {
-        compactThreadDisclosures(threadId)
-      }, Math.ceil(dwellRemaining))
-      compactTimers.set(threadId, timer)
-      return
-    }
-    for (const key of [...autoOpenedDisclosures]) {
-      if (!key.startsWith(prefix)) continue
-      const details = disclosureElements.get(key)
-      if (details?.dataset['status'] === 'error') continue
-      autoOpenedDisclosures.delete(key)
-      autoOpenedAt.delete(key)
-      if (!disclosurePreferences.has(key) && details?.isConnected) details.open = false
-    }
-    if (threadId === store.getState().activeThreadId) scrollToBottom()
-  }
-
-  function scheduleThreadCompaction(threadId: string): void {
-    cancelThreadCompaction(threadId)
-    const timer = setTimeout(() => {
-      compactThreadDisclosures(threadId)
-    }, TOOL_AUTO_COMPACT_DELAY_MS)
-    compactTimers.set(threadId, timer)
   }
 
   function isNearBottom(): boolean {
@@ -3402,7 +3360,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     } else if (isNearBottom()) {
       pinnedToBottom = true
       const threadId = store.getState().activeThreadId
-      if (threadId && deferredCompactions.delete(threadId)) scheduleThreadCompaction(threadId)
+      if (threadId) disclosures.resumeDeferredCompaction(threadId)
     }
     lastScrollTop = scrollTop
     updateScrollButton()
@@ -3624,7 +3582,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       userScrolledUpAt = 0
       pinnedToBottom = true
       const threadId = store.getState().activeThreadId
-      if (threadId && deferredCompactions.delete(threadId)) scheduleThreadCompaction(threadId)
+      if (threadId) disclosures.resumeDeferredCompaction(threadId)
     }
     updateScrollButton()
   }
@@ -3735,53 +3693,22 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // Proposal cards derive their open state from the pending user decision.
     if (card.classList.contains('thread-proposal')) return
     const key = `${threadId}:${messageId}:${toolCardKey(item)}`
-    card.dataset['disclosureKey'] = key
-    // Keep dataset.status aligned with the live tool status so compaction can
-    // leave failed cards open (it only inspects this attribute).
+    // Keep dataset.status aligned with the live tool status for styling.
     const itemStatus =
       item.type === 'individual' ? cardStatus([item.toolCall]) : cardStatus(item.toolCalls)
     card.dataset['status'] = itemStatus
-    disclosureElements.set(key, card)
-    wireDisclosurePreference(card, key)
-    const preference = disclosurePreferences.get(key)
-    const running =
-      item.type === 'individual'
-        ? item.toolCall.status === 'running' || item.toolCall.subagent?.status === 'running'
-        : itemStatus === 'running'
-    const failed = itemStatus === 'error'
-    if (itemStatus === 'interrupted') {
-      autoOpenedDisclosures.delete(key)
-      autoOpenedAt.delete(key)
-    }
-
-    if (running) runningDisclosures.add(key)
-    else {
-      runningDisclosures.delete(key)
-      cancelReveal(key)
-    }
-
-    if (preference !== undefined) {
-      card.open = preference
-    } else if (item.type === 'rollup' || item.type === 'step') {
-      // Background activity stays quiet, including while it runs and when a
-      // call failed: failures render beside the rollup, already open.
-      card.open = false
-    } else if (failed) {
-      // Failed tools stay expanded so the error body is visible without a click.
-      // Compaction already skips data-status=error; auto-open here covers the
-      // case where the tool never ran long enough for revealAfterDelay.
-      card.open = true
-      autoOpenedDisclosures.add(key)
-      if (!autoOpenedAt.has(key)) autoOpenedAt.set(key, Date.now())
-    } else if (autoOpenedDisclosures.has(key)) {
-      card.open = true
-    } else {
-      card.open = false
-      if (running && autoRevealEligible) revealAfterDelay(key)
-    }
+    bindDisclosure(card, threadId, key)
+    const container = item.type === 'rollup' || item.type === 'step'
+    const subagentRunning =
+      item.type === 'individual' && item.toolCall.subagent?.status === 'running'
+    card.open = disclosures.update(threadId, key, {
+      kind: container ? 'container' : 'tool',
+      status: subagentRunning ? 'running' : itemStatus,
+      autoRevealEligible,
+    })
     if (card.open) ensureToolCardBodyRendered(card)
 
-    if (item.type === 'rollup' || item.type === 'step') {
+    if (container) {
       const nestedCards = card.querySelectorAll<HTMLDetailsElement>(
         ':scope > .tool-rollup-body > .tool-card',
       )
@@ -3794,26 +3721,20 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       return
     }
     if (item.type === 'group') {
+      const calls = new Map(item.toolCalls.map((call) => [call.id, call]))
       card
         .querySelectorAll<HTMLDetailsElement>('.tool-group-item[data-tool-id]')
         .forEach((entry) => {
           const id = entry.dataset['toolId']
-          if (!id) return
+          const call = id ? calls.get(id) : undefined
+          if (!id || !call) return
           const itemKey = `${threadId}:${messageId}:t:${id}`
-          entry.dataset['disclosureKey'] = itemKey
-          disclosureElements.set(itemKey, entry)
-          wireDisclosurePreference(entry, itemKey)
-          const preference = disclosurePreferences.get(itemKey)
-          const entryFailed = entry.dataset['status'] === 'error'
-          if (preference !== undefined) {
-            entry.open = preference
-          } else if (entryFailed) {
-            entry.open = true
-            autoOpenedDisclosures.add(itemKey)
-            if (!autoOpenedAt.has(itemKey)) autoOpenedAt.set(itemKey, Date.now())
-          } else {
-            entry.open = false
-          }
+          bindDisclosure(entry, threadId, itemKey)
+          entry.open = disclosures.update(threadId, itemKey, {
+            kind: 'entry',
+            status: cardStatus([call]),
+            autoRevealEligible: false,
+          })
           if (entry.open) ensureToolCardBodyRendered(entry)
         })
     }
@@ -5054,10 +4975,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       setScrollTopProgrammatically(preservedScrollTop)
       updateScrollButton()
     }
-    if (thread.status === 'running') cancelThreadCompaction(thread.id)
-    else if ([...autoOpenedDisclosures].some((key) => key.startsWith(`${thread.id}:`))) {
-      scheduleThreadCompaction(thread.id)
-    }
+    if (thread.status === 'running') disclosures.cancelCompaction(thread.id)
+    else if (disclosures.hasAutoOpen(thread.id)) disclosures.scheduleCompaction(thread.id)
     if (initialStart > 0) {
       const generation = backfillGeneration
       requestAnimationFrame(() => {
@@ -5346,8 +5265,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       }
     }),
     store.on('thread_status_changed', (tid, status) => {
-      if (status === 'running') cancelThreadCompaction(tid)
-      else scheduleThreadCompaction(tid)
+      if (status === 'running') disclosures.cancelCompaction(tid)
+      else disclosures.scheduleCompaction(tid)
       if (tid !== store.getState().activeThreadId) return
       if (status === 'running') {
         list.querySelectorAll('[data-turn-recovery-card]').forEach((card) => {
@@ -5397,14 +5316,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     listResizeObserver?.disconnect()
     conciseFooterObserver.disconnect()
     showAcpTransportNoiseDisclosure = (): boolean => false
-    revealTimers.forEach((timer) => {
-      clearTimeout(timer)
-    })
-    compactTimers.forEach((timer) => {
-      clearTimeout(timer)
-    })
-    revealTimers.clear()
-    compactTimers.clear()
+    disclosures.dispose()
     disposeInlineArtefacts(list)
     unbindFileLinks()
     unbindWorkspaceLinks()
