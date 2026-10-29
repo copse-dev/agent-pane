@@ -2322,8 +2322,8 @@
       "bytes": 44067
     },
     "mermaid-parity-math.png": {
-      "sha256": "cdc7c58020f68b8eda679324eafe321e7c65f893fef68dafe246305b54f2442e",
-      "bytes": 38371
+      "sha256": "d8c04560e8d9593398522e8c3962f23de371117d88fc26abb492699c920d1530",
+      "bytes": 39053
     },
     "mermaid-parity-sequence.png": {
       "sha256": "60de875ee31214ee4d0a9a978090a787c1bd412d498071e90b5dd8eb20d9cb44",
@@ -2530,8 +2530,8 @@
       "bytes": 299122
     },
     "native-isolated-workers-cancelled-dirty.png": {
-      "sha256": "c7bce3c24c7d65da98b0cacaeb415e3697a15f95b5a7828e10d5db4a5e8c8246",
-      "bytes": 302613
+      "sha256": "adc614336d93a7a3438ce38f22445c091198e497e16e2fa7c4306127279d075e",
+      "bytes": 328046
     },
     "native-isolated-workers-running.png": {
       "sha256": "440117fe7149700665a03c793cfbab212722f341a1f1564300c1389a9fa07793",
@@ -2574,8 +2574,8 @@
       "bytes": 298462
     },
     "new-thread-default-branch-explicit-sent.png": {
-      "sha256": "37f51a8635365573e8dd12684a5e518fdb4e3d0df6a0b3a1bc3582c2c19a6886",
-      "bytes": 266583
+      "sha256": "745c7222b79a7c68d28172d5adef5fdf680d5224f743ca371780a0164ab39451",
+      "bytes": 274539
     },
     "new-thread-default-branch-shared-picker.png": {
       "sha256": "3376f9a7aa13de507609577b293eed1e5d994a00534de375d2f4062aff4c77e3",
@@ -2698,8 +2698,8 @@
       "bytes": 33776
     },
     "pane-popout-browser.png": {
-      "sha256": "ed430a3386b80e50fb66e8d562378e1debc21878d3d27852269885dc9394b6ad",
-      "bytes": 76592
+      "sha256": "b66680c25158dbcdecaca7b7015c3161540cd2571dfb4174b480df06afc7b862",
+      "bytes": 77793
     },
     "pane-popout-changes.png": {
       "sha256": "12d0fc3bb9c187305486fc2a47c623d4e02aa9d59dabd39b97a98da22ecbdaad",
@@ -2778,36 +2778,36 @@
       "bytes": 280586
     },
     "plugin-client-action-sent.png": {
-      "sha256": "7da2bfb39a02b1428011a48dfb44ac4785c19eb3f46ebdc055b9dac23395847c",
-      "bytes": 316654
+      "sha256": "c0d3ba5313c01115bec250236d7d769f61a31304bb241509db0e46e73310efff",
+      "bytes": 330945
     },
     "plugin-client-actions.png": {
-      "sha256": "a58e0ad04ce71a347f4a7607f5e97c0d56f4a37163fb096d9648753d1d8252bc",
-      "bytes": 40475
+      "sha256": "4793f750ecee8d4242bfd04f2d4f969e6348aba402c592316eeb3365c5e3e892",
+      "bytes": 45361
     },
     "plugin-client-api-settings.png": {
-      "sha256": "df2ad283b3e810716a7c3c6c64f90a2ee51e714e6b27005e54b00d2fddcf6fb2",
-      "bytes": 48106
+      "sha256": "f684a53841822a1f3de466b9e5e5bc2988b4418bb2811167926c4c7a468da7ab",
+      "bytes": 50948
     },
     "plugin-client-pairing-expanded-scope-interrupt.png": {
-      "sha256": "358c4c142db3989fe1edb35470ac957b97d90c24ac456e29870d3f70f1cc5ef2",
-      "bytes": 121482
+      "sha256": "e166cc714e416759fe25dfa67ca7499915e5822c037b936dc21479a3c617f8b7",
+      "bytes": 131774
     },
     "plugin-client-pairing-expanded-scope.png": {
-      "sha256": "faebcebe9d8640fd02ee5484979ab064418ac0368d23a8124190a0c6b0d81e2e",
-      "bytes": 121553
+      "sha256": "e6b0ba6d1b4bf89d02cf3859dd7863d50a6bb6364c4007a9e1f8ff9786b0101c",
+      "bytes": 131803
     },
     "plugin-client-pending-question.png": {
-      "sha256": "6525cb67aad99e7067961b938f93dfa02f2fea0b89f65126ebc2a8f876a91fb2",
-      "bytes": 42666
+      "sha256": "c17703977fc9585ee4874fbf7c1487fe3a1a77615b15678c877b2ceb5247015f",
+      "bytes": 44805
     },
     "plugin-client-recent-thread-open.png": {
       "sha256": "d44a9a458e075985f02c3c77d288efd0348800538b1b6486b6ae0f856344e128",
       "bytes": 294766
     },
     "plugin-client-submitted-composer.png": {
-      "sha256": "47e4753e3adb776329343739b86b36043124c1530f665e792c6a483dc241606e",
-      "bytes": 40651
+      "sha256": "69cab6be17afa129ed6efb7cc708cdc7875c79dc5b16ba69333fd9618525a77a",
+      "bytes": 42557
     },
     "plugin-client-worktree-preparation.png": {
       "sha256": "408a3b23729358b866a4d1ca11e1bbe73a9573bf8f0efc8f0a4df3ad808f1e05",
@@ -3822,8 +3822,8 @@
       "bytes": 299897
     },
     "settings-composition-packs.png": {
-      "sha256": "0240d033cb5d23b30d0a6feb32cd998b8ff204e61c9a5c7a026362391751e161",
-      "bytes": 238872
+      "sha256": "4dea33a5ef5cf64a423fcd727b6133e6539d327f40f26c40ff7eb21395f8ff06",
+      "bytes": 283057
     },
     "settings-composition-source-folders.png": {
       "sha256": "255930ac7f1dbb91aca4adaa57698676d137fabe5c98b9c6024d947a71f413b4",
@@ -4310,16 +4310,16 @@
       "bytes": 170713
     },
     "settings-storage-maintenance-cleaned.png": {
-      "sha256": "d75a0ad1043a9efd54e2e5b85e958bde522fb042b19db57e1cea1752ca23873a",
-      "bytes": 117376
+      "sha256": "9d9a0463f1a34846857d9fe80309b9a67138c0f97caee7f604fe412db2d583d3",
+      "bytes": 138908
     },
     "settings-storage-maintenance-confirm.png": {
       "sha256": "1de84fae31dbcc9b988e4197a2385bfe20cccadc163511045f73ab369029ce10",
       "bytes": 45437
     },
     "settings-storage-maintenance.png": {
-      "sha256": "8e993f295df3c706bbc929e5eee869352f16ab5fe9239f4caa3b818f404d1081",
-      "bytes": 117570
+      "sha256": "3f38b646343fd20148edd2bb0533fdf8d8792c4adab5a05fa16b58bd6095f5fd",
+      "bytes": 138441
     },
     "settings-storage-project-a-worktrees.png": {
       "sha256": "4dc343ab0131b60ad9405cabe88b93c5842e744f380bfaa0a1013b33eb1540ca",
@@ -4814,16 +4814,16 @@
       "bytes": 161523
     },
     "skill-preflight-missing-agent.png": {
-      "sha256": "b0d18fe25094b97e222555d79576c61bf1b2ded293b758a7c1a6f1eb393a83f8",
-      "bytes": 23834
+      "sha256": "13156712778b1ef7081217dfb2d2c25956d2220bc57cf5c66075b1b06d0b7385",
+      "bytes": 27832
     },
     "skill-preflight-runtime-blockers.png": {
-      "sha256": "fb9c8507822a3f1ece9f578de02193b08de3e526c3fd1c3224e8735ab156a590",
-      "bytes": 186021
+      "sha256": "310c151c62eb9bdc6b07952bc1922ac1ea87a1f02a6f771fea5aca5adf131bac",
+      "bytes": 200992
     },
     "skill-workflow-dependency.png": {
-      "sha256": "ce2a0f2b6b2e18d5f4d3a90f96b9706c41e14de67cc722474a56cdc02f7945b7",
-      "bytes": 152460
+      "sha256": "c5520ed094fbac7f0e3c767ff09f28a940ec5a91f6b98ed5221ac4ad5a48e3e3",
+      "bytes": 164378
     },
     "skills-demo-invoked.png": {
       "sha256": "b5ce90046f74aa425e1eb86fc1316bfe8f2f6b087425649ac682416328e4ecea",
