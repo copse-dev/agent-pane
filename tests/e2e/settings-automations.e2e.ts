@@ -345,7 +345,18 @@ describe('settings automations plugin', function () {
     assert.ok(formActions.buttons[1]?.classes.includes('ui-btn-secondary'), 'Cancel is secondary')
     await saveSettingsSection('.automation-form', 'settings-automation-form.png')
     await detail.$('.automation-save-btn').click()
-    await expect(detail.$('.automation-form')).not.toExist()
+    // Saving hides the form (it is reused, not removed). A rejected save keeps
+    // it open with an error status; report that status.
+    const saved = await browser
+      .waitUntil(async () => !(await detail.$('.automation-form').isDisplayed()), {
+        timeout: 10_000,
+      })
+      .then(
+        () => true,
+        () => false,
+      )
+    if (!saved)
+      assert.fail(`schedule save failed: ${await detail.$('.automation-status').getText()}`)
     await detail.$('.automation-row .automation-row-btn').click()
     await expect(detail.$('.automation-permission-row[title="git_push"] input')).toBeChecked()
     await expect(
