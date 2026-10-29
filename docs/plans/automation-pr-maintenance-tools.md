@@ -14,8 +14,16 @@ Acceptance criteria:
   retain their authority. General shell access is not an automation grant.
 - Push targets only origin and one named branch. Rewritten history requires an
   explicit expected remote SHA, passed as a pinned force-with-lease; no bare force.
+  When the checkout sets `commit.gpgsign`, unpublished unsigned commits are refused
+  (a `gpgsig` header is required; `%G?` cannot verify SSH signatures without an
+  allowed-signers file).
 - Merge requires an expected head SHA and uses repository merge policy, without
   administrator bypass. GitHub must enforce the head guard at the mutation.
+  Before requesting it, the tool refuses drafts, a moved head, outstanding change
+  requests, and PRs with no `APPROVED` review of the expected head commit. Review
+  state is read over GraphQL because `gh pr view --json latestReviews` leaves the
+  reviewed commit empty. Added after a live run merged a PR whose description held
+  it for independent review; prose holds are not parsed, an approval is the gate.
 - Comments use structured text arguments. Review-thread resolution verifies that
   the thread belongs to the addressed PR and repository before mutation.
 - Native and ACP callers use the same permission-gated tools.

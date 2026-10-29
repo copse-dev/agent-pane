@@ -35,6 +35,7 @@ import {
   getCommittedFileDiff,
   parseNameStatusZ,
   pushBranchToOrigin,
+  unsignedCommitsToPublish,
   readThreadChangeSummary,
 } from './git-service.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
@@ -228,6 +229,67 @@ describe('parseNameStatusZ', () => {
 })
 
 const gitOk = spawnSync('git', ['--version']).status === 0
+
+describe('unsignedCommitsToPublish', { skip: !gitOk && 'git not installed' }, () => {
+  it('lists only unpublished commits without a signature, and only when signing is required', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'copse-git-unsigned-'))
+    const repo = join(parent, 'repo')
+    const remote = join(parent, 'remote.git')
+    const git = (...args: string[]): string =>
+      spawnSync('git', ['-c', 'user.name=Copse Test', '-c', 'user.email=test@copse.dev', ...args], {
+        cwd: repo,
+        encoding: 'utf8',
+      }).stdout.trim()
+    const commit = async (name: string): Promise<string> => {
+      await writeFile(join(repo, name), `${name}\n`)
+      git('add', name)
+      git('-c', 'commit.gpgsign=false', 'commit', '-qm', name)
+      return git('rev-parse', 'HEAD')
+    }
+    try {
+      await mkdir(repo)
+      spawnSync('git', ['init', '--bare', '-q', remote])
+      spawnSync('git', ['init', '-q', '-b', 'feature/sign'], { cwd: repo })
+      git('remote', 'add', 'origin', remote)
+      await commit('published.txt')
+      git('push', '-q', 'origin', 'feature/sign')
+      git('fetch', '-q', 'origin')
+      const unsigned = await commit('unsigned.txt')
+
+      assert.deepEqual(await unsignedCommitsToPublish(repo, 'feature/sign'), [])
+
+      git('config', 'commit.gpgsign', 'true')
+      assert.deepEqual(await unsignedCommitsToPublish(repo, 'feature/sign'), [unsigned])
+
+      // A commit object carrying a signature header counts as signed; the
+      // check does not need a verifiable key, only the header git writes.
+      const tree = git('rev-parse', 'HEAD^{tree}')
+      const object = [
+        `tree ${tree}`,
+        `parent ${unsigned}`,
+        'author Copse Test <test@copse.dev> 1700000000 +0000',
+        'committer Copse Test <test@copse.dev> 1700000000 +0000',
+        'gpgsig -----BEGIN SSH SIGNATURE-----',
+        ' AAAA',
+        ' -----END SSH SIGNATURE-----',
+        '',
+        'signed',
+        '',
+      ].join('\n')
+      const signed = spawnSync('git', ['hash-object', '-t', 'commit', '-w', '--stdin'], {
+        cwd: repo,
+        input: object,
+        encoding: 'utf8',
+      }).stdout.trim()
+      git('update-ref', 'refs/heads/feature/sign', signed)
+      assert.deepEqual(await unsignedCommitsToPublish(repo, 'feature/sign'), [unsigned])
+
+      assert.equal(await unsignedCommitsToPublish(repo, 'missing/branch'), null)
+    } finally {
+      await rm(parent, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('pushBranchToOrigin', { skip: !gitOk && 'git not installed' }, () => {
   it('publishes the local branch and configures its upstream', async () => {

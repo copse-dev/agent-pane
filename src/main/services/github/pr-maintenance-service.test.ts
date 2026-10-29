@@ -7,6 +7,32 @@ const sha = 'a'.repeat(40)
 type GhReply = { stdout: string; stderr: string; code: number }
 const ok = (stdout = ''): GhReply => ({ stdout, stderr: '', code: 0 })
 
+const other = 'b'.repeat(40)
+
+function readiness(
+  pr: {
+    isDraft?: boolean
+    headRefOid?: string
+    reviewDecision?: string | null
+    reviews?: { state: string; commit: { oid: string } | null }[]
+  } = {},
+): GhReply {
+  return ok(
+    JSON.stringify({
+      data: {
+        repository: {
+          pullRequest: {
+            isDraft: pr.isDraft ?? false,
+            headRefOid: pr.headRefOid ?? sha,
+            reviewDecision: pr.reviewDecision ?? null,
+            latestReviews: { nodes: pr.reviews ?? [{ state: 'APPROVED', commit: { oid: sha } }] },
+          },
+        },
+      },
+    }),
+  )
+}
+
 function reviewThread(repo: string, number: number, isResolved = false): GhReply {
   return ok(
     JSON.stringify({
@@ -26,7 +52,8 @@ describe('PR maintenance actions', () => {
     const calls: string[][] = []
     const service = createPrMaintenanceService(async (args) => {
       calls.push(args)
-      return calls.length === 1
+      if (calls.length === 1) return readiness()
+      return calls.length === 2
         ? ok(
             JSON.stringify({
               allow_squash_merge: true,
@@ -37,7 +64,7 @@ describe('PR maintenance actions', () => {
         : { stdout: '', stderr: 'Head changed', code: 1 }
     })
     assert.match(await service.merge(ref, sha), /Failed: Head changed/)
-    assert.deepEqual(calls[1], [
+    assert.deepEqual(calls[2], [
       'pr',
       'merge',
       '-R',
@@ -49,17 +76,52 @@ describe('PR maintenance actions', () => {
     ])
   })
 
-  it('does not attempt a merge with missing policy or an invalid SHA', async () => {
+  it('does not attempt a merge with missing review state, missing policy, or an invalid SHA', async () => {
     const calls: string[][] = []
     const service = createPrMaintenanceService(async (args) => {
       calls.push(args)
-      return ok('{}')
+      return calls.length === 2 ? readiness() : ok('{}')
     })
     assert.match(await service.merge(ref, 'HEAD'), /^Failed:/)
     assert.equal(calls.length, 0)
-    assert.match(await service.merge(ref, sha), /^Failed:/)
+    assert.match(await service.merge(ref, sha), /^Failed: could not read pull request review state/)
     assert.equal(calls.length, 1)
+    assert.match(await service.merge(ref, sha), /^Failed: could not read repository merge policy/)
+    assert.equal(calls.length, 3)
   })
+
+  for (const { name, pr, reason } of [
+    { name: 'a draft', pr: { isDraft: true }, reason: /draft/ },
+    { name: 'a moved head', pr: { headRefOid: other }, reason: /head is now bbbbbbbbb/ },
+    {
+      name: 'an outstanding change request',
+      pr: { reviewDecision: 'CHANGES_REQUESTED' },
+      reason: /requested changes/,
+    },
+    { name: 'no review', pr: { reviews: [] }, reason: /no approving review/ },
+    {
+      name: 'an approval of an earlier commit',
+      pr: { reviews: [{ state: 'APPROVED', commit: { oid: other } }] },
+      reason: /no approving review/,
+    },
+    {
+      name: 'only comment reviews',
+      pr: { reviews: [{ state: 'COMMENTED', commit: { oid: sha } }] },
+      reason: /no approving review/,
+    },
+  ]) {
+    it(`refuses to merge ${name} before reading merge policy`, async () => {
+      const calls: string[][] = []
+      const service = createPrMaintenanceService(async (args) => {
+        calls.push(args)
+        return readiness(pr)
+      })
+      const outcome = await service.merge(ref, sha)
+      assert.match(outcome, /^Failed: not merging PR #7: /)
+      assert.match(outcome, reason)
+      assert.equal(calls.length, 1, 'no policy read or merge after a refusal')
+    })
+  }
 
   it('passes multiline comments literally as one argument', async () => {
     const calls: string[][] = []

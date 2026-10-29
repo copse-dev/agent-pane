@@ -1002,8 +1002,10 @@ the original action ran.
 
 PR maintenance also offers separate grants for `git_push`, `gh_pr_merge`, `gh_pr_comment`,
 and `gh_pr_resolve_review_thread`. Push publishes one branch to origin and only replaces
-rewritten history with an explicit full remote SHA lease. Merge uses the repository's
-merge strategy and requires an expected head SHA; it never requests administrator bypass.
+rewritten history with an explicit full remote SHA lease, and refuses unsigned commits when
+the checkout sets `commit.gpgsign`. Merge uses the repository's merge strategy and requires an
+expected head SHA; it refuses drafts, outstanding change requests, and PRs without an approving
+review of that head commit, and never requests administrator bypass.
 Review-thread resolution checks the thread's repository and PR before mutation. The three
 PR maintenance actions require the host GitHub CLI. These grants do not authorize shell
 scripts, general network access, or tool calls from unrelated threads.

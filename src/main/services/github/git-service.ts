@@ -1402,6 +1402,34 @@ export async function localBranchExists(root: string, branch: string): Promise<b
   return code === 0
 }
 
+/**
+ * Commits on `branch` that origin does not have yet and that carry no
+ * signature, when the checkout requires signing (`commit.gpgsign`). Presence of
+ * a `gpgsig` header is checked rather than `%G?`, which reports SSH signatures
+ * as unverifiable without an allowed-signers file. Returns null when the
+ * commits cannot be listed, so callers fail closed.
+ */
+export async function unsignedCommitsToPublish(
+  root: string,
+  branch: string,
+): Promise<string[] | null> {
+  const signing = await runGitRead(['config', '--bool', '--get', 'commit.gpgsign'], root)
+  if (signing.stdout.trim() !== 'true') return []
+  const pending = await runGitRead(
+    ['rev-list', `refs/heads/${branch}`, '--not', '--remotes=origin'],
+    root,
+  )
+  if (pending.code !== 0) return null
+  const unsigned: string[] = []
+  for (const sha of pending.stdout.split('\n').filter(Boolean)) {
+    const object = await runGitRead(['cat-file', 'commit', sha], root)
+    if (object.code !== 0) return null
+    const header = object.stdout.split('\n\n', 1)[0] ?? ''
+    if (!/^gpgsig(-sha256)? /m.test(header)) unsigned.push(sha)
+  }
+  return unsigned
+}
+
 async function resolveDefaultBranch(root: string): Promise<string | null> {
   const { stdout: originHeadStdout, code: originHeadCode } = await runGitRead(
     ['symbolic-ref', 'refs/remotes/origin/HEAD'],

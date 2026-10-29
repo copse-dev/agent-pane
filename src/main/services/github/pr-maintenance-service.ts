@@ -9,6 +9,47 @@ const repoSchema = z.object({
   allow_merge_commit: z.boolean(),
   allow_rebase_merge: z.boolean(),
 })
+// `gh pr view --json latestReviews` leaves each review's commit oid empty, so
+// readiness is read over GraphQL, which reports the commit each review covers.
+const prReadinessSchema = z.object({
+  isDraft: z.boolean(),
+  headRefOid: z.string(),
+  reviewDecision: z.string().nullable(),
+  latestReviews: z.object({
+    nodes: z.array(
+      z.object({ state: z.string(), commit: z.object({ oid: z.string() }).nullable() }),
+    ),
+  }),
+})
+const prReadinessReplySchema = z.object({
+  data: z.object({
+    repository: z.object({ pullRequest: prReadinessSchema.nullable() }),
+  }),
+})
+
+/**
+ * Why a merge must not be requested, or null when it may be. Green checks are
+ * not enough for an unattended merge: it needs a non-draft PR still at the
+ * observed head, with an approving review of that exact commit and no
+ * outstanding change request.
+ */
+function mergeRefusal(
+  pr: z.infer<typeof prReadinessSchema>,
+  expectedHeadSha: string,
+): string | null {
+  if (pr.isDraft) return 'the pull request is a draft.'
+  if (pr.headRefOid.toLowerCase() !== expectedHeadSha.toLowerCase())
+    return `the head is now ${pr.headRefOid.slice(0, 9)}, not ${expectedHeadSha.slice(0, 9)}. Re-review the new head.`
+  if (pr.reviewDecision === 'CHANGES_REQUESTED') return 'a reviewer has requested changes.'
+  const approvedHead = pr.latestReviews.nodes.some(
+    (review) =>
+      review.state === 'APPROVED' &&
+      review.commit?.oid.toLowerCase() === expectedHeadSha.toLowerCase(),
+  )
+  if (!approvedHead) return 'no approving review covers the current head commit.'
+  return null
+}
+
 const reviewThreadSchema = z.object({
   data: z.object({
     node: z.object({
@@ -44,6 +85,24 @@ export function createPrMaintenanceService(run: typeof runGh = runGh): PrMainten
   return {
     async merge(ref: PrRef, expectedHeadSha: string): Promise<string> {
       if (!/^[a-f0-9]{40}$/i.test(expectedHeadSha)) return 'Failed: expected a full head SHA.'
+      const view = await run([
+        'api',
+        'graphql',
+        '-f',
+        'query=query($owner: String!, $repo: String!, $number: Int!) { repository(owner: $owner, name: $repo) { pullRequest(number: $number) { isDraft headRefOid reviewDecision latestReviews(first: 100) { nodes { state commit { oid } } } } } }',
+        '-f',
+        `owner=${ref.owner}`,
+        '-f',
+        `repo=${ref.repo}`,
+        '-F',
+        `number=${String(ref.number)}`,
+      ])
+      if (view.code !== 0) return result(view, '')
+      const pr = safeJsonParse(view.stdout, decodeWithSchema(prReadinessReplySchema))?.data
+        .repository.pullRequest
+      if (!pr) return 'Failed: could not read pull request review state.'
+      const refusal = mergeRefusal(pr, expectedHeadSha)
+      if (refusal) return `Failed: not merging PR #${String(ref.number)}: ${refusal}`
       const response = await run(['api', `repos/${ref.owner}/${ref.repo}`])
       if (response.code !== 0) return result(response, '')
       const repo = safeJsonParse(response.stdout, decodeWithSchema(repoSchema))
