@@ -451,7 +451,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-QCJSAO27.js";
+} from "./chunk-RDH6SCTO.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -4482,6 +4482,7 @@ function mountApprovalDialog(api2, store2, options = {}) {
       chatScrim.hidden = false;
       dialog.show();
     }
+    rejectButton.focus({ preventScroll: true });
     active = true;
     syncAttention();
   }
@@ -11485,7 +11486,7 @@ function runnableCommand(code2) {
 }
 function isRunnableCodeBlock(code2) {
   const language = explicitCodeLanguage(code2);
-  if (language !== null) return SHELL_LANGUAGES.has(language);
+  if (language !== null && language !== "text") return SHELL_LANGUAGES.has(language);
   return looksLikeUnlabelledCommand(copyButtonText(code2));
 }
 function setRunButtonState(button, state) {
@@ -11666,47 +11667,84 @@ var init_code_block_copy = __esm({
     ]);
     COMMON_SHELL_COMMANDS = /* @__PURE__ */ new Set([
       "adb",
+      "awk",
       "bash",
+      "brew",
       "bun",
       "bundle",
       "cargo",
       "cat",
       "cd",
+      "chmod",
+      "chown",
       "cmake",
       "corepack",
+      "cp",
       "curl",
       "deno",
+      "df",
+      "diff",
       "docker",
+      "du",
       "electron",
       "eslint",
+      "find",
       "gh",
       "git",
       "go",
       "gradle",
+      "grep",
+      "head",
       "java",
+      "kill",
+      "killall",
+      "launchctl",
+      "ln",
+      "ls",
       "make",
+      "mkdir",
+      "mv",
       "mvn",
       "node",
+      "nohup",
       "npm",
       "npx",
+      "pkill",
       "pnpm",
       "podman",
       "powershell",
+      "ps",
       "pwsh",
       "pytest",
       "python",
       "python3",
       "rg",
+      "rm",
+      "rsync",
       "ruby",
+      "scp",
+      "sed",
       "sh",
+      "sort",
+      "ssh",
+      "sudo",
       "swift",
+      "systemctl",
+      "tail",
+      "tar",
       "terraform",
       "tofu",
+      "touch",
       "tsc",
+      "uniq",
+      "unzip",
       "uv",
       "vite",
       "vitest",
+      "wc",
       "wdio",
+      "which",
+      "xargs",
       "xcodebuild",
       "yarn",
       "zsh"
@@ -17069,6 +17107,148 @@ var init_render_signature = __esm({
   }
 });
 
+// src/renderer/views/disclosure-model.ts
+function createDisclosureModel(host, timing, clock = systemClock) {
+  const entries = /* @__PURE__ */ new Map();
+  const revealTimers = /* @__PURE__ */ new Map();
+  const compactTimers = /* @__PURE__ */ new Map();
+  const deferredCompactions = /* @__PURE__ */ new Set();
+  function entryFor(threadId, key) {
+    let entry = entries.get(key);
+    if (!entry) {
+      entry = { threadId, mode: "auto", autoOpenedAt: null, running: false, failed: false };
+      entries.set(key, entry);
+    }
+    return entry;
+  }
+  function cancelReveal(key) {
+    revealTimers.get(key)?.();
+    revealTimers.delete(key);
+  }
+  function markAutoOpen(entry) {
+    entry.autoOpenedAt ??= clock.now();
+  }
+  function scheduleReveal(key, entry) {
+    if (revealTimers.has(key) || entry.autoOpenedAt !== null) return;
+    const timer = clock.schedule(() => {
+      revealTimers.delete(key);
+      if (!entry.running || entry.mode !== "auto" || !host.canReveal()) return;
+      if (!host.reveal(key)) return;
+      markAutoOpen(entry);
+    }, timing.revealDelayMs);
+    revealTimers.set(key, timer);
+  }
+  function cancelCompaction(threadId) {
+    compactTimers.get(threadId)?.();
+    compactTimers.delete(threadId);
+  }
+  function compact(threadId) {
+    compactTimers.delete(threadId);
+    if (!host.canCompact(threadId)) {
+      deferredCompactions.add(threadId);
+      return;
+    }
+    deferredCompactions.delete(threadId);
+    const compactable = [...entries].filter(
+      ([, entry]) => entry.threadId === threadId && entry.autoOpenedAt !== null && !entry.failed
+    );
+    const now = clock.now();
+    let dwellRemaining = 0;
+    for (const [, entry] of compactable) {
+      const shownFor = now - (entry.autoOpenedAt ?? now);
+      dwellRemaining = Math.max(dwellRemaining, timing.minDwellMs - shownFor);
+    }
+    if (dwellRemaining > 0) {
+      compactTimers.set(
+        threadId,
+        clock.schedule(() => {
+          compact(threadId);
+        }, Math.ceil(dwellRemaining))
+      );
+      return;
+    }
+    for (const [key, entry] of compactable) {
+      entry.autoOpenedAt = null;
+      if (entry.mode === "auto") host.collapse(key);
+    }
+    host.compacted(threadId);
+  }
+  function scheduleCompaction(threadId) {
+    cancelCompaction(threadId);
+    compactTimers.set(
+      threadId,
+      clock.schedule(() => {
+        compact(threadId);
+      }, timing.compactDelayMs)
+    );
+  }
+  return {
+    mode: (key) => entries.get(key)?.mode ?? "auto",
+    userChoice(key) {
+      const mode = entries.get(key)?.mode;
+      return mode === "user-open" ? true : mode === "user-closed" ? false : void 0;
+    },
+    isAutoOpen: (key) => (entries.get(key)?.autoOpenedAt ?? null) !== null,
+    choose(threadId, key, open) {
+      const entry = entryFor(threadId, key);
+      entry.mode = open ? "user-open" : "user-closed";
+      entry.autoOpenedAt = null;
+      cancelReveal(key);
+    },
+    update(threadId, key, { kind, status, autoRevealEligible }) {
+      const entry = entryFor(threadId, key);
+      entry.failed = status === "error";
+      if (status === "interrupted") entry.autoOpenedAt = null;
+      if (kind !== "entry") {
+        entry.running = status === "running";
+        if (!entry.running) cancelReveal(key);
+      }
+      if (entry.mode !== "auto") return entry.mode === "user-open";
+      if (kind === "container") return false;
+      if (entry.failed) {
+        markAutoOpen(entry);
+        return true;
+      }
+      if (kind === "entry") return false;
+      if (entry.autoOpenedAt !== null) return true;
+      if (entry.running && autoRevealEligible) scheduleReveal(key, entry);
+      return false;
+    },
+    hasAutoOpen(threadId) {
+      for (const entry of entries.values()) {
+        if (entry.threadId === threadId && entry.autoOpenedAt !== null) return true;
+      }
+      return false;
+    },
+    scheduleCompaction,
+    cancelCompaction,
+    resumeDeferredCompaction(threadId) {
+      if (deferredCompactions.delete(threadId)) scheduleCompaction(threadId);
+    },
+    dispose() {
+      for (const cancel of revealTimers.values()) cancel();
+      for (const cancel of compactTimers.values()) cancel();
+      revealTimers.clear();
+      compactTimers.clear();
+      deferredCompactions.clear();
+    }
+  };
+}
+var systemClock;
+var init_disclosure_model = __esm({
+  "src/renderer/views/disclosure-model.ts"() {
+    systemClock = {
+      now: () => Date.now(),
+      schedule(callback, ms) {
+        const timer = setTimeout(callback, ms);
+        return () => {
+          clearTimeout(timer);
+        };
+      }
+    };
+  }
+});
+
 // src/renderer/controller/resend-message.ts
 function lastResendableMessage(thread) {
   const queued = queuedMessageIds(thread);
@@ -19601,7 +19781,8 @@ function mountConversation(root, store2, api2) {
     details.dataset["userToggled"] = "1";
     details.open = true;
     const key = details.dataset["disclosureKey"];
-    if (key) disclosurePreferences.set(key, true);
+    const threadId = store2.getState().activeThreadId;
+    if (key && threadId) disclosures.choose(threadId, key, true);
     details.scrollIntoView({ block: "nearest" });
   });
   activityBar.addEventListener("keydown", (event) => {
@@ -19960,22 +20141,36 @@ function mountConversation(root, store2, api2) {
   let stickyImagePrompt = null;
   let stickyImageFullHeight = 0;
   let backfillGeneration = 0;
-  const disclosurePreferences = /* @__PURE__ */ new Map();
   const liveRollupMessages = /* @__PURE__ */ new Set();
-  const autoOpenedDisclosures = /* @__PURE__ */ new Set();
-  const autoOpenedAt = /* @__PURE__ */ new Map();
-  const runningDisclosures = /* @__PURE__ */ new Set();
   const disclosureElements = /* @__PURE__ */ new Map();
   const wiredDisclosureSummaries = /* @__PURE__ */ new WeakSet();
-  const revealTimers = /* @__PURE__ */ new Map();
-  const compactTimers = /* @__PURE__ */ new Map();
-  const deferredCompactions = /* @__PURE__ */ new Set();
-  function cancelReveal(key) {
-    const timer = revealTimers.get(key);
-    if (timer !== void 0) clearTimeout(timer);
-    revealTimers.delete(key);
-  }
-  function wireDisclosurePreference(details, key) {
+  const disclosures = createDisclosureModel(
+    {
+      canReveal: () => pinnedToBottom,
+      canCompact: (threadId) => threadId !== store2.getState().activeThreadId || pinnedToBottom,
+      reveal(key) {
+        const details = disclosureElements.get(key);
+        if (!details?.isConnected) return false;
+        details.open = true;
+        ensureToolCardBodyRendered(details);
+        scrollToBottom();
+        return true;
+      },
+      collapse(key) {
+        const details = disclosureElements.get(key);
+        if (details?.isConnected) details.open = false;
+      },
+      compacted(threadId) {
+        if (threadId === store2.getState().activeThreadId) scrollToBottom();
+      }
+    },
+    {
+      revealDelayMs: TOOL_AUTO_REVEAL_DELAY_MS,
+      minDwellMs: TOOL_AUTO_REVEAL_MIN_DWELL_MS,
+      compactDelayMs: TOOL_AUTO_COMPACT_DELAY_MS
+    }
+  );
+  function wireDisclosurePreference(details, threadId, key) {
     const summary = details.querySelector(":scope > summary");
     if (!summary || wiredDisclosureSummaries.has(summary)) return;
     wiredDisclosureSummaries.add(summary);
@@ -19984,13 +20179,15 @@ function mountConversation(root, store2, api2) {
       if (target instanceof Element && target.closest("button")) return;
       event.preventDefault();
       details.open = !details.open;
-      disclosurePreferences.set(key, details.open);
+      disclosures.choose(threadId, key, details.open);
       details.dataset["userToggled"] = "1";
-      autoOpenedDisclosures.delete(key);
-      autoOpenedAt.delete(key);
-      cancelReveal(key);
       if (details.open) ensureToolCardBodyRendered(details);
     });
+  }
+  function bindDisclosure(details, threadId, key) {
+    details.dataset["disclosureKey"] = key;
+    disclosureElements.set(key, details);
+    wireDisclosurePreference(details, threadId, key);
   }
   function registerReasoningDisclosures(msgEl) {
     const threadId = getActiveThread(store2)?.id;
@@ -20000,76 +20197,13 @@ function mountConversation(root, store2, api2) {
       const step = details.closest(".tool-card-step[data-step-message-id]");
       const messageId = step?.dataset["stepMessageId"] ?? fallbackMessageId;
       const key = `${threadId}:${messageId}:reasoning`;
-      details.dataset["disclosureKey"] = key;
-      disclosureElements.set(key, details);
-      wireDisclosurePreference(details, key);
-      const preference = disclosurePreferences.get(key);
+      bindDisclosure(details, threadId, key);
+      const preference = disclosures.userChoice(key);
       if (preference !== void 0) {
         details.dataset["userToggled"] = "1";
         details.open = preference;
       }
     });
-  }
-  function cancelThreadCompaction(threadId) {
-    const timer = compactTimers.get(threadId);
-    if (timer !== void 0) clearTimeout(timer);
-    compactTimers.delete(threadId);
-  }
-  function revealAfterDelay(key) {
-    if (revealTimers.has(key) || autoOpenedDisclosures.has(key)) return;
-    const timer = setTimeout(() => {
-      revealTimers.delete(key);
-      if (!runningDisclosures.has(key) || disclosurePreferences.has(key) || !pinnedToBottom) return;
-      const details = disclosureElements.get(key);
-      if (!details?.isConnected) return;
-      autoOpenedDisclosures.add(key);
-      autoOpenedAt.set(key, Date.now());
-      details.open = true;
-      ensureToolCardBodyRendered(details);
-      scrollToBottom();
-    }, TOOL_AUTO_REVEAL_DELAY_MS);
-    revealTimers.set(key, timer);
-  }
-  function compactThreadDisclosures(threadId) {
-    compactTimers.delete(threadId);
-    if (threadId === store2.getState().activeThreadId && !pinnedToBottom) {
-      deferredCompactions.add(threadId);
-      return;
-    }
-    deferredCompactions.delete(threadId);
-    const prefix = `${threadId}:`;
-    const now = Date.now();
-    let dwellRemaining = 0;
-    for (const key of autoOpenedDisclosures) {
-      if (!key.startsWith(prefix)) continue;
-      const details = disclosureElements.get(key);
-      if (details?.dataset["status"] === "error") continue;
-      const openedAt = autoOpenedAt.get(key) ?? 0;
-      dwellRemaining = Math.max(dwellRemaining, TOOL_AUTO_REVEAL_MIN_DWELL_MS - (now - openedAt));
-    }
-    if (dwellRemaining > 0) {
-      const timer = setTimeout(() => {
-        compactThreadDisclosures(threadId);
-      }, Math.ceil(dwellRemaining));
-      compactTimers.set(threadId, timer);
-      return;
-    }
-    for (const key of [...autoOpenedDisclosures]) {
-      if (!key.startsWith(prefix)) continue;
-      const details = disclosureElements.get(key);
-      if (details?.dataset["status"] === "error") continue;
-      autoOpenedDisclosures.delete(key);
-      autoOpenedAt.delete(key);
-      if (!disclosurePreferences.has(key) && details?.isConnected) details.open = false;
-    }
-    if (threadId === store2.getState().activeThreadId) scrollToBottom();
-  }
-  function scheduleThreadCompaction(threadId) {
-    cancelThreadCompaction(threadId);
-    const timer = setTimeout(() => {
-      compactThreadDisclosures(threadId);
-    }, TOOL_AUTO_COMPACT_DELAY_MS);
-    compactTimers.set(threadId, timer);
   }
   function isNearBottom() {
     const distance = list.scrollHeight - list.scrollTop - list.clientHeight;
@@ -20156,7 +20290,7 @@ function mountConversation(root, store2, api2) {
     } else if (isNearBottom()) {
       pinnedToBottom = true;
       const threadId = store2.getState().activeThreadId;
-      if (threadId && deferredCompactions.delete(threadId)) scheduleThreadCompaction(threadId);
+      if (threadId) disclosures.resumeDeferredCompaction(threadId);
     }
     lastScrollTop = scrollTop;
     updateScrollButton();
@@ -20312,7 +20446,7 @@ function mountConversation(root, store2, api2) {
       userScrolledUpAt = 0;
       pinnedToBottom = true;
       const threadId = store2.getState().activeThreadId;
-      if (threadId && deferredCompactions.delete(threadId)) scheduleThreadCompaction(threadId);
+      if (threadId) disclosures.resumeDeferredCompaction(threadId);
     }
     updateScrollButton();
   }
@@ -20366,39 +20500,18 @@ function mountConversation(root, store2, api2) {
   function applyToolCardOpenState(card, item, threadId, messageId, autoRevealEligible) {
     if (card.classList.contains("thread-proposal")) return;
     const key = `${threadId}:${messageId}:${toolCardKey(item)}`;
-    card.dataset["disclosureKey"] = key;
     const itemStatus2 = item.type === "individual" ? cardStatus2([item.toolCall]) : cardStatus2(item.toolCalls);
     card.dataset["status"] = itemStatus2;
-    disclosureElements.set(key, card);
-    wireDisclosurePreference(card, key);
-    const preference = disclosurePreferences.get(key);
-    const running = item.type === "individual" ? item.toolCall.status === "running" || item.toolCall.subagent?.status === "running" : itemStatus2 === "running";
-    const failed = itemStatus2 === "error";
-    if (itemStatus2 === "interrupted") {
-      autoOpenedDisclosures.delete(key);
-      autoOpenedAt.delete(key);
-    }
-    if (running) runningDisclosures.add(key);
-    else {
-      runningDisclosures.delete(key);
-      cancelReveal(key);
-    }
-    if (preference !== void 0) {
-      card.open = preference;
-    } else if (item.type === "rollup" || item.type === "step") {
-      card.open = false;
-    } else if (failed) {
-      card.open = true;
-      autoOpenedDisclosures.add(key);
-      if (!autoOpenedAt.has(key)) autoOpenedAt.set(key, Date.now());
-    } else if (autoOpenedDisclosures.has(key)) {
-      card.open = true;
-    } else {
-      card.open = false;
-      if (running && autoRevealEligible) revealAfterDelay(key);
-    }
+    bindDisclosure(card, threadId, key);
+    const container = item.type === "rollup" || item.type === "step";
+    const subagentRunning = item.type === "individual" && item.toolCall.subagent?.status === "running";
+    card.open = disclosures.update(threadId, key, {
+      kind: container ? "container" : "tool",
+      status: subagentRunning ? "running" : itemStatus2,
+      autoRevealEligible
+    });
     if (card.open) ensureToolCardBodyRendered(card);
-    if (item.type === "rollup" || item.type === "step") {
+    if (container) {
       const nestedCards = card.querySelectorAll(
         ":scope > .tool-rollup-body > .tool-card"
       );
@@ -20411,24 +20524,18 @@ function mountConversation(root, store2, api2) {
       return;
     }
     if (item.type === "group") {
+      const calls = new Map(item.toolCalls.map((call) => [call.id, call]));
       card.querySelectorAll(".tool-group-item[data-tool-id]").forEach((entry) => {
         const id = entry.dataset["toolId"];
-        if (!id) return;
+        const call = id ? calls.get(id) : void 0;
+        if (!id || !call) return;
         const itemKey = `${threadId}:${messageId}:t:${id}`;
-        entry.dataset["disclosureKey"] = itemKey;
-        disclosureElements.set(itemKey, entry);
-        wireDisclosurePreference(entry, itemKey);
-        const preference2 = disclosurePreferences.get(itemKey);
-        const entryFailed = entry.dataset["status"] === "error";
-        if (preference2 !== void 0) {
-          entry.open = preference2;
-        } else if (entryFailed) {
-          entry.open = true;
-          autoOpenedDisclosures.add(itemKey);
-          if (!autoOpenedAt.has(itemKey)) autoOpenedAt.set(itemKey, Date.now());
-        } else {
-          entry.open = false;
-        }
+        bindDisclosure(entry, threadId, itemKey);
+        entry.open = disclosures.update(threadId, itemKey, {
+          kind: "entry",
+          status: cardStatus2([call]),
+          autoRevealEligible: false
+        });
         if (entry.open) ensureToolCardBodyRendered(entry);
       });
     }
@@ -21251,10 +21358,8 @@ function mountConversation(root, store2, api2) {
       setScrollTopProgrammatically(preservedScrollTop);
       updateScrollButton();
     }
-    if (thread.status === "running") cancelThreadCompaction(thread.id);
-    else if ([...autoOpenedDisclosures].some((key) => key.startsWith(`${thread.id}:`))) {
-      scheduleThreadCompaction(thread.id);
-    }
+    if (thread.status === "running") disclosures.cancelCompaction(thread.id);
+    else if (disclosures.hasAutoOpen(thread.id)) disclosures.scheduleCompaction(thread.id);
     if (initialStart > 0) {
       const generation = backfillGeneration;
       requestAnimationFrame(() => {
@@ -21505,8 +21610,8 @@ function mountConversation(root, store2, api2) {
       }
     }),
     store2.on("thread_status_changed", (tid, status) => {
-      if (status === "running") cancelThreadCompaction(tid);
-      else scheduleThreadCompaction(tid);
+      if (status === "running") disclosures.cancelCompaction(tid);
+      else disclosures.scheduleCompaction(tid);
       if (tid !== store2.getState().activeThreadId) return;
       if (status === "running") {
         list.querySelectorAll("[data-turn-recovery-card]").forEach((card) => {
@@ -21545,14 +21650,7 @@ function mountConversation(root, store2, api2) {
     listResizeObserver?.disconnect();
     conciseFooterObserver.disconnect();
     showAcpTransportNoiseDisclosure = () => false;
-    revealTimers.forEach((timer) => {
-      clearTimeout(timer);
-    });
-    compactTimers.forEach((timer) => {
-      clearTimeout(timer);
-    });
-    revealTimers.clear();
-    compactTimers.clear();
+    disclosures.dispose();
     disposeInlineArtefacts(list);
     unbindFileLinks();
     unbindWorkspaceLinks();
@@ -21667,6 +21765,7 @@ var init_conversation = __esm({
     init_reviewer_input3();
     init_reviewer_input();
     init_render_signature();
+    init_disclosure_model();
     init_message_queue();
     init_fork_thread3();
     init_side_chat2();
@@ -86100,6 +86199,7 @@ function createTranscriptReducer(store2, hooks = {}) {
       case "machine_turn_start": {
         hooks.turnStarted?.(threadId);
         setThreadStatus(store2, threadId, "running");
+        if (chunk.hidden) break;
         const id = hooks.createMessageId?.(threadId);
         addMessage(
           store2,
