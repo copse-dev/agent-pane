@@ -70,14 +70,14 @@ export class RemoteNames {
   start(): Promise<void> {
     return this.serial(async () => {
       try {
-        this.record = this.options.store.read()
+        this.record = await this.options.store.read()
       } catch (error) {
         this.fail(error)
         this.changed()
         return
       }
       if (!this.record?.registration) return
-      this.certificate = this.options.store.readCertificate(this.record.certificate)
+      this.certificate = await this.options.store.readCertificate(this.record.certificate)
       this.scheduleRenewal()
       this.changed()
       await this.refreshStatus()

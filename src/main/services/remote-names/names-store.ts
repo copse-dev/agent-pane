@@ -1,5 +1,6 @@
 import { randomUUID, X509Certificate, createPrivateKey } from 'node:crypto'
-import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import {
@@ -72,10 +73,10 @@ export class NamesStore {
     this.chainPath = join(directory, 'tls-chain.pem')
   }
 
-  read(): NamesRecord | null {
+  async read(): Promise<NamesRecord | null> {
     let text: string
     try {
-      text = readFileSync(this.recordPath, 'utf8')
+      text = await readFile(this.recordPath, 'utf8')
     } catch (error) {
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null
       throw error
@@ -119,11 +120,13 @@ export class NamesStore {
   }
 
   /** The stored TLS identity, or null when absent or no longer a matching pair. */
-  readCertificate(meta: NamesRecord['certificate']): StoredCertificate | null {
+  async readCertificate(meta: NamesRecord['certificate']): Promise<StoredCertificate | null> {
     if (!meta) return null
     try {
-      const keyPem = readFileSync(this.keyPath, 'utf8')
-      const chainPem = readFileSync(this.chainPath, 'utf8')
+      const [keyPem, chainPem] = await Promise.all([
+        readFile(this.keyPath, 'utf8'),
+        readFile(this.chainPath, 'utf8'),
+      ])
       if (!new X509Certificate(chainPem).checkPrivateKey(createPrivateKey(keyPem))) return null
       return { ...meta, chainPem, keyPem }
     } catch {

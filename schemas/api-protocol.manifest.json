@@ -1515,6 +1515,27 @@
           0
         ]
       },
+      "mobile:recheck-name-dns": {
+        "api": "mobile.recheckNameDns",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "mobile:register-name": {
+        "api": "mobile.registerName",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "mobile:remove-name": {
+        "api": "mobile.removeName",
+        "args": [
+          0,
+          0
+        ]
+      },
       "mobile:reply": {
         "api": "mobile.reply",
         "args": [
