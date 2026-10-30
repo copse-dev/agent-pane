@@ -2281,6 +2281,18 @@
       "sha256": "abce1da43b77b76b2a10763b63c663bc33afcda3763a38a51cb7347b36e06724",
       "bytes": 109812
     },
+    "mcp-add-server-connected.png": {
+      "sha256": "4a51d6ee6fdfb0a05a12d9b34fbc2cd7c795241b76ac65fe91f012c199191371",
+      "bytes": 356094
+    },
+    "mcp-add-server-form-secrets.png": {
+      "sha256": "496ef5aa28e75a5b0bd5e2a35061c863399cb2d9c97230cb16b50c55584f2e8c",
+      "bytes": 262926
+    },
+    "mcp-add-server-form.png": {
+      "sha256": "21c39fee9fb2cd4ecc756e5bc42c86426702e4326ae997afb120872c3d385016",
+      "bytes": 222873
+    },
     "mcp-approval-dialog.png": {
       "sha256": "0a04775159a537abcbb399c5dce2b0cefa2ac49021416a8681ede5615eef5c75",
       "bytes": 295168
@@ -2296,6 +2308,14 @@
     "mcp-http-sign-in-required.png": {
       "sha256": "4c9d110c0d7c7d575679ed465cd953bd5822255425b78c4e53dc7c32989f3c02",
       "bytes": 349087
+    },
+    "mcp-native-profile-error.png": {
+      "sha256": "3e56c4768c5791ec44925fce793cd00f2cccf6d609fb7a20877f6561408742dc",
+      "bytes": 320855
+    },
+    "mcp-native-simulator-creation-error.png": {
+      "sha256": "4046d1744ddb2b546c0e39cbe49f614f62f2a34153b1d94d6219b699861d10e7",
+      "bytes": 335881
     },
     "mcp-settings-connected.png": {
       "sha256": "71456dfb4b9253161e1acaafe1f61f4ac97656648451475a5f6e33a5e0a568fd",
@@ -5020,6 +5040,10 @@
     "terminal-shell-prompt.png": {
       "sha256": "a2668841e4d7e931ce569284809ff103fe99fa72fec501e1ab24cb16b506d2ce",
       "bytes": 256786
+    },
+    "terminal-unsafe-paste-confirm.png": {
+      "sha256": "a8c06e56373e57706e0f2284a6d47948b3fc289f19632afb4b9974c31c3b5dd6",
+      "bytes": 250150
     },
     "theme-boot-light.png": {
       "sha256": "c7dae4834757b0fb4bfa19e2e7b62315535ae356c42e88d30f319eb15942390f",
