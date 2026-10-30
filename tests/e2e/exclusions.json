@@ -126,17 +126,6 @@
       "markers": ["wdio.ci.conf.ts: exclude"]
     },
     {
-      "spec": "tests/e2e/queued-pinned.e2e.ts",
-      "category": "quarantine",
-      "reason": "CI config documents timing/scroll-pinning instability; this remaining runtime spec has not migrated with the other queue tests.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
-      "ownerRole": "Renderer and CI maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "message-queue, queued-send-now, and queued-message-edit component tests cover related behaviors, not the remaining scroll geometry.",
-      "markers": ["wdio.ci.conf.ts: exclude"]
-    },
-    {
       "spec": "tests/e2e/scroll-to-bottom.e2e.ts",
       "category": "quarantine",
       "reason": "CI config excludes the entire spec for historical renderer crash/timeouts; two streaming cases also skip in-spec.",

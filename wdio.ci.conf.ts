@@ -10,12 +10,6 @@ import { config as baseConfig } from './wdio.conf.ts'
 const ciExclude = [
   './tests/e2e/agent-eval-drive.e2e.ts',
   './tests/e2e/follow-up-suggestions.e2e.ts',
-  // Queued-message timing (mock delays, scroll pinning) that's flaky on the CI
-  // runner. The basic-queue, send-now, and edit specs in this family migrated to
-  // happy-dom component tests (src/renderer/views/{message-queue,queued-send-now,
-  // queued-message-edit}.test.ts); queued-pinned stays until its scroll-pinning
-  // behaviour is ported too.
-  './tests/e2e/queued-pinned.e2e.ts',
   './tests/e2e/portrait-right-panel.e2e.ts',
   // Heavy multi-turn mock agent run + Monaco diff-approval IPC after a
   // reloadSession; flaky/slow on the constrained CI runner (passes locally).
