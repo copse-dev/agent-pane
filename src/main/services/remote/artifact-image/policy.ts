@@ -105,15 +105,6 @@ export function validateArtifactPath(path: string): string {
   return path
 }
 
-export function supportedImageMimeForPath(path: string): string | null {
-  const lower = path.toLowerCase()
-  if (lower.endsWith('.png')) return 'image/png'
-  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
-  if (lower.endsWith('.gif')) return 'image/gif'
-  if (lower.endsWith('.webp')) return 'image/webp'
-  return null
-}
-
 /** Canonicalize one configured origin, or null when it is not an approvable download origin. */
 export function canonicalDownloadOrigin(raw: string): string | null {
   let url: URL
