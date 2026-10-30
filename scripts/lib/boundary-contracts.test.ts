@@ -122,7 +122,7 @@ describe('waivers', () => {
     const failing = [result({ outcome: 'regression', detail: 'HTTP 400' })]
     const today = applyWaivers(failing, [waiver({ expires: '2026-10-30' })], NOW)
     assert.equal(today[0]?.outcome, 'waived')
-    assert.match(today[0]?.detail ?? '', /regression waived until 2026-10-30/)
+    assert.match(today[0].detail, /regression waived until 2026-10-30/)
     const tomorrow = new Date('2026-10-31T00:00:01Z')
     assert.equal(
       applyWaivers(failing, [waiver({ expires: '2026-10-30' })], tomorrow)[0]?.outcome,
@@ -158,10 +158,10 @@ describe('createRedactor', () => {
   it('removes literal secret values and credential-shaped tokens', () => {
     const redact = createRedactor(['sk-ant-api03-REALSECRETVALUE1234567890', ''])
     const out = redact(
-      'key sk-ant-api03-REALSECRETVALUE1234567890 rejected; token ghp_0123456789abcdefghijABCDEFGHIJ012345',
+      `key sk-ant-api03-REALSECRETVALUE1234567890 rejected; token ghp_${'A'.repeat(36)}`,
     )
     assert.doesNotMatch(out, /REALSECRETVALUE/)
-    assert.doesNotMatch(out, /ghp_0123456789/)
+    assert.doesNotMatch(out, /ghp_A{36}/)
     assert.match(out, /REDACTED/)
   })
 })
