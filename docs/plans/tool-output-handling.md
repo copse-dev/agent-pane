@@ -1,6 +1,8 @@
 # Tool-output handling: evidence-preserving caps, spill, and stubbing
 
-Status: PRs A and B implemented on `claude/tool-output-evidence-cap`; C–F are designs.
+Status: **Partially implemented.** PRs A and B shipped in
+[#3415](https://github.com/copse-dev/agent-pane/pull/3415). A2 (`runCommand` still uses
+`appendFlatCapped`) and C–F are open designs.
 Inspired by the SoL-Pi paper's _ObservationPack_ and evidence-preserving reducer: a
 tool observation the model sees should be bounded, should say exactly what was left
 out, and should keep the lines most likely to matter.

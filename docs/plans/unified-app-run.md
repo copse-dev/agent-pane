@@ -1,6 +1,7 @@
 # Shared Apple and Android app running
 
-Follow-on to #2667, on `codex/unified-app-run`.
+Status: **Resolved** — shipped in [#2677](https://github.com/copse-dev/agent-pane/pull/2677), a
+follow-on to [#2667](https://github.com/copse-dev/agent-pane/pull/2667).
 
 ## User flow
 

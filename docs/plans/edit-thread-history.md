@@ -1,6 +1,7 @@
 # Edit thread history
 
-Status: Initial manual editing release implemented in this working tree. Follow-up hardening remains below.
+Status: **Active** — the initial manual editing release is on `main`
+([#3314](https://github.com/copse-dev/agent-pane/pull/3314)). Follow-up hardening remains below.
 Base inspected: `f05906bd5`.
 Design reference: [interactive prototype](../../prototypes/edit-thread.html).
 The prototype's browser spec is [edit-thread.demo.ts](../../tests/demo/edit-thread.demo.ts).

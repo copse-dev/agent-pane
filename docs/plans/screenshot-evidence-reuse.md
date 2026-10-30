@@ -1,8 +1,10 @@
 # Screenshot evidence reuse: rendering-input identity
 
-Status: **Proposed, shadow mode**. Compiled 15 October 2026 against main
-`82d60dc`. Item 3 of the recovery throughput plan proposed in
-[#3770](https://github.com/copse-dev/agent-pane/pull/3770) ("Reuse evidence when
+Status: **Active — shadow instrument landed, measurement pending.** The rendering-input identity
+(`scripts/screenshot-identity.mts`) is wired into `ci.yml` as an observe-only artifact
+([#3783](https://github.com/copse-dev/agent-pane/pull/3783)). Compiled 15 October 2026 against main
+`82d60dc`. Item 3 of the [recovery throughput plan](recovery-throughput.md)
+([#3770](https://github.com/copse-dev/agent-pane/pull/3770)) ("Reuse evidence when
 rendering inputs are unchanged"). This document audits what already reuses
 screenshot evidence, defines a rendering-input identity, and says how to measure
 it. It changes **no** gate, status, label, publisher or acceptance path. Reusing

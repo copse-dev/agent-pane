@@ -1,6 +1,6 @@
 # Sandbox network scope isolation
 
-**Status: Phases 1–5 implemented.** Written after a user report of
+**Status: Resolved — Phases 1–5 implemented.** Written after a user report of
 constant "Run shell command?" prompts in a pane running an OpenRouter model,
 where the reason line named a network widening the pane had nothing to do with.
 
