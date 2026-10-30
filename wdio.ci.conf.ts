@@ -16,6 +16,9 @@ const ciExclude = [
   // queued-message-edit}.test.ts); queued-pinned stays until its scroll-pinning
   // behaviour is ported too.
   './tests/e2e/queued-pinned.e2e.ts',
+  // The auto-portrait layout needs a window >=1080 logical px tall (minWidth 800
+  // x 1.35), taller than the 1600x1024 logical Xvfb desktop in run-e2e.mts.
+  './tests/e2e/portrait-right-panel.e2e.ts',
   // Heavy multi-turn mock agent run + Monaco diff-approval IPC after a
   // reloadSession; flaky/slow on the constrained CI runner (passes locally).
   './tests/e2e/staged-diff-ui.e2e.ts',

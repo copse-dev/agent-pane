@@ -30,8 +30,9 @@ async function setProjectsWidth(px: number): Promise<void> {
 }
 
 /**
- * Narrow the app shell in CSS (not via OS window.resizeTo). CI displays can
- * refuse tall Electron windows. Portrait chrome itself is forced by seeding
+ * Narrow the app shell in CSS (not via OS window.resizeTo). CI displays often
+ * refuse tall Electron windows — same flake that CI-excludes
+ * `portrait-right-panel.e2e.ts`. Portrait chrome itself is forced by seeding
  * `rightPanelPosition: 'bottom'`; this just gives the chat column a stable
  * portrait-ish width for layout + overflow assertions.
  */
@@ -52,9 +53,9 @@ async function pinPortraitAppShell(): Promise<void> {
 async function openPortraitChrome(): Promise<void> {
   resetUserData()
   // Pin the panel to `bottom` so portrait chrome activates without needing a
-  // tall OS window. CI runners can clamp `window.resizeTo` / windowBounds, and
-  // the chrome affordances are identical for bottom-pinned and auto-portrait
-  // layouts.
+  // tall OS window. CI runners often clamp `window.resizeTo` / windowBounds
+  // (same reason `portrait-right-panel.e2e.ts` is CI-excluded), and the chrome
+  // affordances are identical for bottom-pinned and auto-portrait layouts.
   seedPortraitRightPanelFixture(
     seedStableWorkspace(),
     true,
