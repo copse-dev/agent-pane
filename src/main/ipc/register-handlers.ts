@@ -503,10 +503,19 @@ import { explainContainerModel } from '../services/providers/container-provider.
 
 const discoverExternalCursorAgentsFromIpc = createBestEffortExternalCursorAgentDiscovery()
 
-const zAutomationPermission = z.object({
-  kind: z.enum(['copse-action', 'mcp-tool']),
-  toolName: z.string().trim().min(1).max(512),
-})
+const zAutomationPermission = z.union([
+  z.object({
+    kind: z.enum(['copse-action', 'mcp-tool']),
+    toolName: z.string().trim().min(1).max(512),
+  }),
+  z.object({
+    kind: z.literal('worktree-preparation'),
+    toolName: z.literal('prepare_worktree'),
+    directory: z.string().min(1).max(4096),
+    planFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+    offline: z.boolean(),
+  }),
+])
 
 const zAutomationScheduleInput = z.object({
   id: z.string().min(1).max(256).optional(),

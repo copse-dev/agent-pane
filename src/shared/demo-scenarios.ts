@@ -140,6 +140,8 @@ export interface DemoScenario {
     type: string
     allowRemember?: boolean
     rememberLabel?: string
+    rememberDefault?: boolean
+    rememberSubject?: string
     approveLabel?: string
     collapseDetails?: boolean
     approveOnceLabel?: string
@@ -3807,6 +3809,20 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       ...threadAccessApproval(access),
     }),
   ),
+  approvalRiskScenario('approval-automation-preparation', {
+    id: 'automation-preparation',
+    title: 'Prepare this worktree?',
+    type: 'shell',
+    body: "Install dependencies:\n'corepack' 'pnpm@10.34.5' 'install' '--frozen-lockfile' '--ignore-scripts' '--prod=false'\nProject setup:\n'node' 'scripts/prepare-native-artifacts.mts'",
+    bodyAdvice:
+      'Install locked dependencies with lifecycle scripts disabled. Project setup executes repository code.',
+    bodyFooter:
+      'Network: allowed during preparation; checks stay offline. Writes are limited to this project and Copse-managed caches.\nRemembering permits this exact preparation plan and network scope in future runs of this automation. Changed inputs require approval again.',
+    allowRemember: true,
+    rememberLabel: 'Remember for this automation (“Morning caretaker”)',
+    rememberDefault: true,
+    rememberSubject: 'project/schedule/preparation-plan',
+  }),
   approvalRiskScenario('approval-web-url', {
     id: 'web-url',
     title: 'Allow web origin?',

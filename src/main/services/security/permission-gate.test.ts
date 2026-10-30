@@ -95,13 +95,13 @@ function seedAutomationSchedule(permissions: AutomationPermission[] = []): void 
   ])
 }
 
-function underAutomation<T>(fn: () => T): T {
+function underAutomation<T>(fn: () => T, root = '/tmp/automation-project'): T {
   return runWithThreadExecutionContext(
     {
       projectId: 'project-1',
       threadId: 'automation-thread-1',
-      projectRoot: '/tmp/automation-project',
-      root: '/tmp/automation-project',
+      projectRoot: root,
+      root,
       checkoutMode: 'worktree',
       branch: 'copse/automation-thread-1',
       automation: {
@@ -252,6 +252,103 @@ describe('package command approval scope', () => {
 })
 
 describe('prepare_worktree permission', () => {
+  it('remembers only an automation’s reviewed preparation across worktrees and supports revocation', async () => {
+    setPermissionGateForTests(null)
+    const roots = [
+      mkdtempSync(join(tmpdir(), 'prepare-automation-')),
+      mkdtempSync(join(tmpdir(), 'prepare-automation-')),
+    ]
+    for (const root of roots) {
+      writeFileSync(join(root, 'package.json'), '{"packageManager":"npm@11.12.0"}')
+      writeFileSync(join(root, 'package-lock.json'), '{}')
+    }
+    const first = roots[0]
+    const second = roots[1]
+    assert.ok(first && second)
+    seedAutomationSchedule()
+    let prompts = 0
+    let remember = false
+    setApprovalHandler(async (request) => {
+      prompts++
+      assert.equal(request.allowRemember, true)
+      assert.equal(request.rememberDefault, true)
+      assert.match(request.rememberLabel ?? '', /Remember for this automation/)
+      assert.ok(request.rememberSubject)
+      return { approved: true, remember }
+    })
+    const check = (root: string, offline = false): Promise<boolean> =>
+      underAutomation(
+        () =>
+          ensureToolPermitted({
+            toolName: 'prepare_worktree',
+            args: { planFingerprint: readWorktreePreparationPlan(root).fingerprint, offline },
+          }),
+        root,
+      )
+    try {
+      assert.equal(await check(first), true)
+      remember = true
+      assert.equal(await check(first), true)
+      assert.equal(prompts, 2, 'unchecking remember leaves approval one-time')
+      const firstPlan = readWorktreePreparationPlan(first)
+      const secondPlan = readWorktreePreparationPlan(second)
+      assert.notEqual(firstPlan.fingerprint, secondPlan.fingerprint)
+      assert.equal(firstPlan.contentFingerprint, secondPlan.contentFingerprint)
+      assert.equal(await check(second), true)
+      assert.equal(prompts, 2, 'a fresh worktree reuses the content-scoped grant')
+      const saved = getAutomationService().list('project-1')[0]?.permissions ?? []
+      assert.equal(saved.length, 1)
+      assert.equal(saved[0]?.kind, 'worktree-preparation')
+      setApprovalHandler(async (request) => {
+        prompts++
+        assert.equal(request.allowRemember, false)
+        return { approved: false, remember: true }
+      })
+      setWorkspaceRootForTest(first)
+      assert.equal(
+        await ensureToolPermitted({
+          toolName: 'prepare_worktree',
+          args: { planFingerprint: firstPlan.fingerprint },
+        }),
+        false,
+      )
+      setWorkspaceRootForTest(null)
+      assert.equal(prompts, 3, 'ordinary threads cannot reuse the automation grant')
+      setSetting('toolPermissionOverrides', {
+        [copseToolPermissionId('prepare_worktree')]: 'block',
+      })
+      assert.equal(await check(first), false)
+      assert.equal(prompts, 3, 'Blocked denies without prompting')
+      setSetting('toolPermissionOverrides', {})
+      setApprovalHandler(async () => {
+        prompts++
+        return { approved: true, remember: true }
+      })
+      assert.equal(await check(second, true), true)
+      assert.equal(prompts, 4, 'network scope is exact')
+      writeFileSync(join(second, 'package-lock.json'), '{"changed":true}')
+      assert.equal(await check(second), true)
+      assert.equal(prompts, 5, 'changed dependency inputs require approval')
+      setSetting('toolPermissionOverrides', { [copseToolPermissionId('prepare_worktree')]: 'ask' })
+      setApprovalHandler(async (request) => {
+        prompts++
+        assert.equal(request.allowRemember, prompts !== 6)
+        return { approved: true, remember: false }
+      })
+      assert.equal(await check(first), true)
+      assert.equal(prompts, 6, 'Always ask overrides the saved grant')
+      setSetting('toolPermissionOverrides', {})
+      seedAutomationSchedule()
+      assert.equal(await check(first), true)
+      assert.equal(prompts, 7, 'revocation is effective immediately')
+    } finally {
+      setApprovalHandler(null)
+      setSetting('toolPermissionOverrides', {})
+      storageSet(AUTOMATIONS_STORAGE_KEY, [])
+      for (const root of roots) rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('asks once for the bounded preparation capability', async () => {
     const root = mkdtempSync(join(tmpdir(), 'prepare-permission-'))
     writeFileSync(join(root, 'package.json'), '{"packageManager":"npm@11.12.0"}')
@@ -761,6 +858,8 @@ describe('ensureToolPermitted', () => {
     let rememberLabel = ''
     setApprovalHandler(async (request) => {
       rememberLabel = request.rememberLabel ?? ''
+      assert.equal(request.rememberDefault, true)
+      assert.ok(request.rememberSubject)
       return { approved: true, remember: true }
     })
     try {
@@ -770,7 +869,7 @@ describe('ensureToolPermitted', () => {
         ),
         true,
       )
-      assert.match(rememberLabel, /future “Morning caretaker” runs/)
+      assert.match(rememberLabel, /Remember for this automation.*Morning caretaker/)
       assert.equal(
         getAutomationService().permissionPreferenceForThread(
           'project-1',
@@ -813,6 +912,8 @@ describe('ensureToolPermitted', () => {
     let rememberLabel = ''
     setApprovalHandler(async (request) => {
       rememberLabel = request.rememberLabel ?? ''
+      assert.equal(request.rememberDefault, true)
+      assert.ok(request.rememberSubject)
       return { approved: true, remember: true }
     })
     try {
@@ -820,7 +921,7 @@ describe('ensureToolPermitted', () => {
         await underAutomation(() => ensureToolPermitted({ toolName, args: { report: 1 } })),
         true,
       )
-      assert.match(rememberLabel, /Allow this tool for future “Morning caretaker” runs/)
+      assert.match(rememberLabel, /Remember for this automation.*Morning caretaker/)
       assert.equal(
         getAutomationService().permissionPreferenceForThread(
           'project-1',

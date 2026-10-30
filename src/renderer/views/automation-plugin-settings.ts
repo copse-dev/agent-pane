@@ -493,6 +493,13 @@ export function createAutomationPluginSettings(
   function unavailablePermissionOption(
     permission: AutomationPermission,
   ): AutomationPermissionOption {
+    if (permission.kind === 'worktree-preparation') {
+      return {
+        permission,
+        label: `Prepare worktree (${permission.directory})`,
+        detail: `Reviewed plan ${permission.planFingerprint.slice(0, 12)} · ${permission.offline ? 'Offline' : 'Network allowed'}. Changed preparation inputs require approval again.`,
+      }
+    }
     const parts = permission.toolName.split('__')
     const mcpLabel =
       parts[0] === 'mcp' && parts.length >= 3
@@ -544,7 +551,7 @@ export function createAutomationPluginSettings(
             },
             unavailable
               ? 'Unavailable'
-              : option.permission.kind === 'copse-action'
+              : option.permission.kind !== 'mcp-tool'
                 ? 'Copse action'
                 : 'MCP tool',
           ),
@@ -566,7 +573,10 @@ export function createAutomationPluginSettings(
       .map(unavailablePermissionOption)
     const allOptions = [
       ...availablePermissions.map((option) => ({ option, unavailable: false })),
-      ...unavailable.map((option) => ({ option, unavailable: true })),
+      ...unavailable.map((option) => ({
+        option,
+        unavailable: option.permission.kind !== 'worktree-preparation',
+      })),
     ]
     const query = permissionFilterInput.value.trim().toLowerCase()
     const terms = query ? query.split(/\s+/) : []
@@ -575,7 +585,7 @@ export function createAutomationPluginSettings(
         option.label,
         option.detail,
         option.permission.toolName,
-        option.permission.kind === 'copse-action' ? 'Copse action' : 'MCP tool',
+        option.permission.kind !== 'mcp-tool' ? 'Copse action' : 'MCP tool',
       ]
         .join(' ')
         .toLowerCase()
