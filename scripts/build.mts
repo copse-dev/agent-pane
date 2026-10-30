@@ -28,6 +28,7 @@ import {
   assertBundledCursorSkillsSnapshot,
 } from './bundled-cursor-skills-sync.mts'
 import { buildMobileAssets } from './mobile-build.mts'
+import { buildProcessMemoryHelper } from './build-process-memory.mts'
 import { writeMermaidFrameHtml } from './write-mermaid-frame.mts'
 import { writeThirdPartyLicenses } from './write-third-party-licenses.mts'
 import { checkBundledExplainerSyntax } from './lib/explainer-syntax.mts'
@@ -398,6 +399,7 @@ cpSync('src/main/services/simulator-desktop/native', 'dist/resources/apple-simul
 cpSync('src/main/services/desktop-control/native', 'dist/resources/desktop-control', {
   recursive: true,
 })
+buildProcessMemoryHelper()
 
 // The full renderer ↔ main API protocol schema (docs/api-protocol.md). The
 // committed manifest carries only channels and arity; the typed schema a

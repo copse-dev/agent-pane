@@ -10,6 +10,7 @@ import { MAIN_EXTERNALS, MAIN_LOG_OVERRIDE } from './main-externals.mts'
 import { expectString } from '../src/shared/unknown-value.mts'
 import { writeMermaidFrameHtml } from './write-mermaid-frame.mts'
 import { buildMobileAssets } from './mobile-build.mts'
+import { buildProcessMemoryHelper } from './build-process-memory.mts'
 
 const require = createRequire(import.meta.url)
 const electronPath = expectString(require('electron'))
@@ -34,6 +35,7 @@ cpSync('src/main/services/simulator-desktop/native', 'dist/resources/apple-simul
 cpSync('src/main/services/desktop-control/native', 'dist/resources/desktop-control', {
   recursive: true,
 })
+buildProcessMemoryHelper()
 copyFileSync('assets/icons/rose/icon-32.png', 'dist/renderer/favicon.png')
 cpSync('src/renderer/icon-previews', 'dist/renderer/icon-previews', { recursive: true })
 

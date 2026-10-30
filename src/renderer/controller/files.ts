@@ -117,8 +117,6 @@ export async function openWorkspaceFile(
     filesPaneOpen: true,
   })
   store.emit('panel_changed')
-  store.emit('right_panel_mode_changed')
-  store.emit('files_pane_changed')
 }
 
 /** Open a local workspace file using the user's global browser preference. */
@@ -153,8 +151,6 @@ export function revealWorkspaceDirectory(store: AppStore, path: string): void {
   })
   store.emit('explorer_reveal', path)
   store.emit('panel_changed')
-  store.emit('right_panel_mode_changed')
-  store.emit('files_pane_changed')
 }
 
 export async function activateWorkspaceReference(

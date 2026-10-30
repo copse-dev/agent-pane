@@ -1,8 +1,8 @@
 import { networkActivity } from '../services/diagnostics/network-activity.ts'
 import { readOpenAiArtifact } from '../services/remote/openai-agents-client.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
-import { machineManager, syncMachineService } from '../services/machines/machine-service.ts'
-import { machineSharingSchema, REMOTE_SYSTEM_ONE_MODELS_SETTING } from '@shared/machines.ts'
+import { syncMachineService } from '../services/machines/machine-service.ts'
+import { REMOTE_SYSTEM_ONE_MODELS_SETTING } from '@shared/machines.ts'
 import { registerPlanHandlers } from './plan-handlers.ts'
 import { registerChatGptPlanHandlers } from './chat-gpt-plan-handlers.ts'
 import { registerClassifierHandlers } from './classifier-handlers.ts'
@@ -10,16 +10,16 @@ import { registerDecisionHandlers } from './decision-handlers.ts'
 import { registerMobileHandlers } from './mobile-handlers.ts'
 import { registerStorageHandlers } from './storage-handlers.ts'
 import { registerUsageHandlers } from './usage-handlers.ts'
+import { registerAboutHandlers } from './about-handlers.ts'
+import { registerAcpHandlers } from './acp-handlers.ts'
+import { registerAutomationHandlers } from './automation-handlers.ts'
+import { registerEnvironmentSetupHandlers } from './environment-setup-handlers.ts'
+import { registerMachineHandlers } from './machine-handlers.ts'
+import { registerMcpHandlers } from './mcp-handlers.ts'
+import { registerToolPermissionHandlers } from './tool-permission-handlers.ts'
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
 import { getSettingsSnapshot, updateSettings } from '../services/storage/settings-transaction.ts'
 import { modelInvalidationService } from '../services/providers/model-invalidation.ts'
-import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
-import { LICENSE_FILE_KINDS, type AboutInfo } from '@shared/third-party-licenses.mts'
-import {
-  chromiumLicensePath,
-  openableLicenseFile,
-  readThirdPartyLicenseReport,
-} from '../services/about/third-party-licenses.ts'
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -29,13 +29,6 @@ import { skillRootsSchema } from '../services/skills/skill-roots-schema.ts'
 import { z } from 'zod'
 import { syncPluginClientApi } from '../services/plugins/plugin-client-service.ts'
 import { PLUGIN_CLIENT_API_ID } from '@copse/agent/plugins/plugin-client-api-plugin.ts'
-import {
-  applyEnvironmentSetup,
-  dismissEnvironmentSetup,
-  environmentSetupStatus,
-  reviewEnvironmentSetup,
-  undoEnvironmentSetup,
-} from '../services/security/environment-setup.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { scaffoldProject } from '../services/project-scaffold.ts'
 import { createProcessManagerSampler } from '../services/process-manager.ts'
@@ -92,9 +85,7 @@ import {
   modelCardIdsSchema,
   setKeyOptionsSchema,
   parseIpcArgs,
-  parseAcpAuthStatusArgs,
   parsePortKillArgs,
-  zMcpServerName,
   zModelId,
   zHookRunId,
   zHookTestRequest,
@@ -222,15 +213,11 @@ import {
   undoThreadHistoryEdit,
   type ThreadHistoryEditRuntime,
 } from '../services/thread-history-edit.ts'
-import { detectAcpAgents } from '../services/acp/acp-detect.ts'
-import { browseAcpRegistry } from '../services/acp/acp-registry-discovery.ts'
-import { detectAcpAuthStatus } from '../services/acp/acp-auth-status.ts'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import {
   listExternalEditors,
   openWorkspaceInExternalEditor,
 } from '../services/editors/editor-launcher.ts'
-import { probeAcpAgentForSettings } from '../services/acp/acp-agent-service.ts'
 import { listRunningThreadIds } from '../services/agent-service.ts'
 import {
   listWorktreeInventory,
@@ -317,7 +304,6 @@ import {
 } from '@copse/agent/canvas-settings.ts'
 import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
-import { AUTOMATION_FAILURE_CODES } from '@shared/types/automations.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import { COMPUTER_USE_PLUGIN_ID } from '@copse/agent/plugins/computer-use-plugin.ts'
 import { disposeDesktopControlService } from '../services/desktop-control/desktop-control-service.ts'
@@ -420,22 +406,11 @@ import {
   rerunFailedPrRuns,
 } from '../services/github/gh-pr-actions-service.ts'
 import { createPrForThread } from '../services/github/pr-create-service.ts'
-import { signInMcpServer, signOutMcpServer } from '../services/mcp/mcp-oauth.ts'
 import {
-  getMcpServerStatuses,
-  getMcpSignInTarget,
-  onMcpStatusesChanged,
   reloadMcpServers,
   reloadMcpServersForPluginToggle,
-  setMcpServerUserEnabled,
   setWorkspaceTrustAndReload,
 } from '../services/mcp/mcp-registry.ts'
-import { getCuratedServerStatuses, setCuratedServerEnabled } from '../services/mcp/mcp-curated.ts'
-import {
-  listToolPermissionCatalog,
-  resetToolPermissions,
-  updateToolPermissions,
-} from '../services/security/tool-permissions.ts'
 import { isWorkspaceTrusted } from '../services/security/workspace-trust.ts'
 import {
   setMockScenario,
@@ -505,56 +480,6 @@ import { getContainerRunService } from '../services/container-runtime/container-
 import { explainContainerModel } from '../services/providers/container-provider.ts'
 
 const discoverExternalCursorAgentsFromIpc = createBestEffortExternalCursorAgentDiscovery()
-
-const zAutomationPermission = z.object({
-  kind: z.enum(['copse-action', 'mcp-tool']),
-  toolName: z.string().trim().min(1).max(512),
-})
-
-const zAutomationScheduleInput = z.object({
-  id: z.string().min(1).max(256).optional(),
-  name: z.string().trim().min(1).max(160),
-  cron: z.string().trim().min(1).max(160),
-  prompt: z.string().trim().min(1).max(100_000),
-  model: z.string().trim().min(1).max(1024),
-  enabled: z.boolean(),
-  maxLiveWorktrees: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
-  permissions: z.array(zAutomationPermission).max(256).optional(),
-})
-
-const zEventTriggerInput = z.discriminatedUnion('kind', [
-  z.strictObject({
-    kind: z.literal('github-ci-failed'),
-    branch: z.string().trim().min(1).max(200).optional(),
-    checks: z.array(z.string().trim().min(1).max(200)).max(10).optional(),
-    pullRequest: z.number().int().positive().optional(),
-  }),
-  z.strictObject({
-    kind: z.literal('github-pr-changed'),
-    baseBranch: z.string().trim().min(1).max(200),
-    transition: z.enum(['ready-for-review', 'new-commits']),
-  }),
-  z.strictObject({
-    kind: z.literal('github-issue-labeled'),
-    label: z.string().trim().min(1).max(50),
-  }),
-])
-
-const zAutomationFailureReport = z.strictObject({
-  code: z.enum(AUTOMATION_FAILURE_CODES),
-  message: z.string().trim().min(1).max(2000),
-})
-
-const zBranchCiAutomationInput = z.strictObject({
-  id: z.uuid().optional(),
-  name: z.string().trim().min(1).max(160),
-  branch: z.string().trim().min(1).max(200).optional(),
-  trigger: zEventTriggerInput.optional(),
-  prompt: z.string().trim().min(1).max(100_000),
-  model: z.string().trim().min(1).max(1024),
-  enabled: z.boolean(),
-  maxLiveWorktrees: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
-})
 
 const SKILLS_RELOAD_KEYS = new Set([
   'skillsEnabled',
@@ -1449,61 +1374,11 @@ export function registerAllHandlers(
     }
   })
 
-  ipcMain.handle('machines:state', async (event) => {
-    assertMainFrameSender(event, win)
-    const manager = machineManager()
-    await manager.refresh()
-    return manager.snapshot()
-  })
-  ipcMain.handle('machines:pair', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return machineManager().pair(parseIpcArgs(z.string().min(1).max(2048), [raw]))
-  })
-  ipcMain.handle('machines:remove', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return machineManager().remove(parseIpcArgs(z.uuid(), [raw]))
-  })
-  ipcMain.handle('machines:share', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return machineManager().share(parseIpcArgs(machineSharingSchema, [raw]))
-  })
-  ipcMain.handle('machines:invitation', (event) => {
-    assertMainFrameSender(event, win)
-    return machineManager().invitation()
-  })
-  ipcMain.handle('machines:revoke', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return machineManager().revoke(parseIpcArgs(z.uuid(), [raw]))
-  })
+  registerMachineHandlers(win)
 
   registerClassifierHandlers(win)
 
-  // Environment setup: the renderer sends only which issued suggestion ids were
-  // ticked; main applies the values it computed (docs/plans/environment-setup.md).
-  ipcMain.handle('environment-setup:status', (event) => {
-    assertMainFrameSender(event, win)
-    return environmentSetupStatus()
-  })
-  ipcMain.handle('environment-setup:review', (event) => {
-    assertMainFrameSender(event, win)
-    return reviewEnvironmentSetup()
-  })
-  ipcMain.handle('environment-setup:apply', (event, rawReview: unknown, rawIds: unknown) => {
-    assertMainFrameSender(event, win)
-    const [reviewId, ids] = parseIpcArgs(z.tuple([z.uuid(), z.array(z.uuid()).max(64)]), [
-      rawReview,
-      rawIds,
-    ])
-    return applyEnvironmentSetup(reviewId, ids)
-  })
-  ipcMain.handle('environment-setup:undo', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return undoEnvironmentSetup(parseIpcArgs(z.uuid(), [raw]))
-  })
-  ipcMain.handle('environment-setup:dismiss', (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    return dismissEnvironmentSetup(parseIpcArgs(z.boolean(), [raw]))
-  })
+  registerEnvironmentSetupHandlers(win)
 
   registerChatGptPlanHandlers(win)
 
@@ -2704,154 +2579,7 @@ export function registerAllHandlers(
     },
   )
 
-  // Local cron automation prototype (`copse.automations`). Every operation is
-  // project-scoped; the service repeats that ownership check for update/delete
-  // so a renderer cannot address a schedule through another project id.
-  ipcMain.handle('automations:list', (event, rawProjectId: unknown) => {
-    assertMainFrameSender(event, win)
-    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
-    return getAutomationService().list(projectId)
-  })
-  ipcMain.handle('automations:permission-options', (event, rawProjectId: unknown) => {
-    assertMainFrameSender(event, win)
-    parseIpcArgs(zProjectId, [rawProjectId])
-    return getAutomationService().permissionOptions()
-  })
-  ipcMain.handle('automations:upsert', async (event, rawProjectId: unknown, rawInput: unknown) => {
-    assertMainFrameSender(event, win)
-    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
-    const input = parseIpcArgs(zAutomationScheduleInput, [rawInput])
-    return getAutomationService().upsert(projectId, {
-      ...(input.id !== undefined ? { id: input.id } : {}),
-      name: input.name,
-      cron: input.cron,
-      prompt: input.prompt,
-      model: input.model,
-      enabled: input.enabled,
-      ...(input.maxLiveWorktrees !== undefined ? { maxLiveWorktrees: input.maxLiveWorktrees } : {}),
-      ...(input.permissions !== undefined ? { permissions: input.permissions } : {}),
-    })
-  })
-  ipcMain.handle(
-    'automations:remove',
-    async (event, rawProjectId: unknown, rawScheduleId: unknown) => {
-      assertMainFrameSender(event, win)
-      const [projectId, scheduleId] = parseIpcArgs(
-        z.tuple([zProjectId, zNonEmptyString.max(256)]),
-        [rawProjectId, rawScheduleId],
-      )
-      await getAutomationService().remove(projectId, scheduleId)
-    },
-  )
-  ipcMain.handle(
-    'automations:run-now',
-    async (event, rawProjectId: unknown, rawScheduleId: unknown) => {
-      assertMainFrameSender(event, win)
-      const [projectId, scheduleId] = parseIpcArgs(
-        z.tuple([zProjectId, zNonEmptyString.max(256)]),
-        [rawProjectId, rawScheduleId],
-      )
-      return getAutomationService().runNow(projectId, scheduleId)
-    },
-  )
-
-  ipcMain.handle(
-    'automations:cleanup-runs',
-    async (event, rawProjectId: unknown, rawScheduleId: unknown) => {
-      assertMainFrameSender(event, win)
-      const [projectId, scheduleId] = parseIpcArgs(
-        z.tuple([zProjectId, zNonEmptyString.max(256)]),
-        [rawProjectId, rawScheduleId],
-      )
-      return getAutomationService().cleanupRuns(projectId, scheduleId)
-    },
-  )
-
-  ipcMain.handle('automations:list-branch-ci', (event, rawProjectId: unknown) => {
-    assertMainFrameSender(event, win)
-    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
-    return getBranchCiAutomationService().list(projectId)
-  })
-  ipcMain.handle(
-    'automations:upsert-branch-ci',
-    async (event, rawProjectId: unknown, rawInput: unknown) => {
-      assertMainFrameSender(event, win)
-      const projectId = parseIpcArgs(zProjectId, [rawProjectId])
-      const input = parseIpcArgs(zBranchCiAutomationInput, [rawInput])
-      return getBranchCiAutomationService().upsert(projectId, {
-        ...(input.id ? { id: input.id } : {}),
-        name: input.name,
-        ...(input.branch !== undefined ? { branch: input.branch } : {}),
-        ...(input.trigger !== undefined ? { trigger: input.trigger } : {}),
-        prompt: input.prompt,
-        model: input.model,
-        enabled: input.enabled,
-        ...(input.maxLiveWorktrees ? { maxLiveWorktrees: input.maxLiveWorktrees } : {}),
-      })
-    },
-  )
-  ipcMain.handle(
-    'automations:remove-branch-ci',
-    async (event, rawProjectId: unknown, rawId: unknown) => {
-      assertMainFrameSender(event, win)
-      const [projectId, id] = parseIpcArgs(z.tuple([zProjectId, z.uuid()]), [rawProjectId, rawId])
-      await getBranchCiAutomationService().remove(projectId, id)
-    },
-  )
-  ipcMain.handle(
-    'automations:test-branch-ci',
-    async (event, rawProjectId: unknown, rawTrigger: unknown) => {
-      assertMainFrameSender(event, win)
-      const [projectId, trigger] = parseIpcArgs(
-        z.tuple([zProjectId, z.union([z.string().trim().min(1).max(200), zEventTriggerInput])]),
-        [rawProjectId, rawTrigger],
-      )
-      return getBranchCiAutomationService().testMatch(
-        projectId,
-        typeof trigger === 'string' ? { branch: trigger } : { trigger },
-      )
-    },
-  )
-  ipcMain.handle(
-    'automations:event-history',
-    async (event, rawProjectId: unknown, rawId: unknown) => {
-      assertMainFrameSender(event, win)
-      const [projectId, id] = parseIpcArgs(z.tuple([zProjectId, z.uuid()]), [rawProjectId, rawId])
-      return getBranchCiAutomationService().history(projectId, id)
-    },
-  )
-  // The renderer reports what it saw while starting a run; main accepts it only for the
-  // latest run of a saved automation, so a stale or forged thread id changes nothing.
-  ipcMain.handle(
-    'automations:report-start-failure',
-    async (event, rawProjectId: unknown, rawThreadId: unknown, rawFailure: unknown) => {
-      assertMainFrameSender(event, win)
-      const [projectId, threadId, failure] = parseIpcArgs(
-        z.tuple([zProjectId, zNonEmptyString.max(256), zAutomationFailureReport]),
-        [rawProjectId, rawThreadId, rawFailure],
-      )
-      return (
-        (await getAutomationService().reportStartFailure(projectId, threadId, failure)) ||
-        (await getBranchCiAutomationService().reportStartFailure(projectId, threadId, failure))
-      )
-    },
-  )
-  ipcMain.handle('automations:scheduler-health', (event) => {
-    assertMainFrameSender(event, win)
-    return getAutomationService().health()
-  })
-
-  ipcMain.handle(
-    'automations:can-start',
-    async (event, rawProjectId: unknown, rawThreadId: unknown) => {
-      assertMainFrameSender(event, win)
-      const [projectId, threadId] = parseIpcArgs(z.tuple([zProjectId, zNonEmptyString.max(256)]), [
-        rawProjectId,
-        rawThreadId,
-      ])
-      return getBranchCiAutomationService().canStart(projectId, threadId)
-    },
-  )
+  registerAutomationHandlers(win)
 
   // Apple Development first-party plugin. Renderer requests carry only project/thread
   // identities; main resolves and validates the checkout before every operation.
@@ -3416,49 +3144,8 @@ export function registerAllHandlers(
       })
     },
   )
-  ipcMain.handle('acp:detect-agents', (event) => {
-    assertMainFrameSender(event, win)
-    return detectAcpAgents()
-  })
-  ipcMain.handle('acp:browse-registry', (event, refresh: unknown) => {
-    assertMainFrameSender(event, win)
-    const force = parseIpcArgs(z.boolean().optional(), [refresh])
-    return browseAcpRegistry(force)
-  })
-  ipcMain.handle('acp:probe-agent', (event, agentId: unknown) => {
-    assertMainFrameSender(event, win)
-    if (typeof agentId !== 'string') throw new Error('acp:probe-agent requires an agent id')
-    return probeAcpAgentForSettings(agentId)
-  })
-  ipcMain.handle('acp:auth-status', (event, ids: unknown) => {
-    assertMainFrameSender(event, win)
-    const agentIds = parseAcpAuthStatusArgs([ids])
-    return detectAcpAuthStatus(agentIds)
-  })
-  ipcMain.handle('acp:auto-setup', (event) => {
-    assertMainFrameSender(event, win)
-    return runAcpAutoSetup(new AbortController().signal)
-  })
-  ipcMain.handle('about:get-info', async (event): Promise<AboutInfo> => {
-    assertMainFrameSender(event, win)
-    return { version: getElectronAppVersion(), report: await readThirdPartyLicenseReport() }
-  })
-  ipcMain.handle('about:open-license-file', async (event, kind: unknown) => {
-    assertMainFrameSender(event, win)
-    const file = openableLicenseFile(
-      parseIpcArgs(z.enum(LICENSE_FILE_KINDS), [kind]),
-      undefined,
-      chromiumLicensePath({
-        platform: process.platform,
-        resourcesPath: process.resourcesPath,
-        execPath: process.execPath,
-        isPackaged: app.isPackaged,
-      }),
-    )
-    // openPath resolves to an error message rather than rejecting.
-    const error = await shell.openPath(file)
-    if (error) throw new Error(`Could not open ${file}: ${error}`)
-  })
+  registerAcpHandlers(win)
+  registerAboutHandlers(win)
   ipcMain.handle('shell:open-external', (event, url: unknown) => {
     assertMainFrameSender(event, win)
     const href = parseIpcArgs(z.url().max(2048), [url])
@@ -3542,116 +3229,9 @@ export function registerAllHandlers(
     return takePopoutSeed(parsed)
   })
 
-  ipcMain.handle('tool-permissions:list', (event) => {
-    assertMainFrameSender(event, win)
-    return listToolPermissionCatalog(registry, getMcpServerStatuses())
-  })
-  ipcMain.handle('tool-permissions:set', async (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    const update = parseIpcArgs(
-      z.object({
-        toolIds: z.array(z.string().min(1).max(8192)).max(2_000),
-        policy: z.enum(TOOL_PERMISSION_POLICIES),
-      }),
-      [raw],
-    )
-    return updateToolPermissions(registry, getMcpServerStatuses(), update)
-  })
-  ipcMain.handle('tool-permissions:reset', async (event, raw: unknown) => {
-    assertMainFrameSender(event, win)
-    const reset = parseIpcArgs(
-      z.object({ toolIds: z.array(z.string().min(1).max(8192)).max(2_000) }),
-      [raw],
-    )
-    return resetToolPermissions(registry, getMcpServerStatuses(), reset)
-  })
+  registerToolPermissionHandlers(win, registry)
 
-  ipcMain.handle('mcp:list', (event) => {
-    assertMainFrameSender(event, win)
-    return getMcpServerStatuses()
-  })
-  ipcMain.handle('mcp:reload', async (event) => {
-    assertMainFrameSender(event, win)
-    const statuses = await reloadMcpServers(registry)
-    broadcastToAppWindows('mcp:status-changed', statuses)
-    return statuses
-  })
-  ipcMain.handle('mcp:set-enabled', async (event, name: unknown, enabled: unknown) => {
-    assertMainFrameSender(event, win)
-    const [parsedName, parsedEnabled] = parseIpcArgs(z.tuple([zMcpServerName, z.boolean()]), [
-      name,
-      enabled,
-    ])
-    await setMcpServerUserEnabled(parsedName, parsedEnabled)
-    const statuses = await reloadMcpServers(registry)
-    broadcastToAppWindows('mcp:status-changed', statuses)
-    return statuses
-  })
-  // Status changes the registry makes on its own (a sign-in refused while a
-  // server was connected) reach Settings the same way a reload's do.
-  onMcpStatusesChanged((statuses) => {
-    broadcastToAppWindows('mcp:status-changed', statuses)
-  })
-  // One browser sign-in per server at a time; starting another cancels the first.
-  const mcpSignIns = new Map<string, AbortController>()
-  const mcpSignInTargetUrl = (name: string): string => {
-    const target = getMcpSignInTarget(name)
-    if (target?.url === undefined) {
-      throw new Error(`"${name}" is not a connected remote MCP server.`)
-    }
-    return target.url
-  }
-  ipcMain.handle('mcp:sign-in', async (event, name: unknown) => {
-    assertMainFrameSender(event, win)
-    const parsedName = parseIpcArgs(zMcpServerName, [name])
-    const serverUrl = mcpSignInTargetUrl(parsedName)
-    mcpSignIns.get(parsedName)?.abort()
-    const controller = new AbortController()
-    mcpSignIns.set(parsedName, controller)
-    try {
-      await signInMcpServer(serverUrl, {
-        signal: controller.signal,
-        openExternal: (url) => shell.openExternal(url),
-      })
-    } finally {
-      if (mcpSignIns.get(parsedName) === controller) mcpSignIns.delete(parsedName)
-    }
-    const statuses = await reloadMcpServers(registry)
-    broadcastToAppWindows('mcp:status-changed', statuses)
-    return statuses
-  })
-  ipcMain.handle('mcp:cancel-sign-in', (event, name: unknown) => {
-    assertMainFrameSender(event, win)
-    const parsedName = parseIpcArgs(zMcpServerName, [name])
-    mcpSignIns.get(parsedName)?.abort()
-  })
-  ipcMain.handle('mcp:sign-out', async (event, name: unknown) => {
-    assertMainFrameSender(event, win)
-    const parsedName = parseIpcArgs(zMcpServerName, [name])
-    await signOutMcpServer(mcpSignInTargetUrl(parsedName))
-    const statuses = await reloadMcpServers(registry)
-    broadcastToAppWindows('mcp:status-changed', statuses)
-    return statuses
-  })
-  ipcMain.handle('mcp:list-curated', (event) => {
-    assertMainFrameSender(event, win)
-    return getCuratedServerStatuses(getMcpServerStatuses())
-  })
-  ipcMain.handle('mcp:list-declared', (event) => {
-    assertMainFrameSender(event, win)
-    return getPluginService().declaredMcpServers()
-  })
-  ipcMain.handle('mcp:set-curated-enabled', async (event, name: unknown, enabled: unknown) => {
-    assertMainFrameSender(event, win)
-    const [parsedName, parsedEnabled] = parseIpcArgs(z.tuple([zMcpServerName, z.boolean()]), [
-      name,
-      enabled,
-    ])
-    await setCuratedServerEnabled(parsedName, parsedEnabled)
-    const statuses = await reloadMcpServers(registry)
-    broadcastToAppWindows('mcp:status-changed', statuses)
-    return getCuratedServerStatuses(statuses)
-  })
+  registerMcpHandlers(win, registry)
   ipcMain.handle('workspace:is-trusted', () => isWorkspaceTrusted(getWorkspaceRoot()))
   ipcMain.handle('workspace:set-trusted', async (event, trusted: unknown) => {
     assertMainFrameSender(event, win)

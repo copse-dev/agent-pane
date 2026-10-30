@@ -65,8 +65,6 @@ export interface StoreEvents {
   explorer_reveal: [path: string]
   workspace_changed: []
   projects_changed: []
-  files_pane_changed: []
-  right_panel_mode_changed: []
   sidebar_project_filter_changed: []
   // Request the Changes panel to reveal a specific workspace-relative file diff.
   git_change_navigate: [path: string]

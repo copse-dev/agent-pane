@@ -226,7 +226,7 @@ export function mountPaneResizers(body: HTMLElement, store: AppStore, api: ApiCl
   }
 
   syncFilesResizer()
-  const unsubFilesPane = store.on('files_pane_changed', syncFilesResizer)
+  const unsubFilesPane = store.select((s) => s.filesPaneOpen, syncFilesResizer)
   const unsubSettings = store.on('settings_changed', refreshLayoutForViewport)
   window.addEventListener('resize', refreshLayoutForViewport, { passive: true })
 

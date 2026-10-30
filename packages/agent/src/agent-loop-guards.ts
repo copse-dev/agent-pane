@@ -3,18 +3,25 @@ import type { TodoItem } from './wire-types.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 
 /**
- * Tools that only gather context — repeating them often indicates a stuck
- * loop. `explore` is a free-text summarizing subagent (`{ query, paths? }`),
- * not a raw filesystem read, but it is exactly the tool #1433's 43-minute run
- * thrashed on (15 calls, 0 `read_file` calls) and was previously missing here,
- * so `isDuplicateExploreCall` never fired for it at all.
+ * Tools whose calls the duplicate guard fingerprints: they only gather context,
+ * so repeating one often indicates a stuck loop. `explore` is a free-text
+ * summarizing subagent (`{ query, paths? }`), not a raw filesystem read, but it
+ * is exactly the tool #1433's 43-minute run thrashed on (15 calls, 0
+ * `read_file` calls) and was previously missing here, so
+ * `isDuplicateExploreCall` never fired for it at all.
+ *
+ * Not to be confused with `SUBAGENT_ALLOWED_TOOL_NAMES` (`run-subagent.ts`),
+ * the explore subagent's allow-list. Both were once named
+ * `EXPLORE_TOOL_NAMES`; adding `explore` to that one would let the subagent
+ * spawn subagents.
  */
-export const EXPLORE_TOOL_NAMES = new Set([
+export const DUPLICATE_GUARDED_TOOL_NAMES = new Set([
   'list_dir',
   'read_file',
   'find_files',
   'search_code',
   'search_codebase',
+  'semantic_search',
   'explore',
 ])
 
@@ -211,7 +218,7 @@ export function isDuplicateExploreCall(
   args: unknown,
   recentFingerprints: readonly string[],
 ): boolean {
-  if (!EXPLORE_TOOL_NAMES.has(name)) return false
+  if (!DUPLICATE_GUARDED_TOOL_NAMES.has(name)) return false
   const fp = toolCallFingerprint(name, normalizeExploreArgs(name, args))
   if (recentFingerprints.includes(fp)) return true
   if (name !== 'explore') return false
