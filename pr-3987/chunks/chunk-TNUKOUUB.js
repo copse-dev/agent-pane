@@ -68799,8 +68799,9 @@ var init_experimental_markup = __esm({
               </label>
               <p class="field-hint">
                 Breaks a task into a living plan with explicit steps and acceptance criteria before
-                the agent starts. Container, ACP, remote, and plugin-hosted agents can't run while a
-                plan is active, and a step's "done" is the agent's own report, not a verified check.
+                the agent starts. Coding agents and container, remote, or plugin-hosted agents can't
+                run while a plan is active, and a step's "done" is the agent's own report, not a
+                verified check.
               </p>
             </fieldset>
 
