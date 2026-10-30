@@ -62795,7 +62795,7 @@ function initMentionPicker(opts) {
     void updatePicker(val.slice(atIdx + 1, cursor));
   });
   input.el.addEventListener("keydown", (e) => {
-    if (picker.hidden) return;
+    if (picker.hidden || e.isComposing) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       selectedIdx = Math.min(selectedIdx + 1, currentItems.length - 1);
@@ -62968,7 +62968,7 @@ function initSkillPicker(opts) {
     void updatePicker(val.slice(slashIdx + 1, cursor));
   });
   input.el.addEventListener("keydown", (e) => {
-    if (picker.hidden) return;
+    if (picker.hidden || e.isComposing) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       selectedIdx = Math.min(selectedIdx + 1, currentSkills.length - 1);
