@@ -92,6 +92,39 @@ afterEach(() => {
 })
 
 describe('pr pane loading state', () => {
+  it('loads and watches when the panel opens on PRs from the store alone, with no event emitted', async () => {
+    const watches: boolean[] = []
+    const base = apiWithStatus(MISSING)
+    const api: ApiClient = {
+      ...base,
+      gh: {
+        ...base['gh'],
+        setListWatch: async (watching) => {
+          watches.push(watching)
+        },
+      },
+    }
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: false,
+      rightPanelMode: 'prs',
+    })
+    const listRoot = document.createElement('div')
+    document.body.append(listRoot)
+    mountPrPane(listRoot, document.createElement('div'), store, api, MONACO_STUB)
+    await settle()
+    assert.doesNotMatch(listText(listRoot), /Install GitHub CLI/, 'no load while off screen')
+
+    store.setState({ filesPaneOpen: true })
+    await settle()
+    assert.equal(watches.at(-1), true)
+    assert.match(listText(listRoot), /Install GitHub CLI/)
+
+    store.setState({ rightPanelMode: 'changes' })
+    assert.equal(watches.at(-1), false, 'leaving the pane stops the shared list watch')
+  })
+
   it('shows a loading row instead of the "install gh" copy while status is in flight', async () => {
     const { listRoot } = mount(createPendingApi({ 'gh.onListsTick': noopUnsub }))
     await settle()

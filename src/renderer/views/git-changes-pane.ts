@@ -40,6 +40,7 @@ import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 import { isImageDiff, renderImageDiff } from './git-image-diff.ts'
 import { materialFolderIconUrl } from '../icons/material-file-icons.ts'
 import { imageMimeType, isRasterImagePath } from '@shared/fs/image-path.ts'
+import { selectRightPanelMode } from '../controller/panels.ts'
 
 function bytesToBase64(bytes: Uint8Array): string {
   const chunks: string[] = []
@@ -1283,23 +1284,18 @@ export function mountGitChangesPane(
         : `${String(paths.length)} files changed on disk since they were staged. Their diffs were refreshed against the current files — review and re-approve.`
     if (paths[0]) {
       store.setState({ rightPanelMode: 'changes', filesPaneOpen: true })
-      store.emit('right_panel_mode_changed')
-      store.emit('files_pane_changed')
       selection = { kind: 'proposed', path: paths[0] }
       void syncFromStore()
     }
   })
 
   const unsubs = [
-    store.on('right_panel_mode_changed', () => {
-      if (changesModeActive(store)) void refresh()
+    selectRightPanelMode(store, 'changes', (active) => {
+      if (active) void refresh()
     }),
     store.on('git_change_navigate', (path) => {
       adoptActiveOwner()
       pendingNavigate = path
-      if (changesModeActive(store)) void refresh()
-    }),
-    store.on('files_pane_changed', () => {
       if (changesModeActive(store)) void refresh()
     }),
     store.on('workspace_changed', () => {
@@ -1349,9 +1345,8 @@ export function mountGitChangesPane(
 
   // This pane is mounted asynchronously, once the Monaco bundle resolves. If the
   // right panel is already in "changes" mode by the time we mount (the common
-  // case, since the mode is restored before Monaco loads), no
-  // right_panel_mode_changed event will arrive to trigger the first refresh — so
-  // catch up to the current state here, or the diff never renders. See #459.
+  // case, since the mode is restored before Monaco loads), no mode change will
+  // arrive to trigger the first refresh — so catch up to the current state here, or the diff never renders. See #459.
   if (changesModeActive(store)) void refresh()
 
   const unregisterPopoutSeed = registerPopoutSeedHandlers('changes', {
