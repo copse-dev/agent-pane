@@ -199,6 +199,17 @@ records an `allowed` `acp` decision with its ACP tool-call ID. The bridge's `bri
 can name the call unambiguously, beside the `bridgeExecutionId` that the native gate's decisions
 carry.
 
+Every decision recorded inside a turn also names the turn's execution principal. That is
+the local human, or the automation run when the schedule's own record corroborates the
+thread's claim; renderer-visible thread metadata alone never makes a turn an automation.
+Native commands, background tasks and Copse's in-turn subprocesses run through an
+`ExecutionRuntime` adapter (local or SSH). The adapter records a start and an exit line
+naming the runtime profile it actually ran under (`local/contained`, `local/host` or
+`ssh:<hostId>`), plus that profile's capability snapshot once per thread. The adapter
+records containment and decides nothing: the gate and routing above are unchanged. See
+[the decision-log format](decision-log-format.md#where-events-come-from) and
+[the runtime plan](plans/execution-runtime-security.md).
+
 ## High-level tool restrictions
 
 This table covers the built-in registry and dynamic tool families. Feature/plugin enrollment,
