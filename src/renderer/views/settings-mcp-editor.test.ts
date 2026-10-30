@@ -11,6 +11,7 @@ import type {
 } from '@shared/types/mcp-user-servers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { qsRequired } from '../dom/helpers.ts'
 import { mountSettingsDialog } from './settings-dialog.ts'
 
 const USER_PATH = '/user-data/mcp.json'
@@ -98,14 +99,8 @@ async function openMcp(): Promise<EditorCalls> {
   return calls
 }
 
-function q<E extends Element = HTMLElement>(selector: string): E {
-  const found = document.querySelector<E>(selector)
-  assert.ok(found, selector)
-  return found
-}
-
 function type(selector: string, value: string): void {
-  const input = q<HTMLInputElement | HTMLTextAreaElement>(selector)
+  const input = qsRequired<HTMLInputElement | HTMLTextAreaElement>(document, selector)
   input.value = value
   input.dispatchEvent(new Event('input', { bubbles: true }))
 }
@@ -117,8 +112,11 @@ describe('settings → MCP server editor', () => {
 
   it('offers Edit and Remove only on servers from Copse’s own config', async () => {
     await openMcp()
-    const own = q('#mcp-server-list .mcp-server-row[data-mcp-server="docs"]')
-    const other = q('#mcp-server-list .mcp-server-row[data-mcp-server="cursor-one"]')
+    const own = qsRequired(document, '#mcp-server-list .mcp-server-row[data-mcp-server="docs"]')
+    const other = qsRequired(
+      document,
+      '#mcp-server-list .mcp-server-row[data-mcp-server="cursor-one"]',
+    )
     assert.ok(own.querySelector('.mcp-edit-btn'))
     assert.ok(own.querySelector('.mcp-remove-btn'))
     assert.equal(other.querySelector('.mcp-edit-btn'), null)
@@ -127,16 +125,19 @@ describe('settings → MCP server editor', () => {
 
   it('adds a stdio server from the form', async () => {
     const calls = await openMcp()
-    assert.equal(q('#mcp-server-editor').hidden, true)
-    q<HTMLButtonElement>('#mcp-add-btn').click()
-    assert.equal(q('#mcp-server-editor').hidden, false)
+    assert.equal(qsRequired(document, '#mcp-server-editor').hidden, true)
+    qsRequired<HTMLButtonElement>(document, '#mcp-add-btn').click()
+    assert.equal(qsRequired(document, '#mcp-server-editor').hidden, false)
     type('#mcp-editor-name', 'everything')
     type('#mcp-editor-command', 'npx')
     type('#mcp-editor-args', '-y\n@modelcontextprotocol/server-everything\n')
-    q<HTMLButtonElement>('.mcp-editor-secrets button:not(.mcp-editor-secret-remove)').click()
+    qsRequired<HTMLButtonElement>(
+      document,
+      '.mcp-editor-secrets button:not(.mcp-editor-secret-remove)',
+    ).click()
     type('.mcp-editor-secret-key', 'API_KEY')
     type('.mcp-editor-secret-value', 'secret')
-    q<HTMLButtonElement>('#mcp-editor-save').click()
+    qsRequired<HTMLButtonElement>(document, '#mcp-editor-save').click()
     await flush()
     assert.deepEqual(calls.saves, [
       {
@@ -150,22 +151,25 @@ describe('settings → MCP server editor', () => {
         previousName: undefined,
       },
     ])
-    assert.equal(q('#mcp-server-editor').hidden, true)
+    assert.equal(qsRequired(document, '#mcp-server-editor').hidden, true)
   })
 
   it('edits without resending a stored secret it was never given', async () => {
     const calls = await openMcp()
-    q<HTMLButtonElement>('.mcp-server-row[data-mcp-server="docs"] .mcp-edit-btn').click()
-    assert.equal(q<HTMLInputElement>('#mcp-editor-name').value, 'docs')
-    assert.equal(q<HTMLTextAreaElement>('#mcp-editor-args').value, '-y\ndocs')
-    const value = q<HTMLInputElement>('.mcp-editor-secret-value')
+    qsRequired<HTMLButtonElement>(
+      document,
+      '.mcp-server-row[data-mcp-server="docs"] .mcp-edit-btn',
+    ).click()
+    assert.equal(qsRequired<HTMLInputElement>(document, '#mcp-editor-name').value, 'docs')
+    assert.equal(qsRequired<HTMLTextAreaElement>(document, '#mcp-editor-args').value, '-y\ndocs')
+    const value = qsRequired<HTMLInputElement>(document, '.mcp-editor-secret-value')
     assert.equal(value.type, 'password')
     assert.equal(value.value, '')
     assert.equal(value.placeholder, 'Saved value (unchanged)')
-    q<HTMLButtonElement>('#mcp-editor-save').click()
+    qsRequired<HTMLButtonElement>(document, '#mcp-editor-save').click()
     await flush()
-    assert.equal(calls.saves[0]?.previousName, 'docs')
-    assert.deepEqual(calls.saves[0]?.input, {
+    assert.equal(calls.saves.at(0)?.previousName, 'docs')
+    assert.deepEqual(calls.saves.at(0)?.input, {
       transport: 'stdio',
       name: 'docs',
       command: 'npx',
@@ -177,19 +181,19 @@ describe('settings → MCP server editor', () => {
   it('marks the rejected field and keeps the form open', async () => {
     const calls = await openMcp()
     calls.nextSave = { ok: false, field: 'url', message: 'Enter an http:// or https:// URL.' }
-    q<HTMLButtonElement>('#mcp-add-btn').click()
-    const transport = q<HTMLSelectElement>('#mcp-editor-transport')
+    qsRequired<HTMLButtonElement>(document, '#mcp-add-btn').click()
+    const transport = qsRequired<HTMLSelectElement>(document, '#mcp-editor-transport')
     transport.value = 'http'
     transport.dispatchEvent(new Event('change', { bubbles: true }))
-    assert.equal(q('[data-transport="stdio"]').hidden, true)
-    assert.equal(q('[data-transport="http"]').hidden, false)
+    assert.equal(qsRequired(document, '[data-transport="stdio"]').hidden, true)
+    assert.equal(qsRequired(document, '[data-transport="http"]').hidden, false)
     type('#mcp-editor-name', 'remote')
     type('#mcp-editor-url', 'ftp://nope')
-    q<HTMLButtonElement>('#mcp-editor-save').click()
+    qsRequired<HTMLButtonElement>(document, '#mcp-editor-save').click()
     await flush()
-    assert.equal(calls.saves[0]?.input.transport, 'http')
-    assert.equal(q('#mcp-editor-url').getAttribute('aria-invalid'), 'true')
-    assert.match(q('#mcp-editor-status').textContent ?? '', /http:\/\/ or https:\/\//)
-    assert.equal(q('#mcp-server-editor').hidden, false)
+    assert.equal(calls.saves.at(0)?.input.transport, 'http')
+    assert.equal(qsRequired(document, '#mcp-editor-url').getAttribute('aria-invalid'), 'true')
+    assert.match(qsRequired(document, '#mcp-editor-status').textContent, /http:\/\/ or https:\/\//)
+    assert.equal(qsRequired(document, '#mcp-server-editor').hidden, false)
   })
 })
