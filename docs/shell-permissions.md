@@ -587,6 +587,23 @@ Block to require approval or disable it).
 
 ## Read access outside the project
 
+The dedicated `read_file`, `list_dir`, `search_code`, and regex `search_codebase`
+tools also accept absolute external paths after scoped read approval. They reuse
+the current thread's path grants and respect Always ask and Blocked. Workspace
+and chat-store resolution retain their existing guards; a chat-store read still
+requires the separate conversation permission and cannot fall through to an
+external-path prompt after denial. Relative paths that escape the workspace
+remain rejected.
+
+Dedicated external reads run in a one-shot, read-only filesystem worker with
+network denied. If the local project sandbox is unavailable, they fail closed;
+there is no host-filesystem fallback. Approval checks both the supplied path and
+its canonical destination, and rechecks the target identity after approval.
+Directory scans omit credential paths, the chat store, and nested symlinks.
+External search is a bounded filesystem scan, not a workspace index query: it
+skips `.git`, `node_modules`, `dist`, and `vendor`, and reports scan limits or
+unreadable files. Explicit semantic search remains workspace-only.
+
 A command that only reads fully-accounted-for paths outside the project receives the narrower
 “Allow read access outside of the project?” question. The prompt lists every requested path and
 warns that a directory can contain sensitive files. Its primary action grants reads of those
@@ -602,7 +619,10 @@ symlink inside an approved directory reaches whatever it points to. The approved
 identity-pinned while it exists: replacing a granted file or directory, or retargeting a granted
 symlink, revokes that grant and asks again. The sandbox does not close the nested-symlink case:
 `readAllowedSandboxOverlay` canonicalizes each target with `realpath` before widening `allowRead`,
-so it widens to the link's destination. Without an OS sandbox the command reads it on the host. An
+so it widens to the link's destination. When the approved root is itself a symlink, the link path
+is also granted (never as a `/**` subtree): seatbelt reads the link before following it, and the
+runtime's traversal allowance covers directory metadata only. Without an OS sandbox the command
+reads it on the host. An
 expanded “Approve this command” action approves one invocation without a grant.
 
 Reads under macOS's per-user temp directory (`getconf DARWIN_USER_TEMP_DIR`, `/var/folders/…/T`)

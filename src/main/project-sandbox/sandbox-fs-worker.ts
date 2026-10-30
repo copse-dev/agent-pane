@@ -17,6 +17,8 @@ import { dirname } from 'node:path'
 import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import { localWorkspaceFs } from '../services/workspace-fs/local-workspace-fs.ts'
 import { readWorkspaceImage } from '../services/workspace-fs/image-content.ts'
+import { externalReadRequestSchema, executeExternalRead } from './external-read-worker.ts'
+import type { z } from 'zod'
 
 type ReadFileReq = { op: 'readFile'; path: string; encoding: 'utf-8' }
 type ReadImageReq = { op: 'readImage'; path: string; displayPath: string }
@@ -24,7 +26,13 @@ type WriteFileReq = { op: 'writeFile'; path: string; content: string; encoding: 
 type ReaddirReq = { op: 'readdir'; path: string }
 type StatEntryReq = { op: 'statDir'; path: string }
 
-type Request = ReadFileReq | ReadImageReq | WriteFileReq | ReaddirReq | StatEntryReq
+type Request =
+  | ReadFileReq
+  | ReadImageReq
+  | WriteFileReq
+  | ReaddirReq
+  | StatEntryReq
+  | z.infer<typeof externalReadRequestSchema>
 
 type ResponseBody =
   | { ok: true; data?: string; entries?: string[]; dirents?: { name: string; isDir: boolean }[] }
@@ -36,6 +44,10 @@ const SERVER_ENV = 'COPSE_SANDBOX_FS_SERVER'
 function parseRequest(value: unknown): Request | null {
   if (!isRecord(value) || typeof value['path'] !== 'string') return null
   switch (value['op']) {
+    case 'externalRead': {
+      const parsed = externalReadRequestSchema.safeParse(value)
+      return parsed.success ? parsed.data : null
+    }
     case 'readImage':
       return typeof value['displayPath'] === 'string'
         ? { op: value['op'], path: value['path'], displayPath: value['displayPath'] }
@@ -63,6 +75,8 @@ function parseRequest(value: unknown): Request | null {
 
 async function handle(req: Request): Promise<ResponseBody> {
   switch (req.op) {
+    case 'externalRead':
+      return { ok: true, data: await executeExternalRead(req) }
     case 'readImage':
       return {
         ok: true,
