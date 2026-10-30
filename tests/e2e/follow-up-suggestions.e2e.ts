@@ -126,7 +126,9 @@ describe('follow-up suggestion bubbles', () => {
     })
 
     it('shows a Changes bubble from real git diff stats', async () => {
-      const scenario = await completeMockTurn()
+      // The Changes bubble needs the dirty shared checkout itself, so send on
+      // top of it rather than moving to a clean isolated worktree.
+      const scenario = await completeMockTurn(false, { dirtySharedCheckout: true })
 
       const changesBubble = await $('.follow-up-bubble-changes').getElement()
       await expect(changesBubble).toBeDisplayed()
