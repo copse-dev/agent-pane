@@ -639,6 +639,9 @@ export function mountApprovalDialog(
       chatScrim.hidden = false
       dialog.show()
     }
+    // Keep initial keyboard focus on the declining action, even when Chromium
+    // makes the scrollable request details focusable.
+    rejectButton.focus({ preventScroll: true })
     active = true
     syncAttention()
   }

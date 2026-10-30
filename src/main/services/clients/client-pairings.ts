@@ -1,8 +1,15 @@
 import { randomInt, randomUUID } from 'node:crypto'
 import type { ClientAccess } from '../../../shared/client-auth.ts'
 
+/** What the transport knows about how a pairing request arrived. */
+export interface PairingContext {
+  /** The client reached this host over a publicly trusted name its browser verified. */
+  trustedName?: boolean
+}
+
 interface Pairing {
   binding: string | undefined
+  context: PairingContext
   controller: AbortController
   expires: number
   timeout: ReturnType<typeof setTimeout>
@@ -19,7 +26,12 @@ interface PairingOptions {
   ) => { id: string; token: string }
   revoke: (id: string) => void
   canIssue?: () => boolean
-  approve: (label: string, code: string, signal: AbortSignal) => Promise<ClientAccess | null>
+  approve: (
+    label: string,
+    code: string,
+    signal: AbortSignal,
+    context?: PairingContext,
+  ) => Promise<ClientAccess | null>
 }
 
 /** Desktop consent, bounded pending work, expiry and one-time token delivery for all clients. */
@@ -33,7 +45,11 @@ export class ClientPairings {
     this.options = options
   }
 
-  request(label: string, binding?: string): { id: string; code: string } | null {
+  request(
+    label: string,
+    binding?: string,
+    context: PairingContext = {},
+  ): { id: string; code: string } | null {
     this.expire()
     if (
       this.closed ||
@@ -51,6 +67,7 @@ export class ClientPairings {
     timeout.unref()
     const pairing: Pairing = {
       binding,
+      context,
       controller: new AbortController(),
       expires: Date.now() + 120_000,
       timeout,
@@ -98,7 +115,12 @@ export class ClientPairings {
 
   private async approve(id: string, pairing: Pairing, label: string, code: string): Promise<void> {
     try {
-      const access = await this.options.approve(label, code, pairing.controller.signal)
+      const access = await this.options.approve(
+        label,
+        code,
+        pairing.controller.signal,
+        pairing.context,
+      )
       this.expire()
       if (this.closed || this.pending.get(id) !== pairing) return
       if (access === null || this.options.canIssue?.() === false) {

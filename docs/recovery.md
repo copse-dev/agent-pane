@@ -95,6 +95,31 @@ refs live in that project repository, not in Copse app data, and Git may later
 garbage-collect commits after their refs are pruned. They are a short-term edit
 safety net, not a substitute for commits or external backups.
 
+### Apple container images and builder storage
+
+On Apple silicon Macs, Settings → Storage also reports the Apple container store under
+`~/Library/Application Support/com.apple.container/`: unpacked image snapshots, compressed
+content, builder VM allocation, other container disks, workspace volumes and supporting files.
+The image list shows compressed size and snapshot allocation separately. Snapshots not matched to
+listed images may include Apple infrastructure images; this count does not prove they are orphaned. BuildKit's total and
+unused cache figures are inside the builder VM allocation, not additional disk usage.
+APFS clones may share blocks; these are allocated-size estimates, not a promise of recoverable space.
+
+Automatic retention removes only old extra `copse-worker:*` images carrying Copse's worker
+fingerprint. `copse-worker:local` is always kept. Creation and the last recorded use by Copse
+both count toward retention. Copse records usage and run leases in its shared per-user
+`~/.copse/cache/apple-container-activity/` directory, across `COPSE_DIR` profiles.
+Apple's image-delete command also collects orphaned snapshots and blobs from the shared store.
+
+Separate confirmed actions clean extra Copse images, Apple's shared dangling-image/snapshot
+cache (`container image prune`, without `--all`), or unused BuildKit cache (`buildctl prune`).
+The shared actions can affect caches used by other Apple container applications and are not
+scheduled automatically. Cleanup is blocked by Copse run leases, any non-builder container
+(including stopped containers), active BuildKit records, and Copse's native image-build lock.
+Other applications do not participate in Copse's lock: finish their container/build operations
+before requesting shared cleanup. Copse never directly deletes Apple's ext4 files or resets the
+shared builder. Guest-side cache pruning may not shrink its sparse VM disk immediately.
+
 ## Migrations
 
 The current thread store is versioned and documented in

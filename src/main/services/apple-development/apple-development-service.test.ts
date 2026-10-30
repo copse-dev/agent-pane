@@ -5,15 +5,13 @@ import type {
   SupervisedTaskAuditEvent,
   SupervisedTaskMeta,
 } from '@shared/supervisor/task-schema.ts'
+import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
 import {
-  storageDelete,
-  storageGet,
   storageListFiles,
   storageReadFile,
   storageRemoveFile,
-  storageSet,
   storageWriteFile,
-} from '../storage/storage.ts'
+} from '../storage/user-data-files.ts'
 import type { LoadedSupervisedTasks, SupervisedTaskStore } from '../supervisor/task-store.ts'
 import { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import type { ThreadExecutionContext } from '../thread-execution-context.ts'

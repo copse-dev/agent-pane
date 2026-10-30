@@ -414,8 +414,8 @@ content and shrink the compiled surface. Trust stays first-party — shipped-wit
 is a source, not a manifest claim.
 
 **B3 — The rest stay compiled, permanently.** `copse.todos` (panel emission),
-`copse.automations` (level-3 view), `copse.parallel-search` (credential-gated native
-tool), and the other typed-contribution plugins stay in the shipped static list. This
+`copse.automations` (level-3 view), and the other typed-contribution plugins stay in
+the shipped static list. This
 is VS Code's built-in-extensions model and hooks-and-feature-packs decision 15, not an
 unfinished migration. If Agent Plugins later standardizes a hooks or UI component
 type, B3 reopens; until then it is closed.

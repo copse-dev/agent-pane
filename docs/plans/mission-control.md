@@ -353,8 +353,11 @@ start collecting for this.
 
 - **Making the agent more autonomous.** This helps a person supervise; it does not reduce
   what they approve.
-- **Cross-user or hosted visibility.** No hosted backend, and nothing in the
-  evidence asks for it.
+- **Cross-user or hosted visibility.** No hosted backend carries attention or
+  thread state, and nothing in the evidence asks for it. _Amended October 2026:_ the
+  Copse names service ([remote-access.md](../remote-access.md)) is hosted, but it only
+  gives a Mac a publicly trusted name and certificate for its LAN companion; it sees
+  certificate requests and private LAN addresses, never threads or attention.
 - **A LAN view of this desktop session** is specified separately in
   [`mobile-web-experience.md`](mobile-web-experience.md). It needs the running
   desktop and does not create a hosted or shared workspace.

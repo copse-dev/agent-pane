@@ -1,4 +1,5 @@
 import type { SettingsSnapshot } from '@shared/settings-contract.ts'
+import { emptyContainerStorage } from '../../shared/types/storage-cleanup.ts'
 import type { ActiveDiff, StreamChunk, Thread, TranscriptAnnotation } from '@shared/types'
 import { ThreadPrRelationshipIndex } from '@shared/git/thread-pr-relations.ts'
 import { backlinksFor } from '@shared/threads/thread-links.ts'
@@ -574,6 +575,12 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   )
 
   const api: ApiClient = {
+    clientActions: {
+      claim: () => Promise.resolve(false),
+      publish: async () => {},
+      reply: async () => {},
+      onInvoke: () => () => {},
+    },
     threadPrompts: {
       onPrompt: () => () => {},
       reply: async () => {},
@@ -586,9 +593,27 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           running: scenario.mobileCompanion !== undefined,
           url: scenario.mobileCompanion?.url ?? null,
           qrSvg: scenario.mobileCompanion?.qrSvg ?? null,
+          localUrl: null,
+          localQrSvg: null,
+          publicName: {
+            serviceUrl: 'https://api.copse.dev',
+            state: 'unregistered',
+            hostname: null,
+            certificate: null,
+            dns: 'unknown',
+            busy: null,
+            lastError: null,
+          },
           rootCertificatePath: null,
+          address: scenario.mobileCompanion ? new URL(scenario.mobileCompanion.url).hostname : null,
           addresses: scenario.mobileCompanion
-            ? [{ address: new URL(scenario.mobileCompanion.url).hostname, interfaceName: 'Wi-Fi' }]
+            ? [
+                {
+                  address: new URL(scenario.mobileCompanion.url).hostname,
+                  interfaceName: 'Wi-Fi',
+                  virtual: false,
+                },
+              ]
             : [],
           devices: [],
           pairing: null,
@@ -601,6 +626,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       revokeDevice: () => resolvedVoid(),
       respondPairing: () => resolvedVoid(),
       revealCertificate: () => resolvedVoid(),
+      registerName: () => resolvedVoid(),
+      removeName: () => resolvedVoid(),
+      recheckNameDns: () => resolvedVoid(),
       onChat: () => () => {},
       reply: async () => {},
     },
@@ -983,8 +1011,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       reopenArtefact: () => resolved(false),
     },
     storage: {
+      containerCleanup: () => resolved({ removed: 0, bytes: 0, skipped: 0 }),
       maintenance: () =>
         resolved({
+          containers: emptyContainerStorage(),
           retention: { enabled: true, days: 30 },
           areas: [
             { area: 'runs', bytes: 0, entries: 0, busy: false },
