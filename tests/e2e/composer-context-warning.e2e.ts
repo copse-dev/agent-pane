@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import {
   E2E_SCREENSHOT_DIR,
   saveAppScreenshot,
@@ -19,7 +19,9 @@ describe('composer context-window warning', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-context-fit-project', {
+    // Not this checkout: its AGENTS.md, skills and branch reach the estimate
+    // and the follow-up row, so a docs edit on main would move the app frame.
+    seedEmptyProject(seedStableWorkspace(), 'e2e-context-fit-project', {
       subagentsEnabled: false,
       model: 'gpt-4o-mini',
     })

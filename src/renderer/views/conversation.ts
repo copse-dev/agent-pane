@@ -56,11 +56,15 @@ import {
   bindCodeBlockRunRequests,
   setCodeBlockRunOutcome,
 } from '../markdown/code-block-copy.ts'
-import { attachTableCopyButtons } from '../markdown/table-copy.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
-import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { StreamingMarkdownRenderer } from '@copse/streaming-markdown'
-import { createInputSmoother, type InputSmoother } from '@copse/streaming-markdown/smoothing'
+import {
+  paintAssistantMarkdown,
+  renderUserPromptMarkdown,
+  STREAM_PAINT_EVENT,
+  STREAM_SETTLED_EVENT,
+} from '../markdown/message-markdown.ts'
+import { desktopMessageHost } from '../markdown/desktop-message-host.ts'
 import { createFrameLoop } from './frame-loop.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
@@ -132,6 +136,7 @@ import { todosToPanelListData, type PanelListData } from '@copse/agent/plugins/p
 import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugins/todos-plugin.ts'
 import { createAppleDevelopmentPanel } from './apple-development-panel.ts'
 import { mountAppleProjectSuggestions } from './apple-project-suggestion.ts'
+import { mountEnvironmentSetupOffer } from './environment-setup.ts'
 import { createReviewCardEl } from './review-panel.ts'
 import { createComparisonCardEl } from './comparison-panel.ts'
 import { createVisualEvidenceSection } from './visual-evidence-card.ts'
@@ -170,6 +175,7 @@ import {
 import { createReviewerInputToolCard } from './reviewer-input.ts'
 import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
 import { renderSignature } from './render-signature.ts'
+import { createDisclosureModel } from './disclosure-model.ts'
 import {
   drainMessageQueue,
   isHeldMessage,
@@ -831,19 +837,6 @@ function createInnerToolCard(tc: ToolCall, api: ApiClient): HTMLDetailsElement {
   return entry
 }
 
-// Per-message incremental renderers for the active streaming pass. Keyed by the
-// `.message-text` element so re-entrant token events reuse the same DOM regions
-// instead of rebuilding the whole message innerHTML each token (O(n²)).
-const streamingRenderers = new WeakMap<HTMLElement, StreamingMarkdownRenderer>()
-// Streamed text reaches `.message-text` through the package's input smoother,
-// one frame at a time, so the transcript learns about each paint and the
-// deferred final render through these events rather than at the call site.
-const streamSmoothers = new WeakMap<HTMLElement, InputSmoother>()
-/** A paced frame of streamed text landed in this `.message-text`. Bubbles. */
-const STREAM_PAINT_EVENT = 'copse:stream-paint'
-/** A paced stream finished revealing and took its final render. Bubbles. */
-const STREAM_SETTLED_EVENT = 'copse:stream-settled'
-
 /**
  * Cursor ACP may append a trailing `Error: RetriableError: …` transport line
  * after useful output. Keep it out of the primary markdown for everyone. In
@@ -891,36 +884,6 @@ function flushPendingAcpTransportNoise(messageTextEl: HTMLElement): void {
   syncAcpTransportNoiseDisclosure(messageTextEl, pending)
 }
 
-function paintStreamingMarkdown(el: HTMLElement, display: string): void {
-  let renderer = streamingRenderers.get(el)
-  if (!renderer) {
-    renderer = new StreamingMarkdownRenderer(el)
-    streamingRenderers.set(el, renderer)
-  }
-  renderer.update(display)
-  attachCodeBlockCopyButtons(el, { runCommands: true })
-}
-
-function streamSmootherFor(el: HTMLElement, display: string): InputSmoother {
-  const existing = streamSmoothers.get(el)
-  if (existing) return existing
-  // Text already on screen — a message rebuilt mid-stream — stays put; only
-  // what arrives from now on is paced. A fresh bubble paces from its start.
-  const shown = el.hasChildNodes() ? display : ''
-  if (shown) paintStreamingMarkdown(el, shown)
-  const smoother = createInputSmoother({
-    update: (text) => {
-      paintStreamingMarkdown(el, text)
-      el.dispatchEvent(new CustomEvent(STREAM_PAINT_EVENT, { bubbles: true }))
-    },
-    // Follow the provider's own rate: a steady reveal a little behind it.
-    cadence: 'adaptive',
-    initial: shown,
-  })
-  streamSmoothers.set(el, smoother)
-  return smoother
-}
-
 function setAssistantMarkdown(
   el: HTMLElement,
   content: string,
@@ -928,71 +891,18 @@ function setAssistantMarkdown(
   api: ApiClient,
 ): void {
   const { body: display, transportNoise } = assistantDisplayParts(content)
-  if (streaming) {
-    el.classList.add('is-streaming')
-    streamSmootherFor(el, display).push(display)
-    // Demote as soon as the trailing line is complete; keep collapsed while live.
-    syncAcpTransportNoiseDisclosure(el, transportNoise)
-    return
-  }
-  const smoother = streamSmoothers.get(el)
-  if (smoother) {
-    // Let the reveal catch up before the final render replaces the scaffold,
-    // so the end of the answer doesn't arrive in one pop. A later call pushes
-    // again, which voids this settle in favour of its own content.
-    smoother.push(display)
-    smoother.finish(() => {
-      smoother.dispose()
-      streamSmoothers.delete(el)
-      setAssistantMarkdown(el, content, false, api)
-      el.dispatchEvent(new CustomEvent(STREAM_SETTLED_EVENT, { bubbles: true }))
-    })
-    return
-  }
-  // Final render: replace the incremental scaffold with the finished markdown.
-  el.classList.remove('is-streaming')
-  streamingRenderers.delete(el)
-  el.innerHTML = renderMarkdown(display)
-  attachCodeBlockCopyButtons(el, { runCommands: true })
-  // Tables only on the committed final render — during streaming they are
-  // patched with pending rows, so wrapping them then would fight the DOM sync.
-  attachTableCopyButtons(el)
-  void annotateFileReferences(el, api)
-  hydrateRemoteArtifactImages(el, api)
-  void renderMermaidIn(el)
+  paintAssistantMarkdown(
+    el,
+    display,
+    streaming,
+    desktopMessageHost(api, { runCommands: true }),
+    () => {
+      syncAcpTransportNoiseDisclosure(el, transportNoise)
+    },
+  )
+  // While live, demote as soon as the trailing line is complete; keep collapsed.
+  // A paced settle syncs again after its final render (above).
   syncAcpTransportNoiseDisclosure(el, transportNoise)
-}
-
-/** Turn composer single newlines into CommonMark hard breaks; skip fenced code. */
-function userPromptMarkdown(source: string): string {
-  const parts: string[] = []
-  const fenceRe = /```[\s\S]*?```/g
-  let last = 0
-  let match: RegExpExecArray | null
-  while ((match = fenceRe.exec(source)) !== null) {
-    parts.push(hardBreakSingleNewlines(source.slice(last, match.index)))
-    parts.push(match[0])
-    last = match.index + match[0].length
-  }
-  parts.push(hardBreakSingleNewlines(source.slice(last)))
-  return parts.join('')
-}
-
-function hardBreakSingleNewlines(text: string): string {
-  return text.replace(/(?<!\n)\n(?!\n)/g, '  \n')
-}
-
-/** Render markdown into a user-prompt sink (full bubble or one fold region). */
-function paintUserMarkdown(el: HTMLElement, content: string): void {
-  if (!content) {
-    el.replaceChildren()
-    return
-  }
-  // escape-all: angle-bracketed examples (`<cd … && npm test>`) must stay literal.
-  // Default passthrough emits raw tags; the sink sanitizer then strips unknown
-  // elements and the command vanishes from the transcript.
-  el.innerHTML = renderMarkdown(userPromptMarkdown(content), { htmlPolicy: 'escape-all' })
-  attachCodeBlockCopyButtons(el)
 }
 
 /**
@@ -1000,12 +910,7 @@ function paintUserMarkdown(el: HTMLElement, content: string): void {
  * get a mid-fold accordion — opening + closing stay visible; middle collapses.
  */
 function setUserMarkdown(el: HTMLElement, content: string): void {
-  const parts = splitUserPromptForFold(content)
-  if (!parts) {
-    paintUserMarkdown(el, content)
-    return
-  }
-  fillUserPromptFold(el, parts, paintUserMarkdown)
+  renderUserPromptMarkdown(el, content)
 }
 
 function createSubagentMessageEl(content: string, streaming: boolean, api: ApiClient): HTMLElement {
@@ -2733,8 +2638,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const appleSuggestions = mountAppleProjectSuggestions(store, api, () =>
     appleDevelopmentHost.dispatchEvent(new Event('apple-development-refresh')),
   )
+  const environmentSetupOffer = mountEnvironmentSetupOffer(store, api)
   scrollArea.append(
     appleSuggestions.element,
+    environmentSetupOffer.element,
     appleDevelopmentHost,
     todoHost,
     list,
@@ -2792,7 +2699,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     details.dataset['userToggled'] = '1'
     details.open = true
     const key = details.dataset['disclosureKey']
-    if (key) disclosurePreferences.set(key, true)
+    const threadId = store.getState().activeThreadId
+    if (key && threadId) disclosures.choose(threadId, key, true)
     details.scrollIntoView({ block: 'nearest' })
   })
   activityBar.addEventListener('keydown', (event) => {
@@ -3225,29 +3133,48 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // instead of touching a list that has since been cleared/rebuilt again.
   let backfillGeneration = 0
 
-  // Disclosure presentation is deliberately independent from execution status.
-  // A brief done -> running gap must not close and reopen the same rollup, and a
-  // user's explicit choice must survive status updates and mounted thread switches.
-  const disclosurePreferences = new Map<string, boolean>()
+  // Disclosure presentation is deliberately independent from execution status:
+  // `disclosures` owns auto / user-open / user-closed per key, plus the reveal
+  // and compaction timers. A brief done -> running gap must not close and
+  // reopen the same rollup, and a user's explicit choice must survive status
+  // updates and mounted thread switches. The DOM only renders that state.
   // Once a live message starts as a rollup, keep that wrapper shape for this
   // mounted session so a one-tool update cannot turn into a different card type.
   const liveRollupMessages = new Set<string>()
-  const autoOpenedDisclosures = new Set<string>()
-  const autoOpenedAt = new Map<string, number>()
-  const runningDisclosures = new Set<string>()
   const disclosureElements = new Map<string, HTMLDetailsElement>()
   const wiredDisclosureSummaries = new WeakSet<HTMLElement>()
-  const revealTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  const compactTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  const deferredCompactions = new Set<string>()
+  const disclosures = createDisclosureModel(
+    {
+      canReveal: () => pinnedToBottom,
+      canCompact: (threadId) => threadId !== store.getState().activeThreadId || pinnedToBottom,
+      reveal(key) {
+        const details = disclosureElements.get(key)
+        if (!details?.isConnected) return false
+        details.open = true
+        ensureToolCardBodyRendered(details)
+        scrollToBottom()
+        return true
+      },
+      collapse(key) {
+        const details = disclosureElements.get(key)
+        if (details?.isConnected) details.open = false
+      },
+      compacted(threadId) {
+        if (threadId === store.getState().activeThreadId) scrollToBottom()
+      },
+    },
+    {
+      revealDelayMs: TOOL_AUTO_REVEAL_DELAY_MS,
+      minDwellMs: TOOL_AUTO_REVEAL_MIN_DWELL_MS,
+      compactDelayMs: TOOL_AUTO_COMPACT_DELAY_MS,
+    },
+  )
 
-  function cancelReveal(key: string): void {
-    const timer = revealTimers.get(key)
-    if (timer !== undefined) clearTimeout(timer)
-    revealTimers.delete(key)
-  }
-
-  function wireDisclosurePreference(details: HTMLDetailsElement, key: string): void {
+  function wireDisclosurePreference(
+    details: HTMLDetailsElement,
+    threadId: string,
+    key: string,
+  ): void {
     const summary = details.querySelector<HTMLElement>(':scope > summary')
     if (!summary || wiredDisclosureSummaries.has(summary)) return
     wiredDisclosureSummaries.add(summary)
@@ -3258,13 +3185,17 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       // the toggle so the stored preference always matches the visible state.
       event.preventDefault()
       details.open = !details.open
-      disclosurePreferences.set(key, details.open)
+      disclosures.choose(threadId, key, details.open)
       details.dataset['userToggled'] = '1'
-      autoOpenedDisclosures.delete(key)
-      autoOpenedAt.delete(key)
-      cancelReveal(key)
       if (details.open) ensureToolCardBodyRendered(details)
     })
+  }
+
+  /** Register a disclosure's element under its model key and wire user toggles. */
+  function bindDisclosure(details: HTMLDetailsElement, threadId: string, key: string): void {
+    details.dataset['disclosureKey'] = key
+    disclosureElements.set(key, details)
+    wireDisclosurePreference(details, threadId, key)
   }
 
   function registerReasoningDisclosures(msgEl: HTMLElement): void {
@@ -3275,80 +3206,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const step = details.closest<HTMLElement>('.tool-card-step[data-step-message-id]')
       const messageId = step?.dataset['stepMessageId'] ?? fallbackMessageId
       const key = `${threadId}:${messageId}:reasoning`
-      details.dataset['disclosureKey'] = key
-      disclosureElements.set(key, details)
-      wireDisclosurePreference(details, key)
-      const preference = disclosurePreferences.get(key)
+      bindDisclosure(details, threadId, key)
+      const preference = disclosures.userChoice(key)
       if (preference !== undefined) {
         details.dataset['userToggled'] = '1'
         details.open = preference
       }
     })
-  }
-
-  function cancelThreadCompaction(threadId: string): void {
-    const timer = compactTimers.get(threadId)
-    if (timer !== undefined) clearTimeout(timer)
-    compactTimers.delete(threadId)
-  }
-
-  function revealAfterDelay(key: string): void {
-    if (revealTimers.has(key) || autoOpenedDisclosures.has(key)) return
-    const timer = setTimeout(() => {
-      revealTimers.delete(key)
-      if (!runningDisclosures.has(key) || disclosurePreferences.has(key) || !pinnedToBottom) return
-      const details = disclosureElements.get(key)
-      if (!details?.isConnected) return
-      autoOpenedDisclosures.add(key)
-      autoOpenedAt.set(key, Date.now())
-      details.open = true
-      ensureToolCardBodyRendered(details)
-      scrollToBottom()
-    }, TOOL_AUTO_REVEAL_DELAY_MS)
-    revealTimers.set(key, timer)
-  }
-
-  function compactThreadDisclosures(threadId: string): void {
-    compactTimers.delete(threadId)
-    if (threadId === store.getState().activeThreadId && !pinnedToBottom) {
-      deferredCompactions.add(threadId)
-      return
-    }
-    deferredCompactions.delete(threadId)
-    const prefix = `${threadId}:`
-    const now = Date.now()
-    let dwellRemaining = 0
-    for (const key of autoOpenedDisclosures) {
-      if (!key.startsWith(prefix)) continue
-      const details = disclosureElements.get(key)
-      if (details?.dataset['status'] === 'error') continue
-      const openedAt = autoOpenedAt.get(key) ?? 0
-      dwellRemaining = Math.max(dwellRemaining, TOOL_AUTO_REVEAL_MIN_DWELL_MS - (now - openedAt))
-    }
-    if (dwellRemaining > 0) {
-      const timer = setTimeout(() => {
-        compactThreadDisclosures(threadId)
-      }, Math.ceil(dwellRemaining))
-      compactTimers.set(threadId, timer)
-      return
-    }
-    for (const key of [...autoOpenedDisclosures]) {
-      if (!key.startsWith(prefix)) continue
-      const details = disclosureElements.get(key)
-      if (details?.dataset['status'] === 'error') continue
-      autoOpenedDisclosures.delete(key)
-      autoOpenedAt.delete(key)
-      if (!disclosurePreferences.has(key) && details?.isConnected) details.open = false
-    }
-    if (threadId === store.getState().activeThreadId) scrollToBottom()
-  }
-
-  function scheduleThreadCompaction(threadId: string): void {
-    cancelThreadCompaction(threadId)
-    const timer = setTimeout(() => {
-      compactThreadDisclosures(threadId)
-    }, TOOL_AUTO_COMPACT_DELAY_MS)
-    compactTimers.set(threadId, timer)
   }
 
   function isNearBottom(): boolean {
@@ -3444,7 +3308,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     } else if (isNearBottom()) {
       pinnedToBottom = true
       const threadId = store.getState().activeThreadId
-      if (threadId && deferredCompactions.delete(threadId)) scheduleThreadCompaction(threadId)
+      if (threadId) disclosures.resumeDeferredCompaction(threadId)
     }
     lastScrollTop = scrollTop
     updateScrollButton()
@@ -3634,7 +3498,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       userScrolledUpAt = 0
       pinnedToBottom = true
       const threadId = store.getState().activeThreadId
-      if (threadId && deferredCompactions.delete(threadId)) scheduleThreadCompaction(threadId)
+      if (threadId) disclosures.resumeDeferredCompaction(threadId)
     }
     updateScrollButton()
   }
@@ -3745,53 +3609,22 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // Proposal cards derive their open state from the pending user decision.
     if (card.classList.contains('thread-proposal')) return
     const key = `${threadId}:${messageId}:${toolCardKey(item)}`
-    card.dataset['disclosureKey'] = key
-    // Keep dataset.status aligned with the live tool status so compaction can
-    // leave failed cards open (it only inspects this attribute).
+    // Keep dataset.status aligned with the live tool status for styling.
     const itemStatus =
       item.type === 'individual' ? cardStatus([item.toolCall]) : cardStatus(item.toolCalls)
     card.dataset['status'] = itemStatus
-    disclosureElements.set(key, card)
-    wireDisclosurePreference(card, key)
-    const preference = disclosurePreferences.get(key)
-    const running =
-      item.type === 'individual'
-        ? item.toolCall.status === 'running' || item.toolCall.subagent?.status === 'running'
-        : itemStatus === 'running'
-    const failed = itemStatus === 'error'
-    if (itemStatus === 'interrupted') {
-      autoOpenedDisclosures.delete(key)
-      autoOpenedAt.delete(key)
-    }
-
-    if (running) runningDisclosures.add(key)
-    else {
-      runningDisclosures.delete(key)
-      cancelReveal(key)
-    }
-
-    if (preference !== undefined) {
-      card.open = preference
-    } else if (item.type === 'rollup' || item.type === 'step') {
-      // Background activity stays quiet, including while it runs and when a
-      // call failed: failures render beside the rollup, already open.
-      card.open = false
-    } else if (failed) {
-      // Failed tools stay expanded so the error body is visible without a click.
-      // Compaction already skips data-status=error; auto-open here covers the
-      // case where the tool never ran long enough for revealAfterDelay.
-      card.open = true
-      autoOpenedDisclosures.add(key)
-      if (!autoOpenedAt.has(key)) autoOpenedAt.set(key, Date.now())
-    } else if (autoOpenedDisclosures.has(key)) {
-      card.open = true
-    } else {
-      card.open = false
-      if (running && autoRevealEligible) revealAfterDelay(key)
-    }
+    bindDisclosure(card, threadId, key)
+    const container = item.type === 'rollup' || item.type === 'step'
+    const subagentRunning =
+      item.type === 'individual' && item.toolCall.subagent?.status === 'running'
+    card.open = disclosures.update(threadId, key, {
+      kind: container ? 'container' : 'tool',
+      status: subagentRunning ? 'running' : itemStatus,
+      autoRevealEligible,
+    })
     if (card.open) ensureToolCardBodyRendered(card)
 
-    if (item.type === 'rollup' || item.type === 'step') {
+    if (container) {
       const nestedCards = card.querySelectorAll<HTMLDetailsElement>(
         ':scope > .tool-rollup-body > .tool-card',
       )
@@ -3804,26 +3637,20 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       return
     }
     if (item.type === 'group') {
+      const calls = new Map(item.toolCalls.map((call) => [call.id, call]))
       card
         .querySelectorAll<HTMLDetailsElement>('.tool-group-item[data-tool-id]')
         .forEach((entry) => {
           const id = entry.dataset['toolId']
-          if (!id) return
+          const call = id ? calls.get(id) : undefined
+          if (!id || !call) return
           const itemKey = `${threadId}:${messageId}:t:${id}`
-          entry.dataset['disclosureKey'] = itemKey
-          disclosureElements.set(itemKey, entry)
-          wireDisclosurePreference(entry, itemKey)
-          const preference = disclosurePreferences.get(itemKey)
-          const entryFailed = entry.dataset['status'] === 'error'
-          if (preference !== undefined) {
-            entry.open = preference
-          } else if (entryFailed) {
-            entry.open = true
-            autoOpenedDisclosures.add(itemKey)
-            if (!autoOpenedAt.has(itemKey)) autoOpenedAt.set(itemKey, Date.now())
-          } else {
-            entry.open = false
-          }
+          bindDisclosure(entry, threadId, itemKey)
+          entry.open = disclosures.update(threadId, itemKey, {
+            kind: 'entry',
+            status: cardStatus([call]),
+            autoRevealEligible: false,
+          })
           if (entry.open) ensureToolCardBodyRendered(entry)
         })
     }
@@ -5062,10 +4889,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       setScrollTopProgrammatically(preservedScrollTop)
       updateScrollButton()
     }
-    if (thread.status === 'running') cancelThreadCompaction(thread.id)
-    else if ([...autoOpenedDisclosures].some((key) => key.startsWith(`${thread.id}:`))) {
-      scheduleThreadCompaction(thread.id)
-    }
+    if (thread.status === 'running') disclosures.cancelCompaction(thread.id)
+    else if (disclosures.hasAutoOpen(thread.id)) disclosures.scheduleCompaction(thread.id)
     if (initialStart > 0) {
       const generation = backfillGeneration
       requestAnimationFrame(() => {
@@ -5354,8 +5179,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       }
     }),
     store.on('thread_status_changed', (tid, status) => {
-      if (status === 'running') cancelThreadCompaction(tid)
-      else scheduleThreadCompaction(tid)
+      if (status === 'running') disclosures.cancelCompaction(tid)
+      else disclosures.scheduleCompaction(tid)
       if (tid !== store.getState().activeThreadId) return
       if (status === 'running') {
         list.querySelectorAll('[data-turn-recovery-card]').forEach((card) => {
@@ -5405,20 +5230,14 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     listResizeObserver?.disconnect()
     conciseFooterObserver.disconnect()
     showAcpTransportNoiseDisclosure = (): boolean => false
-    revealTimers.forEach((timer) => {
-      clearTimeout(timer)
-    })
-    compactTimers.forEach((timer) => {
-      clearTimeout(timer)
-    })
-    revealTimers.clear()
-    compactTimers.clear()
+    disclosures.dispose()
     disposeInlineArtefacts(list)
     unbindFileLinks()
     unbindWorkspaceLinks()
     unbindBrowserLinks()
     unbindCodeBlockRuns()
     appleSuggestions.destroy()
+    environmentSetupOffer.destroy()
     roadmapOrigin.destroy()
     unsubs.forEach((u) => {
       u()

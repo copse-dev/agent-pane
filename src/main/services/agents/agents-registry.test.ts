@@ -138,6 +138,22 @@ describe('agents-registry', () => {
     assert.ok(first.root.length < second.root.length, 'shallower .copse root comes first')
   })
 
+  it('resolves explicitly owned project roots independently of the active workspace', async () => {
+    const active = join(tempRoot, 'active')
+    const owned = join(tempRoot, 'owned')
+    await seed('active', '.copse', 'active.md', DEFINITION.replace('reviewer', 'active'))
+    await seed('owned', '.copse', 'owned.md', DEFINITION.replace('reviewer', 'owned'))
+    restoreWorkspace = setWorkspaceRootForTest(active)
+    const roots = await runWithWorkspaceTrust(owned, true, () => collectDiscoveryRoots(owned))
+    assert.deepEqual(
+      roots.filter((root) => root.source === 'project').map((root) => root.root),
+      [join(owned, '.copse', 'agents')],
+    )
+    const definitions = await discoverAgentsFromRoots(roots)
+    assert.ok(definitions.agents.some((agent) => agent.name === 'owned'))
+    assert.ok(!definitions.agents.some((agent) => agent.name === 'active'))
+  })
+
   it('does not read project agents from an untrusted workspace', async () => {
     await mkdir(join(tempRoot, '.git'), { recursive: true })
     await seed('', '.claude', 'reviewer.md', DEFINITION.replace('{where}', 'project'))

@@ -1,0 +1,16 @@
+{
+  "name": "@copse/remote-protocol",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Wire protocol for Copse remote access: device keys, signed requests, names API messages, label grants and the relay tunnel handshake",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*.ts": "./src/*.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
+}

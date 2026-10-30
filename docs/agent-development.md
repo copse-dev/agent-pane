@@ -229,7 +229,7 @@ the regex script bridge are retired; the fixture source guard rejects them in ex
 Everything Copse persists lives under one root, `~/.copse/` (`COPSE_DIR` moves the whole profile).
 Keep `config.json` small: every `storage:set` makes the main process rewrite the whole file
 synchronously, so large or append-only data (logs, ledgers) belongs in its own file next to it —
-see `storageAppendFile` / `storageWriteFile` in `src/main/services/storage/storage.ts`.
+see `storageAppendFile` / `storageWriteFile` in `src/main/services/storage/user-data-files.ts`.
 
 | Path                                                                                 | Contents                                                              |
 | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
@@ -372,6 +372,14 @@ while candidates await a decision and passes when there are none. The publisher 
 `screenshots-need-review` while a decision is pending and removes it when there are no candidates
 or a successful label or checkbox decision is recorded. Failed decisions keep the reminder.
 A push rechecks screenshots for the new head and adds the label again if review is needed.
+The evidence comment never stands in for a newer head: as soon as a push lands,
+`.github/workflows/screenshot-review-push.yml` replaces it with a "Waiting for CI on `<sha>`"
+notice and removes `screenshots-need-review`, writing no status, so no decision can be made before
+the new head renders. A red CI run still publishes evidence when its `screenshot-artifacts` job
+passed (it needs only precheck, build and e2e, so a lint or unit failure does not hold the review back); a red
+run that rendered nothing replaces the notice with "No screenshots for `<sha>`" and the run link.
+Lower layers of a screenshot stack are left to the stack gate, and stacks publish only from green
+runs.
 A maintainer decides with a label,
 which `.github/workflows/screenshot-review-labels.yml` acts on and then removes:
 `accept-screenshots` fast-forwards the PR branch to the compare commit, after checking that it is
@@ -446,7 +454,11 @@ of the shot, see `scripts/filter-screenshots.mts`); anything larger is either a 
 spec that is not deterministic, and re-baselining fixes neither.
 
 1. **Is it recurring?** The same shot appearing on PRs that do not touch its spec is unowned drift.
-   Compare the before/after images of two unrelated PRs' evidence comments.
+   Compare the before/after images of two unrelated PRs' evidence comments. Every full run renders
+   the same drift; the filter only shows it to PRs whose diff owns the shot, so a PR touching a
+   widely imported `src/` file shows all of it and a lockfile bump shows none. Find the merged
+   change that moved the pixels without owning them, such as a spec that seeds `process.cwd()` and
+   so renders this checkout's `AGENTS.md`, skills or branch.
 2. **Measure it.** Diff the pair with `pixelmatch` (threshold 0.1) for the differing-pixel count and
    percentage, and compare dimensions. A changed height or width is a state race, never noise.
 3. **Look at both images.** Name what differs before deciding:

@@ -120,10 +120,8 @@ import {
 import { isAgentRunReadonly } from '../agent-run-readonly.ts'
 import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
 import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
-import { PARALLEL_SEARCH_API_URL } from '../parallel-search.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/plugins/background-tasks-plugin.ts'
-import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { assessShellHarm, type ShellHarmContext } from './shell-harm.ts'
 import {
   guardedYoloTierReason,
@@ -135,6 +133,14 @@ import {
   TRUSTED_SSH_HOSTS_SETTING,
   sanitizeTrustedSshHosts,
 } from '@copse/shell-guard/trusted-ssh-hosts.ts'
+import {
+  sanitizeTrustedPackageRegistries,
+  TRUSTED_PACKAGE_REGISTRIES_SETTING,
+} from '@copse/shell-guard/trusted-package-registries.ts'
+import {
+  PRODUCTION_TARGETS_SETTING,
+  sanitizeProductionTargets,
+} from '@copse/shell-guard/production-targets.ts'
 import { currentRunUsesGuardedYolo } from './guarded-yolo.ts'
 import { recordPermissionDecision } from './permission-audit.ts'
 import { resolveToolPermission } from './tool-permissions.ts'
@@ -289,12 +295,18 @@ function shellApprovalAuditContext(): NonNullable<ApprovalRequest['shellContext'
   return {
     sandboxAvailable: commandRunsSandboxed(getAgentExecutionRoot()),
     autoRunEnabled: getSetting<boolean>('autoRunSandboxCommands', true),
-    workspaceTrusted: isWorkspaceTrusted(getWorkspaceRoot()),
+    workspaceTrusted: isWorkspaceTrusted(getAgentProjectRoot()),
     guardedYolo: currentRunUsesGuardedYolo(threadId),
     networkScopeActive: isSandboxNetworkScopeActive(),
   }
 }
 
+/**
+ * @param leaseIdentity offer the outside-sandbox replay lease. Only from
+ *   {@link expectedBlockLeaseIdentity}, which has already judged the whole
+ *   command bounded opaque local execution, so a lease falls back to the exact
+ *   command line when no single constituent can be isolated.
+ */
 async function requestEscalationApproval(
   title: string,
   parts: ShellPromptParts,
@@ -331,7 +343,7 @@ async function requestEscalationApproval(
   )
   if (approved && remember && trustable) await addTrustedShellCommand(trustable)
   if (approved && grantScope === 'turn-tree' && leaseIdentity) {
-    issueShellReplayLease(leaseIdentity, parts.command)
+    issueShellReplayLease(leaseIdentity, parts.command, true)
   }
   return approved
 }
@@ -456,6 +468,8 @@ async function promptShell(
   if (signal?.aborted) return false
   // The trusted-command tick box only makes sense on an escalation to OUTSIDE the
   // sandbox (a trusted command runs unsandboxed); an in-sandbox prompt never offers it.
+  // An up-front `external` verdict is never bounded opaque local execution, so it
+  // never carries a replay lease.
   if (outsideSandbox) {
     return requestEscalationApproval(
       'Run outside sandbox?',
@@ -463,7 +477,6 @@ async function promptShell(
       reasons,
       'shell-sandbox-escalation',
       signal,
-      leaseIdentity,
     )
   }
   const sandboxed =
@@ -559,6 +572,15 @@ export async function promptUnsandboxedShell(
   const forceAsk =
     opts.requireInteractiveApproval === true || resolveToolPermission('run_shell')?.policy === 'ask'
   if (!forceAsk && autoApproveShell(command, 'external')) return true
+  // An agent rerunning the same demo or harness after each fix is blocked the
+  // same way every time. A runner-verified block of bounded opaque local
+  // execution may use or offer the outside-sandbox lease `promptExpectedSandboxBlock`
+  // offers. A forced ask, which includes a block matched only from forgeable
+  // command output, always reaches the user and never offers one.
+  const leaseIdentity = forceAsk
+    ? null
+    : expectedBlockLeaseIdentity(command, getAgentExecutionRoot())
+  if (leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
   // A command that failed inside the sandbox because it reads a file in the
   // user's home directory is the same read-access question as the up-front gate,
   // so a thread that already granted that scope should not be asked again.
@@ -572,6 +594,7 @@ export async function promptUnsandboxedShell(
     reasons,
     'shell-sandbox-retry',
     signal,
+    leaseIdentity ?? undefined,
   )
 }
 
@@ -875,7 +898,7 @@ async function checkWebSearchPermission(
   explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
 ): Promise<boolean> {
   const { getWebSearchProvider } = await import('../web-search/provider.ts')
-  const { WEB_SEARCH_ENDPOINTS, WEB_SEARCH_LABELS } = await import('@shared/web-search.ts')
+  const { WEB_SEARCH_ENDPOINTS } = await import('@shared/web-search.ts')
   const provider = getWebSearchProvider()
   // Let the tool return setup guidance without asking for an unrelated origin.
   if (provider === 'none' || !resolveApiKey(provider)) {
@@ -890,20 +913,20 @@ async function checkWebSearchPermission(
   if (decision.action === 'deny') {
     throw new Error(`Web search denied: ${decision.reasons.join('; ')}`)
   }
-  if (explicitPolicy === 'allow') {
+  // Selecting a provider and resolving its API key in Settings → Web search IS
+  // the user's consent to send search queries to that provider's fixed origin,
+  // mirroring the former `copse.parallel-search` plugin's enable-is-consent
+  // behavior. Auto-allow instead of a one-time web-origin prompt; an explicit
+  // Always ask override still prompts every time. Only grant the origin once
+  // we know the call is actually proceeding, so a denied Always-ask prompt
+  // never leaves a dangling grant for another caller to inherit.
+  if (explicitPolicy !== 'ask') {
     grantWebOriginForNextFetch(decision.origin)
     return true
   }
-  if (decision.action === 'allow') {
-    return explicitPolicy === 'ask' ? promptExplicitToolAsk('web_search', {}, signal) : true
-  }
-  return promptWebOrigin(
-    decision.origin,
-    decision.origin,
-    signal,
-    explicitPolicy !== 'ask',
-    `Search queries will be sent to ${WEB_SEARCH_LABELS[provider]} and may consume paid API credits.`,
-  )
+  const approved = await promptExplicitToolAsk('web_search', {}, signal)
+  if (approved) grantWebOriginForNextFetch(decision.origin)
+  return approved
 }
 
 /**
@@ -936,40 +959,6 @@ async function checkAskClassifierPermission(
     signal,
   )
   return approved
-}
-
-async function checkParallelSearchPermission(
-  signal?: AbortSignal,
-  explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
-): Promise<boolean> {
-  // Enabling the `copse.parallel-search` plugin (default-off, experimental,
-  // explicit API key) IS the user's consent to send search queries to Parallel.
-  // Auto-allow its fixed API origin while the plugin is enabled, mirroring how
-  // the `copse.background-tasks` plugin auto-declares its `loopback-bind`
-  // relaxation: no web-origin prompt just because the enabled search tool ran.
-  if (getDefaultPluginRegistry().isEnabled(PARALLEL_SEARCH_PLUGIN_ID)) {
-    return explicitPolicy === 'ask' ? promptExplicitToolAsk('parallel_search', {}, signal) : true
-  }
-  const saved = getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)
-  const decision = decideWebFetchPermission({
-    url: PARALLEL_SEARCH_API_URL,
-    allowedOrigins: webAllowedOriginsWithDefaults(saved),
-    allowUserApproval: getSetting<boolean>(WEB_ALLOW_USER_APPROVAL_SETTING, true),
-  })
-  if (decision.action === 'deny') {
-    throw new Error(`Parallel Search access denied: ${decision.reasons.join('; ')}`)
-  }
-  if (explicitPolicy === 'allow') return true
-  if (decision.action === 'allow') {
-    return explicitPolicy === 'ask' ? promptExplicitToolAsk('parallel_search', {}, signal) : true
-  }
-  return promptWebOrigin(
-    decision.origin,
-    PARALLEL_SEARCH_API_URL,
-    signal,
-    explicitPolicy !== 'ask',
-    'The objective and search queries will be sent to Parallel. Requests may consume paid API credits; Zero Data Retention depends on your Parallel account agreement.',
-  )
 }
 
 /**
@@ -1034,6 +1023,7 @@ async function checkWorktreePreparationPermission(
     {
       title: 'Prepare this worktree?',
       ...formatPreparationApproval(plan, parsed.offline === true),
+      interactiveClientApproval: 'once',
       type: 'shell',
       cause: 'shell-package-install',
       allowRemember: false,
@@ -1226,9 +1216,18 @@ function sandboxCommandNormallyAllowed(command: string, workspaceRoot: string): 
 }
 
 /** The user's trusted SSH hosts and a filesystem probe, for the harm gate's host-reach rules. */
-function harmHostReachContext(): Pick<ShellHarmContext, 'trustedSshHosts' | 'pathExists'> {
+function harmHostReachContext(): Pick<
+  ShellHarmContext,
+  'trustedSshHosts' | 'trustedPackageRegistries' | 'productionTargets' | 'pathExists'
+> {
   return {
     trustedSshHosts: sanitizeTrustedSshHosts(getSetting<unknown>(TRUSTED_SSH_HOSTS_SETTING, [])),
+    trustedPackageRegistries: sanitizeTrustedPackageRegistries(
+      getSetting<unknown>(TRUSTED_PACKAGE_REGISTRIES_SETTING, []),
+    ),
+    productionTargets: sanitizeProductionTargets(
+      getSetting<unknown>(PRODUCTION_TARGETS_SETTING, []),
+    ),
     pathExists: existsSync,
   }
 }
@@ -1616,23 +1615,23 @@ export async function ensureShellCommandPermitted(
   // A user may explicitly authorize one constituent for bounded exact retries in
   // this human turn tree. Conservative top-level composition is allowed only
   // when every other constituent independently passes ordinary policy.
-  const baseLeaseEligible =
+  // Contained commands only: past the Guarded YOLO return above, `outsideSandbox`
+  // means an `external` verdict, which is never bounded opaque local execution.
+  // Outside-sandbox leases come from the escalation prompts instead
+  // (`expectedBlockLeaseIdentity`).
+  const leaseMatchEligible =
     sandboxEnabled &&
+    !outsideSandbox &&
     workspaceRoot !== null &&
     dangerousInSandboxReasons(command).length === 0 &&
     !detectPackageInstall(command).isInstall
-  const externalReplayEligible =
-    outsideSandbox && isReplayableOpaqueLocalExecution(analyzeShellCommand(command, workspaceRoot))
   const leaseCore =
     workspaceRoot === null
       ? null
       : replayLeaseCore(command, (segment) => leaseCompanionAllowed(segment, workspaceRoot))
-  const leaseMatchEligible = baseLeaseEligible && (!outsideSandbox || externalReplayEligible)
   const leaseRoot = leaseMatchEligible ? workspaceRoot : null
   const leaseIdentity =
-    leaseRoot !== null
-      ? activeShellReplayLeaseIdentity(leaseRoot, outsideSandbox ? 'external' : 'project-sandbox')
-      : null
+    leaseRoot !== null ? activeShellReplayLeaseIdentity(leaseRoot, 'project-sandbox') : null
   const leaseOfferIdentity = leaseCore !== null ? leaseIdentity : null
   if (!forceAsk && leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
 
@@ -2191,8 +2190,6 @@ export async function ensureToolPermitted(
     permitted = await checkFetchUrlPermission(args, signal, explicitPolicy)
   } else if (toolName === 'web_search') {
     permitted = await checkWebSearchPermission(signal, explicitPolicy)
-  } else if (toolName === 'parallel_search') {
-    permitted = await checkParallelSearchPermission(signal, explicitPolicy)
   } else if (toolName === 'ask_classifier') {
     permitted = await checkAskClassifierPermission(args, signal, explicitPolicy)
   } else if (toolName === 'image_gen') {

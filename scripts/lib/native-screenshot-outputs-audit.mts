@@ -27,11 +27,11 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/context-wheel-classifier.e2e.ts': {
-    sourceSha256: '42f16de57f14520051bb4937e4bc14a40dfc7dd6848c317c719cfef5545531cc',
+    sourceSha256: 'd077cf6c449821c8ba1ed8d9ec120287c0bea75f2228a63b9737b3fa833cda55',
     filenames: ['context-wheel-classifier-configured.png', 'context-wheel-classifier-none.png'],
   },
   'tests/e2e/file-viewer-changes.e2e.ts': {
-    sourceSha256: '522bd0c11e02352b85247a035cfbefff8866d2d44b40b18f04cf8f5a2793ddd5',
+    sourceSha256: '72bb1930430f0fc3cfcfc91334d2e5cfabdc815077ba0c2f7f7ec249c3e79d9c',
     filenames: ['file-viewer-copse-strong-dark.png', 'file-viewer-copse-strong-light.png'],
   },
   'tests/e2e/footer-branch-picker.e2e.ts': {
@@ -60,7 +60,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['markdown-ordered-list-after.png', 'markdown-ordered-list-before.png'],
   },
   'tests/e2e/mermaid-parity.e2e.ts': {
-    sourceSha256: '3a180b3692bedbd1d04ad848bf579d0e4ca91cafe3eafaa525ed92fcca8fa569',
+    sourceSha256: '659277b0160d3cf4ec08df4c1c9c9a2eda41f44480456d0fb83d92b56401a81d',
     filenames: [
       'mermaid-parity-class.png',
       'mermaid-parity-flowchart.png',
@@ -90,7 +90,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/pane-popout.e2e.ts': {
-    sourceSha256: '6ea4096df0017141f14ac4a393119a281b0df3508f03462c329c8e2d3c0124c0',
+    sourceSha256: 'ba67a5755045e4cb287caf6b99ec736641758ceeb0ebf0ea55870200d4caff23',
     filenames: [
       'pane-popout-browser.png',
       'pane-popout-changes.png',
@@ -116,7 +116,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['scroll-to-bottom-dark.png', 'scroll-to-bottom-light.png'],
   },
   'tests/e2e/settings-acp-agents-list.e2e.ts': {
-    sourceSha256: '71431b35f09fb252e810ddeba2ec345dae901c69c453ff59dd7ab5275e4bb304',
+    sourceSha256: 'fa0f3bf081ce67f79504e92b6fda07364508dbdcd444028f517e839462a3489e',
     filenames: [
       'settings-acp-agents-list-codex-ready.png',
       'settings-acp-agents-list-page-2.png',
@@ -173,11 +173,11 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/sidebar-other-projects-activity.e2e.ts': {
-    sourceSha256: 'be90e1cb2217e5eda526ab938d2279c6611addd18fe5fa82e8067e158394ff39',
+    sourceSha256: '082610f4fc73977cf993828fe8c2c38a15542553b261b7b3e0e10029b98768c8',
     filenames: ['sidebar-unopened-activity-1600.png', 'sidebar-unopened-activity-800.png'],
   },
   'tests/e2e/terminal-display.e2e.ts': {
-    sourceSha256: '50459641070bc6c2c4db648016f6345d95817acd1e277e737d779a943d519d5e',
+    sourceSha256: 'fc84593f0beb78a50d18b41d739149af0fae651d2a236b5fa821a5a131ebdde4',
     filenames: ['terminal-copse-strong-dark.png', 'terminal-copse-strong-light.png'],
   },
   'tests/e2e/thread-explainer-drawing.e2e.ts': {

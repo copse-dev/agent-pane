@@ -39,6 +39,7 @@ import {
 } from '@copse/llm/stream-retry.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import {
+  ACP_CANCEL_GRACE_MS,
   runAcpSessionPrompt,
   willSandboxAcpAgent,
   type AcpAgentProbe,
@@ -53,6 +54,8 @@ import { requestUserAnswers } from '../ask-user.ts'
 import { runWithActiveRunIdentity } from '../active-run-identity.ts'
 import { acpSessionHandoverNotice } from './acp-session-reattach.ts'
 import { buildInvokedSkillsBlock } from '../skills/skill-prompt.ts'
+import { skillPreflightEnvironment } from '../skills/skills-registry.ts'
+import { createAcpSkillRun } from './acp-skill-context.ts'
 import { listForwardableMcpServers } from '../mcp/mcp-registry.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
@@ -74,6 +77,7 @@ import {
   cancelApprovalsForAcpToolCall,
 } from '../approval.ts'
 import { setRemoteAcpInstallApprover } from './acp-remote-install-approval.ts'
+import { withRemoteAcpSetupProgress } from './acp-remote-setup-progress.ts'
 import {
   awaitStagedDiffDecision,
   captureWorktreeBaseline,
@@ -188,9 +192,8 @@ export interface RunAcpAgentOptions {
   /**
    * Skills the user invoked this turn via `/skill-name`. Their SKILL.md bodies
    * are resolved against Copse's local registry and inlined into the forwarded
-   * prompt: an external ACP agent keeps its own separate skill catalog and never
-   * sees Copse's, so the instructions must travel with the turn rather than
-   * relying on the agent to already know the skill.
+   * prompt. Supporting files and model-selected skills use the run-scoped
+   * read_skill bridge when the executor supports HTTP MCP.
    */
   invokedSkills?: string[]
   /**
@@ -503,8 +506,9 @@ function installAgentInitiatedTurnLease(
 }
 
 export function runAcpAgentFromSettings(options: RunAcpAgentOptions): Promise<RunAcpAgentResult> {
+  const prepareSkills = createAcpSkillRun()
   return runAcpTurnWithContinuation(options, {
-    runTurn: runAcpAgentTurn,
+    runTurn: (turnOptions) => runAcpAgentTurn(turnOptions, prepareSkills),
     isCheckoutDeferred: isThreadCheckoutDeferred,
     executionRoot: getAgentExecutionRoot,
     allocateCheckout: ensureWritableThreadCheckout,
@@ -597,6 +601,7 @@ export async function runAcpTurnWithContinuation(
 
 async function runAcpAgentTurn(
   options: RunAcpAgentOptions,
+  prepareSkills: ReturnType<typeof createAcpSkillRun>,
 ): Promise<RunAcpAgentResult & { startedReadonly: boolean }> {
   perfMark('ttft:acp-preflight-start')
   // On an SSH workspace, ACP is blocked unless the user opted into remote ACP
@@ -781,22 +786,21 @@ async function runAcpAgentTurn(
   const baseline = await perfSpan('ttft:acp-worktree-baseline', captureWorktreeBaseline)
   const denialMark = networkDenialMarker()
 
-  // Resolve the invoked skills' full instructions here, in the GUI process,
-  // against the same local registry the `/` picker used — so a skill the user
-  // could pick is guaranteed to resolve — then inline it into the forwarded
-  // prompt. The external ACP agent has its own separate skill catalog and never
-  // receives Copse's, so shipping the SKILL.md body with the turn is the only
-  // way the agent gets the instructions. Sent every turn a skill is invoked
-  // (not gated on session freshness): the agent does not retain it across turns.
-  const skillsBlock = await perfSpan('ttft:acp-skills', () =>
-    buildInvokedSkillsBlock(options.invokedSkills ?? [], {
-      sandboxActive: sandboxed,
-      // Also grants this thread read-only run_shell access to the skill's
-      // directory: bridged run_shell is the ACP agent's only route into Copse's
-      // tools, and read_skill is not bridged.
-      threadId: options.threadId,
-    }),
-  )
+  // Snapshot explicit instructions only after negotiation supplies the actual
+  // bridge tools. Retries reuse the same bytes and authorization identities.
+  let invokedSkillsBlock: string | undefined
+
+  // The thread's model has dropped off the agent's list: say so in the thread.
+  // Like the handover note, straight to the caller's sink rather than
+  // `onChunk`, so it is not replayed to the agent as its own words and does
+  // not count as progress that blocks a retry. A retry runs on a fresh
+  // session, which would notice again; once per turn is enough.
+  let staleModelNoticed = false
+  const onStaleModel = (notice: string): void => {
+    if (staleModelNoticed) return
+    staleModelNoticed = true
+    options.onChunk({ type: 'text', text: notice })
+  }
 
   // One attempt = acquire (reuse the thread's live session, or open a fresh
   // one), install this turn's handlers, prompt. History is replayed only into
@@ -805,15 +809,28 @@ async function runAcpAgentTurn(
   // for the retry/next turn; all other failures reopen with a full replay.
   let lastPrompt = ''
   const attempt = async (): Promise<{ stopReason: StopReason; usage?: Usage | null }> => {
+    let reportedSetup = false
     const { entry, fresh, handover } = await perfSpan(
       'ttft:acp-session-acquire',
       () =>
-        acquireAcpSession({
-          ...(executionContext ? { projectId: executionContext.projectId } : {}),
-          threadId: options.threadId,
-          config: spawnConfig,
-          registry: options.registry,
-          signal: options.signal,
+        // Reaching an agent on an SSH host can take a while (probes, a first-run
+        // install); name each stage in the activity row. Straight to the caller's
+        // sink, like the handover note: it is status, not assistant progress.
+        withRemoteAcpSetupProgress(
+          (progress) => {
+            reportedSetup = true
+            options.onChunk({ type: 'agent_setup_progress', ...progress })
+          },
+          () =>
+            acquireAcpSession({
+              ...(executionContext ? { projectId: executionContext.projectId } : {}),
+              threadId: options.threadId,
+              config: spawnConfig,
+              registry: options.registry,
+              signal: options.signal,
+            }),
+        ).finally(() => {
+          if (reportedSetup) options.onChunk({ type: 'agent_setup_progress', phase: 'ready' })
         }),
       (acquired) => ({ fresh: acquired?.fresh ?? false }),
     )
@@ -825,10 +842,28 @@ async function runAcpAgentTurn(
       // replayed into later turns nor counts as progress that blocks a retry.
       options.onChunk({ type: 'text', text: acpSessionHandoverNotice(handover, agent.title) })
     }
+    const skillToolNames =
+      entry.open.mcpCapabilities?.http === true ? (entry.bridge?.toolNames ?? []) : []
+    const skillsBlock = (invokedSkillsBlock ??= await perfSpan('ttft:acp-skills', () =>
+      buildInvokedSkillsBlock(options.invokedSkills ?? [], {
+        sandboxActive: sandboxed,
+        // Explicit user invocation retains its existing thread read-only grants.
+        threadId: options.threadId,
+        preflight: skillPreflightEnvironment(skillToolNames, 'acp'),
+      }),
+    ))
+    const skillContext = prepareSkills({
+      toolNames: skillToolNames,
+      freshSession: fresh,
+      invokedSkills: options.invokedSkills ?? [],
+      skillsBlock,
+      includeCatalog: options.executionMode !== 'agent',
+    })
     // A turn the agent started on its own ends here: this prompt binds its own
     // context below, and must not have it cleared by the earlier lease.
     entry.open.agentInitiated?.end()
     installAgentInitiatedTurnLease(entry, options.threadId, executionContext?.projectId, cwd)
+    entry.bridge?.setSkillActivationTurn(skillContext.activation)
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
     entry.bridge?.setExecutionContext(executionContext)
     entry.bridge?.setTurnSignal(options.bridgeTurnSignal ?? options.signal)
@@ -855,19 +890,27 @@ async function runAcpAgentTurn(
         ...(options.executionMode !== 'agent' && options.operatorInstructions
           ? { operatorInstructions: options.operatorInstructions }
           : {}),
-        ...(skillsBlock ? { skills: skillsBlock } : {}),
+        ...(skillContext.prompt ? { skills: skillContext.prompt } : {}),
       },
     )
     lastPrompt = promptBlocks.map((block) => (block.type === 'text' ? block.text : '')).join('')
     try {
       perfMark('ttft:acp-prompt-start', { fresh })
-      return await runAcpSessionPrompt(entry.open, promptBlocks, model, options.signal)
+      return await runAcpSessionPrompt(
+        entry.open,
+        promptBlocks,
+        model,
+        options.signal,
+        ACP_CANCEL_GRACE_MS,
+        { onStaleModel },
+      )
     } catch (err) {
       await disposeAcpSession(options.threadId, {
         preserveForResume: isAcpConnectionDropped(err),
       })
       throw err
     } finally {
+      entry.bridge?.setSkillActivationTurn(null)
       entry.bridge?.setAdvisorContext(null)
       entry.bridge?.setExecutionContext(null)
       entry.bridge?.setTurnSignal(null)
@@ -959,16 +1002,17 @@ async function runAcpAgentTurn(
 /**
  * Probe a configured ACP agent for the models and session modes it offers (for
  * the settings picker, issue #607). Resolves the agent + workspace, then probes
- * it via {@link probeAcpAgent}. Returns `{ models: null, modes: null }` when the
- * agent is unknown/disabled; otherwise each selector is `null` when the agent
- * exposes none of that kind.
+ * it via {@link probeAcpAgent}. Rejects unknown/disabled agents so connection
+ * verification cannot mistake an unattempted probe for success. Each selector
+ * is `null` when a connected agent exposes none of that kind.
  */
 export async function probeAcpAgentForSettings(agentId: string): Promise<AcpAgentProbe> {
   if (isActiveSshWorkspace() && !isAcpOverSshEnabled()) {
     throw new Error(ACP_UNSUPPORTED_ON_SSH_MESSAGE)
   }
   const agent = getAcpAgent(agentId)
-  if (!agent) return { models: null, modes: null }
+  if (!agent)
+    throw new Error('Enable this coding agent in Options before verifying its connection.')
   const cwd = getActiveProjectRoot() ?? getWorkspaceRoot()
   if (!cwd) {
     throw new Error('Open a folder before detecting a coding agent’s models.')

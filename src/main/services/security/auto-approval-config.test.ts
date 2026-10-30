@@ -9,6 +9,7 @@ import { setSetting } from '../storage/settings.test-shim.ts'
 import { setWorkspaceTrusted } from './workspace-trust.ts'
 import { clearGitRemotesCache } from './git-remotes.ts'
 import { resolveAutoApproval } from './auto-approval-config.ts'
+import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
 
 describe('resolveAutoApproval — sandbox gate', () => {
   function withTrustedRepo(run: (root: string) => void): void {
@@ -72,6 +73,38 @@ describe('resolveAutoApproval — sandbox gate', () => {
       const blocked = resolveAutoApproval('git fetch origin main', root, true)
       assert.equal(blocked.action, 'prompt')
       assert.ok(blocked.reasons.includes('auto-run disabled'))
+    })
+  })
+
+  it('reads trust from the run project, not the window workspace', () => {
+    withTrustedRepo((root) => {
+      const other = mkdtempSync(join(tmpdir(), 'copse-auto-approval-other-'))
+      const inOtherProject = <T>(fn: () => T): T =>
+        runWithThreadExecutionContext(
+          {
+            projectId: 'other',
+            threadId: 'background-thread',
+            projectRoot: other,
+            root: other,
+            checkoutMode: 'shared',
+            branch: null,
+          },
+          fn,
+        )
+      try {
+        // The window shows the trusted repo, but this run acts on an untrusted one.
+        const blocked = inOtherProject(() => resolveAutoApproval('git status', undefined, true))
+        assert.equal(blocked.action, 'prompt')
+        assert.ok(blocked.reasons.includes('workspace not trusted'))
+
+        setWorkspaceTrusted(other, true)
+        setWorkspaceTrusted(root, false)
+        const allowed = inOtherProject(() => resolveAutoApproval('git status', undefined, true))
+        assert.equal(allowed.action, 'auto-approve')
+      } finally {
+        setWorkspaceTrusted(other, false)
+        rmSync(other, { recursive: true, force: true })
+      }
     })
   })
 })
