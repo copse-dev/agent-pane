@@ -105,9 +105,14 @@ import {
   reattachThreadCheckout,
   restoreThreadCheckout,
   resolveThreadExecutionContext,
+  runWithThreadExecutionContext,
 } from '../services/thread-execution-context.ts'
 import { expectedThreadWorktreePath, repositoryLocation } from '../services/worktree-manager.ts'
-import { getIndex, whenFileIndexReady } from '../services/search/file-index.ts'
+import {
+  getReadyFileIndex,
+  resolveFileIndexTarget,
+  whenFileIndexReady,
+} from '../services/search/file-index.ts'
 import { resolveFileReferences } from '../services/search/file-reference-resolver.ts'
 import {
   getWorkspaceIndexStatus,
@@ -692,7 +697,7 @@ export function registerAllHandlers(
     reloadMcpForWorkspace()
     // Scheduled, not awaited — index builds must not block the renderer's
     // swap to the full layout; the footer indicator reports progress.
-    startWorkspaceIndexing(root)
+    startWorkspaceIndexing(root, { kind: 'local' })
     await initSkillsRegistry()
     await initAgentsRegistry()
     registerSkillTools(registry)
@@ -888,7 +893,10 @@ export function registerAllHandlers(
     })
     perfSyncSpan('workspace-set:mcp-reload', reloadMcpForWorkspace)
     perfSyncSpan('workspace-set:start-indexing', () => {
-      startWorkspaceIndexing(canonical)
+      startWorkspaceIndexing(
+        canonical,
+        sshHost ? { kind: 'ssh', hostId: sshHost, remoteRoot: canonical } : { kind: 'local' },
+      )
     })
     // Do NOT block the IPC response (and therefore the renderer's boot / first
     // paint) on the skills scan. It re-scans user + bundled + workspace skill
@@ -961,7 +969,9 @@ export function registerAllHandlers(
     const context = await resolveThreadExecutionContext(projectId, threadId)
     const abs = await resolvePathWithinRoot(relPath, context.root)
     await gatewayWriteFile(abs, content, context.root)
-    scheduleIndexRebuild(context.root)
+    runWithThreadExecutionContext(context, () => {
+      scheduleIndexRebuild(context.root)
+    })
   })
 
   ipcMain.handle('fs:readdir', async (event, ...rawArgs) => {
@@ -997,8 +1007,7 @@ export function registerAllHandlers(
     // to the renderer-selected workspace root, not any one thread's execution root.
     const root = getWorkspaceRoot()
     if (!root) return []
-    await whenFileIndexReady(root)
-    const idx = getIndex(root)
+    const idx = await getReadyFileIndex(root)
     if (!idx) return []
     return query ? micromatch(idx.paths, `**/*${query}*`).slice(0, 20) : idx.paths.slice(0, 20)
   })
@@ -1025,27 +1034,30 @@ export function registerAllHandlers(
       )
       if (!owner) {
         const root = getWorkspaceRoot()
-        if (root) await whenFileIndexReady(root)
-        return await resolveFileReferences(candidates, root)
+        const target = resolveFileIndexTarget()
+        if (root) await whenFileIndexReady(root, target)
+        return await resolveFileReferences(candidates, root, undefined, target)
       }
       const context = await resolveThreadExecutionContext(owner.projectId, owner.threadId)
-      const root = context.root
-      await whenFileIndexReady(root)
+      return runWithThreadExecutionContext(context, async () => {
+        const root = context.root
+        await whenFileIndexReady(root)
 
-      const currentWorktreePath = expectedThreadWorktreePath(owner.projectId, owner.threadId)
-      let projectRelativePath = relative(currentWorktreePath, context.root)
-      if (context.checkoutMode === 'shared') {
-        try {
-          ;({ projectRelativePath } = await repositoryLocation(context.projectRoot))
-        } catch {
-          // Non-Git projects still support root-relative links.
-          projectRelativePath = ''
+        const currentWorktreePath = expectedThreadWorktreePath(owner.projectId, owner.threadId)
+        let projectRelativePath = relative(currentWorktreePath, context.root)
+        if (context.checkoutMode === 'shared') {
+          try {
+            ;({ projectRelativePath } = await repositoryLocation(context.projectRoot))
+          } catch {
+            // Non-Git projects still support root-relative links.
+            projectRelativePath = ''
+          }
         }
-      }
-      return await resolveFileReferences(candidates, root, {
-        projectRoot: context.projectRoot,
-        managedProjectRoot: dirname(currentWorktreePath),
-        projectRelativePath,
+        return await resolveFileReferences(candidates, root, {
+          projectRoot: context.projectRoot,
+          managedProjectRoot: dirname(currentWorktreePath),
+          projectRelativePath,
+        })
       })
     },
   )
