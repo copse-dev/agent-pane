@@ -1274,6 +1274,15 @@ export interface ApiClient {
      * the reverse of `setThread`, used by the thread's back-link chip (#2501). */
     findByThread: (threadId: string) => Promise<{ id: string; title: string } | null>
   }
+  /** `run_background` tasks the agent started in this session. */
+  backgroundTasks: {
+    /** A task's retained output, or null once it is gone (stopped, or the app restarted). */
+    logs(
+      projectId: string,
+      threadId: string,
+      taskId: string,
+    ): Promise<{ logs: string; running: boolean } | null>
+  }
   supervisor: {
     list(projectId: string): Promise<{ tasks: SupervisedTaskSummary[] }>
     cancel(projectId: string, taskId: string): Promise<{ task: SupervisedTaskSummary | null }>

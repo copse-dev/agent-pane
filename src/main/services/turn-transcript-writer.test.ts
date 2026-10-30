@@ -263,6 +263,52 @@ describe('TurnTranscriptWriter', () => {
     assert.equal(thread.messages.length, 3)
   })
 
+  it('records a background task ending on its card after the turn, without the window writing it', async () => {
+    const deliveries: Delivery[] = []
+    const turn = harness(recordedTurn, (delivery) => deliveries.push(delivery))
+    await dispatch(turn)
+    deliveries.length = 0
+
+    const phase = {
+      state: 'exited' as const,
+      since: 50,
+      launched: true,
+      exitCode: 1,
+      backgroundTaskId: 'bg-1',
+    }
+    await turn.writer.updateCommandPhase(PROJECT, THREAD, 'call-read', phase)
+
+    const thread = await stored()
+    const call = thread.messages.at(1)?.toolCalls.find((candidate) => candidate.id === 'call-read')
+    assert.deepEqual(call?.commandPhase, phase)
+    assert.equal(call?.result, '1. Ship it', 'the rest of the call is untouched')
+    assert.equal(thread.messages.length, 3)
+    assert.deepEqual(deliveries, [
+      {
+        threadId: THREAD,
+        chunk: { type: 'tool_call_update', toolCallId: 'call-read', commandPhase: phase },
+        stamp: { messageIds: [] },
+      },
+    ])
+  })
+
+  it('ignores an ending for a tool call the thread does not hold', async () => {
+    const deliveries: Delivery[] = []
+    const turn = harness(recordedTurn, (delivery) => deliveries.push(delivery))
+    await dispatch(turn)
+    deliveries.length = 0
+    const before = await stored()
+
+    await turn.writer.updateCommandPhase(PROJECT, THREAD, 'call-missing', {
+      state: 'cancelled',
+      since: 50,
+      launched: true,
+    })
+
+    assert.deepEqual(await stored(), before)
+    assert.deepEqual(deliveries, [])
+  })
+
   it('restores an in-flight bubble and continues with the same identity and full prefix', async () => {
     const window = createStore({ threads: [threadWith(THREAD)] })
     let ids: string[] = []

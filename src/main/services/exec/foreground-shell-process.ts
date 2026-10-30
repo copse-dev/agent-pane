@@ -16,7 +16,7 @@ import { terminateProcessTree } from './subprocess-kill.ts'
 import { emitShellOutput } from './shell-output-context.ts'
 import { adoptSupervisedBackgroundProcess } from './supervised-background-process.ts'
 import { getThreadExecutionContext } from '../thread-execution-context.ts'
-import { captureCommandPhaseReport } from './command-phase.ts'
+import { captureCommandPhaseReport, captureLateCommandPhaseReport } from './command-phase.ts'
 
 /** Tells the model how to reach output dropped from the middle of an over-cap run. */
 const RUN_SHELL_TRUNCATION_HINT =
@@ -164,6 +164,9 @@ export async function runShellOnce(
           proc.stdout?.removeListener('data', stream)
           proc.stderr?.removeListener('data', stream)
           releaseDetached = onDetach?.()
+          // The detached task now ends on its own schedule: that ending lands on
+          // this command's card, as a `run_background` task's does (#3956).
+          const reportEnd = captureLateCommandPhaseReport(owner)
           void adoptSupervisedBackgroundProcess({
             command,
             cwd,
@@ -173,6 +176,15 @@ export async function runShellOnce(
             startedAt,
             output: outputAcc.toString(),
             timeoutMs: Math.max(1, timeout_ms - (Date.now() - startedAt)),
+            onCancelled: ({ id }) => {
+              void reportEnd('cancelled', { backgroundTaskId: id })
+            },
+            onCompletion: async ({ info: completed }) => {
+              await reportEnd(completed.timedOut ? 'timed_out' : 'exited', {
+                backgroundTaskId: completed.id,
+                ...(completed.exitCode !== null ? { exitCode: completed.exitCode } : {}),
+              })
+            },
           }).then(
             (info) => {
               reportPhase('running', { backgroundTaskId: info.id })

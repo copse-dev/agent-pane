@@ -17,6 +17,8 @@ import {
   stopSupervisedBackgroundProcess,
 } from './supervised-background-process.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
+import type { CommandPhase } from '@copse/agent/wire-types.ts'
+import { runWithCommandPhaseReporter, setLateCommandPhaseRecorder } from './command-phase.ts'
 import { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import { FileSupervisedTaskStore } from '../supervisor/task-store.ts'
 
@@ -97,6 +99,41 @@ describe('foreground shell interruption', () => {
     await waitUntil(() => supervisor.get(OWNER.projectId, task.taskId)?.state === 'completed')
     assert.match(getBackgroundProcessLogs(result.backgroundId, OWNER) ?? '', /finished/)
     assert.equal(listBackgroundProcesses(OWNER)[0]?.exitCode, 0)
+  })
+
+  it('records a detached command ending on its own card after the call returned (#3956)', async () => {
+    const inCall: CommandPhase[] = []
+    const late: { toolCallId: string; phase: CommandPhase }[] = []
+    setLateCommandPhaseRecorder((_owner, toolCallId, phase) => {
+      late.push({ toolCallId, phase })
+      return Promise.resolve()
+    })
+    try {
+      let run: ReturnType<typeof start> | undefined
+      const result = await runWithCommandPhaseReporter(
+        (phase) => inCall.push(phase),
+        { state: 'queued', since: 0, launched: false },
+        async () => {
+          run = start(`echo ready $$; sleep 0.5; exit 4`)
+          await run.ready
+          run.controller.abort('send_now')
+          return run.result
+        },
+        () => 'unused',
+        'tc-detached',
+      )
+      assert.ok(result.backgroundId)
+      assert.equal(inCall.at(-1)?.state, 'running')
+      assert.equal(inCall.at(-1)?.backgroundTaskId, result.backgroundId)
+      await waitUntil(() => late.length > 0)
+      assert.equal(late[0]?.toolCallId, 'tc-detached')
+      assert.equal(late[0]?.phase.state, 'exited')
+      assert.equal(late[0]?.phase.exitCode, 4)
+      assert.equal(late[0]?.phase.backgroundTaskId, result.backgroundId)
+      assert.equal(late[0]?.phase.launched, true)
+    } finally {
+      setLateCommandPhaseRecorder(null)
+    }
   })
 
   it('keeps error evidence when transferred work emits more than the background output cap', async () => {
