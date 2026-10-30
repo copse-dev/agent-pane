@@ -517,7 +517,7 @@ describe('createMobileCompanionSection', () => {
     const section = createMobileCompanionSection(api)
     document.body.append(section.root)
     await section.refresh()
-    const card = section.root.querySelector<HTMLElement>('[data-testid="mobile-companion-name"]')
+    const card = section.root.querySelector<HTMLElement>('.mobile-companion-name')
     assert.ok(card)
     assert.match(card.textContent, new RegExp(hostname.replaceAll('.', '\\.')))
     assert.match(card.textContent, /Certificate valid until/)

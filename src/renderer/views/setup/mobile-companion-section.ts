@@ -48,11 +48,7 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
     el(
       'div',
       { class: 'mobile-companion-qr-text' },
-      el(
-        'p',
-        { class: 'field-hint' },
-        'The local address works without DNS. It needs the Copse Local Root on the phone.',
-      ),
+      el('p', { class: 'field-hint' }, 'The local address works without DNS.'),
       localQrUrl,
     ),
   )
@@ -68,14 +64,10 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
     spellcheck: 'false',
     maxlength: '64',
     placeholder: 'Invite code',
+    'aria-label': 'Invite code',
   })
   const registerBtn = el('button', { type: 'button', class: 'ui-btn ui-btn-primary' }, 'Get a name')
-  const inviteRow = el(
-    'div',
-    { class: 'mobile-companion-invite' },
-    el('label', { class: 'mobile-companion-invite-label' }, 'Invite ', inviteInput),
-    registerBtn,
-  )
+  const inviteRow = el('div', { class: 'mobile-companion-invite' }, inviteInput, registerBtn)
   const nameIntro = el(
     'p',
     { class: 'field-hint' },
@@ -96,7 +88,7 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
   const nameStatus = el('span', { class: 'mobile-companion-name-status' })
   const nameCard = el(
     'fieldset',
-    { class: 'mobile-companion-name', 'data-testid': 'mobile-companion-name' },
+    { class: 'mobile-companion-name' },
     el('legend', {}, 'Trusted address'),
     nameIntro,
     inviteRow,
@@ -154,24 +146,20 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
     }
     const trustedName = state.localUrl !== null
     connectionInfo.append(el('p', {}, 'Open ', el('strong', {}, state.url), ' on your phone.'))
-    if (trustedName && state.localUrl)
-      connectionInfo.append(
-        el(
-          'p',
-          { class: 'field-hint' },
-          'Its certificate is publicly trusted, so there is nothing to install. On a network whose DNS cannot answer for the name, open ',
-          el('strong', {}, state.localUrl),
-          ' instead.',
-        ),
-      )
     connectionInfo.append(
-      el(
-        'p',
-        { class: 'field-hint' },
-        trustedName
-          ? 'The local address needs the Copse Local Root on the phone. It can only vouch for private-network addresses, never a website.'
-          : 'Transfer the trust certificate directly to your phone and install it there for a verified connection — it can only vouch for private-network addresses, never a website. Remove it from the phone’s certificate settings when you no longer need it.',
-      ),
+      trustedName && state.localUrl
+        ? el(
+            'p',
+            { class: 'field-hint' },
+            'Its certificate is publicly trusted, so there is nothing to install. If this network’s DNS cannot answer for the name, open ',
+            el('strong', {}, state.localUrl),
+            ' instead; that address needs the Copse Local Root on the phone, which can only vouch for private-network addresses, never a website.',
+          )
+        : el(
+            'p',
+            { class: 'field-hint' },
+            'Transfer the trust certificate directly to your phone and install it there for a verified connection — it can only vouch for private-network addresses, never a website. Remove it from the phone’s certificate settings when you no longer need it.',
+          ),
     )
     if (state.rootCertificatePath) {
       const revealBtn = el(
@@ -480,7 +468,7 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
 
   const root = el(
     'fieldset',
-    {},
+    { class: 'mobile-companion' },
     el('legend', {}, 'Mobile Companion'),
     el(
       'p',

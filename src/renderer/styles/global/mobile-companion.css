@@ -103,14 +103,8 @@
   align-items: center;
   gap: var(--spacing-sm);
 }
-.mobile-companion-invite-label {
-  display: flex;
+.mobile-companion-invite input {
   flex: 1 1 240px;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
-.mobile-companion-invite-label input {
-  flex: 1 1 auto;
   min-width: 0;
   font-family: var(--font-mono);
 }
