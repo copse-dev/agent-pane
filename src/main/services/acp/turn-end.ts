@@ -15,7 +15,7 @@ export class AcpTurnEnded extends Error {
   readonly reason: AcpTurnEndReason
 
   constructor(reason: AcpTurnEndReason) {
-    super(`ACP turn ended: ${reason}`)
+    super(`Agent turn ended: ${reason}`)
     this.reason = reason
   }
 }
