@@ -120,11 +120,11 @@ describe(
     it('the gh_* tools use each running turn’s checkout, not the window workspace', async () => {
       const signal = new AbortController().signal
       const runList = (projectId: string, root: string): Promise<unknown> =>
-        runWithThreadExecutionContext(turn(projectId, root), () =>
+        runWithThreadExecutionContext(turn(projectId, root), async () =>
           ghRunListTool.execute({ limit: 5, failed_only: false }, signal),
         )
       const view = (projectId: string, root: string): Promise<unknown> =>
-        runWithThreadExecutionContext(turn(projectId, root), () =>
+        runWithThreadExecutionContext(turn(projectId, root), async () =>
           ghPrViewTool.execute({ include_checks: false }, signal),
         )
       const [alphaRuns, betaRuns, alphaView, betaView] = await Promise.all([
