@@ -80800,6 +80800,14 @@ var init_browser_pane = __esm({
   }
 });
 
+// src/shared/types/simulator-desktop.ts
+var SIMULATOR_REMOVED_DETAIL;
+var init_simulator_desktop = __esm({
+  "src/shared/types/simulator-desktop.ts"() {
+    SIMULATOR_REMOVED_DETAIL = "Simulator deleted";
+  }
+});
+
 // src/renderer/views/vnc-channel.ts
 var VncIpcChannel;
 var init_vnc_channel = __esm({
@@ -82816,6 +82824,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     simulatorView?.frame(frame);
   });
   const stopSimulatorStatus = api2.simulatorDesktop.onStatus((event) => {
+    if (event.status === "closed" && event.detail === SIMULATOR_REMOVED_DETAIL) void loadMachines();
     if (event.id !== simulatorSessionId) return;
     if (event.status === "error") {
       clearViewer(
@@ -83082,6 +83091,7 @@ function mountVncPane(controlsRoot, viewerRoot, store2, api2) {
 var CHOOSE_MACHINE_TEXT, MANUAL_MACHINE, NEARBY_MACHINE_PREFIX, SSH_MACHINE_PREFIX, SIMULATOR_MACHINE_PREFIX, isVncCredentialType;
 var init_vnc_pane = __esm({
   "src/renderer/views/vnc-pane.ts"() {
+    init_simulator_desktop();
     init_prompt_attachments();
     init_attach_annotation();
     init_annotation_layer();
