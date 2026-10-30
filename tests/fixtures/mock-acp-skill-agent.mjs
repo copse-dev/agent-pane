@@ -1,6 +1,6 @@
 // Independent external executor: real ACP stdio and authenticated HTTP MCP,
 // with deterministic skill selection instead of a model. No host internals.
-import { agent, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
+import { agent, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk/unstable'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { Readable, Writable } from 'node:stream'

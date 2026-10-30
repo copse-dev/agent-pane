@@ -144,6 +144,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
   const events: HeadlessEvent[] = []
   let item = 0
   const mintItemId = (): string => `${options.turnId}-item-${String(++item)}`
+  const projectionContext = { turnId: options.turnId, mintItemId }
   const emit = (event: HeadlessEvent): void => {
     headlessEventSchema.parse(event)
     events.push(event)
@@ -154,7 +155,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
   let pending: { type: 'text' | 'reasoning'; text: string } | null = null
   const flushPending = (): void => {
     if (pending === null) return
-    for (const event of projectStreamChunk(pending, { turnId: options.turnId, mintItemId })) {
+    for (const event of projectStreamChunk(pending, projectionContext)) {
       emit(event)
     }
     pending = null
@@ -218,7 +219,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
           outputTokens += chunk.outputTokens
         }
         if (chunk.type === 'done') doneStopReason = chunk.stopReason
-        for (const event of projectStreamChunk(chunk, { turnId: options.turnId, mintItemId })) {
+        for (const event of projectStreamChunk(chunk, projectionContext)) {
           emit(event)
         }
       },

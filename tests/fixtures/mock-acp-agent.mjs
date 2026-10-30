@@ -27,7 +27,7 @@
  * | `crash`         | write to stderr and exit non-zero **mid-turn**              |
  * | anything else   | echo it back as an agent message chunk                      |
  */
-import { agent, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
+import { agent, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk/unstable'
 import { Writable } from 'node:stream'
 
 /** Bridge Node's stdin to the SDK's Web Stream type (mirrors node-readable-stream.ts). */
