@@ -221,6 +221,13 @@ describe(
       assert.equal(result.code, 3)
     })
 
+    it('reports a signal-terminated ssh client as a failed command', async (t) => {
+      installFakeSsh(t, 'kill -TERM "$$"')
+      const transport = new OpenSshTransport(host)
+      const result = await transport.execShell('true')
+      assert.equal(result.code, 1)
+    })
+
     it('decodes a multibyte character split across output chunks', async (t) => {
       // "€" is E2 82 AC; the pause makes the pipe deliver it in two reads.
       installFakeSsh(t, "printf '\\342\\202'\nsleep 0.1\nprintf '\\254\\n'")

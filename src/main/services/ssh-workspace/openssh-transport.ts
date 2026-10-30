@@ -184,7 +184,7 @@ async function runLocalSsh(
       stdout = appendFlatCapped(stdout, stdoutDecoder.end(), maxBytes)
       stderr = appendFlatCapped(stderr, stderrDecoder.end(), maxBytes)
       settle(() => {
-        resolve({ stdout, stderr, code: code ?? 0 })
+        resolve({ stdout, stderr, code: code ?? 1 })
       })
     })
 
