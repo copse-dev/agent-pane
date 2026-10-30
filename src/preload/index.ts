@@ -16,6 +16,23 @@ exposePerfBridge()
 // missing, extra, or mistyped member fails typecheck here, and the API protocol
 // schema (`pnpm run gen:api-protocol`) is generated from this binding.
 const api: ApiClient = {
+  clientActions: {
+    claim: (id) => ipcRenderer.invoke('client-actions:claim', id),
+    publish: (offer) => ipcRenderer.invoke('client-actions:publish', offer),
+    reply: (id, accepted) => ipcRenderer.invoke('client-actions:reply', id, accepted),
+    onInvoke: (handler) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        command: import('@shared/client-actions.ts').ClientActionCommand,
+      ): void => {
+        handler(command)
+      }
+      ipcRenderer.on('client-actions:invoke', listener)
+      return () => {
+        ipcRenderer.off('client-actions:invoke', listener)
+      }
+    },
+  },
   threadPrompts: {
     revokeAccess: (threadId, access) =>
       ipcRenderer.invoke('thread-prompts:revoke-access', threadId, access),
@@ -64,6 +81,9 @@ const api: ApiClient = {
       rootTrusted?: boolean,
     ) => ipcRenderer.invoke('mobile:respond-pairing', decision, code, pairingId, rootTrusted),
     revealCertificate: () => ipcRenderer.invoke('mobile:reveal-certificate'),
+    registerName: (invite: string) => ipcRenderer.invoke('mobile:register-name', invite),
+    removeName: () => ipcRenderer.invoke('mobile:remove-name'),
+    recheckNameDns: () => ipcRenderer.invoke('mobile:recheck-name-dns'),
     onChat: (handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
@@ -840,6 +860,8 @@ const api: ApiClient = {
       ipcRenderer.invoke('canvas:reopen-artefact', projectId, threadId, title),
   },
   storage: {
+    containerCleanup: (action: import('@shared/types/storage-cleanup.ts').ContainerStorageAction) =>
+      ipcRenderer.invoke('storage:container-cleanup', action),
     maintenance: () => ipcRenderer.invoke('storage:maintenance'),
     cleanup: (area: import('@shared/types/storage-cleanup.ts').StorageArea) =>
       ipcRenderer.invoke('storage:cleanup', area),

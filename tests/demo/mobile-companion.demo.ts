@@ -135,6 +135,55 @@ async function expectComposerVisible(id: 'message' | 'new-message'): Promise<voi
   )
 }
 
+/**
+ * Frame the thread composer where focusing it puts it: from the top of the
+ * page, its reveal scrolls the submit button to 12px above the viewport bottom.
+ * Opening the thread smooth-scrolls to the waiting approval and focuses the
+ * composer, and that reveal only scrolls as far as it must, so a capture
+ * otherwise inherited whichever offset those left behind.
+ */
+async function frameThreadComposer(): Promise<void> {
+  await browser.waitUntil(
+    () =>
+      browser.execute(() => {
+        const preview = document.querySelector<HTMLImageElement>('#message-image-preview img')
+        return (
+          preview?.complete === true &&
+          preview.naturalWidth > 0 &&
+          document.querySelectorAll('#messages .message').length === 4 &&
+          document.querySelector('#attention .decision-actions') !== null
+        )
+      }),
+    { timeoutMsg: 'The thread, its approval and the image preview should finish rendering' },
+  )
+  await browser.execute(() => {
+    const input = document.getElementById('message')
+    if (!input) throw new Error('Missing thread composer')
+    // An instant scroll also ends the smooth scroll to the approval.
+    window.scrollTo({ top: 0, behavior: 'instant' })
+    input.blur()
+    input.focus({ preventScroll: true })
+  })
+  await browser.waitUntil(
+    () =>
+      browser.execute(() => {
+        const send = document.getElementById('send')?.getBoundingClientRect()
+        const viewport = window.visualViewport
+        const bottom = (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight) - 12
+        // Frames near the viewport load their image once; capture them loaded.
+        const loading = [...document.querySelectorAll('#messages .message-image-loading')].some(
+          (label) => {
+            const rect = label.getBoundingClientRect()
+            return rect.bottom > 0 && rect.top < window.innerHeight
+          },
+        )
+        return !!send && Math.abs(send.bottom - bottom) < 1 && !loading
+      }),
+    { timeoutMsg: 'The composer reveal should place Queue message above the viewport bottom' },
+  )
+  await expectComposerVisible('message')
+}
+
 describe('Mobile Companion at phone width', () => {
   beforeEach(async () => {
     await browser.sendCommand('Emulation.setEmulatedMedia', {
@@ -317,6 +366,7 @@ describe('Mobile Companion at phone width', () => {
       await browser.execute(async () => {
         await document.fonts.ready
       })
+      await frameThreadComposer()
       await screenshot('mobile-companion-image-preview.png')
       await $('#message').setValue('What is in this image?')
       await $('#send').click()
@@ -450,6 +500,113 @@ describe('Mobile Companion at phone width', () => {
     } finally {
       await browser.sendCommand('Page.removeScriptToEvaluateOnNewDocument', { identifier })
       await browser.refresh()
+    }
+  })
+
+  it('renders replies with the desktop transcript’s diagrams, highlighting, and copy controls', async () => {
+    await browser.setWindowSize(390, 844)
+    await browser.sendCommand('Emulation.setDeviceMetricsOverride', {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+    })
+    await browser.url('/mobile/')
+    // A settled thread whose reply uses what the desktop transcript renders:
+    // a Mermaid diagram, highlighted code, and a table.
+    const added: unknown = await browser.sendCommandAndGetResult(
+      'Page.addScriptToEvaluateOnNewDocument',
+      {
+        source: `
+          const originalFetch = window.fetch.bind(window)
+          window.fetch = async (...args) => {
+            const response = await originalFetch(...args)
+            if (args[0] !== '/api/thread/proj-1/thread-1') return response
+            const data = await response.json()
+            data.runId = null
+            data.decisions = []
+            data.attention = []
+            data.messages = [
+              { id: 'rich-user', role: 'user', summary: null, imageCount: 0,
+                content: 'How does a release ship?\\nKeep it short.' },
+              { id: 'rich-reply', role: 'assistant', summary: null, imageCount: 0,
+                content: [
+                  'A release moves through three stages:',
+                  '',
+                  '\\u0060\\u0060\\u0060mermaid',
+                  'graph TD',
+                  '  A[Merge to main] --> B[Build and sign]',
+                  '  B --> C[Publish update feed]',
+                  '\\u0060\\u0060\\u0060',
+                  '',
+                  '| Stage | Owner |',
+                  '| --- | --- |',
+                  '| Build | CI |',
+                  '| Publish | Release bot |',
+                  '',
+                  '\\u0060\\u0060\\u0060ts',
+                  'const channel = isRelease ? "stable" : "beta"',
+                  '\\u0060\\u0060\\u0060',
+                ].join('\\n') },
+            ]
+            return new Response(JSON.stringify(data), {
+              status: response.status, headers: response.headers,
+            })
+          }
+        `,
+      },
+    )
+    const identifier = isRecord(added) ? added['identifier'] : undefined
+    if (typeof identifier !== 'string')
+      throw new Error('Chromium did not return a script identifier')
+    // A phone has no hover, so copy controls stay visible there (markdown.css).
+    await browser.sendCommand('Emulation.setTouchEmulationEnabled', {
+      enabled: true,
+      maxTouchPoints: 5,
+    })
+    try {
+      for (const theme of ['light', 'dark']) {
+        await browser.sendCommand('Emulation.setEmulatedMedia', {
+          features: [{ name: 'prefers-color-scheme', value: theme }],
+        })
+        await browser.execute(async () => {
+          await fetch('/mobile-fixture/reset')
+          localStorage.setItem('copse-mobile-token', 'visual-test-token')
+          history.replaceState(
+            {
+              mobileView: 'thread',
+              row: { projectId: 'proj-1', threadId: 'thread-1', title: 'Review the release' },
+            },
+            '',
+          )
+        })
+        await browser.refresh()
+        await expect($('html')).toHaveAttribute('data-theme', theme)
+        const reply = $('#messages .message:nth-child(2) .message-content')
+        // The diagram renders in the desktop's isolated frame, served with its own CSP.
+        await reply.$('.mermaid-frame[data-rendered="true"]').waitForExist({ timeout: 40_000 })
+        await expect(reply.$('.mermaid-fallback-title')).not.toExist()
+        await expect(reply.$('pre code .hljs-string')).toExist()
+        expect(
+          await browser.execute(() => matchMedia('(hover: none) and (pointer: coarse)').matches),
+        ).toBe(true)
+        await expect(reply.$('.code-block-copy')).toBeDisplayed()
+        await expect(reply.$('.table-copy')).toBeDisplayed()
+        await expect(reply.$('.code-block-run')).not.toExist()
+        await expect($('#messages .message:nth-child(1) .message-content br')).toExist()
+        const frameHeight = await browser.execute(
+          () =>
+            document.querySelector('#messages .mermaid-frame')?.getBoundingClientRect().height ?? 0,
+        )
+        assert.ok(frameHeight > 80, `diagram frame height: ${String(frameHeight)}`)
+        await browser.execute(() => {
+          document.querySelector('#messages .mermaid-diagram')?.scrollIntoView({ block: 'center' })
+        })
+        await screenshot(`mobile-companion-rich-reply-${theme}.png`)
+      }
+    } finally {
+      await browser.sendCommand('Emulation.setTouchEmulationEnabled', { enabled: false })
+      await browser.sendCommand('Page.removeScriptToEvaluateOnNewDocument', { identifier })
     }
   })
 

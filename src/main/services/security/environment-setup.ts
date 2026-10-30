@@ -33,7 +33,7 @@ import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
 import { getSetting, updateSetting } from '../storage/settings.ts'
-import { storageAppendFile, storageReadFile, storageWriteFile } from '../storage/storage.ts'
+import { storageAppendFile, storageReadFile, storageWriteFile } from '../storage/user-data-files.ts'
 import { getActiveProjectId, getWorkspaceRoot } from '../workspace.ts'
 import { readPromptEvidence } from './environment-evidence.ts'
 import {

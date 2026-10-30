@@ -39,6 +39,11 @@ const cases = [
   ['pie', 'pie title Results\n"Pass" : 9\n"Fail" : 1'],
   ['mindmap', 'mindmap\n  root((Task))\n    Plan\n    Build\n    Verify'],
   ['math', 'graph LR\nA["$$E=mc^2$$"] --> B["$$\\frac{a}{b}$$"]'],
+  ['invalid-math', 'graph LR\nA["$$\\frac{$$"] --> B["Source remains visible"]'],
+  [
+    'untrusted-math',
+    'graph LR\nA["$$\\href{https://example.invalid}{link}$$"] --> B["No navigation"]',
+  ],
   [
     'unicode',
     'graph LR\nA["Hello 👋 世界"] --> B["A long label that should wrap consistently across rendering boundaries"]',
@@ -120,7 +125,7 @@ function measure(selector: string): Measure {
       edge: edgePath ? getComputedStyle(edgePath).stroke : null,
       background: getComputedStyle(root.querySelector('.mermaid-diagram') ?? root).backgroundColor,
     },
-    math: svg.querySelectorAll('.katex').length,
+    math: svg.querySelectorAll('math').length,
     fontRuns,
     loadedPliant: Array.from(document.fonts)
       .filter(
@@ -206,6 +211,19 @@ describe('Mermaid same-environment rendering parity', () => {
         expect(baseline.loadedPliant).toEqual(['italic', 'normal'])
         for (const run of isolated.fontRuns) expect(run.family).toContain('Pliant')
         expect(isolated.math).toBe(baseline.math)
+        if (name === 'math') expect(isolated.math).toBe(2)
+        if (name === 'invalid-math') expect(isolated.texts).toContain('$$\\frac{$$')
+        if (name === 'untrusted-math') {
+          await browser.switchFrame(await $('#isolated iframe').getElement())
+          const unsafe = await browser.execute(
+            () =>
+              document.querySelectorAll(
+                '.pele-math-label [href], .pele-math-label [src], .pele-math-label script',
+              ).length,
+          )
+          await browser.switchToParentFrame()
+          expect(unsafe).toBe(0)
+        }
         // Chromium rounds the opaque frame's viewport to whole CSS pixels.
         for (let i = 0; i < 2; i++) {
           expect(Math.abs(at(isolated.rect, i) - at(baseline.rect, i))).toBeLessThan(1)

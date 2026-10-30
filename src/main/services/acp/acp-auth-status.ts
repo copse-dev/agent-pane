@@ -59,7 +59,6 @@ async function codexLoginStatus(
  */
 const CHECKS: Readonly<Record<string, (deps: AcpAuthProbeDeps) => Promise<AcpAuthState>>> = {
   'claude-acp': async (deps) => {
-    if (hasEnv(deps, 'ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN')) return 'signed-in'
     try {
       const out = await deps.exec('claude', ['auth', 'status'])
       const parsed = safeJsonParse(out, decodeWithSchema(z.object({ loggedIn: z.boolean() })))
@@ -72,7 +71,6 @@ const CHECKS: Readonly<Record<string, (deps: AcpAuthProbeDeps) => Promise<AcpAut
     }
   },
   'codex-acp': async (deps) => {
-    if (hasEnv(deps, 'OPENAI_API_KEY', 'CODEX_API_KEY')) return 'signed-in'
     // Ask the CLI this adapter actually runs (including CODEX_PATH). A separate
     // `codex` on PATH may use different credentials and cannot answer for it.
     // If the adapter cannot report status, preserve unknown rather than infer
@@ -81,12 +79,11 @@ const CHECKS: Readonly<Record<string, (deps: AcpAuthProbeDeps) => Promise<AcpAut
   },
   gemini: async (deps) =>
     hasEnv(deps, 'GEMINI_API_KEY', 'GOOGLE_API_KEY')
-      ? 'signed-in'
+      ? 'unknown'
       : (await deps.fileExists(join(deps.home, '.gemini', 'oauth_creds.json')))
         ? 'unknown'
         : 'signed-out',
   cursor: async (deps) => {
-    if (hasEnv(deps, 'CURSOR_API_KEY')) return 'signed-in'
     try {
       const out = await deps.exec('cursor-agent', ['status'])
       if (/not logged in/i.test(out)) return 'signed-out'

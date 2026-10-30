@@ -226,6 +226,10 @@ const INVARIANTS: Invariant[] = [
     name: 'a change affecting no reference shots passes the gate',
     check: () => expectGate(['README.md'], false, true),
   },
+  {
+    name: 'a workspace package change owns the shots of the specs it selects',
+    check: () => expectGate(['packages/llm/src/classifiers/http.ts'], false, false),
+  },
 ]
 
 function main(): void {

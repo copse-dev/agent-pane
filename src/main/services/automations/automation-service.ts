@@ -70,6 +70,27 @@ interface CopseAutomationAction {
 
 const COPSE_AUTOMATION_ACTIONS: readonly CopseAutomationAction[] = [
   {
+    toolName: 'git_push',
+    label: 'Push branches',
+    detail:
+      'Publishes a branch to origin; rewritten history requires an explicit remote SHA lease.',
+  },
+  {
+    toolName: 'gh_pr_merge',
+    label: 'Merge pull requests',
+    detail: 'Requests a merge in this project repository with a required head SHA guard.',
+  },
+  {
+    toolName: 'gh_pr_comment',
+    label: 'Comment on pull requests',
+    detail: 'Posts comments on pull requests in this project repository.',
+  },
+  {
+    toolName: 'gh_pr_resolve_review_thread',
+    label: 'Resolve review threads',
+    detail: 'Resolves review threads after verifying their project repository and pull request.',
+  },
+  {
     toolName: 'gh_pr_create',
     label: 'Create pull requests',
     detail: 'Pushes the current thread branch and opens a pull request in this project repository.',

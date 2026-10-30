@@ -1,5 +1,5 @@
 import { requestApproval } from '../approval.ts'
-import { spawnConfigSshTarget, type AcpSshTarget } from './acp-ssh-transport.ts'
+import { remoteHostLabel, spawnConfigSshTarget, type AcpSshTarget } from './acp-ssh-transport.ts'
 import type { AcpAgentSpawnConfig } from './acp-client.ts'
 
 /**
@@ -28,6 +28,26 @@ export function resetRemoteAcpEnvDecisionsForTests(): void {
   decisions.clear()
 }
 
+/** Dialog copy; names the one-time, per-host scope of the answer. */
+export function formatRemoteAcpEnvApproval(input: {
+  agentId: string
+  hostLabel: string
+  envNames: string[]
+}): { title: string; body: string } {
+  return {
+    title: `Forward ${input.agentId} credentials to ${input.hostLabel}?`,
+    body:
+      `The coding agent "${input.agentId}" runs on the SSH host ${input.hostLabel} and has ` +
+      `environment configured in Settings → General → Coding agents: ${input.envNames.join(', ')}. ` +
+      `Forward these values to the remote agent so it can authenticate there? ` +
+      `They travel over the encrypted SSH channel into the agent's process ` +
+      `environment only — never on a command line (\`ps\`) or the remote disk. ` +
+      `Decline to run the agent with credentials already on the host instead.\n\n` +
+      `This is one-time setup for ${input.agentId} on ${input.hostLabel}: Copse keeps your ` +
+      `answer for later turns and threads until it restarts.`,
+  }
+}
+
 function decisionKey(agentId: string, hostId: string, envNames: string[]): string {
   return [agentId, hostId, ...[...envNames].sort()].join('\u0000')
 }
@@ -51,20 +71,13 @@ export async function gateRemoteAcpEnvForward(
   const key = decisionKey(agentId, target.hostId, envNames)
   let decision = decisions.get(key)
   if (decision === undefined) {
+    const { title, body } = formatRemoteAcpEnvApproval({
+      agentId,
+      hostLabel: remoteHostLabel(target.hostId),
+      envNames,
+    })
     decision = await requestApproval(
-      {
-        title: `Forward ${agentId} environment to ${target.hostId}?`,
-        body:
-          `The coding agent "${agentId}" runs on the SSH host ${target.hostId} and has ` +
-          `environment configured in Settings → General → Coding agents: ${envNames.join(', ')}. ` +
-          `Forward these values to the remote agent so it can authenticate there? ` +
-          `They travel over the encrypted SSH channel into the agent's process ` +
-          `environment only — never on a command line (\`ps\`) or the remote disk. ` +
-          `Decline to run the agent with credentials already on the host instead.`,
-        type: 'shell',
-        cause: 'acp-remote-env',
-        allowRemember: false,
-      },
+      { title, body, type: 'shell', cause: 'acp-remote-env', allowRemember: false },
       signal,
     )
       .then(({ approved }) => approved)

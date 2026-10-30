@@ -18,7 +18,11 @@ import {
   ghRunListTool,
   ghRunViewTool,
 } from '../tools/gh-tools.ts'
-import { ghPrActionTools, registerGhPrActionTools } from '../tools/gh-pr-action-tools.ts'
+import {
+  ghCliMaintenanceTools,
+  ghPrActionTools,
+  registerGhPrActionTools,
+} from '../tools/gh-pr-action-tools.ts'
 import { hasGitHubApiToken } from './github/backend/github-token.ts'
 import { isMockGhEnabled } from './github/gh-pr-mock.ts'
 import { investigateCiTool } from '../tools/investigate-ci-tool.ts'
@@ -37,6 +41,8 @@ import { applyPatchTool } from '../tools/apply-patch-tool.ts'
 import { readStagedDiffTool, stagedDiffsTool } from '../tools/staged-diff-tools.ts'
 import { deleteFileTool, renameFileTool, makeDirectoryTool } from '../tools/file-ops-tools.ts'
 import { exploreTool } from '../tools/explore-tool.ts'
+import { isolatedWorkersTool } from '../tools/isolated-workers-tool.ts'
+import { readonlyWorkersTool } from '../tools/readonly-workers-tool.ts'
 import { readSkillTool } from '../tools/read-skill-tool.ts'
 import { updateTodosTool } from '../tools/todo-tool.ts'
 import { askUserTool } from '../tools/ask-user-tool.ts'
@@ -87,12 +93,6 @@ import { videoFramesTool } from '../tools/video-frames-tool.ts'
 import { readArchiveTool } from '../tools/read-archive-tool.ts'
 import { initSubmodulesTool } from '../tools/init-submodules-tool.ts'
 import { gitFetchTool } from '../tools/git-fetch-tool.ts'
-import {
-  PARALLEL_SEARCH_PLUGIN_ID,
-  PARALLEL_SEARCH_TOOL_NAME,
-} from '@copse/agent/plugins/parallel-search-plugin.ts'
-import { parallelSearchTool } from '../tools/parallel-search-tool.ts'
-import { PARALLEL_SEARCH_PROVIDER_ID } from './parallel-search.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import {
   OPEN_SIMULATOR_DESKTOP_TOOL_NAME,
@@ -136,6 +136,8 @@ export function createRegistry(): ToolRegistry {
   registry.register(requestWriteAccessTool)
   registry.register(deferredApprovalStatusTool)
   registry.register(exploreTool)
+  registry.register(readonlyWorkersTool)
+  registry.register(isolatedWorkersTool)
   // Experimental CI investigator subagent (off by default). Gated by the
   // `copse.ci-investigator` first-party plugin — the plugin toggle in Settings >
   // Plugins is the atomic master switch. Registration also requires `gh` (the
@@ -205,9 +207,6 @@ export function createRegistry(): ToolRegistry {
   // approval. Live toggles route through {@link syncPiiTools} on
   // `plugins:set-enabled`.
   syncPiiTools(registry)
-  // Optional hosted web search. The plugin and a configured key are both needed,
-  // so the model never sees a tool that can only answer with setup guidance.
-  syncParallelSearchTools(registry)
   // The Apple plugin exposes XcodeBuildMCP for build/run work. This companion
   // tool brings the resulting booted Simulator into Copse's visible Desktop
   // panel, keeping display integration out of the third-party MCP server.
@@ -422,6 +421,9 @@ export function syncGhTools(registry: ToolRegistry): void {
   // through the approval gate.
   if (ghAvailable || hasGitHubApiToken() || isMockGhEnabled()) {
     registerGhPrActionTools(registry)
+    if (!ghAvailable) {
+      for (const tool of ghCliMaintenanceTools) registry.unregister(tool.name)
+    }
   } else {
     for (const tool of ghPrActionTools) registry.unregister(tool.name)
   }
@@ -521,18 +523,6 @@ export function syncWebSearchTools(registry: ToolRegistry): void {
   }
 }
 
-/** Keep the hosted Parallel tool aligned with plugin enablement and credentials. */
-export function syncParallelSearchTools(registry: ToolRegistry): void {
-  const available =
-    getDefaultPluginRegistry().isEnabled(PARALLEL_SEARCH_PLUGIN_ID) &&
-    resolveApiKey(PARALLEL_SEARCH_PROVIDER_ID) !== null
-  if (available) {
-    if (!registry.has(PARALLEL_SEARCH_TOOL_NAME)) registry.register(parallelSearchTool)
-  } else {
-    registry.unregister(PARALLEL_SEARCH_TOOL_NAME)
-  }
-}
-
 /**
  * Register or unregister the experimental `suggest_model` tool to match the
  * `modelClassifierEnabled` setting. Called at startup (via createRegistry) and
@@ -559,24 +549,6 @@ export function syncOrchestrationStrategyTools(registry: ToolRegistry): void {
   } else {
     registry.unregister(delegateStepTool.name)
   }
-}
-
-/**
- * Main-side mirror of the Settings lock on credential-gated plugins: refuse to
- * switch `copse.parallel-search` on while no Parallel API key resolves, since
- * {@link syncParallelSearchTools} would register nothing and the plugin would
- * read as on while contributing no tool. Returns the refusal reason, or null
- * when the toggle may proceed. Never blocks the off-direction.
- */
-export function pluginEnableRefusal(pluginId: string, enabled: boolean): string | null {
-  if (
-    enabled &&
-    pluginId === PARALLEL_SEARCH_PLUGIN_ID &&
-    resolveApiKey(PARALLEL_SEARCH_PROVIDER_ID) === null
-  ) {
-    return 'Add a Parallel API key before enabling copse.parallel-search.'
-  }
-  return null
 }
 
 /** Register skill tools after the skills registry has been populated. */

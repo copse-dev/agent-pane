@@ -1,5 +1,6 @@
 import type { AcpAgentConfig, AcpAgentSandboxConfig } from '@shared/types/acp.ts'
 import { canonicalAcpAgentId, findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
+import { isClaudeAcpAgent } from '@shared/acp.ts'
 import { getSetting, updateSetting } from '../storage/settings.ts'
 
 /**
@@ -82,6 +83,22 @@ export function resolveAcpPermissionMode(
   if (config.permissionMode) return config.permissionMode
   if (!sandboxed) return undefined
   return findAcpCatalogEntry(config.id)?.sandboxedPermissionMode
+}
+
+/**
+ * Env var this agent reads for its own home/config directory, or `undefined`
+ * for an agent with no such knob. Default spawn env points it at a
+ * thread-scoped directory (see `acp-agent-config-dir.ts`) rather than letting
+ * the agent inherit the real `$HOME`, so a Copse coding thread never pulls in
+ * the user's personal synced skills, plugins, or MCP servers from an unrelated
+ * account.
+ *
+ * `isClaudeAcpAgent` matches by spawn command as well as id, so a custom
+ * agent entry that merely points at the same `claude-agent-acp` binary is
+ * recognised too, not only the preset catalog id.
+ */
+export function resolveAcpConfigDirEnvVar(config: AcpAgentConfig): string | undefined {
+  return isClaudeAcpAgent(config) ? 'CLAUDE_CONFIG_DIR' : undefined
 }
 
 /**

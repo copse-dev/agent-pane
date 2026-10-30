@@ -39,6 +39,8 @@ export interface ScenarioHandle {
   waitForHold(hold: string, timeoutMs?: number): Promise<void>
   /** Wait for every scripted response to be consumed, whichever thread is selected. */
   waitForComplete(timeoutMs?: number): Promise<void>
+  /** Wait until the first `count` scripted user turns have finished. */
+  waitForTurns(count: number, timeoutMs?: number): Promise<void>
   assertComplete(): Promise<void>
 }
 
@@ -126,6 +128,24 @@ export async function installMockScenario(
           timeout: timeoutMs,
           interval: 50,
           timeoutMsg: 'The conversation scenario did not finish',
+        },
+      )
+    },
+    async waitForTurns(count, timeoutMs = 25_000): Promise<void> {
+      await browser.waitUntil(
+        async () => {
+          const status = await browser.execute(async (scenarioId) => {
+            const bridge = window.__copseE2e
+            if (!bridge) throw new Error('The test scenario bridge is unavailable')
+            return bridge.mockScenarioStatus(scenarioId)
+          }, id)
+          if (status.errors.length > 0) throw new Error(status.errors.join('\n'))
+          return status.turn >= count
+        },
+        {
+          timeout: timeoutMs,
+          interval: 50,
+          timeoutMsg: `The conversation scenario did not finish ${String(count)} turn(s)`,
         },
       )
     },

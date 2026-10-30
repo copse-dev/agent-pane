@@ -414,6 +414,11 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // the host with the desktop sign-in. Off by default.
   // See src/main/services/github/sandbox-github-reads.ts.
   sandboxGitHubReadsEnabled: z.boolean(),
+  // Experimental living-plan workflow: the composer's "Start planning" button
+  // and dialog. Off by default — container, ACP, remote, and plugin-hosted
+  // executors still fail closed while a plan is active, and completion is
+  // agent-reported, not host-verified. See docs/plans/plan-mode-and-rewind.md.
+  planModeEnabled: z.boolean(),
   advisorModel: z.string().max(256),
   // Experimental orchestration strategy: the chat model orchestrates and a
   // cheaper worker model implements delegated steps. See orchestration-strategy.ts.

@@ -22,7 +22,7 @@ import {
 } from './lib/tracked-test-tree.mts'
 
 const settingsShim = resolve('src/main/services/storage/settings.test-shim.ts')
-const storageShim = resolve('src/main/services/storage/storage.test-shim.ts')
+const userDataFilesShim = resolve('src/main/services/storage/user-data-files.test-shim.ts')
 const repoRoot = resolve('.')
 
 const bundleOnly = process.argv.includes('--bundle-only')
@@ -195,8 +195,8 @@ async function bundleTests(testFiles: string[], outputDir: string): Promise<void
             if (!args.path.includes('settings.test-shim')) return { path: settingsShim }
             return undefined
           })
-          build.onResolve({ filter: /\/storage\.ts$/ }, (args) => {
-            if (!args.path.includes('storage.test-shim')) return { path: storageShim }
+          build.onResolve({ filter: /\/user-data-files\.ts$/ }, (args) => {
+            if (!args.path.includes('user-data-files.test-shim')) return { path: userDataFilesShim }
             return undefined
           })
         },
