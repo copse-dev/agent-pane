@@ -69,6 +69,8 @@ export interface TranscriptReducerHooks {
   /** A labelled phase began; the renderer owns the wording. */
   activityLabel?: (threadId: string, phase: TranscriptActivityPhase) => void
   promptProgress?: (threadId: string, fraction: number) => void
+  /** A stage of reaching a remote agent began; `label` is the row's wording. */
+  setupProgress?: (threadId: string, label: string) => void
   /** Visible assistant output arrived: the renderer names the thread from it. */
   visibleOutput?: (threadId: string) => void
   toolResult?: (threadId: string, ownerId: string, chunk: ToolResultChunk) => void
@@ -443,6 +445,15 @@ export function createTranscriptReducer(
       }
       case 'prompt_progress': {
         hooks.promptProgress?.(threadId, chunk.fraction)
+        break
+      }
+      case 'agent_setup_progress': {
+        // Status only: nothing reaches the transcript. Until the agent's first
+        // token the row would otherwise say "Reasoning…" while Copse is still
+        // connecting to or installing on a remote host. Once the agent is
+        // reached, resync the row from thread state.
+        if (chunk.phase === 'ready') activity(threadId)
+        else hooks.setupProgress?.(threadId, chunk.label)
         break
       }
       case 'context_pressure': {

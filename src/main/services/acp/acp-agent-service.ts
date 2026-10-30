@@ -77,6 +77,7 @@ import {
   cancelApprovalsForAcpToolCall,
 } from '../approval.ts'
 import { setRemoteAcpInstallApprover } from './acp-remote-install-approval.ts'
+import { withRemoteAcpSetupProgress } from './acp-remote-setup-progress.ts'
 import {
   awaitStagedDiffDecision,
   captureWorktreeBaseline,
@@ -808,15 +809,28 @@ async function runAcpAgentTurn(
   // for the retry/next turn; all other failures reopen with a full replay.
   let lastPrompt = ''
   const attempt = async (): Promise<{ stopReason: StopReason; usage?: Usage | null }> => {
+    let reportedSetup = false
     const { entry, fresh, handover } = await perfSpan(
       'ttft:acp-session-acquire',
       () =>
-        acquireAcpSession({
-          ...(executionContext ? { projectId: executionContext.projectId } : {}),
-          threadId: options.threadId,
-          config: spawnConfig,
-          registry: options.registry,
-          signal: options.signal,
+        // Reaching an agent on an SSH host can take a while (probes, a first-run
+        // install); name each stage in the activity row. Straight to the caller's
+        // sink, like the handover note: it is status, not assistant progress.
+        withRemoteAcpSetupProgress(
+          (progress) => {
+            reportedSetup = true
+            options.onChunk({ type: 'agent_setup_progress', ...progress })
+          },
+          () =>
+            acquireAcpSession({
+              ...(executionContext ? { projectId: executionContext.projectId } : {}),
+              threadId: options.threadId,
+              config: spawnConfig,
+              registry: options.registry,
+              signal: options.signal,
+            }),
+        ).finally(() => {
+          if (reportedSetup) options.onChunk({ type: 'agent_setup_progress', phase: 'ready' })
         }),
       (acquired) => ({ fresh: acquired?.fresh ?? false }),
     )

@@ -1,10 +1,9 @@
 import { $, $$, browser, expect } from '@wdio/globals'
 import assert from 'node:assert/strict'
 import { isDeepStrictEqual } from 'node:util'
-import { readFile, writeFile } from 'node:fs/promises'
-import { build } from 'esbuild'
 import { z } from 'zod'
 import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
+import { buildDemoFixturePage } from './helpers/demo-fixture-page.ts'
 import { analyzeStreamMotion, type StreamFrame } from './helpers/stream-motion.ts'
 
 /**
@@ -89,32 +88,9 @@ async function recordedFrames(): Promise<StreamFrame[]> {
 }
 
 describe('streamed reply motion in the real renderer', () => {
+  let checkpointPage = ''
   before(async () => {
-    await build({
-      entryPoints: ['tests/demo/helpers/streamed-reply-checkpoint-fixture.ts'],
-      outfile: 'dist/demo/streamed-reply-checkpoint-fixture.js',
-      bundle: true,
-      platform: 'browser',
-      format: 'esm',
-      target: 'es2022',
-      tsconfig: 'tsconfig.web.json',
-      loader: { '.css': 'empty', '.ttf': 'dataurl' },
-      define: {
-        __COPSE_TEST_SCENARIOS__: 'true',
-        __COPSE_BUILD_COMMIT__: JSON.stringify('streamed-reply-checkpoint-fixture'),
-        __COPSE_BUILD_DIRTY__: 'false',
-      },
-    })
-    const html = await readFile('dist/demo/index.html', 'utf8')
-    const oldScript = '<script type="module" src="./app.js"></script>'
-    assert.equal(html.split(oldScript).length, 2, 'expected exactly one renderer entry')
-    await writeFile(
-      'dist/demo/streamed-reply-checkpoint-fixture.html',
-      html.replace(
-        oldScript,
-        '<script type="module" src="./streamed-reply-checkpoint-fixture.js"></script>',
-      ),
-    )
+    checkpointPage = await buildDemoFixturePage('streamed-reply-checkpoint-fixture')
   })
   it('reveals a paced reply smoothly and settles without a jump', async () => {
     await browser.url('/?scenario=chat-reading-layout&autoplay=0')
@@ -169,7 +145,7 @@ describe('streamed reply motion in the real renderer', () => {
     expect(Math.abs(motion.finalSwapHeightDeltaPx ?? Infinity)).toBeLessThanOrEqual(1)
   })
   it('captures a complete fixed prefix while the real reply remains streaming', async () => {
-    await browser.url('/streamed-reply-checkpoint-fixture.html')
+    await browser.url(checkpointPage)
     await $('.prompt-input').waitForExist()
     await browser.execute(async () => {
       await document.fonts.ready

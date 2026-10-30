@@ -95,6 +95,15 @@ export type StreamChunk =
     }
   | { type: 'todo_update'; todos: TodoItem[] }
   /**
+   * A stage of reaching an external agent before its first token — today the
+   * SSH connect / remote PATH probe / adapter install / spawn of ACP over SSH.
+   * `setup` marks one-time host work, `start` the per-turn cost, and `ready`
+   * that the agent is reached, so the row returns to the turn's own activity.
+   * Status only: the renderer shows it in the activity row, never the transcript.
+   */
+  | { type: 'agent_setup_progress'; phase: 'start' | 'setup'; label: string }
+  | { type: 'agent_setup_progress'; phase: 'ready' }
+  /**
    * A deferred-worktree thread allocated its checkout mid-turn. Same payload
    * as the first-message transaction's result, so the renderer mirrors it the
    * same way and re-roots the thread's file, changes, and terminal surfaces.

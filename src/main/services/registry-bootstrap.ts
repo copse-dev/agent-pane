@@ -18,7 +18,11 @@ import {
   ghRunListTool,
   ghRunViewTool,
 } from '../tools/gh-tools.ts'
-import { ghPrActionTools, registerGhPrActionTools } from '../tools/gh-pr-action-tools.ts'
+import {
+  ghCliMaintenanceTools,
+  ghPrActionTools,
+  registerGhPrActionTools,
+} from '../tools/gh-pr-action-tools.ts'
 import { hasGitHubApiToken } from './github/backend/github-token.ts'
 import { isMockGhEnabled } from './github/gh-pr-mock.ts'
 import { investigateCiTool } from '../tools/investigate-ci-tool.ts'
@@ -417,6 +421,9 @@ export function syncGhTools(registry: ToolRegistry): void {
   // through the approval gate.
   if (ghAvailable || hasGitHubApiToken() || isMockGhEnabled()) {
     registerGhPrActionTools(registry)
+    if (!ghAvailable) {
+      for (const tool of ghCliMaintenanceTools) registry.unregister(tool.name)
+    }
   } else {
     for (const tool of ghPrActionTools) registry.unregister(tool.name)
   }
