@@ -452,7 +452,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-CX64FVLW.js";
+} from "./chunk-YSDLDTFN.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -67092,6 +67092,16 @@ ${context}` : text;
     persistComposerDraft();
     await submit();
   });
+  planControl.button.hidden = true;
+  let planModeEnabled = false;
+  const refreshPlanModeSetting = async () => {
+    const enabled = await api2.settings.get("planModeEnabled").catch(() => void 0);
+    const next = enabled === true;
+    if (next === planModeEnabled) return;
+    planModeEnabled = next;
+    planControl.button.hidden = !planModeEnabled;
+  };
+  void refreshPlanModeSetting();
   const footer = el("div", { class: "input-footer" });
   const modelHost = el("div", { class: "footer-model-host" });
   const executionMode = mountAgentExecutionModeControl(
@@ -69040,6 +69050,7 @@ ${reply}`);
     }),
     store2.on("settings_changed", () => {
       void refreshContainerRunsSetting();
+      void refreshPlanModeSetting();
       modelPicker.refresh();
       void refreshImageCompatibilityWarning();
       refreshModelPricing();
