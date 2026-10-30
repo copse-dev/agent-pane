@@ -6,7 +6,7 @@ import {
   ndJsonStream,
   PROTOCOL_VERSION,
   RequestError,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import { z } from 'zod'
 import type { StreamChunk } from '@shared/types'
 import { ToolRegistry } from '../tool-registry.ts'

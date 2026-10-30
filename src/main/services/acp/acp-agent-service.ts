@@ -14,7 +14,7 @@ import type {
   Usage,
   WriteTextFileRequest,
   WriteTextFileResponse,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
