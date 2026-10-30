@@ -15004,6 +15004,12 @@ var init_turn_start_hooks = __esm({
   }
 });
 
+// packages/agent/src/read-file-limits.ts
+var init_read_file_limits = __esm({
+  "packages/agent/src/read-file-limits.ts"() {
+  }
+});
+
 // packages/agent/src/agent-loop-guards.ts
 function hasOpenTodos(todos) {
   return todos.some((t) => t.status === "pending" || t.status === "in_progress");
@@ -15011,6 +15017,7 @@ function hasOpenTodos(todos) {
 var MAX_TODO_CLOSEOUT_ATTEMPTS, OPEN_TODOS_FINALIZE_NUDGE, OPEN_TODOS_FINALIZE_NUDGE_STRICT;
 var init_agent_loop_guards = __esm({
   "packages/agent/src/agent-loop-guards.ts"() {
+    init_read_file_limits();
     init_unknown_value();
     MAX_TODO_CLOSEOUT_ATTEMPTS = 3;
     OPEN_TODOS_FINALIZE_NUDGE = `You still have open todos in the plan. Before finishing:
