@@ -220,6 +220,11 @@ export interface ApiClient {
       rootTrusted?: boolean,
     ) => Promise<void>
     revealCertificate: () => Promise<void>
+    /** Redeem an invite for this Mac's publicly trusted name; progress arrives as state. */
+    registerName: (invite: string) => Promise<void>
+    /** Delete this Mac's name from the names service and forget its device key. */
+    removeName: () => Promise<void>
+    recheckNameDns: () => Promise<void>
     onChat: (
       handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void,
     ) => () => void

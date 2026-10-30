@@ -4,10 +4,30 @@ import assert from 'node:assert/strict'
 import type { ApiClient } from '../../../preload/api.d.ts'
 import type {
   MobileCompanionAccess,
+  MobileCompanionPublicName,
   MobileCompanionState,
 } from '../../../shared/types/mobile-companion.ts'
 import { createMobileCompanionSection } from './mobile-companion-section.ts'
 import { createFakeApi } from '../../fake-api.test-support.ts'
+
+const unregistered: MobileCompanionPublicName = {
+  serviceUrl: 'https://api.copse.dev',
+  state: 'unregistered',
+  hostname: null,
+  certificate: null,
+  dns: 'unknown',
+  busy: null,
+  lastError: null,
+}
+
+const hostname = 'lan.abcdefgh2345.u.copse.me'
+const registered: MobileCompanionPublicName = {
+  ...unregistered,
+  state: 'active',
+  hostname,
+  certificate: { notAfter: Date.now() + 5 * 86_400_000, renewAt: Date.now() + 3 * 86_400_000 },
+  dns: 'ok',
+}
 
 function mockApi(initial: Partial<MobileCompanionState> = {}): {
   api: ApiClient
@@ -28,6 +48,9 @@ function mockApi(initial: Partial<MobileCompanionState> = {}): {
       rootTrusted: boolean | undefined
     }>
     revealed: number
+    registerName: string[]
+    removeName: number
+    recheckNameDns: number
   }
   push: (patch: Partial<MobileCompanionState>) => void
 } {
@@ -36,6 +59,9 @@ function mockApi(initial: Partial<MobileCompanionState> = {}): {
     running: false,
     url: null,
     qrSvg: null,
+    localUrl: null,
+    localQrSvg: null,
+    publicName: unregistered,
     rootCertificatePath: null,
     addresses: [{ address: '192.168.1.5', interfaceName: 'en0' }],
     devices: [],
@@ -59,6 +85,9 @@ function mockApi(initial: Partial<MobileCompanionState> = {}): {
       rootTrusted: boolean | undefined
     }>,
     revealed: 0,
+    registerName: [] as string[],
+    removeName: 0,
+    recheckNameDns: 0,
   }
   let handler: ((next: MobileCompanionState) => void) | null = null
   const base = createFakeApi()
@@ -100,6 +129,15 @@ function mockApi(initial: Partial<MobileCompanionState> = {}): {
       },
       revealCertificate: async () => {
         calls.revealed += 1
+      },
+      registerName: async (invite) => {
+        calls.registerName.push(invite)
+      },
+      removeName: async () => {
+        calls.removeName += 1
+      },
+      recheckNameDns: async () => {
+        calls.recheckNameDns += 1
       },
     },
   }
@@ -213,6 +251,7 @@ describe('createMobileCompanionSection', () => {
         id: '8abde2d0-8c97-4a99-9ea8-a7518309ee52',
         label: "Jonathan's iPhone",
         code: '123456',
+        trustedName: false,
       },
     })
 
@@ -248,7 +287,12 @@ describe('createMobileCompanionSection', () => {
 
   it('requires fresh acknowledgement when a replacement repeats both label and code', async () => {
     const { api, calls, push } = mockApi({
-      pairing: { id: '8abde2d0-8c97-4a99-9ea8-a7518309ee52', label: 'First phone', code: '123456' },
+      pairing: {
+        id: '8abde2d0-8c97-4a99-9ea8-a7518309ee52',
+        label: 'First phone',
+        code: '123456',
+        trustedName: false,
+      },
     })
     const section = createMobileCompanionSection(api)
     document.body.append(section.root)
@@ -261,7 +305,12 @@ describe('createMobileCompanionSection', () => {
     originalTrust.dispatchEvent(new Event('change'))
 
     push({
-      pairing: { id: '8abde2d0-8c97-4a99-9ea8-a7518309ee53', label: 'First phone', code: '123456' },
+      pairing: {
+        id: '8abde2d0-8c97-4a99-9ea8-a7518309ee53',
+        label: 'First phone',
+        code: '123456',
+        trustedName: false,
+      },
     })
     const banner = section.root.querySelector('.mobile-companion-pairing-banner')
     assert.ok(banner)
@@ -288,7 +337,12 @@ describe('createMobileCompanionSection', () => {
 
   it('allows read-only pairing without requiring the trust checkbox', async () => {
     const { api, calls } = mockApi({
-      pairing: { id: '8abde2d0-8c97-4a99-9ea8-a7518309ee52', label: 'My phone', code: '123456' },
+      pairing: {
+        id: '8abde2d0-8c97-4a99-9ea8-a7518309ee52',
+        label: 'My phone',
+        code: '123456',
+        trustedName: false,
+      },
     })
     const section = createMobileCompanionSection(api)
     document.body.append(section.root)
@@ -319,6 +373,7 @@ describe('createMobileCompanionSection', () => {
         id: '8abde2d0-8c97-4a99-9ea8-a7518309ee52',
         label: 'Unknown phone',
         code: '000000',
+        trustedName: false,
       },
     })
     const denyBtn = Array.from(section.root.querySelectorAll('button')).find(
@@ -382,5 +437,154 @@ describe('createMobileCompanionSection', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     assert.deepEqual(calls.setAccess, [{ id: 'device-1', access: 'control', rootTrusted: true }])
+  })
+
+  it('grants control over the trusted name on the desktop approval alone', async () => {
+    const { api, calls } = mockApi({
+      pairing: {
+        id: '8abde2d0-8c97-4a99-9ea8-a7518309ee52',
+        label: 'Phone',
+        code: '123456',
+        trustedName: true,
+      },
+    })
+    const section = createMobileCompanionSection(api)
+    document.body.append(section.root)
+    await section.refresh()
+    const banner = section.root.querySelector('.mobile-companion-pairing-banner')
+    assert.ok(banner)
+    assert.equal(banner.querySelector('input[type="checkbox"]'), null)
+    assert.match(banner.textContent, /trusted name/)
+    const controlBtn = Array.from(banner.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Allow control',
+    )
+    assert.ok(controlBtn)
+    assert.equal(controlBtn.hasAttribute('disabled'), false)
+    controlBtn.click()
+    assert.deepEqual(calls.pairing, [
+      {
+        decision: 'control',
+        code: '123456',
+        pairingId: '8abde2d0-8c97-4a99-9ea8-a7518309ee52',
+        rootTrusted: undefined,
+      },
+    ])
+  })
+
+  it('redeems a pasted invite and refuses an empty one', async () => {
+    const { api, calls } = mockApi()
+    const section = createMobileCompanionSection(api)
+    document.body.append(section.root)
+    await section.refresh()
+    const input = section.root.querySelector<HTMLInputElement>(
+      'input[name="mobileCompanionInvite"]',
+    )
+    const button = Array.from(section.root.querySelectorAll('button')).find(
+      (candidate) => candidate.textContent === 'Get a name',
+    )
+    assert.ok(input && button)
+    button.click()
+    assert.equal(input.getAttribute('aria-invalid'), 'true')
+    assert.deepEqual(calls.registerName, [])
+    input.value = '  invite-abc  '
+    input.dispatchEvent(new Event('input'))
+    assert.equal(input.hasAttribute('aria-invalid'), false)
+    button.click()
+    assert.deepEqual(calls.registerName, ['invite-abc'])
+  })
+
+  it('keeps a half-typed invite across state pushes', async () => {
+    const { api, push } = mockApi()
+    const section = createMobileCompanionSection(api)
+    document.body.append(section.root)
+    await section.refresh()
+    const input = section.root.querySelector<HTMLInputElement>(
+      'input[name="mobileCompanionInvite"]',
+    )
+    assert.ok(input)
+    input.value = 'inv'
+    push({ publicName: { ...unregistered, busy: 'registering' } })
+    assert.equal(input.value, 'inv')
+    assert.equal(
+      section.root.querySelector<HTMLInputElement>('input[name="mobileCompanionInvite"]'),
+      input,
+    )
+    assert.match(section.root.textContent, /Getting a name…/)
+  })
+
+  it('shows the registered name, its certificate and a way to remove it', async () => {
+    const { api, calls } = mockApi({ publicName: registered })
+    const section = createMobileCompanionSection(api)
+    document.body.append(section.root)
+    await section.refresh()
+    const card = section.root.querySelector<HTMLElement>('[data-testid="mobile-companion-name"]')
+    assert.ok(card)
+    assert.match(card.textContent, new RegExp(hostname.replaceAll('.', '\\.')))
+    assert.match(card.textContent, /Certificate valid until/)
+    const invite = card.querySelector<HTMLElement>('.mobile-companion-invite')
+    assert.equal(invite?.hidden, true)
+    const remove = Array.from(card.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Remove name',
+    )
+    assert.ok(remove)
+    remove.click()
+    assert.equal(calls.removeName, 1)
+  })
+
+  it('serves the trusted name first, with the LAN IP as the fallback', async () => {
+    const { api } = mockApi({
+      enabled: true,
+      running: true,
+      url: `https://${hostname}:42773`,
+      qrSvg: '<svg data-qr="name"></svg>',
+      localUrl: 'https://192.168.1.5:42773',
+      localQrSvg: '<svg data-qr="local"></svg>',
+      publicName: registered,
+    })
+    const section = createMobileCompanionSection(api)
+    document.body.append(section.root)
+    await section.refresh()
+    const nameQr = section.root.querySelector<HTMLElement>('#mobile-companion-qr')
+    const localQr = section.root.querySelector<HTMLElement>('#mobile-companion-local-qr')
+    assert.ok(nameQr && localQr)
+    assert.equal(nameQr.hidden, false)
+    assert.equal(localQr.hidden, true)
+    assert.match(section.root.textContent, /https:\/\/192\.168\.1\.5:42773/)
+    const swap = Array.from(section.root.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Show the local-address QR',
+    )
+    assert.ok(swap)
+    swap.click()
+    assert.equal(
+      section.root.querySelector<HTMLElement>('#mobile-companion-local-qr')?.hidden,
+      false,
+    )
+  })
+
+  it('explains DNS-rebind protection and leads with the local address when the name does not resolve', async () => {
+    const { api, calls } = mockApi({
+      enabled: true,
+      running: true,
+      url: `https://${hostname}:42773`,
+      qrSvg: '<svg data-qr="name"></svg>',
+      localUrl: 'https://192.168.1.5:42773',
+      localQrSvg: '<svg data-qr="local"></svg>',
+      publicName: { ...registered, dns: 'unresolved' },
+    })
+    const section = createMobileCompanionSection(api)
+    document.body.append(section.root)
+    await section.refresh()
+    assert.match(section.root.textContent, /DNS-rebind protection/)
+    assert.equal(section.root.querySelector<HTMLElement>('#mobile-companion-qr')?.hidden, true)
+    assert.equal(
+      section.root.querySelector<HTMLElement>('#mobile-companion-local-qr')?.hidden,
+      false,
+    )
+    const recheck = Array.from(section.root.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Check again',
+    )
+    assert.ok(recheck)
+    recheck.click()
+    assert.equal(calls.recheckNameDns, 1)
   })
 })

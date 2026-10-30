@@ -1,11 +1,18 @@
 import { ipcMain, shell, type BrowserWindow } from 'electron'
 import { z } from 'zod'
 import { assertMainFrameSender, parseIpcArgs } from './ipc-guards.ts'
-import { mobileDeviceAccessArgsSchema, mobilePairingArgsSchema } from './mobile-companion-args.ts'
+import {
+  mobileDeviceAccessArgsSchema,
+  mobileInviteSchema,
+  mobilePairingArgsSchema,
+} from './mobile-companion-args.ts'
 import {
   disableMobileCompanion,
   enableMobileCompanion,
   getMobileCompanionState,
+  recheckMobilePublicNameDns,
+  registerMobilePublicName,
+  removeMobilePublicName,
   respondToMobilePairing,
   revokeMobileDevice,
   setMobileDeviceAccess,
@@ -40,8 +47,21 @@ export function registerMobileHandlers(win: BrowserWindow): void {
   })
   ipcMain.handle('mobile:respond-pairing', (event, ...args) => {
     assertMainFrameSender(event, win)
-    const [decision, code, pairingId] = parseIpcArgs(mobilePairingArgsSchema, args)
-    respondToMobilePairing(decision, code, pairingId)
+    const [decision, code, pairingId, rootTrusted] = parseIpcArgs(mobilePairingArgsSchema, args)
+    respondToMobilePairing(decision, code, pairingId, rootTrusted === true)
+  })
+  ipcMain.handle('mobile:register-name', async (event, rawInvite: unknown) => {
+    assertMainFrameSender(event, win)
+    const invite = parseIpcArgs(mobileInviteSchema, [rawInvite])
+    await registerMobilePublicName(invite)
+  })
+  ipcMain.handle('mobile:remove-name', async (event) => {
+    assertMainFrameSender(event, win)
+    await removeMobilePublicName()
+  })
+  ipcMain.handle('mobile:recheck-name-dns', async (event) => {
+    assertMainFrameSender(event, win)
+    await recheckMobilePublicNameDns()
   })
   ipcMain.handle('mobile:reveal-certificate', (event) => {
     assertMainFrameSender(event, win)

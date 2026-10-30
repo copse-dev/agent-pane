@@ -97,3 +97,27 @@
   color: var(--text-secondary);
   overflow-wrap: break-word;
 }
+.mobile-companion-invite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.mobile-companion-invite-label {
+  display: flex;
+  flex: 1 1 240px;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.mobile-companion-invite-label input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+}
+.mobile-companion-name-summary strong {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.mobile-companion-name-warning {
+  color: var(--warning);
+}

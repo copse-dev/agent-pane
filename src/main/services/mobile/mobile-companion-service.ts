@@ -1,5 +1,7 @@
+import { lookup } from 'node:dns/promises'
 import { MobilePairing } from './mobile-pairing.ts'
 import QRCode from 'qrcode'
+import { getSecretCipher } from '@copse/store-kit/secret-cipher.ts'
 import type {
   MobileCompanionAccess,
   MobileCompanionState,
@@ -8,6 +10,9 @@ import { broadcastToAppWindows } from '../../windows/app-window-broadcast.ts'
 import { MobileDevices } from './mobile-devices.ts'
 import { MobilePreference } from './mobile-preference.ts'
 import { mobileLanAddresses, startMobileServer, type MobileServer } from './mobile-server.ts'
+import { DEFAULT_NAMES_API, NamesClient } from '../remote-names/names-client.ts'
+import { RemoteNames } from '../remote-names/names-service.ts'
+import { NamesStore } from '../remote-names/names-store.ts'
 
 let active: MobileServer | null = null
 let preference: MobilePreference | null = null
@@ -17,9 +22,40 @@ let retry: ReturnType<typeof setTimeout> | null = null
 let quitting = false
 let generation = 0
 let lastError: string | null = null
-let qrCache: { url: string; svg: string } | null = null
+const qrCache = new Map<string, string>()
 const pairingRequests = new MobilePairing()
 const RETRY_MS = 15_000
+let names: RemoteNames | null = null
+let namesStarted = false
+
+/**
+ * The names API for a new registration. `COPSE_NAMES_API_URL` points a Mac at
+ * another deployment of the service (staging, or a self-hosted one); it is not
+ * a `config.json` setting because a renderer-writable URL could send signed
+ * requests, replayable for five minutes, somewhere else.
+ */
+function namesServiceUrl(): string {
+  const configured = process.env['COPSE_NAMES_API_URL']?.trim()
+  if (configured) return configured
+  return DEFAULT_NAMES_API
+}
+
+function remoteNames(): RemoteNames {
+  names ??= new RemoteNames({
+    store: new NamesStore(getSecretCipher),
+    client: (baseUrl, key): NamesClient => new NamesClient({ baseUrl, key }),
+    serviceUrl: namesServiceUrl,
+    lookup: async (hostname): Promise<string[]> => {
+      try {
+        return (await lookup(hostname, { all: true, family: 4 })).map((entry) => entry.address)
+      } catch {
+        return []
+      }
+    },
+    onChange: publish,
+  })
+  return names
+}
 
 function savedPreference(): MobilePreference {
   preference ??= new MobilePreference()
@@ -43,10 +79,13 @@ function publish(): void {
  */
 function currentQrSvg(url: string | null): string | null {
   if (!url) return null
-  if (qrCache?.url === url) return qrCache.svg
+  const cached = qrCache.get(url)
+  if (cached !== undefined) return cached
   void QRCode.toString(url, { type: 'svg', margin: 1 })
     .then((svg) => {
-      qrCache = { url, svg }
+      // At most the trusted-name and LAN-IP addresses are live at once.
+      if (qrCache.size >= 4) qrCache.clear()
+      qrCache.set(url, svg)
       publish()
     })
     .catch((error: unknown) => {
@@ -57,12 +96,18 @@ function currentQrSvg(url: string | null): string | null {
 
 export function getMobileCompanionState(): MobileCompanionState {
   const running = active?.isRunning() ?? false
-  const url = running ? (active?.url ?? null) : null
+  const ipUrl = running ? (active?.url ?? null) : null
+  const name = running ? remoteNames().identity()?.hostname : undefined
+  const url = name && active ? `https://${name}:${String(active.port)}` : ipUrl
+  const localUrl = url === ipUrl ? null : ipUrl
   return {
     enabled: savedPreference().current().enabled,
     running,
     url,
     qrSvg: currentQrSvg(url),
+    localUrl,
+    localQrSvg: currentQrSvg(localUrl),
+    publicName: remoteNames().state(),
     rootCertificatePath: running ? (active?.rootPath ?? null) : null,
     addresses: mobileLanAddresses(),
     devices: devices().list(),
@@ -90,8 +135,9 @@ function approvePair(
   label: string,
   code: string,
   signal: AbortSignal,
+  trustedName: boolean,
 ): Promise<MobileCompanionAccess | null> {
-  const result = pairingRequests.request(label, code, signal)
+  const result = pairingRequests.request(label, code, signal, trustedName)
   publish()
   return result.finally(publish)
 }
@@ -100,9 +146,10 @@ export function respondToMobilePairing(
   decision: MobileCompanionAccess | 'deny',
   code: string,
   id: string,
+  rootTrusted = false,
 ): void {
   if (quitting) return
-  if (pairingRequests.respond(decision, code, id)) publish()
+  if (pairingRequests.respond(decision, code, id, rootTrusted)) publish()
 }
 
 function launch(address: string): Promise<MobileServer> {
@@ -112,9 +159,11 @@ function launch(address: string): Promise<MobileServer> {
     address,
     devices: devices(),
     approvePair,
+    publicIdentity: () => remoteNames().identity(),
     onDevicesChanged: publish,
     onStop: () => {
       active = null
+      remoteNames().setServerAddress(null)
       scheduleRetry()
       publish()
     },
@@ -126,6 +175,7 @@ function launch(address: string): Promise<MobileServer> {
       }
       active = server
       clearRetry()
+      remoteNames().setServerAddress(server.address)
       return server
     })
     .finally(() => {
@@ -137,6 +187,12 @@ function launch(address: string): Promise<MobileServer> {
 /** Resume the user's enabled choice after every app start. */
 export async function resumeMobileCompanion(): Promise<void> {
   if (quitting) return
+  // Renewal runs whether or not the companion is on: a name nobody renews for
+  // 30 days goes dormant. Retries re-enter here; the names service starts once.
+  if (!namesStarted) {
+    namesStarted = true
+    void remoteNames().start()
+  }
   try {
     const choice = savedPreference().current()
     if (!choice.enabled || active?.isRunning()) return
@@ -198,10 +254,28 @@ export function revokeMobileDevice(id: string): void {
   publish()
 }
 
+/** Redeem an invite for this Mac's trusted name; progress and errors arrive as state. */
+export async function registerMobilePublicName(invite: string): Promise<void> {
+  if (quitting) return
+  await remoteNames().register(invite)
+}
+
+/** Delete this Mac's name from the names service and forget its key. */
+export async function removeMobilePublicName(): Promise<void> {
+  if (quitting) return
+  await remoteNames().remove()
+}
+
+export async function recheckMobilePublicNameDns(): Promise<void> {
+  if (quitting) return
+  await remoteNames().recheckDns()
+}
+
 export async function stopMobileCompanion(): Promise<void> {
   quitting = true
   generation += 1
   clearRetry()
+  names?.stop()
   await active?.close()
   active = null
 }

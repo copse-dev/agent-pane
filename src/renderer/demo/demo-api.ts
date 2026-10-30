@@ -593,6 +593,17 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           running: scenario.mobileCompanion !== undefined,
           url: scenario.mobileCompanion?.url ?? null,
           qrSvg: scenario.mobileCompanion?.qrSvg ?? null,
+          localUrl: null,
+          localQrSvg: null,
+          publicName: {
+            serviceUrl: 'https://api.copse.dev',
+            state: 'unregistered',
+            hostname: null,
+            certificate: null,
+            dns: 'unknown',
+            busy: null,
+            lastError: null,
+          },
           rootCertificatePath: null,
           addresses: scenario.mobileCompanion
             ? [{ address: new URL(scenario.mobileCompanion.url).hostname, interfaceName: 'Wi-Fi' }]
@@ -608,6 +619,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       revokeDevice: () => resolvedVoid(),
       respondPairing: () => resolvedVoid(),
       revealCertificate: () => resolvedVoid(),
+      registerName: () => resolvedVoid(),
+      removeName: () => resolvedVoid(),
+      recheckNameDns: () => resolvedVoid(),
       onChat: () => () => {},
       reply: async () => {},
     },

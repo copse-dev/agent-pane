@@ -60,37 +60,59 @@ describe('mobile request boundary', () => {
     ])
   })
   it('allows only the literal bound host and a private peer', () => {
-    assert.equal(mobileRequestAllowed(request('192.168.1.55'), authority, origin), true)
-    assert.equal(mobileRequestAllowed(request('8.8.8.8'), authority, origin), false)
+    assert.equal(mobileRequestAllowed(request('192.168.1.55'), [authority]), true)
+    assert.equal(mobileRequestAllowed(request('8.8.8.8'), [authority]), false)
     assert.equal(
-      mobileRequestAllowed(request('192.168.1.55', 'copse.local:4000'), authority, origin),
+      mobileRequestAllowed(request('192.168.1.55', 'copse.local:4000'), [authority]),
       false,
     )
     assert.equal(
-      mobileRequestAllowed(request('192.168.1.55', '192.168.1.41:4001'), authority, origin),
+      mobileRequestAllowed(request('192.168.1.55', '192.168.1.41:4001'), [authority]),
       false,
     )
   })
   it('rejects a foreign origin and a missing origin on writes', () => {
     assert.equal(
-      mobileRequestAllowed(
-        request('192.168.1.55', authority, 'https://evil.test'),
-        authority,
-        origin,
-      ),
+      mobileRequestAllowed(request('192.168.1.55', authority, 'https://evil.test'), [authority]),
       false,
     )
     assert.equal(
-      mobileRequestAllowed(
-        request('192.168.1.55', authority, undefined, 'POST'),
-        authority,
-        origin,
-      ),
+      mobileRequestAllowed(request('192.168.1.55', authority, undefined, 'POST'), [authority]),
       false,
     )
     assert.equal(
-      mobileRequestAllowed(request('192.168.1.55', authority, origin, 'POST'), authority, origin),
+      mobileRequestAllowed(request('192.168.1.55', authority, origin, 'POST'), [authority]),
       true,
+    )
+  })
+  it('accepts the trusted name only when it is one of the served authorities', () => {
+    const name = 'lan.abcdefgh2345.u.copse.me:4000'
+    const served = [authority, name]
+    assert.equal(mobileRequestAllowed(request('192.168.1.55', name), [authority]), false)
+    assert.equal(mobileRequestAllowed(request('192.168.1.55', name), served), true)
+    assert.equal(mobileRequestAllowed(request('8.8.8.8', name), served), false)
+    // Another label, or the name without the port, is not this Mac.
+    assert.equal(
+      mobileRequestAllowed(request('192.168.1.55', 'lan.zzzzzzzzzzzz.u.copse.me:4000'), served),
+      false,
+    )
+    assert.equal(
+      mobileRequestAllowed(request('192.168.1.55', 'lan.abcdefgh2345.u.copse.me'), served),
+      false,
+    )
+  })
+  it('binds Origin to the authority the request named', () => {
+    const name = 'lan.abcdefgh2345.u.copse.me:4000'
+    const served = [authority, name]
+    assert.equal(
+      mobileRequestAllowed(request('192.168.1.55', name, `https://${name}`, 'POST'), served),
+      true,
+    )
+    // A page on the IP origin cannot post to the name, or the other way round.
+    assert.equal(mobileRequestAllowed(request('192.168.1.55', name, origin, 'POST'), served), false)
+    assert.equal(
+      mobileRequestAllowed(request('192.168.1.55', authority, `https://${name}`, 'POST'), served),
+      false,
     )
   })
 })
