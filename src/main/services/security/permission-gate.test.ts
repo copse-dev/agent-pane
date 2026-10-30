@@ -53,7 +53,6 @@ import {
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
-import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { setSetting, setApiKey, deleteApiKey } from '../storage/settings.test-shim.ts'
 import { storageSet } from '../storage/storage.ts'
 import { drainWriteQueue } from '../storage/write-queue.ts'
@@ -855,16 +854,59 @@ describe('ensureToolPermitted', () => {
     }
   })
 
-  it('asks for the selected web search origin and explains API-credit usage', async () => {
+  it('auto-allows the configured web search origin but still hard-denies when approvals are off', async () => {
     setPermissionGateForTests(null)
     await setSetting('webSearchProvider', 'tavily')
     setApiKey('tavily', 'fixture-key')
     await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
     await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
-    setApprovalHandler(async (request) => {
-      assert.equal(request.subject, 'https://api.tavily.com:443')
-      assert.equal(request.cause, 'web-origin')
-      assert.match(request.bodyAdvice ?? '', /Tavily.*paid API credits/)
+    const { clearWebOriginGrant } = await import('./web-origin-policy.ts')
+    let prompted = 0
+    setApprovalHandler(async () => {
+      prompted += 1
+      return { approved: false, remember: false }
+    })
+    try {
+      // Selecting Tavily and saving its key is consent: no web-origin prompt.
+      assert.equal(
+        await ensureToolPermitted({ toolName: 'web_search', args: { query: 'docs' } }),
+        true,
+      )
+      assert.equal(prompted, 0)
+      // The real tool handler clears this per-call grant in its own `finally`
+      // (`webSearch()` in `web-search/provider.ts`) once the request completes;
+      // this test checks permission only, without running the handler, so it
+      // must clear the grant itself before the next call — otherwise this
+      // test's own prior grant would make the origin look "already allowed"
+      // and mask the hard deny below.
+      clearWebOriginGrant('https://api.tavily.com:443')
+      // A hard "no new web approvals" stop still applies regardless of consent.
+      await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, false)
+      await assert.rejects(
+        ensureToolPermitted({ toolName: 'web_search', args: { query: 'docs' } }),
+        /Web search denied/,
+      )
+      assert.equal(prompted, 0)
+    } finally {
+      clearWebOriginGrant('https://api.tavily.com:443')
+      await setSetting('webSearchProvider', 'none')
+      await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+      deleteApiKey('tavily')
+      setApprovalHandler(null)
+    }
+  })
+
+  it('still asks every time when web_search has an explicit Always ask override', async () => {
+    setPermissionGateForTests(null)
+    await setSetting('webSearchProvider', 'tavily')
+    setApiKey('tavily', 'fixture-key')
+    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
+    await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+    await setSetting('toolPermissionOverrides', { [copseToolPermissionId('web_search')]: 'ask' })
+    const { clearWebOriginGrant } = await import('./web-origin-policy.ts')
+    let prompted = 0
+    setApprovalHandler(async () => {
+      prompted += 1
       return { approved: false, remember: false }
     })
     try {
@@ -872,14 +914,11 @@ describe('ensureToolPermitted', () => {
         await ensureToolPermitted({ toolName: 'web_search', args: { query: 'docs' } }),
         false,
       )
-      await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, false)
-      await assert.rejects(
-        ensureToolPermitted({ toolName: 'web_search', args: { query: 'docs' } }),
-        /Web search denied/,
-      )
+      assert.equal(prompted, 1)
     } finally {
+      clearWebOriginGrant('https://api.tavily.com:443')
       await setSetting('webSearchProvider', 'none')
-      await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
+      await setSetting('toolPermissionOverrides', {})
       deleteApiKey('tavily')
       setApprovalHandler(null)
     }
@@ -908,61 +947,6 @@ describe('ensureToolPermitted', () => {
     } finally {
       await setSetting('toolPermissionOverrides', {})
       setApprovalHandler(null)
-    }
-  })
-
-  it('auto-allows a direct Parallel Search request while its plugin is enabled', async () => {
-    setPermissionGateForTests(null)
-    // A fresh first-party seed enables every plugin, so `copse.parallel-search`
-    // declares the tool here (default-OFF is a plugin-service migration concern).
-    const registry = createFirstPartyPluginRegistry()
-    setDefaultPluginRegistry(registry)
-    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
-    await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
-    let prompted = false
-    setApprovalHandler(async () => {
-      prompted = true
-      return { approved: false, remember: false }
-    })
-    try {
-      assert.equal(
-        await ensureToolPermitted({ toolName: 'parallel_search', args: { objective: 'Research' } }),
-        true,
-      )
-      assert.equal(prompted, false)
-    } finally {
-      setApprovalHandler(null)
-      setDefaultPluginRegistry(null)
-    }
-  })
-
-  it('prompts before sending a direct Parallel Search request while its plugin is disabled', async () => {
-    const registry = createFirstPartyPluginRegistry()
-    registry.disable(PARALLEL_SEARCH_PLUGIN_ID)
-    setDefaultPluginRegistry(registry)
-    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
-    await setSetting(WEB_ALLOW_USER_APPROVAL_SETTING, true)
-    let approvalBody = ''
-    let approvalAdvice = ''
-    let approvalCause: string | undefined
-    setApprovalHandler(async (request) => {
-      approvalBody = request.body
-      approvalAdvice = request.bodyAdvice ?? ''
-      approvalCause = request.cause
-      return { approved: false, remember: false }
-    })
-    try {
-      assert.equal(
-        await ensureToolPermitted({ toolName: 'parallel_search', args: { objective: 'Research' } }),
-        false,
-      )
-      assert.match(approvalBody, /api\.parallel\.ai/)
-      assert.equal(approvalCause, 'web-origin')
-      assert.match(approvalAdvice, /paid API credits/i)
-      assert.match(approvalAdvice, /Zero Data Retention/i)
-    } finally {
-      setApprovalHandler(null)
-      setDefaultPluginRegistry(null)
     }
   })
 

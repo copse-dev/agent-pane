@@ -250,7 +250,7 @@ and user-controlled diagnostic history, consistent with the platform's storage r
 Do not create an agent-visible tool: these decisions are host orchestration, not something
 the coding model should invoke opportunistically.
 
-The Settings detail follows the direct Parallel Search precedent:
+The Settings detail follows the same credential-detail precedent as `automation-plugin-settings.ts`:
 
 - masked key presence plus save/clear actions backed by Copse's encrypted key store;
 - live model/account validation via a bounded `GET /v1/models` probe;
