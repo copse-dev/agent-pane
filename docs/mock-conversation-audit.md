@@ -73,9 +73,6 @@ the file, not counts of images with visible syntax.
 | ui-polish.e2e.ts              | Delay directive                                     |                  3 | Controlled activity state with natural chat text behind subsequent panels                                              |
 | mcp-validate.spec.ts          | Two external-tool directives                        |                  4 | Port the affected MCP flows to WDIO, or consolidate into verified equivalent coverage before retiring this legacy file |
 
-`staged-diff-ui.e2e.ts` is also excluded by `wdio.ci.conf.ts`. A green default
-CI selection therefore does not establish that all migrated cases work.
-
 **Why replacing the prompt strings is insufficient**
 
 1. **The current script cannot finish a tool turn.**
