@@ -9,6 +9,10 @@ The Mac must stay awake with Copse open. Phone messages enter the primary deskto
 renderer after startup restoration and use its usual checkout and queue paths.
 Diff reading, live token streaming, certificate installation UX, and physical-device
 validation remain outstanding; the verified certificate proof uses iPhone Simulator.
+Since October 2026 a Mac can also redeem an invite for a publicly trusted name,
+`lan.<label>.u.copse.me`, issued by the Copse names service and served beside the LAN IP
+([remote-access.md](../remote-access.md)); it has been tested against a stand-in names API,
+not yet against the live service on a physical phone.
 
 You start four threads, close the lid on nothing, and walk to the kitchen. One of them
 finished nine minutes ago. One is waiting on an approval it raised eight minutes ago.
@@ -261,6 +265,16 @@ expensive is an axis this version simply does not have.
     or downgrading a device prevents further actions; already accepted work may
     finish. Control grants authorize human chat submissions, never wider tool policy.
 
+    _Amended October 2026 for the trusted name ([remote-access.md](../remote-access.md))._ A
+    phone that pairs over `lan.<label>.u.copse.me` has verified a publicly trusted
+    certificate in its own browser, so there is no root to install and the desktop
+    approval at pairing alone grants control. The local-root acknowledgement above still
+    governs pairings over the LAN IP. The server records which authority a pairing
+    request named, and `MobilePairing.respond` in the main process enforces the rule, so
+    the renderer cannot skip the acknowledgement for a LAN-IP pairing. Upgrading an
+    existing device from Manage paired phones still asks for the acknowledgement, because
+    device records do not yet remember which address the phone paired over.
+
 12. **The phone may answer a decision the local gate already raised. It may never widen
     policy.** When L2 lands: `remember` and `grantScope: 'turn-tree'` are rejected
     server-side (the wire schema permits both today —
@@ -310,7 +324,10 @@ expensive is an axis this version simply does not have.
   (ngrok, cloudflared, Funnel) are rejected outright in Non-goals: they convert a LAN
   feature into an internet-exposed control plane with a third party on-path.
 - **`*.localhost`** — not an option. On the phone it resolves to the phone.
-- **A publicly trusted certificate for the LAN address, by any route** — impossible without
+- **A publicly trusted certificate for the LAN address, by any route** — _now provided by the
+  Copse names service ([remote-access.md](../remote-access.md)), which is exactly the
+  authoritative zone plus hosted issuance this entry described; the reasoning below is why a
+  per-Mac name was the only route._ Originally rejected as impossible without
   the hosted backend this plan forbids. The CA/Browser Forum has prohibited reserved IPs
   and internal names since 2015/2016, and Let's Encrypt's IP certificates (GA January 2026)
   cover public addresses only. Plex's `*.plex.direct` works but needs an authoritative DNS
@@ -566,8 +583,10 @@ Non-negotiable controls, all fail-closed, on every request and every SSE connect
 - **Peer address** must be private or link-local. Reuse `isPrivateOrLinkLocalHost`
   (`packages/llm/src/credential-url.ts:36-70`) inverted, so one definition of "the LAN"
   governs both directions.
-- **`Host` must exactly equal the bound `ip:port` literal.** Reject every DNS name,
-  `.local`, and single-label name. This is the DNS-rebinding mitigation and nothing
+- **`Host` must exactly equal the bound `ip:port` literal**, or, once this Mac has one, its own
+  `lan.<label>.u.copse.me:port`: a name only this Mac's device key can point anywhere, and only
+  at a private address. `Origin` must be the origin of whichever authority the request named.
+  Reject every other DNS name, `.local`, and single-label name. This is the DNS-rebinding mitigation and nothing
   substitutes for it: a page the phone merely visits can re-resolve a hostname to the
   laptop's IP, at which point the attacker's origin _is_ the app's origin and CORS never
   applies.
@@ -708,8 +727,13 @@ by hand, on a device the app cannot reach.
   ([`background-supervisor.md`](background-supervisor.md) decision 10).
 - Cloud chat sharing by secret link — already declined elsewhere, and LAN-only is
   precisely what keeps this on the right side of that line.
-- Public tunnels (ngrok, cloudflared, Tailscale Funnel), any Copse-hosted relay, and any
-  ACME/DNS service. All break "no Copse-hosted backend".
+- Public tunnels (ngrok, cloudflared, Tailscale Funnel). They put a third party on-path.
+- _Amended October 2026:_ this plan originally also excluded any Copse-hosted relay and any
+  ACME/DNS service as breaking "no Copse-hosted backend". The Copse names service now runs the
+  `u.copse.me` zone and ACME issuance for a per-Mac name
+  ([remote-access.md](../remote-access.md)); it sees CSRs and private LAN addresses, never
+  thread data, and the Mac's keys never leave it. A Copse relay for reaching the Mac from
+  outside its network is phase 2 of that work and remains outside this plan.
 - mDNS/Bonjour advertisement. It broadcasts a live control plane to every network the
   laptop ever joins, and `.local` names are spoofable by any peer — which the app's own
   outbound policy already refuses for exactly this reason.

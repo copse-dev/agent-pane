@@ -116,7 +116,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['scroll-to-bottom-dark.png', 'scroll-to-bottom-light.png'],
   },
   'tests/e2e/settings-acp-agents-list.e2e.ts': {
-    sourceSha256: '71431b35f09fb252e810ddeba2ec345dae901c69c453ff59dd7ab5275e4bb304',
+    sourceSha256: 'fa0f3bf081ce67f79504e92b6fda07364508dbdcd444028f517e839462a3489e',
     filenames: [
       'settings-acp-agents-list-codex-ready.png',
       'settings-acp-agents-list-page-2.png',
@@ -124,7 +124,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/settings-automations.e2e.ts': {
-    sourceSha256: 'fbdd02764a0dfab43472813022ccbba1a7dd34c9f7406bae1afa87cccf9ff78e',
+    sourceSha256: 'b8d08f4b6a5b11b91ed6573bb3e5271459a916a8a67a8d4ba4dc8355bab724b7',
     filenames: ['settings-automation-form-page-2.png', 'settings-automation-form.png'],
   },
   'tests/e2e/settings-classifiers-install.e2e.ts': {

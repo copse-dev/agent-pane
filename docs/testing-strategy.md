@@ -474,12 +474,24 @@ Rules for anything that lands in a captured frame:
   offsets and the subject's box to hold still (`waitForSettledLayout`) so a
   smooth scroll is never captured mid-flight; a sidebar that shows a thread the
   spec just created needs `waitForActiveThreadTitle()` first, because the
-  auto-title lands a round trip after the turn settles.
-- **Last resort.** When a value in frame comes from the wall clock and no
-  fixture can reach it — the trigger time of a run the real scheduler just
-  fired — `pinTextForCapture` swaps that one text node for a fixed string for
-  the duration of the capture and restores it. Keep the DOM assertion on the
-  real text alongside it; this is not a substitute for seeding.
+  auto-title lands a round trip after the turn settles. The sidebar's changes
+  glyph caches each read for 30s, and on Linux a write-sandboxed command (such as
+  creating a worker checkout) briefly leaves bubblewrap mount-point stubs in the
+  checkout, so read `threadChangeSummary` with `fresh: true` and wait for the
+  glyph to match it before capturing an idle thread. A capture in the middle of
+  a demo trace holds the trace at a checkpoint instead of racing its pacing:
+  bundle an entry that injects the trace player's `sleep` with
+  `buildDemoFixturePage` (`tests/demo/helpers/demo-fixture-page.ts`).
+- **Synced data.** Scheduled bot PRs rewrite data the app prints, such as the
+  intellect scores `sync-intellect.yml` writes into `packages/llm`. A capture
+  that shows one of those numbers changes every time the sync lands, so assert
+  the real text and pin the number for the capture (below), as
+  `model-intellect-equating.e2e.ts` does.
+- **Last resort.** When a value in frame comes from the wall clock or a
+  scheduled sync and no fixture can reach it — the trigger time of a run the
+  real scheduler just fired — `pinTextForCapture` swaps that one text node for
+  a fixed string for the duration of the capture and restores it. Keep the DOM
+  assertion on the real text alongside it; this is not a substitute for seeding.
 
 When you add an e2e screenshot, ask: _if I rebuild this on a different branch,
 on a different day, on a different machine — does any pixel move?_ If yes, pin

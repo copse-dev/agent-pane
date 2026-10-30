@@ -1,10 +1,12 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { at } from '@shared/array-utils.ts'
 import { setSetting } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { setApprovalHandler } from '../approval.ts'
 import {
+  formatRemoteAcpEnvApproval,
   gateRemoteAcpEnvForward,
   remoteAcpAuthRequiredHint,
   resetRemoteAcpEnvDecisionsForTests,
@@ -99,6 +101,40 @@ describe('gateRemoteAcpEnvForward', () => {
       assert.deepEqual(nextConfig.env, { ANTHROPIC_API_KEY: 'sk-next-run' })
     },
   )
+
+  it('presents forwarding as one-time setup for the named host, then stays quiet', async () => {
+    const prompts: { title: string; body: string }[] = []
+    setApprovalHandler((request) => {
+      prompts.push({ title: request.title, body: request.body })
+      return Promise.resolve({ approved: true, remember: false })
+    })
+    const turn = (): { command: string; cwd: string; env?: Record<string, string> } => ({
+      command: 'claude-code-acp',
+      cwd: REMOTE_ROOT,
+      env: { ANTHROPIC_API_KEY: 'sk-test' },
+    })
+    const first = turn()
+    const second = turn()
+    await gateRemoteAcpEnvForward('claude-acp', first)
+    await gateRemoteAcpEnvForward('claude-acp', second)
+
+    // Second turn on the same agent + host: no second prompt, key still forwarded.
+    assert.equal(prompts.length, 1)
+    assert.deepEqual(second.env, { ANTHROPIC_API_KEY: 'sk-test' })
+    // Named by the host's label, not its internal id, and scoped explicitly.
+    const prompt = at(prompts, 0)
+    assert.deepEqual(
+      prompt,
+      formatRemoteAcpEnvApproval({
+        agentId: 'claude-acp',
+        hostLabel: 'Dev',
+        envNames: ['ANTHROPIC_API_KEY'],
+      }),
+    )
+    assert.match(prompt.title, /to Dev\?$/)
+    assert.match(prompt.body, /one-time setup for claude-acp on Dev/)
+    assert.doesNotMatch(prompt.body, /sk-test/)
+  })
 
   it('coalesces concurrent prompts and remembers the shared answer', async () => {
     let prompts = 0

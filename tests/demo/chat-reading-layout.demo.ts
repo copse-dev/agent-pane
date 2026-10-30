@@ -1,5 +1,6 @@
 import { $, $$, browser, expect } from '@wdio/globals'
 import { parkPointer, saveAppScreenshot, saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
+import { buildDemoFixturePage } from './helpers/demo-fixture-page.ts'
 
 const PROSE = '.messages-list > .msg-assistant > .message-body > .message-text'
 
@@ -67,7 +68,9 @@ async function scrollToStart(): Promise<void> {
 }
 
 describe('assistant Reading layout in the real renderer', () => {
+  let toolCheckpointPage = ''
   before(async () => {
+    toolCheckpointPage = await buildDemoFixturePage('reading-layout-tool-checkpoint-fixture')
     await browser.url('/?scenario=chat-reading-layout&autoplay=0')
     await $(PROSE).waitForExist()
     await browser.execute(async () => {
@@ -124,6 +127,47 @@ describe('assistant Reading layout in the real renderer', () => {
     await saveElementScreenshot(`${PROSE} table`, 'chat-reading-layout-table.png')
     await $(`${PROSE} pre`).scrollIntoView({ block: 'center', inline: 'nearest' })
     await saveElementScreenshot(`${PROSE} pre`, 'chat-reading-layout-code.png')
+    await scrollToStart()
+  })
+
+  it('keeps code and table controls hidden at rest on desktop and visible on a touch screen', async () => {
+    const touchScreen = '(hover: none) and (pointer: coarse)'
+    const readControls = (): Promise<string[]> =>
+      browser.execute(
+        (selector) =>
+          [...document.querySelectorAll(selector)].map(
+            (control) => `${control.className} ${getComputedStyle(control).opacity}`,
+          ),
+        `${PROSE} .code-block-actions > button, ${PROSE} .table-copy`,
+      )
+    // Headless Chrome reports no pointing device (hover: none, pointer: none),
+    // which is not a touch screen: the frames captured above must not show
+    // Run/Copy over the code and table they belong to.
+    await parkPointer()
+    expect(await browser.execute((query) => matchMedia(query).matches, touchScreen)).toBe(false)
+    expect(await readControls()).toEqual(['code-block-run 0', 'code-block-copy 0', 'table-copy 0'])
+
+    // A touch screen has no hover, so the controls show without one (markdown.css).
+    await browser.sendCommand('Emulation.setTouchEmulationEnabled', {
+      enabled: true,
+      maxTouchPoints: 5,
+    })
+    try {
+      expect(await browser.execute((query) => matchMedia(query).matches, touchScreen)).toBe(true)
+      // They fade in over their opacity transition.
+      await browser.waitUntil(
+        async () =>
+          JSON.stringify(await readControls()) ===
+          JSON.stringify(['code-block-run 1', 'code-block-copy 1', 'table-copy 1']),
+        { timeout: 2_000, timeoutMsg: 'code and table controls should show on a touch screen' },
+      )
+      await $(`${PROSE} table`).scrollIntoView({ block: 'center', inline: 'nearest' })
+      await saveElementScreenshot(`${PROSE} table`, 'chat-reading-layout-table-touch.png')
+      await $(`${PROSE} pre`).scrollIntoView({ block: 'center', inline: 'nearest' })
+      await saveElementScreenshot(`${PROSE} pre`, 'chat-reading-layout-code-touch.png')
+    } finally {
+      await browser.sendCommand('Emulation.setTouchEmulationEnabled', { enabled: false })
+    }
     await scrollToStart()
   })
 
@@ -213,6 +257,13 @@ describe('assistant Reading layout in the real renderer', () => {
   })
 
   it('keeps the reading size through a real composer submission, tools, and stream completion', async () => {
+    // Same scenario, with its trace held after the read result: the streaming
+    // capture has one tool state, not whichever the 800ms read had reached.
+    await browser.url(toolCheckpointPage)
+    await $(PROSE).waitForExist()
+    await browser.execute(async () => {
+      await document.fonts.ready
+    })
     expect(await $$('.msg-user').length).toBe(1)
     expect(await $$(`${PROSE}.is-streaming`).length).toBe(0)
     await browser.execute(() => {
@@ -243,7 +294,31 @@ describe('assistant Reading layout in the real renderer', () => {
     expect(mixed.proseSize).toBe('15px')
     expect(mixed.proseLineHeight).toBe('24px')
     expect(parseFloat(mixed.toolSize)).toBeLessThan(16)
-    await saveAppScreenshot('chat-reading-layout-streaming.png')
+    try {
+      await browser.waitUntil(
+        () =>
+          browser.execute(() => {
+            const state: unknown = Reflect.get(window, '__copseToolCheckpoint')
+            return (
+              state !== null && typeof state === 'object' && Reflect.get(state, 'paused') === true
+            )
+          }),
+        { timeout: 15_000, timeoutMsg: 'The trace should pause after the read result' },
+      )
+      await expect($('.tool-card[data-status="done"]')).toHaveText(
+        expect.stringContaining('Read file'),
+      )
+      await expect($('.agent-activity-label')).toHaveText('Reasoning…')
+      await expect($(liveProse)).toHaveText('I will inspect the sample before explaining it.')
+      await saveAppScreenshot('chat-reading-layout-streaming.png')
+    } finally {
+      await browser.execute(() => {
+        const state: unknown = Reflect.get(window, '__copseToolCheckpoint')
+        if (state === null || typeof state !== 'object') return
+        const release: unknown = Reflect.get(state, 'release')
+        if (typeof release === 'function') Reflect.apply(release, state, [])
+      })
+    }
     await browser.waitUntil(async () => (await $$(liveProse).length) === 0, {
       timeout: 30_000,
       timeoutMsg: 'Response should finish streaming',

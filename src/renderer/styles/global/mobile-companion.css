@@ -97,3 +97,21 @@
   color: var(--text-secondary);
   overflow-wrap: break-word;
 }
+.mobile-companion-invite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.mobile-companion-invite input {
+  flex: 1 1 240px;
+  min-width: 0;
+  font-family: var(--font-mono);
+}
+.mobile-companion-name-summary strong {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.mobile-companion-name-warning {
+  color: var(--warning);
+}

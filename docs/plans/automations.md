@@ -65,6 +65,10 @@ eligible tool interrupts an automation thread, the approval dialog can add that
 exact tool to the owning schedule instead of making a global grant. Disconnected
 MCP selections stay visible and inert until the same exact tool returns.
 
+PR maintenance has separate opt-ins for publishing branches with pinned leases,
+merging with a head SHA guard, commenting, and resolving verified review threads.
+See [the maintenance tool contract](automation-pr-maintenance-tools.md).
+
 Everything else keeps the normal permission boundary: shell commands, file
 approvals, websites, sensitive-data reveals, ACP permission kinds, and model
 spend cannot be represented by an automation grant. Read-only mode and blocking
