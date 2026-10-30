@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { TranscriptReducer } from './transcript-reducer.ts'
-import type { SubagentMessage } from './wire-types.ts'
+import type { CommandPhase, SubagentMessage } from './wire-types.ts'
 
 function message(id: string): SubagentMessage {
   return { id, role: 'assistant', content: '', toolCalls: [] }
@@ -42,6 +42,28 @@ describe('transcript reducer', () => {
     })
     assert.equal(second.content, 'Next step')
     assert.deepEqual(second.toolCalls, [])
+  })
+  it("replaces a command call's phase with each update", () => {
+    const reducer = new TranscriptReducer()
+    const first = message('first')
+    reducer.reduce(
+      { type: 'tool_call', toolCall: { id: 'sh', name: 'run_shell', args: {} } },
+      () => first,
+    )
+    const phases: CommandPhase[] = [
+      { state: 'queued', since: 1, launched: false },
+      { state: 'running', since: 2, launched: true },
+    ]
+    for (const phase of phases)
+      reducer.reduce(
+        { type: 'tool_call_update', toolCallId: 'sh', commandPhase: phase },
+        () => first,
+      )
+    assert.deepEqual(first.toolCalls[0]?.commandPhase, {
+      state: 'running',
+      since: 2,
+      launched: true,
+    })
   })
   it('leaves grouping to its caller and finalizes only unfinished calls', () => {
     const reducer = new TranscriptReducer(),

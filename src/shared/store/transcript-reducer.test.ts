@@ -186,3 +186,25 @@ test('a user Stop is labelled by the hook, and an already-labelled outcome is ke
   reducer.apply('t1', { type: 'done' })
   assert.equal(messagesOf(store).at(-1)?.turnOutcome?.userAbort, 'stop')
 })
+
+test('a command phase update lands on its card in main and the window alike', () => {
+  const { main, window } = reduceBoth([
+    { type: 'tool_call', toolCall: { id: 'sh1', name: 'run_shell', args: { command: 'ls' } } },
+    {
+      type: 'tool_call_update',
+      toolCallId: 'sh1',
+      commandPhase: { state: 'awaiting_approval', since: 2, launched: false },
+    },
+    {
+      type: 'tool_call_update',
+      toolCallId: 'sh1',
+      commandPhase: { state: 'exited', since: 3, launched: true, exitCode: 2 },
+    },
+    { type: 'tool_result', toolCallId: 'sh1', result: 'Exited with code 2', isError: true },
+  ])
+  for (const store of [main, window]) {
+    const call = messagesOf(store).at(-1)?.toolCalls.at(0)
+    assert.equal(call?.status, 'error')
+    assert.deepEqual(call.commandPhase, { state: 'exited', since: 3, launched: true, exitCode: 2 })
+  }
+})
