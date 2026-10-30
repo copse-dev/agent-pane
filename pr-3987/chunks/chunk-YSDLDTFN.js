@@ -26450,7 +26450,6 @@ var init_tool_display = __esm({
       semantic_search: { running: "Searching codebase", done: "Searched codebase" },
       find_files: { running: "Finding files", done: "Found files" },
       web_search: { running: "Searching the web", done: "Searched the web" },
-      parallel_search: { running: "Searching with Parallel", done: "Searched with Parallel" },
       fetch_url: { running: "Fetching page", done: "Fetched page" },
       browser_preview: { running: "Opening preview", done: "Opened preview" },
       browser_navigate: { running: "Opening browser", done: "Opened browser" },
@@ -26520,7 +26519,7 @@ var init_tool_display = __esm({
         label: { running: "Searching", done: "Searched" }
       },
       web: {
-        tools: ["web_search", "parallel_search", "fetch_url"],
+        tools: ["web_search", "fetch_url"],
         label: { running: "Fetching from web", done: "Fetched from web" }
       },
       browser: {
@@ -27395,6 +27394,9 @@ function sidebarLastPromptAt(thread) {
     if (message !== void 0 && isHumanUserPrompt(message)) return message.createdAt;
   }
   return void 0;
+}
+function isAutomationPendingStart(thread) {
+  return thread.automationPendingStart === true || automationRunBlock(thread) === "pending-start";
 }
 function sidebarHasRun(thread) {
   if (thread.lastPromptAt !== void 0) return true;
@@ -47137,10 +47139,65 @@ function createMobileCompanionSection(api) {
       qrUrl
     )
   );
+  const localQrImage = el("div", { class: "mobile-companion-qr-image", "aria-hidden": "true" });
+  const localQrUrl = el("code", { class: "mobile-companion-qr-url" });
+  const localQrHost = el(
+    "div",
+    { id: "mobile-companion-local-qr", class: "mobile-companion-qr", hidden: true },
+    localQrImage,
+    el(
+      "div",
+      { class: "mobile-companion-qr-text" },
+      el("p", { class: "field-hint" }, "The local address works without DNS."),
+      localQrUrl
+    )
+  );
   const pairingHost = el("div", { class: "mobile-companion-pairing" });
   const deviceList = el("div", { class: "mobile-companion-device-list" });
+  const inviteInput = el("input", {
+    type: "text",
+    name: "mobileCompanionInvite",
+    autocomplete: "off",
+    spellcheck: "false",
+    maxlength: "64",
+    placeholder: "Invite code",
+    "aria-label": "Invite code"
+  });
+  const registerBtn = el("button", { type: "button", class: "ui-btn ui-btn-primary" }, "Get a name");
+  const inviteRow = el("div", { class: "mobile-companion-invite" }, inviteInput, registerBtn);
+  const nameIntro = el(
+    "p",
+    { class: "field-hint" },
+    "Get a name like lan.\u2026u.copse.me with a publicly trusted certificate, so a phone connects with nothing to install. The Copse names service only sees certificate requests and this Mac\u2019s private network address; the key that controls the name stays in this Mac\u2019s keychain."
+  );
+  const nameSummary = el("div", { class: "mobile-companion-name-summary" });
+  const dnsNote = el("div", { class: "mobile-companion-name-dns" });
+  const recheckBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact" },
+    "Check again"
+  );
+  const removeNameBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary" },
+    "Remove name"
+  );
+  const nameStatus = el("span", { class: "mobile-companion-name-status" });
+  const nameCard = el(
+    "fieldset",
+    { class: "mobile-companion-name" },
+    el("legend", {}, "Trusted address"),
+    nameIntro,
+    inviteRow,
+    nameSummary,
+    dnsNote,
+    el("div", { class: "settings-action-row" }, removeNameBtn),
+    nameStatus
+  );
   let lastPairingKey = null;
   let lastDevicesKey = null;
+  let lastState = null;
+  let qrChoice = null;
   function renderAddresses(state) {
     const previous = addressSelect.value;
     clear(addressSelect);
@@ -47149,16 +47206,19 @@ function createMobileCompanionSection(api) {
         el(
           "option",
           { value: candidate.address },
-          `${candidate.interfaceName} \u2014 ${candidate.address}`
+          `${candidate.interfaceName} \u2014 ${candidate.address}${candidate.virtual ? " (virtual or VPN)" : ""}`
         )
       );
     }
-    if (state.addresses.some((candidate) => candidate.address === previous))
-      addressSelect.value = previous;
+    const shown = state.address ?? previous;
+    if (state.addresses.some((candidate) => candidate.address === shown))
+      addressSelect.value = shown;
     const disabled = state.addresses.length === 0 || state.enabled;
     if (disabled) addressSelect.setAttribute("disabled", "");
     else addressSelect.removeAttribute("disabled");
-    addressHint.textContent = state.addresses.length === 0 ? "Connect this Mac to a private Wi-Fi or wired network first." : "Pick the interface your phone is on \u2014 usually Wi-Fi. Turn Mobile Companion off to change it.";
+    const selected = state.addresses.find((candidate) => candidate.address === addressSelect.value);
+    addressHint.classList.toggle("mobile-companion-name-warning", selected?.virtual === true);
+    addressHint.textContent = state.addresses.length === 0 ? "Connect this Mac to a private Wi-Fi or wired network first." : selected?.virtual ? `${selected.interfaceName} is a virtual-machine or VPN network; a phone on your Wi-Fi usually cannot reach it.${state.enabled ? " Turn Mobile Companion off to pick another." : ""}` : "Pick the interface your phone is on \u2014 usually Wi-Fi. Turn Mobile Companion off to change it.";
   }
   function renderConnection(state) {
     clear(connectionInfo);
@@ -47177,9 +47237,16 @@ function createMobileCompanionSection(api) {
       );
       return;
     }
+    const trustedName = state.localUrl !== null;
+    connectionInfo.append(el("p", {}, "Open ", el("strong", {}, state.url), " on your phone."));
     connectionInfo.append(
-      el("p", {}, "Open ", el("strong", {}, state.url), " on your phone."),
-      el(
+      trustedName && state.localUrl ? el(
+        "p",
+        { class: "field-hint" },
+        "Its certificate is publicly trusted, so there is nothing to install. If this network\u2019s DNS cannot answer for the name, open ",
+        el("strong", {}, state.localUrl),
+        " instead; that address needs the Copse Local Root on the phone, which can only vouch for private-network addresses, never a website."
+      ) : el(
         "p",
         { class: "field-hint" },
         "Transfer the trust certificate directly to your phone and install it there for a verified connection \u2014 it can only vouch for private-network addresses, never a website. Remove it from the phone\u2019s certificate settings when you no longer need it."
@@ -47196,14 +47263,102 @@ function createMobileCompanionSection(api) {
       });
       connectionInfo.append(revealBtn);
     }
-    connectionInfo.append(qrHost);
-    if (state.qrSvg) {
+    connectionInfo.append(qrHost, localQrHost);
+    const dnsBlocked = state.publicName.dns === "unresolved" || state.publicName.dns === "mismatch";
+    const showLocal = state.localUrl !== null && (qrChoice === "local" || qrChoice === null && dnsBlocked);
+    if (state.qrSvg && !showLocal) {
       qrImage.innerHTML = state.qrSvg;
       qrUrl.textContent = state.url;
       qrHost.hidden = false;
     } else {
       qrHost.hidden = true;
     }
+    if (state.localQrSvg && state.localUrl && showLocal) {
+      localQrImage.innerHTML = state.localQrSvg;
+      localQrUrl.textContent = state.localUrl;
+      localQrHost.hidden = false;
+    } else {
+      localQrHost.hidden = true;
+    }
+    if (state.localUrl) {
+      const swapBtn = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact" },
+        showLocal ? "Show the trusted-name QR" : "Show the local-address QR"
+      );
+      swapBtn.addEventListener("click", () => {
+        qrChoice = showLocal ? "name" : "local";
+        if (lastState) renderConnection(lastState);
+      });
+      connectionInfo.append(el("div", { class: "settings-action-row" }, swapBtn));
+    }
+  }
+  function renderPublicName(state) {
+    const name = state.publicName;
+    const registered2 = name.state !== "unregistered";
+    inviteRow.hidden = registered2;
+    nameIntro.hidden = registered2;
+    registerBtn.toggleAttribute("disabled", name.busy !== null);
+    registerBtn.textContent = name.busy === "registering" ? "Getting a name\u2026" : "Get a name";
+    removeNameBtn.parentElement?.toggleAttribute("hidden", !registered2);
+    removeNameBtn.toggleAttribute("disabled", name.busy !== null);
+    removeNameBtn.textContent = name.busy === "removing" ? "Removing\u2026" : "Remove name";
+    clear(nameSummary);
+    clear(dnsNote);
+    if (registered2 && name.hostname) {
+      nameSummary.append(el("p", {}, el("strong", {}, name.hostname)));
+      const certificate = name.certificate;
+      nameSummary.append(
+        el(
+          "p",
+          { class: "field-hint" },
+          certificate && certificate.notAfter > Date.now() ? `Certificate valid until ${formatTime(certificate.notAfter)}${certificate.renewAt ? ` \xB7 renews from ${formatTime(certificate.renewAt)}` : ""}. Copse renews it while open.` : "Waiting for a certificate. Copse keeps trying while it is open."
+        )
+      );
+      if (name.state === "dormant")
+        nameSummary.append(
+          el(
+            "p",
+            { class: "field-hint mobile-companion-name-warning" },
+            "This name went dormant after 30 days without a renewal and does not resolve. Copse renews it again while open."
+          )
+        );
+      if (name.state === "retired")
+        nameSummary.append(
+          el(
+            "p",
+            { class: "field-hint mobile-companion-name-warning" },
+            "The names service retired this name. Remove it, then register again with a new invite."
+          )
+        );
+      const bound = state.addresses.find((candidate) => candidate.address === state.address);
+      if (state.running && bound?.virtual)
+        nameSummary.append(
+          el(
+            "p",
+            { class: "field-hint mobile-companion-name-warning" },
+            `${name.hostname} points at ${bound.address} on ${bound.interfaceName}, a virtual-machine or VPN network that phones on your Wi-Fi cannot reach. Turn Mobile Companion off, pick your Wi-Fi network and turn it on again.`
+          )
+        );
+      if (state.running) renderDns(name.hostname, name.dns);
+    }
+    if (name.lastError) setInlineStatus(nameStatus, "error", name.lastError);
+    else nameStatus.replaceChildren();
+  }
+  function renderDns(hostname3, dns) {
+    if (dns === "ok" || dns === "unknown") return;
+    if (dns === "checking") {
+      dnsNote.append(el("p", { class: "field-hint" }, `Checking that ${hostname3} resolves here\u2026`));
+      return;
+    }
+    dnsNote.append(
+      el(
+        "p",
+        { class: "field-hint mobile-companion-name-warning" },
+        dns === "unresolved" ? `This network\u2019s DNS does not answer for ${hostname3}. Many routers drop public names that point at private addresses (DNS-rebind protection in dnsmasq, Pi-hole or OpenWrt), and a phone here will not reach the name either. Allow u.copse.me in the router\u2019s rebind settings, or use the local address.` : `This network\u2019s DNS answers ${hostname3} with a different address. Right after a network change that clears within a minute; if it stays, use the local address.`
+      ),
+      el("div", { class: "settings-action-row" }, recheckBtn)
+    );
   }
   function pairingKey(state) {
     return state.pairing?.id ?? null;
@@ -47218,7 +47373,7 @@ function createMobileCompanionSection(api) {
     const trustInput = el("input", { type: "checkbox" });
     const controlBtn = el(
       "button",
-      { type: "button", class: "ui-btn ui-btn-primary", disabled: true },
+      { type: "button", class: "ui-btn ui-btn-primary", disabled: !pairing.trustedName },
       "Allow control"
     );
     const readBtn = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Read only");
@@ -47230,7 +47385,8 @@ function createMobileCompanionSection(api) {
       void api.mobile.respondPairing("read", pairing.code, pairing.id);
     });
     controlBtn.addEventListener("click", () => {
-      if (trustInput.checked)
+      if (pairing.trustedName) void api.mobile.respondPairing("control", pairing.code, pairing.id);
+      else if (trustInput.checked)
         void api.mobile.respondPairing("control", pairing.code, pairing.id, trustInput.checked);
     });
     denyBtn.addEventListener("click", () => {
@@ -47245,14 +47401,17 @@ function createMobileCompanionSection(api) {
         el(
           "p",
           { class: "field-hint" },
-          "Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold. Confirm below that the Copse Local Root is installed and trusted on this phone before allowing control."
+          "Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold.",
+          pairing.trustedName ? " This phone connected over this Mac\u2019s trusted name, and its browser verified the certificate." : " Confirm below that the Copse Local Root is installed and trusted on this phone before allowing control."
         ),
-        el(
-          "label",
-          { class: "checkbox-label" },
-          trustInput,
-          " The Copse Local Root is installed and trusted on this phone"
-        ),
+        ...pairing.trustedName ? [] : [
+          el(
+            "label",
+            { class: "checkbox-label" },
+            trustInput,
+            " The Copse Local Root is installed and trusted on this phone"
+          )
+        ],
         el("div", { class: "settings-action-row" }, denyBtn, readBtn, controlBtn)
       )
     );
@@ -47323,14 +47482,19 @@ function createMobileCompanionSection(api) {
     for (const device of state.devices) deviceList.append(deviceRow(device));
   }
   function applyState(state) {
+    lastState = state;
     enabledInput.checked = state.enabled;
     renderAddresses(state);
     renderConnection(state);
+    renderPublicName(state);
     renderPairing(state);
     renderDevices(state);
     if (state.lastError) setInlineStatus(status, "error", state.lastError);
     else status.replaceChildren();
   }
+  addressSelect.addEventListener("change", () => {
+    if (lastState) renderAddresses(lastState);
+  });
   enabledInput.addEventListener("change", () => {
     void (async () => {
       if (enabledInput.checked) {
@@ -47346,6 +47510,31 @@ function createMobileCompanionSection(api) {
       await refresh();
     })();
   });
+  registerBtn.addEventListener("click", () => {
+    const invite = inviteInput.value.trim();
+    if (!invite) {
+      inviteInput.setAttribute("aria-invalid", "true");
+      inviteInput.focus();
+      return;
+    }
+    inviteInput.removeAttribute("aria-invalid");
+    void api.mobile.registerName(invite).then(() => {
+      if (lastState?.publicName.state !== "unregistered") inviteInput.value = "";
+    }).catch((error62) => {
+      setInlineStatus(nameStatus, "error", ipcErrorMessage(error62, "Could not get a name."));
+    });
+  });
+  inviteInput.addEventListener("input", () => {
+    inviteInput.removeAttribute("aria-invalid");
+  });
+  removeNameBtn.addEventListener("click", () => {
+    void api.mobile.removeName().catch((error62) => {
+      setInlineStatus(nameStatus, "error", ipcErrorMessage(error62, "Could not remove the name."));
+    });
+  });
+  recheckBtn.addEventListener("click", () => {
+    void api.mobile.recheckNameDns();
+  });
   async function refresh() {
     const state = await api.mobile.getState();
     applyState(state);
@@ -47355,7 +47544,7 @@ function createMobileCompanionSection(api) {
   });
   const root = el(
     "fieldset",
-    {},
+    { class: "mobile-companion" },
     el("legend", {}, "Mobile Companion"),
     el(
       "p",
@@ -47366,16 +47555,26 @@ function createMobileCompanionSection(api) {
     el("label", {}, "Network ", addressSelect),
     addressHint,
     connectionInfo,
+    nameCard,
     pairingHost,
     deviceList,
     status
   );
   return { root, refresh };
 }
+function formatTime(ms) {
+  return new Date(ms).toLocaleString(void 0, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
 var init_mobile_companion_section = __esm({
   "src/renderer/views/setup/mobile-companion-section.ts"() {
     init_helpers();
     init_inline_status();
+    init_ipc_error_message();
   }
 });
 
@@ -55022,11 +55221,46 @@ var init_sources_section = __esm({
   }
 });
 
+// src/shared/types/storage-cleanup.ts
+function emptyContainerStorage(error62 = null) {
+  return {
+    available: false,
+    error: error62,
+    busy: false,
+    totalBytes: 0,
+    snapshotsBytes: 0,
+    blobsBytes: 0,
+    containersBytes: 0,
+    volumesBytes: 0,
+    otherBytes: 0,
+    snapshotCount: 0,
+    unmatchedSnapshots: 0,
+    images: [],
+    builderRunning: false,
+    builderDiskBytes: 0,
+    builderCacheBytes: null,
+    builderReclaimableBytes: null
+  };
+}
+var storageAreaSchema, storageRetentionSchema, CONTAINER_STORAGE_ACTIONS, containerStorageActionSchema;
+var init_storage_cleanup = __esm({
+  "src/shared/types/storage-cleanup.ts"() {
+    init_zod();
+    storageAreaSchema = external_exports.enum(["runs", "builds"]);
+    storageRetentionSchema = external_exports.object({
+      enabled: external_exports.boolean(),
+      days: external_exports.number().int().min(1).max(365)
+    });
+    CONTAINER_STORAGE_ACTIONS = ["worker-images", "apple-images", "apple-builder"];
+    containerStorageActionSchema = external_exports.enum(CONTAINER_STORAGE_ACTIONS);
+  }
+});
+
 // src/renderer/views/storage-maintenance-panel.ts
 function createStorageMaintenancePanel(api) {
-  const element = el("fieldset", { id: "storage-maintenance" });
+  const element = el("div", { id: "storage-maintenance", class: "settings-mount" });
   element.innerHTML = `
-    <legend>Saved runs and build data</legend>
+    <fieldset id="storage-saved-data"><legend>Saved runs and build data</legend>
     <p class="settings-fieldset-desc">Across all projects. Clean up completed container runs or temporary Apple build files. Chats, attachments, source files and shared dependencies are kept.</p>
     <div class="settings-action-row"><span>Saved container runs</span><span id="storage-runs-size">Checking\u2026</span><button type="button" class="ui-btn ui-btn-secondary" id="storage-runs-clean">Clean up\u2026</button></div>
     <p class="field-hint">Removes repository snapshots, outputs and saved state. Incomplete runs and runs with teardown errors are kept.</p>
@@ -55034,7 +55268,18 @@ function createStorageMaintenancePanel(api) {
     <p class="field-hint">Removes Apple build outputs and package caches. They are recreated on the next build. Active runs and builds are kept.</p>
     <label class="checkbox-label"><input type="checkbox" id="storage-expiry-enabled"> Automatically clean up unused data</label>
     <label class="storage-project-field"><span>Keep unused data for</span><select id="storage-expiry-days" aria-label="Storage retention"><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">365 days</option></select></label>
-    <p class="field-hint">Checked when Copse starts and once a day. Older saved run outputs will no longer be available for review or continuation.</p>
+    <p class="field-hint">Checked when Copse starts and once a day. Older saved run outputs will no longer be available for review or continuation. Old unused Copse worker images are also removed; the current local worker is kept. Broader shared cache cleanup requires confirmation; Apple garbage collection also removes orphaned snapshots and blobs when deleting a Copse image.</p>
+    </fieldset>
+    <fieldset id="storage-containers" hidden>
+      <legend>Apple container storage</legend>
+      <p class="field-hint">Shared across Copse profiles and other Apple container applications on this Mac.</p>
+      <p id="storage-containers-status" class="field-hint" role="status"></p>
+      <dl id="storage-container-breakdown"></dl>
+      <p class="field-hint">Unmatched snapshots may include Apple infrastructure images. Apple decides which cached files are unused during cleanup. Allocated disk estimates include filesystem overhead and may count APFS shared blocks more than once. Removing files inside a sparse VM disk may not immediately shrink it.</p>
+      <div class="settings-action-row"><button type="button" class="ui-btn ui-btn-secondary" id="storage-worker-images-clean">Clean unused Copse images\u2026</button><button type="button" class="ui-btn ui-btn-secondary" id="storage-apple-images-clean">Clean shared image cache\u2026</button><button type="button" class="ui-btn ui-btn-secondary" id="storage-apple-builder-clean">Clean shared builder cache\u2026</button></div>
+      <p class="field-hint">The local worker image is kept. Cleanup is paused during Copse runs and builds, and requires other containers to be removed. Shared caches can be recreated by future builds.</p>
+      <details><summary>Cached images</summary><div id="storage-container-images"></div></details>
+    </fieldset>
     <p id="storage-maintenance-status" class="field-hint" role="status" aria-live="polite"></p>`;
   const status = qsRequired(element, "#storage-maintenance-status");
   const enabled = qsRequired(element, "#storage-expiry-enabled");
@@ -55049,6 +55294,53 @@ function createStorageMaintenancePanel(api) {
       const summary = state?.areas.find((entry) => entry.area === area);
       qsRequired(element, `#storage-${area}-clean`).disabled = working || !summary || summary.busy || summary.entries === 0;
     }
+    for (const action of CONTAINER_STORAGE_ACTIONS) {
+      const container = state?.containers;
+      qsRequired(element, `#storage-${action}-clean`).disabled = working || !container?.available || container.busy || action === "worker-images" && !container.images.some((image) => image.eligible) || action === "apple-builder" && (!container.builderRunning || container.builderCacheBytes === null);
+    }
+  }
+  function renderContainers() {
+    const container = state?.containers;
+    if (!container) return;
+    qsRequired(element, "#storage-containers").hidden = !container.available && !container.error;
+    qsRequired(element, "#storage-containers-status").textContent = container.error ? `Inventory unavailable: ${container.error}` : container.busy ? "Containers or builds are in use. Cleanup is paused." : "Apple container storage is ready.";
+    const breakdown = qsRequired(element, "#storage-container-breakdown");
+    breakdown.replaceChildren();
+    const rows = [
+      ["Total allocated", container.totalBytes],
+      [
+        `Unpacked snapshots (${String(container.snapshotCount)}; ${String(container.unmatchedSnapshots)} not matched to listed images)`,
+        container.snapshotsBytes
+      ],
+      ["Compressed image content", container.blobsBytes],
+      ["Builder VM disk", container.builderDiskBytes],
+      [
+        "Other container disks",
+        Math.max(0, container.containersBytes - container.builderDiskBytes)
+      ],
+      ["Workspace volumes", container.volumesBytes],
+      ["Kernels and other supporting files", container.otherBytes]
+    ];
+    for (const [label, bytes] of rows)
+      breakdown.append(el("dt", {}, label), el("dd", {}, formatByteSize(bytes)));
+    for (const [label, bytes] of [
+      ["BuildKit cache (inside the builder disk)", container.builderCacheBytes],
+      ["Unused BuildKit cache", container.builderReclaimableBytes]
+    ])
+      breakdown.append(
+        el("dt", {}, label),
+        el("dd", {}, bytes === null ? "Not reported" : formatByteSize(bytes))
+      );
+    const images = qsRequired(element, "#storage-container-images");
+    images.replaceChildren();
+    for (const image of container.images)
+      images.append(
+        el(
+          "p",
+          { class: "field-hint" },
+          `${image.name}: ${formatByteSize(image.bytes)} compressed \xB7 ${formatByteSize(image.snapshotBytes)} snapshot${image.eligible ? " \xB7 extra Copse image" : ""}`
+        )
+      );
   }
   async function refresh() {
     const token = ++generation;
@@ -55057,6 +55349,7 @@ function createStorageMaintenancePanel(api) {
       const next = await api.storage.maintenance();
       if (token !== generation) return;
       state = next;
+      renderContainers();
       enabled.checked = next.retention.enabled;
       if (![...days.options].some((option) => Number(option.value) === next.retention.days)) {
         days.add(new Option(`${String(next.retention.days)} days`, String(next.retention.days)));
@@ -55082,6 +55375,34 @@ function createStorageMaintenancePanel(api) {
     } catch (error62) {
       status.textContent = errorMessage(error62);
       await refresh();
+    } finally {
+      working = false;
+      controls();
+    }
+  }
+  async function cleanContainers(action) {
+    const detail = {
+      "worker-images": "Remove unused extra Copse worker images. The local worker is kept. Apple also collects orphaned snapshots and image blobs from its shared cache.",
+      "apple-images": "Remove dangling images, orphaned snapshots and image blobs from the shared Apple container cache. This can affect other applications and require images to be downloaded again. Tagged worker images are kept.",
+      "apple-builder": "Remove unused build cache from the shared Apple builder. Other applications may need to rebuild cached layers. The builder remains running and its sparse disk may retain allocated space."
+    };
+    if (!await showConfirmDialog({
+      message: "Clean Apple container storage?",
+      detail: detail[action],
+      confirmLabel: "Clean up",
+      danger: true
+    }))
+      return;
+    working = true;
+    generation++;
+    controls();
+    status.textContent = "Cleaning up\u2026";
+    try {
+      const result = await api.storage.containerCleanup(action);
+      await refresh();
+      status.textContent = result.skipped && result.removed === 0 ? "Cleanup paused: storage is in use or images are protected." : `Apple container cleanup finished. Reported disk allocation decreased by ${formatByteSize(result.bytes)}.`;
+    } catch (error62) {
+      status.textContent = errorMessage(error62);
     } finally {
       working = false;
       controls();
@@ -55120,11 +55441,16 @@ function createStorageMaintenancePanel(api) {
     qsRequired(element, `#storage-${area}-clean`).addEventListener("click", () => {
       void clean(area);
     });
+  for (const action of CONTAINER_STORAGE_ACTIONS)
+    qsRequired(element, `#storage-${action}-clean`).addEventListener("click", () => {
+      void cleanContainers(action);
+    });
   controls();
   return { element, refresh };
 }
 var init_storage_maintenance_panel = __esm({
   "src/renderer/views/storage-maintenance-panel.ts"() {
+    init_storage_cleanup();
     init_file_bytes();
     init_errors4();
     init_helpers();
@@ -63886,60 +64212,6 @@ var init_canvas_settings = __esm({
   }
 });
 
-// packages/agent/src/plugins/parallel-search-plugin.ts
-var PARALLEL_SEARCH_PLUGIN_ID, PARALLEL_SEARCH_TOOL_NAME, PARALLEL_SEARCH_MODE_SETTING_ID, PARALLEL_SEARCH_MODES, DEFAULT_PARALLEL_SEARCH_MODE, parallelSearchPlugin;
-var init_parallel_search_plugin = __esm({
-  "packages/agent/src/plugins/parallel-search-plugin.ts"() {
-    init_plugin_manifest();
-    PARALLEL_SEARCH_PLUGIN_ID = "copse.parallel-search";
-    PARALLEL_SEARCH_TOOL_NAME = "parallel_search";
-    PARALLEL_SEARCH_MODE_SETTING_ID = "mode";
-    PARALLEL_SEARCH_MODES = ["turbo", "basic", "advanced"];
-    DEFAULT_PARALLEL_SEARCH_MODE = "basic";
-    parallelSearchPlugin = definePlugin(
-      {
-        name: PARALLEL_SEARCH_PLUGIN_ID,
-        description: "Sends an objective and focused queries to Parallel\u2019s Search API and returns ranked URLs with token-dense excerpts. Requires a Parallel API key; Zero Data Retention is an account/contract property, not enabled by this plugin.",
-        trust: "first-party",
-        stability: "experimental",
-        tools: {
-          native: [PARALLEL_SEARCH_TOOL_NAME],
-          acpTools: [PARALLEL_SEARCH_TOOL_NAME]
-        },
-        ui: [
-          {
-            id: "parallel-search-credentials",
-            level: 3,
-            slot: "settings-plugin-detail",
-            title: "Parallel credentials"
-          }
-        ],
-        settings: {
-          [PARALLEL_SEARCH_MODE_SETTING_ID]: {
-            kind: "enum",
-            title: "Default search mode",
-            description: "Basic balances quality and latency. Turbo is fastest; Advanced spends more time on harder research.",
-            default: DEFAULT_PARALLEL_SEARCH_MODE,
-            options: PARALLEL_SEARCH_MODES
-          }
-        },
-        storage: { namespace: PARALLEL_SEARCH_PLUGIN_ID }
-      },
-      {
-        toolNames: [PARALLEL_SEARCH_TOOL_NAME],
-        uiContributions: [
-          {
-            id: "parallel-search-credentials",
-            level: 3,
-            slot: "settings-plugin-detail",
-            title: "Parallel credentials"
-          }
-        ]
-      }
-    );
-  }
-});
-
 // packages/agent/src/plugins/apple-development-plugin.ts
 var APPLE_DEVELOPMENT_PLUGIN_ID, APPLE_DEVELOPMENT_PANEL_ID, APPLE_DEVELOPMENT_TOOL_NAMES, APPLE_DEVELOPMENT_SUGGEST_SETTING_ID, appleDevelopmentPlugin;
 var init_apple_development_plugin = __esm({
@@ -65712,60 +65984,6 @@ var init_automation_plugin_settings = __esm({
   }
 });
 
-// src/renderer/views/parallel-search-plugin-settings.ts
-function createParallelSearchPluginSettings(api, options) {
-  const root = document.createElement("div");
-  root.className = "parallel-search-plugin-settings";
-  const reportKeyPresence = async () => {
-    const onKeyPresence = options?.onKeyPresence;
-    if (!onKeyPresence) return;
-    onKeyPresence(await api.settings.getKey("parallel"));
-  };
-  const heading = document.createElement("div");
-  heading.className = "plugin-settings-heading";
-  heading.textContent = "Credentials";
-  const keys = createApiKeysSection(api, {
-    legend: "Parallel account",
-    providers: ["parallel"],
-    validateOnInput: false
-  });
-  keys.root.classList.add("parallel-search-key-fieldset");
-  const note = document.createElement("p");
-  note.className = "parallel-search-notice";
-  note.textContent = "Copse calls api.parallel.ai directly\u2014no MCP server. Search objectives and queries leave this device. Zero Data Retention is not implied by this switch; it must be enabled in your Parallel account or contract.";
-  const saveButton = document.createElement("button");
-  saveButton.type = "button";
-  saveButton.className = "parallel-search-save-btn";
-  saveButton.textContent = "Save API key";
-  saveButton.addEventListener("click", () => {
-    saveButton.disabled = true;
-    void keys.saveKeys().then(reportKeyPresence).finally(() => {
-      saveButton.disabled = false;
-    });
-  });
-  const clearButton = document.createElement("button");
-  clearButton.type = "button";
-  clearButton.className = "parallel-search-clear-btn";
-  clearButton.textContent = "Clear saved key";
-  clearButton.addEventListener("click", () => {
-    clearButton.disabled = true;
-    void api.settings.setKey("parallel", "").then(() => keys.refreshKeyStatus()).then(reportKeyPresence).finally(() => {
-      clearButton.disabled = false;
-    });
-  });
-  const actions = document.createElement("div");
-  actions.className = "parallel-search-actions";
-  actions.append(saveButton, clearButton);
-  root.append(heading, keys.root, note, actions);
-  void keys.refreshKeyStatus().then(reportKeyPresence);
-  return root;
-}
-var init_parallel_search_plugin_settings = __esm({
-  "src/renderer/views/parallel-search-plugin-settings.ts"() {
-    init_api_keys_section();
-  }
-});
-
 // src/renderer/views/apple-development-panel.ts
 function activeOwner(store) {
   const state = store.getState();
@@ -66666,7 +66884,6 @@ function createPacksSection(overlay, api, store, readSettings, getActiveSection,
     const track = document.createElement("span");
     track.className = "toggle-switch-track";
     track.setAttribute("aria-hidden", "true");
-    let credentialLocked = false;
     toggle.addEventListener("change", () => {
       const settingsOpen = row.querySelector(".plugin-settings-fold")?.open;
       toggle.disabled = true;
@@ -66678,7 +66895,7 @@ function createPacksSection(overlay, api, store, readSettings, getActiveSection,
       }).catch(() => {
         toggle.checked = !toggle.checked;
       }).finally(() => {
-        toggle.disabled = credentialLocked && !toggle.checked;
+        toggle.disabled = false;
       });
     });
     toggleLabel.append(toggle, track);
@@ -66965,25 +67182,6 @@ function createPacksSection(overlay, api, store, readSettings, getActiveSection,
         createAppleDevelopmentPanel(store, api, {
           allowEnrollment: true,
           pluginEnabled: plugin.enabled
-        })
-      );
-    }
-    if (plugin.id === PARALLEL_SEARCH_PLUGIN_ID && plugin.contributions.ui.some(
-      (contribution) => contribution.level === 3 && contribution.slot === "settings-plugin-detail"
-    )) {
-      const gate = document.createElement("p");
-      gate.className = "field-hint plugin-credential-gate";
-      gate.hidden = true;
-      row.append(gate);
-      settingsFold.append(
-        createParallelSearchPluginSettings(api, {
-          onKeyPresence: (hasKey) => {
-            credentialLocked = !hasKey;
-            toggle.disabled = credentialLocked && !toggle.checked;
-            gate.hidden = hasKey;
-            gate.textContent = toggle.checked ? "Add a Parallel API key to let the agent use Parallel search." : "Add a Parallel API key to turn this plugin on.";
-            if (toggle.disabled) toggleLabel.title = "Add a Parallel API key to turn this plugin on";
-          }
         })
       );
     }
@@ -67500,10 +67698,8 @@ var init_packs_section = __esm({
     init_advisor_strategy_plugin();
     init_automations_plugin();
     init_canvas_settings();
-    init_parallel_search_plugin();
     init_apple_development_plugin();
     init_automation_plugin_settings();
-    init_parallel_search_plugin_settings();
     init_apple_development_panel();
     init_model_picker();
     init_model_options();
@@ -72267,6 +72463,8 @@ export {
   init_file_bytes,
   openAttachmentPreview,
   init_attachment_preview,
+  emptyContainerStorage,
+  init_storage_cleanup,
   T,
   init_marked_esm,
   excerptText,
@@ -72469,6 +72667,7 @@ export {
   init_automation_run_state,
   sidebarPrRefs,
   sidebarLastPromptAt,
+  isAutomationPendingStart,
   sidebarHasRun,
   init_sidebar_thread,
   projectDisplayName,
