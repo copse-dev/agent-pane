@@ -25,7 +25,7 @@ const dependencies: HostDependencies = {
   sandbox: {
     async initialize(config) {
       if (process.platform === 'win32' || !SandboxManager.isSupportedPlatform()) {
-        throw new Error('no ASRT backend')
+        throw new Error('no sandbox backend on this platform')
       }
       // The ask-callback never grants: the allowlist is decided before startup.
       await SandboxManager.initialize(config, () => Promise.resolve(false), false)
