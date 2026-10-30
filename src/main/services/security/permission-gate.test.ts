@@ -53,7 +53,7 @@ import {
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
-import { setSetting, setApiKey, deleteApiKey } from '../storage/settings.test-shim.ts'
+import { setSetting, setApiKey, deleteApiKey } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
 import { drainWriteQueue } from '../storage/write-queue.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -73,6 +73,9 @@ import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.t
 import type { AutomationPermission } from '@shared/types'
 import { getAutomationService } from '../automations/automation-service.ts'
 import { isMcpToolRemembered } from '../mcp/mcp-registry.ts'
+import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+
+installInMemorySecretCipher()
 
 const AUTOMATIONS_STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
 
@@ -120,7 +123,7 @@ describe('shell prompt audit evidence', () => {
     { cause: 'shell-sandbox-retry', prompt: promptUnsandboxedShell },
   ]) {
     it(`preserves structured reasons for ${cause}`, async () => {
-      setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+      await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
       const reasons = ['OS denied the requested network access']
       setApprovalHandler(async (request) => {
         assert.equal(request.cause, cause)
@@ -151,8 +154,8 @@ describe('package command approval scope', () => {
     const command =
       './node_modules/.bin/tsc --noEmit -p tsconfig.node.json 2>&1 | tail -60; echo "NODE_EXIT=$?"'
     const requests: Array<{ title: string; cause?: string; scope?: string }> = []
-    setSetting('safetyClassifierEnabled', false)
-    setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+    await setSetting('safetyClassifierEnabled', false)
+    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
     setApprovalHandler(async ({ title, cause, scope }) => {
       requests.push({ title, ...(cause ? { cause } : {}), ...(scope ? { scope } : {}) })
       return { approved: false, remember: false }
@@ -187,8 +190,8 @@ describe('package command approval scope', () => {
       setPermissionGateForTests(null)
       const root = mkdtempSync(join(tmpdir(), 'package-scope-'))
       const restore = setWorkspaceRootForTest(root)
-      setSetting('safetyClassifierEnabled', false)
-      setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+      await setSetting('safetyClassifierEnabled', false)
+      await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
       let prompts = 0
       setApprovalHandler(async (request) => {
         prompts += 1
@@ -218,8 +221,8 @@ describe('package command approval scope', () => {
     setPermissionGateForTests(null)
     const root = mkdtempSync(join(tmpdir(), 'package-scope-'))
     const restore = setWorkspaceRootForTest(root)
-    setSetting('safetyClassifierEnabled', false)
-    setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+    await setSetting('safetyClassifierEnabled', false)
+    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
     const requests: { title: string; cause: string | undefined }[] = []
     setApprovalHandler(async ({ title, cause }) => {
       requests.push({ title, cause })
@@ -346,7 +349,7 @@ describe('ensureToolPermitted', () => {
 
   it('blocks an explicit tool policy before prompts or auto-allow branches', async () => {
     setPermissionGateForTests(null)
-    setSetting('toolPermissionOverrides', { [copseToolPermissionId('read_skill')]: 'block' })
+    await setSetting('toolPermissionOverrides', { [copseToolPermissionId('read_skill')]: 'block' })
     let prompted = false
     setApprovalHandler(async () => {
       prompted = true
@@ -360,13 +363,13 @@ describe('ensureToolPermitted', () => {
       assert.equal(prompted, false)
     } finally {
       setApprovalHandler(null)
-      setSetting('toolPermissionOverrides', {})
+      await setSetting('toolPermissionOverrides', {})
     }
   })
 
   it('asks on every invocation even for a normally auto-allowed tool', async () => {
     setPermissionGateForTests(null)
-    setSetting('toolPermissionOverrides', { [copseToolPermissionId('read_skill')]: 'ask' })
+    await setSetting('toolPermissionOverrides', { [copseToolPermissionId('read_skill')]: 'ask' })
     let prompts = 0
     setApprovalHandler(async (request) => {
       prompts++
@@ -380,7 +383,7 @@ describe('ensureToolPermitted', () => {
       assert.equal(prompts, 2)
     } finally {
       setApprovalHandler(null)
-      setSetting('toolPermissionOverrides', {})
+      await setSetting('toolPermissionOverrides', {})
     }
   })
 
@@ -392,7 +395,7 @@ describe('ensureToolPermitted', () => {
       toolName: 'send_mail',
       origin: 'user',
     })
-    setSetting('toolPermissionOverrides', { [id]: 'allow' })
+    await setSetting('toolPermissionOverrides', { [id]: 'allow' })
     let prompted = false
     setApprovalHandler(async () => {
       prompted = true
@@ -403,7 +406,7 @@ describe('ensureToolPermitted', () => {
       assert.equal(prompted, false)
     } finally {
       setApprovalHandler(null)
-      setSetting('toolPermissionOverrides', {})
+      await setSetting('toolPermissionOverrides', {})
       clearMcpToolPermissionTargets()
     }
   })
@@ -411,7 +414,7 @@ describe('ensureToolPermitted', () => {
   it('rechecks block after a pending approval resolves', async () => {
     setPermissionGateForTests(null)
     const id = copseToolPermissionId('read_skill')
-    setSetting('toolPermissionOverrides', { [id]: 'ask' })
+    await setSetting('toolPermissionOverrides', { [id]: 'ask' })
     let release: (() => void) | undefined
     let started: (() => void) | undefined
     const promptStarted = new Promise<void>((resolve) => {
@@ -432,12 +435,12 @@ describe('ensureToolPermitted', () => {
         args: { name: 'demo-skill' },
       })
       await promptStarted
-      setSetting('toolPermissionOverrides', { [id]: 'block' })
+      await setSetting('toolPermissionOverrides', { [id]: 'block' })
       release?.()
       assert.equal(await pending, false)
     } finally {
       setApprovalHandler(null)
-      setSetting('toolPermissionOverrides', {})
+      await setSetting('toolPermissionOverrides', {})
     }
   })
 
@@ -455,8 +458,8 @@ describe('ensureToolPermitted', () => {
     const url = new URL('https://example.com/resource')
     const { assertWebOriginAllowed, clearWebOriginGrant, webOriginKey } =
       await import('./web-origin-policy.ts')
-    setSetting(WEB_ALLOWED_ORIGINS_SETTING, [])
-    setSetting('toolPermissionOverrides', { [id]: 'allow' })
+    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, [])
+    await setSetting('toolPermissionOverrides', { [id]: 'allow' })
     let prompts = 0
     setApprovalHandler(async () => {
       prompts++
@@ -474,8 +477,8 @@ describe('ensureToolPermitted', () => {
     } finally {
       clearWebOriginGrant(webOriginKey(url))
       setApprovalHandler(null)
-      setSetting('toolPermissionOverrides', {})
-      setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
+      await setSetting('toolPermissionOverrides', {})
+      await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
     }
   })
 
@@ -554,7 +557,7 @@ describe('ensureToolPermitted', () => {
 
   it('prompts for every host GUI launch even with a stale allow override', async () => {
     setPermissionGateForTests(null)
-    setSetting('toolPermissionOverrides', {
+    await setSetting('toolPermissionOverrides', {
       [copseToolPermissionId('launch_gui_app')]: 'allow',
     })
     let prompts = 0
@@ -581,7 +584,7 @@ describe('ensureToolPermitted', () => {
       assert.equal(prompts, 1)
     } finally {
       setApprovalHandler(null)
-      setSetting('toolPermissionOverrides', {})
+      await setSetting('toolPermissionOverrides', {})
     }
   })
 
@@ -707,15 +710,15 @@ describe('ensureToolPermitted', () => {
         assert.equal(await underAutomation(check), true)
         assert.equal(prompts, 0)
         assert.equal(await check(), false, 'ordinary threads do not inherit a schedule grant')
-        setSetting('toolPermissionOverrides', { [copseToolPermissionId(toolName)]: 'ask' })
+        await setSetting('toolPermissionOverrides', { [copseToolPermissionId(toolName)]: 'ask' })
         assert.equal(await underAutomation(check), false)
         assert.equal(prompts, 2)
-        setSetting('toolPermissionOverrides', { [copseToolPermissionId(toolName)]: 'block' })
+        await setSetting('toolPermissionOverrides', { [copseToolPermissionId(toolName)]: 'block' })
         assert.equal(await underAutomation(check), false)
         assert.equal(prompts, 2, 'blocked actions never prompt')
       } finally {
         setApprovalHandler(null)
-        setSetting('toolPermissionOverrides', {})
+        await setSetting('toolPermissionOverrides', {})
         storageSet(AUTOMATIONS_STORAGE_KEY, [])
       }
     })
@@ -865,7 +868,7 @@ describe('ensureToolPermitted', () => {
       { kind: 'mcp-tool', toolName },
       { kind: 'copse-action', toolName: 'gh_pr_approve' },
     ])
-    setSetting('toolPermissionOverrides', {
+    await setSetting('toolPermissionOverrides', {
       [mcpId]: 'ask',
       [copseToolPermissionId('gh_pr_approve')]: 'ask',
     })
@@ -889,7 +892,7 @@ describe('ensureToolPermitted', () => {
       assert.equal(prompts, 2)
     } finally {
       setApprovalHandler(null)
-      setSetting('toolPermissionOverrides', {})
+      await setSetting('toolPermissionOverrides', {})
       clearMcpToolPermissionTargets()
       storageSet(AUTOMATIONS_STORAGE_KEY, [])
     }
@@ -1196,7 +1199,7 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
     clearGitRemotesCache()
     const restore = setWorkspaceRootForTest(root)
     setWorkspaceTrusted(root, true)
-    setSetting(AUTO_APPROVAL_LEVEL_SETTING, level)
+    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, level)
     // This suite asserts the deterministic auto-approval assessor, not the
     // optional LM Studio scope classifier (which only adds connect timeouts here).
     await setSetting('safetyClassifierEnabled', false)
@@ -1214,7 +1217,7 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
       return { permitted, prompted }
     } finally {
       setApprovalHandler(null)
-      setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+      await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
       await setSetting('safetyClassifierEnabled', false)
       setWorkspaceTrusted(root, false)
       restore()
@@ -1312,7 +1315,7 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
     writeFileSync(join(root, '.git', 'config'), '[remote "origin"]\n\turl = https://e.com/x.git\n')
     clearGitRemotesCache()
     const restore = setWorkspaceRootForTest(root)
-    setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'remote-write')
+    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'remote-write')
     let prompted = false
     setApprovalHandler(() => {
       prompted = true
@@ -1327,7 +1330,7 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
       assert.equal(prompted, true)
     } finally {
       setApprovalHandler(null)
-      setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+      await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
       restore()
       clearGitRemotesCache()
       rmSync(root, { recursive: true, force: true })
@@ -1341,7 +1344,7 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
     const root = mkdtempSync(join(tmpdir(), 'copse-gate-deny-'))
     const restore = setWorkspaceRootForTest(root)
     setWorkspaceTrusted(root, true)
-    setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'remote-write')
+    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'remote-write')
     try {
       // `rm -rf` is destructive, so it is never a recognised shape either way.
       const permitted = await ensureShellCommandPermitted('rm -rf /', {
@@ -1351,7 +1354,7 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
       })
       assert.equal(permitted, false)
     } finally {
-      setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+      await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
       setWorkspaceTrusted(root, false)
       restore()
       rmSync(root, { recursive: true, force: true })
@@ -3464,8 +3467,8 @@ describe('browser network approvals', () => {
       branch: null,
     }
     const id = copseToolPermissionId('browser_navigate')
-    setSetting(WEB_ALLOWED_ORIGINS_SETTING, [])
-    setSetting('toolPermissionOverrides', { [id]: 'allow' })
+    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, [])
+    await setSetting('toolPermissionOverrides', { [id]: 'allow' })
     let prompts = 0
     setApprovalHandler(async () => {
       prompts++
@@ -3485,8 +3488,8 @@ describe('browser network approvals', () => {
       assert.equal(prompts, 0)
     } finally {
       setApprovalHandler(null)
-      setSetting('toolPermissionOverrides', {})
-      setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
+      await setSetting('toolPermissionOverrides', {})
+      await setSetting(WEB_ALLOWED_ORIGINS_SETTING, DEFAULT_WEB_ALLOWED_ORIGINS)
     }
   })
 
