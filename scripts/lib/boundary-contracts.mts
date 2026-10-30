@@ -13,8 +13,8 @@
 // that no longer decodes, a contract assertion — is a regression.
 
 import { z } from 'zod'
-import { redactSecrets } from '../../packages/llm/src/redact-secrets.ts'
-import { isRecord } from '../../packages/std/src/unknown-value.ts'
+import { redactSecrets } from '@copse/llm/redact-secrets.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 export const CONTRACT_OUTCOMES = [
   'pass',
