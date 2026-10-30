@@ -1,9 +1,11 @@
 # Side chats and thread links spike (design prototype #3538)
 
-> Draft spike, stacked on [#3502](https://github.com/copse-dev/agent-pane/pull/3502) (thread/PR
-> provenance and the SQLite projection). Not for merge as-is. It answers "what do we need to build
-> for the #3538 design", proves the two data-heavy pieces on the real store, and records what is
-> still open.
+> **Historical spike.** It answered "what do we need to build for the #3538 design" on top of
+> [#3502](https://github.com/copse-dev/agent-pane/pull/3502). Since then the side-chat data layer
+> landed in [#3595](https://github.com/copse-dev/agent-pane/pull/3595), with hydration and shared
+> rendering in [#3771](https://github.com/copse-dev/agent-pane/pull/3771) and
+> [#3943](https://github.com/copse-dev/agent-pane/pull/3943). Per-thread panel instances (#3557) and
+> the other open items below are tracked in issues #3554–#3563.
 
 ## Task brief
 

@@ -158,7 +158,9 @@ The catalog launches `copilot --acp --stdio`; ACP is in public preview. GitHub-h
 models use your Copilot plan and usage limits, while BYOK uses the selected
 provider's billing and requires a custom sandbox endpoint. See the
 [candidate review](acp-catalog-review.md) for evidence, confinement limits and
-verification status, including why OpenCode and Qwen Code remain deferred.
+verification status, including why OpenCode remains deferred. Qwen Code is now in the catalog
+(`qwen --acp`, added in [#3745](https://github.com/copse-dev/agent-pane/pull/3745)); the review
+records its auth and billing caveats.
 
 To discover agents beyond that reviewed list, choose **Add provider → An agent
 installed on this machine → Browse agent registry**. Search the public stable

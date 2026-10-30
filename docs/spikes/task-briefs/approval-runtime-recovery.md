@@ -1,5 +1,8 @@
 # Approval runtime coverage — #1680
 
+> **Archived task brief.** Moved from `docs/plans/` on 2026-10-30. Delivered in
+> [#2731](https://github.com/copse-dev/agent-pane/pull/2731); #1680 is closed.
+
 Baseline: `main` at `74a8a61c4b5571fab0e7e83d94cf6c0829e7e4a0`, 20 September 2026.
 Tracking: [#1680](https://github.com/copse-dev/agent-pane/issues/1680), Shipping quality roadmap R12.
 
@@ -54,8 +57,8 @@ screenshot inspection exposed this false positive after the initial green valida
 - Visual inspection confirms the shell prompt names the command and explains why approval is
   required; GitHub creation copy discloses the push; Guarded YOLO shows explicit opt-in,
   bounded confirmation, and the catastrophic denial reason. New reference evidence:
-  [shell approval](../../tests/e2e/screenshots/agent-tasks-shell-approval.png) and
-  [GitHub creation](../../tests/e2e/screenshots/github-write-approval-create-dialog.png).
+  [shell approval](../../../tests/e2e/screenshots/agent-tasks-shell-approval.png) and
+  [GitHub creation](../../../tests/e2e/screenshots/github-write-approval-create-dialog.png).
 - The oracle selects the three changed runtime suites (`mode=subset`) and the full unit tier.
 - `pnpm run check` passed: all static checks and 9,396 unit tests, zero failures or skips.
 - Initial [Linux CI](https://github.com/copse-dev/agent-pane/actions/runs/35538044046) passed all

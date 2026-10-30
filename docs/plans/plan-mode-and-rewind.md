@@ -2,7 +2,7 @@
 
 Tracking: [#1080](https://github.com/copse-dev/agent-pane/issues/1080)
 
-**Status: living plan workflow implemented; full static/unit and focused visual checks pass.** The optional
+**Status: Active — living plan workflow on `main` ([#3747](https://github.com/copse-dev/agent-pane/pull/3747)); prompt-boundary rewind remains.** The optional
 composer Plan control supports editable revisions, passage feedback, exact approval,
 a new implementation turn, and criterion-level completion evidence. Prompt-boundary
 rewind remains a later slice. Working briefs, execution todos and thread worktrees
@@ -13,7 +13,7 @@ reuses this editor and opens the same task-owned plan from a roadmap item. Plan
 actions now enter through the ordinary composer submission path so checkout
 preflight, attachments and draft consumption behave consistently with Send.
 
-### Current task brief
+### Task briefs from the #3747 delivery (historical)
 
 Review fixes: protect both new and saved drafts from accidental dismissal; accept
 formatted required headings; retain complete multiline acceptance criteria in the
