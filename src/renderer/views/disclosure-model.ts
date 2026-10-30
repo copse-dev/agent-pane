@@ -212,10 +212,11 @@ export function createDisclosureModel(
       const entry = entryFor(threadId, key)
       entry.failed = status === 'error'
       if (status === 'interrupted') entry.autoOpenedAt = null
-      if (kind !== 'entry') {
-        entry.running = status === 'running'
-        if (!entry.running) cancelReveal(key)
-      }
+      if (kind !== 'entry') entry.running = status === 'running'
+      // A pending reveal survives only while this update would still schedule
+      // it: work that stops running, or that loses eligibility while it runs
+      // (absorbed into a rollup or group), must not pop open when it fires.
+      if (kind !== 'tool' || status !== 'running' || !autoRevealEligible) cancelReveal(key)
 
       if (entry.mode !== 'auto') return entry.mode === 'user-open'
       if (kind === 'container') return false
