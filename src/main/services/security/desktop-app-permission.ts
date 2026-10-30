@@ -1,3 +1,5 @@
+import { COMPUTER_USE_TOOL_NAMES } from '@copse/agent/plugins/computer-use-plugin.ts'
+import { desktopAppApproval } from '@shared/approval-copy.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { requestApproval } from '../approval.ts'
 import { getSetting, updateSetting } from '../storage/settings.ts'
@@ -13,21 +15,19 @@ import {
  * Listing apps needs no approval. Every other tool names one app by bundle id,
  * and the first use of that app in a thread asks — reading an app's window is
  * already access to whatever it shows. "Always allow" persists the bundle id;
- * a plain approval lasts for the thread. Blocked apps throw before any prompt.
+ * a plain approval lasts for the thread, or for one call outside a thread.
+ * Blocked apps throw before any prompt. A tool-level allow policy does not
+ * skip this gate: it would otherwise grant every app at once.
  */
 
-export const DESKTOP_CONTROL_TOOL_PREFIX = 'desktop_'
+const DESKTOP_CONTROL_TOOLS: ReadonlySet<string> = new Set(COMPUTER_USE_TOOL_NAMES)
 const UNGATED_DESKTOP_TOOLS = new Set(['desktop_apps'])
 
 /** Thread id → bundle ids approved for that thread without "always allow". */
 const threadGrants = new Map<string, Set<string>>()
 
 export function isDesktopControlTool(toolName: string): boolean {
-  return toolName.startsWith(DESKTOP_CONTROL_TOOL_PREFIX)
-}
-
-function threadKey(): string {
-  return getThreadExecutionContext()?.threadId ?? 'no-thread'
+  return DESKTOP_CONTROL_TOOLS.has(toolName)
 }
 
 function describeAction(toolName: string, args: Record<string, unknown>): string {
@@ -62,46 +62,43 @@ export async function checkDesktopAppPermission(
   if (UNGATED_DESKTOP_TOOLS.has(toolName)) return true
   const record = isRecord(args) ? args : {}
   const bundleId = typeof record['app'] === 'string' ? record['app'] : ''
-  const key = threadKey()
+  const threadId = getThreadExecutionContext()?.threadId
   const decision = decideDesktopAppAccess({
     bundleId,
     allowedBundleIds: getSetting<string[]>(DESKTOP_ALLOWED_APPS_SETTING, []),
-    sessionBundleIds: threadGrants.get(key),
+    sessionBundleIds: threadId ? threadGrants.get(threadId) : undefined,
   })
   if (decision.action === 'deny') {
     throw new Error(`Computer use cannot touch this app: ${decision.reason}.`)
   }
-  if (explicitPolicy === 'allow') return true
   if (decision.action === 'allow' && explicitPolicy !== 'ask') return true
 
-  const action = describeAction(toolName, record)
+  const prompt = desktopAppApproval({
+    bundleId,
+    action: describeAction(toolName, record),
+    caution: decision.action === 'prompt' ? decision.caution : undefined,
+    allowRemember: explicitPolicy !== 'ask',
+    threadScoped: threadId !== undefined,
+  })
   const { approved, remember } = await requestApproval(
     {
-      title: `Let the agent use ${bundleId}?`,
-      body: [
-        `The agent wants to ${action}.`,
-        '',
-        'It works in the background through Accessibility and can see anything this app shows, including signed-in accounts. Text it reads from the app is treated as untrusted.',
-      ].join('\n'),
+      ...prompt,
       type: 'mcp',
       cause: 'desktop-app-control',
       subject: bundleId,
       scope: 'external',
-      approveLabel: 'Allow for this thread',
-      allowRemember: explicitPolicy !== 'ask',
-      rememberLabel: `Always allow ${bundleId}`,
     },
     signal,
   )
   if (!approved) return false
-  if (remember && explicitPolicy !== 'ask') {
+  if (remember && prompt.allowRemember) {
     await updateSetting<string[]>(DESKTOP_ALLOWED_APPS_SETTING, [], (saved) =>
       saved.includes(bundleId) ? saved : [...saved, bundleId],
     )
-  } else {
-    const grants = threadGrants.get(key) ?? new Set<string>()
+  } else if (threadId) {
+    const grants = threadGrants.get(threadId) ?? new Set<string>()
     grants.add(bundleId)
-    threadGrants.set(key, grants)
+    threadGrants.set(threadId, grants)
   }
   return true
 }

@@ -2,12 +2,15 @@
  * Which Mac apps computer use may touch, decided before the helper is asked to
  * read or drive anything.
  *
- * Two layers. A fixed block list covers apps whose keyboard is an ungated shell
- * (terminals), whose content is credentials (password managers), whose UI is a
- * security boundary (system authentication prompts), or which would let the
- * agent approve its own requests (Copse). No approval or saved grant reaches a
- * blocked app. Everything else needs a per-app approval, which the user can
- * remember as "always allow".
+ * Three layers. A fixed block list covers apps that run code outside the shell
+ * permission gate (terminals, script and automation tools), whose content is
+ * credentials (password managers), whose UI is a security boundary (System
+ * Settings, authentication prompts), or which would let the agent approve its
+ * own requests (Copse). No approval or saved grant reaches a blocked app.
+ * Cautioned apps can launch code indirectly (Finder opens scripts and apps the
+ * agent wrote): they prompt with a warning every thread and are never saved as
+ * "always allow". Everything else needs a per-app approval, which the user can
+ * remember.
  *
  * Pure so the permission gate and the tools apply the same decision.
  */
@@ -36,6 +39,14 @@ const BLOCKED_APPS: readonly BlockedApp[] = [
       'com.raphaelamorim.rio',
       'org.tabby',
     ],
+  },
+  {
+    reason: 'a script or automation tool, which runs code outside the shell permission gate',
+    bundleIds: ['com.apple.ScriptEditor2', 'com.apple.Automator', 'com.apple.shortcuts'],
+  },
+  {
+    reason: 'System Settings, where privacy and security permissions are changed',
+    bundleIds: ['com.apple.systempreferences'],
   },
   {
     reason: 'Copse itself, where the agent could approve its own requests',
@@ -71,6 +82,14 @@ const BLOCK_REASON_BY_BUNDLE_ID: ReadonlyMap<string, string> = new Map(
   BLOCKED_APPS.flatMap(({ reason, bundleIds }) => bundleIds.map((id) => [id, reason] as const)),
 )
 
+/** Apps that can start code the agent wrote, mapped to the warning shown in the prompt. */
+const CAUTION_BY_BUNDLE_ID: ReadonlyMap<string, string> = new Map([
+  [
+    'com.apple.finder',
+    'Finder can open scripts and apps, including ones the agent wrote, and they run outside the shell permission gate.',
+  ],
+])
+
 const BUNDLE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9.-]{0,254}$/
 
 export function isValidBundleId(bundleId: string): boolean {
@@ -80,7 +99,7 @@ export function isValidBundleId(bundleId: string): boolean {
 export type DesktopAppDecision =
   | { action: 'deny'; reason: string }
   | { action: 'allow' }
-  | { action: 'prompt' }
+  | { action: 'prompt'; caution?: string }
 
 export function decideDesktopAppAccess(input: {
   bundleId: string
@@ -92,8 +111,9 @@ export function decideDesktopAppAccess(input: {
   if (!isValidBundleId(bundleId)) return { action: 'deny', reason: 'not a valid bundle identifier' }
   const blocked = BLOCK_REASON_BY_BUNDLE_ID.get(bundleId)
   if (blocked) return { action: 'deny', reason: `${bundleId} is ${blocked}` }
-  if (input.allowedBundleIds.includes(bundleId) || input.sessionBundleIds?.has(bundleId)) {
-    return { action: 'allow' }
-  }
+  if (input.sessionBundleIds?.has(bundleId)) return { action: 'allow' }
+  const caution = CAUTION_BY_BUNDLE_ID.get(bundleId)
+  if (caution) return { action: 'prompt', caution }
+  if (input.allowedBundleIds.includes(bundleId)) return { action: 'allow' }
   return { action: 'prompt' }
 }

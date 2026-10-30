@@ -4,10 +4,14 @@ import { decideDesktopAppAccess, isValidBundleId } from './desktop-app-policy.ts
 import { desktopKeyCode } from './desktop-keys.ts'
 
 describe('decideDesktopAppAccess', () => {
-  it('denies terminals, Copse, password managers and security prompts even when saved as allowed', () => {
+  it('denies terminals, script tools, Copse, password managers and security UI even when saved as allowed', () => {
     for (const bundleId of [
       'com.apple.Terminal',
       'com.googlecode.iterm2',
+      'com.apple.ScriptEditor2',
+      'com.apple.Automator',
+      'com.apple.shortcuts',
+      'com.apple.systempreferences',
       'dev.copse.app',
       'dev.copse.desktop-control',
       'com.1password.1password',
@@ -37,6 +41,23 @@ describe('decideDesktopAppAccess', () => {
         bundleId: 'com.apple.Notes',
         allowedBundleIds: [],
         sessionBundleIds: new Set(['com.apple.Notes']),
+      }),
+      { action: 'allow' },
+    )
+  })
+
+  it('always prompts for Finder with a warning, unless approved for this thread', () => {
+    const decision = decideDesktopAppAccess({
+      bundleId: 'com.apple.finder',
+      allowedBundleIds: ['com.apple.finder'],
+    })
+    assert.equal(decision.action, 'prompt')
+    assert.match(decision.caution ?? '', /scripts and apps/)
+    assert.deepEqual(
+      decideDesktopAppAccess({
+        bundleId: 'com.apple.finder',
+        allowedBundleIds: [],
+        sessionBundleIds: new Set(['com.apple.finder']),
       }),
       { action: 'allow' },
     )
