@@ -466,6 +466,7 @@ dialog.settings-overlay::backdrop {
 .settings-section > fieldset,
 .settings-section > .settings-mount > fieldset,
 .settings-search-results > fieldset,
+.machines-settings > fieldset,
 .usage-section-root > fieldset {
   /* Flat, not a card: the group's own heading and the gap to the next group are
      what separate it, so its controls share the section's left edge instead of
@@ -496,6 +497,7 @@ dialog.settings-overlay::backdrop {
 .settings-section > fieldset > legend,
 .settings-section > .settings-mount > fieldset > legend,
 .settings-search-results > fieldset > legend,
+.machines-settings > fieldset > legend,
 .usage-section-root > fieldset > legend {
   /* A top-level group is the section's second tier, so it takes the display
      face too — one clear step down from the <h3>. Nested card titles (provider
@@ -518,6 +520,7 @@ dialog.settings-overlay::backdrop {
     .settings-section > fieldset,
     .settings-section > .settings-mount > fieldset,
     .settings-search-results > fieldset,
+    .machines-settings > fieldset,
     .usage-section-root > fieldset
   )
   > legend {
@@ -532,6 +535,7 @@ dialog.settings-overlay::backdrop {
     .settings-section > fieldset,
     .settings-section > .settings-mount > fieldset,
     .settings-search-results > fieldset,
+    .machines-settings > fieldset,
     .usage-section-root > fieldset
   )
   > legend
@@ -2556,8 +2560,8 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   gap: var(--spacing-sm);
   padding-top: var(--spacing-sm);
 }
-/* Names a block *inside* the fold ("Schedules", the Parallel Search key) — the
-   summary already names the fold itself, so these stay captions. */
+/* Names a block *inside* the fold ("Schedules") — the summary already names
+   the fold itself, so these stay captions. */
 .plugin-settings-heading {
   font-size: var(--font-size-xs);
   font-weight: 600;
@@ -2596,56 +2600,11 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   min-width: 180px;
 }
 
-.parallel-search-plugin-settings {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-  margin-top: var(--spacing-xs);
-  border-top: 1px solid var(--border);
-  padding-top: var(--spacing-sm);
-}
-.parallel-search-key-fieldset {
-  margin: 0;
-}
-.parallel-search-notice {
-  margin: 0;
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-}
-.parallel-search-actions {
-  display: flex;
-  gap: var(--spacing-xs);
-}
-.parallel-search-save-btn,
-.parallel-search-clear-btn {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  cursor: pointer;
-}
-.parallel-search-save-btn:hover:not(:disabled),
-.parallel-search-clear-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-}
-.parallel-search-save-btn:disabled,
-.parallel-search-clear-btn:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
 /* Why a bundled plugin ships switched off. Plain hint colour, not a warning:
    the plugin is safe to turn on, the note only sets expectations. */
 .plugin-default-off-note {
   margin: 0;
   font-size: var(--font-size-xs);
-}
-/* Why a credential-gated plugin's toggle is inert (or on-but-inactive). Warning
-   tinted: the plugin cannot contribute its tool in this state. */
-.plugin-credential-gate {
-  margin: 0;
-  font-size: var(--font-size-xs);
-  color: var(--warning, #d29922);
 }
 .plugin-toggle-input:disabled + .toggle-switch-track {
   cursor: not-allowed;
@@ -3342,6 +3301,47 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 #sources-skills-status {
   margin-left: var(--spacing-sm);
+}
+
+#storage-container-breakdown {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--spacing-sm) var(--spacing-lg);
+  font-size: var(--font-size-sm);
+}
+#storage-container-breakdown dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+#storage-container-images {
+  overflow-wrap: anywhere;
+}
+/* Machine connections share the Settings field and button recipes. */
+.machines-settings textarea {
+  width: min(100%, 38rem);
+  min-height: 5rem;
+  resize: vertical;
+}
+.machine-row {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.machine-row h4 {
+  margin: 0 0 6px;
+  overflow-wrap: anywhere;
+}
+.machine-client-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0;
+}
+.machine-share-models {
+  margin: 12px 0;
+}
+.machine-status {
+  margin: 12px 0;
 }
 /* Keep a failed save readable beside the sticky actions. */
 #settings-save-status {

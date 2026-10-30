@@ -133,6 +133,10 @@
       "smoke": null
     },
     {
+      "prefix": "src/main/services/machines/",
+      "smoke": null
+    },
+    {
       "prefix": "src/main/services/mcp/",
       "smoke": null
     },
@@ -338,6 +342,14 @@
     },
     {
       "prefix": "src/shared/",
+      "smoke": null
+    },
+    {
+      "prefix": "packages/remote-protocol/src/",
+      "smoke": null
+    },
+    {
+      "prefix": "src/main/services/remote-names/",
       "smoke": null
     }
   ]

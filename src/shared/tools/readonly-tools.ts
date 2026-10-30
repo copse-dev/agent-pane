@@ -35,6 +35,7 @@ export const READONLY_AGENT_TOOLS = new Set<string>([
   // instead block a read-only reviewer agent for no safety gain — unlike
   // `delegate_step`, whose whole purpose is to write files.
   'task',
+  'run_readonly_workers',
   'ask_user',
   // Thread-owned review artifacts change no workspace or external state.
   'update_thread_plan',

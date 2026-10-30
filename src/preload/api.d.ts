@@ -13,6 +13,7 @@ import type {
 import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
 import type { ClassifierClient } from '@copse/llm/classifiers/types.ts'
 import type { LocalClassifierClient } from '@shared/local-classifiers.ts'
+import type { EnvironmentSetupClient } from '@shared/environment-setup.ts'
 import type {
   ContextBreakdown,
   MachineAgentRunRequest,
@@ -180,6 +181,14 @@ export interface DetectedEnvKey {
 }
 
 export interface ApiClient {
+  clientActions: {
+    claim: (id: string) => Promise<boolean>
+    publish: (offer: import('@shared/client-actions.ts').ClientActionOffer | null) => Promise<void>
+    onInvoke: (
+      handler: (command: import('@shared/client-actions.ts').ClientActionCommand) => void,
+    ) => () => void
+    reply: (id: string, accepted: boolean) => Promise<void>
+  }
   threadPrompts: {
     revokeAccess: (threadId: string, access: 'read' | 'send') => Promise<void>
     onPrompt: (
@@ -211,6 +220,11 @@ export interface ApiClient {
       rootTrusted?: boolean,
     ) => Promise<void>
     revealCertificate: () => Promise<void>
+    /** Redeem an invite for this Mac's publicly trusted name; progress arrives as state. */
+    registerName: (invite: string) => Promise<void>
+    /** Delete this Mac's name from the names service and forget its device key. */
+    removeName: () => Promise<void>
+    recheckNameDns: () => Promise<void>
     onChat: (
       handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void,
     ) => () => void
@@ -622,6 +636,9 @@ export interface ApiClient {
     reopenArtefact: (projectId: string, threadId: string, title: string) => Promise<boolean>
   }
   storage: {
+    containerCleanup: (
+      action: import('@shared/types/storage-cleanup.ts').ContainerStorageAction,
+    ) => Promise<import('@shared/types/storage-cleanup.ts').StorageCleanupResult>
     maintenance: () => Promise<import('@shared/types/storage-cleanup.ts').StorageMaintenanceState>
     cleanup: (
       area: import('@shared/types/storage-cleanup.ts').StorageArea,
@@ -985,8 +1002,10 @@ export interface ApiClient {
     onUiScaleZoomOut: (handler: () => void) => () => void
     onUiScaleReset: (handler: () => void) => () => void
   }
+  machines: import('@shared/machines.ts').MachinesClient
   classifiers: ClassifierClient
   localClassifiers: LocalClassifierClient
+  environmentSetup: EnvironmentSetupClient
   settings: {
     getSnapshot: () => Promise<SettingsSnapshot>
     update: (changes: SettingsUpdate) => Promise<void>
@@ -1086,7 +1105,6 @@ export interface ApiClient {
   }
   appIcon: {
     apply: () => Promise<void>
-    setAutomationMode: (active: boolean) => Promise<void>
   }
   about: {
     /** The app version and the third-party licence report the build shipped. */

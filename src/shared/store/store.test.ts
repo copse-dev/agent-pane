@@ -85,3 +85,98 @@ describe('store', () => {
     assert.equal(updatedId, 'tc1')
   })
 })
+
+describe('store.select', () => {
+  it('notifies with the next and previous value when the selected state changes', () => {
+    const store = createStore()
+    const calls: [boolean, boolean][] = []
+    store.select(
+      (s) => s.projectsPaneOpen,
+      (next, prev) => calls.push([next, prev]),
+    )
+    store.setState({ projectsPaneOpen: false })
+    assert.deepEqual(calls, [[false, true]])
+  })
+
+  it('does not notify on subscribe or when the selected value is unchanged', () => {
+    const store = createStore()
+    let count = 0
+    store.select(
+      (s) => s.rightPanelMode,
+      () => count++,
+    )
+    store.setState({ filesPaneOpen: true })
+    store.setState({ rightPanelMode: 'explorer' })
+    assert.equal(count, 0)
+  })
+
+  it('uses the supplied equality to decide whether a derived value changed', () => {
+    const store = createStore({ rightPanelMode: 'browser' })
+    const seen: string[][] = []
+    store.select(
+      (s) => [s.rightPanelMode, String(s.filesPaneOpen)],
+      (next) => seen.push(next),
+      (a, b) => a.length === b.length && a.every((v, i) => v === b[i]),
+    )
+    // A fresh array every time: without the equality this would always fire.
+    store.setState({ theme: 'light' })
+    store.setState({ filesPaneOpen: true })
+    assert.deepEqual(seen, [['browser', 'true']])
+  })
+
+  it('stops notifying after unsubscribe', () => {
+    const store = createStore()
+    let count = 0
+    const unsub = store.select(
+      (s) => s.activeThreadId,
+      () => count++,
+    )
+    store.setState({ activeThreadId: 'a' })
+    unsub()
+    store.setState({ activeThreadId: 'b' })
+    assert.equal(count, 1)
+  })
+
+  it('notifies every subscriber, and one unsubscribing mid-notify does not skip the rest', () => {
+    const store = createStore()
+    const order: string[] = []
+    const unsubFirst = store.select(
+      (s) => s.filesPaneOpen,
+      () => {
+        order.push('first')
+        unsubSecond()
+      },
+    )
+    const unsubSecond = store.select(
+      (s) => s.filesPaneOpen,
+      () => order.push('second'),
+    )
+    store.select(
+      (s) => s.filesPaneOpen,
+      () => order.push('third'),
+    )
+    store.setState({ filesPaneOpen: true })
+    assert.deepEqual(order, ['first', 'third'])
+    unsubFirst()
+    store.setState({ filesPaneOpen: false })
+    assert.deepEqual(order, ['first', 'third', 'third'])
+  })
+
+  it('notifies once when a listener writes state that another subscriber reads', () => {
+    const store = createStore()
+    const seen: (string | null)[] = []
+    store.select(
+      (s) => s.activeProjectId,
+      (projectId) => {
+        store.setState({ activeThreadId: projectId ? `${projectId}-thread` : null })
+      },
+    )
+    store.select(
+      (s) => s.activeThreadId,
+      (threadId) => seen.push(threadId),
+    )
+    store.setState({ activeProjectId: 'p1' })
+    assert.deepEqual(seen, ['p1-thread'])
+    assert.equal(store.getState().activeThreadId, 'p1-thread')
+  })
+})

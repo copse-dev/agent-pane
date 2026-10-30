@@ -32,6 +32,14 @@ export function e2eGitBranch(): string {
  */
 export const E2E_SHELL = join(process.cwd(), 'tests/e2e/fixtures/e2e-bash-shell.sh')
 
+/**
+ * The names API every e2e app registers with (`COPSE_NAMES_API_URL`): loopback,
+ * so a run can never reach the live api.copse.dev. Nothing listens here unless
+ * a spec starts `tests/e2e/helpers/fake-names-api.ts` on `E2E_NAMES_API_PORT`.
+ */
+export const E2E_NAMES_API_PORT = 42781
+export const E2E_NAMES_API_URL = `http://127.0.0.1:${String(E2E_NAMES_API_PORT)}`
+
 /** Patch electron-shell env before `browser.reloadSession()` (see bootstrap.cjs). */
 export function writeE2eEnv(overrides: Record<string, string | undefined>): void {
   const env: Record<string, string> = {

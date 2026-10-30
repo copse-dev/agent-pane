@@ -16,6 +16,23 @@ exposePerfBridge()
 // missing, extra, or mistyped member fails typecheck here, and the API protocol
 // schema (`pnpm run gen:api-protocol`) is generated from this binding.
 const api: ApiClient = {
+  clientActions: {
+    claim: (id) => ipcRenderer.invoke('client-actions:claim', id),
+    publish: (offer) => ipcRenderer.invoke('client-actions:publish', offer),
+    reply: (id, accepted) => ipcRenderer.invoke('client-actions:reply', id, accepted),
+    onInvoke: (handler) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        command: import('@shared/client-actions.ts').ClientActionCommand,
+      ): void => {
+        handler(command)
+      }
+      ipcRenderer.on('client-actions:invoke', listener)
+      return () => {
+        ipcRenderer.off('client-actions:invoke', listener)
+      }
+    },
+  },
   threadPrompts: {
     revokeAccess: (threadId, access) =>
       ipcRenderer.invoke('thread-prompts:revoke-access', threadId, access),
@@ -64,6 +81,9 @@ const api: ApiClient = {
       rootTrusted?: boolean,
     ) => ipcRenderer.invoke('mobile:respond-pairing', decision, code, pairingId, rootTrusted),
     revealCertificate: () => ipcRenderer.invoke('mobile:reveal-certificate'),
+    registerName: (invite: string) => ipcRenderer.invoke('mobile:register-name', invite),
+    removeName: () => ipcRenderer.invoke('mobile:remove-name'),
+    recheckNameDns: () => ipcRenderer.invoke('mobile:recheck-name-dns'),
     onChat: (handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
@@ -840,6 +860,8 @@ const api: ApiClient = {
       ipcRenderer.invoke('canvas:reopen-artefact', projectId, threadId, title),
   },
   storage: {
+    containerCleanup: (action: import('@shared/types/storage-cleanup.ts').ContainerStorageAction) =>
+      ipcRenderer.invoke('storage:container-cleanup', action),
     maintenance: () => ipcRenderer.invoke('storage:maintenance'),
     cleanup: (area: import('@shared/types/storage-cleanup.ts').StorageArea) =>
       ipcRenderer.invoke('storage:cleanup', area),
@@ -1191,6 +1213,15 @@ const api: ApiClient = {
     authStatus: (ids: string[]) => ipcRenderer.invoke('acp:auth-status', ids),
     autoSetup: () => ipcRenderer.invoke('acp:auto-setup'),
   },
+  machines: {
+    state: () => ipcRenderer.invoke('machines:state'),
+    pair: (code: string) => ipcRenderer.invoke('machines:pair', code),
+    remove: (id: string) => ipcRenderer.invoke('machines:remove', id),
+    share: (config: import('@shared/machines.ts').MachineSharing) =>
+      ipcRenderer.invoke('machines:share', config),
+    invitation: () => ipcRenderer.invoke('machines:invitation'),
+    revoke: (id: string) => ipcRenderer.invoke('machines:revoke', id),
+  },
   classifiers: {
     list: () => ipcRenderer.invoke('classifiers:list'),
     save: (profile: ClassifierProfile) => ipcRenderer.invoke('classifiers:save', profile),
@@ -1208,6 +1239,14 @@ const api: ApiClient = {
     stop: (id: string) => ipcRenderer.invoke('local-classifiers:stop', id),
     uninstall: (id: string) => ipcRenderer.invoke('local-classifiers:uninstall', id),
     connect: (id: string) => ipcRenderer.invoke('local-classifiers:connect', id),
+  },
+  environmentSetup: {
+    status: () => ipcRenderer.invoke('environment-setup:status'),
+    review: () => ipcRenderer.invoke('environment-setup:review'),
+    apply: (reviewId: string, suggestionIds: string[]) =>
+      ipcRenderer.invoke('environment-setup:apply', reviewId, suggestionIds),
+    undo: (undoId: string) => ipcRenderer.invoke('environment-setup:undo', undoId),
+    dismiss: (forever: boolean) => ipcRenderer.invoke('environment-setup:dismiss', forever),
   },
   settings: {
     getSnapshot: () => ipcRenderer.invoke('settings:get-snapshot'),
@@ -1267,8 +1306,6 @@ const api: ApiClient = {
   },
   appIcon: {
     apply: () => ipcRenderer.invoke('app-icon:apply'),
-    setAutomationMode: (active: boolean) =>
-      ipcRenderer.invoke('app-icon:set-automation-mode', active),
   },
   about: {
     getInfo: () => ipcRenderer.invoke('about:get-info'),

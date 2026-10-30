@@ -1058,6 +1058,7 @@ let singleton: TaskSupervisor | null = null
 export function getTaskSupervisor(): TaskSupervisor {
   singleton ??= new TaskSupervisor({
     cronEnabled: (): boolean => getDefaultPluginRegistry().isEnabled(AUTOMATIONS_PLUGIN_ID),
+    concurrencyClassLimits: { native_readonly_worker: 2 },
   })
   return singleton
 }

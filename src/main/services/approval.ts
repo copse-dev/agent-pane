@@ -108,6 +108,8 @@ export interface ApprovalRequest {
   bodyFooter?: string
   type: 'shell' | 'mcp' | 'web' | 'pii' | 'review-spend'
   allowRemember?: boolean
+  /** Host producer certifies that approval authorizes only this concrete request. */
+  interactiveClientApproval?: 'once'
   rememberLabel?: string
   /** Action label for one request. Batches retain a neutral count label. */
   approveLabel?: string
@@ -186,6 +188,16 @@ export interface ApprovalRequest {
   toolCallId?: string
   /** Exact host bridge request identity; audit-only, never an ACP card ID. */
   bridgeExecutionId?: string
+}
+
+/** Explicit host capabilities, never a display title or a client-supplied tool label. */
+export function supportsInteractiveClientApproval(req: ApprovalRequest): boolean {
+  return (
+    (req.type === 'shell' && req.subject === SHELL_DECISION_SUBJECT) ||
+    (req.interactiveClientApproval === 'once' &&
+      req.allowRemember === false &&
+      req.turnTreeLeaseDefault !== true)
+  )
 }
 
 export interface ApprovalResponse {
@@ -626,19 +638,26 @@ export function pendingApprovalRequestsForThread(
 async function deferInsteadOfPrompting(
   req: ApprovalRequest,
   threadId: string,
+  projectId: string | undefined,
   prompt: () => Promise<ApprovalResponse>,
 ): Promise<ApprovalResponse> {
   let entryId: string
   try {
-    const entry = await deferApproval({
-      threadId,
-      kind: req.type,
-      title: req.title,
-      subject: req.subject ?? req.title,
-      ...(req.cause !== undefined ? { cause: req.cause } : {}),
-      ...(req.reasons?.length ? { reasons: req.reasons } : {}),
-      ...(req.scope !== undefined ? { scope: req.scope } : {}),
-    })
+    const entry = await deferApproval(
+      {
+        threadId,
+        kind: req.type,
+        title: req.title,
+        subject: req.subject ?? req.title,
+        ...(req.cause !== undefined ? { cause: req.cause } : {}),
+        ...(req.reasons?.length ? { reasons: req.reasons } : {}),
+        ...(req.scope !== undefined ? { scope: req.scope } : {}),
+      },
+      // The run's own project, not whichever one the window has open: a
+      // schedule can fire in a background project, and Context and the status
+      // tool read the queue by the thread's project.
+      projectId !== undefined ? { projectId } : {},
+    )
     entryId = entry.id
   } catch (error) {
     console.warn('[approval] could not queue a deferral; prompting instead:', error)
@@ -676,7 +695,7 @@ export function requestApproval(
   // them growing a second code path — and without a gate being able to forget.
   const deferringThread = getActiveRunThread()
   if (deferringThread !== null && isDeferralModeActive(deferringThread)) {
-    return deferInsteadOfPrompting(req, deferringThread, () =>
+    return deferInsteadOfPrompting(req, deferringThread, context?.projectId, () =>
       requestApprovalInteractive(req, signal),
     )
   }
@@ -1026,8 +1045,7 @@ export function initApproval(
                   // Other prompts can grant persistent authority on approved alone
                   // (for example provider-host consent). Keep them desktop/mobile-only
                   // until their semantics have a complete interactive-client projection.
-                  interactiveClientSupported:
-                    req.type === 'shell' && req.subject === SHELL_DECISION_SUBJECT,
+                  interactiveClientSupported: supportsInteractiveClientApproval(req),
                 },
               )
             : (): void => {}

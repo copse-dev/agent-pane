@@ -1406,6 +1406,11 @@ async function nulSeparatedPaths(cwd: string, args: string[]): Promise<Set<strin
  * Every signal must agree, including that the staged paths are exactly the
  * picked commit's paths, so a rebase stopped for any other reason keeps the
  * plain `--continue`.
+ *
+ * Git 2.56 stopped rescheduling such a pick: it stops on it the way it does
+ * for a conflict, recording `stopped-sha` and the commit message, and the
+ * plain `--continue` commits the staged changes itself. That stop never
+ * matches here, which is right.
  */
 async function uncommittedRebasePick(
   checkout: string,

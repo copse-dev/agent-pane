@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
+  E2E_WORKSPACE_COMMIT_DATE,
   resetUserData,
   seedFooterBranchFixture,
   seedFooterBranchMismatchFixture,
@@ -84,8 +85,18 @@ describe('footer branch status for a detached thread worktree', function () {
   let projectRoot = ''
   let worktreeRoot = ''
 
+  // Fixed dates make every commit here hash the same on each run: the
+  // Commit and continue run names the picked commit's SHA in the transcript.
   function git(cwd: string, args: string[]): string {
-    return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
+    return execFileSync('git', args, {
+      cwd,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: E2E_WORKSPACE_COMMIT_DATE,
+        GIT_COMMITTER_DATE: E2E_WORKSPACE_COMMIT_DATE,
+      },
+    }).trim()
   }
 
   /** The repair button shares the branch's line instead of wrapping beneath it. */
@@ -350,6 +361,25 @@ describe('footer branch status for a detached thread worktree', function () {
         baseBranch,
       ]),
     ).toThrow()
+    // Git 2.56 stops on the pick as it does for a conflict, so the plain
+    // `Continue rebase` commits it. Recreate the rescheduled stop older Git
+    // leaves, before the footer's debounced refresh reads it, so this
+    // recovery stays covered on every Git.
+    const rebaseState = (name: string): string =>
+      git(worktreeRoot, [
+        'rev-parse',
+        '--path-format=absolute',
+        '--git-path',
+        `rebase-merge/${name}`,
+      ])
+    const todoPath = rebaseState('git-rebase-todo')
+    const todo = readFileSync(todoPath, 'utf8')
+    if (!todo.split('\n').some((line) => line.startsWith(`pick ${picked}`))) {
+      writeFileSync(todoPath, `pick ${picked} thread file\n${todo}`)
+      rmSync(rebaseState('stopped-sha'), { force: true })
+      rmSync(rebaseState('message'), { force: true })
+      git(worktreeRoot, ['update-ref', '--no-deref', 'CHERRY_PICK_HEAD', picked])
+    }
 
     const button = await $('.branch-reattach-button').getElement()
     await expect(button).toHaveText('Commit and continue', { wait: 20_000 })
