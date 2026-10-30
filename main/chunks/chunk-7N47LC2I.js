@@ -26450,7 +26450,6 @@ var init_tool_display = __esm({
       semantic_search: { running: "Searching codebase", done: "Searched codebase" },
       find_files: { running: "Finding files", done: "Found files" },
       web_search: { running: "Searching the web", done: "Searched the web" },
-      parallel_search: { running: "Searching with Parallel", done: "Searched with Parallel" },
       fetch_url: { running: "Fetching page", done: "Fetched page" },
       browser_preview: { running: "Opening preview", done: "Opened preview" },
       browser_navigate: { running: "Opening browser", done: "Opened browser" },
@@ -26520,7 +26519,7 @@ var init_tool_display = __esm({
         label: { running: "Searching", done: "Searched" }
       },
       web: {
-        tools: ["web_search", "parallel_search", "fetch_url"],
+        tools: ["web_search", "fetch_url"],
         label: { running: "Fetching from web", done: "Fetched from web" }
       },
       browser: {
@@ -64210,60 +64209,6 @@ var init_canvas_settings = __esm({
   }
 });
 
-// packages/agent/src/plugins/parallel-search-plugin.ts
-var PARALLEL_SEARCH_PLUGIN_ID, PARALLEL_SEARCH_TOOL_NAME, PARALLEL_SEARCH_MODE_SETTING_ID, PARALLEL_SEARCH_MODES, DEFAULT_PARALLEL_SEARCH_MODE, parallelSearchPlugin;
-var init_parallel_search_plugin = __esm({
-  "packages/agent/src/plugins/parallel-search-plugin.ts"() {
-    init_plugin_manifest();
-    PARALLEL_SEARCH_PLUGIN_ID = "copse.parallel-search";
-    PARALLEL_SEARCH_TOOL_NAME = "parallel_search";
-    PARALLEL_SEARCH_MODE_SETTING_ID = "mode";
-    PARALLEL_SEARCH_MODES = ["turbo", "basic", "advanced"];
-    DEFAULT_PARALLEL_SEARCH_MODE = "basic";
-    parallelSearchPlugin = definePlugin(
-      {
-        name: PARALLEL_SEARCH_PLUGIN_ID,
-        description: "Sends an objective and focused queries to Parallel\u2019s Search API and returns ranked URLs with token-dense excerpts. Requires a Parallel API key; Zero Data Retention is an account/contract property, not enabled by this plugin.",
-        trust: "first-party",
-        stability: "experimental",
-        tools: {
-          native: [PARALLEL_SEARCH_TOOL_NAME],
-          acpTools: [PARALLEL_SEARCH_TOOL_NAME]
-        },
-        ui: [
-          {
-            id: "parallel-search-credentials",
-            level: 3,
-            slot: "settings-plugin-detail",
-            title: "Parallel credentials"
-          }
-        ],
-        settings: {
-          [PARALLEL_SEARCH_MODE_SETTING_ID]: {
-            kind: "enum",
-            title: "Default search mode",
-            description: "Basic balances quality and latency. Turbo is fastest; Advanced spends more time on harder research.",
-            default: DEFAULT_PARALLEL_SEARCH_MODE,
-            options: PARALLEL_SEARCH_MODES
-          }
-        },
-        storage: { namespace: PARALLEL_SEARCH_PLUGIN_ID }
-      },
-      {
-        toolNames: [PARALLEL_SEARCH_TOOL_NAME],
-        uiContributions: [
-          {
-            id: "parallel-search-credentials",
-            level: 3,
-            slot: "settings-plugin-detail",
-            title: "Parallel credentials"
-          }
-        ]
-      }
-    );
-  }
-});
-
 // packages/agent/src/plugins/apple-development-plugin.ts
 var APPLE_DEVELOPMENT_PLUGIN_ID, APPLE_DEVELOPMENT_PANEL_ID, APPLE_DEVELOPMENT_TOOL_NAMES, APPLE_DEVELOPMENT_SUGGEST_SETTING_ID, appleDevelopmentPlugin;
 var init_apple_development_plugin = __esm({
@@ -66036,60 +65981,6 @@ var init_automation_plugin_settings = __esm({
   }
 });
 
-// src/renderer/views/parallel-search-plugin-settings.ts
-function createParallelSearchPluginSettings(api, options) {
-  const root = document.createElement("div");
-  root.className = "parallel-search-plugin-settings";
-  const reportKeyPresence = async () => {
-    const onKeyPresence = options?.onKeyPresence;
-    if (!onKeyPresence) return;
-    onKeyPresence(await api.settings.getKey("parallel"));
-  };
-  const heading = document.createElement("div");
-  heading.className = "plugin-settings-heading";
-  heading.textContent = "Credentials";
-  const keys = createApiKeysSection(api, {
-    legend: "Parallel account",
-    providers: ["parallel"],
-    validateOnInput: false
-  });
-  keys.root.classList.add("parallel-search-key-fieldset");
-  const note = document.createElement("p");
-  note.className = "parallel-search-notice";
-  note.textContent = "Copse calls api.parallel.ai directly\u2014no MCP server. Search objectives and queries leave this device. Zero Data Retention is not implied by this switch; it must be enabled in your Parallel account or contract.";
-  const saveButton = document.createElement("button");
-  saveButton.type = "button";
-  saveButton.className = "parallel-search-save-btn";
-  saveButton.textContent = "Save API key";
-  saveButton.addEventListener("click", () => {
-    saveButton.disabled = true;
-    void keys.saveKeys().then(reportKeyPresence).finally(() => {
-      saveButton.disabled = false;
-    });
-  });
-  const clearButton = document.createElement("button");
-  clearButton.type = "button";
-  clearButton.className = "parallel-search-clear-btn";
-  clearButton.textContent = "Clear saved key";
-  clearButton.addEventListener("click", () => {
-    clearButton.disabled = true;
-    void api.settings.setKey("parallel", "").then(() => keys.refreshKeyStatus()).then(reportKeyPresence).finally(() => {
-      clearButton.disabled = false;
-    });
-  });
-  const actions = document.createElement("div");
-  actions.className = "parallel-search-actions";
-  actions.append(saveButton, clearButton);
-  root.append(heading, keys.root, note, actions);
-  void keys.refreshKeyStatus().then(reportKeyPresence);
-  return root;
-}
-var init_parallel_search_plugin_settings = __esm({
-  "src/renderer/views/parallel-search-plugin-settings.ts"() {
-    init_api_keys_section();
-  }
-});
-
 // src/renderer/views/apple-development-panel.ts
 function activeOwner(store) {
   const state = store.getState();
@@ -66990,7 +66881,6 @@ function createPacksSection(overlay, api, store, readSettings, getActiveSection,
     const track = document.createElement("span");
     track.className = "toggle-switch-track";
     track.setAttribute("aria-hidden", "true");
-    let credentialLocked = false;
     toggle.addEventListener("change", () => {
       const settingsOpen = row.querySelector(".plugin-settings-fold")?.open;
       toggle.disabled = true;
@@ -67002,7 +66892,7 @@ function createPacksSection(overlay, api, store, readSettings, getActiveSection,
       }).catch(() => {
         toggle.checked = !toggle.checked;
       }).finally(() => {
-        toggle.disabled = credentialLocked && !toggle.checked;
+        toggle.disabled = false;
       });
     });
     toggleLabel.append(toggle, track);
@@ -67289,25 +67179,6 @@ function createPacksSection(overlay, api, store, readSettings, getActiveSection,
         createAppleDevelopmentPanel(store, api, {
           allowEnrollment: true,
           pluginEnabled: plugin.enabled
-        })
-      );
-    }
-    if (plugin.id === PARALLEL_SEARCH_PLUGIN_ID && plugin.contributions.ui.some(
-      (contribution) => contribution.level === 3 && contribution.slot === "settings-plugin-detail"
-    )) {
-      const gate = document.createElement("p");
-      gate.className = "field-hint plugin-credential-gate";
-      gate.hidden = true;
-      row.append(gate);
-      settingsFold.append(
-        createParallelSearchPluginSettings(api, {
-          onKeyPresence: (hasKey) => {
-            credentialLocked = !hasKey;
-            toggle.disabled = credentialLocked && !toggle.checked;
-            gate.hidden = hasKey;
-            gate.textContent = toggle.checked ? "Add a Parallel API key to let the agent use Parallel search." : "Add a Parallel API key to turn this plugin on.";
-            if (toggle.disabled) toggleLabel.title = "Add a Parallel API key to turn this plugin on";
-          }
         })
       );
     }
@@ -67824,10 +67695,8 @@ var init_packs_section = __esm({
     init_advisor_strategy_plugin();
     init_automations_plugin();
     init_canvas_settings();
-    init_parallel_search_plugin();
     init_apple_development_plugin();
     init_automation_plugin_settings();
-    init_parallel_search_plugin_settings();
     init_apple_development_panel();
     init_model_picker();
     init_model_options();
