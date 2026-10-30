@@ -1169,6 +1169,18 @@
       "sha256": "dc8f4cd56bb0144c985b5387ee75663d23877993589b600ba459dc31c241a4de",
       "bytes": 218029
     },
+    "command-phase-awaiting-approval.png": {
+      "sha256": "d103681989c1ce077385cc7f44d56d18c8e61a21be62e7476f5a5d5f11392e36",
+      "bytes": 305613
+    },
+    "command-phase-not-started.png": {
+      "sha256": "e7d7915d0b7beaf23d198968852d33130490989b3eb3de626415ab32ba391b35",
+      "bytes": 87307
+    },
+    "command-phase-timed-out.png": {
+      "sha256": "185895c6cbaee65d5f94b3944203b1bcbccb0bde1a48f5faac2575aca7814a2e",
+      "bytes": 67171
+    },
     "comparison-dismiss-after.png": {
       "sha256": "5a6fb895eaf649591688ede94c7c650038c27130e743759e93c13eaf1d88029e",
       "bytes": 273206
@@ -2470,16 +2482,16 @@
       "bytes": 343762
     },
     "mobile-trusted-name-connection.png": {
-      "sha256": "204d3c07389c81d90029d1286f316c638929934ac3afa29056575fb4baed7f15",
-      "bytes": 72227
+      "sha256": "7c73c1ff35ea493f4f69dcfbeee61fac5958f7ad04145b5254a682af5a81a5fe",
+      "bytes": 72217
     },
     "mobile-trusted-name-pairing.png": {
-      "sha256": "892082989b91d8fc108b0b10177815a7215060a873f7cb4fc49d4b3e79b14dbd",
-      "bytes": 57534
+      "sha256": "c98aa69ca698ec3bd10ea4d2f75fb40fc597068c45ce56b80c6876cb16f75740",
+      "bytes": 58061
     },
     "mobile-trusted-name-registered.png": {
-      "sha256": "713df5ba9d36eb94876a029815b03dba044da39020096708422bf64296aed9a3",
-      "bytes": 76245
+      "sha256": "bbc87990c348a774b4a2c6d1f9d71581c7a36ba0edbff921ee2cdb7d81ab894e",
+      "bytes": 75948
     },
     "mobile-trusted-name-unregistered.png": {
       "sha256": "77758ea48ea8e61018d38544c8341ee84eb89090d4f81814b7f4e6790754dff1",
