@@ -427,7 +427,21 @@ import {
   setMcpServerUserEnabled,
   setWorkspaceTrustAndReload,
 } from '../services/mcp/mcp-registry.ts'
-import { getCuratedServerStatuses, setCuratedServerEnabled } from '../services/mcp/mcp-curated.ts'
+import {
+  CURATED_MCP_SERVERS,
+  getCuratedServerStatuses,
+  setCuratedServerEnabled,
+} from '../services/mcp/mcp-curated.ts'
+import {
+  copseUserMcpConfigPath,
+  listUserMcpServers,
+  mcpUserServerInputSchema,
+  removeUserMcpServer,
+  saveUserMcpServer,
+} from '../services/mcp/mcp-user-config.ts'
+import { CANVAS_SERVER_NAME } from '../services/mcp/bundled-mcp-server.ts'
+import type { McpUserServerSaveResult } from '@shared/types/mcp-user-servers.ts'
+import { XCODEBUILD_MCP_SERVER_NAME } from '../services/apple-development/xcodebuildmcp.ts'
 import {
   listToolPermissionCatalog,
   resetToolPermissions,
@@ -3625,6 +3639,51 @@ export function registerAllHandlers(
     const statuses = await reloadMcpServers(registry)
     broadcastToAppWindows('mcp:status-changed', statuses)
     return statuses
+  })
+  // Names a server added in Settings may not take: every server another source
+  // defines (the user's file would be shadowed or would shadow it), the
+  // reviewed catalog, and the names Copse reserves for its own servers.
+  const mcpNamesTakenOutsideUserConfig = (): Map<string, string> => {
+    const userPath = copseUserMcpConfigPath()
+    const taken = new Map<string, string>([
+      [CANVAS_SERVER_NAME, 'a server built into Copse'],
+      [XCODEBUILD_MCP_SERVER_NAME, 'a server built into Copse'],
+    ])
+    for (const entry of CURATED_MCP_SERVERS) taken.set(entry.name, 'a Copse reviewed server')
+    for (const status of getMcpServerStatuses()) {
+      if (status.source === userPath || taken.has(status.name)) continue
+      taken.set(status.name, status.source ? `a server in ${status.source}` : 'another server')
+    }
+    return taken
+  }
+  const reloadAfterUserConfigChange = async (
+    result: McpUserServerSaveResult,
+  ): Promise<McpUserServerSaveResult> => {
+    if (!result.ok) return result
+    const statuses = await reloadMcpServers(registry)
+    broadcastToAppWindows('mcp:status-changed', statuses)
+    return result
+  }
+  ipcMain.handle('mcp:list-user-servers', (event) => {
+    assertMainFrameSender(event, win)
+    return listUserMcpServers()
+  })
+  ipcMain.handle('mcp:save-user-server', async (event, input: unknown, previousName: unknown) => {
+    assertMainFrameSender(event, win)
+    const [parsedInput, parsedPrevious] = parseIpcArgs(
+      z.tuple([mcpUserServerInputSchema, zMcpServerName.optional()]),
+      [input, previousName],
+    )
+    const result = await saveUserMcpServer(parsedInput, {
+      takenNames: mcpNamesTakenOutsideUserConfig(),
+      ...(parsedPrevious === undefined ? {} : { previousName: parsedPrevious }),
+    })
+    return reloadAfterUserConfigChange(result)
+  })
+  ipcMain.handle('mcp:remove-user-server', async (event, name: unknown) => {
+    assertMainFrameSender(event, win)
+    const parsedName = parseIpcArgs(zMcpServerName, [name])
+    return reloadAfterUserConfigChange(await removeUserMcpServer(parsedName))
   })
   ipcMain.handle('mcp:list-curated', (event) => {
     assertMainFrameSender(event, win)

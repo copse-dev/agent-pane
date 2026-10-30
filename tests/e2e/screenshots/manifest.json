@@ -2281,6 +2281,18 @@
       "sha256": "abce1da43b77b76b2a10763b63c663bc33afcda3763a38a51cb7347b36e06724",
       "bytes": 109812
     },
+    "mcp-add-server-connected.png": {
+      "sha256": "4a51d6ee6fdfb0a05a12d9b34fbc2cd7c795241b76ac65fe91f012c199191371",
+      "bytes": 356094
+    },
+    "mcp-add-server-form-secrets.png": {
+      "sha256": "496ef5aa28e75a5b0bd5e2a35061c863399cb2d9c97230cb16b50c55584f2e8c",
+      "bytes": 262926
+    },
+    "mcp-add-server-form.png": {
+      "sha256": "21c39fee9fb2cd4ecc756e5bc42c86426702e4326ae997afb120872c3d385016",
+      "bytes": 222873
+    },
     "mcp-approval-dialog.png": {
       "sha256": "0a04775159a537abcbb399c5dce2b0cefa2ac49021416a8681ede5615eef5c75",
       "bytes": 295168
