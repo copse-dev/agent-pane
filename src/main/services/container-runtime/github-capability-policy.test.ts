@@ -227,6 +227,29 @@ describe('decideGitHubRequest: methods', () => {
   })
 })
 
+describe('decideGitHubRequest: route wording', () => {
+  it('words write refusals for the caller and decides identically for both', () => {
+    const facts: GitHubRequestFacts = {
+      method: 'GET',
+      target: 'http://github.copse.internal/o/r.git/info/refs?service=git-receive-pack',
+      host: 'github.copse.internal',
+    }
+    assert.match(refused(decideGitHubRequest(facts)), /from a container run/)
+    assert.match(refused(decideGitHubRequest(facts, 'sandbox')), /from the project sandbox/)
+    const write: GitHubRequestFacts = {
+      method: 'POST',
+      target: '/repos/o/r/issues',
+      host: 'api.github.com',
+    }
+    assert.match(
+      refused(decideGitHubRequest(write, 'sandbox')),
+      /sandboxed commands can only read GitHub/,
+    )
+    const read: GitHubRequestFacts = { method: 'GET', target: '/repos/o/r', host: 'api.github.com' }
+    assert.deepEqual(decideGitHubRequest(read, 'sandbox'), decideGitHubRequest(read))
+  })
+})
+
 describe('parseAuthority', () => {
   it('lowercases and splits a port', () => {
     assert.deepEqual(parseAuthority('API.GitHub.com:443'), { host: 'api.github.com', port: 443 })

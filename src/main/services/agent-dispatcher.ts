@@ -1,3 +1,4 @@
+import { runWithWorkerDispatchSlots } from './agents/isolated-worker-scope.ts'
 import { runWithThreadPlan } from './thread-plan-context.ts'
 import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
@@ -64,6 +65,8 @@ export interface AgentDispatchPayload {
   continuationBudgetUsed?: number
   /** Summary of reviews the user ran since the model's last reply (#2519). */
   reviewContext?: string
+  /** Set by the long-horizon task wake; never parsed from a renderer payload. */
+  longTaskWake?: true
 }
 
 /** Opens the main-owned transcript of one dispatched turn. */
@@ -80,7 +83,7 @@ export interface AgentDispatchRequest {
 export interface MachineAgentDispatchRequest extends AgentDispatchRequest {
   operationId: string
   turnTreeId: string
-  display?: MachineTurnDisplay
+  display?: MachineTurnDisplay | 'hidden'
   /**
    * Checked once the thread is claimed: true when the agent already saw what
    * this wake would report, so it is recorded without a turn or budget charge.
@@ -538,9 +541,11 @@ export class AgentDispatcher {
     try {
       await this.dependencies.saveEpoch(request.projectId, request.threadId, nextEpoch)
       this.epochs.set(key, nextEpoch)
-      const display = request.display
+      const hidden = request.display === 'hidden'
+      const display = request.display === 'hidden' ? undefined : request.display
       host.emit(request.threadId, {
         type: 'machine_turn_start',
+        ...(hidden ? { hidden: true as const } : {}),
         content: display?.content ?? request.payload.userContent,
         origin: { kind: 'machine', operationId: request.operationId },
         ...(display?.attachments ? { attachments: display.attachments } : {}),
@@ -766,6 +771,7 @@ export class AgentDispatcher {
         ? { continuationBudgetUsed: payload.continuationBudgetUsed }
         : {}),
       ...(payload.reviewContext !== undefined ? { reviewContext: payload.reviewContext } : {}),
+      ...(payload.longTaskWake ? { longTaskWake: true as const } : {}),
     }
     let result: Awaited<ReturnType<AgentDispatcherDependencies['run']>>
     // A deferred-worktree turn may allocate mid-run; the renderer re-roots as
@@ -787,13 +793,20 @@ export class AgentDispatcher {
       result = await runWithThreadExecutionContext(executionContext, () =>
         runWithThreadPlan(plan, () =>
           runWithActiveRunIdentity(threadId, () =>
-            this.dependencies.run(
-              threadId,
-              payload.userContent,
-              priorMessages,
-              host,
-              this.registry,
-              options,
+            runWithWorkerDispatchSlots(
+              {
+                run: (owner, execute) =>
+                  this.withExclusiveHistory(owner.projectId, owner.threadId, execute),
+              },
+              () =>
+                this.dependencies.run(
+                  threadId,
+                  payload.userContent,
+                  priorMessages,
+                  host,
+                  this.registry,
+                  options,
+                ),
             ),
           ),
         ),

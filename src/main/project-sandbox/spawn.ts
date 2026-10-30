@@ -71,6 +71,67 @@ function mergeSpawnEnv(base: NodeJS.ProcessEnv, override?: NodeJS.ProcessEnv): N
 }
 
 /**
+ * Access a spawn gets only when it actually runs inside the project sandbox:
+ * the experimental GitHub read route (`services/github/sandbox-github-reads.ts`).
+ * Dropped on every unsandboxed path — an approved escape, a trusted-command
+ * route, a retry outside, or no sandbox at all — so those keep the user's own
+ * `gh` login and SSH exactly as before.
+ */
+export interface SandboxOnlySpawnAccess {
+  /** Variables added on top of the spawn's final environment; `undefined` unsets. */
+  env: (base: NodeJS.ProcessEnv) => Record<string, string | undefined>
+  /** Unix sockets the spawn may connect to (macOS Seatbelt). */
+  allowUnixSockets: readonly string[]
+  /** Paths the spawn may read. */
+  allowRead: readonly string[]
+}
+
+/** The overlay with the sandbox-only access added; nothing else changes. */
+export function withSandboxOnlyAccess(
+  overlay: Partial<SandboxRuntimeConfig>,
+  access: SandboxOnlySpawnAccess,
+): Partial<SandboxRuntimeConfig> {
+  const network = overlay.network
+  const filesystem = overlay.filesystem
+  if (!network || !filesystem)
+    throw new Error('the workspace overlay must define network and filesystem')
+  const reads = access.allowRead.flatMap((path) => [path, `${path}/**`])
+  return {
+    ...overlay,
+    network:
+      access.allowUnixSockets.length === 0
+        ? network
+        : {
+            ...network,
+            allowUnixSockets: [
+              ...new Set([...(network.allowUnixSockets ?? []), ...access.allowUnixSockets]),
+            ],
+          },
+    filesystem:
+      reads.length === 0
+        ? filesystem
+        : { ...filesystem, allowRead: [...new Set([...(filesystem.allowRead ?? []), ...reads])] },
+  }
+}
+
+/** The sandboxed spawn's environment with the sandbox-only variables applied. */
+export function withSandboxOnlyEnv(
+  env: NodeJS.ProcessEnv,
+  access: SandboxOnlySpawnAccess | undefined,
+): NodeJS.ProcessEnv {
+  if (!access) return env
+  const overrides = access.env(env)
+  const out: NodeJS.ProcessEnv = {}
+  for (const [key, value] of Object.entries(env)) {
+    if (!Object.hasOwn(overrides, key)) out[key] = value
+  }
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value !== undefined) out[key] = value
+  }
+  return out
+}
+
+/**
  * Point the shell's temp-dir env vars at the workspace-owned scratch dir so
  * commands using $TMPDIR (mktemp, build tools, test runners) write to a path the
  * seatbelt allows instead of the system /tmp it denies (issue #481). An explicit
@@ -235,6 +296,8 @@ export async function spawnShellInProjectSandbox(
      * contained way to honour that request, so it fails instead.
      */
     readonlyCheckout?: boolean
+    /** Access applied only if this spawn runs inside the project sandbox. */
+    sandboxOnly?: SandboxOnlySpawnAccess
     executionTarget?: ExecutionTarget
   } & Pick<SpawnOptions, 'stdio'>,
 ): Promise<ChildProcess> {
@@ -274,9 +337,10 @@ export async function spawnShellInProjectSandbox(
     readGrantTargets.length > 0
       ? readAllowedSandboxOverlay(opts.cwd, readGrantTargets)
       : workspaceSandboxOverlay(opts.cwd)
-  const customConfig = opts.readonlyCheckout
-    ? withoutCheckoutWrites(baseConfig, opts.cwd)
-    : baseConfig
+  const contained = opts.readonlyCheckout ? withoutCheckoutWrites(baseConfig, opts.cwd) : baseConfig
+  const customConfig = opts.sandboxOnly
+    ? withSandboxOnlyAccess(contained, opts.sandboxOnly)
+    : contained
   const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
     shellCommandLine,
     shellForSandboxWrap(),
@@ -288,7 +352,12 @@ export async function spawnShellInProjectSandbox(
   if (!file) throw new Error('sandbox wrap produced empty argv')
   return spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
     cwd: opts.cwd,
-    env: withSandboxShellPath(mergeSpawnEnv(withWorkspaceTmpEnv(strippedBaseEnv(env)), opts.env)),
+    env: withSandboxShellPath(
+      withSandboxOnlyEnv(
+        mergeSpawnEnv(withWorkspaceTmpEnv(strippedBaseEnv(env)), opts.env),
+        opts.sandboxOnly,
+      ),
+    ),
     stdio: opts.stdio,
     signal: opts.signal,
     detached: detachForGroupKill,

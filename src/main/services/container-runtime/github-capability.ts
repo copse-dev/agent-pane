@@ -21,7 +21,11 @@ import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import type { EgressLogEntry } from '@shared/types/container-run.ts'
 import { graphqlRequestBodyRefusal } from '../github/graphql-read-only.ts'
-import { decideGitHubRequest, type GitHubAuth } from './github-capability-policy.ts'
+import {
+  decideGitHubRequest,
+  type GitHubAuth,
+  type GitHubRoute,
+} from './github-capability-policy.ts'
 import {
   encodeHead,
   githubRequestHeadSchema,
@@ -39,6 +43,8 @@ export interface GitHubCapabilityOptions {
   /** The run's placeholder: never forwarded, and a canary anywhere but `Authorization`. */
   placeholder: string
   upstream?: GitHubUpstream
+  /** Whose request this is, for the refusal wording; a container run by default. */
+  route?: GitHubRoute
   /** Every decision and its outcome, for the run's egress record. */
   onLog?: (entry: EgressLogEntry) => void
 }
@@ -274,11 +280,14 @@ export class GitHubCapability {
     const { head, rest } = read
     const hostHeaders = head.headers.filter(([name]) => name.toLowerCase() === 'host')
     const hostHeader = hostHeaders.length === 1 ? (hostHeaders[0]?.[1] ?? null) : null
-    const decision = decideGitHubRequest({
-      method: head.method,
-      target: head.target,
-      host: hostHeader,
-    })
+    const decision = decideGitHubRequest(
+      {
+        method: head.method,
+        target: head.target,
+        host: hostHeader,
+      },
+      this.options.route ?? 'container',
+    )
     const label = `github ${head.method.slice(0, 8)} ${head.target.slice(0, 160)}`
     if (decision.action === 'refuse') {
       this.respondRefusal(stream, decision.status, decision.reason, label)

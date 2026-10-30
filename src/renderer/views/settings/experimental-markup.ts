@@ -86,6 +86,35 @@ export const experimentalMarkup = `
             </fieldset>
 
             <fieldset>
+              <legend>GitHub reads in the sandbox</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="sandboxGitHubReadsEnabled" />
+                Let sandboxed commands read GitHub through Copse
+              </label>
+              <p class="field-hint">
+                Agent commands such as <code>git fetch</code> and <code>gh pr view</code> run inside
+                the project sandbox without asking to leave it. Copse makes the request with your
+                desktop GitHub sign-in, which the command never sees, and refuses every write.
+                Pushes, comments and other writes still ask to run outside the sandbox. On Linux
+                this covers <code>git</code> only.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Plans</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="planModeEnabled" />
+                Show "Start planning" in the message box
+              </label>
+              <p class="field-hint">
+                Breaks a task into a living plan with explicit steps and acceptance criteria before
+                the agent starts. Coding agents and container, remote, or plugin-hosted agents can't
+                run while a plan is active, and a step's "done" is the agent's own report, not a
+                verified check.
+              </p>
+            </fieldset>
+
+            <fieldset>
               <legend>Model classifier</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="modelClassifierEnabled" />
@@ -153,6 +182,8 @@ export const experimentalFields: readonly SettingField[] = [
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'deferredWorktreesEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'containerRunsEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'sandboxGitHubReadsEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'planModeEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: DEVELOPER_MODE_SETTING, kind: 'checkbox', default: false, save: true },
 ]

@@ -205,6 +205,72 @@ describe('foreground shell interruption', () => {
   })
 })
 
+describe('sandboxed GitHub read access', () => {
+  // Values only this access sets: the host's own environment may carry any of
+  // these names (CI sets GIT_CONFIG_COUNT), so the probe looks for the values.
+  const given = {
+    GH_CONFIG_DIR: '/private/tmp/cghr/1/gh',
+    GH_TOKEN: 'copse_sgh_probe',
+    GIT_CONFIG_COUNT: '9995',
+  }
+  const access = {
+    env: (): Record<string, string | undefined> => ({ ...given }),
+    allowUnixSockets: ['/private/tmp/cghr/1/gh.sock'],
+    allowRead: ['/private/tmp/cghr/1'],
+  }
+  const probe = 'printf "%s:%s:%s" "${GH_CONFIG_DIR-}" "${GH_TOKEN-}" "${GIT_CONFIG_COUNT-}"'
+  const assertNotGiven = (output: string): void => {
+    assert.deepEqual(
+      output.split(':').filter((value, index) => value === Object.values(given)[index]),
+      [],
+      output,
+    )
+  }
+
+  it('is not given to a run escalated outside the sandbox', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'copse-gh-access-'))
+    try {
+      const result = await runShellOnce(
+        probe,
+        root,
+        5_000,
+        new AbortController().signal,
+        true,
+        { PATH: process.env['PATH'] ?? '/usr/bin:/bin' },
+        [],
+        undefined,
+        false,
+        access,
+      )
+      assertNotGiven(result.output)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('is not given when no project sandbox contains the run', async () => {
+    // Unit tests never initialize ASRT, so a "contained" request runs uncontained.
+    const root = mkdtempSync(join(tmpdir(), 'copse-gh-access-'))
+    try {
+      const result = await runShellOnce(
+        probe,
+        root,
+        5_000,
+        new AbortController().signal,
+        false,
+        { PATH: process.env['PATH'] ?? '/usr/bin:/bin' },
+        [],
+        undefined,
+        false,
+        access,
+      )
+      assertNotGiven(result.output)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('foreground shell completion', () => {
   let root: string
 

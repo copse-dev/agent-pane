@@ -1,5 +1,11 @@
 import { at } from '@copse/std/array-utils.ts'
-import { expectAssistantReply, prepareMockToolTurn } from './helpers/mock-scenario.ts'
+import {
+  expectAssistantReply,
+  installMockScenario,
+  type ScenarioHandle,
+} from './helpers/mock-scenario.ts'
+import { setComposerValue } from './helpers/composer.ts'
+import { acceptanceWakeTurn, readTranscriptNotices } from './helpers/acceptance-wake.ts'
 import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,18 +31,40 @@ const WORKSPACE = join(tmpdir(), 'copse-e2e-popout-proposed-workspace')
 // while the pop-out is open, approvals made in either window, and a proposal
 // arriving while the main window's panel is closed.
 
-async function proposeFileChange(path: string, content: string): Promise<void> {
-  const args = { path, content }
-  const scenario = await prepareMockToolTurn(
-    `Propose an update to ${path}.`,
-    { name: 'write_file', args },
-    'The proposed file change is ready for review.',
-  )
+const PROPOSED_REPLY = 'The proposed file change is ready for review.'
+
+/**
+ * Propose `path` in one scripted turn. Accepting a proposal wakes its turn with
+ * a hidden prompt, so a proposal the spec will accept passes `acceptedReply`:
+ * the scenario then scripts that wake, and the caller waits for it to finish.
+ */
+async function proposeFileChange(
+  path: string,
+  content: string,
+  acceptedReply?: string,
+): Promise<ScenarioHandle> {
+  const user = `Propose an update to ${path}.`
+  const scenario = await installMockScenario({
+    title: user.replace(/[.!?]$/, ''),
+    turns: [
+      {
+        user,
+        responses: [
+          { toolCalls: [{ name: 'write_file', args: { path, content } }] },
+          { text: PROPOSED_REPLY, expectToolResults: [{ name: 'write_file' }] },
+        ],
+      },
+      ...(acceptedReply === undefined ? [] : [acceptanceWakeTurn([path], acceptedReply)]),
+    ],
+  })
+  await setComposerValue(user)
   await $('.submit-btn').click()
-  await scenario.waitForComplete()
-  await expectAssistantReply('The proposed file change is ready for review.')
+  // Every proposal ends with the same reply; wait for this turn's own.
+  await scenario.waitForTurns(1)
+  await expectAssistantReply(PROPOSED_REPLY)
   await waitForAgentIdle()
-  await scenario.assertComplete()
+  if (acceptedReply === undefined) await scenario.assertComplete()
+  return scenario
 }
 
 async function hasDecorations(): Promise<boolean> {
@@ -118,9 +146,16 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
       timeoutMsg: `pop-out never coloured the proposal: ${await describeViewer()}`,
     })
 
-    // Second proposal from the main window while the pop-out is open.
+    // Second proposal from the main window while the pop-out is open. The spec
+    // accepts it below, which wakes its turn.
     await browser.switchToWindow(mainHandle)
-    await proposeFileChange('src/e2e-popout-b.ts', 'export const b = 2\n')
+    const acceptedReply = 'src/e2e-popout-b.ts is on disk and exports b = 2.'
+    const proposalB = await proposeFileChange(
+      'src/e2e-popout-b.ts',
+      'export const b = 2\n',
+      acceptedReply,
+    )
+    const promptsBeforeAccept = (await readTranscriptNotices()).prompts
     await browser.waitUntil(
       async () => (await $$('.git-change-row-proposed').getElements()).length === 2,
       {
@@ -183,6 +218,14 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
       timeout: 15_000,
       timeoutMsg: `embed uncoloured after the pop-out approve: ${await describeViewer()}`,
     })
+
+    // The approval woke b's turn: its scripted reply lands with no new chat
+    // prompt, and no request went unscripted.
+    await proposalB.waitForComplete()
+    await expectAssistantReply(acceptedReply)
+    await waitForAgentIdle()
+    await proposalB.assertComplete()
+    expect(await readTranscriptNotices()).toEqual({ prompts: promptsBeforeAccept, cautions: [] })
   })
 
   it('force-opens the embed coloured when a proposal arrives with its panel closed', async () => {
@@ -206,6 +249,7 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
       timeout: 15_000,
       timeoutMsg: `force-opened embed is uncoloured: ${await describeViewer()}`,
     })
+    expect((await readTranscriptNotices()).cautions).toEqual([])
     await withCaptureFrame(async () => {
       await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-popout-proposed-forced.png'))
     })

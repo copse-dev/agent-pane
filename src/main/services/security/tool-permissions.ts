@@ -24,7 +24,6 @@ const ALWAYS_ASK_TOOLS = new Set([
   'browser_navigate',
   'device_hub',
   'fetch_url',
-  'parallel_search',
   'prepare_worktree',
   'run_background',
   'run_shell',
@@ -33,12 +32,32 @@ const ALWAYS_ASK_TOOLS = new Set([
   'gh_push',
   'gh_pr_create',
   'gh_pr_enable_auto_merge',
+  'git_push',
+  'gh_pr_merge',
+  'gh_pr_comment',
+  'gh_pr_resolve_review_thread',
   'gh_pr_mark_ready',
   'gh_pr_rerun_failed_ci',
   'launch_gui_app',
 ])
 
 const UNCONDITIONALLY_ASK_TOOLS = new Map<string, string>([
+  [
+    'git_push',
+    'This action changes remote state and requires approval or an exact automation grant.',
+  ],
+  [
+    'gh_pr_merge',
+    'This action changes remote state and requires approval or an exact automation grant.',
+  ],
+  [
+    'gh_pr_comment',
+    'This action changes remote state and requires approval or an exact automation grant.',
+  ],
+  [
+    'gh_pr_resolve_review_thread',
+    'This action changes remote state and requires approval or an exact automation grant.',
+  ],
   [
     'prepare_worktree',
     'Worktree preparation must show its exact install and setup plan for every invocation.',

@@ -28,6 +28,12 @@ We design for that.
   Name constraints prevent it from vouching for public IPs or websites, but it
   could impersonate another private-network device. Local roots do not require
   Certificate Transparency, so such issuance is not externally observable.
+- **The names device key** — the P-256 key in `~/.copse/names/device.json`, sealed by the
+  keyring cipher, is the only credential for this Mac's label with the Copse names service
+  ([remote-access.md](remote-access.md)). Whoever holds it can point `lan.<label>.u.copse.me` at
+  any private address and order certificates for `*.<label>.u.copse.me`. The TLS key for the
+  current certificate (`~/.copse/names/tls-key.pem`, 0600) can impersonate that name until the
+  certificate expires, about six days after issue.
 
 ## Adversary model
 
@@ -59,6 +65,7 @@ human approval** before it can reach the host or the network, and should leave a
 | Copse vs. managed agent    | Local handoff and local record          | Provider-managed runtime and retained remote state      |
 | Session vs. runtime        | Durable thread and execution metadata   | Replaceable process, container, VM, or provider session |
 | This device vs. LAN peers  | Desktop approval and local thread store | Other devices on the selected private network           |
+| This Mac vs. names service | Device and TLS keys; checks on replies  | `api.copse.dev` records, DNS answers and issuance       |
 
 LAN model serving is not part of the ordinary custom-provider trust grant. Literal private and
 link-local IP addresses, single-label names, and mDNS hostnames remain denied before the
@@ -116,7 +123,9 @@ project-defined MCP servers are gated behind workspace trust, the
 10. **LAN control-surface compromise.** A peer attempts DNS rebinding, cross-origin
     requests, bearer guessing, or pairing without the person at the desktop.
     _Backstop:_ Mobile Companion is off by default; when enabled it binds one chosen
-    private IPv4 address and requires exact Host and Origin checks. Desktop-approved
+    private IPv4 address and requires exact Host and Origin checks: `Host` must be that
+    `ip:port` literal or, once registered, this Mac's own `lan.<label>.u.copse.me:port`, and
+    `Origin` must match the authority the request named. Desktop-approved
     pairing grants reads; a separate per-device control grant permits bounded chat,
     question, approve-once/deny, and exact-run Stop actions. Existing pairings stay
     read-only until upgraded. Every write rechecks access and project/thread ownership;
@@ -133,6 +142,24 @@ project-defined MCP servers are gated behind workspace trust, the
     asks the person granting control to confirm installation and trust; browsers
     cannot attest this to the server. The primary renderer remains the sole chat
     writer, and accepted work can finish after a device is downgraded or revoked.
+    Over the trusted name the phone's browser verifies a publicly trusted certificate,
+    so pairing there grants control on the desktop approval alone; the local-root
+    acknowledgement applies only to pairings over the LAN IP, and the main process,
+    not the renderer, decides which applies.
+11. **Names service compromise or error.** The Copse names service (`api.copse.dev`), or
+    someone who controls it, issues a certificate for `*.<label>.u.copse.me` with a key it
+    holds and points `lan.<label>.u.copse.me` at another private address, then waits on the
+    same local network to impersonate the Mac to a paired phone; or it returns a hostname,
+    chain or label the Mac did not ask for. _Backstop:_ the service can publish only RFC 1918
+    addresses for a label, so impersonation also needs a device on the phone's own network;
+    every certificate for the name is logged in Certificate Transparency; the Mac serves only
+    the hostname it derives from its own label and installs a chain only when it names that
+    label's wildcard, matches the key the Mac generated and is currently valid; the device key
+    never leaves the keychain seal and is never sent, and each certificate gets a fresh TLS key
+    the service never sees. Requests are signed with a fresh nonce and a timestamp the service
+    checks to five minutes, and the service URL is not renderer-writable, so a captured request
+    cannot be redirected and replayed later. A failure of the service stops renewal and
+    resolution; the LAN-IP address and its local root keep working.
 
 ## Internal Git execution
 
@@ -314,6 +341,7 @@ The target runtime, egress, credential, lifecycle, and checkpoint architecture i
 | SSH workspace                              | Local approval policy and thread ownership; remote filesystem/process routing over SSH; bounded local materialization for media/archive reads                                                                                                                                                                         | The remote account and host enforce filesystem, process, and network security; materialized remote bytes temporarily exist on the local host                                                                                                                 |
 | Managed remote agent                       | Local handoff, PII-redaction option, durable provider-session link, and local transcript projection                                                                                                                                                                                                                   | Runtime isolation, network, credentials, retention, and teardown are provider-owned; the current Anthropic environment request uses unrestricted networking                                                                                                  |
 | Unattended container run (experimental)    | Attested disposable guest with no network interface; egress only through a host broker over the container's stdio; model and GitHub credentials held on the host (GitHub: read-only capability over `gh`'s `http_unix_socket` and git `insteadOf`, exact-host token binding, response redaction, no TLS interception) | Not a hostile-workload boundary; GitHub reads are not limited to the run's repository and are off for a run that installs dependencies; GitHub writes are refused until the write-prompt follow-up ([thread-in-container A24](plans/thread-in-container.md)) |
+| Sandboxed GitHub reads (experimental)      | Contained `git fetch` and macOS `gh` reads reach a host handler over Copse-owned unix sockets; A24's exact-host, reads-only policy; token held on the host; per-thread 32-byte secret required on every request (constant-time, 401 otherwise); escalated runs never get the route                                    | Same-user local processes can reach the sockets but not use them without a thread secret, which the sandboxed command itself can read; reads are not limited to the project repository; Linux covers git only                                                |
 | Remote e2e                                 | Fresh one-shot container per run, explicit snapshot transfer, bounded dev-host TTL                                                                                                                                                                                                                                    | Developer/CI tooling, not a product agent runtime or multi-tenant security claim                                                                                                                                                                             |
 | Copse-provisioned cloud workspace          | Proposed only                                                                                                                                                                                                                                                                                                         | Must satisfy the gates in the execution-runtime-security and cloud-workspace plans before release                                                                                                                                                            |
 
@@ -395,8 +423,10 @@ enforced, ordered by how much they widen the blast radius:
   control. Write-envelope deduplication and expiry do not prevent an attacker
   holding the bearer from creating fresh requests. The experimental companion
   relies on manually installing and trusting the local root; physical-device
-  certificate setup, live certificate renewal and live IP rebinding remain
-  outstanding. Simulator and local HTTPS tests do not establish those guarantees.
+  certificate setup and live IP rebinding remain outstanding. The trusted name's
+  registration, renewal and serving are tested against a stand-in names API over
+  local HTTPS, not yet against the live service on a physical phone. Simulator and
+  local HTTPS tests do not establish those guarantees.
 
 - **No OS sandbox on Windows (or after ASRT init failure).** The project sandbox
   runs on macOS (seatbelt) and Linux (bubblewrap). On Windows, and after a sandbox
@@ -417,6 +447,12 @@ enforced, ordered by how much they widen the blast radius:
   while credentials such as GitHub, package-registry, and cloud tokens may remain for
   tools that need them. The target is brokered use without exposing the raw value to
   the workload.
+- **Sandboxed GitHub reads widen what a contained command can read.** With the experimental
+  setting on, a prompt-injected agent can read any GitHub data the user's sign-in can, from inside
+  the sandbox and without a prompt, and can read its own thread's secret. It cannot write through
+  the route or obtain the token. Anything it reads can leave only through egress the session
+  already has. The route is a fixed alias on ASRT's process-global allowlist, so every sandboxed
+  process, including ACP agents, can reach the handler; without a thread secret it gets 401.
 - **Remote guarantees are heterogeneous.** The local seatbelt does not protect an SSH
   host. Managed-agent isolation is provider-owned, and the current Anthropic managed
   environment is requested with unrestricted networking. Copse needs capability

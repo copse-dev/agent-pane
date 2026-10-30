@@ -1,3 +1,4 @@
+import { initClientActions } from './services/clients/client-action-ipc.ts'
 import './disable-brotli-decoding.ts' // MUST be first — see the module
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
@@ -114,6 +115,7 @@ import { initSshAskpassServer } from './services/ssh-workspace/askpass.ts'
 import { initSshWorkspaceIpc } from './services/ssh-workspace/ssh-workspace-ipc.ts'
 import { clearSshWorkspaceFsCache } from './services/workspace-fs/ssh-workspace-fs.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
+import { diffAcceptancePrompt, setDiffAcceptanceHandler } from './services/diff-acceptance-wake.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
 import {
@@ -180,6 +182,7 @@ import { AgentDispatcher } from './services/agent-dispatcher.ts'
 import { setAgentInitiatedTurnAuthority } from './services/acp/agent-initiated-turn.ts'
 import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
+import { stopSandboxGitHubReads } from './services/github/sandbox-github-reads-runtime.ts'
 import { clearRemoteAgentSession } from './services/remote/remote-agent-client.ts'
 import {
   setBrowserSessionPlatform,
@@ -716,6 +719,7 @@ app
     void syncPluginClientApi()
     initMobileChat(win, ipcMain)
     initThreadPrompts(win, ipcMain)
+    initClientActions(win, ipcMain)
     // Lets main-process code hand the user a running command in the Shells pane
     // (the ACP re-authentication offer). The renderer owns the PTY's xterm tab,
     // so the request is forwarded rather than spawned here.
@@ -736,6 +740,25 @@ app
     perfMark('main:register-handlers')
     const agentDispatcher = new AgentDispatcher(agentHost, registry, undefined, transcriptWriter)
     setAgentInitiatedTurnAuthority(agentDispatcher)
+    setDiffAcceptanceHandler({
+      waitForIdle: (owner) => agentDispatcher.waitForIdle(owner.projectId, owner.threadId),
+      wake: (acceptance) =>
+        agentDispatcher.dispatchMachine({
+          projectId: acceptance.owner.projectId,
+          threadId: acceptance.owner.threadId,
+          operationId: acceptance.operationId,
+          turnTreeId: acceptance.turnTreeId,
+          display: 'hidden',
+          payload: {
+            userContent: diffAcceptancePrompt(acceptance),
+            invokedSkills: [],
+            priorTodos: [],
+          },
+        }),
+    })
+    win.once('closed', () => {
+      setDiffAcceptanceHandler(null)
+    })
     registerAllHandlers(
       win,
       registry,
@@ -1406,7 +1429,12 @@ async function cleanupBeforeQuit(): Promise<void> {
   await drainWriteQueue()
   // Reap the detached gortex daemon too — left running it accumulates multi-GB
   // graphs across sessions and OOM-kills the app on a later launch.
-  await Promise.allSettled([shutdownMcpServers(), shutdownProjectSandbox(), stopGortexDaemon()])
+  await Promise.allSettled([
+    shutdownMcpServers(),
+    // Before the sandbox: its route points ASRT's proxy at these sockets.
+    stopSandboxGitHubReads().then(shutdownProjectSandbox),
+    stopGortexDaemon(),
+  ])
 }
 
 app.on('before-quit', (event) => {
