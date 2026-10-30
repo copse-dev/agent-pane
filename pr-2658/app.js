@@ -34,7 +34,7 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-63MPDVGZ.js";
+} from "./chunks/chunk-5KC454E2.js";
 import "./chunks/chunk-D55J6ZRP.js";
 import {
   init_icons,
@@ -5637,8 +5637,26 @@ function createDemoApi(scenario2, options = {}) {
         running: scenario2.mobileCompanion !== void 0,
         url: scenario2.mobileCompanion?.url ?? null,
         qrSvg: scenario2.mobileCompanion?.qrSvg ?? null,
+        localUrl: null,
+        localQrSvg: null,
+        publicName: {
+          serviceUrl: "https://api.copse.dev",
+          state: "unregistered",
+          hostname: null,
+          certificate: null,
+          dns: "unknown",
+          busy: null,
+          lastError: null
+        },
         rootCertificatePath: null,
-        addresses: scenario2.mobileCompanion ? [{ address: new URL(scenario2.mobileCompanion.url).hostname, interfaceName: "Wi-Fi" }] : [],
+        address: scenario2.mobileCompanion ? new URL(scenario2.mobileCompanion.url).hostname : null,
+        addresses: scenario2.mobileCompanion ? [
+          {
+            address: new URL(scenario2.mobileCompanion.url).hostname,
+            interfaceName: "Wi-Fi",
+            virtual: false
+          }
+        ] : [],
         devices: [],
         pairing: null,
         lastError: null
@@ -5651,6 +5669,9 @@ function createDemoApi(scenario2, options = {}) {
       revokeDevice: () => resolvedVoid(),
       respondPairing: () => resolvedVoid(),
       revealCertificate: () => resolvedVoid(),
+      registerName: () => resolvedVoid(),
+      removeName: () => resolvedVoid(),
+      recheckNameDns: () => resolvedVoid(),
       onChat: () => () => {
       },
       reply: async () => {
@@ -7255,7 +7276,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-EC3JFZOB.js").then(async (main) => {
+    void import("./chunks/main-SVSZPT2J.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
