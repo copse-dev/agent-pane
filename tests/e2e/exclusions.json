@@ -35,20 +35,6 @@
       "markers": ["describe.skip"]
     },
     {
-      "spec": "tests/e2e/context-wheel.e2e.ts",
-      "category": "quarantine",
-      "reason": "Both suites skip in CI; source comments report historical runner memory/session failure with the heavy seeded fixture.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
-      "ownerRole": "Renderer and CI maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "Seeded and live mock specs remain runnable locally; current runtime stability and equivalent coverage need review.",
-      "markers": [
-        "describeSkipInCi: context wheel footer live mock",
-        "describeSkipInCi: context wheel footer seeded"
-      ]
-    },
-    {
       "spec": "tests/e2e/explorer-reload-spaced-path.e2e.ts",
       "category": "platform",
       "reason": "Suite targets the macOS seatbelt filesystem worker and skips other platforms.",
