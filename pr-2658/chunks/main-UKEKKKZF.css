@@ -6802,7 +6802,7 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .message-text .table-copy-shell:focus-within .table-copy {
   opacity: 1;
 }
-@media (hover: none) {
+@media (hover: none) and (pointer: coarse) {
   .message-text .code-block-actions > button,
   .message-text .table-copy {
     opacity: 1;
