@@ -271,33 +271,34 @@
     transparent 100%
   );
 }
-.scroll-to-bottom {
-  position: absolute;
-  left: 50%;
-  bottom: var(--spacing-md);
-  transform: translateX(-50%);
-  width: 36px;
-  height: 36px;
+.conversation-navigation {
+  /* Reserve the same space with or without a return action: no transcript
+     overlays and no viewport jump when navigation becomes available. */
+  flex: 0 0 40px;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  padding: 0 var(--spacing-xl);
+}
+.scroll-to-bottom {
+  max-width: 100%;
+  min-height: 36px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  gap: var(--spacing-sm);
+  border-radius: var(--radius);
   border: none;
-  /* A filled control carrying --text-on-accent, so it takes the fill tier
-     (docs/ui-taste.md -> "--accent tints, --accent-fill fills"). Solid and
-     fully opaque: white on an 80% --accent measured 2.91:1 in dark, and even
-     the right pair loses AA once the page shows through a translucent fill. */
-  background: var(--accent-fill);
-  color: var(--text-on-accent);
-  line-height: 1;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
   cursor: pointer;
-  box-shadow: var(--shadow-md);
-  z-index: 4;
-  transition: background 0.15s;
 }
 .scroll-to-bottom:hover {
   opacity: 1;
-  background: var(--accent-fill-hover);
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 .scroll-to-bottom:focus-visible {
   outline: 2px solid var(--accent);
@@ -1661,4 +1662,51 @@ span.acp-resource-title {
   height: 6px;
   border-radius: 50%;
   background: var(--accent);
+}
+
+/* An overlay, so revealing the label never shifts transcript content. The
+   visible chevron is the hover target; keyboard focus reveals the same label. */
+.conversation-first-prompt {
+  position: absolute;
+  top: var(--spacing-xs);
+  right: var(--spacing-xl);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  min-width: 36px;
+  min-height: 32px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+.conversation-first-prompt-label {
+  display: none;
+}
+.conversation-first-prompt:hover,
+.conversation-first-prompt:focus-visible {
+  opacity: 1;
+  color: var(--text-primary);
+}
+.conversation-first-prompt:hover .conversation-first-prompt-label,
+.conversation-first-prompt:focus-visible .conversation-first-prompt-label {
+  display: inline;
+}
+.conversation-first-prompt:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (hover: none) {
+  .conversation-first-prompt {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .conversation-first-prompt-label {
+    display: inline;
+  }
 }
