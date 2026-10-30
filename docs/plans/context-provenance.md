@@ -1,6 +1,11 @@
 # Context provenance
 
-Status: **Proposed** — design only; nothing on `main`.
+Status: **Resolved.** All four phases are on `main`: the instruction fence
+([#1827](https://github.com/copse-dev/agent-pane/pull/1827)), the trust gate and envelope
+([#1829](https://github.com/copse-dev/agent-pane/pull/1829)), the tool-result envelope
+([#1828](https://github.com/copse-dev/agent-pane/pull/1828)) and memory provenance
+([#1834](https://github.com/copse-dev/agent-pane/pull/1834)), with the injection steer-eval corpus in
+[#1837](https://github.com/copse-dev/agent-pane/pull/1837). The text below is the design record.
 
 Every byte of model context should carry an answer to "who wrote this?", and
 untrusted bytes should never be able to forge the container they arrive in.

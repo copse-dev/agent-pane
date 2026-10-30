@@ -1,5 +1,9 @@
 # CI cancellation gate — #2520
 
+Status: **Resolved** — shipped in [#2722](https://github.com/copse-dev/agent-pane/pull/2722); #2520
+is closed. Base-freshness reporting is [ci-base-freshness.md](ci-base-freshness.md); the
+enforcement decision belongs to [main-gate-shaping.md](main-gate-shaping.md).
+
 Task baseline: `main` at `0a7a0967002da98b6055dc9f87544e91c8ad501b`,
 20 September 2026. Owner: [#2520](https://github.com/copse-dev/agent-pane/issues/2520).
 This is the cancellation slice of Shipping quality roadmap R11. Base-retarget triggers,

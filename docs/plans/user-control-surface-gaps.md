@@ -1,6 +1,9 @@
 # User control surface gaps
 
-Status: **Proposed.** No implementation is on `develop`. This document audits the
+Status: **Reference (dated audit).** Compiled against the former `develop` branch; many of the
+owners it lists have since closed (#869, #998, #1081, #1153, #1222, #1313, #1314, #507, #806) and the
+Activity panel shipped ([`mission-control.md`](mission-control.md)), so recheck ownership against live
+issues before acting on a row. This document audits the
 user-facing control and session-management surface Copse does not currently expose, maps
 each gap to the plan, issue, or roadmap item that already owns it, and records what we
 have decided not to build.

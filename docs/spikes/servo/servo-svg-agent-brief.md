@@ -1,7 +1,12 @@
 # Brief: prototype native SVG layout in Servo
 
+> **Archived task brief.** Moved from `docs/plans/` on 2026-10-30. The prototype it briefed
+> landed in [#1909](https://github.com/copse-dev/agent-pane/pull/1909). It describes the in-repo
+> `tauri-shell/` tree, which moved to [copse-dev/tauri-shell](https://github.com/copse-dev/tauri-shell)
+> in [#1942](https://github.com/copse-dev/agent-pane/pull/1942).
+
 A task brief for a coding agent (or a new contributor) to build a working
-prototype of the phases costed in [`servo-svg-layout.md`](./servo-svg-layout.md).
+prototype of the phases costed in [`servo-svg-layout.md`](../../plans/servo-svg-layout.md).
 Read that document first; this one assumes its conclusions and does not repeat
 the evidence.
 
