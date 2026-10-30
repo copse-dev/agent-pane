@@ -26,8 +26,12 @@ function exchange(port: number, raw: string | Buffer, until?: RegExp): Promise<s
       received += chunk
       if (until?.test(received)) socket.destroy()
     })
-    socket.on('close', () => { resolve(received); })
-    socket.on('error', () => { resolve(received); })
+    socket.on('close', () => {
+      resolve(received)
+    })
+    socket.on('error', () => {
+      resolve(received)
+    })
     socket.write(raw)
   })
 }
@@ -50,7 +54,14 @@ async function echoServer(): Promise<number> {
     socket.on('data', (chunk: Buffer) => socket.write(Buffer.concat([Buffer.from('echo:'), chunk])))
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-  cleanups.push(() => new Promise((resolve) => server.close(() => { resolve(); })))
+  cleanups.push(
+    () =>
+      new Promise((resolve) =>
+        server.close(() => {
+          resolve()
+        }),
+      ),
+  )
   const address = server.address()
   assert.ok(address && typeof address !== 'string')
   return address.port
@@ -107,7 +118,9 @@ describe('artifact image egress proxy', () => {
         if (received.endsWith('\r\n\r\n')) socket.write('ping')
         if (received.includes('echo:ping')) socket.destroy()
       })
-      socket.on('close', () => { resolve(received); })
+      socket.on('close', () => {
+        resolve(received)
+      })
       socket.write(`CONNECT ${HOST}:443 HTTP/1.1\r\n${auth()}\r\n`)
     })
     assert.match(reply, /echo:ping/u)

@@ -54,7 +54,10 @@ function harness(overrides: Partial<ArtifactImageServiceDependencies> = {}): Har
       }
       return Promise.resolve(state.link)
     },
-    credentials: (): { baseUrl: string; apiKey: string } => ({ baseUrl: 'https://api.cursor.com', apiKey: state.apiKey }),
+    credentials: (): { baseUrl: string; apiKey: string } => ({
+      baseUrl: 'https://api.cursor.com',
+      apiKey: state.apiKey,
+    }),
     resolveDownloadUrl: (input): Promise<string> => {
       metadataCalls.push({ agentId: input.agentId, path: input.path, apiKey: input.apiKey })
       return Promise.resolve(state.signedUrl)
@@ -171,7 +174,9 @@ describe('ArtifactImageService', () => {
 
   it('relays the host’s error code', async () => {
     const h = harness()
-    h.state.frames = (job): ImageFrame[] => [errorFrame(job.requestId, 'redirect-denied', 'https://evil.example')]
+    h.state.frames = (job): ImageFrame[] => [
+      errorFrame(job.requestId, 'redirect-denied', 'https://evil.example'),
+    ]
     assert.deepEqual(await h.service.load(REQUEST), {
       ok: false,
       code: 'redirect-denied',
@@ -194,7 +199,8 @@ describe('ArtifactImageService', () => {
     })
 
     const relabelled = harness()
-    relabelled.state.frames = (job): ImageFrame[] => imageFrames(job.requestId, 'image/jpeg', pngBytes())
+    relabelled.state.frames = (job): ImageFrame[] =>
+      imageFrames(job.requestId, 'image/jpeg', pngBytes())
     assert.deepEqual(await relabelled.service.load(REQUEST), {
       ok: false,
       code: 'bad-type',

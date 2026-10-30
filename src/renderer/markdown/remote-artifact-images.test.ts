@@ -111,10 +111,7 @@ describe('hydrateRemoteArtifactImages', () => {
     assert.equal(img.dataset['remoteArtifactError'], 'sandbox-unavailable')
     const notice = qsRequired(list, '.remote-artifact-unavailable')
     assert.match(notice.textContent, /sandbox/u)
-    assert.equal(
-      qsRequired(notice, '.remote-artifact-unavailable-alt').textContent,
-      'Login page',
-    )
+    assert.equal(qsRequired(notice, '.remote-artifact-unavailable-alt').textContent, 'Login page')
     assert.equal(notice.querySelector('.remote-artifact-retry'), null)
     list.remove()
   })

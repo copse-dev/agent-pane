@@ -73,7 +73,9 @@ async function rawServer(
     () =>
       new Promise<void>((resolve) => {
         for (const socket of sockets) socket.destroy()
-        server.close(() => { resolve(); })
+        server.close(() => {
+          resolve()
+        })
       }),
   )
   const address = server.address()
@@ -90,7 +92,9 @@ function plainTransport(port: number, opened: string[] = []): DownloadTransport 
     open(hostname): Promise<Socket> {
       opened.push(hostname)
       return new Promise((resolve, reject) => {
-        const socket = connect(port, '127.0.0.1', () => { resolve(socket); })
+        const socket = connect(port, '127.0.0.1', () => {
+          resolve(socket)
+        })
         socket.once('error', reject)
       })
     },
@@ -412,7 +416,9 @@ describe('downloadArtifactImage against a hostile origin', () => {
         }
         socket.write(bytes[index++] ?? '')
       }, 100)
-      socket.on('close', () => { clearInterval(timer); })
+      socket.on('close', () => {
+        clearInterval(timer)
+      })
     })
     const started = Date.now()
     assert.equal(
@@ -524,7 +530,9 @@ describe('proxyTunnelTransport with real TLS', () => {
       () =>
         new Promise<void>((resolve) => {
           server.closeAllConnections()
-          server.close(() => { resolve(); })
+          server.close(() => {
+            resolve()
+          })
         }),
     )
     const address = server.address()

@@ -993,11 +993,14 @@ describe('resolveRemoteArtifactDownloadUrl', () => {
   it('does not echo a failed response body', async () => {
     const fetchImpl: typeof fetch = async (): Promise<Response> =>
       new Response('secret diagnostic body', { status: 500 })
-    await assert.rejects(resolveRemoteArtifactDownloadUrl({ ...base, fetchImpl }), (error: unknown) => {
-      assert.ok(error instanceof Error)
-      assert.equal(error.message, 'Remote agent artifact download failed with HTTP 500')
-      return true
-    })
+    await assert.rejects(
+      resolveRemoteArtifactDownloadUrl({ ...base, fetchImpl }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error)
+        assert.equal(error.message, 'Remote agent artifact download failed with HTTP 500')
+        return true
+      },
+    )
   })
 
   it('stops reading an oversized metadata response', async () => {

@@ -324,7 +324,9 @@ describe('artifact image host', () => {
 
   it('cancels and kills the downloader when the parent goes away', async () => {
     const abort = new AbortController()
-    setTimeout(() => { abort.abort(); }, 200)
+    setTimeout(() => {
+      abort.abort()
+    }, 200)
     const result = await run('hang', { signal: abort.signal })
     assert.equal(onlyError(result.frames), 'cancelled')
     assert.notEqual(result.child?.exitCode ?? result.child?.signalCode ?? null, null)
