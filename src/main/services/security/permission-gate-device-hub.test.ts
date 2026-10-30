@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
 import { ensureToolPermitted } from './permission-gate.ts'
 import { setApprovalHandler } from '../approval.ts'
-import { setSetting } from '../storage/settings.test-shim.ts'
+import { setSetting } from '../storage/settings.ts'
 import { copseToolPermissionId } from './tool-permissions.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
 

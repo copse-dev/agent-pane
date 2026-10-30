@@ -20,6 +20,7 @@ describe('local validation gate', () => {
       'pnpm run check:dead-code',
       'pnpm run check:oracle',
       'pnpm run check:e2e-exclusions',
+      'pnpm run check:a11y-baseline',
     ])
   })
 

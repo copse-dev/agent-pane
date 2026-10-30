@@ -6,11 +6,12 @@ import { join } from 'node:path'
 describe('main layout boot', () => {
   it('syncs files pane visibility when the layout mounts', () => {
     const src = readFileSync(join(process.cwd(), 'src/renderer/main.ts'), 'utf8')
-    assert.match(src, /store\.on\('files_pane_changed', updateFilesPane\)/)
     assert.match(src, /mountFullLayout\(\)[\s\S]*updateFilesPane\(\)/)
+    // Selected before the right panel layout and the panes mount, so the pane is
+    // visible before any of them reacts to the same state change.
     assert.match(
       src,
-      /store\.on\('files_pane_changed', updateFilesPane\)[\s\S]*updateFilesPane\(\)/,
+      /function mountFullLayout\(\)[^]*?store\.select\(\(s\) => s\.filesPaneOpen, updateFilesPane\)[^]*?mountRightPanelLayout\(store\)/,
     )
   })
 })

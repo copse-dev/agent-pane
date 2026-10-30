@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test'
 import { CLASSIFIER_PRESETS } from '@copse/llm/classifiers/presets.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
 import { setPermissionGateForTests } from '../tool-registry.ts'
-import { setSetting } from '../storage/settings.test-shim.ts'
+import { setSetting } from '../storage/settings.ts'
 import { ensureToolPermitted } from './permission-gate.ts'
 import { copseToolPermissionId } from './tool-permissions.ts'
 

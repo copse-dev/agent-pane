@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
-import { setSetting } from '../services/storage/settings.test-shim.ts'
+import { setSetting } from '../services/storage/settings.ts'
 import { setSeededSimulatorDesktopForTests } from '../services/simulator-desktop/simulator-desktop-service.ts'
 import { setSimulatorDesktopPanelPresenter } from '../services/simulator-desktop/simulator-desktop-panel.ts'
 import { openSimulatorDesktopTool } from './simulator-desktop-tool.ts'

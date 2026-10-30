@@ -89,7 +89,12 @@ startup network requirements. No broad provider/package-registry domains or home
 root are granted to make that work. An exact release, provider, state/cache paths
 and confined startup/turn trace are still needed before adoption.
 
-### Qwen Code — deferred
+### Qwen Code — added to the catalog
+
+> **Update (2026-10-30):** Qwen Code was later added to the built-in catalog in
+> [#3745](https://github.com/copse-dev/agent-pane/pull/3745) (`qwen --acp`, auto-install of
+> `@qwen-code/qwen-code`, `.qwen` home directory, no extra allowed domains). The original deferral
+> review follows.
 
 The [quickstart](https://qwenlm.github.io/qwen-code-docs/en/users/quickstart/)
 documents `npm install -g @qwen-code/qwen-code@latest`, Node.js 22+, and

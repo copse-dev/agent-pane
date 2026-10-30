@@ -122,6 +122,11 @@ minimumReleaseAgeExclude:
 #    Guarded by `project-sandbox/acp-trustd.test.ts`.
 patchedDependencies:
   '@anthropic-ai/sandbox-runtime@0.0.74': patches/@anthropic-ai__sandbox-runtime@0.0.74.patch
+  # 2.7.0 drops test-build defaults, misreports exports, hides profile errors,
+  # and ignores MCP cancellation in native commands. Remove when upstream fixes
+  # these plus the silently ignored profile-creation flag without a profile.
+  # Real factory/renderer/registered-handler coverage: xcodebuildmcp.test.ts.
+  xcodebuildmcp@2.7.0: patches/xcodebuildmcp@2.7.0.patch
 
 # GHSA-86w9-cpqp-85rv (node-forge <=1.4.0, RSA PKCS#1 v1.5 signature
 # verification accepts extra DigestAlgorithm elements) has no patched release,

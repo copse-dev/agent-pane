@@ -1,8 +1,11 @@
 # TypeSafe.ai as a bounded decision engine
 
-Status: **Proposed** — evaluation and integration plan only. No TypeSafe dependency,
-credential, network request, feature pack, or product behavior is implemented by this
-document.
+Status: **Proposed** — evaluation and integration plan only. Nothing in this plan is implemented.
+Separately, a generic `typesafe` classifier preset exists (`packages/llm/src/classifiers/presets.ts`,
+[#2975](https://github.com/copse-dev/agent-pane/pull/2975); see
+[`classifier-providers.md`](classifier-providers.md)), and Settings → Classifiers can drive safety
+screening ([#3064](https://github.com/copse-dev/agent-pane/pull/3064)) through user configuration. This
+plan's exclusion of permission and safety authority still applies to any integration it proposes.
 
 Reviewed against `origin/main` at `5644864fa` (2026-09-25) and TypeSafe's public
 documentation on 2026-09-19.
