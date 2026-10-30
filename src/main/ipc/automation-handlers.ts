@@ -17,7 +17,9 @@ const zAutomationScheduleInput = z.object({
   prompt: z.string().trim().min(1).max(100_000),
   model: z.string().trim().min(1).max(1024),
   enabled: z.boolean(),
-  maxLiveWorktrees: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+  maxLiveWorktrees: z
+    .union([z.number().int().positive().max(Number.MAX_SAFE_INTEGER), z.literal('unlimited')])
+    .optional(),
   permissions: z.array(zAutomationPermission).max(256).optional(),
 })
 
@@ -52,7 +54,9 @@ const zBranchCiAutomationInput = z.strictObject({
   prompt: z.string().trim().min(1).max(100_000),
   model: z.string().trim().min(1).max(1024),
   enabled: z.boolean(),
-  maxLiveWorktrees: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+  maxLiveWorktrees: z
+    .union([z.number().int().positive().max(Number.MAX_SAFE_INTEGER), z.literal('unlimited')])
+    .optional(),
 })
 
 export function registerAutomationHandlers(win: BrowserWindow): void {

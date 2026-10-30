@@ -701,9 +701,17 @@
       "sha256": "e71adce9dea3c00fad280365785e1c9477df96f9728fd8e2305a32c54a6342d4",
       "bytes": 282528
     },
+    "automation-hourly-schedule.png": {
+      "sha256": "df4f7acacaba999f66c04d6782a55ac7862b9bf430bbf21ec7adca412a75fa0e",
+      "bytes": 234212
+    },
     "automation-manager-modal.png": {
       "sha256": "16c2b737d0ad3b7466eb655ac374dc8bb8c210a038956eba6f82bdaeebb658ef",
       "bytes": 274440
+    },
+    "automation-minute-schedule.png": {
+      "sha256": "70ddd7e02ed60f013eb544c1e8b5bf426c14e6d4a74fb28bb543ec946bedb1e3",
+      "bytes": 232609
     },
     "automation-pending-start-activity.png": {
       "sha256": "9c0b7bf5708ff51a6b6032f279ff36a106f7dffe84b7c4e835200dc5fde9dc85",
@@ -1454,16 +1462,16 @@
       "bytes": 299294
     },
     "context-wheel-live-running.png": {
-      "sha256": "1ca14e1ef86aeb79fb33348ac781987a7b30b7669946796e7d1880d8c6616779",
-      "bytes": 3973
+      "sha256": "06a75af9086d814676eb474a81a23a6a354265940d269b85535d24d89864e86a",
+      "bytes": 12906
     },
     "context-wheel-running-hover.png": {
       "sha256": "f4883453558e7ba41e93a94b168e6fed951552b8ed3fc0a330b7a3edc4dbaef1",
       "bytes": 285613
     },
     "context-wheel-seeded-30pct.png": {
-      "sha256": "f143eed28a2ecf9a1e716c6f9c50b6a820d2538c32f5e47a012845d952e03170",
-      "bytes": 5788
+      "sha256": "0ab7fae7257adfc9a77145eac91700a682b64261351282b81106aab3b03bfb36",
+      "bytes": 11080
     },
     "continuation-budget-summary.png": {
       "sha256": "84e390dfde345608081eff96c5eb84b56626f6ffa3c7db5755056be910a2038f",

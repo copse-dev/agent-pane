@@ -2,16 +2,11 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedContextWheelFixture, seedEmptyProject } from './helpers/seed-config.ts'
-import { describeSkipInCi } from './helpers/ci-gate.ts'
 import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
-// Heaviest seeded spec (seedContextWheelFixture + reloadSession). The #345
-// trial confirmed it hard-OOM-crashes the runner on its first launch even in a
-// 4-spec shard at 8 shards, so it stays skipped in CI until its fixture is
-// lightened (it runs fine locally).
-describeSkipInCi('context wheel footer seeded', () => {
+describe('context wheel footer seeded', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
@@ -54,7 +49,7 @@ describeSkipInCi('context wheel footer seeded', () => {
   })
 })
 
-describeSkipInCi('context wheel footer live mock', () => {
+describe('context wheel footer live mock', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
