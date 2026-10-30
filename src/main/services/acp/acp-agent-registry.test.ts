@@ -8,6 +8,7 @@ import {
   getAcpAgent,
   listAcpAgents,
   listEnabledAcpAgents,
+  resolveAcpConfigDirEnvVar,
   resolveAcpPermissionMode,
   resolveAcpSandbox,
   upsertAcpAgent,
@@ -197,6 +198,29 @@ describe('resolveAcpPermissionMode (issue #607)', () => {
     assert.equal(resolveAcpPermissionMode({ ...base, id: 'gemini-cli' }, true), undefined)
     assert.equal(resolveAcpPermissionMode({ ...base, id: 'cursor' }, true), 'acceptEdits')
     assert.equal(resolveAcpPermissionMode({ ...base, id: 'my-custom-agent' }, true), undefined)
+  })
+})
+
+describe('resolveAcpConfigDirEnvVar', () => {
+  const base = { title: 'X', command: 'x', enabled: true }
+
+  it('points Claude ACP agents at their own config-dir env var', () => {
+    for (const id of ['claude-acp', 'claude-agent-acp', 'claude-code-acp']) {
+      assert.equal(resolveAcpConfigDirEnvVar({ ...base, id }), 'CLAUDE_CONFIG_DIR')
+    }
+  })
+
+  it('recognises a custom agent entry that spawns the Claude command', () => {
+    assert.equal(
+      resolveAcpConfigDirEnvVar({ ...base, id: 'my-claude', command: 'claude-agent-acp' }),
+      'CLAUDE_CONFIG_DIR',
+    )
+  })
+
+  it('leaves non-Claude and custom agents without a config-dir default', () => {
+    for (const id of ['gemini', 'codex-acp', 'cursor', 'my-custom-agent']) {
+      assert.equal(resolveAcpConfigDirEnvVar({ ...base, id }), undefined)
+    }
   })
 })
 

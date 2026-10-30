@@ -325,6 +325,31 @@ The agent must bring its own credentials: pass them explicitly through `env`
 (as in the example above), or rely on the agent's own login/config. Non-LLM tool
 tokens such as `GITHUB_TOKEN` are passed through.
 
+### The agent's own config/home directory
+
+An agent `resolveAcpConfigDirEnvVar` (`acp-agent-registry.ts`) recognises as
+wrapping Claude (today, any Claude ACP adapter — see `isClaudeAcpAgent`) is
+**thread-scoped by default**: Copse points `CLAUDE_CONFIG_DIR` at
+`<chat store>/<projectId>/<threadId>/acp-agent-config/<agentId>/`
+(`acp-agent-config-dir.ts`) rather than letting the agent fall back to the real
+`$HOME`. Without this, every ACP-backed Copse thread shares — and is shaped
+by — whatever the signed-in device's Claude Code account has globally:
+personal synced skills, plugins, and MCP servers from a completely unrelated
+context, with no relation to the project the thread is actually working in.
+
+An explicit `CLAUDE_CONFIG_DIR` in the agent's own `env` (Settings → Coding
+agents) always overrides the default — e.g. to point every thread at one
+shared config on purpose. OAuth login state survives the scoping either way:
+on macOS it lives in the Keychain, outside this directory entirely; on
+Linux/Windows, where `claude`'s only saved login is a `.credentials.json` file
+directly under its config dir, `ensureClaudeAcpConfigDir` symlinks that one
+file in from the account's real credentials so every thread shares the same
+login without sharing anything else.
+
+This directory is a root-level sibling of `events.jsonl`, like the ACP wire
+trace: untouched by thread save/load, and carried along by "Export thread
+folder (ZIP)".
+
 ## Tool parity with native Copse
 
 ACP client mode and the **built-in Copse agent loop** (cloud/local models such as
