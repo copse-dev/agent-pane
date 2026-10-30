@@ -1,10 +1,10 @@
 # Sandboxed remote artifact image hydration
 
-Status: implemented for Cursor in #4005. Main no longer fetches image bytes; downloads run in a
-per-job host and an ASRT-confined downloader. Linux containment is demonstrated (see the
-validation record below, with container caveats). macOS native validation and confirmation of
-Cursor's download origin against an authenticated fixture are still open, so containment is not
-yet claimed on macOS.
+Status: implemented for Cursor. Main no longer fetches image bytes; downloads run in a per-job
+host and an ASRT-confined downloader. Linux containment is demonstrated (see the validation record
+below, with container caveats). macOS native validation and confirmation of Cursor's download
+origin against an authenticated fixture are still open, so containment is not yet claimed on macOS.
+Tracking: [#4005](https://github.com/copse-dev/agent-pane/issues/4005).
 
 ## Outcome
 

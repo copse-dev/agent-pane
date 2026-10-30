@@ -1,7 +1,9 @@
 # MCP Apps host support
 
 Status: **Proposed** (2026-10-09). Implementation plan for the full MCP Apps
-enhancement tracked by [#611](https://github.com/copse-dev/agent-pane/issues/611).
+enhancement tracked by [#611](https://github.com/copse-dev/agent-pane/issues/611). The docs-only PR
+that added this plan ([#3607](https://github.com/copse-dev/agent-pane/pull/3607)) auto-closed #611 by
+mistake; no MCP Apps host code exists, so #611 remains the owner of this work.
 This document changes no runtime behavior or plugin defaults.
 
 Here, “full MCP UI support” means a complete host for the pinned MCP Apps

@@ -1127,3 +1127,12 @@ the registry still fails contained and offers to run outside.
 `shell-gate-replay.test.ts` replays the public command test set through the real gate under each
 platform situation and pins every outcome (`benchmarks/escalation-review/testset/gate-replay.jsonl`).
 Update this document and those tests with any intentional contract change.
+
+### Approved host artifact reads
+
+Approved outside-project read targets are added as exact files or recursive directory
+subtrees, without ancestor `allowRead` entries. ASRT already allows directory metadata
+traversal. A bare ancestor is a recursive subpath allow, and with the current runtime
+it can also cause a late whole-home deny to hide the explicitly approved target.
+Native regression coverage reads nested test artifacts while rejecting sibling reads
+and writes; read consent never grants host writes or network access.

@@ -4,7 +4,8 @@ Tracking: proposed as [#744](https://github.com/copse-dev/agent-pane/issues/744)
 [#743](https://github.com/copse-dev/agent-pane/pull/743) follow-up list (doctrine compliance
 evals — incl. ablation-testing prompt sections like the tool list).
 
-Status: **Phase 2 implemented.** Deterministic transcript scoring and prompt-section
+Status: **Resolved (Phases 1–2 implemented; #744 closed).** Phase 1 landed in
+[#1146](https://github.com/copse-dev/agent-pane/pull/1146). Deterministic transcript scoring and prompt-section
 ablation pins run in the per-PR unit tier. The model-backed matrix runs through
 `npm run eval:doctrine` on nightly/label-gated infrastructure (same cost posture as
 Phase 3 of [`industry-benchmarks.md`](industry-benchmarks.md)).

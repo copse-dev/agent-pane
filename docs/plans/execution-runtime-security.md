@@ -1,8 +1,13 @@
 # Execution runtime security
 
-**Status: Proposed.** This is the implementation plan for making Copse's local,
+**Status: Proposed (partly overtaken).** This is the implementation plan for making Copse's local,
 SSH, and future provisioned-cloud execution paths share one explicit security and
-lifecycle model. Existing behavior is unchanged until a phase below lands.
+lifecycle model. The container-runtime slices of R0/R2 shipped through
+[`thread-in-container.md`](thread-in-container.md) (per-origin broker and secret-canary tests;
+[#3105](https://github.com/copse-dev/agent-pane/pull/3105) keeps container credentials out of the
+process environment), and the Linux sandbox landed in
+[#1440](https://github.com/copse-dev/agent-pane/pull/1440). The shared `ExecutionRuntime` adapter,
+principals and audit (R1), the local/SSH GitHub broker (R2) and R3–R6 are not implemented.
 
 ## Why this plan exists
 
