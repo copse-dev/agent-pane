@@ -27395,6 +27395,9 @@ function sidebarLastPromptAt(thread) {
   }
   return void 0;
 }
+function isAutomationPendingStart(thread) {
+  return thread.automationPendingStart === true || automationRunBlock(thread) === "pending-start";
+}
 function sidebarHasRun(thread) {
   if (thread.lastPromptAt !== void 0) return true;
   if (thread.everRan !== void 0) return thread.everRan;
@@ -72649,6 +72652,7 @@ export {
   init_automation_run_state,
   sidebarPrRefs,
   sidebarLastPromptAt,
+  isAutomationPendingStart,
   sidebarHasRun,
   init_sidebar_thread,
   projectDisplayName,

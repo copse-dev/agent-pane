@@ -267,6 +267,7 @@ import {
   isAnyDialogOpen,
   isApprovalStalled,
   isAutomationFailureCode,
+  isAutomationPendingStart,
   isBestValueChatModel,
   isBlankThread,
   isCopseToolCall,
@@ -451,7 +452,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-7N47LC2I.js";
+} from "./chunk-CX64FVLW.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -3754,12 +3755,12 @@ function deriveActivity(input) {
   for (const thread of input.threads) {
     if (waitingThreads.has(thread.id)) continue;
     const run4 = input.runs.get(thread.id);
-    if (thread.status === "running") {
+    if (thread.status === "running" || thread.pendingStart === true) {
       working.push(
         threadRow(
           thread,
           "working",
-          truncateText(run4?.activity ?? "Working\u2026"),
+          truncateText(run4?.activity ?? (thread.status === "running" ? "Working\u2026" : "Starting\u2026")),
           run4?.startedAt ?? null
         )
       );
@@ -3875,7 +3876,8 @@ function collectActivityThreads(store2) {
             id: thread.automation.scheduleId,
             name: thread.automation.scheduleName
           },
-          ...failureField(thread.automation)
+          ...failureField(thread.automation),
+          ...isAutomationPendingStart(thread) ? { pendingStart: true } : {}
         } : {}
       });
     }
@@ -3897,7 +3899,8 @@ function collectActivityThreads(store2) {
           id: carried.thread.automation.scheduleId,
           name: carried.thread.automation.scheduleName
         },
-        ...failureField(carried.thread.automation)
+        ...failureField(carried.thread.automation),
+        ...isAutomationPendingStart(carried.thread) ? { pendingStart: true } : {}
       } : {}
     });
   }
@@ -6177,7 +6180,7 @@ var init_thread_history_editor = __esm({
 function foldAutomationRuns(runs, needsYou) {
   const pending = runs.filter((run4) => needsYou(run4.id));
   const rest = runs.filter((run4) => !needsYou(run4.id));
-  const working = rest.filter((run4) => run4.status === "running");
+  const working = rest.filter((run4) => run4.status === "running" || isAutomationPendingStart(run4));
   const failed = rest.filter((run4) => run4.status === "error");
   return [
     ...pending.length > PENDING_COLLAPSE_ABOVE ? [{ kind: "pending", runs: pending }] : pending.map((run4) => ({ kind: "run", run: run4 })),
@@ -6188,6 +6191,7 @@ function foldAutomationRuns(runs, needsYou) {
 var PENDING_COLLAPSE_ABOVE, FAILED_COLLATE_AT;
 var init_automation_fold = __esm({
   "src/renderer/controller/automation-fold.ts"() {
+    init_sidebar_thread();
     PENDING_COLLAPSE_ABOVE = 3;
     FAILED_COLLATE_AT = 2;
   }
@@ -8036,6 +8040,9 @@ function mountProjectsPane(root, store2, api2) {
       if (thread.status === "running") {
         chatRow.classList.add("is-running");
         chatRow.insertBefore(runningStatus("Agent is working"), title);
+      } else if (isAutomationPendingStart(thread)) {
+        chatRow.classList.add("is-running");
+        chatRow.insertBefore(runningStatus("Starting\u2026"), title);
       } else if ((thread.unreadAt !== void 0 || getSideChatUnreadParents(store2, project.id).has(thread.id)) && thread.id !== activeId) {
         chatRow.classList.add("is-unread");
         chatRow.insertBefore(
@@ -8153,7 +8160,7 @@ function mountProjectsPane(root, store2, api2) {
         el("span", { class: "automation-threads-title" }, "Automations"),
         el("span", { class: "automation-threads-count" }, String(scheduleOwners.size))
       );
-      if (allRuns.some((thread) => thread.status === "running")) {
+      if (allRuns.some((thread) => thread.status === "running" || isAutomationPendingStart(thread))) {
         const status = runningStatusIcon("ui-icon ui-icon-sm automation-threads-running");
         status.setAttribute("role", "img");
         status.setAttribute("aria-label", "An automation is running");
@@ -8286,7 +8293,7 @@ function mountProjectsPane(root, store2, api2) {
               )
             );
           }
-          if (runs.some((thread) => thread.status === "running")) {
+          if (runs.some((thread) => thread.status === "running" || isAutomationPendingStart(thread))) {
             const status = runningStatusIcon("ui-icon ui-icon-sm automation-threads-running");
             status.setAttribute("role", "img");
             status.setAttribute("aria-label", "This automation is running");
