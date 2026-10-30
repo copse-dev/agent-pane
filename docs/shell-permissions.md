@@ -414,6 +414,31 @@ An ACP agent that does not advertise MCP-over-HTTP support cannot mount that bri
 configured MCP tools. This is deliberately fail-closed: ACP provides no per-call host enforcement
 point for a stdio or HTTP MCP server the external agent mounts itself.
 
+## ACP client terminals
+
+An ACP agent that delegates a command through `terminal/create` (issue #623; see
+[ACP agents](acp-agents.md#client-terminals)) gets no authority of its own: the
+request becomes exactly one `run_shell` call through `ToolRegistry`, under the
+owning turn's thread identity and execution context, as a bridged `run_shell`
+call would. The permission gate, per-tool overrides, hooks, read-only mode, the
+platform matrix above, Guarded YOLO, the expected-block and reactive
+unsandboxed-retry prompts and the denial cache therefore apply unchanged, and the
+command's text is what the gate judges and the prompt shows. `env` and `cwd` are
+rendered into that text (`export` lines and a `cd` into a workspace
+subdirectory); a `cwd` outside the execution root is refused, never run
+elsewhere. A request that arrives with no turn bound is refused, as a bridged call
+is. For a sandboxed agent the command shares the agent's network scope, as bridged
+shell calls do.
+
+Terminals are offered only alongside the native bridge for a local agent, never
+to an agent on an SSH host or on Windows. Copse does not auto-approve an agent's
+own `execute` permission request because terminals are advertised: the agent may
+still use its private shell, which only the spawn-time seatbelt contains.
+Implementation: `acp/acp-terminals.ts` (ACP side) and
+`AcpNativeBridge.runShellCommand` (turn binding); per-call output and exit
+reach the terminal through `runWithShellRunObserver` in
+`exec/shell-output-context.ts`.
+
 ## SSH workspaces
 
 On an SSH workspace (`docs/plans/ssh-remote-repo.md`) commands, git, search and files run on the

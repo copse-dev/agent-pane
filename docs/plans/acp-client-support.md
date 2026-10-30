@@ -212,7 +212,19 @@ if (model.startsWith('acp:')) {
 
 ### Phase 2 — Terminals + session persistence
 
-- `terminal/*` handlers
+- `terminal/*` handlers (#623): shipped as client-owned execution through
+  `run_shell` — see [ACP agents → Client terminals](../acp-agents.md#client-terminals).
+  - [x] `terminal/create`, `terminal/output`, `terminal/wait_for_exit`, `terminal/kill`,
+        `terminal/release`; `clientCapabilities.terminal` advertised with the bridge
+  - [x] Headless piped execution via `run_shell` (gate, project sandbox, package
+        firewall, env scrubbing, worktree adoption, unsandboxed retry); one terminal =
+        one command string for violation attribution
+  - [x] Scripted-agent loopback tests (`acp-terminal-loopback.test.ts`)
+  - [ ] Live `ToolCallContent::Terminal` output embed in tool cards
+  - [ ] Headless PTY (`spawnPtyInProjectSandbox`) for TTY-dependent tools
+  - [ ] Interop evidence against a real adapter with `terminal: true`
+  - [ ] Revisit whether a terminal-delegating agent still needs the full spawn-time
+        seatbelt (#590) or only IPC + `fs/*` enforcement
 - `acp-session:{threadId}` + `session/resume`
 - MCP forwarding from `mcp.json`
 - Settings UI for agent CRUD
