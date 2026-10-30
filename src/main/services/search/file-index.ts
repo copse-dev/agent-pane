@@ -9,7 +9,7 @@ import {
   type ExecutionTarget,
 } from '../ssh-workspace/execution-target.ts'
 import { normalizeRemoteWorkspacePath, toRelativePathWithinRoot } from '../workspace.ts'
-import { indexBuildStarted, indexBuildFinished } from './index-status.ts'
+import { indexBuildStarted, indexBuildFinished, indexBuildDiscarded } from './index-status.ts'
 import { isIgnoredWorkspacePath } from './index-ignore.ts'
 import {
   FILE_INDEX_LIST_MAX_BYTES,
@@ -43,6 +43,9 @@ interface Listing {
  */
 const indexes = new Map<string, FileIndex>()
 const buildsInFlight = new Map<string, Promise<void>>()
+// Invalidation revokes publication independently of the readonly subprocess.
+// A newer build for a reused root must not inherit or be removed by old work.
+const publicationTokens = new Map<string, symbol>()
 
 export function resolveFileIndexTarget(): ExecutionTarget {
   return threadProjectExecutionTarget() ?? getActiveExecutionTarget()
@@ -130,8 +133,10 @@ async function runBuild(
   key: string,
   workspaceRoot: string,
   target: ExecutionTarget,
+  token: symbol,
 ): Promise<void> {
   indexBuildStarted('fileIndex')
+  let succeeded = false
   try {
     let listing: Listing
     if (await isRgAvailableForTarget(target)) {
@@ -150,18 +155,23 @@ async function runBuild(
         `[copse-panel] file listing for ${workspaceRoot} exceeded its output cap; the index holds only ${String(listing.paths.length)} of its paths`,
       )
     }
-    indexes.set(key, {
-      paths: listing.paths,
-      lastBuilt: Date.now(),
-      memoryBytes: estimateIndexMemoryBytes(listing.paths),
-      truncated: listing.truncated,
-    })
-    indexBuildFinished('fileIndex', true)
-  } catch (err) {
-    indexBuildFinished('fileIndex', false)
-    throw err
+    if (publicationTokens.get(key) === token) {
+      indexes.set(key, {
+        paths: listing.paths,
+        lastBuilt: Date.now(),
+        memoryBytes: estimateIndexMemoryBytes(listing.paths),
+        truncated: listing.truncated,
+      })
+    }
+    succeeded = true
   } finally {
-    buildsInFlight.delete(key)
+    if (publicationTokens.get(key) === token) {
+      publicationTokens.delete(key)
+      buildsInFlight.delete(key)
+      indexBuildFinished('fileIndex', succeeded)
+    } else {
+      indexBuildDiscarded('fileIndex')
+    }
   }
 }
 
@@ -174,7 +184,9 @@ export function buildIndex(
   // same root share one listing; other roots build independently.
   let inFlight = buildsInFlight.get(key)
   if (!inFlight) {
-    inFlight = runBuild(key, workspaceRoot, target)
+    const token = Symbol()
+    publicationTokens.set(key, token)
+    inFlight = runBuild(key, workspaceRoot, target, token)
     buildsInFlight.set(key, inFlight)
   }
   return inFlight
@@ -242,9 +254,14 @@ export function getIndexMemoryBytes(
 export function invalidateIndex(root?: string, target?: ExecutionTarget): void {
   if (root === undefined) {
     indexes.clear()
+    publicationTokens.clear()
+    buildsInFlight.clear()
     return
   }
-  indexes.delete(fileIndexKey(root, target))
+  const key = fileIndexKey(root, target)
+  indexes.delete(key)
+  publicationTokens.delete(key)
+  buildsInFlight.delete(key)
 }
 
 /**

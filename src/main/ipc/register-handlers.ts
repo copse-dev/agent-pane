@@ -697,7 +697,7 @@ export function registerAllHandlers(
     reloadMcpForWorkspace()
     // Scheduled, not awaited — index builds must not block the renderer's
     // swap to the full layout; the footer indicator reports progress.
-    startWorkspaceIndexing(root)
+    startWorkspaceIndexing(root, { kind: 'local' })
     await initSkillsRegistry()
     await initAgentsRegistry()
     registerSkillTools(registry)
@@ -893,7 +893,10 @@ export function registerAllHandlers(
     })
     perfSyncSpan('workspace-set:mcp-reload', reloadMcpForWorkspace)
     perfSyncSpan('workspace-set:start-indexing', () => {
-      startWorkspaceIndexing(canonical)
+      startWorkspaceIndexing(
+        canonical,
+        sshHost ? { kind: 'ssh', hostId: sshHost, remoteRoot: canonical } : { kind: 'local' },
+      )
     })
     // Do NOT block the IPC response (and therefore the renderer's boot / first
     // paint) on the skills scan. It re-scans user + bundled + workspace skill

@@ -154,14 +154,13 @@ function needsFreshListing(root: string, target: ExecutionTarget): boolean {
  * ("Building file index…"), which is not gortex. Listings use a longer timeout
  * than ordinary tool subprocesses (`FILE_INDEX_LIST_TIMEOUT_MS`).
  */
-export function startWorkspaceIndexing(root: string): void {
+export function startWorkspaceIndexing(root: string, target = resolveFileIndexTarget()): void {
   const key = resolve(root)
   // Switching workspaces replaces the previous primary root: stop its watcher,
   // but retain the last coherent listing in the bounded dormant-project MRU.
   // Worktree execution roots (registered via startExecutionRootIndexing) are
   // untouched — they track their own thread's lifetime, not the renderer's
   // selected workspace.
-  const target = resolveFileIndexTarget()
   const previous = primaryWorkspace
   primaryWorkspace = { root: key, target }
   const generation = ++primaryWorkspaceGeneration

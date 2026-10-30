@@ -379,6 +379,31 @@ describe('file-index execution ownership', () => {
     )
   })
 
+  it('indexes a trusted local folder before the old SSH project selection is replaced', async () => {
+    storageSet('activeProjectId', 'a')
+    setWorkspaceIndexPolicyOverrideForTest('never')
+    startWorkspaceIndexing(root, { kind: 'local' })
+    // Drain either the trusted target or the old selection so this regression
+    // also cleans up completely against the pre-fix implementation.
+    await whenFileIndexReady(root)
+    await whenFileIndexReady(root, { kind: 'local' })
+    assert.deepEqual(getIndex(root, { kind: 'local' })?.paths, ['local.ts'])
+    assert.equal(getIndex(root), null)
+    await assert.rejects(readFile(commandLog), { code: 'ENOENT' })
+  })
+
+  it('indexes the validated SSH host before persisted selection catches up', async () => {
+    storageSet('activeProjectId', 'a')
+    startWorkspaceIndexing(root, { kind: 'ssh', hostId: 'b', remoteRoot: root })
+    await whenFileIndexReady(root)
+    await whenFileIndexReady(root, { kind: 'ssh', hostId: 'b', remoteRoot: root })
+    assert.deepEqual(getIndex(root, { kind: 'ssh', hostId: 'b', remoteRoot: root })?.paths, [
+      'index-host-b.ts',
+    ])
+    assert.equal(getIndex(root), null)
+    assert.doesNotMatch(await readFile(commandLog, 'utf-8'), /index-host-a/)
+  })
+
   it('honors a captured local target when a remote project shares the root', async () => {
     storageSet('activeProjectId', 'a')
     setRgAvailableForTest(true)
