@@ -121,10 +121,8 @@ import {
 import { isAgentRunReadonly } from '../agent-run-readonly.ts'
 import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
 import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
-import { PARALLEL_SEARCH_API_URL } from '../parallel-search.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/plugins/background-tasks-plugin.ts'
-import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { assessShellHarm, type ShellHarmContext } from './shell-harm.ts'
 import {
   guardedYoloTierReason,
@@ -901,7 +899,7 @@ async function checkWebSearchPermission(
   explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
 ): Promise<boolean> {
   const { getWebSearchProvider } = await import('../web-search/provider.ts')
-  const { WEB_SEARCH_ENDPOINTS, WEB_SEARCH_LABELS } = await import('@shared/web-search.ts')
+  const { WEB_SEARCH_ENDPOINTS } = await import('@shared/web-search.ts')
   const provider = getWebSearchProvider()
   // Let the tool return setup guidance without asking for an unrelated origin.
   if (provider === 'none' || !resolveApiKey(provider)) {
@@ -916,20 +914,20 @@ async function checkWebSearchPermission(
   if (decision.action === 'deny') {
     throw new Error(`Web search denied: ${decision.reasons.join('; ')}`)
   }
-  if (explicitPolicy === 'allow') {
+  // Selecting a provider and resolving its API key in Settings → Web search IS
+  // the user's consent to send search queries to that provider's fixed origin,
+  // mirroring the former `copse.parallel-search` plugin's enable-is-consent
+  // behavior. Auto-allow instead of a one-time web-origin prompt; an explicit
+  // Always ask override still prompts every time. Only grant the origin once
+  // we know the call is actually proceeding, so a denied Always-ask prompt
+  // never leaves a dangling grant for another caller to inherit.
+  if (explicitPolicy !== 'ask') {
     grantWebOriginForNextFetch(decision.origin)
     return true
   }
-  if (decision.action === 'allow') {
-    return explicitPolicy === 'ask' ? promptExplicitToolAsk('web_search', {}, signal) : true
-  }
-  return promptWebOrigin(
-    decision.origin,
-    decision.origin,
-    signal,
-    explicitPolicy !== 'ask',
-    `Search queries will be sent to ${WEB_SEARCH_LABELS[provider]} and may consume paid API credits.`,
-  )
+  const approved = await promptExplicitToolAsk('web_search', {}, signal)
+  if (approved) grantWebOriginForNextFetch(decision.origin)
+  return approved
 }
 
 /**
@@ -962,40 +960,6 @@ async function checkAskClassifierPermission(
     signal,
   )
   return approved
-}
-
-async function checkParallelSearchPermission(
-  signal?: AbortSignal,
-  explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
-): Promise<boolean> {
-  // Enabling the `copse.parallel-search` plugin (default-off, experimental,
-  // explicit API key) IS the user's consent to send search queries to Parallel.
-  // Auto-allow its fixed API origin while the plugin is enabled, mirroring how
-  // the `copse.background-tasks` plugin auto-declares its `loopback-bind`
-  // relaxation: no web-origin prompt just because the enabled search tool ran.
-  if (getDefaultPluginRegistry().isEnabled(PARALLEL_SEARCH_PLUGIN_ID)) {
-    return explicitPolicy === 'ask' ? promptExplicitToolAsk('parallel_search', {}, signal) : true
-  }
-  const saved = getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)
-  const decision = decideWebFetchPermission({
-    url: PARALLEL_SEARCH_API_URL,
-    allowedOrigins: webAllowedOriginsWithDefaults(saved),
-    allowUserApproval: getSetting<boolean>(WEB_ALLOW_USER_APPROVAL_SETTING, true),
-  })
-  if (decision.action === 'deny') {
-    throw new Error(`Parallel Search access denied: ${decision.reasons.join('; ')}`)
-  }
-  if (explicitPolicy === 'allow') return true
-  if (decision.action === 'allow') {
-    return explicitPolicy === 'ask' ? promptExplicitToolAsk('parallel_search', {}, signal) : true
-  }
-  return promptWebOrigin(
-    decision.origin,
-    PARALLEL_SEARCH_API_URL,
-    signal,
-    explicitPolicy !== 'ask',
-    'The objective and search queries will be sent to Parallel. Requests may consume paid API credits; Zero Data Retention depends on your Parallel account agreement.',
-  )
 }
 
 /**
@@ -2227,8 +2191,6 @@ export async function ensureToolPermitted(
     permitted = await checkFetchUrlPermission(args, signal, explicitPolicy)
   } else if (toolName === 'web_search') {
     permitted = await checkWebSearchPermission(signal, explicitPolicy)
-  } else if (toolName === 'parallel_search') {
-    permitted = await checkParallelSearchPermission(signal, explicitPolicy)
   } else if (toolName === 'ask_classifier') {
     permitted = await checkAskClassifierPermission(args, signal, explicitPolicy)
   } else if (toolName === 'image_gen') {

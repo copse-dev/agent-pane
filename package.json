@@ -252,6 +252,7 @@
     "@copse/plan-usage": "workspace:*",
     "@copse/plugin-sdk": "workspace:*",
     "@copse/procwatch": "workspace:*",
+    "@copse/remote-protocol": "workspace:*",
     "@copse/review": "workspace:*",
     "@copse/shell-guard": "workspace:*",
     "@copse/std": "workspace:*",

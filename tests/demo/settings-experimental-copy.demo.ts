@@ -156,7 +156,12 @@ describe('browser-hosted Experimental settings copy', () => {
       const getState = window.api.mobile.getState
       window.api.mobile.getState = async (): Promise<MobileCompanionState> => ({
         ...(await getState()),
-        pairing: { id: '8abde2d0-8c97-4a99-9ea8-a7518309ee52', label: 'My phone', code: '123456' },
+        pairing: {
+          id: '8abde2d0-8c97-4a99-9ea8-a7518309ee52',
+          label: 'My phone',
+          code: '123456',
+          trustedName: false,
+        },
       })
       document.body.dataset['mobilePairingCalls'] = '[]'
       window.api.mobile.respondPairing = async (

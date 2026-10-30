@@ -59,7 +59,6 @@ import {
 } from '@copse/agent/plugins/advisor-strategy-plugin.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
-import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
 import { COMPUTER_USE_PLUGIN_ID } from '@copse/agent/plugins/computer-use-plugin.ts'
 import { storageGet, storageListKeys, storageSet, storageUpdate } from '../storage/storage.ts'
@@ -141,9 +140,6 @@ const BACKGROUND_TASKS_STABLE_MIGRATION_KEY = 'pluginMigration.backgroundTasksSt
 /** One-time default-off seed for the new local automations prototype. */
 const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.automationsEnablement'
 
-/** One-time default-off seed for the hosted Parallel Search integration. */
-const PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.parallelSearchEnablement'
-
 /** One-time default-off seed for the delayed artifact-checkpoint experiment. */
 const ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.artifactCheckpointEnablement'
 const REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.reviewerInputEnablement'
@@ -195,7 +191,6 @@ function migratePackKeysToPlugin(): void {
   copyIfAbsent('packSources', PLUGIN_SOURCES_KEY)
   copyIfAbsent('packMigration.packModelSettings', PLUGIN_MODEL_SETTINGS_MIGRATION_KEY)
   copyIfAbsent('packMigration.automationsEnablement', AUTOMATIONS_ENABLEMENT_MIGRATION_KEY)
-  copyIfAbsent('packMigration.parallelSearchEnablement', PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY)
   // Carried across for the same reason as the others: without it an upgrading
   // profile re-runs the background-tasks graduation and silently discards a
   // disable the user made after it first ran.
@@ -307,19 +302,6 @@ function migrateAutomationsEnablement(): void {
   disabled.add(AUTOMATIONS_PLUGIN_ID)
   storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
   storageSet(AUTOMATIONS_ENABLEMENT_MIGRATION_KEY, true)
-}
-
-/**
- * Parallel Search sends user queries to a paid external API. Existing profiles
- * already own `packDisabled`, so seed this newly introduced plugin off exactly
- * once instead of accidentally enabling network access on upgrade.
- */
-function migrateParallelSearchEnablement(): void {
-  if (storageGet(PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY) === true) return
-  const disabled = readDisabledIds()
-  disabled.add(PARALLEL_SEARCH_PLUGIN_ID)
-  storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
-  storageSet(PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY, true)
 }
 
 /**
@@ -940,7 +922,6 @@ export function getPluginService(): PluginService {
   migrateBackgroundTasksStable()
   migratePluginModelSettings()
   migrateAutomationsEnablement()
-  migrateParallelSearchEnablement()
   migrateArtifactCheckpointEnablement()
   migrateReviewerInputEnablement()
   migrateEngineeringEnablement()

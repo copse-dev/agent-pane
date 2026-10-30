@@ -99,6 +99,44 @@ test('a machine turn prompt takes the id main stamped', () => {
   )
 })
 
+test('an internal machine notification starts a turn without adding a chat prompt', () => {
+  const store = seeded()
+  let started = 0
+  const reducer = createTranscriptReducer(store, {
+    turnStarted: () => {
+      started += 1
+    },
+  })
+  reducer.apply('t1', {
+    type: 'machine_turn_start',
+    hidden: true,
+    content: 'The user accepted a.txt.',
+    origin: { kind: 'machine', operationId: 'accept-1' },
+  })
+  assert.equal(started, 1)
+  assert.equal(getThreadById(store, 't1')?.status, 'running')
+  assert.equal(messagesOf(store).length, 1)
+  reducer.apply('t1', { type: 'done' })
+  assert.equal(getThreadById(store, 't1')?.status, 'idle')
+  assert.equal(messagesOf(store).length, 1)
+
+  const { main, window } = reduceBoth([
+    {
+      type: 'machine_turn_start',
+      hidden: true,
+      content: 'The user accepted a.txt.',
+      origin: { kind: 'machine', operationId: 'accept-1' },
+    },
+    { type: 'text', text: 'Validation passed.' },
+    { type: 'done' },
+  ])
+  assert.deepEqual(comparable(messagesOf(window)), comparable(messagesOf(main)))
+  assert.deepEqual(
+    messagesOf(main).map((message) => message.role),
+    ['user', 'assistant'],
+  )
+})
+
 test('a user Stop is labelled by the hook, and an already-labelled outcome is kept', () => {
   const store = seeded()
   const reducer = createTranscriptReducer(store, { userAbort: () => 'send_now' })
