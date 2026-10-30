@@ -2277,6 +2277,18 @@
       "sha256": "3dc9462e04bb6b0ec8c40569a60f37a0c86c25cfae5a602e7396ca090209c90f",
       "bytes": 110094
     },
+    "mcp-add-server-connected.png": {
+      "sha256": "4a51d6ee6fdfb0a05a12d9b34fbc2cd7c795241b76ac65fe91f012c199191371",
+      "bytes": 356094
+    },
+    "mcp-add-server-form-secrets.png": {
+      "sha256": "496ef5aa28e75a5b0bd5e2a35061c863399cb2d9c97230cb16b50c55584f2e8c",
+      "bytes": 262926
+    },
+    "mcp-add-server-form.png": {
+      "sha256": "21c39fee9fb2cd4ecc756e5bc42c86426702e4326ae997afb120872c3d385016",
+      "bytes": 222873
+    },
     "mcp-approval-dialog.png": {
       "sha256": "27854ee5d757a4d6609294137a3a7640e4cc9346fe6fdfc3db88fc17bee27fb3",
       "bytes": 295552
@@ -2286,16 +2298,16 @@
       "bytes": 303223
     },
     "mcp-http-auth-connected.png": {
-      "sha256": "2b74440f5412aa7add4de2bf9d4ba98fb251b4b727b4a800f23db19e1f8be84d",
-      "bytes": 343161
+      "sha256": "f03f702cf3dbb467825cec06536c43705f2e1f0a1cced0081f2bd686df796df2",
+      "bytes": 359086
     },
     "mcp-http-sign-in-required.png": {
-      "sha256": "f4a58d6012fd5fe29bc3bb3273e63938bb1ecc77742c76109f5c4d029403dbbe",
-      "bytes": 347631
+      "sha256": "8a45f864af468a244ef89893ab548ae934689cfeec84fa8d74ab05bc9b9e4820",
+      "bytes": 363924
     },
     "mcp-settings-connected.png": {
-      "sha256": "e86c1c90347b969d097853fd064588e947112646f3661845dee30388f5964566",
-      "bytes": 345282
+      "sha256": "fe805fcfa69c04ada71e4ddebc727e2b9d7713235eec3fd7372e5686f56f39c5",
+      "bytes": 361362
     },
     "mcp-sign-in-states.png": {
       "sha256": "1e1280873fbce826c16e7adca77c4cf41003ba99c30242ee18b31ce6b73ca20d",
@@ -4050,16 +4062,16 @@
       "bytes": 102048
     },
     "settings-mcp-lens.png": {
-      "sha256": "973778b03b3908ba46a1a4891f82e97cc2baba1ab81b690c665bcb288f9272ac",
-      "bytes": 318991
+      "sha256": "80d1102e6542ae9df41d2144390878370b8a9e2a0394bc6bda29b57ce98333e1",
+      "bytes": 330079
     },
     "settings-mcp-permission-group-blocked.png": {
       "sha256": "2094d3df498f2d61cbd061f2f56d05c3665a26f4cbee04e50e22e300c147d3a2",
       "bytes": 337380
     },
     "settings-mcp-server-row.png": {
-      "sha256": "5576e78ae4e104f097b037b2483014454f65405e58cc6f67d716d074a6675094",
-      "bytes": 340724
+      "sha256": "ea6a10fb4538e33559404a74d4c4bb57c79bfffbd079d894d032fdeeb468a5a0",
+      "bytes": 353499
     },
     "settings-mobile-companion-device-trust.png": {
       "sha256": "5efbc0a73e97750a424cdbbeb4b2bcdfd17edbba30ca9f859a4bfdeccbc671b5",
