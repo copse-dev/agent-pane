@@ -85584,6 +85584,12 @@ function mountProcessManagerDialog(api2, store2) {
   }
   function render2(snapshot) {
     if (showingNetwork) network.render(snapshot.network, snapshot.sampledAt);
+    else if (snapshot.memoryMetric === "footprint") {
+      const missing = snapshot.processes.filter((row2) => row2.memoryMiB === null).length;
+      footerHint.textContent = "CPU is approximate; memory is macOS footprint in MiB (includes compressed/swap)." + (missing > 0 ? ` Totals exclude ${String(missing)} unavailable ${missing === 1 ? "process" : "processes"}.` : "");
+    } else {
+      footerHint.textContent = "CPU is approximate; memory is physical RAM in MiB.";
+    }
     const focusedGroup = document.activeElement instanceof HTMLElement && body.contains(document.activeElement) && document.activeElement.classList.contains("process-manager-group-toggle") ? document.activeElement.dataset["groupKey"] : void 0;
     cpuHeading.setAttribute(
       "aria-sort",
