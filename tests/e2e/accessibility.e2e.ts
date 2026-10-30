@@ -100,7 +100,7 @@ async function focusedLabel(): Promise<string> {
   return browser.execute(() => {
     const active = document.activeElement
     if (!(active instanceof HTMLElement)) return '(none)'
-    return `${active.tagName.toLowerCase()}${active.id ? `#${active.id}` : ''} "${(active.getAttribute('aria-label') ?? active.textContent ?? '').trim().slice(0, 40)}"`
+    return `${active.tagName.toLowerCase()}${active.id ? `#${active.id}` : ''} "${(active.getAttribute('aria-label') ?? active.textContent).trim().slice(0, 40)}"`
   })
 }
 
