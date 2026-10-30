@@ -10,9 +10,16 @@ thread `178909d1` ("Cmd+L Select Browser URL") — 43 minutes and 3.38M input to
 produce a 7-line change that did not work ([#1427](https://github.com/copse-dev/agent-pane/pull/1427),
 fixed in [#1432](https://github.com/copse-dev/agent-pane/pull/1432)).
 
-Status: **proposed.** No code landed yet. Fix 0 was reworked after review: the original
-"give the parent a `read_file`" options are superseded by structured explore returns, which
-keep `read_file` off the parent's tool list entirely.
+Status: **Partially implemented.** Fixes 1–3 landed in
+[#2837](https://github.com/copse-dev/agent-pane/pull/2837) and Fix 7 in
+[#3277](https://github.com/copse-dev/agent-pane/pull/3277); the split-out #1436, #1437 and #1438 are
+closed. Fix 5's "check attached in the completing call" hold also landed
+(`holdChecksAttachedAtCompletion`), and step 0, the rename, is done: the guard set is
+`DUPLICATE_GUARDED_TOOL_NAMES` and the subagent allow-list is `SUBAGENT_ALLOWED_TOOL_NAMES`.
+Fix 0/0b, Fix 4 and the rest of Fix 5 (`cancelled` → `completed`) remain open under #1433. Fix 0
+was reworked after review: the original "give the parent a `read_file`" options are superseded by
+structured explore returns, which keep `read_file` off the parent's tool list entirely. Code
+references below describe the code as it was when the plan was written.
 
 ## Why
 

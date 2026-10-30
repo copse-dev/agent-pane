@@ -216,6 +216,9 @@ list rather than adding e2e specs for DOM-only behavior.
 > and saves a screenshot — exactly the sizing/rendering job those tiers are for. Pushing
 > _logic_ down doesn't waive the visual check.
 
+Accessibility has its own lane in this tier: axe-core scans of representative surfaces against a
+shrink-only baseline plus keyboard-only journeys. See [accessibility acceptance](accessibility.md).
+
 ## CI cost is a design input
 
 ### Exclusion inventory

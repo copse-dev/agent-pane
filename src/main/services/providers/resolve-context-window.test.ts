@@ -2,8 +2,11 @@ import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { resolveContextWindow, fetchLmStudioModelContextLength } from './resolve-context-window.ts'
 import { invalidateLmStudioModelsCache } from './lm-studio-models.ts'
-import { setApiKey } from '../storage/settings.test-shim.ts'
+import { setApiKey } from '../storage/settings.ts'
 import { jsonResponse } from './test-response.ts'
+import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+
+installInMemorySecretCipher()
 
 function requestUrl(input: string | URL | Request): string {
   if (typeof input === 'string') return input

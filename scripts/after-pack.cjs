@@ -81,6 +81,15 @@ module.exports = async function afterPack(context) {
   )
   pruneForeignMacosPayloads(join(resources, 'node_modules'), keyringPackageArch)
 
+  const memoryHelper = join(resources, 'dist', 'resources', 'process-memory')
+  const memoryHelperThin = `${memoryHelper}.thin`
+  try {
+    execFileSync('lipo', [memoryHelper, '-thin', targetArch, '-output', memoryHelperThin])
+    renameSync(memoryHelperThin, memoryHelper)
+  } finally {
+    rmSync(memoryHelperThin, { force: true })
+  }
+
   if (archs.length === 1) return
 
   const thinned = `${binary}.thin`

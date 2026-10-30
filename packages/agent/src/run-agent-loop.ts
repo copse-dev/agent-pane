@@ -24,7 +24,7 @@ import {
 import type { TodoItem } from './wire-types.ts'
 import {
   DUPLICATE_TOOL_RESULT_PREFIX,
-  EXPLORE_TOOL_NAMES,
+  DUPLICATE_GUARDED_TOOL_NAMES,
   isDuplicateExploreCall,
   nextConsecutiveExploreWithoutRead,
   normalizeExploreArgs,
@@ -1065,7 +1065,7 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
         // what an earlier read returned, so re-reading after it is fresh work,
         // not a repeat: without this, `read_file` of a range just edited with
         // `str_replace` was refused as a duplicate for the whole window.
-        if (!EXPLORE_TOOL_NAMES.has(tc.name)) recentFingerprints.length = 0
+        if (!DUPLICATE_GUARDED_TOOL_NAMES.has(tc.name)) recentFingerprints.length = 0
         recentToolProgress.push(duplicate ? null : fp)
         if (recentToolProgress.length > RECENT_FINGERPRINT_WINDOW) {
           recentToolProgress.shift()

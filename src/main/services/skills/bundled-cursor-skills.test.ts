@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { setSetting } from '../storage/settings.test-shim.ts'
+import { setSetting } from '../storage/settings.ts'
 import {
   getBundledCursorSkillsRoot,
   isBundledSkillPluginEnabled,
@@ -21,8 +21,8 @@ describe('bundled-cursor-skills', () => {
   })
 
   afterEach(async () => {
-    setSetting('bundledCursorSkillsEnabled', true)
-    setSetting('bundledSkillPluginOverrides', {})
+    await setSetting('bundledCursorSkillsEnabled', true)
+    await setSetting('bundledSkillPluginOverrides', {})
     resetBundledCursorSkillsRootForTest()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
@@ -100,7 +100,7 @@ describe('bundled-cursor-skills', () => {
     })
 
     it("follows the user's choice over the default", async () => {
-      setSetting('bundledSkillPluginOverrides', { teaching: true, 'cursor-team-kit': false })
+      await setSetting('bundledSkillPluginOverrides', { teaching: true, 'cursor-team-kit': false })
       assert.equal(isBundledSkillPluginEnabled('teaching'), true)
       assert.equal(isBundledSkillPluginEnabled('cursor-team-kit'), false)
       const summaries = await listBundledSkillPlugins()
@@ -114,7 +114,7 @@ describe('bundled-cursor-skills', () => {
     })
 
     it('marks every plugin suppressed while all bundled skills are off', async () => {
-      setSetting('bundledCursorSkillsEnabled', false)
+      await setSetting('bundledCursorSkillsEnabled', false)
       const summaries = await listBundledSkillPlugins()
       assert.ok(summaries.every((summary) => summary.suppressed))
     })

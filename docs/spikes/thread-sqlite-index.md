@@ -1,8 +1,9 @@
 # SQLite thread projection spike
 
-> Draft spike: do not merge as-is. Rework the UI integration, IPC contract, and
-> cache plumbing after the [sidebar/activity redesign (#3386)](https://github.com/copse-dev/agent-pane/pull/3386)
-> lands, then rerun the performance measurements and native validation.
+> **Historical spike.** The sidebar/activity redesign it waited on
+> ([#3386](https://github.com/copse-dev/agent-pane/pull/3386)) closed unmerged; the SQLite projection
+> landed in [#3502](https://github.com/copse-dev/agent-pane/pull/3502)
+> (`packages/thread-store/src/sqlite-thread-index.ts`). The text below records the spike.
 
 ## Task brief
 

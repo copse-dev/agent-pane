@@ -67,10 +67,9 @@ export function attachDiffState(
       store.setState({ activeDiff: { path, before, after, language } })
       if (!options.revealOnShowDiff) return
       store.setState({ rightPanelMode: 'changes', filesPaneOpen: true })
-      // Layout first (unhide pane + Changes hosts), then tell the pane to sync.
+      // Layout listeners subscribe before the panes, so this write unhides the
+      // pane and Changes hosts before the Changes pane refreshes.
       syncFilesPaneDom(store)
-      store.emit('right_panel_mode_changed')
-      store.emit('files_pane_changed')
       store.emit('panel_changed')
     },
   )
