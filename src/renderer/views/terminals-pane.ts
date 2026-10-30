@@ -33,6 +33,7 @@ import {
   watchEditorTheme,
   xtermThemeFromTokens,
 } from '../dom/editor-theme.ts'
+import { selectRightPanelMode } from '../controller/panels.ts'
 
 /* xterm only renders whole rows, so the fit addon leaves a few pixels of
    remainder at the bottom of the pane. xterm 6 paints the theme background on
@@ -534,8 +535,7 @@ export function mountTerminalsPane(
 
   // Creating a shell is asynchronous (xterm loads on first use), and more than
   // one listener can ask for "a shell for this scope" before the first lands:
-  // opening the pane fires `files_pane_changed` and `right_panel_mode_changed`
-  // in the same tick. Share the in-flight creation per scope so they get one.
+  // opening the pane and switching thread can both ask in the same tick. Share the in-flight creation per scope so they get one.
   const pendingScopeTabs = new Map<string | null, Promise<string>>()
   // Every tab still waiting on xterm, by scope — including ones a command run, a
   // code-block run or "+" started — so the scope is not given an extra empty one.
@@ -863,8 +863,6 @@ export function mountTerminalsPane(
     await addTab({ activate: true, initialInput: `${trimmed}\r`, ...options })
     if (!wasActive) {
       store.setState({ filesPaneOpen: true, rightPanelMode: 'terminal' })
-      store.emit('files_pane_changed')
-      store.emit('right_panel_mode_changed')
     }
   }
 
@@ -961,8 +959,7 @@ export function mountTerminalsPane(
   }
 
   const unsubs = [
-    store.on('right_panel_mode_changed', onTerminalModeChange),
-    store.on('files_pane_changed', onTerminalModeChange),
+    selectRightPanelMode(store, 'terminal', onTerminalModeChange),
     store.on('agent_task_selected', onAgentTaskSelected),
     store.on('settings_changed', onFontSizeChange),
     store.on('threads_changed', onThreadMaybeChanged),
