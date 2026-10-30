@@ -4853,6 +4853,10 @@
       "sha256": "e967ac35acb0c3a583ac7ccd3e7c72c819d5e793b962a10f288a943e3045b79d",
       "bytes": 343061
     },
+    "simulator-verified-removal.png": {
+      "sha256": "fd614b3c4c09930b07f91268f5d51ff47a54e03821892fa7651fd9bcbd7e299d",
+      "bytes": 100012
+    },
     "site-tour-archive-attachment.png": {
       "sha256": "308c3cbe8eef167298b8525b38c430279a783c4bc0c6d78813a8d91cc5435320",
       "bytes": 118633

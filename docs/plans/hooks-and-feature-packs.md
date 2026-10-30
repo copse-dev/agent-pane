@@ -976,6 +976,9 @@ exists because it converts a class of likely mistake into a mechanical failure:
 
 ### Known implementation traps
 
+Device Hub simulator deletion keeps the existing toolGate and read-only ordering.
+Its per-call approval cannot be replaced by a stored general Device Hub allow.
+
 Collected from design review — each of these was _almost_ a bug in the plan itself:
 
 - **`drainMessageQueue` auto-submits plain queued messages at idle.** Any "queued for
