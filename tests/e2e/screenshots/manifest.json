@@ -2518,12 +2518,12 @@
       "bytes": 344178
     },
     "mobile-trusted-name-connection.png": {
-      "sha256": "204d3c07389c81d90029d1286f316c638929934ac3afa29056575fb4baed7f15",
-      "bytes": 72227
+      "sha256": "a53fd19c8aa34e01cb44fad0d1207972f24aeebd36c38e2e036b1644dbfd6c62",
+      "bytes": 78424
     },
     "mobile-trusted-name-pairing.png": {
-      "sha256": "892082989b91d8fc108b0b10177815a7215060a873f7cb4fc49d4b3e79b14dbd",
-      "bytes": 57534
+      "sha256": "4b3affca19397768d8b9998e37b649277bf8c70b07bcfa11a2c0f6c572c67e4c",
+      "bytes": 57882
     },
     "mobile-trusted-name-registered.png": {
       "sha256": "713df5ba9d36eb94876a029815b03dba044da39020096708422bf64296aed9a3",
