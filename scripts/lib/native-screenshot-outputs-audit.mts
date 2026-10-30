@@ -70,7 +70,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/new-thread-default-branch.e2e.ts': {
-    sourceSha256: 'ccd0524fb2894936c273af35dbcd87a3ab0aae7d716022337159169c215116af',
+    sourceSha256: '92888b33dcea51894f3b9ccf9442ac2d7c5f8eed42131b08fc3c7ebda33f6bdb',
     filenames: [
       'new-thread-default-branch-explicit-sent.png',
       'new-thread-default-branch-shared-picker.png',
