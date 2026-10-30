@@ -59,7 +59,8 @@ describe('skills', () => {
     await expect($('.msg-user')).not.toExist()
     await saveAppScreenshot('skills-discovery-picker.png')
 
-    await $('.prompt-input').click()
+    // Refocus without a click: a mousedown outside the picker dismisses it.
+    await browser.execute(() => document.querySelector<HTMLElement>('.prompt-input')?.focus())
     await browser.keys('Enter')
     await expect($('.skill-picker')).not.toBeDisplayed()
     expect(await browser.execute(() => document.querySelector('.prompt-input')?.textContent)).toBe(
