@@ -100,6 +100,21 @@ export function sidebarLastPromptAt(thread: SidebarThread): number | undefined {
   return undefined
 }
 
+/**
+ * Whether a thread's automation run has been created but not yet started.
+ *
+ * A compacted {@link SidebarThread} (another project's cached row) already has
+ * this precomputed in `automationPendingStart`, since compaction drops the
+ * `draftPrompt` that {@link automationRunBlock} would otherwise need. A live,
+ * uncompacted thread (the active project's own list) has no such field but
+ * still carries `draftPrompt`, so it falls through to computing it directly.
+ */
+export function isAutomationPendingStart(
+  thread: SidebarThread & Partial<Pick<Thread, 'draftPrompt'>>,
+): boolean {
+  return thread.automationPendingStart === true || automationRunBlock(thread) === 'pending-start'
+}
+
 /** The metadata a live {@link Thread} carries beyond {@link SidebarThread}, used to tell it ran. */
 export type RunSignals = SidebarThread &
   Partial<Pick<Thread, 'usage' | 'workingBrief' | 'autoTitleCount' | 'draftPrompt'>>

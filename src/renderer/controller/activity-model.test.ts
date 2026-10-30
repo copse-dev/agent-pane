@@ -263,6 +263,21 @@ describe('deriveActivity', () => {
     assert.equal(working[2]?.since, null)
   })
 
+  it('shows an automation run as working from the moment its thread is created, before status flips to running', () => {
+    const groups = deriveActivity(
+      input({
+        threads: [info('starting', { status: 'idle', pendingStart: true })],
+      }),
+    )
+    const working = group(groups, 'working').rows
+    assert.deepEqual(
+      working.map((row) => row.threadId),
+      ['starting'],
+    )
+    assert.equal(working[0]?.want, 'Starting…')
+    assert.equal(group(groups, 'recent').rows.length, 0)
+  })
+
   it('caps recent rows but keeps the full count', () => {
     const threads = Array.from({ length: RECENT_ROW_LIMIT + 3 }, (_, i) =>
       info(`t${String(i)}`, { unreadAt: i }),
@@ -466,6 +481,31 @@ describe('collectActivityThreads', () => {
     assert.deepEqual(
       collectActivityThreads(store).map((t) => t.status),
       ['error'],
+    )
+  })
+
+  it('flags an automation thread as pendingStart, from the active project and from a carried one', () => {
+    const automation = { scheduleId: 's1', scheduleName: 'Nightly build', triggeredAt: 1 }
+    const store = createStore({
+      projects: [
+        { id: 'p1', path: '/one', name: 'one' },
+        { id: 'p2', path: '/two', name: 'two' },
+      ],
+      activeProjectId: 'p1',
+      threads: [metadataOnly('active', { status: 'idle', draftPrompt: 'Run it', automation })],
+      backgroundThreads: [
+        {
+          projectId: 'p2',
+          thread: metadataOnly('carried', { status: 'idle', draftPrompt: 'Run it', automation }),
+        },
+      ],
+    })
+    assert.deepEqual(
+      collectActivityThreads(store).map((t) => [t.id, t.pendingStart]),
+      [
+        ['active', true],
+        ['carried', true],
+      ],
     )
   })
 })
