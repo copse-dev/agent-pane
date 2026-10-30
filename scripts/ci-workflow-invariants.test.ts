@@ -83,7 +83,7 @@ describe('ci.yml workflow invariants', () => {
     const expected = listed.stdout.trim().split('\n')
     assert.ok(expected.includes('tests/e2e/vnc-viewer.e2e.ts'))
     assert.ok(!expected.includes('tests/e2e/agent-eval-drive.e2e.ts'))
-    assert.ok(!expected.includes('tests/e2e/staged-diff-ui.e2e.ts'))
+    assert.ok(expected.includes('tests/e2e/staged-diff-ui.e2e.ts'))
     const buckets = Array.from({ length: 8 }, (_unused, index) => shardSpecs('full', index + 1, 8))
     assert.deepEqual(buckets.flat().sort(), expected, 'every eligible spec runs exactly once')
     // The 720s attempt watchdog needs headroom on every shard, not on average:
