@@ -2297,6 +2297,14 @@
       "sha256": "4c9d110c0d7c7d575679ed465cd953bd5822255425b78c4e53dc7c32989f3c02",
       "bytes": 349087
     },
+    "mcp-native-profile-error.png": {
+      "sha256": "3e56c4768c5791ec44925fce793cd00f2cccf6d609fb7a20877f6561408742dc",
+      "bytes": 320855
+    },
+    "mcp-native-simulator-creation-error.png": {
+      "sha256": "4046d1744ddb2b546c0e39cbe49f614f62f2a34153b1d94d6219b699861d10e7",
+      "bytes": 335881
+    },
     "mcp-settings-connected.png": {
       "sha256": "71456dfb4b9253161e1acaafe1f61f4ac97656648451475a5f6e33a5e0a568fd",
       "bytes": 346629
@@ -2490,16 +2498,16 @@
       "bytes": 344178
     },
     "mobile-trusted-name-connection.png": {
-      "sha256": "204d3c07389c81d90029d1286f316c638929934ac3afa29056575fb4baed7f15",
-      "bytes": 72227
+      "sha256": "cbd97b05f397d311550115b9852a60d2bb5a9e8ce9f4a81f5302875426234e18",
+      "bytes": 72711
     },
     "mobile-trusted-name-pairing.png": {
-      "sha256": "892082989b91d8fc108b0b10177815a7215060a873f7cb4fc49d4b3e79b14dbd",
-      "bytes": 57534
+      "sha256": "41bf57ce9f96c27886445444977a516c323d11c89c61ece1d29181a5a3b8c693",
+      "bytes": 57967
     },
     "mobile-trusted-name-registered.png": {
-      "sha256": "713df5ba9d36eb94876a029815b03dba044da39020096708422bf64296aed9a3",
-      "bytes": 76245
+      "sha256": "24bb9c6fe14060bb5b01304ba282c719e88b0f17e852e6a76cea830b23b3b42d",
+      "bytes": 76518
     },
     "mobile-trusted-name-unregistered.png": {
       "sha256": "77758ea48ea8e61018d38544c8341ee84eb89090d4f81814b7f4e6790754dff1",
@@ -3332,6 +3340,10 @@
     "remote-folder-breadcrumbs.png": {
       "sha256": "38194a2fdd72dad87396e714b122ab9e66cfd92ec2ca12df69bb34bd7acbbe04",
       "bytes": 50123
+    },
+    "remote-watcher-install-approval.png": {
+      "sha256": "b0a3ca802c3a8c038e7f90e35adc6072928d4d446008e7f754550411a68c8871",
+      "bytes": 60385
     },
     "renderer-input-guards-font-size-empty.png": {
       "sha256": "cdf78e31485f00702b493d9722343c3b089916fdd83da100e5f3a11fc6f04b73",
