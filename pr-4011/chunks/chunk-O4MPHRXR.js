@@ -56145,8 +56145,8 @@ function createMcpServerEditor(host, api, onSaved) {
   const transportSelect = el(
     "select",
     { id: "mcp-editor-transport" },
-    el("option", { value: "stdio" }, "Local command (stdio)"),
-    el("option", { value: "http" }, "Remote URL (HTTP)")
+    el("option", { value: "stdio" }, "Local command"),
+    el("option", { value: "http" }, "Remote URL")
   );
   const commandInput = el("input", {
     type: "text",
