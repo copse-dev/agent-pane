@@ -60,7 +60,7 @@ import {
   resolvePluginMcpConfigPath,
 } from '../skills/cursor-plugins.ts'
 import { isRecord } from '@shared/unknown-value.ts'
-import { getElectronUserDataPath } from '../electron-app-runtime.ts'
+import { copseUserMcpConfigPath } from './mcp-user-config.ts'
 import {
   getXcodeBuildMcpConfig,
   prepareXcodeBuildMcpArguments,
@@ -213,7 +213,7 @@ function projectMcpSourcePaths(workspace: string): string[] {
 }
 
 function userMcpSourcePaths(): string[] {
-  return [join(homedir(), '.cursor', 'mcp.json'), join(getElectronUserDataPath(), 'mcp.json')]
+  return [join(homedir(), '.cursor', 'mcp.json'), copseUserMcpConfigPath()]
 }
 
 async function readPluginMcpConfigs(): Promise<McpServerConfig[]> {
@@ -303,7 +303,7 @@ async function collectE2eMcpFixtureConfig(): Promise<{
   active: McpServerConfig[]
   untrusted: McpServerConfig[]
 } | null> {
-  const configPath = join(getElectronUserDataPath(), 'mcp.json')
+  const configPath = copseUserMcpConfigPath()
   try {
     await fs.access(configPath)
   } catch {
@@ -325,7 +325,7 @@ function isUserMcpSource(source: string | undefined): boolean {
   return (
     source === CURATED_MCP_SOURCE ||
     source === join(homedir(), '.cursor', 'mcp.json') ||
-    source === join(getElectronUserDataPath(), 'mcp.json') ||
+    source === copseUserMcpConfigPath() ||
     agentPluginIdForMcpSource(source) !== undefined ||
     isCursorPluginMcpSource(source)
   )
@@ -347,7 +347,7 @@ function classifyMcpOrigin(source: string | undefined): McpServerOrigin {
   if (agentPluginIdForMcpSource(source) !== undefined) return 'plugin'
   if (isCursorPluginMcpSource(source)) return 'plugin'
   if (source === join(homedir(), '.cursor', 'mcp.json')) return 'user'
-  if (source === join(getElectronUserDataPath(), 'mcp.json')) return 'user'
+  if (source === copseUserMcpConfigPath()) return 'user'
   return 'project'
 }
 
