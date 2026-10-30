@@ -48,6 +48,8 @@ import {
 import { GUEST_ALLOWED_TOOLS } from './guest-tools.ts'
 import { EgressLink } from './egress-link.ts'
 import { probeBroker, startGuestEgressProxy } from './guest-egress-proxy.ts'
+import { startGuestGitHubBridge, type GuestGitHubBridge } from './guest-github-bridge.ts'
+import { guestGitHubConfig } from './github-capability-wire.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types/index.ts'
 import type { ExplicitToolAvailability } from '../tool-availability.ts'
 import { finalGuestText, foldGuestTranscript } from './guest-transcript.ts'
@@ -75,7 +77,10 @@ export interface WorkerProfile {
    */
   workspace: 'carry-in' | 'in-place'
   /** What the agent is told about its environment, before the task. */
-  environmentNote(install: DependencyInstallSummary | null): string
+  environmentNote(
+    install: DependencyInstallSummary | null,
+    capabilities: { githubRead: boolean },
+  ): string
   /**
    * Which of the tools the loop can use exist in this container. The product
    * image ships `rg` and `git`, so its entry states them; an image the product
@@ -239,6 +244,41 @@ function carryIn(spec: Spec, runDir: string): void {
   const head = git(spec.workspace, ['rev-parse', 'HEAD'])
   if (head !== spec.carryInBase)
     throw new Error(`carry-in mismatch: ${head} != ${spec.carryInBase}`)
+}
+
+/** Where `gh`'s socket lives: the guest's own tmpfs, private to the worker user. */
+const GITHUB_SOCKET_DIR = '/tmp/copse-github'
+
+/**
+ * The GitHub read capability (decision A24): start the bridge, then point
+ * `gh` (its config directory, through the environment every later child
+ * inherits) and `git` (the global config in this run's home) at it.
+ */
+async function enableGitHubReads(
+  link: EgressLink,
+  placeholder: string,
+): Promise<GuestGitHubBridge> {
+  mkdirSync(GITHUB_SOCKET_DIR, { recursive: true, mode: 0o700 })
+  const bridge = await startGuestGitHubBridge(link, {
+    socketPath: join(GITHUB_SOCKET_DIR, 'gh.sock'),
+    gitProxy: { host: '127.0.0.1', port: 0 },
+  })
+  const configDir = join(homedir(), '.config', 'copse-gh')
+  const config = guestGitHubConfig({
+    configDir,
+    socketPath: bridge.socketPath,
+    gitProxyPort: bridge.gitProxyPort,
+    placeholder,
+  })
+  mkdirSync(configDir, { recursive: true, mode: 0o700 })
+  for (const [name, contents] of Object.entries(config.ghFiles)) {
+    writeFileSync(join(configDir, name), contents, { mode: 0o600 })
+  }
+  for (const [key, value] of config.gitConfig) {
+    execFileSync('git', ['config', '--global', key, value])
+  }
+  Object.assign(process.env, config.env)
+  return bridge
 }
 
 /** Longest a dependency install may take before the run goes on without it. */
@@ -493,6 +533,19 @@ async function workerMain(profile: WorkerProfile): Promise<void> {
   if (spec.acp) {
     say(`[worker] harness: ACP agent ${spec.acp.agent.id} (${spec.acp.agent.command})\n`)
   }
+  // Before any child exists, so the agent's shell inherits the configuration.
+  // The host never asks for it alongside a dependency install, whose scripts
+  // must not share it; refuse that here too. No link means no host to reach:
+  // say so and go on.
+  let githubBridge: GuestGitHubBridge | null = null
+  if (spec.github && spec.installDependencies) {
+    say('[worker] GitHub: requested alongside a dependency install; not configured\n')
+  } else if (spec.github && link) {
+    githubBridge = await enableGitHubReads(link, spec.github.placeholder)
+    say('[worker] GitHub: read-only through the host (gh and git configured)\n')
+  } else if (spec.github) {
+    say('[worker] GitHub: requested but there is no link to the host; not configured\n')
+  }
 
   say(`[worker] run ${spec.runtimeId} thread ${spec.threadId}\n`)
   workspaceForDiagnosis = spec.workspace
@@ -527,7 +580,7 @@ async function workerMain(profile: WorkerProfile): Promise<void> {
     }
   }
   // The agent is told what it has and what it cannot do, before the task.
-  const prompt = `${profile.environmentNote(installSummary)}\n\nTask:\n${spec.prompt}`
+  const prompt = `${profile.environmentNote(installSummary, { githubRead: githubBridge !== null })}\n\nTask:\n${spec.prompt}`
   if (spec.acp?.login) {
     // The user's sign-in, staged by the host: into this throwaway home, private
     // to the worker, before the agent can look for it.
@@ -711,6 +764,7 @@ async function workerMain(profile: WorkerProfile): Promise<void> {
     // no next turn, and a live child would keep this process from exiting.
     await disposeAllAcpSessions()
     await egressProxy?.close()
+    await githubBridge?.close()
     if (proxyRefusals > 0) {
       say(`[worker] ${String(proxyRefusals)} proxy request(s) refused for want of the run token\n`)
     }

@@ -34,6 +34,8 @@ runContainerWorker({
   },
   workspace: 'carry-in',
   environmentNote: guestEnvironmentNote,
-  // The worker image ships both (and the product never offers `gh` in a guest).
+  // The worker image ships all three, but Copse's own gh-backed tools stay on
+  // the desktop (guest-tools.ts); `gh` in the guest is the shell's, and reaches
+  // GitHub only through the host's read capability when the run has one (A24).
   toolAvailability: () => ({ rg: true, git: true, gh: false }),
 })
