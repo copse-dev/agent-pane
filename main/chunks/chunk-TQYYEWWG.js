@@ -69359,7 +69359,7 @@ function mountSettingsDialog(store, api) {
   overlay.innerHTML = `
     <div class="settings-shell">
       <header class="settings-header">
-        <h2>Settings</h2>
+        <h2 id="settings-dialog-title">Settings</h2>
         <button type="button" class="settings-close-btn" id="settings-close" aria-label="Close settings" data-tooltip="Close settings"></button>
       </header>
 
@@ -69397,6 +69397,7 @@ function mountSettingsDialog(store, api) {
       </div>
     </div>
   `;
+  overlay.setAttribute("aria-labelledby", "settings-dialog-title");
   bindSettingsDialog(overlay);
   for (const definition of SETTINGS_SECTIONS) renderSimpleFields(overlay, definition.fields);
   qsRequired(overlay, "#settings-close").append(closeIcon("ui-icon"));
