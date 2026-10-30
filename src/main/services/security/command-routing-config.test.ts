@@ -138,7 +138,7 @@ describe('trusted-command routing with two roots at once (#3958)', () => {
     setProjectSandboxEnabled(true)
     const restore = setWorkspaceRootForTest(ambient)
     await setSetting(SETTING, ['xcodebuild'])
-    setSetting('autoRunSandboxCommands', true)
+    await setSetting('autoRunSandboxCommands', true)
     setWorkspaceTrusted(trusted.projectRoot, true)
     setWorkspaceTrusted(ambient, true)
     try {

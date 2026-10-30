@@ -38,7 +38,11 @@ describe('resolveAutoApproval — sandbox gate', () => {
 
   it('auto-approves a recognised read-tier shape only when the sandbox is active', async () => {
     await withTrustedRepo((root) => {
-      const allowed = resolveAutoApproval('git fetch origin main', { projectRoot: root, executionRoot: root }, true)
+      const allowed = resolveAutoApproval(
+        'git fetch origin main',
+        { projectRoot: root, executionRoot: root },
+        true,
+      )
       assert.equal(allowed.action, 'auto-approve')
       assert.equal('tier' in allowed ? allowed.tier : undefined, 'read')
 
@@ -70,7 +74,10 @@ describe('resolveAutoApproval — sandbox gate', () => {
 
   it('fails closed when the caller omits sandboxEnabled', async () => {
     await withTrustedRepo((root) => {
-      const blocked = resolveAutoApproval('git fetch origin main', { projectRoot: root, executionRoot: root })
+      const blocked = resolveAutoApproval('git fetch origin main', {
+        projectRoot: root,
+        executionRoot: root,
+      })
       assert.equal(blocked.action, 'prompt')
       assert.ok(blocked.reasons.includes('project sandbox not active'))
     })
@@ -79,7 +86,11 @@ describe('resolveAutoApproval — sandbox gate', () => {
   it('still prompts when auto-run is off, even with a live sandbox', async () => {
     await withTrustedRepo(async (root) => {
       await setSetting('autoRunSandboxCommands', false)
-      const blocked = resolveAutoApproval('git fetch origin main', { projectRoot: root, executionRoot: root }, true)
+      const blocked = resolveAutoApproval(
+        'git fetch origin main',
+        { projectRoot: root, executionRoot: root },
+        true,
+      )
       assert.equal(blocked.action, 'prompt')
       assert.ok(blocked.reasons.includes('auto-run disabled'))
     })
