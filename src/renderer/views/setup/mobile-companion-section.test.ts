@@ -63,7 +63,8 @@ function mockApi(initial: Partial<MobileCompanionState> = {}): {
     localQrSvg: null,
     publicName: unregistered,
     rootCertificatePath: null,
-    addresses: [{ address: '192.168.1.5', interfaceName: 'en0' }],
+    address: null,
+    addresses: [{ address: '192.168.1.5', interfaceName: 'en0', virtual: false }],
     devices: [],
     pairing: null,
     lastError: null,
@@ -586,5 +587,49 @@ describe('createMobileCompanionSection', () => {
     assert.ok(recheck)
     recheck.click()
     assert.equal(calls.recheckNameDns, 1)
+  })
+
+  it('flags a virtual interface and warns when the trusted name points at one', async () => {
+    const { api } = mockApi({
+      enabled: true,
+      running: true,
+      url: `https://${hostname}:42773`,
+      localUrl: 'https://192.168.64.1:42773',
+      address: '192.168.64.1',
+      addresses: [
+        { address: '192.168.0.191', interfaceName: 'en0', virtual: false },
+        { address: '192.168.64.1', interfaceName: 'bridge100', virtual: true },
+      ],
+      publicName: registered,
+    })
+    const section = createMobileCompanionSection(api)
+    document.body.append(section.root)
+    await section.refresh()
+    const select = section.root.querySelector<HTMLSelectElement>(
+      'select[name="mobileCompanionAddress"]',
+    )
+    assert.ok(select)
+    assert.equal(select.value, '192.168.64.1')
+    assert.match(select.selectedOptions[0]?.textContent ?? '', /bridge100 .*\(virtual or VPN\)/)
+    assert.match(section.root.textContent, /bridge100 is a virtual-machine or VPN network/)
+    const card = section.root.querySelector<HTMLElement>('.mobile-companion-name')
+    assert.match(card?.textContent ?? '', /points at 192\.168\.64\.1 on bridge100/)
+  })
+
+  it('defaults to the first listed interface and shows no warning for Wi-Fi', async () => {
+    const { api } = mockApi({
+      addresses: [
+        { address: '192.168.0.191', interfaceName: 'en0', virtual: false },
+        { address: '192.168.64.1', interfaceName: 'bridge100', virtual: true },
+      ],
+    })
+    const section = createMobileCompanionSection(api)
+    document.body.append(section.root)
+    await section.refresh()
+    const select = section.root.querySelector<HTMLSelectElement>(
+      'select[name="mobileCompanionAddress"]',
+    )
+    assert.equal(select?.value, '192.168.0.191')
+    assert.doesNotMatch(section.root.textContent, /virtual-machine or VPN network/)
   })
 })

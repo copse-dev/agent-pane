@@ -10,6 +10,7 @@ import { broadcastToAppWindows } from '../../windows/app-window-broadcast.ts'
 import { MobileDevices } from './mobile-devices.ts'
 import { MobilePreference } from './mobile-preference.ts'
 import { mobileLanAddresses, startMobileServer, type MobileServer } from './mobile-server.ts'
+import { readDefaultRouteInterface } from './default-route.ts'
 import { DEFAULT_NAMES_API, NamesClient } from '../remote-names/names-client.ts'
 import { RemoteNames } from '../remote-names/names-service.ts'
 import { NamesStore } from '../remote-names/names-store.ts'
@@ -26,6 +27,27 @@ const qrCache = new Map<string, string>()
 const pairingRequests = new MobilePairing()
 const RETRY_MS = 15_000
 let names: RemoteNames | null = null
+let defaultInterface: string | null = null
+let defaultInterfaceCheckedAt = 0
+const DEFAULT_ROUTE_REFRESH_MS = 10_000
+
+/**
+ * Re-read which interface carries the default route, at most every ten
+ * seconds, and republish when it changes so Settings re-sorts its list.
+ */
+function refreshDefaultInterface(): Promise<void> {
+  if (Date.now() - defaultInterfaceCheckedAt < DEFAULT_ROUTE_REFRESH_MS) return Promise.resolve()
+  defaultInterfaceCheckedAt = Date.now()
+  return readDefaultRouteInterface().then((next) => {
+    if (next === defaultInterface) return
+    defaultInterface = next
+    publish()
+  })
+}
+
+function lanAddresses(): ReturnType<typeof mobileLanAddresses> {
+  return mobileLanAddresses(undefined, defaultInterface)
+}
 let namesStarted = false
 
 /**
@@ -95,6 +117,7 @@ function currentQrSvg(url: string | null): string | null {
 }
 
 export function getMobileCompanionState(): MobileCompanionState {
+  void refreshDefaultInterface()
   const running = active?.isRunning() ?? false
   const ipUrl = running ? (active?.url ?? null) : null
   const name = running ? remoteNames().identity()?.hostname : undefined
@@ -109,7 +132,8 @@ export function getMobileCompanionState(): MobileCompanionState {
     localQrSvg: currentQrSvg(localUrl),
     publicName: remoteNames().state(),
     rootCertificatePath: running ? (active?.rootPath ?? null) : null,
-    addresses: mobileLanAddresses(),
+    address: running ? (active?.address ?? null) : null,
+    addresses: lanAddresses(),
     devices: devices().list(),
     pairing: pairingRequests.current(),
     lastError,
@@ -196,7 +220,8 @@ export async function resumeMobileCompanion(): Promise<void> {
   try {
     const choice = savedPreference().current()
     if (!choice.enabled || active?.isRunning()) return
-    const addresses = mobileLanAddresses()
+    await refreshDefaultInterface()
+    const addresses = lanAddresses()
     const address =
       choice.address && addresses.some((candidate) => candidate.address === choice.address)
         ? choice.address

@@ -148,7 +148,7 @@ describe('Mobile Companion trusted name', function () {
 
     // The connection block now leads with the trusted name.
     const connection = $('.mobile-companion-connection')
-    await expect(connection).toHaveText(expect.stringContaining(`${origin}`), { wait: 15_000 })
+    await expect(connection).toHaveText(expect.stringContaining(origin), { wait: 15_000 })
     await expect(connection).toHaveText(expect.stringContaining(`https://${address}:42773`))
 
     // Over real TLS: the name gets the issued chain, the bare IP the local root.

@@ -605,8 +605,15 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
             lastError: null,
           },
           rootCertificatePath: null,
+          address: scenario.mobileCompanion ? new URL(scenario.mobileCompanion.url).hostname : null,
           addresses: scenario.mobileCompanion
-            ? [{ address: new URL(scenario.mobileCompanion.url).hostname, interfaceName: 'Wi-Fi' }]
+            ? [
+                {
+                  address: new URL(scenario.mobileCompanion.url).hostname,
+                  interfaceName: 'Wi-Fi',
+                  virtual: false,
+                },
+              ]
             : [],
           devices: [],
           pairing: null,

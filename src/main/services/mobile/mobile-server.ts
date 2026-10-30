@@ -18,6 +18,7 @@ import {
 } from './mobile-activity.ts'
 import { mobileCertificate } from './mobile-certificate.ts'
 import { MobileDevices } from './mobile-devices.ts'
+import { isVirtualInterface } from './default-route.ts'
 import { ClientPairings } from '../clients/client-pairings.ts'
 import type { PublicIdentity } from '../remote-names/names-service.ts'
 import { clientLabelSchema, type ClientAccess } from '../../../shared/client-auth.ts'
@@ -37,19 +38,32 @@ const idPattern = /^[\w-]{1,128}$/
 export interface MobileLanAddress {
   address: string
   interfaceName: string
+  /** A VM bridge or VPN tunnel: a phone on the local network almost never reaches it. */
+  virtual: boolean
 }
 
-/** Keep interface identity: laptops commonly have Wi-Fi, VPN and VM addresses. */
+/**
+ * Keep interface identity: laptops commonly have Wi-Fi, VPN and VM addresses.
+ * The default-route interface comes first, then other physical interfaces,
+ * then virtual ones, so the first entry is the sensible default.
+ */
 export function mobileLanAddresses(
   interfaces: NodeJS.Dict<NetworkInterfaceInfo[]> = networkInterfaces(),
+  defaultInterface: string | null = null,
 ): MobileLanAddress[] {
-  return Object.entries(interfaces).flatMap(([interfaceName, entries]) =>
-    (entries ?? []).flatMap((entry) =>
-      entry.family === 'IPv4' && !entry.internal && isRfc1918(entry.address)
-        ? [{ address: entry.address, interfaceName }]
-        : [],
-    ),
-  )
+  const rank = (candidate: MobileLanAddress): number =>
+    candidate.interfaceName === defaultInterface ? 0 : candidate.virtual ? 2 : 1
+  return Object.entries(interfaces)
+    .flatMap(([interfaceName, entries]) =>
+      (entries ?? []).flatMap((entry) =>
+        entry.family === 'IPv4' && !entry.internal && isRfc1918(entry.address)
+          ? [{ address: entry.address, interfaceName, virtual: isVirtualInterface(interfaceName) }]
+          : [],
+      ),
+    )
+    .map((candidate, index) => ({ candidate, index }))
+    .sort((a, b) => rank(a.candidate) - rank(b.candidate) || a.index - b.index)
+    .map(({ candidate }) => candidate)
 }
 
 function isRfc1918(address: string): boolean {

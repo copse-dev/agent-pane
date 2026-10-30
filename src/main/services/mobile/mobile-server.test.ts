@@ -42,9 +42,26 @@ describe('mobile LAN interfaces', () => {
         en6: [networkAddress('2001:db8::1', 'IPv6')],
       }),
       [
-        { address: '192.168.1.41', interfaceName: 'en0' },
-        { address: '10.20.0.2', interfaceName: 'utun4' },
+        { address: '192.168.1.41', interfaceName: 'en0', virtual: false },
+        { address: '10.20.0.2', interfaceName: 'utun4', virtual: true },
       ],
+    )
+  })
+  it('puts the default-route interface first and virtual networks last', () => {
+    const interfaces = {
+      bridge100: [networkAddress('192.168.64.1')],
+      utun4: [networkAddress('10.20.0.2')],
+      en7: [networkAddress('10.0.0.5')],
+      en0: [networkAddress('192.168.0.191')],
+    }
+    assert.deepEqual(
+      mobileLanAddresses(interfaces, 'en0').map((candidate) => candidate.interfaceName),
+      ['en0', 'en7', 'bridge100', 'utun4'],
+    )
+    // Without a known default route, physical interfaces still lead.
+    assert.deepEqual(
+      mobileLanAddresses(interfaces).map((candidate) => candidate.interfaceName),
+      ['en7', 'en0', 'bridge100', 'utun4'],
     )
   })
 })

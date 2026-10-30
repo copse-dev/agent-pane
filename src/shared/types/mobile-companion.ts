@@ -8,6 +8,8 @@ import type { ClientAccess } from '../client-auth.ts'
 export interface MobileCompanionAddress {
   address: string
   interfaceName: string
+  /** A VM bridge or VPN tunnel, which a phone on the local network almost never reaches. */
+  virtual: boolean
 }
 
 export type MobileCompanionAccess = ClientAccess
@@ -69,6 +71,9 @@ export interface MobileCompanionState {
   localQrSvg: string | null
   publicName: MobileCompanionPublicName
   rootCertificatePath: string | null
+  /** The address the running server is bound to. */
+  address: string | null
+  /** Best first: the default-route interface, then physical, then virtual. */
   addresses: MobileCompanionAddress[]
   devices: MobileCompanionDevice[]
   pairing: MobileCompanionPairing | null

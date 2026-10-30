@@ -112,19 +112,26 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
         el(
           'option',
           { value: candidate.address },
-          `${candidate.interfaceName} — ${candidate.address}`,
+          `${candidate.interfaceName} — ${candidate.address}${candidate.virtual ? ' (virtual or VPN)' : ''}`,
         ),
       )
     }
-    if (state.addresses.some((candidate) => candidate.address === previous))
-      addressSelect.value = previous
+    // A running server shows the address it is bound to; otherwise keep the
+    // user's pick, or the best candidate the main process listed first.
+    const shown = state.address ?? previous
+    if (state.addresses.some((candidate) => candidate.address === shown))
+      addressSelect.value = shown
     const disabled = state.addresses.length === 0 || state.enabled
     if (disabled) addressSelect.setAttribute('disabled', '')
     else addressSelect.removeAttribute('disabled')
+    const selected = state.addresses.find((candidate) => candidate.address === addressSelect.value)
+    addressHint.classList.toggle('mobile-companion-name-warning', selected?.virtual === true)
     addressHint.textContent =
       state.addresses.length === 0
         ? 'Connect this Mac to a private Wi-Fi or wired network first.'
-        : 'Pick the interface your phone is on — usually Wi-Fi. Turn Mobile Companion off to change it.'
+        : selected?.virtual
+          ? `${selected.interfaceName} is a virtual-machine or VPN network; a phone on your Wi-Fi usually cannot reach it.${state.enabled ? ' Turn Mobile Companion off to pick another.' : ''}`
+          : 'Pick the interface your phone is on — usually Wi-Fi. Turn Mobile Companion off to change it.'
   }
 
   function renderConnection(state: MobileCompanionState): void {
@@ -245,6 +252,15 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
             'p',
             { class: 'field-hint mobile-companion-name-warning' },
             'The names service retired this name. Remove it, then register again with a new invite.',
+          ),
+        )
+      const bound = state.addresses.find((candidate) => candidate.address === state.address)
+      if (state.running && bound?.virtual)
+        nameSummary.append(
+          el(
+            'p',
+            { class: 'field-hint mobile-companion-name-warning' },
+            `${name.hostname} points at ${bound.address} on ${bound.interfaceName}, a virtual-machine or VPN network that phones on your Wi-Fi cannot reach. Turn Mobile Companion off, pick your Wi-Fi network and turn it on again.`,
           ),
         )
       if (state.running) renderDns(name.hostname, name.dns)
@@ -411,6 +427,10 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
     if (state.lastError) setInlineStatus(status, 'error', state.lastError)
     else status.replaceChildren()
   }
+
+  addressSelect.addEventListener('change', () => {
+    if (lastState) renderAddresses(lastState)
+  })
 
   enabledInput.addEventListener('change', () => {
     void (async (): Promise<void> => {
