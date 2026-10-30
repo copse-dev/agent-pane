@@ -42411,8 +42411,8 @@ function resolveAgentModelIdentity(...forms) {
     if (id !== null && getIntellectScore(id)) return id;
   }
   for (const form of named) {
-    const labelled = claudeModelIdFromLabel(form);
-    const id = labelled === null ? null : resolveIntellectModelId(labelled);
+    const labelled2 = claudeModelIdFromLabel(form);
+    const id = labelled2 === null ? null : resolveIntellectModelId(labelled2);
     if (id !== null && getIntellectScore(id)) return id;
   }
   return null;
@@ -56143,9 +56143,344 @@ var init_storage_section = __esm({
   }
 });
 
+// src/renderer/views/settings/mcp-server-editor.ts
+function secretRows(kind) {
+  const noun = kind === "env" ? "variable" : "header";
+  const list = el("div", { class: "mcp-editor-secret-list" });
+  const addButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact" },
+    kind === "env" ? "Add variable" : "Add header"
+  );
+  const rows = [];
+  function addRow(key = "", stored = false) {
+    const keyInput = el("input", {
+      type: "text",
+      class: "mcp-editor-secret-key",
+      placeholder: kind === "env" ? "NAME" : "Header-Name",
+      "aria-label": kind === "env" ? "Variable name" : "Header name",
+      spellcheck: "false",
+      autocomplete: "off"
+    });
+    keyInput.value = key;
+    const valueInput = el("input", {
+      type: "password",
+      class: "mcp-editor-secret-value",
+      placeholder: stored ? "Saved value (unchanged)" : "Value",
+      "aria-label": kind === "env" ? `Value of ${key || "variable"}` : `Value of ${key || "header"}`,
+      autocomplete: "new-password"
+    });
+    const row = { key: keyInput, value: valueInput, stored };
+    const removeButton = el(
+      "button",
+      {
+        type: "button",
+        class: "ui-btn ui-btn-secondary ui-btn-compact mcp-editor-secret-remove",
+        "aria-label": `Remove ${noun}`,
+        title: `Remove ${noun}`
+      },
+      "\xD7"
+    );
+    const line = el("div", { class: "mcp-editor-secret-row" }, keyInput, valueInput, removeButton);
+    removeButton.addEventListener("click", () => {
+      rows.splice(rows.indexOf(row), 1);
+      line.remove();
+    });
+    keyInput.addEventListener("input", () => {
+      if (!row.stored) return;
+      row.stored = false;
+      valueInput.placeholder = "Value";
+    });
+    rows.push(row);
+    list.append(line);
+  }
+  addButton.addEventListener("click", () => {
+    addRow();
+    rows.at(-1)?.key.focus();
+  });
+  return {
+    root: el("div", { class: "mcp-editor-secrets" }, list, addButton),
+    entries: () => rows.map(
+      ({ key, value, stored }) => value.value === "" && stored ? { key: key.value } : { key: key.value, value: value.value }
+    ),
+    reset: (stored) => {
+      rows.splice(0);
+      list.replaceChildren();
+      for (const entry of stored) addRow(entry.key, true);
+    }
+  };
+}
+function labelled(text, control, hint) {
+  const label = el("label", {}, text, control);
+  if (hint !== void 0) label.append(el("span", { class: "field-hint" }, hint));
+  return label;
+}
+function createMcpServerEditor(host, api, onSaved) {
+  let editing;
+  const heading = el("h4", { class: "mcp-editor-heading" });
+  const nameInput = el("input", {
+    type: "text",
+    id: "mcp-editor-name",
+    spellcheck: "false",
+    autocomplete: "off",
+    placeholder: "my-server"
+  });
+  const transportSelect = el(
+    "select",
+    { id: "mcp-editor-transport" },
+    el("option", { value: "stdio" }, "Local command"),
+    el("option", { value: "http" }, "Remote URL")
+  );
+  const commandInput = el("input", {
+    type: "text",
+    id: "mcp-editor-command",
+    spellcheck: "false",
+    autocomplete: "off",
+    placeholder: "npx"
+  });
+  const argsInput = el("textarea", {
+    id: "mcp-editor-args",
+    rows: "3",
+    spellcheck: "false",
+    placeholder: "-y\n@modelcontextprotocol/server-everything"
+  });
+  const cwdInput = el("input", {
+    type: "text",
+    id: "mcp-editor-cwd",
+    spellcheck: "false",
+    autocomplete: "off"
+  });
+  const urlInput = el("input", {
+    type: "url",
+    id: "mcp-editor-url",
+    spellcheck: "false",
+    autocomplete: "off",
+    placeholder: "https://example.com/mcp"
+  });
+  const env = secretRows("env");
+  const headers = secretRows("headers");
+  const envGroup = el(
+    "div",
+    { class: "mcp-editor-group" },
+    el("span", { class: "mcp-editor-group-label" }, "Environment variables"),
+    env.root
+  );
+  const headersGroup = el(
+    "div",
+    { class: "mcp-editor-group" },
+    el("span", { class: "mcp-editor-group-label" }, "Headers"),
+    headers.root
+  );
+  const stdioFields = el(
+    "div",
+    { class: "mcp-editor-transport-fields", "data-transport": "stdio" },
+    labelled(
+      "Command",
+      commandInput,
+      "The program that starts the server, such as npx, uvx or a path."
+    ),
+    labelled("Arguments", argsInput, "One argument per line."),
+    labelled("Working directory (optional)", cwdInput),
+    envGroup
+  );
+  const httpFields = el(
+    "div",
+    { class: "mcp-editor-transport-fields", "data-transport": "http" },
+    labelled(
+      "URL",
+      urlInput,
+      "Servers that use OAuth need no header: save, then choose Sign in on the server."
+    ),
+    headersGroup
+  );
+  const secretsHint = el(
+    "p",
+    { class: "field-hint mcp-editor-secrets-hint" },
+    "Values are saved as plain text in Copse\u2019s MCP config, readable only by your user account. To keep a key out of the file, enter ",
+    el("code", {}, "${env:NAME}"),
+    " and Copse reads it from its environment."
+  );
+  const status = el("span", { class: "lmstudio-test-status", id: "mcp-editor-status" });
+  const saveButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary", id: "mcp-editor-save" },
+    "Save server"
+  );
+  const cancelButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary", id: "mcp-editor-cancel" },
+    "Cancel"
+  );
+  const fieldControls = {
+    name: nameInput,
+    command: commandInput,
+    cwd: cwdInput,
+    url: urlInput,
+    env: envGroup,
+    headers: headersGroup
+  };
+  host.replaceChildren(
+    heading,
+    labelled("Name", nameInput, "Tools appear to the agent as mcp__<name>__<tool>."),
+    labelled("Type", transportSelect),
+    stdioFields,
+    httpFields,
+    secretsHint,
+    el("div", { class: "settings-action-row" }, saveButton, cancelButton, status)
+  );
+  function clearInvalid() {
+    for (const control of Object.values(fieldControls)) control.removeAttribute("aria-invalid");
+    status.replaceChildren();
+  }
+  function syncTransport() {
+    const http = transportSelect.value === "http";
+    stdioFields.hidden = http;
+    httpFields.hidden = !http;
+  }
+  function input2() {
+    if (transportSelect.value === "http") {
+      return {
+        transport: "http",
+        name: nameInput.value,
+        url: urlInput.value,
+        headers: headers.entries()
+      };
+    }
+    const cwd = cwdInput.value.trim();
+    return {
+      transport: "stdio",
+      name: nameInput.value,
+      command: commandInput.value,
+      args: argsInput.value.split("\n").map((arg) => arg.trim()),
+      ...cwd ? { cwd } : {},
+      env: env.entries()
+    };
+  }
+  function open2(server) {
+    editing = server?.name;
+    heading.textContent = server ? `Edit ${server.name}` : "Add an MCP server";
+    nameInput.value = server?.name ?? "";
+    transportSelect.value = server?.transport ?? "stdio";
+    commandInput.value = server?.transport === "stdio" ? server.command : "";
+    argsInput.value = server?.transport === "stdio" ? server.args.join("\n") : "";
+    cwdInput.value = server?.transport === "stdio" ? server.cwd ?? "" : "";
+    urlInput.value = server?.transport === "http" ? server.url : "";
+    env.reset(server?.transport === "stdio" ? server.env : []);
+    headers.reset(server?.transport === "http" ? server.headers : []);
+    clearInvalid();
+    syncTransport();
+    host.hidden = false;
+    nameInput.focus();
+  }
+  function close() {
+    editing = void 0;
+    host.hidden = true;
+    clearInvalid();
+  }
+  async function save() {
+    clearInvalid();
+    saveButton.disabled = true;
+    status.textContent = "Saving\u2026";
+    try {
+      const result = await api.mcp.saveUserServer(input2(), editing);
+      if (!result.ok) {
+        const control = fieldControls[result.field];
+        control?.setAttribute("aria-invalid", "true");
+        setInlineStatus(status, "error", result.message);
+        const focusTarget = control instanceof HTMLInputElement ? control : control?.querySelector("input");
+        focusTarget?.focus();
+        return;
+      }
+      close();
+      onSaved(result.list);
+    } catch (error62) {
+      setInlineStatus(status, "error", ipcErrorMessage(error62, "Could not save the server."));
+    } finally {
+      saveButton.disabled = false;
+    }
+  }
+  transportSelect.addEventListener("change", syncTransport);
+  saveButton.addEventListener("click", () => {
+    void save();
+  });
+  cancelButton.addEventListener("click", close);
+  host.addEventListener("input", (event) => {
+    const target = event.target;
+    if (target instanceof HTMLElement) {
+      target.removeAttribute("aria-invalid");
+      target.closest("[aria-invalid]")?.removeAttribute("aria-invalid");
+    }
+  });
+  host.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.target instanceof HTMLTextAreaElement) return;
+    if (!(event.target instanceof HTMLInputElement)) return;
+    event.preventDefault();
+    void save();
+  });
+  host.hidden = true;
+  return { open: open2, close };
+}
+var init_mcp_server_editor = __esm({
+  "src/renderer/views/settings/mcp-server-editor.ts"() {
+    init_helpers();
+    init_inline_status();
+    init_ipc_error_message();
+  }
+});
+
 // src/renderer/views/settings/mcp-section.ts
 function createMcpSection(overlay, api, onTrusted, onManagePermissions, onHeadingsChanged) {
   let generation = 0;
+  let userServers;
+  const editor = createMcpServerEditor(qsRequired(overlay, "#mcp-server-editor"), api, (list) => {
+    userServers = list;
+    void refreshMcpServers();
+  });
+  function userServerFor(s2) {
+    if (userServers === void 0 || s2.source !== userServers.path) return void 0;
+    return userServers.servers.find((server) => server.name === s2.name);
+  }
+  function userServerButtons(server) {
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "ui-btn ui-btn-secondary ui-btn-compact mcp-edit-btn";
+    edit.textContent = "Edit";
+    edit.setAttribute("aria-label", `Edit ${server.name}`);
+    edit.addEventListener("click", () => {
+      editor.open(server);
+    });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "ui-btn ui-btn-secondary ui-btn-compact mcp-remove-btn";
+    remove.textContent = "Remove";
+    remove.setAttribute("aria-label", `Remove ${server.name}`);
+    remove.addEventListener("click", () => {
+      void removeUserServer(server.name);
+    });
+    return [edit, remove];
+  }
+  async function removeUserServer(name) {
+    const confirmed = await showConfirmDialog({
+      message: `Remove ${name}?`,
+      detail: "Copse deletes it from its MCP config and stops it. Its tools stop being available.",
+      confirmLabel: "Remove",
+      danger: true
+    });
+    if (!confirmed) return;
+    const statusEl = qsRequired(overlay, "#mcp-reload-status");
+    try {
+      const result = await api.mcp.removeUserServer(name);
+      if (!result.ok) {
+        setInlineStatus(statusEl, "error", result.message);
+        return;
+      }
+      userServers = result.list;
+      editor.close();
+      await refreshMcpServers();
+    } catch (error62) {
+      setInlineStatus(statusEl, "error", ipcErrorMessage(error62, "Could not remove the server."));
+    }
+  }
   function mcpOriginChip(s2) {
     const labels = {
       user: "Your config",
@@ -56269,6 +56604,7 @@ function createMcpSection(overlay, api, onTrusted, onManagePermissions, onHeadin
       const badge = s2.state === "connected" ? inlineStatus("filled", "connected") : s2.auth === "required" ? inlineStatus("warn", "sign-in required") : s2.state === "error" ? inlineStatus("error", "error") : s2.state === "disabled" ? inlineStatus("idle", "disabled") : s2.state === "untrusted" ? inlineStatus("warn", "not trusted") : document.createTextNode("\u2026 connecting");
       const row = document.createElement("div");
       row.className = `mcp-server-row mcp-state-${s2.state}`;
+      row.dataset["mcpServer"] = s2.name;
       const header = document.createElement("div");
       header.className = "mcp-server-header";
       const toggleLabel = document.createElement("label");
@@ -56308,6 +56644,8 @@ function createMcpSection(overlay, api, onTrusted, onManagePermissions, onHeadin
       const authButton = mcpSignInButton(s2);
       if (authButton) header.append(authButton);
       header.append(permissionsButton);
+      const userServer = userServerFor(s2);
+      if (userServer) header.append(...userServerButtons(userServer));
       row.append(header);
       const statusDetail = s2.state === "connected" ? `${String(s2.toolCount)} tool(s)${s2.tools.length ? `: ${s2.tools.join(", ")}` : ""}` : s2.auth === "required" ? "Sign in to use this server's tools." : s2.error ?? "";
       let detailText = mcpSignInPending.has(s2.name) ? "Continue in your browser to finish signing in." : mcpSignInErrors.get(s2.name) ?? statusDetail;
@@ -56333,13 +56671,21 @@ function createMcpSection(overlay, api, onTrusted, onManagePermissions, onHeadin
   async function refreshMcpServers() {
     const request = generation;
     try {
-      const statuses = await api.mcp.list();
-      if (request === generation) renderMcpServers(statuses);
+      const [statuses, list] = await Promise.all([
+        api.mcp.list(),
+        api.mcp.listUserServers().catch(() => void 0)
+      ]);
+      if (request !== generation) return;
+      userServers = list;
+      renderMcpServers(statuses);
     } catch {
       if (request !== generation) return;
       renderMcpServers([]);
     }
   }
+  qsRequired(overlay, "#mcp-add-btn").addEventListener("click", () => {
+    editor.open();
+  });
   function renderDeclaredMcpServers(declared) {
     const fieldset = qsRequired(overlay, "#mcp-declared-fieldset");
     const listEl = qsRequired(overlay, "#mcp-declared-list");
@@ -56469,6 +56815,7 @@ function createMcpSection(overlay, api, onTrusted, onManagePermissions, onHeadin
     void api.mcp.reload().then((statuses) => {
       if (request !== generation) return;
       renderMcpServers(statuses);
+      void refreshMcpServers();
       void refreshCuratedServers();
       void refreshDeclaredMcpServers();
       const visible = statuses.filter((s2) => !s2.curated);
@@ -56502,6 +56849,8 @@ var init_mcp_section = __esm({
     init_helpers();
     init_icons();
     init_inline_status();
+    init_confirm_dialog();
+    init_mcp_server_editor();
   }
 });
 
@@ -68460,9 +68809,10 @@ var init_mcp_markup = __esm({
               Model Context Protocol servers expose external tools to the agent. This section is
               the whole picture of what Copse talks to over MCP, servers you configured, servers
               the open project asks for, and servers your plugins bring with them. Each row says
-              where it came from. Configure your own in <code>.cursor/mcp.json</code> (project),
-              <code>.mcp.json</code> (project), or <code>~/.cursor/mcp.json</code> (global), then
-              reload. Plugins are installed and turned on under Customise.
+              where it came from. Add your own with <strong>Add server</strong>; Copse keeps them in
+              its own config. It also reads <code>.cursor/mcp.json</code> and
+              <code>.mcp.json</code> (project) and <code>~/.cursor/mcp.json</code> (global), which
+              you edit yourself. Plugins are installed and turned on under Customise.
             </p>
 
             <fieldset>
@@ -68473,11 +68823,15 @@ var init_mcp_markup = __esm({
                 Off servers are not started on reload.
               </p>
               <div class="settings-action-row">
+                <button type="button" class="ui-btn ui-btn-primary" id="mcp-add-btn">
+                  Add server
+                </button>
                 <button type="button" class="ui-btn ui-btn-secondary" id="mcp-reload-btn">
                   Reload servers
                 </button>
                 <span class="lmstudio-test-status" id="mcp-reload-status"></span>
               </div>
+              <div id="mcp-server-editor" class="mcp-server-editor" hidden></div>
             </fieldset>
 
             <fieldset id="mcp-declared-fieldset" hidden>
