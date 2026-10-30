@@ -370,6 +370,7 @@ import {
   remoteAgentGroupLabel,
   removeProject,
   removeQueuedMessage,
+  replaceAcpContentBlocks,
   requestArtefactShow,
   requireActiveThreadOwner,
   resetUiScale,
@@ -454,7 +455,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-6FQJTJ4N.js";
+} from "./chunk-FYEDBEAN.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -80799,6 +80800,14 @@ var init_browser_pane = __esm({
   }
 });
 
+// src/shared/types/simulator-desktop.ts
+var SIMULATOR_REMOVED_DETAIL;
+var init_simulator_desktop = __esm({
+  "src/shared/types/simulator-desktop.ts"() {
+    SIMULATOR_REMOVED_DETAIL = "Simulator deleted";
+  }
+});
+
 // src/renderer/views/vnc-channel.ts
 var VncIpcChannel;
 var init_vnc_channel = __esm({
@@ -82815,6 +82824,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     simulatorView?.frame(frame);
   });
   const stopSimulatorStatus = api2.simulatorDesktop.onStatus((event) => {
+    if (event.status === "closed" && event.detail === SIMULATOR_REMOVED_DETAIL) void loadMachines();
     if (event.id !== simulatorSessionId) return;
     if (event.status === "error") {
       clearViewer(
@@ -83081,6 +83091,7 @@ function mountVncPane(controlsRoot, viewerRoot, store2, api2) {
 var CHOOSE_MACHINE_TEXT, MANUAL_MACHINE, NEARBY_MACHINE_PREFIX, SSH_MACHINE_PREFIX, SIMULATOR_MACHINE_PREFIX, isVncCredentialType;
 var init_vnc_pane = __esm({
   "src/renderer/views/vnc-pane.ts"() {
+    init_simulator_desktop();
     init_prompt_attachments();
     init_attach_annotation();
     init_annotation_layer();
@@ -86219,7 +86230,8 @@ function createTranscriptReducer(store2, hooks = {}) {
         currentText: "",
         writing: false,
         acpMessageId: null,
-        acpThoughtMessageId: null
+        acpThoughtMessageId: null,
+        acpMessageOwners: []
       };
       state.set(threadId, st);
     }
@@ -86263,6 +86275,11 @@ function createTranscriptReducer(store2, hooks = {}) {
     if (st.msgId === null) throw new Error("assistant message id missing for agent text");
     appendToken(store2, st.msgId, plan.text);
     return plan.text;
+  };
+  const acpOwner = (st, channel, messageId) => st.acpMessageOwners.find((entry) => entry.channel === channel && entry.messageId === messageId)?.ownerId;
+  const rememberAcpOwner = (st, channel, messageId) => {
+    if (messageId === void 0 || st.msgId === null || acpOwner(st, channel, messageId)) return;
+    st.acpMessageOwners.push({ channel, messageId, ownerId: st.msgId });
   };
   const apply2 = (threadId, chunk) => {
     const st = get2(threadId);
@@ -86333,6 +86350,31 @@ function createTranscriptReducer(store2, hooks = {}) {
           st.writing = false;
           hooks.visibleOutput?.(threadId);
         }
+        rememberAcpOwner(st, chunk.channel, chunk.messageId);
+        activity(threadId);
+        break;
+      }
+      case "acp_content_replace": {
+        let ownerId = acpOwner(st, chunk.channel, chunk.messageId);
+        if (ownerId === void 0) {
+          const previousId = chunk.channel === "message" ? st.acpMessageId : st.acpThoughtMessageId;
+          if (previousId !== null && previousId !== chunk.messageId && st.msgId) {
+            store2.emit("message_done", st.msgId);
+            st.msgId = null;
+            st.toolSinceText = false;
+            st.currentText = "";
+          }
+          if (chunk.channel === "message") st.acpMessageId = chunk.messageId;
+          else st.acpThoughtMessageId = chunk.messageId;
+          ownerId = ensureFreshAfterTools(threadId, st);
+          rememberAcpOwner(st, chunk.channel, chunk.messageId);
+        }
+        replaceAcpContentBlocks(store2, ownerId, chunk.channel, chunk.content);
+        if (ownerId === st.msgId && chunk.channel === "message") {
+          st.currentText = chunk.content.filter((block) => block.type === "text").map((block) => block.text).join("");
+        }
+        st.writing = false;
+        hooks.visibleOutput?.(threadId);
         activity(threadId);
         break;
       }
@@ -86642,7 +86684,9 @@ function createTranscriptReducer(store2, hooks = {}) {
     restore: (threadId, checkpoint) => {
       state.delete(threadId);
       pendingTurn.delete(threadId);
-      if (checkpoint.stream) state.set(threadId, structuredClone(checkpoint.stream));
+      if (checkpoint.stream) {
+        state.set(threadId, structuredClone(checkpoint.stream));
+      }
       if (checkpoint.pendingTurn) pendingTurn.set(threadId, structuredClone(checkpoint.pendingTurn));
     }
   };
@@ -86929,7 +86973,7 @@ function startAgentController(store2, api2) {
   const unsub = api2.agent.onChunk((threadId, chunk, stamp) => {
     if (stamp && !attached.has(threadId)) return;
     const st = get2(threadId);
-    const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "acp_content" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
+    const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "acp_content" || chunk.type === "acp_content_replace" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
     if (firstVisibleActivity && !st.firstActivityTraced) {
       st.firstActivityTraced = true;
       mark("ttft:renderer-first-activity", { kind: chunk.type });

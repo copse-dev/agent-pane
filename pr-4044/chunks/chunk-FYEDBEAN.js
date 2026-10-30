@@ -23412,6 +23412,22 @@ function appendAcpContentBlock(store, messageId, channel, block) {
   });
   store.emit("message_acp_content", messageId);
 }
+function replaceAcpContentBlocks(store, messageId, channel, blocks) {
+  const text = blocks.filter((block) => block.type === "text").map((block) => block.text).join("");
+  const richBlocks = blocks.filter((block) => block.type !== "text");
+  updateMessage(store, messageId, (message) => {
+    if (channel === "thought") {
+      message.reasoning = text;
+      message.reasoningBlocks = richBlocks;
+    } else {
+      message.content = text;
+      message.contentBlocks = richBlocks;
+    }
+  });
+  if (channel === "thought") store.emit("message_reasoning", messageId, text);
+  else store.emit("message_token", messageId, text);
+  store.emit("message_acp_content", messageId);
+}
 function setMessageContent(store, messageId, content) {
   updateMessage(store, messageId, (m2) => {
     m2.content = content;
@@ -73010,6 +73026,7 @@ export {
   appendToken,
   appendReasoning,
   appendAcpContentBlock,
+  replaceAcpContentBlocks,
   setMessageContent,
   addMessageCanvasArtefact,
   addMessageVisualEvidence,
