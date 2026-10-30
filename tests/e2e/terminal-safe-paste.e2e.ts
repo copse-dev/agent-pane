@@ -72,10 +72,10 @@ describe('terminal paste protection', () => {
   })
 
   it('holds carriage-return paste for confirmation and sends nothing on Cancel', async () => {
-    await browser.execute(async () => navigator.clipboard.writeText('copse-cancelled\r'))
-    await $('.terminal-container .xterm-screen').click()
-    const modifier = process.platform === 'darwin' ? '\uE03D' : '\uE009'
-    await browser.action('key').down(modifier).down('v').up('v').up(modifier).perform()
+    // The paste event Cmd/Ctrl+V delivers. On Linux that shortcut pastes only
+    // through Electron's native Edit-menu accelerator, which WebDriver key events
+    // bypass, and xterm turns the raw Ctrl+V into ^V instead.
+    await transferText('paste', 'copse-cancelled\r')
     const dialog = await $('#confirm-dialog').getElement()
     await dialog.waitForDisplayed()
     await expect(dialog.$('.confirm-dialog-message')).toHaveText(
