@@ -790,6 +790,147 @@ describe('startAcpNativeBridge', () => {
     assert.deepEqual(executed, ['run_shell:git worktree list --porcelain'])
   })
 
+  for (const reason of ['stopped', 'failed', 'idle-timeout', 'session-closed'] as const) {
+    for (const answered of [false, true]) {
+      it(
+        `revokes a ${answered ? 'saved answer' : 'parked prompt'} when an abandoned call's turn ends as ${reason}`,
+        { timeout: 5_000 },
+        async () => {
+          const executed: string[] = []
+          const gate = promptingGate()
+          const owner = new AbortController()
+          const threadId = 'bridge-abandoned-terminal'
+          bridge = await startAcpNativeBridge(
+            testRegistry(executed),
+            new AbortController().signal,
+            {
+              threadId,
+            },
+          )
+          assert.ok(bridge)
+          bridge.setExecutionContext(worktreeContext(threadId, '/worktrees/abandoned-terminal'))
+          bridge.setTurnSignal(owner.signal)
+          for (const init of initialized()) await rpc(bridge, init)
+          const started = gate.started()
+          const pending = rpc(bridge, SHELL_CALL)
+          await started
+          await rpc(bridge, {
+            jsonrpc: '2.0',
+            method: 'notifications/cancelled',
+            params: { requestId: SHELL_CALL.id, reason: 'client gave up' },
+          })
+          assert.match(contentText(await pending) ?? '', /Approval is still pending/)
+          assert.equal(parkedApprovalCount(), 1)
+          if (answered) {
+            gate.release({ approved: true, remember: false, resolution: 'user' })
+            await Promise.resolve()
+          }
+          owner.abort(new AcpTurnEnded(reason))
+          assert.equal(parkedApprovalCount(), 0)
+          if (!answered) assert.equal(gate.handlerSignal()?.aborted, true)
+
+          // Even a late response to the old prompt cannot authorize the next turn.
+          gate.release({ approved: true, remember: false, resolution: 'user' })
+          await Promise.resolve()
+          bridge.setTurnSignal(new AbortController().signal)
+          const nextStarted = gate.started()
+          const retry = rpc(bridge, SHELL_CALL)
+          await nextStarted
+          assert.equal(gate.handlerCalls(), 2)
+          gate.release({ approved: false, remember: false, resolution: 'user' })
+          await retry
+          assert.deepEqual(executed, [])
+        },
+      )
+    }
+  }
+
+  for (const boundary of ['session-abort', 'bridge-close'] as const) {
+    it(`revokes detached approval authority on ${boundary}`, { timeout: 5_000 }, async () => {
+      const gate = promptingGate()
+      const owner = new AbortController()
+      const session = new AbortController()
+      bridge = await startAcpNativeBridge(testRegistry([]), session.signal, {
+        threadId: 'bridge-close-approval',
+      })
+      assert.ok(bridge)
+      bridge.setExecutionContext(worktreeContext('bridge-close-approval', '/worktrees/close'))
+      bridge.setTurnSignal(owner.signal)
+      for (const init of initialized()) await rpc(bridge, init)
+      const started = gate.started()
+      const pending = rpc(bridge, SHELL_CALL)
+      await started
+      owner.abort(new AcpTurnEnded('completed'))
+      await pending
+      assert.equal(parkedApprovalCount(), 1)
+      bridge.setTurnSignal(null)
+      if (boundary === 'session-abort') session.abort()
+      else await bridge.close()
+      assert.equal(parkedApprovalCount(), 0)
+      assert.equal(gate.handlerSignal()?.aborted, true)
+    })
+  }
+
+  it(
+    'leaves a later native approval alone when an idle ACP bridge closes',
+    { timeout: 5_000 },
+    async () => {
+      const gate = promptingGate()
+      const threadId = 'bridge-retired-native'
+      bridge = await startAcpNativeBridge(testRegistry([]), new AbortController().signal, {
+        threadId,
+      })
+      assert.ok(bridge)
+      const native = runWithActiveRunIdentity(threadId, () =>
+        requestApproval({ title: 'Native operation', body: 'Unrelated to ACP', type: 'shell' }),
+      )
+      assert.equal(gate.handlerCalls(), 1)
+      const nativeSignal = gate.handlerSignal()
+      assert.ok(nativeSignal)
+      await bridge.close()
+      assert.equal(nativeSignal.aborted, false)
+      gate.release({ approved: true, remember: false, resolution: 'user' })
+      assert.equal((await native).approved, true)
+    },
+  )
+
+  it('binds replay consent to the execution root', { timeout: 5_000 }, async () => {
+    const executed: string[] = []
+    const gate = promptingGate()
+    const owner = new AbortController()
+    const threadId = 'bridge-replay-root'
+    bridge = await startAcpNativeBridge(testRegistry(executed), new AbortController().signal, {
+      threadId,
+    })
+    assert.ok(bridge)
+    const original = worktreeContext(threadId, '/worktrees/original')
+    bridge.setExecutionContext(original)
+    bridge.setTurnSignal(owner.signal)
+    for (const init of initialized()) await rpc(bridge, init)
+    const started = gate.started()
+    const pending = rpc(bridge, SHELL_CALL)
+    await started
+    owner.abort(new AcpTurnEnded('completed'))
+    await pending
+    gate.release({ approved: true, remember: false, resolution: 'user' })
+    await Promise.resolve()
+
+    bridge.setExecutionContext(worktreeContext(threadId, '/worktrees/different'))
+    bridge.setTurnSignal(new AbortController().signal)
+    const nextStarted = gate.started()
+    const changedRoot = rpc(bridge, SHELL_CALL)
+    await nextStarted
+    assert.equal(gate.handlerCalls(), 2)
+    gate.release({ approved: false, remember: false, resolution: 'user' })
+    await changedRoot
+    assert.deepEqual(executed, [])
+
+    bridge.setExecutionContext(original)
+    assert.equal(contentText(await rpc(bridge, SHELL_CALL)), 'ran git worktree list --porcelain')
+    assert.equal(gate.handlerCalls(), 2)
+    assert.deepEqual(executed, ['run_shell:git worktree list --porcelain'])
+  })
+
   it('parks the approval when the client drops the HTTP call, and replays it to the retry', async () => {
     const executed: string[] = []
     const gate = promptingGate()

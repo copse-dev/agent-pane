@@ -12,6 +12,7 @@ import {
 import { createServer, type ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { z } from 'zod'
 import { safeJsonParse, decodeWithSchema } from '../../src/shared/safe-json.ts'
@@ -197,7 +198,39 @@ describe('native isolated writable workers', function () {
         )
     })
   })
+  /**
+   * Creating each worker checkout runs a write-sandboxed Git command in the
+   * parent checkout, and bubblewrap briefly leaves empty mount-point stubs
+   * (`.bashrc`, `.vscode`, ...) there. A sidebar read in that window caches
+   * "Uncommitted changes" until a later read clears it, so some captures showed
+   * the glyph. The seeded parent checkout is clean: wait until Git agrees and
+   * the row has dropped any glyph from a transient read.
+   */
+  async function settleSidebarChanges(): Promise<void> {
+    const threadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+    assert.ok(threadId)
+    await browser.waitUntil(
+      async () =>
+        isDeepStrictEqual(
+          await browser.execute(
+            (projectId, threadId) =>
+              window.api.git.threadChangeSummary([{ projectId, threadId }], { fresh: true }),
+            PROJECT_ID,
+            threadId,
+          ),
+          [{ dirty: false }],
+        ),
+      { timeout: 15_000, timeoutMsg: 'The parent checkout should read clean' },
+    )
+    // The sidebar keeps a read for 30s unless a working-tree event refreshes it.
+    await $(`.chat-row[data-thread-id="${threadId}"] .chat-changes-status`).waitForExist({
+      timeout: 40_000,
+      reverse: true,
+      timeoutMsg: 'The sidebar should drop a stale changes glyph for the clean checkout',
+    })
+  }
   async function saveWorkerScreenshot(filename: string): Promise<void> {
+    await settleSidebarChanges()
     // Real ownership/path assertions precede capture. These main-generated UUIDs
     // and the host's Node location cannot be seeded through product inputs.
     const text = await $('#body').getText()

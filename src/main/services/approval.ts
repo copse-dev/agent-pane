@@ -19,6 +19,7 @@ import {
 import { getActiveRunThread } from './thread-models.ts'
 import {
   getApprovalOperationKey,
+  getApprovalBridgeOwnerId,
   getApprovalToolCallId,
   getBridgeExecutionId,
 } from './approval-tool-call-context.ts'
@@ -113,6 +114,8 @@ export interface ApprovalRequest {
   bodyFooter?: string
   type: 'shell' | 'mcp' | 'web' | 'pii' | 'review-spend'
   allowRemember?: boolean
+  /** Host producer certifies that approval authorizes only this concrete request. */
+  interactiveClientApproval?: 'once'
   rememberLabel?: string
   /** Action label for one request. Batches retain a neutral count label. */
   approveLabel?: string
@@ -191,6 +194,16 @@ export interface ApprovalRequest {
   toolCallId?: string
   /** Exact host bridge request identity; audit-only, never an ACP card ID. */
   bridgeExecutionId?: string
+}
+
+/** Explicit host capabilities, never a display title or a client-supplied tool label. */
+export function supportsInteractiveClientApproval(req: ApprovalRequest): boolean {
+  return (
+    (req.type === 'shell' && req.subject === SHELL_DECISION_SUBJECT) ||
+    (req.interactiveClientApproval === 'once' &&
+      req.allowRemember === false &&
+      req.turnTreeLeaseDefault !== true)
+  )
 }
 
 export interface ApprovalResponse {
@@ -278,6 +291,7 @@ interface InflightApproval {
 }
 
 interface InflightWaiter {
+  bridgeOwnerId: string | undefined
   bridgeExecutionId?: string
   resolve: (response: ApprovalResponse) => void
   signal: AbortSignal | undefined
@@ -322,6 +336,7 @@ const inflight = new Map<string, InflightApproval>()
  * rest of this module's state.
  */
 interface StoredVerdict {
+  bridgeOwnerId: string | undefined
   response: ApprovalResponse
   settledAt: number
 }
@@ -343,12 +358,16 @@ function abandonedVerdictKey(threadId: string, promptKey: string): string {
   return `${threadId}\u0000${getAgentExecutionRoot() ?? ''}\u0000${promptKey}`
 }
 
-function storeAbandonedVerdict(ledgerKey: string, response: ApprovalResponse): void {
+function storeAbandonedVerdict(
+  ledgerKey: string,
+  response: ApprovalResponse,
+  bridgeOwnerId: string | undefined,
+): void {
   const now = approvalClock()
   for (const [key, entry] of abandonedVerdicts) {
     if (now - entry.settledAt > ABANDONED_VERDICT_TTL_MS) abandonedVerdicts.delete(key)
   }
-  abandonedVerdicts.set(ledgerKey, { response, settledAt: now })
+  abandonedVerdicts.set(ledgerKey, { response, settledAt: now, bridgeOwnerId })
 }
 
 function takeAbandonedVerdict(ledgerKey: string): ApprovalResponse | null {
@@ -564,6 +583,18 @@ export function discardApprovalsForThread(threadId: string, source = 'thread-del
   return discarded
 }
 
+/** Retiring a pooled bridge must not cancel a later native turn's questions. */
+export function discardApprovalsForBridge(bridgeOwnerId: string, source: string): void {
+  for (const entry of [...inflight.values()]) {
+    for (const waiter of [...entry.waiters]) {
+      if (waiter.bridgeOwnerId === bridgeOwnerId) waiter.cancel(source)
+    }
+  }
+  for (const [key, verdict] of abandonedVerdicts) {
+    if (verdict.bridgeOwnerId === bridgeOwnerId) abandonedVerdicts.delete(key)
+  }
+}
+
 /** How many in-flight approval waiters are attributed to `threadId`. */
 export function pendingApprovalCountForThread(threadId: string): number {
   let count = 0
@@ -753,6 +784,7 @@ function requestApprovalUnpaused(
     dedupePrefix,
     threadId,
     getApprovalOperationKey() ?? null,
+    getApprovalBridgeOwnerId() ?? null,
     req.standalone ? randomUUID() : approvalDedupeKey(req),
   ])
   // Only a thread-attributed request can be parked and replayed: the ledger is
@@ -813,6 +845,7 @@ function requestApprovalUnpaused(
       teardownIfIdle()
     }
     const waiter: InflightWaiter = {
+      bridgeOwnerId: getApprovalBridgeOwnerId(),
       resolve,
       signal,
       threadId,
@@ -840,6 +873,7 @@ function requestApprovalUnpaused(
                 req,
                 toolCallId,
                 req.bridgeExecutionId,
+                waiter.bridgeOwnerId,
               ),
             )
           }
@@ -910,6 +944,7 @@ function parkedWaiter(
   req: ApprovalRequest,
   toolCallId?: string,
   bridgeExecutionId?: string,
+  bridgeOwnerId?: string,
 ): InflightWaiter {
   const cancel = (source: string): void => {
     if (!entry.waiters.has(waiter)) return
@@ -918,6 +953,7 @@ function parkedWaiter(
     teardownIfIdle()
   }
   const waiter: InflightWaiter = {
+    bridgeOwnerId,
     threadId,
     ownerThreadId: threadId,
     cancel,
@@ -928,7 +964,7 @@ function parkedWaiter(
     resolve: (response) => {
       // A closed window or failed transport supplied no human decision.
       if (response.resolution === undefined || response.resolution === 'user') {
-        storeAbandonedVerdict(ledgerKey, response)
+        storeAbandonedVerdict(ledgerKey, response, bridgeOwnerId)
       }
     },
     onAbort: () => {
@@ -1078,8 +1114,7 @@ export function initApproval(
                   // Other prompts can grant persistent authority on approved alone
                   // (for example provider-host consent). Keep them desktop/mobile-only
                   // until their semantics have a complete interactive-client projection.
-                  interactiveClientSupported:
-                    req.type === 'shell' && req.subject === SHELL_DECISION_SUBJECT,
+                  interactiveClientSupported: supportsInteractiveClientApproval(req),
                 },
               )
             : (): void => {}

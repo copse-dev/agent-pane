@@ -25,6 +25,7 @@ import {
   setApprovalClockForTest,
   setApprovalHandler,
   trackAcpPermissionToolCall,
+  supportsInteractiveClientApproval,
   type ApprovalRequest,
   type ApprovalResponse,
 } from './approval.ts'
@@ -1143,5 +1144,29 @@ describe('abandoned calls (parked prompts and verdict replay)', () => {
     assert.deepEqual(await pending, { approved: false, remember: false })
     assert.equal(handlerSignal?.aborted, true)
     assert.equal(parkedApprovalCount(), 0)
+  })
+})
+
+describe('paired approval capabilities', () => {
+  it('requires explicit one-request certification for preparation rather than trusting its title or label', () => {
+    const preparation: ApprovalRequest = {
+      title: 'Prepare this worktree?',
+      body: 'Install dependencies and run reviewed setup',
+      type: 'shell',
+      subject: 'prepare_worktree',
+      allowRemember: false,
+    }
+    assert.equal(supportsInteractiveClientApproval(preparation), false)
+    const bounded: ApprovalRequest = { ...preparation, interactiveClientApproval: 'once' }
+    assert.equal(supportsInteractiveClientApproval(bounded), true)
+    assert.equal(supportsInteractiveClientApproval({ ...bounded, allowRemember: true }), false)
+    const unspecifiedRemember: ApprovalRequest = { ...bounded }
+    delete unspecifiedRemember.allowRemember
+    assert.equal(supportsInteractiveClientApproval(unspecifiedRemember), false)
+    assert.equal(
+      supportsInteractiveClientApproval({ ...bounded, turnTreeLeaseDefault: true }),
+      false,
+    )
+    assert.equal(supportsInteractiveClientApproval({ ...preparation, type: 'mcp' }), false)
   })
 })
