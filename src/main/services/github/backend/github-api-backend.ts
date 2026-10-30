@@ -28,6 +28,7 @@ import type {
   GhPrDetails,
   GhPrFileDiff,
   GhPrSummary,
+  GhRepoStacks,
   PrActionResult,
   PrCreateResult,
 } from '@shared/types/git.ts'
@@ -51,6 +52,7 @@ import {
   type GitHubFileContent,
 } from '../pr-file-content.ts'
 import { isDefined, isNonNull } from '@shared/nullish.ts'
+import { loadRepoStacks, loadStackForPr, type StacksResponse } from './github-stacks.ts'
 
 /** REST + GraphQL base URLs, honoring GH_HOST for GitHub Enterprise. */
 function apiRoots(host = process.env['GH_HOST']?.trim()): { rest: string; graphql: string } {
@@ -265,6 +267,16 @@ function mapFileStatus(raw: string | undefined): GhPrChangedFile['status'] {
   }
 }
 
+/** Adapts {@link rest} to the shared stack loaders in `github-stacks.ts`. */
+async function fetchStacksPath(path: string): Promise<StacksResponse> {
+  const result = await rest(`/${path}`)
+  if (result.status === 404) return { kind: 'not-found' }
+  if (!result.ok) {
+    return { kind: 'error', message: result.errorMessage ?? 'Could not load stacks.' }
+  }
+  return { kind: 'ok', json: result.json }
+}
+
 async function getPull(ref: PrRef): Promise<RestResponse> {
   return rest(`/repos/${ref.owner}/${ref.repo}/pulls/${String(ref.number)}`)
 }
@@ -475,12 +487,17 @@ export const githubApiBackend: GitHubBackend = {
       .filter(isNonNull)
   },
 
+  listStacks(owner: string, repo: string): Promise<GhRepoStacks> {
+    return loadRepoStacks(fetchStacksPath, owner, repo)
+  },
+
   async getPrDetails(ref: PrRef): Promise<GhPrDetails | null> {
     // The pull, its files, and its review decision are independent — fetch
     // concurrently rather than serially. reviewDecision is GraphQL-only (the
     // REST pulls payload omits it) and best-effort: a failure just drops the
-    // Approved badge, it never fails the details load.
-    const [result, files, reviewDecision, activity] = await Promise.all([
+    // Approved badge, it never fails the details load. Stack membership is
+    // best-effort for the same reason.
+    const [result, files, reviewDecision, activity, stack] = await Promise.all([
       getPull(ref),
       listPullFiles(ref),
       fetchReviewDecision(ref),
@@ -489,6 +506,7 @@ export const githubApiBackend: GitHubBackend = {
           result.errorMessage ? unavailablePrActivity() : parsePrActivity(result.data),
         )
         .catch(() => unavailablePrActivity()),
+      loadStackForPr(fetchStacksPath, ref),
     ])
     if (result.status === 404) return null
     if (!result.ok) throw new Error(result.errorMessage ?? 'Could not load pull request.')
@@ -521,6 +539,7 @@ export const githubApiBackend: GitHubBackend = {
     if (typeof pull.draft === 'boolean') details.isDraft = pull.draft
     if (pull.auto_merge) details.autoMergeEnabled = true
     if (reviewDecision) details.reviewDecision = reviewDecision
+    if (stack) details.stack = stack
     return details
   },
 
