@@ -6802,7 +6802,7 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .message-text .table-copy-shell:focus-within .table-copy {
   opacity: 1;
 }
-@media (hover: none) {
+@media (hover: none) and (pointer: coarse) {
   .message-text .code-block-actions > button,
   .message-text .table-copy {
     opacity: 1;
@@ -11146,52 +11146,9 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .plugin-setting-input.plugin-setting-number {
   min-width: 180px;
 }
-.parallel-search-plugin-settings {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-  margin-top: var(--spacing-xs);
-  border-top: 1px solid var(--border);
-  padding-top: var(--spacing-sm);
-}
-.parallel-search-key-fieldset {
-  margin: 0;
-}
-.parallel-search-notice {
-  margin: 0;
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-}
-.parallel-search-actions {
-  display: flex;
-  gap: var(--spacing-xs);
-}
-.parallel-search-save-btn,
-.parallel-search-clear-btn {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  cursor: pointer;
-}
-.parallel-search-save-btn:hover:not(:disabled),
-.parallel-search-clear-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-}
-.parallel-search-save-btn:disabled,
-.parallel-search-clear-btn:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
 .plugin-default-off-note {
   margin: 0;
   font-size: var(--font-size-xs);
-}
-.plugin-credential-gate {
-  margin: 0;
-  font-size: var(--font-size-xs);
-  color: var(--warning, #d29922);
 }
 .plugin-toggle-input:disabled + .toggle-switch-track {
   cursor: not-allowed;
@@ -11860,6 +11817,19 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 #sources-skills-status {
   margin-left: var(--spacing-sm);
+}
+#storage-container-breakdown {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--spacing-sm) var(--spacing-lg);
+  font-size: var(--font-size-sm);
+}
+#storage-container-breakdown dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+#storage-container-images {
+  overflow-wrap: anywhere;
 }
 .machines-settings textarea {
   width: min(100%, 38rem);
@@ -17825,6 +17795,24 @@ dialog.activity-panel-overlay {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   overflow-wrap: break-word;
+}
+.mobile-companion-invite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.mobile-companion-invite input {
+  flex: 1 1 240px;
+  min-width: 0;
+  font-family: var(--font-mono);
+}
+.mobile-companion-name-summary strong {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.mobile-companion-name-warning {
+  color: var(--warning);
 }
 
 /* src/renderer/styles/global/memories.css */

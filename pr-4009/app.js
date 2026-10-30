@@ -10,6 +10,7 @@ import {
   ThreadPrRelationshipIndex,
   backlinksFor,
   detectLanguage,
+  emptyContainerStorage,
   external_exports,
   firstPartyProviderOf,
   init_advisor_strategy_plugin,
@@ -21,6 +22,7 @@ import {
   init_product_announcement_dialog,
   init_product_announcements,
   init_settings_dialog,
+  init_storage_cleanup,
   init_thread_links2 as init_thread_links,
   init_thread_pr_relations,
   init_token_estimate,
@@ -32,7 +34,7 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-E7GFSWPO.js";
+} from "./chunks/chunk-YSDLDTFN.js";
 import "./chunks/chunk-D55J6ZRP.js";
 import {
   init_icons,
@@ -5584,6 +5586,15 @@ function createDemoApi(scenario2, options = {}) {
     typeof scenarioModel === "string" ? scenarioModel : void 0
   );
   const api = {
+    clientActions: {
+      claim: () => Promise.resolve(false),
+      publish: async () => {
+      },
+      reply: async () => {
+      },
+      onInvoke: () => () => {
+      }
+    },
     threadPrompts: {
       onPrompt: () => () => {
       },
@@ -5598,8 +5609,26 @@ function createDemoApi(scenario2, options = {}) {
         running: scenario2.mobileCompanion !== void 0,
         url: scenario2.mobileCompanion?.url ?? null,
         qrSvg: scenario2.mobileCompanion?.qrSvg ?? null,
+        localUrl: null,
+        localQrSvg: null,
+        publicName: {
+          serviceUrl: "https://api.copse.dev",
+          state: "unregistered",
+          hostname: null,
+          certificate: null,
+          dns: "unknown",
+          busy: null,
+          lastError: null
+        },
         rootCertificatePath: null,
-        addresses: scenario2.mobileCompanion ? [{ address: new URL(scenario2.mobileCompanion.url).hostname, interfaceName: "Wi-Fi" }] : [],
+        address: scenario2.mobileCompanion ? new URL(scenario2.mobileCompanion.url).hostname : null,
+        addresses: scenario2.mobileCompanion ? [
+          {
+            address: new URL(scenario2.mobileCompanion.url).hostname,
+            interfaceName: "Wi-Fi",
+            virtual: false
+          }
+        ] : [],
         devices: [],
         pairing: null,
         lastError: null
@@ -5612,6 +5641,9 @@ function createDemoApi(scenario2, options = {}) {
       revokeDevice: () => resolvedVoid(),
       respondPairing: () => resolvedVoid(),
       revealCertificate: () => resolvedVoid(),
+      registerName: () => resolvedVoid(),
+      removeName: () => resolvedVoid(),
+      recheckNameDns: () => resolvedVoid(),
       onChat: () => () => {
       },
       reply: async () => {
@@ -5973,7 +6005,9 @@ function createDemoApi(scenario2, options = {}) {
       reopenArtefact: () => resolved(false)
     },
     storage: {
+      containerCleanup: () => resolved({ removed: 0, bytes: 0, skipped: 0 }),
       maintenance: () => resolved({
+        containers: emptyContainerStorage(),
         retention: { enabled: true, days: 30 },
         areas: [
           { area: "runs", bytes: 0, entries: 0, busy: false },
@@ -6722,6 +6756,7 @@ function createDemoApi(scenario2, options = {}) {
 var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN, DEMO_AUTOMATION_PERMISSIONS, emptyArray;
 var init_demo_api = __esm({
   "src/renderer/demo/demo-api.ts"() {
+    init_storage_cleanup();
     init_thread_pr_relations();
     init_thread_links();
     init_automations_plugin();
@@ -7198,7 +7233,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-DTZIEW3Z.js").then(async (main) => {
+    void import("./chunks/main-6JN7JKLJ.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
