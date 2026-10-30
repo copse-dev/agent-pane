@@ -189,7 +189,6 @@
     "tests/e2e/pane-popout.e2e.ts": 16.3,
     "tests/e2e/panel-position.e2e.ts": 7.4,
     "tests/e2e/panel-toggle.e2e.ts": 29.3,
-    "tests/e2e/parallel-search-plugin.e2e.ts": 14.4,
     "tests/e2e/paste-attachment.e2e.ts": 8.7,
     "tests/e2e/perplexity-agent-provider.e2e.ts": 7.8,
     "tests/e2e/plain-language-copy.e2e.ts": 14.4,

@@ -599,8 +599,10 @@ html.mark-external-links
 .message-text .table-copy-shell:focus-within .table-copy {
   opacity: 1;
 }
-/* No hover on a touch screen: keep the copy controls visible there. */
-@media (hover: none) {
+/* No hover on a touch screen: keep the copy controls visible there. A desktop
+   without a pointing device (headless Chrome reports pointer: none) still
+   reveals them on keyboard focus, so it keeps the at-rest layout. */
+@media (hover: none) and (pointer: coarse) {
   .message-text .code-block-actions > button,
   .message-text .table-copy {
     opacity: 1;

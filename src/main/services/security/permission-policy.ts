@@ -72,11 +72,19 @@ export const GITHUB_WRITE_TOOLS = new Set([
   'gh_pr_approve',
   'gh_pr_mark_ready',
   'gh_pr_enable_auto_merge',
+  'git_push',
+  'gh_pr_merge',
+  'gh_pr_comment',
+  'gh_pr_resolve_review_thread',
 ])
 
 /** User-facing question for each mutating GitHub PR tool. Keep snake_case ids out of the modal. */
 const GITHUB_WRITE_PROMPT_TITLES: Record<string, string> = {
   gh_push: 'Push branch to GitHub?',
+  git_push: 'Push branch to origin?',
+  gh_pr_merge: 'Merge pull request on GitHub?',
+  gh_pr_comment: 'Post pull request comment?',
+  gh_pr_resolve_review_thread: 'Resolve pull request review thread?',
   gh_pr_create: 'Open pull request on GitHub?',
   gh_pr_rerun_failed_ci: 'Re-run failed CI on GitHub?',
   gh_pr_approve: 'Approve pull request on GitHub?',
@@ -137,6 +145,13 @@ function formatGithubWritePromptBody(toolName: string, args: unknown): string {
   if (toolName === 'gh_push')
     return 'Push the current thread branch to origin, updating any existing pull request. No force push.'
   if (!isRecord(args)) return JSON.stringify(args, null, 2)
+  // Maintenance actions must expose the body, lease/head guard, or exact thread
+  // being authorized, not just the PR number.
+  if (
+    ['git_push', 'gh_pr_merge', 'gh_pr_comment', 'gh_pr_resolve_review_thread'].includes(toolName)
+  ) {
+    return JSON.stringify(args, null, 2)
+  }
   // gh_pr_create has no PR number yet — show the title, and the target repo
   // when one was passed explicitly, so a retargeted create is visible in the
   // modal before it is approved.

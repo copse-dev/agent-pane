@@ -113,6 +113,8 @@ export interface ApprovalRequest {
   bodyFooter?: string
   type: 'shell' | 'mcp' | 'web' | 'pii' | 'review-spend'
   allowRemember?: boolean
+  /** Host producer certifies that approval authorizes only this concrete request. */
+  interactiveClientApproval?: 'once'
   rememberLabel?: string
   /** Action label for one request. Batches retain a neutral count label. */
   approveLabel?: string
@@ -191,6 +193,16 @@ export interface ApprovalRequest {
   toolCallId?: string
   /** Exact host bridge request identity; audit-only, never an ACP card ID. */
   bridgeExecutionId?: string
+}
+
+/** Explicit host capabilities, never a display title or a client-supplied tool label. */
+export function supportsInteractiveClientApproval(req: ApprovalRequest): boolean {
+  return (
+    (req.type === 'shell' && req.subject === SHELL_DECISION_SUBJECT) ||
+    (req.interactiveClientApproval === 'once' &&
+      req.allowRemember === false &&
+      req.turnTreeLeaseDefault !== true)
+  )
 }
 
 export interface ApprovalResponse {
@@ -1078,8 +1090,7 @@ export function initApproval(
                   // Other prompts can grant persistent authority on approved alone
                   // (for example provider-host consent). Keep them desktop/mobile-only
                   // until their semantics have a complete interactive-client projection.
-                  interactiveClientSupported:
-                    req.type === 'shell' && req.subject === SHELL_DECISION_SUBJECT,
+                  interactiveClientSupported: supportsInteractiveClientApproval(req),
                 },
               )
             : (): void => {}

@@ -43,6 +43,7 @@ import { acpConfigCategory, acpConfigCategoryLabel } from '@shared/acp.ts'
 import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
+import { acpStaleModelNotice } from './acp-stale-model-notice.ts'
 import type { AgentInitiatedTurnLease } from './agent-initiated-turn.ts'
 import { tapAcpWireStream, type AcpWireSink } from './acp-wire-tap.ts'
 import { cancelApprovalsForAcpToolCall } from './acp-permission-registry.ts'
@@ -1533,6 +1534,18 @@ export function toAcpPromptBlocks(prompt: string | ContentBlock[]): ContentBlock
   return typeof prompt === 'string' ? [{ type: 'text', text: prompt }] : prompt
 }
 
+/** What a caller of {@link runAcpSessionPrompt} opts into beyond the turn itself. */
+export interface AcpSessionPromptOptions {
+  /**
+   * Receives {@link acpStaleModelNotice} when the per-turn model is one the
+   * agent no longer offers, once per session for that model. The notice is
+   * copy for the person reading the thread, so only a user-facing turn asks
+   * for it: a caller that uses the turn's text as data (the advisor, whose
+   * advice is a tool result) leaves this unset and the notice is never sent.
+   */
+  onStaleModel?: (notice: string) => void
+}
+
 /**
  * Run one prompt turn on a persistent session: apply a model change if the
  * picker's selection moved, send the prompt, and wait for the turn's stop. The
@@ -1558,6 +1571,7 @@ export async function runAcpSessionPrompt(
   model: string | undefined,
   signal?: AbortSignal,
   cancelGraceMs: number = ACP_CANCEL_GRACE_MS,
+  options: AcpSessionPromptOptions = {},
 ): Promise<AcpTurnStop> {
   const { session, connection } = open
   const promptBlocks = toAcpPromptBlocks(prompt)
@@ -1605,22 +1619,29 @@ export async function runAcpSessionPrompt(
       const selector = modelSelectorFrom(session.response)
       // Only switch when the value is a model the agent still offers and it
       // isn't already current. A stale/removed value (e.g. after an agent
-      // version bump) is skipped, and a rejected set is swallowed, so a bad
-      // model selection degrades to the agent's default instead of failing
-      // the whole turn.
+      // version bump) is skipped, with a notice for a caller that asked for
+      // one, and a rejected set is swallowed, so a bad model selection
+      // degrades to the agent's default instead of failing the whole turn.
       const isKnown = selector?.choices.some((choice) => choice.value === model) ?? false
       if (selector && isKnown && model !== selector.currentValue) {
         try {
-          await connection.agent.request(methods.agent.session.setConfigOption, {
+          const applied = await connection.agent.request(methods.agent.session.setConfigOption, {
             sessionId: session.sessionId,
             configId: selector.configId,
             value: model,
           })
           open.appliedModel = model
+          // ACP has the agent echo its full, updated option set. Keep
+          // `response` current, as a `config_option_update` would, so a later
+          // stale-model notice names the model this session is really on.
+          if (Array.isArray(applied.configOptions)) {
+            session.response.configOptions = applied.configOptions
+          }
         } catch {
           // Fall back to the agent's current model for this turn.
         }
       } else {
+        if (selector && !isKnown) options.onStaleModel?.(acpStaleModelNotice(selector, model))
         open.appliedModel = model
       }
     }
