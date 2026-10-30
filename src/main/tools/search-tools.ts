@@ -5,7 +5,7 @@ import { resolveSearchText } from '@copse/agent/search-routing.ts'
 import { resolveReadablePathWithinRoot } from '../services/workspace.ts'
 import { getAgentExecutionRoot } from '../services/execution-root.ts'
 import { isRgAvailableForTarget } from '../services/tool-availability.ts'
-import { getIndex, whenFileIndexReady } from '../services/search/file-index.ts'
+import { getReadyFileIndex } from '../services/search/file-index.ts'
 import { formatCodeSearchResults, searchCodeContent } from '../services/search/indexed-grep.ts'
 import { slowCodeSearch } from '../services/search/slow-code-search.ts'
 import { isActiveSshWorkspace } from '../services/ssh-workspace/execution-target.ts'
@@ -180,8 +180,7 @@ export const findFilesTool = defineTool({
     if (!root) return 'No workspace open.'
     // Workspace/worktree open schedules the index build without blocking —
     // ride any in-flight build instead of failing during the boot window.
-    await whenFileIndexReady(root)
-    const idx = getIndex(root)
+    const idx = await getReadyFileIndex(root)
     if (!idx) return 'File index not available. Try opening the workspace again.'
     // Take one extra so we can tell "exactly max_results total" from "more were dropped".
     const found = micromatch(idx.paths, pattern, { basename: !pattern.includes('/') }).slice(
