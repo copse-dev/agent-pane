@@ -1057,9 +1057,13 @@ describe('remote ACP agents are never treated as sandboxed', () => {
       const { asked } = await askOnDev(
         permissionRequest({ kind: 'execute', rawInput: { command: 'rm -rf build' } }),
       )
-      assert.equal(asked.length, 1, 'the stored grant must not answer the request')
-      assert.equal(asked[0]?.type, 'shell', 'the shell gate asks, not the generic ACP prompt')
-      assert.match(asked[0]?.body ?? '', /rm -rf build/)
+      // The stored grant must not answer the request: the shell gate asks, not
+      // the generic ACP prompt.
+      assert.deepEqual(
+        asked.map((approval) => approval.type),
+        ['shell'],
+      )
+      assert.ok(asked.every((approval) => approval.body.includes('rm -rf build')))
     } finally {
       storageSet('acp-remembered-grants', [])
     }
@@ -1073,10 +1077,14 @@ describe('remote ACP agents are never treated as sandboxed', () => {
       options: [ALLOW_ONCE, ALLOW_ALWAYS, REJECT_ONCE],
     }
     const { asked, response } = await askOnDev(req)
-    assert.equal(asked.length, 1)
-    assert.equal(asked[0]?.cause, 'acp-permission')
-    assert.equal(asked[0]?.allowRemember, false)
-    assert.equal(asked[0]?.rememberLabel, undefined)
+    assert.deepEqual(
+      asked.map(({ cause, allowRemember, rememberLabel }) => ({
+        cause,
+        allowRemember,
+        rememberLabel,
+      })),
+      [{ cause: 'acp-permission', allowRemember: false, rememberLabel: undefined }],
+    )
     // Even a handler that answers "remember" yields a one-shot answer and no grant.
     assert.deepEqual(response, { outcome: { outcome: 'selected', optionId: ALLOW_ONCE.optionId } })
     assert.deepEqual(storageGet('acp-remembered-grants'), [])
