@@ -181,6 +181,7 @@ import {
   backfillThreadPrRefs,
   getLatestThreadPlan,
   loadProjectThreadMetas,
+  getThreadMeta,
   loadThreadMessages,
   createThread,
   appendMessage,
@@ -2606,7 +2607,12 @@ export function registerAllHandlers(
         rawProjectId,
         rawThreadId,
       ])
-      await resolveThreadExecutionContext(projectId, threadId)
+      // Reading panel state must not recreate a retired automation checkout.
+      // Explicit Apple actions still resolve and validate their execution root.
+      const thread = await getThreadMeta(projectId, threadId)
+      if (!getProjectRoot(projectId) || thread?.id !== threadId) {
+        throw new Error('Apple Development thread is unavailable')
+      }
       return getAppleDevelopmentService().getState({ projectId, threadId })
     },
   )
