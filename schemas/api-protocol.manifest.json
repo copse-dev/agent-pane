@@ -542,6 +542,20 @@
           1
         ]
       },
+      "browser:start-recording": {
+        "api": "browser.startRecording",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "browser:stop-recording": {
+        "api": "browser.stopRecording",
+        "args": [
+          1,
+          1
+        ]
+      },
       "browser:workspace-file-url": {
         "api": "browser.workspaceFileUrl",
         "args": [
@@ -2931,6 +2945,20 @@
         "args": [
           1,
           1
+        ]
+      },
+      "browser:recording-ended": {
+        "api": "browser.onRecordingEnded",
+        "args": [
+          2,
+          2
+        ]
+      },
+      "browser:recording-frame": {
+        "api": "browser.onRecordingFrame",
+        "args": [
+          2,
+          2
         ]
       },
       "browser:share-image": {

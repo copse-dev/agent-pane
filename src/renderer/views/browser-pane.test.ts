@@ -1263,13 +1263,15 @@ describe('browser pane requested URLs', () => {
       const items = menu.querySelectorAll<HTMLButtonElement>('.browser-menu-item')
       const shareTextItem = items[0]
       const shareScreenshotItem = items[1]
-      const downloadCanvasItem = items[2]
-      const exportPdfItem = items[3]
-      const openExternalItem = items[4]
-      const inspectorItem = items[5]
+      const recordItem = items[2]
+      const downloadCanvasItem = items[3]
+      const exportPdfItem = items[4]
+      const openExternalItem = items[5]
+      const inspectorItem = items[6]
       assert.ok(
         shareTextItem &&
           shareScreenshotItem &&
+          recordItem &&
           downloadCanvasItem &&
           exportPdfItem &&
           openExternalItem &&
@@ -1277,6 +1279,7 @@ describe('browser pane requested URLs', () => {
       )
       assert.equal(shareTextItem.textContent, 'Share page text')
       assert.equal(shareScreenshotItem.textContent, 'Share screenshot')
+      assert.equal(recordItem.textContent, 'Record this tab')
       assert.equal(downloadCanvasItem.textContent, 'Download page')
       assert.equal(exportPdfItem.textContent, 'Export PDF')
       assert.equal(shareTextItem.disabled, false)

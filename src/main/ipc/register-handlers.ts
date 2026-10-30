@@ -57,6 +57,7 @@ import {
   exportCanvasArtefact,
   exportBrowserPagePdf,
 } from '../services/browser/browser-share.ts'
+import { BrowserRecordingService } from '../services/browser/browser-recording.ts'
 import { workspacePreviewFileUrl } from '../services/browser/static-preview-server.ts'
 import { takePopoutSeed } from '../services/popout-seed-store.ts'
 import {
@@ -869,6 +870,27 @@ export function registerAllHandlers(
 
   ipcMain.handle('browser:capture-screenshot', async (event, rawId: unknown) => {
     return await captureBrowserScreenshot(interactiveBrowserContents(event, rawId))
+  })
+
+  // Recording a Browser-pane tab: screencast frames go to the renderer, which
+  // draws and encodes them (see browser-recording.ts).
+  const browserRecording = new BrowserRecordingService({
+    frame: (webContentsId, jpeg): void => {
+      if (!win.isDestroyed()) win.webContents.send('browser:recording-frame', webContentsId, jpeg)
+    },
+    ended: (webContentsId, reason): void => {
+      if (!win.isDestroyed()) win.webContents.send('browser:recording-ended', webContentsId, reason)
+    },
+  })
+  win.once('closed', () => {
+    browserRecording.stopAll()
+  })
+  ipcMain.handle('browser:start-recording', async (event, rawId: unknown) => {
+    await browserRecording.start(interactiveBrowserContents(event, rawId))
+  })
+  ipcMain.handle('browser:stop-recording', (event, rawId: unknown) => {
+    assertMainFrameSender(event, win)
+    browserRecording.stop(parseIpcArgs(z.number().int().positive(), [rawId]))
   })
 
   ipcMain.handle('browser:scroll-position', async (event, rawId: unknown) => {

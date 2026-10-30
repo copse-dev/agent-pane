@@ -190,6 +190,15 @@ export function circleIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('circle', ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z'], className)
 }
 
+/** Ring around a dot — Record. */
+export function recordIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'circle-dot',
+    ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z', 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z'],
+    className,
+  )
+}
+
 /**
  * Three-quarter arc — the in-progress marker, meant to be spun by CSS.
  * `circleIcon` cannot do this job: a closed circle is rotationally symmetric, so

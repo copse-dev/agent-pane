@@ -130,6 +130,11 @@ import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import { commitThreadModelSelection } from '../controller/model-selection.ts'
 import { mark as perfMark } from '../perf.ts'
 import type { GitPromptState } from '@shared/types/git.ts'
+import {
+  formatRecordingClock,
+  subscribeActiveRecordings,
+  type ActiveRecording,
+} from '../recording/active-recordings.ts'
 import { isTypingTarget } from '../keyboard-shortcuts.ts'
 import { isAnyDialogOpen } from './dialog-shell.ts'
 
@@ -190,6 +195,9 @@ export function mountInputBar(
   unmount: () => void
 } {
   const chips = el('div', { class: 'attachment-chips' })
+  // Running pane recordings. A separate row from `chips`, which is cleared on
+  // send and thread switch: a recording outlives both until it is stopped.
+  const recordingChips = el('div', { class: 'attachment-chips recording-chips' })
   const composer = mountComposerEditor()
   composer.setPlaceholder('Message…')
   const submitBtn = el(
@@ -783,6 +791,7 @@ export function mountInputBar(
   // Directly above the draft, below the suggestions: attachments are part of
   // the message being composed, not chrome for the whole composer.
   root.insertBefore(chips, inputRow)
+  root.insertBefore(recordingChips, chips)
   const defaultPlaceholder = 'Message…'
   const followUpPlaceholder = 'Send follow-up'
 
@@ -2772,6 +2781,52 @@ export function mountInputBar(
   }
   const unregisterAttachments = registerPromptAttachments(attachmentHandlers)
 
+  let recordingClockTimer: number | null = null
+  let recordingClocks: { clock: HTMLElement; startedAt: number }[] = []
+  function renderRecordingChips(recordings: readonly ActiveRecording[]): void {
+    recordingClocks = []
+    recordingChips.replaceChildren(
+      ...recordings.map((recording) => {
+        const clock = el('span', { class: 'recording-chip-clock' })
+        recordingClocks.push({ clock, startedAt: recording.startedAt })
+        const stop = el(
+          'button',
+          { type: 'button', 'aria-label': `Stop recording ${recording.label}` },
+          closeIcon('ui-icon ui-icon-sm'),
+        )
+        stop.addEventListener('click', () => {
+          recording.stop()
+        })
+        const chip = el(
+          'span',
+          {
+            class: 'attachment-chip recording-chip',
+            title: `${recording.label} — becomes a video attachment when you stop`,
+          },
+          el('span', { class: 'recording-dot', 'aria-hidden': 'true' }),
+          el('span', { class: 'attachment-chip-label' }, `Recording ${recording.label}`),
+          clock,
+          stop,
+        )
+        return chip
+      }),
+    )
+    tickRecordingClocks()
+    if (recordings.length > 0 && recordingClockTimer === null) {
+      recordingClockTimer = window.setInterval(tickRecordingClocks, 500)
+    } else if (recordings.length === 0 && recordingClockTimer !== null) {
+      window.clearInterval(recordingClockTimer)
+      recordingClockTimer = null
+    }
+  }
+  function tickRecordingClocks(): void {
+    const now = performance.now()
+    for (const { clock, startedAt } of recordingClocks) {
+      clock.textContent = formatRecordingClock(now - startedAt)
+    }
+  }
+  const unsubscribeRecordings = subscribeActiveRecordings(renderRecordingChips)
+
   attachBtn.addEventListener('click', () => {
     fileInput.click()
   })
@@ -3085,6 +3140,8 @@ export function mountInputBar(
       })
       unbindDrop()
       unregisterAttachments()
+      unsubscribeRecordings()
+      if (recordingClockTimer !== null) window.clearInterval(recordingClockTimer)
       imageDescriptionSeq++
       descriptionPicker?.destroy()
       modelPicker.destroy()

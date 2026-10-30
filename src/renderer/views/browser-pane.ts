@@ -8,6 +8,7 @@ import {
   externalLinkIcon,
   fileTextIcon,
   imageIcon,
+  recordIcon,
   moreHorizontalIcon,
   penLineIcon,
   plusIcon,
@@ -46,6 +47,8 @@ import { trackGuestScroll, type GuestScrollTracker } from '../drawing/scroll-tra
 import { showErrorToast, showToast } from './toast.ts'
 import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
 import { setTooltip } from '../dom/tooltip.ts'
+import { createSurfaceRecorder, type SurfaceRecorder } from '../recording/surface-recorder.ts'
+import { openScreencastCapture } from '../recording/screencast-capture.ts'
 
 /** Minimal typing for Electron's guest `<webview>` element. */
 interface BrowserWebviewElement extends HTMLElement {
@@ -100,6 +103,8 @@ interface BrowserTab {
   closeMenu: () => void
   /** Drawing overlay, mounted on first use; null until the user annotates. */
   annotation: AnnotationLayer | null
+  /** Record/Stop for this tab's pixels (screencast → canvas → WebM). */
+  recorder: SurfaceRecorder
   /**
    * Guest scroll polling that keeps the overlay page-anchored; with the
    * overlay, and running only while {@link syncAnnotationScroll} says so.
@@ -1298,11 +1303,19 @@ export function mountBrowserPane(
       searchIcon('ui-icon ui-icon-sm'),
       el('span', {}, 'Open inspector'),
     )
+    const recordItemLabel = el('span', {}, 'Record this tab')
+    const recordItem = el(
+      'button',
+      { type: 'button', class: 'browser-menu-item', role: 'menuitem' },
+      recordIcon('ui-icon ui-icon-sm'),
+      recordItemLabel,
+    )
     const menu = el(
       'div',
       { class: 'browser-menu', role: 'menu', hidden: '' },
       shareTextItem,
       shareScreenshotItem,
+      recordItem,
       el('div', { class: 'browser-menu-separator', role: 'separator' }),
       downloadCanvasItem,
       exportPdfItem,
@@ -1322,6 +1335,64 @@ export function mountBrowserPane(
       penLineIcon('ui-icon ui-icon-sm'),
     )
 
+    const recordBtn = el(
+      'button',
+      {
+        type: 'button',
+        class: 'browser-nav-btn browser-record-btn',
+        'aria-label': 'Record this tab',
+        'data-tooltip': 'Record this tab',
+        'aria-pressed': 'false',
+      },
+      recordIcon('ui-icon ui-icon-sm'),
+    )
+    // Filled in once `tab` exists; the recorder only reads it when started.
+    let tabRef: BrowserTab | null = null
+    const recorder = createSurfaceRecorder({
+      sourceKind: () => 'Tab',
+      sourceLabel: () => {
+        if (!tabRef) return 'browser'
+        try {
+          return new URL(webviewUrl(tabRef)).host || (webviewTitle(tabRef) ?? tabRef.label)
+        } catch {
+          return webviewTitle(tabRef) ?? tabRef.label
+        }
+      },
+      openCapture: async () => {
+        const id = tabRef ? shareableWebContentsId(tabRef) : null
+        const browserApi = api?.browser
+        if (
+          id === null ||
+          !browserApi?.startRecording ||
+          !browserApi.stopRecording ||
+          !browserApi.onRecordingFrame ||
+          !browserApi.onRecordingEnded
+        ) {
+          throw new Error('Load a page before recording it.')
+        }
+        return await openScreencastCapture(
+          {
+            startRecording: browserApi.startRecording,
+            stopRecording: browserApi.stopRecording,
+            onRecordingFrame: browserApi.onRecordingFrame,
+            onRecordingEnded: browserApi.onRecordingEnded,
+          },
+          id,
+          () => {
+            recorder.stop('source-ended')
+          },
+        )
+      },
+      onChange: (recording) => {
+        recordBtn.setAttribute('aria-pressed', String(recording))
+        const label = recording ? 'Stop recording' : 'Record this tab'
+        recordBtn.setAttribute('aria-label', label)
+        recordBtn.setAttribute('data-tooltip', label)
+        recordItemLabel.textContent = label
+        webviewHost.classList.toggle('is-recording', recording)
+      },
+    })
+
     const toolbar = el(
       'div',
       { class: 'browser-toolbar' },
@@ -1330,6 +1401,8 @@ export function mountBrowserPane(
       reloadBtn,
       urlInput,
       goBtn,
+      recorder.indicator,
+      recordBtn,
       annotateBtn,
       menuWrap,
     )
@@ -1371,6 +1444,7 @@ export function mountBrowserPane(
       artefactContentReady: false,
       artefact: null,
       annotation: null,
+      recorder,
       annotationScroll: null,
       closeMenu: () => {
         setMenuOpen(false)
@@ -1387,6 +1461,7 @@ export function mountBrowserPane(
         },
       }),
     }
+    tabRef = tab
 
     // The overlay is built on the first click so tabs that never annotate
     // carry no SVG surface, window listeners, or guest scroll polling.
@@ -1465,6 +1540,8 @@ export function mountBrowserPane(
         const shareableId = shareableWebContentsId(tab)
         shareTextItem.disabled = shareableId === null || !api
         shareScreenshotItem.disabled = shareableId === null || !api
+        recordItem.disabled =
+          !recorder.isRecording() && (shareableId === null || !api?.browser.startRecording)
         const artefact = downloadableArtefact(tab)
         downloadCanvasLabel.textContent = artefact ? 'Download canvas' : 'Download page'
         downloadCanvasItem.disabled = artefact
@@ -1506,6 +1583,14 @@ export function mountBrowserPane(
       void api.browser.shareScreenshot(id).catch((error: unknown) => {
         showErrorToast('Could not share browser screenshot', error)
       })
+    })
+    recordItem.addEventListener('click', () => {
+      setMenuOpen(false)
+      recorder.toggle()
+    })
+    recordBtn.addEventListener('click', () => {
+      setMenuOpen(false)
+      recorder.toggle()
     })
     exportPdfItem.addEventListener('click', () => {
       setMenuOpen(false)
@@ -1586,6 +1671,7 @@ export function mountBrowserPane(
     tab.webview?.remove()
     tab.annotationScroll?.dispose()
     tab.annotation?.dispose()
+    tab.recorder.dispose()
     tab.tabSwitch.remove()
     tabs.delete(tabId)
     scheduleSessionSave()
@@ -1657,6 +1743,7 @@ export function mountBrowserPane(
       tab.webview?.remove()
       tab.annotationScroll?.dispose()
       tab.annotation?.dispose()
+      tab.recorder.dispose()
       tab.tabSwitch.remove()
     }
     tabs.clear()
@@ -1976,6 +2063,7 @@ export function mountBrowserPane(
       tab.webview?.remove()
       tab.annotationScroll?.dispose()
       tab.annotation?.dispose()
+      tab.recorder.dispose()
       tab.tabSwitch.remove()
     }
     tabs.clear()
