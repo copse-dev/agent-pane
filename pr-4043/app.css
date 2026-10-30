@@ -13061,6 +13061,13 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   line-height: var(--line-height-base);
   white-space: pre-wrap;
 }
+.terminal-paste-preview {
+  display: block;
+  max-height: 12em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+}
 .confirm-dialog-buttons {
   margin-top: 0;
 }
