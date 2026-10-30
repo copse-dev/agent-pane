@@ -23942,7 +23942,7 @@ function serializedWrite(key, write) {
   writeChains.set(key, next);
   void next.finally(() => {
     if (writeChains.get(key) === next) writeChains.delete(key);
-  });
+  }).catch(() => void 0);
   return next;
 }
 function setNavigationOwnership(owns) {
@@ -23999,15 +23999,22 @@ function metaPatch(prev, next) {
   }
   return patch;
 }
-function acceptRuntimeThreadMeta(projectId, thread, before) {
-  const previous = persistedMeta.get(projectId)?.get(thread.id);
-  if (!previous) return;
+function runtimeMeta(previous, thread, before) {
   const next = { ...previous };
   for (const key of TRANSCRIPT_META_KEYS) {
     if (before && JSON.stringify(before[key]) === JSON.stringify(thread[key])) continue;
     Object.assign(next, { [key]: thread[key] });
   }
-  persistedMeta.get(projectId)?.set(thread.id, next);
+  return next;
+}
+function acceptRuntimeThreadMeta(projectId, thread, before) {
+  const previous = persistedMeta.get(projectId)?.get(thread.id);
+  if (previous) persistedMeta.get(projectId)?.set(thread.id, runtimeMeta(previous, thread, before));
+  for (const pending of pendingThreadWrites.get(projectId)?.get(thread.id) ?? []) {
+    if (pending.kind === "save") pending.meta = runtimeMeta(pending.meta, thread, before);
+  }
+  const creation = unconfirmedCreates.get(projectId)?.get(thread.id);
+  if (creation) creation.meta = runtimeMeta(creation.meta, thread, before);
 }
 function recordPersistedThread(projectId, thread) {
   let metas = persistedMeta.get(projectId);
@@ -24017,30 +24024,88 @@ function recordPersistedThread(projectId, thread) {
   }
   metas.set(thread.id, metaOf(thread));
 }
+function queueThreadWrite(api, projectId, threadId, target) {
+  let projectPending = pendingThreadWrites.get(projectId);
+  if (!projectPending) {
+    projectPending = /* @__PURE__ */ new Map();
+    pendingThreadWrites.set(projectId, projectPending);
+  }
+  const queue = projectPending.get(threadId) ?? [];
+  projectPending.set(threadId, queue);
+  queue.push(target);
+  return serializedWrite(threadWriteKey(projectId, threadId), async () => {
+    let acknowledged = persistedMeta.get(projectId);
+    if (!acknowledged) {
+      acknowledged = /* @__PURE__ */ new Map();
+      persistedMeta.set(projectId, acknowledged);
+    }
+    const previous = acknowledged.get(threadId);
+    try {
+      if (target.kind === "delete") {
+        if (previous || unconfirmedCreates.get(projectId)?.has(threadId)) {
+          await api.threads.delete(projectId, threadId);
+        }
+        acknowledged.delete(threadId);
+      } else {
+        if (!previous) {
+          let creations2 = unconfirmedCreates.get(projectId);
+          if (!creations2) {
+            creations2 = /* @__PURE__ */ new Map();
+            unconfirmedCreates.set(projectId, creations2);
+          }
+          const creation = creations2.get(threadId) ?? { meta: target.meta };
+          creations2.set(threadId, creation);
+          await api.threads.create(projectId, { ...target.thread, ...target.meta });
+          const patch = metaPatch(creation.meta, target.meta);
+          if (Object.keys(patch).length > 0) {
+            await api.threads.updateMeta(projectId, threadId, patch);
+          }
+        } else if (metaSig(previous) !== metaSig(target.meta)) {
+          await api.threads.updateMeta(projectId, threadId, metaPatch(previous, target.meta));
+        }
+        acknowledged.set(threadId, target.meta);
+      }
+      const creations = unconfirmedCreates.get(projectId);
+      creations?.delete(threadId);
+      if (creations?.size === 0) unconfirmedCreates.delete(projectId);
+    } finally {
+      queue.splice(queue.indexOf(target), 1);
+      if (queue.length === 0) projectPending.delete(threadId);
+      if (projectPending.size === 0 && pendingThreadWrites.get(projectId) === projectPending) {
+        pendingThreadWrites.delete(projectId);
+      }
+    }
+  });
+}
 function reconcileThreads(api, projectId, threads) {
-  const prev = persistedMeta.get(projectId) ?? /* @__PURE__ */ new Map();
-  const next = /* @__PURE__ */ new Map();
+  const previous = new Map(persistedMeta.get(projectId));
+  for (const [id, queue] of pendingThreadWrites.get(projectId) ?? []) {
+    const target = queue.at(-1);
+    if (target?.kind === "save") previous.set(id, target.meta);
+    else previous.delete(id);
+  }
+  const next = new Map(threads.map((thread) => [thread.id, { thread, meta: metaOf(thread) }]));
   const writes = [];
-  for (const t2 of threads) {
-    const meta3 = metaOf(t2);
-    next.set(t2.id, meta3);
-    const key = threadWriteKey(projectId, t2.id);
-    const prevMeta = prev.get(t2.id);
-    if (prevMeta === void 0) {
-      writes.push(serializedWrite(key, () => api.threads.create(projectId, t2)));
-    } else if (metaSig(prevMeta) !== metaSig(meta3)) {
-      const patch = metaPatch(prevMeta, meta3);
-      writes.push(serializedWrite(key, () => api.threads.updateMeta(projectId, t2.id, patch)));
+  for (const [id, target] of next) {
+    const before = previous.get(id);
+    if (!before || metaSig(before) !== metaSig(target.meta)) {
+      writes.push(queueThreadWrite(api, projectId, id, { kind: "save", ...target }));
     }
   }
-  for (const id of prev.keys()) {
-    if (!next.has(id)) {
-      writes.push(
-        serializedWrite(threadWriteKey(projectId, id), () => api.threads.delete(projectId, id))
-      );
+  const potentiallyCreated = /* @__PURE__ */ new Set([
+    ...previous.keys(),
+    ...unconfirmedCreates.get(projectId)?.keys() ?? []
+  ]);
+  for (const id of potentiallyCreated) {
+    const pending = pendingThreadWrites.get(projectId)?.get(id)?.at(-1);
+    if (!next.has(id) && pending?.kind !== "delete") {
+      writes.push(queueThreadWrite(api, projectId, id, { kind: "delete" }));
     }
   }
-  persistedMeta.set(projectId, next);
+  for (const id of pendingThreadWrites.get(projectId)?.keys() ?? []) {
+    const pending = writeChains.get(threadWriteKey(projectId, id));
+    if (pending) writes.push(pending.then(() => void 0));
+  }
   return Promise.all(writes).then(() => void 0);
 }
 function flushProjectThreads(api, projectId, threads) {
@@ -24319,7 +24384,7 @@ function attachAutosave(store, api) {
   activeAutosave = autosave;
   return autosave;
 }
-var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, navigationHeldFor, threadWriteKey, persistedMeta, threadLoadRevisions, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
+var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, navigationHeldFor, threadWriteKey, persistedMeta, pendingThreadWrites, unconfirmedCreates, threadLoadRevisions, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
 var init_persistence = __esm({
   "src/renderer/controller/persistence.ts"() {
     init_thread_helpers();
@@ -24337,6 +24402,8 @@ var init_persistence = __esm({
     navigationHeldFor = null;
     threadWriteKey = (projectId, threadId) => `thread:${projectId}:${threadId}`;
     persistedMeta = /* @__PURE__ */ new Map();
+    pendingThreadWrites = /* @__PURE__ */ new Map();
+    unconfirmedCreates = /* @__PURE__ */ new Map();
     threadLoadRevisions = /* @__PURE__ */ new WeakMap();
     AUTOSAVE_DEBOUNCE_MS = 250;
     activeAutosave = null;
