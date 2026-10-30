@@ -283,7 +283,7 @@ export class AcpTerminalHost {
   dispose(): void {
     this.disposed = true
     for (const terminal of this.terminals.values()) {
-      if (!terminal.exitStatus) terminal.abort.abort(new Error('ACP session closed'))
+      if (!terminal.exitStatus) terminal.abort.abort(new Error('The coding agent session has ended'))
     }
     this.terminals.clear()
   }
