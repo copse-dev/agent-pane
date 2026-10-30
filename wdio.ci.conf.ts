@@ -20,10 +20,6 @@ const ciExclude = [
   // Heavy multi-turn mock agent run + Monaco diff-approval IPC after a
   // reloadSession; flaky/slow on the constrained CI runner (passes locally).
   './tests/e2e/staged-diff-ui.e2e.ts',
-  // Heavy mock-agent / context-estimate / scroll specs whose Electron renderer
-  // OOM-crashes ("tab crashed") or overruns the timeout on the 2-core/7GB GitHub
-  // runner even on a fresh first attempt; all pass locally.
-  './tests/e2e/scroll-to-bottom.e2e.ts',
   // context-wheel stays quarantined (describeSkipInCi in its spec): it hard-OOM
   // crashes the runner on its first launch even in a 4-spec shard.
 ]

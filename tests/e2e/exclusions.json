@@ -137,21 +137,6 @@
       "markers": ["wdio.ci.conf.ts: exclude"]
     },
     {
-      "spec": "tests/e2e/scroll-to-bottom.e2e.ts",
-      "category": "quarantine",
-      "reason": "CI config excludes the entire spec for historical renderer crash/timeouts; two streaming cases also skip in-spec.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
-      "ownerRole": "Renderer and CI maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "No equivalent Electron streaming/scroll geometry evidence is established by this inventory.",
-      "markers": [
-        "itSkipInCi: hides scroll-to-bottom while auto-scrolling during streaming",
-        "itSkipInCi: keeps the view pinned when the user scrolls up during streaming",
-        "wdio.ci.conf.ts: exclude"
-      ]
-    },
-    {
       "spec": "tests/e2e/settings-plaintext-secret-storage.e2e.ts",
       "category": "platform",
       "reason": "Test targets the opt-in plaintext secret-storage fallback on Linux and skips other platforms.",
