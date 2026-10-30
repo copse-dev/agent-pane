@@ -1,4 +1,8 @@
+import { mkdtemp, readFile, rm, symlink } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import assert from 'node:assert/strict'
+import { z } from 'zod'
 import { afterEach, describe, it, mock } from 'node:test'
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
@@ -124,3 +128,57 @@ describe('Device Hub project authority', () => {
     },
   )
 })
+
+it(
+  'saves exact PNG bytes in the executing workspace and refuses overwrite or path escape',
+  { skip: process.platform !== 'darwin' },
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-png-contract-'))
+    const outside = await mkdtemp(join(tmpdir(), 'copse-png-outside-'))
+    try {
+      const plugins = createFirstPartyPluginRegistry()
+      plugins.enable(APPLE_DEVELOPMENT_PLUGIN_ID)
+      setDefaultPluginRegistry(plugins)
+      storageSet(storeKey, {
+        version: 1,
+        projects: { [context.projectId]: { enrolled: true, threads: {} } },
+      })
+      const bytes = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4AWP4DwQACfsD/c8LaHIAAAAASUVORK5CYII=',
+        'base64',
+      )
+      const capture = mock.method(deviceHubService, 'screenshot', async () => bytes)
+      await runWithThreadExecutionContext({ ...context, root, projectRoot: root }, async () => {
+        const args = {
+          action: 'screenshot',
+          device_id: 'owned',
+          output_path: 'artifacts/simulator.png',
+        } satisfies z.infer<typeof deviceHubTool.parameters>
+        const result = await deviceHubTool.execute(args, new AbortController().signal)
+        assert.deepEqual(await readFile(join(root, args.output_path)), bytes)
+        assert.ok(typeof result === 'object')
+        assert.match(result.result, /Saved image\/png/)
+        assert.ok(result.result.includes(`${String(bytes.length)} bytes, 1×1 px`))
+        await assert.rejects(
+          async () => deviceHubTool.execute(args, new AbortController().signal),
+          /EEXIST/,
+        )
+        await symlink(outside, join(root, 'escape'))
+        const before = capture.mock.callCount()
+        await assert.rejects(
+          async () =>
+            deviceHubTool.execute(
+              { ...args, output_path: 'escape/simulator.png' },
+              new AbortController().signal,
+            ),
+          /outside workspace/,
+        )
+        assert.equal(capture.mock.callCount(), before)
+        assert.deepEqual(await readFile(join(root, args.output_path)), bytes)
+      })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(outside, { recursive: true, force: true })
+    }
+  },
+)

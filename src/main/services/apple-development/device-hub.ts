@@ -220,7 +220,14 @@ export class DeviceHubService {
       if ((await stat(destination)).size > MAX_BYTES)
         throw new Error('Device screenshot exceeds 20 MiB.')
       const bytes = await readFile(destination)
-      if (!bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+      if (
+        bytes.length < 33 ||
+        !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ||
+        bytes.readUInt32BE(8) !== 13 ||
+        bytes.toString('ascii', 12, 16) !== 'IHDR' ||
+        bytes.readUInt32BE(16) === 0 ||
+        bytes.readUInt32BE(20) === 0
+      ) {
         throw new Error('Device Hub returned an invalid PNG screenshot.')
       }
       return bytes
