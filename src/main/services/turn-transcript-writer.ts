@@ -15,6 +15,7 @@ import {
   setMessageToolSummary,
   setThreadStatus,
 } from '@shared/store/thread-helpers.ts'
+import type { CommandPhase } from '@copse/agent/wire-types.ts'
 import type {
   Message,
   StreamChunk,
@@ -284,6 +285,50 @@ export class TurnTranscriptWriter {
     const message = thread?.messages.find((candidate) => candidate.id === messageId)
     if (!message) return
     await this.deps.appendMessage(projectId, threadId, { ...message, ...annotation })
+  }
+
+  /**
+   * Record a command's new stage on a tool call main already wrote, from
+   * outside the call: a `run_background` task exits on its own schedule,
+   * usually after its turn ended (#3956). A live session holding the call takes
+   * it as an ordinary update; otherwise the stored message is read back,
+   * patched and rewritten, and the window is told without writing it.
+   */
+  async updateCommandPhase(
+    projectId: string,
+    threadId: string,
+    toolCallId: string,
+    commandPhase: CommandPhase,
+  ): Promise<void> {
+    const chunk: StreamChunk = { type: 'tool_call_update', toolCallId, commandPhase }
+    const session = this.sessions.get(threadId)
+    if (
+      session &&
+      session.projectId === projectId &&
+      !session.passthrough &&
+      !session.done &&
+      (session.pending !== null ||
+        getThreadById(session.store, threadId)?.messages.some((message) =>
+          message.toolCalls.some((call) => call.id === toolCallId),
+        ))
+    ) {
+      if (session.pending) session.pending.push(chunk)
+      else this.process(session, chunk)
+      return
+    }
+    await this.settled(threadId)
+    const thread = await this.deps.loadThread(projectId, threadId)
+    const message = thread?.messages.find((candidate) =>
+      candidate.toolCalls.some((call) => call.id === toolCallId),
+    )
+    if (!message) return
+    await this.deps.appendMessage(projectId, threadId, {
+      ...message,
+      toolCalls: message.toolCalls.map((call) =>
+        call.id === toolCallId ? { ...call, commandPhase } : call,
+      ),
+    })
+    this.deps.forward(threadId, chunk, { messageIds: [] })
   }
 
   private process(session: Session, chunk: StreamChunk): void {

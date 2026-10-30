@@ -41,7 +41,10 @@ import { scaffoldProject } from '../services/project-scaffold.ts'
 import { createProcessManagerSampler } from '../services/process-manager.ts'
 import { readOwnedProcessRows } from '../services/process-manager-owned.ts'
 import { stopSupervisedBackgroundProcess } from '../services/exec/supervised-background-process.ts'
-import { hasBackgroundProcessesForThread } from '../services/exec/background-process.ts'
+import {
+  hasBackgroundProcessesForThread,
+  peekBackgroundProcessLogs,
+} from '../services/exec/background-process.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
@@ -2559,6 +2562,19 @@ export function registerAllHandlers(
       const threadId = parseIpcArgs(zNonEmptyString.max(256), [rawThreadId])
       const taskId = parseIpcArgs(zNonEmptyString.max(256), [rawTaskId])
       return createSupervisedTaskClient(getTaskSupervisor(), { projectId, threadId }).get(taskId)
+    },
+  )
+  // A command card's "Logs" (#3956): one task's retained output, scoped to the
+  // thread that started it. Reading here is not the agent observing the exit.
+  ipcMain.handle(
+    'background-tasks:logs',
+    (event, rawProjectId: unknown, rawThreadId: unknown, rawTaskId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, threadId, taskId] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, zNonEmptyString.max(256)]),
+        [rawProjectId, rawThreadId, rawTaskId],
+      )
+      return peekBackgroundProcessLogs(taskId, { projectId, threadId })
     },
   )
   ipcMain.handle(

@@ -293,6 +293,13 @@ spawned, so a command that never started stays distinct from one that ran and
 failed; `backgroundTaskId` names the `run_background` task once there is one.
 It is display metadata: the fold decodes it and drops a malformed value.
 
+A `run_background` task usually ends after its tool call returned, often in a
+later turn. Its first terminal stage (`exited`, `timed_out`, or `cancelled` when
+it was stopped) is then written onto the same call by main, which rewrites the
+owning message line in place before any completion wake starts. A completion
+wake's `origin.operationId` is that task id, so a reader finds the command a
+wake reports on by matching it against `backgroundTaskId`.
+
 `model` on a spine line is the primary-chat picker id for that assistant
 message. The transcript surfaces it only when more than one distinct primary
 model appears in the thread; explore/CI subagent models stay on the nested
