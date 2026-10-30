@@ -119,6 +119,16 @@ const COPSE_AUTOMATION_ACTIONS: readonly CopseAutomationAction[] = [
 
 function isAutomationPermission(value: unknown): boolean {
   if (!isRecord(value)) return false
+  if (value['kind'] === 'worktree-preparation') {
+    return (
+      value['toolName'] === 'prepare_worktree' &&
+      typeof value['directory'] === 'string' &&
+      value['directory'].length > 0 &&
+      typeof value['planFingerprint'] === 'string' &&
+      /^[a-f0-9]{64}$/.test(value['planFingerprint']) &&
+      typeof value['offline'] === 'boolean'
+    )
+  }
   return (
     (value['kind'] === 'copse-action' || value['kind'] === 'mcp-tool') &&
     typeof value['toolName'] === 'string' &&
@@ -175,6 +185,7 @@ function permissionOptions(): AutomationPermissionOption[] {
 
 function canGrantPermissionFromPrompt(permission: AutomationPermission): boolean {
   if (!isAutomationPermission(permission)) return false
+  if (permission.kind === 'worktree-preparation') return true
   if (permission.kind === 'copse-action') {
     return COPSE_AUTOMATION_ACTIONS.some((action) => action.toolName === permission.toolName)
   }

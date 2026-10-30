@@ -13,7 +13,7 @@ import {
 } from '../browser/browser-network-grants.ts'
 import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { resolve } from 'node:path'
+import { relative, resolve } from 'node:path'
 import { getWorkspaceRoot } from '../workspace.ts'
 import { getChatStoreRoot } from '../workspace.ts'
 import { ensureThreadAccess, needsOtherThreadRead } from './thread-access.ts'
@@ -36,7 +36,7 @@ import type { ShellPermissionDecision, ShellPromptParts } from './permission-pol
 import { errorMessage } from '@shared/errors.ts'
 import type { PromptCause } from '@shared/threads/prompt-cause.ts'
 import { isRecord, nonEmptyStringOr } from '@shared/unknown-value.ts'
-import type { AutomationPermission } from '@shared/types'
+import { automationPermissionKey, type AutomationPermission } from '@shared/types'
 import { darwinUserTempDir } from '../../project-sandbox/config.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
@@ -755,8 +755,19 @@ function automationPermissionTarget(
   }
 }
 
-function automationRememberLabel(subject: 'action' | 'tool', scheduleName: string): string {
-  return `Allow this ${subject} for future “${scheduleName}” runs`
+function automationRememberOptions(
+  automation: AutomationPermissionTarget,
+  permission: AutomationPermission,
+): Pick<ApprovalRequest, 'rememberLabel' | 'rememberDefault' | 'rememberSubject'> {
+  return {
+    rememberLabel: `Remember for this automation (“${automation.scheduleName}”)`,
+    rememberDefault: true,
+    rememberSubject: JSON.stringify([
+      automation.projectId,
+      automation.scheduleId,
+      automationPermissionKey(permission),
+    ]),
+  }
 }
 
 /**
@@ -814,7 +825,7 @@ async function checkMcpPermission(
       cause: 'mcp-tool',
       allowRemember: explicitPolicy !== 'ask',
       ...(automation
-        ? { rememberLabel: automationRememberLabel('tool', automation.scheduleName) }
+        ? automationRememberOptions(automation, permission)
         : { rememberLabel: `Always allow ${mcpToolLabel(toolName)}` }),
     },
     signal,
@@ -1005,6 +1016,7 @@ async function checkCustomToolPermission(
 async function checkWorktreePreparationPermission(
   args: unknown,
   signal?: AbortSignal,
+  explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
 ): Promise<boolean> {
   const parsed = z
     .object({
@@ -1019,18 +1031,40 @@ async function checkWorktreePreparationPermission(
     containedPreparationPath(root, parsed.directory),
     parsed.planFingerprint,
   )
-  const { approved } = await requestApproval(
+  const permission: AutomationPermission = {
+    kind: 'worktree-preparation',
+    toolName: 'prepare_worktree',
+    directory: relative(realpathSync(root), plan.root) || '.',
+    planFingerprint: plan.contentFingerprint,
+    offline: parsed.offline === true,
+  }
+  const automation = explicitPolicy === 'ask' ? null : automationPermissionTarget(permission)
+  if (automation?.allowed) return true
+  const details = formatPreparationApproval(plan, permission.offline)
+  const { approved, remember } = await requestApproval(
     {
       title: 'Prepare this worktree?',
-      ...formatPreparationApproval(plan, parsed.offline === true),
-      interactiveClientApproval: 'once',
+      ...details,
+      ...(automation
+        ? {
+            ...automationRememberOptions(automation, permission),
+            bodyFooter: `${details.bodyFooter}\nRemembering permits this exact preparation plan and network scope in future runs of this automation. Changed inputs require approval again.`,
+          }
+        : { interactiveClientApproval: 'once' }),
       type: 'shell',
       cause: 'shell-package-install',
-      allowRemember: false,
+      allowRemember: automation !== null,
       subject: 'prepare_worktree',
     },
     signal,
   )
+  if (approved && remember && automation) {
+    await getAutomationService().grantPermission(
+      automation.projectId,
+      automation.scheduleId,
+      permission,
+    )
+  }
   return approved
 }
 
@@ -1059,9 +1093,7 @@ async function checkGithubWriteToolPermission(
       type: 'mcp',
       cause: 'github-write',
       allowRemember: automation !== null,
-      ...(automation
-        ? { rememberLabel: automationRememberLabel('action', automation.scheduleName) }
-        : {}),
+      ...(automation ? automationRememberOptions(automation, permission) : {}),
       subject: toolName,
     },
     signal,
@@ -2203,7 +2235,7 @@ export async function ensureToolPermitted(
     permitted =
       explicitPolicy === 'ask' ? await promptExplicitToolAsk(toolName, args, signal) : true
   } else if (toolName === 'prepare_worktree') {
-    permitted = await checkWorktreePreparationPermission(args, signal)
+    permitted = await checkWorktreePreparationPermission(args, signal, explicitPolicy)
   } else if (GITHUB_WRITE_TOOLS.has(toolName)) {
     permitted = await checkGithubWriteToolPermission(toolName, args, signal, explicitPolicy)
   } else if (toolName.startsWith('mcp__')) {

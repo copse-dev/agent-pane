@@ -282,6 +282,8 @@ export function mountApprovalDialog(
     type: string
     allowRemember: boolean | undefined
     rememberLabel: string | undefined
+    rememberDefault: boolean | undefined
+    rememberSubject: string | undefined
     approveLabel: string | undefined
     collapseDetails: boolean | undefined
     approveOnceLabel: string | undefined
@@ -394,7 +396,12 @@ export function mountApprovalDialog(
     if (batch.length === 0) return null
     if (!batch.every((req) => req.allowRemember)) return null
     const label = batch[0]?.rememberLabel
-    if (!label || !batch.every((req) => req.rememberLabel === label)) return null
+    const subject = batch[0]?.rememberSubject
+    if (
+      !label ||
+      !batch.every((req) => req.rememberLabel === label && req.rememberSubject === subject)
+    )
+      return null
     return label
   }
 
@@ -617,7 +624,8 @@ export function mountApprovalDialog(
     // Fresh prompt the user is reading for the first time: Approve is live. The
     // settle guard only applies to appends onto an already-open prompt.
     clearSettle()
-    rememberInput.checked = false
+    rememberInput.checked =
+      rememberGrant() !== null && batch.every((req) => req.rememberDefault === true)
     // Each prompt starts collapsed; expanding is a per-prompt decision.
     detailsExpanded = false
     renderBatch()
@@ -774,6 +782,8 @@ export function mountApprovalDialog(
       type,
       allowRemember,
       rememberLabel,
+      rememberDefault,
+      rememberSubject,
       approveLabel,
       collapseDetails,
       approveOnceLabel,
@@ -796,6 +806,8 @@ export function mountApprovalDialog(
         type,
         allowRemember,
         rememberLabel,
+        rememberDefault,
+        rememberSubject,
         approveLabel,
         collapseDetails,
         approveOnceLabel,

@@ -595,6 +595,24 @@ describe('requestApproval pluggable transport', () => {
     )
   })
 
+  it('keeps automation grant identities and remember defaults distinct', () => {
+    const request = {
+      title: 'Prepare',
+      body: 'Setup',
+      type: 'shell',
+      allowRemember: true,
+      rememberLabel: 'Remember for this automation',
+    } satisfies Parameters<typeof approvalDedupeKey>[0]
+    assert.notEqual(
+      approvalDedupeKey({ ...request, rememberSubject: 'schedule/plan-a' }),
+      approvalDedupeKey({ ...request, rememberSubject: 'schedule/plan-b' }),
+    )
+    assert.notEqual(
+      approvalDedupeKey(request),
+      approvalDedupeKey({ ...request, rememberDefault: true }),
+    )
+  })
+
   it('never deduplicates standalone consent with ordinary approval', () => {
     const request = { title: 'Connect client', body: 'Code', type: 'mcp' } satisfies Parameters<
       typeof approvalDedupeKey

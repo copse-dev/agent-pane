@@ -3,6 +3,7 @@ import { beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type {
+  AutomationPermission,
   AutomationPermissionOption,
   AutomationSchedule,
   AutomationScheduleInput,
@@ -420,6 +421,50 @@ describe('automation plugin settings detail', () => {
         },
       },
     ])
+  })
+
+  it('shows a remembered preparation plan and saves its revocation', async () => {
+    const permission: AutomationPermission = {
+      kind: 'worktree-preparation',
+      toolName: 'prepare_worktree',
+      directory: '.',
+      planFingerprint: 'a'.repeat(64),
+      offline: false,
+    }
+    const schedule: AutomationSchedule = {
+      id: 'schedule-a',
+      projectId: 'project-a',
+      name: 'Morning review',
+      cron: '0 9 * * 1-5',
+      prompt: 'Review the project.',
+      model: 'gpt-5.4',
+      enabled: true,
+      permissions: [permission],
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    const { api, upserts } = stubApi([schedule])
+    const store = createStore({
+      activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+    })
+    const root = createAutomationPluginSettings(store, api, true, schedule.id)
+    document.body.append(root)
+    await tick()
+    const rows = [...root.querySelectorAll<HTMLElement>('.automation-permission-row')]
+    const row = rows.find((candidate) => candidate.textContent.includes('Prepare worktree'))
+    assert.ok(row)
+    assert.match(row.textContent, /Reviewed plan aaaaaaaaaaaa/)
+    assert.doesNotMatch(row.textContent, /Unavailable/)
+    const checkbox = row.querySelector<HTMLInputElement>('input')
+    assert.ok(checkbox?.checked)
+    checkbox.checked = false
+    checkbox.dispatchEvent(new Event('change', { bubbles: true }))
+    root
+      .querySelector<HTMLFormElement>('.automation-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await tick()
+    assert.deepEqual(upserts[0]?.input.permissions, [])
   })
 
   it('opens the schedule a sidebar heading linked to', async () => {

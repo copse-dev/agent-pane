@@ -111,6 +111,10 @@ export interface ApprovalRequest {
   /** Host producer certifies that approval authorizes only this concrete request. */
   interactiveClientApproval?: 'once'
   rememberLabel?: string
+  /** Initial checkbox state; never changes a user's choice on a live batch. */
+  rememberDefault?: boolean
+  /** Host-owned grant identity, so matching labels cannot batch unrelated permissions. */
+  rememberSubject?: string
   /** Action label for one request. Batches retain a neutral count label. */
   approveLabel?: string
   /**
@@ -231,6 +235,8 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
     type: req.type,
     allowRemember: req.allowRemember ?? false,
     rememberLabel: req.rememberLabel ?? '',
+    rememberDefault: req.rememberDefault ?? false,
+    rememberSubject: req.rememberSubject ?? '',
     approveLabel: req.approveLabel ?? '',
     collapseDetails: req.collapseDetails ?? false,
     approveOnceLabel: req.approveOnceLabel ?? '',

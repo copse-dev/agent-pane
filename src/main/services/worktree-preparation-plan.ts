@@ -55,6 +55,8 @@ export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun'
 export interface WorktreePreparationPlan {
   root: string
   fingerprint: string
+  /** Same declared inputs across owned worktrees; execution fingerprint remains path-bound. */
+  contentFingerprint: string
   ecosystem: 'uv' | 'pip' | 'go' | 'cargo' | null
   manager: {
     name: PackageManager
@@ -519,19 +521,22 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
   for (const input of inputs) containedPreparationPath(root, input)
   for (const check of config?.checks ?? [])
     if (check.path) relativePreparationPath(root, check.path)
+  const inputFingerprint = fingerprintPaths(
+    root,
+    inputs.flatMap((path) =>
+      existsSync(join(root, path))
+        ? [path, relative(root, realpathSync(join(root, path)))]
+        : [path],
+    ),
+  )
   const fingerprint = createHash('sha256')
     .update('worktree-plan-v2\0')
     .update(root)
-    .update(
-      fingerprintPaths(
-        root,
-        inputs.flatMap((path) =>
-          existsSync(join(root, path))
-            ? [path, relative(root, realpathSync(join(root, path)))]
-            : [path],
-        ),
-      ),
-    )
+    .update(inputFingerprint)
+    .digest('hex')
+  const contentFingerprint = createHash('sha256')
+    .update('worktree-preparation-grant-v1\0')
+    .update(inputFingerprint)
     .digest('hex')
   const nodeRequirements = [
     readPreparationText(root, '.nvmrc'),
@@ -683,6 +688,7 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
   return {
     root,
     fingerprint,
+    contentFingerprint,
     ecosystem,
     manager,
     nodeRequirements,
