@@ -310,7 +310,10 @@ describe('background process manager', () => {
     }
     assert.deepEqual(peeked, { logs: 'peeked\n', running: false })
     assert.equal(isBackgroundExitObserved(info.id, OWNER), false)
-    assert.equal(peekBackgroundProcessLogs(info.id, { projectId: 'other', threadId: 'other' }), null)
+    assert.equal(
+      peekBackgroundProcessLogs(info.id, { projectId: 'other', threadId: 'other' }),
+      null,
+    )
   })
 
   it('does not surface a URL for a plain task that did not opt into port binding', async () => {
