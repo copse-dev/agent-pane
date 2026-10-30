@@ -1,3 +1,4 @@
+import { READ_FILE_LIMITS_CEILING } from './read-file-limits.ts'
 import type { TodoItem } from './wire-types.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 
@@ -39,13 +40,19 @@ function normalizeExplorePaths(rawPaths: unknown): string[] {
 /**
  * Normalizes tool args before fingerprinting. The result is also what
  * actually executes when a call turns out not to be a duplicate (see
- * `run-agent-loop.ts`'s `executeToolBatch`), so this only trims/sorts —
- * it must never change what the tool call means. Near-duplicate detection for
+ * `run-agent-loop.ts`'s `executeToolBatch`), so this preserves the effective request. File reads also canonicalize
+ * their existing line ceiling; asking for more cannot return more lines. Near-duplicate detection for
  * `explore`'s free-text `query` (tokenizing, dropping stopwords) happens
  * separately in `isDuplicateExploreCall`, over the fingerprint string, so the
  * executed args keep the model's actual wording.
  */
 export function normalizeExploreArgs(name: string, args: unknown): unknown {
+  if (name === 'read_file' && isRecord(args)) {
+    const start = typeof args['start_line'] === 'number' ? args['start_line'] : 1
+    const ceiling = start + READ_FILE_LIMITS_CEILING.maxLines - 1
+    const end = typeof args['end_line'] === 'number' ? Math.min(args['end_line'], ceiling) : ceiling
+    return { ...args, start_line: start, end_line: end }
+  }
   if (name === 'list_dir') {
     if (!isRecord(args)) return args
     const path = typeof args['path'] === 'string' ? args['path'].trim() || '.' : '.'
