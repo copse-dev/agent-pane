@@ -245,6 +245,9 @@ import {
   runAcpAutoSetup,
   type AcpPackageChange,
 } from '../services/acp/acp-auto-setup.ts'
+import { getSshConnectionManager } from '../services/ssh-workspace/connection-manager.ts'
+import { WorkspaceActivation } from '../services/workspace-activation.ts'
+import { prepareWorkspaceConnection } from '../services/workspace-connection.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import { requestCloseConfirmation } from '../services/close-confirm.ts'
 import { setSeededVncNearbyServersForTests } from '../services/vnc/vnc-service.ts'
@@ -940,10 +943,17 @@ export function registerAllHandlers(
     )
   })
 
+  const workspaceActivations = new WeakMap<WebContents, WorkspaceActivation>()
   ipcMain.handle('workspace:set', async (event, root: unknown, sshHostArg?: unknown) => {
     assertMainFrameSender(event, win)
     const parsedRoot = parseIpcArgs(zPathString, [root])
     const explicitSshHost = parseIpcArgs(z.string().max(128).optional(), [sshHostArg])
+    let activation = workspaceActivations.get(event.sender)
+    if (!activation) {
+      activation = new WorkspaceActivation()
+      workspaceActivations.set(event.sender, activation)
+    }
+    const assertCurrentSelection = activation.begin()
     // Each phase is timed separately (COPSE_PERF=1) so a slow switch names the
     // phase, and `loop:stall` records show which of them held the event loop.
     const projects = perfSyncSpan('workspace-set:read-projects', storedWorkspaceProjects)
@@ -955,9 +965,20 @@ export function registerAllHandlers(
       () => seedAllowedWorkspaceRoots(workspaceProjectsToSeed(projects, parsedRoot, sshHost)),
       { projects: projects.length },
     )
+    assertCurrentSelection()
     const canonical = await perfSpan('workspace-set:assert', () =>
       assertAllowedWorkspaceRoot(parsedRoot, sshHost),
     )
+    assertCurrentSelection()
+    if (sshHost) {
+      const connections = getSshConnectionManager()
+      await prepareWorkspaceConnection({
+        enabled: getSetting('sshWorkspaceEnabled', false),
+        connected: connections.getConnection(sshHost) !== null,
+        connect: () => connections.connect(sshHost),
+      })
+    }
+    assertCurrentSelection()
     perfSyncSpan('workspace-set:set-root', () => {
       setWorkspaceRoot(canonical)
     })
