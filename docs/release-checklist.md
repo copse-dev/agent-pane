@@ -44,6 +44,12 @@ _before_ the version bump reaches `release`, not after.
       test the forward migration on the release candidate.
 - [ ] Confirm [recovery guidance](recovery.md) still matches shipped data
       locations and migration behavior.
+- [ ] Accessibility acceptance ([accessibility.md](accessibility.md)): confirm
+      the accessibility lane passed in the candidate's full CI run, check that
+      every entry in `tests/e2e/accessibility-baseline.json` links an assigned
+      issue, run the manual VoiceOver journeys on the candidate, and record the
+      results — or a release-owner waiver with owner, scope, tracking issue and
+      expiry — in [product release evidence](product-release-evidence.md).
 
 ## Release notes
 

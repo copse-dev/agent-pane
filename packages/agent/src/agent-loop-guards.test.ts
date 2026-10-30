@@ -168,3 +168,24 @@ describe('hasOpenTodos', () => {
     assert.equal(hasOpenTodos([{ id: '1', content: 'x', status: 'in_progress' }]), true)
   })
 })
+
+describe('capped read_file pages', () => {
+  it('does not reread page one merely because end_line grows past the cap', () => {
+    const first = normalizeExploreArgs('read_file', { path: 'project.pbxproj', end_line: 300 })
+    assert.deepEqual(first, { path: 'project.pbxproj', start_line: 1, end_line: 150 })
+    assert.equal(
+      isDuplicateExploreCall('read_file', { path: 'project.pbxproj', end_line: 388 }, [
+        toolCallFingerprint('read_file', first),
+      ]),
+      true,
+    )
+    assert.equal(
+      isDuplicateExploreCall(
+        'read_file',
+        { path: 'project.pbxproj', start_line: 151, end_line: 388 },
+        [toolCallFingerprint('read_file', first)],
+      ),
+      false,
+    )
+  })
+})

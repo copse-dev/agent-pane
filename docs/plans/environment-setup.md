@@ -1,7 +1,7 @@
 # Environment setup: teach Copse what you already approve
 
-Status: **Active** — Phases 1–3 are implemented on `claude/agent-panel-feature-compat-1e3ead`
-(not yet merged). The classifier-context idea in Phase 3 is deliberately not built; see
+Status: **Resolved** — Phases 1–3 are on `main`
+([#3950](https://github.com/copse-dev/agent-pane/pull/3950)). The classifier-context idea in Phase 3 is deliberately not built; see
 [Later work](#later-work).
 
 ## Motivation

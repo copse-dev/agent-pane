@@ -1,7 +1,8 @@
 # Thread layout stability
 
-Status: **Active** — the renderer-side disclosure policy, stable reconciliation, reading-anchor
-preservation, and focused visual validation are implemented on this branch. Frame-level scroll
+Status: **Resolved core** — the renderer-side disclosure policy, stable reconciliation, reading-anchor
+preservation, and focused visual validation are on `main` (f9989cb26; the disclosure model moved to
+`src/renderer/views/disclosure-model.ts` in [#3967](https://github.com/copse-dev/agent-pane/pull/3967)). Frame-level scroll
 coalescing and comparison against an always-compact variant remain product follow-ups.
 
 ## Goal

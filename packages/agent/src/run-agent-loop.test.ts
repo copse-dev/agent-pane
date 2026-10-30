@@ -3095,3 +3095,62 @@ describe('runAgentLoop malformed tool call recovery', () => {
     assert.equal(r.applied.length, 4)
   })
 })
+
+it('executes a capped read page once and allows the next page', async () => {
+  const chunks: AgentStreamChunk[] = []
+  const executed: unknown[] = []
+  await runAgentLoop({
+    provider: mockProvider([
+      [
+        {
+          type: 'tool_call',
+          toolCall: {
+            id: 'page1',
+            name: 'read_file',
+            args: { path: 'project.pbxproj', end_line: 300 },
+          },
+        },
+        { type: 'done' },
+      ],
+      [
+        {
+          type: 'tool_call',
+          toolCall: {
+            id: 'repeat',
+            name: 'read_file',
+            args: { path: 'project.pbxproj', end_line: 388 },
+          },
+        },
+        { type: 'done' },
+      ],
+      [
+        {
+          type: 'tool_call',
+          toolCall: {
+            id: 'page2',
+            name: 'read_file',
+            args: { path: 'project.pbxproj', start_line: 151, end_line: 388 },
+          },
+        },
+        { type: 'done' },
+      ],
+      [{ type: 'text', text: 'Read both pages.' }, { type: 'done' }],
+    ]),
+    messages: [{ role: 'user', content: 'Read the project file.' }],
+    tools: [],
+    onChunk: (chunk) => chunks.push(chunk),
+    executeTool: async (_name, args) => {
+      executed.push(args)
+      return 'page content'
+    },
+  })
+  assert.deepEqual(executed, [
+    { path: 'project.pbxproj', start_line: 1, end_line: 150 },
+    { path: 'project.pbxproj', start_line: 151, end_line: 300 },
+  ])
+  const duplicate = chunks.find(
+    (chunk) => chunk.type === 'tool_result' && chunk.toolCallId === 'repeat',
+  )
+  assert.ok(duplicate?.type === 'tool_result')
+  assert.match(duplicate.result, /duplicate/i)
+})
