@@ -55022,11 +55022,46 @@ var init_sources_section = __esm({
   }
 });
 
+// src/shared/types/storage-cleanup.ts
+function emptyContainerStorage(error62 = null) {
+  return {
+    available: false,
+    error: error62,
+    busy: false,
+    totalBytes: 0,
+    snapshotsBytes: 0,
+    blobsBytes: 0,
+    containersBytes: 0,
+    volumesBytes: 0,
+    otherBytes: 0,
+    snapshotCount: 0,
+    unmatchedSnapshots: 0,
+    images: [],
+    builderRunning: false,
+    builderDiskBytes: 0,
+    builderCacheBytes: null,
+    builderReclaimableBytes: null
+  };
+}
+var storageAreaSchema, storageRetentionSchema, CONTAINER_STORAGE_ACTIONS, containerStorageActionSchema;
+var init_storage_cleanup = __esm({
+  "src/shared/types/storage-cleanup.ts"() {
+    init_zod();
+    storageAreaSchema = external_exports.enum(["runs", "builds"]);
+    storageRetentionSchema = external_exports.object({
+      enabled: external_exports.boolean(),
+      days: external_exports.number().int().min(1).max(365)
+    });
+    CONTAINER_STORAGE_ACTIONS = ["worker-images", "apple-images", "apple-builder"];
+    containerStorageActionSchema = external_exports.enum(CONTAINER_STORAGE_ACTIONS);
+  }
+});
+
 // src/renderer/views/storage-maintenance-panel.ts
 function createStorageMaintenancePanel(api) {
-  const element = el("fieldset", { id: "storage-maintenance" });
+  const element = el("div", { id: "storage-maintenance", class: "settings-mount" });
   element.innerHTML = `
-    <legend>Saved runs and build data</legend>
+    <fieldset id="storage-saved-data"><legend>Saved runs and build data</legend>
     <p class="settings-fieldset-desc">Across all projects. Clean up completed container runs or temporary Apple build files. Chats, attachments, source files and shared dependencies are kept.</p>
     <div class="settings-action-row"><span>Saved container runs</span><span id="storage-runs-size">Checking\u2026</span><button type="button" class="ui-btn ui-btn-secondary" id="storage-runs-clean">Clean up\u2026</button></div>
     <p class="field-hint">Removes repository snapshots, outputs and saved state. Incomplete runs and runs with teardown errors are kept.</p>
@@ -55034,7 +55069,18 @@ function createStorageMaintenancePanel(api) {
     <p class="field-hint">Removes Apple build outputs and package caches. They are recreated on the next build. Active runs and builds are kept.</p>
     <label class="checkbox-label"><input type="checkbox" id="storage-expiry-enabled"> Automatically clean up unused data</label>
     <label class="storage-project-field"><span>Keep unused data for</span><select id="storage-expiry-days" aria-label="Storage retention"><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">365 days</option></select></label>
-    <p class="field-hint">Checked when Copse starts and once a day. Older saved run outputs will no longer be available for review or continuation.</p>
+    <p class="field-hint">Checked when Copse starts and once a day. Older saved run outputs will no longer be available for review or continuation. Old unused Copse worker images are also removed; the current local worker is kept. Broader shared cache cleanup requires confirmation; Apple garbage collection also removes orphaned snapshots and blobs when deleting a Copse image.</p>
+    </fieldset>
+    <fieldset id="storage-containers" hidden>
+      <legend>Apple container storage</legend>
+      <p class="field-hint">Shared across Copse profiles and other Apple container applications on this Mac.</p>
+      <p id="storage-containers-status" class="field-hint" role="status"></p>
+      <dl id="storage-container-breakdown"></dl>
+      <p class="field-hint">Unmatched snapshots may include Apple infrastructure images. Apple decides which cached files are unused during cleanup. Allocated disk estimates include filesystem overhead and may count APFS shared blocks more than once. Removing files inside a sparse VM disk may not immediately shrink it.</p>
+      <div class="settings-action-row"><button type="button" class="ui-btn ui-btn-secondary" id="storage-worker-images-clean">Clean unused Copse images\u2026</button><button type="button" class="ui-btn ui-btn-secondary" id="storage-apple-images-clean">Clean shared image cache\u2026</button><button type="button" class="ui-btn ui-btn-secondary" id="storage-apple-builder-clean">Clean shared builder cache\u2026</button></div>
+      <p class="field-hint">The local worker image is kept. Cleanup is paused during Copse runs and builds, and requires other containers to be removed. Shared caches can be recreated by future builds.</p>
+      <details><summary>Cached images</summary><div id="storage-container-images"></div></details>
+    </fieldset>
     <p id="storage-maintenance-status" class="field-hint" role="status" aria-live="polite"></p>`;
   const status = qsRequired(element, "#storage-maintenance-status");
   const enabled = qsRequired(element, "#storage-expiry-enabled");
@@ -55049,6 +55095,53 @@ function createStorageMaintenancePanel(api) {
       const summary = state?.areas.find((entry) => entry.area === area);
       qsRequired(element, `#storage-${area}-clean`).disabled = working || !summary || summary.busy || summary.entries === 0;
     }
+    for (const action of CONTAINER_STORAGE_ACTIONS) {
+      const container = state?.containers;
+      qsRequired(element, `#storage-${action}-clean`).disabled = working || !container?.available || container.busy || action === "worker-images" && !container.images.some((image) => image.eligible) || action === "apple-builder" && (!container.builderRunning || container.builderCacheBytes === null);
+    }
+  }
+  function renderContainers() {
+    const container = state?.containers;
+    if (!container) return;
+    qsRequired(element, "#storage-containers").hidden = !container.available && !container.error;
+    qsRequired(element, "#storage-containers-status").textContent = container.error ? `Inventory unavailable: ${container.error}` : container.busy ? "Containers or builds are in use. Cleanup is paused." : "Apple container storage is ready.";
+    const breakdown = qsRequired(element, "#storage-container-breakdown");
+    breakdown.replaceChildren();
+    const rows = [
+      ["Total allocated", container.totalBytes],
+      [
+        `Unpacked snapshots (${String(container.snapshotCount)}; ${String(container.unmatchedSnapshots)} not matched to listed images)`,
+        container.snapshotsBytes
+      ],
+      ["Compressed image content", container.blobsBytes],
+      ["Builder VM disk", container.builderDiskBytes],
+      [
+        "Other container disks",
+        Math.max(0, container.containersBytes - container.builderDiskBytes)
+      ],
+      ["Workspace volumes", container.volumesBytes],
+      ["Kernels and other supporting files", container.otherBytes]
+    ];
+    for (const [label, bytes] of rows)
+      breakdown.append(el("dt", {}, label), el("dd", {}, formatByteSize(bytes)));
+    for (const [label, bytes] of [
+      ["BuildKit cache (inside the builder disk)", container.builderCacheBytes],
+      ["Unused BuildKit cache", container.builderReclaimableBytes]
+    ])
+      breakdown.append(
+        el("dt", {}, label),
+        el("dd", {}, bytes === null ? "Not reported" : formatByteSize(bytes))
+      );
+    const images = qsRequired(element, "#storage-container-images");
+    images.replaceChildren();
+    for (const image of container.images)
+      images.append(
+        el(
+          "p",
+          { class: "field-hint" },
+          `${image.name}: ${formatByteSize(image.bytes)} compressed \xB7 ${formatByteSize(image.snapshotBytes)} snapshot${image.eligible ? " \xB7 extra Copse image" : ""}`
+        )
+      );
   }
   async function refresh() {
     const token = ++generation;
@@ -55057,6 +55150,7 @@ function createStorageMaintenancePanel(api) {
       const next = await api.storage.maintenance();
       if (token !== generation) return;
       state = next;
+      renderContainers();
       enabled.checked = next.retention.enabled;
       if (![...days.options].some((option) => Number(option.value) === next.retention.days)) {
         days.add(new Option(`${String(next.retention.days)} days`, String(next.retention.days)));
@@ -55082,6 +55176,34 @@ function createStorageMaintenancePanel(api) {
     } catch (error62) {
       status.textContent = errorMessage(error62);
       await refresh();
+    } finally {
+      working = false;
+      controls();
+    }
+  }
+  async function cleanContainers(action) {
+    const detail = {
+      "worker-images": "Remove unused extra Copse worker images. The local worker is kept. Apple also collects orphaned snapshots and image blobs from its shared cache.",
+      "apple-images": "Remove dangling images, orphaned snapshots and image blobs from the shared Apple container cache. This can affect other applications and require images to be downloaded again. Tagged worker images are kept.",
+      "apple-builder": "Remove unused build cache from the shared Apple builder. Other applications may need to rebuild cached layers. The builder remains running and its sparse disk may retain allocated space."
+    };
+    if (!await showConfirmDialog({
+      message: "Clean Apple container storage?",
+      detail: detail[action],
+      confirmLabel: "Clean up",
+      danger: true
+    }))
+      return;
+    working = true;
+    generation++;
+    controls();
+    status.textContent = "Cleaning up\u2026";
+    try {
+      const result = await api.storage.containerCleanup(action);
+      await refresh();
+      status.textContent = result.skipped && result.removed === 0 ? "Cleanup paused: storage is in use or images are protected." : `Apple container cleanup finished. Reported disk allocation decreased by ${formatByteSize(result.bytes)}.`;
+    } catch (error62) {
+      status.textContent = errorMessage(error62);
     } finally {
       working = false;
       controls();
@@ -55120,11 +55242,16 @@ function createStorageMaintenancePanel(api) {
     qsRequired(element, `#storage-${area}-clean`).addEventListener("click", () => {
       void clean(area);
     });
+  for (const action of CONTAINER_STORAGE_ACTIONS)
+    qsRequired(element, `#storage-${action}-clean`).addEventListener("click", () => {
+      void cleanContainers(action);
+    });
   controls();
   return { element, refresh };
 }
 var init_storage_maintenance_panel = __esm({
   "src/renderer/views/storage-maintenance-panel.ts"() {
+    init_storage_cleanup();
     init_file_bytes();
     init_errors4();
     init_helpers();
@@ -72252,6 +72379,8 @@ export {
   init_file_bytes,
   openAttachmentPreview,
   init_attachment_preview,
+  emptyContainerStorage,
+  init_storage_cleanup,
   T,
   init_marked_esm,
   excerptText,
