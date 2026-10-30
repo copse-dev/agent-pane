@@ -74,8 +74,6 @@ export interface FrontierCandidate {
     usedPercent: number
     resetsAt: string | null
     apiPricePerMTok: number
-    /** Expected-plan mode: prior windows that hit the limit (N/M). */
-    priorLimitHits?: { hit: number; total: number }
   }
   /**
    * Set instead of `plan` when the governing plan window is spent: the model is
@@ -85,8 +83,6 @@ export interface FrontierCandidate {
   planLimitReached?: {
     label: string
     resetsAt: string | null
-    /** Expected-plan mode: prior windows that hit the limit (N/M). */
-    priorLimitHits?: { hit: number; total: number }
   }
   /** AA's own cost-per-Intelligence-Index-task in USD, when the feed carries it. */
   costPerTask?: number

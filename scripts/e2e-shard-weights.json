@@ -316,7 +316,6 @@
     "tests/e2e/settings-usage-auth-errors.e2e.ts": 9.7,
     "tests/e2e/settings-usage-classifiers.e2e.ts": 8.6,
     "tests/e2e/settings-usage-codex-chatpass.e2e.ts": 9.3,
-    "tests/e2e/settings-usage-plan-worth-it.e2e.ts": 8.4,
     "tests/e2e/settings-usage-token-expired.e2e.ts": 9.3,
     "tests/e2e/settings-usage-unconfirmed-plans.e2e.ts": 9.5,
     "tests/e2e/settings-usage-value-map-card-link.e2e.ts": 11.4,

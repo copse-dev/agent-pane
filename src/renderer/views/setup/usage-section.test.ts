@@ -4,7 +4,6 @@ import { describe, it } from 'node:test'
 import { createStore } from '@shared/store/store.ts'
 import { createFakeApi } from '../../fake-api.test-support.ts'
 import type { PlanUsageSnapshot, ProviderPlanResult } from '@copse/plan-usage'
-import type { PlanWorthItPayload } from '@shared/usage/plan-worth-it.ts'
 import type { ModelUsageBreakdown } from '@shared/usage/aggregate-usage.ts'
 import {
   claudeReasonNeedsLogin,
@@ -13,7 +12,6 @@ import {
   renderClassifierTable,
   renderModelTable,
   renderPlanProvider,
-  renderPlanWorthItSection,
 } from './usage-section.ts'
 
 function claudeUnavailable(reason: string): ProviderPlanResult {
@@ -476,70 +474,6 @@ describe('renderModelTable alignment', () => {
     assert.equal(cells[1], '1.0k')
     assert.equal(cells[2], '200')
     assert.equal(cells[5], 'unpriced')
-  })
-})
-
-describe('renderPlanWorthItSection', () => {
-  function payload(
-    verdict: PlanWorthItPayload['worthIt']['verdict'],
-    overrides: Partial<PlanWorthItPayload['worthIt']> = {},
-  ): PlanWorthItPayload {
-    return {
-      worthIt: {
-        verdict,
-        reason: 'test reason',
-        apiEquivalentBurnPerWeek: 90,
-        planFeePerWeek: 23,
-        monthlyFeeUsd: 100,
-        feeHint: { monthlyFeeUsd: 100, label: 'Max 5x' },
-        completedWeeklyCount: 2,
-        inferenceFrontierNote: null,
-        ...overrides,
-      },
-      windowExhaustion: [],
-      historySampleCount: 2,
-      completedWeeklyCount: 2,
-    }
-  }
-
-  it('renders the verdict card and wires the inference control', () => {
-    const host = document.createElement('div')
-    let inferred = 0
-    renderPlanWorthItSection(host, payload('worth_it'), null, {
-      onFeeChange: () => undefined,
-      onShowInference: () => {
-        inferred += 1
-      },
-    })
-    assert.equal(host.querySelector('.usage-worth-card')?.getAttribute('data-verdict'), 'worth_it')
-    assert.match(host.querySelector('.usage-worth-verdict')?.textContent ?? '', /Worth it/)
-    const feeInput = host.querySelector<HTMLInputElement>('#usage-worth-fee-input')
-    assert.ok(feeInput)
-    assert.equal(feeInput.value, '100')
-    host.querySelector<HTMLButtonElement>('.usage-worth-inference-btn')?.click()
-    assert.equal(inferred, 1)
-  })
-
-  it('shows the empty-history copy', () => {
-    const host = document.createElement('div')
-    renderPlanWorthItSection(
-      host,
-      payload('insufficient_history', {
-        reason: 'Need a couple of completed weekly windows — reopen Usage after resets.',
-        monthlyFeeUsd: null,
-        apiEquivalentBurnPerWeek: null,
-        completedWeeklyCount: 0,
-      }),
-      null,
-      { onFeeChange: () => undefined, onShowInference: () => undefined },
-    )
-    assert.equal(
-      host.querySelector('.usage-worth-card')?.getAttribute('data-verdict'),
-      'insufficient_history',
-    )
-    assert.match(host.querySelector('.usage-worth-reason')?.textContent ?? '', /completed weekly/)
-    assert.match(host.querySelector('.usage-worth-reason')?.textContent ?? '', /· reopen Usage/)
-    assert.doesNotMatch(host.querySelector('.usage-worth-reason')?.textContent ?? '', /—/)
   })
 })
 

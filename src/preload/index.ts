@@ -1316,9 +1316,6 @@ const api: ApiClient = {
     getThreadClassifierUse: (projectId, threadId) =>
       ipcRenderer.invoke('usage:get-thread-classifier-use', projectId, threadId),
     getPlanUsage: (force?: boolean) => ipcRenderer.invoke('usage:get-plan-usage', force),
-    getPlanWorthIt: () => ipcRenderer.invoke('usage:get-plan-worth-it'),
-    setClaudePlanMonthlyFee: (fee: number | null) =>
-      ipcRenderer.invoke('usage:set-claude-plan-monthly-fee', fee),
   },
   decisions: {
     list: (projectId?: string) => ipcRenderer.invoke('decisions:list', projectId),
