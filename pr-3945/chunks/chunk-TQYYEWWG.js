@@ -27395,6 +27395,9 @@ function sidebarLastPromptAt(thread) {
   }
   return void 0;
 }
+function isAutomationPendingStart(thread) {
+  return thread.automationPendingStart === true || automationRunBlock(thread) === "pending-start";
+}
 function sidebarHasRun(thread) {
   if (thread.lastPromptAt !== void 0) return true;
   if (thread.everRan !== void 0) return thread.everRan;
@@ -68985,6 +68988,20 @@ var init_experimental_markup = __esm({
             </fieldset>
 
             <fieldset>
+              <legend>Plans</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="planModeEnabled" />
+                Show "Start planning" in the message box
+              </label>
+              <p class="field-hint">
+                Breaks a task into a living plan with explicit steps and acceptance criteria before
+                the agent starts. Coding agents and container, remote, or plugin-hosted agents can't
+                run while a plan is active, and a step's "done" is the agent's own report, not a
+                verified check.
+              </p>
+            </fieldset>
+
+            <fieldset>
               <legend>Model classifier</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="modelClassifierEnabled" />
@@ -69051,6 +69068,7 @@ var init_experimental_markup = __esm({
       { name: "modelClassifierEnabled", kind: "checkbox", default: false, save: true },
       { name: "deferredWorktreesEnabled", kind: "checkbox", default: false, save: true },
       { name: "containerRunsEnabled", kind: "checkbox", default: false, save: true },
+      { name: "planModeEnabled", kind: "checkbox", default: false, save: true },
       { name: "orchestrationStrategyEnabled", kind: "checkbox", default: false, save: true },
       { name: DEVELOPER_MODE_SETTING, kind: "checkbox", default: false, save: true }
     ];
@@ -69341,7 +69359,7 @@ function mountSettingsDialog(store, api) {
   overlay.innerHTML = `
     <div class="settings-shell">
       <header class="settings-header">
-        <h2>Settings</h2>
+        <h2 id="settings-dialog-title">Settings</h2>
         <button type="button" class="settings-close-btn" id="settings-close" aria-label="Close settings" data-tooltip="Close settings"></button>
       </header>
 
@@ -69379,6 +69397,7 @@ function mountSettingsDialog(store, api) {
       </div>
     </div>
   `;
+  overlay.setAttribute("aria-labelledby", "settings-dialog-title");
   bindSettingsDialog(overlay);
   for (const definition of SETTINGS_SECTIONS) renderSimpleFields(overlay, definition.fields);
   qsRequired(overlay, "#settings-close").append(closeIcon("ui-icon"));
@@ -72649,6 +72668,7 @@ export {
   init_automation_run_state,
   sidebarPrRefs,
   sidebarLastPromptAt,
+  isAutomationPendingStart,
   sidebarHasRun,
   init_sidebar_thread,
   projectDisplayName,
