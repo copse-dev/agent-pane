@@ -18,6 +18,7 @@
     "check:a11y-baseline": "node scripts/check-a11y-baseline.mts",
     "filter:screenshots": "node scripts/filter-screenshots.mts",
     "build": "node scripts/build.mts",
+    "build:remote-watcher": "node scripts/stage-remote-watcher.mts",
     "build:demo": "node scripts/build.mts --demo",
     "build:servo": "node scripts/build.mts --servo",
     "servo": "node scripts/run-servo.mts",
@@ -165,7 +166,8 @@
       "**/node_modules/@anthropic-ai/sandbox-runtime/**/*",
       "**/node_modules/xcodebuildmcp/**/*",
       "dist/resources/gortex/**",
-      "dist/resources/licenses/**"
+      "dist/resources/licenses/**",
+      "dist/resources/remote-watcher/**"
     ],
     "afterPack": "scripts/after-pack.cjs",
     "generateUpdatesFilesForAllChannels": true,
