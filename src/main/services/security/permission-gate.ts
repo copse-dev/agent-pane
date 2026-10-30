@@ -2256,7 +2256,10 @@ async function decideToolPermitted(
     )
   } else if (toolName === 'device_hub') {
     // Host device access (including screenshots) is not project-sandboxed.
-    permitted = explicitPolicy === 'allow' || (await promptExplicitToolAsk(toolName, args, signal))
+    const deletingSimulator = isRecord(args) && args['action'] === 'delete_simulator'
+    permitted =
+      (!deletingSimulator && explicitPolicy === 'allow') ||
+      (await promptExplicitToolAsk(toolName, args, signal))
   } else if (toolName === 'launch_gui_app') {
     // Always prompt — GUI launch leaves the sandbox and puts a window on the
     // desktop. A stale stored allow is coerced to ask by tool-permissions.ts;
