@@ -117,12 +117,12 @@
     {
       "spec": "tests/e2e/portrait-right-panel.e2e.ts",
       "category": "quarantine",
-      "reason": "Excluded by CI config; the specific historical reason and current reproduction need review.",
+      "reason": "The auto-portrait layout cannot occur on the CI display. The main window has minWidth 800, so portrait needs a window at least 1.35 x 800 = 1080 logical pixels tall, but scripts/run-e2e.mts runs Xvfb at 3200x2048 with a pinned 2x DPR, a 1600x1024 logical desktop. The seeded 760x1180 window stays below the aspect threshold: CI run 41092504471 (#4022) failed both cases at setPortraitWindow's 'expected Electron window to resize to a tall portrait viewport' wait on both shard attempts, while the other 53 specs in that shard passed. Restoring it needs a taller framebuffer, which changes every reference screenshot's capture identity.",
       "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
       "ownerRole": "Renderer and CI maintainer (person assignment pending in #2719)",
       "recordedOn": "2026-09-20",
       "reviewBy": "2026-09-27",
-      "coverage": "No equivalent layout/runtime evidence is established by this inventory.",
+      "coverage": "portrait-right-panel-layout.test.ts covers the aspect and height heuristic, and portrait-panel-controls.e2e.ts covers the bottom-pinned portrait chrome in CI. The auto-detected stacked layout itself has no CI runtime evidence; it needs a local run on a display at least 1080 logical pixels tall.",
       "markers": ["wdio.ci.conf.ts: exclude"]
     },
     {
