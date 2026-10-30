@@ -4,7 +4,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { Writable } from 'node:stream'
-import { client, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
+import { client, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk/unstable'
 import * as v2 from '@agentclientprotocol/sdk/experimental/v2'
 import type { StreamChunk } from '@shared/types'
 import { nodeReadableStream } from './node-byte-streams.ts'
@@ -15,10 +15,9 @@ import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
  *
  * `acp-loopback.test.ts` proves Copse's two halves agree with each other, which
  * cannot catch a shared misreading of the protocol. The agent here is a third
- * party: `@agentclientprotocol/sdk` publishes a runnable dual-version example
- * that answers v1 or v2 per connection (`agentProtocolRouter().withV1().withV2()`).
- * It costs nothing to run — no model, no API key, no network — and it version-
- * locks with the SDK we pin, so it moves when the protocol we build against moves.
+ * party: a repo-owned fixture built from the SDK's public agent builders and
+ * `agentProtocolRouter().withV1().withV2()`. It costs nothing to run — no model,
+ * no API key, no network — and avoids relying on examples removed from SDK 2.x.
  *
  * Two arms, doing different jobs:
  *
@@ -34,18 +33,13 @@ import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
 
 // The runner compiles to `dist-test/` and runs node from the repo root, so
 // `import.meta.dirname` is undefined under CJS — resolve from the runner's cwd,
-// as acp-probe-worker.test.ts does. A deep file path rather than a package
-// specifier on purpose: the SDK's `exports` map does not expose `./dist/*`.
-const EXAMPLE_AGENT = join(
-  process.cwd(),
-  'node_modules/@agentclientprotocol/sdk/dist/examples/dual-version-agent.js',
-)
+// as acp-probe-worker.test.ts does.
+const EXAMPLE_AGENT = join(process.cwd(), 'tests/fixtures/acp-dual-version-agent.mjs')
 
 function spawnExampleAgent(): ChildProcessWithoutNullStreams {
   assert.ok(
     existsSync(EXAMPLE_AGENT),
-    `the SDK's dual-version example agent is missing at ${EXAMPLE_AGENT} — it ships in the ` +
-      `@agentclientprotocol/sdk tarball, so this means the dependency layout changed`,
+    `the repo-owned dual-version ACP fixture is missing at ${EXAMPLE_AGENT}`,
   )
   // ELECTRON_RUN_AS_NODE keeps the child a plain Node process when the suite is
   // run under Electron's binary, matching acp-probe-worker.test.ts.
@@ -132,6 +126,9 @@ describe('external ACP agent conformance (v2 — the incoming surface)', () => {
     const child = spawnExampleAgent()
     try {
       const updates: v2.SessionUpdate[] = []
+      let promptReceiptId = ''
+      let echoedUserMessageId = ''
+      let receiptArrivedBeforeIdle = false
 
       const stopReason = await v2
         .client({ name: 'copse-conformance' })
@@ -142,15 +139,22 @@ describe('external ACP agent conformance (v2 — the incoming surface)', () => {
             capabilities: {},
           })
           return ctx.buildSession('/tmp/project').withSession(async (session) => {
-            // `prompt()` resolves on ACCEPT in v2, so it is deliberately not
-            // awaited for the turn: the turn ends when the agent says so.
-            session.prompt('hello')
+            // v2 prompt resolves on acceptance and returns the id of the user
+            // message the agent then echoes on the update stream.
+            const receipt = await session.prompt('hello')
+            promptReceiptId = receipt.messageId
             for (;;) {
               const message = await session.nextUpdate()
               updates.push(message.update)
+              if (v2.SessionUpdate.isUserMessage(message.update)) {
+                echoedUserMessageId = message.update.messageId
+              }
               // The SDK derives `stop` from the idle `state_update` — proof that
               // turn completion now travels as a session update.
-              if (message.kind === 'stop') return message.stopReason
+              if (message.kind === 'stop') {
+                receiptArrivedBeforeIdle = promptReceiptId !== ''
+                return message.stopReason
+              }
             }
           })
         })
@@ -173,6 +177,8 @@ describe('external ACP agent conformance (v2 — the incoming surface)', () => {
       const [, idle] = states
       assert.equal(idle?.state === 'idle' ? idle.stopReason : undefined, 'end_turn')
       assert.equal(stopReason, 'end_turn')
+      assert.equal(receiptArrivedBeforeIdle, true)
+      assert.equal(promptReceiptId, echoedUserMessageId)
 
       // Whole messages keyed by `messageId` replace the v1 chunk stream, for the
       // user's own prompt as well as the agent's reply — an upsert model the
@@ -183,10 +189,8 @@ describe('external ACP agent conformance (v2 — the incoming surface)', () => {
       )
       const agentMessage = updates.find((update) => update.sessionUpdate === 'agent_message')
       assert.ok(agentMessage, `expected an agent_message update, got ${String(kinds)}`)
-      assert.ok(
-        'messageId' in agentMessage && typeof agentMessage.messageId === 'string',
-        'v2 whole-message updates are keyed by messageId',
-      )
+      assert.ok(v2.SessionUpdate.isAgentMessage(agentMessage))
+      assert.equal(typeof agentMessage.messageId, 'string')
     } finally {
       child.kill()
     }

@@ -8,7 +8,7 @@ import type {
   PermissionOption,
   RequestPermissionRequest,
   RequestPermissionResponse,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import { ACP_UNSUPPORTED_ON_SSH_MESSAGE } from '@shared/acp.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { runBackgroundTool } from '../../tools/background-process-tool.ts'

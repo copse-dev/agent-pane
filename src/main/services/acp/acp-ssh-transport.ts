@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { PassThrough } from 'node:stream'
-import { ndJsonStream } from '@agentclientprotocol/sdk'
+import { ndJsonStream } from '@agentclientprotocol/sdk/unstable'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import { containerAcpAgent } from '@shared/container-acp-agents.ts'
 import { getSetting } from '../storage/settings.ts'

@@ -32,6 +32,9 @@ patchedDependencies:
   '@anthropic-ai/sandbox-runtime@0.0.74':
     hash: a5816a871319563faaa812e0295c6d6f066d2dc54feefd46090d73a1f441de35
     path: patches/@anthropic-ai__sandbox-runtime@0.0.74.patch
+  xcodebuildmcp@2.7.0:
+    hash: ff48d03ac621c630f0d0540b305f089e63578b78ec28b4a75ccb49793dfe4b31
+    path: patches/xcodebuildmcp@2.7.0.patch
 
 importers:
 
@@ -63,11 +66,11 @@ importers:
         version: 7.2.4
       xcodebuildmcp:
         specifier: 2.7.0
-        version: 2.7.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))
+        version: 2.7.0(patch_hash=ff48d03ac621c630f0d0540b305f089e63578b78ec28b4a75ccb49793dfe4b31)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))
     devDependencies:
       '@agentclientprotocol/sdk':
-        specifier: ^1.8.0
-        version: 1.8.0(zod@4.6.7)
+        specifier: 2.2.0
+        version: 2.2.0(zod@4.6.7)
       '@anthropic-ai/sdk':
         specifier: ^0.133.0
         version: 0.133.0(zod@4.6.7)
@@ -206,6 +209,9 @@ importers:
       '@xterm/xterm':
         specifier: ^6.0.0
         version: 6.0.0
+      axe-core:
+        specifier: ^4.14.0
+        version: 4.14.0
       bonjour-service:
         specifier: ^1.4.4
         version: 1.4.4
@@ -485,10 +491,14 @@ importers:
 
 packages:
 
-  '@agentclientprotocol/sdk@1.8.0':
-    resolution: {integrity: sha512-fbP7qHZsFyTJVT0/RPrcWJ8An26qLXHEuGCHHEKDyxD1xpXV+Ejyh2LAE6vBAFePkpVjZeeohnbgvuEhZ7wLMg==}
+  '@agentclientprotocol/sdk@2.2.0':
+    resolution: {integrity: sha512-o1+eDQVb05yzPY+5v54awHyONU1oeLsbLVavkwrMQaZDuJDh/38pQiXJS4ix4d6QA3Y4bU0lHFRjwg99KKKSaQ==}
     peerDependencies:
-      zod: ^3.25.0 || ^4.0.0
+      '@modelcontextprotocol/server': ^2.4.0
+      zod: ^3.25.76 || ^4.0.0
+    peerDependenciesMeta:
+      '@modelcontextprotocol/server':
+        optional: true
 
   '@antfu/install-pkg@2.1.0':
     resolution: {integrity: sha512-sdg9NxU3zR4Mnawfbc/x6GB5Wf17WYud5qOuEuxXjaKpYpMkISSJEjItGebXJ2bQ4DIcly4NYH23mtkGJjvKUw==}
@@ -2446,6 +2456,10 @@ packages:
 
   aws4@1.13.2:
     resolution: {integrity: sha512-lHe62zvbTB5eEABUVi/AwVh0ZKY9rMMDhmm+eeyuuUQbQ3+J+fONVQOZyj+DdrvD4BY33uYniyRJ4UJIaSKAfw==}
+
+  axe-core@4.14.0:
+    resolution: {integrity: sha512-9WTZxEjsZ7b13TH8JPmbV2z8CHbl80/2hm3XPEG4JgNdQLK81IBRXmSxHfMAOkSqQeRxT/0dwNDz2GOm3zzpcQ==}
+    engines: {node: '>=4'}
 
   b4a@1.9.0:
     resolution: {integrity: sha512-dpfcF9fDNR6++cthXR67iyhgqWy9CBouAvIWhIntzBG6cvK/cnIPiZQjBwi/ZqjjBEDGfoNDtmB0kTjroOJ3pQ==}
@@ -5414,7 +5428,7 @@ packages:
 
 snapshots:
 
-  '@agentclientprotocol/sdk@1.8.0(zod@4.6.7)':
+  '@agentclientprotocol/sdk@2.2.0(zod@4.6.7)':
     dependencies:
       zod: 4.6.7
 
@@ -7455,6 +7469,8 @@ snapshots:
       when-exit: 2.1.5
 
   aws4@1.13.2: {}
+
+  axe-core@4.14.0: {}
 
   b4a@1.9.0: {}
 
@@ -10709,7 +10725,7 @@ snapshots:
 
   ws@8.22.0: {}
 
-  xcodebuildmcp@2.7.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1)):
+  xcodebuildmcp@2.7.0(patch_hash=ff48d03ac621c630f0d0540b305f089e63578b78ec28b4a75ccb49793dfe4b31)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1)):
     dependencies:
       '@clack/prompts': 1.8.0
       '@modelcontextprotocol/sdk': 1.32.1(zod@4.6.7)

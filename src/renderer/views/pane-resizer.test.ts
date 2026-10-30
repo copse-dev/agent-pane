@@ -7,6 +7,7 @@ import { PORTRAIT_RIGHT_PANEL_CLASS } from './portrait-right-panel-layout.ts'
 import { applyLayout, mountPaneResizers, parseSavedLayout } from './pane-resizer.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { qsRequired } from '../dom/helpers.ts'
 
 function dispatchPointer(target: EventTarget, type: string, init: MouseEventInit): void {
   const event = new window.MouseEvent(type, { bubbles: true, cancelable: true, ...init })
@@ -58,6 +59,19 @@ afterEach(() => {
 })
 
 describe('pane resizer', () => {
+  it('shows the files resizer only while the panel is open, from the store alone', () => {
+    const body = mountResizableDom()
+    const store = createStore({ filesPaneOpen: false })
+    mountPaneResizers(body, store, apiStub())
+    const filesResizer = qsRequired(body, '#resizer-files')
+    assert.equal(filesResizer.hidden, true)
+
+    store.setState({ filesPaneOpen: true })
+    assert.equal(filesResizer.hidden, false)
+    store.setState({ filesPaneOpen: false })
+    assert.equal(filesResizer.hidden, true)
+  })
+
   it('parses and applies the saved stacked files pane height', () => {
     const layout = parseSavedLayout({ filesPaneHeight: 420 })
     assert.equal(layout.filesPaneHeight, 420)

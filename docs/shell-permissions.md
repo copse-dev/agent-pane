@@ -1005,6 +1005,16 @@ the current thread. Later user turns use ordinary interactive approval.
 Resolving a queued request records the human decision; it does not prove that
 the original action ran.
 
+PR maintenance also offers separate grants for `git_push`, `gh_pr_merge`, `gh_pr_comment`,
+and `gh_pr_resolve_review_thread`. Push publishes one branch to origin and only replaces
+rewritten history with an explicit full remote SHA lease, and refuses unsigned commits when
+the checkout sets `commit.gpgsign`. Merge uses the repository's merge strategy and requires an
+expected head SHA; it refuses drafts, outstanding change requests, and PRs without an approving
+review of that head commit, and never requests administrator bypass.
+Review-thread resolution checks the thread's repository and PR before mutation. The three
+PR maintenance actions require the host GitHub CLI. These grants do not authorize shell
+scripts, general network access, or tool calls from unrelated threads.
+
 ## Implementation map
 
 Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, and zsh's
@@ -1088,3 +1098,24 @@ the registry still fails contained and offers to run outside.
 `shell-gate-replay.test.ts` replays the public command test set through the real gate under each
 platform situation and pins every outcome (`benchmarks/escalation-review/testset/gate-replay.jsonl`).
 Update this document and those tests with any intentional contract change.
+
+### Approved host artifact reads
+
+Approved outside-project read targets are added as exact files or recursive directory
+subtrees, without ancestor `allowRead` entries. ASRT already allows directory metadata
+traversal. A bare ancestor is a recursive subpath allow, and with the current runtime
+it can also cause a late whole-home deny to hide the explicitly approved target.
+Native regression coverage reads nested test artifacts while rejecting sibling reads
+and writes; read consent never grants host writes or network access.
+
+### CoreSimulator host commands and deletion
+
+`xcrun simctl` device operations and direct `simctl` invocations use host
+CoreSimulator services and follow the host-approval path, even when a pipeline
+or `|| echo` masks a command failure. Help and `xcrun --find` stay contained.
+
+Device Hub simulator deletion accepts one UUID, shuts down that device if
+needed, deletes it, and reports absence only after a successful host inventory.
+Deletion asks on every invocation, including with a stored Device Hub allow,
+and cannot be remembered through the approval dialog. Stored blocks, read-only
+runs and toolGate hooks still win. Other Device Hub actions retain their policy.

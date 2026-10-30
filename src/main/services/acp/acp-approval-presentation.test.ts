@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { RequestPermissionRequest, ToolKind } from '@agentclientprotocol/sdk'
+import type { RequestPermissionRequest, ToolKind } from '@agentclientprotocol/sdk/unstable'
 import { permissionKindLabel, presentPermissionRequest } from './acp-approval-presentation.ts'
 
 function permissionRequest(

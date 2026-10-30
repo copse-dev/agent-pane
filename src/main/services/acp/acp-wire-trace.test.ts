@@ -12,7 +12,7 @@ import {
   type RequestPermissionResponse,
   type SessionUpdate,
   type Stream,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import { z } from 'zod'
 import type { StreamChunk, Thread } from '@shared/types'
 import { isRecord } from '@shared/unknown-value.ts'

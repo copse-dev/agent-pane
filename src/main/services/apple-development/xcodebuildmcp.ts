@@ -49,6 +49,13 @@ const PROVISIONING_TOOL_NAMES = new Set([
   'test_sim',
 ])
 
+/** Cold Xcode builds/tests legitimately exceed the MCP SDK's 60-second default. */
+export function xcodeBuildMcpToolTimeoutMs(toolName: string): number | undefined {
+  if (PROVISIONING_TOOL_NAMES.has(toolName)) return 20 * 60_000
+  if (toolName === 'boot_sim') return 4 * 60_000
+  return undefined
+}
+
 const ALLOW_PROVISIONING_UPDATES = '-allowProvisioningUpdates'
 
 export function isXcodeBuildMcpToolName(toolName: string): boolean {

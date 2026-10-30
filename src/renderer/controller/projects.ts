@@ -507,7 +507,6 @@ export async function removeProject(store: AppStore, api: ApiClient, id: string)
     store.emit('workspace_changed')
     store.emit('threads_changed')
     store.emit('panel_changed')
-    store.emit('files_pane_changed')
     return
   }
 
@@ -700,7 +699,6 @@ async function finishActivate(
   store.emit('workspace_changed')
   store.emit('threads_changed')
   store.emit('panel_changed')
-  store.emit('files_pane_changed')
   endApply({ threads: merged.length })
   const { projects, activeThreadId: appliedThreadId } = store.getState()
   // Rewrite the projects list only if the apply changed it (a cleared `missing`
