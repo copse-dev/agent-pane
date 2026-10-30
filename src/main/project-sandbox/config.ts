@@ -72,7 +72,11 @@ function gitConfigReadPaths(): string[] {
   const home = homedir()
   return [
     join(home, '.gitconfig'),
-    join(home, '.config/git/**'),
+    // Not `.config/git/**`: git's XDG credential store keeps plaintext tokens
+    // in `.config/git/credentials`.
+    join(home, '.config/git/config'),
+    join(home, '.config/git/ignore'),
+    join(home, '.config/git/attributes'),
     join(home, '.gitignore'),
     join(home, '.gitignore_global'),
   ]
@@ -443,11 +447,53 @@ export function baseSandboxConfig(): SandboxRuntimeConfig {
   }
 }
 
-/** Resolve Node/npm toolchain paths so sandboxed shells can run `npm test`, etc. */
-export function resolveNodeToolchainAllowRead(env: NodeJS.ProcessEnv = process.env): string[] {
+/** Where `path` sits relative to `home`: covering it (home or an ancestor), inside it, or apart. */
+function placeAgainstHome(path: string, home: string): 'covers' | 'inside' | 'apart' {
+  const toHome = relative(path, home)
+  if (toHome === '' || (!toHome.startsWith('..') && !isAbsolute(toHome))) return 'covers'
+  const fromHome = relative(home, path)
+  return !fromHome.startsWith('..') && !isAbsolute(fromHome) ? 'inside' : 'apart'
+}
+
+/**
+ * Whether `versionRoot`, the parent of a node's `binDir`, is a Node install
+ * tree that is safe to re-allow whole: the nvm/fnm `.../versions/node/vX.Y.Z`
+ * shape, a Homebrew Cellar keg, a distro `/usr`. A `~/bin/node` or
+ * `~/.local/bin/node` must not turn `~` or `~/.local` (with `.ssh`, `.aws`,
+ * `.npmrc`, …) into a read grant, so the root may not cover home, must sit at
+ * least two levels below home when inside it, and must hold npm's
+ * `lib/node_modules`. `homes` lists home as spelled and canonicalized.
+ */
+function isNodeVersionRoot(versionRoot: string, binDir: string, homes: readonly string[]): boolean {
+  if (basename(binDir) !== 'bin' || versionRoot === binDir) return false
+  for (const home of homes) {
+    const place = placeAgainstHome(versionRoot, home)
+    if (place === 'covers') return false
+    if (place === 'inside' && relative(home, versionRoot).split(sep).length < 2) return false
+  }
+  try {
+    return statSync(join(versionRoot, 'lib', 'node_modules')).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Resolve Node/npm toolchain paths so sandboxed shells can run `npm test`, etc.
+ *
+ * Each `node` on `PATH` is allowed both as found and canonicalized, with its
+ * bin directory unless that is home or an ancestor. Its install tree is added
+ * only when it passes `isNodeVersionRoot`; otherwise the binary and its bin
+ * directory are all a contained command can read.
+ */
+export function resolveNodeToolchainAllowRead(
+  env: NodeJS.ProcessEnv = process.env,
+  home: string = homedir(),
+): string[] {
   const pathVar = env['PATH'] ?? ''
   const dirs = pathVar.split(':').filter(Boolean)
   const allow = new Set<string>()
+  const homes = [...new Set([home, canonicalizePathCached(home)])]
 
   for (const dir of dirs) {
     let nodePath: string
@@ -458,16 +504,26 @@ export function resolveNodeToolchainAllowRead(env: NodeJS.ProcessEnv = process.e
       continue
     }
 
-    allow.add(nodePath)
-    const binDir = dirname(nodePath)
-    allow.add(binDir)
-    allow.add(`${binDir}/**`)
+    let realNodePath = nodePath
+    try {
+      realNodePath = realpathSync(nodePath)
+    } catch {
+      // keep the PATH spelling
+    }
 
-    // nvm/fnm layout: .../versions/node/vX.Y.Z/bin/node — npm lives under ../lib.
-    const versionRoot = dirname(binDir)
-    if (versionRoot !== binDir) {
-      allow.add(versionRoot)
-      allow.add(`${versionRoot}/**`)
+    for (const node of new Set([nodePath, realNodePath])) {
+      allow.add(node)
+      const binDir = dirname(node)
+      if (homes.some((h) => placeAgainstHome(binDir, h) === 'covers')) continue
+      allow.add(binDir)
+      allow.add(`${binDir}/**`)
+
+      // nvm/fnm layout: .../versions/node/vX.Y.Z/bin/node — npm lives under ../lib.
+      const versionRoot = dirname(binDir)
+      if (isNodeVersionRoot(versionRoot, binDir, homes)) {
+        allow.add(versionRoot)
+        allow.add(`${versionRoot}/**`)
+      }
     }
   }
 

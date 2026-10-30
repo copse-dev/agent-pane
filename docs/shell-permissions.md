@@ -1028,6 +1028,17 @@ and `$RUSTUP_HOME/settings.toml`). The rest of `$CARGO_HOME` stays denied: `cred
 a toolchain. So `cargo --version`, `rustc`, and `rustfmt` run contained, while a build that needs
 the registry still fails contained and offers to run outside.
 
+The git config grant is `~/.gitconfig`, the global ignore files, and
+`~/.config/git/{config,ignore,attributes}`, not the whole directory: git's XDG credential store
+keeps plaintext tokens in `~/.config/git/credentials`. For each `node` on `PATH` the sandbox
+re-allows the binary (as found and canonicalized) and the directory holding it. It re-allows the
+directory above `bin` only when that looks like a version install (nvm's `versions/node/vX.Y.Z`, a
+Homebrew Cellar keg): it must hold `lib/node_modules`, must not be home or one of its ancestors, and
+must sit at least two levels below home. So `~/bin/node` or `~/.local/bin/node` never turns `~` or
+`~/.local` (and `.ssh`, `.aws`, `.npmrc` with it) into a read grant. A version manager that keeps
+its shims in a top-level home directory (Volta's `~/.volta/bin`, asdf's `~/.asdf/shims`) gets only
+the shim and that directory.
+
 - `permission-policy.ts`: pure permission decisions, MCP decisions, outside-sandbox classification,
   and prompt-body formatting.
 - `@copse/shell-guard` (`packages/shell-guard/`): the deterministic classifiers, host-free.
