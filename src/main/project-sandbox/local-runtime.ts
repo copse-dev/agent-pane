@@ -7,13 +7,16 @@
  */
 import { spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
 import { SandboxManager, type SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
+import { memberOf } from '@copse/std/member-of.ts'
 import {
   deriveRuntimeCapabilities,
+  type ExecutionRuntimeCapabilities,
   type LocalContainment,
   type RuntimeProfile,
 } from '@shared/threads/execution-runtime.ts'
 import type {
   ExecutionRuntime,
+  LocalSandboxPlan,
   RuntimeCommand,
   RuntimeExecRequest,
   RuntimeExecution,
@@ -32,12 +35,38 @@ import {
 import { isSpawnableWorkingDirectory } from './spawn-cwd.ts'
 import { sandboxTmpDirFor, withSandboxTmpEnv, withSandboxWrapTmpDir } from './tmp-env.ts'
 
+/** Issues a per-execution GitHub grant for the current turn, or null when it cannot. */
+export type LocalGitHubBroker = (request: {
+  readonly profile: RuntimeProfile
+  readonly readOnly: boolean
+}) => Promise<BrokeredCredential | null>
+
+/** What the local adapter needs from an issued grant. */
+export interface BrokeredCredential {
+  readonly env: Readonly<Record<string, string>>
+  readonly socketPath: string
+  readonly release: () => Promise<void>
+}
+
 export interface LocalRuntimeDependencies {
   spawn: (file: string, args: readonly string[], options: SpawnOptions) => ChildProcess
   wrapWithSandboxArgv: typeof SandboxManager.wrapWithSandboxArgv
   isSandboxEnabled: () => boolean
   isSpawnableWorkingDirectory: (cwd: string) => Promise<boolean>
   releaseSandboxLease: () => void
+  brokerGitHub: LocalGitHubBroker
+  platform: NodeJS.Platform
+}
+
+let registeredGitHubBroker: LocalGitHubBroker | null = null
+
+/**
+ * Register the main-process GitHub broker. Kept as a seam so the decision-log
+ * and GitHub graphs stay out of low-level spawn code; until it is registered,
+ * brokered executions still lose their raw tokens but get no grant.
+ */
+export function setLocalGitHubBroker(broker: LocalGitHubBroker | null): void {
+  registeredGitHubBroker = broker
 }
 
 const defaultDependencies: LocalRuntimeDependencies = {
@@ -48,8 +77,51 @@ const defaultDependencies: LocalRuntimeDependencies = {
       SandboxManager.wrapWithSandboxArgv(command, shell, overlay, signal, cwd, options),
     ),
   releaseSandboxLease: afterSandboxedCommand,
+  brokerGitHub: (request) => registeredGitHubBroker?.(request) ?? Promise.resolve(null),
+  platform: process.platform,
   isSandboxEnabled: isProjectSandboxEnabled,
   isSpawnableWorkingDirectory,
+}
+
+/** Env keys through which a raw GitHub token could reach a child. */
+export const GITHUB_TOKEN_ENV_KEYS = [
+  'GH_TOKEN',
+  'GITHUB_TOKEN',
+  'GH_ENTERPRISE_TOKEN',
+  'GITHUB_ENTERPRISE_TOKEN',
+] as const
+
+const isGitHubTokenEnvKey = memberOf(GITHUB_TOKEN_ENV_KEYS)
+
+function withoutGitHubTokens(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(env).filter(([key]) => !isGitHubTokenEnvKey(key)))
+}
+
+/**
+ * Whether a brokered credential can reach this execution. A process outside
+ * the sandbox can always open the grant's socket. Inside it, macOS Seatbelt
+ * admits one named socket; Linux bubblewrap's seccomp filter refuses every
+ * AF_UNIX socket, so a contained Linux command is not brokered (it has no
+ * network either, and still loses the raw token).
+ */
+function brokerReaches(containment: LocalContainment, platform: NodeJS.Platform): boolean {
+  return containment === 'host' || platform === 'darwin'
+}
+
+/** Admit exactly the grant's socket to a contained process, keeping every other rule. */
+function withBrokerSocket(
+  config: LocalSandboxPlan['config'],
+  socketPath: string,
+): LocalSandboxPlan['config'] {
+  const network = config.network
+  if (!network) throw new Error('a contained plan must define a network config')
+  return {
+    ...config,
+    network: {
+      ...network,
+      allowUnixSockets: [...new Set([...(network.allowUnixSockets ?? []), socketPath])],
+    },
+  }
 }
 
 function mergeSpawnEnv(base: NodeJS.ProcessEnv, override?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -116,11 +188,16 @@ export function createLocalExecutionRuntime(
 ): ExecutionRuntime {
   return {
     kind: 'local',
-    capabilities: (request) =>
-      deriveRuntimeCapabilities({
-        kind: 'local',
-        containment: containmentFor(request, dependencies),
-      }),
+    capabilities: (request): ExecutionRuntimeCapabilities => {
+      const containment = containmentFor(request, dependencies)
+      const brokered =
+        request.local?.brokerGitHubCredentials === true &&
+        brokerReaches(containment, dependencies.platform)
+      return deriveRuntimeCapabilities(
+        { kind: 'local', containment },
+        brokered ? { brokeredCredentials: ['github'] } : {},
+      )
+    },
     stop: () => Promise.resolve(),
     exec: async (request): Promise<RuntimeExecution> => {
       // Fail before the fork when the working directory is gone, naming it
@@ -131,26 +208,58 @@ export function createLocalExecutionRuntime(
       if (request.abortCheckpoints) request.signal?.throwIfAborted()
       const containment = containmentFor(request, dependencies)
       const profile: RuntimeProfile = { kind: 'local', containment }
-      const capabilities = deriveRuntimeCapabilities(profile)
-
-      if (containment === 'host') {
-        if (request.local?.requireSandbox !== undefined) {
-          throw new Error(request.local.requireSandbox)
-        }
-        const launch = hostLaunch(request.command)
-        const child = dependencies.spawn(launch.file, launch.args, {
-          cwd: request.cwd,
-          env: mergeSpawnEnv(strippedBaseEnv(), request.env),
-          stdio: request.stdio,
-          signal: request.signal,
-          detached: detachForGroupKill,
-        })
-        return { child, profile, capabilities }
+      const local = request.local
+      if (containment === 'host' && local?.requireSandbox !== undefined) {
+        throw new Error(local.requireSandbox)
+      }
+      const brokering = local?.brokerGitHubCredentials === true
+      const credential =
+        brokering && brokerReaches(containment, dependencies.platform)
+          ? await dependencies.brokerGitHub({ profile, readOnly: containment === 'contained' })
+          : null
+      const capabilities = deriveRuntimeCapabilities(
+        profile,
+        credential ? { brokeredCredentials: ['github'] } : {},
+      )
+      // The broker's env goes last so neither the base env nor a caller
+      // overlay can put a raw GitHub token back.
+      const childEnv = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv =>
+        brokering ? { ...withoutGitHubTokens(env), ...credential?.env } : env
+      const releaseCredential = (): void => {
+        void credential?.release()
       }
 
-      const local = request.local
-      if (!local) throw new Error('local containment request missing')
-      const plan = local.plan()
+      if (containment === 'host') {
+        try {
+          const launch = hostLaunch(request.command)
+          const child = dependencies.spawn(launch.file, launch.args, {
+            cwd: request.cwd,
+            env: childEnv(mergeSpawnEnv(strippedBaseEnv(), request.env)),
+            stdio: request.stdio,
+            signal: request.signal,
+            detached: detachForGroupKill,
+          })
+          if (credential) {
+            child.once('close', releaseCredential)
+            child.once('error', releaseCredential)
+          }
+          return { child, profile, capabilities }
+        } catch (err) {
+          releaseCredential()
+          throw err
+        }
+      }
+
+      let plan: LocalSandboxPlan
+      let config: LocalSandboxPlan['config']
+      try {
+        if (!local) throw new Error('local containment request missing')
+        plan = local.plan()
+        config = credential ? withBrokerSocket(plan.config, credential.socketPath) : plan.config
+      } catch (err) {
+        releaseCredential()
+        throw err
+      }
       const scope = plan.networkScope
       // ASRT's proxies consult the GLOBAL config per connection, so a process
       // that needs wider network holds a scope for exactly its own lifetime.
@@ -168,11 +277,11 @@ export function createLocalExecutionRuntime(
         dependencies.releaseSandboxLease()
       }
       try {
-        const tmpDir = sandboxTmpDir(plan.config)
+        const tmpDir = sandboxTmpDir(config)
         const { argv, env } = await dependencies.wrapWithSandboxArgv(
           commandLine(request.command),
           shellForSandboxWrap(),
-          plan.config,
+          config,
           request.signal,
           plan.wrapCwd,
           plan.violationId ? { commandId: plan.violationId } : undefined,
@@ -189,7 +298,7 @@ export function createLocalExecutionRuntime(
           // The workspace tmp dir goes last: ASRT's baked-in TMPDIR beats the
           // spawn env, so a caller's TMP or TEMP could only disagree with it.
           env: withSandboxShellPath(
-            withSandboxTmpEnv(mergeSpawnEnv(strippedBaseEnv(env), request.env), tmpDir),
+            withSandboxTmpEnv(childEnv(mergeSpawnEnv(strippedBaseEnv(env), request.env)), tmpDir),
           ),
           stdio: request.stdio,
           signal: request.signal,
@@ -198,17 +307,20 @@ export function createLocalExecutionRuntime(
         child.once('close', () => {
           releaseLease()
           releaseScope()
+          releaseCredential()
         })
         child.once('error', () => {
           // A failed kill can emit an error while the wrapped process is still
           // alive. Keep its deny-path mounts until close; a failed spawn has no PID.
           if (child.pid === undefined) releaseLease()
           releaseScope()
+          releaseCredential()
         })
         return { child, profile, capabilities }
       } catch (err) {
         releaseLease()
         releaseScope()
+        releaseCredential()
         throw err
       }
     },

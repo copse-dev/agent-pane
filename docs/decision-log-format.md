@@ -126,6 +126,16 @@ Optional argv / Guarded-YOLO extras live next to tool results:
   writes a `kind: "runtime-state"` line with its `capabilities`. `observed` records an
   effect, not an authorization. Processes outside a turn, such as Copse's own background
   probes, are not recorded. Interactive terminals are not recorded yet either.
+- **Brokered credentials** — with the experimental GitHub broker on
+  ([shell permissions](shell-permissions.md#brokered-github-credentials-experimental)),
+  each grant writes a `kind: "execution-grant"` line (`verdict: "allowed"`, `scope`
+  `github-api` or `github-api-read`, reasons naming the methods and expiry). Each request
+  the broker relays writes a `kind: "credential-use"` line: `subject` is method and host,
+  and the reasons carry the status and byte counts. Each refusal writes a
+  `kind: "network-access"` line with `verdict: "blocked"` and the reason. All three are
+  `actor: "system"`, carry the principal and `runtime`, and set `source` to the opaque
+  credential reference `github:user-login`. None records the token, the execution's
+  capability, request paths or bodies.
 - **Hook verdicts** — any non-`allow` Cursor hook decision
   ([`cursor-hooks.ts`](../src/shared/types/cursor-hooks.ts)) is recorded
   as an `actor: "hook"` event (`blocked` / `ask`).

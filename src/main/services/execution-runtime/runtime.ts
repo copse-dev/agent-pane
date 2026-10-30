@@ -55,6 +55,13 @@ export interface LocalContainmentRequest {
   /** Refuse with this message rather than run outside the sandbox. */
   readonly requireSandbox?: string
   readonly plan: () => LocalSandboxPlan
+  /**
+   * Keep raw GitHub tokens out of this child and, where the broker can reach
+   * it, attach GitHub credentials host-side instead (execution-runtime-security
+   * R2). Set by the spawn layer only for in-turn agent commands while the
+   * experimental setting is on.
+   */
+  readonly brokerGitHubCredentials?: boolean
 }
 
 export interface RuntimeExecRequest {

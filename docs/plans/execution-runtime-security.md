@@ -8,7 +8,9 @@ and lifecycle model. The container-runtime slices of R0/R2 shipped through
 process environment), and the Linux sandbox landed in
 [#1440](https://github.com/copse-dev/agent-pane/pull/1440). R1 (the shared `ExecutionRuntime`
 adapter, execution principals and the process audit trail) and R2 (brokered GitHub credentials
-for local execution) are in progress; their acceptance criteria and current state are under
+for local execution, behind an experimental setting) are implemented apart from the
+approval-prompt display (R1-9) and SSH brokering (R2-8). Their acceptance criteria and current
+state are under
 [R1 and R2 acceptance criteria](#r1-and-r2-acceptance-criteria). R3–R6 have not started.
 
 ## Why this plan exists
@@ -320,33 +322,38 @@ observable from a test or a recorded thread spine. Unchecked items are open.
 
 **R2 — brokered GitHub credentials for local execution**
 
-- [ ] **R2-1 Per-execution broker.** A host-side broker issues one grant per execution.
+- [x] **R2-1 Per-execution broker.** A host-side broker issues one grant per execution.
       Each grant has its own unix socket and capability. The grant names the principal,
       project, thread, origin (`api.github.com`), methods, opaque credential reference and
       expiry.
-- [ ] **R2-2 Policy.** The broker refuses another `Host`, a method the grant does not
+- [x] **R2-2 Policy.** The broker refuses another `Host`, a method the grant does not
       name, a GraphQL mutation in a read-only grant, an expired or revoked grant, and
       another execution's capability. It never follows a redirect, so the credential is
       never sent to a redirect target. Each case has a test.
-- [ ] **R2-3 Canary absent.** A brokered child's environment contains no `GH_TOKEN`,
+- [x] **R2-3 Canary absent.** A brokered child's environment contains no `GH_TOKEN`,
       `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN` or `GITHUB_ENTERPRISE_TOKEN`, and no gh config
       directory that holds the real login. A test with a canary token proves this.
-- [ ] **R2-4 Approved work succeeds.** A real `gh api` call from a brokered child reaches
+- [x] **R2-4 Approved work succeeds.** A real `gh api` call from a brokered child reaches
       the upstream through the broker, with the real token attached there (stub upstream
       in tests).
-- [ ] **R2-5 Audit.** Each grant appends an `execution-grant` line. Each brokered request
+- [x] **R2-5 Audit.** Each grant appends an `execution-grant` line. Each brokered request
       appends a `credential-use` line with destination, method, status and byte counts,
       plus the opaque credential reference, never the token. Each refusal appends a
       `network-access` line with verdict `blocked`.
-- [ ] **R2-6 Opt-in rollout.** Local brokering sits behind an experimental setting that is
+- [x] **R2-6 Opt-in rollout.** Local brokering sits behind an experimental setting that is
       off by default. A contained command gets a read-only grant, matching `gh_api_read`.
       A command approved to run outside the sandbox gets every method. Capabilities report
       `brokeredCredentials: ['github']` for brokered executions.
-- [ ] **R2-7 Known limits stated.** The broker cannot contain a process outside the sandbox:
+- [x] **R2-7 Known limits stated.** The broker cannot contain a process outside the sandbox:
       it can still reach other origins directly and read `~/.config/gh`. Linux bubblewrap
       blocks AF_UNIX sockets, so contained Linux commands are not brokered yet. SSH
       execution and `git` HTTPS transport are not brokered. The plan and
       `shell-permissions.md` both say so.
+
+- [ ] **R2-8 SSH execution brokered.** Forward a grant's socket over the SSH connection so
+      a remote `gh` reaches the broker, and point the remote gh config at it. **Open.** Today
+      Copse sends no GitHub token to an SSH host, but the remote account's own credentials
+      stay with the workload.
 
 ### R3 — enforceable local profiles on every supported platform
 

@@ -49,6 +49,8 @@ import {
   type ExecutionTarget,
 } from '../services/ssh-workspace/execution-target.ts'
 import { buildRemotePtyLaunch } from '../services/ssh-workspace/ssh-spawn.ts'
+import { getSetting } from '../services/storage/settings.ts'
+import { currentThreadExecutionContext } from '../services/thread-execution-context-store.ts'
 
 export type { ExecutionTarget }
 
@@ -115,6 +117,18 @@ export function spawnRunsOnSshTarget(cwd: string | null): boolean {
   } catch {
     return true
   }
+}
+
+/**
+ * Whether an agent command spawned now keeps raw GitHub tokens out and gets a
+ * brokered grant instead (execution-runtime-security R2). Only in-turn
+ * commands: the grant is bound to the turn's thread and principal.
+ */
+function brokerGitHubForAgentCommand(): boolean {
+  return (
+    getSetting<boolean>('githubCredentialBrokerEnabled', false) &&
+    currentThreadExecutionContext() !== null
+  )
 }
 
 const SANDBOX_BECAME_UNAVAILABLE =
@@ -198,6 +212,7 @@ export async function spawnShellInProjectSandbox(
     ...(opts.signal ? { signal: opts.signal } : {}),
     local: {
       sandbox: opts.unsandboxed !== true,
+      brokerGitHubCredentials: brokerGitHubForAgentCommand(),
       ...(opts.readonlyCheckout
         ? { requireSandbox: 'A read-only checkout needs the project sandbox, which is unavailable' }
         : {}),
@@ -252,6 +267,7 @@ export async function spawnBackgroundProcess(
     ...(opts.env ? { env: opts.env } : {}),
     local: {
       sandbox: opts.unsandboxed !== true,
+      brokerGitHubCredentials: brokerGitHubForAgentCommand(),
       plan: () => {
         const readGrantTargets = opts.readGrantTargets ?? []
         const base =

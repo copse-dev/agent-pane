@@ -812,6 +812,39 @@ message pointing at `run_shell git fetch`.
 an agent-requested action, governed like any tool by its per-tool permission (set it to Ask or
 Block to require approval or disable it).
 
+## Brokered GitHub credentials (experimental)
+
+Settings → Experimental → **Brokered GitHub credentials** (`githubCredentialBrokerEnabled`, off by
+default) changes how agent shell commands and background tasks on this computer receive GitHub
+authority ([plan R2](plans/execution-runtime-security.md#r2--brokered-local-egress-and-credentials)).
+While it is on, an in-turn local `run_shell` / `run_background` child never receives `GH_TOKEN`,
+`GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN` or `GITHUB_ENTERPRISE_TOKEN`, whether they come from Copse's
+own environment or a caller overlay. Where the child can reach it, the child instead gets one
+grant: a private `GH_CONFIG_DIR` whose `http_unix_socket` points at a socket for that execution
+alone, plus a random capability as `GH_TOKEN`. `gh` sends its requests over that socket. The broker
+in the main process attaches the user's GitHub login (`resolveGitHubApiToken`) and replays the
+request to `https://api.github.com`.
+
+- **Authority does not grow.** A command approved to run outside the sandbox gets every method,
+  because it already had the user's own access. A contained command gets a read-only grant, GET or
+  HEAD plus a GraphQL `query`, which is what `gh_api_read` already auto-runs. A contained mutation
+  is refused with 403, and approval policy is unchanged.
+- **Refusals.** Any `Host` other than `api.github.com`, a missing or foreign capability, an expired
+  or released grant (one hour, or the process's exit), and an oversized body. The broker never
+  follows a redirect, so the credential is never sent to a redirect target.
+- **Audit.** `execution-grant`, `credential-use` (method, host, status, byte counts) and
+  `network-access` (`blocked`) decision lines, bound to the turn's principal. They name the
+  credential by the opaque reference `github:user-login`; neither the token nor the capability
+  is recorded.
+- **Where it applies.** A contained command reaches the grant's socket only on macOS, where
+  Seatbelt admits that one socket path. On Linux, bubblewrap's seccomp filter refuses every
+  AF_UNIX socket, so a contained command gets no grant. It still loses the raw token, and it had
+  no network anyway.
+- **Limits.** A command outside the sandbox can still reach other origins directly and read
+  `~/.config/gh` itself. Brokering removes the token from its environment, not from the host.
+  `git` over HTTPS, `gh auth git-credential`, interactive terminals, SSH workspaces and ACP agents
+  are not brokered.
+
 ## Read access outside the project
 
 A command that only reads fully-accounted-for paths outside the project receives the narrower
