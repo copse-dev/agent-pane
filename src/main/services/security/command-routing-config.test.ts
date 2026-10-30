@@ -142,7 +142,14 @@ describe('trusted-command routing with two roots at once (#3958)', () => {
     setWorkspaceTrusted(trusted.projectRoot, true)
     setWorkspaceTrusted(ambient, true)
     try {
-      const resolve = async (roots: typeof trusted) => {
+      const resolve = async (
+        roots: typeof trusted,
+      ): Promise<{
+        routing: string
+        outside: boolean
+        readGrant: string[] | null
+        offer: string | null
+      }> => {
         await new Promise<void>((done) => setImmediate(done))
         return {
           routing: routeShellCommand('xcodebuild -list', roots).outcome,
