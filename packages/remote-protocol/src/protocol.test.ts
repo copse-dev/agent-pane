@@ -41,6 +41,9 @@ const RFC_KEY = {
   y: '4Etl6SRW2YiLUrN5vfvVHuhp7x8PxltmWWlbbM4IFyM',
 } as const
 
+// A made-up names-service label: public DNS, not a secret.
+const GRANT_LABEL = 'abcdefgh2345'
+
 const sha256Url = (text: string): string => createHash('sha256').update(text).digest('base64url')
 
 describe('base64url', () => {
@@ -254,7 +257,7 @@ describe('names API messages', () => {
 describe('label grants', () => {
   it('signs a grant the label key can verify, and nothing else', async () => {
     const keys = await generateDeviceKeyPair()
-    const grant = await createGrant(keys.privateKey, 'abcdefgh2345', 1_000)
+    const grant = await createGrant(keys.privateKey, GRANT_LABEL, 1_000)
     assert.equal(grant.expiresMs, 1_000 + GRANT_LIFETIME_MS)
     assert.deepEqual(LabelGrant.parse(grant), grant)
     assert.equal(await verifyGrantSignature(keys.publicKey, grant), true)
