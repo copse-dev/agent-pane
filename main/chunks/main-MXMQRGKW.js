@@ -70363,6 +70363,25 @@ var init_tab_scope = __esm({
   }
 });
 
+// src/renderer/terminal/remote-connect.ts
+function remoteTerminalHostLabel(projects, projectId, executionTarget) {
+  if (executionTarget === "local" || !projectId) return null;
+  const project = projects.find((candidate) => candidate.id === projectId);
+  if (!project?.sshHost) return null;
+  const colon = project.name.indexOf(":");
+  return colon > 0 ? project.name.slice(0, colon) : project.sshHost;
+}
+function deferTerminalSpawn(input) {
+  return input.automatic && input.hostLabel !== null;
+}
+function remoteTerminalConnectHint(hostLabel3) {
+  return [`Remote shell on ${hostLabel3}.`, "Click or press a key to connect."];
+}
+var init_remote_connect = __esm({
+  "src/renderer/terminal/remote-connect.ts"() {
+  }
+});
+
 // src/renderer/views/terminals-pane.ts
 function loadXterm() {
   xtermModules ??= Promise.all([import("./xterm-IKRIYUAQ.js"), import("./addon-fit-E3NYE2VH.js")]).then(
@@ -70583,6 +70602,11 @@ ${output}` : "Terminal output: (none)"
   }
   async function ensureSession(tab) {
     if (tab.sessionId || tab.creating) return;
+    if (tab.awaitingConnect) {
+      openTerminalSurface(tab);
+      fitTab(tab);
+      return;
+    }
     if (!store2.getState().workspaceRoot || !tab.scopeProjectId) {
       tab.term.writeln("\x1B[90mOpen a folder to use the terminal.\x1B[0m", () => {
         finishCodeBlockRun(tab, null);
@@ -70668,6 +70692,7 @@ ${output}` : "Terminal output: (none)"
   function wireTabInput(tab) {
     registerTerminalSelectionToChatShortcut(tab.term, () => tab.label);
     tab.term.onData((data) => {
+      if (connectWaitingTab(tab)) return;
       if (data.includes("\r")) {
         tab.commandRan = true;
         scheduleAutoName(tab);
@@ -70679,7 +70704,8 @@ ${output}` : "Terminal output: (none)"
       }
       void api2.terminal.write(tab.sessionId, data);
     });
-    tab.container.addEventListener("mousedown", () => {
+    tab.container.addEventListener("mousedown", (e) => {
+      if (e.button === 0) connectWaitingTab(tab);
       if (activeTabId === tab.id) focusTab(tab);
     });
     tab.container.addEventListener("contextmenu", (e) => {
@@ -70707,6 +70733,14 @@ ${output}` : "Terminal output: (none)"
         }
       ]);
     });
+  }
+  function connectWaitingTab(tab) {
+    if (!tab.awaitingConnect) return false;
+    tab.awaitingConnect = false;
+    tab.panel.removeAttribute("data-awaiting-connect");
+    tab.term.reset();
+    void ensureSession(tab);
+    return true;
   }
   function currentThreadId() {
     return store2.getState().activeThreadId;
@@ -70791,6 +70825,21 @@ ${output}` : "Terminal output: (none)"
     }
     const { term, fitAddon } = xterm;
     const fileLinks = installTerminalFileLinks(term, store2, api2);
+    const remoteHost = remoteTerminalHostLabel(
+      store2.getState().projects,
+      scopeProjectId,
+      options?.executionTarget
+    );
+    const awaitingConnect = deferTerminalSpawn({
+      automatic: options?.automatic === true && !options.initialInput && !options.codeBlockRun,
+      hostLabel: remoteHost
+    });
+    if (awaitingConnect && remoteHost) {
+      panel.setAttribute("data-awaiting-connect", "");
+      for (const line of remoteTerminalConnectHint(remoteHost)) {
+        term.writeln(`\x1B[90m${line}\x1B[0m`);
+      }
+    }
     const tab = {
       id,
       scopeProjectId,
@@ -70808,6 +70857,7 @@ ${output}` : "Terminal output: (none)"
       fileLinks,
       sessionId: null,
       creating: false,
+      awaitingConnect,
       // Seed the command so it runs as soon as the PTY spawns; `ensureSession`
       // flushes pending input right after create.
       pendingInput: options?.initialInput ? [options.initialInput] : [],
@@ -70887,7 +70937,7 @@ ${output}` : "Terminal output: (none)"
       setActiveTab(lastRemaining.id);
     } else {
       activeTabId = null;
-      if (terminalModeActive(store2)) void ensureScopeTab();
+      if (terminalModeActive(store2)) void ensureScopeTab({ automatic: true });
     }
   }
   function onScopeSwitch() {
@@ -70896,7 +70946,8 @@ ${output}` : "Terminal output: (none)"
     for (const tab2 of visible) setTabVisible(tab2, true);
     if (activeTabId && !visible.some((t) => t.id === activeTabId)) activeTabId = null;
     if (needsNew) {
-      if (terminalModeActive(store2) && !scopeHasTab()) void ensureScopeTab({ focus: false });
+      if (terminalModeActive(store2) && !scopeHasTab())
+        void ensureScopeTab({ focus: false, automatic: true });
       return;
     }
     if (!activeTabId && visible.length > 0) setActiveTab(at(visible, 0).id, { focus: false });
@@ -70927,12 +70978,15 @@ ${output}` : "Terminal output: (none)"
     });
   }
   function onTerminalModeChange() {
+    syncTerminalMode(false);
+  }
+  function syncTerminalMode(automatic) {
     if (!terminalModeActive(store2)) {
       resizeObserver.disconnect();
       return;
     }
     if (!scopeHasTab()) {
-      void ensureScopeTab().then(showActiveTab);
+      void ensureScopeTab({ automatic }).then(showActiveTab);
       return;
     }
     showActiveTab();
@@ -70998,7 +71052,7 @@ ${output}` : "Terminal output: (none)"
     const tab = tabs.get(tabId);
     if (tab) void ensureSession(tab);
   }
-  onTerminalModeChange();
+  syncTerminalMode(true);
   function onAgentTaskSelected(taskId) {
     for (const tab of tabs.values()) {
       tab.tabBtn.classList.toggle("is-active", taskId ? false : tab.id === activeTabId);
@@ -71023,7 +71077,8 @@ ${output}` : "Terminal output: (none)"
       await addTab({
         activate: tab.scopeId === currentThreadId(),
         scopeProjectId: tab.scopeProjectId,
-        scopeId: tab.scopeId
+        scopeId: tab.scopeId,
+        automatic: true
       });
     }
   }
@@ -71115,6 +71170,7 @@ var init_terminals_pane = __esm({
     init_create_after_persist();
     init_start_failure_message();
     init_tab_scope();
+    init_remote_connect();
     init_editor_theme();
     xtermModules = null;
   }
@@ -86320,6 +86376,11 @@ function createTranscriptReducer(store2, hooks = {}) {
         hooks.promptProgress?.(threadId, chunk.fraction);
         break;
       }
+      case "agent_setup_progress": {
+        if (chunk.phase === "ready") activity(threadId);
+        else hooks.setupProgress?.(threadId, chunk.label);
+        break;
+      }
       case "context_pressure": {
         updateContextSnapshot(store2, threadId, {
           contextWindow: chunk.contextWindow,
@@ -86665,6 +86726,9 @@ function startAgentController(store2, api2) {
     },
     promptProgress: (threadId, fraction) => {
       const label = promptProgressLabel(fraction);
+      if (label !== get2(threadId).lastActivityLabel) emitActivity(threadId, label);
+    },
+    setupProgress: (threadId, label) => {
       if (label !== get2(threadId).lastActivityLabel) emitActivity(threadId, label);
     },
     visibleOutput: (threadId) => {
