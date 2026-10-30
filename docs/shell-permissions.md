@@ -134,6 +134,12 @@ facts, not a complete snapshot of all grants or an execution authorization.
 Coalesced prompts retain the opening request's context. Raw command text is still
 omitted: use the tool-call reference to find the existing tool arguments.
 
+An ACP permission request whose provenance claims conflict records a `classified` `acp` decision
+with the reason before it follows the ordinary path. A request delegated to the native bridge
+records an `allowed` `acp` decision with its ACP tool-call ID. The bridge's `bridge-request` record repeats that ID when it
+can name the call unambiguously, beside the `bridgeExecutionId` that the native gate's decisions
+carry.
+
 ## High-level tool restrictions
 
 This table covers the built-in registry and dynamic tool families. Feature/plugin enrollment,
@@ -414,6 +420,19 @@ An ACP agent that does not advertise MCP-over-HTTP support cannot mount that bri
 configured MCP tools. This is deliberately fail-closed: ACP provides no per-call host enforcement
 point for a stdio or HTTP MCP server the external agent mounts itself.
 
+Because every bridged call is re-gated there, the agent's own ACP permission request for one only
+duplicates that gate. Copse approves the ACP-layer request only when **adapter-authored provenance**
+names a `copse` bridge tool that the session's live bridge serves. Provenance comes from:
+
+- the adapter's structured tool name (`_meta.claudeCode.toolName`, or a qualified ACP `name`);
+- a title that is _exactly_ a bridge identity.
+
+The claims on the request and on the agent's earlier reports of the same `toolCallId` must agree.
+Absent, unknown or conflicting provenance, or a session without a mounted bridge, keeps the
+ordinary ACP path. A display title that merely starts with a bridged name is model-reachable text,
+such as a shell command, and claims nothing. Each delegation records an `acp` `allowed` decision.
+See [`plans/acp-tool-provenance.md`](plans/acp-tool-provenance.md).
+
 ## SSH workspaces
 
 On an SSH workspace (`docs/plans/ssh-remote-repo.md`) commands, git, search and files run on the
@@ -435,8 +454,8 @@ reads the original command.
   platform matrix applies to them: read/search requests, Codex code-mode cells, ambiguous commands
   and opaque interpreter scripts prompt, deterministic auto-approval does not fire, and Claude
   presets keep their own prompting mode rather than `acceptEdits`. Such an agent is not offered
-  Copse's loopback native-tool bridge or its token, so bridged-title auto-approval does not apply
-  either. Configured agent `env` reaches the host only after a consent prompt, over stdin; a
+  Copse's loopback native-tool bridge or its token, so bridged-provenance auto-approval does not
+  apply either. Configured agent `env` reaches the host only after a consent prompt, over stdin; a
   missing curated adapter is installed only after an approval that names the host and the pinned
   `package@version`. Remembered ACP tool-kind approvals are scoped to the configured SSH host;
   an approval on one host never authorizes the same agent on another.
