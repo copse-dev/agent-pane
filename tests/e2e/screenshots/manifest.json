@@ -1021,6 +1021,10 @@
       "sha256": "0960dd70b971092b733ab1b0188cf730ef2c044f49341c04d7a3d0f23e359731",
       "bytes": 352297
     },
+    "chat-reading-layout-code-touch.png": {
+      "sha256": "34b1c0835a952b672a107cfac33ee13874a5e868af71982e38c42085ce7aeb2f",
+      "bytes": 7478
+    },
     "chat-reading-layout-code.png": {
       "sha256": "a1b992091630eb5d74f0002ec70bea75c3fb7ed4f7df6632a6964774f1e9fc89",
       "bytes": 6488
@@ -1044,6 +1048,10 @@
     "chat-reading-layout-streaming.png": {
       "sha256": "fcf9dc2ceb31bcb8d885ec6ab09df850a693af6ec668786ccbbf942631aa3234",
       "bytes": 130567
+    },
+    "chat-reading-layout-table-touch.png": {
+      "sha256": "adbf4c3f29757bc179c8b3cda2f2da98dcdf3014505341ee5cfa4731d0c8b38c",
+      "bytes": 16026
     },
     "chat-reading-layout-table.png": {
       "sha256": "816ce3beedff5eacd41ba54181b6c9dcf47d122dc14893462d40d63f06abef21",
