@@ -70190,6 +70190,80 @@ var init_selection_to_chat2 = __esm({
   }
 });
 
+// src/renderer/terminal/safe-paste.ts
+function sanitizeTerminalPaste(text) {
+  return Array.from(text, (character) => {
+    const code2 = character.charCodeAt(0);
+    const allowedWhitespace = code2 === 9 || code2 === 10 || code2 === 13;
+    return !allowedWhitespace && code2 < 32 || code2 >= 127 && code2 <= 159 ? " " : character;
+  }).join("");
+}
+function installSafeTerminalPaste(term, container, getSessionId, confirm = showConfirmDialog) {
+  async function paste(text) {
+    const sessionId = getSessionId();
+    if (!sessionId || !text) return;
+    const sanitized = sanitizeTerminalPaste(text);
+    const bracketed = term.modes.bracketedPasteMode && !term.options.ignoreBracketedPasteMode;
+    if (!bracketed && (sanitized.includes("\r") || sanitized.includes("\n"))) {
+      const preview = el(
+        "code",
+        { class: "terminal-paste-preview" },
+        sanitized.replace(/\r\n|\r/g, "\n").slice(0, 2e3)
+      );
+      const confirmed = await confirm({
+        message: "Paste text that may run commands?",
+        detail: el(
+          "span",
+          {},
+          "Line breaks can run commands immediately in this terminal. Only paste text you trust.\n\n",
+          preview,
+          sanitized.length > 2e3 ? "\nPreview truncated. The full text will be pasted." : ""
+        ),
+        confirmLabel: "Paste"
+      });
+      if (!confirmed) return;
+    }
+    if (getSessionId() !== sessionId) return;
+    term.paste(sanitized);
+    term.focus();
+  }
+  function pasteFromEvent(text) {
+    void paste(text).catch((error) => {
+      console.warn("Could not paste into terminal", error);
+    });
+  }
+  container.addEventListener(
+    "paste",
+    (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      pasteFromEvent(event.clipboardData?.getData("text/plain") ?? "");
+    },
+    { capture: true }
+  );
+  container.addEventListener("dragover", (event) => {
+    event.preventDefault();
+  });
+  container.addEventListener(
+    "drop",
+    (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (event.dataTransfer && event.dataTransfer.files.length === 0) {
+        pasteFromEvent(event.dataTransfer.getData("text/plain"));
+      }
+    },
+    { capture: true }
+  );
+  return paste;
+}
+var init_safe_paste = __esm({
+  "src/renderer/terminal/safe-paste.ts"() {
+    init_helpers();
+    init_confirm_dialog();
+  }
+});
+
 // src/renderer/views/terminal-file-links.ts
 function collectVisibleCandidates(term) {
   const buf = term.buffer.active;
@@ -70715,6 +70789,11 @@ ${output}` : "Terminal output: (none)"
     }
   }
   function wireTabInput(tab) {
+    const paste = installSafeTerminalPaste(
+      tab.term,
+      tab.container,
+      () => tabs.get(tab.id) === tab ? tab.sessionId : null
+    );
     registerTerminalSelectionToChatShortcut(tab.term, () => tab.label);
     tab.term.onData((data) => {
       if (connectWaitingTab(tab)) return;
@@ -70748,11 +70827,8 @@ ${output}` : "Terminal output: (none)"
           label: "Paste",
           disabled: !tab.sessionId,
           onSelect: () => {
-            void navigator.clipboard.readText().then((text) => {
-              if (text && tab.sessionId) {
-                tab.term.paste(text);
-                focusTab(tab);
-              }
+            void navigator.clipboard.readText().then((text) => paste(text)).catch((error) => {
+              console.warn("Could not paste into terminal", error);
             });
           }
         }
@@ -71184,6 +71260,7 @@ var init_terminals_pane = __esm({
     init_pane_popout_button();
     init_pane_tabs();
     init_selection_to_chat2();
+    init_safe_paste();
     init_terminal_file_links();
     init_terminal_web_links();
     init_scoped_tabs();
