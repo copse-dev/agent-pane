@@ -51,7 +51,7 @@ export function parseRelease(value: unknown): PublishedRelease {
     prerelease: expectBoolean(release['prerelease'], 'release.prerelease'),
     publishedAt: publishedAt === null ? null : expectString(publishedAt, 'release.published_at'),
     assets: expectArray(release['assets'], 'release.assets').map((asset, index) =>
-      expectString(expectRecord(asset, `release.assets[${index}]`)['name'], 'asset.name'),
+      expectString(expectRecord(asset, `release.assets[${String(index)}]`)['name'], 'asset.name'),
     ),
   }
 }
