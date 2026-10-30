@@ -764,7 +764,7 @@ describe('ci.yml workflow invariants', () => {
     const precheck = jobBlock('precheck')
     const binding =
       'BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}'
-    assert.equal(precheck.split(binding).length - 1, 4) // includes the advisory shadow comparison
+    assert.equal(precheck.split(binding).length - 1, 5) // includes the advisory shadow comparison and the accessibility baseline
     const plan = precheck.slice(precheck.indexOf('- id: plan'))
     assert.match(plan, /HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/)
     assert.doesNotMatch(plan, /HEAD_SHA: [^\n]*merge_group/)
