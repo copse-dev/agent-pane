@@ -1122,10 +1122,6 @@ export interface ApiClient {
       threadId: string,
     ) => Promise<import('@shared/usage/classifier-use.ts').ThreadClassifierUse>
     getPlanUsage: (force?: boolean) => Promise<import('@copse/plan-usage').PlanUsageSnapshot>
-    getPlanWorthIt: () => Promise<import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload>
-    setClaudePlanMonthlyFee: (
-      fee: number | null,
-    ) => Promise<import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload>
   }
   decisions: {
     list: (projectId?: string) => Promise<import('@shared/threads/decision-log.ts').DecisionEvent[]>

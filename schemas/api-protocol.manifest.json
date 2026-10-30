@@ -2565,13 +2565,6 @@
           1
         ]
       },
-      "usage:get-plan-worth-it": {
-        "api": "usage.getPlanWorthIt",
-        "args": [
-          0,
-          0
-        ]
-      },
       "usage:get-summary": {
         "api": "usage.getSummary",
         "args": [
@@ -2584,13 +2577,6 @@
         "args": [
           2,
           2
-        ]
-      },
-      "usage:set-claude-plan-monthly-fee": {
-        "api": "usage.setClaudePlanMonthlyFee",
-        "args": [
-          1,
-          1
         ]
       },
       "video:attach": {

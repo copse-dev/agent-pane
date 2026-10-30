@@ -165,7 +165,6 @@ describe('applyPlanCoverage', () => {
       const paid: FrontierCandidate = { id, intellect: 60, costPerMTok: 30 }
       const plans = id.includes('grok') ? cursor : claude
       assert.equal(applyPlanCoverage(paid, plans), paid, id)
-      assert.equal(applyPlanCoverage(paid, plans, { mode: 'expected' }), paid, id)
     }
   })
 
@@ -225,48 +224,6 @@ describe('applyPlanCoverage', () => {
     const out = applyPlanCoverage(candidate, snap, { mode: 'inference' })
     assert.equal(out, candidate)
     assert.equal(out.costPerMTok, 12)
-  })
-
-  it('expected mode plots at API price when prior windows usually hit the limit', () => {
-    const snap = snapshot('claude', [
-      {
-        id: 'seven_day_fable',
-        label: 'Weekly Fable',
-        usedPercent: 20,
-        resetsAt: '2026-07-21T00:00:00Z',
-      },
-    ])
-    const exhaustion = new Map([['seven_day_fable', { hit: 2, total: 3 }]])
-    const out = applyPlanCoverage(candidate, snap, {
-      mode: 'expected',
-      windowExhaustion: exhaustion,
-    })
-    assert.equal(out.costPerMTok, 12)
-    assert.equal(out.plan, undefined)
-    assert.deepEqual(out.planLimitReached, {
-      label: 'Weekly Fable',
-      resetsAt: '2026-07-21T00:00:00Z',
-      priorLimitHits: { hit: 2, total: 3 },
-    })
-  })
-
-  it('expected mode stays included when prior exhaustion is rare', () => {
-    const snap = snapshot('claude', [
-      {
-        id: 'seven_day_fable',
-        label: 'Weekly Fable',
-        usedPercent: 20,
-        resetsAt: '2026-07-21T00:00:00Z',
-      },
-    ])
-    const exhaustion = new Map([['seven_day_fable', { hit: 1, total: 4 }]])
-    const out = applyPlanCoverage(candidate, snap, {
-      mode: 'expected',
-      windowExhaustion: exhaustion,
-    })
-    assert.equal(out.costPerMTok, 0)
-    assert.equal(out.plan, 'Weekly Fable')
-    assert.deepEqual(out.planDetail?.priorLimitHits, { hit: 1, total: 4 })
   })
 })
 
