@@ -249,7 +249,7 @@ describe('resolveNodeToolchainAllowRead', () => {
     const home = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-node-home-')))
     return {
       home,
-      cleanup: () => {
+      cleanup: (): void => {
         rmSync(home, { recursive: true, force: true })
       },
     }
