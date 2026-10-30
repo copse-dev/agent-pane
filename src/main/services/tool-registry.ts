@@ -15,7 +15,7 @@ import {
   getReadonlyToolBlockReason,
   isToolAllowedInReadonlyMode,
 } from '@shared/tools/readonly-tools.ts'
-import type { PermissionCheck } from './security/permission-policy.ts'
+import { toolPermissionDeniedMessage, type PermissionCheck } from './security/permission-policy.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 import { expectRecord } from '@shared/unknown-value.ts'
@@ -278,7 +278,12 @@ export class ToolRegistry {
       ).prepareCheckoutForTool(name, effectiveArgs, mcpAnnotations)
       if (checkoutNote !== null) checkoutNotes.push(checkoutNote)
     })
-    if (!permitted) return `User rejected the ${name} tool call.`
+    if (!permitted) {
+      return toolPermissionDeniedMessage(
+        name,
+        check.denial ?? (signal.aborted ? { by: 'cancelled' } : undefined),
+      )
+    }
 
     // The registered wrapper parses once more immediately before execution so
     // schema transforms apply exactly once to the value the tool receives. Feed
