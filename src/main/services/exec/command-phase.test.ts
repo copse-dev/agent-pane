@@ -171,11 +171,13 @@ describe('a background task ending after its call returned', () => {
     assert.deepEqual(states(phases), ['starting', 'running'])
     await reportEnd('exited', { exitCode: 2 })
     assert.equal(late.length, 1)
-    assert.equal(late[0].toolCallId, 'tc-bg')
-    assert.equal(late[0].phase.state, 'exited')
-    assert.equal(late[0].phase.exitCode, 2)
-    assert.equal(late[0].phase.backgroundTaskId, 'bg-9')
-    assert.equal(late[0].phase.launched, true)
+    const [ending] = late
+    assert.ok(ending)
+    assert.equal(ending.toolCallId, 'tc-bg')
+    assert.equal(ending.phase.state, 'exited')
+    assert.equal(ending.phase.exitCode, 2)
+    assert.equal(ending.phase.backgroundTaskId, 'bg-9')
+    assert.equal(ending.phase.launched, true)
   })
 
   it('keeps only the first ending and ignores anything that is not an ending', async () => {
