@@ -1698,12 +1698,12 @@
       "bytes": 5545
     },
     "follow-up-suggestions-demo.png": {
-      "sha256": "691e39c67022a437bd0655c2d31a3e058f544328967f4f920dbdb8423256a793",
-      "bytes": 287173
+      "sha256": "e66def1a5703a95664b624481bbd566467fd6491783fb962be68992401f09458",
+      "bytes": 303211
     },
     "follow-up-suggestions-git-changes.png": {
-      "sha256": "6764ddc6e97329afbf1e9739f656413a8eb56868793f07f814e726aa392b1cbd",
-      "bytes": 285697
+      "sha256": "5dfcdd1037d2de7c3b7d90e468b2c86a58f8fb124386ae88094030365237d134",
+      "bytes": 335794
     },
     "follow-up-suggestions-investigate-ci.png": {
       "sha256": "abd83e344f8684892214b843951d96a72fb060259d6c73013eb156e8c7b7bade",
@@ -2486,16 +2486,16 @@
       "bytes": 343762
     },
     "mobile-trusted-name-connection.png": {
-      "sha256": "204d3c07389c81d90029d1286f316c638929934ac3afa29056575fb4baed7f15",
-      "bytes": 72227
+      "sha256": "f1fda7c8b9d26b4a42351583f8e05b1033e49cb87090f682b2872927ef82132c",
+      "bytes": 71933
     },
     "mobile-trusted-name-pairing.png": {
-      "sha256": "892082989b91d8fc108b0b10177815a7215060a873f7cb4fc49d4b3e79b14dbd",
-      "bytes": 57534
+      "sha256": "26ec8d4f3542e4c4c1d864da9826a428471a239e1f53368cfb48ecc1a3b546b3",
+      "bytes": 57707
     },
     "mobile-trusted-name-registered.png": {
-      "sha256": "713df5ba9d36eb94876a029815b03dba044da39020096708422bf64296aed9a3",
-      "bytes": 76245
+      "sha256": "2cfc8c4a818cb7471aeae9afb389aa8950db48a02c6b2c3ebdf5964d50a04376",
+      "bytes": 75549
     },
     "mobile-trusted-name-unregistered.png": {
       "sha256": "77758ea48ea8e61018d38544c8341ee84eb89090d4f81814b7f4e6790754dff1",
