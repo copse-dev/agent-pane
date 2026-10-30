@@ -38,12 +38,14 @@ function lastRunLabel(timestamp: number | undefined): string {
 }
 
 function liveWorktreeLimit(value: string): AutomationLiveWorktreeLimit {
-  if (value === '2') return 2
-  if (value === '3') return 3
-  return 1
+  if (value === 'unlimited') return 'unlimited'
+  const limit = Number(value)
+  return Number.isSafeInteger(limit) && limit > 0 ? limit : 1
 }
 
 type SimpleSchedule =
+  | { repeat: 'minute'; hour: number; minute: number }
+  | { repeat: 'hourly'; hour: number; minute: number }
   | { repeat: 'daily'; hour: number; minute: number }
   | { repeat: 'weekdays'; hour: number; minute: number }
   | { repeat: 'weekly'; hour: number; minute: number; on: number }
@@ -78,6 +80,11 @@ function parseSimpleSchedule(cron: string): SimpleSchedule | null {
     month !== '*'
   ) {
     return null
+  }
+  if (hourRaw === '*' && dayOfMonth === '*' && dayOfWeek === '*') {
+    if (minuteRaw === '*') return { repeat: 'minute', hour: 0, minute: 0 }
+    const minute = parseCronNumber(minuteRaw, 0, 59)
+    if (minute !== null) return { repeat: 'hourly', hour: 0, minute }
   }
   const minute = parseCronNumber(minuteRaw, 0, 59)
   const hour = parseCronNumber(hourRaw, 0, 23)
@@ -126,6 +133,8 @@ function weekdayName(value: number): string {
 }
 
 function simpleScheduleDescription(schedule: SimpleSchedule): string {
+  if (schedule.repeat === 'minute') return 'Every minute'
+  if (schedule.repeat === 'hourly') return `Every hour at minute ${twoDigits(schedule.minute)}`
   const time = scheduleTime(schedule)
   if (schedule.repeat === 'daily') return `Every day at ${time}`
   if (schedule.repeat === 'weekdays') return `Every weekday at ${time}`
@@ -233,6 +242,8 @@ export function createAutomationPluginSettings(
   const repeatSelect = el(
     'select',
     { class: 'automation-input automation-repeat-select', required: true },
+    el('option', { value: 'minute' }, 'Every minute'),
+    el('option', { value: 'hourly' }, 'Every hour'),
     el('option', { value: 'daily' }, 'Every day'),
     el('option', { value: 'weekdays' }, 'Weekdays'),
     el('option', { value: 'weekly' }, 'Every week'),
@@ -244,6 +255,20 @@ export function createAutomationPluginSettings(
     value: '09:00',
     required: true,
   })
+  const hourlyMinuteInput = el('input', {
+    type: 'number',
+    min: '0',
+    max: '59',
+    step: '1',
+    value: '0',
+    class: 'automation-input automation-hourly-minute-input',
+  })
+  const hourlyMinuteLabel = el(
+    'label',
+    { class: 'automation-label' },
+    'At minute',
+    hourlyMinuteInput,
+  )
   const weeklyDaySelect = el('select', {
     class: 'automation-input automation-weekly-day-select',
   })
@@ -282,6 +307,7 @@ export function createAutomationPluginSettings(
       'div',
       { class: 'automation-schedule-controls' },
       repeatLabel,
+      hourlyMinuteLabel,
       weeklyDayLabel,
       monthlyDayLabel,
       timeLabel,
@@ -305,6 +331,10 @@ export function createAutomationPluginSettings(
     el('option', { value: '1' }, '1 — wait for prior work'),
     el('option', { value: '2' }, '2 — allow one retained checkout'),
     el('option', { value: '3' }, '3 — allow two retained checkouts'),
+    el('option', { value: '5' }, '5 live worktrees'),
+    el('option', { value: '10' }, '10 live worktrees'),
+    el('option', { value: '25' }, '25 live worktrees'),
+    el('option', { value: 'unlimited' }, 'Unlimited'),
   )
   const permissionsFieldset = el('fieldset', { class: 'automation-permissions' })
   const permissionFilterInput = el('input', {
@@ -421,6 +451,11 @@ export function createAutomationPluginSettings(
   }
 
   function selectedSimpleSchedule(): SimpleSchedule | null {
+    if (repeatSelect.value === 'minute') return { repeat: 'minute', hour: 0, minute: 0 }
+    if (repeatSelect.value === 'hourly') {
+      const minute = parseCronNumber(hourlyMinuteInput.value, 0, 59)
+      return minute === null ? null : { repeat: 'hourly', hour: 0, minute }
+    }
     const [hourRaw, minuteRaw] = timeInput.value.split(':')
     if (hourRaw === undefined || minuteRaw === undefined) return null
     const hour = parseCronNumber(hourRaw, 0, 23)
@@ -445,6 +480,8 @@ export function createAutomationPluginSettings(
       if (repeatSelect.value === 'custom' && customCron) return customCron
       return null
     }
+    if (schedule.repeat === 'minute') return '* * * * *'
+    if (schedule.repeat === 'hourly') return `${String(schedule.minute)} * * * *`
     const prefix = `${String(schedule.minute)} ${String(schedule.hour)}`
     if (schedule.repeat === 'daily') return `${prefix} * * *`
     if (schedule.repeat === 'weekdays') return `${prefix} * * 1-5`
@@ -456,9 +493,14 @@ export function createAutomationPluginSettings(
     const custom = repeatSelect.value === 'custom'
     const weekly = repeatSelect.value === 'weekly'
     const monthly = repeatSelect.value === 'monthly'
-    timeLabel.hidden = custom
-    timeInput.disabled = custom
-    timeInput.required = !custom
+    const hourly = repeatSelect.value === 'hourly'
+    const hideTime = custom || hourly || repeatSelect.value === 'minute'
+    timeLabel.hidden = hideTime
+    timeInput.disabled = hideTime
+    timeInput.required = !hideTime
+    hourlyMinuteLabel.hidden = !hourly
+    hourlyMinuteInput.disabled = !hourly
+    hourlyMinuteInput.required = hourly
     weeklyDayLabel.hidden = !weekly
     weeklyDaySelect.disabled = !weekly
     weeklyDaySelect.required = weekly
@@ -485,6 +527,7 @@ export function createAutomationPluginSettings(
     }
     repeatSelect.value = schedule.repeat
     timeInput.value = scheduleTime(schedule)
+    hourlyMinuteInput.value = String(schedule.minute)
     if (schedule.repeat === 'weekly') weeklyDaySelect.value = String(schedule.on)
     if (schedule.repeat === 'monthly') monthlyDaySelect.value = String(schedule.on)
     updateScheduleControls()
@@ -641,7 +684,13 @@ export function createAutomationPluginSettings(
     setScheduleControls(schedule?.cron ?? '0 9 * * 1-5')
     promptInput.value = schedule?.prompt ?? draft?.prompt ?? ''
     enabledInput.checked = schedule?.enabled ?? draft?.enabled ?? true
-    worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1)
+    const savedLimit = String(schedule?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1)
+    if (!Array.from(worktreeLimitSelect.options).some((option) => option.value === savedLimit)) {
+      worktreeLimitSelect.append(
+        el('option', { value: savedLimit }, `${savedLimit} live worktrees`),
+      )
+    }
+    worktreeLimitSelect.value = savedLimit
     permissionFilterInput.value = ''
     setPermissionChoices(schedule?.permissions ?? [])
     // An existing schedule keeps whatever it stored (including a model pinned
@@ -807,7 +856,9 @@ export function createAutomationPluginSettings(
           el(
             'span',
             {},
-            `${String(schedule.maxLiveWorktrees ?? 1)} live worktree${(schedule.maxLiveWorktrees ?? 1) === 1 ? '' : 's'} max`,
+            schedule.maxLiveWorktrees === 'unlimited'
+              ? 'Unlimited live worktrees'
+              : `${String(schedule.maxLiveWorktrees ?? 1)} live worktree${(schedule.maxLiveWorktrees ?? 1) === 1 ? '' : 's'} max`,
           ),
           el(
             'span',
@@ -967,6 +1018,7 @@ export function createAutomationPluginSettings(
     }
     updateScheduleControls()
   })
+  hourlyMinuteInput.addEventListener('input', updateScheduleControls)
   timeInput.addEventListener('input', updateScheduleControls)
   weeklyDaySelect.addEventListener('change', updateScheduleControls)
   monthlyDaySelect.addEventListener('change', updateScheduleControls)
