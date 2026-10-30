@@ -69,7 +69,10 @@ import { createFrameLoop } from './frame-loop.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
-import { hydrateRemoteArtifactImages } from '../markdown/remote-artifact-images.ts'
+import {
+  hydrateRemoteArtifactImages,
+  type ArtifactImageScope,
+} from '../markdown/remote-artifact-images.ts'
 import { stripTextToolCallBlocks } from '@copse/agent/parse-text-tool-calls.ts'
 import { splitCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import { stripInlineVisualizationReferences } from '@shared/inline-visualization.ts'
@@ -2655,6 +2658,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const expandedConciseTurns = new Set<string>()
   let conciseFooterSyncQueued = false
   /** The concise setting as it applies to one message: off inside an expanded turn. */
+  /**
+   * The thread a remote-artifact image request belongs to, captured when the
+   * request starts so a later thread switch cannot redirect its result.
+   */
+  function artifactImageScope(threadId?: string): ArtifactImageScope | null {
+    const { activeProjectId, activeThreadId } = store.getState()
+    const thread = threadId ?? activeThreadId
+    return activeProjectId && thread ? { projectId: activeProjectId, threadId: thread } : null
+  }
+
   function conciseEnabledFor(thread: Thread | undefined, messageId: string): boolean {
     const enabled = store.getState().conciseThreadsEnabled
     if (!enabled || expandedConciseTurns.size === 0 || !thread) return enabled
@@ -3379,7 +3392,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   })
   list.addEventListener(STREAM_SETTLED_EVENT, () => {
     // The final render ran after message_done had already synced the list.
-    hydrateRemoteArtifactImages(list, api)
+    hydrateRemoteArtifactImages(list, api, artifactImageScope())
     syncAcpResourceReferences(list, api, store)
     scrollToBottom()
   })
@@ -3997,7 +4010,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const msg = thread?.messages.find((m) => m.id === msgId)
     const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`)
     if (!msg || !msgEl) return
-    hydrateRemoteArtifactImages(list, api)
+    hydrateRemoteArtifactImages(list, api, artifactImageScope(threadId))
     const run = multiStepRunFor(thread, msgId)
     // Re-render any tool cards this message already carries (restored threads).
     renderToolCards(msgEl, msg.toolCalls, {
@@ -5102,7 +5115,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const msg = thread?.messages.find((m) => m.id === mid)
       if (textEl && msg?.role === 'assistant') {
         setAssistantMarkdown(textEl, msg.content, false, api)
-        hydrateRemoteArtifactImages(list, api)
+        hydrateRemoteArtifactImages(list, api, artifactImageScope())
         syncAcpResourceReferences(list, api, store)
       }
       if (msg?.role === 'assistant' && msgEl) {
