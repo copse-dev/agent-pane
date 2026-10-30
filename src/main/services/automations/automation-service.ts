@@ -219,9 +219,10 @@ function isSchedule(value: unknown): value is AutomationSchedule {
     typeof value['model'] === 'string' &&
     typeof value['enabled'] === 'boolean' &&
     (maxLiveWorktrees === undefined ||
-      maxLiveWorktrees === 1 ||
-      maxLiveWorktrees === 2 ||
-      maxLiveWorktrees === 3) &&
+      maxLiveWorktrees === 'unlimited' ||
+      (typeof maxLiveWorktrees === 'number' &&
+        Number.isSafeInteger(maxLiveWorktrees) &&
+        maxLiveWorktrees > 0)) &&
     (lastWorktreeLimitAt === undefined ||
       (typeof lastWorktreeLimitAt === 'number' && Number.isFinite(lastWorktreeLimitAt))) &&
     (blockedBy === undefined ||
@@ -465,7 +466,7 @@ export function createAutomationService(
     projectId: string,
     scheduleId: string,
     triggeredAt: number,
-    attemptedLimit: number,
+    attemptedLimit: AutomationSchedule['maxLiveWorktrees'],
     blockedBy: AutomationRetainedWorktree[],
     signal?: AbortSignal,
   ): Promise<void> {
@@ -898,7 +899,11 @@ export function createAutomationService(
       // for a run right now is not that, so a manual start is never refused for it.
       signal.throwIfAborted()
       const maxLiveWorktrees = schedule.maxLiveWorktrees ?? 1
-      if (source === 'schedule' && retained.length >= maxLiveWorktrees) {
+      if (
+        source === 'schedule' &&
+        maxLiveWorktrees !== 'unlimited' &&
+        retained.length >= maxLiveWorktrees
+      ) {
         await recordWorktreeLimit(
           schedule.projectId,
           schedule.id,
@@ -1151,7 +1156,10 @@ export function createAutomationService(
         // A pending or running run owns its checkout; leave it alone.
         const idle = threads.filter((thread) => automationRunBlock(thread) === null)
         const result = await releaseFinishedRuns(projectId, idle)
-        if (result.retained.length < (schedule.maxLiveWorktrees ?? 1)) {
+        if (
+          schedule.maxLiveWorktrees === 'unlimited' ||
+          result.retained.length < (schedule.maxLiveWorktrees ?? 1)
+        ) {
           await clearWorktreeLimit(projectId, scheduleId)
         } else {
           await refreshWorktreeLimitBlockers(projectId, scheduleId, result.retained)

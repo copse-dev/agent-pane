@@ -11,8 +11,6 @@ const ciExclude = [
   './tests/e2e/agent-eval-drive.e2e.ts',
   './tests/e2e/follow-up-suggestions.e2e.ts',
   './tests/e2e/portrait-right-panel.e2e.ts',
-  // context-wheel stays quarantined (describeSkipInCi in its spec): it hard-OOM
-  // crashes the runner on its first launch even in a 4-spec shard.
 ]
 
 const outcomes = outcomeHooks(
