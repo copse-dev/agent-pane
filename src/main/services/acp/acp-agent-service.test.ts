@@ -1073,9 +1073,10 @@ describe('remote ACP agents are never treated as sandboxed', () => {
       )
       assert.deepEqual(result, { prompted: false, approved: true })
       const line = recorded.find((decision) => decision.line.source === 'acp-bridge-provenance')
-      assert.equal(line?.line.verdict, 'allowed')
-      assert.equal(line?.line.toolCallId, 't1')
-      assert.equal(line?.line.subject, 'Agent: copse/semantic_search')
+      assert.ok(line)
+      assert.equal(line.line.verdict, 'allowed')
+      assert.equal(line.line.toolCallId, 't1')
+      assert.equal(line.line.subject, 'Agent: copse/semantic_search')
     })
 
     it('prompts for a generic-titled call with no provenance', async () => {
@@ -1104,8 +1105,9 @@ describe('remote ACP agents are never treated as sandboxed', () => {
       )
       assert.deepEqual(result, { prompted: true, approved: false })
       const conflict = recorded.find((decision) => decision.line.verdict === 'classified')
-      assert.match(conflict?.line.reasons?.[0] ?? '', /^acp provenance: conflicting/)
-      assert.equal(conflict?.line.toolCallId, 't1')
+      assert.ok(conflict)
+      assert.match(conflict.line.reasons?.[0] ?? '', /^acp provenance: conflicting/)
+      assert.equal(conflict.line.toolCallId, 't1')
     })
 
     it('prompts when the session has no live bridge to re-gate the call', async () => {
