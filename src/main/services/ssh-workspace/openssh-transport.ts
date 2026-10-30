@@ -101,6 +101,7 @@ async function runLocalSsh(
   args: string[],
   options: SshExecOptions = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
+  options.signal?.throwIfAborted()
   // Inherit process.env so ProxyCommand (e.g. Boundary) keeps PATH/HOME/SSH_AUTH_SOCK.
   // Passing `{}` replaces the child env entirely and yields "UNKNOWN port 65535".
   const askpass = leaseSshAskpassEnv(process.env, hostId)
@@ -113,6 +114,9 @@ async function runLocalSsh(
       proc = spawn('ssh', args, {
         env: askpass.env,
         stdio: 'pipe',
+        // Give the client and its ProxyCommand descendants a process group we
+        // can stop together without signalling Copse's own group.
+        detached: process.platform !== 'win32',
       })
     } catch (err) {
       askpass.release()
@@ -123,21 +127,18 @@ async function runLocalSsh(
     let stdout = ''
     let stderr = ''
     let settled = false
-    let cancelKill: (() => void) | undefined
 
-    const finish = (fn: () => void): void => {
+    const settle = (fn: () => void): void => {
       if (timer) clearTimeout(timer)
-      cancelKill?.()
       options.signal?.removeEventListener('abort', onAbort)
-      askpass.release()
       fn()
     }
 
     const onAbort = (): void => {
       if (settled) return
       settled = true
-      cancelKill = terminateProcessTree(proc)
-      finish(() => {
+      terminateProcessTree(proc)
+      settle(() => {
         const err = new Error('SSH command aborted')
         err.name = 'AbortError'
         reject(err)
@@ -147,10 +148,10 @@ async function runLocalSsh(
     const timer =
       timeoutMs > 0
         ? setTimeout(() => {
-            cancelKill = terminateProcessTree(proc)
             if (!settled) {
               settled = true
-              finish(() => {
+              terminateProcessTree(proc)
+              settle(() => {
                 reject(new Error(`SSH command timed out after ${String(timeoutMs)}ms`))
               })
             }
@@ -174,11 +175,15 @@ async function runLocalSsh(
     })
 
     proc.on('close', (code) => {
+      // Askpass belongs to the client until its pipes close. Do not cancel the
+      // bounded kill escalation here: a ProxyCommand may outlive this client
+      // even after redirecting all pipes, so close does not prove the group is gone.
+      askpass.release()
       if (settled) return
       settled = true
       stdout = appendFlatCapped(stdout, stdoutDecoder.end(), maxBytes)
       stderr = appendFlatCapped(stderr, stderrDecoder.end(), maxBytes)
-      finish(() => {
+      settle(() => {
         resolve({ stdout, stderr, code: code ?? 0 })
       })
     })
@@ -186,12 +191,15 @@ async function runLocalSsh(
     proc.on('error', (err) => {
       if (settled) return
       settled = true
-      finish(() => {
+      settle(() => {
         reject(err)
       })
     })
 
     options.signal?.addEventListener('abort', onAbort)
+    // Cover an abort racing spawn/listener installation as well as a signal
+    // that was already aborted before any child or askpass lease was created.
+    if (options.signal?.aborted) onAbort()
   })
 }
 

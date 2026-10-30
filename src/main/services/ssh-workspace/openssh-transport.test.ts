@@ -1,8 +1,10 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { Readable, Writable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
@@ -143,11 +145,45 @@ function installFakeSsh(t: { after: (fn: () => void) => void }, script: string):
   process.env['PATH'] = [dir, originalPath ?? ''].join(delimiter)
   setSshControlDirForTests(dir)
   t.after(() => {
+    for (const name of ['pid', 'child-pid']) {
+      const pidPath = join(dir, name)
+      if (existsSync(pidPath)) {
+        const pid = Number(readFileSync(pidPath, 'utf8').trim())
+        if (Number.isInteger(pid) && pid > 1) cleanupProcessGroup(pid)
+      }
+    }
     process.env['PATH'] = originalPath
     setSshControlDirForTests(null)
     rmSync(dir, { recursive: true, force: true })
   })
   return dir
+}
+
+async function waitForCondition(condition: () => boolean, message: string): Promise<void> {
+  const deadline = Date.now() + 5_000
+  while (!condition() && Date.now() < deadline) await delay(20)
+  assert.ok(condition(), message)
+}
+
+function processIsRunning(pid: number): boolean {
+  const result = spawnSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8' })
+  assert.equal(result.error, undefined, 'process liveness probe must execute')
+  const state = result.stdout.trim()
+  // A container's init may retain an orphaned zombie. It has stopped executing
+  // and cannot be killed again; do not mistake it for a leaked live process.
+  return state.length > 0 && !state.startsWith('Z')
+}
+
+function cleanupProcessGroup(pid: number): void {
+  try {
+    process.kill(-pid, 'SIGKILL')
+  } catch {
+    try {
+      process.kill(pid, 'SIGKILL')
+    } catch {
+      // The assertion path and the success path must both leave no fixture alive.
+    }
+  }
 }
 
 describe(
@@ -191,6 +227,82 @@ describe(
       const transport = new OpenSshTransport(host)
       const result = await transport.execShell('true')
       assert.equal(result.stdout, '€\n')
+    })
+
+    for (const stop of ['abort', 'timeout'] as const) {
+      it(`escalates ${stop} to SIGKILL when the ssh client ignores SIGTERM`, async (t) => {
+        const dir = installFakeSsh(
+          t,
+          'trap "" TERM\necho $$ > "$(dirname "$0")/pid"\nwhile :; do sleep 1; done',
+        )
+        const pidPath = join(dir, 'pid')
+        const controller = new AbortController()
+        const transport = new OpenSshTransport(host)
+        const operation = transport.execShell('true', {
+          signal: controller.signal,
+          timeoutMs: stop === 'timeout' ? 3_000 : 0,
+        })
+        // Register the rejection expectation before triggering Stop or waiting
+        // for readiness, so a timeout cannot become an unhandled rejection.
+        const rejected = assert.rejects(
+          operation,
+          stop === 'abort' ? { name: 'AbortError' } : /SSH command timed out/,
+        )
+        await waitForCondition(() => existsSync(pidPath), 'fake ssh installed its TERM handler')
+        const pid = Number(readFileSync(pidPath, 'utf8').trim())
+        assert.ok(Number.isInteger(pid) && pid > 1)
+        const stoppedAt = Date.now()
+        if (stop === 'abort') {
+          controller.abort()
+          controller.abort()
+        }
+        await rejected
+        if (stop === 'abort') {
+          assert.ok(Date.now() - stoppedAt < 1_000, 'Stop rejects before the kill grace elapses')
+        }
+        const sshPid = pid
+        await waitForCondition(() => !processIsRunning(sshPid), 'stubborn ssh must be SIGKILLed')
+      })
+    }
+
+    for (const redirected of [false, true]) {
+      it(`kills a descendant after ssh exits (${redirected ? 'redirected' : 'inherited'} pipes)`, async (t) => {
+        const dir = installFakeSsh(
+          t,
+          `echo $$ > "$(dirname "$0")/pid"\n(trap "" TERM; echo ready > "$(dirname "$0")/child-ready"; exec sleep 30) ${redirected ? '>/dev/null 2>&1 </dev/null' : ''} &\necho $! > "$(dirname "$0")/child-pid"\nwait`,
+        )
+        const controller = new AbortController()
+        const transport = new OpenSshTransport(host)
+        const operation = transport.execShell('true', { signal: controller.signal, timeoutMs: 0 })
+        const rejected = assert.rejects(operation, { name: 'AbortError' })
+        await waitForCondition(
+          () => existsSync(join(dir, 'child-ready')) && existsSync(join(dir, 'child-pid')),
+          'the descendant installed its TERM handler',
+        )
+        const pid = Number(readFileSync(join(dir, 'pid'), 'utf8').trim())
+        const descendantPid = Number(readFileSync(join(dir, 'child-pid'), 'utf8').trim())
+        assert.ok(Number.isInteger(pid) && pid > 1)
+        assert.ok(Number.isInteger(descendantPid) && descendantPid > 1)
+        controller.abort()
+        await rejected
+        const childPid = descendantPid
+        await waitForCondition(
+          () => !processIsRunning(childPid),
+          'a descendant that outlives ssh must receive the group SIGKILL',
+        )
+      })
+    }
+
+    it('does not start ssh for an already cancelled command', async (t) => {
+      const dir = installFakeSsh(t, 'echo started > "$(dirname "$0")/started"')
+      const controller = new AbortController()
+      controller.abort()
+      const transport = new OpenSshTransport(host)
+      await assert.rejects(transport.execArgv(['true'], { signal: controller.signal }), {
+        name: 'AbortError',
+      })
+      await delay(30)
+      assert.equal(existsSync(join(dir, 'started')), false)
     })
   },
 )
