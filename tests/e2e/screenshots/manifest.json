@@ -2297,6 +2297,14 @@
       "sha256": "4c9d110c0d7c7d575679ed465cd953bd5822255425b78c4e53dc7c32989f3c02",
       "bytes": 349087
     },
+    "mcp-native-profile-error.png": {
+      "sha256": "3e56c4768c5791ec44925fce793cd00f2cccf6d609fb7a20877f6561408742dc",
+      "bytes": 320855
+    },
+    "mcp-native-simulator-creation-error.png": {
+      "sha256": "4046d1744ddb2b546c0e39cbe49f614f62f2a34153b1d94d6219b699861d10e7",
+      "bytes": 335881
+    },
     "mcp-settings-connected.png": {
       "sha256": "71456dfb4b9253161e1acaafe1f61f4ac97656648451475a5f6e33a5e0a568fd",
       "bytes": 346629
