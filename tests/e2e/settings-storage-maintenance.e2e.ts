@@ -47,7 +47,8 @@ describe('Storage cleanup controls', function () {
     await expect($('#storage-expiry-days')).toBeEnabled()
     await expect($('#storage-expiry-days')).toHaveValue('90')
     await saveElementScreenshot('#storage-saved-data', 'settings-storage-maintenance-search.png')
-    await search.setValue('')
+    // Selecting a section is the explicit exit from search: it clears the box
+    // and returns lifted fieldsets. Clearing the value alone fires no input.
     await $('#settings-dialog button[data-section="storage"]').click()
     await expect($('#storage-maintenance #storage-runs-clean')).toBeEnabled()
     const panel = await $('#storage-maintenance').getElement()
