@@ -86,8 +86,9 @@ issues #128 and #174).
 Every detected agent install, every ACP adapter install and every online
 worktree-preparation install runs behind the package firewall
 (`src/main/services/security/package-firewall/`,
-[plan](plans/package-firewall.md)). It is our own code, run by the app binary as
-Node, so there is nothing to install or approve first. It replaced the
+[plan](plans/package-firewall.md)). It is our own code, run by the Node worker
+runtime (the bundled Node in packaged macOS, the app binary as Node elsewhere),
+so there is nothing to install or approve first. It replaced the
 third-party firewall binary Copse used to bootstrap globally.
 
 - A per-command wrapper starts an authenticated loopback CONNECT proxy and

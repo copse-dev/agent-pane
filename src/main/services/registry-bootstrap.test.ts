@@ -22,7 +22,12 @@ import { buildSkillsCatalogBlock } from './skills/skill-prompt.ts'
 import { ToolRegistry } from './tool-registry.ts'
 import { refreshSkillsRegistry, setSkillsForTest } from './skills/skills-registry.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
-import { deleteApiKey, setApiKey, setSetting } from './storage/settings.test-shim.ts'
+import {
+  deleteApiKey,
+  setApiKey,
+  setSavedSecretsLocked,
+  setSetting,
+} from './storage/settings.test-shim.ts'
 import { setGhAvailableForTest } from './tool-availability.ts'
 import {
   getDefaultPluginRegistry,
@@ -503,6 +508,47 @@ describe('experimental setting tool syncs', () => {
       assert.equal(createRegistry().has(tool), true)
     })
   }
+})
+
+describe('credential-gated tools with a locked saved-secret vault', () => {
+  const previousOpenAiKey = process.env['OPENAI_API_KEY']
+  afterEach(() => {
+    setSavedSecretsLocked(false)
+    deleteApiKey('openai')
+    deleteApiKey('tavily')
+    setSetting('webSearchProvider', 'none')
+    if (previousOpenAiKey === undefined) Reflect.deleteProperty(process.env, 'OPENAI_API_KEY')
+    else process.env['OPENAI_API_KEY'] = previousOpenAiKey
+  })
+
+  it('builds the startup registry without the gated tools, then adds them once unlocked', () => {
+    Reflect.deleteProperty(process.env, 'OPENAI_API_KEY')
+    setApiKey('openai', 'stored-openai-key')
+    setSetting('webSearchProvider', 'tavily')
+    setApiKey('tavily', 'stored-tavily-key')
+    setSavedSecretsLocked(true)
+
+    // A throw here aborted the rest of main-process startup, including the
+    // vault IPC the user needs to unlock.
+    const registry = createRegistry()
+    assert.equal(registry.has(IMAGE_GEN_TOOL_NAME), false)
+    assert.equal(registry.has('web_search'), false)
+
+    setSavedSecretsLocked(false)
+    syncImageGenerationTools(registry)
+    syncWebSearchTools(registry)
+    assert.equal(registry.has(IMAGE_GEN_TOOL_NAME), true)
+    assert.equal(registry.has('web_search'), true)
+  })
+
+  it('still offers image_gen from an external OpenAI key while locked', () => {
+    process.env['OPENAI_API_KEY'] = 'external-openai-key'
+    setApiKey('openai', 'stored-openai-key')
+    setSavedSecretsLocked(true)
+    const registry = new ToolRegistry()
+    syncImageGenerationTools(registry)
+    assert.equal(registry.has(IMAGE_GEN_TOOL_NAME), true)
+  })
 })
 
 describe('ACP bridge exposure decisions', () => {

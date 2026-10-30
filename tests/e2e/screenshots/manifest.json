@@ -4545,6 +4545,26 @@
       "sha256": "e986c561af0ec82f85676257e9489d19cfc395ebc9cccad581b983ff3ae1f5a3",
       "bytes": 178513
     },
+    "settings-vault-locked.png": {
+      "sha256": "d2803e0c4253512de767164b0e1e6b5b7fb5f55aa5f58c0aa0c7022554397533",
+      "bytes": 102861
+    },
+    "settings-vault-setup.png": {
+      "sha256": "903de966d8b71fe590751b0b3eb28d31d41d84cc565b92b6f8f26a35447f7fa7",
+      "bytes": 110019
+    },
+    "settings-vault-startup-unavailable.png": {
+      "sha256": "ad889e632eb39f0f26a94cc1f62c658d550d1c2636bf209a11426e91dd82733b",
+      "bytes": 50002
+    },
+    "settings-vault-unavailable.png": {
+      "sha256": "548f6831a955db824d985d174752f514a125c40ebc5b7e26a44adf1b35844cf4",
+      "bytes": 49425
+    },
+    "settings-vault-verified.png": {
+      "sha256": "280161757006b1b47a842705f62d037c41898a9f55dd9f2b7af3638403574d90",
+      "bytes": 103893
+    },
     "settings-web-search-tavily.png": {
       "sha256": "ef069f33f46ec410cd8ae92b098b0249d1ad536e1e1bb7f32f1e36c9985c9763",
       "bytes": 77856

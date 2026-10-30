@@ -7,8 +7,10 @@ export const storageFields: readonly SettingField[] = [
 export const storageMarkup = `<section class="settings-section" data-section="storage">
             <h3>Storage</h3>
             <p class="settings-section-desc">
-              Manage finished threads and see what Copse keeps on disk.
+              Protect saved credentials, manage finished threads, inspect what Copse keeps on disk, and reclaim project storage.
             </p>
+
+            <div id="settings-profile-vault-host" class="settings-mount"></div>
 
             <fieldset>
               <legend>Finished threads · all projects</legend>

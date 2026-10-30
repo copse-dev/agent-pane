@@ -1,3 +1,4 @@
+import { VaultError } from '@copse/store-kit/profile-vault-crypto.ts'
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
@@ -75,7 +76,10 @@ function settingKey(serverUrl: string): string {
   return `${MCP_OAUTH_SETTING_PREFIX}${digest}`
 }
 
-/** The stored sign-in for one server URL, or null when absent or unreadable. */
+/**
+ * The stored sign-in for one server URL, or null when absent or unreadable.
+ * Throws {@link VaultError} when the profile vault is locked or damaged.
+ */
 export function readMcpOAuthRecord(
   serverUrl: string,
   dependencies: McpOAuthStoreDependencies = defaultDependencies,
@@ -88,8 +92,14 @@ export function readMcpOAuthRecord(
   if (!cipher) return null
   let text: string
   try {
-    text = cipher.decryptString(Buffer.from(stored.data.enc, 'base64'))
-  } catch {
+    text = cipher.decryptString(Buffer.from(stored.data.enc, 'base64'), {
+      store: 'mcp-oauth',
+      record: settingKey(serverUrl),
+    })
+  } catch (error) {
+    // A locked or damaged vault is not a missing sign-in; report it rather
+    // than connect unauthenticated.
+    if (error instanceof VaultError) throw error
     return null
   }
   const record = safeJsonParse(text, decodeWithSchema(recordSchema))
@@ -120,7 +130,12 @@ export async function writeMcpOAuthRecord(
   }
   const stored: StoredSecret = {
     v: 1,
-    enc: cipher.encryptString(JSON.stringify(normalized)).toString('base64'),
+    enc: cipher
+      .encryptString(JSON.stringify(normalized), {
+        store: 'mcp-oauth',
+        record: settingKey(record.serverUrl),
+      })
+      .toString('base64'),
   }
   await dependencies.write(settingKey(record.serverUrl), stored)
 }

@@ -46,9 +46,9 @@ preparation ran through `sfw`, a closed-source binary fetched from npm:
 
 ```
 run_shell / ACP auto-setup / worktree preparation
-        │  ELECTRON_RUN_AS_NODE=1 <Copse> dist/main/package-firewall.js <cmd…>
+        │  <Node worker> dist/main/package-firewall.js <cmd…>
         ▼
-package-firewall.js  (standalone bundle, Electron-as-Node)
+package-firewall.js  (standalone bundle, run by the Node worker runtime)
   1. mint an ephemeral, name-constrained CA in memory (EC P-256, 7-day validity)
   2. start an authenticated HTTP CONNECT proxy on 127.0.0.1:<random>
   3. write the CA *certificate* (never the key) to a private temp dir

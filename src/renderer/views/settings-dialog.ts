@@ -20,6 +20,7 @@ import { createAppearanceSection } from './settings/appearance-section.ts'
 import { createSecuritySection } from './settings/security-section.ts'
 import { createSourcesSection } from './settings/sources-section.ts'
 import { createStorageSection } from './settings/storage-section.ts'
+import { createProfileVaultSection } from './settings-profile-vault.ts'
 import { createMcpSection } from './settings/mcp-section.ts'
 import { createPacksSection } from './settings/packs-section.ts'
 import { SETTINGS_SECTIONS } from './settings/registry.ts'
@@ -216,6 +217,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     () => {
       nav.refreshHeadings()
     },
+  )
+  qsRequired(overlay, '#settings-profile-vault-host').append(
+    createProfileVaultSection(api.profileVault),
   )
   const storage = createStorageSection(overlay, api, store, closeSettingsDialog)
   const lifecycle = new SettingsLifecycle(

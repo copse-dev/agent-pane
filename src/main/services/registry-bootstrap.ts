@@ -56,7 +56,7 @@ import { registerBrowserTools } from '../tools/browser-tools.ts'
 import { rememberTool, recallTool } from '../tools/memory-tools.ts'
 import { revealPiiTool } from '../tools/reveal-pii-tool.ts'
 import { listSkills, listModelInvocableSkills } from './skills/skills-registry.ts'
-import { getSetting, resolveApiKey } from './storage/settings.ts'
+import { getSetting, resolveApiKeyIfUnlocked } from './storage/settings.ts'
 import { isGhAvailable } from './tool-availability.ts'
 import {
   BROWSER_TOOLS_ENABLED_SETTING,
@@ -251,7 +251,7 @@ export function createRegistry(): ToolRegistry {
 
 /** Keep the OpenAI-backed image tool aligned with live credential changes. */
 export function syncImageGenerationTools(registry: ToolRegistry): void {
-  if (resolveApiKey('openai')) {
+  if (resolveApiKeyIfUnlocked('openai')) {
     if (!registry.has(IMAGE_GEN_TOOL_NAME)) registry.register(imageGenTool)
   } else {
     registry.unregister(IMAGE_GEN_TOOL_NAME)
@@ -516,7 +516,7 @@ export function syncReadTerminalTools(registry: ToolRegistry): void {
 /** Offer search only while the selected provider has a readable credential. */
 export function syncWebSearchTools(registry: ToolRegistry): void {
   const provider = resolveWebSearchProvider(getSetting('webSearchProvider', 'none'))
-  if (provider !== 'none' && resolveApiKey(provider) !== null) {
+  if (provider !== 'none' && resolveApiKeyIfUnlocked(provider) !== null) {
     if (!registry.has('web_search')) registry.register(webSearchTool)
   } else {
     registry.unregister('web_search')

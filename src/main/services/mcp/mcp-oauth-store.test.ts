@@ -1,5 +1,6 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { VaultError } from '@copse/store-kit/profile-vault-crypto.ts'
 import { setSecretCipher } from '../storage/secret-cipher.ts'
 import {
   deleteMcpOAuthRecord,
@@ -38,5 +39,46 @@ describe('MCP OAuth store (default settings dependencies)', () => {
     await writeMcpOAuthRecord(record)
 
     assert.deepEqual(readMcpOAuthRecord(SERVER_URL), record)
+  })
+
+  it('reports a locked vault instead of reading the sign-in as absent', async () => {
+    setSecretCipher({
+      isEncryptionAvailable: () => true,
+      encryptString: (text) => scramble(Buffer.from(text, 'utf8')),
+      decryptString: (buffer) => scramble(buffer).toString('utf8'),
+    })
+    await writeMcpOAuthRecord(record)
+    setSecretCipher({
+      isEncryptionAvailable: () => true,
+      encryptString: () => {
+        throw new VaultError('locked')
+      },
+      decryptString: () => {
+        throw new VaultError('locked')
+      },
+    })
+
+    assert.throws(
+      () => readMcpOAuthRecord(SERVER_URL),
+      (error: unknown) => error instanceof VaultError && error.reason === 'locked',
+    )
+  })
+
+  it('still reads an undecryptable record as absent', async () => {
+    setSecretCipher({
+      isEncryptionAvailable: () => true,
+      encryptString: (text) => scramble(Buffer.from(text, 'utf8')),
+      decryptString: (buffer) => scramble(buffer).toString('utf8'),
+    })
+    await writeMcpOAuthRecord(record)
+    setSecretCipher({
+      isEncryptionAvailable: () => true,
+      encryptString: (text) => Buffer.from(text, 'utf8'),
+      decryptString: () => {
+        throw new Error('the OS key changed')
+      },
+    })
+
+    assert.equal(readMcpOAuthRecord(SERVER_URL), null)
   })
 })
