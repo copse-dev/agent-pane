@@ -4,14 +4,18 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { PermissionOption, RequestPermissionRequest } from '@agentclientprotocol/sdk'
+import type {
+  PermissionOption,
+  RequestPermissionRequest,
+  RequestPermissionResponse,
+} from '@agentclientprotocol/sdk'
 import { ACP_UNSUPPORTED_ON_SSH_MESSAGE } from '@shared/acp.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { runBackgroundTool } from '../../tools/background-process-tool.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
-import { setApprovalHandler } from '../approval.ts'
+import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
 import { setSetting } from '../storage/settings.ts'
-import { storageSet } from '../storage/storage.ts'
+import { storageGet, storageSet } from '../storage/storage.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
 import { isAcpPermissionRemembered, rememberAcpPermission } from './acp-permission-grants.ts'
@@ -1016,6 +1020,66 @@ describe('remote ACP agents are never treated as sandboxed', () => {
     } finally {
       storageSet('acp-remembered-grants', [])
     }
+  })
+
+  async function askOnDev(
+    req: RequestPermissionRequest,
+  ): Promise<{ asked: ApprovalRequest[]; response: RequestPermissionResponse }> {
+    const asked: ApprovalRequest[] = []
+    setApprovalHandler((approval) => {
+      asked.push(approval)
+      return Promise.resolve({ approved: true, remember: true })
+    })
+    const response = await runWithThreadExecutionContext(
+      {
+        projectId: 'p1',
+        threadId: 't-remote',
+        projectRoot: REMOTE_ROOT,
+        root: REMOTE_ROOT,
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () =>
+        respondToPermissionForTest(
+          { id: 'gemini', title: 'Agent', ...remote(), remoteHostId: 'dev' },
+          req,
+          REMOTE_ROOT,
+          REMOTE_ROOT,
+        ),
+    )
+    return { asked, response }
+  }
+
+  it('sends a command to the shell gate despite a stored execute grant', async () => {
+    // A grant an earlier version stored from a command-less execute prompt.
+    storageSet('acp-remembered-grants', ['gemini@remote/dev:execute'])
+    try {
+      const { asked } = await askOnDev(
+        permissionRequest({ kind: 'execute', rawInput: { command: 'rm -rf build' } }),
+      )
+      assert.equal(asked.length, 1, 'the stored grant must not answer the request')
+      assert.equal(asked[0]?.type, 'shell', 'the shell gate asks, not the generic ACP prompt')
+      assert.match(asked[0]?.body ?? '', /rm -rf build/)
+    } finally {
+      storageSet('acp-remembered-grants', [])
+    }
+  })
+
+  it('offers no remember for a command-less execute request', async () => {
+    storageSet('acp-remembered-grants', [])
+    // No rawInput command and no title: nothing the shell gate could classify.
+    const req = {
+      ...permissionRequest({ kind: 'execute' }),
+      options: [ALLOW_ONCE, ALLOW_ALWAYS, REJECT_ONCE],
+    }
+    const { asked, response } = await askOnDev(req)
+    assert.equal(asked.length, 1)
+    assert.equal(asked[0]?.cause, 'acp-permission')
+    assert.equal(asked[0]?.allowRemember, false)
+    assert.equal(asked[0]?.rememberLabel, undefined)
+    // Even a handler that answers "remember" yields a one-shot answer and no grant.
+    assert.deepEqual(response, { outcome: { outcome: 'selected', optionId: ALLOW_ONCE.optionId } })
+    assert.deepEqual(storageGet('acp-remembered-grants'), [])
   })
 
   it('does not waive a prompt for a title that claims a bridged native tool', async () => {
