@@ -1565,6 +1565,10 @@
       "sha256": "39ec79e79ec05cded7eba78a892b4f8427a857806d0eb55376a1565ddcdecbd4",
       "bytes": 179587
     },
+    "device-hub-png-results.png": {
+      "sha256": "7f25ff7205ddf69ec575b047270415d461788cd18b182d2f13bcfd95186cb60e",
+      "bytes": 342228
+    },
     "dialog-input-text-selection.png": {
       "sha256": "548350117d08ebb985b9363ba8c1d43b334e2b85265e797ebd52cde6a85b0ee2",
       "bytes": 103586
