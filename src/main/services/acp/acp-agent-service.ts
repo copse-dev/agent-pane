@@ -48,7 +48,13 @@ import {
   type AcpAgentSpawnConfig,
   type AcpClientHandlers,
 } from './acp-client.ts'
-import { getAcpAgent, resolveAcpPermissionMode, resolveAcpSandbox } from './acp-agent-registry.ts'
+import {
+  getAcpAgent,
+  resolveAcpConfigDirEnvVar,
+  resolveAcpPermissionMode,
+  resolveAcpSandbox,
+} from './acp-agent-registry.ts'
+import { ensureAcpAgentConfigDir, ensureClaudeAcpConfigDir } from './acp-agent-config-dir.ts'
 import { probeAcpAgentIsolated } from './acp-probe-host.ts'
 import { acquireAcpSession, disposeAcpSession, type PooledAcpSession } from './acp-session-pool.ts'
 import { createAgentInitiatedTurnLease } from './agent-initiated-turn.ts'
@@ -696,13 +702,46 @@ async function runAcpAgentTurn(
     agent.configOptions && Object.keys(agent.configOptions).length > 0
       ? agent.configOptions
       : undefined
+  // Default the agent's own home/config dir (e.g. Claude Code's
+  // `CLAUDE_CONFIG_DIR`) to this thread's scoped directory rather than the
+  // real `$HOME`, so a Copse coding thread never inherits the user's personal
+  // synced skills, plugins, or MCP servers into an unrelated project. An
+  // explicit `agent.env` override (set in Settings → Coding agents) always
+  // wins. Best-effort: a thread whose owning project cannot be resolved here
+  // keeps the agent's own default rather than failing the turn over it.
+  const configDirEnvVar = resolveAcpConfigDirEnvVar(agent)
+  let defaultConfigEnv: Record<string, string> | undefined
+  if (configDirEnvVar && executionContext?.projectId) {
+    try {
+      // `CLAUDE_CONFIG_DIR` is the only one today; the Claude-aware ensure
+      // also keeps the agent's own OAuth login live (see
+      // `ensureClaudeAcpConfigDir`). A future non-Claude `configDirEnvVar`
+      // falls back to the plain, credential-unaware ensure.
+      const ensureConfigDir =
+        configDirEnvVar === 'CLAUDE_CONFIG_DIR' ? ensureClaudeAcpConfigDir : ensureAcpAgentConfigDir
+      defaultConfigEnv = {
+        [configDirEnvVar]: await ensureConfigDir(
+          executionContext.projectId,
+          options.threadId,
+          agent.id,
+        ),
+      }
+    } catch (err) {
+      console.warn(
+        `[acp-agent-service] could not scope ${configDirEnvVar} to this thread; the agent will use its own default:`,
+        err,
+      )
+    }
+  }
+  const env =
+    defaultConfigEnv || agent.env ? { ...defaultConfigEnv, ...(agent.env ?? {}) } : undefined
   const spawnConfig: AcpAgentSpawnConfig = {
     command: agent.command,
     ...(options.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
     cwd,
     sshTarget,
     ...(agent.args ? { args: agent.args } : {}),
-    ...(agent.env ? { env: agent.env } : {}),
+    ...(env ? { env } : {}),
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
     ...(sandbox ? { sandbox } : {}),
     ...(permissionMode ? { permissionMode } : {}),
