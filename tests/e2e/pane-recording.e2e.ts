@@ -295,9 +295,14 @@ describe('Recording a pane into the chat', function () {
   })
 
   it('records a Browser-pane tab and attaches a playable video', async () => {
-    const recordButton = $('.browser-tab-panel:not([hidden]) .browser-record-btn')
+    const panel = $('.browser-tab-panel:not([hidden])')
+    const recordButton = panel.$('.browser-record-btn')
     assert.equal(await recordButton.getAttribute('aria-label'), 'Record this tab')
-    await recordButton.click()
+    // Beside the Tabs list the toolbar keeps its room for the address, so Record
+    // starts from the ⋯ menu here rather than the toolbar.
+    assert.equal(await recordButton.isDisplayed(), false)
+    await panel.$('.browser-menu-btn').click()
+    await panel.$('.browser-menu-item*=Record this tab').click()
 
     const pill = $('.browser-tab-panel:not([hidden]) .recording-indicator')
     await pill.waitForDisplayed({ timeout: 10_000 })
