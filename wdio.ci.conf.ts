@@ -16,7 +16,6 @@ const ciExclude = [
   // queued-message-edit}.test.ts); queued-pinned stays until its scroll-pinning
   // behaviour is ported too.
   './tests/e2e/queued-pinned.e2e.ts',
-  './tests/e2e/portrait-right-panel.e2e.ts',
   // Heavy multi-turn mock agent run + Monaco diff-approval IPC after a
   // reloadSession; flaky/slow on the constrained CI runner (passes locally).
   './tests/e2e/staged-diff-ui.e2e.ts',

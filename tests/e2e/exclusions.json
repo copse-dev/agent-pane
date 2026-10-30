@@ -115,17 +115,6 @@
       "markers": ["this.skip"]
     },
     {
-      "spec": "tests/e2e/portrait-right-panel.e2e.ts",
-      "category": "quarantine",
-      "reason": "Excluded by CI config; the specific historical reason and current reproduction need review.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
-      "ownerRole": "Renderer and CI maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "No equivalent layout/runtime evidence is established by this inventory.",
-      "markers": ["wdio.ci.conf.ts: exclude"]
-    },
-    {
       "spec": "tests/e2e/queued-pinned.e2e.ts",
       "category": "quarantine",
       "reason": "CI config documents timing/scroll-pinning instability; this remaining runtime spec has not migrated with the other queue tests.",
