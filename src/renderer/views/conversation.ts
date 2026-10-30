@@ -125,6 +125,7 @@ import {
   RUN_ROLLUP_KEY,
   type ToolCallDisplayItem,
 } from '@shared/tools/tool-display.ts'
+import { commandPhaseLabel, liveCommandPhase } from '@shared/tools/command-phase-display.ts'
 import { toolRunForMessage, type ToolRun } from '@shared/tools/tool-runs.ts'
 import { isHostInterruptedToolCall } from '@shared/tools/tool-interruption.ts'
 import { isCopseToolCall } from '@shared/tools/copse-tool-call.ts'
@@ -406,6 +407,7 @@ function createToolHeader(
   count?: number,
   editStats?: ToolCall['editStats'],
   editPath?: string | null,
+  commandPhase?: ToolCall['commandPhase'],
 ): HTMLElement {
   // Nothing here precedes the label in flow: the slot renders in the transcript
   // gutter, or trails the row when it is indented (tool-cards.css). So the label
@@ -445,6 +447,20 @@ function createToolHeader(
   }
   if (count !== undefined && count > 1) {
     children.push(el('span', { class: 'tool-count' }, `×${String(count)}`))
+  }
+  const phase = commandPhaseLabel(commandPhase)
+  if (phase && commandPhase) {
+    children.push(
+      el(
+        'span',
+        {
+          class: 'tool-command-phase',
+          'data-phase': commandPhase.state,
+          ...(phase.detail !== undefined ? { 'data-tooltip': phase.detail } : {}),
+        },
+        phase.text,
+      ),
+    )
   }
   children.push(el('span', { class: 'tool-status-icon', 'aria-label': status }, statusIcon(status)))
   return el('summary', { class: summaryClass }, ...children)
@@ -507,6 +523,7 @@ function appendStandardToolSections(
     count,
     tc.editStats,
     getToolEditPath(tc),
+    tc.commandPhase,
   )
   card.append(header)
   const buildBody = (): void => {
@@ -1242,7 +1259,18 @@ function createGroupToolCard(
 
   const count = item.toolCalls.length
   const groupItems = el('div', { class: 'tool-group-items' })
-  card.append(createToolHeader(item.label, status, 'tool-card-header', count), groupItems)
+  card.append(
+    createToolHeader(
+      item.label,
+      status,
+      'tool-card-header',
+      count,
+      undefined,
+      undefined,
+      liveCommandPhase(item.toolCalls),
+    ),
+    groupItems,
+  )
 
   for (const tc of item.toolCalls) {
     const entry = el('details', {
@@ -1298,7 +1326,18 @@ function createRollupToolCard(
     body.append(childCard)
   }
   syncRollupInterruptionNote(body, item.toolCalls)
-  card.append(createToolHeader(item.label, status, 'tool-card-header', count), body)
+  card.append(
+    createToolHeader(
+      item.label,
+      status,
+      'tool-card-header',
+      count,
+      undefined,
+      undefined,
+      liveCommandPhase(item.toolCalls),
+    ),
+    body,
+  )
   return card
 }
 
@@ -1331,7 +1370,18 @@ function createStepToolCard(
     toolCardSignatures.set(childCard, toolCardSignature(child))
     body.append(childCard)
   }
-  card.append(createToolHeader(item.label, status, 'tool-card-header'), body)
+  card.append(
+    createToolHeader(
+      item.label,
+      status,
+      'tool-card-header',
+      undefined,
+      undefined,
+      undefined,
+      liveCommandPhase(item.toolCalls),
+    ),
+    body,
+  )
   return card
 }
 
@@ -1429,7 +1479,15 @@ function reconcileGroupCard(
   card.dataset['status'] = status
   replaceDirectToolHeader(
     card,
-    createToolHeader(item.label, status, 'tool-card-header', item.toolCalls.length),
+    createToolHeader(
+      item.label,
+      status,
+      'tool-card-header',
+      item.toolCalls.length,
+      undefined,
+      undefined,
+      liveCommandPhase(item.toolCalls),
+    ),
   )
   let host = Array.from(card.children).find(
     (node): node is HTMLElement =>
@@ -1523,7 +1581,18 @@ function reconcileToolCard(
       card.dataset['rollupKey'] = item.key
     }
     const count = item.type === 'rollup' ? rollupHeaderCount(item) : undefined
-    replaceDirectToolHeader(card, createToolHeader(item.label, status, 'tool-card-header', count))
+    replaceDirectToolHeader(
+      card,
+      createToolHeader(
+        item.label,
+        status,
+        'tool-card-header',
+        count,
+        undefined,
+        undefined,
+        liveCommandPhase(item.toolCalls),
+      ),
+    )
     let body = Array.from(card.children).find(
       (node): node is HTMLElement =>
         node instanceof HTMLElement && node.classList.contains('tool-rollup-body'),
