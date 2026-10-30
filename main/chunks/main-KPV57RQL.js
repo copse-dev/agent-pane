@@ -370,6 +370,7 @@ import {
   remoteAgentGroupLabel,
   removeProject,
   removeQueuedMessage,
+  replaceAcpContentBlocks,
   requestArtefactShow,
   requireActiveThreadOwner,
   resetUiScale,
@@ -454,7 +455,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-6FQJTJ4N.js";
+} from "./chunk-FYEDBEAN.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -86219,7 +86220,8 @@ function createTranscriptReducer(store2, hooks = {}) {
         currentText: "",
         writing: false,
         acpMessageId: null,
-        acpThoughtMessageId: null
+        acpThoughtMessageId: null,
+        acpMessageOwners: []
       };
       state.set(threadId, st);
     }
@@ -86263,6 +86265,11 @@ function createTranscriptReducer(store2, hooks = {}) {
     if (st.msgId === null) throw new Error("assistant message id missing for agent text");
     appendToken(store2, st.msgId, plan.text);
     return plan.text;
+  };
+  const acpOwner = (st, channel, messageId) => st.acpMessageOwners.find((entry) => entry.channel === channel && entry.messageId === messageId)?.ownerId;
+  const rememberAcpOwner = (st, channel, messageId) => {
+    if (messageId === void 0 || st.msgId === null || acpOwner(st, channel, messageId)) return;
+    st.acpMessageOwners.push({ channel, messageId, ownerId: st.msgId });
   };
   const apply2 = (threadId, chunk) => {
     const st = get2(threadId);
@@ -86333,6 +86340,31 @@ function createTranscriptReducer(store2, hooks = {}) {
           st.writing = false;
           hooks.visibleOutput?.(threadId);
         }
+        rememberAcpOwner(st, chunk.channel, chunk.messageId);
+        activity(threadId);
+        break;
+      }
+      case "acp_content_replace": {
+        let ownerId = acpOwner(st, chunk.channel, chunk.messageId);
+        if (ownerId === void 0) {
+          const previousId = chunk.channel === "message" ? st.acpMessageId : st.acpThoughtMessageId;
+          if (previousId !== null && previousId !== chunk.messageId && st.msgId) {
+            store2.emit("message_done", st.msgId);
+            st.msgId = null;
+            st.toolSinceText = false;
+            st.currentText = "";
+          }
+          if (chunk.channel === "message") st.acpMessageId = chunk.messageId;
+          else st.acpThoughtMessageId = chunk.messageId;
+          ownerId = ensureFreshAfterTools(threadId, st);
+          rememberAcpOwner(st, chunk.channel, chunk.messageId);
+        }
+        replaceAcpContentBlocks(store2, ownerId, chunk.channel, chunk.content);
+        if (ownerId === st.msgId && chunk.channel === "message") {
+          st.currentText = chunk.content.filter((block) => block.type === "text").map((block) => block.text).join("");
+        }
+        st.writing = false;
+        hooks.visibleOutput?.(threadId);
         activity(threadId);
         break;
       }
@@ -86642,7 +86674,9 @@ function createTranscriptReducer(store2, hooks = {}) {
     restore: (threadId, checkpoint) => {
       state.delete(threadId);
       pendingTurn.delete(threadId);
-      if (checkpoint.stream) state.set(threadId, structuredClone(checkpoint.stream));
+      if (checkpoint.stream) {
+        state.set(threadId, structuredClone(checkpoint.stream));
+      }
       if (checkpoint.pendingTurn) pendingTurn.set(threadId, structuredClone(checkpoint.pendingTurn));
     }
   };
@@ -86929,7 +86963,7 @@ function startAgentController(store2, api2) {
   const unsub = api2.agent.onChunk((threadId, chunk, stamp) => {
     if (stamp && !attached.has(threadId)) return;
     const st = get2(threadId);
-    const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "acp_content" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
+    const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "acp_content" || chunk.type === "acp_content_replace" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
     if (firstVisibleActivity && !st.firstActivityTraced) {
       st.firstActivityTraced = true;
       mark("ttft:renderer-first-activity", { kind: chunk.type });
