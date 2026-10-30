@@ -9,31 +9,6 @@ import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 // Refreshes patch existing cards in place (src/renderer/views/tool-card-refresh.ts),
 // so the same nodes survive churn and a new tool slots in beside them.
 
-/**
- * Click a disclosure summary once it has stopped moving. Opening a disclosure
- * grows the pinned transcript, and the stream-follow glide then scrolls it over
- * a few frames; a click aimed while the row is still moving can miss it.
- */
-async function clickSummary(selector: string): Promise<void> {
-  await browser.waitUntil(() =>
-    browser.execute(
-      (sel) =>
-        new Promise<boolean>((resolve) => {
-          const top = (): number | undefined =>
-            document.querySelector(sel)?.getBoundingClientRect().top
-          const before = top()
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              resolve(before !== undefined && top() === before)
-            })
-          })
-        }),
-      selector,
-    ),
-  )
-  await $(selector).click()
-}
-
 describe('tool card disclosure choices', () => {
   before(async () => {
     await build({
@@ -59,15 +34,15 @@ describe('tool card disclosure choices', () => {
     await rollup.waitForDisplayed()
     // Background activity starts compact; the reader opens it.
     await expect(rollup).not.toHaveAttribute('open')
-    await clickSummary('.tool-card-rollup > summary')
+    await rollup.$('summary').click()
     await expect(rollup).toHaveAttribute('open')
 
     // The reader looks at the running command, then closes it again, and
     // opens the finished edit.
-    await clickSummary('.tool-card[data-tool-id="tc-shell"] > summary')
+    await shell.$('summary').click()
     await expect(shell).toHaveAttribute('open')
-    await clickSummary('.tool-card[data-tool-id="tc-shell"] > summary')
-    await clickSummary('.tool-card[data-tool-id="tc-edit"] > summary')
+    await shell.$('summary').click()
+    await edit.$('summary').click()
     await expect(shell).not.toHaveAttribute('open')
     await expect(edit).toHaveAttribute('open')
 

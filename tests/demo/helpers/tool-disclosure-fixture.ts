@@ -28,7 +28,6 @@ const store = createStore({ workspaceRoot: '/workspace' })
 const threadId = createThread(store)
 addMessage(store, threadId, 'user', 'Run the tests and update the notes.')
 const messageId = addMessage(store, threadId, 'assistant', '')
-mountConversation(conversation, store, createFakeApi())
 addToolCall(store, messageId, {
   id: 'tc-shell',
   name: 'run_shell',
@@ -43,6 +42,11 @@ addToolCall(store, messageId, {
   status: 'done',
   result: 'Wrote notes.md',
 })
+// Mount after both calls exist so the transcript renders them as one rollup
+// from the start. Adding the running shell first would briefly render it as
+// a standalone card and arm its delayed auto-reveal, which then races the
+// spec's first clicks.
+mountConversation(conversation, store, createFakeApi())
 
 window.toolDisclosureFixture = {
   setShellStatus(status): void {
