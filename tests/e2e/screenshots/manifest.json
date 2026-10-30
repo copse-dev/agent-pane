@@ -2350,8 +2350,8 @@
       "bytes": 170788
     },
     "mobile-auth-pairing-stopped.png": {
-      "sha256": "025b0c474263f6ba8f608374043a8ff2af147479666e77139d9a9d65eb8f58e1",
-      "bytes": 121386
+      "sha256": "83193cc2dcaf8ae186ddf759a497ab45f325c94ee9114965eaf3f4eb0550485d",
+      "bytes": 205632
     },
     "mobile-auth-pairing.png": {
       "sha256": "2eaa01ceb8219b393842bb5e3888127d36c9c260e606af6a7a4b8711d7b8d5dc",
@@ -2468,6 +2468,22 @@
     "mobile-controls-stopped-desktop.png": {
       "sha256": "15794c3dcf133778f3384d58406ad3c314e7d0dc81ac4e1d41d0e54bf59a573b",
       "bytes": 343762
+    },
+    "mobile-trusted-name-connection.png": {
+      "sha256": "204d3c07389c81d90029d1286f316c638929934ac3afa29056575fb4baed7f15",
+      "bytes": 72227
+    },
+    "mobile-trusted-name-pairing.png": {
+      "sha256": "892082989b91d8fc108b0b10177815a7215060a873f7cb4fc49d4b3e79b14dbd",
+      "bytes": 57534
+    },
+    "mobile-trusted-name-registered.png": {
+      "sha256": "713df5ba9d36eb94876a029815b03dba044da39020096708422bf64296aed9a3",
+      "bytes": 76245
+    },
+    "mobile-trusted-name-unregistered.png": {
+      "sha256": "77758ea48ea8e61018d38544c8341ee84eb89090d4f81814b7f4e6790754dff1",
+      "bytes": 43296
     },
     "mock-script-multiturn.png": {
       "sha256": "6edb1b7b567d16803ab0792369c41a9dcc1e92eafd922027208dfe9d84c39209",
@@ -2786,16 +2802,16 @@
       "bytes": 40475
     },
     "plugin-client-api-settings.png": {
-      "sha256": "df2ad283b3e810716a7c3c6c64f90a2ee51e714e6b27005e54b00d2fddcf6fb2",
-      "bytes": 48106
+      "sha256": "f684a53841822a1f3de466b9e5e5bc2988b4418bb2811167926c4c7a468da7ab",
+      "bytes": 50948
     },
     "plugin-client-pairing-expanded-scope-interrupt.png": {
-      "sha256": "358c4c142db3989fe1edb35470ac957b97d90c24ac456e29870d3f70f1cc5ef2",
-      "bytes": 121482
+      "sha256": "e166cc714e416759fe25dfa67ca7499915e5822c037b936dc21479a3c617f8b7",
+      "bytes": 131774
     },
     "plugin-client-pairing-expanded-scope.png": {
-      "sha256": "faebcebe9d8640fd02ee5484979ab064418ac0368d23a8124190a0c6b0d81e2e",
-      "bytes": 121553
+      "sha256": "e6b0ba6d1b4bf89d02cf3859dd7863d50a6bb6364c4007a9e1f8ff9786b0101c",
+      "bytes": 131803
     },
     "plugin-client-pending-question.png": {
       "sha256": "6525cb67aad99e7067961b938f93dfa02f2fea0b89f65126ebc2a8f876a91fb2",
