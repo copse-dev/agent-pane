@@ -4,7 +4,8 @@ Tracking: [#644](https://github.com/copse-dev/agent-pane/issues/644) (closed)
 
 Status: **Resolved core.** The filesystem-native store and `@` thread references
 shipped in [#647](https://github.com/copse-dev/agent-pane/pull/647). Lazy renderer
-loading and streaming partial persistence remain separate follow-ups; see Progress.
+loading closed with [#998](https://github.com/copse-dev/agent-pane/issues/998); streaming partial
+persistence remains a separate follow-up; see Progress.
 
 ## Goal
 

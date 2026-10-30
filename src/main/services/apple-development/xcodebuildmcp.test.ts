@@ -1,7 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { createRequire } from 'node:module'
+import { join } from 'node:path'
 import {
   createXcodeBuildMcpConfig,
+  xcodeBuildMcpToolTimeoutMs,
   isXcodeBuildMcpToolName,
   prepareXcodeBuildMcpArguments,
   XCODEBUILD_MCP_TOOL_PREFIX,
@@ -9,6 +13,24 @@ import {
 } from './xcodebuildmcp.ts'
 
 describe('XcodeBuildMCP integration', () => {
+  it('keeps source defaults when building test products and clears them only for prepared execution', () => {
+    const entry = createRequire(join(process.cwd(), 'package.json')).resolve('xcodebuildmcp')
+    execFileSync(
+      process.execPath,
+      [join(process.cwd(), 'tests/fixtures/xcodebuildmcp-session-defaults.mjs'), entry],
+      { timeout: 15_000 },
+    )
+  })
+
+  it('cancels native child execution through the real registered MCP handler', () => {
+    const entry = createRequire(join(process.cwd(), 'package.json')).resolve('xcodebuildmcp')
+    execFileSync(
+      process.execPath,
+      [join(process.cwd(), 'tests/fixtures/xcodebuildmcp-cancellation.mjs'), entry],
+      { timeout: 15_000 },
+    )
+  })
+
   it('launches the pinned entry as an Electron Node child with every workflow enabled', () => {
     const config = createXcodeBuildMcpConfig({
       root: '/workspace/project',
@@ -26,6 +48,14 @@ describe('XcodeBuildMCP integration', () => {
     assert.deepEqual(config.env['XCODEBUILDMCP_ENABLED_WORKFLOWS']?.split(','), [
       ...XCODEBUILD_MCP_WORKFLOWS,
     ])
+  })
+
+  it('bounds native build/test and boot calls beyond the SDK default', () => {
+    for (const tool of ['build_sim', 'build_run_sim', 'test_sim', 'build_macos', 'test_device'])
+      assert.equal(xcodeBuildMcpToolTimeoutMs(tool), 1_200_000)
+    assert.equal(xcodeBuildMcpToolTimeoutMs('boot_sim'), 240_000)
+    assert.equal(xcodeBuildMcpToolTimeoutMs('list_sims'), undefined)
+    assert.equal(xcodeBuildMcpToolTimeoutMs('session_set_defaults'), undefined)
   })
 
   it('recognizes only the reserved MCP tool prefix', () => {
