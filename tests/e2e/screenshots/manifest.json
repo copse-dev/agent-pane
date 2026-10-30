@@ -5021,6 +5021,10 @@
       "sha256": "a2668841e4d7e931ce569284809ff103fe99fa72fec501e1ab24cb16b506d2ce",
       "bytes": 256786
     },
+    "terminal-unsafe-paste-confirm.png": {
+      "sha256": "a8c06e56373e57706e0f2284a6d47948b3fc289f19632afb4b9974c31c3b5dd6",
+      "bytes": 250150
+    },
     "theme-boot-light.png": {
       "sha256": "c7dae4834757b0fb4bfa19e2e7b62315535ae356c42e88d30f319eb15942390f",
       "bytes": 288580

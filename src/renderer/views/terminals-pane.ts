@@ -9,6 +9,7 @@ import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { uiPaneTab, uiPaneTabsShell, type UiPaneTab } from '../ui/pane-tabs.ts'
 import { registerTerminalSelectionToChatShortcut } from '../terminal/selection-to-chat.ts'
+import { installSafeTerminalPaste } from '../terminal/safe-paste.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { CodeBlockRunRequest } from '@shared/store/events.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -459,6 +460,9 @@ export function mountTerminalsPane(
   }
 
   function wireTabInput(tab: TerminalTab): void {
+    const paste = installSafeTerminalPaste(tab.term, tab.container, () =>
+      tabs.get(tab.id) === tab ? tab.sessionId : null,
+    )
     // Cmd/Ctrl+L attaches the terminal's current selection to the chat so
     // command output can be referenced as a prompt attachment.
     registerTerminalSelectionToChatShortcut(tab.term, () => tab.label)
@@ -498,12 +502,12 @@ export function mountTerminalsPane(
           label: 'Paste',
           disabled: !tab.sessionId,
           onSelect: (): void => {
-            void navigator.clipboard.readText().then((text) => {
-              if (text && tab.sessionId) {
-                tab.term.paste(text)
-                focusTab(tab)
-              }
-            })
+            void navigator.clipboard
+              .readText()
+              .then((text) => paste(text))
+              .catch((error: unknown) => {
+                console.warn('Could not paste into terminal', error)
+              })
           },
         },
       ])

@@ -11,6 +11,13 @@
   line-height: var(--line-height-base);
   white-space: pre-wrap;
 }
+.terminal-paste-preview {
+  display: block;
+  max-height: 12em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+}
 /* Button look lives on `.ui-btn*` (ui.css); this host only keeps the legacy hook. */
 .confirm-dialog-buttons {
   margin-top: 0;
