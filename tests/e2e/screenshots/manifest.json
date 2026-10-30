@@ -3109,6 +3109,10 @@
       "sha256": "5f0748883a749033846a05d631874045952cf7c2fb3e16507d3d76c815a3b66d",
       "bytes": 192357
     },
+    "process-manager-memory.png": {
+      "sha256": "27cba69eaa7ac22bb9d5c482a2a6644af5a78cc4dd13b26e541b49c55dec824c",
+      "bytes": 9403
+    },
     "process-manager-network.png": {
       "sha256": "c7c2ed0e233459b7f25abd63c2a0561d0af71d528c238f6ee15f4502b3f69cb8",
       "bytes": 92503
