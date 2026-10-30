@@ -47137,10 +47137,65 @@ function createMobileCompanionSection(api) {
       qrUrl
     )
   );
+  const localQrImage = el("div", { class: "mobile-companion-qr-image", "aria-hidden": "true" });
+  const localQrUrl = el("code", { class: "mobile-companion-qr-url" });
+  const localQrHost = el(
+    "div",
+    { id: "mobile-companion-local-qr", class: "mobile-companion-qr", hidden: true },
+    localQrImage,
+    el(
+      "div",
+      { class: "mobile-companion-qr-text" },
+      el("p", { class: "field-hint" }, "The local address works without DNS."),
+      localQrUrl
+    )
+  );
   const pairingHost = el("div", { class: "mobile-companion-pairing" });
   const deviceList = el("div", { class: "mobile-companion-device-list" });
+  const inviteInput = el("input", {
+    type: "text",
+    name: "mobileCompanionInvite",
+    autocomplete: "off",
+    spellcheck: "false",
+    maxlength: "64",
+    placeholder: "Invite code",
+    "aria-label": "Invite code"
+  });
+  const registerBtn = el("button", { type: "button", class: "ui-btn ui-btn-primary" }, "Get a name");
+  const inviteRow = el("div", { class: "mobile-companion-invite" }, inviteInput, registerBtn);
+  const nameIntro = el(
+    "p",
+    { class: "field-hint" },
+    "Get a name like lan.\u2026u.copse.me with a publicly trusted certificate, so a phone connects with nothing to install. The Copse names service only sees certificate requests and this Mac\u2019s private network address; the key that controls the name stays in this Mac\u2019s keychain."
+  );
+  const nameSummary = el("div", { class: "mobile-companion-name-summary" });
+  const dnsNote = el("div", { class: "mobile-companion-name-dns" });
+  const recheckBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact" },
+    "Check again"
+  );
+  const removeNameBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary" },
+    "Remove name"
+  );
+  const nameStatus = el("span", { class: "mobile-companion-name-status" });
+  const nameCard = el(
+    "fieldset",
+    { class: "mobile-companion-name" },
+    el("legend", {}, "Trusted address"),
+    nameIntro,
+    inviteRow,
+    nameSummary,
+    dnsNote,
+    el("div", { class: "settings-action-row" }, removeNameBtn),
+    nameStatus
+  );
   let lastPairingKey = null;
   let lastDevicesKey = null;
+  let lastState = null;
+  let qrChoice = null;
   function renderAddresses(state) {
     const previous = addressSelect.value;
     clear(addressSelect);
@@ -47149,16 +47204,19 @@ function createMobileCompanionSection(api) {
         el(
           "option",
           { value: candidate.address },
-          `${candidate.interfaceName} \u2014 ${candidate.address}`
+          `${candidate.interfaceName} \u2014 ${candidate.address}${candidate.virtual ? " (virtual or VPN)" : ""}`
         )
       );
     }
-    if (state.addresses.some((candidate) => candidate.address === previous))
-      addressSelect.value = previous;
+    const shown = state.address ?? previous;
+    if (state.addresses.some((candidate) => candidate.address === shown))
+      addressSelect.value = shown;
     const disabled = state.addresses.length === 0 || state.enabled;
     if (disabled) addressSelect.setAttribute("disabled", "");
     else addressSelect.removeAttribute("disabled");
-    addressHint.textContent = state.addresses.length === 0 ? "Connect this Mac to a private Wi-Fi or wired network first." : "Pick the interface your phone is on \u2014 usually Wi-Fi. Turn Mobile Companion off to change it.";
+    const selected = state.addresses.find((candidate) => candidate.address === addressSelect.value);
+    addressHint.classList.toggle("mobile-companion-name-warning", selected?.virtual === true);
+    addressHint.textContent = state.addresses.length === 0 ? "Connect this Mac to a private Wi-Fi or wired network first." : selected?.virtual ? `${selected.interfaceName} is a virtual-machine or VPN network; a phone on your Wi-Fi usually cannot reach it.${state.enabled ? " Turn Mobile Companion off to pick another." : ""}` : "Pick the interface your phone is on \u2014 usually Wi-Fi. Turn Mobile Companion off to change it.";
   }
   function renderConnection(state) {
     clear(connectionInfo);
@@ -47177,9 +47235,16 @@ function createMobileCompanionSection(api) {
       );
       return;
     }
+    const trustedName = state.localUrl !== null;
+    connectionInfo.append(el("p", {}, "Open ", el("strong", {}, state.url), " on your phone."));
     connectionInfo.append(
-      el("p", {}, "Open ", el("strong", {}, state.url), " on your phone."),
-      el(
+      trustedName && state.localUrl ? el(
+        "p",
+        { class: "field-hint" },
+        "Its certificate is publicly trusted, so there is nothing to install. If this network\u2019s DNS cannot answer for the name, open ",
+        el("strong", {}, state.localUrl),
+        " instead; that address needs the Copse Local Root on the phone, which can only vouch for private-network addresses, never a website."
+      ) : el(
         "p",
         { class: "field-hint" },
         "Transfer the trust certificate directly to your phone and install it there for a verified connection \u2014 it can only vouch for private-network addresses, never a website. Remove it from the phone\u2019s certificate settings when you no longer need it."
@@ -47196,14 +47261,102 @@ function createMobileCompanionSection(api) {
       });
       connectionInfo.append(revealBtn);
     }
-    connectionInfo.append(qrHost);
-    if (state.qrSvg) {
+    connectionInfo.append(qrHost, localQrHost);
+    const dnsBlocked = state.publicName.dns === "unresolved" || state.publicName.dns === "mismatch";
+    const showLocal = state.localUrl !== null && (qrChoice === "local" || qrChoice === null && dnsBlocked);
+    if (state.qrSvg && !showLocal) {
       qrImage.innerHTML = state.qrSvg;
       qrUrl.textContent = state.url;
       qrHost.hidden = false;
     } else {
       qrHost.hidden = true;
     }
+    if (state.localQrSvg && state.localUrl && showLocal) {
+      localQrImage.innerHTML = state.localQrSvg;
+      localQrUrl.textContent = state.localUrl;
+      localQrHost.hidden = false;
+    } else {
+      localQrHost.hidden = true;
+    }
+    if (state.localUrl) {
+      const swapBtn = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact" },
+        showLocal ? "Show the trusted-name QR" : "Show the local-address QR"
+      );
+      swapBtn.addEventListener("click", () => {
+        qrChoice = showLocal ? "name" : "local";
+        if (lastState) renderConnection(lastState);
+      });
+      connectionInfo.append(el("div", { class: "settings-action-row" }, swapBtn));
+    }
+  }
+  function renderPublicName(state) {
+    const name = state.publicName;
+    const registered2 = name.state !== "unregistered";
+    inviteRow.hidden = registered2;
+    nameIntro.hidden = registered2;
+    registerBtn.toggleAttribute("disabled", name.busy !== null);
+    registerBtn.textContent = name.busy === "registering" ? "Getting a name\u2026" : "Get a name";
+    removeNameBtn.parentElement?.toggleAttribute("hidden", !registered2);
+    removeNameBtn.toggleAttribute("disabled", name.busy !== null);
+    removeNameBtn.textContent = name.busy === "removing" ? "Removing\u2026" : "Remove name";
+    clear(nameSummary);
+    clear(dnsNote);
+    if (registered2 && name.hostname) {
+      nameSummary.append(el("p", {}, el("strong", {}, name.hostname)));
+      const certificate = name.certificate;
+      nameSummary.append(
+        el(
+          "p",
+          { class: "field-hint" },
+          certificate && certificate.notAfter > Date.now() ? `Certificate valid until ${formatTime(certificate.notAfter)}${certificate.renewAt ? ` \xB7 renews from ${formatTime(certificate.renewAt)}` : ""}. Copse renews it while open.` : "Waiting for a certificate. Copse keeps trying while it is open."
+        )
+      );
+      if (name.state === "dormant")
+        nameSummary.append(
+          el(
+            "p",
+            { class: "field-hint mobile-companion-name-warning" },
+            "This name went dormant after 30 days without a renewal and does not resolve. Copse renews it again while open."
+          )
+        );
+      if (name.state === "retired")
+        nameSummary.append(
+          el(
+            "p",
+            { class: "field-hint mobile-companion-name-warning" },
+            "The names service retired this name. Remove it, then register again with a new invite."
+          )
+        );
+      const bound = state.addresses.find((candidate) => candidate.address === state.address);
+      if (state.running && bound?.virtual)
+        nameSummary.append(
+          el(
+            "p",
+            { class: "field-hint mobile-companion-name-warning" },
+            `${name.hostname} points at ${bound.address} on ${bound.interfaceName}, a virtual-machine or VPN network that phones on your Wi-Fi cannot reach. Turn Mobile Companion off, pick your Wi-Fi network and turn it on again.`
+          )
+        );
+      if (state.running) renderDns(name.hostname, name.dns);
+    }
+    if (name.lastError) setInlineStatus(nameStatus, "error", name.lastError);
+    else nameStatus.replaceChildren();
+  }
+  function renderDns(hostname3, dns) {
+    if (dns === "ok" || dns === "unknown") return;
+    if (dns === "checking") {
+      dnsNote.append(el("p", { class: "field-hint" }, `Checking that ${hostname3} resolves here\u2026`));
+      return;
+    }
+    dnsNote.append(
+      el(
+        "p",
+        { class: "field-hint mobile-companion-name-warning" },
+        dns === "unresolved" ? `This network\u2019s DNS does not answer for ${hostname3}. Many routers drop public names that point at private addresses (DNS-rebind protection in dnsmasq, Pi-hole or OpenWrt), and a phone here will not reach the name either. Allow u.copse.me in the router\u2019s rebind settings, or use the local address.` : `This network\u2019s DNS answers ${hostname3} with a different address. Right after a network change that clears within a minute; if it stays, use the local address.`
+      ),
+      el("div", { class: "settings-action-row" }, recheckBtn)
+    );
   }
   function pairingKey(state) {
     return state.pairing?.id ?? null;
@@ -47218,7 +47371,7 @@ function createMobileCompanionSection(api) {
     const trustInput = el("input", { type: "checkbox" });
     const controlBtn = el(
       "button",
-      { type: "button", class: "ui-btn ui-btn-primary", disabled: true },
+      { type: "button", class: "ui-btn ui-btn-primary", disabled: !pairing.trustedName },
       "Allow control"
     );
     const readBtn = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Read only");
@@ -47230,7 +47383,8 @@ function createMobileCompanionSection(api) {
       void api.mobile.respondPairing("read", pairing.code, pairing.id);
     });
     controlBtn.addEventListener("click", () => {
-      if (trustInput.checked)
+      if (pairing.trustedName) void api.mobile.respondPairing("control", pairing.code, pairing.id);
+      else if (trustInput.checked)
         void api.mobile.respondPairing("control", pairing.code, pairing.id, trustInput.checked);
     });
     denyBtn.addEventListener("click", () => {
@@ -47245,14 +47399,17 @@ function createMobileCompanionSection(api) {
         el(
           "p",
           { class: "field-hint" },
-          "Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold. Confirm below that the Copse Local Root is installed and trusted on this phone before allowing control."
+          "Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold.",
+          pairing.trustedName ? " This phone connected over this Mac\u2019s trusted name, and its browser verified the certificate." : " Confirm below that the Copse Local Root is installed and trusted on this phone before allowing control."
         ),
-        el(
-          "label",
-          { class: "checkbox-label" },
-          trustInput,
-          " The Copse Local Root is installed and trusted on this phone"
-        ),
+        ...pairing.trustedName ? [] : [
+          el(
+            "label",
+            { class: "checkbox-label" },
+            trustInput,
+            " The Copse Local Root is installed and trusted on this phone"
+          )
+        ],
         el("div", { class: "settings-action-row" }, denyBtn, readBtn, controlBtn)
       )
     );
@@ -47323,14 +47480,19 @@ function createMobileCompanionSection(api) {
     for (const device of state.devices) deviceList.append(deviceRow(device));
   }
   function applyState(state) {
+    lastState = state;
     enabledInput.checked = state.enabled;
     renderAddresses(state);
     renderConnection(state);
+    renderPublicName(state);
     renderPairing(state);
     renderDevices(state);
     if (state.lastError) setInlineStatus(status, "error", state.lastError);
     else status.replaceChildren();
   }
+  addressSelect.addEventListener("change", () => {
+    if (lastState) renderAddresses(lastState);
+  });
   enabledInput.addEventListener("change", () => {
     void (async () => {
       if (enabledInput.checked) {
@@ -47346,6 +47508,31 @@ function createMobileCompanionSection(api) {
       await refresh();
     })();
   });
+  registerBtn.addEventListener("click", () => {
+    const invite = inviteInput.value.trim();
+    if (!invite) {
+      inviteInput.setAttribute("aria-invalid", "true");
+      inviteInput.focus();
+      return;
+    }
+    inviteInput.removeAttribute("aria-invalid");
+    void api.mobile.registerName(invite).then(() => {
+      if (lastState?.publicName.state !== "unregistered") inviteInput.value = "";
+    }).catch((error62) => {
+      setInlineStatus(nameStatus, "error", ipcErrorMessage(error62, "Could not get a name."));
+    });
+  });
+  inviteInput.addEventListener("input", () => {
+    inviteInput.removeAttribute("aria-invalid");
+  });
+  removeNameBtn.addEventListener("click", () => {
+    void api.mobile.removeName().catch((error62) => {
+      setInlineStatus(nameStatus, "error", ipcErrorMessage(error62, "Could not remove the name."));
+    });
+  });
+  recheckBtn.addEventListener("click", () => {
+    void api.mobile.recheckNameDns();
+  });
   async function refresh() {
     const state = await api.mobile.getState();
     applyState(state);
@@ -47355,7 +47542,7 @@ function createMobileCompanionSection(api) {
   });
   const root = el(
     "fieldset",
-    {},
+    { class: "mobile-companion" },
     el("legend", {}, "Mobile Companion"),
     el(
       "p",
@@ -47366,16 +47553,26 @@ function createMobileCompanionSection(api) {
     el("label", {}, "Network ", addressSelect),
     addressHint,
     connectionInfo,
+    nameCard,
     pairingHost,
     deviceList,
     status
   );
   return { root, refresh };
 }
+function formatTime(ms) {
+  return new Date(ms).toLocaleString(void 0, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
 var init_mobile_companion_section = __esm({
   "src/renderer/views/setup/mobile-companion-section.ts"() {
     init_helpers();
     init_inline_status();
+    init_ipc_error_message();
   }
 });
 
