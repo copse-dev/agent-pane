@@ -93,17 +93,6 @@
       "markers": ["this.skip"]
     },
     {
-      "spec": "tests/e2e/onboarding.e2e.ts",
-      "category": "environment",
-      "reason": "Fallback test skips when a detected local server changes onboarding to checklist mode.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
-      "ownerRole": "Onboarding maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "onboarding-scan-import.e2e.ts covers deterministic scan/checklist paths; the fallback run remains dependent on host detections.",
-      "markers": ["this.skip"]
-    },
-    {
       "spec": "tests/e2e/plugin-hook-loading.e2e.ts",
       "category": "platform",
       "reason": "Before hook skips non-macOS hosts for the seatbelt-backed plugin hook loading scenario.",
