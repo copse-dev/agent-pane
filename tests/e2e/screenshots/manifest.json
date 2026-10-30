@@ -705,6 +705,14 @@
       "sha256": "f32359af3d3d0ebcc6dd45aab6138fe3c6882874df32a27048ae64aff9e84ddb",
       "bytes": 274440
     },
+    "automation-pending-start-activity.png": {
+      "sha256": "9c0b7bf5708ff51a6b6032f279ff36a106f7dffe84b7c4e835200dc5fde9dc85",
+      "bytes": 220357
+    },
+    "automation-pending-start-sidebar.png": {
+      "sha256": "dc12eb752cff9c94ebc180f29d7a64a4cd7d8343bb92bfdc6a3a6796d5a038d5",
+      "bytes": 9800
+    },
     "automation-permission-editor.png": {
       "sha256": "533618f9617bd70f41203ca40f7dd6c081d2c2dec68bcb3b18118173e648ce0f",
       "bytes": 41709
