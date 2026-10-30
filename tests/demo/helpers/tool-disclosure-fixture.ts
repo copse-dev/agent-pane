@@ -9,12 +9,16 @@ import { createFakeApi } from '../../../src/renderer/fake-api.test-support.ts'
 import { mountConversation } from '../../../src/renderer/views/conversation.ts'
 
 // Mounts the real conversation over an in-memory store with one long-running
-// shell card and one finished edit card. The spec drives tool-status churn
-// through `window.toolDisclosureFixture` the way agent events would.
+// shell card and one finished edit card. The spec drives tool-status churn and
+// new tool calls through `window.toolDisclosureFixture` the way agent events
+// would.
 
 declare global {
   interface Window {
-    toolDisclosureFixture: { setShellStatus(status: 'running' | 'done'): void }
+    toolDisclosureFixture: {
+      setShellStatus(status: 'running' | 'done'): void
+      addRead(id: string, path: string): void
+    }
   }
 }
 
@@ -45,6 +49,15 @@ window.toolDisclosureFixture = {
     updateToolCall(store, messageId, 'tc-shell', {
       status,
       result: status === 'done' ? 'All tests passed.' : null,
+    })
+  },
+  addRead(id, path): void {
+    addToolCall(store, messageId, {
+      id,
+      name: 'read_file',
+      args: { path },
+      status: 'done',
+      result: `Contents of ${path}`,
     })
   },
 }
