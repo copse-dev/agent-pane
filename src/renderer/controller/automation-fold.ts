@@ -1,4 +1,4 @@
-import type { SidebarThread } from './sidebar-thread.ts'
+import { isAutomationPendingStart, type SidebarThread } from './sidebar-thread.ts'
 
 /** More than this many runs waiting on the user collapse into one row. */
 export const PENDING_COLLAPSE_ABOVE = 3
@@ -26,7 +26,7 @@ export function foldAutomationRuns(
 ): AutomationFoldEntry[] {
   const pending = runs.filter((run) => needsYou(run.id))
   const rest = runs.filter((run) => !needsYou(run.id))
-  const working = rest.filter((run) => run.status === 'running')
+  const working = rest.filter((run) => run.status === 'running' || isAutomationPendingStart(run))
   const failed = rest.filter((run) => run.status === 'error')
   return [
     ...(pending.length > PENDING_COLLAPSE_ABOVE

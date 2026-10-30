@@ -283,7 +283,6 @@ import { setPluginBrowserService } from '../services/plugins/plugin-browser-serv
 import { discoverCursorRules, toCursorRuleSummaries } from '../services/skills/cursor-rules.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
-  pluginEnableRefusal,
   registerSkillTools,
   syncAppleDevelopmentTools,
   syncAdvisorStrategyTools,
@@ -295,7 +294,6 @@ import {
   syncImageGenerationTools,
   syncBackgroundTasksTools,
   syncOkfMemoryTools,
-  syncParallelSearchTools,
   syncWebSearchTools,
   syncPiiTools,
   syncReadTerminalTools,
@@ -316,7 +314,6 @@ import {
   MCP_UI_CANVAS_PLUGIN_ID,
   ANIMATED_EXPLAINERS_SETTING_ID,
 } from '@copse/agent/canvas-settings.ts'
-import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { AUTOMATION_FAILURE_CODES } from '@shared/types/automations.ts'
@@ -1654,7 +1651,6 @@ export function registerAllHandlers(
     // their key. Drop it here so the next value-map open re-fetches with the new
     // key.
     if (p === 'artificial-analysis') invalidateLiveIntellectCache()
-    if (p === 'parallel') syncParallelSearchTools(registry)
     if (p === 'parallel' || p === 'tavily') syncWebSearchTools(registry)
     // Saving an HF token auto-populates its priced, provider-pinned model list so
     // the picker and cost estimate work without a manual fetch (fire-and-forget).
@@ -2591,8 +2587,6 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
     const enabled = parseIpcArgs(z.boolean(), [rawEnabled])
-    const refusal = pluginEnableRefusal(id, enabled)
-    if (refusal) throw new IpcValidationError(refusal)
     const pluginService = getPluginService()
     await pluginService.setEnabled(id, enabled)
     if (id === PLUGIN_CLIENT_API_ID) await syncPluginClientApi()
@@ -2656,9 +2650,6 @@ export function registerAllHandlers(
     // sandbox relaxation (the permission-gate reads `isPermissionDeclared`).
     if (id === BACKGROUND_TASKS_PLUGIN_ID) {
       syncBackgroundTasksTools(registry)
-    }
-    if (id === PARALLEL_SEARCH_PLUGIN_ID) {
-      syncParallelSearchTools(registry)
     }
     if (id === DARK_FACTORY_PLUGIN_ID) {
       syncDarkFactorySensor()

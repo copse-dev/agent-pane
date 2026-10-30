@@ -211,6 +211,10 @@ describe('AutomationService', () => {
         .filter((option) => option.permission.kind === 'copse-action')
         .map((option) => option.permission.toolName),
       [
+        'git_push',
+        'gh_pr_merge',
+        'gh_pr_comment',
+        'gh_pr_resolve_review_thread',
         'gh_pr_create',
         'gh_pr_rerun_failed_ci',
         'gh_pr_approve',

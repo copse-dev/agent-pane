@@ -6,9 +6,14 @@ import {
   zNonEmptyString,
 } from './ipc-guards.ts'
 import { inspectStorageMaintenance, saveStorageRetention } from '../services/storage-maintenance.ts'
+import { containerStorage } from '../services/container-storage.ts'
 import { storageCleanup } from '../services/storage-cleanup.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
-import { storageAreaSchema, storageRetentionSchema } from '../../shared/types/storage-cleanup.ts'
+import {
+  containerStorageActionSchema,
+  storageAreaSchema,
+  storageRetentionSchema,
+} from '../../shared/types/storage-cleanup.ts'
 
 export function registerStorageHandlers(win: BrowserWindow): void {
   ipcMain.handle('storage:maintenance', (event) => {
@@ -18,6 +23,10 @@ export function registerStorageHandlers(win: BrowserWindow): void {
   ipcMain.handle('storage:cleanup', (event, area: unknown) => {
     assertMainFrameSender(event, win)
     return storageCleanup().clean(parseIpcArgs(storageAreaSchema, [area]))
+  })
+  ipcMain.handle('storage:container-cleanup', (event, action: unknown) => {
+    assertMainFrameSender(event, win)
+    return containerStorage().clean(parseIpcArgs(containerStorageActionSchema, [action]))
   })
   ipcMain.handle('storage:retention', (event, policy: unknown) => {
     assertMainFrameSender(event, win)
