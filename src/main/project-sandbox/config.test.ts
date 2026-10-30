@@ -247,7 +247,12 @@ describe('resolveNodeToolchainAllowRead', () => {
 
   function fakeHome(): { home: string; cleanup: () => void } {
     const home = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-node-home-')))
-    return { home, cleanup: () => rmSync(home, { recursive: true, force: true }) }
+    return {
+      home,
+      cleanup: () => {
+        rmSync(home, { recursive: true, force: true })
+      },
+    }
   }
 
   function installNode(binDir: string): string {
