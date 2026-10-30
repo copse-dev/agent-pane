@@ -281,7 +281,7 @@ describe('TurnTranscriptWriter', () => {
     const thread = await stored()
     const call = thread.messages.at(1)?.toolCalls.find((candidate) => candidate.id === 'call-read')
     assert.deepEqual(call?.commandPhase, phase)
-    assert.equal(call?.result, '1. Ship it', 'the rest of the call is untouched')
+    assert.equal(call.result, '1. Ship it', 'the rest of the call is untouched')
     assert.equal(thread.messages.length, 3)
     assert.deepEqual(deliveries, [
       {

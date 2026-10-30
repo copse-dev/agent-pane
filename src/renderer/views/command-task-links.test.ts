@@ -74,7 +74,7 @@ describe('background task logs on a command card', () => {
     next = null
     button.click()
     await flush()
-    assert.match(output.textContent ?? '', /no longer available/)
+    assert.match(output.textContent, /no longer available/)
   })
 
   it('says so when the task printed nothing', async () => {

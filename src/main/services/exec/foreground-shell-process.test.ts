@@ -126,11 +126,11 @@ describe('foreground shell interruption', () => {
       assert.equal(inCall.at(-1)?.state, 'running')
       assert.equal(inCall.at(-1)?.backgroundTaskId, result.backgroundId)
       await waitUntil(() => late.length > 0)
-      assert.equal(late[0]?.toolCallId, 'tc-detached')
-      assert.equal(late[0]?.phase.state, 'exited')
-      assert.equal(late[0]?.phase.exitCode, 4)
-      assert.equal(late[0]?.phase.backgroundTaskId, result.backgroundId)
-      assert.equal(late[0]?.phase.launched, true)
+      assert.equal(late[0].toolCallId, 'tc-detached')
+      assert.equal(late[0].phase.state, 'exited')
+      assert.equal(late[0].phase.exitCode, 4)
+      assert.equal(late[0].phase.backgroundTaskId, result.backgroundId)
+      assert.equal(late[0].phase.launched, true)
     } finally {
       setLateCommandPhaseRecorder(null)
     }
