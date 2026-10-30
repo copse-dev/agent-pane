@@ -27751,7 +27751,6 @@ async function removeProject(store, api, id) {
     store.emit("workspace_changed");
     store.emit("threads_changed");
     store.emit("panel_changed");
-    store.emit("files_pane_changed");
     return;
   }
   store.setState({ projects });
@@ -27875,7 +27874,6 @@ async function finishActivate(store, api, id, path, sshHost, gen, outgoingId, ou
   store.emit("workspace_changed");
   store.emit("threads_changed");
   store.emit("panel_changed");
-  store.emit("files_pane_changed");
   endApply({ threads: merged.length });
   const { projects, activeThreadId: appliedThreadId } = store.getState();
   await (projects === projectsAtDispatch ? saveNavigation(api, id, appliedThreadId) : saveProjects(api, projects, id, appliedThreadId));
@@ -55348,6 +55346,8 @@ function createStorageMaintenancePanel(api) {
       <details><summary>Cached images</summary><div id="storage-container-images"></div></details>
     </fieldset>
     <p id="storage-maintenance-status" class="field-hint" role="status" aria-live="polite"></p>`;
+  const savedData = qsRequired(element, "#storage-saved-data");
+  const containers = qsRequired(element, "#storage-containers");
   const status = qsRequired(element, "#storage-maintenance-status");
   const enabled = qsRequired(element, "#storage-expiry-enabled");
   const days = qsRequired(element, "#storage-expiry-days");
@@ -55359,19 +55359,19 @@ function createStorageMaintenancePanel(api) {
     days.disabled = working || !state;
     for (const area of ["runs", "builds"]) {
       const summary = state?.areas.find((entry) => entry.area === area);
-      qsRequired(element, `#storage-${area}-clean`).disabled = working || !summary || summary.busy || summary.entries === 0;
+      qsRequired(savedData, `#storage-${area}-clean`).disabled = working || !summary || summary.busy || summary.entries === 0;
     }
     for (const action of CONTAINER_STORAGE_ACTIONS) {
       const container = state?.containers;
-      qsRequired(element, `#storage-${action}-clean`).disabled = working || !container?.available || container.busy || action === "worker-images" && !container.images.some((image) => image.eligible) || action === "apple-builder" && (!container.builderRunning || container.builderCacheBytes === null);
+      qsRequired(containers, `#storage-${action}-clean`).disabled = working || !container?.available || container.busy || action === "worker-images" && !container.images.some((image) => image.eligible) || action === "apple-builder" && (!container.builderRunning || container.builderCacheBytes === null);
     }
   }
   function renderContainers() {
     const container = state?.containers;
     if (!container) return;
-    qsRequired(element, "#storage-containers").hidden = !container.available && !container.error;
-    qsRequired(element, "#storage-containers-status").textContent = container.error ? `Inventory unavailable: ${container.error}` : container.busy ? "Containers or builds are in use. Cleanup is paused." : "Apple container storage is ready.";
-    const breakdown = qsRequired(element, "#storage-container-breakdown");
+    containers.hidden = !container.available && !container.error;
+    qsRequired(containers, "#storage-containers-status").textContent = container.error ? `Inventory unavailable: ${container.error}` : container.busy ? "Containers or builds are in use. Cleanup is paused." : "Apple container storage is ready.";
+    const breakdown = qsRequired(containers, "#storage-container-breakdown");
     breakdown.replaceChildren();
     const rows = [
       ["Total allocated", container.totalBytes],
@@ -55398,7 +55398,7 @@ function createStorageMaintenancePanel(api) {
         el("dt", {}, label),
         el("dd", {}, bytes === null ? "Not reported" : formatByteSize(bytes))
       );
-    const images = qsRequired(element, "#storage-container-images");
+    const images = qsRequired(containers, "#storage-container-images");
     images.replaceChildren();
     for (const image of container.images)
       images.append(
@@ -55423,7 +55423,7 @@ function createStorageMaintenancePanel(api) {
       }
       days.value = String(next.retention.days);
       for (const summary of next.areas)
-        qsRequired(element, `#storage-${summary.area}-size`).textContent = summary.busy ? "In use" : `${formatByteSize(summary.bytes)} \xB7 ${String(summary.entries)} item${summary.entries === 1 ? "" : "s"}`;
+        qsRequired(savedData, `#storage-${summary.area}-size`).textContent = summary.busy ? "In use" : `${formatByteSize(summary.bytes)} \xB7 ${String(summary.entries)} item${summary.entries === 1 ? "" : "s"}`;
     } catch (error62) {
       if (token === generation) status.textContent = errorMessage(error62);
     } finally {
@@ -70310,6 +70310,15 @@ function syncFilesPaneDom(store) {
   const pane = document.getElementById("pane-files");
   if (pane) pane.hidden = !store.getState().filesPaneOpen;
 }
+function rightPanelShows(state, mode) {
+  return state.filesPaneOpen && state.rightPanelMode === mode;
+}
+function selectRightPanelMode(store, mode, listener) {
+  return store.select((state) => rightPanelShows(state, mode), listener);
+}
+function selectRightPanel(store, listener) {
+  return store.select((state) => state.filesPaneOpen ? state.rightPanelMode : null, listener);
+}
 function setRightPanelMaximized(store, maximized) {
   if (store.getState().rightPanelMaximized === maximized) return;
   store.setState({ rightPanelMaximized: maximized });
@@ -70336,8 +70345,6 @@ function toggleFilesPane(store) {
   });
   if (!open2) clearMaximizedOnClose(store);
   syncFilesPaneDom(store);
-  store.emit("files_pane_changed");
-  if (open2) store.emit("right_panel_mode_changed");
 }
 function openRightPanel(store, mode) {
   const { filesPaneOpen, rightPanelMode } = store.getState();
@@ -70347,8 +70354,6 @@ function openRightPanel(store, mode) {
   }
   store.setState({ filesPaneOpen: true, rightPanelMode: mode });
   syncFilesPaneDom(store);
-  store.emit("files_pane_changed");
-  store.emit("right_panel_mode_changed");
 }
 function navigateToChange(store, path) {
   store.emit("git_change_navigate", path);
@@ -70378,13 +70383,10 @@ function toggleRightPanel(store, mode) {
     store.setState({ filesPaneOpen: false });
     clearMaximizedOnClose(store);
     syncFilesPaneDom(store);
-    store.emit("files_pane_changed");
     return;
   }
   store.setState({ filesPaneOpen: true, rightPanelMode: mode });
   syncFilesPaneDom(store);
-  store.emit("files_pane_changed");
-  store.emit("right_panel_mode_changed");
 }
 function ensureWorkspaceForPanel(api, store) {
   if (store.getState().workspaceRoot) return true;
@@ -72701,8 +72703,6 @@ async function openWorkspaceFile(store, api, path, reveal) {
     filesPaneOpen: true
   });
   store.emit("panel_changed");
-  store.emit("right_panel_mode_changed");
-  store.emit("files_pane_changed");
 }
 async function openWorkspaceFileInBrowser(store, api, path) {
   const { projectId, threadId } = requireActiveThreadOwner(store);
@@ -72727,8 +72727,6 @@ function revealWorkspaceDirectory(store, path) {
   });
   store.emit("explorer_reveal", path);
   store.emit("panel_changed");
-  store.emit("right_panel_mode_changed");
-  store.emit("files_pane_changed");
 }
 async function activateWorkspaceReference(store, api, path, kind, reveal) {
   if (kind === "directory") {
@@ -73235,6 +73233,8 @@ export {
   requireActiveThreadOwner,
   init_active_thread_owner,
   syncFilesPaneDom,
+  selectRightPanelMode,
+  selectRightPanel,
   toggleRightPanelMaximized,
   isRightPanelMaximized,
   toggleProjectsPane,
