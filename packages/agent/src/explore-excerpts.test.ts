@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   EXPLORE_EXCERPTS_HEADING,
   mergeExploredSpans,
+  quoteExploredLines,
   renderExploreResult,
   selectExploreExcerpts,
   type ExploredSpan,
@@ -78,5 +79,51 @@ describe('renderExploreResult', () => {
     // The fence outgrows the longest backtick run so embedded fences survive.
     assert.ok(text.includes(`\`a.ts\` lines 3–5:\n\`\`\`\`\n${kept.text}\n\`\`\`\`\n`))
     assert.match(text, /Not quoted \(over the excerpt budget[^)]*\): `b\.ts` line 1\./)
+  })
+})
+
+describe('quoteExploredLines (#1433 Fix 0b)', () => {
+  const read = [span('a.ts', 10, numbered('a', 10, 20)), span('a.ts', 40, numbered('a', 40, 42))]
+
+  it('answers not-explored for a path no explore read', () => {
+    assert.deepEqual(quoteExploredLines(read, 'b.ts', {}, 10_000), { kind: 'not-explored' })
+  })
+
+  it('answers outside, with the explored ranges, for lines exploration never read', () => {
+    const lookup = quoteExploredLines(read, 'a.ts', { startLine: 25, endLine: 30 }, 10_000)
+    assert.ok(lookup.kind === 'outside')
+    assert.deepEqual(
+      lookup.available.map((s) => [s.startLine, s.endLine]),
+      [
+        [10, 20],
+        [40, 42],
+      ],
+    )
+  })
+
+  it('quotes the requested lines verbatim and names the parts it could not', () => {
+    const lookup = quoteExploredLines(read, 'a.ts', { startLine: 18, endLine: 41 }, 10_000)
+    assert.deepEqual(lookup, {
+      kind: 'quoted',
+      pieces: [span('a.ts', 18, numbered('a', 18, 20)), span('a.ts', 40, numbered('a', 40, 41))],
+      unread: [[21, 39]],
+      nextLine: null,
+    })
+  })
+
+  it('quotes every explored span of the file when no range is given', () => {
+    const lookup = quoteExploredLines(read, 'a.ts', {}, 10_000)
+    assert.ok(lookup.kind === 'quoted')
+    assert.deepEqual(lookup.pieces, mergeExploredSpans(read))
+  })
+
+  it('cuts at the char limit on a whole line and says where to continue', () => {
+    const lookup = quoteExploredLines(read, 'a.ts', { startLine: 10, endLine: 20 }, 12)
+    assert.deepEqual(lookup, {
+      kind: 'quoted',
+      pieces: [span('a.ts', 10, ['a10', 'a11', 'a12'])],
+      unread: [],
+      nextLine: 13,
+    })
   })
 })

@@ -31,6 +31,7 @@ function tenseFromStatus(status: ToolCall['status']): ToolLabelTense {
 
 const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   explore: { running: 'Exploring files', done: 'Explored files' },
+  read_explored: { running: 'Quoting explored lines', done: 'Quoted explored lines' },
   read_file: { running: 'Reading file', done: 'Read file' },
   list_dir: { running: 'Listing directory', done: 'Listed directory' },
   search_code: { running: 'Searching code', done: 'Searched code' },
@@ -105,7 +106,14 @@ interface ToolGroupDef {
 
 const TOOL_GROUPS: Record<string, ToolGroupDef> = {
   reading: {
-    tools: ['explore', 'read_file', 'list_dir', 'video_frames', 'preflight_worktree'],
+    tools: [
+      'explore',
+      'read_explored',
+      'read_file',
+      'list_dir',
+      'video_frames',
+      'preflight_worktree',
+    ],
     label: { running: 'Reading files', done: 'Read files' },
   },
   searching: {
