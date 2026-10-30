@@ -516,7 +516,6 @@ export async function removeProject(store: AppStore, api: ApiClient, id: string)
     store.emit('workspace_changed')
     store.emit('threads_changed')
     store.emit('panel_changed')
-    store.emit('files_pane_changed')
     return
   }
 
@@ -595,7 +594,6 @@ function applyProjectSelection(
   store.emit('workspace_changed')
   store.emit('threads_changed')
   store.emit('panel_changed')
-  store.emit('files_pane_changed')
   residentThreads.remember(
     id,
     store.getState().threads,

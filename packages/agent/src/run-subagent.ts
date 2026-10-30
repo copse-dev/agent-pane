@@ -17,7 +17,14 @@ import { hasLastUsage } from '@copse/llm/provider-usage.ts'
 
 const randomUUID = (): string => globalThis.crypto.randomUUID()
 
-export const EXPLORE_TOOL_NAMES = [
+/**
+ * The explore subagent's hard allow-list (`subagent-service.ts` filters its
+ * toolset to these and refuses anything else). Read-only by construction: it
+ * must never contain `explore`, `investigate_ci` or any other subagent-spawning
+ * tool, or a subagent could recurse. Not the duplicate guard's set — see
+ * `DUPLICATE_GUARDED_TOOL_NAMES` in `agent-loop-guards.ts` (#1433).
+ */
+export const SUBAGENT_ALLOWED_TOOL_NAMES = [
   'read_file',
   'list_dir',
   'search_code',

@@ -1,3 +1,7 @@
+import { mkdir, open } from 'node:fs/promises'
+import { dirname } from 'node:path'
+import { assertWriteTargetWithinRoot, resolvePathWithinRoot } from '../services/workspace.ts'
+import { requireAgentExecutionRoot } from '../services/execution-root.ts'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { deviceHubService } from '../services/apple-development/device-hub.ts'
@@ -27,7 +31,7 @@ const input = z.discriminatedUnion('type', [
 export const deviceHubTool = defineTool({
   name: 'device_hub',
   description:
-    'Use Apple Device Hub on a local Mac. List physical devices and simulators, open Device Hub, list installed apps, launch an installed bundle ID, or capture a screenshot. Show opens a booted simulator in Copse’s Desktop panel, initially view-only. Input sends a discrete simulator tap (normalized x/y), USB HID key, or hardware button. Physical-device input and live embedding are not supported; use Device Hub for those. Requires an enrolled Apple Development project and tool permission. Build/install apps with the bundled XcodeBuildMCP tools.',
+    'Use Apple Device Hub on a local Mac. List physical devices and simulators, open Device Hub, list installed apps, launch an installed bundle ID, or capture a screenshot. Optional screenshot output_path saves a new PNG file inside the executing workspace; existing files are never overwritten. An image attachment alone is not a saved workspace file. Show opens a booted simulator in Copse’s Desktop panel, initially view-only. Input sends a discrete simulator tap (normalized x/y), USB HID key, or hardware button. Physical-device input and live embedding are not supported; use Device Hub for those. Requires an enrolled Apple Development project and tool permission. Build/install apps with the bundled XcodeBuildMCP tools.',
   provenance: 'external',
   parameters: z.discriminatedUnion('action', [
     z.object({ action: z.literal('list') }),
@@ -38,7 +42,15 @@ export const deviceHubTool = defineTool({
       device_id: deviceId,
       bundle_id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9.-]{0,254}$/),
     }),
-    z.object({ action: z.literal('screenshot'), device_id: deviceId }),
+    z.object({
+      action: z.literal('screenshot'),
+      device_id: deviceId,
+      output_path: z
+        .string()
+        .regex(/\.png$/i)
+        .optional()
+        .describe('New workspace-relative PNG file to save; existing files are never overwritten.'),
+    }),
     z.object({ action: z.literal('show'), device_id: deviceId }),
     z.object({ action: z.literal('input'), device_id: deviceId, input }),
   ]),
@@ -63,9 +75,28 @@ export const deviceHubTool = defineTool({
     if (args.action === 'launch')
       return deviceHubService.launch(args.device_id, args.bundle_id, signal)
     if (args.action === 'screenshot') {
+      const root = requireAgentExecutionRoot()
+      const destination = args.output_path
+        ? await resolvePathWithinRoot(args.output_path, root)
+        : undefined
+      if (destination) await assertWriteTargetWithinRoot(destination, root)
       const bytes = await deviceHubService.screenshot(args.device_id, signal)
+      signal.throwIfAborted()
+      const dimensions = `${String(bytes.readUInt32BE(16))}×${String(bytes.readUInt32BE(20))} px`
+      if (destination) {
+        await mkdir(dirname(destination), { recursive: true })
+        await assertWriteTargetWithinRoot(destination, root)
+        const file = await open(destination, 'wx')
+        try {
+          await file.writeFile(bytes)
+        } finally {
+          await file.close()
+        }
+      }
       return {
-        result: `Screenshot of device ${args.device_id}.`,
+        result: destination
+          ? `Saved image/png (${String(bytes.length)} bytes, ${dimensions}) from device ${args.device_id} to ${args.output_path ?? destination}.`
+          : `Attached image/png (${String(bytes.length)} bytes, ${dimensions}) of device ${args.device_id}. No workspace image file was saved. Use output_path to save a PNG.`,
         images: [
           { dataUrl: `data:image/png;base64,${bytes.toString('base64')}`, kind: 'screenshot' },
         ],

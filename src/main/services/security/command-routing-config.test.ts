@@ -92,7 +92,7 @@ describe('sandbox routing in a worktree thread', () => {
   it('reads trust from the thread project, not the window workspace', async () => {
     const restore = setWorkspaceRootForTest('/tmp/copse-routing-other-window')
     await setSetting(SETTING, ['xcodebuild'])
-    setSetting('autoRunSandboxCommands', true)
+    await setSetting('autoRunSandboxCommands', true)
     setWorkspaceTrusted(projectRoot, true)
     try {
       runWithThreadExecutionContext(worktree, () => {

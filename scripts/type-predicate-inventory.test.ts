@@ -84,7 +84,6 @@ const ASSERTED_PREDICATES: Readonly<Record<string, readonly string[]>> = {
   'src/main/services/security/pii-redactor.ts': ['isCreateGuard'],
   'src/main/services/ssh-workspace/execution-target.ts': ['(anonymous)'],
   'src/main/services/storage/knowledge-store.ts': ['isIndexRecord'],
-  'src/main/services/storage/settings.test-shim.ts': ['schemaAccepts'],
   'src/main/services/storage/settings.ts': ['isStoredKey', 'schemaAccepts'],
   'src/main/services/thread-checkout-transaction.ts': ['(anonymous)'],
   'src/main/services/vnc/vnc-username-store.ts': ['isStoredVncUsername'],

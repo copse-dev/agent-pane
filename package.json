@@ -160,6 +160,7 @@
       "!dist/renderer/mermaid-frame.js"
     ],
     "asarUnpack": [
+      "dist/resources/process-memory",
       "**/node_modules/node-pty/**/*",
       "**/node_modules/@napi-rs/**/*",
       "**/node_modules/@anthropic-ai/sandbox-runtime/**/*",

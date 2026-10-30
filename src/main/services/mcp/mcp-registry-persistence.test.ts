@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { isMcpToolRemembered, rememberMcpTool, setMcpServerUserEnabled } from './mcp-registry.ts'
 import { getSetting, setSetting } from '../storage/settings.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
+import { seedHandEditedSetting } from '../storage/settings.test-support.ts'
 import { expectStringArray } from '@shared/unknown-value.ts'
 import {
   clearMcpToolPermissionTargets,
@@ -60,7 +61,7 @@ describe('mcp-registry persistence (serialized + validated)', () => {
 
   it('ignores a corrupt override value on read', async () => {
     const tool = registerTool('server', 'tool')
-    await setSetting(OVERRIDES_KEY, 'corrupt-not-an-object')
+    await seedHandEditedSetting(OVERRIDES_KEY, 'corrupt-not-an-object')
 
     assert.equal(isMcpToolRemembered(tool.executionName), false)
   })

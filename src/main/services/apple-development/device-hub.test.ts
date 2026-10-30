@@ -23,7 +23,10 @@ const PHYSICAL = {
   connectionProperties: { tunnelState: 'disconnected' },
 }
 const inventory = JSON.stringify({ result: { devices: [SIMULATOR, PHYSICAL] } })
-const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0])
+const png = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4AWP4DwQACfsD/c8LaHIAAAAASUVORK5CYII=',
+  'base64',
+)
 
 describe('Device Hub', () => {
   it('reads current properties and legacy paired devices without claiming physical input support', () => {
@@ -91,7 +94,7 @@ describe('Device Hub', () => {
   it('captures simulator and physical PNGs and cleans files after success and failure', async () => {
     const files: string[] = []
     const calls: string[][] = []
-    let invalidPng = false
+    let capturedPng = png
     const service = new DeviceHubService(async (_file, args) => {
       calls.push(args)
       const output = args.includes('--json-output')
@@ -106,7 +109,7 @@ describe('Device Hub', () => {
         : args.at(-1)
       assert.ok(destination)
       files.push(destination)
-      await writeFile(destination, invalidPng ? Buffer.from('not a PNG') : png)
+      await writeFile(destination, capturedPng)
       return ''
     })
     const signal = new AbortController().signal
@@ -121,7 +124,12 @@ describe('Device Hub', () => {
       '--device',
       PHYSICAL.identifier,
     ])
-    invalidPng = true
+    for (const invalid of [Buffer.from('not a PNG'), png.subarray(0, 8), png.subarray(0, 24)]) {
+      capturedPng = invalid
+      await assert.rejects(service.screenshot(ID, signal), /invalid PNG/)
+    }
+    capturedPng = Buffer.from(png)
+    capturedPng.writeUInt32BE(0, 16)
     await assert.rejects(service.screenshot(ID, signal), /invalid PNG/)
     for (const file of files) await assert.rejects(stat(file), { code: 'ENOENT' })
   })
