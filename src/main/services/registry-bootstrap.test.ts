@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   createRegistry,
-  pluginEnableRefusal,
   registerSkillTools,
   syncAppleDevelopmentTools,
   syncCiInvestigatorTools,
@@ -14,7 +13,6 @@ import {
   syncModelClassifierTools,
   syncOkfMemoryTools,
   syncOrchestrationStrategyTools,
-  syncParallelSearchTools,
   syncWebSearchTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
@@ -44,7 +42,6 @@ import {
   resetBundledCursorSkillsRootForTest,
 } from './skills/bundled-cursor-skills.ts'
 import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
-import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import {
   CI_INVESTIGATOR_PLUGIN_ID,
   CI_INVESTIGATOR_PLUGIN_TOOL_NAMES,
@@ -427,31 +424,6 @@ describe('syncWebSearchTools', () => {
   })
 })
 
-describe('syncParallelSearchTools', () => {
-  afterEach(() => {
-    deleteApiKey('parallel')
-    setDefaultPluginRegistry(null)
-  })
-
-  it('requires both an enabled plugin and a configured key', () => {
-    const plugins = createFirstPartyPluginRegistry()
-    setDefaultPluginRegistry(plugins)
-    const registry = new ToolRegistry()
-
-    plugins.enable(PARALLEL_SEARCH_PLUGIN_ID)
-    syncParallelSearchTools(registry)
-    assert.equal(registry.has('parallel_search'), false)
-
-    setApiKey('parallel', 'test-key')
-    syncParallelSearchTools(registry)
-    assert.equal(registry.has('parallel_search'), true)
-
-    plugins.disable(PARALLEL_SEARCH_PLUGIN_ID)
-    syncParallelSearchTools(registry)
-    assert.equal(registry.has('parallel_search'), false)
-  })
-})
-
 describe('syncCiInvestigatorTools', () => {
   afterEach(() => {
     setGhAvailableForTest(null)
@@ -538,59 +510,35 @@ describe('experimental setting tool syncs', () => {
   }
 })
 
-describe('pluginEnableRefusal', () => {
-  afterEach(() => {
-    deleteApiKey('parallel')
-  })
-
-  it('refuses to enable Parallel Search without a resolvable key', () => {
-    deleteApiKey('parallel')
-    assert.match(pluginEnableRefusal(PARALLEL_SEARCH_PLUGIN_ID, true) ?? '', /Parallel API key/)
-  })
-
-  it('allows enabling Parallel Search once a key is stored', () => {
-    setApiKey('parallel', 'test-key')
-    assert.equal(pluginEnableRefusal(PARALLEL_SEARCH_PLUGIN_ID, true), null)
-  })
-
-  it('never blocks disabling, and ignores other plugins', () => {
-    deleteApiKey('parallel')
-    assert.equal(pluginEnableRefusal(PARALLEL_SEARCH_PLUGIN_ID, false), null)
-    assert.equal(pluginEnableRefusal(OKF_MEMORIES_PLUGIN_ID, true), null)
-  })
-})
-
 describe('credential-gated tools with a locked saved-secret vault', () => {
   const previousOpenAiKey = process.env['OPENAI_API_KEY']
   afterEach(() => {
     setSavedSecretsLocked(false)
     deleteApiKey('openai')
-    deleteApiKey('parallel')
-    setDefaultPluginRegistry(null)
+    deleteApiKey('tavily')
+    setSetting('webSearchProvider', 'none')
     if (previousOpenAiKey === undefined) Reflect.deleteProperty(process.env, 'OPENAI_API_KEY')
     else process.env['OPENAI_API_KEY'] = previousOpenAiKey
   })
 
   it('builds the startup registry without the gated tools, then adds them once unlocked', () => {
     Reflect.deleteProperty(process.env, 'OPENAI_API_KEY')
-    const plugins = createFirstPartyPluginRegistry()
-    plugins.enable(PARALLEL_SEARCH_PLUGIN_ID)
-    setDefaultPluginRegistry(plugins)
     setApiKey('openai', 'stored-openai-key')
-    setApiKey('parallel', 'stored-parallel-key')
+    setSetting('webSearchProvider', 'tavily')
+    setApiKey('tavily', 'stored-tavily-key')
     setSavedSecretsLocked(true)
 
     // A throw here aborted the rest of main-process startup, including the
     // vault IPC the user needs to unlock.
     const registry = createRegistry()
     assert.equal(registry.has(IMAGE_GEN_TOOL_NAME), false)
-    assert.equal(registry.has('parallel_search'), false)
+    assert.equal(registry.has('web_search'), false)
 
     setSavedSecretsLocked(false)
     syncImageGenerationTools(registry)
-    syncParallelSearchTools(registry)
+    syncWebSearchTools(registry)
     assert.equal(registry.has(IMAGE_GEN_TOOL_NAME), true)
-    assert.equal(registry.has('parallel_search'), true)
+    assert.equal(registry.has('web_search'), true)
   })
 
   it('still offers image_gen from an external OpenAI key while locked', () => {

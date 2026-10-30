@@ -103,7 +103,7 @@ import {
   syncCiInvestigatorTools,
   syncGhTools,
   syncImageGenerationTools,
-  syncParallelSearchTools,
+  syncWebSearchTools,
 } from './services/registry-bootstrap.ts'
 import { getPluginService } from './services/plugins/plugin-service.ts'
 import {
@@ -785,7 +785,7 @@ app
     // re-check them once the user unlocks from Settings.
     const disposeVaultUnlockSync = profileVault.onUnlocked(() => {
       syncImageGenerationTools(registry)
-      syncParallelSearchTools(registry)
+      syncWebSearchTools(registry)
     })
     win.once('closed', disposeVaultUnlockSync)
     // An unlocked vault session survives sleep and screen lock. Shutdown or loss

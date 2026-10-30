@@ -81,6 +81,9 @@ const api: ApiClient = {
       rootTrusted?: boolean,
     ) => ipcRenderer.invoke('mobile:respond-pairing', decision, code, pairingId, rootTrusted),
     revealCertificate: () => ipcRenderer.invoke('mobile:reveal-certificate'),
+    registerName: (invite: string) => ipcRenderer.invoke('mobile:register-name', invite),
+    removeName: () => ipcRenderer.invoke('mobile:remove-name'),
+    recheckNameDns: () => ipcRenderer.invoke('mobile:recheck-name-dns'),
     onChat: (handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
