@@ -64,6 +64,61 @@ describe('ToolRegistry', () => {
     setPermissionGateForTests(null)
   })
 
+  // #1745: an agent told "User rejected" for a refusal nobody made goes on to
+  // tell the user they rejected (or deleted) something they never touched.
+  describe('attributes a refusal to the user only when the user declined', () => {
+    const gatedRegistry = (): ToolRegistry => {
+      const reg = new ToolRegistry()
+      reg.register({
+        name: 'gated',
+        description: 'requires approval',
+        parameters: z.object({}),
+        execute: async () => 'ran',
+      })
+      return reg
+    }
+    afterEach(() => {
+      setPermissionGateForTests(null)
+    })
+
+    it('names a hook refusal as the hook’s', async () => {
+      setPermissionGateForTests(async (check) => {
+        check.denial = { by: 'hook' }
+        return false
+      })
+      const result = await gatedRegistry().execute('gated', {}, new AbortController().signal)
+      assert.equal(
+        result,
+        'Tool gated blocked: a hook denied it. It did not run. The user did not reject this call.',
+      )
+    })
+
+    it('names a prompt that closed unanswered', async () => {
+      setPermissionGateForTests(async (check) => {
+        check.denial = { by: 'unanswered', resolution: 'unavailable' }
+        return false
+      })
+      const { result } = await gatedRegistry().executeNormalized(
+        'gated',
+        {},
+        new AbortController().signal,
+      )
+      assert.match(result, /^Tool gated blocked: no approval prompt could be shown\./)
+      assert.match(result, /The user did not reject this call\.$/)
+    })
+
+    it('reports a refusal under an aborted signal as a cancellation', async () => {
+      const controller = new AbortController()
+      setPermissionGateForTests(async () => {
+        controller.abort()
+        return false
+      })
+      const { result } = await gatedRegistry().executeNormalized('gated', {}, controller.signal)
+      assert.match(result, /^Tool gated blocked: the call was cancelled before it ran/)
+      assert.doesNotMatch(result, /User rejected/)
+    })
+  })
+
   // H1 (docs/plans/hooks-and-feature-packs.md): the object the permission gate
   // rewrites is also the input the tool executes, after one final schema parse.
   it('executes with hook-rewritten input without applying schema transforms twice', async () => {
@@ -529,7 +584,10 @@ describe('ToolRegistry', () => {
         const blocked = await inThread('t1', () =>
           reg.execute('search_code', { pattern: 'foo' }, signal),
         )
-        assert.equal(blocked, 'User rejected the search_code tool call.')
+        assert.equal(
+          blocked,
+          'Tool search_code blocked: it is set to Block in tool permission settings. It did not run. The user did not reject this call.',
+        )
         assert.equal(searchCalls, 1, 'the cached value and handler must both remain untouched')
       } finally {
         setSetting('toolPermissionOverrides', {})

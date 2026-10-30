@@ -138,6 +138,10 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'gh_pr_approve',
   'gh_pr_mark_ready',
   'gh_pr_enable_auto_merge',
+  'git_push',
+  'gh_pr_merge',
+  'gh_pr_comment',
+  'gh_pr_resolve_review_thread',
   // Reading an attached/workspace recording as stills. Frames come back as MCP
   // image content (see `toMcpContent`), so a bridged agent sees the same
   // pictures a native run does rather than a manifest describing images it

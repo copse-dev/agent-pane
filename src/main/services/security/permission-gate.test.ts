@@ -517,6 +517,10 @@ describe('ensureToolPermitted', () => {
   it('prompts for mutating GitHub PR tools instead of auto-running them', async () => {
     setPermissionGateForTests(null)
     const writeTools = [
+      'git_push',
+      'gh_pr_merge',
+      'gh_pr_comment',
+      'gh_pr_resolve_review_thread',
       'gh_pr_approve',
       'gh_push',
       'gh_pr_create',
@@ -531,6 +535,10 @@ describe('ensureToolPermitted', () => {
         return { approved: false, remember: false }
       })
       try {
+        await runWithAgentRunReadonly(true, async () => {
+          assert.equal(await ensureToolPermitted({ toolName, args: { number: 1 } }), false)
+          assert.equal(prompted, false)
+        })
         // Denied at the prompt → the call must not proceed.
         assert.equal(
           await ensureToolPermitted({ toolName, args: { number: 1 } }),
@@ -679,6 +687,39 @@ describe('ensureToolPermitted', () => {
       storageSet(AUTOMATIONS_STORAGE_KEY, [])
     }
   })
+
+  for (const toolName of [
+    'git_push',
+    'gh_pr_merge',
+    'gh_pr_comment',
+    'gh_pr_resolve_review_thread',
+  ]) {
+    it(`honours only the exact schedule grant for ${toolName} and retains explicit policy`, async () => {
+      setPermissionGateForTests(null)
+      seedAutomationSchedule([{ kind: 'copse-action', toolName }])
+      let prompts = 0
+      setApprovalHandler(async () => {
+        prompts++
+        return { approved: false, remember: false }
+      })
+      const check = (): Promise<boolean> => ensureToolPermitted({ toolName, args: { number: 1 } })
+      try {
+        assert.equal(await underAutomation(check), true)
+        assert.equal(prompts, 0)
+        assert.equal(await check(), false, 'ordinary threads do not inherit a schedule grant')
+        setSetting('toolPermissionOverrides', { [copseToolPermissionId(toolName)]: 'ask' })
+        assert.equal(await underAutomation(check), false)
+        assert.equal(prompts, 2)
+        setSetting('toolPermissionOverrides', { [copseToolPermissionId(toolName)]: 'block' })
+        assert.equal(await underAutomation(check), false)
+        assert.equal(prompts, 2, 'blocked actions never prompt')
+      } finally {
+        setApprovalHandler(null)
+        setSetting('toolPermissionOverrides', {})
+        storageSet(AUTOMATIONS_STORAGE_KEY, [])
+      }
+    })
+  }
 
   it('rejects a renderer-spoofed automation claim that is not the recorded run', async () => {
     setPermissionGateForTests(null)

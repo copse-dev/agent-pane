@@ -1,5 +1,7 @@
 # Deferred thread worktrees (prototype)
 
+Tracking for default-on: [#4004](https://github.com/copse-dev/agent-pane/issues/4004).
+
 Status: **Prototype, opt-in** through Settings → Experimental → Deferred worktrees
 (`deferredWorktreesEnabled`, off by default). The toggle applies across Copse to eligible new
 threads using automatic checkout, including projects with no explicit mode or `always`.

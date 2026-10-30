@@ -64,6 +64,7 @@ import { getElectronUserDataPath } from '../electron-app-runtime.ts'
 import {
   getXcodeBuildMcpConfig,
   prepareXcodeBuildMcpArguments,
+  xcodeBuildMcpToolTimeoutMs,
   XCODEBUILD_MCP_SERVER_NAME,
 } from '../apple-development/xcodebuildmcp.ts'
 import { isAppleDevelopmentProjectEnrolled } from '../apple-development/apple-development-service.ts'
@@ -590,6 +591,10 @@ function registerListedTools(
           server.serverName === XCODEBUILD_MCP_SERVER_NAME
             ? prepareXcodeBuildMcpArguments(tool.name, args)
             : args
+        const timeout =
+          server.serverName === XCODEBUILD_MCP_SERVER_NAME
+            ? xcodeBuildMcpToolTimeoutMs(tool.name)
+            : undefined
         let result: Awaited<ReturnType<Client['callTool']>>
         try {
           // An MCP server is its own process and may write anywhere, so the
@@ -601,7 +606,7 @@ function registerListedTools(
                 arguments: isRecord(preparedArgs) ? preparedArgs : {},
               },
               undefined,
-              { signal },
+              { signal, ...(timeout === undefined ? {} : { timeout }) },
             ),
           )
         } catch (error) {

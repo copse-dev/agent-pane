@@ -912,7 +912,10 @@ describe('startAcpNativeBridge', () => {
       method: 'tools/call',
       params: { name: 'mcp__mail__list_messages', arguments: {} },
     })
-    assert.equal(contentText(denied), 'User rejected the mcp__mail__list_messages tool call.')
+    assert.equal(
+      contentText(denied),
+      'Tool mcp__mail__list_messages blocked: it is set to Block in tool permission settings. It did not run. The user did not reject this call.',
+    )
     assert.equal(executed, false, 'a denied bridged MCP call must not reach its handler')
   })
 

@@ -3,7 +3,8 @@
 //     allow/deny) — approval lets the call proceed, a decline blocks it;
 //   - a hook `deny` **surfaces its `agentMessage` to the agent** by throwing so
 //     the reason reaches the model as the tool result (the existing
-//     agent-visible deny path), while a bare deny stays a plain rejection.
+//     agent-visible deny path), while a bare deny is a plain refusal that the
+//     check attributes to the hook, never to the user (#1745).
 // Driven end-to-end through `ensureToolPermitted` with a real user hook.
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
@@ -11,6 +12,7 @@ import { mkdtemp, mkdir, writeFile, rm, chmod } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { ensureToolPermitted } from './permission-gate.ts'
+import type { PermissionCheck } from './permission-policy.ts'
 import { setPermissionGateForTests } from '../tool-registry.ts'
 import { setApprovalHandler } from '../approval.ts'
 import { setSetting } from '../storage/settings.ts'
@@ -114,9 +116,23 @@ describe('permission gate — Cursor hook ask/deny surfacing (B4)', () => {
       prompts += 1
       return { approved: false, remember: false }
     })
-    const allowed = await underThread(() => ensureToolPermitted(readFile))
+    const check: PermissionCheck = { ...readFile }
+    const allowed = await underThread(() => ensureToolPermitted(check))
     assert.equal(allowed, false)
     assert.equal(prompts, 1)
+    assert.equal(check.denial, undefined, 'a declined prompt is the user’s decision')
+  })
+
+  it('ask whose prompt closes unanswered is not attributed to the user', async () => {
+    await writeReadFileHook('{"permission":"ask"}')
+    setApprovalHandler(async () => ({
+      approved: false,
+      remember: false,
+      resolution: 'window-closed',
+    }))
+    const check: PermissionCheck = { ...readFile }
+    assert.equal(await underThread(() => ensureToolPermitted(check)), false)
+    assert.deepEqual(check.denial, { by: 'unanswered', resolution: 'window-closed' })
   })
 
   it('deny with an agentMessage throws so the reason reaches the agent', async () => {
@@ -128,10 +144,12 @@ describe('permission gate — Cursor hook ask/deny surfacing (B4)', () => {
     )
   })
 
-  it('a bare deny (no message) is a plain rejection, not a throw', async () => {
+  it('a bare deny (no message) is a hook refusal, not a throw or a user rejection', async () => {
     await writeReadFileHook('{"permission":"deny"}')
     setApprovalHandler(async () => ({ approved: true, remember: false }))
-    assert.equal(await underThread(() => ensureToolPermitted(readFile)), false)
+    const check: PermissionCheck = { ...readFile }
+    assert.equal(await underThread(() => ensureToolPermitted(check)), false)
+    assert.deepEqual(check.denial, { by: 'hook' })
     const decisions = await readDecisionLog(projectId)
     assert.equal(
       decisions.some(

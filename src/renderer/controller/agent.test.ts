@@ -1051,6 +1051,35 @@ test('prompt progress dedupes on the label but re-emits after another activity',
   ])
 })
 
+test('remote agent setup stages drive the activity row until the agent is reached', () => {
+  const { send, store } = setup()
+  const labels: (string | null)[] = []
+  store.on('agent_activity', (_tid, label) => labels.push(label))
+
+  send({ type: 'agent_setup_progress', phase: 'start', label: 'Connecting to Dev…' })
+  send({ type: 'agent_setup_progress', phase: 'start', label: 'Connecting to Dev…' })
+  send({
+    type: 'agent_setup_progress',
+    phase: 'setup',
+    label: 'Installing pkg@1.0.0 on Dev (one-time setup)…',
+  })
+  send({ type: 'agent_setup_progress', phase: 'ready' })
+
+  // A repeated stage is not re-announced; `ready` hands the row back to the
+  // turn's own activity, as derived from thread state.
+  assert.deepEqual(labels.slice(0, 2), [
+    'Connecting to Dev…',
+    'Installing pkg@1.0.0 on Dev (one-time setup)…',
+  ])
+  assert.equal(labels.length, 3)
+  assert.notEqual(labels[2], 'Installing pkg@1.0.0 on Dev (one-time setup)…')
+  // Status only: nothing lands in the transcript.
+  assert.equal(
+    store.getState().threads[0]?.messages.some((message) => message.role === 'assistant'),
+    false,
+  )
+})
+
 test('review report chunks stay on the assistant message of each turn', () => {
   const report: ThreadReviewReport = {
     status: 'done',
