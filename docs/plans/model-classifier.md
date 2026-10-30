@@ -1,6 +1,7 @@
 # Model classifier
 
-Tracking: [#557](https://github.com/copse-dev/agent-pane/issues/557)
+Tracking: [#557](https://github.com/copse-dev/agent-pane/issues/557) (closed); follow-ups in
+[#4001](https://github.com/copse-dev/agent-pane/issues/4001)
 
 Status: **primary prompt routing plus an experimental advisory tool**.
 

@@ -1,6 +1,7 @@
 # Sandboxed remote artifact image hydration
 
-Status: proposed design; no download behavior has changed.
+Status: proposed design; no download behavior has changed. Tracking:
+[#4005](https://github.com/copse-dev/agent-pane/issues/4005).
 
 ## Outcome
 

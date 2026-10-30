@@ -1,6 +1,7 @@
 # Package firewall
 
-**Status: Implemented (phase 1, plus the release-age limit).** Replaces the third-party Socket
+**Status: Resolved for phase 1, plus the release-age limit
+([#3915](https://github.com/copse-dev/agent-pane/pull/3915)).** Replaces the third-party Socket
 Firewall (`sfw`) with a package firewall written in this repository. It runs under the app's own
 runtime, checks every package download against public malware advisories, leaves versions
 published in the last 48 hours out of what installs resolve, and needs no global install,

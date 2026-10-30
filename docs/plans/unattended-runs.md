@@ -1,6 +1,6 @@
 # Unattended runs on a contained runtime
 
-**Status: Proposed.** Nothing here is implemented under these decisions.
+**Status: Proposed (partly overtaken by [`thread-in-container.md`](thread-in-container.md)).** Nothing here is implemented under these decisions.
 [`thread-in-container.md`](thread-in-container.md) prototypes the unattended-run mode with
 the agent loop **inside** the guest rather than on the desktop, and records where that
 diverges from Decisions 1 and 3 below; if that direction is confirmed, those two decisions
