@@ -32,6 +32,7 @@ import { isImportedCursorAgentThread } from '@shared/remote-agent-link.ts'
 import { firstNonEmptyString, isRecord } from '@shared/unknown-value.ts'
 import { z } from 'zod'
 import { sleepMs } from '@copse/llm/stream-retry.ts'
+import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { getApiKey, getSetting } from '../storage/settings.ts'
 import { appendImportedRemoteAgentRunResult, getProjectThread } from '../thread-store.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
@@ -46,7 +47,6 @@ import {
   type RemoteAgentRunResult,
 } from './remote-agent-shared.ts'
 import { attachRemoteAgentPrFromText, recordRemoteAgentLaunch } from './remote-agent-link-store.ts'
-import { LruStringCache } from './lru-string-cache.ts'
 
 // Re-exported for callers/tests that import the repository resolver from here.
 export { resolveRemoteAgentRepository } from './remote-agent-shared.ts'
@@ -55,18 +55,9 @@ const REMOTE_AGENT_SESSION_PREFIX = 'remote-agent-session:'
 const REMOTE_AGENT_MODE = 'agent'
 /** Create-run retries while a just-cancelled run is still settling (`409 agent_busy`). */
 const REMOTE_RUN_BUSY_MAX_ATTEMPTS = 10
-const MAX_REMOTE_ARTIFACT_IMAGE_BYTES = 15 * 1024 * 1024
-// Bound the artifact-image cache so long sessions don't slowly leak memory.
-// Each entry is a base64 data URL that can be ~20 MB, so we cap by total bytes
-// (the memory that actually matters) with an entry-count backstop for the
-// many-small-images case. 64 MB keeps a few large images or dozens of small
-// ones hot while guaranteeing an upper bound.
-const MAX_REMOTE_ARTIFACT_IMAGE_CACHE_ENTRIES = 64
-const MAX_REMOTE_ARTIFACT_IMAGE_CACHE_BYTES = 64 * 1024 * 1024
-const artifactImageDataUrlCache = new LruStringCache(
-  MAX_REMOTE_ARTIFACT_IMAGE_CACHE_ENTRIES,
-  MAX_REMOTE_ARTIFACT_IMAGE_CACHE_BYTES,
-)
+/** Bounds for the credentialed artifact metadata request (sandboxed-artifact-image-downloads.md). */
+const ARTIFACT_METADATA_MAX_BYTES = 64 * 1024
+const ARTIFACT_METADATA_TIMEOUT_MS = 10_000
 
 /**
  * Cursor Cloud run streams can drop mid-turn (`stream_unavailable`, network
@@ -357,10 +348,6 @@ function assertArtifactPath(path: string): string {
   return path
 }
 
-function artifactCacheKey(agentId: string, path: string): string {
-  return `${agentId}\0${path}`
-}
-
 async function createRemoteAgent(input: {
   fetchImpl: typeof fetch
   baseUrl: string
@@ -632,77 +619,69 @@ export async function listRemoteArtifacts(input: {
     }))
 }
 
+/** Read at most `maxBytes` of a response body, cancelling the rest. */
+async function readBoundedText(response: Response, maxBytes: number): Promise<string> {
+  const reader = response.body?.getReader()
+  if (!reader) return ''
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > maxBytes) {
+      await reader.cancel()
+      throw new Error('Remote agent artifact download response was too large')
+    }
+    chunks.push(value)
+  }
+  return Buffer.concat(chunks).toString('utf8')
+}
+
+/**
+ * Ask the provider for a signed artifact download URL. This is the only
+ * credentialed request in artifact access, so it is bounded and never follows
+ * a redirect: an API that needs another endpoint must be configured with it.
+ */
 export async function resolveRemoteArtifactDownloadUrl(input: {
   fetchImpl?: typeof fetch
   baseUrl?: string
   apiKey?: string
   agentId: string
   path: string
+  signal?: AbortSignal
 }): Promise<string> {
   const fetchImpl = input.fetchImpl ?? fetch
   const baseUrl = input.baseUrl ?? readValidatedBaseUrl(REMOTE_AGENT_PROVIDER_CURSOR)
   const apiKey = input.apiKey ?? resolveApiKey()
   const path = assertArtifactPath(input.path)
+  const timeout = AbortSignal.timeout(ARTIFACT_METADATA_TIMEOUT_MS)
   const response = await fetchImpl(remoteArtifactDownloadEndpoint(baseUrl, input.agentId, path), {
     headers: { Authorization: cursorAuthHeader(apiKey) },
+    redirect: 'manual',
+    signal: input.signal ? AbortSignal.any([input.signal, timeout]) : timeout,
   })
-  const json = cursorArtifactDownloadResponseSchema.parse(
-    await readJsonResponse(response, 'Remote agent artifact download'),
-  )
+  if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
+    await response.body?.cancel()
+    throw new Error('Remote agent artifact download endpoint redirected; refusing to follow it')
+  }
+  if (!response.ok) {
+    await response.body?.cancel()
+    throw new Error(`Remote agent artifact download failed with HTTP ${String(response.status)}`)
+  }
+  const text = await readBoundedText(response, ARTIFACT_METADATA_MAX_BYTES)
+  const json = safeJsonParse(text, decodeWithSchema(cursorArtifactDownloadResponseSchema))
+  if (!json) throw new Error('Remote agent artifact download returned invalid JSON')
   if (!json.url) throw new Error('Remote agent artifact download response did not include a URL')
   return json.url
 }
 
-function imageMimeTypeForPath(path: string): string | null {
-  const lower = path.toLowerCase()
-  if (lower.endsWith('.png')) return 'image/png'
-  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
-  if (lower.endsWith('.gif')) return 'image/gif'
-  if (lower.endsWith('.webp')) return 'image/webp'
-  return null
-}
-
-export async function fetchRemoteArtifactImageDataUrl(input: {
-  fetchImpl?: typeof fetch
-  baseUrl?: string
-  apiKey?: string
-  agentId: string
-  path: string
-}): Promise<string> {
-  const fetchImpl = input.fetchImpl ?? fetch
-  const path = assertArtifactPath(input.path)
-  const cacheKey = artifactCacheKey(input.agentId, path)
-  const cached = artifactImageDataUrlCache.get(cacheKey)
-  if (cached) return cached
-
-  const url = await resolveRemoteArtifactDownloadUrl({ ...input, path, fetchImpl })
-  const response = await fetchImpl(url)
-  if (!response.ok) {
-    const details = await response.text()
-    throw new Error(
-      `Remote agent artifact image fetch failed with HTTP ${String(response.status)}${details ? `: ${details}` : ''}`,
-    )
+/** The configured Cursor API base and key, as artifact access needs them. */
+export function cursorArtifactCredentials(): { baseUrl: string; apiKey: string } {
+  return {
+    baseUrl: readValidatedBaseUrl(REMOTE_AGENT_PROVIDER_CURSOR),
+    apiKey: resolveApiKey(),
   }
-  const contentLength = Number(response.headers.get('content-length') ?? 0)
-  if (contentLength > MAX_REMOTE_ARTIFACT_IMAGE_BYTES) {
-    throw new Error(`Remote agent artifact image is too large (${String(contentLength)} bytes).`)
-  }
-  const mimeType = firstNonEmptyString(
-    response.headers.get('content-type')?.split(';')[0]?.trim(),
-    imageMimeTypeForPath(path),
-  )
-  if (!mimeType?.startsWith('image/')) {
-    throw new Error('Remote agent artifact is not an image.')
-  }
-  const buffer = Buffer.from(await response.arrayBuffer())
-  if (buffer.byteLength > MAX_REMOTE_ARTIFACT_IMAGE_BYTES) {
-    throw new Error(
-      `Remote agent artifact image is too large (${String(buffer.byteLength)} bytes).`,
-    )
-  }
-  const dataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`
-  artifactImageDataUrlCache.set(cacheKey, dataUrl)
-  return dataUrl
 }
 
 function formatBytes(bytes: number | undefined): string {

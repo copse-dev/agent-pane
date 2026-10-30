@@ -1,7 +1,10 @@
 # Sandboxed remote artifact image hydration
 
-Status: proposed design; no download behavior has changed. Tracking:
-[#4005](https://github.com/copse-dev/agent-pane/issues/4005).
+Status: implemented for Cursor. Main no longer fetches image bytes; downloads run in a per-job
+host and an ASRT-confined downloader. Linux containment is demonstrated (see the validation record
+below, with container caveats). macOS native validation and confirmation of Cursor's download
+origin against an authenticated fixture are still open, so containment is not yet claimed on macOS.
+Tracking: [#4005](https://github.com/copse-dev/agent-pane/issues/4005).
 
 ## Outcome
 
@@ -16,7 +19,9 @@ networking and Trusted Types enforcement are separate work. Explicit artifact
 links remain a separate user-initiated feature and must not become an automatic
 fallback for failed hydration.
 
-## Current path and evidence
+## Path before #4005 and evidence
+
+This records the path the design replaced; the validation record below describes what ships.
 
 - `src/renderer/markdown/artifact-image-policy.ts` accepts artifact-shaped raw image
   sources and emits inert placeholders. An apparent URL's hostname is not used to
@@ -301,6 +306,66 @@ Add the smallest focused Electron WebdriverIO spec using real IPC for a successf
 image and an unavailable/retry state, assert relevant DOM behavior, and save a
 screenshot. Follow the screenshot-validation skill when implementing that UI change.
 Use the test oracle and `pnpm run check` before committing implementation.
+
+## Validation record (2026-10-30, #4005)
+
+Where the code lives: `src/main/services/remote/artifact-image/`. `policy.ts` and
+`image-signature.ts` hold the pure checks, `protocol.ts` the bounded frames and the verifier both
+sides run, `egress-proxy.ts` the job proxy, `downloader.ts` the confined client, `host.ts` the
+per-job lifecycle, and `service.ts` authorization, queueing and cache.
+
+**Pinned ASRT (0.0.74) external-proxy wiring.** Setting both `network.httpProxyPort` and
+`network.socksProxyPort` to the job proxy stops ASRT starting its own mux proxy. On Linux it
+bridges both ports into the bwrap network namespace (`localhost:3128` and `:1080`) over Unix
+sockets. With a real bwrap run, the confined child reached only the job proxy, which saw an
+unauthenticated `CONNECT` and refused it. A direct connection to the internet failed with
+`ENETUNREACH`, host loopback was unreachable, and a denied read sentinel was absent.
+
+**Findings that changed the implementation:**
+
+- ASRT creates its Linux bridge sockets in the temp directory, and this profile denies reads of
+  it. Without re-allowing exactly those two socket paths, the in-namespace socat has nothing to
+  connect to and every download fails. `host-entry.ts` re-allows them.
+- ASRT starts the in-namespace socat bridge in the background. A child that connects immediately
+  gets `ECONNREFUSED`, so the downloader retries its proxy connection only, for up to 3 seconds.
+- ASRT's parent-proxy discovery copies the host's `HTTPS_PROXY` into `JAVA_TOOL_OPTIONS`.
+  Main therefore starts the host with an environment built from scratch (`PATH`, `HOME`,
+  `TMPDIR`, `ELECTRON_RUN_AS_NODE`), and the host builds the downloader's from scratch too.
+- Egress-policy tests caught `canonicalDownloadOrigin` accepting `https://*.amazonaws.com`: the
+  URL parser allows `*`, and ASRT honours a wildcard allowlist entry. Origins are now checked
+  against a strict DNS-name pattern.
+- The downloader trusts only the runtime's bundled roots. Behind a TLS-intercepting proxy
+  (enterprise inspection, or this session's egress gateway) hydration fails closed as `tls`.
+  This is the intended behaviour, not a fallback gap.
+
+**End-to-end run.** The production host job, egress proxy, ASRT and the built downloader bundle
+ran under real bwrap against `https://cloud-agent-artifacts.s3.us-east-1.amazonaws.com`. The proxy
+logged `egress allowed` for the S3 host and the tunnel carried the TLS handshake, which failed
+closed as `tls` because the session's gateway re-signs TLS. The run used two container-only
+workarounds that production does not have: socat forced to IPv4 (the kernel has no IPv6 in new
+namespaces) and seccomp's Unix-socket filter off (`apply-seccomp` cannot create a nested user
+namespace there; the repo's own real-sandbox tests fail the same way on that host).
+
+**Provider origin.** `CURSOR_ARTIFACT_DOWNLOAD_ORIGINS` holds one exact origin,
+`https://cloud-agent-artifacts.s3.us-east-1.amazonaws.com`. A third-party report of Cursor's
+presigned artifact URLs names it, and so does the repository's existing test fixture. Cursor's
+own documentation could not be read from the implementing session. Confirm the origin and any
+redirect pattern with an authenticated fixture. A different real origin fails closed as
+`origin-denied` naming that origin; the fix is to correct the list, never to widen it.
+
+**Not yet done from this design:**
+
+- macOS native containment tests (seatbelt with an external proxy, no bypass, sentinel reads).
+- An abrupt parent-death and orphan test on a real process tree. Unit tests cover cancellation
+  and the host deadline. The host cancels when stdin closes, and the downloader stays in the
+  host's process group, which main signals as a whole.
+- Renderer subscriptions that cancel a shared job when the last viewer leaves. Jobs are instead
+  bounded by the queue, deduplication and deadlines.
+- A trusted provenance migration for old threads without `remoteAgentLink`. Their images fail
+  closed as `unlinked-agent`. The thread store keeps one current link per thread, so an image
+  from an earlier, replaced agent link is also refused.
+- Download-origin configuration for custom providers. Only Cursor links hydrate; other providers
+  answer `unsupported-provider`.
 
 ## Remaining implementation gates and tradeoffs
 

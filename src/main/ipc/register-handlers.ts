@@ -467,7 +467,6 @@ import {
   type ResolvedModelCard,
 } from '../services/providers/model-card-resolver.ts'
 import {
-  fetchRemoteArtifactImageDataUrl,
   refreshImportedCursorAgentThread,
   resolveRemoteArtifactDownloadUrl,
 } from '../services/remote/remote-agent-client.ts'
@@ -477,6 +476,8 @@ import {
 } from '../services/remote/cursor-cloud-models.ts'
 import { createBestEffortExternalCursorAgentDiscovery } from '../services/remote/cursor-agent-discovery.ts'
 import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-link-store.ts'
+import { artifactImageService } from '../services/remote/artifact-image/default-service.ts'
+import { zArtifactImageRequest } from '../services/remote/artifact-image/service.ts'
 import { prRefSchema } from '@shared/git/thread-pr-relations.ts'
 import {
   lookupPrThreadRelationships,
@@ -3370,15 +3371,12 @@ export function registerAllHandlers(
       return resolveRemoteArtifactDownloadUrl({ agentId: parsedAgentId, path: parsedPath })
     },
   )
-  ipcMain.handle(
-    'remote-agent:artifact-image-data-url',
-    async (event, agentId: unknown, path: unknown) => {
-      assertMainFrameSender(event, win)
-      const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
-      const parsedPath = parseIpcArgs(z.string().min(1).max(4096), [path])
-      return fetchRemoteArtifactImageDataUrl({ agentId: parsedAgentId, path: parsedPath })
-    },
-  )
+  // Automatic artifact-image hydration: authorized against the thread's durable
+  // remote-agent link and downloaded by a confined host, never by main.
+  ipcMain.handle('remote-agent:artifact-image-data-url', (event, request: unknown) => {
+    assertMainFrameSender(event, win)
+    return artifactImageService().load(parseIpcArgs(zArtifactImageRequest, [request]))
+  })
   ipcMain.handle('remote-agent:models', (event) => {
     assertMainFrameSender(event, win)
     return listCursorCloudModels()

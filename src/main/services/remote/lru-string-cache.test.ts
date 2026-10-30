@@ -67,4 +67,14 @@ describe('LruStringCache', () => {
     assert.throws(() => new LruStringCache(0, 10))
     assert.throws(() => new LruStringCache(10, 0))
   })
+
+  it('clears every entry and its byte accounting', () => {
+    const cache = new LruStringCache(10, 100)
+    cache.set('a', 'aaa')
+    cache.set('b', 'bb')
+    cache.clear()
+    assert.equal(cache.size, 0)
+    assert.equal(cache.bytes, 0)
+    assert.equal(cache.get('a'), undefined)
+  })
 })

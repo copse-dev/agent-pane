@@ -1,5 +1,9 @@
 import type { SettingsSnapshot, SettingsUpdate } from '@shared/settings-contract.ts'
 import type {
+  RemoteArtifactImageRequest,
+  RemoteArtifactImageResult,
+} from '@shared/remote-artifact-image.ts'
+import type {
   AppRunOwner,
   AppRunSelection,
   AppRunAction,
@@ -936,7 +940,10 @@ export interface ApiClient {
   remoteAgent: {
     /** Returns a remote URL, or an empty string when a native Save dialog handled the download. */
     downloadArtifact: (agentId: string, path: string) => Promise<string>
-    artifactImageDataUrl: (agentId: string, path: string) => Promise<string>
+    /** Hydrate one artifact image for the thread on screen; see sandboxed-artifact-image-downloads.md. */
+    artifactImageDataUrl: (
+      request: RemoteArtifactImageRequest,
+    ) => Promise<RemoteArtifactImageResult>
     /** Live Cursor Cloud Agent models from `GET /v1/models` (empty without a key). */
     models: () => Promise<Array<{ id: string; label: string }>>
     /**
