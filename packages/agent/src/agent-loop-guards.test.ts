@@ -36,6 +36,13 @@ describe('DUPLICATE_GUARDED_TOOL_NAMES', () => {
   })
 })
 
+describe('read_explored in the loop guards (#1433 Fix 0b)', () => {
+  it('counts as an exact read: duplicate-guarded, and it ends an explore-without-read streak', () => {
+    assert.equal(DUPLICATE_GUARDED_TOOL_NAMES.has('read_explored'), true)
+    assert.equal(nextConsecutiveExploreWithoutRead(3, 'read_explored'), 0)
+  })
+})
+
 describe('SUBAGENT_ALLOWED_TOOL_NAMES', () => {
   // The two sets were both named EXPLORE_TOOL_NAMES (#1433). "Add explore to
   // EXPLORE_TOOL_NAMES" applied to the allow-list would have granted the
