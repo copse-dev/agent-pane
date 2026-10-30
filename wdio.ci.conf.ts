@@ -9,7 +9,6 @@ import { config as baseConfig } from './wdio.conf.ts'
  */
 const ciExclude = [
   './tests/e2e/agent-eval-drive.e2e.ts',
-  './tests/e2e/follow-up-suggestions.e2e.ts',
   // Queued-message timing (mock delays, scroll pinning) that's flaky on the CI
   // runner. The basic-queue, send-now, and edit specs in this family migrated to
   // happy-dom component tests (src/renderer/views/{message-queue,queued-send-now,
