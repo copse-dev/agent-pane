@@ -23,6 +23,22 @@ export function getAgentProjectRoot(): string | null {
   return getThreadExecutionContext()?.projectRoot ?? getWorkspaceRoot()
 }
 
+/**
+ * The two roots a permission decision is judged against: the persisted project
+ * (trust and repo-supplied config) and the checkout commands run in. Security
+ * readers take these explicitly so two runs in different projects or worktrees
+ * cannot read each other's roots (#3958).
+ */
+export interface AgentRoots {
+  readonly projectRoot: string | null
+  readonly executionRoot: string | null
+}
+
+/** The current agent run's {@link AgentRoots}, resolved the same way as the getters above. */
+export function currentAgentRoots(): AgentRoots {
+  return { projectRoot: getAgentProjectRoot(), executionRoot: getAgentExecutionRoot() }
+}
+
 export function requireAgentExecutionRoot(): string {
   const root = getAgentExecutionRoot()
   if (!root) throw new Error('No workspace open. Use Open Folder first.')
