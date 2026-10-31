@@ -1,7 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { RequestPermissionRequest, ToolKind } from '@agentclientprotocol/sdk/unstable'
-import { permissionKindLabel, presentPermissionRequest } from './acp-approval-presentation.ts'
+import {
+  acpShellCommandText,
+  permissionKindLabel,
+  presentPermissionRequest,
+} from './acp-approval-presentation.ts'
 
 function permissionRequest(
   toolCall: Partial<RequestPermissionRequest['toolCall']>,
@@ -240,5 +244,45 @@ describe('permissionKindLabel', () => {
 
   it('quotes unknown kinds instead of guessing', () => {
     assert.equal(permissionKindLabel('think'), '"think" tool calls')
+  })
+})
+
+describe('acpShellCommandText', () => {
+  const command = (toolCall: Partial<RequestPermissionRequest['toolCall']>): string | null =>
+    acpShellCommandText(permissionRequest(toolCall).toolCall)
+
+  it('reads an execute command from rawInput, falling back to the title', () => {
+    assert.equal(
+      command({ kind: 'execute', rawInput: { command: 'rm -rf build' } }),
+      'rm -rf build',
+    )
+    assert.equal(
+      command({ kind: 'execute', rawInput: { command: ['git', 'status'] } }),
+      'git status',
+    )
+    assert.equal(command({ kind: 'execute', title: '`git status`' }), 'git status')
+    assert.equal(command({ kind: 'execute' }), null)
+  })
+
+  it('counts an unclassified request as a command only when rawInput carries one', () => {
+    for (const kind of [undefined, 'other'] as const) {
+      const kindField = kind ? { kind } : {}
+      assert.equal(command({ ...kindField, rawInput: { command: 'rm -rf build' } }), 'rm -rf build')
+      // The title of an unclassified call is a label (an MCP tool name, "Delete
+      // everything"), not a command line, so it alone does not make a command.
+      assert.equal(command({ ...kindField, title: 'rm -rf build' }), null)
+      assert.equal(
+        command({ ...kindField, title: 'Delete everything', rawInput: { path: '/' } }),
+        null,
+      )
+      assert.equal(command({ ...kindField, rawInput: { command: null } }), null)
+    }
+  })
+
+  it('leaves kinds the agent classified itself to their own handling', () => {
+    const kinds: ToolKind[] = ['read', 'edit', 'delete', 'move', 'search', 'think', 'fetch']
+    for (const kind of kinds) {
+      assert.equal(command({ kind, rawInput: { command: 'str_replace' } }), null, kind)
+    }
   })
 })

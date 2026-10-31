@@ -33,7 +33,10 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
     open folder).
   - **`fs/write_text_file`** → the **diff-approval queue**. The agent's write is
     shown to you as a diff and is **blocked until you approve or reject it**.
-  - **`session/request_permission`** → the normal approval dialog.
+  - **`session/request_permission`** → Copse's shell gate when the request
+    runs a command (an `execute` request, or one with no kind or `other` that
+    carries `rawInput.command`), otherwise the normal approval dialog. See
+    [ACP permission requests](shell-permissions.md#acp-permission-requests).
 - Your configured **MCP servers** (stdio, plus http when the agent supports it)
   are handed to the agent via `session/new`, so it can mount them itself. The
   same trust and enable gating applies as for Copse's own connections.
@@ -111,8 +114,10 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
 > capability, but every agent keeps its own shell tool — a `sed -i` or
 > `echo >` from the agent's shell lands on disk directly, gated only by
 > `session/request_permission`, which Copse routes through its shell gate.
-> Execute requests are never remembered: the generic prompt offers no
-> "Always allow … execute", and grants stored by earlier versions are ignored.
+> A request that runs a command, whether marked `execute` or sent with no kind
+> but a `rawInput.command`, is never remembered: no "Always allow" grant
+> answers it, and execute grants stored by earlier versions are ignored. A
+> one-shot approval never selects the agent's own `allow_always` either.
 > Containment and detection of such writes are tracked in #590 and #591.
 
 ## Configure an agent
