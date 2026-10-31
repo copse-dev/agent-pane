@@ -4231,8 +4231,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const m = thread.messages[i]
       if (m) prependMessageEl(thread.id, m.id, anchor)
     }
-    const delta = list.scrollHeight - heightBefore
-    if (delta !== 0) setScrollTopProgrammatically(scrollTopBefore + delta)
     // Older messages can start new model segments; appendMessageEl only syncs
     // labels for the window it saw, so a chunk further back needs its own pass.
     syncModelLabels()
@@ -4244,6 +4242,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     syncUserActions()
     // A chunk can hold resources that the replies already on screen cite.
     syncAcpResourceReferences(list, api, store)
+    // Footers and labels contribute height too. Finish the whole chunk before
+    // measuring its growth; the deferred footer observer would otherwise move
+    // the transcript after we had already compensated for the insertion.
+    syncConciseTurnFooters()
+    const delta = list.scrollHeight - heightBefore
+    if (delta !== 0) setScrollTopProgrammatically(scrollTopBefore + delta)
     updateScrollButton()
     if (chunkStart > 0) {
       requestAnimationFrame(() => {
@@ -4324,6 +4328,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     syncUserActions()
     syncAcpResourceReferences(list, api, store)
     finishThreadChrome(thread)
+    // Include Show steps in the initial geometry, before the observer's later
+    // microtask can add height below the position we just scrolled to.
+    syncConciseTurnFooters()
     refreshStickyImagePrompt()
     if (preservedScrollTop === null) {
       scrollToBottom(true)

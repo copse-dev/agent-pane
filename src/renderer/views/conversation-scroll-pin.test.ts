@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import {
   addMessage,
+  addToolCall,
   createThread,
   setThreadStatus,
   switchThread,
@@ -45,6 +46,7 @@ function installGeometry(list: HTMLElement): { setExtra: (px: number) => void; m
   const contentHeight = (): number =>
     list.querySelectorAll(':scope > .msg-user, :scope > .msg-assistant').length * ROW_HEIGHT +
     (list.querySelector(':scope > .agent-activity:not([hidden])') ? 32 : 0) +
+    list.querySelectorAll(':scope > .concise-turn-footer').length * 28 +
     extra
   const max = (): number => Math.max(0, contentHeight() - CLIENT_HEIGHT)
   Object.defineProperties(list, {
@@ -95,6 +97,56 @@ function mountAtBottom(): {
 }
 
 describe('transcript bottom pinning', () => {
+  for (const turns of [12, 45]) {
+    it(`includes concise footers when opening a ${String(turns)}-turn thread`, async () => {
+      const store = createStore({ conciseThreadsEnabled: true })
+      const threadId = createThread(store)
+      for (let i = 0; i < turns; i++) {
+        addMessage(store, threadId, 'user', `Review step ${String(i)}`)
+        const reply = addMessage(
+          store,
+          threadId,
+          'assistant',
+          'Review complete.',
+          undefined,
+          undefined,
+          {
+            model: 'claude-opus-5-5',
+          },
+        )
+        addToolCall(store, reply, {
+          id: `read-${String(i)}`,
+          name: 'read_file',
+          args: { path: 'form.ts' },
+          status: 'done',
+          result: '',
+        })
+      }
+      const other = createThread(store)
+      const host = document.createElement('div')
+      document.body.append(host)
+      const unmount = mountConversation(host, store, fakeApi())
+      const list = host.querySelector<HTMLElement>('.messages-list')
+      assert.ok(list)
+      const geometry = installGeometry(list)
+      try {
+        for (let visit = 0; visit < 2; visit++) {
+          switchThread(store, threadId)
+          await new Promise((resolve) => setTimeout(resolve, 0))
+          assert.equal(list.querySelectorAll('.concise-turn-footer').length, turns)
+          assert.equal(
+            list.scrollTop,
+            geometry.max(),
+            'footers must not push the bottom out of view',
+          )
+          switchThread(store, other)
+        }
+      } finally {
+        unmount()
+      }
+    })
+  }
+
   it('retains compact previews through an upward reading-anchor correction', () => {
     const store = createStore({ conciseThreadsEnabled: false })
     const threadId = createThread(store)
