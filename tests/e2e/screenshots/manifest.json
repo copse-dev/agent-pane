@@ -5433,6 +5433,10 @@
       "sha256": "825dff3e811a39fef409a8e5a0da056a655301020ef81305fa4f825bfbb05613",
       "bytes": 15009
     },
+    "tool-disclosure-absorbed-closed.png": {
+      "sha256": "0e505b363107741e8d242db32b32c418439c48e63ec012e2662566bad8871715",
+      "bytes": 11987
+    },
     "tool-disclosure-user-choices.png": {
       "sha256": "b0cf1623dc2aa533e9cc7346c2e955de02e633834378e93c1caa889e38fc5dcf",
       "bytes": 14239
