@@ -124,7 +124,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/settings-automations.e2e.ts': {
-    sourceSha256: 'b8d08f4b6a5b11b91ed6573bb3e5271459a916a8a67a8d4ba4dc8355bab724b7',
+    sourceSha256: '3ec27a15e96dc3331d83f3bfa8bf4193279d3a63c3f9d91b37d512b1bfc0615e',
     filenames: ['settings-automation-form-page-2.png', 'settings-automation-form.png'],
   },
   'tests/e2e/settings-classifiers-install.e2e.ts': {
