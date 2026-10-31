@@ -8,6 +8,7 @@ import { restoreArchivedThread } from './thread-archive.ts'
 import {
   __resetPersistenceForTest,
   attachAutosave,
+  flushProjectThreads,
   invalidateProjectThreadLoads,
   loadThreads,
 } from './persistence.ts'
@@ -132,4 +133,53 @@ it('a rejected Restore leaves the archive and current selection unchanged', asyn
   await assert.rejects(restoreArchivedThread(store, api, 'project', original.id), /busy or changed/)
   assert.equal(store.getState().activeThreadId, 'current')
   assert.equal(store.getState().threads[0]?.archivedAt, 10)
+})
+
+it('a delayed restore read preserves newer acknowledged metadata and its loaded transcript', async () => {
+  const original = thread()
+  let delayed = false
+  let reads = 0
+  let releaseRead: (value: Thread[]) => void = () => undefined
+  let updates = 0
+  const api = createFakeApi()
+  api.threads.loadProject = async (): Promise<Thread[]> => {
+    reads += 1
+    if (!delayed) return [original]
+    return new Promise<Thread[]>((resolve) => {
+      releaseRead = resolve
+    })
+  }
+  api.threads.archiveDecision = async (): Promise<boolean> => true
+  api.threads.updateMeta = async (): Promise<void> => {
+    updates += 1
+  }
+  const seeded = await loadThreads(api, 'project')
+  const store = createStore({
+    activeProjectId: 'project',
+    expandedProjectId: 'project',
+    threads: seeded,
+  })
+  delayed = true
+  const restoring = restoreArchivedThread(store, api, 'project', original.id)
+  await Promise.resolve()
+  assert.equal(reads, 2)
+  const newer = {
+    ...original,
+    title: 'New acknowledged title',
+    updatedAt: 20,
+    lastSettledAt: 10,
+  }
+  delete newer.archivedAt
+  store.setState({ threads: [newer] })
+  await flushProjectThreads(api, 'project', [newer])
+  const stale = { ...original, updatedAt: 20, messages: [], messagesLoaded: false }
+  delete stale.archivedAt
+  releaseRead([stale])
+  await restoring
+  assert.equal(store.getState().threads[0]?.title, newer.title)
+  assert.equal(store.getState().threads[0]?.archivedAt, undefined)
+  assert.deepEqual(store.getState().threads[0]?.messages, original.messages)
+  assert.equal(updates, 1)
+  await flushProjectThreads(api, 'project', store.getState().threads)
+  assert.equal(updates, 1, 'the stale restore response did not replace the newer baseline')
 })
