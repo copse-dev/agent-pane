@@ -46,6 +46,29 @@
 .ask-user-action {
   padding: 8px 16px;
 }
+/* A single question's quick answers: one per row, picking one sends it. */
+.ask-user-options-stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+.ask-user-options-stacked .ask-user-option {
+  padding: var(--spacing-sm) var(--spacing-lg);
+  text-align: left;
+}
+.ask-user-other {
+  align-self: flex-start;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.ask-user-other:hover {
+  color: var(--text-primary);
+}
 .ask-user-recommended-label {
   margin-left: var(--spacing-sm);
   color: var(--accent);

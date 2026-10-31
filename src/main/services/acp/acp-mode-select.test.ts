@@ -6,7 +6,7 @@ import {
   PROTOCOL_VERSION,
   type AgentApp,
   type SessionModeState,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import type { AcpTransportFactory } from './acp-client.ts'
 import { modeSelectorFrom, openAcpSession } from './acp-client.ts'
 

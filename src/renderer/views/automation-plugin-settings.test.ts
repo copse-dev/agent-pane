@@ -154,6 +154,59 @@ function stubApi(
 }
 
 describe('automation plugin settings detail', () => {
+  for (const [cron, repeat, limit] of [
+    ['* * * * *', 'minute', 10],
+    ['15 * * * *', 'hourly', 'unlimited'],
+  ] as const) {
+    it(`round-trips a ${repeat} schedule and its worktree setting`, async () => {
+      const schedule: AutomationSchedule = {
+        id: 'schedule-a',
+        projectId: 'project-a',
+        name: 'Frequent review',
+        cron,
+        prompt: 'Review changes.',
+        model: 'gpt-5.4',
+        enabled: true,
+        maxLiveWorktrees: limit,
+        createdAt: 1,
+        updatedAt: 1,
+      }
+      const { api, upserts } = stubApi([schedule])
+      const store = createStore({
+        activeProjectId: 'project-a',
+        projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+      })
+      const root = createAutomationPluginSettings(store, api, true)
+      document.body.append(root)
+      await tick()
+      root.querySelector<HTMLButtonElement>('.automation-row-btn')?.click()
+      await tick()
+      assert.equal(
+        root.querySelector<HTMLSelectElement>('.automation-repeat-select')?.value,
+        repeat,
+      )
+      assert.equal(
+        root.querySelector<HTMLSelectElement>('.automation-worktree-limit-select')?.value,
+        String(limit),
+      )
+      assert.equal(root.querySelector<HTMLInputElement>('.automation-time-input')?.disabled, true)
+      if (repeat === 'hourly') {
+        assert.equal(
+          root.querySelector<HTMLInputElement>('.automation-hourly-minute-input')?.value,
+          '15',
+        )
+      }
+      root
+        .querySelector<HTMLFormElement>('.automation-form')
+        ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await tick()
+      const saved = upserts[0]
+      assert.ok(saved)
+      assert.equal(saved.input.cron, cron)
+      assert.equal(saved.input.maxLiveWorktrees, limit)
+    })
+  }
+
   beforeEach(() => {
     document.body.innerHTML = ''
   })

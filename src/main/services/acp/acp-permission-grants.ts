@@ -16,8 +16,19 @@ import { parseStringList } from '../storage/storage-schema.ts'
  * another, since each host is its own trust boundary with its own credentials.
  * Remote grants carry an `@remote/<host id>` suffix on the agent id; local keys
  * keep their original form so existing grants hold.
+ *
+ * `execute` is never a grant. A kind-wide execute grant would approve every
+ * later command before Copse's shell gate classifies, sandboxes or confirms
+ * it, so execute grants are neither stored nor honoured — including ones
+ * stored by earlier versions, which the next write prunes.
  */
 const GRANTS_STORAGE_KEY = 'acp-remembered-grants'
+
+const UNGRANTABLE_KIND = 'execute'
+
+function isUngrantableKey(key: string): boolean {
+  return key.endsWith(`:${UNGRANTABLE_KIND}`)
+}
 
 /** Where the agent that asked for the permission runs. */
 export type AcpGrantLocation = { kind: 'local' } | { kind: 'remote'; hostId: string }
@@ -53,6 +64,7 @@ export function isAcpPermissionRemembered(
   kind: string,
   location: AcpGrantLocation = LOCAL,
 ): boolean {
+  if (kind === UNGRANTABLE_KIND) return false
   const stored = parseStringList(storageGet(GRANTS_STORAGE_KEY))
   return grantKeys(agentId, kind, location).some((key) => stored.includes(key))
 }
@@ -66,8 +78,9 @@ export function rememberAcpPermission(
   kind: string,
   location: AcpGrantLocation = LOCAL,
 ): Promise<void> {
+  if (kind === UNGRANTABLE_KIND) return Promise.resolve()
   return storageUpdate(GRANTS_STORAGE_KEY, (raw) => {
-    const list = parseStringList(raw)
+    const list = parseStringList(raw).filter((stored) => !isUngrantableKey(stored))
     const key = grantKey(agentId, kind, location)
     return list.includes(key) ? list : [...list, key]
   })

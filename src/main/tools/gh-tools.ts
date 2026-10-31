@@ -7,13 +7,28 @@ import {
   getGhRunListText,
   getGhRunLogText,
   runGh,
+  type GhToolContext,
 } from '../services/github/gh-service.ts'
+import { getAgentExecutionRoot } from '../services/execution-root.ts'
+import { getThreadExecutionContext } from '../services/thread-execution-context.ts'
 import {
   GH_API_READ_MAX_OUTPUT_BYTES,
   GH_API_READ_MAX_PAGES,
   parseGhApiReadArgs,
   runGhApiRead,
 } from '../services/github/gh-api-read.ts'
+
+/**
+ * The running turn's checkout and project, passed explicitly so a `gh_*` call
+ * never reads the window's active project (#3958). Outside a turn there is no
+ * project, so PR provenance reports itself unavailable.
+ */
+function ghToolContext(): GhToolContext {
+  return {
+    root: getAgentExecutionRoot(),
+    projectId: getThreadExecutionContext()?.projectId ?? null,
+  }
+}
 
 export const ghPrListTool = defineTool({
   name: 'gh_pr_list',
@@ -42,7 +57,7 @@ export const ghPrListTool = defineTool({
     details: z.boolean().optional().default(false).describe('Include PR review and merge details.'),
   }),
   execute: async ({ state, limit, head, repo, details }) =>
-    getGhPrListText({ state, limit, head, repo, details }),
+    getGhPrListText({ state, limit, head, repo, details }, ghToolContext()),
 })
 
 export const ghPrViewTool = defineTool({
@@ -64,7 +79,7 @@ export const ghPrViewTool = defineTool({
       .describe('Include CI/check status in the response.'),
   }),
   execute: async ({ number, include_checks }) =>
-    getGhPrViewText({ number, includeChecks: include_checks }),
+    getGhPrViewText({ number, includeChecks: include_checks }, ghToolContext()),
 })
 
 export const ghPrFilesTool = defineTool({
@@ -80,7 +95,7 @@ export const ghPrFilesTool = defineTool({
       .optional()
       .describe('Pull request number. Omit to use the open PR for the checked-out branch.'),
   }),
-  execute: async ({ number }) => getGhPrFilesText({ number }),
+  execute: async ({ number }) => getGhPrFilesText({ number }, ghToolContext()),
 })
 
 export const ghRunListTool = defineTool({
@@ -108,7 +123,7 @@ export const ghRunListTool = defineTool({
       .describe('Only return runs that failed (failure, error, or timed out).'),
   }),
   execute: async ({ branch, limit, failed_only }) =>
-    getGhRunListText({ branch, limit, failedOnly: failed_only }),
+    getGhRunListText({ branch, limit, failedOnly: failed_only }, ghToolContext()),
 })
 
 export const ghRunViewTool = defineTool({
@@ -125,7 +140,7 @@ export const ghRunViewTool = defineTool({
       .describe('Return only the logs of failed steps. Set false for the full run log.'),
   }),
   execute: async ({ run_id, failed_only }) =>
-    getGhRunLogText({ runId: run_id, failedOnly: failed_only }),
+    getGhRunLogText({ runId: run_id, failedOnly: failed_only }, ghToolContext()),
 })
 
 export const ghApiReadTool = defineTool({
@@ -164,6 +179,11 @@ export const ghApiReadTool = defineTool({
   execute: async (args, signal) => {
     const input = parseGhApiReadArgs(args)
     if (!input.ok) return `gh_api_read refused: ${input.error}`
-    return runGhApiRead(input.value, runGh, signal)
+    const { root } = ghToolContext()
+    return runGhApiRead(
+      input.value,
+      (ghArgs, opts) => runGh(ghArgs, { ...opts, cwd: root }),
+      signal,
+    )
   },
 })

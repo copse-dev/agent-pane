@@ -19,8 +19,6 @@ import { showErrorToast, showToast } from './toast.ts'
 /** Open the changeset reviewer pane (mirrors the diff-conflict banner path). */
 function openChangesReviewer(store: AppStore): void {
   store.setState({ rightPanelMode: 'changes', filesPaneOpen: true })
-  store.emit('right_panel_mode_changed')
-  store.emit('files_pane_changed')
 }
 
 /**

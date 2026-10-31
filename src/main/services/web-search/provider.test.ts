@@ -1,15 +1,18 @@
 import assert from 'node:assert/strict'
 import { afterEach, describe, it, mock } from 'node:test'
 import { safeJsonParse } from '@shared/safe-json.ts'
-import { setSetting, setApiKey, deleteApiKey } from '../storage/settings.test-shim.ts'
+import { setSetting, setApiKey, deleteApiKey } from '../storage/settings.ts'
 import { clearWebOriginGrant, grantWebOriginForNextFetch } from '../security/web-origin-policy.ts'
 import { webSearch } from './provider.ts'
+import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+
+installInMemorySecretCipher()
 
 describe('configured web search', () => {
-  afterEach(() => {
+  afterEach(async () => {
     mock.restoreAll()
-    setSetting('webSearchProvider', 'none')
-    setSetting('webAllowedOrigins', [])
+    await setSetting('webSearchProvider', 'none')
+    await setSetting('webAllowedOrigins', [])
     deleteApiKey('tavily')
     deleteApiKey('parallel')
     clearWebOriginGrant('https://api.tavily.com:443')
@@ -17,14 +20,14 @@ describe('configured web search', () => {
   })
 
   it('requires setup without contacting a free scraping fallback', async () => {
-    setSetting('webSearchProvider', 'none')
+    await setSetting('webSearchProvider', 'none')
     const fetch = mock.method(globalThis, 'fetch', async () => Response.json({}))
     await assert.rejects(webSearch('docs'), /Settings → Web search/)
     assert.equal(fetch.mock.callCount(), 0)
   })
 
   it('routes to Tavily only and consumes the approved origin grant', async () => {
-    setSetting('webSearchProvider', 'tavily')
+    await setSetting('webSearchProvider', 'tavily')
     setApiKey('tavily', 'tavily-test-key')
     grantWebOriginForNextFetch('https://api.tavily.com:443')
     const fetch = mock.method(globalThis, 'fetch', async (url: unknown) => {
@@ -41,9 +44,9 @@ describe('configured web search', () => {
   })
 
   it('routes Parallel through the same result contract', async () => {
-    setSetting('webSearchProvider', 'parallel')
+    await setSetting('webSearchProvider', 'parallel')
     setApiKey('parallel', 'parallel-test-key')
-    setSetting('webAllowedOrigins', ['https://api.parallel.ai'])
+    await setSetting('webAllowedOrigins', ['https://api.parallel.ai'])
     mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
       assert.equal(url, 'https://api.parallel.ai/v1/search')
       assert.deepEqual(typeof init?.body === 'string' ? safeJsonParse(init.body) : null, {
@@ -61,10 +64,10 @@ describe('configured web search', () => {
   })
 
   it('does not try another provider when the selected provider fails', async () => {
-    setSetting('webSearchProvider', 'tavily')
+    await setSetting('webSearchProvider', 'tavily')
     setApiKey('tavily', 'key')
     setApiKey('parallel', 'other-key')
-    setSetting('webAllowedOrigins', ['https://api.tavily.com'])
+    await setSetting('webAllowedOrigins', ['https://api.tavily.com'])
     const fetch = mock.method(globalThis, 'fetch', async () => new Response(null, { status: 429 }))
     await assert.rejects(webSearch('docs'), /rate limit/)
     assert.equal(fetch.mock.callCount(), 1)

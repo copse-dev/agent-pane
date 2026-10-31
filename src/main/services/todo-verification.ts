@@ -2,7 +2,7 @@ import { errorMessage } from '@shared/errors.ts'
 import { access } from 'node:fs/promises'
 import type { TodoCheck } from '@shared/types/todo.ts'
 import { runCommand } from './exec/command-runner.ts'
-import { getAgentExecutionRoot } from './execution-root.ts'
+import { currentAgentRoots, getAgentExecutionRoot } from './execution-root.ts'
 import { ensureShellCommandPermitted } from './security/permission-gate.ts'
 import { shellRunsOutsideSandbox } from './security/command-routing-config.ts'
 import { resolvePathWithinRoot } from './workspace.ts'
@@ -65,7 +65,7 @@ export async function verifyTodoCheck(
       const parts = check.command.trim().split(/\s+/)
       const [cmd, ...args] = parts
       if (!cmd) return { passed: false, detail: 'empty shell command' }
-      const unsandboxed = shellRunsOutsideSandbox(check.command)
+      const unsandboxed = shellRunsOutsideSandbox(check.command, currentAgentRoots())
       const r = await runCommand(cmd, args, {
         cwd: root,
         signal,
