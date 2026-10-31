@@ -784,6 +784,15 @@ Later project-sandbox shell commands receive read-only cache access and matching
 cache variables without changing their install policy. Offline preparation blocks network for every
 subprocess using kernel isolation with no proxy ports or sockets; other agents' network grants
 cannot widen this boundary. Missing runtime versions or offline inputs fail with remediation.
+Node preparation resolves PATH directory aliases and grants the canonical executable files and recognized
+npm/Corepack/package-manager implementation trees. When the command is a Volta, asdf, or mise shim
+in that manager's own shim directory, it also grants the manager's shim and install subtrees
+(Volta `bin` and `tools`; asdf `shims`, `installs`, `plugins`, `bin`, and `lib`; mise `shims`,
+`installs`, and `plugins`), read-only, since the shim runs an install it cannot otherwise reach. It
+does not grant a whole fnm registry, installation parent, manager data root, or home directory.
+bubblewrap bind-mounts a granted file through its symlink, which turns fnm's `bin/npm` into a copy
+whose relative requires break, so on Linux the contained process finds these commands first through
+private symlinks in its scratch directory that point at the canonical executables.
 Runtime installation/version switching and Windows sandbox support remain separate capabilities.
 
 ## Guarded YOLO
