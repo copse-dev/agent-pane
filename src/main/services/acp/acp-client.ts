@@ -26,6 +26,10 @@ import {
   type WriteTextFileResponse,
 } from '@agentclientprotocol/sdk'
 import { spawn, type ChildProcess } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, symlinkSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { nodeWritableStream } from './node-byte-streams.ts'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import type { StreamChunk } from '@shared/types'
@@ -39,7 +43,7 @@ import type {
   AcpModelChoice,
   AcpModelSelector,
 } from '@shared/types/acp.ts'
-import { acpConfigCategory, acpConfigCategoryLabel } from '@shared/acp.ts'
+import { acpConfigCategory, acpConfigCategoryLabel, isClaudeAcpAgent } from '@shared/acp.ts'
 import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
@@ -67,6 +71,7 @@ import {
   type AcpSessionCarryOver,
 } from './acp-session-reattach.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
+import { getElectronUserDataPath } from '../electron-app-runtime.ts'
 import { acpAgentSandboxOverlay, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
 import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
 import {
@@ -408,6 +413,38 @@ async function applyConfigOptions(
 }
 
 /**
+ * Where a Claude ACP agent's config/credentials/skills live for one workspace
+ * root, instead of the real `~/.claude`. Keyed by `cwd` (stable per project
+ * checkout/worktree) rather than thread or project id, neither of which
+ * `AcpAgentSpawnConfig` carries.
+ */
+function defaultClaudeAcpConfigDir(cwd: string): string {
+  const key = createHash('sha256').update(cwd).digest('hex').slice(0, 16)
+  return join(getElectronUserDataPath(), 'acp-claude-config', key)
+}
+
+/**
+ * On Linux/Windows `claude`'s login lives in `<config dir>/.credentials.json`
+ * — there is no Keychain to fall back to — so pointing `CLAUDE_CONFIG_DIR`
+ * somewhere new would otherwise sign every thread out. Best-effort link the
+ * real file in; a missing source (never logged in) or an existing link/file
+ * is left alone rather than failing the turn.
+ */
+function linkClaudeAcpCredentials(configDir: string): void {
+  if (process.platform === 'darwin') return
+  const source = join(homedir(), '.claude', '.credentials.json')
+  const target = join(configDir, '.credentials.json')
+  if (existsSync(target) || !existsSync(source)) return
+  try {
+    symlinkSync(source, target)
+  } catch {
+    // Best-effort: a stale/broken existing entry or a permissions quirk here
+    // should not block the turn, which still works against the user's real
+    // ~/.claude the same way it did before this default existed.
+  }
+}
+
+/**
  * Build the env for the spawned ACP agent. The base is scrubbed of LLM/provider
  * secrets via {@link envForRendererChildProcess} (an external agent runs its own
  * model loop and must not inherit Copse's cloud API keys); `config.env` is the
@@ -418,6 +455,44 @@ export function buildAcpAgentEnv(
   baseEnv: NodeJS.ProcessEnv = process.env,
 ): Record<string, string> {
   return { ...envForRendererChildProcess(baseEnv), ...(config.env ?? {}) }
+}
+
+/**
+ * Default `CLAUDE_CONFIG_DIR` override for actually spawning the Claude ACP
+ * agent process — a coding-thread turn or a models/modes probe (both go
+ * through {@link spawnAcpAgentProcess}) — so it never inherits the user's real
+ * `~/.claude`: its personal synced skills, plugins, and MCP servers have no
+ * business loading into a project thread. Deliberately NOT folded into
+ * {@link buildAcpAgentEnv}: that helper also backs the Settings auth-status
+ * check (`acp-auth-status.ts`), which runs the real `claude` CLI and must keep
+ * reading the user's actual login state, not a fresh empty directory.
+ *
+ * `undefined` when `config.env` already sets the var explicitly (Settings →
+ * Coding agents), the agent isn't a Claude ACP agent, the spawn is sandboxed
+ * (the seatbelt only grants the literal `~/.claude*` paths in the agent's
+ * {@link AcpAgentSandboxConfig.homeDirs} allowlist, not an arbitrary scoped
+ * directory — until that allowlist itself is updated to match, sandboxed spawns
+ * keep the previous, unscoped behavior), or resolving/creating the directory
+ * failed — all best-effort, since none of that should fail the turn.
+ */
+export function claudeAcpConfigDirOverride(
+  config: AcpAgentSpawnConfig,
+  env: Readonly<Record<string, string>>,
+): Record<string, string> | undefined {
+  if (env['CLAUDE_CONFIG_DIR'] || willSandboxAcpAgent(config.sandbox)) return undefined
+  const identity = config.args
+    ? { command: config.command, args: config.args }
+    : { command: config.command }
+  if (!isClaudeAcpAgent(identity)) return undefined
+  try {
+    const configDir = defaultClaudeAcpConfigDir(config.cwd)
+    mkdirSync(configDir, { recursive: true })
+    linkClaudeAcpCredentials(configDir)
+    return { CLAUDE_CONFIG_DIR: configDir }
+  } catch (err) {
+    console.warn('[acp] could not scope CLAUDE_CONFIG_DIR for the Claude ACP agent', err)
+    return undefined
+  }
 }
 
 /**
@@ -522,7 +597,8 @@ export async function spawnAcpAgentProcess(
     baseEnv?: NodeJS.ProcessEnv
   } = {},
 ): Promise<ChildProcess> {
-  const env = buildAcpAgentEnv(config, options.baseEnv)
+  const baseEnv = buildAcpAgentEnv(config, options.baseEnv)
+  const env = { ...baseEnv, ...claudeAcpConfigDirOverride(config, baseEnv) }
   const stdio: 'pipe'[] = ['pipe', 'pipe', 'pipe']
   // Both branches below reach `spawn` directly rather than through
   // `spawnInProjectSandbox`, so they miss its working-directory probe. A thread
