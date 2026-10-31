@@ -1055,6 +1055,15 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         thread.updatedAt = Date.now()
         return resolved(true)
       },
+      actionState: () =>
+        resolved({
+          entries: [],
+          assessed: 0,
+          total: 0,
+          pending: 0,
+          assessing: false,
+          budgetLimited: false,
+        }),
       onAutoArchived: () => () => {},
       storageSize: () => resolved({ bytes: 24_576, truncated: false }),
       archive: (_projectId, threadId) => {
