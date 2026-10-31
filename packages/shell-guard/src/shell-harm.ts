@@ -1203,6 +1203,8 @@ function pnpmShimTargets(contents: string): string[] | null {
  * Whether `resolved` is the workspace's own pnpm shim for an installed package:
  * directly inside `<workspace>/node_modules/.bin`, and running only files under
  * `<workspace>/node_modules`. That is what `npx <name>` already runs unread.
+ * Each target is followed through links: pnpm links a workspace package to its
+ * source, which is outside `node_modules` and editable, so it is read instead.
  */
 function isWorkspacePackageShim(
   resolved: string,
@@ -1217,7 +1219,7 @@ function isWorkspacePackageShim(
   return (
     targets !== null &&
     targets.every((target) => {
-      const file = resolve(bin, target)
+      const file = canonicalPath(resolve(bin, target), context)
       return file !== modules && isAtOrAbove(modules, file)
     })
   )

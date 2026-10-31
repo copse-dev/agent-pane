@@ -858,8 +858,9 @@ While active:
   are a second exception: a file directly in `<workspace>/node_modules/.bin` that consists only of
   pnpm's shim template, and runs only files under `<workspace>/node_modules`, runs like the
   `npx <name>` that resolves to it. Any other line, or a target outside `node_modules`, and the
-  file is read as the script it is. A word starting with `#` in command position is a comment,
-  not a script to inspect.
+  file is read as the script it is. Targets are followed through links, so a workspace package
+  that pnpm links to its source in the repository is read, not trusted. A word starting with `#`
+  in command position is a comment, not a script to inspect.
 - Script and inline code is read as code, not shell: a `${…}` template literal is not an
   expansion. Deletion calls (`rm(…)` from `fs`/`fs/promises`, `rmSync`, `unlink`, `rmtree`, …)
   deny on a catastrophic literal target and otherwise prompt, so a script that recursively

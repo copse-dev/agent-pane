@@ -833,6 +833,35 @@ describe('Guarded YOLO shell harm gate — false positives', () => {
       assert.equal(action('./node_modules/.bin/clean', { readScript }), 'deny')
     })
 
+    it('follows the target through links, trusting only files that stay in node_modules', () => {
+      // pnpm links a registry package into its store, inside node_modules, but
+      // links a workspace package to its source, which the agent can edit.
+      const links: Record<string, string> = {
+        '/work/project/node_modules/eslint/bin/eslint.js':
+          '/work/project/node_modules/.pnpm/eslint@9.0.0/node_modules/eslint/bin/eslint.js',
+        '/work/project/node_modules/@copse/review/bin/copse-review.mjs':
+          '/work/project/packages/review/bin/copse-review.mjs',
+        '/work/project/node_modules/escape/run.js': '/tmp/escape/run.js',
+      }
+      const canonicalizePath = (path: string): string => links[path] ?? path
+      const readScript = scripts({
+        '/work/project/node_modules/.bin/eslint': shim('../eslint/bin/eslint.js'),
+        '/work/project/node_modules/.bin/copse-review': shim(
+          '../@copse/review/bin/copse-review.mjs',
+        ),
+        '/work/project/node_modules/.bin/escape': shim('../escape/run.js'),
+      })
+      assert.equal(
+        action('./node_modules/.bin/eslint src', { readScript, canonicalizePath }),
+        'allow',
+      )
+      assert.equal(
+        action('./node_modules/.bin/copse-review', { readScript, canonicalizePath }),
+        'prompt',
+      )
+      assert.equal(action('./node_modules/.bin/escape', { readScript, canonicalizePath }), 'prompt')
+    })
+
     it('does not trust a shim outside the workspace .bin directory', () => {
       const readScript = scripts({
         '/work/project/tools/.bin/eslint': shim('../eslint/bin/eslint.js'),
