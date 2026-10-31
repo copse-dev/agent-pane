@@ -879,8 +879,17 @@ While active:
   described below. Read-only `gh` carve-outs keep the normal sandboxed path.
 - Direct execution of a workspace file the gate cannot read as text prompts, except a compiled
   executable (ELF, Mach-O, PE header) inside the workspace: it has no text to inspect, and running
-  it is no riskier than the `cargo run` or `make` that built it. A word starting with `#` in
-  command position is a comment, not a script to inspect.
+  it is no riskier than the `cargo run` or `make` that built it. The workspace's own pnpm shims
+  are a second exception: a file directly in `<workspace>/node_modules/.bin` that consists only of
+  pnpm's shim template, and runs only files under `<workspace>/node_modules`, runs like the
+  `npx <name>` that resolves to it. Any other line, or a target outside `node_modules`, and the
+  file is read as the script it is. Targets are followed through links, so a workspace package
+  that pnpm links to its source in the repository is read, not trusted. A word starting with `#`
+  in command position is a comment, not a script to inspect.
+- Script and inline code is read as code, not shell: a `${…}` template literal is not an
+  expansion. Deletion calls (`rm(…)` from `fs`/`fs/promises`, `rmSync`, `unlink`, `rmtree`, …)
+  deny on a catastrophic literal target and otherwise prompt, so a script that recursively
+  deletes a computed path, such as `scripts/run-tests.mts` clearing its output directory, asks.
 - Commands that reach past this machine's project without deleting anything ask once
   (`host-reach.ts`):
   - `ssh`, `scp`, `sftp`, `mosh`, and remote `rsync` to a host not listed under Settings →
