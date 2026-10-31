@@ -2,12 +2,13 @@
 
 Tracking: [#264](https://github.com/copse-dev/agent-pane/issues/264)
 
-Status: **In progress.** The protocol core and app wiring have landed, including
+Status: **Resolved core.** #264 closed on 2026-07-27. The protocol core and app wiring have landed, including
 model routing, Settings, MCP/native-tool forwarding, streaming, permissions,
 filesystem handling, cancellation, and an in-memory resumable session pool.
 See [`docs/acp-agents.md`](../acp-agents.md) for current setup. Durable restart
 continuity, replay, and cross-client hand-off are now specified separately in
-[`acp-session-continuity.md`](acp-session-continuity.md).
+[`acp-session-continuity.md`](acp-session-continuity.md), and remote agents in
+[`acp-over-ssh.md`](acp-over-ssh.md). Client-owned `terminal/*` is tracked in #623.
 
 ## Goal
 

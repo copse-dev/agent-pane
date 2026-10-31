@@ -5,6 +5,10 @@ import {
   serializedSet,
   afterThreadWrites,
   attachAutosave,
+  flushProjectThreads,
+  loadThreads,
+  loadPersistedThread,
+  invalidateProjectThreadLoads,
   acceptRuntimeThreadMeta,
   awaitPendingThreadPersistence,
   __resetPersistenceForTest,
@@ -26,16 +30,23 @@ import type {
 } from '@shared/types'
 import { createHash } from 'node:crypto'
 import { explodeMessage, foldMessage } from '@shared/threads/fold.ts'
-import { parseMessageValue } from '@shared/threads/thread-boundary.ts'
+import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import { parseSpine, serializeSpineLine } from '@shared/threads/spine-schema.ts'
 import { startAgentController } from './agent.ts'
+import { attachThreadHydration, ensureThreadMessages } from './thread-hydration.ts'
 import { __resetRuntimeTranscriptForTest, applyRuntimeOwnedChunk } from './runtime-transcript.ts'
 import { dismissReviewFinding, dismissReviewReport, startReview } from './review-actions.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { optionalRecord } from '@shared/unknown-value.ts'
 import { startProposedThread } from './thread-proposals.ts'
-import { markThreadHasSavedPlan, switchThread } from '@shared/store/thread-helpers.ts'
+import {
+  createThread,
+  isBlankThread,
+  markThreadHasSavedPlan,
+  normalizeBlankThreads,
+  switchThread,
+} from '@shared/store/thread-helpers.ts'
 
 // attachAutosave registers a pagehide listener; provide a minimal window stub
 // (node test env has no DOM).
@@ -62,6 +73,8 @@ function fakeApi(
   handlers: {
     set?: (key: string, value: unknown) => Promise<void>
     create?: (projectId: string, thread: Thread) => Promise<void>
+    updateMeta?: (projectId: string, threadId: string, patch: unknown) => Promise<void>
+    delete?: (projectId: string, threadId: string) => Promise<void>
   } = {},
 ): { api: ApiClient; calls: FakeApiCalls } {
   const calls: FakeApiCalls = {
@@ -106,12 +119,16 @@ function fakeApi(
         ): Promise<void> => {
           calls.appends.push({ projectId, threadId, message })
         },
-        updateMeta: async (projectId: string, threadId: string, patch: unknown): Promise<void> => {
-          calls.metas.push({ projectId, threadId, patch })
-        },
-        delete: async (projectId: string, threadId: string): Promise<void> => {
-          calls.deletes.push({ projectId, threadId })
-        },
+        updateMeta:
+          handlers.updateMeta ??
+          (async (projectId: string, threadId: string, patch: unknown): Promise<void> => {
+            calls.metas.push({ projectId, threadId, patch })
+          }),
+        delete:
+          handlers.delete ??
+          (async (projectId: string, threadId: string): Promise<void> => {
+            calls.deletes.push({ projectId, threadId })
+          }),
         catalog: async (): Promise<never[]> => [],
       },
     } satisfies ApiClient
@@ -130,6 +147,12 @@ function thread(id: string, overrides: Partial<Thread> = {}): Thread {
     updatedAt: 1,
     ...overrides,
   }
+}
+
+async function seedPersistedThread(projectId: string, value: Thread): Promise<void> {
+  const api = createFakeApi()
+  api.threads.loadProject = async (): Promise<Thread[]> => [value]
+  await loadPersistedThread(api, projectId, value.id)
 }
 
 function userMsg(id: string): Message {
@@ -1127,4 +1150,757 @@ test('a turn starts only after the thread writes queued before it', async () => 
   })
   assert.equal(ranSync, true)
   autosave.detach()
+})
+
+test('a failed thread create is retried by an unchanged flush', async () => {
+  __resetPersistenceForTest()
+  const created: Thread[] = []
+  const { api, calls } = fakeApi({
+    create: async (_projectId, value) => {
+      created.push(value)
+      if (created.length === 1) throw new Error('disk full')
+    },
+  })
+  const value = thread('retry-create', { draftPrompt: 'keep my draft' })
+  await assert.rejects(flushProjectThreads(api, 'p1', [value]), /disk full/)
+  await flushProjectThreads(api, 'p1', [value])
+  await flushProjectThreads(api, 'p1', [value])
+  assert.equal(created.length, 2, 'retry creates the missing thread, then deduplicates')
+  assert.equal(created[1]?.draftPrompt, 'keep my draft')
+  assert.deepEqual(calls.metas, [], 'updateMeta cannot create a missing thread')
+})
+
+test('failed metadata patches retain edits and deletions for the next unchanged flush', async () => {
+  __resetPersistenceForTest()
+  const original = thread('retry-meta', { queuePaused: true })
+  await seedPersistedThread('p1', original)
+  const patches: unknown[] = []
+  const { api } = fakeApi({
+    updateMeta: async (_projectId, _threadId, patch) => {
+      patches.push(patch)
+      if (patches.length === 1) throw new Error('disk full')
+    },
+  })
+  const next = thread('retry-meta', { draftPrompt: 'saved after retry' })
+  await assert.rejects(flushProjectThreads(api, 'p1', [next]), /disk full/)
+  await flushProjectThreads(api, 'p1', [next])
+  await flushProjectThreads(api, 'p1', [next])
+  assert.deepEqual(patches, [
+    { draftPrompt: 'saved after retry', queuePaused: undefined },
+    { draftPrompt: 'saved after retry', queuePaused: undefined },
+  ])
+})
+
+test('failed deletion retries without rewriting a successfully saved sibling', async () => {
+  __resetPersistenceForTest()
+  await seedPersistedThread('p1', thread('remove'))
+  await seedPersistedThread('p1', thread('keep'))
+  let deletions = 0
+  const { api, calls } = fakeApi({
+    delete: async () => {
+      deletions += 1
+      if (deletions === 1) throw new Error('disk full')
+    },
+  })
+  const retained = thread('keep', { title: 'new title' })
+  await assert.rejects(flushProjectThreads(api, 'p1', [retained]), /disk full/)
+  await flushProjectThreads(api, 'p1', [retained])
+  await flushProjectThreads(api, 'p1', [retained])
+  assert.equal(deletions, 2)
+  assert.deepEqual(
+    calls.metas.map((call) => call.patch),
+    [{ title: 'new title' }],
+  )
+})
+
+test('a queued update retries create after the preceding create fails', async () => {
+  __resetPersistenceForTest()
+  const created: Thread[] = []
+  let rejectCreate: (error: Error) => void = () => undefined
+  const { api, calls } = fakeApi({
+    create: (_projectId, value) => {
+      created.push(value)
+      if (created.length > 1) return Promise.resolve()
+      return new Promise<void>((_resolve, reject) => {
+        rejectCreate = reject
+      })
+    },
+  })
+  const initial = flushProjectThreads(api, 'p1', [thread('queued')])
+  const rejected = assert.rejects(initial, /disk full/)
+  const updated = thread('queued', { draftPrompt: 'newer draft' })
+  const latest = flushProjectThreads(api, 'p1', [updated])
+  assert.equal(created.length, 1, 'later save waits for the earlier operation')
+  rejectCreate(new Error('disk full'))
+  await rejected
+  await latest
+  await flushProjectThreads(api, 'p1', [updated])
+  assert.deepEqual(
+    created.map((value) => value.draftPrompt),
+    [undefined, 'newer draft'],
+  )
+  assert.deepEqual(
+    calls.metas.map((call) => call.patch),
+    [{ draftPrompt: 'newer draft' }],
+  )
+})
+
+for (const deletionFails of [false, true]) {
+  test(`queued delete then recreate stays ordered when delete ${deletionFails ? 'fails' : 'succeeds'}`, async () => {
+    __resetPersistenceForTest()
+    await seedPersistedThread('p1', thread('restored'))
+    const operations: string[] = []
+    let settleDelete: () => void = () => undefined
+    const { api } = fakeApi({
+      delete: () => {
+        operations.push('delete')
+        return new Promise<void>((resolve, reject) => {
+          settleDelete = (): void => {
+            if (deletionFails) reject(new Error('disk full'))
+            else resolve()
+          }
+        })
+      },
+      create: async () => {
+        operations.push('create')
+      },
+      updateMeta: async (_projectId, _threadId, patch) => {
+        operations.push('update')
+        assert.deepEqual(patch, { title: 'restored title' })
+      },
+    })
+    const removed = flushProjectThreads(api, 'p1', [])
+    const deletion = deletionFails ? assert.rejects(removed, /disk full/) : removed
+    const restored = thread('restored', { title: 'restored title' })
+    const recreated = flushProjectThreads(api, 'p1', [restored])
+    assert.deepEqual(operations, ['delete'])
+    settleDelete()
+    await deletion
+    await recreated
+    await flushProjectThreads(api, 'p1', [restored])
+    assert.deepEqual(
+      operations,
+      deletionFails ? ['delete', 'create', 'update'] : ['delete', 'create'],
+    )
+  })
+}
+
+test('runtime acceptance during a failed user write does not acknowledge unsaved user fields', async () => {
+  __resetPersistenceForTest()
+  const original = thread('runtime-retry', { model: 'old-model' })
+  await seedPersistedThread('p1', original)
+  let rejectUpdate: (error: Error) => void = () => undefined
+  const patches: unknown[] = []
+  const { api } = fakeApi({
+    updateMeta: (_projectId, _threadId, patch) => {
+      patches.push(patch)
+      if (patches.length > 1) return Promise.resolve()
+      return new Promise<void>((_resolve, reject) => {
+        rejectUpdate = reject
+      })
+    },
+  })
+  const edited = { ...original, model: 'user-model', draftPrompt: 'unsaved draft' }
+  const first = flushProjectThreads(api, 'p1', [edited])
+  const rejected = assert.rejects(first, /disk full/)
+  const runtimeUpdated = {
+    ...edited,
+    status: 'running' as const,
+    usage: { inputTokens: 10, outputTokens: 20 },
+  }
+  acceptRuntimeThreadMeta('p1', runtimeUpdated, transcriptMeta(edited))
+  rejectUpdate(new Error('disk full'))
+  await rejected
+  await flushProjectThreads(api, 'p1', [runtimeUpdated])
+  await flushProjectThreads(api, 'p1', [runtimeUpdated])
+  assert.deepEqual(
+    patches,
+    [
+      { model: 'user-model', draftPrompt: 'unsaved draft' },
+      { model: 'user-model', draftPrompt: 'unsaved draft' },
+    ],
+    'retry writes user fields only; main already owns the runtime fields',
+  )
+})
+
+for (const operation of ['create', 'update', 'delete'] as const) {
+  test(`an unchanged flush awaits a pending ${operation} and observes its rejection`, async () => {
+    __resetPersistenceForTest()
+    const original = thread('pending')
+    if (operation !== 'create') await seedPersistedThread('p1', original)
+    let rejectWrite: (error: Error) => void = () => undefined
+    const write = (): Promise<void> =>
+      new Promise<void>((_resolve, reject) => {
+        rejectWrite = reject
+      })
+    const { api } = fakeApi({
+      create: write,
+      updateMeta: write,
+      delete: write,
+    })
+    const target = operation === 'delete' ? [] : [thread('pending', { title: 'new title' })]
+    const first = flushProjectThreads(api, 'p1', target)
+    const firstRejection = assert.rejects(first, /disk full/)
+    let settled = false
+    const duplicate = flushProjectThreads(api, 'p1', target)
+    const duplicateRejection = assert.rejects(
+      duplicate.finally(() => {
+        settled = true
+      }),
+      /disk full/,
+    )
+    await tick()
+    assert.equal(settled, false, 'unchanged does not mean acknowledged')
+    rejectWrite(new Error('disk full'))
+    await Promise.all([firstRejection, duplicateRejection])
+  })
+}
+
+test('retry after a committed create preserves newer main messages and runtime metadata', async () => {
+  __resetPersistenceForTest()
+  const disk = new Map<string, Thread>()
+  let creates = 0
+  const { api } = fakeApi({
+    create: async (_projectId, value) => {
+      creates += 1
+      // The production create endpoint is idempotent for an existing thread.
+      if (!disk.has(value.id)) disk.set(value.id, structuredClone(value))
+      if (creates === 1) {
+        const stored = disk.get(value.id)
+        assert.ok(stored)
+        disk.set(value.id, {
+          ...stored,
+          messages: [...stored.messages, { ...userMsg('main-message'), role: 'assistant' }],
+          status: 'running',
+          usage: { inputTokens: 99, outputTokens: 50 },
+        })
+        throw new Error('catalog full after thread commit')
+      }
+    },
+    updateMeta: async (_projectId, threadId, patch) => {
+      assert.deepEqual(patch, { draftPrompt: 'latest draft', queuePaused: undefined })
+      const stored = disk.get(threadId)
+      assert.ok(stored)
+      const next = { ...stored, draftPrompt: 'latest draft' }
+      delete next.queuePaused
+      disk.set(threadId, next)
+    },
+  })
+  const initial = thread('partial-create', { messages: [userMsg('original')], queuePaused: true })
+  await assert.rejects(flushProjectThreads(api, 'p1', [initial]), /catalog full/)
+  const latest = thread('partial-create', {
+    messages: initial.messages,
+    draftPrompt: 'latest draft',
+  })
+  await flushProjectThreads(api, 'p1', [latest])
+  await flushProjectThreads(api, 'p1', [latest])
+  const stored = disk.get(initial.id)
+  assert.ok(stored)
+  assert.equal(creates, 2)
+  assert.deepEqual(
+    stored.messages.map((message) => message.id),
+    ['original', 'main-message'],
+  )
+  assert.equal(stored.draftPrompt, 'latest draft')
+  assert.equal(stored.queuePaused, undefined)
+  assert.equal(stored.status, 'running')
+  assert.deepEqual(stored.usage, { inputTokens: 99, outputTokens: 50 })
+})
+
+test('removing a thread after unacknowledged creation still deletes its possible committed copy', async () => {
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi({
+    create: async () => {
+      throw new Error('catalog full after thread commit')
+    },
+  })
+  await assert.rejects(flushProjectThreads(api, 'p1', [thread('unconfirmed')]), /catalog full/)
+  await flushProjectThreads(api, 'p1', [])
+  await flushProjectThreads(api, 'p1', [])
+  assert.deepEqual(calls.deletes, [{ projectId: 'p1', threadId: 'unconfirmed' }])
+})
+
+function applyThreadMeta(value: Thread, patch: unknown): Thread {
+  const next = parseThreadValue({ ...value, ...expectRecord(patch) })
+  assert.ok(next)
+  return next
+}
+
+for (const queued of [false, true]) {
+  test(`repairs a partially committed metadata patch when ${queued ? 'queued' : 'later'} edits revert to the acknowledged value`, async () => {
+    __resetPersistenceForTest()
+    const original = thread('partial-update')
+    await seedPersistedThread('p1', original)
+    let disk = original
+    let attempts = 0
+    let rejectFirst: (error: Error) => void = () => undefined
+    const { api } = fakeApi({
+      updateMeta: (_projectId, _threadId, patch) => {
+        attempts += 1
+        disk = applyThreadMeta(disk, patch)
+        if (attempts > 1) return Promise.resolve()
+        return new Promise<void>((_resolve, reject) => {
+          rejectFirst = reject
+        })
+      },
+    })
+    const failed = flushProjectThreads(api, 'p1', [{ ...original, title: 'temporary edit' }])
+    const rejected = assert.rejects(failed, /catalog failed after commit/)
+    const reverted = queued ? flushProjectThreads(api, 'p1', [original]) : undefined
+    rejectFirst(new Error('catalog failed after commit'))
+    await rejected
+    if (reverted) await reverted
+    else await flushProjectThreads(api, 'p1', [original])
+    await flushProjectThreads(api, 'p1', [original])
+    assert.equal(disk.title, original.title)
+    assert.equal(attempts, 2)
+  })
+}
+
+for (const paused of [false, true]) {
+  test(`repairs a rejected optional-field ${paused ? 'removal' : 'addition'} when the user reverts it`, async () => {
+    __resetPersistenceForTest()
+    const original = thread('optional-update', paused ? { queuePaused: true } : {})
+    const edited = thread('optional-update', paused ? {} : { queuePaused: true })
+    await seedPersistedThread('p1', original)
+    let disk = original
+    let attempts = 0
+    const { api } = fakeApi({
+      updateMeta: async (_projectId, _threadId, patch) => {
+        disk = applyThreadMeta(disk, patch)
+        if (++attempts === 1) throw new Error('catalog failed after commit')
+      },
+    })
+    await assert.rejects(flushProjectThreads(api, 'p1', [edited]), /catalog failed/)
+    await flushProjectThreads(api, 'p1', [original])
+    assert.equal(disk.queuePaused, original.queuePaused)
+    assert.equal(attempts, 2)
+  })
+}
+
+test('usage-only runtime acceptance preserves uncertain user model and draft retry intent', async () => {
+  __resetPersistenceForTest()
+  const original = thread('mixed-ownership', { model: 'old-model', draftPrompt: 'old draft' })
+  await seedPersistedThread('p1', original)
+  let disk = original
+  const patches: unknown[] = []
+  const { api } = fakeApi({
+    updateMeta: async (_projectId, _threadId, patch) => {
+      patches.push(patch)
+      disk = applyThreadMeta(disk, patch)
+      if (patches.length === 1) throw new Error('catalog failed after commit')
+    },
+  })
+  await assert.rejects(
+    flushProjectThreads(api, 'p1', [{ ...original, model: 'new-model', draftPrompt: 'new draft' }]),
+    /catalog failed/,
+  )
+  // The user undoes both edits; the runtime then reports usage without
+  // acknowledging the model/draft fields. Their uncertain patch keys survive.
+  const runtime = { ...original, usage: { inputTokens: 77, outputTokens: 33 } }
+  disk = { ...disk, usage: runtime.usage }
+  acceptRuntimeThreadMeta('p1', runtime, transcriptMeta(original))
+  await flushProjectThreads(api, 'p1', [runtime])
+  assert.deepEqual(patches[1], { model: 'old-model', draftPrompt: 'old draft' })
+  assert.equal(disk.model, 'old-model')
+  assert.equal(disk.draftPrompt, 'old draft')
+  assert.deepEqual(disk.usage, runtime.usage)
+})
+
+for (const removed of [false, true]) {
+  for (const edited of [false, true]) {
+    test(`re-establishes existence after delete rejects ${removed ? 'after' : 'before'} removal with ${edited ? 'new' : 'unchanged'} metadata`, async () => {
+      __resetPersistenceForTest()
+      const original = thread('partial-delete', { messages: [userMsg('original')] })
+      await seedPersistedThread('p1', original)
+      const disk = new Map([[original.id, original]])
+      const newer = { ...userMsg('new-main-message'), role: 'assistant' as const }
+      let creates = 0
+      const { api } = fakeApi({
+        delete: async () => {
+          if (removed) disk.delete(original.id)
+          else {
+            disk.set(original.id, {
+              ...original,
+              messages: [...original.messages, newer],
+              usage: { inputTokens: 99, outputTokens: 11 },
+            })
+          }
+          throw new Error('delete acknowledgement failed')
+        },
+        create: async (_projectId, value) => {
+          creates += 1
+          if (!disk.has(value.id)) disk.set(value.id, structuredClone(value))
+        },
+        updateMeta: async (_projectId, id, patch) => {
+          const current = disk.get(id)
+          assert.ok(current, 'existence is re-established before metadata is patched')
+          disk.set(id, applyThreadMeta(current, patch))
+        },
+      })
+      await assert.rejects(flushProjectThreads(api, 'p1', []), /delete acknowledgement/)
+      const target = edited ? { ...original, draftPrompt: 'restored draft' } : original
+      await flushProjectThreads(api, 'p1', [target])
+      await flushProjectThreads(api, 'p1', [target])
+      const restored = disk.get(original.id)
+      assert.ok(restored)
+      assert.equal(creates, 1)
+      assert.equal(restored.draftPrompt, target.draftPrompt)
+      assert.deepEqual(
+        restored.messages.map((message) => message.id),
+        removed ? ['original'] : ['original', 'new-main-message'],
+      )
+      if (!removed) assert.deepEqual(restored.usage, { inputTokens: 99, outputTokens: 11 })
+    })
+  }
+}
+
+test('an unchanged deletion retries uncertain repair even after a load confirms its directory is absent', async () => {
+  __resetPersistenceForTest()
+  await seedPersistedThread('p1', thread('delete-retry'))
+  let attempts = 0
+  const { api } = fakeApi({
+    delete: async () => {
+      if (++attempts === 1) throw new Error('catalog failed after removal')
+    },
+  })
+  await assert.rejects(flushProjectThreads(api, 'p1', []), /catalog failed/)
+  await loadThreads(api, 'p1')
+  await flushProjectThreads(api, 'p1', [])
+  await flushProjectThreads(api, 'p1', [])
+  assert.equal(attempts, 2, 'absence on load does not acknowledge the failed catalog repair')
+})
+
+for (const acknowledgeFirst of [false, true]) {
+  test(`an old load cannot erase a newer write ${acknowledgeFirst ? 'acknowledged before' : 'still pending at'} its response`, async () => {
+    __resetPersistenceForTest()
+    const original = thread('load-write', { lastSettledAt: 1 })
+    await seedPersistedThread('p1', original)
+    let disk = original
+    let releaseLoad: (value: Thread[]) => void = () => undefined
+    let releaseWrite: () => void = () => undefined
+    let updates = 0
+    const { api } = fakeApi({
+      updateMeta: (_projectId, _threadId, patch) => {
+        disk = applyThreadMeta(disk, patch)
+        if (++updates > 1) return Promise.resolve()
+        return new Promise<void>((resolve) => {
+          releaseWrite = resolve
+        })
+      },
+    })
+    api.threads.loadProject = (): Promise<Thread[]> =>
+      new Promise<Thread[]>((resolve) => {
+        releaseLoad = resolve
+      })
+    const loading = loadThreads(api, 'p1')
+    const saving = flushProjectThreads(api, 'p1', [{ ...original, title: 'new title' }])
+    if (acknowledgeFirst) {
+      releaseWrite()
+      await saving
+    }
+    releaseLoad([original])
+    const loaded = await loading
+    assert.equal(loaded[0]?.title, 'new title', 'the read does not replace newer local intent')
+    const reverting = flushProjectThreads(api, 'p1', [original])
+    if (!acknowledgeFirst) releaseWrite()
+    await saving
+    await reverting
+    await flushProjectThreads(api, 'p1', [original])
+    assert.equal(disk.title, original.title)
+    assert.equal(updates, 2)
+  })
+}
+
+for (const revert of [false, true]) {
+  test(`an old load cannot acknowledge away a partial failed write before ${revert ? 'reverted' : 'unchanged'} retry`, async () => {
+    __resetPersistenceForTest()
+    const original = thread('load-failure', { lastSettledAt: 1 })
+    await seedPersistedThread('p1', original)
+    let disk = original
+    let release: (value: Thread[]) => void = () => undefined
+    let attempts = 0
+    const { api } = fakeApi({
+      updateMeta: async (_projectId, _threadId, patch) => {
+        disk = applyThreadMeta(disk, patch)
+        if (++attempts === 1) throw new Error('catalog failed after commit')
+      },
+    })
+    api.threads.loadProject = (): Promise<Thread[]> =>
+      new Promise<Thread[]>((resolve) => {
+        release = resolve
+      })
+    const loading = loadThreads(api, 'p1')
+    const edited = { ...original, title: 'new title' }
+    await assert.rejects(flushProjectThreads(api, 'p1', [edited]), /catalog failed/)
+    release([original])
+    const loaded = await loading
+    assert.equal(loaded[0]?.title, 'new title', 'failed write intent stays separate from seeding')
+    const target = revert ? original : edited
+    await flushProjectThreads(api, 'p1', [target])
+    await flushProjectThreads(api, 'p1', [target])
+    assert.equal(disk.title, target.title)
+    assert.equal(attempts, 2)
+  })
+}
+
+test('a stale load cannot resurrect an ID created and deleted during its request', async () => {
+  __resetPersistenceForTest()
+  const value = thread('load-aba', { lastSettledAt: 1 })
+  let release: (value: Thread[]) => void = () => undefined
+  const { api, calls } = fakeApi()
+  api.threads.loadProject = (): Promise<Thread[]> =>
+    new Promise<Thread[]>((resolve) => {
+      release = resolve
+    })
+  const loading = loadThreads(api, 'p1')
+  await flushProjectThreads(api, 'p1', [value])
+  await flushProjectThreads(api, 'p1', [])
+  release([value])
+  const loaded = await loading
+  assert.deepEqual(loaded, [])
+  await flushProjectThreads(api, 'p1', loaded)
+  assert.equal(calls.creates.length, 1)
+  assert.equal(calls.deletes.length, 1)
+})
+
+test('seeding preserves changed IDs, discovers new IDs and drops unchanged IDs absent on disk', async () => {
+  __resetPersistenceForTest()
+  const original = thread('changed', { lastSettledAt: 1 })
+  const missing = thread('missing', { lastSettledAt: 1 })
+  const discovered = thread('discovered', { lastSettledAt: 1 })
+  await seedPersistedThread('p1', original)
+  await seedPersistedThread('p1', missing)
+  let release: (value: Thread[]) => void = () => undefined
+  const { api, calls } = fakeApi()
+  api.threads.loadProject = (): Promise<Thread[]> =>
+    new Promise<Thread[]>((resolve) => {
+      release = resolve
+    })
+  const loading = loadThreads(api, 'p1')
+  const latest = { ...original, title: 'new title' }
+  await flushProjectThreads(api, 'p1', [latest, missing])
+  release([original, discovered])
+  const loaded = await loading
+  assert.deepEqual(new Set(loaded.map((value) => value.id)), new Set(['changed', 'discovered']))
+  assert.equal(loaded.find((value) => value.id === 'changed')?.title, 'new title')
+  await flushProjectThreads(api, 'p1', loaded)
+  assert.equal(calls.metas.length, 1)
+  assert.equal(calls.creates.length, 0, 'newly discovered metadata is already persisted')
+  assert.equal(calls.deletes.length, 0, 'authoritative absence is already acknowledged')
+})
+
+for (const newerFirst of [false, true]) {
+  test(`concurrent loads retain the newer response when it resolves ${newerFirst ? 'first' : 'last'}`, async () => {
+    __resetPersistenceForTest()
+    const original = thread('read-order', { title: 'old title', lastSettledAt: 1 })
+    const newer = { ...original, title: 'new title' }
+    await seedPersistedThread('p1', original)
+    const releases: Array<(value: Thread[]) => void> = []
+    const { api, calls } = fakeApi()
+    api.threads.loadProject = (): Promise<Thread[]> =>
+      new Promise<Thread[]>((resolve) => {
+        releases.push(resolve)
+      })
+    const first = loadThreads(api, 'p1')
+    const second = loadThreads(api, 'p1')
+    const releaseFirst = releases[0]
+    const releaseSecond = releases[1]
+    assert.ok(releaseFirst)
+    assert.ok(releaseSecond)
+    if (newerFirst) {
+      releaseSecond([newer])
+      await second
+      releaseFirst([original])
+      await first
+    } else {
+      releaseFirst([original])
+      await first
+      releaseSecond([newer])
+      await second
+    }
+    await flushProjectThreads(api, 'p1', [newer])
+    assert.deepEqual(calls.metas, [], 'the newest read already seeded the new title')
+  })
+}
+
+test('a newer empty full load protects absence against previously undiscovered stale IDs', async () => {
+  __resetPersistenceForTest()
+  const value = thread('unknown-to-newer-read', { lastSettledAt: 1 })
+  const releases: Array<(value: Thread[]) => void> = []
+  const { api, calls } = fakeApi()
+  api.threads.loadProject = (): Promise<Thread[]> =>
+    new Promise<Thread[]>((resolve) => {
+      releases.push(resolve)
+    })
+  const first = loadThreads(api, 'p1')
+  const second = loadThreads(api, 'p1')
+  const releaseFirst = releases[0]
+  const releaseSecond = releases[1]
+  assert.ok(releaseFirst)
+  assert.ok(releaseSecond)
+  releaseSecond([])
+  await second
+  releaseFirst([value])
+  assert.deepEqual(await first, [])
+  await flushProjectThreads(api, 'p1', [])
+  assert.deepEqual(calls.deletes, [])
+})
+
+test('a newer one-thread load protects its absent thread without replacing other project metadata', async () => {
+  __resetPersistenceForTest()
+  const missing = thread('missing-one', { lastSettledAt: 1 })
+  const untouched = thread('untouched', { lastSettledAt: 1 })
+  await seedPersistedThread('p1', missing)
+  await seedPersistedThread('p1', untouched)
+  const releases: Array<(value: Thread[]) => void> = []
+  const { api, calls } = fakeApi()
+  api.threads.loadProject = (): Promise<Thread[]> =>
+    new Promise<Thread[]>((resolve) => {
+      releases.push(resolve)
+    })
+  const project = loadThreads(api, 'p1')
+  const single = loadPersistedThread(api, 'p1', missing.id)
+  const releaseProject = releases[0]
+  const releaseSingle = releases[1]
+  assert.ok(releaseProject)
+  assert.ok(releaseSingle)
+  releaseSingle([untouched])
+  assert.equal(await single, undefined)
+  releaseProject([missing, untouched])
+  assert.deepEqual(
+    (await project).map((value) => value.id),
+    ['untouched'],
+  )
+  await flushProjectThreads(api, 'p1', [untouched])
+  assert.deepEqual(calls.deletes, [])
+})
+
+test('a primary-data load does not falsely acknowledge a failed create catalog repair', async () => {
+  __resetPersistenceForTest()
+  const initial = thread('create-read', { model: 'initial-model', lastSettledAt: 1 })
+  let disk = initial
+  let creates = 0
+  const { api, calls } = fakeApi({
+    create: async () => {
+      if (++creates === 1) {
+        disk = { ...initial, model: 'runtime-model', usage: { inputTokens: 88, outputTokens: 22 } }
+        throw new Error('catalog failed after create')
+      }
+    },
+  })
+  api.threads.loadProject = async (): Promise<Thread[]> => [disk]
+  await assert.rejects(flushProjectThreads(api, 'p1', [initial]), /catalog failed/)
+  const loaded = await loadThreads(api, 'p1')
+  assert.equal(loaded[0]?.model, 'runtime-model')
+  await flushProjectThreads(api, 'p1', loaded)
+  await flushProjectThreads(api, 'p1', loaded)
+  assert.equal(creates, 2, 'create still repairs its failed catalog after a metadata-only read')
+  assert.deepEqual(
+    calls.metas,
+    [],
+    'observed main-owned fields are not mistaken for later user edits',
+  )
+  assert.equal(disk.model, 'runtime-model')
+  assert.deepEqual(disk.usage, { inputTokens: 88, outputTokens: 22 })
+})
+
+test('an invalidated read retries with a newer request generation', async () => {
+  __resetPersistenceForTest()
+  const original = thread('reloaded', { title: 'old', lastSettledAt: 1 })
+  const middle = { ...original, title: 'middle' }
+  const latest = { ...original, title: 'latest' }
+  await seedPersistedThread('p1', original)
+  const releases: Array<(value: Thread[]) => void> = []
+  const { api, calls } = fakeApi()
+  api.threads.loadProject = (): Promise<Thread[]> =>
+    new Promise<Thread[]>((resolve) => {
+      releases.push(resolve)
+    })
+  const first = loadThreads(api, 'p1')
+  const second = loadThreads(api, 'p1')
+  const releaseFirst = releases[0]
+  const releaseSecond = releases[1]
+  assert.ok(releaseFirst)
+  assert.ok(releaseSecond)
+  releaseSecond([middle])
+  await second
+  invalidateProjectThreadLoads(api, 'p1')
+  releaseFirst([original])
+  await tick()
+  const releaseRetry = releases[2]
+  assert.ok(releaseRetry)
+  releaseRetry([latest])
+  assert.equal((await first)[0]?.title, 'latest')
+  await flushProjectThreads(api, 'p1', [latest])
+  assert.deepEqual(calls.metas, [])
+})
+
+test('newer saved-plan retention survives an older read, hydration and real blank-thread pruning', async (t) => {
+  __resetPersistenceForTest()
+  const original = thread('saved-plan', { lastSettledAt: 1, messagesLoaded: false })
+  const releases: Array<(value: Thread[]) => void> = []
+  const { api, calls } = fakeApi()
+  api.threads.loadProject = (): Promise<Thread[]> =>
+    new Promise((resolve) => {
+      releases.push(resolve)
+    })
+  const older = loadThreads(api, 'p1')
+  const newer = loadThreads(api, 'p1')
+  const releaseOlder = releases[0]
+  const releaseNewer = releases[1]
+  assert.ok(releaseOlder)
+  assert.ok(releaseNewer)
+  releaseNewer([{ ...original, hasSavedPlan: true }])
+  assert.equal((await newer)[0]?.hasSavedPlan, true)
+  releaseOlder([original])
+  const rows = await older
+  assert.equal(rows[0]?.hasSavedPlan, true)
+  const store = createStore({ activeProjectId: 'p1', activeThreadId: original.id, threads: rows })
+  const autosave = attachAutosave(store, api)
+  const detachHydration = attachThreadHydration(store, api)
+  t.after(() => {
+    autosave.detach()
+    detachHydration()
+  })
+  await ensureThreadMessages('p1', original.id)
+  const hydrated = store.getState().threads.find((value) => value.id === original.id)
+  assert.ok(hydrated)
+  assert.equal(hydrated.messagesLoaded, true)
+  assert.equal(isBlankThread(hydrated), false)
+  createThread(store)
+  normalizeBlankThreads(store)
+  await autosave.flush()
+  assert.ok(store.getState().threads.some((value) => value.id === original.id))
+  assert.deepEqual(calls.deletes, [], 'autosave must never delete the plan-only task')
+  assert.ok(
+    calls.metas.every((call) => !Object.hasOwn(expectRecord(call.patch), 'hasSavedPlan')),
+    'derived retention is never persisted as mutable metadata',
+  )
+})
+
+test('a middle read cannot replace a newer retention projection in an older active read', async () => {
+  __resetPersistenceForTest()
+  const original = thread('projection-order', { lastSettledAt: 1, messagesLoaded: false })
+  const releases: Array<(value: Thread[]) => void> = []
+  const { api } = fakeApi()
+  api.threads.loadProject = (): Promise<Thread[]> =>
+    new Promise((resolve) => {
+      releases.push(resolve)
+    })
+  const oldest = loadThreads(api, 'p1')
+  const middle = loadThreads(api, 'p1')
+  const newest = loadThreads(api, 'p1')
+  const first = releases[0]
+  const second = releases[1]
+  const third = releases[2]
+  assert.ok(first)
+  assert.ok(second)
+  assert.ok(third)
+  third([{ ...original, hasSavedPlan: true }])
+  await newest
+  second([{ ...original, hasSavedPlan: false }])
+  assert.equal((await middle)[0]?.hasSavedPlan, true)
+  first([original])
+  assert.equal((await oldest)[0]?.hasSavedPlan, true)
 })

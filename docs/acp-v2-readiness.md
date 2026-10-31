@@ -1,13 +1,34 @@
 # ACP v2 readiness
 
-**Short answer: the capability probe (and all of Copse's ACP integration) is
-v1, by design. The _protocol_ project is well into v2, and as of SDK **1.3.0**
-the TypeScript SDK we consume publishes a v2 API too — but on a separate
-`./experimental/v2` entry point that Copse deliberately does not import. Its
-main entry, the one our client is built on, still negotiates v1. This page
-tracks what's coming, how far along it is, and where it lands.**
+**Short answer: Copse's shipping ACP integration is v1, by design. We pin SDK
+**2.2.0** exactly and import its explicit `/unstable` v1 surface because Copse
+uses v1 extensions. The SDK's default entry remains stable v1; v2 remains on
+the separate `./experimental/v2` and `./experimental/v2/unstable` entry points.
+This page tracks what's coming, how far along it is, and where it lands.**
 
-## Status update (2026-10-16)
+## Status update (2026-10-30)
+
+- **SDK:** Copse now pins `@agentclientprotocol/sdk@2.2.0` exactly. SDK 2.x split
+  stable and unstable entry points but did **not** make the package major select
+  protocol v2. Copse imports `/unstable` consistently for its v1 extension use;
+  the nightly watch treats the 2.x line and both experimental v2 runtime exports
+  as reviewed facts, while a new major or runtime export remains loud.
+- **Conformance:** SDK 2.x no longer ships compiled examples or test fixtures.
+  Copse now owns a small external-process dual-version fixture built only from
+  public SDK APIs. Its v2 arm awaits the prompt insertion receipt, proves it
+  arrives before `idle`, and checks that its `messageId` matches `user_message`.
+- **Projection fixes:** the frozen headless envelope upserts `text_replace` by
+  item id; v1 tool calls retain their programmatic name in `_meta["copse.dev"]`;
+  and the v2 prototype now preserves message/thought id-scoped replacements,
+  rich content, and initially completed tool results.
+- **Notice/compaction:** these updates are stable but capability-gated in 2.2.
+  Copse intentionally advertises neither capability and tests that unexpected
+  updates are dropped until a durable host-owned model exists.
+- **Product posture:** no v2 path is wired into the session pool and no default
+  changes. Per-agent v2 opt-in remains S4 and default-on still waits for the v2
+  runtime entry point to leave `./experimental/`.
+
+## Previous status update (2026-10-16)
 
 The section below dates from 2026-07 and is kept as history. Since then:
 
@@ -51,12 +72,11 @@ Two different projects, at two very different stages:
   side v2 is real and moving, though the guide still says to "gate v2 behind
   explicit version negotiation and feature flags until it stabilizes."
 - **The published TypeScript SDK (`@agentclientprotocol/sdk`) ships v2 behind
-  an experimental entry point.** Latest is **1.3.0** (`latest` tag; the 0.29→1.x
-  jump is v1 going _stable_, not v2). Its **main** entry is unchanged —
-  `PROTOCOL_VERSION === 1`, generated from `schema/schema.json` — but 1.3.0 added
-  a second export, **`@agentclientprotocol/sdk/experimental/v2`**, whose
-  `PROTOCOL_VERSION` is **2**, generated from the shipped
-  `schema/v2/schema.unstable.json`. Note how it arrived: a **minor** release, no
+  experimental entry points.** Copse pins **2.2.0**. Its **main** entry is
+  stable v1 (`PROTOCOL_VERSION === 1`), `/unstable` exposes v1 extensions,
+  `./experimental/v2` exposes the v2 stable-feature set, and
+  `./experimental/v2/unstable` adds draft extensions. Note how v2 first arrived
+  in 1.3.0: a **minor** release, no
   major bump and no `next` dist-tag — a watch that only looked for those two
   shapes would have missed it entirely (see [The watch](#the-watch-how-well-find-out)).
   The Rust crate isn't published to npm at all (`@agentclientprotocol/schema`
@@ -71,7 +91,7 @@ import change. So **v2 stays a watch item**, with the trigger sharpened: not
 tracking is automated rather than a periodic manual re-check of npm; see
 [The watch](#the-watch-how-well-find-out) below.
 
-> `package.json` depends on `@agentclientprotocol/sdk@^1.8.0` (locked `1.8.0`; 1.9.0 is the first release with the v2 insertion-receipt lifecycle).
+> `package.json` depends on `@agentclientprotocol/sdk@2.2.0` exactly.
 > The unit gate pins both halves of what that version means
 > (`scripts/acp-v2-watch.test.ts`): the main entry is `PROTOCOL_VERSION === 1`,
 > and `./experimental/v2` is `PROTOCOL_VERSION === 2`.
@@ -79,11 +99,11 @@ tracking is automated rather than a periodic manual re-check of npm; see
 ## Why the probe can't (and shouldn't) see v2 today
 
 Three independent facts, all verifiable in the SDK we depend on
-(`@agentclientprotocol/sdk@1.3.0`):
+(`@agentclientprotocol/sdk@2.2.0`):
 
-1. **The code path we use is v1.** The probe, the client, and every adapter
-   import the package's main entry, where `PROTOCOL_VERSION === 1`, and the
-   probe requests v1 in `initialize`. The v2 types that 1.3.0 also ships live on
+1. **The code path we use is v1.** The probe, the client, and every shipping adapter
+   import the package's `/unstable` v1 entry, where `PROTOCOL_VERSION === 1`, and the
+   probe requests v1 in `initialize`. The v2 types live on
    a separate `./experimental/v2` entry point nothing in `src/` imports, so they
    are not reachable from any current code path — importing them is the
    migration, not a switch.
@@ -163,20 +183,21 @@ here noticed for weeks. Two checks now carry it:
   registry's `latest` manifest, because that is how v2 actually arrived. It goes
   red when the v2 surface differs from the one already triaged — above all when a
   v2 entry point appears **outside `./experimental/`**, which is v2 graduating —
-  and also on a release with major >= 2, a dist-tag beyond `latest`, or our own
-  `package.json` moving past the 1.x line. The report (including every v2 entry
+  and also on a newly unreviewed SDK major, a dist-tag beyond `latest`, or our own
+  `package.json` moving to an unreviewed major. Schema JSON exports are excluded:
+  they are artifacts, not executable protocol entry points. The report (including every v2 entry
   point currently published) goes to the run summary. It is advisory: its own
   workflow, never a merge gate, no build and no dependency install (the script is
   deliberately dependency-free).
 - **Every PR** — [`scripts/acp-v2-watch.test.ts`](../scripts/acp-v2-watch.test.ts)
   pins the offline half in the normal unit gate against the SDK actually
   installed: the main entry is `PROTOCOL_VERSION === 1`, `./experimental/v2` is
-  `PROTOCOL_VERSION === 2`, and `package.json` still tracks the 1.x line. Either
+  `PROTOCOL_VERSION === 2`, and `package.json` still tracks the reviewed 2.x line. Either
   number moving fails the gate, which is the point — that change is the migration
   below, not a dependency bump.
 - **Every PR, against a real agent** —
   [`src/main/services/acp/acp-v2-conformance.test.ts`](../src/main/services/acp/acp-v2-conformance.test.ts)
-  drives the SDK's own **dual-version example agent** as a subprocess. See
+  drives Copse's public-API **dual-version fixture agent** as a subprocess. See
   [Testing against a real agent, for free](#testing-against-a-real-agent-for-free).
 
 What the watch deliberately does **not** do: it reads the npm registry, not the
@@ -193,19 +214,11 @@ misreading of the protocol — both ends are ours. Copse can also be spawned as 
 ACP agent for real (`--acp` → `runAcpAgentMode`), and with `COPSE_PANEL_MOCK_LLM=1`
 that costs no tokens, but it boots inside Electron, so it is e2e-tier.
 
-The third party is already installed. `@agentclientprotocol/sdk` publishes
-runnable examples inside its tarball:
-
-| Shipped file                          | What it is                                                                                      |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `dist/examples/dual-version-agent.js` | Answers **v1 or v2** per connection (`agentProtocolRouter().withV1().withV2()`)                 |
-| `dist/examples/agent.js`              | Scripted v1 turn: message chunks, `tool_call`, `tool_call_update`, a real permission round trip |
-| `dist/test-support/test-agent.js`     | Programmable test agent (chunk count, delay, optional permission)                               |
-
-No model, no API key, no network, no added dependency — and version-locked to the
-SDK we pin, so the target moves when the protocol we build against moves. Note
-these are file paths, not package specifiers: the SDK's `exports` map does not
-expose `./dist/*`.
+SDK 2.x removed compiled examples and test support from its package. Copse's
+`tests/fixtures/acp-dual-version-agent.mjs` is therefore a deliberately small
+external process assembled from public `agent`, `agentProtocolRouter`, methods,
+and ndjson APIs. No model, API key, network, private `dist/*` import, or added
+dependency is involved; its messages are validated by the pinned SDK at runtime.
 
 The conformance test uses the dual-version one for two different jobs. The **v1**
 arm is a regression guard on the path Copse ships — SDK client plus
@@ -218,10 +231,8 @@ RFDs: `initialize` requires the new `info` object (omit it and you get
 whole messages keyed by `messageId` replace the chunk stream. When
 `session-update-adapter.ts` learns v2, that arm is the checklist.
 
-Gap: the v2 arm does not await `session.prompt()`, so it cannot see the
-insertion receipt. On SDK 1.9.0 the prompt resolves with `{ messageId }` before
-`idle`, and that id equals the `user_message` update's id; the arm should assert
-both once the pin moves to 1.9.0.
+The v2 arm awaits `session.prompt()`, asserts the `{ messageId }` receipt exists
+before `idle`, and checks it equals the `user_message` update's id.
 
 When it fires, triage before bumping: confirm what the new surface actually
 negotiates. If the migration will take longer than a night, add the new
@@ -240,7 +251,7 @@ or the session pool, so nothing in a shipping path changes:
   — v2 session updates to `StreamChunk`.
 
 Both have unit tests, and the adapter is additionally driven end to end against
-the SDK's dual-version example agent. Four findings, each of which changes the
+the repo-owned public-API dual-version fixture. Four findings, each of which changes the
 plan below:
 
 **1. The v2 client cannot fall back — and fails in a way you cannot read.** The
@@ -262,7 +273,8 @@ narrows properly. **v2 mapping is a guard chain, not a switch** — the v1 adapt
 shape does not survive the port. (Constructing typed literals works fine; it is
 only reading that fails, so test fixtures need no casts.)
 
-**3. ~~The whole-message upsert is free.~~ Retracted (2026-10-16).** Whole-message
+**3. ~~The whole-message upsert is free.~~ Retracted (2026-10-16), internal
+primitive landed (2026-10-30).** Whole-message
 updates do _not_ map onto `text_replace`. In the renderer `text_replace` replaces
 the **current** assistant message (`src/renderer/controller/agent.ts`), not the
 turn's text, so the prototype's "send the concatenation" collapses several
@@ -273,7 +285,9 @@ tool call whose first update is already `completed` stays `running`; tool output
 and replay applied after live updates duplicates text. The missing piece is an
 internal "replace message _X_" primitive for text and reasoning keyed by
 `messageId` — the v1 path already carries ids through `acp_content`, but only for
-appends.
+appends. `acp_content_replace` now provides that primitive and its shared reducer
+retains owner ids across renderer/headless checkpoints. The remaining replay
+dedupe policy is S1/S4 work, not a projection limitation.
 
 **4. `StopReason` is not re-exported** from the v2 entry point — only reachable
 as `schema.StopReason` inside the SDK's own declarations. Derive it from the

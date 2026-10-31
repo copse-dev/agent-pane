@@ -532,7 +532,6 @@ describe('roadmap pane', () => {
       assert.equal(list.querySelectorAll('.roadmap-row').length, 0)
       api.roadmap.list = async (): Promise<KnowledgeNote[]> => [makeItem('b', 'Project B item')]
       store.setState({ filesPaneOpen: true })
-      store.emit('files_pane_changed')
       await flush()
       assert.equal(list.querySelector('.roadmap-row-title')?.textContent, 'Project B item')
     } finally {
@@ -646,8 +645,6 @@ describe('roadmap pane', () => {
     try {
       await flush()
       store.setState({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
-      store.emit('files_pane_changed')
-      store.emit('right_panel_mode_changed')
       store.emit('roadmap_reveal', 'b')
       await flush()
       const selected = list.querySelector('.roadmap-row.is-selected .roadmap-row-title')
@@ -1898,8 +1895,9 @@ describe('roadmap pane', () => {
       assert.ok(prompt)
       // User is mid-edit...
       prompt.value = 'Half-typed new prompt'
-      // ...when a background store event fires (e.g. the staged-diff queue drains).
-      store.emit('files_pane_changed')
+      // ...when the panel is closed and reopened, which refreshes the list.
+      store.setState({ filesPaneOpen: false })
+      store.setState({ filesPaneOpen: true })
       await flush()
       // The draft must survive rather than being overwritten with the stored item.
       assert.equal(

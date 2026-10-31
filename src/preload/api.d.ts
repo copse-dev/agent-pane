@@ -99,6 +99,11 @@ import type {
   DeclaredMcpServer,
 } from '@shared/types/mcp.ts'
 import type {
+  McpUserServerInput,
+  McpUserServerList,
+  McpUserServerSaveResult,
+} from '@shared/types/mcp-user-servers.ts'
+import type {
   ToolPermissionCatalog,
   ToolPermissionReset,
   ToolPermissionUpdate,
@@ -220,6 +225,11 @@ export interface ApiClient {
       rootTrusted?: boolean,
     ) => Promise<void>
     revealCertificate: () => Promise<void>
+    /** Redeem an invite for this Mac's publicly trusted name; progress arrives as state. */
+    registerName: (invite: string) => Promise<void>
+    /** Delete this Mac's name from the names service and forget its device key. */
+    removeName: () => Promise<void>
+    recheckNameDns: () => Promise<void>
     onChat: (
       handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void,
     ) => () => void
@@ -606,6 +616,17 @@ export interface ApiClient {
     cancelSignIn: (name: string) => Promise<void>
     /** Forget the stored sign-in for a remote server and reconnect it. */
     signOut: (name: string) => Promise<McpServerStatus[]>
+    /** Servers in Copse's own `mcp.json`, the config Settings edits. Secret values are withheld. */
+    listUserServers: () => Promise<McpUserServerList>
+    /**
+     * Add a server to Copse's `mcp.json`, or replace `previousName`'s entry, then
+     * reload. A rejected input resolves `{ ok: false }` naming the field; nothing is written.
+     */
+    saveUserServer: (
+      input: McpUserServerInput,
+      previousName?: string,
+    ) => Promise<McpUserServerSaveResult>
+    removeUserServer: (name: string) => Promise<McpUserServerSaveResult>
     onStatusChanged: (handler: (statuses: McpServerStatus[]) => void) => () => void
   }
   toolPermissions: {

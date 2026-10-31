@@ -690,6 +690,32 @@ export function appendAcpContentBlock(
   store.emit('message_acp_content', messageId)
 }
 
+/** Replace one ACP message/thought upsert without disturbing sibling message ids. */
+export function replaceAcpContentBlocks(
+  store: AppStore,
+  messageId: string,
+  channel: 'message' | 'thought',
+  blocks: readonly import('../types/tools.ts').AcpContentBlock[],
+): void {
+  const text = blocks
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text)
+    .join('')
+  const richBlocks = blocks.filter((block) => block.type !== 'text')
+  updateMessage(store, messageId, (message) => {
+    if (channel === 'thought') {
+      message.reasoning = text
+      message.reasoningBlocks = richBlocks
+    } else {
+      message.content = text
+      message.contentBlocks = richBlocks
+    }
+  })
+  if (channel === 'thought') store.emit('message_reasoning', messageId, text)
+  else store.emit('message_token', messageId, text)
+  store.emit('message_acp_content', messageId)
+}
+
 export function setMessageContent(store: AppStore, messageId: string, content: string): void {
   updateMessage(store, messageId, (m) => {
     m.content = content

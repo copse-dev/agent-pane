@@ -20,6 +20,7 @@
 // first-party function hooks that read pure loop signals off the payload.
 import type { BlockingHook } from './canonical-events.ts'
 import {
+  EXPLORE_REPEAT_USE_EXCERPTS_NUDGE,
   EXPLORE_WITHOUT_READ_NUDGE,
   EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD,
   LOOP_NUDGE_USER_MESSAGE,
@@ -75,6 +76,9 @@ export const stuckFinalizeNudgeHook: BlockingHook<'stepBoundary'> = {
  *     never gets the verbatim bytes an edit needs) → the read-specific
  *     `EXPLORE_WITHOUT_READ_NUDGE`, which does the opposite — telling the
  *     model to `read_file` before it edits, not to stop reading altogether.
+ *     In explore mode there is no `read_file` (`readFileOffered: false`), so
+ *     the same condition selects `EXPLORE_REPEAT_USE_EXCERPTS_NUDGE`, which
+ *     points at the verbatim excerpts explore results now carry (Fix 0).
  * The explore-without-read condition does not require `escalation` (context-
  * window tracking): it is meaningful even when the loop never measures
  * conversation pressure. The harness pushes the returned text as a user
@@ -87,7 +91,12 @@ export const loopNudgeHook: BlockingHook<'stepBoundary'> = {
     if (payload.phase !== 'preStream') return undefined
     if (payload.loopNudgeSent) return undefined
     if ((payload.consecutiveExploreWithoutRead ?? 0) >= EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD) {
-      return { injectContext: EXPLORE_WITHOUT_READ_NUDGE }
+      return {
+        injectContext:
+          payload.readFileOffered === false
+            ? EXPLORE_REPEAT_USE_EXCERPTS_NUDGE
+            : EXPLORE_WITHOUT_READ_NUDGE,
+      }
     }
     if (!payload.escalation) return undefined
     if (!shouldInjectLoopNudge(payload.escalation.input, payload.escalation.pressure)) {

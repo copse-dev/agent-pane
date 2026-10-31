@@ -99,7 +99,11 @@ import {
   type ThreadGroupMode,
   type ThreadSortMode,
 } from '@shared/types/state.ts'
-import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.ts'
+import {
+  isAutomationPendingStart,
+  sidebarPrRefs,
+  type SidebarThread,
+} from '../controller/sidebar-thread.ts'
 import { getAttentionThreadIds, isThreadAwaitingAttention } from '../controller/attention.ts'
 import { openActivityPanel } from './activity-panel.ts'
 import { openThreadHistoryEditor } from './thread-history-editor.ts'
@@ -1828,6 +1832,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       if (thread.status === 'running') {
         chatRow.classList.add('is-running')
         chatRow.insertBefore(runningStatus('Agent is working'), title)
+      } else if (isAutomationPendingStart(thread)) {
+        chatRow.classList.add('is-running')
+        chatRow.insertBefore(runningStatus('Starting…'), title)
       } else if (
         (thread.unreadAt !== undefined ||
           getSideChatUnreadParents(store, project.id).has(thread.id)) &&
@@ -1998,7 +2005,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         el('span', { class: 'automation-threads-title' }, 'Automations'),
         el('span', { class: 'automation-threads-count' }, String(scheduleOwners.size)),
       )
-      if (allRuns.some((thread) => thread.status === 'running')) {
+      if (
+        allRuns.some((thread) => thread.status === 'running' || isAutomationPendingStart(thread))
+      ) {
         const status = runningStatusIcon('ui-icon ui-icon-sm automation-threads-running')
         status.setAttribute('role', 'img')
         status.setAttribute('aria-label', 'An automation is running')
@@ -2141,7 +2150,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
               ),
             )
           }
-          if (runs.some((thread) => thread.status === 'running')) {
+          if (
+            runs.some((thread) => thread.status === 'running' || isAutomationPendingStart(thread))
+          ) {
             const status = runningStatusIcon('ui-icon ui-icon-sm automation-threads-running')
             status.setAttribute('role', 'img')
             status.setAttribute('aria-label', 'This automation is running')

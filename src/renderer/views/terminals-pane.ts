@@ -9,6 +9,7 @@ import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { uiPaneTab, uiPaneTabsShell, type UiPaneTab } from '../ui/pane-tabs.ts'
 import { registerTerminalSelectionToChatShortcut } from '../terminal/selection-to-chat.ts'
+import { installSafeTerminalPaste } from '../terminal/safe-paste.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { CodeBlockRunRequest } from '@shared/store/events.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -24,10 +25,16 @@ import { createTerminalAfterPersist } from '../terminal/create-after-persist.ts'
 import { terminalStartFailureMessage } from '../terminal/start-failure-message.ts'
 import { resolveTerminalTabScope } from '../terminal/tab-scope.ts'
 import {
+  deferTerminalSpawn,
+  remoteTerminalConnectHint,
+  remoteTerminalHostLabel,
+} from '../terminal/remote-connect.ts'
+import {
   readEditorThemeTokens,
   watchEditorTheme,
   xtermThemeFromTokens,
 } from '../dom/editor-theme.ts'
+import { selectRightPanelMode } from '../controller/panels.ts'
 
 /* xterm only renders whole rows, so the fit addon leaves a few pixels of
    remainder at the bottom of the pane. xterm 6 paints the theme background on
@@ -85,6 +92,11 @@ interface TerminalTab {
   fileLinks: TerminalFileLinks
   sessionId: string | null
   creating: boolean
+  /**
+   * An SSH shell Copse opened on its own (not at the user's request) that waits
+   * for a click or keypress before spawning — see remote-connect.ts.
+   */
+  awaitingConnect: boolean
   pendingInput: string[]
   codeBlockRun: CodeBlockRunRequest | null
   termOpened: boolean
@@ -349,6 +361,11 @@ export function mountTerminalsPane(
 
   async function ensureSession(tab: TerminalTab): Promise<void> {
     if (tab.sessionId || tab.creating) return
+    if (tab.awaitingConnect) {
+      openTerminalSurface(tab)
+      fitTab(tab)
+      return
+    }
     if (!store.getState().workspaceRoot || !tab.scopeProjectId) {
       tab.term.writeln('\x1b[90mOpen a folder to use the terminal.\x1b[0m', () => {
         finishCodeBlockRun(tab, null)
@@ -443,10 +460,17 @@ export function mountTerminalsPane(
   }
 
   function wireTabInput(tab: TerminalTab): void {
+    const paste = installSafeTerminalPaste(tab.term, tab.container, () =>
+      tabs.get(tab.id) === tab ? tab.sessionId : null,
+    )
     // Cmd/Ctrl+L attaches the terminal's current selection to the chat so
     // command output can be referenced as a prompt attachment.
     registerTerminalSelectionToChatShortcut(tab.term, () => tab.label)
     tab.term.onData((data) => {
+      // The keypress that connects a waiting remote tab is not shell input, so
+      // an Enter here must not count as a command: the login banner that
+      // follows would otherwise auto-name the tab.
+      if (connectWaitingTab(tab)) return
       if (data.includes('\r')) {
         tab.commandRan = true
         scheduleAutoName(tab)
@@ -458,7 +482,9 @@ export function mountTerminalsPane(
       }
       void api.terminal.write(tab.sessionId, data)
     })
-    tab.container.addEventListener('mousedown', () => {
+    tab.container.addEventListener('mousedown', (e) => {
+      // Only a primary click connects; a right-click opens the context menu.
+      if (e.button === 0) connectWaitingTab(tab)
       if (activeTabId === tab.id) focusTab(tab)
     })
     tab.container.addEventListener('contextmenu', (e) => {
@@ -476,16 +502,26 @@ export function mountTerminalsPane(
           label: 'Paste',
           disabled: !tab.sessionId,
           onSelect: (): void => {
-            void navigator.clipboard.readText().then((text) => {
-              if (text && tab.sessionId) {
-                tab.term.paste(text)
-                focusTab(tab)
-              }
-            })
+            void navigator.clipboard
+              .readText()
+              .then((text) => paste(text))
+              .catch((error: unknown) => {
+                console.warn('Could not paste into terminal', error)
+              })
           },
         },
       ])
     })
+  }
+
+  /** Spawn a waiting remote tab on the user's say-so; false if it was not waiting. */
+  function connectWaitingTab(tab: TerminalTab): boolean {
+    if (!tab.awaitingConnect) return false
+    tab.awaitingConnect = false
+    tab.panel.removeAttribute('data-awaiting-connect')
+    tab.term.reset()
+    void ensureSession(tab)
+    return true
   }
 
   function currentThreadId(): string | null {
@@ -503,8 +539,7 @@ export function mountTerminalsPane(
 
   // Creating a shell is asynchronous (xterm loads on first use), and more than
   // one listener can ask for "a shell for this scope" before the first lands:
-  // opening the pane fires `files_pane_changed` and `right_panel_mode_changed`
-  // in the same tick. Share the in-flight creation per scope so they get one.
+  // opening the pane and switching thread can both ask in the same tick. Share the in-flight creation per scope so they get one.
   const pendingScopeTabs = new Map<string | null, Promise<string>>()
   // Every tab still waiting on xterm, by scope — including ones a command run, a
   // code-block run or "+" started — so the scope is not given an extra empty one.
@@ -514,7 +549,7 @@ export function mountTerminalsPane(
     return visibleTabs().length > 0 || (creatingTabs.get(currentThreadId()) ?? 0) > 0
   }
 
-  function ensureScopeTab(options?: { focus?: boolean }): Promise<string> {
+  function ensureScopeTab(options?: { focus?: boolean; automatic?: boolean }): Promise<string> {
     const scopeId = currentThreadId()
     let pending = pendingScopeTabs.get(scopeId)
     if (!pending) {
@@ -540,6 +575,8 @@ export function mountTerminalsPane(
     scopeProjectId?: string
     executionTarget?: 'local'
     scopeId?: string
+    /** Copse opened this tab itself (thread switch, worktree hand-off, …). */
+    automatic?: boolean
   }): Promise<string> {
     tabCounter += 1
     const id = crypto.randomUUID()
@@ -598,6 +635,21 @@ export function mountTerminalsPane(
     }
     const { term, fitAddon } = xterm
     const fileLinks = installTerminalFileLinks(term, store, api)
+    const remoteHost = remoteTerminalHostLabel(
+      store.getState().projects,
+      scopeProjectId,
+      options?.executionTarget,
+    )
+    const awaitingConnect = deferTerminalSpawn({
+      automatic: options?.automatic === true && !options.initialInput && !options.codeBlockRun,
+      hostLabel: remoteHost,
+    })
+    if (awaitingConnect && remoteHost) {
+      panel.setAttribute('data-awaiting-connect', '')
+      for (const line of remoteTerminalConnectHint(remoteHost)) {
+        term.writeln(`\x1b[90m${line}\x1b[0m`)
+      }
+    }
     const tab: TerminalTab = {
       id,
       scopeProjectId,
@@ -615,6 +667,7 @@ export function mountTerminalsPane(
       fileLinks,
       sessionId: null,
       creating: false,
+      awaitingConnect,
       // Seed the command so it runs as soon as the PTY spawns; `ensureSession`
       // flushes pending input right after create.
       pendingInput: options?.initialInput ? [options.initialInput] : [],
@@ -707,7 +760,7 @@ export function mountTerminalsPane(
       setActiveTab(lastRemaining.id)
     } else {
       activeTabId = null
-      if (terminalModeActive(store)) void ensureScopeTab()
+      if (terminalModeActive(store)) void ensureScopeTab({ automatic: true })
     }
   }
 
@@ -724,7 +777,8 @@ export function mountTerminalsPane(
     if (activeTabId && !visible.some((t) => t.id === activeTabId)) activeTabId = null
 
     if (needsNew) {
-      if (terminalModeActive(store) && !scopeHasTab()) void ensureScopeTab({ focus: false })
+      if (terminalModeActive(store) && !scopeHasTab())
+        void ensureScopeTab({ focus: false, automatic: true })
       return
     }
     if (!activeTabId && visible.length > 0) setActiveTab(at(visible, 0).id, { focus: false })
@@ -758,13 +812,19 @@ export function mountTerminalsPane(
   }
 
   function onTerminalModeChange(): void {
+    syncTerminalMode(false)
+  }
+
+  // `automatic` is the restore at mount: the pane was left open, and nobody
+  // asked for a shell this time. Opening the pane later is the user's request.
+  function syncTerminalMode(automatic: boolean): void {
     if (!terminalModeActive(store)) {
       resizeObserver.disconnect()
       return
     }
     // The first shell of a scope arrives once xterm has loaded; show it then.
     if (!scopeHasTab()) {
-      void ensureScopeTab().then(showActiveTab)
+      void ensureScopeTab({ automatic }).then(showActiveTab)
       return
     }
     showActiveTab()
@@ -807,8 +867,6 @@ export function mountTerminalsPane(
     await addTab({ activate: true, initialInput: `${trimmed}\r`, ...options })
     if (!wasActive) {
       store.setState({ filesPaneOpen: true, rightPanelMode: 'terminal' })
-      store.emit('files_pane_changed')
-      store.emit('right_panel_mode_changed')
     }
   }
 
@@ -846,7 +904,7 @@ export function mountTerminalsPane(
     if (tab) void ensureSession(tab)
   }
 
-  onTerminalModeChange()
+  syncTerminalMode(true)
 
   // While an agent task panel owns the viewer, the shells list drops its active
   // highlight; when the task is cleared (taskId null), restore it.
@@ -880,6 +938,7 @@ export function mountTerminalsPane(
         activate: tab.scopeId === currentThreadId(),
         scopeProjectId: tab.scopeProjectId,
         scopeId: tab.scopeId,
+        automatic: true,
       })
     }
   }
@@ -904,8 +963,7 @@ export function mountTerminalsPane(
   }
 
   const unsubs = [
-    store.on('right_panel_mode_changed', onTerminalModeChange),
-    store.on('files_pane_changed', onTerminalModeChange),
+    selectRightPanelMode(store, 'terminal', onTerminalModeChange),
     store.on('agent_task_selected', onAgentTaskSelected),
     store.on('settings_changed', onFontSizeChange),
     store.on('threads_changed', onThreadMaybeChanged),

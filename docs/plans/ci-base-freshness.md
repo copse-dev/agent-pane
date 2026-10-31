@@ -1,5 +1,9 @@
 # CI base freshness — #2520
 
+Status: **Resolved** for the reporting and bounded-refresh slices
+([#2974](https://github.com/copse-dev/agent-pane/pull/2974)); #2520 is closed. The open
+enforcement decision belongs to [main-gate-shaping.md](main-gate-shaping.md).
+
 Task baseline: `main` at `883ff2e`, 22 September 2026. Owner:
 [#2520](https://github.com/copse-dev/agent-pane/issues/2520). This is the
 **base-advancement reporting** slice of Shipping quality roadmap R11. It

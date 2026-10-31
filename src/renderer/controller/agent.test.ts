@@ -18,6 +18,7 @@ import { isRuntimeOwnedMessage } from './runtime-transcript.ts'
 import { createTranscriptReducer } from '@shared/store/transcript-reducer.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { markQuietRun } from './quiet-runs.ts'
+import { selectRightPanelMode, syncFilesPaneDom } from './panels.ts'
 import { getReviewReportTarget, setReviewReportTarget } from './review-report-target.ts'
 import { markSendNowAbort, takeSendNowAbort } from './send-now-aborts.ts'
 import { sessionUpdateToStreamChunks } from '../../main/services/acp/session-update-adapter.ts'
@@ -269,9 +270,10 @@ test('diff events stay scoped to their owning project and thread', () => {
 })
 
 test('opening Changes for a staged diff unhides the pane before panel sync events', () => {
-  // Layout must win the race against Monaco's whenDiffHostVisible wait: emit
-  // right_panel_mode_changed / files_pane_changed (and sync #pane-files) before
-  // panel_changed / staged_diffs_changed, which kick the Changes viewer.
+  // Layout must win the race against Monaco's whenDiffHostVisible wait: the
+  // Changes pane hears the mode change (and #pane-files is synced) before
+  // panel_changed / staged_diffs_changed, which kick the Changes viewer. main.ts
+  // selects `filesPaneOpen` for #pane-files before any pane subscribes.
   const { store, showDiff, queueDiffs } = setup()
   const pane = document.createElement('div')
   pane.id = 'pane-files'
@@ -279,11 +281,14 @@ test('opening Changes for a staged diff unhides the pane before panel sync event
   document.body.append(pane)
 
   const events: string[] = []
-  store.on('right_panel_mode_changed', () => {
-    events.push(`mode:${pane.hidden ? 'hidden' : 'open'}`)
-  })
-  store.on('files_pane_changed', () => {
-    events.push(`files:${pane.hidden ? 'hidden' : 'open'}`)
+  store.select(
+    (s) => s.filesPaneOpen,
+    () => {
+      syncFilesPaneDom(store)
+    },
+  )
+  selectRightPanelMode(store, 'changes', () => {
+    events.push(`changes:${pane.hidden ? 'hidden' : 'open'}`)
   })
   store.on('staged_diffs_changed', () => {
     events.push(`staged:${pane.hidden ? 'hidden' : 'open'}`)
@@ -294,7 +299,7 @@ test('opening Changes for a staged diff unhides the pane before panel sync event
 
   showDiff('project-1', 't1', 'a.ts', 'before', 'after', 'typescript')
   assert.equal(pane.hidden, false)
-  assert.deepEqual(events, ['mode:open', 'files:open', 'panel:open'])
+  assert.deepEqual(events, ['changes:open', 'panel:open'])
 
   events.length = 0
   queueDiffs('project-1', 't1', [{ path: 'a.ts', language: 'typescript' }])
@@ -1049,6 +1054,35 @@ test('prompt progress dedupes on the label but re-emits after another activity',
     'Reviewing changes…',
     'Processing prompt… 47%',
   ])
+})
+
+test('remote agent setup stages drive the activity row until the agent is reached', () => {
+  const { send, store } = setup()
+  const labels: (string | null)[] = []
+  store.on('agent_activity', (_tid, label) => labels.push(label))
+
+  send({ type: 'agent_setup_progress', phase: 'start', label: 'Connecting to Dev…' })
+  send({ type: 'agent_setup_progress', phase: 'start', label: 'Connecting to Dev…' })
+  send({
+    type: 'agent_setup_progress',
+    phase: 'setup',
+    label: 'Installing pkg@1.0.0 on Dev (one-time setup)…',
+  })
+  send({ type: 'agent_setup_progress', phase: 'ready' })
+
+  // A repeated stage is not re-announced; `ready` hands the row back to the
+  // turn's own activity, as derived from thread state.
+  assert.deepEqual(labels.slice(0, 2), [
+    'Connecting to Dev…',
+    'Installing pkg@1.0.0 on Dev (one-time setup)…',
+  ])
+  assert.equal(labels.length, 3)
+  assert.notEqual(labels[2], 'Installing pkg@1.0.0 on Dev (one-time setup)…')
+  // Status only: nothing lands in the transcript.
+  assert.equal(
+    store.getState().threads[0]?.messages.some((message) => message.role === 'assistant'),
+    false,
+  )
 })
 
 test('review report chunks stay on the assistant message of each turn', () => {

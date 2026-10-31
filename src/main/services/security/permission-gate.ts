@@ -14,10 +14,9 @@ import {
 import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
-import { getWorkspaceRoot } from '../workspace.ts'
 import { getChatStoreRoot } from '../workspace.ts'
 import { ensureThreadAccess, needsOtherThreadRead } from './thread-access.ts'
-import { getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
+import { currentAgentRoots, getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
 import {
   getActiveExecutionTarget,
   isSshExecutionTarget,
@@ -52,7 +51,7 @@ import { currentRunIsUnattendedContainer } from './unattended-run.ts'
 import { decideContainedShellEffect } from '@copse/shell-guard/container-effects.ts'
 import { detectCheckoutDetachingCommand } from '@copse/shell-guard/checkout-detach.ts'
 import { isInsideManagedThreadWorktree } from '../worktree-manager.ts'
-import { requestApproval, type ApprovalRequest } from '../approval.ts'
+import { observeApprovalResolutions, requestApproval, type ApprovalRequest } from '../approval.ts'
 import { recordDecision } from './decision-log-store.ts'
 import { getSetting, updateSetting, resolveApiKey } from '../storage/settings.ts'
 import {
@@ -120,10 +119,8 @@ import {
 import { isAgentRunReadonly } from '../agent-run-readonly.ts'
 import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
 import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
-import { PARALLEL_SEARCH_API_URL } from '../parallel-search.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/plugins/background-tasks-plugin.ts'
-import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { assessShellHarm, type ShellHarmContext } from './shell-harm.ts'
 import {
   guardedYoloTierReason,
@@ -225,6 +222,12 @@ export interface ShellCommandPermissionOptions {
 }
 
 export interface TerminalPermissionOptions {
+  /**
+   * Root of the project the terminal is opened for, or null when it does not
+   * resolve. The caller names it so a window opening a terminal is not judged
+   * against whichever workspace another window last selected (#3958).
+   */
+  projectRoot: string | null
   sandboxEnabled?: boolean
   remoteTarget?: boolean
   /** Whether the OS has an ASRT backend at all. Defaults to this machine's. */
@@ -277,7 +280,11 @@ function autoApproveShell(
   executionRoot?: string | null,
   sandboxEnabled = commandRunsSandboxed(executionRoot ?? getAgentExecutionRoot()),
 ): boolean {
-  const decision = resolveAutoApproval(command, executionRoot, sandboxEnabled)
+  const decision = resolveAutoApproval(
+    command,
+    { projectRoot: getAgentProjectRoot(), executionRoot: executionRoot ?? getAgentExecutionRoot() },
+    sandboxEnabled,
+  )
   if (decision.action !== 'auto-approve') return false
   recordDecision({
     kind: 'shell',
@@ -318,7 +325,7 @@ async function requestEscalationApproval(
   leaseIdentity?: ShellReplayLeaseIdentity,
 ): Promise<boolean> {
   if (signal?.aborted) return false
-  const trustable = offerableTrustedCommand(parts.command)
+  const trustable = offerableTrustedCommand(parts.command, getAgentProjectRoot())
   const { approved, remember, grantScope } = await requestApproval(
     {
       title,
@@ -900,7 +907,7 @@ async function checkWebSearchPermission(
   explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
 ): Promise<boolean> {
   const { getWebSearchProvider } = await import('../web-search/provider.ts')
-  const { WEB_SEARCH_ENDPOINTS, WEB_SEARCH_LABELS } = await import('@shared/web-search.ts')
+  const { WEB_SEARCH_ENDPOINTS } = await import('@shared/web-search.ts')
   const provider = getWebSearchProvider()
   // Let the tool return setup guidance without asking for an unrelated origin.
   if (provider === 'none' || !resolveApiKey(provider)) {
@@ -915,20 +922,20 @@ async function checkWebSearchPermission(
   if (decision.action === 'deny') {
     throw new Error(`Web search denied: ${decision.reasons.join('; ')}`)
   }
-  if (explicitPolicy === 'allow') {
+  // Selecting a provider and resolving its API key in Settings → Web search IS
+  // the user's consent to send search queries to that provider's fixed origin,
+  // mirroring the former `copse.parallel-search` plugin's enable-is-consent
+  // behavior. Auto-allow instead of a one-time web-origin prompt; an explicit
+  // Always ask override still prompts every time. Only grant the origin once
+  // we know the call is actually proceeding, so a denied Always-ask prompt
+  // never leaves a dangling grant for another caller to inherit.
+  if (explicitPolicy !== 'ask') {
     grantWebOriginForNextFetch(decision.origin)
     return true
   }
-  if (decision.action === 'allow') {
-    return explicitPolicy === 'ask' ? promptExplicitToolAsk('web_search', {}, signal) : true
-  }
-  return promptWebOrigin(
-    decision.origin,
-    decision.origin,
-    signal,
-    explicitPolicy !== 'ask',
-    `Search queries will be sent to ${WEB_SEARCH_LABELS[provider]} and may consume paid API credits.`,
-  )
+  const approved = await promptExplicitToolAsk('web_search', {}, signal)
+  if (approved) grantWebOriginForNextFetch(decision.origin)
+  return approved
 }
 
 /**
@@ -961,40 +968,6 @@ async function checkAskClassifierPermission(
     signal,
   )
   return approved
-}
-
-async function checkParallelSearchPermission(
-  signal?: AbortSignal,
-  explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
-): Promise<boolean> {
-  // Enabling the `copse.parallel-search` plugin (default-off, experimental,
-  // explicit API key) IS the user's consent to send search queries to Parallel.
-  // Auto-allow its fixed API origin while the plugin is enabled, mirroring how
-  // the `copse.background-tasks` plugin auto-declares its `loopback-bind`
-  // relaxation: no web-origin prompt just because the enabled search tool ran.
-  if (getDefaultPluginRegistry().isEnabled(PARALLEL_SEARCH_PLUGIN_ID)) {
-    return explicitPolicy === 'ask' ? promptExplicitToolAsk('parallel_search', {}, signal) : true
-  }
-  const saved = getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)
-  const decision = decideWebFetchPermission({
-    url: PARALLEL_SEARCH_API_URL,
-    allowedOrigins: webAllowedOriginsWithDefaults(saved),
-    allowUserApproval: getSetting<boolean>(WEB_ALLOW_USER_APPROVAL_SETTING, true),
-  })
-  if (decision.action === 'deny') {
-    throw new Error(`Parallel Search access denied: ${decision.reasons.join('; ')}`)
-  }
-  if (explicitPolicy === 'allow') return true
-  if (decision.action === 'allow') {
-    return explicitPolicy === 'ask' ? promptExplicitToolAsk('parallel_search', {}, signal) : true
-  }
-  return promptWebOrigin(
-    decision.origin,
-    PARALLEL_SEARCH_API_URL,
-    signal,
-    explicitPolicy !== 'ask',
-    'The objective and search queries will be sent to Parallel. Requests may consume paid API credits; Zero Data Retention depends on your Parallel account agreement.',
-  )
 }
 
 /**
@@ -1487,7 +1460,7 @@ export async function ensureShellCommandPermitted(
   // AND the workspace to be trusted, and never waives analysis for an untrusted
   // co-segment, so this can only fire for a genuinely safe command line.
   if (!guardedYolo && !forceAsk) {
-    const routing = routeShellCommand(command)
+    const routing = routeShellCommand(command, currentAgentRoots())
     if (routing.outcome === 'allow') {
       recordDecision({
         kind: 'shell',
@@ -1561,7 +1534,9 @@ export async function ensureShellCommandPermitted(
 
   const outsideSandbox =
     shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled) ||
-    (guardedYolo && sandboxEnabled && routeShellCommand(command).outcome === 'allow')
+    (guardedYolo &&
+      sandboxEnabled &&
+      routeShellCommand(command, currentAgentRoots()).outcome === 'allow')
   const auditGuardedYolo = (
     userResponse: 'approved' | 'declined' | 'not-required',
     promptedBy?: string[],
@@ -1936,10 +1911,8 @@ async function checkBackgroundProcessPermission(
  * not add a separate approval boundary. Agent shell confinement stays on
  * run_shell / run_background. (#662, #803, #812)
  */
-export async function ensureTerminalPermitted(
-  opts: TerminalPermissionOptions = {},
-): Promise<boolean> {
-  if (!getWorkspaceRoot()) throw new Error('No workspace open.')
+export async function ensureTerminalPermitted(opts: TerminalPermissionOptions): Promise<boolean> {
+  if (!opts.projectRoot) throw new Error('No workspace open.')
   const decision = decideTerminalPermission({
     sandboxEnabled: opts.sandboxEnabled ?? isProjectSandboxEnabled(),
     remoteTarget: opts.remoteTarget ?? isSshExecutionTarget(getActiveExecutionTarget()),
@@ -2050,7 +2023,8 @@ function recordHookDecision(toolName: string, decision: HookGateDecision): void 
  *   - **deny** — the call is blocked. A message-bearing deny *throws* so the
  *     hook's reason reaches the model as the tool result (the existing
  *     agent-visible deny path, same as a strict-mode / web deny); a bare deny
- *     returns false, which the tool loop renders as the plain user rejection.
+ *     returns false with `deniedByHook`, which the tool loop renders as a hook
+ *     block, never as a user rejection (#1745).
  *   - **ask** — escalates to Copse's approval prompt (never a silent allow/deny,
  *     B4). Approval falls through to the normal gate; a decline blocks the call.
  *   - **allow** — falls through: a hook can only *tighten* the gate, never
@@ -2064,6 +2038,8 @@ function recordHookDecision(toolName: string, decision: HookGateDecision): void 
 interface ToolGateHookOutcome {
   /** Whether the call may proceed to Copse's own gate (false = blocked). */
   ok: boolean
+  /** Set when the hook itself refused; absent when the user declined a hook `ask`. */
+  deniedByHook?: true
   /** Final hook-rewritten tool input (H1), when the pipeline rewrote it. */
   updatedInput?: Record<string, unknown>
   /**
@@ -2114,7 +2090,7 @@ async function applyToolGateHooks(
     // Block the triggering call too: `haltRun` outranks everything (decision 12),
     // so the tool must not execute once before the abort is observed — regardless
     // of whether the hook also set `permission: 'deny'`.
-    return { ok: false }
+    return { ok: false, deniedByHook: true }
   }
 
   if (decision.permission === 'deny') {
@@ -2123,7 +2099,7 @@ async function applyToolGateHooks(
       throw new Error(`Blocked by a hook: ${decision.agentMessage}`)
     }
     console.warn(`[hooks] toolGate denied ${check.toolName}`)
-    return { ok: false }
+    return { ok: false, deniedByHook: true }
   }
 
   const rewrite = decision.updatedInput !== undefined ? { updatedInput: decision.updatedInput } : {}
@@ -2159,7 +2135,9 @@ function recordExplicitToolPolicy(
 }
 
 /**
- * Returns true when the tool call may proceed, false when the user rejected.
+ * Returns true when the tool call may proceed, false when it was refused. A
+ * refusal that was not the user declining a prompt is stamped on
+ * `check.denial`, so the tool result does not blame the user for it (#1745).
  *
  * This gate is default-allow: only the tools matched below (shell, MCP, web
  * fetch/search, browser navigation) are explicitly gated, and anything else
@@ -2174,17 +2152,42 @@ export async function ensureToolPermitted(
   signal?: AbortSignal,
   afterHooks?: (effectiveArgs: unknown) => Promise<void>,
 ): Promise<boolean> {
+  const { value: permitted, lastResolution } = await observeApprovalResolutions(() =>
+    decideToolPermitted(check, signal, afterHooks),
+  )
+  if (
+    !permitted &&
+    check.denial === undefined &&
+    lastResolution !== undefined &&
+    lastResolution !== 'user'
+  ) {
+    check.denial = { by: 'unanswered', resolution: lastResolution }
+  }
+  return permitted
+}
+
+async function decideToolPermitted(
+  check: PermissionCheck,
+  signal?: AbortSignal,
+  afterHooks?: (effectiveArgs: unknown) => Promise<void>,
+): Promise<boolean> {
   if (planToolBlockReason(check.toolName)) return false
   const initialOverride = resolveToolPermission(check.toolName)
   if (initialOverride) recordExplicitToolPolicy(check.toolName, initialOverride)
-  if (initialOverride?.policy === 'block') return false
+  if (initialOverride?.policy === 'block') {
+    check.denial = { by: 'policy' }
+    return false
+  }
 
   const originalShellCommand =
     check.toolName === 'run_shell' || check.toolName === 'run_background'
       ? shellCommandFromArgs(check.args)
       : null
   const gate = await applyToolGateHooks(check, signal)
-  if (!gate.ok) return false
+  if (!gate.ok) {
+    if (gate.deniedByHook) check.denial = { by: 'hook' }
+    return false
+  }
 
   if (gate.updatedInput && typeof check.args === 'object' && check.args !== null) {
     Object.assign(check.args, gate.updatedInput)
@@ -2226,8 +2229,6 @@ export async function ensureToolPermitted(
     permitted = await checkFetchUrlPermission(args, signal, explicitPolicy)
   } else if (toolName === 'web_search') {
     permitted = await checkWebSearchPermission(signal, explicitPolicy)
-  } else if (toolName === 'parallel_search') {
-    permitted = await checkParallelSearchPermission(signal, explicitPolicy)
   } else if (toolName === 'ask_classifier') {
     permitted = await checkAskClassifierPermission(args, signal, explicitPolicy)
   } else if (toolName === 'image_gen') {
@@ -2264,7 +2265,10 @@ export async function ensureToolPermitted(
     )
   } else if (toolName === 'device_hub') {
     // Host device access (including screenshots) is not project-sandboxed.
-    permitted = explicitPolicy === 'allow' || (await promptExplicitToolAsk(toolName, args, signal))
+    const deletingSimulator = isRecord(args) && args['action'] === 'delete_simulator'
+    permitted =
+      (!deletingSimulator && explicitPolicy === 'allow') ||
+      (await promptExplicitToolAsk(toolName, args, signal))
   } else if (toolName === 'launch_gui_app') {
     // Always prompt — GUI launch leaves the sandbox and puts a window on the
     // desktop. A stale stored allow is coerced to ask by tool-permissions.ts;
@@ -2294,5 +2298,6 @@ export async function ensureToolPermitted(
   const currentOverride = resolveToolPermission(toolName)
   if (currentOverride?.policy !== 'block') return true
   recordExplicitToolPolicy(toolName, currentOverride, 'tool-permission-recheck')
+  check.denial = { by: 'policy' }
   return false
 }
