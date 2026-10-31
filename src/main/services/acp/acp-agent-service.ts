@@ -72,6 +72,7 @@ import {
 } from './acp-permission-grants.ts'
 import {
   acpExecuteCommandText,
+  acpShellCommandText,
   permissionKindLabel,
   presentPermissionRequest,
 } from './acp-approval-presentation.ts'
@@ -1165,14 +1166,19 @@ export function mergeAcpPermissionAbortSignals(
   return AbortSignal.any([turnSignal, rpcSignal])
 }
 
+/**
+ * Answer a request that runs `command` (see `acpShellCommandText`) through the
+ * shell gate, as native `run_shell` is. Null when there is no command text to
+ * classify, which leaves the request to the generic prompt.
+ */
 async function respondToAcpExecutePermission(
   agent: { sandboxed: boolean; contained?: boolean },
   req: RequestPermissionRequest,
+  command: string | null,
   root: string | null,
   projectRoot: string | null,
   signal?: AbortSignal,
 ): Promise<RequestPermissionResponse | null> {
-  const command = acpExecuteCommandText(req.toolCall)
   if (!command) return null
   if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
   const readOnly = agent.sandboxed && isStructurallyReadOnlyShellCommand(command)
@@ -1231,7 +1237,8 @@ function acpGrantLocationFor(agent: AcpPermissionAgent): AcpGrantLocation | null
  * Requests whose (agent, tool kind) pair was granted "always allow" earlier are
  * approved without prompting; checking the dialog's remember box persists such
  * a grant and also answers with the agent's own `allow_always` option so the
- * agent-side session stops asking within the turn.
+ * agent-side session stops asking within the turn. A request that runs a
+ * command is never remembered: each command must reach the shell gate.
  */
 async function respondToPermission(
   agent: AcpPermissionAgent,
@@ -1265,7 +1272,16 @@ async function respondToPermission(
   }
   const kind = req.toolCall.kind ?? 'other'
   const grantLocation = acpGrantLocationFor(agent)
-  if (grantLocation && isAcpPermissionRemembered(agent.id, kind, grantLocation)) {
+  // A grant is keyed by kind alone, so one remembered answer for a request
+  // that runs a command would wave every later command of that kind past the
+  // shell gate below. Such requests — `execute`, or an unclassified request
+  // carrying `rawInput.command` — are never rememberable, and a stored grant
+  // never answers them. The grant store also ignores stored execute grants;
+  // a stored `other` grant still covers `other` requests without a command.
+  const shellCommand = acpShellCommandText(req.toolCall)
+  const runsCommand = kind === 'execute' || shellCommand !== null
+  const rememberable = !runsCommand
+  if (rememberable && grantLocation && isAcpPermissionRemembered(agent.id, kind, grantLocation)) {
     return permissionResponseFor(req.options, true, { preferAlways: true })
   }
   // Low-risk ACP reads/searches from a sandboxed agent should not require users
@@ -1292,7 +1308,7 @@ async function respondToPermission(
   ) {
     return permissionResponseFor(req.options, true)
   }
-  if (kind === 'execute') {
+  if (runsCommand) {
     const toolCallId = req.toolCall.toolCallId
     const tracked = toolCallId ? trackAcpPermissionToolCall(toolCallId) : null
     const approvalSignal = tracked
@@ -1302,8 +1318,13 @@ async function respondToPermission(
       : signal
     try {
       const executeResponse = await respondToAcpExecutePermission(
-        agent,
+        // Only an `execute` request runs in the agent's own shell. An
+        // unclassified call's `command` may be an MCP tool argument (a Redis or
+        // SQL command) that runs outside that sandbox, so it is judged without
+        // the sandbox's containment claim: gated, never auto-run on it.
+        kind === 'execute' ? agent : { ...agent, sandboxed: false },
         req,
+        shellCommand,
         root,
         projectRoot,
         approvalSignal,
@@ -1361,8 +1382,10 @@ async function respondToPermission(
       {
         ...presentation,
         cause: 'acp-permission',
-        allowRemember: true,
-        rememberLabel: `Always allow ${agent.title} ${permissionKindLabel(kind)}`,
+        allowRemember: rememberable,
+        ...(rememberable
+          ? { rememberLabel: `Always allow ${agent.title} ${permissionKindLabel(kind)}` }
+          : {}),
         // Lets turn bookkeeping leave this tool call open while its prompt
         // outlives the turn (approval parking), instead of stamping it
         // "interrupted" underneath a question the user can still answer.
@@ -1371,10 +1394,11 @@ async function respondToPermission(
       approvalSignal,
     )
     if (approvalSignal?.aborted) return { outcome: { outcome: 'cancelled' } }
-    if (approved && remember && grantLocation) {
+    const remembered = approved && remember && rememberable
+    if (remembered && grantLocation) {
       void rememberAcpPermission(agent.id, kind, grantLocation)
     }
-    return permissionResponseFor(req.options, approved, { preferAlways: approved && remember })
+    return permissionResponseFor(req.options, approved, { preferAlways: remembered })
   } finally {
     tracked?.unregister()
   }
@@ -1382,10 +1406,13 @@ async function respondToPermission(
 
 /**
  * Translate the user's approve/deny into one of the agent-provided option ids.
- * By default a one-shot option (`*_once`) wins over a remembered one
- * (`*_always`) since Copse asks per call; `preferAlways` flips that for grants
- * the user chose to remember. Falls back to `cancelled` when the agent offered
- * no option of the needed polarity.
+ * Copse asks per call, so an approval selects the agent's one-shot
+ * `allow_once`. Only `preferAlways`, for grants the user chose to remember,
+ * selects `allow_always` (falling back to `allow_once`). A one-shot approval
+ * never falls back to `allow_always`: the agent would remember an answer given
+ * once, and its later requests of that kind would never reach Copse's gate. A
+ * denial prefers `reject_once`. Falls back to `cancelled` when the agent
+ * offered no option that matches the answer.
  */
 export function permissionResponseFor(
   options: PermissionOption[],
@@ -1395,7 +1422,7 @@ export function permissionResponseFor(
   const wanted: PermissionOptionKind[] = approved
     ? opts?.preferAlways
       ? ['allow_always', 'allow_once']
-      : ['allow_once', 'allow_always']
+      : ['allow_once']
     : ['reject_once', 'reject_always']
   const option = pickPermissionOption(options, wanted)
   return option

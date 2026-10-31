@@ -21,7 +21,7 @@ import { showConfirmDialog } from './confirm-dialog.ts'
 import { uiActions } from '../ui/actions.ts'
 import { startReview } from '../controller/review-actions.ts'
 import { REVIEW_PLUGIN_ID } from '@copse/agent/plugins/review-plugin.ts'
-import type { ActiveDiff } from '@shared/types/state.ts'
+import type { ActiveDiff, StagedDiffEntry } from '@shared/types/state.ts'
 import {
   pruneStagedDiffCache,
   resolveStagedDiffView,
@@ -1284,8 +1284,17 @@ export function mountGitChangesPane(
     renderRestoreBanner()
   }
 
+  /** The proposed diff and its queue are unchanged; a fresh empty queue is no change. */
+  function sameDiffState(
+    a: readonly [ActiveDiff | null, StagedDiffEntry[]],
+    b: readonly [ActiveDiff | null, StagedDiffEntry[]],
+  ): boolean {
+    return a[0] === b[0] && (a[1] === b[1] || (a[1].length === 0 && b[1].length === 0))
+  }
+
   async function syncFromStore(): Promise<void> {
-    // switchThread can emit panel_changed before threads_changed.
+    // A thread switch resets the diff state inside its setState, so this can
+    // run before threads_changed.
     adoptActiveOwner()
     renderList()
     await syncSelection()
@@ -1350,9 +1359,14 @@ export function mountGitChangesPane(
       // windows" (#1704). Debounced, so a multi-file approve-all coalesces.
       scheduleRefresh()
     }),
-    store.on('panel_changed', () => {
-      if (changesModeActive(store)) void syncFromStore()
-    }),
+    // Only the diff state: an ordinary thread switch is threads_changed's job.
+    store.select(
+      (s) => [s.activeDiff, s.stagedDiffs] as const,
+      () => {
+        if (changesModeActive(store)) void syncFromStore()
+      },
+      sameDiffState,
+    ),
     store.on('settings_changed', syncReviewGate),
     store.on('thread_status_changed', syncReviewButton),
     store.on('threads_changed', syncReviewButton),

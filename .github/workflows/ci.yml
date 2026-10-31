@@ -443,7 +443,7 @@ jobs:
       # specs it can affect; on a push to main it maps vs the previous main
       # commit. The nightly `schedule` always runs the full suite. The output
       # drives the `e2e` job below:
-      #   mode=full    → all 8 shards run the whole CI suite
+      #   mode=full    → all 9 shards run the whole CI suite
       #   mode=subset  → only the listed specs run, distributed across the shards
       #   mode=skip    → nothing e2e-relevant changed; shards report green, no run
       # subset is used only for confident, UI-coupled diffs; LOW-confidence
@@ -650,7 +650,7 @@ jobs:
         run: |
           git fetch --no-tags origin "$BASE_SHA" 2>/dev/null || true
           node scripts/check-screenshots.mts --plan --base "$BASE_SHA"
-      # Keep every full e2e run at 8 shards. This was sized when both runner
+      # Keep every full e2e run at 9 shards. Eight was sized when both runner
       # classes had a tight memory ceiling: the private-repo hosted runner was
       # 7 GB and each self-hosted `copse-e2e` container is capped at 6 GB. Public
       # repos now get 4-vCPU / 16 GiB hosted runners, so on the default runner
@@ -660,6 +660,10 @@ jobs:
       # container launch too many sequential Electron sessions; accumulated
       # Electron/gortex processes then OOM-crash unrelated late-running specs.
       # The run step's duration-balanced split still partitions specs disjointly.
+      # The ninth shard (October 2026) is for time, not memory: at eight, the
+      # recorded weights put every shard within a second of the 600s spec
+      # budget, so no new spec could be added. More shards only lower each
+      # one's Electron launch count, so this stays inside #339's memory bound.
       - id: shards
         env:
           PLAN_MODE: ${{ steps.plan.outputs.mode }}
@@ -687,7 +691,7 @@ jobs:
           if [ "$PLAN_MODE" = "subset" ]; then
             # SHARD_TOTAL is the shard count the run step splits across, so total and
             # the list must agree or specs would be assigned to shards that were
-            # never dispatched. Cap at 8 (the memory ceiling from #339).
+            # never dispatched. Cap at the full run's 9 shards.
             #
             # Pack SPECS_PER_SHARD specs onto each shard rather than one. Every
             # shard pays ~3 minutes of checkout, setup and dist download before
@@ -704,13 +708,13 @@ jobs:
               exit 0
             fi
             n=$(( (specs + SPECS_PER_SHARD - 1) / SPECS_PER_SHARD ))
-            [ "$n" -gt 8 ] && n=8
+            [ "$n" -gt 9 ] && n=9
             list="$(seq -s, 1 "$n")"
             echo "mode=subset -> $specs spec(s) on $n shard(s)"
             { echo "total=$n"; echo "list=[$list]"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          { echo "total=8"; echo "list=[1,2,3,4,5,6,7,8]"; } >> "$GITHUB_OUTPUT"
+          { echo "total=9"; echo "list=[1,2,3,4,5,6,7,8,9]"; } >> "$GITHUB_OUTPUT"
 
   # Auto-fix the PR branch: run every autofix we have — ESLint `--fix` then
   # Prettier `--write` — and commit the result back onto the head branch. This
@@ -1547,12 +1551,13 @@ jobs:
     # duration-balanced slice of specs. The shared `dist` artifact
     # from the `build` job is unpacked here rather than rebuilt per shard.
     #
-    # Every full run uses 8 shards. Each shard runs its slice as one sequential
+    # Every full run uses 9 shards. Each shard runs its slice as one sequential
     # wdio process, relaunching Electron per spec. Both the hosted runner (7 GB)
     # and self-hosted container (6 GB cap) eventually exhaust memory when a shard
     # launches too many Electron/gortex processes; a later unrelated spec then
     # fails to boot or OOM-crashes ("shutdown signal"). #339's data showed that
-    # 8 shards stays under that limit even in the densest spec range.
+    # 8 shards stays under that limit even in the densest spec range, so more
+    # shards (fewer launches each) stay under it too.
     # The per-attempt `timeout` is 840s (step cap 31 min: two attempts plus
     # cleanup and diagnostics). The ten-minute budget interrupted otherwise
     # passing 44-spec shards at the tail (exit 124); by October 2026 full
@@ -1563,9 +1568,11 @@ jobs:
     # bounded headroom without changing individual test caps. The job's
     # 55-minute timeout covers that 31-minute step plus setup, which took 18-20
     # minutes on slow hosted runners, so a retried shard still reaches its digest.
-    # Keep eight shards as the memory ceiling (#339). Shards are balanced by
-    # recorded spec durations; refresh them with `pnpm run e2e:shard-weights`
-    # (and speed up specs) before raising this budget.
+    # Eight shards is the memory floor (#339): never pack the suite into fewer.
+    # The ninth was added when the suite outgrew 8 x 600s of recorded spec time.
+    # Shards are balanced by recorded spec durations; refresh them with
+    # `pnpm run e2e:shard-weights` (and speed up specs) before raising this
+    # budget or adding another shard.
     strategy:
       # Fail fast: the first shard to go red cancels the rest. On the self-hosted
       # fleet a failure is usually a whole-run problem (a poisoned dep cache, a
@@ -1718,7 +1725,7 @@ jobs:
       # the job indefinitely.
       # Oracle gate (see the precheck job's plan step): `full` shards the whole
       # suite; `subset` distributes only the planned specs by duration across the
-      # same 8 shards (so no shard exceeds the per-shard memory budget the count
+      # same 9 shards (so no shard exceeds the per-shard memory budget the count
       # is tuned for); `skip` runs nothing. Every shard still reports a status, so
       # this composes with any required check without depending on an aggregate
       # gate first.

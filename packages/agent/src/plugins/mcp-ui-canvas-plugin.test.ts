@@ -64,8 +64,8 @@ describe('copse.mcp-ui-canvas plugin', () => {
     assert.equal(mcpUiCanvasPlugin.manifest.tools, undefined)
   })
 
-  it('keeps the explainer experiment off until the user opts in', () => {
-    assert.equal(mcpUiCanvasPlugin.manifest.stability, 'experimental')
+  it('is stable while keeping the nested explainer experiment off until the user opts in', () => {
+    assert.equal(mcpUiCanvasPlugin.manifest.stability, 'stable')
     const setting = mcpUiCanvasPlugin.manifest.settings?.[ANIMATED_EXPLAINERS_SETTING_ID]
     assert.equal(setting?.kind, 'boolean')
     assert.equal(setting.default, false)
