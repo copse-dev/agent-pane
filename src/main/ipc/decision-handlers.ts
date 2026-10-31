@@ -11,7 +11,9 @@ import {
 export function registerDecisionHandlers(win: BrowserWindow): void {
   // Durable permission-decision audit log (#656). The caller names the project;
   // without one there is nothing to read. The window's active project is not
-  // main's to guess.
+  // main's to guess. The id stays optional in the schema only to keep the API
+  // protocol compatible (making it required is a breaking change that needs an
+  // API_PROTOCOL_VERSION bump); every caller passes it.
   defineHandler(win, 'decisions:list', z.tuple([zProjectId.optional()]), (projectId) =>
     projectId === undefined ? [] : readDecisionLog(projectId),
   )
