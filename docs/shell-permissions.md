@@ -512,6 +512,13 @@ expectation, not a confirmed sandbox failure. A cached denial instead retains ‚Ä
 sandbox?‚Äù and states that a previous denial was recorded, without attributing a new request
 to the agent. Approval authorizes one outside execution; rejection keeps the contained attempt.
 
+The runner-side signal is the number of violations ASRT recorded for _this_ attempt. Each sandboxed
+`run_shell` attempt and hook process is wrapped with a fresh violation id and counted by that id,
+never by command text: ASRT keeps its last 100 violations for the whole session and otherwise keys
+them on the first 100 characters of the command, so a text lookup would charge a later failure with
+an earlier run's denial, with a different command's denial when the two share a prefix, or with a
+log line that arrived late. An ordinary failure after such a run is not offered an outside retry.
+
 Some sandboxed failures come from a broker or helper that does not increment the OS sandbox's
 violation counter. After a non-zero attempt, `run_shell` may recognise the bounded denial signatures
 for a Git network read, GitHub CLI config access, or a package install unable to download from inside the sandbox and offer the
