@@ -443,6 +443,8 @@ describe('buildAcpPrompt', () => {
     const user = 'Please implement the complete feature, then show it working.'
     const fresh = buildAcpPrompt(user, [])
     assert.match(fresh, /Execution discipline:/)
+    assert.match(fresh, /describe actions in plain language/)
+    assert.match(fresh, /never internal tool identifiers/)
     assert.match(fresh, /copse read_file\/search_code\/find_files for inspection/)
     assert.match(fresh, /Existing approval covers only its stated action, target, and scope/)
     assert.match(fresh, /A denial is not permission to retry/)
