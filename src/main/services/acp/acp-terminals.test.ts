@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  ACP_TERMINAL_DEFAULT_OUTPUT_BYTES,
   ACP_TERMINAL_MAX_LIVE,
   ACP_TERMINAL_NOT_RUN_EXIT_CODE,
   AcpTerminalHost,
@@ -129,6 +130,26 @@ describe('AcpTerminalHost', () => {
       truncated: false,
       exitStatus: { exitCode: 3, signal: null },
     })
+  })
+
+  it('caps an agent-requested output limit at the default', async () => {
+    const chunk = 'x'.repeat(64 * 1024)
+    const host = new AcpTerminalHost(
+      scriptedRunner((_command, observer) => {
+        for (let i = 0; i < 20; i++) observer.output(chunk)
+        observer.exit({ exitCode: 0, signal: null })
+        return Promise.resolve('')
+      }),
+    )
+    const { terminalId } = host.create({
+      sessionId: SESSION,
+      command: 'yes',
+      outputByteLimit: 1e15,
+    })
+    await host.waitForExit({ sessionId: SESSION, terminalId })
+    const { output, truncated } = host.output({ sessionId: SESSION, terminalId })
+    assert.equal(truncated, true)
+    assert.equal(Buffer.byteLength(output), ACP_TERMINAL_DEFAULT_OUTPUT_BYTES)
   })
 
   it('reports a command that never ran as exit 126 with the reason', async () => {

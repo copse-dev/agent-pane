@@ -54,7 +54,11 @@ export type AcpTerminalCommandRunner = (
   signal: AbortSignal,
 ) => Promise<string>
 
-/** Retained output when the agent sets no `outputByteLimit`. */
+/**
+ * Retained output when the agent sets no `outputByteLimit`, and the most it may
+ * ask for: the buffer lives in the main process, so an agent must not be able to
+ * make it unbounded.
+ */
 export const ACP_TERMINAL_DEFAULT_OUTPUT_BYTES = 1024 * 1024
 /** Live (unreleased) terminals one agent connection may hold. */
 export const ACP_TERMINAL_MAX_LIVE = 16
@@ -203,7 +207,7 @@ export class AcpTerminalHost {
     }
     const limit =
       typeof req.outputByteLimit === 'number' && req.outputByteLimit >= 0
-        ? Math.floor(req.outputByteLimit)
+        ? Math.min(Math.floor(req.outputByteLimit), ACP_TERMINAL_DEFAULT_OUTPUT_BYTES)
         : ACP_TERMINAL_DEFAULT_OUTPUT_BYTES
     const buffer = new AcpTerminalOutputBuffer(limit)
     const abort = new AbortController()
