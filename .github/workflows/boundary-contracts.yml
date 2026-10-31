@@ -1,0 +1,92 @@
+name: Production-boundary contracts
+
+# Exercises the real services Copse depends on — LLM provider APIs, GitHub, the
+# update feed, the npm packages ACP auto-setup installs — through product code
+# (issue #1370). docs/boundary-contracts.md has the matrix, what each outcome
+# means, ownership, alerting, cost budget and how to rerun safely.
+#
+# Deliberately its OWN workflow and never a pull-request or merge-queue check:
+# ordinary CI must not depend on third-party availability, and these jobs hold
+# provider keys that candidate code must never reach (docs/ci-runner-security.md).
+# Every trigger below runs trusted code from this repository only.
+#
+# The run fails only on a product regression (or an expired waiver). Outages and
+# rate limits are warning annotations on a green run: a lane that goes red when
+# a vendor has a bad hour gets ignored. The red run IS the alert — GitHub emails
+# the workflow's last editor when a scheduled run fails.
+
+on:
+  schedule:
+    # Daily, after acp-v2-watch (05:43) and ahead of ci.yml's 06:17 nightly; off
+    # the top of the hour to avoid Actions' busiest cron window.
+    - cron: '29 5 * * *'
+  # `release` takes only promotion merges, and release-cut.yml tags the version
+  # from the same push: this is the release-candidate run whose URL the release
+  # evidence records (docs/product-release-evidence.md).
+  push:
+    branches: [release]
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: Comma-separated target ids to run (empty runs every target)
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+# A manual rerun overlapping the nightly should queue, not cancel it.
+concurrency:
+  group: boundary-contracts-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    # Hosted only: this job holds provider keys, so it never routes to the
+    # self-hosted fleet regardless of SELF_HOSTED_CHECKS.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      # Secrets are bound to this one step, so the dependency install above
+      # (which runs package lifecycle scripts) never sees them. The runner
+      # redacts every literal secret value from its console output, summary,
+      # annotations and report on top of Actions' own log masking.
+      - name: Run contracts
+        env:
+          CONTRACT_ANTHROPIC_API_KEY: ${{ secrets.CONTRACT_ANTHROPIC_API_KEY }}
+          CONTRACT_OPENAI_API_KEY: ${{ secrets.CONTRACT_OPENAI_API_KEY }}
+          CONTRACT_OPENROUTER_API_KEY: ${{ secrets.CONTRACT_OPENROUTER_API_KEY }}
+          # Optional model overrides (repository variables); empty uses the
+          # cheapest tracked model per provider.
+          CONTRACT_ANTHROPIC_MODEL: ${{ vars.CONTRACT_ANTHROPIC_MODEL }}
+          CONTRACT_OPENAI_MODEL: ${{ vars.CONTRACT_OPENAI_MODEL }}
+          CONTRACT_OPENROUTER_MODEL: ${{ vars.CONTRACT_OPENROUTER_MODEL }}
+          # The job's own read-only token: repository reads for the GitHub
+          # contracts, and a higher API rate limit for the update feed.
+          GITHUB_TOKEN: ${{ github.token }}
+          TARGETS: ${{ inputs.targets }}
+        run: |
+          set -euo pipefail
+          args=(--json boundary-contracts.json)
+          IFS=',' read -ra ids <<< "${TARGETS:-}"
+          for id in "${ids[@]}"; do
+            [ -n "$id" ] && args+=(--target "$id")
+          done
+          pnpm run contracts:boundary -- "${args[@]}"
+
+      # The report is already redacted. Kept as the immutable evidence a release
+      # cut links (with the run URL) from docs/product-release-evidence.md.
+      - name: Upload report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: boundary-contracts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: boundary-contracts.json
+          if-no-files-found: warn
+          retention-days: 90
