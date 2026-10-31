@@ -24015,6 +24015,30 @@ function metaPatch(prev, next) {
   }
   return patch;
 }
+function markMetadataChanged(projectId, threadId, ownLoad) {
+  if (ownLoad) return;
+  for (const load of activeMetadataLoads.get(projectId) ?? []) load.changed.add(threadId);
+}
+function metadataBaseline(projectId) {
+  let metas = persistedMeta.get(projectId);
+  if (!metas) {
+    metas = /* @__PURE__ */ new Map();
+    persistedMeta.set(projectId, metas);
+  }
+  return metas;
+}
+function acknowledgeMetadata(projectId, threadId, meta3, ownLoad) {
+  const metas = metadataBaseline(projectId);
+  if (meta3) metas.set(threadId, meta3);
+  else metas.delete(threadId);
+  markMetadataChanged(projectId, threadId, ownLoad);
+}
+function retryMetaPatch(previous, next, uncertain) {
+  const patch = metaPatch(previous, next);
+  const values = { ...next };
+  for (const key of uncertain?.fields ?? []) Object.assign(patch, { [key]: values[key] });
+  return patch;
+}
 function runtimeMeta(previous, thread, before) {
   const next = { ...previous };
   for (const key of TRANSCRIPT_META_KEYS) {
@@ -24025,20 +24049,19 @@ function runtimeMeta(previous, thread, before) {
 }
 function acceptRuntimeThreadMeta(projectId, thread, before) {
   const previous = persistedMeta.get(projectId)?.get(thread.id);
-  if (previous) persistedMeta.get(projectId)?.set(thread.id, runtimeMeta(previous, thread, before));
+  if (previous) acknowledgeMetadata(projectId, thread.id, runtimeMeta(previous, thread, before));
   for (const pending of pendingThreadWrites.get(projectId)?.get(thread.id) ?? []) {
     if (pending.kind === "save") pending.meta = runtimeMeta(pending.meta, thread, before);
   }
   const creation = unconfirmedCreates.get(projectId)?.get(thread.id);
   if (creation) creation.meta = runtimeMeta(creation.meta, thread, before);
-}
-function recordPersistedThread(projectId, thread) {
-  let metas = persistedMeta.get(projectId);
-  if (!metas) {
-    metas = /* @__PURE__ */ new Map();
-    persistedMeta.set(projectId, metas);
+  const uncertain = uncertainThreadWrites.get(projectId)?.get(thread.id);
+  if (uncertain?.target) uncertain.target = runtimeMeta(uncertain.target, thread, before);
+  for (const key of TRANSCRIPT_META_KEYS) {
+    if (!before || JSON.stringify(before[key]) !== JSON.stringify(thread[key])) {
+      uncertain?.fields.delete(key);
+    }
   }
-  metas.set(thread.id, metaOf(thread));
 }
 function queueThreadWrite(api, projectId, threadId, target) {
   let projectPending = pendingThreadWrites.get(projectId);
@@ -24049,41 +24072,64 @@ function queueThreadWrite(api, projectId, threadId, target) {
   const queue = projectPending.get(threadId) ?? [];
   projectPending.set(threadId, queue);
   queue.push(target);
+  markMetadataChanged(projectId, threadId);
   return serializedWrite(threadWriteKey(projectId, threadId), async () => {
-    let acknowledged = persistedMeta.get(projectId);
-    if (!acknowledged) {
-      acknowledged = /* @__PURE__ */ new Map();
-      persistedMeta.set(projectId, acknowledged);
-    }
-    const previous = acknowledged.get(threadId);
+    const previous = metadataBaseline(projectId).get(threadId);
+    const uncertain = uncertainThreadWrites.get(projectId)?.get(threadId);
+    let submittedPatch;
+    let attemptedDelete = false;
     try {
       if (target.kind === "delete") {
-        if (previous || unconfirmedCreates.get(projectId)?.has(threadId)) {
+        if (previous || unconfirmedCreates.get(projectId)?.has(threadId) || uncertain?.deleted) {
+          attemptedDelete = true;
           await api.threads.delete(projectId, threadId);
         }
-        acknowledged.delete(threadId);
+        acknowledgeMetadata(projectId, threadId, null);
       } else {
-        if (!previous) {
+        if (!previous || uncertain?.deleted || unconfirmedCreates.get(projectId)?.has(threadId)) {
           let creations2 = unconfirmedCreates.get(projectId);
           if (!creations2) {
             creations2 = /* @__PURE__ */ new Map();
             unconfirmedCreates.set(projectId, creations2);
           }
-          const creation = creations2.get(threadId) ?? { meta: target.meta };
+          const creation = creations2.get(threadId) ?? { meta: previous ?? target.meta };
           creations2.set(threadId, creation);
           await api.threads.create(projectId, { ...target.thread, ...target.meta });
-          const patch = metaPatch(creation.meta, target.meta);
-          if (Object.keys(patch).length > 0) {
-            await api.threads.updateMeta(projectId, threadId, patch);
-          }
-        } else if (metaSig(previous) !== metaSig(target.meta)) {
-          await api.threads.updateMeta(projectId, threadId, metaPatch(previous, target.meta));
+          submittedPatch = retryMetaPatch(creation.meta, target.meta, uncertain);
+        } else {
+          submittedPatch = retryMetaPatch(previous, target.meta, uncertain);
         }
-        acknowledged.set(threadId, target.meta);
+        if (Object.keys(submittedPatch).length > 0) {
+          await api.threads.updateMeta(projectId, threadId, submittedPatch);
+        }
+        acknowledgeMetadata(projectId, threadId, target.meta);
       }
       const creations = unconfirmedCreates.get(projectId);
       creations?.delete(threadId);
       if (creations?.size === 0) unconfirmedCreates.delete(projectId);
+      const uncertainties = uncertainThreadWrites.get(projectId);
+      uncertainties?.delete(threadId);
+      if (uncertainties?.size === 0) uncertainThreadWrites.delete(projectId);
+    } catch (error62) {
+      const fields = Object.keys(submittedPatch ?? {});
+      if (fields.length > 0 || attemptedDelete || target.kind === "save") {
+        let uncertainties = uncertainThreadWrites.get(projectId);
+        if (!uncertainties) {
+          uncertainties = /* @__PURE__ */ new Map();
+          uncertainThreadWrites.set(projectId, uncertainties);
+        }
+        const failed = uncertainties.get(threadId) ?? {
+          fields: /* @__PURE__ */ new Set(),
+          deleted: false,
+          target: null
+        };
+        for (const field of fields) failed.fields.add(field);
+        failed.deleted ||= attemptedDelete;
+        failed.target = target.kind === "save" ? target.meta : null;
+        uncertainties.set(threadId, failed);
+        markMetadataChanged(projectId, threadId);
+      }
+      throw error62;
     } finally {
       queue.splice(queue.indexOf(target), 1);
       if (queue.length === 0) projectPending.delete(threadId);
@@ -24104,13 +24150,16 @@ function reconcileThreads(api, projectId, threads) {
   const writes = [];
   for (const [id, target] of next) {
     const before = previous.get(id);
-    if (!before || metaSig(before) !== metaSig(target.meta)) {
+    const uncertain = uncertainThreadWrites.get(projectId)?.has(id);
+    const pending = pendingThreadWrites.get(projectId)?.has(id);
+    if (!before || metaSig(before) !== metaSig(target.meta) || uncertain && !pending) {
       writes.push(queueThreadWrite(api, projectId, id, { kind: "save", ...target }));
     }
   }
   const potentiallyCreated = /* @__PURE__ */ new Set([
     ...previous.keys(),
-    ...unconfirmedCreates.get(projectId)?.keys() ?? []
+    ...unconfirmedCreates.get(projectId)?.keys() ?? [],
+    ...uncertainThreadWrites.get(projectId)?.keys() ?? []
   ]);
   for (const id of potentiallyCreated) {
     const pending = pendingThreadWrites.get(projectId)?.get(id)?.at(-1);
@@ -24178,20 +24227,163 @@ function invalidateProjectThreadLoads(api, projectId) {
   }
   revisions.set(projectId, (revisions.get(projectId) ?? 0) + 1);
 }
-async function loadThreads(api, projectId) {
-  let loaded;
-  let revision;
-  do {
-    revision = threadLoadRevisions.get(api)?.get(projectId) ?? 0;
-    loaded = await api.threads.loadProject(projectId);
-  } while (revision !== (threadLoadRevisions.get(api)?.get(projectId) ?? 0));
-  const threads = sortThreadsNewestFirst(loaded).map(
-    (thread) => thread.status !== "running" && thread.lastSettledAt === void 0 ? { ...thread, lastSettledAt: thread.updatedAt } : thread
-  );
-  const metas = /* @__PURE__ */ new Map();
-  for (const t2 of threads) metas.set(t2.id, metaOf(t2));
-  persistedMeta.set(projectId, metas);
-  return threads;
+function threadWithMeta(thread, meta3, projection) {
+  const messagesLoaded = projection ? projection.messagesLoaded : thread.messagesLoaded;
+  const hasSavedPlan = projection ? projection.hasSavedPlan : thread.hasSavedPlan;
+  return {
+    ...meta3,
+    messages: thread.messages,
+    ...messagesLoaded !== void 0 ? { messagesLoaded } : {},
+    ...hasSavedPlan !== void 0 ? { hasSavedPlan } : {}
+  };
+}
+async function readThreadMetadata(api, projectId, onlyThreadId) {
+  const load = {
+    changed: /* @__PURE__ */ new Set(),
+    generation: 0,
+    fullProjectionGeneration: 0,
+    projections: /* @__PURE__ */ new Map()
+  };
+  let loads = activeMetadataLoads.get(projectId);
+  if (!loads) {
+    loads = /* @__PURE__ */ new Set();
+    activeMetadataLoads.set(projectId, loads);
+  }
+  loads.add(load);
+  try {
+    let loaded;
+    let revision;
+    do {
+      revision = threadLoadRevisions.get(api)?.get(projectId) ?? 0;
+      load.generation = ++metadataLoadGeneration;
+      loaded = await api.threads.loadProject(projectId);
+    } while (revision !== (threadLoadRevisions.get(api)?.get(projectId) ?? 0));
+    const threads = sortThreadsNewestFirst(loaded).filter((thread) => onlyThreadId === void 0 || thread.id === onlyThreadId).map(
+      (thread) => onlyThreadId === void 0 && thread.status !== "running" && thread.lastSettledAt === void 0 ? { ...thread, lastSettledAt: thread.updatedAt } : thread
+    );
+    const baseline = metadataBaseline(projectId);
+    const beforeSeed = new Map(baseline);
+    const returned = new Map(threads.map((thread) => [thread.id, thread]));
+    if (load.generation < (appliedProjectLoads.get(projectId) ?? 0)) {
+      for (const id of /* @__PURE__ */ new Set([...baseline.keys(), ...returned.keys()])) load.changed.add(id);
+    }
+    for (const [id, generation] of appliedThreadLoads.get(projectId) ?? []) {
+      if (load.generation < generation) load.changed.add(id);
+    }
+    for (const id of baseline.keys()) {
+      if (onlyThreadId !== void 0 && id !== onlyThreadId) continue;
+      if (!returned.has(id) && !load.changed.has(id)) {
+        acknowledgeMetadata(projectId, id, null, load);
+      }
+    }
+    for (const thread of threads) {
+      if (!load.changed.has(thread.id)) {
+        const meta3 = metaOf(thread);
+        const uncertain = uncertainThreadWrites.get(projectId)?.get(thread.id);
+        const creation = unconfirmedCreates.get(projectId)?.get(thread.id);
+        const before = beforeSeed.get(thread.id) ?? creation?.meta ?? meta3;
+        for (const pending of pendingThreadWrites.get(projectId)?.get(thread.id) ?? []) {
+          if (pending.kind === "save") {
+            pending.meta = { ...meta3, ...retryMetaPatch(before, pending.meta, uncertain) };
+          }
+        }
+        if (uncertain?.target) {
+          uncertain.target = { ...meta3, ...retryMetaPatch(before, uncertain.target, uncertain) };
+        }
+        if (creation) creation.meta = meta3;
+        acknowledgeMetadata(projectId, thread.id, meta3, load);
+      }
+    }
+    for (const id of load.changed) {
+      if (onlyThreadId !== void 0 && id !== onlyThreadId) continue;
+      const current = baseline.get(id);
+      if (current) {
+        const old = returned.get(id) ?? { ...current, messages: [], messagesLoaded: false };
+        returned.set(id, threadWithMeta(old, current));
+      } else {
+        returned.delete(id);
+      }
+    }
+    for (const id of /* @__PURE__ */ new Set([
+      ...returned.keys(),
+      ...pendingThreadWrites.get(projectId)?.keys() ?? [],
+      ...uncertainThreadWrites.get(projectId)?.keys() ?? []
+    ])) {
+      if (onlyThreadId !== void 0 && id !== onlyThreadId) continue;
+      const pending = pendingThreadWrites.get(projectId)?.get(id)?.at(-1);
+      const uncertain = uncertainThreadWrites.get(projectId)?.get(id);
+      if (pending?.kind === "delete" || !pending && uncertain?.target === null) {
+        returned.delete(id);
+        continue;
+      }
+      const target = pending?.kind === "save" ? pending.meta : uncertain?.target;
+      if (!target) continue;
+      const current = returned.get(id) ?? { ...target, messages: [], messagesLoaded: false };
+      const before = beforeSeed.get(id) ?? unconfirmedCreates.get(projectId)?.get(id)?.meta ?? target;
+      const patch = retryMetaPatch(before, target, uncertain);
+      returned.set(id, threadWithMeta(current, { ...metaOf(current), ...patch }));
+    }
+    for (const [id, thread] of returned) {
+      const known = load.projections.get(id);
+      const projection = known && known.generation >= load.fullProjectionGeneration ? known : {
+        generation: load.fullProjectionGeneration,
+        messagesLoaded: void 0,
+        hasSavedPlan: void 0
+      };
+      if (projection.generation > load.generation) {
+        returned.set(id, threadWithMeta(thread, metaOf(thread), projection));
+      }
+    }
+    for (const older of loads) {
+      if (older === load || older.generation >= load.generation) continue;
+      if (onlyThreadId === void 0) {
+        older.fullProjectionGeneration = Math.max(older.fullProjectionGeneration, load.generation);
+        for (const [id, projection] of older.projections) {
+          if (projection.generation <= load.generation) older.projections.delete(id);
+        }
+      }
+      for (const [id, thread] of returned) {
+        const previous = older.projections.get(id);
+        if (!previous || previous.generation < load.generation) {
+          older.projections.set(id, {
+            generation: load.generation,
+            messagesLoaded: thread.messagesLoaded,
+            hasSavedPlan: thread.hasSavedPlan
+          });
+        }
+      }
+    }
+    if (onlyThreadId === void 0) {
+      appliedProjectLoads.set(
+        projectId,
+        Math.max(appliedProjectLoads.get(projectId) ?? 0, load.generation)
+      );
+      const scoped = appliedThreadLoads.get(projectId);
+      for (const [id, generation] of scoped ?? []) {
+        if (generation <= load.generation) scoped?.delete(id);
+      }
+      if (scoped?.size === 0) appliedThreadLoads.delete(projectId);
+    } else {
+      let scoped = appliedThreadLoads.get(projectId);
+      if (!scoped) {
+        scoped = /* @__PURE__ */ new Map();
+        appliedThreadLoads.set(projectId, scoped);
+      }
+      scoped.set(onlyThreadId, Math.max(scoped.get(onlyThreadId) ?? 0, load.generation));
+    }
+    return sortThreadsNewestFirst([...returned.values()]);
+  } finally {
+    loads.delete(load);
+    if (loads.size === 0 && activeMetadataLoads.get(projectId) === loads) {
+      activeMetadataLoads.delete(projectId);
+    }
+  }
+}
+function loadThreads(api, projectId) {
+  return readThreadMetadata(api, projectId);
+}
+async function loadPersistedThread(api, projectId, threadId) {
+  return (await readThreadMetadata(api, projectId, threadId))[0];
 }
 function awaitPendingThreadPersistence() {
   return activeAutosave?.whenIdle() ?? Promise.resolve();
@@ -24400,7 +24592,7 @@ function attachAutosave(store, api) {
   activeAutosave = autosave;
   return autosave;
 }
-var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, navigationHeldFor, threadWriteKey, persistedMeta, pendingThreadWrites, unconfirmedCreates, threadLoadRevisions, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
+var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, navigationHeldFor, threadWriteKey, persistedMeta, pendingThreadWrites, unconfirmedCreates, uncertainThreadWrites, activeMetadataLoads, metadataLoadGeneration, appliedProjectLoads, appliedThreadLoads, threadLoadRevisions, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
 var init_persistence = __esm({
   "src/renderer/controller/persistence.ts"() {
     init_thread_helpers();
@@ -24420,6 +24612,11 @@ var init_persistence = __esm({
     persistedMeta = /* @__PURE__ */ new Map();
     pendingThreadWrites = /* @__PURE__ */ new Map();
     unconfirmedCreates = /* @__PURE__ */ new Map();
+    uncertainThreadWrites = /* @__PURE__ */ new Map();
+    activeMetadataLoads = /* @__PURE__ */ new Map();
+    metadataLoadGeneration = 0;
+    appliedProjectLoads = /* @__PURE__ */ new Map();
+    appliedThreadLoads = /* @__PURE__ */ new Map();
     threadLoadRevisions = /* @__PURE__ */ new WeakMap();
     AUTOSAVE_DEBOUNCE_MS = 250;
     activeAutosave = null;
@@ -73082,13 +73279,13 @@ export {
   suspendNavigationWrites,
   markNavigationRestored,
   acceptRuntimeThreadMeta,
-  recordPersistedThread,
   flushProjectThreads,
   loadProjects,
   saveProjects,
   saveProjectGroups,
   invalidateProjectThreadLoads,
   loadThreads,
+  loadPersistedThread,
   awaitPendingThreadPersistence,
   attachAutosave,
   init_persistence,
