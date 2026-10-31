@@ -4,6 +4,7 @@ import { toolNeedsWritableCheckout } from '@shared/tools/deferred-checkout-tools
 import { isRecord } from '@copse/std/unknown-value.ts'
 import { isProjectSandboxEnabled } from '../project-sandbox/index.ts'
 import { shellRunsOutsideSandbox } from './security/command-routing-config.ts'
+import { currentAgentRoots } from './execution-root.ts'
 import {
   allocateDeferredThreadWorktree,
   type AllocateDeferredWorktreeInput,
@@ -203,7 +204,7 @@ function shellFacts(args: unknown): {
   if (typeof command !== 'string') return null
   return {
     sandboxEnabled: isProjectSandboxEnabled(),
-    runsOutsideSandbox: shellRunsOutsideSandbox(command),
+    runsOutsideSandbox: shellRunsOutsideSandbox(command, currentAgentRoots()),
     expectsSandboxBlock: args['expects_sandbox_block'] === true,
   }
 }
