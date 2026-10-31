@@ -1,6 +1,8 @@
 # Finished-thread archival (#3330)
 
-Task brief and completion evidence, 20 October 2026.
+Status: **Resolved** — shipped in [#3871](https://github.com/copse-dev/agent-pane/pull/3871); #3330 is
+closed and follow-up work is #3877. The task brief and completion evidence below date from
+20 October 2026; its "Remaining work" section describes the pre-merge state.
 Base: `00a1ba24bf16eb8edca276b4b733369586895c16` (`origin/main`).
 Reference: closed, unmerged prototype #3373. The purple merged-PR icon shipped in #3371 and is outside this change.
 

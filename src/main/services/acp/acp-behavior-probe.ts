@@ -8,7 +8,7 @@ import {
   type Stream,
   type ToolKind,
   type WriteTextFileRequest,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { isRecord } from '@shared/unknown-value.ts'
 import { tapAcpWireStream } from './acp-wire-tap.ts'

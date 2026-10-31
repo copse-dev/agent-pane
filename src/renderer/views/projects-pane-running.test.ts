@@ -109,6 +109,37 @@ describe('projects pane running status (component)', () => {
     assert.equal(rowByTitle('One')?.classList.contains('is-running'), false)
   })
 
+  it('marks an automation thread as starting before its status flips to running', () => {
+    const pending: Thread = {
+      ...thread('t1', 'Nightly build'),
+      draftPrompt: 'Run the nightly build',
+      automation: { scheduleId: 's1', scheduleName: 'Nightly build', triggeredAt: 1 },
+    }
+    const store = createStore({
+      projects: [{ id: 'p1', path: '/proj', name: 'Proj' }],
+      activeProjectId: 'p1',
+      expandedProjectId: 'p1',
+      workspaceRoot: '/proj',
+      threads: [pending],
+      activeThreadId: 't1',
+    })
+    mount(store)
+
+    const row = rowByTitle('Nightly build')
+    assert.ok(row?.classList.contains('is-running'))
+    const dots = row?.querySelector('.chat-running-status')
+    assert.ok(dots)
+    assert.equal(dots.getAttribute('aria-label'), 'Starting…')
+
+    setThreadStatus(store, 't1', 'running')
+    assert.equal(
+      rowByTitle('Nightly build')
+        ?.querySelector('.chat-running-status')
+        ?.getAttribute('aria-label'),
+      'Agent is working',
+    )
+  })
+
   it('marks the collapsed project chevron while its carried agent works', () => {
     const carried = thread('carried', 'Background work', 'running')
     const store = createStore({

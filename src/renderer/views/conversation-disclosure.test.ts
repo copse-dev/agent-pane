@@ -133,6 +133,32 @@ describe('conversation disclosure state (component)', () => {
     assert.equal(rollup.open, true, 'the rollup lost its user-open choice')
   })
 
+  // The run goes live before the reveal delay elapses, so the next refresh
+  // absorbs the still-running card into the live rollup: directly as a nested
+  // card, or as an entry of a group formed with a like sibling.
+  const absorptions: [shape: string, sibling: Parameters<typeof addToolCall>[2]][] = [
+    ['a nested card', { ...shell('tc-2'), name: 'read_file', args: { path: 'a.md' } }],
+    ['a group entry', shell('tc-2')],
+  ]
+  for (const [shape, sibling] of absorptions) {
+    it(`does not pop open a running card absorbed into a rollup as ${shape}`, async () => {
+      const { store, threadId, messageId } = mount()
+      addToolCall(store, messageId, shell('tc-1'))
+      const standalone = qsRequired<HTMLDetailsElement>(document, '[data-tool-id="tc-1"]')
+      assert.equal(standalone.closest('.tool-card-rollup'), null, 'expected a standalone card')
+
+      setThreadStatus(store, threadId, 'running')
+      addToolCall(store, messageId, sibling)
+      const rollup = qsRequired<HTMLDetailsElement>(document, '.tool-card-rollup')
+      const nested = qsRequired<HTMLDetailsElement>(rollup, '[data-tool-id="tc-1"]')
+      assert.equal(nested.classList.contains('tool-group-item'), shape === 'a group entry')
+
+      await delay(350)
+      assert.equal(nested.open, false, 'the absorbed card popped open after the reveal delay')
+      assert.equal(rollup.open, false, 'background activity in a rollup stays quiet')
+    })
+  }
+
   it('keeps a user-opened group entry open while a sibling churns', () => {
     const { store, messageId } = mount()
     for (const id of ['tc-a', 'tc-b']) {

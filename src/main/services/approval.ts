@@ -671,7 +671,43 @@ async function deferInsteadOfPrompting(
   )
 }
 
+type ApprovalResolution = NonNullable<ApprovalResponse['resolution']>
+
+/** How the last prompt opened inside {@link observeApprovalResolutions} settled. */
+interface ApprovalResolutionObserver {
+  last?: ApprovalResolution
+}
+
+const resolutionObserver = new AsyncLocalStorage<ApprovalResolutionObserver>()
+
+/**
+ * Run `fn` and report how the last approval prompt it opened settled, if any.
+ * Gates collapse a prompt to a boolean, so this is how a caller tells a user's
+ * "no" from a prompt that closed with no answer at all.
+ */
+export async function observeApprovalResolutions<T>(
+  fn: () => Promise<T>,
+): Promise<{ value: T; lastResolution: ApprovalResolution | undefined }> {
+  const observer: ApprovalResolutionObserver = {}
+  const value = await resolutionObserver.run(observer, fn)
+  return { value, lastResolution: observer.last }
+}
+
 export function requestApproval(
+  req: ApprovalRequest,
+  signal?: AbortSignal,
+): Promise<ApprovalResponse> {
+  const observer = resolutionObserver.getStore()
+  const response = requestApprovalUnobserved(req, signal)
+  if (!observer) return response
+  return response.then((settled) => {
+    // An external handler that omits the resolution answered as the user.
+    observer.last = settled.resolution ?? 'user'
+    return settled
+  })
+}
+
+function requestApprovalUnobserved(
   req: ApprovalRequest,
   signal?: AbortSignal,
 ): Promise<ApprovalResponse> {
@@ -1013,7 +1049,7 @@ export function initApproval(
         // (`renderer-prompt-target.ts`).
         const dest = resolveRendererPromptTarget(win.webContents)
         if (dest.isDestroyed()) {
-          resolve(DENIED)
+          resolve({ ...DENIED, resolution: 'window-closed' })
           return
         }
         const send = (): void => {

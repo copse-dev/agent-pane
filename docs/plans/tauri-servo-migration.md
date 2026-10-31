@@ -1,6 +1,11 @@
 # Tauri + Servo migration plan
 
-**Status: prototype in progress** — see `tauri-shell/` and `src/sidecar/` on this branch.
+**Status: Partial / deferred (dormant).** Phase 1 is on `main`: `src/sidecar/`,
+`pnpm build:servo` / `pnpm servo` and [`docs/servo-mode.md`](../servo-mode.md). The Rust shell moved
+to [copse-dev/tauri-shell](https://github.com/copse-dev/tauri-shell) in
+[#1942](https://github.com/copse-dev/agent-pane/pull/1942) and is consumed as a released binary.
+Phases 2–5 are not scheduled; the last Servo change was #1947 (2026-08-26). References below to
+"this branch" and to an in-repo `tauri-shell/` describe the August prototype.
 
 The goal: replace Electron as Copse's desktop shell with [Tauri](https://tauri.app/)
 running the [`tauri-runtime-servo`](https://github.com/copse-dev/tauri-runtime-servo)
@@ -8,7 +13,7 @@ runtime — the same Servo engine on every platform, statically linked, no syste
 webview lottery — while keeping the entire existing main-process codebase running
 unchanged as a **Node.js sidecar**.
 
-This document is the plan; the prototype on this branch implements phase 1.
+This document is the plan; the phase 1 prototype is on `main` (see Status).
 
 ## Why this shape
 

@@ -7,7 +7,7 @@ import {
   seedStableWorkspace,
 } from './helpers/seed-config.ts'
 import { maskProcessManagerLiveValues } from './helpers/process-manager-capture.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { approveShellCommandIfPrompted } from './helpers/shell-approval.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
@@ -29,6 +29,39 @@ describe('Process manager', function () {
 
   after(() => {
     resetUserData()
+  })
+
+  it('shows live memory footprint readings and labels their accounting', async () => {
+    await $('.prompt-input').click()
+    await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'Shift', 'p'])
+    const dialog = $('#process-manager-dialog')
+    await dialog.waitForDisplayed({ timeout: 10_000 })
+    await expect(dialog.$('.process-manager-footer')).toHaveText(
+      expect.stringContaining(
+        process.platform === 'darwin'
+          ? 'memory is macOS footprint in MiB (includes compressed/swap).'
+          : 'memory is physical RAM in MiB.',
+      ),
+    )
+    const memorySample = await browser.execute(() => window.api.processManager.snapshot())
+    assert.equal(
+      memorySample.memoryMetric,
+      process.platform === 'darwin' ? 'footprint' : 'resident',
+    )
+    const mainProcess = memorySample.processes.find((row) => row.label === 'Copse main')
+    assert.ok(
+      mainProcess && mainProcess.memoryMiB !== null && mainProcess.memoryMiB > 0,
+      'the live main process must have a reading, including from the bundled macOS helper',
+    )
+    await dialog.$('.process-manager-group-toggle[data-group-key=""]').click()
+    const mainRow = dialog.$(`tr[data-pid="${String(mainProcess.pid)}"]`)
+    await mainRow.waitForDisplayed({ timeout: 10_000 })
+    assert.ok(Number.parseFloat(await mainRow.$('td:nth-child(5)').getText()) > 0)
+    await maskProcessManagerLiveValues()
+    await saveElementScreenshot('.process-manager-footer', 'process-manager-memory.png')
+    await dialog.$('.process-manager-group-toggle[data-group-key=""]').click()
+    await dialog.$('[aria-label="Close process manager"]').click()
+    await dialog.waitForDisplayed({ reverse: true, timeout: 5_000 })
   })
 
   it('shows live tasks, jumps to their thread, and stops an owned terminal', async () => {

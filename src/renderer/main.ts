@@ -649,6 +649,9 @@ if (popoutMode) {
 }
 
 function mountFullLayout(): void {
+  // Subscribe before any pane: selections run in subscription order inside
+  // `setState`, so `#pane-files` is shown before a pane measures or fills it.
+  store.select((s) => s.filesPaneOpen, updateFilesPane)
   // Kick off the Monaco bundle immediately so it loads in parallel with the rest
   // of the layout, but mount the editor-backed panes only once it resolves — the
   // editor library is no longer part of the initial app.js.
@@ -747,7 +750,6 @@ function mountFullLayout(): void {
     mountPaneResizers(body, store, api)
   }
 
-  store.on('files_pane_changed', updateFilesPane)
   updateFilesPane()
 }
 
@@ -885,7 +887,6 @@ async function confirmDeleteThread(): Promise<void> {
     stagedDiffs: [],
   })
   store.emit('threads_changed')
-  store.emit('panel_changed')
 }
 
 function switchToPrevThread(): void {

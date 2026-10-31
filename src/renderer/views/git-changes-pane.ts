@@ -21,7 +21,7 @@ import { showConfirmDialog } from './confirm-dialog.ts'
 import { uiActions } from '../ui/actions.ts'
 import { startReview } from '../controller/review-actions.ts'
 import { REVIEW_PLUGIN_ID } from '@copse/agent/plugins/review-plugin.ts'
-import type { ActiveDiff } from '@shared/types/state.ts'
+import type { ActiveDiff, StagedDiffEntry } from '@shared/types/state.ts'
 import {
   pruneStagedDiffCache,
   resolveStagedDiffView,
@@ -40,6 +40,7 @@ import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 import { isImageDiff, renderImageDiff } from './git-image-diff.ts'
 import { materialFolderIconUrl } from '../icons/material-file-icons.ts'
 import { imageMimeType, isRasterImagePath } from '@shared/fs/image-path.ts'
+import { selectRightPanelMode } from '../controller/panels.ts'
 
 function bytesToBase64(bytes: Uint8Array): string {
   const chunks: string[] = []
@@ -1256,8 +1257,17 @@ export function mountGitChangesPane(
     renderRestoreBanner()
   }
 
+  /** The proposed diff and its queue are unchanged; a fresh empty queue is no change. */
+  function sameDiffState(
+    a: readonly [ActiveDiff | null, StagedDiffEntry[]],
+    b: readonly [ActiveDiff | null, StagedDiffEntry[]],
+  ): boolean {
+    return a[0] === b[0] && (a[1] === b[1] || (a[1].length === 0 && b[1].length === 0))
+  }
+
   async function syncFromStore(): Promise<void> {
-    // switchThread can emit panel_changed before threads_changed.
+    // A thread switch resets the diff state inside its setState, so this can
+    // run before threads_changed.
     adoptActiveOwner()
     renderList()
     await syncSelection()
@@ -1283,23 +1293,18 @@ export function mountGitChangesPane(
         : `${String(paths.length)} files changed on disk since they were staged. Their diffs were refreshed against the current files — review and re-approve.`
     if (paths[0]) {
       store.setState({ rightPanelMode: 'changes', filesPaneOpen: true })
-      store.emit('right_panel_mode_changed')
-      store.emit('files_pane_changed')
       selection = { kind: 'proposed', path: paths[0] }
       void syncFromStore()
     }
   })
 
   const unsubs = [
-    store.on('right_panel_mode_changed', () => {
-      if (changesModeActive(store)) void refresh()
+    selectRightPanelMode(store, 'changes', (active) => {
+      if (active) void refresh()
     }),
     store.on('git_change_navigate', (path) => {
       adoptActiveOwner()
       pendingNavigate = path
-      if (changesModeActive(store)) void refresh()
-    }),
-    store.on('files_pane_changed', () => {
       if (changesModeActive(store)) void refresh()
     }),
     store.on('workspace_changed', () => {
@@ -1327,9 +1332,14 @@ export function mountGitChangesPane(
       // windows" (#1704). Debounced, so a multi-file approve-all coalesces.
       scheduleRefresh()
     }),
-    store.on('panel_changed', () => {
-      if (changesModeActive(store)) void syncFromStore()
-    }),
+    // Only the diff state: an ordinary thread switch is threads_changed's job.
+    store.select(
+      (s) => [s.activeDiff, s.stagedDiffs] as const,
+      () => {
+        if (changesModeActive(store)) void syncFromStore()
+      },
+      sameDiffState,
+    ),
     store.on('settings_changed', syncReviewGate),
     store.on('thread_status_changed', syncReviewButton),
     store.on('threads_changed', syncReviewButton),
@@ -1349,9 +1359,8 @@ export function mountGitChangesPane(
 
   // This pane is mounted asynchronously, once the Monaco bundle resolves. If the
   // right panel is already in "changes" mode by the time we mount (the common
-  // case, since the mode is restored before Monaco loads), no
-  // right_panel_mode_changed event will arrive to trigger the first refresh — so
-  // catch up to the current state here, or the diff never renders. See #459.
+  // case, since the mode is restored before Monaco loads), no mode change will
+  // arrive to trigger the first refresh — so catch up to the current state here, or the diff never renders. See #459.
   if (changesModeActive(store)) void refresh()
 
   const unregisterPopoutSeed = registerPopoutSeedHandlers('changes', {

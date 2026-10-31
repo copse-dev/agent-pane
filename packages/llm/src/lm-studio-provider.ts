@@ -1,3 +1,4 @@
+import { normalizeOpenAIToolSchema } from './normalize-tool-schema.ts'
 import {
   Chat,
   LMStudioClient,
@@ -382,6 +383,7 @@ function toLmStudioTools(tools: LLMTool[]): LMStudioTool[] {
 function lmStudioToolParameters(
   parameters: Record<string, unknown>,
 ): NonNullable<LMStudioTool['function']['parameters']> {
+  parameters = normalizeOpenAIToolSchema(parameters)
   const properties = isRecord(parameters['properties']) ? parameters['properties'] : {}
   const required = Array.isArray(parameters['required'])
     ? parameters['required'].filter((value) => typeof value === 'string')
@@ -392,6 +394,7 @@ function lmStudioToolParameters(
       ? parameters['additionalProperties']
       : undefined
   return {
+    ...parameters,
     type: 'object',
     properties,
     ...(required ? { required } : {}),

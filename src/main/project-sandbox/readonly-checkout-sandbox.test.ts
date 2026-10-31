@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   afterSandboxedCommand,
@@ -35,9 +35,11 @@ async function shell(
   command: string,
   cwd: string,
   readonlyCheckout: boolean,
+  readGrantTargets?: readonly string[],
 ): Promise<{ output: string; code: number }> {
   const child = await spawnShellInProjectSandbox(command, {
     cwd,
+    ...(readGrantTargets ? { readGrantTargets } : {}),
     // Only what the command needs on top of the spawn's own environment.
     env: gitIdentity,
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -170,6 +172,32 @@ describe('read-only checkout shell sandbox', () => {
     for (const path of cleanups.splice(0).reverse()) {
       await rm(path, { recursive: true, force: true })
     }
+  })
+
+  it('reads an approved home artifact recursively without granting sibling reads or writes', async (t) => {
+    if (process.platform !== 'darwin') {
+      t.skip('macOS Seatbelt read-grant regression')
+      return
+    }
+    const workspace = await mkdtemp(join(tmpdir(), 'copse-read-grant-project-'))
+    const host = await mkdtemp(join(homedir(), '.copse-read-grant-test-'))
+    cleanups.push(workspace, host)
+    const granted = join(host, 'results')
+    await mkdir(join(granted, 'nested'), { recursive: true })
+    await writeFile(join(granted, 'nested', 'result.txt'), 'passed\n')
+    await writeFile(join(host, 'private.txt'), 'private\n')
+    await initProjectSandbox()
+    assert.ok(isProjectSandboxEnabled(), 'the native read-grant regression requires Seatbelt')
+    const read = await shell(`cat '${granted}/nested/result.txt'`, workspace, false, [granted])
+    assert.equal(read.code, 0, read.output)
+    assert.equal(read.output, 'passed\n')
+    const sibling = await shell(`cat '${host}/private.txt'`, workspace, false, [granted])
+    assert.notEqual(sibling.code, 0, 'a grant must not expose a sibling')
+    const write = await shell(`echo changed > '${granted}/nested/result.txt'`, workspace, false, [
+      granted,
+    ])
+    assert.notEqual(write.code, 0, 'a read grant must not allow writes')
+    assert.equal(await readFile(join(granted, 'nested', 'result.txt'), 'utf-8'), 'passed\n')
   })
 
   it('lets a deferred thread read and inspect the checkout but never write it', async (t) => {
