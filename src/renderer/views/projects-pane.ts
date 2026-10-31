@@ -570,7 +570,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     const { projects, sidebarThreadSort, sidebarThreadSortReverse, sidebarProjectFilterId } =
       store.getState()
     const chosen = projects.find((project) => project.id === sidebarProjectFilterId)
-    if (!chosen) store.setState({ sidebarProjectFilterId: null })
     const projectName = chosen ? projectDisplayName(chosen) : 'All projects'
     const suffix = archivedOnly ? ' · Archived' : needsCleanupOnly ? ' · Needs cleanup' : ''
     filterLabel.textContent = `${projectName}${suffix}`
@@ -1587,6 +1586,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function render(preserveScroll = false): void {
+    // A filter naming a removed project lists everything. Clear it before any
+    // DOM work: the write re-renders through the filter selection.
+    const { projects: known, sidebarProjectFilterId } = store.getState()
+    if (sidebarProjectFilterId !== null && !known.some((p) => p.id === sidebarProjectFilterId)) {
+      store.setState({ sidebarProjectFilterId: null })
+    }
     // A redraw removes the source row, so Chromium may have nowhere to send
     // its eventual dragend. Clear the gesture before replacing its DOM.
     endDrag()
@@ -2856,7 +2861,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     }),
     unsubWorkingTree,
     store.on('projects_changed', render),
-    store.on('sidebar_project_filter_changed', render),
+    store.select(
+      (s) => s.sidebarProjectFilterId,
+      () => {
+        render()
+      },
+    ),
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
     store.on('threads_changed', () => {

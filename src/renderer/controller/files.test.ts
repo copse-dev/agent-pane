@@ -38,9 +38,12 @@ describe('files controller', () => {
       filesPaneOpen: false,
       rightPanelMode: 'terminal',
     })
-    let panelEvents = 0
+    let openFileChanges = 0
     let panelChanges = 0
-    store.on('panel_changed', () => (panelEvents += 1))
+    store.select(
+      (s) => s.openFile,
+      () => (openFileChanges += 1),
+    )
     selectRightPanel(store, () => (panelChanges += 1))
 
     await openWorkspaceFile(store, apiWithFile('# Readme\n'), 'README.md')
@@ -53,7 +56,7 @@ describe('files controller', () => {
     assert.equal(store.getState().panelTab, 'file')
     assert.equal(store.getState().filesPaneOpen, true)
     assert.equal(store.getState().rightPanelMode, 'explorer')
-    assert.equal(panelEvents, 1)
+    assert.equal(openFileChanges, 1)
     assert.equal(panelChanges, 1)
   })
 })

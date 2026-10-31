@@ -12,6 +12,17 @@ export interface IpcHandlerOptions {
   readonly sender?: 'main-frame' | 'any'
 }
 
+/**
+ * How a positional handler reports invalid arguments. `'tuple'` (the default)
+ * reports every failing position, as `parseIpcArgs(z.tuple([...]), [a, b])`
+ * does. `'per-argument'` reports only the first failing argument, with no tuple
+ * index, as a handler that called `parseIpcArgs(schema, [raw])` once per
+ * argument does. Both accept exactly the same argument lists.
+ */
+export interface PositionalArgsOptions {
+  readonly errors?: 'tuple' | 'per-argument'
+}
+
 type SenderCheck<E> = (event: E) => void
 
 /** One schema per positional argument; a rest element would change which arguments are read. */
@@ -37,19 +48,24 @@ export function senderCheck(
  * - One argument is parsed on its own (`parseIpcArgs(schema, [raw])`), so its
  *   validation error has no tuple index in the path.
  * - Two or more are parsed as the tuple (`parseIpcArgs(z.tuple(...), [a, b])`),
- *   so the error lists every failing position, as before.
+ *   so the error lists every failing position, as before. With
+ *   `{ errors: 'per-argument' }` they are reported as one argument is instead:
+ *   the first failing argument alone, in order.
  */
 export function parsePositionalIpcArgs<T extends readonly z.ZodType[]>(
   args: PositionalArgs<T>,
   rawArgs: readonly unknown[],
+  options: PositionalArgsOptions = {},
 ): z.output<PositionalArgs<T>> {
   const items: readonly z.ZodType[] = args.def.items
   const positional = items.map((_, index) => rawArgs[index])
   const parsed = args.safeParse(positional)
   if (parsed.success) return parsed.data
-  const [only] = items
-  // Rethrows with the single-argument wording; the tuple's error is the fallback.
-  if (items.length === 1 && only) parseIpcArgs(only, positional)
+  if (items.length === 1 || options.errors === 'per-argument') {
+    // Rethrows the first failing argument with the single-argument wording; the
+    // tuple's error is the fallback.
+    items.forEach((item, index) => parseIpcArgs(item, [positional[index]]))
+  }
   throw new IpcValidationError(parsed.error.message)
 }
 
@@ -61,10 +77,11 @@ export function positionalIpcHandler<E, T extends readonly z.ZodType[], R>(
   checkSender: SenderCheck<E>,
   args: PositionalArgs<T>,
   fn: (...parsed: z.output<PositionalArgs<T>>) => R,
+  options?: PositionalArgsOptions,
 ): (event: E, ...rawArgs: unknown[]) => R {
   return (event, ...rawArgs) => {
     checkSender(event)
-    return fn(...parsePositionalIpcArgs(args, rawArgs))
+    return fn(...parsePositionalIpcArgs(args, rawArgs, options))
   }
 }
 

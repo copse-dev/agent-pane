@@ -83,6 +83,30 @@ agent({ name: 'mock-acp-agent' })
       process.exit(3)
     }
 
+    if (text.includes('ask-execute')) {
+      // No command and no title, like a code-mode cell: nothing the shell gate
+      // can classify, so the request reaches Copse's generic ACP prompt.
+      const response = await ctx.client.request(methods.client.session.requestPermission, {
+        sessionId,
+        toolCall: {
+          toolCallId: 'mock-tool-execute',
+          kind: 'execute',
+          status: 'pending',
+          rawInput: { cell: 'print(1)' },
+        },
+        options: [
+          { kind: 'allow_once', name: 'Allow', optionId: 'allow' },
+          { kind: 'allow_always', name: 'Always allow', optionId: 'allow-always' },
+          { kind: 'reject_once', name: 'Reject', optionId: 'reject' },
+        ],
+      })
+      const outcome = response.outcome
+      const decision =
+        outcome.outcome === 'cancelled' ? 'cancelled' : `answered ${String(outcome.optionId)}`
+      await say(`client ${decision}`)
+      return { stopReason: 'end_turn' }
+    }
+
     if (text.includes('ask')) {
       const response = await ctx.client.request(methods.client.session.requestPermission, {
         sessionId,

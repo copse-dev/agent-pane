@@ -1231,7 +1231,8 @@ function acpGrantLocationFor(agent: AcpPermissionAgent): AcpGrantLocation | null
  * Requests whose (agent, tool kind) pair was granted "always allow" earlier are
  * approved without prompting; checking the dialog's remember box persists such
  * a grant and also answers with the agent's own `allow_always` option so the
- * agent-side session stops asking within the turn.
+ * agent-side session stops asking within the turn. `execute` is never
+ * remembered: each command must reach the shell gate.
  */
 async function respondToPermission(
   agent: AcpPermissionAgent,
@@ -1265,7 +1266,11 @@ async function respondToPermission(
   }
   const kind = req.toolCall.kind ?? 'other'
   const grantLocation = acpGrantLocationFor(agent)
-  if (grantLocation && isAcpPermissionRemembered(agent.id, kind, grantLocation)) {
+  // An execute grant would be keyed by kind alone, so one remembered answer
+  // would wave every later command past the shell gate below. Execute is
+  // never rememberable; the grant store also ignores any stored before this.
+  const rememberable = kind !== 'execute'
+  if (rememberable && grantLocation && isAcpPermissionRemembered(agent.id, kind, grantLocation)) {
     return permissionResponseFor(req.options, true, { preferAlways: true })
   }
   // Low-risk ACP reads/searches from a sandboxed agent should not require users
@@ -1361,8 +1366,10 @@ async function respondToPermission(
       {
         ...presentation,
         cause: 'acp-permission',
-        allowRemember: true,
-        rememberLabel: `Always allow ${agent.title} ${permissionKindLabel(kind)}`,
+        allowRemember: rememberable,
+        ...(rememberable
+          ? { rememberLabel: `Always allow ${agent.title} ${permissionKindLabel(kind)}` }
+          : {}),
         // Lets turn bookkeeping leave this tool call open while its prompt
         // outlives the turn (approval parking), instead of stamping it
         // "interrupted" underneath a question the user can still answer.
@@ -1371,10 +1378,11 @@ async function respondToPermission(
       approvalSignal,
     )
     if (approvalSignal?.aborted) return { outcome: { outcome: 'cancelled' } }
-    if (approved && remember && grantLocation) {
+    const remembered = approved && remember && rememberable
+    if (remembered && grantLocation) {
       void rememberAcpPermission(agent.id, kind, grantLocation)
     }
-    return permissionResponseFor(req.options, approved, { preferAlways: approved && remember })
+    return permissionResponseFor(req.options, approved, { preferAlways: remembered })
   } finally {
     tracked?.unregister()
   }
