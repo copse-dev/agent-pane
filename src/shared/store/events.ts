@@ -61,11 +61,9 @@ export interface StoreEvents {
   // A fresh chat was opened (new blank thread reused or created). Used to refresh
   // provider-reported model context windows so the new chat reflects current limits.
   new_thread_opened: []
-  panel_changed: []
   explorer_reveal: [path: string]
   workspace_changed: []
   projects_changed: []
-  sidebar_project_filter_changed: []
   // Request the Changes panel to reveal a specific workspace-relative file diff.
   git_change_navigate: [path: string]
   // Request the Roadmap pane to select a specific item (quick-open palette hit).
