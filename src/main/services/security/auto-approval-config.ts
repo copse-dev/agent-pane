@@ -6,7 +6,7 @@ import {
   sanitizeAutoApprovalLevel,
 } from '@shared/auto-approval.ts'
 import { getSetting } from '../storage/settings.ts'
-import { getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
+import type { AgentRoots } from '../execution-root.ts'
 import { isWorkspaceTrusted } from './workspace-trust.ts'
 import { configuredGitRemotes } from './git-remotes.ts'
 import { assessAutoApproval, type AutoApprovalDecision } from './auto-approval.ts'
@@ -38,14 +38,14 @@ export { AUTO_APPROVAL_LEVEL_SETTING } from '@shared/auto-approval.ts'
  * Returns `prompt` whenever any gate is closed, so the caller's existing prompt
  * path is the default.
  *
- * @param executionRoot the resolved execution root for this run, when the caller
- *   already knows it. Falls back to the active run's root, then the workspace root.
+ * @param roots the run's project root (trust and git remotes) and execution root
+ *   (where the command's paths are judged), resolved by the caller.
  * @param sandboxEnabled whether an OS sandbox is actually confining this session.
  *   Defaults to `false` (fail closed). Every tier prompts when it is not `true`.
  */
 export function resolveAutoApproval(
   command: string,
-  executionRoot?: string | null,
+  roots: AgentRoots,
   sandboxEnabled = false,
 ): AutoApprovalDecision {
   if (!getSetting<boolean>('autoRunSandboxCommands', true)) {
@@ -56,13 +56,12 @@ export function resolveAutoApproval(
   }
   // Trust belongs to the run's project, not whichever checkout the window shows:
   // a background or automation thread acts on its own project.
-  const projectRoot = getAgentProjectRoot()
+  const { projectRoot } = roots
   if (!isWorkspaceTrusted(projectRoot)) {
     return { action: 'prompt', reasons: ['workspace not trusted'] }
   }
-  const root = executionRoot ?? getAgentExecutionRoot()
   return assessAutoApproval(command, {
-    workspaceRoot: root,
+    workspaceRoot: roots.executionRoot,
     level: effectiveAutoApprovalLevel(autoApprovalLevel(), sandboxEnabled),
     // Remotes come from the project's repository: that is the checkout the user
     // opened and trusted. An execution root inside it (a worktree) shares the

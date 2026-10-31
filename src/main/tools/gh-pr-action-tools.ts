@@ -8,6 +8,7 @@ import {
 } from '../services/github/git-service.ts'
 import { getAgentExecutionRoot } from '../services/execution-root.ts'
 import { createPrMaintenanceService } from '../services/github/pr-maintenance-service.ts'
+import { runGh } from '../services/github/gh-service.ts'
 import {
   approvePr,
   enablePrAutoMerge,
@@ -171,7 +172,10 @@ export const ghEnableAutoMergeTool = defineTool({
 })
 
 const commitSha = z.string().regex(/^[a-f0-9]{40}$/i)
-const maintenance = createPrMaintenanceService()
+// Bound per call to the running turn's checkout, never the window's (#3958).
+const maintenance = createPrMaintenanceService((args) =>
+  runGh(args, { cwd: getAgentExecutionRoot() }),
+)
 
 export const gitPushTool = defineTool({
   name: 'git_push',

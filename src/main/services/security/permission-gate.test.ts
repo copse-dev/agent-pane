@@ -1794,7 +1794,11 @@ describe('ensureTerminalPermitted', () => {
     })
     try {
       assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: false }),
+        await ensureTerminalPermitted({
+          projectRoot: '/tmp/project',
+          sandboxEnabled: true,
+          remoteTarget: false,
+        }),
         true,
       )
       assert.equal(prompted, false)
@@ -1814,7 +1818,11 @@ describe('ensureTerminalPermitted', () => {
     })
     try {
       assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: false, remoteTarget: false }),
+        await ensureTerminalPermitted({
+          projectRoot: '/tmp/project',
+          sandboxEnabled: false,
+          remoteTarget: false,
+        }),
         true,
       )
       assert.match(approvalBody, /full user account, filesystem, and network/i)
@@ -1836,6 +1844,7 @@ describe('ensureTerminalPermitted', () => {
     })
     try {
       await ensureTerminalPermitted({
+        projectRoot: '/tmp/project',
         sandboxEnabled: false,
         remoteTarget: false,
         sandboxPlatform: false,
@@ -1860,6 +1869,7 @@ describe('ensureTerminalPermitted', () => {
     })
     try {
       await ensureTerminalPermitted({
+        projectRoot: '/tmp/project',
         sandboxEnabled: false,
         remoteTarget: false,
         sandboxPlatform: true,
@@ -1883,6 +1893,7 @@ describe('ensureTerminalPermitted', () => {
     })
     try {
       await ensureTerminalPermitted({
+        projectRoot: '/tmp/project',
         sandboxEnabled: false,
         remoteTarget: false,
         sandboxPlatform: true,
@@ -1905,6 +1916,7 @@ describe('ensureTerminalPermitted', () => {
     })
     try {
       await ensureTerminalPermitted({
+        projectRoot: '/tmp/project',
         sandboxEnabled: false,
         remoteTarget: false,
         sandboxPlatform: true,
@@ -1922,7 +1934,11 @@ describe('ensureTerminalPermitted', () => {
     setApprovalHandler(async () => ({ approved: false, remember: false }))
     try {
       assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: false, remoteTarget: false }),
+        await ensureTerminalPermitted({
+          projectRoot: '/tmp/project',
+          sandboxEnabled: false,
+          remoteTarget: false,
+        }),
         false,
       )
     } finally {
@@ -1942,7 +1958,11 @@ describe('ensureTerminalPermitted', () => {
     })
     try {
       assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: true }),
+        await ensureTerminalPermitted({
+          projectRoot: '/tmp/project',
+          sandboxEnabled: true,
+          remoteTarget: true,
+        }),
         true,
       )
       assert.match(approvalTitle, /remote terminal/i)
@@ -1953,10 +1973,29 @@ describe('ensureTerminalPermitted', () => {
     }
   })
 
-  it('throws when no workspace is open', async () => {
+  it('throws when the requesting project does not resolve, whatever the window workspace', async () => {
+    const restore = setWorkspaceRootForTest('/tmp/project')
+    try {
+      await assert.rejects(
+        () => ensureTerminalPermitted({ projectRoot: null }),
+        /No workspace open/,
+      )
+    } finally {
+      restore()
+    }
+  })
+
+  it('judges the requesting project, not the process-global workspace (#3958)', async () => {
     const restore = setWorkspaceRootForTest(null)
     try {
-      await assert.rejects(() => ensureTerminalPermitted(), /No workspace open/)
+      assert.equal(
+        await ensureTerminalPermitted({
+          projectRoot: '/tmp/project',
+          sandboxEnabled: true,
+          remoteTarget: false,
+        }),
+        true,
+      )
     } finally {
       restore()
     }
