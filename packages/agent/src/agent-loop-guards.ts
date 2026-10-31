@@ -23,6 +23,7 @@ export const DUPLICATE_GUARDED_TOOL_NAMES = new Set([
   'search_codebase',
   'semantic_search',
   'explore',
+  'read_explored',
 ])
 
 export function toolCallFingerprint(name: string, args: unknown): string {
@@ -277,7 +278,7 @@ export const EXPLORE_WITHOUT_READ_NUDGE =
  * model after a tool it cannot call.
  */
 export const EXPLORE_REPEAT_USE_EXCERPTS_NUDGE =
-  'You have called explore several times in a row. Each explore result already ends with verbatim excerpts of the lines it read, copied from the files byte-for-byte. Copy str_replace old_string from those excerpt blocks, not from the prose summary, and make the edit. Explore again only if no excerpt covers the lines you need, and then name that path and function.'
+  'You have called explore several times in a row. Each explore result already ends with verbatim excerpts of the lines it read, copied from the files byte-for-byte. Copy str_replace old_string from those excerpt blocks, not from the prose summary, and make the edit. If no excerpt covers the lines you need, call read_explored with the path and lines; explore again only if exploration never read them.'
 
 /**
  * Tracks the explore/read_file interleaving for `EXPLORE_WITHOUT_READ_NUDGE`:
@@ -287,7 +288,8 @@ export const EXPLORE_REPEAT_USE_EXCERPTS_NUDGE =
  */
 export function nextConsecutiveExploreWithoutRead(current: number, toolName: string): number {
   if (toolName === 'explore') return current + 1
-  if (toolName === 'read_file') return 0
+  // read_explored quotes exact bytes in explore mode, as read_file does elsewhere.
+  if (toolName === 'read_file' || toolName === 'read_explored') return 0
   return current
 }
 

@@ -31,6 +31,7 @@ const PATH_BEARING_TOOLS = new Set([
   'rename_file',
   'list_dir',
   'explore',
+  'read_explored',
   'search_codebase',
   'search_code',
   'semantic_search',
