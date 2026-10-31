@@ -1,6 +1,6 @@
 // The `copse.mcp-ui-canvas` first-party plugin.
 //
-// Bundles the experimental "MCP-UI artefacts (canvas)" feature (issue #611)
+// Bundles the "MCP-UI artefacts (canvas)" feature (issue #611)
 // behind a single lifecycle flag. Unlike the other first-party plugins this plugin
 // contributes **no tool** — the canvas is pure cross-cutting behaviour that
 // already lives across main (the MCP registry's UI-resource summarisation and
@@ -21,14 +21,16 @@
 // reason `copse.site-building` uses one: the guidance is worth its tokens on a
 // prototype turn and pure noise on every other.
 //
-// **Default DISABLED on fresh profiles.** Canvas was opt-in (off by default via
-// `mcpUiArtefactsEnabled`). Default-off is expressed the same way as every other
-// experimental plugin: `experimental` stability puts the id in the
-// `pluginDisabled` set seeded on a profile that has none. No migration ever read
-// the retired setting, and no upgrade seed was added with this plugin, so a
-// profile that already owned a disable list when it arrived (#1197) got canvas
-// enabled whatever the old setting said. That is deliberately left alone now —
-// see `DEFAULT_DISABLED_PLUGIN_IDS` in `plugin-service.ts`.
+// **Stable, default-ON.** Canvas was opt-in at launch (off by default via the
+// retired `mcpUiArtefactsEnabled` setting, then via `experimental` stability).
+// It graduated to `stable` once the live-toggle MCP reload
+// (`reloadMcpServersForPluginToggle` in `mcp-registry.ts`) and the ACP
+// inline-visualization capability gate (`dispatchInlineVisualization` in
+// `inline-visualization.ts`) both existed, so disabling the plugin now turns
+// off every path that can render agent-authored HTML, not only the bundled
+// tool. A profile that already owns a disable list is graduated once by
+// `migrateMcpUiCanvasStable()` in `plugin-service.ts`; later toggles remain
+// the user's own choice.
 //
 // **No-double-registration.** The `mcpUiArtefactsEnabled` standalone setting is
 // gone (removed from the zod schema and the settings dialog) — the plugin
@@ -74,7 +76,7 @@ export const mcpUiCanvasPlugin: RegisteredPlugin = definePlugin(
     description:
       'Create interactive demos, charts and small apps in Canvas. Optionally turn explanation requests into captioned animations in your chat.',
     trust: 'first-party',
-    stability: 'experimental',
+    stability: 'stable',
     settings: {
       [ANIMATED_EXPLAINERS_SETTING_ID]: {
         kind: 'boolean',
