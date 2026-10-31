@@ -23108,7 +23108,6 @@ function createThread(store, draftPrompt) {
     stagedDiffs: []
   });
   store.emit("threads_changed");
-  store.emit("panel_changed");
   store.emit("new_thread_opened");
   return id;
 }
@@ -23136,7 +23135,6 @@ function openNewThread(store) {
       activeDiff: null,
       stagedDiffs: []
     });
-    store.emit("panel_changed");
     store.emit("new_thread_opened");
     return existing.id;
   }
@@ -23156,7 +23154,6 @@ function switchThread(store, id) {
     const { unreadAt: _read, ...readThread } = thread;
     return readThread;
   });
-  const panelWasPopulated = state.openFile !== null || state.activeDiff !== null || state.stagedDiffs.length > 0;
   store.setState({
     activeThreadId: id,
     threads,
@@ -23164,7 +23161,6 @@ function switchThread(store, id) {
     activeDiff: null,
     stagedDiffs: []
   });
-  if (panelWasPopulated) store.emit("panel_changed");
   store.emit("threads_changed");
 }
 function nextThreadId(store) {
@@ -23219,7 +23215,6 @@ function deleteThread(store, id) {
     ...activeDoomed ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}
   });
   store.emit("threads_changed");
-  if (activeDoomed) store.emit("panel_changed");
 }
 function archiveThread(store, id, persisted) {
   const { threads, activeThreadId } = store.getState();
@@ -23255,7 +23250,6 @@ function archiveThread(store, id, persisted) {
     ...activeArchived ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}
   });
   store.emit("threads_changed");
-  if (activeArchived) store.emit("panel_changed");
 }
 function restoreThread(store, id) {
   const { threads } = store.getState();
@@ -27963,7 +27957,6 @@ async function removeProject(store, api, id) {
     store.emit("projects_changed");
     store.emit("workspace_changed");
     store.emit("threads_changed");
-    store.emit("panel_changed");
     return;
   }
   store.setState({ projects });
@@ -28086,7 +28079,6 @@ async function finishActivate(store, api, id, path, sshHost, gen, outgoingId, ou
   store.emit("projects_changed");
   store.emit("workspace_changed");
   store.emit("threads_changed");
-  store.emit("panel_changed");
   endApply({ threads: merged.length });
   const { projects, activeThreadId: appliedThreadId } = store.getState();
   await (projects === projectsAtDispatch ? saveNavigation(api, id, appliedThreadId) : saveProjects(api, projects, id, appliedThreadId));
@@ -28173,7 +28165,6 @@ function openNewProjectThread(store, api, projectId = store.getState().sidebarPr
 }
 function setSidebarProjectFilter(store, api, projectId) {
   store.setState({ sidebarProjectFilterId: projectId });
-  store.emit("sidebar_project_filter_changed");
   const thread = getActiveThread(store);
   const activeProjectId = store.getState().activeProjectId;
   if (thread && !isBlankThread(thread)) {
@@ -70517,6 +70508,142 @@ var init_announcement_catalog = __esm({
   }
 });
 
+// src/shared/store/store.ts
+function sameItems(a4, b2) {
+  return a4.length === b2.length && a4.every((item, index) => Object.is(item, b2[index]));
+}
+function createStore(initial) {
+  let state = {
+    workspaceRoot: null,
+    projects: [],
+    projectGroups: [],
+    activeProjectId: null,
+    expandedProjectId: null,
+    threads: [],
+    backgroundThreads: [],
+    activeThreadId: null,
+    panelTab: "file",
+    openFile: null,
+    activeDiff: null,
+    stagedDiffs: [],
+    filesPaneOpen: false,
+    rightPanelMode: "explorer",
+    rightPanelMaximized: false,
+    projectsPaneOpen: true,
+    layout: { ...DEFAULT_LAYOUT },
+    theme: "dark",
+    themePreference: DEFAULT_THEME_PREFERENCE,
+    fontSize: 14,
+    uiScale: 1,
+    animateAgentAvatars: true,
+    conciseThreadsEnabled: true,
+    autoPortraitRightPanel: true,
+    rightPanelPosition: "auto",
+    sidebarProjectFilterId: null,
+    sidebarThreadSort: "activity",
+    sidebarThreadSortReverse: false,
+    sidebarThreadGroup: "project",
+    openLinksInBuiltInBrowser: true,
+    developerMode: false,
+    ...initial
+  };
+  const listeners = {
+    message_added: /* @__PURE__ */ new Set(),
+    message_queued: /* @__PURE__ */ new Set(),
+    message_token: /* @__PURE__ */ new Set(),
+    message_reasoning: /* @__PURE__ */ new Set(),
+    message_acp_content: /* @__PURE__ */ new Set(),
+    message_canvas_artefacts_changed: /* @__PURE__ */ new Set(),
+    message_visual_evidence_changed: /* @__PURE__ */ new Set(),
+    message_done: /* @__PURE__ */ new Set(),
+    tool_call_started: /* @__PURE__ */ new Set(),
+    tool_call_updated: /* @__PURE__ */ new Set(),
+    thread_model_resolved: /* @__PURE__ */ new Set(),
+    thread_status_changed: /* @__PURE__ */ new Set(),
+    agent_activity: /* @__PURE__ */ new Set(),
+    threads_changed: /* @__PURE__ */ new Set(),
+    reviewer_input_open: /* @__PURE__ */ new Set(),
+    reviewer_input_jump: /* @__PURE__ */ new Set(),
+    thread_draft_changed: /* @__PURE__ */ new Set(),
+    new_thread_opened: /* @__PURE__ */ new Set(),
+    explorer_reveal: /* @__PURE__ */ new Set(),
+    workspace_changed: /* @__PURE__ */ new Set(),
+    projects_changed: /* @__PURE__ */ new Set(),
+    git_change_navigate: /* @__PURE__ */ new Set(),
+    roadmap_reveal: /* @__PURE__ */ new Set(),
+    thread_plan_open: /* @__PURE__ */ new Set(),
+    thread_plan_changed: /* @__PURE__ */ new Set(),
+    browser_url_requested: /* @__PURE__ */ new Set(),
+    browser_url_bar_focus_requested: /* @__PURE__ */ new Set(),
+    pr_open_requested: /* @__PURE__ */ new Set(),
+    thread_archive_requested: /* @__PURE__ */ new Set(),
+    side_chat_open_requested: /* @__PURE__ */ new Set(),
+    canvas_artefact_requested: /* @__PURE__ */ new Set(),
+    canvas_artefact_show_requested: /* @__PURE__ */ new Set(),
+    settings_changed: /* @__PURE__ */ new Set(),
+    theme_changed: /* @__PURE__ */ new Set(),
+    staged_diffs_changed: /* @__PURE__ */ new Set(),
+    usage_updated: /* @__PURE__ */ new Set(),
+    context_updated: /* @__PURE__ */ new Set(),
+    todos_changed: /* @__PURE__ */ new Set(),
+    review_changed: /* @__PURE__ */ new Set(),
+    hook_card_added: /* @__PURE__ */ new Set(),
+    comparison_changed: /* @__PURE__ */ new Set(),
+    review_report_changed: /* @__PURE__ */ new Set(),
+    git_branch_changed: /* @__PURE__ */ new Set(),
+    thread_checkout_changed: /* @__PURE__ */ new Set(),
+    composer_draft_flush: /* @__PURE__ */ new Set(),
+    agent_task_selected: /* @__PURE__ */ new Set(),
+    shell_tab_activated: /* @__PURE__ */ new Set(),
+    request_terminal_command: /* @__PURE__ */ new Set(),
+    code_block_run_requested: /* @__PURE__ */ new Set(),
+    code_block_run_finished: /* @__PURE__ */ new Set(),
+    thread_reference_attach: /* @__PURE__ */ new Set(),
+    attention_changed: /* @__PURE__ */ new Set(),
+    sidebar_threads_loaded: /* @__PURE__ */ new Set(),
+    automation_schedules_loaded: /* @__PURE__ */ new Set()
+  };
+  function on2(event, handler) {
+    listeners[event].add(handler);
+    return () => {
+      listeners[event].delete(handler);
+    };
+  }
+  function emit(event, ...args) {
+    listeners[event].forEach((handler) => {
+      handler(...args);
+    });
+  }
+  const selections = /* @__PURE__ */ new Set();
+  function select(selector, listener, equals = Object.is) {
+    let value = selector(state);
+    const check2 = () => {
+      const next = selector(state);
+      const prev = value;
+      if (equals(prev, next)) return;
+      value = next;
+      listener(next, prev);
+    };
+    selections.add(check2);
+    return () => {
+      selections.delete(check2);
+    };
+  }
+  function setState(partial2) {
+    state = { ...state, ...partial2 };
+    for (const check2 of [...selections]) {
+      if (selections.has(check2)) check2();
+    }
+  }
+  return { getState: () => state, setState, on: on2, emit, select };
+}
+var init_store = __esm({
+  "src/shared/store/store.ts"() {
+    init_types2();
+    init_layout();
+  }
+});
+
 // src/renderer/controller/panels.ts
 function syncFilesPaneDom(store) {
   if (typeof document === "undefined") return;
@@ -72881,7 +73008,7 @@ async function openWorkspaceFile(store, api, path, reveal) {
       if (!isOwner()) preview.close();
     };
     unsubs.push(
-      store.on("panel_changed", checkOwner),
+      store.select((s2) => [s2.activeProjectId, s2.activeThreadId], checkOwner, sameItems),
       store.on("threads_changed", checkOwner),
       store.on("workspace_changed", checkOwner),
       store.on("thread_checkout_changed", (changedThreadId) => {
@@ -72915,7 +73042,6 @@ async function openWorkspaceFile(store, api, path, reveal) {
     rightPanelMode: "explorer",
     filesPaneOpen: true
   });
-  store.emit("panel_changed");
 }
 async function openWorkspaceFileInBrowser(store, api, path) {
   const { projectId, threadId } = requireActiveThreadOwner(store);
@@ -72939,7 +73065,6 @@ function revealWorkspaceDirectory(store, path) {
     filesPaneOpen: true
   });
   store.emit("explorer_reveal", path);
-  store.emit("panel_changed");
 }
 async function activateWorkspaceReference(store, api, path, kind, reveal) {
   if (kind === "directory") {
@@ -72951,6 +73076,7 @@ async function activateWorkspaceReference(store, api, path, kind, reveal) {
 var LANG;
 var init_files = __esm({
   "src/renderer/controller/files.ts"() {
+    init_store();
     init_active_thread_owner();
     init_panels();
     init_image_path();
@@ -73443,6 +73569,9 @@ export {
   workingBriefFromUserContent,
   nextWorkingBrief,
   init_working_brief,
+  sameItems,
+  createStore,
+  init_store,
   getActiveThreadOwner,
   requireActiveThreadOwner,
   init_active_thread_owner,
