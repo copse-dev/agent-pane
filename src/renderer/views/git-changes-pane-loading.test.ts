@@ -64,6 +64,103 @@ afterEach(() => {
 })
 
 describe('git changes pane loading state', () => {
+  for (const clean of [true, false]) {
+    it(`preserves ${clean ? 'No changes' : 'file rows'} throughout an unchanged refresh`, async () => {
+      const base = createFakeApi()
+      let reads = 0
+      let finishCommitted: ((value: null) => void) | undefined
+      const api: ApiClient = {
+        ...base,
+        git: {
+          ...base.git,
+          isAvailable: async () => true,
+          status: async () => ({
+            staged: [],
+            unstaged: clean ? [] : [{ path: 'edited.ts', status: 'modified' }],
+          }),
+          committedChanges: () => {
+            if (++reads === 1) return Promise.resolve(null)
+            return new Promise((resolve) => {
+              finishCommitted = resolve
+            })
+          },
+          sessionBackup: async () => null,
+          fileDiff: async () => null,
+        },
+      }
+      const { listRoot, viewerRoot } = mount(api)
+      await settle()
+      const selector = clean ? '.git-changes-empty' : '.git-change-row'
+      const original = listRoot.querySelector<HTMLElement>(selector)
+      assert.ok(original)
+      if (!clean) original.focus()
+      const refresh = listRoot.querySelector<HTMLButtonElement>('.git-changes-refresh-btn')
+      assert.ok(refresh)
+      for (let index = 0; index < 2; index++) {
+        refresh.click()
+        await settle()
+        assert.equal(listRoot.querySelector('.pane-loading'), null)
+        assert.equal(listRoot.querySelector(selector), original)
+        if (clean)
+          assert.equal(
+            viewerRoot.querySelector('.panel-empty')?.textContent,
+            'Select a changed file',
+          )
+        finishCommitted?.(null)
+        await settle()
+        assert.equal(listRoot.querySelector(selector), original)
+        if (!clean) assert.equal(document.activeElement, original)
+      }
+    })
+  }
+
+  it('retains settled rows until a refresh can move them into committed changes', async () => {
+    const base = createFakeApi()
+    let committedNow = false
+    let finishCommitted: (() => void) | undefined
+    const api: ApiClient = {
+      ...base,
+      git: {
+        ...base.git,
+        isAvailable: async () => true,
+        status: async () => ({
+          staged: [],
+          unstaged: committedNow ? [] : [{ path: 'edited.ts', status: 'modified' }],
+        }),
+        committedChanges: () => {
+          if (!committedNow) return Promise.resolve(null)
+          return new Promise((resolve) => {
+            finishCommitted = (): void => {
+              resolve({
+                baseLabel: 'main',
+                changes: [{ path: 'edited.ts', status: 'modified' }],
+              })
+            }
+          })
+        },
+        sessionBackup: async () => null,
+        fileDiff: async () => null,
+        committedFileDiff: async () => null,
+      },
+    }
+    const { listRoot } = mount(api)
+    await settle()
+    const original = listRoot.querySelector('.git-change-row')
+    assert.ok(original)
+    committedNow = true
+    listRoot.querySelector<HTMLButtonElement>('.git-changes-refresh-btn')?.click()
+    await settle()
+    assert.equal(listRoot.querySelector('.git-change-row'), original)
+    assert.equal(listRoot.querySelector('.pane-loading'), null)
+    finishCommitted?.()
+    await settle()
+    assert.match(
+      listRoot.querySelector('.git-change-row-committed')?.textContent ?? '',
+      /edited.ts/,
+    )
+    assert.equal(listRoot.querySelector('.git-changes-empty'), null)
+  })
+
   it('shows a loading row, not "Not a git repository", while the probe is in flight', async () => {
     const { listRoot, viewerRoot } = mount(createPendingApi(SUBSCRIPTIONS))
     await settle()
