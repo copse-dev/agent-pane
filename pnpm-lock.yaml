@@ -27,6 +27,7 @@ overrides:
   undici@8: 8.12.3
   source-map-js@<1.2.2: 1.2.2
   body-parser@2: 2.4.0
+  node-forge: 1.4.2
 
 patchedDependencies:
   '@anthropic-ai/sandbox-runtime@0.0.74':
@@ -4184,8 +4185,8 @@ packages:
   node-api-version@0.2.1:
     resolution: {integrity: sha512-2xP/IGGMmmSQpI1+O/k72jF/ykvZ89JeuKX3TLJAYPDVLUalrshrLHkeVcCCZqG/eEa635cr8IBYzgnDvM2O8Q==}
 
-  node-forge@1.4.0:
-    resolution: {integrity: sha512-LarFH0+6VfriEhqMMcLX2F7SwSXeWwnEAJEsYm5QKWchiVYVvJyV9v7UDvUv+w5HO23ZpQTXDv/GxdDdMyOuoQ==}
+  node-forge@1.4.2:
+    resolution: {integrity: sha512-rRtAR5XLJ8gCKd9du4qrKAsgCG1ObGP4gLeNJMa4vYSeq4bmBMOJk5IHkrviBV0q7uoAJlVd8HEQYQSVUb4FGQ==}
     engines: {node: '>= 6.13.0'}
 
   node-gyp@12.4.0:
@@ -5442,7 +5443,7 @@ snapshots:
     dependencies:
       '@pondwader/socks5-server': 1.0.10
       commander: 12.1.0
-      node-forge: 1.4.0
+      node-forge: 1.4.2
       zod: 3.25.76
 
   '@anthropic-ai/sdk@0.133.0(zod@4.6.7)':
@@ -9467,7 +9468,7 @@ snapshots:
     dependencies:
       semver: 7.8.5
 
-  node-forge@1.4.0: {}
+  node-forge@1.4.2: {}
 
   node-gyp@12.4.0:
     dependencies:

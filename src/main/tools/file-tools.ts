@@ -16,6 +16,7 @@ import { buildReadFilePageMeta, formatReadFilePageFooter } from '@copse/agent/re
 import { getStagedDiffEntry } from '../services/diff-queue.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { isNonNull } from '@shared/nullish.ts'
+import { recordExploredSpan } from '../services/explore-read-recorder.ts'
 
 export const LIST_DIR_MAX_ENTRIES = 1000
 
@@ -87,6 +88,22 @@ export const readFileTool = defineTool({
       result.lineTruncated || result.charTruncated,
     )
     const pending = getStagedDiffEntry(path)
+    // Inside an explore subagent, hand the exact lines to the parent (#1433,
+    // Fix 0). Skipped when a staged diff is pending (str_replace edits that
+    // proposed content, not these on-disk bytes), when nothing was read, and
+    // when the char cap left a single line that may be only a prefix.
+    if (
+      !pending &&
+      result.endLine >= result.startLine &&
+      !(result.charTruncated && result.endLine === result.startLine)
+    ) {
+      recordExploredSpan({
+        path: path.replace(/^\.\//, ''),
+        startLine: result.startLine,
+        endLine: result.endLine,
+        text: result.text,
+      })
+    }
     const pendingNote = pending
       ? `\n\n[Note: ${path} has a pending Copse staged diff that is not written to disk yet. This read_file output is the on-disk content only. Use read_staged_diff with this path to inspect the proposed after content, or wait for user approval before validating.]`
       : ''
