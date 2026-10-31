@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { startAgentController } from './agent.ts'
-import { createStore } from '@shared/store/store.ts'
+import { createStore, sameItems } from '@shared/store/store.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { getThreadById, setMessageReviewReport } from '@shared/store/thread-helpers.ts'
 import type {
@@ -271,9 +271,10 @@ test('diff events stay scoped to their owning project and thread', () => {
 
 test('opening Changes for a staged diff unhides the pane before panel sync events', () => {
   // Layout must win the race against Monaco's whenDiffHostVisible wait: the
-  // Changes pane hears the mode change (and #pane-files is synced) before
-  // panel_changed / staged_diffs_changed, which kick the Changes viewer. main.ts
-  // selects `filesPaneOpen` for #pane-files before any pane subscribes.
+  // Changes pane hears the mode change (and #pane-files is synced) before the
+  // diff-state selection and staged_diffs_changed, which kick the Changes
+  // viewer. main.ts selects `filesPaneOpen` for #pane-files before any pane
+  // subscribes.
   const { store, showDiff, queueDiffs } = setup()
   const pane = document.createElement('div')
   pane.id = 'pane-files'
@@ -293,9 +294,13 @@ test('opening Changes for a staged diff unhides the pane before panel sync event
   store.on('staged_diffs_changed', () => {
     events.push(`staged:${pane.hidden ? 'hidden' : 'open'}`)
   })
-  store.on('panel_changed', () => {
-    events.push(`panel:${pane.hidden ? 'hidden' : 'open'}`)
-  })
+  store.select(
+    (s) => [s.activeDiff, s.stagedDiffs] as const,
+    () => {
+      events.push(`panel:${pane.hidden ? 'hidden' : 'open'}`)
+    },
+    sameItems,
+  )
 
   showDiff('project-1', 't1', 'a.ts', 'before', 'after', 'typescript')
   assert.equal(pane.hidden, false)
@@ -304,7 +309,8 @@ test('opening Changes for a staged diff unhides the pane before panel sync event
   events.length = 0
   queueDiffs('project-1', 't1', [{ path: 'a.ts', language: 'typescript' }])
   assert.equal(pane.hidden, false)
-  assert.deepEqual(events, ['staged:open', 'panel:open'])
+  // The selection runs inside the queue's setState, ahead of the event.
+  assert.deepEqual(events, ['panel:open', 'staged:open'])
 
   pane.remove()
 })
