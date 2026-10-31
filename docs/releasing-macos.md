@@ -17,10 +17,10 @@ repository.
 The package version is the sole source of truth. The release workflow rejects
 every other prerelease shape instead of guessing:
 
-| Package/tag shape             | Copse channel | Update feed      | GitHub release |
-| ----------------------------- | ------------- | ---------------- | -------------- |
-| `X.Y.Z` / `vX.Y.Z`            | Stable        | `latest-mac.yml` | Normal/latest  |
-| `X.Y.Z-beta.N` / matching tag | Beta          | `beta-mac.yml`   | Prerelease     |
+| Package/tag shape             | Copse channel | Update feed                         | GitHub release                                    |
+| ----------------------------- | ------------- | ----------------------------------- | ------------------------------------------------- |
+| `X.Y.Z` / `vX.Y.Z`            | Stable        | `latest-mac.yml` and `beta-mac.yml` | Prerelease (stable candidate), then normal/latest |
+| `X.Y.Z-beta.N` / matching tag | Beta          | `beta-mac.yml`                      | Prerelease                                        |
 
 The package version decides what a build is. Which feed an installation
 follows is the user's choice in Settings → About (`updateChannel`), remembered
@@ -33,6 +33,16 @@ otherwise keeps taking the newest beta, so it moves at the next stable release
 classifier in
 [`src/shared/release-channel.mts`](../src/shared/release-channel.mts) drives both
 the packaged app and the release workflow so their routing cannot drift.
+
+How the two feeds are told apart is a property of `electron-updater`'s GitHub
+provider, not of file names alone. The **stable** check (`allowPrerelease:
+false`) asks `releases/latest`, which GitHub never resolves to a prerelease or a
+draft, and reads that release's `latest-mac.yml`. The **beta** check
+(`allowPrerelease: true`, channel `beta`) walks `releases.atom` newest first and
+takes the first `beta` or stable tag, reading its `beta-mac.yml`. So the
+GitHub release type, not a separate host, is what keeps betas away from stable
+users, and it is also the lever for [promotion](#stable-promotion) and
+[halting](#halting-a-release).
 
 GitHub release assets must be anonymously reachable. `build.publish` therefore
 points at `copse-dev/copse-releases`, not this source repository. The source can
@@ -88,10 +98,15 @@ The repository needs these Actions secrets:
 | `APPLE_TEAM_ID`               | Apple Developer Team ID.                        |
 
 `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` mint the narrowly scoped token
-that publishes into `copse-dev/copse-releases`; the GitHub App must be installed
+that publishes, promotes and halts in `copse-dev/copse-releases`; the GitHub App must be installed
 there with Contents write permission. `GITHUB_TOKEN` remains scoped to the
 private source run and its Actions artifacts. The release workflow fails before
 packaging if a required signing or notarization credential is missing.
+
+`Promote stable release` runs in the `stable-release` Actions environment.
+GitHub creates an unprotected environment on first use, so configure it in the
+repository settings with the release owner as a required reviewer before the
+first stable promotion; that approval is the human gate on the stable channel.
 
 ## Publishing through CI
 
@@ -144,8 +159,10 @@ Monday. Publishing is the only routine manual step:
    manually dispatch `Publish release artifacts` with the tag and successful
    `Release (macOS)` run ID. The publisher verifies the source workflow,
    successful conclusion, exact tagged SHA, checksums, and public target state,
-   then creates a prerelease for beta or a normal/latest release for stable in
-   `copse-dev/copse-releases`. It first commits `LATEST.md` there, naming the
+   then creates a prerelease in `copse-dev/copse-releases`. That is the final
+   state for a beta. For a stable version it is a _stable candidate_: beta users
+   receive it, stable users do not until it is
+   [promoted](#stable-promotion). It first commits `LATEST.md` there, naming the
    release, and tags that commit: GitHub dates and orders releases by the
    tagged commit, so each release needs its own. It never rebuilds. GitHub artifact attestation is
    added automatically once the source repository is public; until then the
@@ -161,13 +178,97 @@ tagged commit's `Full release validation` before its roughly hour-long packaging
 
 ### Cutting a release by hand
 
-Stable releases are never cut on schedule. To cut one — or any version other
+Stable releases are never cut on schedule, and a cut stable version is only a
+stable candidate until it is [promoted](#stable-promotion). To cut one — or any version other
 than the next beta, such as a minor jump — dispatch `Bump release version` with
 the version, or run `node scripts/release-bump.mts <version>` and open the PR
 yourself. Complete [the release checklist](release-checklist.md) first,
 including security review and GA-blocker handling. Do not edit `package.json`
 alone: the release jobs fail closed when the version has no `## <version>`
 section in `CHANGELOG.md`.
+
+## Stable promotion
+
+A stable release is never a new build. The stable version `X.Y.Z` is cut by
+hand (below), built, signed, notarized and smoke-tested once by
+`Release (macOS)`, and published by `Publish release artifacts` as a
+prerelease. From then on those exact bytes are the stable candidate:
+
+1. **Soak on the beta channel.** The candidate is the newest entry in the beta
+   feed, so every beta installation is offered it. Stable installations are
+   not. The candidate must serve the beta channel for at least
+   `DEFAULT_STABLE_SOAK_HOURS` (72) hours; a promotion run may lower that to no
+   less than 24 for an urgent fix, and the run's input records the choice.
+2. **Sign off.** Complete the stable items of the
+   [release checklist](release-checklist.md#stable-promotion), including the
+   install and update rehearsal of the published candidate.
+3. **Promote.** Dispatch
+   [`Promote stable release`](../.github/workflows/release-promote.yml) with the
+   tag. It runs in the `stable-release` environment, whose required reviewers
+   approve the run. It refuses a beta, a draft, an already-promoted release, a
+   release missing any asset, an unsoaked candidate, and any version not newer
+   than the current stable. It then downloads the published assets, checks
+   `SHA256SUMS`, checks that `latest-mac.yml` and `beta-mac.yml` name this
+   version and match every published zip and DMG by SHA-512 and size, and checks
+   that the published `RELEASE_VALIDATION.json` names the tag's commit on
+   `release`. Only then does it mark the same GitHub Release as the latest
+   non-prerelease, commit `LATEST.md`, and confirm signed out that
+   `releases/latest` and its `latest-mac.yml` now serve the version.
+
+Promotion edits release metadata only. No asset is uploaded, replaced or
+re-signed, so stable users install byte-for-byte what beta users ran. The checks
+live in [`scripts/release-promotion.mts`](../scripts/release-promotion.mts).
+
+A beta (`X.Y.Z-beta.N`) can never be promoted. Its version string is inside the
+signed app, so it would keep identifying as a beta, and changing that would mean
+a new build.
+
+Betas continue during a soak: the bump after `X.Y.Z` is `X.Y.(Z+1)-beta.1`,
+which sorts above the candidate. Promotion is unaffected because the stable
+feed follows the release explicitly marked latest, not the newest one.
+
+## Halting a release
+
+When a published release is found to be bad, dispatch
+[`Halt release`](../.github/workflows/release-halt.yml) with the tag, `halt`,
+and a reason. It works for betas, stable candidates and promoted stable
+releases:
+
+- The GitHub Release becomes a draft. Drafts are absent from `releases.atom` and
+  `releases/latest`, and their assets stop downloading, so neither update check
+  offers the version and no new user can download it. The bytes are kept in the
+  draft for investigation; nothing is deleted.
+- If it was the latest stable release, the newest remaining stable release is
+  marked latest again, so the stable feed and download fall back to it. With no
+  earlier stable release, the stable feed serves nothing until a corrective
+  release.
+- `LATEST.md` records the halt, an anonymous check confirms the version has
+  left both feeds, and an `area:release` issue named `Release halted: <tag>`
+  records who halted it and why.
+
+A halt stops the bad version spreading. It does not move anyone who already
+installed it, because Copse never downgrades (`allowDowngrade: false`): a lower
+version is not offered even when it is the newest one listed. Those users
+recover through a corrective newer release, published and (for stable)
+promoted the usual way. Close the halt issue once it is out.
+
+If a halt was raised in error, dispatch the same workflow with `resume`. The
+release is republished unchanged; a stable release becomes latest again only if
+it is still the newest stable one.
+
+### Rollback policy
+
+Copse rolls forward, not back. "Rollback" means two things here, both
+supported:
+
+- **Stop new exposure** to a bad version: halt it, as above.
+- **Restore users** who installed it: publish a corrective version that sorts
+  above it. A stable fix still soaks on the beta channel, but the run may lower
+  the soak to 24 hours; for a severe defect, halt first and then fix.
+
+Installing an older version, by an in-app downgrade or by asking users to
+reinstall an old DMG, is not supported: data migrations are forward-only (see
+[recovery.md](recovery.md)).
 
 ### Failed releases
 
@@ -248,9 +349,12 @@ applied silently.
 Before announcing either channel, exercise the real transition with installed
 signed builds:
 
-- Stable old → stable new succeeds; stable old does not see a beta-only release.
+- Stable old → stable new succeeds after promotion; stable old does not see a
+  beta-only release or an unpromoted stable candidate.
 - Beta old → beta new succeeds.
-- Beta old → newer stable succeeds.
+- Beta old → newer stable candidate succeeds.
+- A halted release disappears from both feeds, and its installed copy is not
+  downgraded.
 - A lower version is never offered, even if its release was published later.
 
 Auto-update wiring lives in
@@ -259,9 +363,9 @@ active only in packaged macOS builds.
 
 ## Recovery and current scope
 
-- Releases are forward-fix only. Preserve affected data and publish a newer
-  corrective version; do not direct users to downgrade. See
-  [recovery.md](recovery.md).
+- Releases are forward-fix only. [Halt](#halting-a-release) a bad release,
+  preserve affected data and publish a newer corrective version; do not direct
+  users to downgrade. See [recovery.md](recovery.md).
 - Windows and Linux packages do not yet have an equivalent command-execution
   containment boundary and are not public distribution targets.
 - The bundled `gortex` helper is `asarUnpack`ed and signed with the app. Verify
