@@ -297,6 +297,7 @@ import {
   listOrphanProjects,
   listSubagentRuns,
   loadArtefactContent,
+  loadPersistedThread,
   loadProjects,
   loadThreads,
   localBenchmarkScore,
@@ -358,7 +359,6 @@ import {
   queuedMessageIds,
   queuedPayloadText,
   recordContextTrim,
-  recordPersistedThread,
   recordThreadArchives,
   recordThreadVideos,
   recoverOrphanProject,
@@ -455,7 +455,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-ENS5RTVY.js";
+} from "./chunk-ACROG24K.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -2818,15 +2818,12 @@ async function restoreArchivedThread(store2, api2, projectId, threadId) {
     throw new Error("The thread is busy or changed. Try restoring it again.");
   invalidateProjectThreadLoads(api2, projectId);
   if (store2.getState().activeProjectId === projectId) {
-    const metadata = (await api2.threads.loadProject(projectId)).find(
-      (thread) => thread.id === threadId
-    );
+    const metadata = await loadPersistedThread(api2, projectId, threadId);
     if (!metadata) throw new Error("The restored thread could not be loaded.");
     if (store2.getState().activeProjectId === projectId) {
       const threads = store2.getState().threads;
       const previous = threads.find((thread) => thread.id === threadId);
       const restored = previous?.messagesLoaded !== false && previous ? { ...metadata, messages: previous.messages, messagesLoaded: true } : metadata;
-      recordPersistedThread(projectId, metadata);
       store2.setState({ threads: [...threads.filter((thread) => thread.id !== threadId), restored] });
       store2.emit("threads_changed");
     }
@@ -84239,9 +84236,16 @@ function mountAskUserDialog(api2, store2) {
       form.append(el("p", { class: "ask-user-origin" }, asker.label));
       store2.emit("side_chat_open_requested", asker.firstSideChatId);
     }
+    const actionsOnly = active.presentation?.kind === "actions";
+    const choiceMode = !actionsOnly && active.questions.length === 1 && (active.questions[0]?.options?.length ?? 0) > 0;
+    const submitBtn = el(
+      "button",
+      { type: "submit", class: "ask-user-submit", title: "Send answer (\u2318Enter or Ctrl+Enter)" },
+      "Send answer"
+    );
+    submitBtn.hidden = choiceMode;
     active.questions.forEach((q2, i2) => {
       const questionId = `ask-user-question-${String(i2)}`;
-      const actionsOnly = active?.presentation?.kind === "actions";
       const input = el("textarea", {
         class: "ask-user-input",
         rows: "2",
@@ -84257,11 +84261,14 @@ function mountAskUserDialog(api2, store2) {
       question.innerHTML = renderMarkdown(q2.question);
       const field = el("div", { class: "ask-user-field" }, question);
       if (q2.options && q2.options.length > 0) {
-        const optionRow = el("div", { class: "ask-user-options" });
+        const optionRow = el("div", {
+          class: choiceMode ? "ask-user-options ask-user-options-stacked" : "ask-user-options",
+          ...choiceMode ? { role: "group", "aria-labelledby": questionId } : {}
+        });
         for (const option of q2.options) {
           const button = el("button", {
             type: "button",
-            class: actionsOnly ? `ui-btn ${option === q2.options[0] ? "ui-btn-primary" : "ui-btn-secondary"} ask-user-option ask-user-action` : "ask-user-option"
+            class: actionsOnly ? `ui-btn ${option === q2.options[0] ? "ui-btn-primary" : "ui-btn-secondary"} ask-user-option ask-user-action` : choiceMode ? "ask-user-option ask-user-choice" : "ask-user-option"
           });
           setInlineMarkdown(button, option);
           const answer = button.textContent;
@@ -84274,6 +84281,10 @@ function mountAskUserDialog(api2, store2) {
               respond([option]);
               return;
             }
+            if (choiceMode) {
+              respond([answer]);
+              return;
+            }
             input.value = answer;
             input.focus();
           });
@@ -84283,6 +84294,17 @@ function mountAskUserDialog(api2, store2) {
       }
       if (q2.recommendationReason) {
         field.append(el("p", { class: "ask-user-recommendation-reason" }, q2.recommendationReason));
+      }
+      if (choiceMode) {
+        const toggle = el("button", { type: "button", class: "ask-user-other" }, "Something else\u2026");
+        input.hidden = true;
+        toggle.addEventListener("click", () => {
+          toggle.hidden = true;
+          input.hidden = false;
+          submitBtn.hidden = false;
+          input.focus();
+        });
+        field.append(toggle);
       }
       if (!actionsOnly) field.append(input);
       form.append(field);
@@ -84298,24 +84320,9 @@ function mountAskUserDialog(api2, store2) {
       event.preventDefault();
       cancel();
     });
-    form.append(
-      el(
-        "div",
-        { class: "ask-user-buttons" },
-        cancelBtn,
-        el(
-          "button",
-          {
-            type: "submit",
-            class: "ask-user-submit",
-            title: "Send answer (\u2318Enter or Ctrl+Enter)"
-          },
-          "Send answer"
-        )
-      )
-    );
+    form.append(el("div", { class: "ask-user-buttons" }, cancelBtn, submitBtn));
     dialog.showModal();
-    inputs[0]?.focus();
+    (form.querySelector(".ask-user-other") ?? inputs[0])?.focus();
   }
   function withdrawIfUnshowable() {
     if (!active || isShowable(active)) return;
@@ -84399,6 +84406,7 @@ function mountAskUserDialog(api2, store2) {
   }
   function submit() {
     if (active?.presentation?.kind === "actions") return;
+    if (inputs.some((input) => input.hidden)) return;
     respond(inputs.map((input) => input.value));
   }
   function cancel() {
