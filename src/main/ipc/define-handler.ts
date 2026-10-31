@@ -6,6 +6,7 @@ import {
   positionalIpcHandler,
   senderCheck,
   type IpcHandlerOptions,
+  type PositionalArgsOptions,
 } from './ipc-handler.ts'
 
 /**
@@ -27,15 +28,17 @@ export type InvokeChannel = keyof (typeof apiProtocolManifest)['channels']['invo
  * The sender is checked first (unless `{ sender: 'any' }`), then the arguments
  * are parsed as `parsePositionalIpcArgs` describes: extra ones are ignored and
  * the validation error reads as it did when the handler was written by hand.
+ * Pass `{ errors: 'per-argument' }` for a handler that parsed each argument on
+ * its own, so only the first invalid one is reported.
  */
 export function defineHandler<T extends readonly z.ZodType[]>(
   win: BrowserWindow,
   channel: InvokeChannel,
   args: z.ZodTuple<T, null>,
   fn: (...parsed: z.output<z.ZodTuple<T, null>>) => unknown,
-  options?: IpcHandlerOptions,
+  options?: IpcHandlerOptions & PositionalArgsOptions,
 ): void {
-  ipcMain.handle(channel, positionalIpcHandler(senderCheck(win, options), args, fn))
+  ipcMain.handle(channel, positionalIpcHandler(senderCheck(win, options), args, fn, options))
 }
 
 /**
