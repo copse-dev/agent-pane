@@ -34,7 +34,7 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-PRSXV62T.js";
+} from "./chunks/chunk-G6QSUZO6.js";
 import "./chunks/chunk-D55J6ZRP.js";
 import {
   init_icons,
@@ -2998,6 +2998,90 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        // #1433 Fix 0: an explore result is the summary plus harness-copied
+        // verbatim excerpts. The card shows the summary once (in the timeline) and
+        // only the excerpts below it.
+        id: "explore-excerpts",
+        label: "Explore result with verbatim excerpts",
+        project: project("demo-explore-excerpts-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-explore-excerpts-thread",
+            title: "Explore excerpts",
+            status: "idle",
+            messages: [
+              {
+                id: "demo-explore-excerpts-assistant",
+                role: "assistant",
+                content: "The Enter handler is in wireToolbar.",
+                toolCalls: [
+                  {
+                    id: "demo-explore-excerpts-call",
+                    name: "explore",
+                    args: { query: "How does wireToolbar submit the URL?" },
+                    status: "done",
+                    result: [
+                      "wireToolbar submits the URL on Enter in browser-pane.ts.",
+                      "",
+                      "---",
+                      "",
+                      "Verbatim excerpts \u2014 copied exactly from the files the explorer read, byte for byte. The summary above is prose with approximate line numbers; copy str_replace old_string from these blocks instead.",
+                      "",
+                      "`src/renderer/browser-pane.ts` lines 291\u2013295:",
+                      "```",
+                      "  urlInput.addEventListener('keydown', (event) => {\n    if (event.key === 'Enter') {\n      submitUrl(urlInput.value)\n    }\n  })",
+                      "```"
+                    ].join("\n"),
+                    subagent: {
+                      id: "demo-explore-excerpts-session",
+                      kind: "explore",
+                      status: "done",
+                      prompt: "How does wireToolbar submit the URL?",
+                      summary: "wireToolbar submits the URL on Enter in browser-pane.ts.",
+                      messages: [
+                        {
+                          id: "demo-explore-excerpts-message-1",
+                          role: "assistant",
+                          content: "Reading **browser-pane.ts** around wireToolbar.",
+                          toolCalls: [
+                            {
+                              id: "demo-explore-excerpts-read",
+                              name: "read_file",
+                              args: {
+                                path: "src/renderer/browser-pane.ts",
+                                start_line: 291,
+                                end_line: 295
+                              },
+                              status: "done",
+                              result: "  urlInput.addEventListener('keydown', (event) => {\n    if (event.key === 'Enter') {\n      submitUrl(urlInput.value)\n    }\n  })"
+                            }
+                          ]
+                        },
+                        {
+                          id: "demo-explore-excerpts-message-2",
+                          role: "assistant",
+                          content: "wireToolbar submits the URL on Enter in browser-pane.ts.",
+                          toolCalls: []
+                        }
+                      ]
+                    }
+                  }
+                ],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
         // #728: a subagent-backed explore must stay its own card when a sibling
         // read_file would otherwise fold both into a "Read files" group.
         id: "subagent-ungrouped",
@@ -5599,8 +5683,26 @@ function createDemoApi(scenario2, options = {}) {
         running: scenario2.mobileCompanion !== void 0,
         url: scenario2.mobileCompanion?.url ?? null,
         qrSvg: scenario2.mobileCompanion?.qrSvg ?? null,
+        localUrl: null,
+        localQrSvg: null,
+        publicName: {
+          serviceUrl: "https://api.copse.dev",
+          state: "unregistered",
+          hostname: null,
+          certificate: null,
+          dns: "unknown",
+          busy: null,
+          lastError: null
+        },
         rootCertificatePath: null,
-        addresses: scenario2.mobileCompanion ? [{ address: new URL(scenario2.mobileCompanion.url).hostname, interfaceName: "Wi-Fi" }] : [],
+        address: scenario2.mobileCompanion ? new URL(scenario2.mobileCompanion.url).hostname : null,
+        addresses: scenario2.mobileCompanion ? [
+          {
+            address: new URL(scenario2.mobileCompanion.url).hostname,
+            interfaceName: "Wi-Fi",
+            virtual: false
+          }
+        ] : [],
         devices: [],
         pairing: null,
         lastError: null
@@ -5613,6 +5715,9 @@ function createDemoApi(scenario2, options = {}) {
       revokeDevice: () => resolvedVoid(),
       respondPairing: () => resolvedVoid(),
       revealCertificate: () => resolvedVoid(),
+      registerName: () => resolvedVoid(),
+      removeName: () => resolvedVoid(),
+      recheckNameDns: () => resolvedVoid(),
       onChat: () => () => {
       },
       reply: async () => {
@@ -5947,6 +6052,9 @@ function createDemoApi(scenario2, options = {}) {
         );
         return resolved(structuredClone([...mcpStatuses]));
       },
+      listUserServers: () => resolved({ path: "/demo/mcp.json", servers: [] }),
+      saveUserServer: unsupported,
+      removeUserServer: unsupported,
       onStatusChanged: subscribe
     },
     toolPermissions: {
@@ -7202,7 +7310,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-DT5WSVSD.js").then(async (main) => {
+    void import("./chunks/main-ZODLKRNG.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
