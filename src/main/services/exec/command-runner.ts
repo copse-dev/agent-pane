@@ -8,7 +8,7 @@ import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { afterSandboxedCommand, spawnInProjectSandbox } from '../../project-sandbox/index.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
 import {
-  appendFlatCapped,
+  CappedOutputAccumulator,
   COMMAND_OUTPUT_MAX_BYTES,
   COMMAND_RUNNER_DEFAULT_TIMEOUT_MS,
 } from './subprocess-output-cap.ts'
@@ -29,10 +29,9 @@ export interface CommandResult {
   /**
    * Whether stdout exceeded `stdoutMaxBytes` and lost content.
    *
-   * Overflow is dropped silently on the hot path (re-truncating a capped
-   * buffer per chunk thrashed the GC), so the retained string looks like a
-   * complete listing. Callers that reason about *scale* from output size must
-   * consult this: the #795 file index read a 124,597-path checkout as 61,735
+   * The retained string keeps a head and tail around a truncation marker, so
+   * a line-oriented listing can still look plausible. Callers that reason
+   * about *scale* from output size must consult this: the #795 file index read a 124,597-path checkout as 61,735
    * paths, sailed under the 100k semantic-index cap, and let gortex loose on
    * the whole tree.
    */
@@ -209,8 +208,8 @@ function runCommandImpl(
         return
       }
 
-      let stdout = ''
-      let stderr = ''
+      const stdoutAcc = new CappedOutputAccumulator(stdoutMaxBytes)
+      const stderrAcc = new CappedOutputAccumulator(COMMAND_OUTPUT_MAX_BYTES)
       const stdoutDecoder = new StringDecoder('utf8')
       const stderrDecoder = new StringDecoder('utf8')
       let settled = false
@@ -264,29 +263,13 @@ function runCommandImpl(
         fn()
       }
 
-      // Once accumulated output reaches its cap, DROP further chunks instead of
-      // re-appending: `appendFlatCapped` re-scans and re-truncates the whole
-      // capped buffer on every chunk, so a subprocess that keeps emitting past
-      // the cap spins O(chunks × cap) and churns multi-MB allocations (observed
-      // as ~250 MB/cycle GC thrash that starved the event loop). Track raw bytes
-      // (O(1) per chunk) and stop once over the cap; the process keeps draining
-      // its pipe and exits normally, we just ignore the overflow we'd discard
-      // anyway.
-      let rawStdoutBytes = 0
-      let stdoutCapped = false
-      let rawStderrBytes = 0
-      let stderrCapped = false
+      // Head + tail accumulation keeps the real end of the output (usually
+      // where a failing command reports its error) at O(chunk) per append.
       proc.stdout?.on('data', (d: Buffer) => {
-        rawStdoutBytes += d.length
-        if (stdoutCapped) return
-        stdout = appendFlatCapped(stdout, stdoutDecoder.write(d), stdoutMaxBytes)
-        if (rawStdoutBytes >= stdoutMaxBytes) stdoutCapped = true
+        stdoutAcc.append(stdoutDecoder.write(d))
       })
       proc.stderr?.on('data', (d: Buffer) => {
-        rawStderrBytes += d.length
-        if (stderrCapped) return
-        stderr = appendFlatCapped(stderr, stderrDecoder.write(d), COMMAND_OUTPUT_MAX_BYTES)
-        if (rawStderrBytes >= COMMAND_OUTPUT_MAX_BYTES) stderrCapped = true
+        stderrAcc.append(stderrDecoder.write(d))
       })
 
       proc.on('close', (code) => {
@@ -296,14 +279,13 @@ function runCommandImpl(
         }
         settled = true
         finish(() => {
-          if (!stdoutCapped) stdout = appendFlatCapped(stdout, stdoutDecoder.end(), stdoutMaxBytes)
-          if (!stderrCapped)
-            stderr = appendFlatCapped(stderr, stderrDecoder.end(), COMMAND_OUTPUT_MAX_BYTES)
+          stdoutAcc.append(stdoutDecoder.end())
+          stderrAcc.append(stderrDecoder.end())
           resolve({
-            stdout,
-            stderr,
+            stdout: stdoutAcc.toString(),
+            stderr: stderrAcc.toString(),
             code: code ?? 1,
-            stdoutTruncated: rawStdoutBytes > stdoutMaxBytes,
+            stdoutTruncated: stdoutAcc.isTruncated(),
           })
         })
       })
