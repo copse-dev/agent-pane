@@ -1,0 +1,149 @@
+/* Pane recording: the live pill a pane shows while it records its own surface,
+   the red frame around what is being captured, and the composer's live chip.
+   Red is reserved for "capturing now"; the Desktop pane's amber already means
+   "you are controlling this", and the two can be on at once. */
+
+.recording-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: recording-pulse 1.4s ease-in-out infinite;
+}
+
+/* Inside an idle Record button the dot is an affordance, not a status. */
+.recording-dot.is-idle {
+  animation: none;
+}
+
+@keyframes recording-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recording-dot {
+    animation: none;
+  }
+}
+
+.recording-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  min-height: 28px;
+  padding: 0 4px 0 10px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--danger) 14%, var(--bg-elevated));
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.recording-indicator[hidden] {
+  display: none;
+}
+
+.recording-indicator-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recording-indicator-clock {
+  flex: none;
+  color: var(--text-secondary);
+}
+
+.recording-indicator-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  margin-left: auto;
+  padding: 0 9px;
+  border: 0;
+  flex: none;
+  border-radius: 11px;
+  background: var(--danger);
+  color: var(--text-on-danger);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.recording-indicator-stop-glyph {
+  width: 8px;
+  height: 8px;
+  border-radius: 1.5px;
+  background: currentColor;
+}
+
+/* Desktop pane: the pill fills the controls column like the buttons around it. */
+.vnc-record-btn {
+  justify-content: center;
+  gap: var(--spacing-xs);
+  width: 100%;
+}
+
+.vnc-controls-body > .recording-indicator {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.vnc-screen.is-recording canvas,
+.browser-webview-host.is-recording {
+  box-shadow:
+    0 0 0 1px var(--danger),
+    0 0 0 3px color-mix(in srgb, var(--danger) 22%, transparent);
+}
+
+/* Browser toolbar: the pill sits between the URL field and the action buttons. */
+.browser-toolbar > .recording-indicator {
+  flex: none;
+}
+
+/* A narrow toolbar cannot fit the pill beside the address bar, so it floats
+   over the page's top-right corner instead; Stop must never leave the pane.
+   The guest page is captured on its own, so the overlay is not recorded. */
+@container browser-toolbar (max-width: 520px) {
+  .browser-toolbar > .recording-indicator {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: var(--spacing-sm);
+    z-index: 10;
+    max-width: calc(100% - 2 * var(--spacing-sm));
+    box-sizing: border-box;
+    background: color-mix(in srgb, var(--danger) 18%, var(--bg-elevated));
+    box-shadow: var(--shadow-md);
+  }
+}
+
+.browser-record-btn[aria-pressed='true'] {
+  color: var(--danger);
+}
+
+/* Six 28px icons and their gaps take 192px, so below 288px Record would squeeze
+   the address under the 96px it needs to read the host. It gives way there: the
+   ⋯ menu carries Record, and the floating pill carries Stop. */
+@container browser-toolbar (max-width: 287px) {
+  .browser-record-btn {
+    display: none;
+  }
+}
+
+/* Composer: a running recording shows as a chip that becomes the ordinary
+   video chip when it stops. */
+.recording-chip {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg-elevated));
+}
+
+.recording-chip-clock {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}

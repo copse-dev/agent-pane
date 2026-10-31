@@ -4791,7 +4791,7 @@ describe('input bar stacking order', () => {
     // bar, the mention pickers) are overlays parked on the same host.
     const order = Array.from(host.children)
       .map((child) => child.className.split(' ')[0])
-      .slice(0, 11)
+      .slice(0, 12)
 
     assert.deepEqual(order, [
       'guarded-yolo-banner',
@@ -4802,6 +4802,8 @@ describe('input bar stacking order', () => {
       'composer-image-warning',
       'composer-context-warning',
       'follow-up-suggestions',
+      // Running pane recordings, then the draft's attachments.
+      'attachment-chips',
       'attachment-chips',
       'input-row',
       'input-footer',

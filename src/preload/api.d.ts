@@ -278,6 +278,15 @@ export interface ApiClient {
      */
     captureScreenshot: (webContentsId: number) => Promise<BrowserImageShare>
     /**
+     * Stream the tab's painted frames (JPEG) to `onRecordingFrame` until
+     * stopped. Absent on hosts without a main-process guest (demo/site).
+     */
+    startRecording?: (webContentsId: number) => Promise<void>
+    stopRecording?: (webContentsId: number) => Promise<void>
+    onRecordingFrame?: (handler: (webContentsId: number, jpeg: Uint8Array) => void) => () => void
+    /** The screencast stopped on its own — the tab closed or a debugger took over. */
+    onRecordingEnded?: (handler: (webContentsId: number, reason: string) => void) => () => void
+    /**
      * The guest's scroll offsets in CSS pixels, or null when the guest could
      * not answer. The page-anchored annotation overlay re-reads this while the
      * user scrolls so marks track the content.
