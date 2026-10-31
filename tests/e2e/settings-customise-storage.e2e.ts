@@ -162,6 +162,9 @@ describe('settings → Customise / MCP / Storage', function () {
     await expect($('#settings-dialog .settings-nav-subheadings')).toHaveText(
       expect.stringContaining('Declared by plugins, not running'),
     )
+    // Built-in servers (Canvas is on by default) list above the declarations, so
+    // bring the declared row clear of the footer before capturing the lens.
+    await declaredRow.scrollIntoView({ block: 'center' })
     await saveElementScreenshot('#settings-dialog', 'settings-mcp-lens.png')
   })
 })
