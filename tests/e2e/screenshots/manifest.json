@@ -85,6 +85,10 @@
       "sha256": "563e9c797b31ae86e63ca59da09830bb088fe1ca394bd5a6f62f66b28056b7bc",
       "bytes": 360510
     },
+    "acp-kindless-command-approval.png": {
+      "sha256": "f33441f842e5cfd9d3c5bc24c313ab4d0c19564090a629e35fc013c0a136e090",
+      "bytes": 52362
+    },
     "acp-mcp-tool-name.png": {
       "sha256": "b13e068c48edf821ee0717039532efa66671f07fd6d9bf2055fe909651b9b81b",
       "bytes": 269335
