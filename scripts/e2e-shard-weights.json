@@ -1,5 +1,5 @@
 {
-  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-31",
+  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-31; acp-kindless-command-approval retained from main: provisional local Linux Xvfb run (10s), 2026-10-31",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15.5,
     "tests/e2e/accessibility.e2e.ts": 23.8,
@@ -10,6 +10,7 @@
     "tests/e2e/acp-execute-no-remember.e2e.ts": 7.8,
     "tests/e2e/acp-gpt-model-labels.e2e.ts": 6.4,
     "tests/e2e/acp-inline-visualization.e2e.ts": 13.3,
+    "tests/e2e/acp-kindless-command-approval.e2e.ts": 10,
     "tests/e2e/acp-mcp-tool-name.e2e.ts": 7.6,
     "tests/e2e/acp-network-scope-approval.e2e.ts": 5.7,
     "tests/e2e/acp-registry-discovery.e2e.ts": 18.8,

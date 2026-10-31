@@ -85,6 +85,10 @@
       "sha256": "563e9c797b31ae86e63ca59da09830bb088fe1ca394bd5a6f62f66b28056b7bc",
       "bytes": 360510
     },
+    "acp-kindless-command-approval.png": {
+      "sha256": "f33441f842e5cfd9d3c5bc24c313ab4d0c19564090a629e35fc013c0a136e090",
+      "bytes": 52362
+    },
     "acp-mcp-tool-name.png": {
       "sha256": "b13e068c48edf821ee0717039532efa66671f07fd6d9bf2055fe909651b9b81b",
       "bytes": 269335
@@ -1138,8 +1142,8 @@
       "bytes": 284800
     },
     "classifier-use-hover.png": {
-      "sha256": "b4d793f8f7aa68781fd9055f1e9e03d17647c4ec2972ed7935c0afe7169c7198",
-      "bytes": 348621
+      "sha256": "6b12ffd2519048ba5484d5a8f9fa5ccf6d82d0cf6f51cc233ddb7b5eafd05d5b",
+      "bytes": 354958
     },
     "classify-structured-card.png": {
       "sha256": "c484d562fc794f423bfa895dfcb52d3d6cf06b9ee21ba2276197679731d63068",
@@ -1466,8 +1470,8 @@
       "bytes": 326090
     },
     "context-wheel-danger.png": {
-      "sha256": "52a0840fff5168a85a66277eb348f319de19bd74441b23d3eb9e5f20eb851be4",
-      "bytes": 299294
+      "sha256": "2c59a5cb9fc017f0b811fc3cd24cd14e110bc2f879a51c4c39966845d5f0d873",
+      "bytes": 307331
     },
     "context-wheel-live-running.png": {
       "sha256": "06a75af9086d814676eb474a81a23a6a354265940d269b85535d24d89864e86a",
@@ -1866,8 +1870,8 @@
       "bytes": 273052
     },
     "footer-usage-tooltip.png": {
-      "sha256": "b1541f0acccf025d0641c8cbc234b25df0ec0c8f3c3e7cfb7c36c2fac61f7162",
-      "bytes": 405988
+      "sha256": "4c99aab6b393e6206289274a97c9e7f852e638b3ded836e76ddb8c1bcd6db9d6",
+      "bytes": 403378
     },
     "git-attribution-off.png": {
       "sha256": "17cc9dc1fe532989b34dedb9c25da487f4da72f00ffcd2af5cd45d923e7d9fae",
@@ -4018,20 +4022,20 @@
       "bytes": 90794
     },
     "settings-experimental.png": {
-      "sha256": "b9f2114737e7c9e125f163bba663aaf3758ad7f9168dabb6ba08e73429e2b61c",
-      "bytes": 297161
+      "sha256": "3e0071bf203bb284cfb73241053801c489d62cea73467e7369cda4c215d3efbe",
+      "bytes": 298315
     },
     "settings-explainers-browse-recovery.png": {
-      "sha256": "23e3c2ef90b9a83b5e55a8fe3d6c2867426940eb96e16fb9479f946d05ccc700",
-      "bytes": 71484
+      "sha256": "c9b5de15c6e693382d3af9b2b0c5d943d2fd17dba952609750e0f1cdaf608a90",
+      "bytes": 70269
     },
     "settings-explainers-entry.png": {
-      "sha256": "6b7c2c376f4c03d717b1cb53991c1d53546c04d2a6d1c16e98b75b0ec3076a23",
-      "bytes": 48319
+      "sha256": "7f4b4bab78521b50996ee60c538885cf38f1c46fa1a55381fd19d04d506351ff",
+      "bytes": 49476
     },
     "settings-explainers-experimental.png": {
-      "sha256": "54f67c7e83d17e5c9a3669633519c7c9191cf616ef586c4d97ba7737a3be13f1",
-      "bytes": 74221
+      "sha256": "c1d3ccefc96888d14995534b6be100c786946bf14a5139cb5254fce7fd1bbe01",
+      "bytes": 73018
     },
     "settings-footer-frost-covers-actions.png": {
       "sha256": "9210875e7ecfd05030848d8abc64426f845d08ba4134427e85cd03407ed98d38",
