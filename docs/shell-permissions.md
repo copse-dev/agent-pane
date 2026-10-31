@@ -1039,6 +1039,22 @@ and `$RUSTUP_HOME/settings.toml`). The rest of `$CARGO_HOME` stays denied: `cred
 a toolchain. So `cargo --version`, `rustc`, and `rustfmt` run contained, while a build that needs
 the registry still fails contained and offers to run outside.
 
+It also re-allows, read-only and only when the directory exists, the installed package-manager and
+interpreter caches: Corepack's cache (`$COREPACK_HOME`, else `${XDG_CACHE_HOME:-~/.cache}/node/corepack`,
+plus `~/Library/Caches/node/corepack` on macOS), `~/.bun/bin`, `~/.pyenv/versions`, and
+`~/.local/share/uv/python`. A Corepack-pinned pnpm or yarn, `bun test`, and a uv or pyenv `.venv`
+whose `bin/python` links into those installs therefore start contained instead of failing and
+offering to run outside. None of these roots is writable (a writable shim on `PATH` would run later
+outside the sandbox), and a root is dropped when it is or contains home, or contains or sits inside
+a credential path (`~/.npmrc`, `~/.yarnrc.yml`, `~/.config/pnpm/rc`, `~/.bunfig.toml`,
+`~/.config/uv`, `~/.pypirc`, `~/.config/pip`, `~/.netrc`), which stay denied. Everything inside
+an allowed root is readable, so a pyenv or conda prefix's own `pip.conf`, `pip.ini`, or `.condarc`
+can carry an index or channel token, and a contained command can read it. That is accepted, because
+the sandbox cannot deny a file pattern inside a read-only tree on both platforms (bubblewrap binds
+concrete paths). Keep such tokens in the user-level files above, which stay denied. Shells in a
+worktree with a valid preparation plan point `COREPACK_HOME` at Copse's Corepack cache only after
+preparation has stamped the worktree; before that, Copse's cache is empty, so they keep the user's.
+
 - `permission-policy.ts`: pure permission decisions, MCP decisions, outside-sandbox classification,
   and prompt-body formatting.
 - `@copse/shell-guard` (`packages/shell-guard/`): the deterministic classifiers, host-free.
