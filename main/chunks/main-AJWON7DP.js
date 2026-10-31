@@ -19010,9 +19010,18 @@ function timelineShowsText(session, text) {
   if (!target) return false;
   return session.messages.some((m2) => m2.content.replace(/\s+/g, " ").trim() === target);
 }
+function textAfterTimelinePrefix(session, result) {
+  for (const m2 of session.messages) {
+    const prefix = m2.content.trimEnd();
+    if (!prefix || !result.startsWith(prefix)) continue;
+    return result.slice(prefix.length).replace(/^\s*---\s*\n/, "").trim();
+  }
+  return null;
+}
 function parentResultText(tc, session, status) {
   if (status !== "done" || !tc.result) return "";
-  return timelineShowsText(session, tc.result) ? "" : tc.result;
+  if (timelineShowsText(session, tc.result)) return "";
+  return textAfterTimelinePrefix(session, tc.result) ?? tc.result;
 }
 function subagentCardStatus(tc, session) {
   if (tc.status === "running" || session.status === "running") return "running";
