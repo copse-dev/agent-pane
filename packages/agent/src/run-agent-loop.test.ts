@@ -28,7 +28,11 @@ import type {
 } from '@copse/llm/wire-types.ts'
 import type { StreamCutRecord } from './stream-cut-record.ts'
 import type { AgentStreamChunk, TodoItem } from './wire-types.ts'
-import { EXPLORE_WITHOUT_READ_NUDGE, STUCK_FINALIZE_NUDGE } from './agent-loop-guards.ts'
+import {
+  EXPLORE_REPEAT_USE_EXCERPTS_NUDGE,
+  EXPLORE_WITHOUT_READ_NUDGE,
+  STUCK_FINALIZE_NUDGE,
+} from './agent-loop-guards.ts'
 
 /** A visible answer comfortably past the trailing-reasoning text tolerance. */
 const ANSWER_PAST_TOLERANCE =
@@ -2265,51 +2269,67 @@ src/renderer/views/projects-pane.ts
     assert.ok(chunks.some((c) => c.type === 'text' && c.text === 'finished'))
   })
 
-  it('nudges repeated explore calls on hosts without a context estimate', async () => {
-    const messages: LLMMessage[] = [{ role: 'user', content: 'fix the URL input' }]
-    const applied: import('./run-agent-loop.ts').AppliedNudgeRecord[] = []
-    let calls = 0
-    const provider: LLMProvider = {
-      async *stream(currentMessages): AsyncGenerator<ProviderStreamChunk> {
-        calls++
-        if (calls <= 3) {
-          yield {
-            type: 'tool_call',
-            toolCall: {
-              id: `explore-${String(calls)}`,
-              name: 'explore',
-              args: { query: `inspect URL input concern ${String(calls)}` },
-            },
-          }
-          yield { type: 'done' }
-          return
-        }
-        assert.ok(
-          currentMessages.some(
-            (message) => message.role === 'user' && message.content === EXPLORE_WITHOUT_READ_NUDGE,
-          ),
-          'the fourth stream must receive the read_file nudge',
-        )
-        yield { type: 'text', text: 'I will read the exact file before editing.' }
-        yield { type: 'done' }
-      },
-    }
-
-    await runAgentLoop({
-      provider,
-      messages,
+  for (const { mode, tools, nudge } of [
+    {
+      mode: 'with read_file',
+      tools: [
+        { name: 'explore', description: 'explore', parameters: {} },
+        { name: 'read_file', description: 'read', parameters: {} },
+      ],
+      nudge: EXPLORE_WITHOUT_READ_NUDGE,
+    },
+    {
+      // Explore mode: read_file is delegated away, so the nudge names explore's
+      // verbatim excerpts instead (#1433, Fix 0).
+      mode: 'in explore mode',
       tools: [{ name: 'explore', description: 'explore', parameters: {} }],
-      recordAppliedNudge: (record) => applied.push(record),
-      onChunk: () => {},
-      executeTool: async () => 'summary',
-    })
+      nudge: EXPLORE_REPEAT_USE_EXCERPTS_NUDGE,
+    },
+  ]) {
+    it(`nudges repeated explore calls on hosts without a context estimate, ${mode}`, async () => {
+      const messages: LLMMessage[] = [{ role: 'user', content: 'fix the URL input' }]
+      const applied: import('./run-agent-loop.ts').AppliedNudgeRecord[] = []
+      let calls = 0
+      const provider: LLMProvider = {
+        async *stream(currentMessages): AsyncGenerator<ProviderStreamChunk> {
+          calls++
+          if (calls <= 3) {
+            yield {
+              type: 'tool_call',
+              toolCall: {
+                id: `explore-${String(calls)}`,
+                name: 'explore',
+                args: { query: `inspect URL input concern ${String(calls)}` },
+              },
+            }
+            yield { type: 'done' }
+            return
+          }
+          assert.ok(
+            currentMessages.some((message) => message.role === 'user' && message.content === nudge),
+            'the fourth stream must receive the explore-without-read nudge',
+          )
+          yield { type: 'text', text: 'I will copy the exact text before editing.' }
+          yield { type: 'done' }
+        },
+      }
 
-    assert.equal(calls, 4)
-    assert.deepEqual(
-      applied.filter((record) => record.hookId === 'loop-nudge').map((record) => record.text),
-      [EXPLORE_WITHOUT_READ_NUDGE],
-    )
-  })
+      await runAgentLoop({
+        provider,
+        messages,
+        tools,
+        recordAppliedNudge: (record) => applied.push(record),
+        onChunk: () => {},
+        executeTool: async () => 'summary',
+      })
+
+      assert.equal(calls, 4)
+      assert.deepEqual(
+        applied.filter((record) => record.hookId === 'loop-nudge').map((record) => record.text),
+        [nudge],
+      )
+    })
+  }
 
   it('applies the delayed artifact checkpoint once after the fake clock crosses its threshold', async () => {
     let now = 0

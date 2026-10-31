@@ -1244,6 +1244,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   // Explore-without-read streak (#1433) driving the `loop-nudge` hook's
   // read-specific condition; see `nextConsecutiveExploreWithoutRead`.
   const consecutiveExploreWithoutRead = { value: 0 }
+  // In explore mode the parent has no read_file; the explore-without-read
+  // nudge then points at explore's verbatim excerpts instead (#1433, Fix 0).
+  const readFileOffered = tools.some((t) => t.name === 'read_file')
   // Cross-turn reasoning fingerprint (#1408): see RECENT_REASONING_TEXT_WINDOW.
   const recentReasoningTexts: string[] = []
 
@@ -1361,6 +1364,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           remainingWallTimeMs: budget.deadline.remainingWallTimeMs(),
           streamCappedAsRunaway: false,
           consecutiveExploreWithoutRead: consecutiveExploreWithoutRead.value,
+          readFileOffered,
         })
 
         if (preNudges.stuckFinalize !== undefined) {
@@ -1473,6 +1477,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         remainingWallTimeMs: budget.deadline.remainingWallTimeMs(),
         streamCappedAsRunaway: false,
         consecutiveExploreWithoutRead: consecutiveExploreWithoutRead.value,
+        readFileOffered,
       })
       if (preNudges.loop !== undefined) {
         messages.push({ role: 'user', content: preNudges.loop })

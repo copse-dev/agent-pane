@@ -10,6 +10,7 @@ import { setWorkspaceTrusted } from './workspace-trust.ts'
 import { clearGitRemotesCache } from './git-remotes.ts'
 import { resolveAutoApproval } from './auto-approval-config.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
+import { currentAgentRoots } from '../execution-root.ts'
 
 describe('resolveAutoApproval — sandbox gate', () => {
   async function withTrustedRepo(run: (root: string) => void | Promise<void>): Promise<void> {
@@ -37,11 +38,19 @@ describe('resolveAutoApproval — sandbox gate', () => {
 
   it('auto-approves a recognised read-tier shape only when the sandbox is active', async () => {
     await withTrustedRepo((root) => {
-      const allowed = resolveAutoApproval('git fetch origin main', root, true)
+      const allowed = resolveAutoApproval(
+        'git fetch origin main',
+        { projectRoot: root, executionRoot: root },
+        true,
+      )
       assert.equal(allowed.action, 'auto-approve')
       assert.equal('tier' in allowed ? allowed.tier : undefined, 'read')
 
-      const blocked = resolveAutoApproval('git fetch origin main', root, false)
+      const blocked = resolveAutoApproval(
+        'git fetch origin main',
+        { projectRoot: root, executionRoot: root },
+        false,
+      )
       assert.equal(blocked.action, 'prompt')
       assert.ok(blocked.reasons.includes('project sandbox not active'))
     })
@@ -54,14 +63,21 @@ describe('resolveAutoApproval — sandbox gate', () => {
         'gh run download 123 --dir .tmp/artifacts',
         'gh run download 123 --dir /tmp/outside-artifacts',
       ]) {
-        assert.equal(resolveAutoApproval(command, root, true).action, 'prompt', command)
+        assert.equal(
+          resolveAutoApproval(command, { projectRoot: root, executionRoot: root }, true).action,
+          'prompt',
+          command,
+        )
       }
     })
   })
 
   it('fails closed when the caller omits sandboxEnabled', async () => {
     await withTrustedRepo((root) => {
-      const blocked = resolveAutoApproval('git fetch origin main', root)
+      const blocked = resolveAutoApproval('git fetch origin main', {
+        projectRoot: root,
+        executionRoot: root,
+      })
       assert.equal(blocked.action, 'prompt')
       assert.ok(blocked.reasons.includes('project sandbox not active'))
     })
@@ -70,7 +86,11 @@ describe('resolveAutoApproval — sandbox gate', () => {
   it('still prompts when auto-run is off, even with a live sandbox', async () => {
     await withTrustedRepo(async (root) => {
       await setSetting('autoRunSandboxCommands', false)
-      const blocked = resolveAutoApproval('git fetch origin main', root, true)
+      const blocked = resolveAutoApproval(
+        'git fetch origin main',
+        { projectRoot: root, executionRoot: root },
+        true,
+      )
       assert.equal(blocked.action, 'prompt')
       assert.ok(blocked.reasons.includes('auto-run disabled'))
     })
@@ -93,18 +113,62 @@ describe('resolveAutoApproval — sandbox gate', () => {
         )
       try {
         // The window shows the trusted repo, but this run acts on an untrusted one.
-        const blocked = inOtherProject(() => resolveAutoApproval('git status', undefined, true))
+        const blocked = inOtherProject(() =>
+          resolveAutoApproval('git status', currentAgentRoots(), true),
+        )
         assert.equal(blocked.action, 'prompt')
         assert.ok(blocked.reasons.includes('workspace not trusted'))
 
         setWorkspaceTrusted(other, true)
         setWorkspaceTrusted(root, false)
-        const allowed = inOtherProject(() => resolveAutoApproval('git status', undefined, true))
+        const allowed = inOtherProject(() =>
+          resolveAutoApproval('git status', currentAgentRoots(), true),
+        )
         assert.equal(allowed.action, 'auto-approve')
       } finally {
         setWorkspaceTrusted(other, false)
         rmSync(other, { recursive: true, force: true })
       }
     })
+  })
+
+  it('resolves two roots at once independently of the window workspace (#3958)', async () => {
+    const makeRepo = (prefix: string): string => {
+      const root = mkdtempSync(join(tmpdir(), prefix))
+      mkdirSync(join(root, '.git'))
+      writeFileSync(
+        join(root, '.git', 'config'),
+        '[remote "origin"]\n\turl = https://example.com/x.git\n',
+      )
+      return root
+    }
+    const trusted = makeRepo('copse-auto-approval-trusted-')
+    const untrusted = makeRepo('copse-auto-approval-untrusted-')
+    const ambient = makeRepo('copse-auto-approval-ambient-')
+    clearGitRemotesCache()
+    const restore = setWorkspaceRootForTest(ambient)
+    setWorkspaceTrusted(trusted, true)
+    setWorkspaceTrusted(ambient, true)
+    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'read')
+    await setSetting('autoRunSandboxCommands', true)
+    try {
+      const resolve = async (root: string): Promise<ReturnType<typeof resolveAutoApproval>> => {
+        // Yield so the two resolutions interleave rather than run back to back.
+        await new Promise<void>((done) => setImmediate(done))
+        return resolveAutoApproval('git status', { projectRoot: root, executionRoot: root }, true)
+      }
+      const [a, b] = await Promise.all([resolve(trusted), resolve(untrusted)])
+      assert.equal(a.action, 'auto-approve')
+      assert.equal(b.action, 'prompt')
+      assert.ok(b.reasons.includes('workspace not trusted'))
+    } finally {
+      await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+      setWorkspaceTrusted(trusted, false)
+      setWorkspaceTrusted(ambient, false)
+      restore()
+      clearGitRemotesCache()
+      for (const root of [trusted, untrusted, ambient])
+        rmSync(root, { recursive: true, force: true })
+    }
   })
 })

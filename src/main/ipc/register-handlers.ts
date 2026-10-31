@@ -1,5 +1,4 @@
 import { networkActivity } from '../services/diagnostics/network-activity.ts'
-import { readOpenAiArtifact } from '../services/remote/openai-agents-client.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
 import { syncMachineService } from '../services/machines/machine-service.ts'
 import { REMOTE_SYSTEM_ONE_MODELS_SETTING } from '@shared/machines.ts'
@@ -17,6 +16,9 @@ import { registerEnvironmentSetupHandlers } from './environment-setup-handlers.t
 import { registerMachineHandlers } from './machine-handlers.ts'
 import { registerMcpHandlers } from './mcp-handlers.ts'
 import { registerToolPermissionHandlers } from './tool-permission-handlers.ts'
+import { registerAppleDevelopmentHandlers } from './apple-development-handlers.ts'
+import { registerGhHandlers } from './gh-handlers.ts'
+import { registerRemoteAgentHandlers } from './remote-agent-handlers.ts'
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
 import { getSettingsSnapshot, updateSettings } from '../services/storage/settings-transaction.ts'
 import { modelInvalidationService } from '../services/providers/model-invalidation.ts'
@@ -24,7 +26,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebConten
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
-import { basename, dirname, extname, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { skillRootsSchema } from '../services/skills/skill-roots-schema.ts'
 import { z } from 'zod'
 import { syncPluginClientApi } from '../services/plugins/plugin-client-service.ts'
@@ -94,7 +96,6 @@ import {
   zPathString,
   zProjectId,
   zThreadId,
-  zPrComposerCreateRequest,
   mainWindowNavigationSchema,
 } from './ipc-guards.ts'
 import { resolveHookTestTarget } from './hook-test-target.ts'
@@ -181,7 +182,6 @@ import {
   backfillThreadPrRefs,
   getLatestThreadPlan,
   loadProjectThreadMetas,
-  getThreadMeta,
   loadThreadMessages,
   createThread,
   appendMessage,
@@ -315,12 +315,6 @@ import { getBranchCiAutomationService } from '../services/automations/branch-ci-
 import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-sensor.ts'
 import { getTaskSupervisor } from '../services/supervisor/task-supervisor.ts'
 import { getAppleDevelopmentService } from '../services/apple-development/apple-development-service.ts'
-import {
-  APPLE_SUGGESTION_ANSWERS,
-  appleConfigureInputSchema,
-  appleExecuteInputSchema,
-  appleOperationInputSchema,
-} from '@shared/types/apple-development.ts'
 
 import { createSupervisedTaskClient } from '../services/supervisor/task-client.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
@@ -387,28 +381,7 @@ import {
 import { branchHasOpenPr, getGitBranchStatus } from '../services/github/pr-context-service.ts'
 import { getSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
 import { isGitAvailableForTarget } from '../services/tool-availability.ts'
-import {
-  getGhCliStatus,
-  getGhPrChecksState,
-  getGhPrDetails,
-  getGhPrFileDiff,
-  invalidateGithubReadCache,
-  listMyOpenPrs,
-  listWorkspaceOpenPrs,
-  resolveGithubPrRef,
-} from '../services/github/gh-pr-service.ts'
-import {
-  notifyGitHubListWatchers,
-  setGitHubListWatch,
-  setGitHubListWatchBroadcast,
-} from '../services/github/backend/github-list-watch.ts'
-import {
-  approvePr,
-  enablePrAutoMerge,
-  markPrReady,
-  rerunFailedPrRuns,
-} from '../services/github/gh-pr-actions-service.ts'
-import { createPrForThread } from '../services/github/pr-create-service.ts'
+import { setGitHubListWatchBroadcast } from '../services/github/backend/github-list-watch.ts'
 import {
   reloadMcpServers,
   reloadMcpServersForPluginToggle,
@@ -447,23 +420,8 @@ import {
   resolveModelCard,
   type ResolvedModelCard,
 } from '../services/providers/model-card-resolver.ts'
-import {
-  fetchRemoteArtifactImageDataUrl,
-  refreshImportedCursorAgentThread,
-  resolveRemoteArtifactDownloadUrl,
-} from '../services/remote/remote-agent-client.ts'
-import {
-  invalidateCursorCloudModelsCache,
-  listCursorCloudModels,
-} from '../services/remote/cursor-cloud-models.ts'
-import { createBestEffortExternalCursorAgentDiscovery } from '../services/remote/cursor-agent-discovery.ts'
-import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-link-store.ts'
-import { prRefSchema } from '@shared/git/thread-pr-relations.ts'
-import {
-  lookupPrThreadRelationships,
-  lookupThreadPrRelationships,
-  lookupThreadBacklinks,
-} from '../services/thread-store.ts'
+import { invalidateCursorCloudModelsCache } from '../services/remote/cursor-cloud-models.ts'
+import { lookupThreadBacklinks } from '../services/thread-store.ts'
 
 import {
   gatewayListDir,
@@ -481,8 +439,6 @@ import {
 } from '../services/security/guarded-yolo.ts'
 import { getContainerRunService } from '../services/container-runtime/container-run-service.ts'
 import { explainContainerModel } from '../services/providers/container-provider.ts'
-
-const discoverExternalCursorAgentsFromIpc = createBestEffortExternalCursorAgentDiscovery()
 
 const SKILLS_RELOAD_KEYS = new Set([
   'skillsEnabled',
@@ -2587,172 +2543,7 @@ export function registerAllHandlers(
 
   registerAutomationHandlers(win)
 
-  // Apple Development first-party plugin. Renderer requests carry only project/thread
-  // identities; main resolves and validates the checkout before every operation.
-  const appleInvocation = (
-    projectId: string,
-    threadId: string,
-    signal: AbortSignal,
-  ): { owner: { projectId: string; threadId: string }; source: 'user'; signal: AbortSignal } => ({
-    owner: { projectId, threadId },
-    source: 'user' as const,
-    signal,
-  })
-
-  ipcMain.handle(
-    'apple-development:state',
-    async (event, rawProjectId: unknown, rawThreadId: unknown) => {
-      assertMainFrameSender(event, win)
-      const [projectId, threadId] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [
-        rawProjectId,
-        rawThreadId,
-      ])
-      // Reading panel state must not recreate a retired automation checkout.
-      // Explicit Apple actions still resolve and validate their execution root.
-      const thread = await getThreadMeta(projectId, threadId)
-      if (!getProjectRoot(projectId) || thread?.id !== threadId) {
-        throw new Error('Apple Development thread is unavailable')
-      }
-      return getAppleDevelopmentService().getState({ projectId, threadId })
-    },
-  )
-  ipcMain.handle('apple-development:detect-project', async (event, rawProjectId: unknown) => {
-    assertMainFrameSender(event, win)
-    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
-    return getAppleDevelopmentService().detectProject(projectId)
-  })
-  ipcMain.handle('apple-development:suggestion', async (event, rawProjectId: unknown) => {
-    assertMainFrameSender(event, win)
-    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
-    return getAppleDevelopmentService().projectSuggestion(projectId)
-  })
-  ipcMain.handle(
-    'apple-development:answer-suggestion',
-    async (event, rawProjectId: unknown, rawAnswer: unknown) => {
-      assertMainFrameSender(event, win)
-      const [projectId, answer] = parseIpcArgs(
-        z.tuple([zProjectId, z.enum(APPLE_SUGGESTION_ANSWERS)]),
-        [rawProjectId, rawAnswer],
-      )
-      await getAppleDevelopmentService().answerSuggestion(projectId, answer)
-    },
-  )
-  ipcMain.handle(
-    'apple-development:set-enrolled',
-    async (event, rawProjectId: unknown, rawThreadId: unknown, rawEnrolled: unknown) => {
-      assertMainFrameSender(event, win)
-      const [projectId, threadId, enrolled] = parseIpcArgs(
-        z.tuple([zProjectId, zThreadId, z.boolean()]),
-        [rawProjectId, rawThreadId, rawEnrolled],
-      )
-      const controller = new AbortController()
-      const state = await getAppleDevelopmentService().setEnrolled(
-        appleInvocation(projectId, threadId, controller.signal),
-        enrolled,
-      )
-      const statuses = await reloadMcpServers(registry)
-      broadcastToAppWindows('mcp:status-changed', statuses)
-      return state
-    },
-  )
-  ipcMain.handle(
-    'apple-development:discover',
-    async (event, rawProjectId: unknown, rawThreadId: unknown, rawIncludeMetadata: unknown) => {
-      assertMainFrameSender(event, win)
-      const [projectId, threadId, includeMetadata] = parseIpcArgs(
-        z.tuple([zProjectId, zThreadId, z.boolean()]),
-        [rawProjectId, rawThreadId, rawIncludeMetadata],
-      )
-      const controller = new AbortController()
-      return getAppleDevelopmentService().discover(
-        appleInvocation(projectId, threadId, controller.signal),
-        includeMetadata,
-      )
-    },
-  )
-  ipcMain.handle(
-    'apple-development:configure',
-    async (event, rawProjectId: unknown, rawThreadId: unknown, rawInput: unknown) => {
-      assertMainFrameSender(event, win)
-      const [projectId, threadId, input] = parseIpcArgs(
-        z.tuple([zProjectId, zThreadId, appleConfigureInputSchema]),
-        [rawProjectId, rawThreadId, rawInput],
-      )
-      const controller = new AbortController()
-      return getAppleDevelopmentService().configure(
-        appleInvocation(projectId, threadId, controller.signal),
-        input,
-      )
-    },
-  )
-  ipcMain.handle(
-    'apple-development:destinations',
-    async (
-      event,
-      rawProjectId: unknown,
-      rawThreadId: unknown,
-      rawCandidateId: unknown,
-      rawSchemeId: unknown,
-    ) => {
-      assertMainFrameSender(event, win)
-      const [projectId, threadId, candidateId, schemeId] = parseIpcArgs(
-        z.tuple([zProjectId, zThreadId, zNonEmptyString.max(512), zNonEmptyString.max(256)]),
-        [rawProjectId, rawThreadId, rawCandidateId, rawSchemeId],
-      )
-      const controller = new AbortController()
-      return getAppleDevelopmentService().destinations(
-        appleInvocation(projectId, threadId, controller.signal),
-        candidateId,
-        schemeId,
-      )
-    },
-  )
-  ipcMain.handle(
-    'apple-development:execute',
-    async (event, rawProjectId: unknown, rawThreadId: unknown, rawInput: unknown) => {
-      assertMainFrameSender(event, win)
-      const [projectId, threadId, input] = parseIpcArgs(
-        z.tuple([zProjectId, zThreadId, appleExecuteInputSchema]),
-        [rawProjectId, rawThreadId, rawInput],
-      )
-      const controller = new AbortController()
-      return getAppleDevelopmentService().execute(
-        appleInvocation(projectId, threadId, controller.signal),
-        input,
-      )
-    },
-  )
-  ipcMain.handle(
-    'apple-development:operation',
-    async (event, rawProjectId: unknown, rawThreadId: unknown, rawInput: unknown) => {
-      assertMainFrameSender(event, win)
-      const [projectId, threadId, input] = parseIpcArgs(
-        z.tuple([zProjectId, zThreadId, appleOperationInputSchema]),
-        [rawProjectId, rawThreadId, rawInput],
-      )
-      const controller = new AbortController()
-      const call = appleInvocation(projectId, threadId, controller.signal)
-      if (input.action === 'cancel') {
-        return getAppleDevelopmentService().cancel(call, input.operationId)
-      }
-      return getAppleDevelopmentService().operation(call, input.operationId, input.logCursor)
-    },
-  )
-  ipcMain.handle(
-    'apple-development:stop-app',
-    async (event, rawProjectId: unknown, rawThreadId: unknown, rawAppSessionId: unknown) => {
-      assertMainFrameSender(event, win)
-      const [projectId, threadId, appSessionId] = parseIpcArgs(
-        z.tuple([zProjectId, zThreadId, zNonEmptyString.max(256)]),
-        [rawProjectId, rawThreadId, rawAppSessionId],
-      )
-      const controller = new AbortController()
-      return getAppleDevelopmentService().stopApp(
-        appleInvocation(projectId, threadId, controller.signal),
-        appSessionId,
-      )
-    },
-  )
+  registerAppleDevelopmentHandlers(win, registry)
 
   // Decision 7 / F3: the workspace-trust prompt surfaces project hooks that
   // declare `sandbox: false` at the consent moment. Read-only display parsing —
@@ -2978,183 +2769,8 @@ export function registerAllHandlers(
     },
   )
 
-  ipcMain.handle('gh:status', () => getGhCliStatus())
-  ipcMain.handle('gh:invalidate-read-cache', () => {
-    invalidateGithubReadCache()
-    // Other windows re-read through the now-empty TTL cache instead of waiting
-    // up to 30s for the next shared tick.
-    notifyGitHubListWatchers()
-  })
-  const listWatchTeardown = new WeakSet<WebContents>()
-  ipcMain.handle('gh:set-list-watch', (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [watching, includeMyPrs] = parseIpcArgs(z.tuple([z.boolean(), z.boolean()]), rawArgs)
-    if (!listWatchTeardown.has(event.sender)) {
-      listWatchTeardown.add(event.sender)
-      const watcherId = event.sender.id
-      event.sender.once('destroyed', () => {
-        setGitHubListWatch(watcherId, false, false)
-      })
-    }
-    setGitHubListWatch(event.sender.id, watching, includeMyPrs)
-  })
-  ipcMain.handle('gh:list-my-open-prs', () => listMyOpenPrs())
-  ipcMain.handle('gh:list-workspace-open-prs', () => listWorkspaceOpenPrs())
-  ipcMain.handle('gh:pr-checks', (event, owner: unknown, repo: unknown, number: unknown) => {
-    assertMainFrameSender(event, win)
-    const parsedOwner = parseIpcArgs(z.string().min(1).max(128), [owner])
-    const parsedRepo = parseIpcArgs(z.string().min(1).max(128), [repo])
-    const parsedNumber = parseIpcArgs(z.number().int().positive(), [number])
-    return getGhPrChecksState({ owner: parsedOwner, repo: parsedRepo, number: parsedNumber })
-  })
-  ipcMain.handle('gh:pr-details', (event, owner: unknown, repo: unknown, number: unknown) => {
-    assertMainFrameSender(event, win)
-    const parsedOwner = parseIpcArgs(z.string().min(1).max(128), [owner])
-    const parsedRepo = parseIpcArgs(z.string().min(1).max(128), [repo])
-    const parsedNumber = parseIpcArgs(z.number().int().positive(), [number])
-    return getGhPrDetails({ owner: parsedOwner, repo: parsedRepo, number: parsedNumber })
-  })
-  ipcMain.handle(
-    'gh:pr-file-diff',
-    (event, owner: unknown, repo: unknown, number: unknown, path: unknown) => {
-      assertMainFrameSender(event, win)
-      const parsedOwner = parseIpcArgs(z.string().min(1).max(128), [owner])
-      const parsedRepo = parseIpcArgs(z.string().min(1).max(128), [repo])
-      const parsedNumber = parseIpcArgs(z.number().int().positive(), [number])
-      const parsedPath = parseIpcArgs(zPathString, [path])
-      return getGhPrFileDiff(
-        { owner: parsedOwner, repo: parsedRepo, number: parsedNumber },
-        parsedPath,
-      )
-    },
-  )
-  ipcMain.handle('gh:resolve-pr-url', (event, url: unknown) => {
-    assertMainFrameSender(event, win)
-    const parsedUrl = parseIpcArgs(z.url().max(2048), [url])
-    return resolveGithubPrRef(parsedUrl)
-  })
-  // Local-only legacy agent/PR associations; reads thread metadata.
-  ipcMain.handle('gh:agent-pr-links', () => listActiveProjectAgentPrLinks())
-  ipcMain.handle('gh:pr-thread-relationships', (event, input: unknown) => {
-    assertMainFrameSender(event, win)
-    const pr = parseIpcArgs(prRefSchema, [input])
-    const projectId = getActiveProjectId()
-    return projectId ? lookupPrThreadRelationships(projectId, pr) : []
-  })
-  ipcMain.handle('gh:thread-pr-relationships', (event, input: unknown) => {
-    assertMainFrameSender(event, win)
-    const threadId = parseIpcArgs(z.string().min(1), [input])
-    const projectId = getActiveProjectId()
-    return projectId ? lookupThreadPrRelationships(projectId, threadId) : []
-  })
-  // PR lifecycle write actions. Unlike the read handlers above, these mutate
-  // GitHub state, so each asserts a main-frame sender before acting.
-  const parsePrRef = (
-    owner: unknown,
-    repo: unknown,
-    number: unknown,
-  ): { owner: string; repo: string; number: number } => ({
-    owner: parseIpcArgs(z.string().min(1).max(128), [owner]),
-    repo: parseIpcArgs(z.string().min(1).max(128), [repo]),
-    number: parseIpcArgs(z.number().int().positive(), [number]),
-  })
-  // The "Create PR" chip's second half. Runs the same `createPrForThread` the
-  // `gh_pr_create` tool does — trailer, target resolution and thread linking
-  // included — so a PR opened from the dialog is indistinguishable from one the
-  // agent opened. No model call: by this point the user has settled every
-  // argument, and the dialog they just confirmed is the decision to publish.
-  // The decoder admits only title/body/draft; head, base, owner and repo come
-  // from the thread's checkout inside `createPrForThread`, never the renderer.
-  ipcMain.handle(
-    'gh:create-pr-for-thread',
-    async (event, projectIdArg: unknown, threadIdArg: unknown, requestArg: unknown) => {
-      assertMainFrameSender(event, win)
-      const projectId = parseIpcArgs(zProjectId, [projectIdArg])
-      const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-      const request = parseIpcArgs(zPrComposerCreateRequest, [requestArg])
-      const context = await resolveThreadExecutionContext(projectId, threadId)
-      return createPrForThread(request, context)
-    },
-  )
-  ipcMain.handle(
-    'gh:rerun-failed-runs',
-    (event, owner: unknown, repo: unknown, number: unknown) => {
-      assertMainFrameSender(event, win)
-      return rerunFailedPrRuns(parsePrRef(owner, repo, number))
-    },
-  )
-  ipcMain.handle('gh:approve-pr', (event, owner: unknown, repo: unknown, number: unknown) => {
-    assertMainFrameSender(event, win)
-    return approvePr(parsePrRef(owner, repo, number))
-  })
-  ipcMain.handle('gh:mark-pr-ready', (event, owner: unknown, repo: unknown, number: unknown) => {
-    assertMainFrameSender(event, win)
-    return markPrReady(parsePrRef(owner, repo, number))
-  })
-  ipcMain.handle(
-    'gh:enable-auto-merge',
-    (event, owner: unknown, repo: unknown, number: unknown) => {
-      assertMainFrameSender(event, win)
-      return enablePrAutoMerge(parsePrRef(owner, repo, number))
-    },
-  )
-  ipcMain.handle(
-    'remote-agent:download-artifact',
-    async (event, agentId: unknown, path: unknown) => {
-      assertMainFrameSender(event, win)
-      const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
-      const parsedPath = parseIpcArgs(z.string().min(1).max(4096), [path])
-      if (parsedAgentId.startsWith('openai:')) {
-        const data = await readOpenAiArtifact(parsedAgentId.slice('openai:'.length), parsedPath)
-        const result = await dialog.showSaveDialog(win, {
-          title: 'Save agent artifact',
-          defaultPath: `agent-artifact${extname(parsedPath)}`,
-        })
-        if (!result.canceled && result.filePath) await writeFile(result.filePath, data)
-        return ''
-      }
-      return resolveRemoteArtifactDownloadUrl({ agentId: parsedAgentId, path: parsedPath })
-    },
-  )
-  ipcMain.handle(
-    'remote-agent:artifact-image-data-url',
-    async (event, agentId: unknown, path: unknown) => {
-      assertMainFrameSender(event, win)
-      const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
-      const parsedPath = parseIpcArgs(z.string().min(1).max(4096), [path])
-      return fetchRemoteArtifactImageDataUrl({ agentId: parsedAgentId, path: parsedPath })
-    },
-  )
-  ipcMain.handle('remote-agent:models', (event) => {
-    assertMainFrameSender(event, win)
-    return listCursorCloudModels()
-  })
-  /**
-   * Import Cursor cloud agents launched outside Copse as local thread stubs.
-   * Prefer passing the renderer’s active `projectId` so sync stays scoped to the
-   * open project. Caller should reload/merge project threads after imports.
-   */
-  ipcMain.handle('remote-agent:discover-external', (event, projectId: unknown) => {
-    assertMainFrameSender(event, win)
-    if (projectId === undefined || projectId === null) {
-      return discoverExternalCursorAgentsFromIpc()
-    }
-    const id = parseIpcArgs(zProjectId, [projectId])
-    return discoverExternalCursorAgentsFromIpc({ projectId: id })
-  })
-  ipcMain.handle(
-    'remote-agent:refresh-imported-thread',
-    (event, projectId: unknown, threadId: unknown) => {
-      assertMainFrameSender(event, win)
-      const [id, thread] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
-      return refreshImportedCursorAgentThread({
-        projectId: id,
-        threadId: thread,
-        isThreadRunning: (candidateId) =>
-          isDispatcherThreadActive(id, candidateId) || listRunningThreadIds().includes(candidateId),
-      })
-    },
-  )
+  registerGhHandlers(win)
+  registerRemoteAgentHandlers(win, isDispatcherThreadActive)
   registerAcpHandlers(win)
   registerAboutHandlers(win)
   ipcMain.handle('shell:open-external', (event, url: unknown) => {

@@ -271,6 +271,15 @@ export const EXPLORE_WITHOUT_READ_NUDGE =
   'You have called explore several times in a row without calling read_file. explore returns a prose summary with approximate line numbers, not the verbatim bytes str_replace needs. Call read_file on the specific path you are about to edit, copy the exact text from its output, then retry the edit.'
 
 /**
+ * Explore-mode counterpart of `EXPLORE_WITHOUT_READ_NUDGE`. The parent has no
+ * `read_file` there; the exact bytes are the verbatim-excerpt blocks appended
+ * to each explore result (#1433, Fix 0), so naming read_file would send the
+ * model after a tool it cannot call.
+ */
+export const EXPLORE_REPEAT_USE_EXCERPTS_NUDGE =
+  'You have called explore several times in a row. Each explore result already ends with verbatim excerpts of the lines it read, copied from the files byte-for-byte. Copy str_replace old_string from those excerpt blocks, not from the prose summary, and make the edit. Explore again only if no excerpt covers the lines you need, and then name that path and function.'
+
+/**
  * Tracks the explore/read_file interleaving for `EXPLORE_WITHOUT_READ_NUDGE`:
  * increments on each `explore` call, resets to 0 on `read_file`, and is
  * otherwise unaffected by other tools (a `str_replace` failure in between
