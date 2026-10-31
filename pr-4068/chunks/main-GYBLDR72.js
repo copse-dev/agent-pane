@@ -101,6 +101,7 @@ import {
   createNewProject,
   createOverlayDialog,
   createPasteKeyForm,
+  createStore,
   createThread,
   definePlugin,
   deleteThread,
@@ -240,6 +241,7 @@ import {
   init_side_chat,
   init_sidebar_thread,
   init_state,
+  init_store,
   init_theme,
   init_thread_helpers,
   init_thread_hydration,
@@ -297,6 +299,7 @@ import {
   listOrphanProjects,
   listSubagentRuns,
   loadArtefactContent,
+  loadPersistedThread,
   loadProjects,
   loadThreads,
   localBenchmarkScore,
@@ -358,7 +361,6 @@ import {
   queuedMessageIds,
   queuedPayloadText,
   recordContextTrim,
-  recordPersistedThread,
   recordThreadArchives,
   recordThreadVideos,
   recoverOrphanProject,
@@ -381,6 +383,7 @@ import {
   restoreUiScale,
   reviewerInputAnswer,
   reviewerInputRequests,
+  sameItems,
   saveProjectGroups,
   saveProjects,
   scaledEditorFontSize,
@@ -455,7 +458,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-FYEDBEAN.js";
+} from "./chunk-EFYF4CLQ.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -662,141 +665,6 @@ var init_themes = __esm({
 // src/renderer/styles/global/popout.css
 var init_popout = __esm({
   "src/renderer/styles/global/popout.css"() {
-  }
-});
-
-// src/shared/store/store.ts
-function createStore(initial) {
-  let state = {
-    workspaceRoot: null,
-    projects: [],
-    projectGroups: [],
-    activeProjectId: null,
-    expandedProjectId: null,
-    threads: [],
-    backgroundThreads: [],
-    activeThreadId: null,
-    panelTab: "file",
-    openFile: null,
-    activeDiff: null,
-    stagedDiffs: [],
-    filesPaneOpen: false,
-    rightPanelMode: "explorer",
-    rightPanelMaximized: false,
-    projectsPaneOpen: true,
-    layout: { ...DEFAULT_LAYOUT },
-    theme: "dark",
-    themePreference: DEFAULT_THEME_PREFERENCE,
-    fontSize: 14,
-    uiScale: 1,
-    animateAgentAvatars: true,
-    conciseThreadsEnabled: true,
-    autoPortraitRightPanel: true,
-    rightPanelPosition: "auto",
-    sidebarProjectFilterId: null,
-    sidebarThreadSort: "activity",
-    sidebarThreadSortReverse: false,
-    sidebarThreadGroup: "project",
-    openLinksInBuiltInBrowser: true,
-    developerMode: false,
-    ...initial
-  };
-  const listeners = {
-    message_added: /* @__PURE__ */ new Set(),
-    message_queued: /* @__PURE__ */ new Set(),
-    message_token: /* @__PURE__ */ new Set(),
-    message_reasoning: /* @__PURE__ */ new Set(),
-    message_acp_content: /* @__PURE__ */ new Set(),
-    message_canvas_artefacts_changed: /* @__PURE__ */ new Set(),
-    message_visual_evidence_changed: /* @__PURE__ */ new Set(),
-    message_done: /* @__PURE__ */ new Set(),
-    tool_call_started: /* @__PURE__ */ new Set(),
-    tool_call_updated: /* @__PURE__ */ new Set(),
-    thread_model_resolved: /* @__PURE__ */ new Set(),
-    thread_status_changed: /* @__PURE__ */ new Set(),
-    agent_activity: /* @__PURE__ */ new Set(),
-    threads_changed: /* @__PURE__ */ new Set(),
-    reviewer_input_open: /* @__PURE__ */ new Set(),
-    reviewer_input_jump: /* @__PURE__ */ new Set(),
-    thread_draft_changed: /* @__PURE__ */ new Set(),
-    new_thread_opened: /* @__PURE__ */ new Set(),
-    panel_changed: /* @__PURE__ */ new Set(),
-    explorer_reveal: /* @__PURE__ */ new Set(),
-    workspace_changed: /* @__PURE__ */ new Set(),
-    projects_changed: /* @__PURE__ */ new Set(),
-    sidebar_project_filter_changed: /* @__PURE__ */ new Set(),
-    git_change_navigate: /* @__PURE__ */ new Set(),
-    roadmap_reveal: /* @__PURE__ */ new Set(),
-    thread_plan_open: /* @__PURE__ */ new Set(),
-    thread_plan_changed: /* @__PURE__ */ new Set(),
-    browser_url_requested: /* @__PURE__ */ new Set(),
-    browser_url_bar_focus_requested: /* @__PURE__ */ new Set(),
-    pr_open_requested: /* @__PURE__ */ new Set(),
-    thread_archive_requested: /* @__PURE__ */ new Set(),
-    side_chat_open_requested: /* @__PURE__ */ new Set(),
-    canvas_artefact_requested: /* @__PURE__ */ new Set(),
-    canvas_artefact_show_requested: /* @__PURE__ */ new Set(),
-    settings_changed: /* @__PURE__ */ new Set(),
-    theme_changed: /* @__PURE__ */ new Set(),
-    staged_diffs_changed: /* @__PURE__ */ new Set(),
-    usage_updated: /* @__PURE__ */ new Set(),
-    context_updated: /* @__PURE__ */ new Set(),
-    todos_changed: /* @__PURE__ */ new Set(),
-    review_changed: /* @__PURE__ */ new Set(),
-    hook_card_added: /* @__PURE__ */ new Set(),
-    comparison_changed: /* @__PURE__ */ new Set(),
-    review_report_changed: /* @__PURE__ */ new Set(),
-    git_branch_changed: /* @__PURE__ */ new Set(),
-    thread_checkout_changed: /* @__PURE__ */ new Set(),
-    composer_draft_flush: /* @__PURE__ */ new Set(),
-    agent_task_selected: /* @__PURE__ */ new Set(),
-    shell_tab_activated: /* @__PURE__ */ new Set(),
-    request_terminal_command: /* @__PURE__ */ new Set(),
-    code_block_run_requested: /* @__PURE__ */ new Set(),
-    code_block_run_finished: /* @__PURE__ */ new Set(),
-    thread_reference_attach: /* @__PURE__ */ new Set(),
-    attention_changed: /* @__PURE__ */ new Set(),
-    sidebar_threads_loaded: /* @__PURE__ */ new Set(),
-    automation_schedules_loaded: /* @__PURE__ */ new Set()
-  };
-  function on2(event, handler) {
-    listeners[event].add(handler);
-    return () => {
-      listeners[event].delete(handler);
-    };
-  }
-  function emit(event, ...args) {
-    listeners[event].forEach((handler) => {
-      handler(...args);
-    });
-  }
-  const selections = /* @__PURE__ */ new Set();
-  function select(selector, listener, equals = Object.is) {
-    let value = selector(state);
-    const check = () => {
-      const next = selector(state);
-      const prev = value;
-      if (equals(prev, next)) return;
-      value = next;
-      listener(next, prev);
-    };
-    selections.add(check);
-    return () => {
-      selections.delete(check);
-    };
-  }
-  function setState(partial) {
-    state = { ...state, ...partial };
-    for (const check of [...selections]) {
-      if (selections.has(check)) check();
-    }
-  }
-  return { getState: () => state, setState, on: on2, emit, select };
-}
-var init_store = __esm({
-  "src/shared/store/store.ts"() {
-    init_types();
-    init_layout();
   }
 });
 
@@ -2818,15 +2686,12 @@ async function restoreArchivedThread(store2, api2, projectId, threadId) {
     throw new Error("The thread is busy or changed. Try restoring it again.");
   invalidateProjectThreadLoads(api2, projectId);
   if (store2.getState().activeProjectId === projectId) {
-    const metadata = (await api2.threads.loadProject(projectId)).find(
-      (thread) => thread.id === threadId
-    );
+    const metadata = await loadPersistedThread(api2, projectId, threadId);
     if (!metadata) throw new Error("The restored thread could not be loaded.");
     if (store2.getState().activeProjectId === projectId) {
       const threads = store2.getState().threads;
       const previous = threads.find((thread) => thread.id === threadId);
       const restored = previous?.messagesLoaded !== false && previous ? { ...metadata, messages: previous.messages, messagesLoaded: true } : metadata;
-      recordPersistedThread(projectId, metadata);
       store2.setState({ threads: [...threads.filter((thread) => thread.id !== threadId), restored] });
       store2.emit("threads_changed");
     }
@@ -3275,7 +3140,6 @@ async function forkThread(store2, api2, sourceThreadId, options = {}) {
     stagedDiffs: []
   });
   store2.emit("threads_changed");
-  store2.emit("panel_changed");
   const projectId = store2.getState().activeProjectId;
   if (!projectId) return { threadId: forked.id, history: null, droppedAttachments: false };
   let history2 = null;
@@ -3342,7 +3206,6 @@ function createFollowUpThread(store2, api2, sourceThreadId) {
     stagedDiffs: []
   });
   store2.emit("threads_changed");
-  store2.emit("panel_changed");
   store2.emit("new_thread_opened");
   void attachSourceReference(store2, api2, projectId, source, thread.id);
   return thread.id;
@@ -3998,7 +3861,6 @@ async function startSideChat(store2, api2, parentThreadId, options = {}) {
       stagedDiffs: []
     });
     store2.emit("threads_changed");
-    store2.emit("panel_changed");
   } else {
     store2.setState({ threads: [side, ...store2.getState().threads] });
     store2.emit("threads_changed");
@@ -4083,7 +3945,6 @@ async function promoteSideChat(store2, api2, sideThreadId) {
     stagedDiffs: []
   });
   store2.emit("threads_changed");
-  store2.emit("panel_changed");
   archiveThread(store2, sideThreadId);
   const projectId = store2.getState().activeProjectId;
   if (projectId) {
@@ -7021,7 +6882,6 @@ function mountProjectsPane(root, store2, api2) {
   function syncFilterControls() {
     const { projects, sidebarThreadSort, sidebarThreadSortReverse, sidebarProjectFilterId } = store2.getState();
     const chosen = projects.find((project) => project.id === sidebarProjectFilterId);
-    if (!chosen) store2.setState({ sidebarProjectFilterId: null });
     const projectName = chosen ? projectDisplayName(chosen) : "All projects";
     const suffix = archivedOnly ? " \xB7 Archived" : needsCleanupOnly ? " \xB7 Needs cleanup" : "";
     filterLabel.textContent = `${projectName}${suffix}`;
@@ -7838,6 +7698,10 @@ function mountProjectsPane(root, store2, api2) {
     return entries;
   }
   function render2(preserveScroll = false) {
+    const { projects: known, sidebarProjectFilterId } = store2.getState();
+    if (sidebarProjectFilterId !== null && !known.some((p) => p.id === sidebarProjectFilterId)) {
+      store2.setState({ sidebarProjectFilterId: null });
+    }
     endDrag();
     const scrollTop = preserveScroll ? list.scrollTop : 0;
     prBackfillObserver?.disconnect();
@@ -8861,7 +8725,12 @@ function mountProjectsPane(root, store2, api2) {
     }),
     unsubWorkingTree,
     store2.on("projects_changed", render2),
-    store2.on("sidebar_project_filter_changed", render2),
+    store2.select(
+      (s) => s.sidebarProjectFilterId,
+      () => {
+        render2();
+      }
+    ),
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
     store2.on("threads_changed", () => {
@@ -17214,10 +17083,8 @@ function createDisclosureModel(host, timing, clock = systemClock) {
       const entry = entryFor(threadId, key);
       entry.failed = status === "error";
       if (status === "interrupted") entry.autoOpenedAt = null;
-      if (kind !== "entry") {
-        entry.running = status === "running";
-        if (!entry.running) cancelReveal(key);
-      }
+      if (kind !== "entry") entry.running = status === "running";
+      if (kind !== "tool" || status !== "running" || !autoRevealEligible) cancelReveal(key);
       if (entry.mode !== "auto") return entry.mode === "user-open";
       if (kind === "container") return false;
       if (entry.failed) {
@@ -18925,13 +18792,13 @@ function transcriptInputs(store2, thread) {
     artefactPreviewRevision: artefactPreviewRevision(thread.id)
   };
 }
-function sameItems(a, b2) {
+function sameItems2(a, b2) {
   if (a === b2) return true;
   if (!a || !b2 || a.length !== b2.length) return false;
   return a.every((item, i2) => item === b2[i2]);
 }
 function sameTranscriptInputs(a, b2) {
-  return a.threadId === b2.threadId && a.status === b2.status && a.model === b2.model && a.todos === b2.todos && a.workingBrief === b2.workingBrief && a.interruptedTurnAt === b2.interruptedTurnAt && a.liveProposalTargets === b2.liveProposalTargets && a.needsHydration === b2.needsHydration && a.hydrationFailed === b2.hydrationFailed && a.artefactPreviewRevision === b2.artefactPreviewRevision && sameItems(a.messages, b2.messages) && sameItems(a.pendingMessages, b2.pendingMessages) && sameItems(a.threadProposals, b2.threadProposals) && sameItems(a.reviewerInputAnswers, b2.reviewerInputAnswers);
+  return a.threadId === b2.threadId && a.status === b2.status && a.model === b2.model && a.todos === b2.todos && a.workingBrief === b2.workingBrief && a.interruptedTurnAt === b2.interruptedTurnAt && a.liveProposalTargets === b2.liveProposalTargets && a.needsHydration === b2.needsHydration && a.hydrationFailed === b2.hydrationFailed && a.artefactPreviewRevision === b2.artefactPreviewRevision && sameItems2(a.messages, b2.messages) && sameItems2(a.pendingMessages, b2.pendingMessages) && sameItems2(a.threadProposals, b2.threadProposals) && sameItems2(a.reviewerInputAnswers, b2.reviewerInputAnswers);
 }
 function summaryPreview(text, max = 200) {
   const trimmed2 = text.trim();
@@ -32736,10 +32603,12 @@ function mountFileTree(root, store2, api2) {
   const unsubs = [
     store2.on("workspace_changed", refresh),
     store2.on("threads_changed", refreshForActiveTask),
-    store2.on("panel_changed", () => {
-      const path = store2.getState().openFile?.path;
-      if (path) void revealPath(path);
-    }),
+    store2.select(
+      (s) => s.openFile,
+      (openFile2) => {
+        if (openFile2) void revealPath(openFile2.path);
+      }
+    ),
     store2.on("explorer_reveal", (path) => {
       void revealPath(path, true);
     })
@@ -70055,20 +69924,25 @@ function mountContextPanel(root, store2, api2, monaco) {
   }
   let watched = null;
   const unsubs = [
-    store2.on("panel_changed", () => {
-      updatePanel();
-      void refreshWorkingDiff();
-      const { openFile } = store2.getState();
-      const owner = getActiveThreadOwner(store2);
-      if (watched && (watched.path !== openFile?.path || watched.projectId !== owner?.projectId || watched.threadId !== owner.threadId)) {
-        void api2.fs.unwatch(watched.projectId, watched.threadId, watched.path);
-        watched = null;
-      }
-      if (openFile && owner && !watched) {
-        void api2.fs.watch(owner.projectId, owner.threadId, openFile.path);
-        watched = { ...owner, path: openFile.path };
-      }
-    })
+    // The open file and the thread it belongs to; staging a diff is not a change.
+    store2.select(
+      (s) => [s.openFile, s.activeProjectId, s.activeThreadId],
+      () => {
+        updatePanel();
+        void refreshWorkingDiff();
+        const { openFile } = store2.getState();
+        const owner = getActiveThreadOwner(store2);
+        if (watched && (watched.path !== openFile?.path || watched.projectId !== owner?.projectId || watched.threadId !== owner.threadId)) {
+          void api2.fs.unwatch(watched.projectId, watched.threadId, watched.path);
+          watched = null;
+        }
+        if (openFile && owner && !watched) {
+          void api2.fs.watch(owner.projectId, owner.threadId, openFile.path);
+          watched = { ...owner, path: openFile.path };
+        }
+      },
+      sameItems
+    )
   ];
   const unsubFsChanged = api2.fs.onChanged((projectId, threadId, path, newContent) => {
     const owner = getActiveThreadOwner(store2);
@@ -70119,6 +69993,7 @@ function mountContextPanel(root, store2, api2, monaco) {
 }
 var init_context_panel = __esm({
   "src/renderer/views/context-panel.ts"() {
+    init_store();
     init_code_block_copy();
     init_dist();
     init_mermaid();
@@ -72884,6 +72759,9 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     }
     renderRestoreBanner();
   }
+  function sameDiffState(a, b2) {
+    return a[0] === b2[0] && (a[1] === b2[1] || a[1].length === 0 && b2[1].length === 0);
+  }
   async function syncFromStore() {
     adoptActiveOwner();
     renderList();
@@ -72932,9 +72810,14 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       else renderList();
       scheduleRefresh();
     }),
-    store2.on("panel_changed", () => {
-      if (changesModeActive(store2)) void syncFromStore();
-    }),
+    // Only the diff state: an ordinary thread switch is threads_changed's job.
+    store2.select(
+      (s) => [s.activeDiff, s.stagedDiffs],
+      () => {
+        if (changesModeActive(store2)) void syncFromStore();
+      },
+      sameDiffState
+    ),
     store2.on("settings_changed", syncReviewGate),
     store2.on("thread_status_changed", syncReviewButton),
     store2.on("threads_changed", syncReviewButton),
@@ -84219,9 +84102,16 @@ function mountAskUserDialog(api2, store2) {
       form.append(el("p", { class: "ask-user-origin" }, asker.label));
       store2.emit("side_chat_open_requested", asker.firstSideChatId);
     }
+    const actionsOnly = active.presentation?.kind === "actions";
+    const choiceMode = !actionsOnly && active.questions.length === 1 && (active.questions[0]?.options?.length ?? 0) > 0;
+    const submitBtn = el(
+      "button",
+      { type: "submit", class: "ask-user-submit", title: "Send answer (\u2318Enter or Ctrl+Enter)" },
+      "Send answer"
+    );
+    submitBtn.hidden = choiceMode;
     active.questions.forEach((q2, i2) => {
       const questionId = `ask-user-question-${String(i2)}`;
-      const actionsOnly = active?.presentation?.kind === "actions";
       const input = el("textarea", {
         class: "ask-user-input",
         rows: "2",
@@ -84237,11 +84127,14 @@ function mountAskUserDialog(api2, store2) {
       question.innerHTML = renderMarkdown(q2.question);
       const field = el("div", { class: "ask-user-field" }, question);
       if (q2.options && q2.options.length > 0) {
-        const optionRow = el("div", { class: "ask-user-options" });
+        const optionRow = el("div", {
+          class: choiceMode ? "ask-user-options ask-user-options-stacked" : "ask-user-options",
+          ...choiceMode ? { role: "group", "aria-labelledby": questionId } : {}
+        });
         for (const option of q2.options) {
           const button = el("button", {
             type: "button",
-            class: actionsOnly ? `ui-btn ${option === q2.options[0] ? "ui-btn-primary" : "ui-btn-secondary"} ask-user-option ask-user-action` : "ask-user-option"
+            class: actionsOnly ? `ui-btn ${option === q2.options[0] ? "ui-btn-primary" : "ui-btn-secondary"} ask-user-option ask-user-action` : choiceMode ? "ask-user-option ask-user-choice" : "ask-user-option"
           });
           setInlineMarkdown(button, option);
           const answer = button.textContent;
@@ -84254,6 +84147,10 @@ function mountAskUserDialog(api2, store2) {
               respond([option]);
               return;
             }
+            if (choiceMode) {
+              respond([answer]);
+              return;
+            }
             input.value = answer;
             input.focus();
           });
@@ -84263,6 +84160,17 @@ function mountAskUserDialog(api2, store2) {
       }
       if (q2.recommendationReason) {
         field.append(el("p", { class: "ask-user-recommendation-reason" }, q2.recommendationReason));
+      }
+      if (choiceMode) {
+        const toggle = el("button", { type: "button", class: "ask-user-other" }, "Something else\u2026");
+        input.hidden = true;
+        toggle.addEventListener("click", () => {
+          toggle.hidden = true;
+          input.hidden = false;
+          submitBtn.hidden = false;
+          input.focus();
+        });
+        field.append(toggle);
       }
       if (!actionsOnly) field.append(input);
       form.append(field);
@@ -84278,24 +84186,9 @@ function mountAskUserDialog(api2, store2) {
       event.preventDefault();
       cancel();
     });
-    form.append(
-      el(
-        "div",
-        { class: "ask-user-buttons" },
-        cancelBtn,
-        el(
-          "button",
-          {
-            type: "submit",
-            class: "ask-user-submit",
-            title: "Send answer (\u2318Enter or Ctrl+Enter)"
-          },
-          "Send answer"
-        )
-      )
-    );
+    form.append(el("div", { class: "ask-user-buttons" }, cancelBtn, submitBtn));
     dialog.showModal();
-    inputs[0]?.focus();
+    (form.querySelector(".ask-user-other") ?? inputs[0])?.focus();
   }
   function withdrawIfUnshowable() {
     if (!active || isShowable(active)) return;
@@ -84379,6 +84272,7 @@ function mountAskUserDialog(api2, store2) {
   }
   function submit() {
     if (active?.presentation?.kind === "actions") return;
+    if (inputs.some((input) => input.hidden)) return;
     respond(inputs.map((input) => input.value));
   }
   function cancel() {
@@ -84959,6 +84853,8 @@ function mountFileSearchDialog(store2, api2) {
   });
   openImpl2 = () => {
     if (dialog.open) return;
+    if (debounce) clearTimeout(debounce);
+    debounce = null;
     input.value = "";
     results = [];
     selectedIdx = 0;
@@ -86829,16 +86725,17 @@ function attachDiffState(store2, api2, options) {
       activeDiff: entries.length === 0 ? null : stillQueued
     });
     store2.emit("staged_diffs_changed");
-    store2.emit("panel_changed");
   };
   const unsubShowDiff = api2.diff.onShowDiff(
     (projectId, threadId, path, before, after, language) => {
       if (!isActiveOwner(projectId, threadId)) return;
-      store2.setState({ activeDiff: { path, before, after, language } });
-      if (!options.revealOnShowDiff) return;
-      store2.setState({ rightPanelMode: "changes", filesPaneOpen: true });
+      const activeDiff = { path, before, after, language };
+      if (!options.revealOnShowDiff) {
+        store2.setState({ activeDiff });
+        return;
+      }
+      store2.setState({ activeDiff, rightPanelMode: "changes", filesPaneOpen: true });
       syncFilesPaneDom(store2);
-      store2.emit("panel_changed");
     }
   );
   const unsubQueued = api2.diff.onQueued((projectId, threadId, entries) => {
@@ -89213,7 +89110,6 @@ async function confirmDeleteThread() {
     stagedDiffs: []
   });
   store.emit("threads_changed");
-  store.emit("panel_changed");
 }
 function switchToPrevThread() {
   const prev = prevThreadId(store);
