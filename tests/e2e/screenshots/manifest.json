@@ -4781,6 +4781,10 @@
       "sha256": "807c282c2ba76039efb7652bafd151be8c5027929704237929825aafa8336fb1",
       "bytes": 298287
     },
+    "sidebar-status-details.png": {
+      "sha256": "0ddd8c32595c2b9f767aa47fe643e8270087a1d6f075281b97f29d9841aad7ff",
+      "bytes": 276846
+    },
     "sidebar-thread-changes-1600.png": {
       "sha256": "a4d75a4a22113b23c0d797caac16121cd45a83cbea296b0755b0ff701a5f3b68",
       "bytes": 95386
@@ -4842,12 +4846,12 @@
       "bytes": 101334
     },
     "sidebar-unopened-activity-1600.png": {
-      "sha256": "cb352fb6cf561fed557f431b88c743d63dc446fbbbbf06b5e2f3654ec155941f",
-      "bytes": 351084
+      "sha256": "1b8593a973698d3fb4abf2c187f3830d1f74842bf3934da1c7f05d36cd8ae5e7",
+      "bytes": 354442
     },
     "sidebar-unopened-activity-800.png": {
-      "sha256": "29d1a46d6584d4ddefacfbafe0487432bce2b82f96ca61db9f9dfe79985f440e",
-      "bytes": 228356
+      "sha256": "fb9fc075ce588ba0f32457b369549c5636fc2754ede6cd0a8220866ed53d05e6",
+      "bytes": 231954
     },
     "simulator-desktop-choice.png": {
       "sha256": "9761a3114966194c28152b6d0884c9b419acf2e8a5db50c8b68d253a249c6518",
