@@ -17083,10 +17083,8 @@ function createDisclosureModel(host, timing, clock = systemClock) {
       const entry = entryFor(threadId, key);
       entry.failed = status === "error";
       if (status === "interrupted") entry.autoOpenedAt = null;
-      if (kind !== "entry") {
-        entry.running = status === "running";
-        if (!entry.running) cancelReveal(key);
-      }
+      if (kind !== "entry") entry.running = status === "running";
+      if (kind !== "tool" || status !== "running" || !autoRevealEligible) cancelReveal(key);
       if (entry.mode !== "auto") return entry.mode === "user-open";
       if (kind === "container") return false;
       if (entry.failed) {
@@ -84855,6 +84853,8 @@ function mountFileSearchDialog(store2, api2) {
   });
   openImpl2 = () => {
     if (dialog.open) return;
+    if (debounce) clearTimeout(debounce);
+    debounce = null;
     input.value = "";
     results = [];
     selectedIdx = 0;
