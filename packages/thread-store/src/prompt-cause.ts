@@ -103,6 +103,7 @@ export const PROMPT_CAUSES = [
   'mode-arming',
   'thread-read-access',
   'thread-send-access',
+  'thread-orchestration-access',
 ] as const
 
 export type PromptCause = (typeof PROMPT_CAUSES)[number]
@@ -177,6 +178,7 @@ const CONTAINMENT: Readonly<Record<PromptCause, PromptCauseContainment>> = {
   'mode-arming': 'kept',
   'thread-read-access': 'kept',
   'thread-send-access': 'kept',
+  'thread-orchestration-access': 'kept',
 }
 
 export function promptCauseContainment(cause: PromptCause): PromptCauseContainment {
@@ -216,6 +218,7 @@ const LABELS: Readonly<Record<PromptCause, string>> = {
   'mode-arming': 'Arming a mode (user-initiated, not an interruption)',
   'thread-read-access': 'Reading other threads',
   'thread-send-access': 'Sending prompts to other threads',
+  'thread-orchestration-access': 'Orchestrating own subthreads',
 }
 
 export function promptCauseLabel(cause: PromptCause): string {

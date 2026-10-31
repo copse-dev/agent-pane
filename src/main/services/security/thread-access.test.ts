@@ -17,6 +17,7 @@ describe('conversation access', () => {
   afterEach(async () => {
     await setSetting('threadReadAccess', [])
     await setSetting('threadSendAccess', [])
+    await setSetting('threadSubthreadAccess', [])
   })
 
   it('asks exactly twice, reuses each grant and isolates other threads', async () => {
@@ -43,7 +44,7 @@ describe('conversation access', () => {
     assert.deepEqual(requests, ['Read your other threads?', 'Send prompts to your other threads?'])
   })
 
-  for (const access of ['read', 'send'] as const) {
+  for (const access of ['read', 'send', 'orchestrate'] as const) {
     for (const cancelled of [0, 1] as const) {
       it(`${access}: cancelling waiter ${String(cancelled)} preserves its live sibling`, async () => {
         const shown = Promise.withResolvers<boolean>()

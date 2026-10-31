@@ -5,6 +5,12 @@ import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 describe('conversation access approvals', () => {
   for (const fixture of [
     {
+      access: 'orchestrate',
+      title: 'Allow subthread orchestration?',
+      action: 'Allow orchestration',
+      explanation: 'Only subthreads created by this thread are included',
+    },
+    {
       access: 'read',
       title: 'Read your other threads?',
       action: 'Allow reading',

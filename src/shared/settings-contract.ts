@@ -201,6 +201,13 @@ export interface SettingsValues {
   toolPermissionOverrides: Record<string, 'allow' | 'ask' | 'block'>
   threadReadAccess: string[]
   threadSendAccess: string[]
+  threadSubthreadAccess: string[]
+  threadSubthreadOwners: Array<{
+    projectId: string
+    parentThreadId: string
+    threadId: string
+    key: string
+  }>
   cursorHooksEnabled: boolean
   defaultReadonlyMode: boolean
   safeInstallEnabled: boolean
@@ -265,6 +272,8 @@ type DedicatedSettingKey =
   | 'toolPermissionOverrides'
   | 'threadReadAccess'
   | 'threadSendAccess'
+  | 'threadSubthreadAccess'
+  | 'threadSubthreadOwners'
   | 'cursorHooksEnabled'
   | 'defaultReadonlyMode'
   | 'safeInstallEnabled'

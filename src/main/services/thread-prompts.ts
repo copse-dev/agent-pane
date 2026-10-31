@@ -3,16 +3,20 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { assertMainFrameSender, parseIpcArgs } from '../ipc/ipc-guards.ts'
 import type { ThreadPromptCommand, ThreadPromptResult } from '@shared/thread-prompt.ts'
-import { revokeThreadAccess } from './security/thread-access.ts'
+import { hasThreadAccess, revokeThreadAccess } from './security/thread-access.ts'
 
-type Send = (command: Omit<ThreadPromptCommand, 'id' | 'expiresAt'>) => Promise<ThreadPromptResult>
+type Send = (
+  command: Omit<ThreadPromptCommand, 'id' | 'expiresAt'>,
+  signal?: AbortSignal,
+) => Promise<ThreadPromptResult>
 let send: Send | null = null
 
 export function sendThreadPrompt(
   command: Omit<ThreadPromptCommand, 'id' | 'expiresAt'>,
+  signal?: AbortSignal,
 ): Promise<ThreadPromptResult> {
   return (
-    send?.(command) ??
+    send?.(command, signal) ??
     Promise.resolve({ ok: false, error: 'Open the desktop window to send a prompt.' })
   )
 }
@@ -30,19 +34,29 @@ export function initThreadPrompts(win: BrowserWindow, ipcMain: IpcMain): void {
   ipcMain.handle('thread-prompts:revoke-access', async (event, ...args) => {
     assertMainFrameSender(event, win)
     const [threadId, access] = parseIpcArgs(
-      z.tuple([z.string().min(1), z.enum(['read', 'send'])]),
+      z.tuple([z.string().min(1), z.enum(['read', 'send', 'orchestrate'])]),
       args,
     )
     await revokeThreadAccess(threadId, access)
   })
   const pending = new Map<string, (result: ThreadPromptResult) => void>()
+  const canSubmit = new Map<string, () => boolean>()
+  ipcMain.handle('thread-prompts:can-submit', (event, ...args) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(z.uuid(), args)
+    return canSubmit.get(id)?.() ?? false
+  })
   ipcMain.handle('thread-prompts:reply', (event, ...args) => {
     assertMainFrameSender(event, win)
     const [id, result] = parseIpcArgs(replySchema, args)
     pending.get(id)?.(result)
   })
-  const sender: Send = (command) =>
+  const sender: Send = (command, signal) =>
     new Promise((resolve) => {
+      if (signal?.aborted) {
+        resolve({ ok: false, error: 'Sending was cancelled.' })
+        return
+      }
       if (win.isDestroyed()) {
         resolve({ ok: false, error: 'The desktop window closed.' })
         return
@@ -57,11 +71,25 @@ export function initThreadPrompts(win: BrowserWindow, ipcMain: IpcMain): void {
           }),
         60_000,
       )
+      const onAbort = (): void => {
+        pending.get(id)?.({ ok: false, error: 'Sending was cancelled.' })
+      }
+      canSubmit.set(
+        id,
+        () =>
+          pending.has(id) &&
+          Date.now() < expiresAt &&
+          !signal?.aborted &&
+          (!command.requireWorktree || hasThreadAccess(command.sourceThreadId, 'orchestrate')),
+      )
       pending.set(id, (result) => {
         pending.delete(id)
+        canSubmit.delete(id)
+        signal?.removeEventListener('abort', onAbort)
         clearTimeout(timer)
         resolve(result)
       })
+      signal?.addEventListener('abort', onAbort, { once: true })
       win.webContents.send('thread-prompts:prompt', {
         ...command,
         id,
