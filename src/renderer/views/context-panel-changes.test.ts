@@ -202,6 +202,57 @@ function query(root: HTMLElement, selector: string): HTMLElement {
   return found
 }
 
+describe('file viewer store selection', () => {
+  it('opens a file the store opens, with no event, and ignores a staged diff', async () => {
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+    })
+    const watched: string[] = []
+    const base = makeApi({
+      'src/app.ts': {
+        path: 'src/app.ts',
+        before: 'old\n',
+        after: 'new\n',
+        language: 'typescript',
+      },
+    })
+    const api: ApiClient = {
+      ...base,
+      fs: {
+        ...base.fs,
+        watch: async (_projectId, _threadId, path): Promise<void> => {
+          watched.push(path)
+        },
+      },
+    }
+    const monaco = makeMonacoStub()
+    let models = 0
+    const createModel = monaco.editor.createModel
+    monaco.editor.createModel = (value, language): ContextPanelModel => {
+      models += 1
+      return createModel(value, language)
+    }
+    const root = document.createElement('div')
+    document.body.append(root)
+    mountContextPanel(root, store, api, monaco)
+    assert.equal(query(root, '.panel-empty').hidden, false)
+
+    store.setState({ openFile: openFileState('src/app.ts', 'new\n', 'typescript') })
+    await flushAsync()
+
+    assert.equal(query(root, '.panel-empty').hidden, true)
+    assert.equal(query(root, '.file-viewer-changes-btn').hidden, false)
+    assert.deepEqual(watched, ['src/app.ts'])
+    assert.equal(models, 1)
+
+    store.setState({ stagedDiffs: [{ path: 'src/other.ts', language: 'typescript' }] })
+    await flushAsync()
+    assert.equal(models, 1, 'staging a diff must not rebuild the open file')
+  })
+})
+
 describe('file viewer Changes view', () => {
   it('opens a local file in the built-in browser by default from the viewer context menu', async () => {
     const capture: ContextPanelCapture = { previewRequests: [], openedBrowserUrls: [] }
