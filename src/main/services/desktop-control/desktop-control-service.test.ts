@@ -4,8 +4,11 @@ import { afterEach, describe, it } from 'node:test'
 import {
   DesktopControlService,
   helperSourceWithCallerRequirement,
+  openFuses,
   parseDesignatedRequirement,
+  readFuseWires,
 } from './desktop-control-service.ts'
+import { setElectronAppRuntime } from '../electron-app-runtime.ts'
 
 // A stand-in for the Swift helper that speaks the same line protocol, so the
 // service's process handling is exercised across a real pipe.
@@ -114,5 +117,71 @@ describe('helper caller requirement', () => {
       helperSourceWithCallerRequirement('print(1)\n', 'identifier "a\\b"'),
       'let expectedCallerRequirement = "identifier \\"a\\\\b\\""\nprint(1)\n',
     )
+  })
+})
+
+const SENTINEL = 'dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX'
+
+/** A binary with one fuse wire per slice, cut into chunks of `size` bytes. */
+async function* fuseBinary(wires: readonly string[], size: number): AsyncGenerator<Buffer> {
+  const bytes = Buffer.from(
+    wires
+      .map((wire) => `padding${SENTINEL}\x01${String.fromCharCode(wire.length)}${wire}`)
+      .join('') + 'tail',
+    'latin1',
+  )
+  for (let offset = 0; offset < bytes.length; offset += size) {
+    yield bytes.subarray(offset, offset + size)
+  }
+}
+
+describe('Electron fuse check', () => {
+  const closed = '0r00110100'
+
+  it("reads every slice's wire however the binary is chunked", async () => {
+    for (const size of [1, 7, 33, 4096]) {
+      const wires = await readFuseWires(fuseBinary([closed, '1r11000100'], size))
+      assert.deepEqual(
+        wires.map((wire) => wire.toString('latin1')),
+        [closed, '1r11000100'],
+        `chunk size ${String(size)}`,
+      )
+    }
+  })
+
+  it('accepts only wires that close Node mode and pin the app to its signed asar', async () => {
+    assert.deepEqual(openFuses(await readFuseWires(fuseBinary([closed, closed], 64))), [])
+    // Electron's defaults leave Node mode open and the asar unchecked.
+    assert.deepEqual(openFuses(await readFuseWires(fuseBinary(['1r11001100'], 64))), [
+      'RunAsNode',
+      'EnableNodeOptionsEnvironmentVariable',
+      'EnableNodeCliInspectArguments',
+      'EnableEmbeddedAsarIntegrityValidation',
+      'OnlyLoadAppFromAsar',
+    ])
+    // One open slice of a universal binary is enough to refuse.
+    assert.deepEqual(openFuses(await readFuseWires(fuseBinary([closed, '1r00110100'], 64))), [
+      'RunAsNode',
+    ])
+  })
+
+  it(
+    'refuses to build the helper in a packaged Copse whose fuses it cannot confirm',
+    { skip: process.platform !== 'darwin' },
+    async () => {
+      setElectronAppRuntime({ userDataPath: '/nonexistent', version: '1.0.0', isPackaged: true })
+      const service = new DesktopControlService()
+      services.push(service)
+      try {
+        await assert.rejects(service.permissions(), /Electron fuses \(RunAsNode, /)
+      } finally {
+        setElectronAppRuntime(null)
+      }
+    },
+  )
+
+  it('treats a binary without a fuse wire as open', async () => {
+    assert.deepEqual(await readFuseWires(fuseBinary([], 8)), [])
+    assert.equal(openFuses([]).length, 5)
   })
 })

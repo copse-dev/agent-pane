@@ -532,7 +532,9 @@ let isDisclaimedCopy = CommandLine.arguments.contains(disclaimedFlag)
 // must satisfy the code requirement of the Copse executable that compiled it.
 // The disclaimed copy's parent is the launcher copy, which must be this same
 // binary, and whose own parent must be Copse. Anything else exits before a
-// single request is read.
+// single request is read. A signature names an executable, not what it runs,
+// so a packaged Copse compiles this helper only when its Electron fuses stop
+// that executable running as Node or loading code outside its signed asar.
 
 func parentPid(of pid: pid_t) -> pid_t? {
   var info = kinfo_proc()

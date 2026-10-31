@@ -1,11 +1,12 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { createReadStream } from 'node:fs'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
-import { getElectronUserDataPath } from '../electron-app-runtime.ts'
+import { getElectronUserDataPath, isElectronAppPackaged } from '../electron-app-runtime.ts'
 
 /**
  * Owns the native `copse-desktop` helper (native/copse-desktop.swift): one
@@ -437,6 +438,88 @@ async function copseCallerRequirement(env: NodeJS.ProcessEnv): Promise<string> {
   return requirement
 }
 
+// ── Electron fuses ──────────────────────────────────────────────────────────
+//
+// The helper trusts any process with Copse's code signature. Electron can run
+// that same signed executable as plain Node (ELECTRON_RUN_AS_NODE), take
+// NODE_OPTIONS or --inspect, or load app code from outside the signed
+// app.asar, so any of those would let another local program pass the caller
+// check and drive the helper without Copse's approvals. A packaged build
+// therefore serves computer use only when its fuses close all of them.
+
+const FUSE_SENTINEL = Buffer.from('dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX', 'latin1')
+const FUSE_WIRE_VERSION = 0x01
+const FUSE_DISABLED = 0x30
+const FUSE_ENABLED = 0x31
+
+const REQUIRED_FUSES = [
+  { index: 0, name: 'RunAsNode', state: FUSE_DISABLED },
+  { index: 2, name: 'EnableNodeOptionsEnvironmentVariable', state: FUSE_DISABLED },
+  { index: 3, name: 'EnableNodeCliInspectArguments', state: FUSE_DISABLED },
+  { index: 4, name: 'EnableEmbeddedAsarIntegrityValidation', state: FUSE_ENABLED },
+  { index: 5, name: 'OnlyLoadAppFromAsar', state: FUSE_ENABLED },
+] as const
+
+/**
+ * The fuse wires in an Electron binary, one per architecture slice: the bytes
+ * after each sentinel, its version byte and its length byte. Streamed, because
+ * the framework binary is hundreds of megabytes.
+ */
+export async function readFuseWires(chunks: AsyncIterable<unknown>): Promise<Buffer[]> {
+  const wires: Buffer[] = []
+  let carry = Buffer.alloc(0)
+  for await (const chunk of chunks) {
+    if (!Buffer.isBuffer(chunk)) throw new Error('Expected binary chunks')
+    const buffer = Buffer.concat([carry, chunk])
+    let keepFrom = Math.max(0, buffer.length - (FUSE_SENTINEL.length - 1))
+    let searchFrom = 0
+    for (;;) {
+      const at = buffer.indexOf(FUSE_SENTINEL, searchFrom)
+      if (at === -1) break
+      const header = at + FUSE_SENTINEL.length
+      const length = buffer[header + 1]
+      if (length === undefined || header + 2 + length > buffer.length) {
+        keepFrom = at
+        break
+      }
+      if (buffer[header] !== FUSE_WIRE_VERSION)
+        throw new Error('Unknown Electron fuse wire version')
+      wires.push(Buffer.from(buffer.subarray(header + 2, header + 2 + length)))
+      searchFrom = header + 2 + length
+      keepFrom = Math.max(keepFrom, searchFrom)
+    }
+    carry = Buffer.from(buffer.subarray(keepFrom))
+  }
+  return wires
+}
+
+/** Names of the required fuses that any wire leaves open; all of them when there is no wire. */
+export function openFuses(wires: readonly Buffer[]): string[] {
+  return REQUIRED_FUSES.filter(
+    ({ index, state }) => wires.length === 0 || wires.some((wire) => wire[index] !== state),
+  ).map(({ name }) => name)
+}
+
+/** Refuse a packaged build whose fuses let another program run as Copse. */
+async function assertFusesCloseOtherCallers(): Promise<void> {
+  if (!isElectronAppPackaged()) return
+  const framework = join(
+    dirname(process.execPath),
+    '..',
+    'Frameworks',
+    'Electron Framework.framework',
+    'Electron Framework',
+  )
+  const open = openFuses(
+    await readFuseWires(createReadStream(framework, { highWaterMark: 1 << 20 })).catch(() => []),
+  )
+  if (open.length) {
+    throw new Error(
+      `Computer use is unavailable in this build of Copse: its Electron fuses (${open.join(', ')}) would let other programs run as Copse and use the desktop helper's permissions.`,
+    )
+  }
+}
+
 /**
  * Compile the helper when its source changes, always to the same path.
  *
@@ -450,9 +533,12 @@ async function copseCallerRequirement(env: NodeJS.ProcessEnv): Promise<string> {
  *
  * The Copse executable's own code requirement is compiled in, and the helper
  * refuses any other parent, so its privacy grants are not usable by other
- * local processes that run the binary directly.
+ * local processes that run the binary directly. A packaged build must also
+ * have its Electron fuses closed; a development build, which runs as Node by
+ * design, is trusted as the developer's own.
  */
 async function compileHelper(): Promise<string> {
+  await assertFusesCloseOtherCallers()
   const sourceDirectory = helperSourceDirectory()
   const source = join(sourceDirectory, 'copse-desktop.swift')
   const plist = join(sourceDirectory, 'Info.plist')
