@@ -35,7 +35,7 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 | Environment setup                | Suggests values for the auto-approval level, trusted commands, web origins, trusted SSH hosts and trusted package registries from prompts a person approved in the active project. Applies only what the user ticks, through the same settings; adds no grant path. See [Environment setup](#environment-setup).                                                                                         |
 | Deferral mode                    | Session-only, thread-scoped; approval requests queue instead of blocking. Changes prompt handling, not authorization.                                                                                                                                                                                                                                                                                    |
 | Unattended container             | Explicitly armed run on an attested disposable guest. Contained shell effects allow, outward effects defer or deny, host escapes deny; budgets required. Experimental, off by default, mutually exclusive with Guarded YOLO.                                                                                                                                                                             |
-| ACP permission mode              | Agent-specific session mode, additional to Copse's gate and sandbox. Sandboxed Claude presets may default to acceptEdits; unsandboxed/SSH presets do not receive that default. Remembered ACP grants are per agent and tool kind; `execute` is never remembered (stored ones are ignored), so every `execute` request reaches the shell gate.                                                            |
+| ACP permission mode              | Agent-specific session mode, additional to Copse's gate and sandbox. Sandboxed Claude presets may default to acceptEdits; unsandboxed/SSH presets do not receive that default. Remembered ACP grants are per agent and tool kind; a request that runs a command is never remembered, so every command reaches the shell gate. See [ACP permission requests](#acp-permission-requests).                   |
 | Agent managed thread mode        | Opt-in per thread for external coding agents. Copse does not apply its process sandbox and selects the agent-advertised Auto/Default session mode when available. The agent's permission requests are presented without Copse's shell classifier, remembered grants, or edit auto-approval. Copse's native-tool bridge remains available and every bridged call still uses the ordinary Copse tool gate. |
 
 ## Per-tool permission settings
@@ -392,6 +392,43 @@ approval by default because they access host devices outside the project sandbox
 permission overrides apply, but read-only mode and enrollment checks still fail closed. Showing a
 simulator does not enable renderer control; discrete agent input is a separate approved call.
 
+## ACP permission requests
+
+`respondToPermission` in `src/main/services/acp/acp-agent-service.ts` answers an external
+agent's `session/request_permission`. A request **runs a command** when either:
+
+- its kind is `execute`, with the command in `rawInput.command` or, failing that, in the title; or
+- it has no kind, or ACP's catch-all `other`, and carries a `rawInput.command` string or argv
+  (`acpShellCommandText`). ACP makes `kind` optional, so an agent can omit it. A structured
+  `command` object is a tool's argument, not a command line.
+
+A request that runs a command goes through the shell gate (`ensureShellCommandPermitted`), like
+native `run_shell`, after the bridged-tool check (Copse re-gates those calls when they run). Only
+an `execute` request runs in the agent's own shell, so only it carries the agent's sandbox claim
+into the gate. An unclassified request's `command` may be an MCP tool argument (a Redis or SQL
+command) that runs outside that sandbox, so it is judged as unsandboxed and never auto-runs on the
+sandbox. Its
+answer is never remembered, and no stored grant answers it. Remembered grants are keyed by agent
+and tool kind only. One remembered command approval would therefore approve every later command of
+that kind, such as `rm -rf`, before the gate classified, sandboxed or confirmed it. The grant store
+also ignores and prunes `execute` grants saved by earlier versions. An `execute` request with no
+command text at all gets the generic prompt without a remember option.
+
+A remembered `other` grant still covers `other` requests that carry no `rawInput.command`, such
+as an MCP tool call. A title alone does not make an `other` request a command. For such a call the
+title is a label, like an MCP tool name or "Delete everything", and treating it as a command line
+would send every unclassified tool call through the shell classifier. So an agent that puts a
+command only in the title of a kind-less request still gets the generic prompt, which an `other`
+grant can answer. Kinds the agent did classify (`read`, `edit`, `search`, `fetch`, and so on) keep
+their own handling even when their input has a `command` field.
+
+Copse answers with the agent's `allow_always` option only for a remembered grant or a ticked
+remember box. A one-shot approval, including every shell-gate approval, selects `allow_once`. An
+agent that offers no `allow_once` gets `cancelled`, not `allow_always`, because the agent would
+otherwise remember an answer the user gave once and stop asking Copse. Agent managed thread mode
+shows the agent's own request without Copse's shell classifier or remembered grants. Only its
+`allow_always` rule applies there: the dialog's box selects the agent's own option.
+
 ## ACP MCP mediation
 
 The Codex ACP preset allows the macOS `com.apple.trustd.agent` service for TLS
@@ -465,7 +502,7 @@ reads the original command.
   missing curated adapter is installed only after an approval that names the host and the pinned
   `package@version`. Remembered ACP tool-kind approvals are scoped to the configured SSH host;
   an approval on one host never authorizes the same agent on another. No host remembers an
-  `execute` approval.
+  approval for a request that runs a command.
 - **Native `run_shell`, `run_background` and todo-verification commands** use the actual
   execution target to determine containment. `commandRunsSandboxed` rejects a local sandbox
   claim when `spawnRunsOnSshTarget` resolves remote execution. The unsandboxed platform policy
