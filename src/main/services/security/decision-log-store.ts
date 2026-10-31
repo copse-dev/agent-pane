@@ -67,9 +67,9 @@ export type RecordDecisionInput = Omit<DecisionInput, 'threadId'> & {
   /** Overrides the active-run thread; omit to attribute to the current run. */
   threadId?: string
   /**
-   * The thread's project. Omit only inside the thread's own turn: the project
-   * is then the turn's. Never the window's active project, which can be a
-   * different one.
+   * The thread's project. Omit only inside a turn: the project is then the
+   * turn's (for an explicit `threadId`, only that thread's own turn). Never the
+   * window's active project, which can be a different one.
    */
   projectId?: string
   /** Optional turn correlation (hook recording context). */
@@ -110,10 +110,16 @@ export function persistRecordedDecision(decision: RecordedDecision): void {
   ).catch(() => undefined)
 }
 
-/** The running turn's project, when that turn is `threadId`'s own. */
-function turnProjectFor(threadId: string | null): string | undefined {
+/**
+ * The running turn's project for a decision on `threadId`. A thread the caller
+ * named borrows it only from its own turn. A decision that names no thread
+ * belongs to the running turn whatever thread the run identity reports: an
+ * isolated worker runs its own turn inside its parent's run, in the same project.
+ */
+function turnProjectFor(threadId: string | null, threadNamed: boolean): string | undefined {
   const context = currentThreadExecutionContext()
-  return context !== null && context.threadId === threadId ? context.projectId : undefined
+  if (context === null) return undefined
+  return !threadNamed || context.threadId === threadId ? context.projectId : undefined
 }
 
 /**
@@ -123,7 +129,7 @@ function turnProjectFor(threadId: string | null): string | undefined {
 export function recordDecision(input: RecordDecisionInput): void {
   try {
     const threadId = input.threadId ?? getActiveRunThread()
-    const projectId = input.projectId ?? turnProjectFor(threadId)
+    const projectId = input.projectId ?? turnProjectFor(threadId, input.threadId !== undefined)
     if (!projectId || !threadId) {
       console.warn('[decision-log] dropping decision — no active project/thread', {
         kind: input.kind,

@@ -328,6 +328,44 @@ describe('decision-log-store', () => {
     assert.deepEqual(await readDecisionLog('window-project'), [])
   })
 
+  it("records an isolated worker's unattributed decision on its run's thread and project", async () => {
+    const previous = storageGet('activeProjectId')
+    storageSet('activeProjectId', 'window-project')
+    try {
+      // The parent run's identity stays on the dispatching thread while the
+      // worker executes its own turn (isolated-worker-checkout.ts), in the
+      // parent's project.
+      await runWithActiveRunIdentity('parent-thread', () =>
+        threadExecutionContextStorage.run(
+          {
+            projectId: 'project-a',
+            threadId: 'worker-thread',
+            projectRoot: root,
+            root,
+            checkoutMode: 'worktree',
+            branch: null,
+          },
+          async () => {
+            recordDecision({
+              kind: 'hook',
+              actor: 'hook',
+              verdict: 'blocked',
+              subject: 'run_shell',
+            })
+          },
+        ),
+      )
+    } finally {
+      storageSet('activeProjectId', previous)
+    }
+    const events = await readDecisionLog('project-a')
+    assert.deepEqual(
+      events.map((event) => [event.threadId, event.subject]),
+      [['parent-thread', 'run_shell']],
+    )
+    assert.deepEqual(await readDecisionLog('window-project'), [])
+  })
+
   it('exports a manifest + events bundle', async () => {
     recordDecision({
       projectId: PROJECT,
