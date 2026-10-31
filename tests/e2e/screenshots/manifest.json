@@ -73,6 +73,10 @@
       "sha256": "2faefcfa134d8e57fdc697d68881df8e7575e71a7defc2446daeb493b298405c",
       "bytes": 27544
     },
+    "acp-execute-no-remember.png": {
+      "sha256": "f54a8c93ffa7167fe95b9cffe6d4e0023f9d4a855291ec8e5dcc0c5e060234ee",
+      "bytes": 24307
+    },
     "acp-gpt-model-labels.png": {
       "sha256": "c1c8aacbe3ef517e53ec2c7bc22ac2eabdaba8b6d864378be70efd8d79d4f21e",
       "bytes": 43240
