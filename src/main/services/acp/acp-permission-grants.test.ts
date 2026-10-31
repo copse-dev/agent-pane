@@ -20,18 +20,18 @@ describe('acp-permission-grants', () => {
   })
 
   it('remembers a grant scoped to the (agent, kind) pair', async () => {
-    await rememberAcpPermission('claude-agent-acp', 'execute')
-    assert.equal(isAcpPermissionRemembered('claude-agent-acp', 'execute'), true)
+    await rememberAcpPermission('claude-agent-acp', 'edit')
+    assert.equal(isAcpPermissionRemembered('claude-agent-acp', 'edit'), true)
     // Neither a different kind nor a different agent inherits the grant.
-    assert.equal(isAcpPermissionRemembered('claude-agent-acp', 'edit'), false)
-    assert.equal(isAcpPermissionRemembered('gemini-acp', 'execute'), false)
+    assert.equal(isAcpPermissionRemembered('claude-agent-acp', 'fetch'), false)
+    assert.equal(isAcpPermissionRemembered('gemini-acp', 'edit'), false)
   })
 
   it('keeps local grants and the grants of each SSH host apart', async () => {
     const dev: AcpGrantLocation = { kind: 'remote', hostId: 'dev' }
     const prod: AcpGrantLocation = { kind: 'remote', hostId: 'prod' }
-    await rememberAcpPermission('a', 'execute')
-    assert.equal(isAcpPermissionRemembered('a', 'execute', dev), false)
+    await rememberAcpPermission('a', 'fetch')
+    assert.equal(isAcpPermissionRemembered('a', 'fetch', dev), false)
 
     await rememberAcpPermission('b', 'edit', dev)
     assert.equal(isAcpPermissionRemembered('b', 'edit', dev), true)
@@ -39,7 +39,7 @@ describe('acp-permission-grants', () => {
     assert.equal(isAcpPermissionRemembered('b', 'edit'), false)
     // Local keys keep their original form, so grants stored before this change hold.
     assert.deepEqual([...expectStringArray(storageGet(GRANTS_KEY))].sort(), [
-      'a:execute',
+      'a:fetch',
       'b@remote/dev:edit',
     ])
   })
@@ -52,11 +52,28 @@ describe('acp-permission-grants', () => {
   it('concurrent grants do not drop each other', async () => {
     await Promise.all([
       rememberAcpPermission('a', 'read'),
-      rememberAcpPermission('a', 'execute'),
+      rememberAcpPermission('a', 'edit'),
       rememberAcpPermission('b', 'read'),
     ])
     const stored = expectStringArray(storageGet(GRANTS_KEY))
-    assert.deepEqual([...stored].sort(), ['a:execute', 'a:read', 'b:read'])
+    assert.deepEqual([...stored].sort(), ['a:edit', 'a:read', 'b:read'])
+  })
+
+  it('never stores an execute grant', async () => {
+    await rememberAcpPermission('a', 'execute')
+    await rememberAcpPermission('a', 'execute', { kind: 'remote', hostId: 'dev' })
+    assert.deepEqual(storageGet(GRANTS_KEY), [])
+  })
+
+  it('ignores execute grants stored by earlier versions and prunes them on write', async () => {
+    const dev: AcpGrantLocation = { kind: 'remote', hostId: 'dev' }
+    storageSet(GRANTS_KEY, ['a:execute', 'a@remote/dev:execute', 'a:read'])
+    assert.equal(isAcpPermissionRemembered('a', 'execute'), false)
+    assert.equal(isAcpPermissionRemembered('a', 'execute', dev), false)
+    assert.equal(isAcpPermissionRemembered('a', 'read'), true, 'other kinds still hold')
+
+    await rememberAcpPermission('b', 'edit')
+    assert.deepEqual(storageGet(GRANTS_KEY), ['a:read', 'b:edit'])
   })
 
   it('is idempotent under concurrency', async () => {

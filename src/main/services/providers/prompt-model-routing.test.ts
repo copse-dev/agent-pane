@@ -36,9 +36,9 @@ function assessmentRoute(model: string, answer: string | Error): SmallTasksRoute
 }
 
 describe('primary prompt model routing', () => {
-  beforeEach(() => {
-    setSetting('classifierProviders', { version: 1, profiles: [] })
-    deleteSetting('backgroundClassifier')
+  beforeEach(async () => {
+    await setSetting('classifierProviders', { version: 1, profiles: [] })
+    await deleteSetting('backgroundClassifier')
   })
   afterEach(() => {
     mock.restoreAll()

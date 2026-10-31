@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path'
 import type { StreamChunk } from '@shared/types'
 import { runAcpAgentFromSettings } from './acp-agent-service.ts'
 import { disposeAllAcpSessions } from './acp-session-pool.ts'
-import { setSetting } from '../storage/settings.test-shim.ts'
+import { setSetting } from '../storage/settings.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
 
@@ -22,7 +22,7 @@ let root = ''
 afterEach(async () => {
   await disposeAllAcpSessions()
   setWorkspaceRootForTest(null)
-  setSetting('registeredAcpAgents', [])
+  await setSetting('registeredAcpAgents', [])
   if (root) await rm(root, { recursive: true, force: true })
 })
 
@@ -31,7 +31,7 @@ describe('an ACP thread turn on a model the agent no longer offers', () => {
     root = await mkdtemp(join(tmpdir(), 'copse-acp-stale-model-'))
     execFileSync('git', ['init', '--quiet', root])
     setWorkspaceRootForTest(root)
-    setSetting('registeredAcpAgents', [
+    await setSetting('registeredAcpAgents', [
       {
         id: 'stale-model-fixture',
         title: 'Fixture agent',

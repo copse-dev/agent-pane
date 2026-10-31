@@ -99,6 +99,11 @@ import type {
   DeclaredMcpServer,
 } from '@shared/types/mcp.ts'
 import type {
+  McpUserServerInput,
+  McpUserServerList,
+  McpUserServerSaveResult,
+} from '@shared/types/mcp-user-servers.ts'
+import type {
   ToolPermissionCatalog,
   ToolPermissionReset,
   ToolPermissionUpdate,
@@ -620,6 +625,17 @@ export interface ApiClient {
     cancelSignIn: (name: string) => Promise<void>
     /** Forget the stored sign-in for a remote server and reconnect it. */
     signOut: (name: string) => Promise<McpServerStatus[]>
+    /** Servers in Copse's own `mcp.json`, the config Settings edits. Secret values are withheld. */
+    listUserServers: () => Promise<McpUserServerList>
+    /**
+     * Add a server to Copse's `mcp.json`, or replace `previousName`'s entry, then
+     * reload. A rejected input resolves `{ ok: false }` naming the field; nothing is written.
+     */
+    saveUserServer: (
+      input: McpUserServerInput,
+      previousName?: string,
+    ) => Promise<McpUserServerSaveResult>
+    removeUserServer: (name: string) => Promise<McpUserServerSaveResult>
     onStatusChanged: (handler: (statuses: McpServerStatus[]) => void) => () => void
   }
   toolPermissions: {

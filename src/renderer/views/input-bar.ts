@@ -436,6 +436,20 @@ export function mountInputBar(
     // If preflight needs attention, the complete prompt stays ready in the composer.
     await submit()
   })
+  // Experimental and off by default (Settings › Experimental): container, ACP,
+  // remote, and plugin-hosted executors fail closed while a plan is active, and
+  // completion is agent-reported rather than host-verified, so the button stays
+  // hidden until the user opts in.
+  planControl.button.hidden = true
+  let planModeEnabled = false
+  const refreshPlanModeSetting = async (): Promise<void> => {
+    const enabled = await api.settings.get('planModeEnabled').catch(() => undefined)
+    const next = enabled === true
+    if (next === planModeEnabled) return
+    planModeEnabled = next
+    planControl.button.hidden = !planModeEnabled
+  }
+  void refreshPlanModeSetting()
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
   const executionMode = mountAgentExecutionModeControl(
@@ -3040,6 +3054,7 @@ export function mountInputBar(
     }),
     store.on('settings_changed', () => {
       void refreshContainerRunsSetting()
+      void refreshPlanModeSetting()
       modelPicker.refresh()
       void refreshImageCompatibilityWarning()
       // An added/edited provider (e.g. a freshly fetched HF list) changes pricing.

@@ -1,5 +1,8 @@
 # Native ChatGPT plan prototype
 
+> **Archived task brief.** Moved from `docs/plans/` on 2026-10-30. Delivered in
+> [#3440](https://github.com/copse-dev/agent-pane/pull/3440).
+
 Original base: `14b02041fe6760d71308653ba2a0c8c0a6880b51`.
 PR rebased onto `cf5ba42734562bd8861675d179811a5767568adf`.
 

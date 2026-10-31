@@ -146,6 +146,16 @@ const INVARIANTS: Invariant[] = [
     check: () => expectPlan(['package.json'], 'full'),
   },
   {
+    // pnpm resolves from these, so a dependency-only PR (an `overrides` pin and
+    // its regenerated lockfile) touches nothing else and must not skip e2e.
+    name: 'broad change (pnpm lockfile, workspace, .npmrc) forces full',
+    check: () =>
+      expectPlan(['pnpm-lock.yaml'], 'full') ??
+      expectPlan(['pnpm-workspace.yaml'], 'full') ??
+      expectPlan(['.npmrc'], 'full') ??
+      expectConfidence(['pnpm-lock.yaml', 'pnpm-workspace.yaml'], 'broad'),
+  },
+  {
     name: 'shared stylesheet (base, tokens) forces full',
     check: () =>
       expectPlan(['src/renderer/styles/global/base.css'], 'full') ??

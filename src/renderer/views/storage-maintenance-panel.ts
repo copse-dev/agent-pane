@@ -36,6 +36,10 @@ export function createStorageMaintenancePanel(api: ApiClient): {
       <details><summary>Cached images</summary><div id="storage-container-images"></div></details>
     </fieldset>
     <p id="storage-maintenance-status" class="field-hint" role="status" aria-live="polite"></p>`
+  // Settings search moves fieldsets out of this mount into its results list.
+  // Keep queries scoped to the fieldsets, which move with their controls.
+  const savedData = qsRequired(element, '#storage-saved-data')
+  const containers = qsRequired(element, '#storage-containers')
   const status = qsRequired(element, '#storage-maintenance-status')
   const enabled = qsRequired<HTMLInputElement>(element, '#storage-expiry-enabled')
   const days = qsRequired<HTMLSelectElement>(element, '#storage-expiry-days')
@@ -47,12 +51,12 @@ export function createStorageMaintenancePanel(api: ApiClient): {
     days.disabled = working || !state
     for (const area of ['runs', 'builds'] as const) {
       const summary = state?.areas.find((entry) => entry.area === area)
-      qsRequired<HTMLButtonElement>(element, `#storage-${area}-clean`).disabled =
+      qsRequired<HTMLButtonElement>(savedData, `#storage-${area}-clean`).disabled =
         working || !summary || summary.busy || summary.entries === 0
     }
     for (const action of CONTAINER_STORAGE_ACTIONS) {
       const container = state?.containers
-      qsRequired<HTMLButtonElement>(element, `#storage-${action}-clean`).disabled =
+      qsRequired<HTMLButtonElement>(containers, `#storage-${action}-clean`).disabled =
         working ||
         !container?.available ||
         container.busy ||
@@ -65,13 +69,13 @@ export function createStorageMaintenancePanel(api: ApiClient): {
     const container = state?.containers
     if (!container) return
     // Unsupported platforms and Macs without the container CLI have nothing to manage.
-    qsRequired(element, '#storage-containers').hidden = !container.available && !container.error
-    qsRequired(element, '#storage-containers-status').textContent = container.error
+    containers.hidden = !container.available && !container.error
+    qsRequired(containers, '#storage-containers-status').textContent = container.error
       ? `Inventory unavailable: ${container.error}`
       : container.busy
         ? 'Containers or builds are in use. Cleanup is paused.'
         : 'Apple container storage is ready.'
-    const breakdown = qsRequired(element, '#storage-container-breakdown')
+    const breakdown = qsRequired(containers, '#storage-container-breakdown')
     breakdown.replaceChildren()
     const rows = [
       ['Total allocated', container.totalBytes],
@@ -98,7 +102,7 @@ export function createStorageMaintenancePanel(api: ApiClient): {
         el('dt', {}, label),
         el('dd', {}, bytes === null ? 'Not reported' : formatByteSize(bytes)),
       )
-    const images = qsRequired(element, '#storage-container-images')
+    const images = qsRequired(containers, '#storage-container-images')
     images.replaceChildren()
     for (const image of container.images)
       images.append(
@@ -123,7 +127,7 @@ export function createStorageMaintenancePanel(api: ApiClient): {
       }
       days.value = String(next.retention.days)
       for (const summary of next.areas)
-        qsRequired(element, `#storage-${summary.area}-size`).textContent = summary.busy
+        qsRequired(savedData, `#storage-${summary.area}-size`).textContent = summary.busy
           ? 'In use'
           : `${formatByteSize(summary.bytes)} · ${String(summary.entries)} item${summary.entries === 1 ? '' : 's'}`
     } catch (error) {
