@@ -370,6 +370,7 @@ import {
   remoteAgentGroupLabel,
   removeProject,
   removeQueuedMessage,
+  replaceAcpContentBlocks,
   requestArtefactShow,
   requireActiveThreadOwner,
   resetUiScale,
@@ -454,7 +455,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-6FQJTJ4N.js";
+} from "./chunk-FYEDBEAN.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -14573,79 +14574,6 @@ var init_composer_editor = __esm({
   }
 });
 
-// src/shared/tools/tool-runs.ts
-function regularToolCalls(msg) {
-  return (msg.toolCalls ?? []).filter((tc) => !tc.subagent);
-}
-function hasText(value) {
-  return trimmed(value) !== null;
-}
-function trimmed(value) {
-  const text = (value ?? "").trim();
-  return text.length > 0 ? text : null;
-}
-function isAnchorable(msg) {
-  return msg !== void 0 && msg.role === "assistant" && regularToolCalls(msg).length > 0;
-}
-function isAbsorbable(msg) {
-  if (!msg || msg.role !== "assistant") return false;
-  if (hasText(msg.content)) return false;
-  return regularToolCalls(msg).length > 0 || hasText(msg.reasoning) || Boolean(msg.reasoningBlocks?.length);
-}
-function stepOf(msg) {
-  const reasoning = msg.reasoning;
-  const reasoningBlocks = msg.reasoningBlocks;
-  const summary = trimmed(msg.toolSummary);
-  return {
-    messageId: msg.id,
-    toolCalls: regularToolCalls(msg),
-    ...reasoning !== void 0 && hasText(reasoning) ? { reasoning } : {},
-    ...reasoningBlocks?.length ? { reasoningBlocks } : {},
-    ...summary !== null ? { summary } : {}
-  };
-}
-function deriveToolRuns(messages) {
-  const runs = [];
-  let i2 = 0;
-  while (i2 < messages.length) {
-    const anchor = messages[i2];
-    i2 += 1;
-    if (!isAnchorable(anchor) || !anchor) continue;
-    const steps = [stepOf(anchor)];
-    while (isAbsorbable(messages[i2])) {
-      const member = messages[i2];
-      if (!member) break;
-      steps.push(stepOf(member));
-      i2 += 1;
-    }
-    const summary = trimmed(anchor.runSummary);
-    runs.push({
-      anchorId: anchor.id,
-      memberIds: steps.map((step) => step.messageId),
-      steps,
-      toolCalls: steps.flatMap((step) => step.toolCalls),
-      ...summary !== null ? { summary } : {}
-    });
-  }
-  return runs;
-}
-function toolRunForMessage(messages, messageId) {
-  const index = messages.findIndex((m2) => m2.id === messageId);
-  if (index < 0) return null;
-  let start = index;
-  while (start > 0 && isAbsorbable(messages[start])) start -= 1;
-  let end = index + 1;
-  while (end < messages.length && isAbsorbable(messages[end])) end += 1;
-  for (const run4 of deriveToolRuns(messages.slice(start, end))) {
-    if (run4.memberIds.includes(messageId)) return run4;
-  }
-  return null;
-}
-var init_tool_runs = __esm({
-  "src/shared/tools/tool-runs.ts"() {
-  }
-});
-
 // src/renderer/views/thread-roadmap-origin.ts
 function roadmapOriginIcon() {
   return outlineIcon(
@@ -17121,6 +17049,79 @@ var init_render_signature = __esm({
   }
 });
 
+// src/shared/tools/tool-runs.ts
+function regularToolCalls(msg) {
+  return (msg.toolCalls ?? []).filter((tc) => !tc.subagent);
+}
+function hasText(value) {
+  return trimmed(value) !== null;
+}
+function trimmed(value) {
+  const text = (value ?? "").trim();
+  return text.length > 0 ? text : null;
+}
+function isAnchorable(msg) {
+  return msg !== void 0 && msg.role === "assistant" && regularToolCalls(msg).length > 0;
+}
+function isAbsorbable(msg) {
+  if (!msg || msg.role !== "assistant") return false;
+  if (hasText(msg.content)) return false;
+  return regularToolCalls(msg).length > 0 || hasText(msg.reasoning) || Boolean(msg.reasoningBlocks?.length);
+}
+function stepOf(msg) {
+  const reasoning = msg.reasoning;
+  const reasoningBlocks = msg.reasoningBlocks;
+  const summary = trimmed(msg.toolSummary);
+  return {
+    messageId: msg.id,
+    toolCalls: regularToolCalls(msg),
+    ...reasoning !== void 0 && hasText(reasoning) ? { reasoning } : {},
+    ...reasoningBlocks?.length ? { reasoningBlocks } : {},
+    ...summary !== null ? { summary } : {}
+  };
+}
+function deriveToolRuns(messages) {
+  const runs = [];
+  let i2 = 0;
+  while (i2 < messages.length) {
+    const anchor = messages[i2];
+    i2 += 1;
+    if (!isAnchorable(anchor) || !anchor) continue;
+    const steps = [stepOf(anchor)];
+    while (isAbsorbable(messages[i2])) {
+      const member = messages[i2];
+      if (!member) break;
+      steps.push(stepOf(member));
+      i2 += 1;
+    }
+    const summary = trimmed(anchor.runSummary);
+    runs.push({
+      anchorId: anchor.id,
+      memberIds: steps.map((step) => step.messageId),
+      steps,
+      toolCalls: steps.flatMap((step) => step.toolCalls),
+      ...summary !== null ? { summary } : {}
+    });
+  }
+  return runs;
+}
+function toolRunForMessage(messages, messageId) {
+  const index = messages.findIndex((m2) => m2.id === messageId);
+  if (index < 0) return null;
+  let start = index;
+  while (start > 0 && isAbsorbable(messages[start])) start -= 1;
+  let end = index + 1;
+  while (end < messages.length && isAbsorbable(messages[end])) end += 1;
+  for (const run4 of deriveToolRuns(messages.slice(start, end))) {
+    if (run4.memberIds.includes(messageId)) return run4;
+  }
+  return null;
+}
+var init_tool_runs = __esm({
+  "src/shared/tools/tool-runs.ts"() {
+  }
+});
+
 // src/renderer/views/disclosure-model.ts
 function createDisclosureModel(host, timing, clock = systemClock) {
   const entries = /* @__PURE__ */ new Map();
@@ -17260,6 +17261,444 @@ var init_disclosure_model = __esm({
         };
       }
     };
+  }
+});
+
+// src/renderer/views/tool-card-refresh.ts
+function markUserInterruptedCalls(thread) {
+  if (!thread || markedTranscripts.has(thread.messages)) return;
+  markedTranscripts.add(thread.messages);
+  let turnCalls = [];
+  for (const [index, message2] of thread.messages.entries()) {
+    if (message2.role !== "assistant") turnCalls = [];
+    else turnCalls.push(...message2.toolCalls);
+    if (!message2.turnOutcome) continue;
+    const next = thread.messages[index + 1];
+    const userCancelled = message2.turnOutcome.status === "cancelled" && message2.turnOutcome.source === "user" && !(next?.role === "user" && next.origin !== void 0);
+    const cause = userCancelled ? interruptionCause(message2.turnOutcome, next) : null;
+    for (const call of turnCalls) {
+      if (cause) userInterruptedCalls.set(call, cause);
+      else userInterruptedCalls.delete(call);
+    }
+    turnCalls = [];
+  }
+}
+function userInterruption(call) {
+  return isHostInterruptedToolCall(call) ? userInterruptedCalls.get(call) : void 0;
+}
+function cardStatus2(toolCalls) {
+  if (toolCalls.some((call) => call.status === "running")) return "running";
+  if (toolCalls.some((call) => call.status === "error" && userInterruption(call) === void 0)) {
+    return "error";
+  }
+  if (toolCalls.some((call) => userInterruption(call) !== void 0)) return "interrupted";
+  return "done";
+}
+function toolCardKey(item) {
+  if (item.type === "rollup") return "r:activity";
+  if (item.type === "step") return `s:${item.key}`;
+  if (item.type === "group") return `g:${item.key}`;
+  return `t:${item.toolCall.id}`;
+}
+function toolCallSignature(call) {
+  return renderSignature({ call, interruption: userInterruption(call) ?? null });
+}
+function toolCardSignature(item, extra) {
+  const calls = item.type === "individual" ? [item.toolCall] : item.toolCalls;
+  const base2 = renderSignature({
+    item,
+    interruptions: calls.map((call) => userInterruption(call) ?? null)
+  });
+  return extra === void 0 ? base2 : `${base2}|${extra}`;
+}
+function shouldNestReasoningInTools(toolCalls) {
+  return toolCalls.some((tc) => !tc.subagent);
+}
+function multiStepRunFor(thread, msgId) {
+  if (!thread) return void 0;
+  const run4 = toolRunForMessage(thread.messages, msgId);
+  return run4 && run4.steps.length > 1 ? run4 : void 0;
+}
+function messageToolCardOpts(msg) {
+  return {
+    ...msg.commandSummary !== void 0 ? { commandSummary: msg.commandSummary } : {},
+    ...msg.toolSummary !== void 0 ? { toolSummary: msg.toolSummary } : {},
+    ...msg.reasoning !== void 0 ? { reasoning: msg.reasoning } : {},
+    ...msg.reasoningBlocks !== void 0 ? { reasoningBlocks: msg.reasoningBlocks } : {}
+  };
+}
+function liveStepMessageId(thread) {
+  if (!thread || thread.status !== "running") return null;
+  const last = thread.messages[thread.messages.length - 1];
+  if (!last || last.content.trim()) return null;
+  return last.id;
+}
+function isReasoningDisclosureLive(thread, msg) {
+  if (!thread || thread.status !== "running") return false;
+  if (msg.content.trim()) return false;
+  return thread.messages[thread.messages.length - 1]?.id === msg.id;
+}
+function createToolCardRefresher(host) {
+  const { store: store2, api: api2, list, conciseEnabledFor } = host;
+  const {
+    createToolCard: createToolCard2,
+    reconcileToolCard: reconcileToolCard2,
+    ensureToolCardBodyRendered: ensureToolCardBodyRendered2,
+    syncToolResultContent: syncToolResultContent2,
+    syncToolRunMemberVisibility: syncToolRunMemberVisibility2,
+    syncNestedRollupReasoning: syncNestedRollupReasoning2,
+    syncRunStepReasoning: syncRunStepReasoning2,
+    syncReasoningEl: syncReasoningEl2
+  } = host.dom;
+  const liveRollupMessages = /* @__PURE__ */ new Set();
+  const disclosureElements = /* @__PURE__ */ new Map();
+  const wiredDisclosureSummaries = /* @__PURE__ */ new WeakSet();
+  const disclosures = createDisclosureModel(
+    {
+      canReveal: () => host.isPinnedToBottom(),
+      canCompact: (threadId) => threadId !== store2.getState().activeThreadId || host.isPinnedToBottom(),
+      reveal(key) {
+        const details = disclosureElements.get(key);
+        if (!details?.isConnected) return false;
+        details.open = true;
+        ensureToolCardBodyRendered2(details);
+        host.scrollToBottom();
+        return true;
+      },
+      collapse(key) {
+        const details = disclosureElements.get(key);
+        if (details?.isConnected) details.open = false;
+      },
+      compacted(threadId) {
+        if (threadId === store2.getState().activeThreadId) host.scrollToBottom();
+      }
+    },
+    {
+      revealDelayMs: TOOL_AUTO_REVEAL_DELAY_MS,
+      minDwellMs: TOOL_AUTO_REVEAL_MIN_DWELL_MS,
+      compactDelayMs: TOOL_AUTO_COMPACT_DELAY_MS
+    }
+  );
+  function wireDisclosurePreference(details, threadId, key) {
+    const summary = details.querySelector(":scope > summary");
+    if (!summary || wiredDisclosureSummaries.has(summary)) return;
+    wiredDisclosureSummaries.add(summary);
+    summary.addEventListener("click", (event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest("button")) return;
+      event.preventDefault();
+      details.open = !details.open;
+      disclosures.choose(threadId, key, details.open);
+      details.dataset["userToggled"] = "1";
+      if (details.open) ensureToolCardBodyRendered2(details);
+    });
+  }
+  function bindDisclosure(details, threadId, key) {
+    details.dataset["disclosureKey"] = key;
+    disclosureElements.set(key, details);
+    wireDisclosurePreference(details, threadId, key);
+  }
+  function registerReasoningDisclosures(msgEl) {
+    const threadId = getActiveThread(store2)?.id;
+    const fallbackMessageId = msgEl.dataset["messageId"];
+    if (!threadId || !fallbackMessageId) return;
+    msgEl.querySelectorAll(".message-reasoning").forEach((details) => {
+      const step = details.closest(".tool-card-step[data-step-message-id]");
+      const messageId = step?.dataset["stepMessageId"] ?? fallbackMessageId;
+      const key = `${threadId}:${messageId}:reasoning`;
+      bindDisclosure(details, threadId, key);
+      const preference = disclosures.userChoice(key);
+      if (preference !== void 0) {
+        details.dataset["userToggled"] = "1";
+        details.open = preference;
+      }
+    });
+  }
+  function applyRollupSummaries(item, opts) {
+    const { commandSummary, toolSummary } = opts;
+    if (item.type === "rollup") {
+      if (toolSummary?.trim()) {
+        const failed = item.toolCalls.filter((tc) => tc.status === "error").length;
+        item.label = failed > 0 ? `${toolSummary.trim()} \xB7 ${String(failed)} failed` : toolSummary.trim();
+      }
+      for (const child of item.children) applyRollupSummaries(child, opts);
+      if (!toolSummary?.trim() && commandSummary && item.children.length === 1 && item.children[0]?.type === "group" && item.children[0].key === "shell") {
+        item.label = commandSummary;
+      }
+      if (toolSummary?.trim() && item.children.length === 1 && item.children[0]?.type === "group" && item.children[0].key === "shell") {
+        item.children[0].label = toolSummary.trim();
+      }
+      return;
+    }
+    if (item.type === "group" && item.key === "shell" && commandSummary) {
+      item.label = commandSummary;
+    }
+  }
+  function labelUserInterruptions(item) {
+    const calls = item.type === "individual" ? [item.toolCall] : item.toolCalls;
+    if (calls.some((call) => userInterruption(call) !== void 0)) {
+      const failed = calls.filter(
+        (call) => call.status === "error" && userInterruption(call) === void 0
+      ).length;
+      const base2 = item.label.replace(/ · \d+ failed$/, "");
+      item.label = `${base2}${failed ? ` \xB7 ${String(failed)} failed` : ""} \xB7 Interrupted`;
+    }
+    if (item.type === "rollup" || item.type === "step") {
+      for (const child of item.children) labelUserInterruptions(child);
+    }
+  }
+  function applyToolCardOpenState(card, item, threadId, messageId, autoRevealEligible) {
+    if (card.classList.contains("thread-proposal")) return;
+    const key = `${threadId}:${messageId}:${toolCardKey(item)}`;
+    const itemStatus2 = item.type === "individual" ? cardStatus2([item.toolCall]) : cardStatus2(item.toolCalls);
+    card.dataset["status"] = itemStatus2;
+    bindDisclosure(card, threadId, key);
+    const container = item.type === "rollup" || item.type === "step";
+    const subagentRunning = item.type === "individual" && item.toolCall.subagent?.status === "running";
+    card.open = disclosures.update(threadId, key, {
+      kind: container ? "container" : "tool",
+      status: subagentRunning ? "running" : itemStatus2,
+      autoRevealEligible
+    });
+    if (card.open) ensureToolCardBodyRendered2(card);
+    if (container) {
+      const nestedCards = card.querySelectorAll(
+        ":scope > .tool-rollup-body > .tool-card"
+      );
+      item.children.forEach((child, index) => {
+        const nested = nestedCards[index];
+        if (nested) {
+          applyToolCardOpenState(nested, child, threadId, messageId, false);
+        }
+      });
+      return;
+    }
+    if (item.type === "group") {
+      const calls = new Map(item.toolCalls.map((call) => [call.id, call]));
+      card.querySelectorAll(".tool-group-item[data-tool-id]").forEach((entry) => {
+        const id = entry.dataset["toolId"];
+        const call = id ? calls.get(id) : void 0;
+        if (!id || !call) return;
+        const itemKey = `${threadId}:${messageId}:t:${id}`;
+        bindDisclosure(entry, threadId, itemKey);
+        entry.open = disclosures.update(threadId, itemKey, {
+          kind: "entry",
+          status: cardStatus2([call]),
+          autoRevealEligible: false
+        });
+        if (entry.open) ensureToolCardBodyRendered2(entry);
+      });
+    }
+  }
+  function renderToolCards(msgEl, toolCalls, opts = {}) {
+    const threadId = store2.getState().activeThreadId ?? "";
+    const msgId = msgEl.dataset["messageId"] ?? "";
+    const messageKey = threadId && msgId ? `${threadId}:${msgId}` : null;
+    const activeThread = getActiveThread(store2);
+    markUserInterruptedCalls(activeThread);
+    if (messageKey && activeThread?.status === "running" && toolCalls.some((tool) => !tool.subagent)) {
+      liveRollupMessages.add(messageKey);
+    }
+    const run4 = opts.run && (opts.run.anchorId === msgId || list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null) ? opts.run : void 0;
+    const isRunMember = run4 !== void 0 && run4.anchorId !== msgId;
+    msgEl.classList.toggle("msg-tool-run-member", isRunMember);
+    const message2 = activeThread?.messages.find((m2) => m2.id === msgId);
+    if (message2) syncConciseMessageClasses(msgEl, message2, conciseEnabledFor(activeThread, msgId));
+    const nestReasoning = run4 === void 0 && (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) && shouldNestReasoningInTools(toolCalls);
+    const isInterrupted = (call) => userInterruption(call) !== void 0;
+    const items = run4 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [
+      ...buildToolRunDisplayItems(run4, { isInterrupted }),
+      ...buildSubagentDisplayItems(toolCalls)
+    ] : buildToolCallDisplayItems(toolCalls, {
+      isInterrupted,
+      ...nestReasoning || messageKey !== null && liveRollupMessages.has(messageKey) ? { forceRollup: true } : {}
+    });
+    if (!run4) for (const item of items) applyRollupSummaries(item, opts);
+    for (const item of items) labelUserInterruptions(item);
+    const existing = /* @__PURE__ */ new Map();
+    for (const node of msgEl.querySelectorAll(":scope > .tool-card")) {
+      const key = toolCardKeys.get(node);
+      if (key) existing.set(key, node);
+    }
+    const desired = [];
+    for (const item of items) {
+      const key = toolCardKey(item);
+      const sig = toolCardSignature(
+        item,
+        item.type === "individual" ? threadProposalCardSignature(item.toolCall, store2, threadId) : void 0
+      );
+      let card = existing.get(key) ?? null;
+      if (card) existing.delete(key);
+      if (card && toolCardSignatures.get(card) === sig) {
+      } else if (card && !card.classList.contains("thread-proposal") && !(item.type === "individual" && isThreadProposalCall(item.toolCall)) && !(item.type === "individual" && isReviewerInputCall(item.toolCall))) {
+        reconcileToolCard2(card, item, api2, threadId, store2);
+      } else {
+        card?.remove();
+        card = createToolCard2(item, api2, threadId, store2);
+        toolCardKeys.set(card, key);
+        toolCardSignatures.set(card, sig);
+      }
+      applyToolCardOpenState(card, item, threadId, msgId, true);
+      if (item.type === "rollup" && nestReasoning) {
+        syncNestedRollupReasoning2(
+          card,
+          msgEl,
+          opts.reasoning,
+          opts.reasoningBlocks,
+          opts.reasoningLive === true,
+          acpWorkspaceRoot(store2)
+        );
+      }
+      if (item.type === "rollup" && run4 && item.key === RUN_ROLLUP_KEY) {
+        syncRunStepReasoning2(card, run4, opts.liveStepId ?? null, acpWorkspaceRoot(store2));
+      }
+      desired.push(card);
+    }
+    existing.forEach((node) => {
+      node.remove();
+    });
+    if (run4) {
+      msgEl.querySelectorAll(".message-body > .message-reasoning").forEach((node) => {
+        node.remove();
+      });
+    } else if (!nestReasoning) {
+      msgEl.querySelectorAll(".tool-card-rollup .message-reasoning").forEach((node) => {
+        node.remove();
+      });
+    }
+    const firstToolIdx = Array.from(msgEl.children).findIndex(
+      (node) => node.classList.contains("tool-card")
+    );
+    const base2 = firstToolIdx === -1 ? msgEl.children.length : firstToolIdx;
+    for (let i2 = 0; i2 < desired.length; i2++) {
+      const node = desired[i2];
+      if (!node) continue;
+      if (msgEl.children[base2 + i2] !== node) {
+        msgEl.insertBefore(node, msgEl.children[base2 + i2] ?? null);
+      }
+    }
+    syncToolResultContent2(
+      msgEl,
+      run4 ? isRunMember ? [] : run4.toolCalls : toolCalls,
+      acpWorkspaceRoot(store2)
+    );
+    hydrateAcpResourceImages(msgEl, api2, store2);
+    registerReasoningDisclosures(msgEl);
+    syncToolRunMemberVisibility2(msgEl);
+  }
+  function renderRunAnchor(thread, run4) {
+    const anchor = thread?.messages.find((m2) => m2.id === run4.anchorId);
+    const anchorEl = list.querySelector(`[data-message-id="${run4.anchorId}"]`);
+    if (!anchor || !anchorEl) return;
+    renderToolCards(anchorEl, anchor.toolCalls, {
+      ...messageToolCardOpts(anchor),
+      run: run4,
+      liveStepId: liveStepMessageId(thread)
+    });
+  }
+  function releaseRunMembers(thread, run4) {
+    for (const id of run4.memberIds) {
+      if (id === run4.anchorId) continue;
+      const memberEl = list.querySelector(`[data-message-id="${id}"]`);
+      if (!memberEl?.querySelector(":scope > .tool-card-rollup")) continue;
+      const msg = thread?.messages.find((m2) => m2.id === id);
+      if (!msg) continue;
+      renderToolCards(memberEl, msg.toolCalls, {
+        ...messageToolCardOpts(msg),
+        run: run4,
+        liveStepId: liveStepMessageId(thread)
+      });
+    }
+  }
+  function syncRunLayout(thread, run4, changedId) {
+    if (changedId === run4.anchorId) releaseRunMembers(thread, run4);
+    else renderRunAnchor(thread, run4);
+  }
+  function resyncRunMembership(thread, msgId) {
+    const staleStep = list.querySelector(
+      `.tool-card-step[data-step-message-id="${msgId}"]`
+    );
+    const anchorEl = staleStep?.closest(".msg");
+    const anchorId = anchorEl?.dataset["messageId"];
+    if (!anchorEl || !anchorId || anchorId === msgId) return;
+    const anchorRun = multiStepRunFor(thread, anchorId);
+    if (anchorRun?.memberIds.includes(msgId) === true) return;
+    const anchor = thread?.messages.find((m2) => m2.id === anchorId);
+    if (!anchor) return;
+    renderToolCards(anchorEl, anchor.toolCalls, {
+      ...messageToolCardOpts(anchor),
+      ...anchorRun ? { run: anchorRun, liveStepId: liveStepMessageId(thread) } : {}
+    });
+    refreshToolCards(msgId);
+    const msg = thread?.messages.find((m2) => m2.id === msgId);
+    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
+    if (!msg || !msgEl || multiStepRunFor(thread, msgId)) return;
+    syncReasoningEl2(msgEl, msg, isReasoningDisclosureLive(thread, msg), acpWorkspaceRoot(store2));
+  }
+  function syncRunStepTrail(thread, run4) {
+    const runCard = list.querySelector(
+      `[data-message-id="${run4.anchorId}"] > .tool-card-rollup[data-rollup-key="${RUN_ROLLUP_KEY}"]`
+    );
+    const complete = runCard !== null && run4.steps.every(
+      (step) => runCard.querySelector(`.tool-card-step[data-step-message-id="${step.messageId}"]`)
+    );
+    if (!complete) {
+      renderRunAnchor(thread, run4);
+      return;
+    }
+    syncRunStepReasoning2(runCard, run4, liveStepMessageId(thread), acpWorkspaceRoot(store2));
+    hydrateAcpResourceImages(runCard, api2, store2);
+  }
+  function refreshToolCards(msgId) {
+    const thread = store2.getState().threads.find((t) => t.messages.some((m2) => m2.id === msgId));
+    const msg = thread?.messages.find((m2) => m2.id === msgId);
+    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
+    if (!msg || !msgEl) return;
+    host.keepReadingPosition(() => {
+      const run4 = multiStepRunFor(thread, msgId);
+      renderToolCards(msgEl, msg.toolCalls, {
+        ...messageToolCardOpts(msg),
+        reasoningLive: isReasoningDisclosureLive(thread, msg),
+        ...run4 ? { run: run4, liveStepId: liveStepMessageId(thread) } : {}
+      });
+      if (run4) syncRunLayout(thread, run4, msgId);
+      syncAcpResourceReferences(list, api2, store2);
+    });
+  }
+  return {
+    disclosures,
+    renderToolCards,
+    refreshToolCards,
+    registerReasoningDisclosures,
+    syncRunLayout,
+    resyncRunMembership,
+    syncRunStepTrail,
+    forgetDisclosureElements() {
+      disclosureElements.clear();
+    }
+  };
+}
+var userInterruptedCalls, markedTranscripts, toolCardKeys, toolCardSignatures, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS;
+var init_tool_card_refresh = __esm({
+  "src/renderer/views/tool-card-refresh.ts"() {
+    init_thread_helpers();
+    init_tool_display();
+    init_tool_runs();
+    init_tool_interruption();
+    init_reviewer_input();
+    init_acp_resource_previews();
+    init_concise_thread();
+    init_disclosure_model();
+    init_render_signature();
+    init_thread_proposal_tool_card();
+    init_turn_interruption();
+    userInterruptedCalls = /* @__PURE__ */ new WeakMap();
+    markedTranscripts = /* @__PURE__ */ new WeakSet();
+    toolCardKeys = /* @__PURE__ */ new WeakMap();
+    toolCardSignatures = /* @__PURE__ */ new WeakMap();
+    TOOL_AUTO_REVEAL_DELAY_MS = 300;
+    TOOL_AUTO_REVEAL_MIN_DWELL_MS = 1e3;
+    TOOL_AUTO_COMPACT_DELAY_MS = 750;
   }
 });
 
@@ -18122,35 +18561,6 @@ var init_selection_quote = __esm({
 });
 
 // src/renderer/views/conversation.ts
-function markUserInterruptedCalls(thread) {
-  if (!thread || markedTranscripts.has(thread.messages)) return;
-  markedTranscripts.add(thread.messages);
-  let turnCalls = [];
-  for (const [index, message2] of thread.messages.entries()) {
-    if (message2.role !== "assistant") turnCalls = [];
-    else turnCalls.push(...message2.toolCalls);
-    if (!message2.turnOutcome) continue;
-    const next = thread.messages[index + 1];
-    const userCancelled = message2.turnOutcome.status === "cancelled" && message2.turnOutcome.source === "user" && !(next?.role === "user" && next.origin !== void 0);
-    const cause = userCancelled ? interruptionCause(message2.turnOutcome, next) : null;
-    for (const call of turnCalls) {
-      if (cause) userInterruptedCalls.set(call, cause);
-      else userInterruptedCalls.delete(call);
-    }
-    turnCalls = [];
-  }
-}
-function userInterruption(call) {
-  return isHostInterruptedToolCall(call) ? userInterruptedCalls.get(call) : void 0;
-}
-function cardStatus2(toolCalls) {
-  if (toolCalls.some((call) => call.status === "running")) return "running";
-  if (toolCalls.some((call) => call.status === "error" && userInterruption(call) === void 0)) {
-    return "error";
-  }
-  if (toolCalls.some((call) => userInterruption(call) !== void 0)) return "interrupted";
-  return "done";
-}
 function interruptionLabel(call) {
   return interruptionNote(userInterruption(call) ?? "user");
 }
@@ -18600,9 +19010,18 @@ function timelineShowsText(session, text) {
   if (!target) return false;
   return session.messages.some((m2) => m2.content.replace(/\s+/g, " ").trim() === target);
 }
+function textAfterTimelinePrefix(session, result) {
+  for (const m2 of session.messages) {
+    const prefix = m2.content.trimEnd();
+    if (!prefix || !result.startsWith(prefix)) continue;
+    return result.slice(prefix.length).replace(/^\s*---\s*\n/, "").trim();
+  }
+  return null;
+}
 function parentResultText(tc, session, status) {
   if (status !== "done" || !tc.result) return "";
-  return timelineShowsText(session, tc.result) ? "" : tc.result;
+  if (timelineShowsText(session, tc.result)) return "";
+  return textAfterTimelinePrefix(session, tc.result) ?? tc.result;
 }
 function subagentCardStatus(tc, session) {
   if (tc.status === "running" || session.status === "running") return "running";
@@ -18857,23 +19276,6 @@ function createToolCard(item, api2, threadId, store2) {
   if (item.type === "step") return createStepToolCard(item, api2, threadId);
   if (item.type === "group") return createGroupToolCard(item);
   return createIndividualToolCard(item.toolCall, item.label, api2, threadId, store2);
-}
-function toolCardKey(item) {
-  if (item.type === "rollup") return "r:activity";
-  if (item.type === "step") return `s:${item.key}`;
-  if (item.type === "group") return `g:${item.key}`;
-  return `t:${item.toolCall.id}`;
-}
-function toolCallSignature(call) {
-  return renderSignature({ call, interruption: userInterruption(call) ?? null });
-}
-function toolCardSignature(item, extra) {
-  const calls = item.type === "individual" ? [item.toolCall] : item.toolCalls;
-  const base2 = renderSignature({
-    item,
-    interruptions: calls.map((call) => userInterruption(call) ?? null)
-  });
-  return extra === void 0 ? base2 : `${base2}|${extra}`;
 }
 function replaceDirectToolHeader(card, header) {
   const current = Array.from(card.children).find(
@@ -19469,28 +19871,6 @@ function syncAcpMessageContent(msgEl, blocks, workspaceRoot) {
 function hasReasoningContent(reasoning, blocks) {
   return Boolean(reasoning?.trim()) || Boolean(blocks?.length);
 }
-function shouldNestReasoningInTools(toolCalls) {
-  return toolCalls.some((tc) => !tc.subagent);
-}
-function multiStepRunFor(thread, msgId) {
-  if (!thread) return void 0;
-  const run4 = toolRunForMessage(thread.messages, msgId);
-  return run4 && run4.steps.length > 1 ? run4 : void 0;
-}
-function messageToolCardOpts(msg) {
-  return {
-    ...msg.commandSummary !== void 0 ? { commandSummary: msg.commandSummary } : {},
-    ...msg.toolSummary !== void 0 ? { toolSummary: msg.toolSummary } : {},
-    ...msg.reasoning !== void 0 ? { reasoning: msg.reasoning } : {},
-    ...msg.reasoningBlocks !== void 0 ? { reasoningBlocks: msg.reasoningBlocks } : {}
-  };
-}
-function liveStepMessageId(thread) {
-  if (!thread || thread.status !== "running") return null;
-  const last = thread.messages[thread.messages.length - 1];
-  if (!last || last.content.trim()) return null;
-  return last.id;
-}
 function reasoningDisclosureTitle(live) {
   return live ? "Reasoning\u2026" : "Reasoned";
 }
@@ -19505,11 +19885,6 @@ function setReasoningDisclosureTitle(details, live) {
     if (textEl && state?.live)
       renderReasoningText(textEl, state.text, false, state.blocks, state.workspaceRoot);
   }
-}
-function isReasoningDisclosureLive(thread, msg) {
-  if (!thread || thread.status !== "running") return false;
-  if (msg.content.trim()) return false;
-  return thread.messages[thread.messages.length - 1]?.id === msg.id;
 }
 function transcriptChip(attachment, api2) {
   const { kind, label } = attachment;
@@ -20141,70 +20516,36 @@ function mountConversation(root, store2, api2) {
   let stickyImagePrompt = null;
   let stickyImageFullHeight = 0;
   let backfillGeneration = 0;
-  const liveRollupMessages = /* @__PURE__ */ new Set();
-  const disclosureElements = /* @__PURE__ */ new Map();
-  const wiredDisclosureSummaries = /* @__PURE__ */ new WeakSet();
-  const disclosures = createDisclosureModel(
-    {
-      canReveal: () => pinnedToBottom,
-      canCompact: (threadId) => threadId !== store2.getState().activeThreadId || pinnedToBottom,
-      reveal(key) {
-        const details = disclosureElements.get(key);
-        if (!details?.isConnected) return false;
-        details.open = true;
-        ensureToolCardBodyRendered(details);
-        scrollToBottom();
-        return true;
-      },
-      collapse(key) {
-        const details = disclosureElements.get(key);
-        if (details?.isConnected) details.open = false;
-      },
-      compacted(threadId) {
-        if (threadId === store2.getState().activeThreadId) scrollToBottom();
-      }
+  const toolCards = createToolCardRefresher({
+    store: store2,
+    api: api2,
+    list,
+    dom: {
+      createToolCard,
+      reconcileToolCard,
+      ensureToolCardBodyRendered,
+      syncToolResultContent,
+      syncToolRunMemberVisibility,
+      syncNestedRollupReasoning,
+      syncRunStepReasoning,
+      syncReasoningEl
     },
-    {
-      revealDelayMs: TOOL_AUTO_REVEAL_DELAY_MS,
-      minDwellMs: TOOL_AUTO_REVEAL_MIN_DWELL_MS,
-      compactDelayMs: TOOL_AUTO_COMPACT_DELAY_MS
-    }
-  );
-  function wireDisclosurePreference(details, threadId, key) {
-    const summary = details.querySelector(":scope > summary");
-    if (!summary || wiredDisclosureSummaries.has(summary)) return;
-    wiredDisclosureSummaries.add(summary);
-    summary.addEventListener("click", (event) => {
-      const target = event.target;
-      if (target instanceof Element && target.closest("button")) return;
-      event.preventDefault();
-      details.open = !details.open;
-      disclosures.choose(threadId, key, details.open);
-      details.dataset["userToggled"] = "1";
-      if (details.open) ensureToolCardBodyRendered(details);
-    });
-  }
-  function bindDisclosure(details, threadId, key) {
-    details.dataset["disclosureKey"] = key;
-    disclosureElements.set(key, details);
-    wireDisclosurePreference(details, threadId, key);
-  }
-  function registerReasoningDisclosures(msgEl) {
-    const threadId = getActiveThread(store2)?.id;
-    const fallbackMessageId = msgEl.dataset["messageId"];
-    if (!threadId || !fallbackMessageId) return;
-    msgEl.querySelectorAll(".message-reasoning").forEach((details) => {
-      const step = details.closest(".tool-card-step[data-step-message-id]");
-      const messageId = step?.dataset["stepMessageId"] ?? fallbackMessageId;
-      const key = `${threadId}:${messageId}:reasoning`;
-      bindDisclosure(details, threadId, key);
-      const preference = disclosures.userChoice(key);
-      if (preference !== void 0) {
-        details.dataset["userToggled"] = "1";
-        details.open = preference;
-      }
-    });
-  }
+    isPinnedToBottom: () => pinnedToBottom,
+    scrollToBottom: () => {
+      scrollToBottom();
+    },
+    keepReadingPosition,
+    conciseEnabledFor
+  });
+  const {
+    disclosures,
+    renderToolCards,
+    refreshToolCards,
+    registerReasoningDisclosures,
+    syncRunLayout,
+    resyncRunMembership,
+    syncRunStepTrail
+  } = toolCards;
   function isNearBottom() {
     const distance = list.scrollHeight - list.scrollTop - list.clientHeight;
     return distance <= SCROLL_PIN_THRESHOLD_PX;
@@ -20411,241 +20752,6 @@ function mountConversation(root, store2, api2) {
     setScrollTopProgrammatically(list.scrollTop + delta);
     pinnedToBottom = false;
     updateScrollButton();
-  }
-  function applyRollupSummaries(item, opts) {
-    const { commandSummary, toolSummary } = opts;
-    if (item.type === "rollup") {
-      if (toolSummary?.trim()) {
-        const failed = item.toolCalls.filter((tc) => tc.status === "error").length;
-        item.label = failed > 0 ? `${toolSummary.trim()} \xB7 ${String(failed)} failed` : toolSummary.trim();
-      }
-      for (const child of item.children) applyRollupSummaries(child, opts);
-      if (!toolSummary?.trim() && commandSummary && item.children.length === 1 && item.children[0]?.type === "group" && item.children[0].key === "shell") {
-        item.label = commandSummary;
-      }
-      if (toolSummary?.trim() && item.children.length === 1 && item.children[0]?.type === "group" && item.children[0].key === "shell") {
-        item.children[0].label = toolSummary.trim();
-      }
-      return;
-    }
-    if (item.type === "group" && item.key === "shell" && commandSummary) {
-      item.label = commandSummary;
-    }
-  }
-  function labelUserInterruptions(item) {
-    const calls = item.type === "individual" ? [item.toolCall] : item.toolCalls;
-    if (calls.some((call) => userInterruption(call) !== void 0)) {
-      const failed = calls.filter(
-        (call) => call.status === "error" && userInterruption(call) === void 0
-      ).length;
-      const base2 = item.label.replace(/ · \d+ failed$/, "");
-      item.label = `${base2}${failed ? ` \xB7 ${String(failed)} failed` : ""} \xB7 Interrupted`;
-    }
-    if (item.type === "rollup" || item.type === "step") {
-      for (const child of item.children) labelUserInterruptions(child);
-    }
-  }
-  function applyToolCardOpenState(card, item, threadId, messageId, autoRevealEligible) {
-    if (card.classList.contains("thread-proposal")) return;
-    const key = `${threadId}:${messageId}:${toolCardKey(item)}`;
-    const itemStatus2 = item.type === "individual" ? cardStatus2([item.toolCall]) : cardStatus2(item.toolCalls);
-    card.dataset["status"] = itemStatus2;
-    bindDisclosure(card, threadId, key);
-    const container = item.type === "rollup" || item.type === "step";
-    const subagentRunning = item.type === "individual" && item.toolCall.subagent?.status === "running";
-    card.open = disclosures.update(threadId, key, {
-      kind: container ? "container" : "tool",
-      status: subagentRunning ? "running" : itemStatus2,
-      autoRevealEligible
-    });
-    if (card.open) ensureToolCardBodyRendered(card);
-    if (container) {
-      const nestedCards = card.querySelectorAll(
-        ":scope > .tool-rollup-body > .tool-card"
-      );
-      item.children.forEach((child, index) => {
-        const nested = nestedCards[index];
-        if (nested) {
-          applyToolCardOpenState(nested, child, threadId, messageId, false);
-        }
-      });
-      return;
-    }
-    if (item.type === "group") {
-      const calls = new Map(item.toolCalls.map((call) => [call.id, call]));
-      card.querySelectorAll(".tool-group-item[data-tool-id]").forEach((entry) => {
-        const id = entry.dataset["toolId"];
-        const call = id ? calls.get(id) : void 0;
-        if (!id || !call) return;
-        const itemKey = `${threadId}:${messageId}:t:${id}`;
-        bindDisclosure(entry, threadId, itemKey);
-        entry.open = disclosures.update(threadId, itemKey, {
-          kind: "entry",
-          status: cardStatus2([call]),
-          autoRevealEligible: false
-        });
-        if (entry.open) ensureToolCardBodyRendered(entry);
-      });
-    }
-  }
-  function renderToolCards(msgEl, toolCalls, opts = {}) {
-    const threadId = store2.getState().activeThreadId ?? "";
-    const msgId = msgEl.dataset["messageId"] ?? "";
-    const messageKey = threadId && msgId ? `${threadId}:${msgId}` : null;
-    const activeThread = getActiveThread(store2);
-    markUserInterruptedCalls(activeThread);
-    if (messageKey && activeThread?.status === "running" && toolCalls.some((tool) => !tool.subagent)) {
-      liveRollupMessages.add(messageKey);
-    }
-    const run4 = opts.run && (opts.run.anchorId === msgId || list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null) ? opts.run : void 0;
-    const isRunMember = run4 !== void 0 && run4.anchorId !== msgId;
-    msgEl.classList.toggle("msg-tool-run-member", isRunMember);
-    const message2 = activeThread?.messages.find((m2) => m2.id === msgId);
-    if (message2) syncConciseMessageClasses(msgEl, message2, conciseEnabledFor(activeThread, msgId));
-    const nestReasoning = run4 === void 0 && (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) && shouldNestReasoningInTools(toolCalls);
-    const isInterrupted = (call) => userInterruption(call) !== void 0;
-    const items = run4 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [
-      ...buildToolRunDisplayItems(run4, { isInterrupted }),
-      ...buildSubagentDisplayItems(toolCalls)
-    ] : buildToolCallDisplayItems(toolCalls, {
-      isInterrupted,
-      ...nestReasoning || messageKey !== null && liveRollupMessages.has(messageKey) ? { forceRollup: true } : {}
-    });
-    if (!run4) for (const item of items) applyRollupSummaries(item, opts);
-    for (const item of items) labelUserInterruptions(item);
-    const existing = /* @__PURE__ */ new Map();
-    for (const node of msgEl.querySelectorAll(":scope > .tool-card")) {
-      const key = toolCardKeys.get(node);
-      if (key) existing.set(key, node);
-    }
-    const desired = [];
-    for (const item of items) {
-      const key = toolCardKey(item);
-      const sig = toolCardSignature(
-        item,
-        item.type === "individual" ? threadProposalCardSignature(item.toolCall, store2, threadId) : void 0
-      );
-      let card = existing.get(key) ?? null;
-      if (card) existing.delete(key);
-      if (card && toolCardSignatures.get(card) === sig) {
-      } else if (card && !card.classList.contains("thread-proposal") && !(item.type === "individual" && isThreadProposalCall(item.toolCall)) && !(item.type === "individual" && isReviewerInputCall(item.toolCall))) {
-        reconcileToolCard(card, item, api2, threadId, store2);
-      } else {
-        card?.remove();
-        card = createToolCard(item, api2, threadId, store2);
-        toolCardKeys.set(card, key);
-        toolCardSignatures.set(card, sig);
-      }
-      applyToolCardOpenState(card, item, threadId, msgId, true);
-      if (item.type === "rollup" && nestReasoning) {
-        syncNestedRollupReasoning(
-          card,
-          msgEl,
-          opts.reasoning,
-          opts.reasoningBlocks,
-          opts.reasoningLive === true,
-          acpWorkspaceRoot(store2)
-        );
-      }
-      if (item.type === "rollup" && run4 && item.key === RUN_ROLLUP_KEY) {
-        syncRunStepReasoning(card, run4, opts.liveStepId ?? null, acpWorkspaceRoot(store2));
-      }
-      desired.push(card);
-    }
-    existing.forEach((node) => {
-      node.remove();
-    });
-    if (run4) {
-      msgEl.querySelectorAll(".message-body > .message-reasoning").forEach((node) => {
-        node.remove();
-      });
-    } else if (!nestReasoning) {
-      msgEl.querySelectorAll(".tool-card-rollup .message-reasoning").forEach((node) => {
-        node.remove();
-      });
-    }
-    const firstToolIdx = Array.from(msgEl.children).findIndex(
-      (node) => node.classList.contains("tool-card")
-    );
-    const base2 = firstToolIdx === -1 ? msgEl.children.length : firstToolIdx;
-    for (let i2 = 0; i2 < desired.length; i2++) {
-      const node = desired[i2];
-      if (!node) continue;
-      if (msgEl.children[base2 + i2] !== node) {
-        msgEl.insertBefore(node, msgEl.children[base2 + i2] ?? null);
-      }
-    }
-    syncToolResultContent(
-      msgEl,
-      run4 ? isRunMember ? [] : run4.toolCalls : toolCalls,
-      acpWorkspaceRoot(store2)
-    );
-    hydrateAcpResourceImages(msgEl, api2, store2);
-    registerReasoningDisclosures(msgEl);
-    syncToolRunMemberVisibility(msgEl);
-  }
-  function renderRunAnchor(thread, run4) {
-    const anchor = thread?.messages.find((m2) => m2.id === run4.anchorId);
-    const anchorEl = list.querySelector(`[data-message-id="${run4.anchorId}"]`);
-    if (!anchor || !anchorEl) return;
-    renderToolCards(anchorEl, anchor.toolCalls, {
-      ...messageToolCardOpts(anchor),
-      run: run4,
-      liveStepId: liveStepMessageId(thread)
-    });
-  }
-  function releaseRunMembers(thread, run4) {
-    for (const id of run4.memberIds) {
-      if (id === run4.anchorId) continue;
-      const memberEl = list.querySelector(`[data-message-id="${id}"]`);
-      if (!memberEl?.querySelector(":scope > .tool-card-rollup")) continue;
-      const msg = thread?.messages.find((m2) => m2.id === id);
-      if (!msg) continue;
-      renderToolCards(memberEl, msg.toolCalls, {
-        ...messageToolCardOpts(msg),
-        run: run4,
-        liveStepId: liveStepMessageId(thread)
-      });
-    }
-  }
-  function syncRunLayout(thread, run4, changedId) {
-    if (changedId === run4.anchorId) releaseRunMembers(thread, run4);
-    else renderRunAnchor(thread, run4);
-  }
-  function resyncRunMembership(thread, msgId) {
-    const staleStep = list.querySelector(
-      `.tool-card-step[data-step-message-id="${msgId}"]`
-    );
-    const anchorEl = staleStep?.closest(".msg");
-    const anchorId = anchorEl?.dataset["messageId"];
-    if (!anchorEl || !anchorId || anchorId === msgId) return;
-    const anchorRun = multiStepRunFor(thread, anchorId);
-    if (anchorRun?.memberIds.includes(msgId) === true) return;
-    const anchor = thread?.messages.find((m2) => m2.id === anchorId);
-    if (!anchor) return;
-    renderToolCards(anchorEl, anchor.toolCalls, {
-      ...messageToolCardOpts(anchor),
-      ...anchorRun ? { run: anchorRun, liveStepId: liveStepMessageId(thread) } : {}
-    });
-    refreshToolCards(msgId);
-    const msg = thread?.messages.find((m2) => m2.id === msgId);
-    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
-    if (!msg || !msgEl || multiStepRunFor(thread, msgId)) return;
-    syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg), acpWorkspaceRoot(store2));
-  }
-  function syncRunStepTrail(thread, run4) {
-    const runCard = list.querySelector(
-      `[data-message-id="${run4.anchorId}"] > .tool-card-rollup[data-rollup-key="${RUN_ROLLUP_KEY}"]`
-    );
-    const complete = runCard !== null && run4.steps.every(
-      (step) => runCard.querySelector(`.tool-card-step[data-step-message-id="${step.messageId}"]`)
-    );
-    if (!complete) {
-      renderRunAnchor(thread, run4);
-      return;
-    }
-    syncRunStepReasoning(runCard, run4, liveStepMessageId(thread), acpWorkspaceRoot(store2));
-    hydrateAcpResourceImages(runCard, api2, store2);
   }
   function buildMessageEl(threadId, msgId) {
     const thread = getThreadById(store2, threadId);
@@ -21267,7 +21373,7 @@ function mountConversation(root, store2, api2) {
       userScrolledUpAt = 0;
       lastScrollTop = 0;
     }
-    disclosureElements.clear();
+    toolCards.forgetDisclosureElements();
     if (!rebuildingSameThread) selectionQuote.dismiss();
     disposeInlineArtefacts(list);
     avatarMotion.setActive(null);
@@ -21332,22 +21438,11 @@ function mountConversation(root, store2, api2) {
     }
     if (list.scrollTop !== fallbackScrollTop) setScrollTopProgrammatically(fallbackScrollTop);
   }
-  function refreshToolCards(msgId) {
-    const thread = store2.getState().threads.find((t) => t.messages.some((m2) => m2.id === msgId));
-    const msg = thread?.messages.find((m2) => m2.id === msgId);
-    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
-    if (!msg || !msgEl) return;
+  function keepReadingPosition(update) {
     const prevScrollTop = list.scrollTop;
     const wasPinned = pinnedToBottom;
     const readingAnchor = wasPinned ? null : captureReadingAnchor();
-    const run4 = multiStepRunFor(thread, msgId);
-    renderToolCards(msgEl, msg.toolCalls, {
-      ...messageToolCardOpts(msg),
-      reasoningLive: isReasoningDisclosureLive(thread, msg),
-      ...run4 ? { run: run4, liveStepId: liveStepMessageId(thread) } : {}
-    });
-    if (run4) syncRunLayout(thread, run4, msgId);
-    syncAcpResourceReferences(list, api2, store2);
+    update();
     if (wasPinned) {
       scrollToBottom();
     } else restoreReadingAnchor(readingAnchor, prevScrollTop);
@@ -21640,7 +21735,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var userInterruptedCalls, markedTranscripts, PATCH_OP_LABEL, lazyToolCardBodies, toolResultContentSignatures, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE;
+var PATCH_OP_LABEL, lazyToolCardBodies, toolResultContentSignatures, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -21685,8 +21780,6 @@ var init_conversation = __esm({
     init_composer_editor();
     init_agent_activity();
     init_tool_display();
-    init_tool_runs();
-    init_tool_interruption();
     init_copse_tool_call();
     init_panels();
     init_thread_roadmap_origin();
@@ -21711,7 +21804,7 @@ var init_conversation = __esm({
     init_reviewer_input3();
     init_reviewer_input();
     init_render_signature();
-    init_disclosure_model();
+    init_tool_card_refresh();
     init_message_queue();
     init_fork_thread3();
     init_side_chat2();
@@ -21729,8 +21822,6 @@ var init_conversation = __esm({
     init_selection_quote();
     init_ipc_error_message();
     init_turn_interruption();
-    userInterruptedCalls = /* @__PURE__ */ new WeakMap();
-    markedTranscripts = /* @__PURE__ */ new WeakSet();
     PATCH_OP_LABEL = { add: "Added", update: "Edited", delete: "Deleted", move: "Moved" };
     lazyToolCardBodies = /* @__PURE__ */ new WeakMap();
     toolResultContentSignatures = /* @__PURE__ */ new WeakMap();
@@ -21738,8 +21829,6 @@ var init_conversation = __esm({
     subagentMessageCommitted = /* @__PURE__ */ new WeakMap();
     subagentInnerToolsSig = /* @__PURE__ */ new WeakMap();
     subagentCardChromeSig = /* @__PURE__ */ new WeakMap();
-    toolCardKeys = /* @__PURE__ */ new WeakMap();
-    toolCardSignatures = /* @__PURE__ */ new WeakMap();
     toolGroupItemSignatures = /* @__PURE__ */ new WeakMap();
     acpDiffLineSigns = { context: " ", add: "+", del: "-" };
     acpDiffLineNames = { add: "Added: ", del: "Deleted: " };
@@ -21748,9 +21837,6 @@ var init_conversation = __esm({
     SCROLL_PIN_THRESHOLD_PX = 48;
     USER_SCROLL_UP_DEBOUNCE_MS = 150;
     STREAM_FOLLOW_EASE_MS = 90;
-    TOOL_AUTO_REVEAL_DELAY_MS = 300;
-    TOOL_AUTO_REVEAL_MIN_DWELL_MS = 1e3;
-    TOOL_AUTO_COMPACT_DELAY_MS = 750;
     INITIAL_RENDER_WINDOW = 40;
     REOPENABLE_REASONING = ".msg-assistant:not(.msg-concise) .message-reasoning";
     BACKFILL_CHUNK_SIZE = 30;
@@ -80799,6 +80885,14 @@ var init_browser_pane = __esm({
   }
 });
 
+// src/shared/types/simulator-desktop.ts
+var SIMULATOR_REMOVED_DETAIL;
+var init_simulator_desktop = __esm({
+  "src/shared/types/simulator-desktop.ts"() {
+    SIMULATOR_REMOVED_DETAIL = "Simulator deleted";
+  }
+});
+
 // src/renderer/views/vnc-channel.ts
 var VncIpcChannel;
 var init_vnc_channel = __esm({
@@ -82815,6 +82909,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     simulatorView?.frame(frame);
   });
   const stopSimulatorStatus = api2.simulatorDesktop.onStatus((event) => {
+    if (event.status === "closed" && event.detail === SIMULATOR_REMOVED_DETAIL) void loadMachines();
     if (event.id !== simulatorSessionId) return;
     if (event.status === "error") {
       clearViewer(
@@ -83081,6 +83176,7 @@ function mountVncPane(controlsRoot, viewerRoot, store2, api2) {
 var CHOOSE_MACHINE_TEXT, MANUAL_MACHINE, NEARBY_MACHINE_PREFIX, SSH_MACHINE_PREFIX, SIMULATOR_MACHINE_PREFIX, isVncCredentialType;
 var init_vnc_pane = __esm({
   "src/renderer/views/vnc-pane.ts"() {
+    init_simulator_desktop();
     init_prompt_attachments();
     init_attach_annotation();
     init_annotation_layer();
@@ -85587,6 +85683,12 @@ function mountProcessManagerDialog(api2, store2) {
   }
   function render2(snapshot) {
     if (showingNetwork) network.render(snapshot.network, snapshot.sampledAt);
+    else if (snapshot.memoryMetric === "footprint") {
+      const missing = snapshot.processes.filter((row2) => row2.memoryMiB === null).length;
+      footerHint.textContent = "CPU is approximate; memory is macOS footprint in MiB (includes compressed/swap)." + (missing > 0 ? ` Totals exclude ${String(missing)} unavailable ${missing === 1 ? "process" : "processes"}.` : "");
+    } else {
+      footerHint.textContent = "CPU is approximate; memory is physical RAM in MiB.";
+    }
     const focusedGroup = document.activeElement instanceof HTMLElement && body.contains(document.activeElement) && document.activeElement.classList.contains("process-manager-group-toggle") ? document.activeElement.dataset["groupKey"] : void 0;
     cpuHeading.setAttribute(
       "aria-sort",
@@ -86213,7 +86315,8 @@ function createTranscriptReducer(store2, hooks = {}) {
         currentText: "",
         writing: false,
         acpMessageId: null,
-        acpThoughtMessageId: null
+        acpThoughtMessageId: null,
+        acpMessageOwners: []
       };
       state.set(threadId, st);
     }
@@ -86257,6 +86360,11 @@ function createTranscriptReducer(store2, hooks = {}) {
     if (st.msgId === null) throw new Error("assistant message id missing for agent text");
     appendToken(store2, st.msgId, plan.text);
     return plan.text;
+  };
+  const acpOwner = (st, channel, messageId) => st.acpMessageOwners.find((entry) => entry.channel === channel && entry.messageId === messageId)?.ownerId;
+  const rememberAcpOwner = (st, channel, messageId) => {
+    if (messageId === void 0 || st.msgId === null || acpOwner(st, channel, messageId)) return;
+    st.acpMessageOwners.push({ channel, messageId, ownerId: st.msgId });
   };
   const apply2 = (threadId, chunk) => {
     const st = get2(threadId);
@@ -86327,6 +86435,31 @@ function createTranscriptReducer(store2, hooks = {}) {
           st.writing = false;
           hooks.visibleOutput?.(threadId);
         }
+        rememberAcpOwner(st, chunk.channel, chunk.messageId);
+        activity(threadId);
+        break;
+      }
+      case "acp_content_replace": {
+        let ownerId = acpOwner(st, chunk.channel, chunk.messageId);
+        if (ownerId === void 0) {
+          const previousId = chunk.channel === "message" ? st.acpMessageId : st.acpThoughtMessageId;
+          if (previousId !== null && previousId !== chunk.messageId && st.msgId) {
+            store2.emit("message_done", st.msgId);
+            st.msgId = null;
+            st.toolSinceText = false;
+            st.currentText = "";
+          }
+          if (chunk.channel === "message") st.acpMessageId = chunk.messageId;
+          else st.acpThoughtMessageId = chunk.messageId;
+          ownerId = ensureFreshAfterTools(threadId, st);
+          rememberAcpOwner(st, chunk.channel, chunk.messageId);
+        }
+        replaceAcpContentBlocks(store2, ownerId, chunk.channel, chunk.content);
+        if (ownerId === st.msgId && chunk.channel === "message") {
+          st.currentText = chunk.content.filter((block) => block.type === "text").map((block) => block.text).join("");
+        }
+        st.writing = false;
+        hooks.visibleOutput?.(threadId);
         activity(threadId);
         break;
       }
@@ -86636,7 +86769,9 @@ function createTranscriptReducer(store2, hooks = {}) {
     restore: (threadId, checkpoint) => {
       state.delete(threadId);
       pendingTurn.delete(threadId);
-      if (checkpoint.stream) state.set(threadId, structuredClone(checkpoint.stream));
+      if (checkpoint.stream) {
+        state.set(threadId, structuredClone(checkpoint.stream));
+      }
       if (checkpoint.pendingTurn) pendingTurn.set(threadId, structuredClone(checkpoint.pendingTurn));
     }
   };
@@ -86923,7 +87058,7 @@ function startAgentController(store2, api2) {
   const unsub = api2.agent.onChunk((threadId, chunk, stamp) => {
     if (stamp && !attached.has(threadId)) return;
     const st = get2(threadId);
-    const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "acp_content" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
+    const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "acp_content" || chunk.type === "acp_content_replace" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
     if (firstVisibleActivity && !st.firstActivityTraced) {
       st.firstActivityTraced = true;
       mark("ttft:renderer-first-activity", { kind: chunk.type });
