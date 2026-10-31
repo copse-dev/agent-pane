@@ -73,6 +73,10 @@
       "sha256": "2faefcfa134d8e57fdc697d68881df8e7575e71a7defc2446daeb493b298405c",
       "bytes": 27544
     },
+    "acp-execute-no-remember.png": {
+      "sha256": "f54a8c93ffa7167fe95b9cffe6d4e0023f9d4a855291ec8e5dcc0c5e060234ee",
+      "bytes": 24307
+    },
     "acp-gpt-model-labels.png": {
       "sha256": "c1c8aacbe3ef517e53ec2c7bc22ac2eabdaba8b6d864378be70efd8d79d4f21e",
       "bytes": 43240
@@ -586,8 +590,8 @@
       "bytes": 261152
     },
     "ask-user-dialog-cancelled.png": {
-      "sha256": "c8abc189ec9303e859c72cabd48d634a8fbd73e9f4ba625ac0ab7fdeaf4831cc",
-      "bytes": 325321
+      "sha256": "3afead11facf61dc40b662a973e8bd2ac9afbfd2e37ad26b46403dea2460798a",
+      "bytes": 338601
     },
     "ask-user-dialog-escape-cancel.png": {
       "sha256": "73604b2d17207a26acd231623e85f94578f7ca6cf86fb48661a6fa9744324ca7",
@@ -597,9 +601,13 @@
       "sha256": "564b70419ce05383c709c17699b32fb4ef6860ffff3bbac3f4ff1a12fdd98f73",
       "bytes": 29184
     },
+    "ask-user-dialog-something-else.png": {
+      "sha256": "12ae15e1bd6ea164f6b12df95362138a475efc9c3a3463ca2150d26328988402",
+      "bytes": 47555
+    },
     "ask-user-dialog.png": {
-      "sha256": "b9a255f203820b1f8d098e1558845b0d5375651de14d814aebd5dd309969a049",
-      "bytes": 53188
+      "sha256": "f3a5c037b4a0c1b726f8b7a02fc0f765764d6fd879e58541a9a2a5a2de25f8bb",
+      "bytes": 51345
     },
     "attachment-preview-header.png": {
       "sha256": "70201a8fe18047f0ff75ccc3d03c002d49948afbae83fce3e9222c69c9a6a08f",
@@ -1138,8 +1146,8 @@
       "bytes": 89500
     },
     "claude-login-after-settings.png": {
-      "sha256": "9a2c39b769e383455da20f694378caa1fe9acc6fd4d330a732609c55836a7234",
-      "bytes": 43438
+      "sha256": "47774551f7c69efc6fa7b4cf014364ac881fd81fa7ef862efa88937a29f3a5f3",
+      "bytes": 42677
     },
     "claude-login-deferred-settings.png": {
       "sha256": "21af80738aebdcb0f421f018215caf9815eac55d84ce48d3f7f83b15cc7a5a85",
@@ -1664,6 +1672,10 @@
     "explainer-text-alignment.png": {
       "sha256": "da351a36bae46913ab28836566ab209a00d5daa0ff0d44a35e832622e430ebc0",
       "bytes": 346779
+    },
+    "explore-excerpts-expanded.png": {
+      "sha256": "c6620475c11d809759da87e7245feb797a78454a62714697f500f9d82c91ce88",
+      "bytes": 132327
     },
     "explorer-reload-spaced-path.png": {
       "sha256": "ce98b38803d727e1a5d0764865360a6ed3436f9d4d466db8067b616ad2c12f43",
@@ -2514,8 +2526,8 @@
       "bytes": 289105
     },
     "mobile-controls-queued-desktop.png": {
-      "sha256": "1ea51711dc889b76f22c0a894986cc0d61f7ef6b95f628f623d161d50cd5a71d",
-      "bytes": 256909
+      "sha256": "8d7ed3cb8ceea1290fd954bd16e33be153ff8f22fd98ca9ed37a62975e3e7f97",
+      "bytes": 255088
     },
     "mobile-controls-stopped-desktop.png": {
       "sha256": "671283289cf15daac9fb8560314686ebdc031c8d1b3a296f8b2f754d53353a39",
@@ -2582,8 +2594,8 @@
       "bytes": 296757
     },
     "monaco-selection-chat-attachment.png": {
-      "sha256": "9b6221809c85fc35bbe84dc4a65e4c03f0378e99218627afb4096f0dca41f676",
-      "bytes": 1306909
+      "sha256": "4852a7e27e9c81446689b2272afcde0dffd56c4406c1968d7080cee58beb0be7",
+      "bytes": 1307106
     },
     "multiple-main-windows-secondary.png": {
       "sha256": "19b29a09c474b4d8696432ad79f0e4adf73a9af9263e5cb6fd2aeb6ee04131a4",
@@ -2862,8 +2874,8 @@
       "bytes": 131803
     },
     "plugin-client-pending-question.png": {
-      "sha256": "c17703977fc9585ee4874fbf7c1487fe3a1a77615b15678c877b2ceb5247015f",
-      "bytes": 44805
+      "sha256": "cfd775f885bd90ab60dd62c62f69780e0efd0e12ebf78c446e62593ec0960faa",
+      "bytes": 44498
     },
     "plugin-client-recent-thread-open.png": {
       "sha256": "d9250752ff74ff342ec8bee830211ea54d10bf081e5c300d4a9b4d0ed8ac6119",
@@ -5416,6 +5428,10 @@
     "tool-blob-integrity.png": {
       "sha256": "da71838cb282f07e0fd534c921c36c923d6a10aaf80d2857f72918350ef72548",
       "bytes": 304231
+    },
+    "tool-card-refresh-new-tool.png": {
+      "sha256": "825dff3e811a39fef409a8e5a0da056a655301020ef81305fa4f825bfbb05613",
+      "bytes": 15009
     },
     "tool-disclosure-user-choices.png": {
       "sha256": "b0cf1623dc2aa533e9cc7346c2e955de02e633834378e93c1caa889e38fc5dcf",

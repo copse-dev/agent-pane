@@ -35,7 +35,7 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 | Environment setup                | Suggests values for the auto-approval level, trusted commands, web origins, trusted SSH hosts and trusted package registries from prompts a person approved in the active project. Applies only what the user ticks, through the same settings; adds no grant path. See [Environment setup](#environment-setup).                                                                                         |
 | Deferral mode                    | Session-only, thread-scoped; approval requests queue instead of blocking. Changes prompt handling, not authorization.                                                                                                                                                                                                                                                                                    |
 | Unattended container             | Explicitly armed run on an attested disposable guest. Contained shell effects allow, outward effects defer or deny, host escapes deny; budgets required. Experimental, off by default, mutually exclusive with Guarded YOLO.                                                                                                                                                                             |
-| ACP permission mode              | Agent-specific session mode, additional to Copse's gate and sandbox. Sandboxed Claude presets may default to acceptEdits; unsandboxed/SSH presets do not receive that default.                                                                                                                                                                                                                           |
+| ACP permission mode              | Agent-specific session mode, additional to Copse's gate and sandbox. Sandboxed Claude presets may default to acceptEdits; unsandboxed/SSH presets do not receive that default. Remembered ACP grants are per agent and tool kind; `execute` is never remembered (stored ones are ignored), so every `execute` request reaches the shell gate.                                                            |
 | Agent managed thread mode        | Opt-in per thread for external coding agents. Copse does not apply its process sandbox and selects the agent-advertised Auto/Default session mode when available. The agent's permission requests are presented without Copse's shell classifier, remembered grants, or edit auto-approval. Copse's native-tool bridge remains available and every bridged call still uses the ordinary Copse tool gate. |
 
 ## Per-tool permission settings
@@ -464,7 +464,8 @@ reads the original command.
   either. Configured agent `env` reaches the host only after a consent prompt, over stdin; a
   missing curated adapter is installed only after an approval that names the host and the pinned
   `package@version`. Remembered ACP tool-kind approvals are scoped to the configured SSH host;
-  an approval on one host never authorizes the same agent on another.
+  an approval on one host never authorizes the same agent on another. No host remembers an
+  `execute` approval.
 - **Native `run_shell`, `run_background` and todo-verification commands** use the actual
   execution target to determine containment. `commandRunsSandboxed` rejects a local sandbox
   claim when `spawnRunsOnSshTarget` resolves remote execution. The unsandboxed platform policy

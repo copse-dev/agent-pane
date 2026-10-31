@@ -8,6 +8,7 @@ import { getPendingAfterContent, applyOrStageDiff } from '../services/diff-queue
 import { detectLanguage } from '../services/language.ts'
 import { applyLfViewEdits, toLfView } from '@shared/line-endings.ts'
 import { isAgentRunExploreMode } from '../services/agent-run-explore-mode.ts'
+import { EXPLORE_EXCERPTS_HEADING } from '@copse/agent/explore-excerpts.ts'
 
 /** Non-overlapping match offsets, left to right. */
 function matchOffsets(haystack: string, needle: string): number[] {
@@ -27,14 +28,13 @@ function matchOffsets(haystack: string, needle: string): number[] {
  * explore returns a prose summary with approximate line numbers, not verbatim
  * bytes, so telling the model to "re-read" is ambiguous — it was satisfied by
  * calling explore again (#1433). Name the remedy the run actually has: outside
- * explore mode only read_file returns the exact text str_replace needs to
- * match; in explore mode read_file is delegated away from the parent (see
- * `PARENT_DELEGATED_TOOLS`), so naming it sends the model after a tool it
- * cannot call — ask explore for a verbatim quote instead.
+ * explore mode, read_file returns the exact text; in explore mode read_file is
+ * delegated away from the parent (see `PARENT_DELEGATED_TOOLS`), and the exact
+ * text is the verbatim-excerpt half of an explore result (Fix 0).
  */
 export function oldStringNotFoundMessage(path: string, exploreMode: boolean): string {
   if (exploreMode) {
-    return `old_string was not found in the file. explore returns a summary, not verbatim bytes: call explore again on ${path} asking it to quote the exact lines you want to replace verbatim in a fenced code block, then copy old_string from that quote.`
+    return `old_string was not found in the file. Copy old_string byte-for-byte from a "${EXPLORE_EXCERPTS_HEADING}" block for ${path} in an explore result, not from the prose summary above it. If no excerpt covers those lines, call explore with paths: ["${path}"] naming the function or lines you will change.`
   }
   return `old_string was not found in the file. Call read_file on ${path} and copy the exact text from its output — explore returns a summary, not verbatim bytes.`
 }
