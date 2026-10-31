@@ -17,7 +17,7 @@ import {
 } from '@shared/threads/spine-schema.ts'
 import { projectStoreDir } from '../storage/copse-paths.ts'
 import { runSerialized } from '../storage/write-queue.ts'
-import { getActiveProjectId } from '../workspace.ts'
+import { currentThreadExecutionContext } from '../thread-execution-context-store.ts'
 import { getActiveRunThread } from '../thread-models.ts'
 import { appendSpineDecision } from '../thread-store.ts'
 
@@ -40,7 +40,7 @@ function sha256(text: string): string {
  * longer written; readers ignore/delete it.
  *
  * Recording is best-effort: {@link recordDecision} never throws and never blocks
- * the decision it describes. Without an active project+thread the event is
+ * the decision it describes. Without a resolvable project+thread the event is
  * dropped (there is no `_global` file anymore).
  */
 
@@ -62,11 +62,15 @@ function deleteLegacyDecisionLog(projectId: string): void {
   }
 }
 
-/** Fields the writer resolves from ambient state when a caller omits them. */
+/** Fields the writer resolves from the running turn when a caller omits them. */
 export type RecordDecisionInput = Omit<DecisionInput, 'threadId'> & {
   /** Overrides the active-run thread; omit to attribute to the current run. */
   threadId?: string
-  /** Overrides the active project; omit to attribute to the current project. */
+  /**
+   * The thread's project. Omit only inside the thread's own turn: the project
+   * is then the turn's. Never the window's active project, which can be a
+   * different one.
+   */
   projectId?: string
   /** Optional turn correlation (hook recording context). */
   turnId?: string
@@ -106,14 +110,20 @@ export function persistRecordedDecision(decision: RecordedDecision): void {
   ).catch(() => undefined)
 }
 
+/** The running turn's project, when that turn is `threadId`'s own. */
+function turnProjectFor(threadId: string | null): string | undefined {
+  const context = currentThreadExecutionContext()
+  return context !== null && context.threadId === threadId ? context.projectId : undefined
+}
+
 /**
  * Record one decision onto the active thread spine. Best-effort and
  * fire-and-forget.
  */
 export function recordDecision(input: RecordDecisionInput): void {
   try {
-    const projectId = input.projectId ?? getActiveProjectId()
     const threadId = input.threadId ?? getActiveRunThread()
+    const projectId = input.projectId ?? turnProjectFor(threadId)
     if (!projectId || !threadId) {
       console.warn('[decision-log] dropping decision — no active project/thread', {
         kind: input.kind,
