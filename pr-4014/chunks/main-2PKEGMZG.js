@@ -370,6 +370,7 @@ import {
   remoteAgentGroupLabel,
   removeProject,
   removeQueuedMessage,
+  replaceAcpContentBlocks,
   requestArtefactShow,
   requireActiveThreadOwner,
   resetUiScale,
@@ -383,6 +384,8 @@ import {
   saveProjectGroups,
   saveProjects,
   scaledEditorFontSize,
+  selectRightPanel,
+  selectRightPanelMode,
   sendQueuedMessageNow,
   setArtefactContent,
   setArtefactPreview,
@@ -452,7 +455,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-SKPO4FJB.js";
+} from "./chunk-FYEDBEAN.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -721,8 +724,6 @@ function createStore(initial) {
     explorer_reveal: /* @__PURE__ */ new Set(),
     workspace_changed: /* @__PURE__ */ new Set(),
     projects_changed: /* @__PURE__ */ new Set(),
-    files_pane_changed: /* @__PURE__ */ new Set(),
-    right_panel_mode_changed: /* @__PURE__ */ new Set(),
     sidebar_project_filter_changed: /* @__PURE__ */ new Set(),
     git_change_navigate: /* @__PURE__ */ new Set(),
     roadmap_reveal: /* @__PURE__ */ new Set(),
@@ -2290,10 +2291,10 @@ function mountPanelModeControls(store2, api2, opts = {}) {
   syncSideChatBadge();
   syncExperimentalBtns();
   const unsubs = [
-    store2.on("files_pane_changed", syncPanelBtns),
-    store2.on("files_pane_changed", syncSideChatBadge),
-    store2.on("right_panel_mode_changed", syncPanelBtns),
-    store2.on("right_panel_mode_changed", syncSideChatBadge),
+    selectRightPanel(store2, () => {
+      syncPanelBtns();
+      syncSideChatBadge();
+    }),
     store2.on("staged_diffs_changed", syncChangesBadge),
     store2.on("threads_changed", syncSideChatBadge),
     store2.on("settings_changed", syncExperimentalBtns)
@@ -62795,7 +62796,7 @@ function initMentionPicker(opts) {
     void updatePicker(val.slice(atIdx + 1, cursor));
   });
   input.el.addEventListener("keydown", (e) => {
-    if (picker.hidden) return;
+    if (picker.hidden || e.isComposing) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       selectedIdx = Math.min(selectedIdx + 1, currentItems.length - 1);
@@ -62968,7 +62969,7 @@ function initSkillPicker(opts) {
     void updatePicker(val.slice(slashIdx + 1, cursor));
   });
   input.el.addEventListener("keydown", (e) => {
-    if (picker.hidden) return;
+    if (picker.hidden || e.isComposing) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       selectedIdx = Math.min(selectedIdx + 1, currentSkills.length - 1);
@@ -65253,8 +65254,6 @@ var init_create_pr_dialog = __esm({
 // src/renderer/views/follow-up-suggestions.ts
 function openChangesReviewer(store2) {
   store2.setState({ rightPanelMode: "changes", filesPaneOpen: true });
-  store2.emit("right_panel_mode_changed");
-  store2.emit("files_pane_changed");
 }
 async function createPrFromBubble(store2, api2, threadId, onConfirmed) {
   const { activeProjectId } = store2.getState();
@@ -70190,6 +70189,80 @@ var init_selection_to_chat2 = __esm({
   }
 });
 
+// src/renderer/terminal/safe-paste.ts
+function sanitizeTerminalPaste(text) {
+  return Array.from(text, (character) => {
+    const code2 = character.charCodeAt(0);
+    const allowedWhitespace = code2 === 9 || code2 === 10 || code2 === 13;
+    return !allowedWhitespace && code2 < 32 || code2 >= 127 && code2 <= 159 ? " " : character;
+  }).join("");
+}
+function installSafeTerminalPaste(term, container, getSessionId, confirm = showConfirmDialog) {
+  async function paste(text) {
+    const sessionId = getSessionId();
+    if (!sessionId || !text) return;
+    const sanitized = sanitizeTerminalPaste(text);
+    const bracketed = term.modes.bracketedPasteMode && !term.options.ignoreBracketedPasteMode;
+    if (!bracketed && (sanitized.includes("\r") || sanitized.includes("\n"))) {
+      const preview = el(
+        "code",
+        { class: "terminal-paste-preview" },
+        sanitized.replace(/\r\n|\r/g, "\n").slice(0, 2e3)
+      );
+      const confirmed = await confirm({
+        message: "Paste text that may run commands?",
+        detail: el(
+          "span",
+          {},
+          "Line breaks can run commands immediately in this terminal. Only paste text you trust.\n\n",
+          preview,
+          sanitized.length > 2e3 ? "\nPreview truncated. The full text will be pasted." : ""
+        ),
+        confirmLabel: "Paste"
+      });
+      if (!confirmed) return;
+    }
+    if (getSessionId() !== sessionId) return;
+    term.paste(sanitized);
+    term.focus();
+  }
+  function pasteFromEvent(text) {
+    void paste(text).catch((error) => {
+      console.warn("Could not paste into terminal", error);
+    });
+  }
+  container.addEventListener(
+    "paste",
+    (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      pasteFromEvent(event.clipboardData?.getData("text/plain") ?? "");
+    },
+    { capture: true }
+  );
+  container.addEventListener("dragover", (event) => {
+    event.preventDefault();
+  });
+  container.addEventListener(
+    "drop",
+    (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (event.dataTransfer && event.dataTransfer.files.length === 0) {
+        pasteFromEvent(event.dataTransfer.getData("text/plain"));
+      }
+    },
+    { capture: true }
+  );
+  return paste;
+}
+var init_safe_paste = __esm({
+  "src/renderer/terminal/safe-paste.ts"() {
+    init_helpers();
+    init_confirm_dialog();
+  }
+});
+
 // src/renderer/views/terminal-file-links.ts
 function collectVisibleCandidates(term) {
   const buf = term.buffer.active;
@@ -70715,6 +70788,11 @@ ${output}` : "Terminal output: (none)"
     }
   }
   function wireTabInput(tab) {
+    const paste = installSafeTerminalPaste(
+      tab.term,
+      tab.container,
+      () => tabs.get(tab.id) === tab ? tab.sessionId : null
+    );
     registerTerminalSelectionToChatShortcut(tab.term, () => tab.label);
     tab.term.onData((data) => {
       if (connectWaitingTab(tab)) return;
@@ -70748,11 +70826,8 @@ ${output}` : "Terminal output: (none)"
           label: "Paste",
           disabled: !tab.sessionId,
           onSelect: () => {
-            void navigator.clipboard.readText().then((text) => {
-              if (text && tab.sessionId) {
-                tab.term.paste(text);
-                focusTab(tab);
-              }
+            void navigator.clipboard.readText().then((text) => paste(text)).catch((error) => {
+              console.warn("Could not paste into terminal", error);
             });
           }
         }
@@ -71042,8 +71117,6 @@ ${output}` : "Terminal output: (none)"
     await addTab({ activate: true, initialInput: `${trimmed2}\r`, ...options });
     if (!wasActive) {
       store2.setState({ filesPaneOpen: true, rightPanelMode: "terminal" });
-      store2.emit("files_pane_changed");
-      store2.emit("right_panel_mode_changed");
     }
   }
   async function runCodeBlockInBackground(request) {
@@ -71121,8 +71194,7 @@ ${output}` : "Terminal output: (none)"
     }
   }
   const unsubs = [
-    store2.on("right_panel_mode_changed", onTerminalModeChange),
-    store2.on("files_pane_changed", onTerminalModeChange),
+    selectRightPanelMode(store2, "terminal", onTerminalModeChange),
     store2.on("agent_task_selected", onAgentTaskSelected),
     store2.on("settings_changed", onFontSizeChange),
     store2.on("threads_changed", onThreadMaybeChanged),
@@ -71184,6 +71256,7 @@ var init_terminals_pane = __esm({
     init_pane_popout_button();
     init_pane_tabs();
     init_selection_to_chat2();
+    init_safe_paste();
     init_terminal_file_links();
     init_terminal_web_links();
     init_scoped_tabs();
@@ -71197,6 +71270,7 @@ var init_terminals_pane = __esm({
     init_tab_scope();
     init_remote_connect();
     init_editor_theme();
+    init_panels();
     xtermModules = null;
   }
 });
@@ -72744,22 +72818,17 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     conflictBanner.textContent = paths.length === 1 ? `${at(paths, 0)} changed on disk since this diff was staged. The diff was refreshed against the current file \u2014 review and re-approve to keep your changes.` : `${String(paths.length)} files changed on disk since they were staged. Their diffs were refreshed against the current files \u2014 review and re-approve.`;
     if (paths[0]) {
       store2.setState({ rightPanelMode: "changes", filesPaneOpen: true });
-      store2.emit("right_panel_mode_changed");
-      store2.emit("files_pane_changed");
       selection = { kind: "proposed", path: paths[0] };
       void syncFromStore();
     }
   });
   const unsubs = [
-    store2.on("right_panel_mode_changed", () => {
-      if (changesModeActive(store2)) void refresh();
+    selectRightPanelMode(store2, "changes", (active) => {
+      if (active) void refresh();
     }),
     store2.on("git_change_navigate", (path) => {
       adoptActiveOwner();
       pendingNavigate = path;
-      if (changesModeActive(store2)) void refresh();
-    }),
-    store2.on("files_pane_changed", () => {
       if (changesModeActive(store2)) void refresh();
     }),
     store2.on("workspace_changed", () => {
@@ -72845,6 +72914,7 @@ var init_git_changes_pane = __esm({
     init_git_image_diff();
     init_material_file_icons();
     init_image_path();
+    init_panels();
     STATUS_LABEL = {
       modified: "M",
       added: "A",
@@ -74467,13 +74537,9 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   const unbindActivityBrowserLinks = bindBrowserLinkClicks(activityHost, store2, api2);
   const stopObservingLayout = observeDiffHostLayout(viewerRoot, () => diffEditor);
   const unsubs = [
-    store2.on("right_panel_mode_changed", () => {
+    selectRightPanelMode(store2, "prs", (active) => {
       syncWatch();
-      if (prsModeActive(store2)) void refresh();
-    }),
-    store2.on("files_pane_changed", () => {
-      syncWatch();
-      if (prsModeActive(store2)) void refresh();
+      if (active) void refresh();
     }),
     store2.on("workspace_changed", () => {
       threadRelationshipRequest++;
@@ -74600,6 +74666,7 @@ var init_pr_pane = __esm({
     init_pr_thread_relationships();
     init_pr_auth_error();
     init_ipc_error_message();
+    init_panels();
     STATUS_LABEL2 = {
       added: "A",
       modified: "M",
@@ -74899,11 +74966,8 @@ function mountMemoriesPane(listRoot, viewerRoot, store2, api2) {
   deleteBtn.addEventListener("click", () => void remove());
   cancelBtn.addEventListener("click", cancel);
   const unsubs = [
-    store2.on("right_panel_mode_changed", () => {
-      if (memoriesModeActive(store2)) void refresh({ preserveDirty: true });
-    }),
-    store2.on("files_pane_changed", () => {
-      if (memoriesModeActive(store2)) void refresh({ preserveDirty: true });
+    selectRightPanelMode(store2, "memories", (active) => {
+      if (active) void refresh({ preserveDirty: true });
     }),
     store2.on("workspace_changed", () => {
       selectedId = null;
@@ -74935,6 +74999,7 @@ var init_memories_pane = __esm({
     init_unknown_value2();
     init_icons();
     init_pane_loading();
+    init_panels();
   }
 });
 
@@ -75927,13 +75992,8 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
         void refreshAccess();
       }
     }),
-    store2.on("right_panel_mode_changed", () => {
-      if (!contextModeActive(store2)) return;
-      render2();
-      void refreshMentions();
-    }),
-    store2.on("files_pane_changed", () => {
-      if (!contextModeActive(store2)) return;
+    selectRightPanelMode(store2, "context", (active) => {
+      if (!active) return;
       render2();
       void refreshMentions();
     }),
@@ -76339,8 +76399,7 @@ function mountSideChatPane(listRoot, viewerRoot, store2, api2) {
       openRightPanel(store2, "side-chat");
       render2();
     }),
-    store2.on("right_panel_mode_changed", schedule),
-    store2.on("files_pane_changed", schedule),
+    selectRightPanelMode(store2, "side-chat", schedule),
     store2.on("threads_changed", schedule),
     store2.on("message_added", schedule),
     store2.on("message_token", schedule),
@@ -76589,10 +76648,7 @@ function mountPortsSection(listRoot, store2, api2) {
     }
     void pollOnce();
   }
-  const unsubs = [
-    store2.on("right_panel_mode_changed", syncPolling),
-    store2.on("files_pane_changed", syncPolling)
-  ];
+  const unsubs = [selectRightPanelMode(store2, "terminal", syncPolling)];
   render2();
   syncPolling();
   return () => {
@@ -79087,11 +79143,8 @@ Notes: ${notes}` : prompt;
   deleteBtn.addEventListener("click", () => void remove());
   cancelBtn.addEventListener("click", cancel);
   const unsubs = [
-    store2.on("right_panel_mode_changed", () => {
-      if (roadmapModeActive(store2)) void refresh({ preserveDirty: true });
-    }),
-    store2.on("files_pane_changed", () => {
-      if (roadmapModeActive(store2)) void refresh({ preserveDirty: true });
+    selectRightPanelMode(store2, "roadmap", (active) => {
+      if (active) void refresh({ preserveDirty: true });
     }),
     // Saves return before their complexity stamp lands (roadmap-complexity.ts);
     // pick the badge up when main says the stamp arrived.
@@ -79185,6 +79238,7 @@ var init_roadmap_pane = __esm({
     init_unknown_value2();
     init_member_of2();
     init_nullish2();
+    init_panels();
     STATUS_OPTIONS = [
       "ready",
       "blocked",
@@ -80666,8 +80720,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   const unsubs = [
     store2.on("threads_changed", onThreadMaybeChanged),
     store2.on("workspace_changed", onThreadMaybeChanged),
-    store2.on("right_panel_mode_changed", onBrowserModeChange),
-    store2.on("files_pane_changed", onBrowserModeChange),
+    selectRightPanelMode(store2, "browser", onBrowserModeChange),
     store2.select((s) => s.rightPanelMaximized, onRightPanelMaximizedChanged),
     store2.on("browser_url_requested", openRequestedBrowserUrl),
     store2.on("browser_url_bar_focus_requested", focusUrlBar),
@@ -80744,6 +80797,14 @@ var init_browser_pane = __esm({
     NET_ERROR_ABORTED = -3;
     NET_ERROR_BLOCKED_BY_CLIENT = -20;
     WEBVIEW_PREFS2 = "contextIsolation=true";
+  }
+});
+
+// src/shared/types/simulator-desktop.ts
+var SIMULATOR_REMOVED_DETAIL;
+var init_simulator_desktop = __esm({
+  "src/shared/types/simulator-desktop.ts"() {
+    SIMULATOR_REMOVED_DETAIL = "Simulator deleted";
   }
 });
 
@@ -82763,6 +82824,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     simulatorView?.frame(frame);
   });
   const stopSimulatorStatus = api2.simulatorDesktop.onStatus((event) => {
+    if (event.status === "closed" && event.detail === SIMULATOR_REMOVED_DETAIL) void loadMachines();
     if (event.id !== simulatorSessionId) return;
     if (event.status === "error") {
       clearViewer(
@@ -82781,8 +82843,8 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : machineSelect.value
     );
   });
-  const stopMode = store2.on("right_panel_mode_changed", () => {
-    if (!vncModeActive(store2)) return;
+  const stopMode = selectRightPanelMode(store2, "vnc", (active) => {
+    if (!active) return;
     void loadMachines();
     if (options.isActive()) {
       if (rfb) rfb.focus();
@@ -83029,6 +83091,7 @@ function mountVncPane(controlsRoot, viewerRoot, store2, api2) {
 var CHOOSE_MACHINE_TEXT, MANUAL_MACHINE, NEARBY_MACHINE_PREFIX, SSH_MACHINE_PREFIX, SIMULATOR_MACHINE_PREFIX, isVncCredentialType;
 var init_vnc_pane = __esm({
   "src/renderer/views/vnc-pane.ts"() {
+    init_simulator_desktop();
     init_prompt_attachments();
     init_attach_annotation();
     init_annotation_layer();
@@ -85535,6 +85598,12 @@ function mountProcessManagerDialog(api2, store2) {
   }
   function render2(snapshot) {
     if (showingNetwork) network.render(snapshot.network, snapshot.sampledAt);
+    else if (snapshot.memoryMetric === "footprint") {
+      const missing = snapshot.processes.filter((row2) => row2.memoryMiB === null).length;
+      footerHint.textContent = "CPU is approximate; memory is macOS footprint in MiB (includes compressed/swap)." + (missing > 0 ? ` Totals exclude ${String(missing)} unavailable ${missing === 1 ? "process" : "processes"}.` : "");
+    } else {
+      footerHint.textContent = "CPU is approximate; memory is physical RAM in MiB.";
+    }
     const focusedGroup = document.activeElement instanceof HTMLElement && body.contains(document.activeElement) && document.activeElement.classList.contains("process-manager-group-toggle") ? document.activeElement.dataset["groupKey"] : void 0;
     cpuHeading.setAttribute(
       "aria-sort",
@@ -86161,7 +86230,8 @@ function createTranscriptReducer(store2, hooks = {}) {
         currentText: "",
         writing: false,
         acpMessageId: null,
-        acpThoughtMessageId: null
+        acpThoughtMessageId: null,
+        acpMessageOwners: []
       };
       state.set(threadId, st);
     }
@@ -86205,6 +86275,11 @@ function createTranscriptReducer(store2, hooks = {}) {
     if (st.msgId === null) throw new Error("assistant message id missing for agent text");
     appendToken(store2, st.msgId, plan.text);
     return plan.text;
+  };
+  const acpOwner = (st, channel, messageId) => st.acpMessageOwners.find((entry) => entry.channel === channel && entry.messageId === messageId)?.ownerId;
+  const rememberAcpOwner = (st, channel, messageId) => {
+    if (messageId === void 0 || st.msgId === null || acpOwner(st, channel, messageId)) return;
+    st.acpMessageOwners.push({ channel, messageId, ownerId: st.msgId });
   };
   const apply2 = (threadId, chunk) => {
     const st = get2(threadId);
@@ -86275,6 +86350,31 @@ function createTranscriptReducer(store2, hooks = {}) {
           st.writing = false;
           hooks.visibleOutput?.(threadId);
         }
+        rememberAcpOwner(st, chunk.channel, chunk.messageId);
+        activity(threadId);
+        break;
+      }
+      case "acp_content_replace": {
+        let ownerId = acpOwner(st, chunk.channel, chunk.messageId);
+        if (ownerId === void 0) {
+          const previousId = chunk.channel === "message" ? st.acpMessageId : st.acpThoughtMessageId;
+          if (previousId !== null && previousId !== chunk.messageId && st.msgId) {
+            store2.emit("message_done", st.msgId);
+            st.msgId = null;
+            st.toolSinceText = false;
+            st.currentText = "";
+          }
+          if (chunk.channel === "message") st.acpMessageId = chunk.messageId;
+          else st.acpThoughtMessageId = chunk.messageId;
+          ownerId = ensureFreshAfterTools(threadId, st);
+          rememberAcpOwner(st, chunk.channel, chunk.messageId);
+        }
+        replaceAcpContentBlocks(store2, ownerId, chunk.channel, chunk.content);
+        if (ownerId === st.msgId && chunk.channel === "message") {
+          st.currentText = chunk.content.filter((block) => block.type === "text").map((block) => block.text).join("");
+        }
+        st.writing = false;
+        hooks.visibleOutput?.(threadId);
         activity(threadId);
         break;
       }
@@ -86584,7 +86684,9 @@ function createTranscriptReducer(store2, hooks = {}) {
     restore: (threadId, checkpoint) => {
       state.delete(threadId);
       pendingTurn.delete(threadId);
-      if (checkpoint.stream) state.set(threadId, structuredClone(checkpoint.stream));
+      if (checkpoint.stream) {
+        state.set(threadId, structuredClone(checkpoint.stream));
+      }
       if (checkpoint.pendingTurn) pendingTurn.set(threadId, structuredClone(checkpoint.pendingTurn));
     }
   };
@@ -86651,8 +86753,6 @@ function attachDiffState(store2, api2, options) {
       if (!options.revealOnShowDiff) return;
       store2.setState({ rightPanelMode: "changes", filesPaneOpen: true });
       syncFilesPaneDom(store2);
-      store2.emit("right_panel_mode_changed");
-      store2.emit("files_pane_changed");
       store2.emit("panel_changed");
     }
   );
@@ -86873,7 +86973,7 @@ function startAgentController(store2, api2) {
   const unsub = api2.agent.onChunk((threadId, chunk, stamp) => {
     if (stamp && !attached.has(threadId)) return;
     const st = get2(threadId);
-    const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "acp_content" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
+    const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "acp_content" || chunk.type === "acp_content_replace" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
     if (firstVisibleActivity && !st.firstActivityTraced) {
       st.firstActivityTraced = true;
       mark("ttft:renderer-first-activity", { kind: chunk.type });
@@ -87414,8 +87514,6 @@ async function runSurfaceSweep(store2) {
   mark("autopilot:sweep-start", { dwellMs: SWEEP_DWELL_MS, count: SWEEP_SURFACES.length });
   for (const surface of SWEEP_SURFACES) {
     store2.setState({ rightPanelMode: surface, filesPaneOpen: true });
-    store2.emit("right_panel_mode_changed");
-    store2.emit("files_pane_changed");
     await afterNextFrame();
     mark("autopilot:surface", { surface });
     await sleep(SWEEP_DWELL_MS);
@@ -88174,7 +88272,7 @@ function mountPortraitRightPanelLayout(body, store2) {
     app?.classList.toggle(PORTRAIT_CHROME_CLASS, useChrome);
   };
   window.addEventListener("resize", sync, { passive: true });
-  const unsubs = [store2.on("files_pane_changed", sync), store2.on("settings_changed", sync)];
+  const unsubs = [store2.select((s) => s.filesPaneOpen, sync), store2.on("settings_changed", sync)];
   sync();
   return () => {
     window.removeEventListener("resize", sync);
@@ -88367,7 +88465,7 @@ function mountPaneResizers(body, store2, api2) {
     refreshLayoutForViewport();
   };
   syncFilesResizer();
-  const unsubFilesPane = store2.on("files_pane_changed", syncFilesResizer);
+  const unsubFilesPane = store2.select((s) => s.filesPaneOpen, syncFilesResizer);
   const unsubSettings = store2.on("settings_changed", refreshLayoutForViewport);
   window.addEventListener("resize", refreshLayoutForViewport, { passive: true });
   return () => {
@@ -88834,6 +88932,7 @@ async function activatePopoutPane(mode) {
   await applyPopoutSeed(mode, seed, store);
 }
 function mountFullLayout() {
+  store.select((s) => s.filesPaneOpen, updateFilesPane);
   const monacoReady = loadMonaco();
   mountProjectsPane(requireElement("pane-projects"), store, api);
   const inputRoot = requireElement("input-bar");
@@ -88921,7 +89020,6 @@ function mountFullLayout() {
     mountPortraitRightPanelLayout(body, store);
     mountPaneResizers(body, store, api);
   }
-  store.on("files_pane_changed", updateFilesPane);
   updateFilesPane();
 }
 function updateFilesPane() {
