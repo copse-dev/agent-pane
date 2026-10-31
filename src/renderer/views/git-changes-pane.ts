@@ -127,6 +127,12 @@ function getFirstGitChange(status: GitStatusResult): { path: string; staged: boo
   return null
 }
 
+/** Whether a staged or unstaged path in `prev` is missing from `next`. */
+function workingTreePathLeft(prev: GitStatusResult, next: GitStatusResult): boolean {
+  const remaining = new Set([...next.staged, ...next.unstaged].map((change) => change.path))
+  return [...prev.staged, ...prev.unstaged].some((change) => !remaining.has(change.path))
+}
+
 function defaultProposedPath(
   queue: { path: string }[],
   activeDiff: ActiveDiff | null,
@@ -1243,6 +1249,11 @@ export function mountGitChangesPane(
           nextStatus !== null &&
           getFirstGitChange(nextStatus) !== null
         if (selectedEarly) void syncSelection()
+      } else if (status && nextStatus && !workingTreePathLeft(status, nextStatus)) {
+        // Nothing left the working tree, so no row can be on its way into
+        // committed changes: show new rows now, not behind the PR lookup.
+        status = nextStatus
+        renderList()
       }
       const committedResult = await committedRead
       if (requestId !== refreshRequestId) return

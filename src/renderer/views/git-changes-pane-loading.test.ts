@@ -114,6 +114,40 @@ describe('git changes pane loading state', () => {
     })
   }
 
+  it('shows a new working-tree file at once while committed changes are still loading', async () => {
+    const base = createFakeApi()
+    let added = false
+    let reads = 0
+    const api: ApiClient = {
+      ...base,
+      git: {
+        ...base.git,
+        isAvailable: async () => true,
+        status: async () => ({
+          staged: [],
+          unstaged: [
+            { path: 'edited.ts', status: 'modified' },
+            ...(added ? [{ path: 'added.ts', status: 'untracked' as const }] : []),
+          ],
+        }),
+        // Settled once; every later committed read (a PR lookup) never returns.
+        committedChanges: () =>
+          ++reads === 1 ? Promise.resolve(null) : new Promise<null>(() => undefined),
+        sessionBackup: async () => null,
+        fileDiff: async () => null,
+      },
+    }
+    const { listRoot } = mount(api)
+    await settle()
+    const original = listRoot.querySelector('.git-change-row')
+    assert.ok(original)
+    added = true
+    listRoot.querySelector<HTMLButtonElement>('.git-changes-refresh-btn')?.click()
+    await settle()
+    assert.match(listRoot.textContent, /added\.ts/)
+    assert.equal(listRoot.querySelector('.pane-loading'), null)
+  })
+
   it('retains settled rows until a refresh can move them into committed changes', async () => {
     const base = createFakeApi()
     let committedNow = false
