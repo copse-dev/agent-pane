@@ -354,6 +354,7 @@ export class AgentDispatcher {
     await this.recordMachineStart(request, next.continuationUsed)
     return {
       status: 'granted',
+      turnTreeId: epoch.turnTreeId,
       release: () => this.recordMachineFinish(request, 'completed', next.continuationUsed),
     }
   }

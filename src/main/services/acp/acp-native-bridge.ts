@@ -17,7 +17,8 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 import { errorMessage } from '@shared/errors.ts'
 import { getSetting } from '../storage/settings.ts'
-import { AbandonedCallAbort, discardApprovalsForBridge } from '../approval.ts'
+import { recoverAcpToolCompletion, resolveAcpToolCompletionHandler } from './tool-completion.ts'
+import { AbandonedCallAbort, ApprovalPendingError, discardApprovalsForBridge } from '../approval.ts'
 import { AcpTurnEnded } from './turn-end.ts'
 import { runWithBridgeExecutionId } from '../approval-tool-call-context.ts'
 import { recordDecision } from '../security/decision-log-store.ts'
@@ -561,6 +562,17 @@ function buildMcpServer(
     }
     extra.signal.addEventListener('abort', onExtraAbort, { once: true })
     let stopKeepalive = (): void => {}
+    const turnTreeId = ctx.getTurnTreeId()
+    const owningTurnSignal = ctx.getTurnSignal()
+    const continuationRevoked = (): boolean => {
+      const reason: unknown = owningTurnSignal?.reason
+      return (
+        ctx.sessionSignal.aborted ||
+        (owningTurnSignal?.aborted === true &&
+          !(reason instanceof AcpTurnEnded && reason.reason === 'completed'))
+      )
+    }
+    const completionHandler = resolveAcpToolCompletionHandler()
     try {
       const executeSignal = mergeBridgeExecuteSignal(
         ctx.sessionSignal,
@@ -630,7 +642,6 @@ function buildMcpServer(
       // set by agent-service around the prompt — not a fresh per-request
       // resolve; the guard above already rejected any call with none bound.
       const inlineCanvasScope = ctx.getInlineCanvasScope()
-      const turnTreeId = ctx.getTurnTreeId()
       const runExecute = (): ReturnType<ToolRegistry['executeNormalized']> =>
         inlineCanvasScope(() =>
           runWithActiveRunIdentity(ctx.threadId, () => {
@@ -659,6 +670,31 @@ function buildMcpServer(
       for (const path of bridgedWorkspaceWritePaths(name, request.params.arguments)) {
         ctx.recordWorkspaceWrite(path)
       }
+      // An external action may finish after cancellation: losing the response
+      // cannot undo it. Recover output, never retry execution. Explicit Stop,
+      // failure and session closure must not start a new machine turn.
+      const turnReason: unknown = owningTurnSignal?.reason
+      const normalTurnEnd = turnReason instanceof AcpTurnEnded && turnReason.reason === 'completed'
+      if (
+        turnTreeId !== null &&
+        !ctx.sessionSignal.aborted &&
+        (!owningTurnSignal?.aborted || normalTurnEnd) &&
+        (ctx.getCallSignal().aborted || normalTurnEnd)
+      ) {
+        void recoverAcpToolCompletion(
+          {
+            operationId: bridgeExecutionId,
+            owner: executionContext,
+            turnTreeId,
+            toolName: name,
+            result,
+            alreadyObserved: continuationRevoked,
+          },
+          completionHandler,
+        ).catch((err: unknown) => {
+          console.error('[acp-bridge] could not recover completed tool result:', errorMessage(err))
+        })
+      }
       return {
         content: toMcpContent(
           name === REQUEST_WRITE_ACCESS_TOOL
@@ -668,6 +704,36 @@ function buildMcpServer(
         ),
       }
     } catch (err) {
+      if (
+        err instanceof ApprovalPendingError &&
+        err.retry &&
+        turnTreeId !== null &&
+        completionHandler
+      ) {
+        const retry = err.retry
+        void retry.settled
+          .then(async () => {
+            // A live retry may already have consumed the answer, or Stop/session
+            // closure may have revoked it while this continuation waited.
+            if (!retry.available() || continuationRevoked()) return
+            await completionHandler(
+              {
+                operationId: `approval:${bridgeExecutionId}`,
+                owner: executionContext,
+                turnTreeId,
+                toolName: name,
+                alreadyObserved: () => !retry.available() || continuationRevoked(),
+              },
+              `The user answered the pending approval for ${name}. ` +
+                'Retry this exact tool call once to consume the saved decision, then continue the original task. ' +
+                'The call has not executed through this approval yet.\n' +
+                `Tool: ${name}\nArguments (data): ${JSON.stringify(request.params.arguments ?? {})}`,
+            )
+          })
+          .catch((error: unknown) => {
+            console.error('[acp-bridge] could not resume answered approval:', errorMessage(error))
+          })
+      }
       return { content: [{ type: 'text', text: errorMessage(err) }], isError: true }
     } finally {
       stopKeepalive()

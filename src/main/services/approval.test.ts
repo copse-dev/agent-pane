@@ -760,6 +760,33 @@ describe('abandoned calls (parked prompts and verdict replay)', () => {
     assert.equal(events.at(-1)?.source, 'client-abandoned')
   })
 
+  for (const ending of ['consumed', 'expired', 'revoked'] as const) {
+    it(`invalidates an approval wake when its saved answer is ${ending}`, async () => {
+      let now = 1_000_000
+      setApprovalClockForTest(() => now)
+      parkingHandler()
+      const { signal, abandon } = abandonedSignal()
+      const pending = requestUnderThread(req, signal)
+      await Promise.resolve()
+      abandon()
+      let retry: ApprovalPendingError['retry']
+      await assert.rejects(pending, (error: unknown) => {
+        assert.ok(error instanceof ApprovalPendingError)
+        retry = error.retry
+        return true
+      })
+      assert.ok(retry)
+      assert.equal(retry.available(), false)
+      release?.({ approved: true, remember: false, resolution: 'user' })
+      await retry.settled
+      assert.equal(retry.available(), true)
+      if (ending === 'consumed') await requestUnderThread(req)
+      else if (ending === 'expired') now += 11 * 60_000
+      else discardApprovalsForThread(THREAD, 'stopped')
+      assert.equal(retry.available(), false)
+    })
+  }
+
   it('replays the eventual verdict to an identical retry without prompting again', async () => {
     parkingHandler()
     const { signal, abandon } = abandonedSignal()
@@ -1057,7 +1084,11 @@ describe('abandoned calls (parked prompts and verdict replay)', () => {
         beginWriter: (): (() => void) => (): void => {},
         getAuthority: () => ({
           claimAgentInitiatedTurn: (): Promise<AgentInitiatedTurnClaim> =>
-            Promise.resolve({ status: 'granted', release: (): Promise<void> => Promise.resolve() }),
+            Promise.resolve({
+              status: 'granted',
+              turnTreeId: 'tree-current',
+              release: (): Promise<void> => Promise.resolve(),
+            }),
         }),
       })
       const currentSignal = (): AbortSignal | null => turnSignal

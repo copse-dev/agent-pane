@@ -1,5 +1,15 @@
 # Shell and tool permission contract
 
+A tool cancelled while waiting for permission reports cancellation and never
+executes after the signal aborts. A negative gate result preserves its denial
+reason, distinguishing a user decline from policy, hook and unanswered-prompt
+refusals. Pending ACP approval remains a separate retryable error.
+
+When an authorized bridged action finishes after its caller detaches, Copse
+records its textual result before requesting continuation against the original
+human epoch. This delivers an outcome, never re-executes the action, and does
+not grant authority to run another tool.
+
 This document describes current shipped behavior. Read it before changing permission policy, shell
 scope analysis, the project sandbox, escalation, or approval UI. Historical design decisions
 remain in `docs/plans/`; this is the durable cross-platform contract.

@@ -11,6 +11,13 @@ The implementation lives in [`@copse/thread-store`](../packages/thread-store/REA
 The app's `src/main/services/thread-store.ts` is a compatibility re-export that
 installs the profile and tracing environment first.
 
+ACP tool results recovered after the caller detaches use a `decision` line with
+`kind: "bridge-result"`, `source: "acp-native-bridge"`, and the host-owned
+`bridgeExecutionId`. Its ordinary private decision detail blob contains
+`{ result: string }`; `classified` is the audit verdict, not an authorization.
+The blob is written before a continuation is requested. A stale or exhausted
+continuation leaves the saved result available for inspection.
+
 ## Location
 
 ```

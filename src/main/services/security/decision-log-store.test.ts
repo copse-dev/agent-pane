@@ -18,6 +18,7 @@ import {
 } from '@shared/threads/spine-schema.ts'
 import {
   recordDecision,
+  recordDecisionAndWait,
   readDecisionLog,
   readThreadDecisionLog,
   exportDecisionLog,
@@ -80,6 +81,37 @@ describe('decision-log-store', () => {
     assert.equal(existsSync(join(root, PROJECT, 'decisions.jsonl')), false)
     assert.equal(existsSync(threadEventsPath(root)), true)
   })
+
+  for (const scoped of [false, true]) {
+    it(`awaits result recording without escaping a scoped host: ${String(scoped)}`, async () => {
+      const captured: RecordedDecision[] = []
+      const record = (): Promise<RecordedDecision | null> =>
+        recordDecisionAndWait({
+          projectId: PROJECT,
+          threadId: THREAD,
+          kind: 'bridge-result',
+          actor: 'system',
+          verdict: 'classified',
+          subject: 'gh_pr_create',
+          detail: { result: 'Created draft once' },
+        })
+      const decision = scoped
+        ? await runWithDecisionRecorder((entry) => captured.push(entry), record)
+        : await record()
+      assert.ok(decision?.line.detail)
+      assert.equal(existsSync(threadEventsPath(root)), !scoped)
+      if (scoped) {
+        assert.equal(captured.length, 1)
+        assert.equal(captured[0], decision)
+      } else {
+        assert.equal(
+          readFileSync(join(root, PROJECT, THREAD, decision.line.detail.ref), 'utf8'),
+          JSON.stringify({ result: 'Created draft once' }),
+        )
+        assert.ok(readFileSync(threadEventsPath(root), 'utf8').includes(decision.line.id))
+      }
+    })
+  }
 
   it('writes a detail blob when detail is supplied', async () => {
     recordDecision({

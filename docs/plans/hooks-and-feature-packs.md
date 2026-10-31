@@ -138,7 +138,18 @@ revisiting this document, not silently diverging in an implementation PR.
    for HTTP tool calls. Clearing the context clears the snapshot; a legacy run
    without an explicit human epoch cannot synthesize one from its thread id.
    Bounded background tasks launched through ACP therefore use the same wake
-   budget and stale-epoch checks as native launches.
+   budget and stale-epoch checks as native launches. Self-resume budget grants
+   return that same epoch for binding the bridge; the lease must not drop it.
+   Answering a parked approval requests one host-native continuation to retry the
+   exact call through the ordinary gate. A consumed, expired or revoked answer
+   suppresses that wake at dispatch time. A bridged operation that returns after
+   its caller detaches or its turn completes normally saves the textual result
+   as a private `bridge-result` decision detail before requesting continuation.
+   Recovery delivers output and never executes the tool again. Bridge execution
+   ids deduplicate delivery. Stop, failed turns and session closure do not
+   request result recovery; missing epochs permit no synthesized wake. Saved
+   results remain inspectable when delivery is stale or budget-exhausted.
+   This does not introduce automatic recovery after app restart.
    Each in-run grant carries its bounded mechanism reason
    (`todo-closeout`, `pre-review-todo`, or `post-review-remediation`) for reporting;
    the reason does not change first-come ordering or the shared count. When the limit

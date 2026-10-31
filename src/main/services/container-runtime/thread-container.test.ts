@@ -1,5 +1,5 @@
 import { isRecord } from '@shared/unknown-value.ts'
-import { describe, it } from 'node:test'
+import { after as afterTests, before, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import {
@@ -11,7 +11,8 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
+import os, { tmpdir } from 'node:os'
+import { syncBuiltinESMExports } from 'node:module'
 import { join } from 'node:path'
 import { containerAcpAgentSpecs } from '@shared/container-acp-agents.ts'
 import { WORKER_BASE_IMAGE, WORKER_DOCKERFILE, WORKER_ENTRYPOINT_SH } from './worker-image-files.ts'
@@ -51,6 +52,26 @@ import {
   type ContainerRunInput,
 } from './thread-container.ts'
 import { containerAttestationShortfall } from '../security/runtime-containment.ts'
+
+const originalProfile = process.env['COPSE_DIR']
+let profile = ''
+let restoreHome = (): void => {}
+before(() => {
+  profile = mkdtempSync(join(tmpdir(), 'copse-thread-container-profile-'))
+  process.env['COPSE_DIR'] = profile
+  const home = mock.method(os, 'homedir', () => profile)
+  restoreHome = (): void => {
+    home.mock.restore()
+  }
+  syncBuiltinESMExports()
+})
+afterTests(() => {
+  restoreHome()
+  syncBuiltinESMExports()
+  if (originalProfile === undefined) delete process.env['COPSE_DIR']
+  else process.env['COPSE_DIR'] = originalProfile
+  rmSync(profile, { recursive: true, force: true })
+})
 
 function input(overrides: Partial<ContainerRunInput> = {}): ContainerRunInput {
   return {

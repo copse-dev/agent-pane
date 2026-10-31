@@ -44,7 +44,8 @@ function setup(options: {
     projectId: 'project',
     threadId: 'thread',
     bridge: {
-      setExecutionContext: (context) => {
+      setExecutionContext: (context, turnTreeId) => {
+        if (context) assert.equal(turnTreeId, 'tree-current')
         events.push(context ? 'bind' : 'unbind')
       },
       setTurnSignal: (signal) => {
@@ -79,6 +80,7 @@ function setup(options: {
 function granted(events: string[]): AgentInitiatedTurnClaim {
   return {
     status: 'granted',
+    turnTreeId: 'tree-current',
     release: (): Promise<void> => {
       events.push('budget-released')
       return Promise.resolve()
@@ -161,6 +163,7 @@ describe('agent-initiated turn lease', () => {
     lease.end()
     finishClaim({
       status: 'granted',
+      turnTreeId: 'tree-current',
       release: (): Promise<void> => {
         events.push('budget-released')
         return Promise.resolve()

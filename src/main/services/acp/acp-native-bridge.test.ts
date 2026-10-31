@@ -59,6 +59,7 @@ import {
 } from './acp-native-bridge.ts'
 import type { AcpNativeBridge } from './acp-native-bridge.ts'
 import { AcpTurnEnded } from './turn-end.ts'
+import { setAcpToolCompletionHandler } from './tool-completion.ts'
 import { expectRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { at } from '@shared/array-utils.ts'
 import { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
@@ -89,6 +90,20 @@ import {
  * drive it as a real MCP client would: JSON-RPC over stateless streamable
  * HTTP, bearer-token gated.
  */
+
+function deferredSignal(): {
+  promise: Promise<void>
+  resolve: () => void
+  reject: (error: unknown) => void
+} {
+  let resolve!: () => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<void>((onResolve, onReject) => {
+    resolve = onResolve
+    reject = onReject
+  })
+  return { promise, resolve, reject }
+}
 
 describe('bridgedWorkspaceWritePaths', () => {
   it('attributes successful native file edits to the ACP workspace audit', () => {
@@ -354,6 +369,7 @@ describe('startAcpNativeBridge', () => {
   let bridge: AcpNativeBridge | null = null
 
   afterEach(async () => {
+    setAcpToolCompletionHandler(null)
     setPermissionGateForTests(null)
     setDefaultPluginRegistry(null)
     setApprovalHandler(null)
@@ -747,6 +763,170 @@ describe('startAcpNativeBridge', () => {
       t.mock.timers.reset()
     }
   })
+
+  it(
+    'wakes an answered parked approval and consumes it once on an exact retry',
+    { timeout: 5_000 },
+    async () => {
+      const executed: string[] = []
+      const gate = promptingGate()
+      const owner = new AbortController()
+      const resumed = deferredSignal()
+      const threadId = 'approval-auto-resume'
+      let wakes = 0
+      bridge = await startAcpNativeBridge(testRegistry(executed), new AbortController().signal, {
+        threadId,
+      })
+      assert.ok(bridge)
+      const currentBridge = bridge
+      const bind = (): void => {
+        runWithActiveRunIdentity(threadId, () => {
+          setActiveRunTurnTreeId(asTurnTreeId('tree-approval'))
+          currentBridge.setExecutionContext(worktreeContext(threadId, '/worktrees/approval'))
+        })
+      }
+      bind()
+      currentBridge.setTurnSignal(owner.signal)
+      setAcpToolCompletionHandler(async (completion, prompt) => {
+        try {
+          wakes++
+          assert.equal(completion.turnTreeId, 'tree-approval')
+          assert.ok(completion.alreadyObserved)
+          assert.equal(completion.alreadyObserved(), false)
+          assert.match(prompt, /Retry this exact tool call once/)
+          assert.ok(prompt.includes(JSON.stringify(SHELL_CALL.params.arguments)))
+          bind()
+          currentBridge.setTurnSignal(new AbortController().signal)
+          assert.equal(
+            contentText(await rpc(currentBridge, SHELL_CALL)),
+            'ran git worktree list --porcelain',
+          )
+          assert.equal(completion.alreadyObserved(), true)
+          resumed.resolve()
+          return 'completed'
+        } catch (error) {
+          resumed.reject(error)
+          throw error
+        }
+      })
+      for (const init of initialized()) await rpc(currentBridge, init)
+      const started = gate.started()
+      const pending = rpc(currentBridge, SHELL_CALL)
+      await started
+      owner.abort(new AcpTurnEnded('completed'))
+      currentBridge.setExecutionContext(null)
+      currentBridge.setTurnSignal(null)
+      assert.match(contentText(await pending) ?? '', /Approval is still pending/)
+      assert.equal(wakes, 0)
+      gate.release({ approved: true, remember: false, resolution: 'user' })
+      await resumed.promise
+      assert.equal(wakes, 1)
+      assert.equal(gate.handlerCalls(), 1)
+      assert.deepEqual(executed, ['run_shell:git worktree list --porcelain'])
+    },
+  )
+
+  for (const ending of ['completed', 'stopped', 'connected', 'queued-stop'] as const) {
+    it(
+      `tracks late result recovery across the owning turn boundary: ${ending}`,
+      { timeout: 5_000 },
+      async () => {
+        const previousRoot = process.env['COPSE_WORKSPACE_DIR']
+        const root = mkdtempSync(join(tmpdir(), 'copse-late-tool-'))
+        process.env['COPSE_WORKSPACE_DIR'] = root
+        const started = deferredSignal()
+        const finish = deferredSignal()
+        const recovered = deferredSignal()
+        let executions = 0
+        let wakes = 0
+        const gate = promptingGate()
+        const registry = new ToolRegistry()
+        registry.register({
+          name: 'run_shell',
+          description: 'An already-authorized action that cannot undo its side effect',
+          parameters: z.object({ command: z.string() }),
+          execute: async () => {
+            executions++
+            started.resolve()
+            await finish.promise
+            return 'Created https://github.com/example/repo/pull/123'
+          },
+        })
+        const owner = new AbortController()
+        const threadId = 'late-result'
+        setAcpToolCompletionHandler(async (completion, prompt) => {
+          try {
+            wakes++
+            assert.equal(completion.turnTreeId, 'tree-late')
+            assert.equal(completion.owner.threadId, threadId)
+            assert.match(prompt, /action already ran; do not repeat it/)
+            assert.match(prompt, /pull\/123/)
+            const events = await readDecisionLog('project-1')
+            assert.ok(
+              events.some(
+                (event) =>
+                  event.kind === 'bridge-result' &&
+                  event.bridgeExecutionId === completion.operationId,
+              ),
+              'the result must be durable before dispatch',
+            )
+            const alreadyObserved = completion.alreadyObserved
+            assert.ok(alreadyObserved)
+            assert.equal(alreadyObserved(), false)
+            if (ending === 'queued-stop') {
+              // The dispatcher waits for the active turn before claiming this
+              // wake. Stop during that wait must revoke the queued continuation.
+              owner.abort(new AcpTurnEnded('stopped'))
+              assert.equal(alreadyObserved(), true)
+            }
+            recovered.resolve()
+            return 'completed'
+          } catch (error) {
+            recovered.reject(error)
+            throw error
+          }
+        })
+        try {
+          bridge = await startAcpNativeBridge(registry, new AbortController().signal, { threadId })
+          assert.ok(bridge)
+          runWithActiveRunIdentity(threadId, () => {
+            setActiveRunTurnTreeId(asTurnTreeId('tree-late'))
+            bridge?.setExecutionContext(worktreeContext(threadId, '/worktrees/late'))
+          })
+          bridge.setTurnSignal(owner.signal)
+          for (const init of initialized()) await rpc(bridge, init)
+          const approvalStarted = gate.started()
+          const pending = rpc(bridge, SHELL_CALL)
+          await approvalStarted
+          gate.release({ approved: true, remember: false, resolution: 'user' })
+          await started.promise
+          if (ending === 'queued-stop') {
+            await rpc(bridge, {
+              jsonrpc: '2.0',
+              method: 'notifications/cancelled',
+              params: { requestId: SHELL_CALL.id, reason: 'client detached' },
+            })
+          } else if (ending !== 'connected') {
+            owner.abort(new AcpTurnEnded(ending))
+            bridge.setExecutionContext(null)
+            bridge.setTurnSignal(null)
+          }
+          finish.resolve()
+          await pending
+          if (ending === 'completed' || ending === 'queued-stop') await recovered.promise
+          assert.equal(executions, 1)
+          assert.equal(wakes, ending === 'completed' || ending === 'queued-stop' ? 1 : 0)
+        } finally {
+          finish.resolve()
+          await bridge?.close()
+          setAcpToolCompletionHandler(null)
+          if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+          else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+          rmSync(root, { recursive: true, force: true })
+        }
+      },
+    )
+  }
 
   it('keeps a live HTTP approval when its turn completes before the client disconnects', async () => {
     const executed: string[] = []

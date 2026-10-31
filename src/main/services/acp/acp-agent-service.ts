@@ -108,7 +108,8 @@ import { getSetting } from '../storage/settings.ts'
 import { ensureShellCommandPermitted } from '../security/permission-gate.ts'
 import { currentRunIsUnattendedContainer } from '../security/unattended-run.ts'
 import { recordDecision } from '../security/decision-log-store.ts'
-import { getActiveRunThread } from '../thread-models.ts'
+import { getActiveRunThread, setActiveRunTurnTreeId } from '../thread-models.ts'
+import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import { isStructurallyReadOnlyShellCommand } from '../security/permission-policy.ts'
 import { detectLanguage } from '../language.ts'
 import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
@@ -473,7 +474,7 @@ function installAgentInitiatedTurnLease(
     projectId,
     threadId,
     bridge: {
-      setExecutionContext: (context) => {
+      setExecutionContext: (context, turnTreeId) => {
         if (!context) {
           bridge.setExecutionContext(null)
           return
@@ -481,6 +482,7 @@ function installAgentInitiatedTurnLease(
         // The bridge captures per-thread scopes from the async context at bind time.
         runWithThreadExecutionContext(context, () => {
           runWithActiveRunIdentity(threadId, () => {
+            if (turnTreeId !== undefined) setActiveRunTurnTreeId(asTurnTreeId(turnTreeId))
             bridge.setExecutionContext(context)
           })
         })

@@ -85,8 +85,16 @@ export function isAbandonedCallAbort(reason: unknown): boolean {
 export class ApprovalPendingError extends Error {
   override readonly name = 'ApprovalPendingError'
 
-  constructor(title: string) {
+  readonly retry:
+    | {
+        settled: Promise<ApprovalResponse>
+        available: () => boolean
+      }
+    | undefined
+
+  constructor(title: string, retry?: ApprovalPendingError['retry']) {
     super(approvalPendingMessage(title))
+    this.retry = retry
   }
 }
 
@@ -899,7 +907,24 @@ function requestApprovalUnpaused(
           // The caller is gone but the question stands: keep the prompt open
           // with a stand-in waiter that files the answer for the caller's
           // retry, and tell the caller so — this is not a denial.
+          let retry: ApprovalPendingError['retry']
           if (![...active.waiters].some((other) => other.ledgerKey === ledgerKey)) {
+            let settleAnswer: (response: ApprovalResponse) => void
+            const settled = new Promise<ApprovalResponse>((resolve) => {
+              settleAnswer = resolve
+            })
+            let answer: ApprovalResponse | undefined
+            retry = {
+              settled,
+              available: (): boolean => {
+                const stored = abandonedVerdicts.get(ledgerKey)
+                return (
+                  stored !== undefined &&
+                  stored.response === answer &&
+                  approvalClock() - stored.settledAt <= ABANDONED_VERDICT_TTL_MS
+                )
+              },
+            }
             active.waiters.add(
               parkedWaiter(
                 ledgerKey,
@@ -910,6 +935,10 @@ function requestApprovalUnpaused(
                 toolCallId,
                 req.bridgeExecutionId,
                 waiter.bridgeOwnerId,
+                (response) => {
+                  answer = response
+                  settleAnswer(response)
+                },
               ),
             )
           }
@@ -924,7 +953,7 @@ function requestApprovalUnpaused(
             source: completed ? 'turn-completed' : 'client-abandoned',
             detail: { abortReason: reason instanceof Error ? reason.message : String(reason) },
           })
-          reject(new ApprovalPendingError(req.title))
+          reject(new ApprovalPendingError(req.title, retry))
           return
         }
         // Cancellation ends the question; completion only detaches its caller.
@@ -981,11 +1010,13 @@ function parkedWaiter(
   toolCallId?: string,
   bridgeExecutionId?: string,
   bridgeOwnerId?: string,
+  onSettled?: (response: ApprovalResponse) => void,
 ): InflightWaiter {
   const cancel = (source: string): void => {
     if (!entry.waiters.has(waiter)) return
     entry.waiters.delete(waiter)
     recordApprovalDecision(req, DENIED, source)
+    onSettled?.({ approved: false, remember: false, resolution: 'unavailable' })
     teardownIfIdle()
   }
   const waiter: InflightWaiter = {
@@ -1002,6 +1033,7 @@ function parkedWaiter(
       if (response.resolution === undefined || response.resolution === 'user') {
         storeAbandonedVerdict(ledgerKey, response, bridgeOwnerId)
       }
+      onSettled?.(response)
     },
     onAbort: () => {
       cancel('aborted')

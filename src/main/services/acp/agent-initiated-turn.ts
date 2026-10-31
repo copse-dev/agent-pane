@@ -15,7 +15,7 @@ import { AcpTurnEnded, type AcpTurnEndReason } from './turn-end.ts'
  */
 
 export type AgentInitiatedTurnClaim =
-  | { status: 'granted'; release: () => Promise<void> }
+  | { status: 'granted'; turnTreeId: string; release: () => Promise<void> }
   | { status: 'budget-exhausted' }
 
 export interface AgentInitiatedTurnAuthority {
@@ -33,7 +33,7 @@ export function setAgentInitiatedTurnAuthority(next: AgentInitiatedTurnAuthority
 }
 
 export interface AgentTurnBridge<TContext> {
-  setExecutionContext: (context: TContext | null) => void
+  setExecutionContext: (context: TContext | null, turnTreeId?: string) => void
   setTurnSignal: (signal: AbortSignal | null) => void
   setPendingExecutionContext: (pending: Promise<TContext | null> | null) => void
 }
@@ -108,7 +108,7 @@ export function createAgentInitiatedTurnLease<TContext>(
     releaseBudget = claim.release
     const context = await deps.resolveContext(deps.projectId, deps.threadId)
     if (isEnded(turn)) return null
-    deps.bridge.setExecutionContext(context)
+    deps.bridge.setExecutionContext(context, claim.turnTreeId)
     bound = true
     releaseWriter = deps.beginWriter()
     return context

@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -30,20 +30,20 @@ describe('formatArgvForShell', () => {
     assert.equal(command, `'${exec}' '${worker}'`)
   })
 
-  it('runs a spaced executable path under bash -c without splitting on spaces', () => {
-    const dir = '/tmp/copse spaced spawn test'
+  it('runs a spaced executable path under bash -c without splitting on spaces', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'copse spaced spawn '))
     const execPath = `${dir}/fake-electron`
     const workerPath = `${dir}/worker.js`
     const command = formatArgvForShell(execPath, [workerPath])
-    const script = [
-      `mkdir -p ${JSON.stringify(dir)}`,
-      `printf '#!/bin/sh\\necho OK\\n' > ${JSON.stringify(execPath)}`,
-      `chmod +x ${JSON.stringify(execPath)}`,
-      `touch ${JSON.stringify(workerPath)}`,
-      command,
-    ].join('; ')
-    const out = execFileSync('/bin/bash', ['-c', script], { encoding: 'utf8' }).trim()
-    assert.equal(out, 'OK')
+    try {
+      await writeFile(execPath, '#!/bin/sh\necho OK\n')
+      await chmod(execPath, 0o755)
+      await writeFile(workerPath, '')
+      const out = execFileSync('/bin/bash', ['-c', command], { encoding: 'utf8' }).trim()
+      assert.equal(out, 'OK')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })
 
