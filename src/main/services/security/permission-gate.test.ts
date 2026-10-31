@@ -39,7 +39,17 @@ import { decideMcpPermission, describeMcpAnnotations } from './permission-policy
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
-import { setApprovalHandler } from '../approval.ts'
+import {
+  ApprovalPendingError,
+  discardApprovalsForThread,
+  setApprovalHandler,
+  type ApprovalResponse,
+} from '../approval.ts'
+import { runWithBridgeExecutionId } from '../approval-tool-call-context.ts'
+import {
+  createAgentInitiatedTurnLease,
+  type AgentInitiatedTurnClaim,
+} from '../acp/agent-initiated-turn.ts'
 import { darwinUserTempDir } from '../../project-sandbox/config.ts'
 import { clearReadOutsideProjectGrants, grantReadOutsideProject } from './read-outside-grant.ts'
 import { SHELL_DECISION_SUBJECT, type DecisionEvent } from '@shared/threads/decision-log.ts'
@@ -1675,6 +1685,100 @@ describe('run_background permission', () => {
       setApprovalHandler(null)
       restore()
       await setSetting('safetyClassifierEnabled', false)
+    }
+  })
+
+  it('preserves a pending port-binding approval when its ACP turn completes normally', async () => {
+    setPermissionGateForTests(null)
+    const projectRoot = '/tmp/port-binding-turn-completion'
+    const threadId = 'port-binding-turn-completion'
+    const restore = setWorkspaceRootForTest(projectRoot)
+    await setSetting('safetyClassifierEnabled', false)
+    await setSetting('portBindingAllowedRoots', [])
+    const context: ThreadExecutionContext = {
+      projectId: projectRoot,
+      projectRoot,
+      threadId,
+      root: projectRoot,
+      checkoutMode: 'shared',
+      branch: 'main',
+    }
+    let turnSignal: AbortSignal | null = null
+    let binding: Promise<ThreadExecutionContext | null> | null = null
+    const lease = createAgentInitiatedTurnLease<ThreadExecutionContext>({
+      projectId: projectRoot,
+      threadId,
+      bridge: {
+        setExecutionContext: () => {},
+        setTurnSignal: (signal) => {
+          turnSignal = signal
+        },
+        setPendingExecutionContext: (pending) => {
+          binding = pending
+        },
+      },
+      resolveContext: async () => context,
+      confirmContinue: async () => false,
+      beginWriter: (): (() => void) => (): void => {},
+      getAuthority: () => ({
+        claimAgentInitiatedTurn: async (): Promise<AgentInitiatedTurnClaim> => ({
+          status: 'granted',
+          release: async (): Promise<void> => {},
+        }),
+      }),
+    })
+    let portPrompts = 0
+    let promptSignal: AbortSignal | undefined
+    let answer: (response: ApprovalResponse) => void = () => {}
+    const prompted = Promise.withResolvers<undefined>()
+    setApprovalHandler((request, signal) => {
+      // The ordinary shell gate can also prompt on hosts without a sandbox.
+      if (request.cause !== 'shell-port-binding') {
+        return Promise.resolve({ approved: true, remember: false })
+      }
+      portPrompts++
+      assert.equal(request.title, 'Allow this project to bind a local port?')
+      promptSignal = signal
+      prompted.resolve(undefined)
+      return new Promise<ApprovalResponse>((resolve) => {
+        answer = resolve
+      })
+    })
+    const args = { action: 'start', command: 'npm run dev', allow_port_binding: true }
+    const start = (signal: AbortSignal): Promise<boolean> =>
+      runWithActiveRunIdentity(threadId, () =>
+        runWithThreadExecutionContext(context, () =>
+          runWithBridgeExecutionId(
+            'port-binding-call',
+            () => ensureToolPermitted({ toolName: 'run_background', args }, signal),
+            { toolName: 'run_background', arguments: args },
+          ),
+        ),
+      )
+    try {
+      lease.begin()
+      const currentBinding = (): Promise<ThreadExecutionContext | null> | null => binding
+      await currentBinding()
+      assert.ok(turnSignal)
+      const pending = start(turnSignal)
+      const detached = assert.rejects(pending, ApprovalPendingError)
+      await prompted.promise
+      lease.end()
+      await detached
+      assert.equal(promptSignal?.aborted, false, 'completion must keep the human prompt alive')
+      assert.equal(portPrompts, 1)
+      answer({ approved: true, remember: false })
+      // Drain the handler resolution before the next tool request.
+      await Promise.resolve()
+      await Promise.resolve()
+      assert.equal(await start(new AbortController().signal), true)
+      assert.equal(portPrompts, 1, 'the exact retry must consume the retained human answer')
+    } finally {
+      lease.end('stopped')
+      discardApprovalsForThread(threadId, 'stopped')
+      setApprovalHandler(null)
+      restore()
+      await setSetting('portBindingAllowedRoots', [])
     }
   })
 

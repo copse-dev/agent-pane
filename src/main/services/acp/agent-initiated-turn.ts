@@ -1,3 +1,5 @@
+import { AcpTurnEnded, type AcpTurnEndReason } from './turn-end.ts'
+
 // Generic over the bound context: importing the real type (even type-only) would put
 // thread-execution-context's heavy graph in reach of the stdout-owning ACP workers, which
 // scripts/stdout-protocol-guard.test.ts forbids.
@@ -55,7 +57,7 @@ export interface AgentInitiatedTurnLease {
   /** More agent output during its own turn: restarts the idle clock. */
   touch: () => void
   /** The self-started turn finished, a Copse turn took over, or the session closed. */
-  end: () => void
+  end: (reason?: AcpTurnEndReason) => void
   /** A self-started turn is in progress (between `begin` and `end`). */
   isActive: () => boolean
 }
@@ -76,7 +78,9 @@ export function createAgentInitiatedTurnLease<TContext>(
 
   const armIdle = (): void => {
     clearTimeout(idleTimer)
-    idleTimer = setTimeout(end, idleMs)
+    idleTimer = setTimeout(() => {
+      end('idle-timeout')
+    }, idleMs)
     idleTimer.unref()
   }
 
@@ -129,12 +133,12 @@ export function createAgentInitiatedTurnLease<TContext>(
     armIdle()
   }
 
-  function end(): void {
+  function end(reason: AcpTurnEndReason = 'completed'): void {
     clearTimeout(idleTimer)
     const turn = abort
     if (!turn) return
     abort = null
-    turn.abort()
+    turn.abort(new AcpTurnEnded(reason))
     deps.bridge.setPendingExecutionContext(null)
     if (bound) deps.bridge.setExecutionContext(null)
     deps.bridge.setTurnSignal(null)
