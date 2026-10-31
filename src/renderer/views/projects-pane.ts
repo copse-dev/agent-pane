@@ -2830,6 +2830,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       }
       showThreadArchiveToast(store, api, event.projectId, event.threadId, event.title)
     }),
+    // A trigger means main wrote this project's threads: it created a run and,
+    // when the project is not focused, drives that turn itself. A resident
+    // snapshot read before then lacks the run, so the next switch must reload.
+    api.automations.onTriggered((event) => {
+      invalidateProjectThreadLoads(api, event.projectId)
+    }),
     store.on('thread_archive_requested', (projectId, threadId) => {
       void archiveProjectThread(projectId, threadId)
     }),
