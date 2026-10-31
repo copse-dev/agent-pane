@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { $, browser } from '@wdio/globals'
-import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
+import { resetUserData, writeSeedConfig, writeSettings } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-concise-scroll-project'
@@ -11,12 +11,12 @@ describe('completed thread switch scroll position', function () {
 
   before(async () => {
     resetUserData()
+    writeSettings({ conciseThreadsEnabled: true })
     const now = Date.parse('2026-10-01T10:00:00Z')
     writeSeedConfig({
       projects: [{ id: PROJECT_ID, path: process.cwd(), name: 'Completed threads' }],
       activeProjectId: PROJECT_ID,
       activeThreadId: threadId('a'),
-      conciseThreadsEnabled: true,
       [`threads:${PROJECT_ID}`]: ['a', 'b'].map((suffix) => ({
         id: threadId(suffix),
         title: `Completed thread ${suffix.toUpperCase()}`,
