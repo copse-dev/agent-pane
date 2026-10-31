@@ -161,6 +161,7 @@
       "!dist/renderer/mermaid-frame.js"
     ],
     "asarUnpack": [
+      "dist/resources/process-memory",
       "**/node_modules/node-pty/**/*",
       "**/node_modules/@napi-rs/**/*",
       "**/node_modules/@anthropic-ai/sandbox-runtime/**/*",
@@ -248,7 +249,7 @@
     "@nationaldesignstudio/rampart": "0.1.3"
   },
   "devDependencies": {
-    "@agentclientprotocol/sdk": "^1.8.0",
+    "@agentclientprotocol/sdk": "2.2.0",
     "@anthropic-ai/sdk": "^0.133.0",
     "@copse/agent": "workspace:*",
     "@copse/hooks-dialects": "workspace:*",

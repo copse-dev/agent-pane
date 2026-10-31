@@ -7,6 +7,9 @@ import { describe, it } from 'node:test'
 import { getSettingsSnapshot, updateSettings } from './settings-transaction.ts'
 import { getSetting, setSetting, setApiKey, updateSetting } from './settings.ts'
 import { runWithExplicitSettings } from './settings-context.ts'
+import { installInMemorySecretCipher } from './secret-cipher.test-support.ts'
+
+installInMemorySecretCipher()
 
 type ReadableSchemas = typeof MAIN_ONLY_SETTING_SCHEMAS & typeof RENDERER_WRITABLE_SETTING_SCHEMAS
 type SchemaSnapshot = { [K in keyof ReadableSchemas]?: z.output<ReadableSchemas[K]> | undefined }

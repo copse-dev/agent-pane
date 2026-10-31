@@ -76,7 +76,7 @@ import {
   prepareWorktreeTool,
 } from '../../tools/worktree-preparation-tool.ts'
 import { browserShowTool } from '../../tools/browser-tools.ts'
-import { setSetting } from '../storage/settings.test-shim.ts'
+import { setSetting } from '../storage/settings.ts'
 import {
   clearMcpToolPermissionTargets,
   registerMcpToolPermissionTarget,
@@ -357,7 +357,7 @@ describe('startAcpNativeBridge', () => {
     setDefaultPluginRegistry(null)
     setApprovalHandler(null)
     clearAbandonedVerdictsForTest()
-    setSetting('toolPermissionOverrides', {})
+    await setSetting('toolPermissionOverrides', {})
     clearMcpToolPermissionTargets()
     await bridge?.close()
     bridge = null
@@ -890,7 +890,7 @@ describe('startAcpNativeBridge', () => {
       toolName: 'list_messages',
       origin: 'user',
     })
-    setSetting('toolPermissionOverrides', { [permissionId]: 'block' })
+    await setSetting('toolPermissionOverrides', { [permissionId]: 'block' })
     bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
       threadId: 'bridge-mcp-policy',
     })

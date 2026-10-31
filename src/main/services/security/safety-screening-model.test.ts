@@ -14,6 +14,9 @@ import { invalidateLmStudioModelsCache } from '../providers/provider-selection.t
 import { setPlanUsageSnapshotFetcherForTest } from '../plan-usage-bridge.ts'
 import { PROVIDER_ENV_VARS } from '../providers/env-key-detection.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
+import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+
+installInMemorySecretCipher()
 
 /**
  * A safety model can clear the intelligence bar and still be too slow to be

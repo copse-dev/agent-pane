@@ -18,7 +18,7 @@ import {
 } from './search/execution-root-watcher.ts'
 import { turnIngestedExternalContent } from './security/turn-taint.ts'
 import { z } from 'zod'
-import { setSetting } from './storage/settings.test-shim.ts'
+import { setSetting } from './storage/settings.ts'
 import { copseToolPermissionId } from './security/tool-permissions.ts'
 import { recoverTextToolCalls } from '@copse/agent/parse-text-tool-calls.ts'
 
@@ -577,7 +577,7 @@ describe('ToolRegistry', () => {
       assert.equal(searchCalls, 1)
 
       setPermissionGateForTests(null)
-      setSetting('toolPermissionOverrides', {
+      await setSetting('toolPermissionOverrides', {
         [copseToolPermissionId('search_code')]: 'block',
       })
       try {
@@ -590,7 +590,7 @@ describe('ToolRegistry', () => {
         )
         assert.equal(searchCalls, 1, 'the cached value and handler must both remain untouched')
       } finally {
-        setSetting('toolPermissionOverrides', {})
+        await setSetting('toolPermissionOverrides', {})
       }
     })
 

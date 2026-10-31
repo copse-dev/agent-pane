@@ -77,8 +77,9 @@ UI changes or introducing a setting. Avoid adding a growing list of per-tool del
    screenshots alone cannot demonstrate temporal jitter.
 
 2. **Own disclosure state explicitly.** Keep renderer-side policy state in
-   `src/renderer/views/disclosure-model.ts`, which `conversation.ts` reads and
-   writes instead of the previous DOM. Track `auto`, `user-open`, and `user-closed` separately
+   `src/renderer/views/disclosure-model.ts`, which the tool-card refresh
+   (`src/renderer/views/tool-card-refresh.ts`, extracted from `conversation.ts`
+   in #3962) reads and writes instead of the previous DOM. Track `auto`, `user-open`, and `user-closed` separately
    from tool status, keyed by thread/message/disclosure identity. Track reveal and
    settle deadlines with renderer timers. Use existing run lifecycle signals;
    confirm native and ACP completion semantics before wiring compaction. Clear stale
