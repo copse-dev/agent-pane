@@ -163,7 +163,12 @@ describe('settings → Customise / MCP / Storage', function () {
       expect.stringContaining('Declared by plugins, not running'),
     )
     // Built-in servers (Canvas is on by default) list above the declarations, so
-    // bring the declared row clear of the footer before capturing the lens.
+    // bring the declared row clear of the footer before capturing the lens. The
+    // Canvas row stays in frame, so wait for its live status to settle first:
+    // a capture taken while it still reads "… connecting" would not repeat.
+    await mcp
+      .$('.mcp-server-row.mcp-state-connected[data-mcp-server="copse-canvas"]')
+      .waitForExist({ timeout: 20_000 })
     await declaredRow.scrollIntoView({ block: 'center' })
     await saveElementScreenshot('#settings-dialog', 'settings-mcp-lens.png')
   })
