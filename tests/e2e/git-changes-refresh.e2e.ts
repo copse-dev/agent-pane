@@ -63,8 +63,10 @@ describe('Changes background refresh', function () {
   })
 
   it('keeps the settled empty state while refreshing, then displays actual edits', async () => {
+    // Scope every query to the Changes host: side chat, memories, roadmap and
+    // PR panes also render a `.git-changes-list`, and side chat mounts first.
     await browser.execute(() => {
-      const list = document.querySelector<HTMLElement>('.git-changes-list')
+      const list = document.querySelector<HTMLElement>('#git-changes-host .git-changes-list')
       const empty = list?.querySelector<HTMLElement>('.git-changes-empty')
       if (!list || !empty) throw new Error('expected settled Changes list')
       empty.dataset['retained'] = 'true'
@@ -76,16 +78,16 @@ describe('Changes background refresh', function () {
     })
     unlinkSync(join(barrier, 'release'))
     unlinkSync(join(barrier, 'started'))
-    await $('.git-changes-refresh-btn').click()
+    await $('#git-changes-host .git-changes-refresh-btn').click()
     await browser.waitUntil(() => existsSync(join(barrier, 'started')))
     await expect($('#git-changes-host .git-changes-empty')).toHaveText('No changes')
     await expect($('#git-changes-host .pane-loading')).not.toExist()
     await saveElementScreenshot('#git-changes-host', 'git-changes-refresh-retained.png')
-    assert.equal(await $('.git-changes-empty').getAttribute('data-retained'), 'true')
-    assert.equal(await $('.git-changes-list').getAttribute('data-mutations'), '0')
+    assert.equal(await $('#git-changes-host .git-changes-empty').getAttribute('data-retained'), 'true')
+    assert.equal(await $('#git-changes-host .git-changes-list').getAttribute('data-mutations'), '0')
     writeFileSync(join(barrier, 'release'), '')
     // A real filesystem change takes the same background refresh path.
     writeFileSync(join(repoRoot, 'example.ts'), 'export const value = 2\n')
-    await expect($('.git-change-row*=example.ts')).toBeDisplayed()
+    await expect($('#git-changes-host').$('.git-change-row*=example.ts')).toBeDisplayed()
   })
 })
