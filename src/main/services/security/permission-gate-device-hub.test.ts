@@ -19,10 +19,18 @@ describe('Device Hub permission boundary', () => {
       assert.equal(request.subject, 'device_hub')
       return { approved: false, remember: false }
     })
-    for (const action of ['list', 'open', 'launch', 'screenshot', 'show', 'input']) {
+    for (const action of [
+      'list',
+      'open',
+      'launch',
+      'screenshot',
+      'show',
+      'input',
+      'delete_simulator',
+    ]) {
       assert.equal(await ensureToolPermitted({ toolName: 'device_hub', args: { action } }), false)
     }
-    assert.equal(prompts, 6)
+    assert.equal(prompts, 7)
   })
 
   it('honors explicit allow/block but never bypasses read-only mode', async () => {
@@ -31,6 +39,24 @@ describe('Device Hub permission boundary', () => {
     assert.equal(await ensureToolPermitted(check), true)
     await runWithAgentRunReadonly(true, async () => {
       assert.equal(await ensureToolPermitted(check), false)
+      assert.equal(
+        await ensureToolPermitted({
+          toolName: 'device_hub',
+          args: {
+            action: 'screenshot',
+            device_id: '11111111-2222-4333-8444-555555555555',
+            output_path: 'artifacts/simulator.png',
+          },
+        }),
+        false,
+      )
+      assert.equal(
+        await ensureToolPermitted({
+          toolName: 'device_hub',
+          args: { action: 'delete_simulator', device_id: '11111111-2222-4333-8444-555555555555' },
+        }),
+        false,
+      )
     })
     await setSetting('toolPermissionOverrides', { [copseToolPermissionId('device_hub')]: 'block' })
     assert.equal(await ensureToolPermitted(check), false)
@@ -48,4 +74,28 @@ describe('Device Hub permission boundary', () => {
       false,
     )
   })
+})
+
+it('asks for exact simulator deletion even when Device Hub already has a broad allow', async () => {
+  await setSetting('toolPermissionOverrides', { [copseToolPermissionId('device_hub')]: 'allow' })
+  let prompts = 0
+  setApprovalHandler(async (request) => {
+    prompts++
+    assert.equal(request.allowRemember, false)
+    assert.ok(request.body.includes('11111111-2222-4333-8444-555555555555'))
+    return { approved: false, remember: false }
+  })
+  assert.equal(
+    await ensureToolPermitted({
+      toolName: 'device_hub',
+      args: { action: 'delete_simulator', device_id: '11111111-2222-4333-8444-555555555555' },
+    }),
+    false,
+  )
+  assert.equal(prompts, 1)
+  assert.equal(
+    await ensureToolPermitted({ toolName: 'device_hub', args: { action: 'list' } }),
+    true,
+  )
+  assert.equal(prompts, 1)
 })

@@ -33,7 +33,7 @@ afterEach(() => {
 
 describe('Device Hub tool contract', () => {
   it('requires an explicit device for every device operation', () => {
-    for (const action of ['apps', 'launch', 'screenshot', 'show', 'input']) {
+    for (const action of ['apps', 'launch', 'screenshot', 'show', 'input', 'delete_simulator']) {
       assert.equal(deviceHubTool.parameters.safeParse({ action }).success, false)
     }
     assert.equal(deviceHubTool.parameters.safeParse({ action: 'open' }).success, true)

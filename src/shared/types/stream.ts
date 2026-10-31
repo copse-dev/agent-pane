@@ -63,6 +63,13 @@ export type StreamChunk =
       content: AcpContentBlock
       messageId?: string
     }
+  /** Replace the complete content of one externally identified ACP message. */
+  | {
+      type: 'acp_content_replace'
+      channel: 'message' | 'thought'
+      messageId: string
+      content: AcpContentBlock[]
+    }
   /** A provider presentation reference resolved through Copse's canvas. */
   | {
       type: 'canvas_artefact'
