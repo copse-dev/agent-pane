@@ -6,13 +6,20 @@ import { join } from 'node:path'
 import type { ThreadPromptCommand } from '@shared/thread-prompt.ts'
 import { normalizeToolExecuteResult } from '@shared/types'
 import { createSubthreadsTool } from './subthreads-tool.ts'
-import { createThread, getProjectThread } from '../services/thread-store.ts'
+import { canDispatchSubthread } from '../services/thread-prompts.ts'
+import {
+  createThread,
+  getProjectThread,
+  updateMeta,
+  appendMessage,
+} from '../services/thread-store.ts'
 import { runWithActiveRunIdentity } from '../services/active-run-identity.ts'
 import { threadExecutionContextStorage } from '../services/thread-execution-context-store.ts'
 import { runWithApprovalHandler } from '../services/approval.ts'
 import { setSetting } from '../services/storage/settings.ts'
 import { hasThreadAccess, revokeThreadAccess } from '../services/security/thread-access.ts'
 import { z } from 'zod'
+import { ToolSchema } from '@modelcontextprotocol/sdk/types.js'
 import { safeJsonParse, decodeWithSchema } from '@shared/safe-json.ts'
 
 describe('subthread orchestration', () => {
@@ -104,15 +111,78 @@ describe('subthread orchestration', () => {
         )
         assert.equal(sent.length, 3)
         assert.ok(sent.every((command) => command.requireWorktree))
-        assert.deepEqual((await getProjectThread('project', childId))?.followUpOf, {
-          parentThreadId: 'parent',
-        })
+        assert.equal((await getProjectThread('project', childId))?.followUpOf, undefined)
         assert.equal(hasThreadAccess('parent', 'read'), false)
         assert.equal(hasThreadAccess('parent', 'send'), false)
         assert.equal(hasThreadAccess(childId, 'orchestrate'), false)
       },
     )
     assert.equal(prompts, 1)
+  })
+
+  it('uses an object schema accepted by MCP', () => {
+    const schema = z.toJSONSchema(tool.parameters)
+    ToolSchema.parse({ name: tool.name, description: tool.description, inputSchema: schema })
+    assert.equal(schema.type, 'object')
+    assert.equal(Object.hasOwn(schema, 'oneOf'), false)
+  })
+
+  it('bounds live children and lifetime starts, replaces archived keys and forbids nesting', async () => {
+    await setSetting('threadSubthreadAccess', ['parent'])
+    const first = id(await run(start))
+    await run({ ...start, key: 'second' })
+    assert.match(await run({ ...start, key: 'third' }), /two live children/)
+    assert.match(await run(start, first), /cannot orchestrate nested/)
+    for (let index = 0; index < 2; index++) {
+      const current = await getProjectThread('project', id(await run(start)))
+      assert.ok(current)
+      await updateMeta('project', current.id, { archivedAt: Date.now() })
+      const replacement = id(await run(start))
+      assert.notEqual(replacement, current.id)
+      assert.match(await run(start, current.id), /cannot orchestrate nested/)
+    }
+    const current = await getProjectThread('project', id(await run(start)))
+    assert.ok(current)
+    await updateMeta('project', current.id, { archivedAt: Date.now() })
+    assert.match(await run(start), /four child starts/)
+    assert.equal(sent.length, 4)
+  })
+
+  it('returns capped text without reasoning, tool payloads or inline image data', async () => {
+    await setSetting('threadSubthreadAccess', ['parent'])
+    const childId = id(await run(start))
+    const child = await getProjectThread('project', childId)
+    assert.ok(child)
+    for (let index = 0; index < 100; index++) {
+      await appendMessage('project', childId, {
+        id: String(index),
+        role: 'assistant',
+        content: 'data:image/png;base64,SECRET ' + 'x'.repeat(5000),
+        createdAt: 1,
+        toolCalls: [],
+        reasoning: 'PRIVATE_REASONING',
+      })
+    }
+    const result = await run({ action: 'read', thread_id: childId, offset: 0, limit: 100 })
+    assert.ok(Buffer.byteLength(result) < 26_000)
+    assert.doesNotMatch(result, /PRIVATE_REASONING|data:image|SECRET/)
+    assert.match(result, /image omitted/)
+    assert.ok(sent.every((command) => command.authorizingAccess === 'orchestrate'))
+  })
+
+  it('rechecks ownership, archive state and revocation before queued dispatch', async () => {
+    await setSetting('threadSubthreadAccess', ['parent'])
+    const childId = id(await run(start))
+    assert.equal(await canDispatchSubthread('project', 'parent', childId), true)
+    assert.equal(await canDispatchSubthread('other-project', 'parent', childId), false)
+    assert.equal(await canDispatchSubthread('project', 'other', childId), false)
+    await revokeThreadAccess('parent', 'orchestrate')
+    assert.equal(await canDispatchSubthread('project', 'parent', childId), false)
+    await setSetting('threadSubthreadAccess', ['parent'])
+    const child = await getProjectThread('project', childId)
+    assert.ok(child)
+    await updateMeta('project', child.id, { archivedAt: 1 })
+    assert.equal(await canDispatchSubthread('project', 'parent', childId), false)
   })
 
   it('concurrent retries converge on one child and one prompt', async () => {

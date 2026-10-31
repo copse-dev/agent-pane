@@ -94,7 +94,7 @@ export async function acceptThreadPrompt(
       return { ok: false, error: 'The destination conversation is unavailable.' }
     const origin: MachineMessageOrigin = {
       kind: 'machine',
-      operationId: `thread:${command.sourceThreadId}`,
+      operationId: `${command.authorizingAccess ? 'subthread' : 'thread'}:${command.sourceThreadId}`,
     }
     // An earlier failed run does not prevent an authorized new prompt.
     if (current.status === 'error')

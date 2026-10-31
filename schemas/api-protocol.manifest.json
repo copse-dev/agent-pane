@@ -2383,6 +2383,13 @@
           2
         ]
       },
+      "thread-prompts:can-dispatch": {
+        "api": "threadPrompts.canDispatch",
+        "args": [
+          3,
+          3
+        ]
+      },
       "thread-prompts:can-submit": {
         "api": "threadPrompts.canSubmit",
         "args": [

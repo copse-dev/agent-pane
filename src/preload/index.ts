@@ -34,6 +34,8 @@ const api: ApiClient = {
     },
   },
   threadPrompts: {
+    canDispatch: (projectId, parentId, childId) =>
+      ipcRenderer.invoke('thread-prompts:can-dispatch', projectId, parentId, childId),
     canSubmit: (id) => ipcRenderer.invoke('thread-prompts:can-submit', id),
     revokeAccess: (threadId, access) =>
       ipcRenderer.invoke('thread-prompts:revoke-access', threadId, access),

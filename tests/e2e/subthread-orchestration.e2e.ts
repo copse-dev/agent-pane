@@ -102,7 +102,12 @@ describe('parent thread orchestration', () => {
         browser.execute(
           async ({ projectId, owner }) => {
             const threads = await window.api.threads.loadProject(projectId)
-            const children = threads.filter((thread) => thread.followUpOf?.parentThreadId === owner)
+            const ownership = (await window.api.settings.getSnapshot()).threadSubthreadOwners
+            const ids = (ownership ?? [])
+              .filter((entry) => entry.projectId === projectId && entry.parentThreadId === owner)
+              .map((entry) => entry.threadId)
+            const children = threads.filter((thread) => ids.includes(thread.id))
+            if (children.some((thread) => thread.followUpOf !== undefined)) return false
             if (children.length !== 2 || !children.every((thread) => thread.worktree?.path))
               return false
             const replies = await Promise.all(

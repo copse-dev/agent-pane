@@ -76,7 +76,16 @@ revisiting this document, not silently diverging in an implementation PR.
    background-task supervisor, preserving its process, containment, logs and original
    deadline. Explicit Stop still cancels foreground work. No mid-turn injection
    path exists for async hooks; late results are therefore safe by construction.
-5. **One auto-continuation budget.** A single counter per **turn tree** (everything
+5. **One auto-continuation budget.** Persistent subthreads are a bounded delegation
+   exception: a parent may start at most four children over its lifetime and keep at
+   most two unarchived children. Owned children cannot orchestrate grandchildren.
+   Each child retains its own continuation budget; this explicitly permits bounded
+   additional model work instead of sharing the parent's counter. Replacing an
+   archived or deleted child still consumes the parent's lifetime start limit.
+   Queued delegated prompts recheck ownership and the parent's grant before dispatch,
+   including after restart; revoked prompts are held and never auto-drain.
+   This exception does not change hook or background-wake accounting.
+   Otherwise, a single counter per **turn tree** (everything
    descending from one human-originated submission). Change acceptance wakes the
    proposing thread after successful GUI application, at most once per approval batch
    and originating epoch. The wake waits until the thread runs no turn and no machine

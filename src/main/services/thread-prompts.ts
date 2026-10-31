@@ -4,6 +4,37 @@ import { z } from 'zod'
 import { assertMainFrameSender, parseIpcArgs } from '../ipc/ipc-guards.ts'
 import type { ThreadPromptCommand, ThreadPromptResult } from '@shared/thread-prompt.ts'
 import { hasThreadAccess, revokeThreadAccess } from './security/thread-access.ts'
+import { getSetting } from './storage/settings.ts'
+import { getThreadMeta } from './thread-store.ts'
+import type { SettingsValues } from '@shared/settings-contract.ts'
+
+export async function canDispatchSubthread(
+  projectId: string,
+  parentId: string,
+  childId: string,
+): Promise<boolean> {
+  const owned = getSetting<SettingsValues['threadSubthreadOwners']>(
+    'threadSubthreadOwners',
+    [],
+  ).some(
+    (entry) =>
+      entry.projectId === projectId &&
+      entry.parentThreadId === parentId &&
+      entry.threadId === childId,
+  )
+  if (!owned || !hasThreadAccess(parentId, 'orchestrate')) return false
+  const [parent, child] = await Promise.all([
+    getThreadMeta(projectId, parentId),
+    getThreadMeta(projectId, childId),
+  ])
+  return (
+    !!parent &&
+    !!child &&
+    parent.archivedAt === undefined &&
+    child.archivedAt === undefined &&
+    hasThreadAccess(parentId, 'orchestrate')
+  )
+}
 
 type Send = (
   command: Omit<ThreadPromptCommand, 'id' | 'expiresAt'>,
@@ -38,6 +69,14 @@ export function initThreadPrompts(win: BrowserWindow, ipcMain: IpcMain): void {
       args,
     )
     await revokeThreadAccess(threadId, access)
+  })
+  ipcMain.handle('thread-prompts:can-dispatch', async (event, ...args) => {
+    assertMainFrameSender(event, win)
+    const [projectId, parentId, childId] = parseIpcArgs(
+      z.tuple([z.string().min(1), z.string().min(1), z.string().min(1)]),
+      args,
+    )
+    return canDispatchSubthread(projectId, parentId, childId)
   })
   const pending = new Map<string, (result: ThreadPromptResult) => void>()
   const canSubmit = new Map<string, () => boolean>()
@@ -80,7 +119,8 @@ export function initThreadPrompts(win: BrowserWindow, ipcMain: IpcMain): void {
           pending.has(id) &&
           Date.now() < expiresAt &&
           !signal?.aborted &&
-          (!command.requireWorktree || hasThreadAccess(command.sourceThreadId, 'orchestrate')),
+          (!command.authorizingAccess ||
+            hasThreadAccess(command.sourceThreadId, command.authorizingAccess)),
       )
       pending.set(id, (result) => {
         pending.delete(id)

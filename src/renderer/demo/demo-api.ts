@@ -582,6 +582,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onInvoke: () => () => {},
     },
     threadPrompts: {
+      // Demo scenarios never dispatch native delegated work.
+      canDispatch: () => resolved(false),
       canSubmit: () => resolved(true),
       onPrompt: () => () => {},
       reply: async () => {},
