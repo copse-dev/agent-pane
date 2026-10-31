@@ -440,6 +440,7 @@ export function mountThreadContextPane(
   let accessGrants: {
     read: boolean
     send: boolean
+    orchestrate: boolean
     context: ContextPermissionSnapshot
     guardedYolo: GuardedYoloPhase
     workspaceTrusted: boolean
@@ -478,6 +479,7 @@ export function mountThreadContextPane(
     const grants = [
       { access: 'read' as const, label: 'Read other threads' },
       { access: 'send' as const, label: 'Send prompts to other threads' },
+      { access: 'orchestrate' as const, label: 'Orchestrate own subthreads' },
     ].filter(({ access }) => currentGrants[access])
     if (grants.length === 0) {
       result.append(emptyNote('No saved conversation access.'))
@@ -642,21 +644,32 @@ export function mountThreadContextPane(
       // Port-binding grants are saved per project, even for a worktree thread.
       const projectRoot = project?.path
       if (!projectRoot) return
-      const [read, send, context, guardedYolo, trusted, savedOrigins, overrides, decisions] =
-        await Promise.all([
-          api.settings.get('threadReadAccess'),
-          api.settings.get('threadSendAccess'),
-          api.security.getContextPermissions(projectId, threadId, projectRoot),
-          api.security.getGuardedYolo(threadId),
-          api.workspace.isTrusted(),
-          api.settings.get('webAllowedOrigins'),
-          api.settings.get('toolPermissionOverrides'),
-          api.decisions.listThread(projectId, threadId),
-        ])
+      const [
+        read,
+        send,
+        orchestrate,
+        context,
+        guardedYolo,
+        trusted,
+        savedOrigins,
+        overrides,
+        decisions,
+      ] = await Promise.all([
+        api.settings.get('threadReadAccess'),
+        api.settings.get('threadSendAccess'),
+        api.settings.get('threadSubthreadAccess'),
+        api.security.getContextPermissions(projectId, threadId, projectRoot),
+        api.security.getGuardedYolo(threadId),
+        api.workspace.isTrusted(),
+        api.settings.get('webAllowedOrigins'),
+        api.settings.get('toolPermissionOverrides'),
+        api.decisions.listThread(projectId, threadId),
+      ])
       if (disposed || mine !== accessToken || getActiveThread(store)?.id !== threadId) return
       accessGrants = {
         read: Array.isArray(read) && read.includes(threadId),
         send: Array.isArray(send) && send.includes(threadId),
+        orchestrate: Array.isArray(orchestrate) && orchestrate.includes(threadId),
         context,
         guardedYolo: guardedYolo.phase,
         workspaceTrusted: trusted,

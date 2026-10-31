@@ -162,6 +162,7 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'propose_thread',
   'list_threads',
   'send_thread_prompt',
+  'subthreads',
   // Visibility into pending diff-queue approvals.
   'staged_diffs',
   'read_staged_diff',

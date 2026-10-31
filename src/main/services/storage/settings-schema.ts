@@ -134,6 +134,15 @@ export const MAIN_ONLY_SETTING_SCHEMAS = {
   // permission policy; stable keys are constructed in tool-permissions.ts.
   threadReadAccess: z.array(z.string().min(1)),
   threadSendAccess: z.array(z.string().min(1)),
+  threadSubthreadAccess: z.array(z.string().min(1)),
+  threadSubthreadOwners: z.array(
+    z.object({
+      projectId: z.string().min(1),
+      parentThreadId: z.string().min(1),
+      threadId: z.string().min(1),
+      key: z.string().min(1),
+    }),
+  ),
   toolPermissionOverrides: z
     .record(z.string().min(1).max(8192), z.enum(TOOL_PERMISSION_POLICIES))
     .refine((value) => Object.keys(value).length <= 10_000, 'Too many tool permission overrides'),

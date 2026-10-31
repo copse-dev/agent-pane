@@ -2,11 +2,22 @@
 export const UNSANDBOXED_ACCESS_WARNING =
   'This runs with your user account’s access to files and the network, beyond the project sandbox.'
 
-export function threadAccessApproval(access: 'read' | 'send'): ApprovalDetails & {
+export function threadAccessApproval(access: 'read' | 'send' | 'orchestrate'): ApprovalDetails & {
   title: string
   approveLabel: string
   allowRemember: boolean
 } {
+  if (access === 'orchestrate')
+    return {
+      title: 'Allow subthread orchestration?',
+      body: '',
+      bodyAdvice:
+        'Allow this thread to start subthreads in isolated checkouts, read their conversations, and send them further instructions. This allows additional model usage. Only subthreads created by this thread are included; their normal permissions and limits still apply.',
+      bodyFooter:
+        'Applies only to this thread until revoked in the thread’s Context panel → Permissions.',
+      approveLabel: 'Allow orchestration',
+      allowRemember: false,
+    }
   return {
     title: access === 'read' ? 'Read your other threads?' : 'Send prompts to your other threads?',
     body: '',

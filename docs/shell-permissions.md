@@ -79,6 +79,8 @@ Destination prompts enter the normal queue with machine provenance, consume the 
 continuation budget and respect held/paused queues. They do not interrupt active work or
 switch the visible thread. An unavailable or archived destination is rejected.
 
+The \`subthreads\` tool asks once for **Allow subthread orchestration?** Its separate, revocable grant permits starting children in isolated checkouts, listing their status, reading their conversations through the tool, and sending further prompts. Main-owned ownership records limit access to children this parent created in this project; a follow-up link alone grants no orchestration authority. Children inherit neither this grant nor the parent's other permissions. Normal model usage, queue pauses, continuation budgets and tool permissions still apply. Repeating a start with the same task key returns the existing child without resubmitting. Revoke orchestration in Context → Permissions. This does not authorize raw chat-store writes or reads of unrelated conversations.
+
 The experimental interactive-client API requires its default-off plugin and desktop pairing.
 Viewing and submitting decisions are separate session-only grants across all projects. A client
 may approve once or deny an exact pending standard shell-command or bounded worktree-preparation session/request/revision; it cannot create remembered
