@@ -1142,8 +1142,8 @@
       "bytes": 284800
     },
     "classifier-use-hover.png": {
-      "sha256": "b4d793f8f7aa68781fd9055f1e9e03d17647c4ec2972ed7935c0afe7169c7198",
-      "bytes": 348621
+      "sha256": "6b12ffd2519048ba5484d5a8f9fa5ccf6d82d0cf6f51cc233ddb7b5eafd05d5b",
+      "bytes": 354958
     },
     "classify-structured-card.png": {
       "sha256": "c484d562fc794f423bfa895dfcb52d3d6cf06b9ee21ba2276197679731d63068",
@@ -1470,8 +1470,8 @@
       "bytes": 326090
     },
     "context-wheel-danger.png": {
-      "sha256": "52a0840fff5168a85a66277eb348f319de19bd74441b23d3eb9e5f20eb851be4",
-      "bytes": 299294
+      "sha256": "2c59a5cb9fc017f0b811fc3cd24cd14e110bc2f879a51c4c39966845d5f0d873",
+      "bytes": 307331
     },
     "context-wheel-live-running.png": {
       "sha256": "06a75af9086d814676eb474a81a23a6a354265940d269b85535d24d89864e86a",
@@ -1870,8 +1870,8 @@
       "bytes": 273052
     },
     "footer-usage-tooltip.png": {
-      "sha256": "b1541f0acccf025d0641c8cbc234b25df0ec0c8f3c3e7cfb7c36c2fac61f7162",
-      "bytes": 405988
+      "sha256": "4c99aab6b393e6206289274a97c9e7f852e638b3ded836e76ddb8c1bcd6db9d6",
+      "bytes": 403378
     },
     "git-attribution-off.png": {
       "sha256": "17cc9dc1fe532989b34dedb9c25da487f4da72f00ffcd2af5cd45d923e7d9fae",
@@ -2334,12 +2334,12 @@
       "bytes": 302654
     },
     "mcp-http-auth-connected.png": {
-      "sha256": "3d6916a3c4ed3d4cdafa71a9d65c793e4e2008b5a524def46960e5e5636f1736",
-      "bytes": 344490
+      "sha256": "f03f702cf3dbb467825cec06536c43705f2e1f0a1cced0081f2bd686df796df2",
+      "bytes": 359086
     },
     "mcp-http-sign-in-required.png": {
-      "sha256": "4c9d110c0d7c7d575679ed465cd953bd5822255425b78c4e53dc7c32989f3c02",
-      "bytes": 349087
+      "sha256": "8a45f864af468a244ef89893ab548ae934689cfeec84fa8d74ab05bc9b9e4820",
+      "bytes": 363924
     },
     "mcp-native-profile-error.png": {
       "sha256": "3e56c4768c5791ec44925fce793cd00f2cccf6d609fb7a20877f6561408742dc",
@@ -2350,8 +2350,8 @@
       "bytes": 335881
     },
     "mcp-settings-connected.png": {
-      "sha256": "71456dfb4b9253161e1acaafe1f61f4ac97656648451475a5f6e33a5e0a568fd",
-      "bytes": 346629
+      "sha256": "fe805fcfa69c04ada71e4ddebc727e2b9d7713235eec3fd7372e5686f56f39c5",
+      "bytes": 361362
     },
     "mcp-sign-in-states.png": {
       "sha256": "1e1280873fbce826c16e7adca77c4cf41003ba99c30242ee18b31ce6b73ca20d",
@@ -3330,8 +3330,8 @@
       "bytes": 30115
     },
     "queued-pinned-scrolled-top.png": {
-      "sha256": "7099471374e7dac8dfae6b9c6767b03176eb0422b4ab5ae273dc3533d40104eb",
-      "bytes": 366837
+      "sha256": "ddec1f4c489146eb8fd1628f70c7d7dc9cd543bddd19acd5ad29b23835786116",
+      "bytes": 427851
     },
     "read-outside-approval-collapsed.png": {
       "sha256": "ec3f3722a1b858eccb95d9fd5cd55a31ff5a9fc84fa74dad276007df9c0d0fd3",
@@ -4022,20 +4022,20 @@
       "bytes": 90794
     },
     "settings-experimental.png": {
-      "sha256": "b9f2114737e7c9e125f163bba663aaf3758ad7f9168dabb6ba08e73429e2b61c",
-      "bytes": 297161
+      "sha256": "3e0071bf203bb284cfb73241053801c489d62cea73467e7369cda4c215d3efbe",
+      "bytes": 298315
     },
     "settings-explainers-browse-recovery.png": {
-      "sha256": "23e3c2ef90b9a83b5e55a8fe3d6c2867426940eb96e16fb9479f946d05ccc700",
-      "bytes": 71484
+      "sha256": "c9b5de15c6e693382d3af9b2b0c5d943d2fd17dba952609750e0f1cdaf608a90",
+      "bytes": 70269
     },
     "settings-explainers-entry.png": {
-      "sha256": "6b7c2c376f4c03d717b1cb53991c1d53546c04d2a6d1c16e98b75b0ec3076a23",
-      "bytes": 48319
+      "sha256": "7f4b4bab78521b50996ee60c538885cf38f1c46fa1a55381fd19d04d506351ff",
+      "bytes": 49476
     },
     "settings-explainers-experimental.png": {
-      "sha256": "54f67c7e83d17e5c9a3669633519c7c9191cf616ef586c4d97ba7737a3be13f1",
-      "bytes": 74221
+      "sha256": "c1d3ccefc96888d14995534b6be100c786946bf14a5139cb5254fce7fd1bbe01",
+      "bytes": 73018
     },
     "settings-footer-frost-covers-actions.png": {
       "sha256": "9210875e7ecfd05030848d8abc64426f845d08ba4134427e85cd03407ed98d38",
@@ -4110,16 +4110,16 @@
       "bytes": 102048
     },
     "settings-mcp-lens.png": {
-      "sha256": "4425a2d3af2e75e1305e09ae7e7ec633111fed9422e2fa57b1ead622d8edaf6e",
-      "bytes": 320446
+      "sha256": "579c887f1bafd582e166e3469dcd6cc09e5aeed27ea50b75c6e6a6f912b6699d",
+      "bytes": 346826
     },
     "settings-mcp-permission-group-blocked.png": {
       "sha256": "2094d3df498f2d61cbd061f2f56d05c3665a26f4cbee04e50e22e300c147d3a2",
       "bytes": 337380
     },
     "settings-mcp-server-row.png": {
-      "sha256": "530c20055d05d28c84b056a0882c5302f8113cf884bb8b9b20f3d4a93a126441",
-      "bytes": 342087
+      "sha256": "ea6a10fb4538e33559404a74d4c4bb57c79bfffbd079d894d032fdeeb468a5a0",
+      "bytes": 353499
     },
     "settings-mobile-companion-device-trust.png": {
       "sha256": "5efbc0a73e97750a424cdbbeb4b2bcdfd17edbba30ca9f859a4bfdeccbc671b5",
@@ -4978,28 +4978,28 @@
       "bytes": 25524
     },
     "staged-diff-css-accept-no-error.png": {
-      "sha256": "95c1c0f32f51c8ea7257699816de7de304d9a9321bde066212bab1678bfa07b8",
-      "bytes": 357831
+      "sha256": "ae791aac22db8d4408b73f14ab1fc37453a88f68a823784a0ef33cef8b065b63",
+      "bytes": 380566
     },
     "staged-diff-multi.png": {
-      "sha256": "2428e4a5fe8b567f13638a3410958e77e25911207f8a822c25060bee333b3655",
-      "bytes": 386691
+      "sha256": "2198e2ada78e0358367af5f84e3de65e4e7562daec094a9dc48158db2dd6f122",
+      "bytes": 374589
     },
     "staged-diff-popout-proposed.png": {
-      "sha256": "e40c2fa01a7deecdea80b3868f60f4cc085e6718febf61806f14bce444af44fc",
-      "bytes": 53542
+      "sha256": "d7ec0b7286827bc955671efd5ef9185e293490119681a565bff8a750a66f7a44",
+      "bytes": 67787
     },
     "staged-diff-rapid-selection.png": {
-      "sha256": "2428e4a5fe8b567f13638a3410958e77e25911207f8a822c25060bee333b3655",
-      "bytes": 386691
+      "sha256": "12108adf4cea0113a76d5c6c7aec01d80bfa7b1437624db1f0322b14ad5cf5a8",
+      "bytes": 374576
     },
     "staged-diff-single.png": {
-      "sha256": "4e2a7ec595e40706110e88c2fa299d34f4a0deaa0499f3414821cf314d6db91c",
-      "bytes": 302804
+      "sha256": "6c287205b2a3214176308437edce669df2497c6667b3c5735044311a1c42e310",
+      "bytes": 303334
     },
     "staged-diff-thread-isolated.png": {
-      "sha256": "46f74bc5c2fc6b40502bcbb4c85b4dbf4705e4f187be1509fd24184cbae32e12",
-      "bytes": 230401
+      "sha256": "9711405bd1a0840fd908abe747625d270fb3707570da5e8afad4186e3ffc569c",
+      "bytes": 270835
     },
     "streamed-reply-mid-stream.png": {
       "sha256": "4ecd66e6eb9132c278f91a3c0a0f01e940ed8bab269222037fc90b19c9634f4b",
