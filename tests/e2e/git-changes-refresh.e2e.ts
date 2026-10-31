@@ -83,7 +83,10 @@ describe('Changes background refresh', function () {
     await expect($('#git-changes-host .git-changes-empty')).toHaveText('No changes')
     await expect($('#git-changes-host .pane-loading')).not.toExist()
     await saveElementScreenshot('#git-changes-host', 'git-changes-refresh-retained.png')
-    assert.equal(await $('#git-changes-host .git-changes-empty').getAttribute('data-retained'), 'true')
+    assert.equal(
+      await $('#git-changes-host .git-changes-empty').getAttribute('data-retained'),
+      'true',
+    )
     assert.equal(await $('#git-changes-host .git-changes-list').getAttribute('data-mutations'), '0')
     writeFileSync(join(barrier, 'release'), '')
     // A real filesystem change takes the same background refresh path.
