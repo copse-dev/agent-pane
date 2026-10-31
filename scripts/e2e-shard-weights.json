@@ -1,5 +1,5 @@
 {
-  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-19; accessibility provisional at its local Linux Xvfb run (28s) until its first CI run is measured, 2026-10-30; plugin-client-approvals provisional at the median (8s) until its first CI run is measured, 2026-10-19; host-read-tool-cards provisional at the median (8s) until its first CI run is measured, 2026-10-20; detached-turn-transcript is macOS-only and skips on the Linux CI shards, recorded at 1s, 2026-10-16; device-hub-png-result measured at 5.2s from successful CI run 41128105859 shard 6 (job 124318769247), 2026-10-30; acp-execute-no-remember provisional at its local Linux Xvfb run (12s) until its first CI run is measured, 2026-10-31; acp-kindless-command-approval provisional at its local Linux Xvfb run (10s) until its first CI run is measured, 2026-10-31",
+  "source": "median PASSED seconds over 160 CI e2e shard logs, 2026-10-19; accessibility provisional at its local Linux Xvfb run (28s) until its first CI run is measured, 2026-10-30; plugin-client-approvals provisional at the median (8s) until its first CI run is measured, 2026-10-19; host-read-tool-cards provisional at the median (8s) until its first CI run is measured, 2026-10-20; detached-turn-transcript is macOS-only and skips on the Linux CI shards, recorded at 1s, 2026-10-16; device-hub-png-result measured at 5.2s from successful CI run 41128105859 shard 6 (job 124318769247), 2026-10-30; acp-execute-no-remember provisional at its local Linux Xvfb run (12s) until its first CI run is measured, 2026-10-31; acp-kindless-command-approval provisional at its local Linux Xvfb run (10s) until its first CI run is measured, 2026-10-31; subthread-orchestration provisional at the median (8s) until its first CI run is measured, 2026-10-31",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15.7,
     "tests/e2e/accessibility.e2e.ts": 28,
@@ -346,6 +346,7 @@
     "tests/e2e/ssh-prompt-dialog.e2e.ts": 7.7,
     "tests/e2e/ssh-titlebar-target.e2e.ts": 4.9,
     "tests/e2e/subagent-badge-model-label.e2e.ts": 8.7,
+    "tests/e2e/subthread-orchestration.e2e.ts": 8,
     "tests/e2e/supervised-task-recovery.e2e.ts": 7.3,
     "tests/e2e/supervised-tasks.e2e.ts": 8,
     "tests/e2e/terminal-display.e2e.ts": 13.2,
