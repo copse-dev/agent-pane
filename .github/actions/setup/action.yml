@@ -79,6 +79,13 @@ runs:
 
     - name: Install hosted Linux system dependencies
       run: |
+        # A mirror connection that stalls mid-transfer otherwise holds the
+        # index refresh until the job's timeout (precheck sat 28 minutes after
+        # noble-security InRelease in run 41250733541). Give up on a stalled
+        # fetch after 30 s and retry it. Later apt calls in this job, such as
+        # the sandbox dependency installs, read the same drop-in.
+        printf '%s\n' 'Acquire::Retries "3";' 'Acquire::http::Timeout "30";' \
+          'Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/80-ci-network >/dev/null
         mkdir -p "$APT_ARCHIVES/partial"
         sudo apt-get update
         sudo apt-get install -y -o Dir::Cache::archives="$APT_ARCHIVES/" ripgrep \

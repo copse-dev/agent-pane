@@ -43,6 +43,16 @@ describe('CI dependency cache boundary', () => {
     assert.doesNotMatch(script, /\$\{\{/, 'the install script reads the path from env, not inline')
   })
 
+  it('bounds a stalled apt mirror fetch before the first apt call', () => {
+    const install = actionStep('Install hosted Linux system dependencies')
+    const dropIn = install.indexOf('/etc/apt/apt.conf.d/')
+    assert.ok(dropIn >= 0, 'the step writes an apt network drop-in')
+    assert.ok(dropIn < install.indexOf('apt-get update'), 'the drop-in precedes apt-get update')
+    assert.match(install, /Acquire::Retries "3";/)
+    assert.match(install, /Acquire::http::Timeout "30";/)
+    assert.match(install, /Acquire::https::Timeout "30";/)
+  })
+
   it('keeps later pnpm commands on the selected job-local store', () => {
     const selection = actionStep('Select pnpm content store')
     assert.ok(selection.includes('echo "npm_config_store_dir=$path" >> "$GITHUB_ENV"'))
