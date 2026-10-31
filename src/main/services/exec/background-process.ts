@@ -2,7 +2,7 @@ import { createThreadResource } from '../thread-resource-fence.ts'
 import { randomUUID } from 'node:crypto'
 import type { ChildProcess } from 'node:child_process'
 import { isProjectSandboxEnabled, spawnBackgroundProcess } from '../../project-sandbox/index.ts'
-import { getAgentExecutionRoot } from '../execution-root.ts'
+import { currentAgentRoots, getAgentExecutionRoot } from '../execution-root.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
 import { SUBPROCESS_KILL_GRACE_MS, terminateProcessTree } from './subprocess-kill.ts'
@@ -304,7 +304,8 @@ export async function startBackgroundProcess(
   const owner = opts.owner ?? requireThreadExecutionOwner()
   const unsandboxed =
     !isProjectSandboxEnabled() ||
-    (currentRunUsesGuardedYolo(owner.threadId) && shellRunsOutsideSandbox(command))
+    (currentRunUsesGuardedYolo(owner.threadId) &&
+      shellRunsOutsideSandbox(command, currentAgentRoots()))
 
   const adoptEdits = await captureBackgroundEditAdoption(cwd, owner).catch((error: unknown) => {
     console.warn('[background-process] edit ownership snapshot failed:', error)

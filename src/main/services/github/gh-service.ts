@@ -1,6 +1,4 @@
 import { runCommand } from '../exec/command-runner.ts'
-import { getWorkspaceRoot, getActiveProjectId } from '../workspace.ts'
-import { currentThreadExecutionContext } from '../thread-execution-context-store.ts'
 import { getPrThreadProvenanceText } from './pr-thread-provenance.ts'
 import { isGhAvailable } from '../tool-availability.ts'
 import { decodeWithSchema, safeJsonParse, type JsonDecoder } from '@shared/safe-json.ts'
@@ -203,18 +201,22 @@ async function shouldForwardEnvToken(cwd: string, signal?: AbortSignal): Promise
   return forwardEnvTokenProbe
 }
 
-/** Run GitHub CLI outside the project sandbox so read-only API calls can reach GitHub. */
+/**
+ * Run GitHub CLI outside the project sandbox so read-only API calls can reach GitHub.
+ * `cwd` is the checkout the caller acts on, or null when none resolves; it is
+ * never read from the process-global workspace (#3958).
+ */
 export async function runGh(
   args: string[],
   opts: {
     timeout_ms?: number
     signal?: AbortSignal
-    cwd?: string
+    cwd: string | null
     stdin?: Buffer
     stdoutMaxBytes?: number
-  } = {},
+  },
 ): Promise<{ stdout: string; stderr: string; code: number }> {
-  const cwd = opts.cwd ?? getWorkspaceRoot()
+  const { cwd } = opts
   if (!cwd) return { stdout: '', stderr: 'No workspace open.', code: 1 }
   const includeTokens = await shouldForwardEnvToken(cwd, opts.signal)
   const commandOpts: Parameters<typeof runCommand>[2] = {
@@ -304,13 +306,24 @@ export function formatGhPrView(pr: GhPrViewDetails): string {
   return lines.join('\n')
 }
 
-export async function getGhPrListText(opts: {
-  state: 'open' | 'closed' | 'merged' | 'all'
-  limit: number
-  head?: string | undefined
-  repo?: string | undefined
-  details?: boolean | undefined
-}): Promise<string> {
+/** Where a `gh_*` tool runs and which project's threads it reports against (#3958). */
+export interface GhToolContext {
+  /** Checkout `gh` and `git` run in, or null when no workspace resolves. */
+  readonly root: string | null
+  /** Project whose thread provenance a PR view reports, or null outside a project. */
+  readonly projectId: string | null
+}
+
+export async function getGhPrListText(
+  opts: {
+    state: 'open' | 'closed' | 'merged' | 'all'
+    limit: number
+    head?: string | undefined
+    repo?: string | undefined
+    details?: boolean | undefined
+  },
+  context: GhToolContext,
+): Promise<string> {
   if (!isGhAvailable()) return 'gh is not available on this system.'
   const args = [
     'pr',
@@ -326,15 +339,14 @@ export async function getGhPrListText(opts: {
   ]
   if (opts.head) args.push('--head', opts.head)
   if (opts.repo) args.push('--repo', opts.repo)
-  const { stdout, stderr, code } = await runGh(args)
+  const { stdout, stderr, code } = await runGh(args, { cwd: context.root })
   if (code !== 0) return formatGhError(stderr, code)
   const list = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrListSchema))
   if (!Array.isArray(list)) return stdout.trim() || '(no output)'
   return formatGhPrList(list, opts.details)
 }
 
-async function currentGitBranch(): Promise<string | null> {
-  const cwd = getWorkspaceRoot()
+async function currentGitBranch(cwd: string | null): Promise<string | null> {
   if (!cwd) return null
   const pathPrefix = process.platform === 'win32' ? '' : '/usr/bin:/bin:'
   const { stdout, code } = await runCommand('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
@@ -371,13 +383,16 @@ export function truncateLogTail(text: string, maxChars: number): string {
   return `… [${String(dropped)} earlier characters truncated; showing the last ${String(maxChars)}]\n${tail}`
 }
 
-export async function getGhRunListText(opts: {
-  branch?: string | undefined
-  limit: number
-  failedOnly?: boolean | undefined
-}): Promise<string> {
+export async function getGhRunListText(
+  opts: {
+    branch?: string | undefined
+    limit: number
+    failedOnly?: boolean | undefined
+  },
+  context: GhToolContext,
+): Promise<string> {
   if (!isGhAvailable()) return 'gh is not available on this system.'
-  const branch = opts.branch ?? (await currentGitBranch())
+  const branch = opts.branch ?? (await currentGitBranch(context.root))
   const args = [
     'run',
     'list',
@@ -387,7 +402,7 @@ export async function getGhRunListText(opts: {
     'databaseId,workflowName,name,displayTitle,headBranch,headSha,conclusion,status,event,createdAt,url',
   ]
   if (branch) args.push('--branch', branch)
-  const { stdout, stderr, code } = await runGh(args)
+  const { stdout, stderr, code } = await runGh(args, { cwd: context.root })
   if (code !== 0) return formatGhError(stderr, code)
   let list = safeJsonParse(stdout.trim(), decodeWithSchema(ghRunListSchema))
   if (!Array.isArray(list)) return stdout.trim() || '(no output)'
@@ -398,11 +413,14 @@ export async function getGhRunListText(opts: {
 /** Default cap on returned log size to keep CI logs within the agent's context budget. */
 export const GH_RUN_LOG_MAX_CHARS = 20_000
 
-export async function getGhRunLogText(opts: {
-  runId: number
-  failedOnly?: boolean
-  maxChars?: number
-}): Promise<string> {
+export async function getGhRunLogText(
+  opts: {
+    runId: number
+    failedOnly?: boolean
+    maxChars?: number
+  },
+  context: GhToolContext,
+): Promise<string> {
   if (!isGhAvailable()) return 'gh is not available on this system.'
   const args = [
     'run',
@@ -410,20 +428,21 @@ export async function getGhRunLogText(opts: {
     String(opts.runId),
     opts.failedOnly === false ? '--log' : '--log-failed',
   ]
-  const { stdout, stderr, code } = await runGh(args)
+  const { stdout, stderr, code } = await runGh(args, { cwd: context.root })
   if (code !== 0) return formatGhError(stderr, code)
   const log = stdout.trim()
   if (!log) return '(no log output — the run may still be in progress or have no failing steps)'
   return truncateLogTail(log, opts.maxChars ?? GH_RUN_LOG_MAX_CHARS)
 }
 
-export async function getGhPrViewText(opts: {
-  number?: number | undefined
-  includeChecks: boolean
-}): Promise<string> {
+export async function getGhPrViewText(
+  opts: {
+    number?: number | undefined
+    includeChecks: boolean
+  },
+  context: GhToolContext,
+): Promise<string> {
   if (!isGhAvailable()) return 'gh is not available on this system.'
-  const context = currentThreadExecutionContext()
-  const projectId = context?.projectId ?? getActiveProjectId()
   const jsonFields = [
     'state',
     'number',
@@ -443,13 +462,13 @@ export async function getGhPrViewText(opts: {
   if (opts.includeChecks) jsonFields.push('statusCheckRollup')
   const args = ['pr', 'view', '--json', jsonFields.join(',')]
   if (opts.number !== undefined) args.push(String(opts.number))
-  const { stdout, stderr, code } = await runGh(args, context ? { cwd: context.root } : {})
+  const { stdout, stderr, code } = await runGh(args, { cwd: context.root })
   if (code !== 0) return formatGhError(stderr, code)
   const pr = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrViewDetailsSchema))
   if (!pr) return stdout.trim() || '(no output)'
   const provenance = pr.url
     ? await getPrThreadProvenanceText(
-        projectId,
+        context.projectId,
         pr.url,
         pr.commits?.map((commit) => commit.oid),
       )
@@ -477,7 +496,10 @@ export function formatGhPrFiles(pr: GhPrViewDetails): string {
   return [header, ...lines, totals].join('\n')
 }
 
-export async function getGhPrFilesText(opts: { number?: number | undefined }): Promise<string> {
+export async function getGhPrFilesText(
+  opts: { number?: number | undefined },
+  context: GhToolContext,
+): Promise<string> {
   if (!isGhAvailable()) return 'gh is not available on this system.'
   const args = [
     'pr',
@@ -486,7 +508,7 @@ export async function getGhPrFilesText(opts: { number?: number | undefined }): P
     ['number', 'title', 'url', 'additions', 'deletions', 'changedFiles', 'files'].join(','),
   ]
   if (opts.number !== undefined) args.push(String(opts.number))
-  const { stdout, stderr, code } = await runGh(args)
+  const { stdout, stderr, code } = await runGh(args, { cwd: context.root })
   if (code !== 0) return formatGhError(stderr, code)
   const pr = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrViewDetailsSchema))
   if (!pr) return stdout.trim() || '(no output)'

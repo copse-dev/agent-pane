@@ -1,6 +1,8 @@
 import { resolve } from 'node:path'
 import {
   buildIndex,
+  fileIndexKey,
+  resolveFileIndexTarget,
   getIndexAgeMs,
   getIndexMemoryBytes,
   getIndexStats,
@@ -12,7 +14,7 @@ import {
   setSemanticIndexScaleGuarded,
   setSemanticIndexUnavailable,
 } from './index-status.ts'
-import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
+import { isSshExecutionTarget, type ExecutionTarget } from '../ssh-workspace/execution-target.ts'
 import {
   isRootWatched,
   startWorkspaceIndexWatcher,
@@ -22,9 +24,14 @@ import { stopWatchingExecutionRoot } from './execution-root-watcher.ts'
 import { pathLabel, perfMark, perfSpan } from '../diagnostics/perf-trace.ts'
 
 /** The most recently opened renderer-selected workspace root, if any. */
-let primaryWorkspaceRoot: string | null = null
+interface IndexOwner {
+  root: string
+  target: ExecutionTarget
+}
+
+let primaryWorkspace: IndexOwner | null = null
 let primaryWorkspaceGeneration = 0
-const dormantPrimaryIndexes = new Map<string, number>()
+const dormantPrimaryIndexes = new Map<string, IndexOwner & { bytes: number }>()
 
 // File lists are compact compared with transcripts and semantic indexes, but a
 // user may have hundreds of saved projects. Retain warm project snapshots only
@@ -81,23 +88,24 @@ export function selectDormantIndexEvictions(
   return evictions
 }
 
-function retainDormantPrimaryIndex(root: string): void {
-  const key = resolve(root)
-  const bytes = getIndexMemoryBytes(key)
+function retainDormantPrimaryIndex(root: string, target: ExecutionTarget): void {
+  const key = fileIndexKey(root, target)
+  const bytes = getIndexMemoryBytes(root, target)
   if (bytes === null) return
   // Delete + set promotes a project that was selected more recently.
   dormantPrimaryIndexes.delete(key)
-  dormantPrimaryIndexes.set(key, bytes)
+  dormantPrimaryIndexes.set(key, { root, target, bytes })
   const snapshots = [...dormantPrimaryIndexes].map(([snapshotRoot, snapshotBytes]) => ({
     root: snapshotRoot,
-    bytes: snapshotBytes,
+    bytes: snapshotBytes.bytes,
   }))
   for (const evictedRoot of selectDormantIndexEvictions(
     snapshots,
     DORMANT_PRIMARY_INDEX_BUDGET_BYTES,
   )) {
+    const evicted = dormantPrimaryIndexes.get(evictedRoot)
     dormantPrimaryIndexes.delete(evictedRoot)
-    invalidateIndex(evictedRoot)
+    if (evicted) invalidateIndex(evicted.root, evicted.target)
   }
 }
 
@@ -115,10 +123,10 @@ function retainDormantPrimaryIndex(root: string): void {
  * `scheduleIndexRebuild`, and the diff queue after a write all call `buildIndex`
  * directly and always re-list.
  */
-function needsFreshListing(root: string): boolean {
-  const age = getIndexAgeMs(root)
+function needsFreshListing(root: string, target: ExecutionTarget): boolean {
+  const age = getIndexAgeMs(root, target)
   if (age === null) return true // Never listed — nothing to reuse.
-  if (isRootWatched(root)) return false
+  if (isRootWatched(root, target)) return false
   return age >= UNWATCHED_INDEX_MAX_AGE_MS
 }
 
@@ -146,20 +154,20 @@ function needsFreshListing(root: string): boolean {
  * ("Building file index…"), which is not gortex. Listings use a longer timeout
  * than ordinary tool subprocesses (`FILE_INDEX_LIST_TIMEOUT_MS`).
  */
-export function startWorkspaceIndexing(root: string): void {
+export function startWorkspaceIndexing(root: string, target = resolveFileIndexTarget()): void {
   const key = resolve(root)
   // Switching workspaces replaces the previous primary root: stop its watcher,
   // but retain the last coherent listing in the bounded dormant-project MRU.
   // Worktree execution roots (registered via startExecutionRootIndexing) are
   // untouched — they track their own thread's lifetime, not the renderer's
   // selected workspace.
-  const previous = primaryWorkspaceRoot
-  primaryWorkspaceRoot = key
+  const previous = primaryWorkspace
+  primaryWorkspace = { root: key, target }
   const generation = ++primaryWorkspaceGeneration
-  dormantPrimaryIndexes.delete(key)
-  if (previous && previous !== key) {
-    stopWorkspaceIndexWatcher(previous)
-    retainDormantPrimaryIndex(previous)
+  dormantPrimaryIndexes.delete(fileIndexKey(key, target))
+  if (previous && fileIndexKey(previous.root, previous.target) !== fileIndexKey(key, target)) {
+    stopWorkspaceIndexWatcher(previous.root, previous.target)
+    retainDormantPrimaryIndex(previous.root, previous.target)
     // Status is global — drop the outgoing root's skipped/limited/unavailable
     // chip so it cannot linger on the incoming project while scale evidence
     // loads (and so a missing semantic backend cannot leave it stuck forever).
@@ -168,12 +176,16 @@ export function startWorkspaceIndexing(root: string): void {
 
   perfMark('index:requested', { root: pathLabel(key) })
   beginWorkspaceIndexGate(key)
-  void runWorkspaceIndexing(key, generation).catch((err: unknown) => {
+  void runWorkspaceIndexing(key, target, generation).catch((err: unknown) => {
     console.warn('[copse-panel] workspace indexing orchestration failed:', err)
   })
 }
 
-async function runWorkspaceIndexing(root: string, generation: number): Promise<void> {
+async function runWorkspaceIndexing(
+  root: string,
+  target: ExecutionTarget,
+  generation: number,
+): Promise<void> {
   try {
     // Re-selecting the project you are already on re-runs this; the scale
     // evidence below reads the existing listing rather than rebuilding it.
@@ -183,14 +195,14 @@ async function runWorkspaceIndexing(root: string, generation: number): Promise<v
     // event loop the renderer's other calls are queued behind, which is a
     // different way to make an open feel slow. Timing it separately from the
     // open is what tells those two apart.
-    const fresh = needsFreshListing(root)
+    const fresh = needsFreshListing(root, target)
     perfMark('index:start', { root: pathLabel(root), fresh })
     if (fresh) {
       await perfSpan(
         'index:build',
-        () => buildIndex(root),
+        () => buildIndex(root, target),
         () => ({
-          paths: getIndexStats(root)?.pathCount ?? 0,
+          paths: getIndexStats(root, target)?.pathCount ?? 0,
         }),
       )
     }
@@ -202,17 +214,22 @@ async function runWorkspaceIndexing(root: string, generation: number): Promise<v
   // coherent snapshot as dormant data, but never let an obsolete orchestration
   // re-arm the outgoing root's watcher or semantic work.
   if (generation !== primaryWorkspaceGeneration) {
-    if (root !== primaryWorkspaceRoot) retainDormantPrimaryIndex(root)
+    if (
+      !primaryWorkspace ||
+      fileIndexKey(root, target) !== fileIndexKey(primaryWorkspace.root, primaryWorkspace.target)
+    ) {
+      retainDormantPrimaryIndex(root, target)
+    }
     return
   }
 
-  if (isActiveSshWorkspace()) {
+  if (isSshExecutionTarget(target)) {
     resolveWorkspaceIndexGate(root, { semantic: 'skipped', watch: 'skipped' })
     setSemanticIndexUnavailable()
     return
   }
 
-  const stats = getIndexStats(root)
+  const stats = getIndexStats(root, target)
   const policy = decideWorkspaceIndexPolicy({
     pathCount: stats?.pathCount ?? 0,
     byteEstimate: stats?.byteEstimate ?? null,
@@ -240,14 +257,14 @@ async function runWorkspaceIndexing(root: string, generation: number): Promise<v
   }
 
   if (policyAllowsWatch(policy)) {
-    startWorkspaceIndexWatcher(root, { withSemantic: true })
+    startWorkspaceIndexWatcher(root, { withSemantic: true, executionTarget: target })
   }
 }
 
 /** Test hook — clear gate + override between tests. */
 export function resetWorkspaceIndexingForTest(): void {
   policyOverride = 'default'
-  primaryWorkspaceRoot = null
+  primaryWorkspace = null
   primaryWorkspaceGeneration = 0
   dormantPrimaryIndexes.clear()
   clearWorkspaceIndexGate()
@@ -271,17 +288,23 @@ export function resetWorkspaceIndexingForTest(): void {
  * whose watcher never armed and whose listing has gone stale, pays for a walk.
  */
 export function startExecutionRootIndexing(root: string): void {
-  if (needsFreshListing(root)) {
-    void buildIndex(root).catch((err: unknown) => {
+  // Called for managed local worktrees, sometimes before their turn's ALS
+  // context is bound. The selected project may already be an unrelated host.
+  const target: ExecutionTarget = { kind: 'local' }
+  if (needsFreshListing(root, target)) {
+    void buildIndex(root, target).catch((err: unknown) => {
       console.warn('[copse-panel] execution root index build failed:', err)
     })
   }
-  startWorkspaceIndexWatcher(root, { withSemantic: false })
+  startWorkspaceIndexWatcher(root, { withSemantic: false, executionTarget: target })
 }
 
 /** Release a worktree execution root's index/watcher once its thread's checkout is retired. */
 export function stopExecutionRootIndexing(root: string): void {
-  stopWorkspaceIndexWatcher(root)
+  // Managed worktrees are local directories under Copse's worktree root.
+  // Retirement can run after selection moved to an SSH project.
+  const target: ExecutionTarget = { kind: 'local' }
+  stopWorkspaceIndexWatcher(root, target)
   // The tool-result cache watches this root too (`ensureExecutionRootWatched`,
   // via the tool registry). Nothing else stops it, and a recursive `fs.watch`
   // left on a directory that has been removed is not inert: on a change event
@@ -290,5 +313,5 @@ export function stopExecutionRootIndexing(root: string): void {
   // it. Retiring, pruning, and deleting a worktree all funnel through
   // `releaseWorktreeRoot` into here, so this is where the watcher goes.
   stopWatchingExecutionRoot(root)
-  invalidateIndex(root)
+  invalidateIndex(root, target)
 }

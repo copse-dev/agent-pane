@@ -23,5 +23,7 @@ export interface ProcessManagerRow {
 export interface ProcessManagerSnapshot {
   sampledAt: number
   processes: ProcessManagerRow[]
+  /** macOS uses physical footprint; other platforms use resident memory. */
+  memoryMetric?: 'resident' | 'footprint'
   network?: NetworkActivitySnapshot
 }

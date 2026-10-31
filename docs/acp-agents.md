@@ -117,9 +117,10 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
 > adapters, Gemini CLI) use it for file _edits_ when Copse advertises the
 > capability, but every agent keeps its own shell tool — a `sed -i` or
 > `echo >` from the agent's shell lands on disk directly, gated only by
-> `session/request_permission` (and not even that once you grant an
-> "Always allow … execute" remember). Containment and detection of such
-> writes are tracked in #590 and #591.
+> `session/request_permission`, which Copse routes through its shell gate.
+> Execute requests are never remembered: the generic prompt offers no
+> "Always allow … execute", and grants stored by earlier versions are ignored.
+> Containment and detection of such writes are tracked in #590 and #591.
 
 ## Configure an agent
 

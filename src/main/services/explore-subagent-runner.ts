@@ -22,7 +22,7 @@ export type ExploreSubagentRunner = (opts: {
   query: string
   paths?: string[] | undefined
   signal: AbortSignal
-}) => Promise<{ summary: string; usage: ModelUsage }>
+}) => Promise<{ summary: string; text: string; usage: ModelUsage }>
 
 /**
  * Context travels via AsyncLocalStorage, not a module-global slot: the parent

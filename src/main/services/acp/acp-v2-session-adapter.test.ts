@@ -4,7 +4,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { Writable } from 'node:stream'
-import { ndJsonStream } from '@agentclientprotocol/sdk'
+import { ndJsonStream } from '@agentclientprotocol/sdk/unstable'
 import * as v2 from '@agentclientprotocol/sdk/experimental/v2'
 import type { StreamChunk } from '@shared/types'
 import { createV2SessionAdapter } from './acp-v2-session-adapter.ts'
@@ -12,8 +12,8 @@ import { nodeReadableStream } from './node-byte-streams.ts'
 
 /**
  * The v2 adapter prototype, driven two ways: synthetic updates for the shapes a
- * real agent does not happen to send, and one end-to-end turn against the SDK's
- * dual-version example agent — the same token-free peer
+ * real agent does not happen to send, and one end-to-end turn against a
+ * repo-owned dual-version fixture built only from public SDK APIs — the same token-free peer
  * `acp-v2-conformance.test.ts` uses.
  */
 
@@ -35,13 +35,25 @@ describe('v2 session adapter', () => {
       messageId: 'm1',
       content: CONTENT('lo'),
     })
-    assert.deepEqual(first.chunks, [{ type: 'text', text: 'Hel' }])
-    assert.deepEqual(second.chunks, [{ type: 'text', text: 'lo' }])
+    assert.deepEqual(first.chunks, [
+      {
+        type: 'acp_content',
+        channel: 'message',
+        messageId: 'm1',
+        content: { type: 'text', text: 'Hel' },
+      },
+    ])
+    assert.deepEqual(second.chunks, [
+      {
+        type: 'acp_content',
+        channel: 'message',
+        messageId: 'm1',
+        content: { type: 'text', text: 'lo' },
+      },
+    ])
   })
 
-  it('maps a whole-message upsert onto text_replace', () => {
-    // The point of the prototype: v2's biggest shape change costs no new wire
-    // type, because `text_replace` already means "replace accumulated text".
+  it('maps a whole-message upsert onto an id-scoped replacement', () => {
     const adapter = createV2SessionAdapter()
     adapter.apply({
       sessionUpdate: 'agent_message_chunk',
@@ -53,12 +65,17 @@ describe('v2 session adapter', () => {
       messageId: 'm1',
       content: [CONTENT('final')],
     })
-    assert.deepEqual(replaced.chunks, [{ type: 'text_replace', text: 'final' }])
+    assert.deepEqual(replaced.chunks, [
+      {
+        type: 'acp_content_replace',
+        channel: 'message',
+        messageId: 'm1',
+        content: [{ type: 'text', text: 'final' }],
+      },
+    ])
   })
 
-  it('replays every message when one of several is revised', () => {
-    // `text_replace` replaces the turn's whole accumulated text, not one
-    // message, so a revision has to re-send the concatenation in order.
+  it('revises one of several messages without replaying its siblings', () => {
     const adapter = createV2SessionAdapter()
     adapter.apply({
       sessionUpdate: 'agent_message_chunk',
@@ -75,7 +92,110 @@ describe('v2 session adapter', () => {
       messageId: 'm1',
       content: [CONTENT('ONE ')],
     })
-    assert.deepEqual(revised.chunks, [{ type: 'text_replace', text: 'ONE two' }])
+    assert.deepEqual(revised.chunks, [
+      {
+        type: 'acp_content_replace',
+        channel: 'message',
+        messageId: 'm1',
+        content: [{ type: 'text', text: 'ONE ' }],
+      },
+    ])
+  })
+
+  it('matches a spec-literal message fold and stays idempotent on whole-message replay', () => {
+    const adapter = createV2SessionAdapter()
+    const chunks: StreamChunk[] = []
+    const updates: v2.SessionUpdate[] = [
+      {
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'm1',
+        content: CONTENT('draft'),
+      },
+      {
+        sessionUpdate: 'agent_message',
+        messageId: 'm1',
+        content: [CONTENT('final')],
+      },
+      {
+        sessionUpdate: 'agent_message',
+        messageId: 'm1',
+        content: [CONTENT('final')],
+      },
+      {
+        sessionUpdate: 'agent_message',
+        messageId: 'm2',
+        content: [CONTENT('second')],
+      },
+    ]
+    for (const update of updates) {
+      chunks.push(...adapter.apply(update).chunks)
+    }
+
+    const folded = new Map<string, string>()
+    for (const chunk of chunks) {
+      if (chunk.type === 'acp_content' && chunk.content.type === 'text' && chunk.messageId) {
+        folded.set(chunk.messageId, (folded.get(chunk.messageId) ?? '') + chunk.content.text)
+      }
+      if (chunk.type === 'acp_content_replace') {
+        folded.set(
+          chunk.messageId,
+          chunk.content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join(''),
+        )
+      }
+    }
+
+    assert.deepEqual(
+      [...folded],
+      [
+        ['m1', 'final'],
+        ['m2', 'second'],
+      ],
+    )
+  })
+
+  it('preserves whole-thought upserts and rich message content', () => {
+    const adapter = createV2SessionAdapter()
+    assert.deepEqual(
+      adapter.apply({
+        sessionUpdate: 'agent_thought',
+        messageId: 'thought-1',
+        content: [CONTENT('revised reasoning')],
+      }).chunks,
+      [
+        {
+          type: 'acp_content_replace',
+          channel: 'thought',
+          messageId: 'thought-1',
+          content: [{ type: 'text', text: 'revised reasoning' }],
+        },
+      ],
+    )
+    assert.deepEqual(
+      adapter.apply({
+        sessionUpdate: 'agent_message',
+        messageId: 'rich-1',
+        content: [
+          CONTENT('see '),
+          { type: 'image', data: 'pixels', mimeType: 'image/png', uri: 'file:///shot.png' },
+        ],
+      }).chunks,
+      [
+        {
+          type: 'acp_content_replace',
+          channel: 'message',
+          messageId: 'rich-1',
+          content: [
+            { type: 'text', text: 'see ' },
+            {
+              type: 'image',
+              dataUrl: 'data:image/png;base64,pixels',
+              mimeType: 'image/png',
+              uri: 'file:///shot.png',
+            },
+          ],
+        },
+      ],
+    )
   })
 
   it('opens a tool card on the first update for an id and patches after', () => {
@@ -97,10 +217,48 @@ describe('v2 session adapter', () => {
         type: 'tool_call',
         toolCall: { id: 't1', name: 'read_file', args: { path: 'a.ts' } },
       },
+      {
+        type: 'tool_call_update',
+        toolCallId: 't1',
+        name: 'read_file',
+        programmaticName: 'read_file',
+        args: { path: 'a.ts' },
+        status: 'running',
+      },
     ])
     assert.deepEqual(patched.chunks, [
       { type: 'tool_call_update', toolCallId: 't1', status: 'done' },
     ])
+  })
+
+  it('keeps terminal output on an initially completed tool update', () => {
+    const adapter = createV2SessionAdapter()
+    assert.deepEqual(
+      adapter.apply({
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 't-complete',
+        name: 'read_file',
+        status: 'completed',
+        content: [{ type: 'content', content: CONTENT('file contents') }],
+      }).chunks,
+      [
+        {
+          type: 'tool_call',
+          toolCall: { id: 't-complete', name: 'read_file', args: {} },
+        },
+        {
+          type: 'tool_call_update',
+          toolCallId: 't-complete',
+          name: 'read_file',
+          programmaticName: 'read_file',
+          status: 'done',
+          result: 'file contents',
+          resultFormat: 'markdown',
+          images: [],
+          content: [{ type: 'content', content: { type: 'text', text: 'file contents' } }],
+        },
+      ],
+    )
   })
 
   it('ends the turn on the idle state update, not on a chunk', () => {
@@ -146,10 +304,7 @@ describe('v2 session adapter', () => {
   })
 })
 
-const EXAMPLE_AGENT = join(
-  process.cwd(),
-  'node_modules/@agentclientprotocol/sdk/dist/examples/dual-version-agent.js',
-)
+const EXAMPLE_AGENT = join(process.cwd(), 'tests/fixtures/acp-dual-version-agent.mjs')
 
 function spawnExampleAgent(): ChildProcessWithoutNullStreams {
   assert.ok(existsSync(EXAMPLE_AGENT), `missing SDK example agent at ${EXAMPLE_AGENT}`)
@@ -185,10 +340,15 @@ describe('v2 session adapter against the SDK example agent', () => {
         })
       })
 
-      // The agent's reply arrives as one whole `agent_message`, so it lands as a
-      // replacement rather than a delta — the upsert path, end to end.
+      // The agent's reply arrives as one whole `agent_message`: the id-scoped
+      // upsert path is exercised end to end without relying on package internals.
       assert.deepEqual(chunks, [
-        { type: 'text_replace', text: 'Hello from the v2 implementation.' },
+        {
+          type: 'acp_content_replace',
+          channel: 'message',
+          messageId: 'agent-1',
+          content: [{ type: 'text', text: 'Hello from the v2 implementation.' }],
+        },
       ])
       assert.equal(stopReason, 'end_turn')
     } finally {
