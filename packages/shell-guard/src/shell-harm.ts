@@ -1,4 +1,4 @@
-import { dirname, isAbsolute, parse as parsePath, resolve, sep, win32 } from 'node:path'
+import { dirname, isAbsolute, join, parse as parsePath, resolve, sep, win32 } from 'node:path'
 import {
   CODE_INTERPRETERS,
   SCRIPT_EXTENSIONS,
@@ -843,8 +843,13 @@ function inspectPermissionBypass(command: string, normalized: string, out: Mutab
  * signal at all, so `fs.rmSync(process.env.HOME, {recursive: true})` was silently
  * allowed. An argument we cannot resolve is now a prompt.
  */
+/**
+ * `rm(` is Node's `fs/promises` and `fs` callback delete, usually imported by name
+ * (`import { rm } from 'node:fs/promises'`). It only counts as a call, so the
+ * bare word in an import list or a string does not.
+ */
 const LANGUAGE_DELETION_VERBS =
-  'rmSync|rmdirSync|removeSync|rmtree|rm_rf|remove_entry|removedirs|unlinkSync|unlink|promises\\s*\\.\\s*rm|rimraf\\s*\\.\\s*sync|rimraf'
+  'rmSync|rmdirSync|removeSync|rmtree|rm_rf|remove_entry|removedirs|unlinkSync|unlink|promises\\s*\\.\\s*rm|rm(?=\\s*\\()|rimraf\\s*\\.\\s*sync|rimraf'
 
 /**
  * `require('fs').promises.rm(…)` and `require('rimraf').sync(…)` put a quoted
@@ -1161,6 +1166,63 @@ function scriptContentsLookBinary(contents: string): boolean {
   return controls / sampleLen > 0.1
 }
 
+/**
+ * Every line pnpm's `node_modules/.bin` shim (`@zkochan/cmd-shim`) is made of. The
+ * shim's `$(echo "$0" | sed …)` and `$basedir` targets are exactly what the gate
+ * cannot inspect, so `./node_modules/.bin/eslint` prompted while `npx eslint`,
+ * which runs the same file, did not. A file is only treated as a shim when it
+ * has no other line; anything else is still read as the script it is.
+ */
+const PNPM_SHIM_LINES = [
+  /^#!\/bin\/sh$/,
+  /^basedir=\$\(dirname "\$\(echo "\$0" \| sed -e 's,\\\\,\/,g'\)"\)$/,
+  /^case `uname` in$/,
+  /^\*CYGWIN\*\|\*MINGW\*\|\*MSYS\*\)$/,
+  /^if command -v cygpath > \/dev\/null 2>&1; then$/,
+  /^basedir=`cygpath -w "\$basedir"`$/,
+  /^(?:fi|;;|esac|else)?$/,
+  /^if \[ -z "\$NODE_PATH" \]; then$/,
+  /^export NODE_PATH="[^"$`]*(?::\$NODE_PATH)?"$/,
+  /^if \[ -x "\$basedir\/node" \]; then$/,
+]
+const PNPM_SHIM_EXEC = /^exec (?:"\$basedir\/node"|node) +"\$basedir\/([^"$`]+)" "\$@"$/
+
+/** The files a pnpm shim runs, relative to its directory, or null when it is not one. */
+function pnpmShimTargets(contents: string): string[] | null {
+  const targets: string[] = []
+  for (const raw of contents.split('\n')) {
+    const line = raw.trim()
+    const target = PNPM_SHIM_EXEC.exec(line)?.[1]
+    if (target !== undefined) targets.push(target)
+    else if (!PNPM_SHIM_LINES.some((pattern) => pattern.test(line))) return null
+  }
+  return targets.length > 0 ? targets : null
+}
+
+/**
+ * Whether `resolved` is the workspace's own pnpm shim for an installed package:
+ * directly inside `<workspace>/node_modules/.bin`, and running only files under
+ * `<workspace>/node_modules`. That is what `npx <name>` already runs unread.
+ */
+function isWorkspacePackageShim(
+  resolved: string,
+  contents: string,
+  context: ShellHarmContext,
+): boolean {
+  if (context.workspaceRoot === null) return false
+  const modules = join(canonicalPath(context.workspaceRoot, context), 'node_modules')
+  const bin = join(modules, '.bin')
+  if (dirname(resolved) !== bin) return false
+  const targets = pnpmShimTargets(contents)
+  return (
+    targets !== null &&
+    targets.every((target) => {
+      const file = resolve(bin, target)
+      return file !== modules && isAtOrAbove(modules, file)
+    })
+  )
+}
+
 function inspectInterpreter(
   argv: string[],
   context: ShellHarmContext,
@@ -1217,6 +1279,9 @@ function inspectInterpreter(
     isAtOrAbove(canonicalPath(context.workspaceRoot, context), resolved) &&
     context.isCompiledProgram?.(resolved) === true
   ) {
+    return
+  }
+  if (contents !== null && !isInterpreter && isWorkspacePackageShim(resolved, contents, context)) {
     return
   }
   if (contents === null || depth >= MAX_SCRIPT_DEPTH || scriptContentsLookBinary(contents)) {
@@ -1876,7 +1941,10 @@ function assess(
   // here as well, which is why every piped command carried two near-identical
   // reasons; the shared pattern now covers pwsh/powershell too.
   for (const reason of dangerousInSandboxReasons(inspectableCommand)) addUnique(out.prompt, reason)
+  // Shell expansion only: in code, `${…}` is a template literal, and deletions
+  // are read by `inspectLanguageDeletion` instead.
   if (
+    language === 'shell' &&
     /\$(?:\{|[A-Za-z_])|%[A-Za-z_][A-Za-z0-9_]*%/.test(inspectableCommand) &&
     /\b(?:rm|del|rmdir|remove-item|dd|mkfs|shred)\b/i.test(inspectableCommand)
   ) {

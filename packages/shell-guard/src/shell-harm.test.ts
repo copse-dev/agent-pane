@@ -136,6 +136,32 @@ describe('Guarded YOLO shell harm gate', () => {
     }
   })
 
+  it('reads template literals in scripts as code, not shell expansion', () => {
+    const scripts = new Map([
+      ['/work/project/report.mts', 'const del = `${count} dd entries`\nconsole.log(del)'],
+      [
+        '/work/project/clean.mts',
+        "import { rm } from 'node:fs/promises'\nawait rm(`${root}/out`, { recursive: true })",
+      ],
+      [
+        '/work/project/wipe.mjs',
+        "import { rm } from 'node:fs'\nrm('/', { recursive: true }, done)",
+      ],
+    ])
+    const readScript = (path: string): string | null => scripts.get(path) ?? null
+    assert.equal(action('node report.mts', { readScript }), 'allow')
+    assert.deepEqual(assessShellHarm('node clean.mts', { ...context, readScript }).reasons, [
+      'recursive deletion from interpreter code with an unresolved target requires confirmation',
+    ])
+    assert.equal(action('node wipe.mjs', { readScript }), 'deny')
+    assert.equal(
+      action(
+        `node -e "const { rm } = require('fs/promises'); rm(process.argv[1], { recursive: true })"`,
+      ),
+      'prompt',
+    )
+  })
+
   it('offers consent for unconfirmed host power text in interpreter code', () => {
     const scripts = new Map([
       ['/work/project/report.mts', 'console.log("shutdown report")'],
@@ -743,6 +769,78 @@ describe('Guarded YOLO shell harm gate — false positives', () => {
 
   it('does not inspect a heredoc shebang line as a script', () => {
     assert.equal(action("cat > build/notes.sh <<'EOF'\n#!/bin/sh\necho hi\nEOF"), 'allow')
+  })
+
+  describe("the workspace's pnpm .bin shims", () => {
+    // Verbatim from a pnpm 10 install, with the NODE_PATH store paths shortened.
+    const shim = (target: string): string =>
+      [
+        '#!/bin/sh',
+        `basedir=$(dirname "$(echo "$0" | sed -e 's,\\\\,/,g')")`,
+        '',
+        'case `uname` in',
+        '    *CYGWIN*|*MINGW*|*MSYS*)',
+        '        if command -v cygpath > /dev/null 2>&1; then',
+        '            basedir=`cygpath -w "$basedir"`',
+        '        fi',
+        '    ;;',
+        'esac',
+        '',
+        'if [ -z "$NODE_PATH" ]; then',
+        '  export NODE_PATH="/work/project/node_modules/.pnpm/node_modules"',
+        'else',
+        '  export NODE_PATH="/work/project/node_modules/.pnpm/node_modules:$NODE_PATH"',
+        'fi',
+        'if [ -x "$basedir/node" ]; then',
+        `  exec "$basedir/node"  "$basedir/${target}" "$@"`,
+        'else',
+        `  exec node  "$basedir/${target}" "$@"`,
+        'fi',
+        '',
+      ].join('\n')
+    const scripts =
+      (files: Record<string, string>) =>
+      (path: string): string | null =>
+        files[path] ?? null
+
+    it('runs one like `npx` does, without reading it as a script', () => {
+      const readScript = scripts({
+        '/work/project/node_modules/.bin/eslint': shim('../eslint/bin/eslint.js'),
+      })
+      for (const command of [
+        './node_modules/.bin/eslint src/main/index.ts',
+        'node_modules/.bin/eslint --fix src',
+        '/work/project/node_modules/.bin/eslint src',
+      ]) {
+        assert.equal(action(command, { readScript }), 'allow', command)
+      }
+    })
+
+    it('still reads a shim that runs a file outside node_modules', () => {
+      const readScript = scripts({
+        '/work/project/node_modules/.bin/eslint': shim('../../scripts/payload.js'),
+      })
+      assert.equal(action('./node_modules/.bin/eslint src', { readScript }), 'prompt')
+    })
+
+    it('still reads a .bin file that is not exactly a shim', () => {
+      const tampered = shim('../eslint/bin/eslint.js').replace('esac', 'esac\nrm -rf "$HOME"')
+      const readScript = scripts({
+        '/work/project/node_modules/.bin/eslint': tampered,
+        '/work/project/node_modules/.bin/clean': '#!/bin/sh\nrm -rf ~\n',
+      })
+      assert.notEqual(action('./node_modules/.bin/eslint src', { readScript }), 'allow')
+      assert.equal(action('./node_modules/.bin/clean', { readScript }), 'deny')
+    })
+
+    it('does not trust a shim outside the workspace .bin directory', () => {
+      const readScript = scripts({
+        '/work/project/tools/.bin/eslint': shim('../eslint/bin/eslint.js'),
+        '/work/other/node_modules/.bin/eslint': shim('../eslint/bin/eslint.js'),
+      })
+      assert.equal(action('./tools/.bin/eslint src', { readScript }), 'prompt')
+      assert.equal(action('../other/node_modules/.bin/eslint src', { readScript }), 'prompt')
+    })
   })
 
   it('runs a compiled program inside the workspace without inspecting it', () => {
