@@ -991,7 +991,7 @@ Update this document and the Guarded YOLO / harm / read-outside tests with any i
 ## Environment setup
 
 Environment setup ([plan](plans/environment-setup.md)) reviews the prompts a person answered in the
-active project and suggests values for settings this contract already defines: the shell
+project open in the asking window and suggests values for settings this contract already defines: the shell
 auto-approval level, trusted commands, web origins, trusted SSH hosts and trusted package
 registries. It changes no rule. An applied suggestion has exactly the effect of the same value
 typed into Settings → Permissions.

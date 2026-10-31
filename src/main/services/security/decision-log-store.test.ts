@@ -25,6 +25,9 @@ import {
   type RecordedDecision,
 } from './decision-log-store.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { runWithActiveRunIdentity } from '../active-run-identity.ts'
+import { storageGet, storageSet } from '../storage/storage.ts'
+import { threadExecutionContextStorage } from '../thread-execution-context-store.ts'
 
 const PROJECT = 'proj-1'
 const THREAD = 't-42'
@@ -272,6 +275,57 @@ describe('decision-log-store', () => {
       subject: 'orphan',
     })
     assert.deepEqual(await readDecisionLog(PROJECT), [])
+  })
+
+  it("attributes concurrent turns in two projects to each turn's own project", async () => {
+    const previous = storageGet('activeProjectId')
+    // The window shows a third project; no turn below belongs to it.
+    storageSet('activeProjectId', 'window-project')
+    const turn = (projectId: string, threadId: string): Promise<void> =>
+      threadExecutionContextStorage.run(
+        {
+          projectId,
+          threadId,
+          projectRoot: root,
+          root,
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        () =>
+          runWithActiveRunIdentity(threadId, async () => {
+            await new Promise((resolve) => setTimeout(resolve, 5))
+            recordDecision({
+              kind: 'shell',
+              actor: 'user',
+              verdict: 'approved',
+              subject: projectId,
+            })
+            // A thread named outside its own turn has no project to borrow.
+            recordDecision({
+              kind: 'shell',
+              actor: 'user',
+              verdict: 'approved',
+              subject: 'foreign',
+              threadId: 'foreign-thread',
+            })
+          }),
+      )
+    try {
+      await Promise.all([turn('project-a', 'thread-a'), turn('project-b', 'thread-b')])
+    } finally {
+      storageSet('activeProjectId', previous)
+    }
+    for (const { projectId, threadId } of [
+      { projectId: 'project-a', threadId: 'thread-a' },
+      { projectId: 'project-b', threadId: 'thread-b' },
+    ]) {
+      const events = await readDecisionLog(projectId)
+      assert.deepEqual(
+        events.map((event) => [event.threadId, event.subject]),
+        [[threadId, projectId]],
+      )
+    }
+    assert.deepEqual(await readDecisionLog('window-project'), [])
   })
 
   it('exports a manifest + events bundle', async () => {
