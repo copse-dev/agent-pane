@@ -141,20 +141,41 @@ async function expectComposerVisible(id: 'message' | 'new-message'): Promise<voi
  * Opening the thread smooth-scrolls to the waiting approval and focuses the
  * composer, and that reveal only scrolls as far as it must, so a capture
  * otherwise inherited whichever offset those left behind.
+ *
+ * The run is still live, so the newest reply is paced in frame by frame. The
+ * reveal runs once, on focus: framing before that reply has painted all of its
+ * saved text lets the reply's growth push Queue message below where the reveal
+ * put it.
  */
 async function frameThreadComposer(): Promise<void> {
   await browser.waitUntil(
     () =>
-      browser.execute(() => {
+      browser.execute(async () => {
         const preview = document.querySelector<HTMLImageElement>('#message-image-preview img')
+        if (
+          preview?.complete !== true ||
+          preview.naturalWidth === 0 ||
+          document.querySelectorAll('#messages .message').length !== 4 ||
+          document.querySelector('#attention .decision-actions') === null
+        ) {
+          return false
+        }
+        const response = await fetch('/api/thread/proj-1/thread-1', {
+          headers: { Authorization: `Bearer ${localStorage.getItem('copse-mobile-token') ?? ''}` },
+        })
+        const data: unknown = await response.json()
+        if (typeof data !== 'object' || data === null || !('messages' in data)) return false
+        const saved: unknown = Array.isArray(data.messages) ? data.messages.at(-1) : undefined
+        if (typeof saved !== 'object' || saved === null || !('content' in saved)) return false
+        const painted = document.querySelector('#messages .message:last-child .message-content')
         return (
-          preview?.complete === true &&
-          preview.naturalWidth > 0 &&
-          document.querySelectorAll('#messages .message').length === 4 &&
-          document.querySelector('#attention .decision-actions') !== null
+          typeof saved.content === 'string' && painted?.textContent.trim() === saved.content.trim()
         )
       }),
-    { timeoutMsg: 'The thread, its approval and the image preview should finish rendering' },
+    {
+      timeoutMsg:
+        'The thread, its approval, the image preview and the paced newest reply should finish rendering',
+    },
   )
   await browser.execute(() => {
     const input = document.getElementById('message')
