@@ -184,6 +184,27 @@ describe('test oracle base resolution', () => {
   })
 })
 
+describe('test oracle dependency inputs', () => {
+  // pnpm installs from these, so one changed alone can swap the code of any
+  // shipped dependency. A security pin through pnpm-workspace.yaml `overrides`
+  // with its regenerated lockfile once planned mode=skip, as if only docs moved.
+  for (const file of ['pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc']) {
+    it(`plans the full suite for a change to ${file} alone`, () => {
+      const root = mkdtempSync(join(tmpdir(), 'copse-oracle-deps-'))
+      try {
+        git(root, 'init', '-q')
+        const base = commit(root, 'README.md', 'base\n')
+        commit(root, file, 'changed\n')
+        const p = plan(root, base)
+        assert.equal(p.get('mode'), 'full')
+        assert.equal(p.get('unit_mode'), 'full')
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+  }
+})
+
 describe('assignShards', () => {
   const specs = ['a', 'b', 'c', 'd', 'e', 'f']
 
