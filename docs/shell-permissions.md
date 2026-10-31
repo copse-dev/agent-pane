@@ -453,6 +453,31 @@ An ACP agent that does not advertise MCP-over-HTTP support cannot mount that bri
 configured MCP tools. This is deliberately fail-closed: ACP provides no per-call host enforcement
 point for a stdio or HTTP MCP server the external agent mounts itself.
 
+## ACP client terminals
+
+An ACP agent that delegates a command through `terminal/create` (issue #623; see
+[ACP agents](acp-agents.md#client-terminals)) gets no authority of its own: the
+request becomes exactly one `run_shell` call through `ToolRegistry`, under the
+owning turn's thread identity and execution context, as a bridged `run_shell`
+call would. The permission gate, per-tool overrides, hooks, read-only mode, the
+platform matrix above, Guarded YOLO, the expected-block and reactive
+unsandboxed-retry prompts and the denial cache therefore apply unchanged, and the
+command's text is what the gate judges and the prompt shows. `env` and `cwd` are
+rendered into that text (`export` lines and a `cd` into a workspace
+subdirectory); a `cwd` outside the execution root is refused, never run
+elsewhere. A request that arrives with no turn bound is refused, as a bridged call
+is. For a sandboxed agent the command shares the agent's network scope, as bridged
+shell calls do.
+
+Terminals are offered only alongside the native bridge for a local agent, never
+to an agent on an SSH host or on Windows. Copse does not auto-approve an agent's
+own `execute` permission request because terminals are advertised: the agent may
+still use its private shell, which only the spawn-time seatbelt contains.
+Implementation: `acp/acp-terminals.ts` (ACP side) and
+`AcpNativeBridge.runShellCommand` (turn binding); per-call output and exit
+reach the terminal through `runWithShellRunObserver` in
+`exec/shell-output-context.ts`.
+
 ## SSH workspaces
 
 On an SSH workspace (`docs/plans/ssh-remote-repo.md`) commands, git, search and files run on the
@@ -856,8 +881,17 @@ While active:
   described below. Read-only `gh` carve-outs keep the normal sandboxed path.
 - Direct execution of a workspace file the gate cannot read as text prompts, except a compiled
   executable (ELF, Mach-O, PE header) inside the workspace: it has no text to inspect, and running
-  it is no riskier than the `cargo run` or `make` that built it. A word starting with `#` in
-  command position is a comment, not a script to inspect.
+  it is no riskier than the `cargo run` or `make` that built it. The workspace's own pnpm shims
+  are a second exception: a file directly in `<workspace>/node_modules/.bin` that consists only of
+  pnpm's shim template, and runs only files under `<workspace>/node_modules`, runs like the
+  `npx <name>` that resolves to it. Any other line, or a target outside `node_modules`, and the
+  file is read as the script it is. Targets are followed through links, so a workspace package
+  that pnpm links to its source in the repository is read, not trusted. A word starting with `#`
+  in command position is a comment, not a script to inspect.
+- Script and inline code is read as code, not shell: a `${…}` template literal is not an
+  expansion. Deletion calls (`rm(…)` from `fs`/`fs/promises`, `rmSync`, `unlink`, `rmtree`, …)
+  deny on a catastrophic literal target and otherwise prompt, so a script that recursively
+  deletes a computed path, such as `scripts/run-tests.mts` clearing its output directory, asks.
 - Commands that reach past this machine's project without deleting anything ask once
   (`host-reach.ts`):
   - `ssh`, `scp`, `sftp`, `mosh`, and remote `rsync` to a host not listed under Settings →
