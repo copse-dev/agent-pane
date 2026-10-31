@@ -5317,6 +5317,10 @@
       "sha256": "4aa5e4d5fedc7ee27faf86a22bb7052260493dca11c2ff96229e7dbd72921bb3",
       "bytes": 278392
     },
+    "thread-switch-concise-bottom.png": {
+      "sha256": "080a550c88204564ac48daffe3651a1e9ec1acb615bc8c57135b0c6c3a78e650",
+      "bytes": 408722
+    },
     "thread-switch-isolated-worktrees.png": {
       "sha256": "2971d9e89189f3f005088d7fefb8d8689764eb63dc42f5f54eb699e3bed9f5bf",
       "bytes": 160553
