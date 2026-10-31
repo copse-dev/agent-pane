@@ -5417,6 +5417,10 @@
       "sha256": "da71838cb282f07e0fd534c921c36c923d6a10aaf80d2857f72918350ef72548",
       "bytes": 304231
     },
+    "tool-card-refresh-new-tool.png": {
+      "sha256": "825dff3e811a39fef409a8e5a0da056a655301020ef81305fa4f825bfbb05613",
+      "bytes": 15009
+    },
     "tool-disclosure-user-choices.png": {
       "sha256": "b0cf1623dc2aa533e9cc7346c2e955de02e633834378e93c1caa889e38fc5dcf",
       "bytes": 14239
