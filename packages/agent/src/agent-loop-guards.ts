@@ -1,19 +1,27 @@
+import { READ_FILE_LIMITS_CEILING } from './read-file-limits.ts'
 import type { TodoItem } from './wire-types.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 
 /**
- * Tools that only gather context — repeating them often indicates a stuck
- * loop. `explore` is a free-text summarizing subagent (`{ query, paths? }`),
- * not a raw filesystem read, but it is exactly the tool #1433's 43-minute run
- * thrashed on (15 calls, 0 `read_file` calls) and was previously missing here,
- * so `isDuplicateExploreCall` never fired for it at all.
+ * Tools whose calls the duplicate guard fingerprints: they only gather context,
+ * so repeating one often indicates a stuck loop. `explore` is a free-text
+ * summarizing subagent (`{ query, paths? }`), not a raw filesystem read, but it
+ * is exactly the tool #1433's 43-minute run thrashed on (15 calls, 0
+ * `read_file` calls) and was previously missing here, so
+ * `isDuplicateExploreCall` never fired for it at all.
+ *
+ * Not to be confused with `SUBAGENT_ALLOWED_TOOL_NAMES` (`run-subagent.ts`),
+ * the explore subagent's allow-list. Both were once named
+ * `EXPLORE_TOOL_NAMES`; adding `explore` to that one would let the subagent
+ * spawn subagents.
  */
-export const EXPLORE_TOOL_NAMES = new Set([
+export const DUPLICATE_GUARDED_TOOL_NAMES = new Set([
   'list_dir',
   'read_file',
   'find_files',
   'search_code',
   'search_codebase',
+  'semantic_search',
   'explore',
 ])
 
@@ -39,13 +47,19 @@ function normalizeExplorePaths(rawPaths: unknown): string[] {
 /**
  * Normalizes tool args before fingerprinting. The result is also what
  * actually executes when a call turns out not to be a duplicate (see
- * `run-agent-loop.ts`'s `executeToolBatch`), so this only trims/sorts —
- * it must never change what the tool call means. Near-duplicate detection for
+ * `run-agent-loop.ts`'s `executeToolBatch`), so this preserves the effective request. File reads also canonicalize
+ * their existing line ceiling; asking for more cannot return more lines. Near-duplicate detection for
  * `explore`'s free-text `query` (tokenizing, dropping stopwords) happens
  * separately in `isDuplicateExploreCall`, over the fingerprint string, so the
  * executed args keep the model's actual wording.
  */
 export function normalizeExploreArgs(name: string, args: unknown): unknown {
+  if (name === 'read_file' && isRecord(args)) {
+    const start = typeof args['start_line'] === 'number' ? args['start_line'] : 1
+    const ceiling = start + READ_FILE_LIMITS_CEILING.maxLines - 1
+    const end = typeof args['end_line'] === 'number' ? Math.min(args['end_line'], ceiling) : ceiling
+    return { ...args, start_line: start, end_line: end }
+  }
   if (name === 'list_dir') {
     if (!isRecord(args)) return args
     const path = typeof args['path'] === 'string' ? args['path'].trim() || '.' : '.'
@@ -204,7 +218,7 @@ export function isDuplicateExploreCall(
   args: unknown,
   recentFingerprints: readonly string[],
 ): boolean {
-  if (!EXPLORE_TOOL_NAMES.has(name)) return false
+  if (!DUPLICATE_GUARDED_TOOL_NAMES.has(name)) return false
   const fp = toolCallFingerprint(name, normalizeExploreArgs(name, args))
   if (recentFingerprints.includes(fp)) return true
   if (name !== 'explore') return false
@@ -255,6 +269,15 @@ export const EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD = 3
  */
 export const EXPLORE_WITHOUT_READ_NUDGE =
   'You have called explore several times in a row without calling read_file. explore returns a prose summary with approximate line numbers, not the verbatim bytes str_replace needs. Call read_file on the specific path you are about to edit, copy the exact text from its output, then retry the edit.'
+
+/**
+ * Explore-mode counterpart of `EXPLORE_WITHOUT_READ_NUDGE`. The parent has no
+ * `read_file` there; the exact bytes are the verbatim-excerpt blocks appended
+ * to each explore result (#1433, Fix 0), so naming read_file would send the
+ * model after a tool it cannot call.
+ */
+export const EXPLORE_REPEAT_USE_EXCERPTS_NUDGE =
+  'You have called explore several times in a row. Each explore result already ends with verbatim excerpts of the lines it read, copied from the files byte-for-byte. Copy str_replace old_string from those excerpt blocks, not from the prose summary, and make the edit. Explore again only if no excerpt covers the lines you need, and then name that path and function.'
 
 /**
  * Tracks the explore/read_file interleaving for `EXPLORE_WITHOUT_READ_NUDGE`:

@@ -1,6 +1,9 @@
 # UI kit (renderer primitives)
 
-Status: **Active** — first slice on branch `jkt/auto/ui-kit-web-components-*`.
+Status: **Active** — the first slice is on `main`
+([#1150](https://github.com/copse-dev/agent-pane/pull/1150)), and the Browser/Terminals pane-tabs shell
+(`src/renderer/ui/pane-tabs.ts`) shipped in [#3944](https://github.com/copse-dev/agent-pane/pull/3944).
+The list+viewer shell (memories/roadmap) remains.
 
 ## Question
 

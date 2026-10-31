@@ -1,7 +1,7 @@
 import { clientActionSnapshotSchema } from '../../src/shared/client-actions.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -504,7 +504,8 @@ describe('interactive client live approvals', function () {
   it('offers Tab before chips, submits the suggested message once and rejects a stale press', async () => {
     writeE2eEnv({ COPSE_PANEL_MOCK_NEXT_STEP: '1' })
     resetUserData()
-    seedEmptyProject(seedStableWorkspace(), 'e2e-plugin-actions', {
+    const workspace = seedStableWorkspace({ files: { 'README.md': 'Before the fix.\n' } })
+    seedEmptyProject(workspace, 'e2e-plugin-actions', {
       model: 'claude-sonnet-4-6',
       subagentsEnabled: false,
       mockFollowUps: true,
@@ -538,6 +539,9 @@ describe('interactive client live approvals', function () {
     await submitComposer()
     await waitForAgentIdle()
     await scenario.assertComplete()
+    // Keep real Git and the mock +1/-1 summary consistent after first-send
+    // checkout: a native refresh must not remove the chip during capture.
+    writeFileSync(join(workspace, 'README.md'), 'After the fix.\n')
     await browser.waitUntil(
       async () => {
         const state = await json(
@@ -555,6 +559,11 @@ describe('interactive client live approvals', function () {
     assert.ok(state.offer)
     assert.equal(state.offer.actions[0]?.label, 'Run the test suite to verify the fix')
     assert.ok(state.offer.actions.some((action) => action.kind === 'follow-up'))
+    // The action offer and Git summary arrive independently. The mock summary
+    // is part of the settled composer and must be present in this capture.
+    await expect($('.follow-up-bubble-changes')).toBeDisplayed({ wait: 15_000 })
+    await expect($('.follow-up-bubble-changes .follow-up-stat-add')).toHaveText('+1')
+    await expect($('.follow-up-bubble-changes .follow-up-stat-del')).toHaveText('-1')
     await saveElementScreenshot('#input-bar', 'plugin-client-actions.png')
     state = await json(
       await fetch(service.origin + '/v1/actions', { headers }),

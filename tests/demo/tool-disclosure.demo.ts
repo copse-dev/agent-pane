@@ -6,6 +6,8 @@ import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 // An explicit open/close on a tool card is the reader's choice: tool-status
 // churn (running → done → running) must not override it. The disclosure model
 // (src/renderer/views/disclosure-model.ts) owns that state, not the DOM.
+// Refreshes patch existing cards in place (src/renderer/views/tool-card-refresh.ts),
+// so the same nodes survive churn and a new tool slots in beside them.
 
 describe('tool card disclosure choices', () => {
   before(async () => {
@@ -44,6 +46,10 @@ describe('tool card disclosure choices', () => {
     await expect(shell).not.toHaveAttribute('open')
     await expect(edit).toHaveAttribute('open')
 
+    // Remember the card nodes: refreshes must patch them, not rebuild them.
+    await browser.execute(() => {
+      window.toolDisclosureCards = Array.from(document.querySelectorAll('.tool-card'))
+    })
     const churn: ('running' | 'done')[] = ['done', 'running', 'done', 'running']
     for (const status of churn) {
       await browser.execute((next) => {
@@ -61,6 +67,11 @@ describe('tool card disclosure choices', () => {
     await expect(shell).not.toHaveAttribute('open')
     await expect(edit).toHaveAttribute('open')
     await expect(edit.$('.tool-result, .tool-args')).toBeDisplayed()
+    const reused = await browser.execute(() => {
+      const before = window.toolDisclosureCards ?? []
+      return before.length > 0 && before.every((node) => node.isConnected)
+    })
+    expect(reused).toBe(true)
 
     await browser.execute(async () => {
       await document.fonts.ready
@@ -71,4 +82,43 @@ describe('tool card disclosure choices', () => {
     })
     await saveElementScreenshot('#fixture', 'tool-disclosure-user-choices.png')
   })
+
+  it('slots a new tool in after the existing cards without rebuilding them', async () => {
+    // Continues from the state above: rollup open, shell closed, edit open.
+    const rollup = $('.tool-card-rollup')
+    const edit = rollup.$('.tool-card[data-tool-id="tc-edit"]')
+    await browser.execute(() => {
+      window.toolDisclosureCards = Array.from(document.querySelectorAll('.tool-card'))
+      window.toolDisclosureFixture.addRead('tc-read', 'README.md')
+    })
+    const read = rollup.$('.tool-card[data-tool-id="tc-read"]')
+    await read.waitForExist()
+    const layout = await browser.execute(() => {
+      const before = window.toolDisclosureCards ?? []
+      const ids = Array.from(
+        document.querySelectorAll<HTMLElement>('.tool-card-rollup .tool-card[data-tool-id]'),
+      ).map((node) => node.dataset['toolId'])
+      return { ids, reused: before.every((node) => node.isConnected) }
+    })
+    expect(layout.ids).toEqual(['tc-shell', 'tc-edit', 'tc-read'])
+    expect(layout.reused).toBe(true)
+    await expect(rollup).toHaveAttribute('open')
+    await expect(edit).toHaveAttribute('open')
+    await expect(read).not.toHaveAttribute('open')
+
+    await browser.execute(async () => {
+      await document.fonts.ready
+      for (const animation of document.getAnimations()) {
+        animation.pause()
+        animation.currentTime = 1250
+      }
+    })
+    await saveElementScreenshot('#fixture', 'tool-card-refresh-new-tool.png')
+  })
 })
+
+declare global {
+  interface Window {
+    toolDisclosureCards?: Element[]
+  }
+}

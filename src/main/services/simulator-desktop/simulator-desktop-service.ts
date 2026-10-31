@@ -1,3 +1,4 @@
+import { SIMULATOR_REMOVED_DETAIL } from '@shared/types/simulator-desktop.ts'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
@@ -279,6 +280,43 @@ async function compileHelpers(): Promise<NativeHelpers> {
 export class SimulatorDesktopService {
   private readonly connections = new Map<string, ManagedSimulatorConnection>()
   private helpers: Promise<NativeHelpers> | null = null
+  private readonly retiringDevices = new Set<string>()
+  private readonly frameObservers = new Set<(udid: string, error?: Error) => void>()
+
+  /** Resolve only after a native frame has actually been sent to the Desktop renderer. */
+  waitForFrame(udid: string, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted()
+    return new Promise((resolve, reject) => {
+      const finish = (error?: Error): void => {
+        clearTimeout(timer)
+        signal.removeEventListener('abort', aborted)
+        this.frameObservers.delete(observe)
+        if (error) reject(error)
+        else resolve()
+      }
+      const observe = (received: string, error?: Error): void => {
+        if (received === udid) finish(error)
+      }
+      const aborted = (): void => {
+        const reason: unknown = signal.reason
+        finish(
+          reason instanceof Error
+            ? reason
+            : new Error(typeof reason === 'string' ? reason : 'Desktop capture cancelled'),
+        )
+      }
+      const timer = setTimeout(() => {
+        finish(
+          new Error(
+            'No live Simulator frame reached Copse Desktop within 90 seconds. Desktop capture is unverified.',
+          ),
+        )
+      }, 90_000)
+      this.frameObservers.add(observe)
+      signal.addEventListener('abort', aborted, { once: true })
+      if (signal.aborted) aborted()
+    })
+  }
 
   /** A discrete, approval-gated agent action; does not enable renderer control. */
   async agentInput(
@@ -328,6 +366,8 @@ export class SimulatorDesktopService {
   }
 
   async open(udid: string, owner: SimulatorDesktopOwner): Promise<SimulatorDesktopConnection> {
+    if (this.retiringDevices.has(udid.toUpperCase()))
+      throw new Error('That Simulator is being removed')
     if (
       [...this.connections.values()].some(
         (connection) => connection.public.device.udid === udid && !connection.closing,
@@ -410,6 +450,26 @@ export class SimulatorDesktopService {
       if (connection.owner.id === ownerId) this.closeManaged(connection, 'closed')
     }
     return Promise.resolve()
+  }
+
+  /** Stop only this device's streams before verified removal; then refresh its viewers. */
+  async retireDevice<T>(udid: string, remove: () => Promise<T>): Promise<T> {
+    const identity = udid.toUpperCase()
+    if (this.retiringDevices.has(identity))
+      throw new Error('That Simulator is already being removed')
+    this.retiringDevices.add(identity)
+    const connections = [...this.connections.values()].filter(
+      (connection) => connection.public.device.udid.toUpperCase() === identity,
+    )
+    try {
+      for (const connection of connections) this.closeManaged(connection, 'closed')
+      const result = await remove()
+      for (const connection of connections)
+        this.emitStatus(connection, 'closed', SIMULATOR_REMOVED_DETAIL)
+      return result
+    } finally {
+      this.retiringDevices.delete(identity)
+    }
   }
 
   closeAll(): Promise<void> {
@@ -511,6 +571,13 @@ export class SimulatorDesktopService {
     status: SimulatorDesktopStatus,
     detail?: string,
   ): void {
+    if (status === 'closed' || status === 'error') {
+      for (const observe of this.frameObservers)
+        observe(
+          connection.public.device.udid,
+          new Error(detail ?? 'Simulator Desktop connection closed before capture'),
+        )
+    }
     connection.public.status = status
     connection.connected = status === 'connected'
     if (connection.owner.isDestroyed()) return
@@ -529,6 +596,7 @@ export class SimulatorDesktopService {
       id: connection.public.id,
       bytes: Uint8Array.from(frame.bytes),
     } satisfies SimulatorDesktopFrame)
+    for (const observe of this.frameObservers) observe(connection.public.device.udid)
   }
 
   private closeManaged(

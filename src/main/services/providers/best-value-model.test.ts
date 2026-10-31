@@ -7,7 +7,7 @@ import { frontierForKnownModels } from '@copse/llm/pareto-frontier.ts'
 import { pickDynamicModel } from '@copse/llm/dynamic-model-pick.ts'
 import { applyPlanCoverage } from '@shared/plan-inclusion.ts'
 import { planAcpFrontierCandidates } from '@shared/plan-frontier-candidates.ts'
-import { setSetting } from '../storage/settings.test-shim.ts'
+import { setSetting } from '../storage/settings.ts'
 
 describe('resolveBestValueFromFrontier', () => {
   it('removes blocked xAI routes before choosing the automatic winner', async () => {

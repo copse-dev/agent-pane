@@ -77,7 +77,7 @@ import {
   prepareWorktreeTool,
 } from '../../tools/worktree-preparation-tool.ts'
 import { browserShowTool } from '../../tools/browser-tools.ts'
-import { setSetting } from '../storage/settings.test-shim.ts'
+import { setSetting } from '../storage/settings.ts'
 import {
   clearMcpToolPermissionTargets,
   registerMcpToolPermissionTarget,
@@ -358,7 +358,7 @@ describe('startAcpNativeBridge', () => {
     setDefaultPluginRegistry(null)
     setApprovalHandler(null)
     clearAbandonedVerdictsForTest()
-    setSetting('toolPermissionOverrides', {})
+    await setSetting('toolPermissionOverrides', {})
     clearMcpToolPermissionTargets()
     await bridge?.close()
     bridge = null
@@ -1074,7 +1074,7 @@ describe('startAcpNativeBridge', () => {
       toolName: 'list_messages',
       origin: 'user',
     })
-    setSetting('toolPermissionOverrides', { [permissionId]: 'block' })
+    await setSetting('toolPermissionOverrides', { [permissionId]: 'block' })
     bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
       threadId: 'bridge-mcp-policy',
     })
@@ -1096,7 +1096,10 @@ describe('startAcpNativeBridge', () => {
       method: 'tools/call',
       params: { name: 'mcp__mail__list_messages', arguments: {} },
     })
-    assert.equal(contentText(denied), 'User rejected the mcp__mail__list_messages tool call.')
+    assert.equal(
+      contentText(denied),
+      'Tool mcp__mail__list_messages blocked: it is set to Block in tool permission settings. It did not run. The user did not reject this call.',
+    )
     assert.equal(executed, false, 'a denied bridged MCP call must not reach its handler')
   })
 

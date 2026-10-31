@@ -1431,11 +1431,32 @@
           0
         ]
       },
+      "mcp:list-user-servers": {
+        "api": "mcp.listUserServers",
+        "args": [
+          0,
+          0
+        ]
+      },
       "mcp:reload": {
         "api": "mcp.reload",
         "args": [
           0,
           0
+        ]
+      },
+      "mcp:remove-user-server": {
+        "api": "mcp.removeUserServer",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "mcp:save-user-server": {
+        "api": "mcp.saveUserServer",
+        "args": [
+          1,
+          2
         ]
       },
       "mcp:set-curated-enabled": {

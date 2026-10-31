@@ -5,7 +5,7 @@ import { getExploreSubagentRunner } from '../services/explore-subagent-runner.ts
 export const exploreTool = defineTool({
   name: 'explore',
   description:
-    'Explore the codebase by reading and searching files. Returns a concise summary instead of raw file contents. Use this instead of read_file or search tools.',
+    'Explore the codebase by reading and searching files. Returns a concise summary, followed by verbatim excerpts of the lines the explorer read — copy str_replace old_string from those excerpts, never from the summary. Use this instead of read_file or search tools.',
   parameters: z.object({
     query: z.string().describe('What to find or understand in the codebase'),
     paths: z.array(z.string()).optional().describe('Optional paths to focus exploration on'),
@@ -16,6 +16,6 @@ export const exploreTool = defineTool({
       return 'Error: explore subagent is not available in this context.'
     }
     const result = await runner({ query, paths, signal })
-    return result.summary
+    return result.text
   },
 })
