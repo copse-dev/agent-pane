@@ -102,6 +102,7 @@ describe('tier screening through the safety-screening classifier', () => {
     setApprovalHandler(null)
     disableGuardedYolo(THREAD)
     await readDecisionLog(PROJECT)
+    assert.deepEqual(await readDecisionLog(SELECTED_PROJECT), [])
     storageDelete('activeProjectId')
     if (previousHome !== undefined) process.env['HOME'] = previousHome
     else delete process.env['HOME']
