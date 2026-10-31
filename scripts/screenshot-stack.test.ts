@@ -870,8 +870,8 @@ describe('stack workflow integration', () => {
     f.statuses.set(BASE, [status('Screenshot review', 10, 'Stack deferred to approved tip')])
     const comments = new Map<number, { id: number; body: string; user: { id: number } }>()
     let commentWrites = 0
-    const write = f.github.rest.repos.createCommitStatus
-    f.github.rest.repos.createCommitStatus = async (value) => {
+    const write = f.github.rest.repos.createCommitStatus.bind(f.github.rest.repos)
+    f.github.rest.repos.createCommitStatus = async (value): Promise<void> => {
       await write(value)
       f.statuses.set(value.sha, [
         status(value.context, 20 + f.writes.length, value.description, value.state),
@@ -885,15 +885,21 @@ describe('stack workflow integration', () => {
         ...f.github.rest,
         pulls: {
           ...f.github.rest.pulls,
-          list: async () => ({ data: [...f.pulls.values()] }),
+          list: async (): Promise<{ data: unknown[] }> => ({ data: [...f.pulls.values()] }),
         },
         issues: {
-          listComments: async () => ({ data: [] }),
-          createComment: async ({ issue_number, body }: { issue_number: number; body: string }) => {
+          listComments: async (): Promise<{ data: unknown[] }> => ({ data: [] }),
+          createComment: async ({
+            issue_number,
+            body,
+          }: {
+            issue_number: number
+            body: string
+          }): Promise<void> => {
             commentWrites += 1
             comments.set(issue_number, { id: issue_number, body, user: { id: 41898282 } })
           },
-          updateComment: async () => {
+          updateComment: async (): Promise<void> => {
             commentWrites += 1
           },
         },
