@@ -15,7 +15,7 @@ import { setGhAvailableForTest } from './tool-availability.ts'
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { CI_INVESTIGATOR_PLUGIN_ID } from '@copse/agent/plugins/ci-investigator-plugin.ts'
-import { setSetting } from './storage/settings.test-shim.ts'
+import { setSetting } from './storage/settings.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import {
   runWithThreadExecutionContext,
@@ -30,9 +30,9 @@ describe('buildSystemPrompt Opus 5 conciseness steering', () => {
   let restoreWorkspace: (() => void) | undefined
 
   beforeEach(async () => {
-    setSetting('skillsEnabled', false)
-    setSetting('skillPluginPaths', [])
-    setSetting('customInstructions', '')
+    await setSetting('skillsEnabled', false)
+    await setSetting('skillPluginPaths', [])
+    await setSetting('customInstructions', '')
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-system-prompt-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
   })
@@ -90,7 +90,7 @@ describe('buildSystemPrompt Opus 5 conciseness steering', () => {
   })
 
   it('keeps the tone reminder ahead of custom instructions so users can override it', async () => {
-    setSetting('customInstructions', 'Always walk me through your reasoning in full detail.')
+    await setSetting('customInstructions', 'Always walk me through your reasoning in full detail.')
     const prompt = await build('claude-opus-5')
     assert.ok(prompt.indexOf('<tone_preference>') < prompt.indexOf('Custom instructions'))
   })
@@ -110,9 +110,9 @@ describe('buildSystemPrompt prefix stability', () => {
   let restoreWorkspace: (() => void) | undefined
 
   beforeEach(async () => {
-    setSetting('skillsEnabled', false)
-    setSetting('skillPluginPaths', [])
-    setSetting('customInstructions', '')
+    await setSetting('skillsEnabled', false)
+    await setSetting('skillPluginPaths', [])
+    await setSetting('customInstructions', '')
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-system-prompt-stable-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
   })
@@ -150,9 +150,9 @@ describe('buildSystemPrompt instruction layers', () => {
   let originalHome: string | undefined
 
   beforeEach(async () => {
-    setSetting('skillsEnabled', false)
-    setSetting('skillPluginPaths', [])
-    setSetting('customInstructions', 'User custom rules')
+    await setSetting('skillsEnabled', false)
+    await setSetting('skillPluginPaths', [])
+    await setSetting('customInstructions', 'User custom rules')
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-system-prompt-instr-'))
     homeRoot = await mkdtemp(join(tmpdir(), 'copse-system-prompt-home-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
@@ -161,7 +161,7 @@ describe('buildSystemPrompt instruction layers', () => {
   })
 
   afterEach(async () => {
-    setSetting('customInstructions', '')
+    await setSetting('customInstructions', '')
     restoreWorkspace?.()
     if (originalHome !== undefined) process.env['HOME'] = originalHome
     else delete process.env['HOME']
@@ -220,9 +220,9 @@ describe('buildSystemPrompt working directory', () => {
   let restoreWorkspace: (() => void) | undefined
 
   beforeEach(async () => {
-    setSetting('skillsEnabled', false)
-    setSetting('skillPluginPaths', [])
-    setSetting('customInstructions', '')
+    await setSetting('skillsEnabled', false)
+    await setSetting('skillPluginPaths', [])
+    await setSetting('customInstructions', '')
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-system-prompt-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
   })
@@ -279,9 +279,9 @@ describe('buildSystemPrompt Git repository root', () => {
   const extraRoots: string[] = []
 
   beforeEach(async () => {
-    setSetting('skillsEnabled', false)
-    setSetting('skillPluginPaths', [])
-    setSetting('customInstructions', '')
+    await setSetting('skillsEnabled', false)
+    await setSetting('skillPluginPaths', [])
+    await setSetting('customInstructions', '')
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-repo-prompt-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
   })
@@ -391,9 +391,9 @@ describe('buildSystemPrompt investigate_ci tool line', () => {
   let restoreWorkspace: (() => void) | undefined
 
   beforeEach(async () => {
-    setSetting('skillsEnabled', false)
-    setSetting('skillPluginPaths', [])
-    setSetting('customInstructions', '')
+    await setSetting('skillsEnabled', false)
+    await setSetting('skillPluginPaths', [])
+    await setSetting('customInstructions', '')
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-system-prompt-ci-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
   })
@@ -454,9 +454,9 @@ describe('buildSystemPrompt worktree preparation steering', () => {
   let restoreWorkspace: (() => void) | undefined
 
   beforeEach(async () => {
-    setSetting('skillsEnabled', false)
-    setSetting('skillPluginPaths', [])
-    setSetting('customInstructions', '')
+    await setSetting('skillsEnabled', false)
+    await setSetting('skillPluginPaths', [])
+    await setSetting('customInstructions', '')
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-worktree-preparation-prompt-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
   })

@@ -15,6 +15,12 @@ import { agentWorkspaceLabel } from './execution-root.ts'
 import { buildExploreSearchRoutingAddon } from '@copse/agent/search-routing.ts'
 import { isSemanticSearchAvailable } from './search/semantic-index.ts'
 import { subagentHookCallbacks } from './hooks/subagent.ts'
+import { runWithExploredSpanRecorder } from './explore-read-recorder.ts'
+import {
+  renderExploreResult,
+  selectExploreExcerpts,
+  type ExploredSpan,
+} from '@copse/agent/explore-excerpts.ts'
 
 export interface RunExploreSubagentOptions {
   parentToolCallId: string
@@ -33,7 +39,14 @@ export interface RunExploreSubagentOptions {
 }
 
 export interface ExploreSubagentResult {
+  /** The subagent's own final message: prose with approximate line numbers. */
   summary: string
+  /**
+   * What the parent receives (#1433, Fix 0): the summary followed by the spans
+   * the subagent read, copied verbatim by the harness and bounded by the
+   * subagent's read budget. Equal to `summary` when nothing was read.
+   */
+  text: string
   usage: ModelUsage
 }
 
@@ -84,27 +97,35 @@ export async function runExploreSubagent(
   })
   const subagentReadLimits = readFileLimitsForSubagent(subagentBudget)
 
+  const spans: ExploredSpan[] = []
   return runWithAgentRunReadFileLimits(subagentReadLimits, async () => {
-    const { summary, session } = await runSubagent({
-      provider,
-      prompt,
-      parentGoal: `${parentGoal}\nWorkspace: ${workspace}`,
-      tools: filterExploreTools(registry),
-      parentToolCallId,
-      signal,
-      maxContextTokens: contextWindow,
-      toolSchemaReserveTokens: toolSchemaReserve,
-      executeTool: (name, args, sig) => executeExploreTool(registry, name, args, sig),
-      onSubagentChunk: onChunk,
-      systemPromptSuffix: buildExploreSearchRoutingAddon(isSemanticSearchAvailable()),
-      usageModel,
-      ...(localFallback !== undefined ? { localFallback } : {}),
-      // subagentStart gate + subagentStop notification (D1); no-op callbacks
-      // when cursorHooksEnabled is off, so the explore path is unchanged.
-      ...subagentHookCallbacks({ usageModel }),
-    })
+    const { summary, session } = await runWithExploredSpanRecorder(
+      (span) => spans.push(span),
+      () =>
+        runSubagent({
+          provider,
+          prompt,
+          parentGoal: `${parentGoal}\nWorkspace: ${workspace}`,
+          tools: filterExploreTools(registry),
+          parentToolCallId,
+          signal,
+          maxContextTokens: contextWindow,
+          toolSchemaReserveTokens: toolSchemaReserve,
+          executeTool: (name, args, sig) => executeExploreTool(registry, name, args, sig),
+          onSubagentChunk: onChunk,
+          systemPromptSuffix: buildExploreSearchRoutingAddon(isSemanticSearchAvailable()),
+          usageModel,
+          ...(localFallback !== undefined ? { localFallback } : {}),
+          // subagentStart gate + subagentStop notification (D1); no-op callbacks
+          // when cursorHooksEnabled is off, so the explore path is unchanged.
+          ...subagentHookCallbacks({ usageModel }),
+        }),
+    )
 
     const usage = session.usage ?? { inputTokens: 0, outputTokens: 0 }
-    return { summary, usage }
+    // One read's worth of characters: the budget the subagent's own reads were
+    // held to, so excerpts never cost the parent more than a read_file would.
+    const selection = selectExploreExcerpts(spans, summary, subagentReadLimits.maxChars)
+    return { summary, text: renderExploreResult(summary, selection), usage }
   })
 }

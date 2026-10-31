@@ -59,6 +59,7 @@ Rules:
 - Prefer search_codebase (auto mode) or semantic_search over search_code alone — they combine regex and native semantic search
 - Do not write files or run shell commands
 - Cite file paths and line ranges when relevant
+- Before finishing, read_file the exact lines the parent will need to change, with a narrow start_line/end_line range — the parent may receive your read_file output verbatim alongside your summary, so it does not need code pasted into the summary
 - Be thorough in exploration but concise in your final summary
 - Your final message must be a structured summary the parent can use without re-reading files`
 

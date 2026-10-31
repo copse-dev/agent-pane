@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { createStore } from './store.ts'
+import { createStore, sameItems } from './store.ts'
 import {
   archiveThread,
   restoreThread,
@@ -366,7 +366,11 @@ describe('blank thread reuse', () => {
       stagedDiffs: [{ path: 'same.txt', language: 'plaintext' }],
     })
     let panelChanges = 0
-    store.on('panel_changed', () => panelChanges++)
+    store.select(
+      (s) => [s.openFile, s.activeDiff, s.stagedDiffs.length] as const,
+      () => panelChanges++,
+      sameItems,
+    )
 
     switchThread(store, first)
 
@@ -385,16 +389,20 @@ describe('blank thread reuse', () => {
     addMessage(store, second, 'user', 'second')
     let panelChanges = 0
     let threadChanges = 0
-    store.on('panel_changed', () => panelChanges++)
+    store.select(
+      (s) => [s.openFile, s.activeDiff, s.stagedDiffs.length] as const,
+      () => panelChanges++,
+      sameItems,
+    )
     store.on('threads_changed', () => threadChanges++)
 
     switchThread(store, first)
 
     assert.equal(store.getState().activeThreadId, first)
-    // No file, diff or staged queue was open, so the reset announces nothing —
-    // and its subscribers (the Changes pane, the context panel) answer that
-    // announcement with real git work on top of what `threads_changed` already
-    // triggers.
+    // No file, diff or staged queue was open, so the reset changes nothing a
+    // panel selection reads — and those selectors (the Changes pane, the
+    // context panel) would answer a change with real git work on top of what
+    // `threads_changed` already triggers.
     assert.equal(panelChanges, 0)
     assert.equal(threadChanges, 1)
   })
