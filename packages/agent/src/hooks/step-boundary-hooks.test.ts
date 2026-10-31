@@ -17,6 +17,7 @@ import { createHookRegistry, FIRST_PARTY_HOOKS, type HookEmitResult } from './ho
 import type { StepBoundaryEscalation, StepBoundaryPayload } from './canonical-events.ts'
 import { measureConversationPressure, type EscalationInput } from '../agent-loop-escalation.ts'
 import {
+  EXPLORE_REPEAT_USE_EXCERPTS_NUDGE,
   EXPLORE_WITHOUT_READ_NUDGE,
   EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD,
   LOOP_NUDGE_USER_MESSAGE,
@@ -213,6 +214,29 @@ describe('loop-nudge', () => {
         preStream({
           escalation: calm,
           consecutiveExploreWithoutRead: EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD,
+        }),
+        {},
+      ),
+      { injectContext: EXPLORE_WITHOUT_READ_NUDGE },
+    )
+  })
+
+  it('points explore mode at the verbatim excerpts instead of the withheld read_file (#1433 Fix 0)', async () => {
+    const outcome = await loopNudgeHook.run(
+      preStream({
+        consecutiveExploreWithoutRead: EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD,
+        readFileOffered: false,
+      }),
+      {},
+    )
+    assert.deepEqual(outcome, { injectContext: EXPLORE_REPEAT_USE_EXCERPTS_NUDGE })
+    assert.doesNotMatch(EXPLORE_REPEAT_USE_EXCERPTS_NUDGE, /read_file/)
+    // An explicit true keeps the read_file wording.
+    assert.deepEqual(
+      await loopNudgeHook.run(
+        preStream({
+          consecutiveExploreWithoutRead: EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD,
+          readFileOffered: true,
         }),
         {},
       ),

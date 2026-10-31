@@ -893,9 +893,29 @@ function timelineShowsText(session: SubagentSession, text: string): boolean {
 }
 
 /**
+ * The part of `result` after a leading copy of one of the timeline's messages,
+ * or null when it does not start with one. An explore result is the summary
+ * followed by harness-copied verbatim excerpts (#1433), so only the excerpts
+ * are new to the reader; the `---` that separates them in the model-facing text
+ * is dropped, since the card already sets them apart.
+ */
+function textAfterTimelinePrefix(session: SubagentSession, result: string): string | null {
+  for (const m of session.messages) {
+    const prefix = m.content.trimEnd()
+    if (!prefix || !result.startsWith(prefix)) continue
+    return result
+      .slice(prefix.length)
+      .replace(/^\s*---\s*\n/, '')
+      .trim()
+  }
+  return null
+}
+
+/**
  * The result text to render below the timeline, or `''` when there is nothing
  * left to add — the subagent already said it in the timeline above, or it has
- * not settled yet.
+ * not settled yet. A result that repeats a timeline message and then adds more
+ * (explore's verbatim excerpts) renders only the addition.
  */
 function parentResultText(
   tc: ToolCall,
@@ -903,7 +923,8 @@ function parentResultText(
   status: ToolCall['status'],
 ): string {
   if (status !== 'done' || !tc.result) return ''
-  return timelineShowsText(session, tc.result) ? '' : tc.result
+  if (timelineShowsText(session, tc.result)) return ''
+  return textAfterTimelinePrefix(session, tc.result) ?? tc.result
 }
 
 function subagentCardStatus(tc: ToolCall, session: SubagentSession): ToolCall['status'] {
