@@ -903,13 +903,32 @@ While active:
   described below. Read-only `gh` carve-outs keep the normal sandboxed path.
 - Direct execution of a workspace file the gate cannot read as text prompts, except a compiled
   executable (ELF, Mach-O, PE header) inside the workspace: it has no text to inspect, and running
-  it is no riskier than the `cargo run` or `make` that built it. The workspace's own pnpm shims
-  are a second exception: a file directly in `<workspace>/node_modules/.bin` that consists only of
-  pnpm's shim template, and runs only files under `<workspace>/node_modules`, runs like the
-  `npx <name>` that resolves to it. Any other line, or a target outside `node_modules`, and the
-  file is read as the script it is. Targets are followed through links, so a workspace package
-  that pnpm links to its source in the repository is read, not trusted. A word starting with `#`
-  in command position is a comment, not a script to inspect.
+  it is no riskier than the `cargo run` or `make` that built it. A word starting with `#` in
+  command position is a comment, not a script to inspect.
+- Nothing under `node_modules` is trusted for being there. An agent can write a shim and a payload
+  (`node_modules/.bin/evil`, `node_modules/evil/index.js`) or rewrite a file in an installed
+  package, so a package binary is read as the program it runs and gets the answer that running
+  that file with `node` gets:
+  - A pnpm `.bin` shim that is exactly pnpm's template, line for line and in order, is read as the
+    file it runs, wherever the shim is: as JavaScript for the `exec node` form, and as a program for
+    the form pnpm writes for a native binary. `$basedir` is the directory of the path the shell
+    runs, so a link to a real shim resolves from the link's directory. When `$basedir/node` exists
+    (or the host cannot say), the shim runs that instead of node, and it is read too. A file with
+    any other line, or the same lines out of order, is read as the shell script it is, which
+    prompts.
+  - `npx <name>`, `npm exec <name>` / `npm x <name>` and `pnpm exec <name>`, directly or through
+    `corepack`, read the workspace's `node_modules/.bin/<name>` the same way. `pnpm exec` runs any
+    other command from PATH, so that command is assessed as if typed, and `pnpm exec -c` assesses
+    its shell string. An option the gate does not model, which can choose another directory or
+    workspace package (`--prefix`, `-C`, `--filter`, `-r`), prompts, and so does `npx ./dir`, which
+    runs the package in a local directory.
+  - Registry packages are read the same way, with no exemption. Their bins are ordinarily small
+    launchers that read clean; one that recursively deletes a computed path (`c8` clears its
+    temporary directory) asks.
+  - A `.bin` entry is a program whatever its suffix: `./node_modules/.bin/tool.png` is read, not
+    skipped as an image.
+  - Package scripts (`pnpm run <script>`, `npm test`), `pnpm <bin>` without `exec`, and `yarn` are
+    not followed into what they run.
 - Script and inline code is read as code, not shell: a `${…}` template literal is not an
   expansion. Deletion calls (`rm(…)` from `fs`/`fs/promises`, `rmSync`, `unlink`, `rmtree`, …)
   deny on a catastrophic literal target and otherwise prompt, so a script that recursively
@@ -936,7 +955,8 @@ While active:
   - `launchctl`, `systemctl`, `crontab`, and `defaults` writes, `screencapture`, `osascript`, and
     every `pkill`/`killall` (a pattern cannot be scoped to the agent's own processes, so even
     `pkill -f "node scripts/watch"` can stop the user's watcher; `kill` by PID or job runs);
-  - `npx`/`npm exec` of anything but a binary installed in the workspace's `node_modules/.bin`,
+  - `npx`/`npm exec` (including `npm -s exec` and `corepack npx`) of anything but a binary
+    installed in the workspace's `node_modules/.bin`, which is read as above instead,
     package-manager initializer commands (`npm create`/named `npm init`, `pnpm create`,
     `yarn create`, `bun create`), and `pnpm dlx`, `yarn dlx`, `bunx`, `uvx`, and `pipx run`,
     which download code before running it;

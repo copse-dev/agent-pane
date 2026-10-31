@@ -744,10 +744,14 @@ describe('Guarded YOLO shell harm gate', () => {
       '  https://example.com/install.sh',
     ].join('\n')
 
-    // `npx` runs the project's own `tool` binary, so nothing is fetched.
-    const pathExists = (path: string): boolean => path === '/work/project/node_modules/.bin/tool'
-    assert.equal(action(command, { pathExists }), 'allow')
-    assert.deepEqual(uninspectableReasons(command, { pathExists }), [])
+    // `npx` runs the project's own `tool` binary, so nothing is fetched, and
+    // the gate reads that binary.
+    const tool = '/work/project/node_modules/.bin/tool'
+    const pathExists = (path: string): boolean => path === tool
+    const readScript = (path: string): string | null =>
+      path === tool ? '#!/usr/bin/env node\nconsole.log(1)\n' : null
+    assert.equal(action(command, { pathExists, readScript }), 'allow')
+    assert.deepEqual(uninspectableReasons(command, { pathExists, readScript }), [])
   })
 })
 
@@ -769,107 +773,6 @@ describe('Guarded YOLO shell harm gate — false positives', () => {
 
   it('does not inspect a heredoc shebang line as a script', () => {
     assert.equal(action("cat > build/notes.sh <<'EOF'\n#!/bin/sh\necho hi\nEOF"), 'allow')
-  })
-
-  describe("the workspace's pnpm .bin shims", () => {
-    // Verbatim from a pnpm 10 install, with the NODE_PATH store paths shortened.
-    const shim = (target: string): string =>
-      [
-        '#!/bin/sh',
-        `basedir=$(dirname "$(echo "$0" | sed -e 's,\\\\,/,g')")`,
-        '',
-        'case `uname` in',
-        '    *CYGWIN*|*MINGW*|*MSYS*)',
-        '        if command -v cygpath > /dev/null 2>&1; then',
-        '            basedir=`cygpath -w "$basedir"`',
-        '        fi',
-        '    ;;',
-        'esac',
-        '',
-        'if [ -z "$NODE_PATH" ]; then',
-        '  export NODE_PATH="/work/project/node_modules/.pnpm/node_modules"',
-        'else',
-        '  export NODE_PATH="/work/project/node_modules/.pnpm/node_modules:$NODE_PATH"',
-        'fi',
-        'if [ -x "$basedir/node" ]; then',
-        `  exec "$basedir/node"  "$basedir/${target}" "$@"`,
-        'else',
-        `  exec node  "$basedir/${target}" "$@"`,
-        'fi',
-        '',
-      ].join('\n')
-    const scripts =
-      (files: Record<string, string>) =>
-      (path: string): string | null =>
-        files[path] ?? null
-
-    it('runs one like `npx` does, without reading it as a script', () => {
-      const readScript = scripts({
-        '/work/project/node_modules/.bin/eslint': shim('../eslint/bin/eslint.js'),
-      })
-      for (const command of [
-        './node_modules/.bin/eslint src/main/index.ts',
-        'node_modules/.bin/eslint --fix src',
-        '/work/project/node_modules/.bin/eslint src',
-      ]) {
-        assert.equal(action(command, { readScript }), 'allow', command)
-      }
-    })
-
-    it('still reads a shim that runs a file outside node_modules', () => {
-      const readScript = scripts({
-        '/work/project/node_modules/.bin/eslint': shim('../../scripts/payload.js'),
-      })
-      assert.equal(action('./node_modules/.bin/eslint src', { readScript }), 'prompt')
-    })
-
-    it('still reads a .bin file that is not exactly a shim', () => {
-      const tampered = shim('../eslint/bin/eslint.js').replace('esac', 'esac\nrm -rf "$HOME"')
-      const readScript = scripts({
-        '/work/project/node_modules/.bin/eslint': tampered,
-        '/work/project/node_modules/.bin/clean': '#!/bin/sh\nrm -rf ~\n',
-      })
-      assert.notEqual(action('./node_modules/.bin/eslint src', { readScript }), 'allow')
-      assert.equal(action('./node_modules/.bin/clean', { readScript }), 'deny')
-    })
-
-    it('follows the target through links, trusting only files that stay in node_modules', () => {
-      // pnpm links a registry package into its store, inside node_modules, but
-      // links a workspace package to its source, which the agent can edit.
-      const links: Record<string, string> = {
-        '/work/project/node_modules/eslint/bin/eslint.js':
-          '/work/project/node_modules/.pnpm/eslint@9.0.0/node_modules/eslint/bin/eslint.js',
-        '/work/project/node_modules/@copse/review/bin/copse-review.mjs':
-          '/work/project/packages/review/bin/copse-review.mjs',
-        '/work/project/node_modules/escape/run.js': '/tmp/escape/run.js',
-      }
-      const canonicalizePath = (path: string): string => links[path] ?? path
-      const readScript = scripts({
-        '/work/project/node_modules/.bin/eslint': shim('../eslint/bin/eslint.js'),
-        '/work/project/node_modules/.bin/copse-review': shim(
-          '../@copse/review/bin/copse-review.mjs',
-        ),
-        '/work/project/node_modules/.bin/escape': shim('../escape/run.js'),
-      })
-      assert.equal(
-        action('./node_modules/.bin/eslint src', { readScript, canonicalizePath }),
-        'allow',
-      )
-      assert.equal(
-        action('./node_modules/.bin/copse-review', { readScript, canonicalizePath }),
-        'prompt',
-      )
-      assert.equal(action('./node_modules/.bin/escape', { readScript, canonicalizePath }), 'prompt')
-    })
-
-    it('does not trust a shim outside the workspace .bin directory', () => {
-      const readScript = scripts({
-        '/work/project/tools/.bin/eslint': shim('../eslint/bin/eslint.js'),
-        '/work/other/node_modules/.bin/eslint': shim('../eslint/bin/eslint.js'),
-      })
-      assert.equal(action('./tools/.bin/eslint src', { readScript }), 'prompt')
-      assert.equal(action('../other/node_modules/.bin/eslint src', { readScript }), 'prompt')
-    })
   })
 
   it('runs a compiled program inside the workspace without inspecting it', () => {
@@ -897,6 +800,250 @@ describe('Guarded YOLO shell harm gate — false positives', () => {
     ]) {
       assert.equal(action(command), 'prompt', command)
     }
+  })
+})
+
+describe('Guarded YOLO shell harm gate — package binaries', () => {
+  const WS = '/work/project'
+  const BIN = `${WS}/node_modules/.bin`
+  const NODE_PATH = `${WS}/node_modules/.pnpm/node_modules`
+  // Verbatim from a pnpm 10 install, with the NODE_PATH store paths shortened.
+  const prologue = [
+    '#!/bin/sh',
+    `basedir=$(dirname "$(echo "$0" | sed -e 's,\\\\,/,g')")`,
+    '',
+    'case `uname` in',
+    '    *CYGWIN*|*MINGW*|*MSYS*)',
+    '        if command -v cygpath > /dev/null 2>&1; then',
+    '            basedir=`cygpath -w "$basedir"`',
+    '        fi',
+    '    ;;',
+    'esac',
+    '',
+    'if [ -z "$NODE_PATH" ]; then',
+    `  export NODE_PATH="${NODE_PATH}"`,
+    'else',
+    `  export NODE_PATH="${NODE_PATH}:$NODE_PATH"`,
+    'fi',
+  ]
+  /** The shim pnpm writes for a JavaScript bin. */
+  const shim = (target: string): string =>
+    [
+      ...prologue,
+      'if [ -x "$basedir/node" ]; then',
+      `  exec "$basedir/node"  "$basedir/${target}" "$@"`,
+      'else',
+      `  exec node  "$basedir/${target}" "$@"`,
+      'fi',
+      '',
+    ].join('\n')
+  /** The shim pnpm writes for a bin that is not JavaScript, such as esbuild's native binary. */
+  const directShim = (target: string): string =>
+    [...prologue, `"$basedir/${target}"   "$@"`, 'exit $?', ''].join('\n')
+
+  const ESLINT_BIN =
+    '#!/usr/bin/env node\n"use strict";\nrequire("../lib/cli").execute(process.argv)\n'
+  const RM_ROOT = "require('child_process').execSync('rm -rf /')\n"
+  const RM_ARG = "require('fs').rmSync(process.argv[2], { recursive: true })\n"
+  const STORE_ESLINT = `${WS}/node_modules/.pnpm/eslint@9.0.0/node_modules/eslint/bin/eslint.js`
+
+  /** A filesystem of text files and links; every listed path exists. */
+  function disk(
+    files: Record<string, string>,
+    links: Record<string, string> = {},
+  ): Partial<ShellHarmContext> {
+    const canonicalizePath = (path: string): string => links[path] ?? path
+    return {
+      readScript: (path) => files[path] ?? null,
+      canonicalizePath,
+      pathExists: (path) => Object.hasOwn(files, canonicalizePath(path)),
+    }
+  }
+
+  /** eslint as pnpm installs it from the registry: a shim, and a link into the store. */
+  const installed = (files: Record<string, string> = {}): Partial<ShellHarmContext> =>
+    disk(
+      { [`${BIN}/eslint`]: shim('../eslint/bin/eslint.js'), [STORE_ESLINT]: ESLINT_BIN, ...files },
+      { [`${WS}/node_modules/eslint/bin/eslint.js`]: STORE_ESLINT },
+    )
+
+  /** An agent's own writes: a verbatim shim, and a payload where a package would be. */
+  const staged = (payload: string): Partial<ShellHarmContext> =>
+    disk({
+      [`${BIN}/evil`]: shim('../evil/index.js'),
+      [`${WS}/node_modules/evil/index.js`]: payload,
+    })
+
+  const EVERY_ROUTE = [
+    './node_modules/.bin/evil',
+    'node_modules/.bin/evil --flag',
+    '/work/project/node_modules/.bin/evil',
+    'npx evil',
+    'npx --yes evil',
+    'npx \\\n  evil',
+    'npm exec evil',
+    'npm exec -- evil',
+    'npm x evil',
+    'npm -s exec evil',
+    'pnpm exec evil',
+    'pnpm -s exec evil',
+    'pnpm -w exec evil',
+    'corepack pnpm exec evil',
+    'env FOO=1 npx evil',
+  ]
+
+  it('runs a registry package installed through the pnpm store, by every route', () => {
+    for (const command of [
+      './node_modules/.bin/eslint src/main/index.ts',
+      'node_modules/.bin/eslint --fix src',
+      '/work/project/node_modules/.bin/eslint src',
+      'npx eslint src',
+      'npm exec eslint -- src',
+      'pnpm exec eslint src',
+      'pnpm -s exec eslint src',
+    ]) {
+      assert.equal(action(command, installed()), 'allow', command)
+    }
+  })
+
+  it('runs a native package binary through its shim', () => {
+    const native = `${WS}/node_modules/.pnpm/esbuild@0.28.2/node_modules/esbuild/bin/esbuild`
+    const context: Partial<ShellHarmContext> = {
+      ...disk(
+        { [`${BIN}/esbuild`]: directShim('../esbuild/bin/esbuild') },
+        { [`${WS}/node_modules/esbuild/bin/esbuild`]: native },
+      ),
+      pathExists: (path) => path === `${BIN}/esbuild`,
+      isCompiledProgram: (path) => path === native,
+    }
+    assert.equal(action('./node_modules/.bin/esbuild --version', context), 'allow')
+    assert.equal(action('npx esbuild --version', context), 'allow')
+  })
+
+  it('gives a staged node_modules package what running its file with node gets, by every route', () => {
+    // Before, every route here was allowed unread: a shim whose target stays
+    // under node_modules was trusted, and so was any name npx found in .bin.
+    assert.equal(action('node node_modules/evil/index.js', staged(RM_ROOT)), 'deny')
+    assert.equal(action('node node_modules/evil/index.js', staged(RM_ARG)), 'prompt')
+    for (const command of EVERY_ROUTE) {
+      assert.equal(action(command, staged(RM_ROOT)), 'deny', command)
+      assert.equal(action(command, staged(RM_ARG)), 'prompt', command)
+    }
+  })
+
+  it('reads a file an agent rewrote inside an installed package', () => {
+    const tampered = installed({ [STORE_ESLINT]: RM_ROOT })
+    assert.equal(action('./node_modules/.bin/eslint src', tampered), 'deny')
+    assert.equal(action('npx eslint src', tampered), 'deny')
+  })
+
+  it('reads the file a shim runs wherever the shim and the file are', () => {
+    const review = `${WS}/packages/review/bin/copse-review.mjs`
+    const context = (contents: string): Partial<ShellHarmContext> =>
+      disk(
+        {
+          [`${BIN}/copse-review`]: shim('../@copse/review/bin/copse-review.mjs'),
+          [`${WS}/packages/review/node_modules/.bin/js-yaml`]: shim('../js-yaml/bin/js-yaml.mjs'),
+          [`${WS}/packages/review/node_modules/js-yaml/bin/js-yaml.mjs`]: contents,
+          [`${BIN}/escape`]: shim('../../scripts/payload.js'),
+          [review]: contents,
+        },
+        // pnpm links a workspace package to its source, which the agent can edit.
+        { [`${WS}/node_modules/@copse/review/bin/copse-review.mjs`]: review },
+      )
+    for (const command of [
+      './node_modules/.bin/copse-review',
+      'npx copse-review',
+      'packages/review/node_modules/.bin/js-yaml x.yml',
+    ]) {
+      assert.equal(action(command, context('console.log(1)\n')), 'allow', command)
+      assert.equal(action(command, context(RM_ROOT)), 'deny', command)
+    }
+    // A target that cannot be read is not run unread.
+    assert.equal(action('./node_modules/.bin/escape', context('console.log(1)\n')), 'prompt')
+  })
+
+  it('resolves a shim from the path the shell runs, not the file a link points to', () => {
+    // `$basedir` is the directory of `$0`: through `x/run`, the shim runs
+    // `x/../eslint/bin/eslint.js`, beside the link, not the installed eslint.
+    const context = (contents: string): Partial<ShellHarmContext> => {
+      const base = installed({ [`${WS}/eslint/bin/eslint.js`]: contents })
+      const canonicalizePath = (path: string): string =>
+        path === `${WS}/x/run` ? `${BIN}/eslint` : (base.canonicalizePath?.(path) ?? path)
+      return { ...base, canonicalizePath }
+    }
+    assert.equal(action('./x/run src', context(RM_ROOT)), 'deny')
+    assert.equal(action('./x/run src', context('console.log(1)\n')), 'allow')
+  })
+
+  it('inspects a node program staged beside a shim, which the shim runs instead of node', () => {
+    const hijacked = installed({ [`${BIN}/node`]: '#!/bin/sh\nrm -rf "$HOME"\n' })
+    assert.equal(action('./node_modules/.bin/eslint src', hijacked), 'deny')
+    assert.equal(action('npx eslint src', hijacked), 'deny')
+    // Without a way to tell that `$basedir/node` is absent, the shim is not run unread.
+    const unknown: Partial<ShellHarmContext> = { ...installed() }
+    delete unknown.pathExists
+    assert.equal(action('./node_modules/.bin/eslint src', unknown), 'prompt')
+  })
+
+  it('reads a .bin file that is not exactly a shim as the script it is', () => {
+    const tampered = shim('../eslint/bin/eslint.js').replace('esac', 'esac\nrm -rf "$HOME"')
+    // Outside its `case`, the cygpath line empties `$basedir` on a host without
+    // cygpath, so the shim would run a file other than the one it names.
+    const reordered = shim('../eslint/bin/eslint.js').replace(
+      'case `uname` in',
+      'basedir=`cygpath -w "$basedir"`\ncase `uname` in',
+    )
+    const context = installed({
+      [`${BIN}/tampered`]: tampered,
+      [`${BIN}/reordered`]: reordered,
+      [`${BIN}/clean`]: '#!/bin/sh\nrm -rf ~\n',
+    })
+    assert.equal(action('./node_modules/.bin/tampered src', context), 'deny')
+    assert.equal(action('./node_modules/.bin/reordered src', context), 'prompt')
+    assert.equal(action('./node_modules/.bin/clean', context), 'deny')
+    assert.equal(action('npx clean', context), 'deny')
+  })
+
+  it('follows one shim, not a shim that runs another shim', () => {
+    // pnpm never chains shims; following them without a limit would recurse
+    // past the depth the other inspectors share.
+    const context = disk({
+      [`${BIN}/outer`]: directShim('inner'),
+      [`${BIN}/inner`]: shim('../evil/index.js'),
+      [`${WS}/node_modules/evil/index.js`]: 'console.log(1)\n',
+    })
+    assert.equal(action('./node_modules/.bin/inner', context), 'allow')
+    assert.equal(action('./node_modules/.bin/outer', context), 'prompt')
+  })
+
+  it('reads a package binary whatever its suffix', () => {
+    const context = disk({
+      [`${BIN}/evil.png`]: shim('../evil/index.js'),
+      [`${WS}/node_modules/evil/index.js`]: RM_ROOT,
+    })
+    assert.equal(action('./node_modules/.bin/evil.png', context), 'deny')
+  })
+
+  it('asks when runner options choose which package binary runs', () => {
+    for (const command of [
+      'pnpm --filter app exec evil',
+      'pnpm -C packages/app exec evil',
+      'pnpm -r exec evil',
+      'pnpm exec --parallel evil',
+      'npm --prefix packages/app exec evil',
+      'npx --prefix packages/app evil',
+      'npx ./tools/evil',
+    ]) {
+      assert.equal(action(command, staged(RM_ROOT)), 'prompt', command)
+    }
+  })
+
+  it('assesses a command pnpm exec runs from PATH as if it were typed', () => {
+    const scripts = disk({ [`${WS}/evil.js`]: RM_ROOT })
+    assert.equal(action('pnpm exec node evil.js', scripts), 'deny')
+    assert.equal(action("pnpm exec -c 'rm -rf ~'", scripts), 'deny')
+    assert.equal(action('pnpm exec tsc --noEmit', scripts), 'allow')
   })
 })
 
