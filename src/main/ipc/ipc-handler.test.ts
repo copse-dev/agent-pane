@@ -39,6 +39,10 @@ function outcome(run: () => unknown): unknown {
   }
 }
 
+function isError(result: unknown): boolean {
+  return typeof result === 'object' && result !== null && Object.hasOwn(result, 'error')
+}
+
 // Argument lists a renderer could send: none, too few, valid, wrong types,
 // extra trailing values, and a whole tuple wrapped in one array.
 const ARGUMENT_LISTS: unknown[][] = [
@@ -234,10 +238,10 @@ describe("{ errors: 'per-argument' } matches one parseIpcArgs call per argument"
 
   it('accepts exactly the argument lists the tuple form accepts', () => {
     for (const rawArgs of PR_REF_ARGUMENT_LISTS) {
-      const tuple = outcome(() => parsePositionalIpcArgs(ghPrFileDiffArgs, rawArgs))
+      const tuple = ghPrFileDiffArgs.safeParse(rawArgs.slice(0, 4))
       const each = outcome(() => parsePositionalIpcArgs(ghPrFileDiffArgs, rawArgs, perArgument))
-      assert.equal(Object.hasOwn(each, 'ok'), Object.hasOwn(tuple, 'ok'), JSON.stringify(rawArgs))
-      if (Object.hasOwn(tuple, 'ok')) assert.deepEqual(each, tuple)
+      if (tuple.success) assert.deepEqual(each, { ok: tuple.data }, JSON.stringify(rawArgs))
+      else assert.equal(isError(each), true, JSON.stringify(rawArgs))
     }
   })
 })
