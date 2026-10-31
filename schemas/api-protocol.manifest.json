@@ -2397,6 +2397,13 @@
           2
         ]
       },
+      "threads:action-state": {
+        "api": "threads.actionState",
+        "args": [
+          0,
+          0
+        ]
+      },
       "threads:annotate-message": {
         "api": "threads.annotateMessage",
         "args": [

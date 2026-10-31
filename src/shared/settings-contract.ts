@@ -1,6 +1,7 @@
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
 import type { MachineSharing, SharedMachineModel } from './machines.ts'
 import type { ReleaseChannel } from './release-channel.mts'
+import type { ThreadSortMode } from './types/state.ts'
 
 /** Validated, nonsecret persisted preferences. Host schemas verify this wire contract. */
 export interface SettingsValues {
@@ -24,7 +25,7 @@ export interface SettingsValues {
   chatGptPlanWelcomeSeen: boolean
   theme: 'system' | 'light' | 'dark'
   updateChannel: ReleaseChannel
-  sidebarThreadSort: 'activity' | 'created' | 'title'
+  sidebarThreadSort: ThreadSortMode
   sidebarThreadSortReverse: boolean
   sidebarThreadGroup: 'project' | 'status' | 'none'
   fontSize: number

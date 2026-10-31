@@ -104,6 +104,10 @@ import {
   sidebarPrRefs,
   type SidebarThread,
 } from '../controller/sidebar-thread.ts'
+import {
+  emptyThreadActionState,
+  type ThreadActionAssessment,
+} from '@shared/threads/action-assessment.ts'
 import { getAttentionThreadIds, isThreadAwaitingAttention } from '../controller/attention.ts'
 import { openActivityPanel } from './activity-panel.ts'
 import { openThreadHistoryEditor } from './thread-history-editor.ts'
@@ -511,6 +515,52 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     chevronDownIcon('ui-icon ui-icon-sm ui-picker-chevron'),
   )
   const filtersRow = el('div', { class: 'projects-filters' }, projectFilterBtn, sortBtn)
+  const actionProgress = el('p', { class: 'thread-action-progress', role: 'status' })
+  let actionState = emptyThreadActionState()
+  let actionDisposed = false
+  let actionLoading = false
+  function assessmentFor(
+    projectId: string,
+    thread: SidebarThread,
+  ): ThreadActionAssessment | undefined {
+    if (thread.status === 'running') return undefined
+    const assessment = actionState.entries.find(
+      (entry) => entry.projectId === projectId && entry.threadId === thread.id,
+    )?.assessment
+    if (
+      !assessment ||
+      (thread.lastPromptAt ?? 0) > assessment.assessedAt ||
+      (thread.lastSettledAt ?? 0) > assessment.assessedAt
+    )
+      return undefined
+    return assessment
+  }
+  function actionRank(projectId: string, thread: SidebarThread): number {
+    if (isThreadAwaitingAttention(thread.id)) return 0
+    const status = assessmentFor(projectId, thread)?.status
+    return status === 'needs-action'
+      ? 1
+      : status === undefined || status === 'uncertain'
+        ? 2
+        : status === 'waiting'
+          ? 3
+          : 4
+  }
+  const actionsDisposed = (): boolean => actionDisposed
+  async function refreshActions(): Promise<void> {
+    if (actionLoading || actionsDisposed()) return
+    actionLoading = true
+    try {
+      const next = await api.threads.actionState()
+      if (actionsDisposed() || JSON.stringify(next) === JSON.stringify(actionState)) return
+      actionState = next
+      render(true)
+    } catch {
+      /* Assessment availability never blocks browsing threads. */
+    } finally {
+      actionLoading = false
+    }
+  }
 
   searchInput.addEventListener('input', () => {
     threadFilter = filterText(searchInput.value.trim())
@@ -538,6 +588,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   root.append(
     header,
     filtersRow,
+    actionProgress,
     list,
     el('div', { class: 'projects-settings-actions' }, settingsBtn),
   )
@@ -548,6 +599,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     activity: 'Activity order',
     created: 'Created',
     title: 'Thread name',
+    action: 'Needs action',
   }
   const GROUP_LABELS: Readonly<Record<ThreadGroupMode, string>> = {
     project: 'Project',
@@ -1621,6 +1673,15 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       return false
     }
     syncFilterControls()
+    actionProgress.hidden = store.getState().sidebarThreadSort !== 'action'
+    actionProgress.textContent =
+      actionState.total === 0
+        ? 'Copse checks whether threads need action. Older threads are checked gradually.'
+        : actionState.pending > 0
+          ? `Checking older threads · ${String(actionState.assessed)} of ${String(actionState.total)} assessed${actionState.unavailable ? ' · waiting for a model' : actionState.budgetLimited ? ' · continuing later' : ''}`
+          : `All ${String(actionState.total)} threads assessed`
+    actionProgress.title =
+      'Assessments only help sort threads. Unchanged conversations are not assessed again; uncertain results wait for new evidence.'
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } =
       store.getState()
     // The project filter narrows what is listed, not what exists: automations,
@@ -1862,6 +1923,34 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       if (isThreadAwaitingAttention(thread.id)) {
         chatRow.classList.add('needs-attention')
         chatRow.append(attentionBell('This thread needs your attention'))
+      }
+
+      if (store.getState().sidebarThreadSort === 'action') {
+        const assessment = assessmentFor(project.id, thread)
+        const label = isThreadAwaitingAttention(thread.id)
+          ? 'Needs you'
+          : assessment?.status === 'needs-action'
+            ? 'Needs action'
+            : assessment?.status === 'waiting'
+              ? 'Waiting'
+              : assessment?.status === 'complete'
+                ? 'Complete'
+                : assessment
+                  ? 'Uncertain'
+                  : thread.status === 'running'
+                    ? 'Working'
+                    : 'Not assessed'
+        chatRow.append(
+          el(
+            'span',
+            {
+              class: 'thread-action-status',
+              title: assessment?.reason ?? label,
+              'aria-label': assessment ? `${label}: ${assessment.reason}` : label,
+            },
+            label,
+          ),
+        )
       }
 
       const prRollup = rollupForThread(thread)
@@ -2488,6 +2577,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         // A filter's matches stay newest first; the chosen order is for the browse list.
         isFiltering ? 'activity' : store.getState().sidebarThreadSort,
         !isFiltering && store.getState().sidebarThreadSortReverse,
+        (thread) => actionRank(project.id, thread),
       )
       const visibleLimit = visibleThreadCounts.get(project.id) ?? SIDEBAR_THREADS_PAGE_SIZE
       const activeId = project.id === activeProjectId ? activeThreadId : null
@@ -2618,7 +2708,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         }
       }
       const { sidebarThreadSort, sidebarThreadSortReverse } = store.getState()
-      const ordered = orderSidebarRows(rows, sidebarThreadSort, sidebarThreadSortReverse)
+      const actionOwners = new Map(rows.map((row) => [row.thread, row.projectId]))
+      const ordered = orderSidebarRows(
+        rows,
+        sidebarThreadSort,
+        sidebarThreadSortReverse,
+        (thread) => actionRank(actionOwners.get(thread) ?? '', thread),
+      )
       const sections =
         mode === 'status'
           ? groupRowsByStatus(ordered, isThreadAwaitingAttention)
@@ -2875,7 +2971,31 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
   render()
   refreshOrphans()
+  void refreshActions()
+  const actionRefreshTimer = setInterval(() => {
+    if (!root.isConnected) {
+      clearInterval(actionRefreshTimer)
+      return
+    }
+    void refreshActions()
+  }, 15_000)
+  // Browser handles are numeric; Node timers should not keep mounted-view tests alive.
+  const nodeActionTimer: unknown = actionRefreshTimer
+  if (
+    typeof nodeActionTimer === 'object' &&
+    nodeActionTimer !== null &&
+    'unref' in nodeActionTimer
+  ) {
+    const { unref } = nodeActionTimer
+    if (typeof unref === 'function') Reflect.apply(unref, nodeActionTimer, [])
+  }
+  const unsubActionRefresh = store.on('thread_status_changed', () => {
+    void refreshActions()
+  })
   return () => {
+    actionDisposed = true
+    clearInterval(actionRefreshTimer)
+    unsubActionRefresh()
     archivedThreads.hide()
     contentFilter.cancel()
     for (const timer of prBackfillRetryTimers) clearTimeout(timer)

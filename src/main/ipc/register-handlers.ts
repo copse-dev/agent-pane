@@ -1,3 +1,4 @@
+import { createThreadActionAssessor } from '../services/thread-action-assessment.ts'
 import { networkActivity } from '../services/diagnostics/network-activity.ts'
 import { perfSpan, perfSyncSpan } from '../services/diagnostics/perf-trace.ts'
 import { syncMachineService } from '../services/machines/machine-service.ts'
@@ -493,6 +494,27 @@ export function registerAllHandlers(
   threadHistoryEditRuntime: ThreadHistoryEditRuntime,
   threadArchivingRuntime: ThreadArchivingRuntime,
 ): void {
+  const actionAssessor = createThreadActionAssessor(
+    (projectId, threadId) =>
+      isDispatcherThreadActive(projectId, threadId) || listRunningThreadIds().includes(threadId),
+  )
+  const assessActions = (): void => {
+    void actionAssessor.tick().catch((error: unknown) => {
+      console.warn('[thread-action-assessment]', error)
+    })
+  }
+  const actionStartup = setTimeout(assessActions, 5_000)
+  const actionInterval = setInterval(assessActions, 20_000)
+  actionStartup.unref()
+  actionInterval.unref()
+  win.once('closed', () => {
+    clearTimeout(actionStartup)
+    clearInterval(actionInterval)
+  })
+  ipcMain.handle('threads:action-state', (event) => {
+    assertMainFrameSender(event, win)
+    return actionAssessor.snapshot()
+  })
   const autoArchive = new ThreadAutoArchive({
     ...threadArchivingRuntime,
     isViewed: (projectId, threadId): boolean =>
