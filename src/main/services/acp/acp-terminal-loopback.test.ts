@@ -19,7 +19,7 @@ import { runShellTool } from '../../tools/shell-tool.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
 import { clearGitRemotesCache } from '../security/git-remotes.ts'
 import { setWorkspaceTrusted } from '../security/workspace-trust.ts'
-import { setSetting } from '../storage/settings.test-shim.ts'
+import { setSetting } from '../storage/settings.ts'
 import type { ThreadExecutionContext } from '../thread-execution-context.ts'
 import { ToolRegistry } from '../tool-registry.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
@@ -84,13 +84,12 @@ describe('ACP client terminals through run_shell (#623)', () => {
       setWorkspaceTrusted(root, false)
     })
     // Deterministic shape approval off: every question below must reach a person.
-    setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
-    setSetting('autoRunSandboxCommands', true)
-    setSetting('safeInstallEnabled', false)
+    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+    await setSetting('autoRunSandboxCommands', true)
+    await setSetting('safeInstallEnabled', false)
     await setSetting('safetyClassifierEnabled', false)
-    cleanups.push(() => {
-      setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
-      setSetting('safeInstallEnabled', true)
+    cleanups.push(async () => {
+      await setSetting('safeInstallEnabled', true)
     })
 
     if (opts.sandbox === 'violation') {

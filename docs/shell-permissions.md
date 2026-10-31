@@ -1131,3 +1131,15 @@ traversal. A bare ancestor is a recursive subpath allow, and with the current ru
 it can also cause a late whole-home deny to hide the explicitly approved target.
 Native regression coverage reads nested test artifacts while rejecting sibling reads
 and writes; read consent never grants host writes or network access.
+
+### CoreSimulator host commands and deletion
+
+`xcrun simctl` device operations and direct `simctl` invocations use host
+CoreSimulator services and follow the host-approval path, even when a pipeline
+or `|| echo` masks a command failure. Help and `xcrun --find` stay contained.
+
+Device Hub simulator deletion accepts one UUID, shuts down that device if
+needed, deletes it, and reports absence only after a successful host inventory.
+Deletion asks on every invocation, including with a stored Device Hub allow,
+and cannot be remembered through the approval dialog. Stored blocks, read-only
+runs and toolGate hooks still win. Other Device Hub actions retain their policy.

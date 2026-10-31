@@ -1,7 +1,7 @@
 import { memberOf } from '@shared/member-of.ts'
 
 /** A project-owned recurring schedule persisted by the automations plugin. */
-export type AutomationLiveWorktreeLimit = 1 | 2 | 3
+export type AutomationLiveWorktreeLimit = number | 'unlimited'
 
 /**
  * One exact approval a schedule may reuse without interrupting a future run.
@@ -35,7 +35,7 @@ export interface AutomationSchedule {
   prompt: string
   model: string
   enabled: boolean
-  /** Maximum unresolved linked checkouts this schedule may retain. Defaults to 1. */
+  /** Maximum unresolved linked checkouts, or no retention cap. Defaults to 1. */
   maxLiveWorktrees?: AutomationLiveWorktreeLimit
   /** Exact tools/actions explicitly allowed to run unattended for this schedule. */
   permissions?: AutomationPermission[]

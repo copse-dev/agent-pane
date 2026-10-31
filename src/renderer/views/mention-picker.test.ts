@@ -135,6 +135,38 @@ describe('mention picker (files + threads + shells)', () => {
     return textarea
   }
 
+  for (const key of ['Enter', 'Tab', 'ArrowDown', 'ArrowUp', 'Escape']) {
+    it(`leaves composing ${key} to the input method`, async () => {
+      const attached: AttachedThreadRef[] = []
+      const textarea = mount(
+        [hit('t1', 'First thread'), hit('t2', 'Second thread')],
+        [],
+        (thread) => attached.push(thread),
+      )
+      await typeMention(textarea, '@')
+      const picker = inputBar.querySelector<HTMLElement>('.mention-picker')
+      assert.ok(picker)
+      const selected = picker.querySelector('.selected')
+      const event = new window.KeyboardEvent('keydown', {
+        key,
+        isComposing: true,
+        bubbles: true,
+        cancelable: true,
+      })
+      textarea.dispatchEvent(event)
+      await flush()
+      assert.equal(event.defaultPrevented, false)
+      assert.equal(textarea.value, '@')
+      assert.equal(picker.hidden, false)
+      assert.equal(picker.querySelector('.selected'), selected)
+      assert.equal(attached.length, 0)
+      textarea.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter' }))
+      await flush()
+      assert.equal(attached.length, 1)
+      assert.equal(picker.hidden, true)
+    })
+  }
+
   it('lists past threads above files and excludes the active thread', async () => {
     const textarea = mount([hit('t1', 'Auth refactor'), hit('active', 'Current')], ['src/a.ts'])
     await typeMention(textarea, '@ref')

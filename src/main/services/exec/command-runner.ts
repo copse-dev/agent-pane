@@ -3,6 +3,7 @@ import { currentThreadExecutionContext } from '../thread-execution-context-store
 import { setPriority } from 'node:os'
 import { StringDecoder } from 'node:string_decoder'
 import { getWorkspaceRoot } from '../workspace.ts'
+import type { ExecutionTarget } from '../ssh-workspace/execution-target.ts'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { afterSandboxedCommand, spawnInProjectSandbox } from '../../project-sandbox/index.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
@@ -40,6 +41,8 @@ export interface CommandResult {
 
 export interface RunCommandOptions {
   cwd?: string
+  /** Captured owner of commands that must survive a selected-project change. */
+  executionTarget?: ExecutionTarget
   signal?: AbortSignal
   unsandboxed?: boolean
   /** Fail closed if the local sandbox authorized at the gate is no longer available. */
@@ -181,6 +184,7 @@ function runCommandImpl(
           env: spawnEnv,
           stdio: 'pipe',
         }
+        if (opts.executionTarget) spawnOpts.executionTarget = opts.executionTarget
         if (opts.unsandboxed !== undefined) spawnOpts.unsandboxed = opts.unsandboxed
         if (opts.requireSandbox !== undefined) spawnOpts.requireSandbox = opts.requireSandbox
         if (opts.sandboxConfig) spawnOpts.sandboxConfig = opts.sandboxConfig

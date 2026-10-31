@@ -10,6 +10,7 @@ import {
   appendToken,
   appendReasoning,
   appendAcpContentBlock,
+  replaceAcpContentBlocks,
   addMessageCanvasArtefact,
   addMessageVisualEvidence,
   addToolCall,
@@ -127,6 +128,12 @@ interface StreamState {
   writing: boolean
   acpMessageId: string | null
   acpThoughtMessageId: string | null
+  /** External v2 message/thought id -> durable Copse bubble id. */
+  acpMessageOwners: Array<{
+    channel: 'message' | 'thought'
+    messageId: string
+    ownerId: string
+  }>
 }
 
 export function createTranscriptReducer(
@@ -145,6 +152,7 @@ export function createTranscriptReducer(
         writing: false,
         acpMessageId: null,
         acpThoughtMessageId: null,
+        acpMessageOwners: [],
       }
       state.set(threadId, st)
     }
@@ -202,6 +210,23 @@ export function createTranscriptReducer(
     if (st.msgId === null) throw new Error('assistant message id missing for agent text')
     appendToken(store, st.msgId, plan.text)
     return plan.text
+  }
+
+  const acpOwner = (
+    st: StreamState,
+    channel: 'message' | 'thought',
+    messageId: string,
+  ): string | undefined =>
+    st.acpMessageOwners.find((entry) => entry.channel === channel && entry.messageId === messageId)
+      ?.ownerId
+
+  const rememberAcpOwner = (
+    st: StreamState,
+    channel: 'message' | 'thought',
+    messageId: string | undefined,
+  ): void => {
+    if (messageId === undefined || st.msgId === null || acpOwner(st, channel, messageId)) return
+    st.acpMessageOwners.push({ channel, messageId, ownerId: st.msgId })
   }
 
   const apply = (threadId: string, chunk: StreamChunk): void => {
@@ -280,6 +305,34 @@ export function createTranscriptReducer(
           st.writing = false
           hooks.visibleOutput?.(threadId)
         }
+        rememberAcpOwner(st, chunk.channel, chunk.messageId)
+        activity(threadId)
+        break
+      }
+      case 'acp_content_replace': {
+        let ownerId = acpOwner(st, chunk.channel, chunk.messageId)
+        if (ownerId === undefined) {
+          const previousId = chunk.channel === 'message' ? st.acpMessageId : st.acpThoughtMessageId
+          if (previousId !== null && previousId !== chunk.messageId && st.msgId) {
+            store.emit('message_done', st.msgId)
+            st.msgId = null
+            st.toolSinceText = false
+            st.currentText = ''
+          }
+          if (chunk.channel === 'message') st.acpMessageId = chunk.messageId
+          else st.acpThoughtMessageId = chunk.messageId
+          ownerId = ensureFreshAfterTools(threadId, st)
+          rememberAcpOwner(st, chunk.channel, chunk.messageId)
+        }
+        replaceAcpContentBlocks(store, ownerId, chunk.channel, chunk.content)
+        if (ownerId === st.msgId && chunk.channel === 'message') {
+          st.currentText = chunk.content
+            .filter((block) => block.type === 'text')
+            .map((block) => block.text)
+            .join('')
+        }
+        st.writing = false
+        hooks.visibleOutput?.(threadId)
         activity(threadId)
         break
       }
@@ -675,7 +728,9 @@ export function createTranscriptReducer(
     restore: (threadId, checkpoint): void => {
       state.delete(threadId)
       pendingTurn.delete(threadId)
-      if (checkpoint.stream) state.set(threadId, structuredClone(checkpoint.stream))
+      if (checkpoint.stream) {
+        state.set(threadId, structuredClone(checkpoint.stream))
+      }
       if (checkpoint.pendingTurn) pendingTurn.set(threadId, structuredClone(checkpoint.pendingTurn))
     },
   }

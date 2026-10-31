@@ -6,6 +6,7 @@ import {
   ndJsonStream,
   PROTOCOL_VERSION,
   type ClientConnection,
+  type ClientCapabilities,
   type ContentBlock,
   type LoadSessionResponse,
   type AvailableCommand,
@@ -24,7 +25,7 @@ import {
   type Usage,
   type WriteTextFileRequest,
   type WriteTextFileResponse,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { nodeWritableStream } from './node-byte-streams.ts'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
@@ -68,6 +69,22 @@ import {
 } from './acp-session-reattach.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { acpAgentSandboxOverlay, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
+
+/**
+ * Copse intentionally advertises no notice or compaction session capability.
+ * SDK 2.2 stabilizes those updates, but both remain opt-in until Copse has a
+ * durable host-owned persistence and presentation model for them.
+ *
+ * `terminal` is advertised only when this connection can back `terminal/*`
+ * with Copse's own run_shell path (#623).
+ */
+export function acpClientCapabilities(
+  readTextFile: boolean,
+  writeTextFile: boolean,
+  terminal = false,
+): ClientCapabilities {
+  return { fs: { readTextFile, writeTextFile }, terminal }
+}
 import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
 import {
   detachForGroupKill,
@@ -1367,10 +1384,7 @@ export async function openAcpSession(
     const initResponse = await perfSpan('ttft:acp-initialize', () =>
       connection.agent.request(methods.agent.initialize, {
         protocolVersion: PROTOCOL_VERSION,
-        clientCapabilities: {
-          fs: { readTextFile: true, writeTextFile: true },
-          terminal: terminals !== undefined,
-        },
+        clientCapabilities: acpClientCapabilities(true, true, terminals !== undefined),
       }),
     )
     const mcpCapabilities = initResponse.agentCapabilities?.mcpCapabilities
@@ -1751,7 +1765,7 @@ export async function probeAcpAgent(
     return await app.connectWith(stream, async (ctx) => {
       await ctx.request(methods.agent.initialize, {
         protocolVersion: PROTOCOL_VERSION,
-        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+        clientCapabilities: acpClientCapabilities(false, false),
       })
       return ctx.buildSession(config.cwd).withSession((session) => {
         const configOptions = configOptionsFrom(session.newSessionResponse)
