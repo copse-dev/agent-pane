@@ -142,7 +142,7 @@ contained exactly like a native `run_shell` call:
   prompt shows, and the classifier judges, everything that will run. A `cwd`
   outside the workspace or an invalid variable name is refused without running.
 - **Results.** `terminal/output` returns the raw output (the last
-  `outputByteLimit` bytes, 1 MiB by default, trimmed at a character boundary) and
+  `outputByteLimit` bytes, which defaults to and is capped at 1 MiB, trimmed at a character boundary) and
   the exit status once the command finishes; `terminal/wait_for_exit` resolves
   with it. After an approved unsandboxed retry the output holds both attempts,
   separated by a `[Copse] Retrying outside the project sandbox (approved).` line,
