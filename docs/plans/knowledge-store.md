@@ -2,12 +2,13 @@
 
 Tracking: [#645](https://github.com/copse-dev/agent-pane/issues/645)
 
-Status: **Active experimental feature** — the store, roadmap migration, and memories
-migration are on `main`; knowledge surfacing remains tracked in the open issue. The
-roadmap consumer is opt-in behind the `copse.roadmap-plans` first-party pack
-(Settings → Packs; landed in [#1089](https://github.com/copse-dev/agent-pane/pull/1089));
+Status: **Resolved core; surfacing deferred.** The store, roadmap migration, and memories
+migration are on `main`, and #645 is closed. Knowledge surfacing (editor, prompt-time
+injection) is tracked by [#870](https://github.com/copse-dev/agent-pane/issues/870). The
+roadmap consumer is opt-in behind the `copse.roadmap-plans` first-party plugin
+(Settings → Plugins; landed in [#1089](https://github.com/copse-dev/agent-pane/pull/1089));
 nothing reads or writes roadmap notes while that pack is off. The memories consumer is
-opt-in behind the `copse.okf-memories` first-party pack (Settings → Packs; extraction in
+opt-in behind the `copse.okf-memories` first-party plugin (Settings → Plugins; extraction in
 [#1088](https://github.com/copse-dev/agent-pane/pull/1088)); nothing reads or writes
 memory notes while that pack is off.
 

@@ -25,6 +25,7 @@ import {
   openBrowserUrl,
   openPullRequest,
   openRightPanel,
+  selectRightPanelMode,
   toggleFilesPane,
 } from '../controller/panels.ts'
 import { startSideChat } from '../controller/side-chat.ts'
@@ -1033,13 +1034,8 @@ export function mountThreadContextPane(
         void refreshAccess()
       }
     }),
-    store.on('right_panel_mode_changed', () => {
-      if (!contextModeActive(store)) return
-      render()
-      void refreshMentions()
-    }),
-    store.on('files_pane_changed', () => {
-      if (!contextModeActive(store)) return
+    selectRightPanelMode(store, 'context', (active) => {
+      if (!active) return
       render()
       void refreshMentions()
     }),

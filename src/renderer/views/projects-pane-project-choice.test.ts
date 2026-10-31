@@ -100,6 +100,34 @@ function mount(populated = false): { store: AppStore; api: ApiClient } {
   return { store, api }
 }
 
+describe('sidebar project filter', () => {
+  it('repaints when the filter is written to the store, with no event', () => {
+    const { store } = mount()
+    const label = (): string | null | undefined =>
+      document.querySelector('.projects-filter-label')?.textContent
+    assert.equal(label(), 'All projects')
+
+    store.setState({ sidebarProjectFilterId: 'b' })
+    assert.equal(label(), 'Beta')
+
+    store.setState({ sidebarProjectFilterId: null })
+    assert.equal(label(), 'All projects')
+  })
+
+  it('drops a filter naming a removed project without drawing the list twice', () => {
+    const { store } = mount()
+    const list = document.querySelector('.projects-list')
+    assert.ok(list)
+    const rows = list.innerHTML
+
+    store.setState({ sidebarProjectFilterId: 'gone' })
+
+    assert.equal(store.getState().sidebarProjectFilterId, null)
+    assert.equal(document.querySelector('.projects-filter-label')?.textContent, 'All projects')
+    assert.equal(list.innerHTML, rows)
+  })
+})
+
 describe('sidebar project choice for new threads', () => {
   it('uses the selected project for an already-open new thread, even with existing conversations', async () => {
     const { store } = mount()

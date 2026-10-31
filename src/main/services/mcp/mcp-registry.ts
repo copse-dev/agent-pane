@@ -60,10 +60,11 @@ import {
   resolvePluginMcpConfigPath,
 } from '../skills/cursor-plugins.ts'
 import { isRecord } from '@shared/unknown-value.ts'
-import { getElectronUserDataPath } from '../electron-app-runtime.ts'
+import { copseUserMcpConfigPath } from './mcp-user-config.ts'
 import {
   getXcodeBuildMcpConfig,
   prepareXcodeBuildMcpArguments,
+  xcodeBuildMcpToolTimeoutMs,
   XCODEBUILD_MCP_SERVER_NAME,
 } from '../apple-development/xcodebuildmcp.ts'
 import { isAppleDevelopmentProjectEnrolled } from '../apple-development/apple-development-service.ts'
@@ -213,7 +214,7 @@ function projectMcpSourcePaths(workspace: string): string[] {
 }
 
 function userMcpSourcePaths(): string[] {
-  return [join(homedir(), '.cursor', 'mcp.json'), join(getElectronUserDataPath(), 'mcp.json')]
+  return [join(homedir(), '.cursor', 'mcp.json'), copseUserMcpConfigPath()]
 }
 
 async function readPluginMcpConfigs(): Promise<McpServerConfig[]> {
@@ -303,7 +304,7 @@ async function collectE2eMcpFixtureConfig(): Promise<{
   active: McpServerConfig[]
   untrusted: McpServerConfig[]
 } | null> {
-  const configPath = join(getElectronUserDataPath(), 'mcp.json')
+  const configPath = copseUserMcpConfigPath()
   try {
     await fs.access(configPath)
   } catch {
@@ -325,7 +326,7 @@ function isUserMcpSource(source: string | undefined): boolean {
   return (
     source === CURATED_MCP_SOURCE ||
     source === join(homedir(), '.cursor', 'mcp.json') ||
-    source === join(getElectronUserDataPath(), 'mcp.json') ||
+    source === copseUserMcpConfigPath() ||
     agentPluginIdForMcpSource(source) !== undefined ||
     isCursorPluginMcpSource(source)
   )
@@ -347,7 +348,7 @@ function classifyMcpOrigin(source: string | undefined): McpServerOrigin {
   if (agentPluginIdForMcpSource(source) !== undefined) return 'plugin'
   if (isCursorPluginMcpSource(source)) return 'plugin'
   if (source === join(homedir(), '.cursor', 'mcp.json')) return 'user'
-  if (source === join(getElectronUserDataPath(), 'mcp.json')) return 'user'
+  if (source === copseUserMcpConfigPath()) return 'user'
   return 'project'
 }
 
@@ -590,6 +591,10 @@ function registerListedTools(
           server.serverName === XCODEBUILD_MCP_SERVER_NAME
             ? prepareXcodeBuildMcpArguments(tool.name, args)
             : args
+        const timeout =
+          server.serverName === XCODEBUILD_MCP_SERVER_NAME
+            ? xcodeBuildMcpToolTimeoutMs(tool.name)
+            : undefined
         let result: Awaited<ReturnType<Client['callTool']>>
         try {
           // An MCP server is its own process and may write anywhere, so the
@@ -601,7 +606,7 @@ function registerListedTools(
                 arguments: isRecord(preparedArgs) ? preparedArgs : {},
               },
               undefined,
-              { signal },
+              { signal, ...(timeout === undefined ? {} : { timeout }) },
             ),
           )
         } catch (error) {
@@ -614,7 +619,7 @@ function registerListedTools(
           }
           throw error
         }
-        // Experimental MCP-UI canvas: when enabled, recognised UI resources are
+        // MCP-UI canvas: when enabled, recognised UI resources are
         // rendered as a sandboxed artefact and summarised for the model (raw
         // body kept out of context) rather than inlined as tool output. Gated by
         // the `copse.mcp-ui-canvas` first-party plugin's capability — the plugin
@@ -646,8 +651,9 @@ function registerListedTools(
 /**
  * Connect Copse's bundled in-process MCP servers (e.g. the canvas). These ship
  * with the app, need no user configuration, and are trusted by default. Gated by
- * the same experimental flag that turns on canvas rendering. Reported with an
- * `in-process` transport so the UI can distinguish them from configured servers.
+ * the same `copse.mcp-ui-canvas` capability that turns on canvas rendering.
+ * Reported with an `in-process` transport so the UI can distinguish them from
+ * configured servers.
  */
 async function connectBundledServers(
   registry: ToolRegistry,

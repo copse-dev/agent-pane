@@ -573,6 +573,34 @@ describe('browser pane requested URLs', () => {
     }
   })
 
+  it('opens a first tab when the panel opens on Browser from the store alone', () => {
+    const resizeObserverDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'ResizeObserver')
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    const unmount = mountBrowserPane(list, viewer, store)
+
+    try {
+      assert.equal(list.querySelectorAll('.browser-tabs-tab-label').length, 0)
+      // No `openRightPanel`, no emit: the state change alone opens the pane.
+      store.setState({ filesPaneOpen: true, rightPanelMode: 'browser' })
+      assert.equal(list.querySelectorAll('.browser-tabs-tab-label').length, 1)
+      assert.ok(viewer.querySelector('.browser-url-input'))
+    } finally {
+      if (resizeObserverDescriptor) {
+        Object.defineProperty(globalThis, 'ResizeObserver', resizeObserverDescriptor)
+      } else {
+        Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      }
+      unmount()
+    }
+  })
+
   it('opens a requested URL in the active tab address bar', () => {
     const raf = globalThis.requestAnimationFrame
     globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {

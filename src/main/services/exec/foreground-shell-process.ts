@@ -13,7 +13,7 @@ import {
   stripTerminalControlSequences,
 } from './subprocess-output-cap.ts'
 import { terminateProcessTree } from './subprocess-kill.ts'
-import { emitShellOutput } from './shell-output-context.ts'
+import { currentShellRunObserver, mirrorShellOutput } from './shell-output-context.ts'
 import { adoptSupervisedBackgroundProcess } from './supervised-background-process.ts'
 import { getThreadExecutionContext } from '../thread-execution-context.ts'
 import { captureCommandPhaseReport, captureLateCommandPhaseReport } from './command-phase.ts'
@@ -82,6 +82,8 @@ export async function runShellOnce(
   signal.throwIfAborted()
   const owner = getThreadExecutionContext()
   const reportPhase = captureCommandPhaseReport()
+  // Captured once: child stream callbacks need not run in the caller's context.
+  const observer = currentShellRunObserver()
   return new Promise<ShellRunResult>((resolve, reject) => {
     void (async (): Promise<void> => {
       const spawnController = new AbortController()
@@ -149,8 +151,10 @@ export async function runShellOnce(
       let releaseDetached: (() => Promise<void>) | undefined
       let cancelKill: (() => void) | undefined
       const stream = (data: Buffer): void => {
-        const toStream = outputAcc.append(data.toString())
-        if (toStream) emitShellOutput(toStream)
+        const text = data.toString()
+        observer?.output(text)
+        const toStream = outputAcc.append(text)
+        if (toStream) mirrorShellOutput(toStream)
       }
       proc.stdout?.on('data', stream)
       proc.stderr?.on('data', stream)
@@ -259,6 +263,9 @@ export async function runShellOnce(
       })
 
       proc.on('close', (code, closeSignal) => {
+        // Reported even after a timeout settled the promise: the observer's
+        // terminal is still waiting for the process to actually exit.
+        if (!detached) observer?.exit({ exitCode: code, signal: closeSignal })
         cleanup()
         const violationCount = sandboxViolationCount()
         finish()

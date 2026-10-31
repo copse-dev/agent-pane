@@ -984,6 +984,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         )
         return resolved(structuredClone([...mcpStatuses]))
       },
+      listUserServers: () => resolved({ path: '/demo/mcp.json', servers: [] }),
+      saveUserServer: unsupported,
+      removeUserServer: unsupported,
       onStatusChanged: subscribe,
     },
     toolPermissions: {

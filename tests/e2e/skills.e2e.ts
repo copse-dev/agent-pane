@@ -38,7 +38,35 @@ describe('skills', () => {
     const skill = $('.skill-picker').$('.skill-item*=/demo-skill')
     await skill.waitForDisplayed({ timeout: 10_000 })
     await expect(skill.$('.skill-item-name')).toHaveText('/demo-skill')
+    // Candidate confirmation belongs to the input method, not autocomplete.
+    // Inject the browser's composition flag; this tests renderer routing, not
+    // the macOS input method's own candidate UI.
+    const composition = await browser.execute(() => {
+      const input = document.querySelector('.prompt-input')
+      if (!(input instanceof HTMLElement)) throw new Error('Composer missing')
+      const enter = new KeyboardEvent('keydown', {
+        key: 'Enter',
+        isComposing: true,
+        bubbles: true,
+        cancelable: true,
+      })
+      input.dispatchEvent(enter)
+      return { prevented: enter.defaultPrevented, text: input.textContent }
+    })
+    expect(composition.prevented).toBe(false)
+    expect(composition.text).toBe('/demo-skill')
+    await expect(skill).toBeDisplayed()
+    await expect($('.msg-user')).not.toExist()
     await saveAppScreenshot('skills-discovery-picker.png')
+
+    // Refocus without a click: a mousedown outside the picker dismisses it.
+    await browser.execute(() => document.querySelector<HTMLElement>('.prompt-input')?.focus())
+    await browser.keys('Enter')
+    await expect($('.skill-picker')).not.toBeDisplayed()
+    expect(await browser.execute(() => document.querySelector('.prompt-input')?.textContent)).toBe(
+      '/demo-skill ',
+    )
+    await expect($('.msg-user')).not.toExist()
 
     const scenario = await installMockScenario({
       title: 'Validate skills support',

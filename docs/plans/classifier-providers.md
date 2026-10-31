@@ -1,6 +1,8 @@
 # First-class classifier providers
 
-Status: implemented for validation, 2026-09-22. Base: `883ff2e11` (`origin/main`).
+Status: **Resolved** — shipped in [#2975](https://github.com/copse-dev/agent-pane/pull/2975); user
+documentation is [`docs/classifier-providers.md`](../classifier-providers.md). The text below is the
+original implementation brief (base `883ff2e11`, 2026-09-22).
 
 Risk: medium. This adds credential-backed network calls and a local scorer process through an
 explicit classifier surface. Existing host approval, secret storage, and main-frame IPC contracts

@@ -1,5 +1,9 @@
 # Native named workers: first slice
 
+Status: **Resolved** — shipped in [#3897](https://github.com/copse-dev/agent-pane/pull/3897)
+(`src/main/tools/readonly-workers-tool.ts`). Related plan:
+[custom-subagents.md](custom-subagents.md).
+
 Brief recorded at `2b25d75dae6e191934890666759fc7919584407c`; rebased onto `41b7c785ff978c66a303874b4c3cfde00fe6e2a5` before completion.
 
 The current custom-agent path runs one explicit slash invocation inline. Native

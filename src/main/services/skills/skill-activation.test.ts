@@ -17,7 +17,7 @@ import {
 import { clearThreadReadRoots, threadReadRoots } from '../security/thread-read-roots.ts'
 import type { SkillMetadata } from '@shared/types/skills.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
-import { setSetting } from '../storage/settings.test-shim.ts'
+import { setSetting } from '../storage/settings.ts'
 import { resetBuiltinSkillsRootForTest, setBuiltinSkillsRootForTest } from './builtin-skills.ts'
 import {
   resetBundledCursorSkillsRootForTest,
@@ -434,14 +434,14 @@ describe('model skill activation', () => {
       disableModelInvocation: true,
     })
     await writeFile(join(leaf.skillRoot, 'support.md'), 'SUPPORT')
-    setSetting('bundledCursorSkillsEnabled', true)
-    setSetting('bundledSkillPluginOverrides', { 'workflow-plugin': true })
+    await setSetting('bundledCursorSkillsEnabled', true)
+    await setSetting('bundledSkillPluginOverrides', { 'workflow-plugin': true })
     try {
       const turn = createSkillActivationTurn([parent.name], ['read_skill'])
       await turn.read('leaf', undefined, signal)
       assert.equal(getSkillAvailability('leaf'), 'supported')
       assert.equal(getSkillAvailability('absent'), 'unavailable')
-      setSetting('bundledSkillPluginOverrides', { 'workflow-plugin': false })
+      await setSetting('bundledSkillPluginOverrides', { 'workflow-plugin': false })
       assert.equal(getSkillAvailability('leaf'), 'disabled')
       assert.equal(getSkillAvailability('workflow-plugin/leaf'), 'disabled')
       assert.equal(getSkillAvailability('workflow-plugin'), 'disabled')
@@ -450,16 +450,16 @@ describe('model skill activation', () => {
         createSkillActivationTurn([parent.name], ['read_skill']).read('leaf', undefined, signal),
         /switched off/,
       )
-      setSetting('bundledSkillPluginOverrides', { 'workflow-plugin': true })
-      setSetting('bundledCursorSkillsEnabled', false)
+      await setSetting('bundledSkillPluginOverrides', { 'workflow-plugin': true })
+      await setSetting('bundledCursorSkillsEnabled', false)
       await assert.rejects(turn.read('leaf', undefined, signal), /switched off/)
-      setSetting('bundledCursorSkillsEnabled', true)
-      setSetting('skillsEnabled', false)
+      await setSetting('bundledCursorSkillsEnabled', true)
+      await setSetting('skillsEnabled', false)
       await assert.rejects(turn.read('leaf', undefined, signal), /Skills are switched off/)
     } finally {
-      setSetting('skillsEnabled', true)
-      setSetting('bundledCursorSkillsEnabled', false)
-      setSetting('bundledSkillPluginOverrides', {})
+      await setSetting('skillsEnabled', true)
+      await setSetting('bundledCursorSkillsEnabled', false)
+      await setSetting('bundledSkillPluginOverrides', {})
     }
   })
 
@@ -621,7 +621,7 @@ describe('model skill activation', () => {
     setUserSkillsHomeForTest(join(root, 'home'))
     setBuiltinSkillsRootForTest(null)
     setBundledCursorSkillsRootForTest(resolve('vendor/bundled-cursor-skills'))
-    setSetting('bundledCursorSkillsEnabled', true)
+    await setSetting('bundledCursorSkillsEnabled', true)
     try {
       await refreshSkillsRegistry()
       const sdk = getSkill('cursor-sdk')
@@ -645,7 +645,7 @@ describe('model skill activation', () => {
       setUserSkillsHomeForTest(null)
       resetBuiltinSkillsRootForTest()
       resetBundledCursorSkillsRootForTest()
-      setSetting('bundledCursorSkillsEnabled', false)
+      await setSetting('bundledCursorSkillsEnabled', false)
     }
   })
 })

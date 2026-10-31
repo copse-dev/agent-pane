@@ -6,6 +6,7 @@ import { createStore } from '@shared/store/store.ts'
 import {
   addMessage,
   appendAcpContentBlock,
+  replaceAcpContentBlocks,
   appendReasoning,
   appendToken,
   addToolCall,
@@ -78,6 +79,11 @@ export function createHeadlessAutomationRun(
   let currentText = ''
   let acpMessageId: string | null = null
   let acpThoughtMessageId: string | null = null
+  const acpMessageOwners: Array<{
+    channel: 'message' | 'thought'
+    messageId: string
+    ownerId: string
+  }> = []
   let failure: { code: string; message: string } | null = null
 
   const startBubble = (): string => addMessage(store, threadId, 'assistant', '')
@@ -104,6 +110,18 @@ export function createHeadlessAutomationRun(
       currentText = ''
     }
     return msgId
+  }
+
+  const acpOwner = (channel: 'message' | 'thought', messageId: string): string | undefined =>
+    acpMessageOwners.find((entry) => entry.channel === channel && entry.messageId === messageId)
+      ?.ownerId
+
+  const rememberAcpOwner = (
+    channel: 'message' | 'thought',
+    messageId: string | undefined,
+  ): void => {
+    if (messageId === undefined || msgId === null || acpOwner(channel, messageId)) return
+    acpMessageOwners.push({ channel, messageId, ownerId: msgId })
   }
 
   const host: AgentHost<StreamChunk> = {
@@ -143,6 +161,31 @@ export function createHeadlessAutomationRun(
             appendReasoning(store, bubbleAfterTools(), chunk.content.text)
           } else {
             appendText(chunk.content.text)
+          }
+          rememberAcpOwner(chunk.channel, chunk.messageId)
+          return
+        }
+        case 'acp_content_replace': {
+          let ownerId = acpOwner(chunk.channel, chunk.messageId)
+          if (ownerId === undefined) {
+            const previousId = chunk.channel === 'message' ? acpMessageId : acpThoughtMessageId
+            if (previousId !== null && previousId !== chunk.messageId && msgId) {
+              persist(msgId)
+              msgId = null
+              toolSinceText = false
+              currentText = ''
+            }
+            if (chunk.channel === 'message') acpMessageId = chunk.messageId
+            else acpThoughtMessageId = chunk.messageId
+            ownerId = bubbleAfterTools()
+            rememberAcpOwner(chunk.channel, chunk.messageId)
+          }
+          replaceAcpContentBlocks(store, ownerId, chunk.channel, chunk.content)
+          if (ownerId === msgId && chunk.channel === 'message') {
+            currentText = chunk.content
+              .filter((block) => block.type === 'text')
+              .map((block) => block.text)
+              .join('')
           }
           return
         }

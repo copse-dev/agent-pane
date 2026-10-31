@@ -9,7 +9,7 @@ import { REQUEST_WRITE_ACCESS_TOOL } from '@shared/tools/readonly-tools.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { CLASSIFIER_PRESETS } from '@copse/llm/classifiers/presets.ts'
 import { refreshSkillsRegistry } from './skills/skills-registry.ts'
-import { setSetting } from './storage/settings.test-shim.ts'
+import { setSetting } from './storage/settings.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import {
   resetBundledCursorSkillsRootForTest,
@@ -29,10 +29,10 @@ describe('estimateContextBreakdown', () => {
   let restoreWorkspace: (() => void) | undefined
 
   beforeEach(async () => {
-    setSetting('skillsEnabled', true)
-    setSetting('skillPluginPaths', [])
-    setSetting('subagentsEnabled', false)
-    setSetting('model', 'claude-sonnet-4-6')
+    await setSetting('skillsEnabled', true)
+    await setSetting('skillPluginPaths', [])
+    await setSetting('subagentsEnabled', false)
+    await setSetting('model', 'claude-sonnet-4-6')
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-context-estimate-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
     await mkdir(join(tempRoot, '.cursor', 'skills', 'demo-skill'), { recursive: true })
@@ -76,7 +76,7 @@ description: Bundled skill for tests
     )
 
     setBundledCursorSkillsRootForTest(bundledRoot)
-    setSetting('bundledCursorSkillsEnabled', true)
+    await setSetting('bundledCursorSkillsEnabled', true)
     await refreshSkillsRegistry()
     const registry = createRegistry()
     registerSkillTools(registry)
@@ -87,7 +87,7 @@ description: Bundled skill for tests
       priorMessages: [],
     })
 
-    setSetting('bundledCursorSkillsEnabled', false)
+    await setSetting('bundledCursorSkillsEnabled', false)
     await refreshSkillsRegistry()
     registerSkillTools(registry)
     const withoutBundled = await estimateContextBreakdown(registry, {

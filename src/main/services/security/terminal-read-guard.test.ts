@@ -13,6 +13,9 @@ import {
 } from './terminal-read-guard.ts'
 import { resetSafetyModelProblemReportsForTest } from './safety-model-availability.ts'
 import { invalidateLmStudioModelsCache } from '../providers/provider-selection.ts'
+import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+
+installInMemorySecretCipher()
 
 /**
  * A safety model can be configured, enabled, and simply absent — that is the

@@ -160,6 +160,7 @@ export interface SettingsValues {
   conciseThreadsEnabled: boolean
   deferredWorktreesEnabled: boolean
   containerRunsEnabled: boolean
+  planModeEnabled: boolean
   advisorModel: string
   orchestrationStrategyEnabled: boolean
   orchestrationWorkerModel: string

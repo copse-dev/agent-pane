@@ -26,6 +26,48 @@ afterEach(() => {
 })
 
 describe('skill picker', () => {
+  for (const key of ['Enter', 'Tab', 'ArrowDown', 'ArrowUp', 'Escape']) {
+    it(`leaves composing ${key} to the input method`, async () => {
+      const inputBar = document.createElement('div')
+      const input = mountComposerEditor()
+      inputBar.append(input.el)
+      document.body.append(inputBar)
+      const dispose = initSkillPicker({
+        input,
+        inputBar,
+        listInvocables: async () => [
+          { name: 'demo-one', description: 'First skill', kind: 'skill' },
+          { name: 'demo-two', description: 'Second skill', kind: 'skill' },
+        ],
+      })
+      try {
+        input.value = '/demo'
+        input.setSelectionRange(5, 5)
+        input.el.dispatchEvent(new Event('input', { bubbles: true }))
+        await settle()
+        const picker = inputBar.querySelector<HTMLElement>('.skill-picker')
+        assert.ok(picker)
+        const selected = picker.querySelector('.selected')
+        const event = new window.KeyboardEvent('keydown', {
+          key,
+          isComposing: true,
+          bubbles: true,
+          cancelable: true,
+        })
+        input.el.dispatchEvent(event)
+        assert.equal(event.defaultPrevented, false)
+        assert.equal(input.value, '/demo')
+        assert.equal(picker.hidden, false)
+        assert.equal(picker.querySelector('.selected'), selected)
+        input.el.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter' }))
+        assert.equal(input.value, '/demo-one ')
+        assert.equal(picker.hidden, true)
+      } finally {
+        dispose.destroy()
+      }
+    })
+  }
+
   it('filters slash commands and inserts the selected skill into the composer', async () => {
     const inputBar = document.createElement('div')
     const input = mountComposerEditor()

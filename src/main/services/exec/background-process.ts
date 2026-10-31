@@ -2,7 +2,7 @@ import { createThreadResource } from '../thread-resource-fence.ts'
 import { randomUUID } from 'node:crypto'
 import type { ChildProcess } from 'node:child_process'
 import { isProjectSandboxEnabled, spawnBackgroundProcess } from '../../project-sandbox/index.ts'
-import { getAgentExecutionRoot } from '../execution-root.ts'
+import { currentAgentRoots, getAgentExecutionRoot } from '../execution-root.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
 import { SUBPROCESS_KILL_GRACE_MS, terminateProcessTree } from './subprocess-kill.ts'
@@ -20,6 +20,7 @@ import { shellRunsOutsideSandbox } from '../security/command-routing-config.ts'
 import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
 import { worktreePreparationShellEnvironment } from '../worktree-preparation.ts'
 import { beginWorktreeWriter } from '../worktree-writers.ts'
+import { captureBackgroundEditAdoption } from '../diff-queue.ts'
 
 // The `run_background` tool is gated by the `copse.background-tasks` first-party
 // plugin (Settings > Plugins), which also DECLARES the `loopback-bind` sandbox
@@ -321,8 +322,23 @@ export async function startBackgroundProcess(
   const owner = opts.owner ?? requireThreadExecutionOwner()
   const unsandboxed =
     !isProjectSandboxEnabled() ||
-    (currentRunUsesGuardedYolo(owner.threadId) && shellRunsOutsideSandbox(command))
+    (currentRunUsesGuardedYolo(owner.threadId) &&
+      shellRunsOutsideSandbox(command, currentAgentRoots()))
 
+  const adoptEdits = await captureBackgroundEditAdoption(cwd, owner).catch((error: unknown) => {
+    console.warn('[background-process] edit ownership snapshot failed:', error)
+    return async (): Promise<void> => {}
+  })
+  const releaseWriter = beginWorktreeWriter(cwd)
+  let settleEdits: Promise<void> | undefined
+  const finishEdits = (): Promise<void> => {
+    settleEdits ??= adoptEdits()
+      .catch((error: unknown) => {
+        console.warn('[background-process] edit ownership refresh failed:', error)
+      })
+      .finally(releaseWriter)
+    return settleEdits
+  }
   const entry = await createThreadResource(owner, async () => {
     const proc = await spawnBackgroundProcess(command, {
       cwd,
@@ -330,13 +346,6 @@ export async function startBackgroundProcess(
       allowPortBinding: portBinding,
       unsandboxed,
     })
-    // A task writes on its own schedule, across turns, so the diff queue must
-    // not trust a remembered clean sweep while it runs (#1700). Released on the
-    // child's own exit, however it was stopped.
-    const releaseWriter = beginWorktreeWriter(cwd)
-    proc.once('exit', releaseWriter)
-    proc.once('error', releaseWriter)
-    if (proc.exitCode !== null || proc.signalCode !== null) releaseWriter()
 
     const entry: BackgroundProcess = {
       id: nextBackgroundOperationId(),
@@ -371,6 +380,9 @@ export async function startBackgroundProcess(
     }
 
     return entry
+  }).catch((error: unknown) => {
+    releaseWriter()
+    throw error
   })
   const proc = entry.proc
   const waitMs = opts.waitMs ?? (portBinding ? DEFAULT_URL_WAIT_MS : DEFAULT_SETTLE_MS)
@@ -392,19 +404,24 @@ export async function startBackgroundProcess(
       onOutput(entry, d)
       if (entry.url !== null) done()
     })
-    proc.on('exit', (code) => {
-      entry.exited = true
-      entry.exitCode = code
-      notifyCompletion(entry)
-      done()
-      notifyThreadResourceFinished(entry.owner.threadId)
+    const finish = (code: number | null): void => {
+      // Cancelled/timed-out work has no complete result to attribute. Release
+      // first so even an ownership audit already in flight fails its epoch guard.
+      if (entry.cancelled || entry.timedOut || code === null) releaseWriter()
+      void finishEdits().then(() => {
+        if (entry.exited) return
+        entry.exited = true
+        entry.exitCode = code
+        notifyCompletion(entry)
+        done()
+        notifyThreadResourceFinished(entry.owner.threadId)
+      })
+    }
+    proc.once('exit', finish)
+    proc.once('error', () => {
+      finish(null)
     })
-    proc.on('error', () => {
-      entry.exited = true
-      notifyCompletion(entry)
-      done()
-      notifyThreadResourceFinished(entry.owner.threadId)
-    })
+    if (proc.exitCode !== null || proc.signalCode !== null) finish(proc.exitCode)
   })
 
   return toInfo(entry)
