@@ -173,7 +173,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/sidebar-other-projects-activity.e2e.ts': {
-    sourceSha256: '0ecde1b2d82565a5f47034254693d8236c9ba28298d2b8ca08ee255869c97edb',
+    sourceSha256: '2ae0ae6c48b6cd7278baeead0a4951ea877355b2efa7805bb48c5381553f1205',
     filenames: ['sidebar-unopened-activity-1600.png', 'sidebar-unopened-activity-800.png'],
   },
   'tests/e2e/terminal-display.e2e.ts': {

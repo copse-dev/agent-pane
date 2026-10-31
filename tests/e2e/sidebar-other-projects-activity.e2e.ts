@@ -2,7 +2,12 @@ import { mkdtempSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, writeSeedConfig, writeSettings } from './helpers/seed-config.ts'
+import {
+  e2eWorkspaceDir,
+  resetUserData,
+  writeSeedConfig,
+  writeSettings,
+} from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
@@ -109,6 +114,12 @@ describe('status sidebar title and details', () => {
     await browser.waitUntil(
       async () => (await browser.execute(() => document.readyState)) === 'complete',
     )
+    // Close the outgoing stores before removing the preceding fixture's projects.
+    // Resetting config alone makes their retained threads appear as recoverable.
+    await browser.deleteSession({ shutdownDriver: false })
+    for (const projectId of [activeProject, unopenedProject]) {
+      removeE2eTree(join(e2eWorkspaceDir(), projectId))
+    }
     root = mkdtempSync(join(tmpdir(), 'copse-status-details-'))
     const projectPath = join(root, 'project')
     mkdirSync(projectPath)
@@ -194,6 +205,7 @@ describe('status sidebar title and details', () => {
     expect(geometry.detailsTop).toBeGreaterThanOrEqual(geometry.titleBottom)
     expect(geometry.titleLeft).toBe(geometry.detailsLeft)
     expect(Math.abs(geometry.titleWidth - geometry.detailsWidth)).toBeLessThan(1)
+    await expect($('.orphans-heading')).not.toExist()
     await saveAppScreenshot('sidebar-status-details.png')
     await row.$('.chat-title').doubleClick()
     await expect(row.$('.chat-title-rename')).toBeDisplayed()
