@@ -1,6 +1,6 @@
 /**
  * Electron vs Tauri+Servo: the measurement harness for
- * docs/plans/tauri-servo-perf-handoff.md.
+ * docs/spikes/servo/tauri-servo-perf-handoff.md.
  *
  * Both stacks run the same renderer bundle and the same main-process source, so
  * the marks in the NDJSON trace (`COPSE_PERF=1`) come from *identical* renderer
@@ -122,7 +122,7 @@ const STACKS: Stack[] = [
     env: { TAURI_SHELL: '1' },
     unavailable: () =>
       !existsSync(TAURI_BIN)
-        ? 'no shell binary — run `pnpm servo` once to fetch it, then point COPSE_TAURI_SHELL_BIN at it (see docs/plans/tauri-servo-perf-handoff.md §2)'
+        ? 'no shell binary — run `pnpm servo` once to fetch it, then point COPSE_TAURI_SHELL_BIN at it (see docs/spikes/servo/tauri-servo-perf-handoff.md §2)'
         : !existsSync(resolve('dist/sidecar/index.js'))
           ? 'dist/sidecar/index.js missing — run pnpm build:tauri'
           : null,

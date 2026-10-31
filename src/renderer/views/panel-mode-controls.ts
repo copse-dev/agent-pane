@@ -5,7 +5,7 @@ import { setTooltip } from '../dom/tooltip.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
-import { toggleRightPanelWithWorkspace } from '../controller/panels.ts'
+import { selectRightPanel, toggleRightPanelWithWorkspace } from '../controller/panels.ts'
 import { sideChatsOf } from '@shared/threads/side-chat.ts'
 import { countPortraitPanelOverflow } from './portrait-panel-bar-overflow.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
@@ -588,10 +588,10 @@ export function mountPanelModeControls(
   syncExperimentalBtns()
 
   const unsubs = [
-    store.on('files_pane_changed', syncPanelBtns),
-    store.on('files_pane_changed', syncSideChatBadge),
-    store.on('right_panel_mode_changed', syncPanelBtns),
-    store.on('right_panel_mode_changed', syncSideChatBadge),
+    selectRightPanel(store, () => {
+      syncPanelBtns()
+      syncSideChatBadge()
+    }),
     store.on('staged_diffs_changed', syncChangesBadge),
     store.on('threads_changed', syncSideChatBadge),
     store.on('settings_changed', syncExperimentalBtns),

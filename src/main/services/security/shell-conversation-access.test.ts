@@ -10,7 +10,7 @@ import { setWorkspaceRootForTest } from '../workspace.ts'
 import { setApprovalHandler } from '../approval.ts'
 import { runWithActiveRunIdentity } from '../active-run-identity.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
-import { setSetting } from '../storage/settings.test-shim.ts'
+import { setSetting } from '../storage/settings.ts'
 import { drainWriteQueue } from '../storage/write-queue.ts'
 
 async function withReadAlias(

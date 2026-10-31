@@ -1,6 +1,6 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { ndJsonStream } from '@agentclientprotocol/sdk'
+import { ndJsonStream } from '@agentclientprotocol/sdk/unstable'
 import type { StreamChunk } from '@shared/types'
 import { buildAcpAgentApp, type AcpTurnRunner } from './acp-agent-server.ts'
 import { runAcpSessionPrompt, type AcpClientHandlers } from './acp-client.ts'

@@ -304,6 +304,29 @@ jobs:
       - run: npm run format:check
       - run: npm run check:dead-code
       - run: npm run check:e2e-exclusions
+      # The accessibility baseline only shrinks (docs/accessibility.md). The e2e
+      # lane pins it to what the app renders; this step refuses a PR or queue
+      # candidate that tolerates more than its base. Nothing to compare on
+      # schedule / branch-create runs.
+      - name: Accessibility baseline only shrinks
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          # A PR checkout is refs/pull/N/merge; its first parent is the base it
+          # actually merges into, which an event's base.sha can lag behind.
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            BASE_SHA="$(git rev-parse HEAD^1)"
+          fi
+          if [ -z "${BASE_SHA:-}" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "No base sha for ${GITHUB_EVENT_NAME} -> skipping the accessibility baseline comparison"
+            exit 0
+          fi
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --quiet origin "$BASE_SHA"
+          fi
+          node scripts/check-a11y-baseline.mts --base "$BASE_SHA"
       # Enforce the API protocol's compatibility rule (docs/api-protocol.md).
       # The unit test only pins that the committed manifest matches the sources,
       # which a breaking change satisfies by regenerating; this is the step that

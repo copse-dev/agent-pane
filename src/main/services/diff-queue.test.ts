@@ -14,6 +14,7 @@ import {
   approveAllStagedDiffs,
   approveStagedDiff,
   captureWorktreeBaseline,
+  captureBackgroundEditAdoption,
   clearDiffQueueForTest,
   getDiffQueueForTest,
   getRecentStagedDiffDecision,
@@ -28,7 +29,7 @@ import {
 import { setGitAvailableForTest } from './tool-availability.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { getSessionBackup, resetSessionBackup } from './worktree-backup.ts'
-import { beginWorktreeWriter, withWorktreeWriter } from './worktree-writers.ts'
+import { beginWorktreeWriter, withWorktreeWriter, noteWorktreeWrite } from './worktree-writers.ts'
 import { getIndex, invalidateIndex } from './search/file-index.ts'
 import {
   runWithThreadExecutionContext,
@@ -972,6 +973,74 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
     assert.match(result, /backed up to refs\/copse\/backups\//)
     // The manual edit is preserved on disk (and recoverable from the backup ref).
     assert.equal(await readFile(join(workspaceRoot, 'manual.txt'), 'utf-8'), 'user edit\n')
+  })
+
+  worktreeIt(
+    'refreshes only owned background edits and protects later manual changes',
+    async () => {
+      await applyOrStageDiff('a.txt', '', 'agent\n', 'plaintext')
+      const adopt = await captureBackgroundEditAdoption(workspaceRoot, TEST_THREAD_OWNER)
+      const release = beginWorktreeWriter(workspaceRoot)
+      try {
+        await writeFile(join(workspaceRoot, 'a.txt'), 'formatted\n')
+        await writeFile(join(workspaceRoot, 'manual.txt'), 'user work\n')
+        await adopt()
+      } finally {
+        release()
+      }
+      const result = await applyOrStageDiff('a.txt', 'formatted\n', 'next\n', 'plaintext')
+      assert.match(result, /Applied edit directly/)
+      assert.match(result, /backed up to refs\/copse\/backups\//)
+      assert.equal(await readFile(join(workspaceRoot, 'manual.txt'), 'utf-8'), 'user work\n')
+
+      await writeFile(join(workspaceRoot, 'a.txt'), 'later user edit\n')
+      const guarded = await applyOrStageDiff(
+        'a.txt',
+        'later user edit\n',
+        'overwrite\n',
+        'plaintext',
+      )
+      assert.match(guarded, /file changed on disk since Copse last applied/)
+      assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'later user edit\n')
+    },
+  )
+
+  for (const interruption of ['user turn', 'other writer', 'prior external edit']) {
+    worktreeIt(`does not adopt background changes after ${interruption}`, async () => {
+      await applyOrStageDiff('a.txt', '', 'agent\n', 'plaintext')
+      if (interruption === 'prior external edit') {
+        await writeFile(join(workspaceRoot, 'a.txt'), 'user work\n')
+      }
+      const adopt = await captureBackgroundEditAdoption(workspaceRoot, TEST_THREAD_OWNER)
+      const release = beginWorktreeWriter(workspaceRoot)
+      try {
+        await writeFile(join(workspaceRoot, 'a.txt'), 'user work\n')
+        if (interruption === 'user turn') noteWorktreeWrite()
+        if (interruption === 'other writer') beginWorktreeWriter(workspaceRoot)()
+        await adopt()
+      } finally {
+        release()
+      }
+      const result = await applyOrStageDiff('a.txt', 'user work\n', 'overwrite\n', 'plaintext')
+      assert.match(result, /file changed on disk since Copse last applied/)
+      assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'user work\n')
+    })
+  }
+
+  ownedIt('does not attribute background writes in a shared checkout', async () => {
+    await applyOrStageDiff('a.txt', '', 'agent\n', 'plaintext')
+    const adopt = await captureBackgroundEditAdoption(workspaceRoot, TEST_THREAD_OWNER)
+    const release = beginWorktreeWriter(workspaceRoot)
+    try {
+      await writeFile(join(workspaceRoot, 'a.txt'), 'user work\n')
+      await adopt()
+    } finally {
+      release()
+    }
+    assert.match(
+      await applyOrStageDiff('a.txt', 'user work\n', 'overwrite\n', 'plaintext'),
+      /file changed on disk since Copse last applied/,
+    )
   })
 
   ownedIt('captures dirty-file contents with bounded parallel reads', async () => {

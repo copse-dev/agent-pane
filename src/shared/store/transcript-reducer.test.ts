@@ -81,6 +81,95 @@ test('main and the window reduce a recorded turn to the same messages', () => {
   assert.deepEqual(getThreadById(main, 't1')?.todos, getThreadById(window, 't1')?.todos)
 })
 
+test('remote agent setup stages are status for the window, never transcript', () => {
+  const setup: StreamChunk[] = [
+    { type: 'agent_setup_progress', phase: 'start', label: 'Connecting to Dev…' },
+    { type: 'agent_setup_progress', phase: 'setup', label: 'Installing pkg on Dev…' },
+    { type: 'agent_setup_progress', phase: 'ready' },
+  ]
+  // Main runs without window hooks: the stages leave no message behind.
+  const { main, window } = reduceBoth(setup)
+  assert.deepEqual(
+    messagesOf(main).map((message) => message.id),
+    ['u1'],
+  )
+  assert.deepEqual(comparable(messagesOf(window)), comparable(messagesOf(main)))
+
+  // The window hears each stage's label, then `ready` hands the row back.
+  const store = seeded()
+  const calls: string[] = []
+  const reducer = createTranscriptReducer(store, {
+    setupProgress: (_threadId, label) => calls.push(`label:${label}`),
+    activity: () => calls.push('activity'),
+  })
+  for (const chunk of setup) reducer.apply('t1', chunk)
+  assert.deepEqual(calls, ['label:Connecting to Dev…', 'label:Installing pkg on Dev…', 'activity'])
+  assert.deepEqual(
+    messagesOf(store).map((message) => message.id),
+    ['u1'],
+  )
+})
+
+test('ACP whole-message upserts replace only their external message id', () => {
+  const { main, window } = reduceBoth([
+    {
+      type: 'acp_content',
+      channel: 'message',
+      messageId: 'm-1',
+      content: { type: 'text', text: 'first draft' },
+    },
+    {
+      type: 'acp_content',
+      channel: 'message',
+      messageId: 'm-2',
+      content: { type: 'text', text: 'second stays' },
+    },
+    {
+      type: 'acp_content_replace',
+      channel: 'message',
+      messageId: 'm-1',
+      content: [
+        { type: 'text', text: 'first final' },
+        {
+          type: 'image',
+          dataUrl: 'data:image/png;base64,cGl4ZWxz',
+          mimeType: 'image/png',
+        },
+      ],
+    },
+  ])
+
+  assert.deepEqual(comparable(messagesOf(window)), comparable(messagesOf(main)))
+  const [, first, second] = messagesOf(main)
+  assert.ok(first)
+  assert.ok(second)
+  assert.equal(first.content, 'first final')
+  assert.deepEqual(first.contentBlocks, [
+    { type: 'image', dataUrl: 'data:image/png;base64,cGl4ZWxz', mimeType: 'image/png' },
+  ])
+  assert.equal(second.content, 'second stays')
+})
+
+test('ACP whole-thought upserts replace reasoning by external id', () => {
+  const { main, window } = reduceBoth([
+    {
+      type: 'acp_content',
+      channel: 'thought',
+      messageId: 'thought-1',
+      content: { type: 'text', text: 'draft reasoning' },
+    },
+    {
+      type: 'acp_content_replace',
+      channel: 'thought',
+      messageId: 'thought-1',
+      content: [{ type: 'text', text: 'final reasoning' }],
+    },
+  ])
+
+  assert.deepEqual(comparable(messagesOf(window)), comparable(messagesOf(main)))
+  assert.equal(messagesOf(main).at(1)?.reasoning, 'final reasoning')
+})
+
 test('a machine turn prompt takes the id main stamped', () => {
   const { main, window } = reduceBoth([
     {

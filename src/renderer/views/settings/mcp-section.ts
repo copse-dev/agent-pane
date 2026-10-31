@@ -5,6 +5,9 @@ import { errorMessage } from '@shared/errors.ts'
 import { qsRequired } from '../../dom/helpers.ts'
 import { warningIcon } from '../../dom/icons.ts'
 import { inlineStatus, setInlineStatus } from '../../dom/inline-status.ts'
+import type { McpUserServer, McpUserServerList } from '@shared/types/mcp-user-servers.ts'
+import { showConfirmDialog } from '../confirm-dialog.ts'
+import { createMcpServerEditor } from './mcp-server-editor.ts'
 
 export interface McpSection {
   render(statuses: McpServerStatus[]): void
@@ -21,6 +24,61 @@ export function createMcpSection(
   onHeadingsChanged: () => void,
 ): McpSection {
   let generation = 0
+  // Servers in Copse's own mcp.json: the rows Settings can edit and remove.
+  let userServers: McpUserServerList | undefined
+  const editor = createMcpServerEditor(qsRequired(overlay, '#mcp-server-editor'), api, (list) => {
+    userServers = list
+    void refreshMcpServers()
+  })
+
+  /** The editable entry behind a status row, when the row came from Copse's own config. */
+  function userServerFor(s: McpServerStatus): McpUserServer | undefined {
+    if (userServers === undefined || s.source !== userServers.path) return undefined
+    return userServers.servers.find((server) => server.name === s.name)
+  }
+
+  function userServerButtons(server: McpUserServer): HTMLButtonElement[] {
+    const edit = document.createElement('button')
+    edit.type = 'button'
+    edit.className = 'ui-btn ui-btn-secondary ui-btn-compact mcp-edit-btn'
+    edit.textContent = 'Edit'
+    edit.setAttribute('aria-label', `Edit ${server.name}`)
+    edit.addEventListener('click', () => {
+      editor.open(server)
+    })
+    const remove = document.createElement('button')
+    remove.type = 'button'
+    remove.className = 'ui-btn ui-btn-secondary ui-btn-compact mcp-remove-btn'
+    remove.textContent = 'Remove'
+    remove.setAttribute('aria-label', `Remove ${server.name}`)
+    remove.addEventListener('click', () => {
+      void removeUserServer(server.name)
+    })
+    return [edit, remove]
+  }
+
+  async function removeUserServer(name: string): Promise<void> {
+    const confirmed = await showConfirmDialog({
+      message: `Remove ${name}?`,
+      detail: 'Copse deletes it from its MCP config and stops it. Its tools stop being available.',
+      confirmLabel: 'Remove',
+      danger: true,
+    })
+    if (!confirmed) return
+    const statusEl = qsRequired(overlay, '#mcp-reload-status')
+    try {
+      const result = await api.mcp.removeUserServer(name)
+      if (!result.ok) {
+        setInlineStatus(statusEl, 'error', result.message)
+        return
+      }
+      userServers = result.list
+      editor.close()
+      await refreshMcpServers()
+    } catch (error: unknown) {
+      setInlineStatus(statusEl, 'error', ipcErrorMessage(error, 'Could not remove the server.'))
+    }
+  }
   /**
    * The origin chip: who asked for this server.
    *
@@ -219,6 +277,7 @@ export function createMcpSection(
                   : document.createTextNode('… connecting')
       const row = document.createElement('div')
       row.className = `mcp-server-row mcp-state-${s.state}`
+      row.dataset['mcpServer'] = s.name
 
       const header = document.createElement('div')
       header.className = 'mcp-server-header'
@@ -270,6 +329,8 @@ export function createMcpSection(
       const authButton = mcpSignInButton(s)
       if (authButton) header.append(authButton)
       header.append(permissionsButton)
+      const userServer = userServerFor(s)
+      if (userServer) header.append(...userServerButtons(userServer))
       row.append(header)
 
       const statusDetail =
@@ -307,13 +368,22 @@ export function createMcpSection(
   async function refreshMcpServers(): Promise<void> {
     const request = generation
     try {
-      const statuses = await api.mcp.list()
-      if (request === generation) renderMcpServers(statuses)
+      const [statuses, list] = await Promise.all([
+        api.mcp.list(),
+        api.mcp.listUserServers().catch(() => undefined),
+      ])
+      if (request !== generation) return
+      userServers = list
+      renderMcpServers(statuses)
     } catch {
       if (request !== generation) return
       renderMcpServers([])
     }
   }
+
+  qsRequired(overlay, '#mcp-add-btn').addEventListener('click', () => {
+    editor.open()
+  })
 
   /**
    * Plugin-declared servers Copse is not running. Hidden entirely when there are
@@ -475,6 +545,8 @@ export function createMcpSection(
       .then((statuses) => {
         if (request !== generation) return
         renderMcpServers(statuses)
+        // The config file may have been edited by hand since Settings opened.
+        void refreshMcpServers()
         void refreshCuratedServers()
         void refreshDeclaredMcpServers()
         const visible = statuses.filter((s) => !s.curated)

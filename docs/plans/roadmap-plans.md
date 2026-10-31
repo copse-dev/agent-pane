@@ -1,5 +1,10 @@
 # Roadmap plans
 
+Status: **Resolved core; follow-ups unowned.** The feature is on `main` (#556 closed); plugin
+extraction (`copse.roadmap-plans`) landed in [#1089](https://github.com/copse-dev/agent-pane/pull/1089),
+and the living-plan workflow the prototype below builds on landed in
+[#3747](https://github.com/copse-dev/agent-pane/pull/3747). The remaining follow-ups need a new issue.
+
 ## Roadmap / living plan prototype (2026-09-26)
 
 Task brief: keep the compact backlog and quick capture, with a cleaner document

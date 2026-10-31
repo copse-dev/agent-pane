@@ -5,7 +5,6 @@ import {
   seedScrollToBottomFixture,
 } from './helpers/seed-config.ts'
 import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
-import { itSkipInCi } from './helpers/ci-gate.ts'
 import { composerText, setComposerValue } from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
@@ -204,7 +203,7 @@ describe('scroll to bottom', () => {
     await saveAppScreenshot('scroll-to-bottom-at-bottom.png')
   })
 
-  itSkipInCi('hides scroll-to-bottom while auto-scrolling during streaming', async () => {
+  it('hides scroll-to-bottom while auto-scrolling during streaming', async () => {
     resetUserData()
     seedScrollStreamingFixture(process.cwd())
     await browser.reloadSession()
@@ -248,7 +247,7 @@ describe('scroll to bottom', () => {
     await scenario.assertComplete()
   })
 
-  itSkipInCi('keeps the view pinned when the user scrolls up during streaming', async () => {
+  it('keeps the view pinned when the user scrolls up during streaming', async () => {
     resetUserData()
     seedScrollStreamingFixture(process.cwd())
     await browser.reloadSession()

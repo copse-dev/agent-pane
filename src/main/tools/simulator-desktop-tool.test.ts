@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
-import { setSetting } from '../services/storage/settings.test-shim.ts'
-import { setSeededSimulatorDesktopForTests } from '../services/simulator-desktop/simulator-desktop-service.ts'
+import { setSetting } from '../services/storage/settings.ts'
+import {
+  getSimulatorDesktopService,
+  type SimulatorDesktopOwner,
+  setSeededSimulatorDesktopForTests,
+} from '../services/simulator-desktop/simulator-desktop-service.ts'
 import { setSimulatorDesktopPanelPresenter } from '../services/simulator-desktop/simulator-desktop-panel.ts'
 import { openSimulatorDesktopTool } from './simulator-desktop-tool.ts'
 
@@ -25,9 +29,23 @@ afterEach(async () => {
 describe('open_simulator_desktop', () => {
   it('shows the sole booted Simulator in the visible panel', async () => {
     await setSetting('vncEnabled', true)
-    setSeededSimulatorDesktopForTests([FIRST], null)
+    setSeededSimulatorDesktopForTests([FIRST], {
+      bytes: Uint8Array.from([1, 2]),
+      mimeType: 'image/jpeg',
+      pixelWidth: 10,
+      pixelHeight: 10,
+    })
     const shown: string[] = []
-    setSimulatorDesktopPanelPresenter((udid) => shown.push(udid))
+    setSimulatorDesktopPanelPresenter((udid) => {
+      shown.push(udid)
+      const owner: SimulatorDesktopOwner = { id: 987, isDestroyed: () => false, send() {} }
+      void getSimulatorDesktopService()
+        .open(udid, owner)
+        .then((connection) => {
+          getSimulatorDesktopService().start(connection.id, owner.id)
+          void getSimulatorDesktopService().close(connection.id, owner.id)
+        })
+    })
 
     const result = await openSimulatorDesktopTool.execute(
       openSimulatorDesktopTool.parameters.parse({}),
@@ -77,4 +95,17 @@ describe('open_simulator_desktop', () => {
     )
     assert.deepEqual(shown, [])
   })
+})
+
+it('never reports a Desktop capture when presentation fails', async () => {
+  await setSetting('vncEnabled', true)
+  setSeededSimulatorDesktopForTests([FIRST], null)
+  setSimulatorDesktopPanelPresenter(() => {
+    throw new Error('renderer unavailable')
+  })
+  await assert.rejects(
+    async () =>
+      openSimulatorDesktopTool.execute({ udid: FIRST.udid }, new AbortController().signal),
+    /renderer unavailable/,
+  )
 })
