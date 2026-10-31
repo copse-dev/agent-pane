@@ -297,6 +297,7 @@ import {
   listOrphanProjects,
   listSubagentRuns,
   loadArtefactContent,
+  loadPersistedThread,
   loadProjects,
   loadThreads,
   localBenchmarkScore,
@@ -358,7 +359,6 @@ import {
   queuedMessageIds,
   queuedPayloadText,
   recordContextTrim,
-  recordPersistedThread,
   recordThreadArchives,
   recordThreadVideos,
   recoverOrphanProject,
@@ -455,7 +455,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-FYEDBEAN.js";
+} from "./chunk-G6QSUZO6.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -2818,15 +2818,12 @@ async function restoreArchivedThread(store2, api2, projectId, threadId) {
     throw new Error("The thread is busy or changed. Try restoring it again.");
   invalidateProjectThreadLoads(api2, projectId);
   if (store2.getState().activeProjectId === projectId) {
-    const metadata = (await api2.threads.loadProject(projectId)).find(
-      (thread) => thread.id === threadId
-    );
+    const metadata = await loadPersistedThread(api2, projectId, threadId);
     if (!metadata) throw new Error("The restored thread could not be loaded.");
     if (store2.getState().activeProjectId === projectId) {
       const threads = store2.getState().threads;
       const previous = threads.find((thread) => thread.id === threadId);
       const restored = previous?.messagesLoaded !== false && previous ? { ...metadata, messages: previous.messages, messagesLoaded: true } : metadata;
-      recordPersistedThread(projectId, metadata);
       store2.setState({ threads: [...threads.filter((thread) => thread.id !== threadId), restored] });
       store2.emit("threads_changed");
     }
