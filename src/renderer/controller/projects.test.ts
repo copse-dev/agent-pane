@@ -27,9 +27,16 @@ import {
   switchProject,
   switchProjectThread,
 } from './projects.ts'
+import { prepareWorkspaceConnection } from '../../main/services/workspace-connection.ts'
+import { createWorkspaceNavigation } from '../../preload/workspace-navigation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { collectActivityThreads } from './activity-model.ts'
-import { __resetPersistenceForTest, markNavigationRestored, saveNavigation } from './persistence.ts'
+import {
+  __resetPersistenceForTest,
+  invalidateProjectThreadLoads,
+  markNavigationRestored,
+  saveNavigation,
+} from './persistence.ts'
 
 function thread(id: string, title = id): Thread {
   return {
@@ -68,7 +75,24 @@ function makeApi(handlers: {
 }): ApiClient {
   return ((): ApiClient => {
     const base = createFakeApi()
-    return {
+    const workspaceInvoke = createWorkspaceNavigation(async (_channel, path, sshHost) => {
+      assert.equal(typeof path, 'string')
+      assert.ok(typeof path === 'string')
+      assert.ok(sshHost === undefined || typeof sshHost === 'string')
+      if (sshHost) {
+        const enabled = await api.settings.get('sshWorkspaceEnabled')
+        const states = await api.sshWorkspace.getStates()
+        await prepareWorkspaceConnection({
+          enabled: enabled === true,
+          connected: states.some(
+            (state) => state.hostId === sshHost && state.status === 'connected',
+          ),
+          connect: () => api.sshWorkspace.connect(sshHost),
+        })
+      }
+      return handlers.workspaceSet?.(path, sshHost) ?? path
+    })
+    const api: ApiClient = {
       ...base,
       windowState: {
         ...base['windowState'],
@@ -77,7 +101,11 @@ function makeApi(handlers: {
       workspace: {
         ...base['workspace'],
         open: handlers.workspaceOpen ?? (async (): Promise<string | null> => null),
-        set: handlers.workspaceSet ?? (async (path): Promise<string> => path),
+        set: async (path, sshHost): Promise<string> => {
+          const result = await workspaceInvoke('workspace:set', path, sshHost)
+          assert.ok(typeof result === 'string')
+          return result
+        },
       },
       storage: {
         ...base['storage'],
@@ -107,6 +135,7 @@ function makeApi(handlers: {
         },
       },
     } satisfies ApiClient
+    return api
   })()
 }
 
@@ -280,6 +309,8 @@ test('visible PR discovery updates a previously active project sidebar row', asy
   assert.equal(applyCachedSidebarPrRefs('a', [{ threadId: 't-a', prRefs: [ref] }]), true)
   assert.deepEqual(getSidebarThreads(store, 'a')[0]?.prRefs, [ref])
   assert.equal(getSidebarThreads(store, 'a')[0]?.messages, undefined)
+  switchProjectThread(store, api, 'a', 't-a')
+  assert.deepEqual(store.getState().threads[0]?.prRefs, [ref])
 })
 
 test('switchProject carries chunks that land while activation is in flight', async () => {
@@ -602,7 +633,7 @@ test('a superseded thread-load failure cannot roll back a newer project switch',
   await waitUntil(() => store.getState().activeProjectId === 'c')
   failLoad(new Error('old load failed'))
   await new Promise((resolve) => setTimeout(resolve, 20))
-  assert.deepEqual(roots, ['/b', '/a', '/c'])
+  assert.deepEqual(roots, ['/b', '/c'])
   assert.equal(selections.at(-1), 'c')
   assert.equal(store.getState().expandedProjectId, 'c')
   assert.equal(isProjectSwitchInFlight(store, store.getState().expandedProjectId ?? ''), false)
@@ -1873,4 +1904,302 @@ test('attentionThreadId hands a side chat to its parent, in this project or a ca
   assert.equal(attentionThreadId(store, 'orphan'), 'orphan')
   assert.equal(attentionThreadId(store, 'parent'), 'parent')
   assert.equal(attentionThreadId(store, 'unknown'), 'unknown')
+})
+
+test('a resident thread is selected synchronously across projects without reloading history', async () => {
+  resetProjectSwitchStateForTest()
+  __resetPersistenceForTest()
+  const store = createStore({
+    projects: [
+      { id: 'fast-a', path: '/a', name: 'A' },
+      { id: 'fast-b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'fast-a',
+    expandedProjectId: 'fast-a',
+    workspaceRoot: '/a',
+    activeThreadId: 't-a',
+    threads: [thread('t-a')],
+  })
+  const loads: string[] = []
+  let holdWorkspace = false
+  const releases: Array<() => void> = []
+  const api = makeApi({
+    workspaceSet: async (path) => {
+      if (holdWorkspace) await new Promise<void>((resolve) => releases.push(resolve))
+      return path
+    },
+    loadProjectThreads: async (id) => {
+      loads.push(id)
+      return [thread('t-b')]
+    },
+  })
+  const detach = attachProjectThreadCache(store)
+  switchProjectThread(store, api, 'fast-b', 't-b')
+  await waitUntil(() => store.getState().activeProjectId === 'fast-b')
+  const selectedB = store.getState().threads[0]
+  holdWorkspace = true
+  switchProjectThread(store, api, 'fast-a', 't-a')
+  assert.equal(store.getState().activeProjectId, 'fast-a')
+  assert.equal(store.getState().activeThreadId, 't-a')
+  assert.equal(store.getState().threads[0]?.messages[0]?.content, 'hello')
+  // Switch again without yielding, while the workspace request is still held.
+  switchProjectThread(store, api, 'fast-b', 't-b')
+  assert.equal(store.getState().activeProjectId, 'fast-b')
+  assert.equal(store.getState().threads[0], selectedB)
+  assert.deepEqual(loads, ['fast-b'])
+  holdWorkspace = false
+  for (const release of releases) release()
+  await waitUntil(() => store.getState().backgroundThreads.length === 0)
+  detach()
+})
+
+test('preloaded project metadata can display a cold thread before workspace activation', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    activeThreadId: 't-a',
+    threads: [thread('t-a')],
+  })
+  let loads = 0
+  let releaseWorkspace = (): void => undefined
+  const api = makeApi({
+    workspaceSet: (path) =>
+      new Promise<string>((resolve) => {
+        releaseWorkspace = (): void => {
+          resolve(path)
+        }
+      }),
+    loadProjectThreads: async () => {
+      loads += 1
+      return [{ ...thread('t-b'), messages: [], messagesLoaded: false }]
+    },
+  })
+  await preloadSidebarThreads(store, api)
+  switchProjectThread(store, api, 'b', 't-b')
+  assert.equal(store.getState().activeProjectId, 'b')
+  assert.equal(store.getState().activeThreadId, 't-b')
+  assert.equal(store.getState().threads[0]?.messagesLoaded, false)
+  assert.equal(loads, 1)
+  releaseWorkspace()
+  await new Promise((resolve) => setTimeout(resolve, 5))
+})
+
+test('a failed resident activation restores the previous selection and its transcript', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    activeThreadId: 't-a',
+    threads: [thread('t-a')],
+  })
+  let fail = false
+  const api = makeApi({
+    workspaceSet: async (path) => {
+      if (fail && path === '/a') throw new Error('folder moved')
+      return path
+    },
+    loadProjectThreads: async () => [thread('t-b')],
+  })
+  switchProjectThread(store, api, 'b', 't-b')
+  await waitUntil(() => store.getState().activeProjectId === 'b')
+  fail = true
+  switchProjectThread(store, api, 'a', 't-a')
+  assert.equal(store.getState().activeProjectId, 'a')
+  store.setState({
+    threads: store.getState().threads.map((t) => ({ ...t, draftPrompt: 'Keep my draft' })),
+  })
+  await waitUntil(() => store.getState().activeProjectId === 'b')
+  assert.equal(store.getState().activeThreadId, 't-b')
+  assert.equal(store.getState().threads[0]?.messages[0]?.content, 'hello')
+  assert.equal(store.getState().projects.find((p) => p.id === 'a')?.missing, true)
+  fail = false
+  switchProjectThread(store, api, 'a', 't-a')
+  assert.equal(store.getState().threads[0]?.draftPrompt, 'Keep my draft')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+})
+
+test('resident navigation adopts a finished background run instead of its cached snapshot', async () => {
+  resetProjectSwitchStateForTest()
+  const running = { ...thread('t-a'), status: 'running' as const }
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    activeThreadId: running.id,
+    threads: [running],
+  })
+  const api = makeApi({ loadProjectThreads: async () => [thread('t-b')] })
+  switchProjectThread(store, api, 'b', 't-b')
+  await waitUntil(() => store.getState().activeProjectId === 'b')
+  const latest = {
+    ...running,
+    status: 'idle' as const,
+    title: 'Finished in the background',
+    messages: [
+      ...running.messages,
+      {
+        id: 'done',
+        role: 'assistant' as const,
+        content: 'The final response',
+        toolCalls: [],
+        createdAt: 2,
+      },
+    ],
+  }
+  store.setState({ backgroundThreads: [{ projectId: 'a', thread: latest }] })
+  switchProjectThread(store, api, 'a', 't-a')
+  assert.equal(store.getState().threads[0], latest)
+  assert.equal(store.getState().threads[0]?.messages.at(-1)?.content, 'The final response')
+  assert.equal(store.getState().backgroundThreads.length, 0)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+})
+
+test('main-owned archive changes invalidate resident metadata before a revisit', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    activeThreadId: 't-a',
+    threads: [thread('t-a')],
+  })
+  const loaded: string[] = []
+  const api = makeApi({
+    loadProjectThreads: async (id) => {
+      loaded.push(id)
+      return [thread(`t-${id}`, id === 'a' ? 'Updated on disk' : 'B')]
+    },
+  })
+  switchProjectThread(store, api, 'b', 't-b')
+  await waitUntil(() => store.getState().activeProjectId === 'b')
+  invalidateProjectThreadLoads(api, 'a')
+  switchProjectThread(store, api, 'a', 't-a')
+  await waitUntil(() => store.getState().activeProjectId === 'a')
+  assert.deepEqual(loaded, ['b', 'a'])
+  assert.equal(store.getState().threads[0]?.title, 'Updated on disk')
+})
+
+test('a resident SSH thread renders before reconnecting its workspace', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'remote', path: '/srv/app', name: 'Remote', sshHost: 'host' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    activeThreadId: 't-a',
+    threads: [thread('t-a')],
+  })
+  let hold = false
+  let release = (): void => undefined
+  const api = makeApi({
+    settingsGet: async () => true,
+    sshConnect: async () => {
+      if (hold)
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+    },
+    loadProjectThreads: async () => [thread('t-remote')],
+  })
+  switchProjectThread(store, api, 'remote', 't-remote')
+  await waitUntil(() => store.getState().activeProjectId === 'remote')
+  switchProjectThread(store, api, 'a', 't-a')
+  assert.equal(store.getState().activeProjectId, 'a')
+  hold = true
+  switchProjectThread(store, api, 'remote', 't-remote')
+  assert.equal(store.getState().activeProjectId, 'remote')
+  assert.equal(store.getState().threads[0]?.messages[0]?.content, 'hello')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  release()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+})
+
+test('a metadata cache miss can select a thread while workspace activation is held', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    activeThreadId: 't-a',
+    threads: [thread('t-a')],
+  })
+  let release = (): void => undefined
+  const api = makeApi({
+    workspaceSet: (path) =>
+      new Promise<string>((resolve) => {
+        release = (): void => {
+          resolve(path)
+        }
+      }),
+    loadProjectThreads: async () => [thread('t-b')],
+  })
+  switchProjectThread(store, api, 'b', 't-b')
+  await waitUntil(() => store.getState().activeThreadId === 't-b')
+  assert.equal(store.getState().activeProjectId, 'b')
+  release()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+})
+
+test('folder-open callers still await activation after the conversation becomes visible', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    activeThreadId: 't-a',
+    threads: [thread('t-a')],
+  })
+  let release = (): void => undefined
+  const api = makeApi({
+    workspaceOpen: async () => '/b',
+    workspaceSet: (path) =>
+      new Promise<string>((resolve) => {
+        release = (): void => {
+          resolve(path)
+        }
+      }),
+    loadProjectThreads: async () => [thread('t-b')],
+  })
+  let completed = false
+  const opened = addProject(store, api).then((result) => {
+    completed = true
+    return result
+  })
+  await waitUntil(() => store.getState().activeProjectId === 'b')
+  assert.equal(completed, false)
+  const secondOpen = addProject(store, api)
+  await Promise.resolve()
+  release()
+  assert.equal(await opened, true)
+  assert.equal(await secondOpen, true)
 })

@@ -554,6 +554,11 @@ export function saveProjectGroups(api: ApiClient, groups: ProjectGroup[]): Promi
 
 const threadLoadRevisions = new WeakMap<ApiClient, Map<string, number>>()
 
+/** Revision shared by in-flight reads and resident project snapshots. */
+export function projectThreadLoadRevision(api: ApiClient, projectId: string): number {
+  return threadLoadRevisions.get(api)?.get(projectId) ?? 0
+}
+
 /** Discard metadata responses that started before a main-process archive/restore. */
 export function invalidateProjectThreadLoads(api: ApiClient, projectId: string): void {
   let revisions = threadLoadRevisions.get(api)
