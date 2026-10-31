@@ -1158,14 +1158,16 @@ describe('remote ACP agents are never treated as sandboxed', () => {
     }
   })
 
-  it('classifies a kind-less command exactly like an execute request', async () => {
+  it('classifies a kind-less command like an execute request outside the sandbox', async () => {
     for (const command of ['gh api repos/octo/app/issues', 'rm -rf build']) {
       for (const [posture, root] of [
         [remote(), REMOTE_ROOT],
         [local(), LOCAL_ROOT],
       ] as const) {
+        // The agent's sandbox contains only its own shell, so a kind-less
+        // command is judged as an execute request without that claim.
         const asExecute = await answer(
-          posture,
+          { ...posture, sandboxed: false },
           'gemini',
           permissionRequest({ kind: 'execute', rawInput: { command } }),
           root,
@@ -1179,6 +1181,24 @@ describe('remote ACP agents are never treated as sandboxed', () => {
         assert.deepEqual(kindless, asExecute, `${command} on ${root}`)
       }
     }
+  })
+
+  it("does not auto-run an unclassified tool's command on the agent's sandbox", async () => {
+    // An MCP tool argument (a Redis or SQL command) runs outside the agent's
+    // seatbelt, so a sandboxed agent's kind-less call still prompts.
+    for (const command of ['GET user:1', 'ls']) {
+      const kindless = permissionRequest({ title: 'mcp__redis__exec', rawInput: { command } })
+      assert.deepEqual(await answer(local(), 'gemini', kindless, LOCAL_ROOT), {
+        prompted: true,
+        approved: false,
+      })
+    }
+    // The agent's own shell keeps its sandboxed auto-run.
+    const execute = permissionRequest({ kind: 'execute', rawInput: { command: 'ls' } })
+    assert.deepEqual(await answer(local(), 'gemini', execute, LOCAL_ROOT), {
+      prompted: false,
+      approved: true,
+    })
   })
 
   it('does not waive a prompt for a title that claims a bridged native tool', async () => {

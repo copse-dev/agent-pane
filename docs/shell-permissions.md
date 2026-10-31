@@ -398,11 +398,16 @@ simulator does not enable renderer control; discrete agent input is a separate a
 agent's `session/request_permission`. A request **runs a command** when either:
 
 - its kind is `execute`, with the command in `rawInput.command` or, failing that, in the title; or
-- it has no kind, or ACP's catch-all `other`, and carries `rawInput.command`
-  (`acpShellCommandText`). ACP makes `kind` optional, so an agent can omit it.
+- it has no kind, or ACP's catch-all `other`, and carries a `rawInput.command` string or argv
+  (`acpShellCommandText`). ACP makes `kind` optional, so an agent can omit it. A structured
+  `command` object is a tool's argument, not a command line.
 
 A request that runs a command goes through the shell gate (`ensureShellCommandPermitted`), like
-native `run_shell`, after the bridged-tool check (Copse re-gates those calls when they run). Its
+native `run_shell`, after the bridged-tool check (Copse re-gates those calls when they run). Only
+an `execute` request runs in the agent's own shell, so only it carries the agent's sandbox claim
+into the gate. An unclassified request's `command` may be an MCP tool argument (a Redis or SQL
+command) that runs outside that sandbox, so it is judged as unsandboxed and never auto-runs on the
+sandbox. Its
 answer is never remembered, and no stored grant answers it. Remembered grants are keyed by agent
 and tool kind only. One remembered command approval would therefore approve every later command of
 that kind, such as `rm -rf`, before the gate classified, sandboxed or confirmed it. The grant store

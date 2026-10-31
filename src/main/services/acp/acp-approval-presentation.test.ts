@@ -276,6 +276,9 @@ describe('acpShellCommandText', () => {
         null,
       )
       assert.equal(command({ ...kindField, rawInput: { command: null } }), null)
+      // A structured `command` is a tool's argument, not a command line.
+      assert.equal(command({ ...kindField, rawInput: { command: { op: 'set' } } }), null)
+      assert.equal(command({ ...kindField, rawInput: { command: ['ls', '-la'] } }), 'ls -la')
     }
   })
 

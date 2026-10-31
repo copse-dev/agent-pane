@@ -1318,7 +1318,11 @@ async function respondToPermission(
       : signal
     try {
       const executeResponse = await respondToAcpExecutePermission(
-        agent,
+        // Only an `execute` request runs in the agent's own shell. An
+        // unclassified call's `command` may be an MCP tool argument (a Redis or
+        // SQL command) that runs outside that sandbox, so it is judged without
+        // the sandbox's containment claim: gated, never auto-run on it.
+        kind === 'execute' ? agent : { ...agent, sandboxed: false },
         req,
         shellCommand,
         root,
