@@ -1,3 +1,4 @@
+import { SIMULATOR_REMOVED_DETAIL } from '@shared/types/simulator-desktop.ts'
 import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
 import type RFB from '@novnc/novnc'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
@@ -1799,6 +1800,7 @@ function mountVncSession(
     simulatorView?.frame(frame)
   })
   const stopSimulatorStatus = api.simulatorDesktop.onStatus((event) => {
+    if (event.status === 'closed' && event.detail === SIMULATOR_REMOVED_DETAIL) void loadMachines()
     if (event.id !== simulatorSessionId) return
     if (event.status === 'error') {
       clearViewer(

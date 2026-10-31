@@ -13,7 +13,7 @@ import {
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import { getSetting } from '../services/storage/settings.ts'
-import { showSimulatorDesktop } from '../services/simulator-desktop/simulator-desktop-panel.ts'
+import { showSimulatorDesktopWithFrame } from '../services/simulator-desktop/simulator-desktop-panel.ts'
 import { getSimulatorDesktopService } from '../services/simulator-desktop/simulator-desktop-service.ts'
 
 const deviceId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/)
@@ -31,7 +31,7 @@ const input = z.discriminatedUnion('type', [
 export const deviceHubTool = defineTool({
   name: 'device_hub',
   description:
-    'Use Apple Device Hub on a local Mac. List physical devices and simulators, open Device Hub, list installed apps, launch an installed bundle ID, or capture a screenshot. Optional screenshot output_path saves a new PNG file inside the executing workspace; existing files are never overwritten. An image attachment alone is not a saved workspace file. Show opens a booted simulator in Copse’s Desktop panel, initially view-only. Input sends a discrete simulator tap (normalized x/y), USB HID key, or hardware button. Physical-device input and live embedding are not supported; use Device Hub for those. Requires an enrolled Apple Development project and tool permission. Build/install apps with the bundled XcodeBuildMCP tools.',
+    'Use Apple Device Hub on a local Mac. List physical devices and simulators, open Device Hub, list installed apps, launch an installed bundle ID, capture a screenshot, or delete an explicitly requested disposable simulator by UUID and verify absence. Deletion requires per-call approval. Optional screenshot output_path saves a new PNG file inside the executing workspace; existing files are never overwritten. An image attachment alone is not a saved workspace file. Show opens a booted simulator in Copse’s Desktop panel, initially view-only. Input sends a discrete simulator tap (normalized x/y), USB HID key, or hardware button. Physical-device input and live embedding are not supported; use Device Hub for those. Requires an enrolled Apple Development project and tool permission. Build/install apps with the bundled XcodeBuildMCP tools.',
   provenance: 'external',
   parameters: z.discriminatedUnion('action', [
     z.object({ action: z.literal('list') }),
@@ -51,6 +51,7 @@ export const deviceHubTool = defineTool({
         .optional()
         .describe('New workspace-relative PNG file to save; existing files are never overwritten.'),
     }),
+    z.object({ action: z.literal('delete_simulator'), device_id: z.uuid() }),
     z.object({ action: z.literal('show'), device_id: deviceId }),
     z.object({ action: z.literal('input'), device_id: deviceId, input }),
   ]),
@@ -74,6 +75,12 @@ export const deviceHubTool = defineTool({
     if (args.action === 'apps') return deviceHubService.apps(args.device_id, signal)
     if (args.action === 'launch')
       return deviceHubService.launch(args.device_id, args.bundle_id, signal)
+    if (args.action === 'delete_simulator') {
+      const receipt = await getSimulatorDesktopService().retireDevice(args.device_id, () =>
+        deviceHubService.deleteSimulator(args.device_id, signal),
+      )
+      return JSON.stringify(receipt, null, 2)
+    }
     if (args.action === 'screenshot') {
       const root = requireAgentExecutionRoot()
       const destination = args.output_path
@@ -112,7 +119,7 @@ export const deviceHubTool = defineTool({
     if (args.action === 'show') {
       if (!getSetting<boolean>('vncEnabled', false))
         throw new Error('Enable the Desktop viewer in Settings first.')
-      showSimulatorDesktop(device.udid)
+      await showSimulatorDesktopWithFrame(device.udid, signal)
       return `Opened ${device.name} in the Desktop panel, view-only.`
     }
     await getSimulatorDesktopService().agentInput(device.udid, args.input, signal)

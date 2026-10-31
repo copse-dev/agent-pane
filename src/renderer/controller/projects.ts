@@ -515,7 +515,6 @@ export async function removeProject(store: AppStore, api: ApiClient, id: string)
     store.emit('projects_changed')
     store.emit('workspace_changed')
     store.emit('threads_changed')
-    store.emit('panel_changed')
     return
   }
 
@@ -593,7 +592,6 @@ function applyProjectSelection(
   store.emit('projects_changed')
   store.emit('workspace_changed')
   store.emit('threads_changed')
-  store.emit('panel_changed')
   residentThreads.remember(
     id,
     store.getState().threads,
@@ -904,7 +902,6 @@ export function setSidebarProjectFilter(
   projectId: string | null,
 ): void {
   store.setState({ sidebarProjectFilterId: projectId })
-  store.emit('sidebar_project_filter_changed')
   const thread = getActiveThread(store)
   const activeProjectId = store.getState().activeProjectId
   if (thread && !isBlankThread(thread)) {

@@ -1,7 +1,12 @@
 import { afterEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { ndJsonStream } from '@agentclientprotocol/sdk'
-import { ACP_SESSION_STARTUP_TIMEOUT_MS, openAcpSession, type AcpTransport } from './acp-client.ts'
+import { ndJsonStream } from '@agentclientprotocol/sdk/unstable'
+import {
+  ACP_SESSION_STARTUP_TIMEOUT_MS,
+  acpClientCapabilities,
+  openAcpSession,
+  type AcpTransport,
+} from './acp-client.ts'
 
 /**
  * An agent that never answers: its end of the pipe is never read, so
@@ -31,6 +36,12 @@ const CONFIG = { command: 'unused-in-tests', cwd: '/tmp/acp-startup-test' }
 describe('openAcpSession startup', () => {
   afterEach(() => {
     mock.timers.reset()
+  })
+
+  it('does not advertise notice or compaction without a host-owned lifecycle', () => {
+    const capabilities = acpClientCapabilities(true, true)
+    assert.deepEqual(capabilities.fs, { readTextFile: true, writeTextFile: true })
+    assert.equal(Object.hasOwn(capabilities, 'session'), false)
   })
 
   it('gives up on a hung initialize when the run is stopped', async () => {

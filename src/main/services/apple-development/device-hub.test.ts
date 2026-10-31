@@ -185,3 +185,68 @@ describe('Device Hub', () => {
     await assert.rejects(stat(output), { code: 'ENOENT' })
   })
 })
+
+describe('exact simulator deletion receipts', () => {
+  it('deletes only the selected simulator and verifies absence with CoreSimulator', async () => {
+    let deleted = false
+    const calls: string[][] = []
+    const service = new DeviceHubService(async (_file, args) => {
+      calls.push(args)
+      if (args[1] === 'list')
+        return JSON.stringify({
+          devices: { runtime: deleted ? [] : [{ udid: ID, state: 'Booted' }] },
+        })
+      if (args[1] === 'delete') deleted = true
+      return ''
+    })
+    const receipt = await service.deleteSimulator(ID, new AbortController().signal)
+    assert.deepEqual(receipt, { simulatorId: ID, deleted: true, verifiedAbsent: true })
+    assert.deepEqual(
+      calls.map((args) => args.slice(0, 3)),
+      [
+        ['simctl', 'list', 'devices'],
+        ['simctl', 'shutdown', ID],
+        ['simctl', 'delete', ID],
+        ['simctl', 'list', 'devices'],
+      ],
+    )
+    const before = calls.length
+    await assert.rejects(service.deleteSimulator('all', new AbortController().signal))
+    assert.equal(calls.length, before)
+  })
+  it('never reports cleanup when deletion or the final host query fails', async () => {
+    const service = new DeviceHubService(async (_file, args) => {
+      if (args[1] === 'list')
+        return JSON.stringify({ devices: { runtime: [{ udid: ID, state: 'Shutdown' }] } })
+      return ''
+    })
+    await assert.rejects(service.deleteSimulator(ID, new AbortController().signal), /still exists/)
+  })
+})
+
+it('reports absence idempotently and never fabricates cleanup after a failed host query', async () => {
+  const signal = new AbortController().signal
+  const absent = new DeviceHubService(async () => JSON.stringify({ devices: {} }))
+  assert.deepEqual(await absent.deleteSimulator(ID, signal), {
+    simulatorId: ID,
+    deleted: false,
+    verifiedAbsent: true,
+  })
+  for (const failure of ['invalid inventory', 'delete', 'verification']) {
+    let queries = 0
+    const service = new DeviceHubService(async (_file, args) => {
+      if (args[1] === 'list') {
+        queries++
+        if (failure === 'invalid inventory') return 'not JSON'
+        if (failure === 'verification' && queries > 1) throw new Error('host query failed')
+        return JSON.stringify({ devices: { runtime: [{ udid: ID, state: 'Shutdown' }] } })
+      }
+      if (failure === 'verification') return ''
+      throw new Error('native delete failed')
+    })
+    await assert.rejects(
+      service.deleteSimulator(ID, signal),
+      /unverified|host query failed|native delete failed/,
+    )
+  }
+})

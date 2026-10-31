@@ -189,6 +189,37 @@ export class DeviceHubService {
     return JSON.stringify(result.result)
   }
 
+  /** Exact UUID only. Shutdown/erase is never treated as deletion evidence. */
+  async deleteSimulator(
+    id: string,
+    signal: AbortSignal,
+  ): Promise<{ simulatorId: string; deleted: boolean; verifiedAbsent: true }> {
+    z.uuid().parse(id)
+    const schema = z.object({
+      devices: z.record(z.string(), z.array(z.object({ udid: z.uuid(), state: z.string() }))),
+    })
+    const list = async (): Promise<{ udid: string; state: string }[]> => {
+      const raw = await this.execute(
+        '/usr/bin/xcrun',
+        ['simctl', 'list', 'devices', '--json'],
+        signal,
+      )
+      const parsed = safeJsonParse(raw, decodeWithSchema(schema))
+      if (!parsed) throw new Error('CoreSimulator device query failed; cleanup is unverified.')
+      return Object.values(parsed.devices).flat()
+    }
+    const device = (await list()).find(
+      (candidate) => candidate.udid.toLowerCase() === id.toLowerCase(),
+    )
+    if (!device) return { simulatorId: id, deleted: false, verifiedAbsent: true }
+    if (device.state === 'Booted')
+      await this.execute('/usr/bin/xcrun', ['simctl', 'shutdown', device.udid], signal)
+    await this.execute('/usr/bin/xcrun', ['simctl', 'delete', device.udid], signal)
+    if ((await list()).some((candidate) => candidate.udid.toLowerCase() === id.toLowerCase()))
+      throw new Error(`Simulator ${id} still exists; cleanup is unverified.`)
+    return { simulatorId: id, deleted: true, verifiedAbsent: true }
+  }
+
   async screenshot(id: string, signal: AbortSignal): Promise<Buffer> {
     const device = await this.device(id, signal)
     return this.scratch(async (directory) => {

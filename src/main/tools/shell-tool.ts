@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { errorMessage } from '@shared/errors.ts'
-import { getAgentExecutionRoot } from '../services/execution-root.ts'
+import { currentAgentRoots, getAgentExecutionRoot } from '../services/execution-root.ts'
 import { isThreadCheckoutDeferred } from '../services/thread-execution-context.ts'
 import { REQUEST_WRITE_ACCESS_TOOL } from '@shared/tools/readonly-tools.ts'
 import {
@@ -367,7 +367,8 @@ export const runShellTool = defineTool({
     // command that would earn an unsandboxed retry simply retries in the same
     // guest, so the escalation questions below are answered without a prompt.
     const unattendedContainer = currentRunIsUnattendedContainer(threadId)
-    let outsideSandbox = shellRunsOutsideSandbox(command)
+    const agentRoots = currentAgentRoots()
+    let outsideSandbox = shellRunsOutsideSandbox(command, agentRoots)
 
     // Advisory only, and derived from the RAW model-authored command — the same
     // input the routing decision above reads, never the command's own output
@@ -388,7 +389,7 @@ export const runShellTool = defineTool({
     // not granting). Same RAW command as the routing decision above and as the
     // permission gate's read-access question, so the approval the user answered
     // and the seatbelt the command gets can never describe different paths.
-    const readGrantTargets = outsideSandbox ? shellReadGrantTargets(command, cwd) : null
+    const readGrantTargets = outsideSandbox ? shellReadGrantTargets(command, agentRoots, cwd) : null
     if (readGrantTargets) {
       outsideSandbox = false
       // Audit parity with the grant itself: the gate's `external-read` line says

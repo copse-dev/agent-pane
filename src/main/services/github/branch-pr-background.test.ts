@@ -76,7 +76,7 @@ describe('background branch PR reads', { skip: !gitOk }, () => {
         return getGitBranchStatus(project, branch, root, {
           runGh: async (args, options) => {
             remoteReads++
-            requests.push({ args, cwd: options?.cwd })
+            requests.push({ args, cwd: options.cwd ?? undefined })
             return response
           },
         })

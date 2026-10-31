@@ -14,10 +14,9 @@ import {
 import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
-import { getWorkspaceRoot } from '../workspace.ts'
 import { getChatStoreRoot } from '../workspace.ts'
 import { ensureThreadAccess, needsOtherThreadRead } from './thread-access.ts'
-import { getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
+import { currentAgentRoots, getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
 import {
   getActiveExecutionTarget,
   isSshExecutionTarget,
@@ -223,6 +222,12 @@ export interface ShellCommandPermissionOptions {
 }
 
 export interface TerminalPermissionOptions {
+  /**
+   * Root of the project the terminal is opened for, or null when it does not
+   * resolve. The caller names it so a window opening a terminal is not judged
+   * against whichever workspace another window last selected (#3958).
+   */
+  projectRoot: string | null
   sandboxEnabled?: boolean
   remoteTarget?: boolean
   /** Whether the OS has an ASRT backend at all. Defaults to this machine's. */
@@ -275,7 +280,11 @@ function autoApproveShell(
   executionRoot?: string | null,
   sandboxEnabled = commandRunsSandboxed(executionRoot ?? getAgentExecutionRoot()),
 ): boolean {
-  const decision = resolveAutoApproval(command, executionRoot, sandboxEnabled)
+  const decision = resolveAutoApproval(
+    command,
+    { projectRoot: getAgentProjectRoot(), executionRoot: executionRoot ?? getAgentExecutionRoot() },
+    sandboxEnabled,
+  )
   if (decision.action !== 'auto-approve') return false
   recordDecision({
     kind: 'shell',
@@ -316,7 +325,7 @@ async function requestEscalationApproval(
   leaseIdentity?: ShellReplayLeaseIdentity,
 ): Promise<boolean> {
   if (signal?.aborted) return false
-  const trustable = offerableTrustedCommand(parts.command)
+  const trustable = offerableTrustedCommand(parts.command, getAgentProjectRoot())
   const { approved, remember, grantScope } = await requestApproval(
     {
       title,
@@ -1451,7 +1460,7 @@ export async function ensureShellCommandPermitted(
   // AND the workspace to be trusted, and never waives analysis for an untrusted
   // co-segment, so this can only fire for a genuinely safe command line.
   if (!guardedYolo && !forceAsk) {
-    const routing = routeShellCommand(command)
+    const routing = routeShellCommand(command, currentAgentRoots())
     if (routing.outcome === 'allow') {
       recordDecision({
         kind: 'shell',
@@ -1525,7 +1534,9 @@ export async function ensureShellCommandPermitted(
 
   const outsideSandbox =
     shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled) ||
-    (guardedYolo && sandboxEnabled && routeShellCommand(command).outcome === 'allow')
+    (guardedYolo &&
+      sandboxEnabled &&
+      routeShellCommand(command, currentAgentRoots()).outcome === 'allow')
   const auditGuardedYolo = (
     userResponse: 'approved' | 'declined' | 'not-required',
     promptedBy?: string[],
@@ -1900,10 +1911,8 @@ async function checkBackgroundProcessPermission(
  * not add a separate approval boundary. Agent shell confinement stays on
  * run_shell / run_background. (#662, #803, #812)
  */
-export async function ensureTerminalPermitted(
-  opts: TerminalPermissionOptions = {},
-): Promise<boolean> {
-  if (!getWorkspaceRoot()) throw new Error('No workspace open.')
+export async function ensureTerminalPermitted(opts: TerminalPermissionOptions): Promise<boolean> {
+  if (!opts.projectRoot) throw new Error('No workspace open.')
   const decision = decideTerminalPermission({
     sandboxEnabled: opts.sandboxEnabled ?? isProjectSandboxEnabled(),
     remoteTarget: opts.remoteTarget ?? isSshExecutionTarget(getActiveExecutionTarget()),
@@ -2256,7 +2265,10 @@ async function decideToolPermitted(
     )
   } else if (toolName === 'device_hub') {
     // Host device access (including screenshots) is not project-sandboxed.
-    permitted = explicitPolicy === 'allow' || (await promptExplicitToolAsk(toolName, args, signal))
+    const deletingSimulator = isRecord(args) && args['action'] === 'delete_simulator'
+    permitted =
+      (!deletingSimulator && explicitPolicy === 'allow') ||
+      (await promptExplicitToolAsk(toolName, args, signal))
   } else if (toolName === 'launch_gui_app') {
     // Always prompt — GUI launch leaves the sandbox and puts a window on the
     // desktop. A stale stored allow is coerced to ask by tool-permissions.ts;
