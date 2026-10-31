@@ -58,7 +58,7 @@ const MCP_UI_CANVAS_CAPABILITY_DECL: PluginCapabilityDecl = {
   name: MCP_UI_CANVAS_CAPABILITY,
   title: 'MCP-UI canvas rendering',
   description:
-    'Recognise UI resources returned by MCP tools (self-contained HTML) and render them as a fully sandboxed artefact in the Browser pane, plus a bundled canvas server exposing render_html_artefact and render_explainer for captioned animations in the conversation. While off, UI resources are treated as plain tool output.',
+    'Recognise UI resources returned by MCP tools (self-contained HTML) and render them as a fully sandboxed artefact in the Browser pane. Includes a canvas service for interactive pages and captioned animations in the conversation. While off, UI resources are treated as plain tool output.',
 }
 
 /**

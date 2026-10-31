@@ -314,7 +314,7 @@ describe('settings automations plugin', function () {
       await expect(row).toExist()
       await expect(row.$('input')).not.toBeChecked()
     }
-    await filter.setValue('git_push')
+    await filter.setValue('push branches')
     await browser.waitUntil(
       async () => (await detail.$$('.automation-permission-row')).length === 1,
     )
@@ -325,7 +325,7 @@ describe('settings automations plugin', function () {
       detail.$('.automation-permission-row[data-tool-name="git_push"] input'),
     ).toBeChecked()
     await saveElementScreenshot('.automation-permissions', 'settings-automation-push-grant.png')
-    await filter.setValue('publish_weekly')
+    await filter.setValue('publish weekly')
     await browser.waitUntil(
       async () => (await detail.$$('.automation-permission-row').getElements()).length === 1,
     )
