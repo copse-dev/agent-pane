@@ -208,6 +208,7 @@ export interface SettingsValues {
   webAllowedOrigins: Array<string>
   webAllowUserApproval: boolean
   browserAllowUserApproval: boolean
+  desktopControlAllowedApps: Array<string>
   approvedProviderHosts: Array<string>
   providerAllowUserApproval: boolean
   extraProviders: Array<{
@@ -272,6 +273,7 @@ type DedicatedSettingKey =
   | 'webAllowedOrigins'
   | 'webAllowUserApproval'
   | 'browserAllowUserApproval'
+  | 'desktopControlAllowedApps'
   | 'approvedProviderHosts'
   | 'providerAllowUserApproval'
   | 'extraProviders'

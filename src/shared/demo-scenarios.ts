@@ -17,6 +17,7 @@ import { CONCISE_SCREENSHOT, CONCISE_STATE_SCENARIOS } from './demo-concise-stat
 import { BRIDGED_TOOL_SCENARIOS } from './demo-bridged-tools.ts'
 import {
   browserApprovalDetails,
+  desktopAppApproval,
   providerApprovalDetails,
   webApprovalDetails,
   threadAccessApproval,
@@ -3925,5 +3926,27 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ...providerApprovalDetails('api.example.com', 'https://api.example.com/v1'),
     allowRemember: false,
     approveLabel: 'Always allow host',
+  }),
+  approvalRiskScenario('approval-desktop-app', {
+    id: 'desktop-app',
+    type: 'mcp',
+    ...desktopAppApproval({
+      bundleId: 'com.apple.Notes',
+      action: 'read its window contents',
+      allowRemember: true,
+      threadScoped: true,
+    }),
+  }),
+  approvalRiskScenario('approval-desktop-finder', {
+    id: 'desktop-finder',
+    type: 'mcp',
+    ...desktopAppApproval({
+      bundleId: 'com.apple.finder',
+      action: 'activate element e12',
+      caution:
+        'Finder can open scripts and apps, including ones the agent wrote, and they run outside the shell permission gate.',
+      allowRemember: true,
+      threadScoped: true,
+    }),
   }),
 ]

@@ -182,6 +182,15 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'browser_tabs',
   // Only promotes an already-open page or this thread's rendered artefact.
   'browser_show',
+  // Computer use (`copse.computer-use`). Registered only while the plugin is
+  // enabled; every call re-enters the per-app permission gate.
+  'desktop_apps',
+  'desktop_snapshot',
+  'desktop_screenshot',
+  'desktop_click',
+  'desktop_type',
+  'desktop_key',
+  'desktop_menu',
 ]
 
 /**

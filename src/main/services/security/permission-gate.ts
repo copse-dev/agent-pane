@@ -52,6 +52,7 @@ import { decideContainedShellEffect } from '@copse/shell-guard/container-effects
 import { detectCheckoutDetachingCommand } from '@copse/shell-guard/checkout-detach.ts'
 import { isInsideManagedThreadWorktree } from '../worktree-manager.ts'
 import { observeApprovalResolutions, requestApproval, type ApprovalRequest } from '../approval.ts'
+import { checkDesktopAppPermission, isDesktopControlTool } from './desktop-app-permission.ts'
 import { recordDecision } from './decision-log-store.ts'
 import { getSetting, updateSetting, resolveApiKey } from '../storage/settings.ts'
 import {
@@ -2263,6 +2264,8 @@ async function decideToolPermitted(
       signal,
       explicitPolicy,
     )
+  } else if (isDesktopControlTool(toolName)) {
+    permitted = await checkDesktopAppPermission(toolName, args, signal, explicitPolicy)
   } else if (toolName === 'device_hub') {
     // Host device access (including screenshots) is not project-sandboxed.
     const deletingSimulator = isRecord(args) && args['action'] === 'delete_simulator'

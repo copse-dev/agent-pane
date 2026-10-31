@@ -96,6 +96,8 @@ export const PROMPT_CAUSES = [
    * desktop, not a confined guest.
    */
   'gui-app-launch',
+  /** Computer use reading or operating a Mac app for the first time in a thread. */
+  'desktop-app-control',
   /**
    * Arming a mode the user themselves just asked for. Not an interruption —
    * counted so the log stays complete, and labelled so a reader discounts it.
@@ -174,6 +176,7 @@ const CONTAINMENT: Readonly<Record<PromptCause, PromptCauseContainment>> = {
   // A GUI launch is an authorization for a visible host app — the window
   // server is outside any guest, so a container never removes this ask.
   'gui-app-launch': 'kept',
+  'desktop-app-control': 'kept',
   'mode-arming': 'kept',
   'thread-read-access': 'kept',
   'thread-send-access': 'kept',
@@ -213,6 +216,7 @@ const LABELS: Readonly<Record<PromptCause, string>> = {
   'acp-package-setup': 'Coding agent package setup',
   'acp-remote-env': 'Forwarding coding agent environment to a remote host',
   'gui-app-launch': 'Launch a host GUI app',
+  'desktop-app-control': 'Operate a Mac app',
   'mode-arming': 'Arming a mode (user-initiated, not an interruption)',
   'thread-read-access': 'Reading other threads',
   'thread-send-access': 'Sending prompts to other threads',
