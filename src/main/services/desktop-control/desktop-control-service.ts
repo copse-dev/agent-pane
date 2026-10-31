@@ -371,14 +371,20 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-function run(file: string, args: readonly string[], env: NodeJS.ProcessEnv): Promise<void> {
+/** Run a build tool and resolve with its stdout. */
+function run(file: string, args: readonly string[], env: NodeJS.ProcessEnv): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(file, args, { env, stdio: ['ignore', 'ignore', 'pipe'] })
+    const child = spawn(file, args, { env, stdio: ['ignore', 'pipe', 'pipe'] })
+    let stdout = ''
     let stderr = ''
     const timer = setTimeout(() => {
       child.kill('SIGTERM')
     }, COMPILE_TIMEOUT_MS)
     timer.unref()
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (chunk: string) => {
+      stdout = (stdout + chunk).slice(-MAX_DIAGNOSTIC_CHARS)
+    })
     child.stderr.setEncoding('utf8')
     child.stderr.on('data', (chunk: string) => {
       stderr = (stderr + chunk).slice(-MAX_DIAGNOSTIC_CHARS)
@@ -389,13 +395,47 @@ function run(file: string, args: readonly string[], env: NodeJS.ProcessEnv): Pro
     })
     child.once('close', (code) => {
       clearTimeout(timer)
-      if (code === 0) resolve()
+      if (code === 0) resolve(stdout)
       else reject(new Error(stderr.trim() || `${file} exited with code ${String(code)}`))
     })
   })
 }
 
 let compiled: Promise<string> | null = null
+
+/**
+ * The designated requirement from `codesign -d -r-` output. Ad-hoc signatures
+ * print theirs as a comment (`# designated => cdhash H"…"`). Null when the
+ * output has none or it is not plain printable ASCII.
+ */
+export function parseDesignatedRequirement(output: string): string | null {
+  const match = /^(?:# )?designated => (.+)$/m.exec(output)
+  const requirement = match?.[1]?.trim()
+  return requirement && /^[\x20-\x7e]+$/.test(requirement) ? requirement : null
+}
+
+/**
+ * The helper source with the caller requirement prepended as a Swift constant.
+ * The requirement is printable ASCII, so escaping `\` and `"` is enough.
+ */
+export function helperSourceWithCallerRequirement(source: string, requirement: string): string {
+  const literal = requirement.replaceAll('\\', '\\\\').replaceAll('"', '\\"')
+  return `let expectedCallerRequirement = "${literal}"\n${source}`
+}
+
+/** The code requirement of the running Copse executable: the helper's only accepted caller. */
+async function copseCallerRequirement(env: NodeJS.ProcessEnv): Promise<string> {
+  const output = await run('/usr/bin/codesign', ['-d', '-r-', process.execPath], env).catch(
+    () => '',
+  )
+  const requirement = parseDesignatedRequirement(output)
+  if (!requirement) {
+    throw new Error(
+      'Computer use needs a code-signed Copse: the desktop helper only accepts Copse as its caller.',
+    )
+  }
+  return requirement
+}
 
 /**
  * Compile the helper when its source changes, always to the same path.
@@ -407,32 +447,42 @@ let compiled: Promise<string> | null = null
  * long as the path is stable. `CSC_NAME` (electron-builder's identity name)
  * selects that signature for development; a shipped build should carry a
  * prebuilt, notarized helper instead.
+ *
+ * The Copse executable's own code requirement is compiled in, and the helper
+ * refuses any other parent, so its privacy grants are not usable by other
+ * local processes that run the binary directly.
  */
 async function compileHelper(): Promise<string> {
   const sourceDirectory = helperSourceDirectory()
   const source = join(sourceDirectory, 'copse-desktop.swift')
   const plist = join(sourceDirectory, 'Info.plist')
-  const [sourceBytes, plistBytes] = await Promise.all([readFile(source), readFile(plist)])
+  const [sourceText, plistBytes] = await Promise.all([readFile(source, 'utf8'), readFile(plist)])
+  const directory = join(getElectronUserDataPath(), 'native-helpers', 'desktop-control')
+  const binary = join(directory, 'copse-desktop')
+  const moduleCache = join(directory, 'module-cache')
+  const env = {
+    ...process.env,
+    CLANG_MODULE_CACHE_PATH: moduleCache,
+    SWIFT_MODULE_CACHE_PATH: moduleCache,
+  }
+  const generatedSource = helperSourceWithCallerRequirement(
+    sourceText,
+    await copseCallerRequirement(env),
+  )
   const digest = createHash('sha256')
-    .update(sourceBytes)
+    .update(generatedSource)
     .update(plistBytes)
     .digest('hex')
     .slice(0, 16)
-  const directory = join(getElectronUserDataPath(), 'native-helpers', 'desktop-control')
-  const binary = join(directory, 'copse-desktop')
   const configuredIdentity = process.env['CSC_NAME']?.trim()
   const identity = configuredIdentity?.length ? configuredIdentity : '-'
   const stamp = join(directory, 'build-stamp')
   const expectedStamp = `${digest} ${identity}`
   const currentStamp = await readFile(stamp, 'utf8').catch(() => '')
   if (currentStamp === expectedStamp && (await exists(binary))) return binary
-  const moduleCache = join(directory, 'module-cache')
   await mkdir(moduleCache, { recursive: true })
-  const env = {
-    ...process.env,
-    CLANG_MODULE_CACHE_PATH: moduleCache,
-    SWIFT_MODULE_CACHE_PATH: moduleCache,
-  }
+  const compiledSource = join(directory, 'copse-desktop.swift')
+  await writeFile(compiledSource, generatedSource)
   const partial = `${binary}.partial`
   await run(
     '/usr/bin/xcrun',
@@ -457,7 +507,7 @@ async function compileHelper(): Promise<string> {
       '__info_plist',
       '-Xlinker',
       plist,
-      source,
+      compiledSource,
       '-o',
       partial,
     ],

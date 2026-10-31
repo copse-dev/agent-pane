@@ -16,14 +16,15 @@
 //
 // Password fields (AXSecureTextField) never have their value read.
 //
-// Compile:
-//   swiftc -O -swift-version 5 -framework AppKit -framework ApplicationServices \
-//     -framework ScreenCaptureKit copse-desktop.swift -o copse-desktop
+// Copse compiles this file with one generated line prepended:
+//   let expectedCallerRequirement = "<code requirement of the Copse executable>"
+// and the helper serves no other parent (see "Caller check" below).
 
 import AppKit
 import ApplicationServices
 import Foundation
 import ScreenCaptureKit
+import Security
 
 // Private but long-stable: maps an AX window element to its CGWindowID. Used by
 // every macOS window manager (yabai, Rectangle, Hammerspoon).
@@ -521,8 +522,65 @@ func handle(_ method: String, _ params: [String: Any]) throws -> Any {
 func responsibility_spawnattrs_setdisclaim(_ attrs: UnsafeMutablePointer<posix_spawnattr_t?>, _ disclaim: Int32) -> Int32
 
 let disclaimedFlag = "--disclaimed"
+let isDisclaimedCopy = CommandLine.arguments.contains(disclaimedFlag)
+
+// MARK: - Caller check
+//
+// Disclaiming makes this binary its own TCC subject, so any process that ran
+// it would inherit its Accessibility and Screen Recording grants without
+// Copse's per-app approval. The helper therefore serves only Copse: its parent
+// must satisfy the code requirement of the Copse executable that compiled it.
+// The disclaimed copy's parent is the launcher copy, which must be this same
+// binary, and whose own parent must be Copse. Anything else exits before a
+// single request is read.
+
+func parentPid(of pid: pid_t) -> pid_t? {
+  var info = kinfo_proc()
+  var size = MemoryLayout<kinfo_proc>.stride
+  var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+  guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return nil }
+  return info.kp_eproc.e_ppid
+}
+
+func process(_ pid: pid_t, satisfies requirement: SecRequirement) -> Bool {
+  var code: SecCode?
+  let attributes = [kSecGuestAttributePid: NSNumber(value: pid)] as CFDictionary
+  guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess, let code else {
+    return false
+  }
+  return SecCodeCheckValidity(code, [], requirement) == errSecSuccess
+}
+
+func ownRequirement() -> SecRequirement? {
+  var me: SecCode?
+  guard SecCodeCopySelf([], &me) == errSecSuccess, let me else { return nil }
+  var staticCode: SecStaticCode?
+  guard SecCodeCopyStaticCode(me, [], &staticCode) == errSecSuccess, let staticCode else { return nil }
+  var requirement: SecRequirement?
+  guard SecCodeCopyDesignatedRequirement(staticCode, [], &requirement) == errSecSuccess else { return nil }
+  return requirement
+}
+
+func callerIsCopse() -> Bool {
+  var copse: SecRequirement?
+  guard SecRequirementCreateWithString(expectedCallerRequirement as CFString, [], &copse) == errSecSuccess,
+        let copse else { return false }
+  var caller = getppid()
+  if isDisclaimedCopy {
+    guard let me = ownRequirement(), process(caller, satisfies: me),
+          let launcherParent = parentPid(of: caller) else { return false }
+    caller = launcherParent
+  }
+  return process(caller, satisfies: copse)
+}
+
+if !callerIsCopse() {
+  FileHandle.standardError.write("copse-desktop: refusing to serve a caller that is not Copse\n".data(using: .utf8)!)
+  exit(77)
+}
+
 var disclaimedChild: pid_t = 0
-if !CommandLine.arguments.contains(disclaimedFlag), ProcessInfo.processInfo.environment["COPSE_DESKTOP_NO_DISCLAIM"] == nil {
+if !isDisclaimedCopy {
   var attrs: posix_spawnattr_t?
   posix_spawnattr_init(&attrs)
   _ = responsibility_spawnattrs_setdisclaim(&attrs, 1)

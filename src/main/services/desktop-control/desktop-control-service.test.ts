@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { afterEach, describe, it } from 'node:test'
-import { DesktopControlService } from './desktop-control-service.ts'
+import {
+  DesktopControlService,
+  helperSourceWithCallerRequirement,
+  parseDesignatedRequirement,
+} from './desktop-control-service.ts'
 
 // A stand-in for the Swift helper that speaks the same line protocol, so the
 // service's process handling is exercised across a real pipe.
@@ -81,5 +85,34 @@ describe('DesktopControlService', () => {
     const controller = new AbortController()
     controller.abort(new Error('stop'))
     await assert.rejects(service.apps(controller.signal), /stop/)
+  })
+})
+
+describe('helper caller requirement', () => {
+  it('reads Developer ID and ad-hoc designated requirements from codesign output', () => {
+    assert.equal(
+      parseDesignatedRequirement(
+        'designated => identifier "dev.copse.app" and anchor apple generic and certificate leaf[subject.OU] = "ABCDE12345"\n',
+      ),
+      'identifier "dev.copse.app" and anchor apple generic and certificate leaf[subject.OU] = "ABCDE12345"',
+    )
+    assert.equal(
+      parseDesignatedRequirement(
+        '# designated => cdhash H"4746041b12c97641943a947516009f07ff580a1e"\n',
+      ),
+      'cdhash H"4746041b12c97641943a947516009f07ff580a1e"',
+    )
+  })
+
+  it('rejects output without a requirement or with characters it cannot embed', () => {
+    assert.equal(parseDesignatedRequirement('code object is not signed at all\n'), null)
+    assert.equal(parseDesignatedRequirement('designated => identifier "x\u0007"'), null)
+  })
+
+  it('prepends the requirement as an escaped Swift string constant', () => {
+    assert.equal(
+      helperSourceWithCallerRequirement('print(1)\n', 'identifier "a\\b"'),
+      'let expectedCallerRequirement = "identifier \\"a\\\\b\\""\nprint(1)\n',
+    )
   })
 })
