@@ -88,6 +88,7 @@ import {
   residentRequestMatches,
 } from '../controller/thread-filter.ts'
 import { sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
+import { formatAge, formatAgeLong } from '../controller/activity-model.ts'
 import {
   groupRowsByStatus,
   orderSidebarRows,
@@ -1649,7 +1650,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     function renderThreadRow(
       project: Project,
       thread: SidebarThread,
-      options: { displayTitle?: string; allowRename?: boolean } = {},
+      options: { displayTitle?: string; allowRename?: boolean; statusDetails?: boolean } = {},
     ): HTMLElement {
       const activeId = project.id === activeProjectId ? activeThreadId : null
       const displayTitle = (options.displayTitle ?? thread.title) || 'New Thread'
@@ -1698,13 +1699,36 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           })
         }
       }
+      let content = title
+      if (options.statusDetails) {
+        const details = el('span', { class: 'chat-thread-details' })
+        if (thread.createdAt !== undefined && Number.isFinite(thread.createdAt)) {
+          const elapsed = Math.max(0, Date.now() - thread.createdAt)
+          details.append(
+            el(
+              'time',
+              {
+                class: 'chat-thread-age',
+                datetime: new Date(thread.createdAt).toISOString(),
+                title: `Started ${new Date(thread.createdAt).toLocaleString()}`,
+                'aria-label': `Started ${formatAgeLong(elapsed)} ago`,
+              },
+              formatAge(elapsed),
+            ),
+          )
+        }
+        details.append(
+          el('span', { class: 'chat-thread-owner' }, `· ${projectDisplayName(project)}`),
+        )
+        content = el('span', { class: 'chat-thread-content' }, title, details)
+      }
       const chatRow = el(
         'div',
         {
           class: `chat-row${thread.automation ? ' is-automation' : ''}${thread.id === activeThreadId && project.id === activeProjectId ? ' selected' : ''}`,
           'data-thread-id': thread.id,
         },
-        title,
+        content,
       )
       chatRow.addEventListener('click', () => {
         if (renaming?.threadId === thread.id) return
@@ -1831,10 +1855,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
       if (thread.status === 'running') {
         chatRow.classList.add('is-running')
-        chatRow.insertBefore(runningStatus('Agent is working'), title)
+        chatRow.insertBefore(runningStatus('Agent is working'), content)
       } else if (isAutomationPendingStart(thread)) {
         chatRow.classList.add('is-running')
-        chatRow.insertBefore(runningStatus('Starting…'), title)
+        chatRow.insertBefore(runningStatus('Starting…'), content)
       } else if (
         (thread.unreadAt !== undefined ||
           getSideChatUnreadParents(store, project.id).has(thread.id)) &&
@@ -1850,7 +1874,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 ? 'Unread agent completion'
                 : 'Unread reply in a side chat',
           }),
-          title,
+          content,
         )
       }
 
@@ -2675,12 +2699,14 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           for (const thread of paged.visibleThreads) {
             const project = owners.get(byThread.get(thread)?.projectId ?? '')
             if (!project) continue
-            const row = renderThreadRow(project, thread)
-            row
-              .querySelector('.chat-title')
-              ?.after(
-                el('span', { class: 'chat-thread-owner' }, `· ${projectDisplayName(project)}`),
-              )
+            const row = renderThreadRow(project, thread, { statusDetails: mode === 'status' })
+            if (mode !== 'status') {
+              row
+                .querySelector('.chat-title')
+                ?.after(
+                  el('span', { class: 'chat-thread-owner' }, `· ${projectDisplayName(project)}`),
+                )
+            }
             chats.append(row)
           }
           if (paged.hasMore) {

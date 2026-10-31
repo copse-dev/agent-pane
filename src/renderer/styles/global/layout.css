@@ -744,6 +744,32 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Status grouping gives the title its own line; metadata shares the line below. */
+.chat-thread-content {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+.chat-thread-details {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+}
+.chat-thread-age {
+  flex: none;
+}
+.chats-list .chat-thread-details .chat-thread-owner {
+  display: block;
+  flex: 1 1 auto;
+  max-width: none;
+  margin-left: 0;
+}
 .chat-title-rename {
   flex: 1 1 auto;
   min-width: 0;

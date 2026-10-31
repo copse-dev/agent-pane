@@ -23,6 +23,8 @@ function thread(id: string, title: string, status: Thread['status'] = 'idle'): T
   }
 }
 
+const disposers: Array<() => void> = []
+
 function mount(
   group: ThreadGroupMode,
   threads: Thread[] = [
@@ -61,7 +63,7 @@ function mount(
   })
   const host = document.createElement('div')
   document.body.append(host)
-  mountProjectsPane(host, store, api)
+  disposers.push(mountProjectsPane(host, store, api))
   return { store, saved }
 }
 
@@ -71,6 +73,7 @@ const titles = (): string[] =>
   Array.from(document.querySelectorAll('.chat-row .chat-title')).map((n) => n.textContent)
 
 afterEach(() => {
+  for (const dispose of disposers.splice(0)) dispose()
   resetAttention()
   document.body.replaceChildren()
 })
@@ -88,6 +91,46 @@ describe('projects pane group by (component)', () => {
     assert.equal(document.querySelector('.project-twisty'), null)
     assert.deepEqual(headings(), ['Needs you', 'Working', 'Recent'])
     assert.deepEqual(titles(), ['Asker', 'Runner', 'Idle one'])
+  })
+
+  it('gives status titles their own line above creation age and project', () => {
+    const now = Date.now()
+    const hourOld = {
+      ...thread('hour', 'A longer title with room to read'),
+      createdAt: now - 3_600_000,
+      updatedAt: now,
+    }
+    const dayOld = {
+      ...thread('day', 'Started yesterday'),
+      createdAt: now - 86_400_000,
+      updatedAt: now,
+    }
+    mount('status', [hourOld, dayOld])
+    const row = document.querySelector('.chat-row[data-thread-id="hour"]')
+    assert.ok(row)
+    assert.equal(
+      row.querySelector('.chat-thread-content > .chat-title')?.textContent,
+      hourOld.title,
+    )
+    assert.equal(row.querySelector('.chat-thread-details .chat-thread-age')?.textContent, '1h')
+    assert.equal(
+      row.querySelector('.chat-thread-details .chat-thread-owner')?.textContent,
+      '· work',
+    )
+    assert.equal(
+      row.querySelector('time')?.getAttribute('datetime'),
+      new Date(hourOld.createdAt).toISOString(),
+    )
+    assert.equal(
+      document.querySelector('.chat-row[data-thread-id="day"] .chat-thread-age')?.textContent,
+      '1d',
+    )
+  })
+
+  it('keeps the project tree on one line without status metadata', () => {
+    mount('project')
+    assert.equal(document.querySelector('.chat-thread-content'), null)
+    assert.equal(document.querySelector('.chat-thread-age'), null)
   })
 
   it('lists every thread flat, each naming its project', () => {
