@@ -113,6 +113,21 @@ describe('createHeadlessAutomationRun', () => {
       content: { type: 'resource_link', uri: 'file:///tmp/report.md', name: 'report.md' },
       messageId: 'msg-1',
     })
+    run.host.emit(threadId, {
+      type: 'acp_content_replace',
+      channel: 'thought',
+      messageId: 'thought-1',
+      content: [{ type: 'text', text: 'Build checks complete.' }],
+    })
+    run.host.emit(threadId, {
+      type: 'acp_content_replace',
+      channel: 'message',
+      messageId: 'msg-1',
+      content: [
+        { type: 'text', text: 'Build remains green.' },
+        { type: 'resource_link', uri: 'file:///tmp/final.md', name: 'final.md' },
+      ],
+    })
     run.host.emit(threadId, { type: 'done' })
     await run.flush()
 
@@ -120,10 +135,10 @@ describe('createHeadlessAutomationRun', () => {
     assert.equal(persisted?.messages.length, 1)
     const message = persisted.messages[0]
     assert.equal(message?.role, 'assistant')
-    assert.equal(message.reasoning, 'Checking the build.')
-    assert.equal(message.content, 'Build is green.')
+    assert.equal(message.reasoning, 'Build checks complete.')
+    assert.equal(message.content, 'Build remains green.')
     assert.deepEqual(message.contentBlocks, [
-      { type: 'resource_link', uri: 'file:///tmp/report.md', name: 'report.md' },
+      { type: 'resource_link', uri: 'file:///tmp/final.md', name: 'final.md' },
     ])
   })
 

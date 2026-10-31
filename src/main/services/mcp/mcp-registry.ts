@@ -619,7 +619,7 @@ function registerListedTools(
           }
           throw error
         }
-        // Experimental MCP-UI canvas: when enabled, recognised UI resources are
+        // MCP-UI canvas: when enabled, recognised UI resources are
         // rendered as a sandboxed artefact and summarised for the model (raw
         // body kept out of context) rather than inlined as tool output. Gated by
         // the `copse.mcp-ui-canvas` first-party plugin's capability — the plugin
@@ -651,8 +651,9 @@ function registerListedTools(
 /**
  * Connect Copse's bundled in-process MCP servers (e.g. the canvas). These ship
  * with the app, need no user configuration, and are trusted by default. Gated by
- * the same experimental flag that turns on canvas rendering. Reported with an
- * `in-process` transport so the UI can distinguish them from configured servers.
+ * the same `copse.mcp-ui-canvas` capability that turns on canvas rendering.
+ * Reported with an `in-process` transport so the UI can distinguish them from
+ * configured servers.
  */
 async function connectBundledServers(
   registry: ToolRegistry,

@@ -46,6 +46,13 @@ import { BRIDGE_MCP_SERVER_NAME, matchesBridgedToolName } from './acp-bridge-nam
 import { isAppleDevelopmentToolOffered } from '../apple-development/apple-development-tool-scope.ts'
 import { configuredClassifierProfiles } from '../classifiers/classifier-service.ts'
 import { ASK_CLASSIFIER_TOOL_NAME, describeClassifyTool } from '../../tools/classifier-tool.ts'
+import { RUN_SHELL_MAX_TIMEOUT_MS } from '../../tools/shell-tool.ts'
+import { getAgentExecutionRoot } from '../execution-root.ts'
+import { runWithShellRunObserver } from '../exec/shell-output-context.ts'
+import type { AcpTerminalCommandRunner } from './acp-terminals.ts'
+
+/** The registry tool every ACP client terminal command re-enters. */
+const TERMINAL_TOOL = 'run_shell'
 
 export { BRIDGE_MCP_SERVER_NAME }
 
@@ -327,6 +334,14 @@ export interface AcpNativeBridge {
   setTurnSignal: (signal: AbortSignal | null) => void
   /** Attribute successful native workspace edits to the current ACP turn's audit. */
   setWorkspaceWriteObserver: (observer: ((path: string) => void) | null) => void
+  /**
+   * Back one ACP client terminal (`terminal/create`, #623): run a command
+   * through `run_shell` under this turn's bindings, exactly as a bridged
+   * `run_shell` call would run — the same gate, project sandbox and
+   * unsandboxed retry — while `observer` receives its raw output and exit.
+   * Refused, like a bridged call, when no turn is bound.
+   */
+  runShellCommand: AcpTerminalCommandRunner
   /** Stop the HTTP server. Idempotent; safe to call after the turn settles. */
   close: () => Promise<void>
 }
@@ -476,6 +491,44 @@ function toMcpContent(
   return blocks
 }
 
+/**
+ * Run `execute` as the owning turn would: thread identity, turn tree, the
+ * turn's resolved execution context, the bridge execution id approvals and the
+ * decision log attribute to, and — for a sandboxed agent — its shared network
+ * scope. Bridge HTTP handlers and ACP client requests are separate async chains
+ * from the turn, so none of this is inherited.
+ */
+function runInTurnBinding<T>(
+  binding: {
+    threadId: string
+    executionContext: ThreadExecutionContext
+    inlineCanvasScope: ReturnType<typeof captureInlineCanvasScope>
+    turnTreeId: ReturnType<typeof getActiveRunTurnTreeId>
+    skillTurn: SkillActivationTurn | null
+    bridgeExecutionId: string
+    networkScopeAlreadyApplies: boolean
+  },
+  execute: () => Promise<T>,
+): Promise<T> {
+  const withPermissionContext = (): Promise<T> =>
+    binding.networkScopeAlreadyApplies
+      ? runWithAcpBridgePermissionContext({ networkScopeAlreadyApplies: true }, execute)
+      : execute()
+  return binding.inlineCanvasScope(() =>
+    runWithActiveRunIdentity(binding.threadId, () => {
+      // HTTP requests do not inherit the owning turn's ALS epoch. A wake
+      // must use that human epoch, never a guessed thread-id fallback.
+      if (binding.turnTreeId !== null) setActiveRunTurnTreeId(binding.turnTreeId)
+      return runWithThreadExecutionContext(binding.executionContext, () =>
+        runWithSkillActivationTurn(
+          binding.skillTurn ?? createSkillActivationTurn([], [], 0, 'acp'),
+          () => runWithBridgeExecutionId(binding.bridgeExecutionId, withPermissionContext),
+        ),
+      )
+    }),
+  )
+}
+
 function buildMcpServer(
   registry: ToolRegistry,
   advisorContext: { current: AdvisorRunnerContext | null },
@@ -622,35 +675,26 @@ function buildMcpServer(
         })
         return registry.executeNormalized(name, request.params.arguments, executeSignal)
       }
-      const withPermissionContext = (): ReturnType<ToolRegistry['executeNormalized']> =>
-        ctx.networkScopeAlreadyApplies
-          ? runWithAcpBridgePermissionContext({ networkScopeAlreadyApplies: true }, execute)
-          : execute()
-      // Bridge HTTP handlers are a separate async chain from the ACP turn — rebind
-      // the thread identity so approval prompts / idle-deadline pauses attribute
-      // to the owning thread (and cancelApprovalsForThread can find them).
-      //
-      // The turn's full execution context is rebound for the same reason
-      // (#1439): without it, root resolution falls back to the shared checkout,
-      // so a bridged tool in a worktree-mode thread would edit a different tree
-      // than the turn itself. The context is the turn's already-resolved one —
-      // set by agent-service around the prompt — not a fresh per-request
-      // resolve; the guard above already rejected any call with none bound.
-      const inlineCanvasScope = ctx.getInlineCanvasScope()
-      const turnTreeId = ctx.getTurnTreeId()
+      // Rebind the thread identity so approval prompts / idle-deadline pauses
+      // attribute to the owning thread (and cancelApprovalsForThread can find
+      // them), and the turn's full execution context (#1439): without it, root
+      // resolution falls back to the shared checkout, so a bridged tool in a
+      // worktree-mode thread would edit a different tree than the turn itself.
+      // The context is the turn's already-resolved one — set by agent-service
+      // around the prompt — not a fresh per-request resolve; the guard above
+      // already rejected any call with none bound.
       const runExecute = (): ReturnType<ToolRegistry['executeNormalized']> =>
-        inlineCanvasScope(() =>
-          runWithActiveRunIdentity(ctx.threadId, () => {
-            // HTTP requests do not inherit the owning turn's ALS epoch. A wake
-            // must use that human epoch, never a guessed thread-id fallback.
-            if (turnTreeId !== null) setActiveRunTurnTreeId(turnTreeId)
-            return runWithThreadExecutionContext(executionContext, () =>
-              runWithSkillActivationTurn(
-                skillTurn ?? createSkillActivationTurn([], [], 0, 'acp'),
-                () => runWithBridgeExecutionId(bridgeExecutionId, withPermissionContext),
-              ),
-            )
-          }),
+        runInTurnBinding(
+          {
+            threadId: ctx.threadId,
+            executionContext,
+            inlineCanvasScope: ctx.getInlineCanvasScope(),
+            turnTreeId: ctx.getTurnTreeId(),
+            skillTurn,
+            bridgeExecutionId,
+            networkScopeAlreadyApplies: ctx.networkScopeAlreadyApplies,
+          },
+          execute,
         )
       const advisor = advisorContext.current
       const { result, images } =
@@ -880,6 +924,59 @@ export async function startAcpNativeBridge(
     },
     setWorkspaceWriteObserver: (observer): void => {
       workspaceWriteObserver = observer
+    },
+    runShellCommand: async (compose, observer, terminalSignal): Promise<string> => {
+      if (closed) throw new Error('The coding agent session has ended')
+      if (
+        !registry.has(TERMINAL_TOOL) ||
+        !activeBridgeToolNames(opts.projectId, registry, offerWriteAccess).includes(TERMINAL_TOOL)
+      ) {
+        return 'Copse cannot run shell commands for this thread.'
+      }
+      // Same fail-closed turn boundary as a bridged call (#1439).
+      const pendingBinding = executionContext ? null : pendingExecutionContext
+      const boundContext =
+        executionContext ??
+        (await awaitPendingExecutionContext(pendingBinding, terminalSignal)) ??
+        executionContext
+      if (!boundContext) {
+        return pendingBinding
+          ? 'Command was not run: this turn started without a prompt from the user and was not approved to continue.'
+          : 'Command was not run: it arrived after its agent turn ended, so no thread execution context is bound.'
+      }
+      const bridgeExecutionId = randomUUID()
+      const executeSignal = mergeBridgeExecuteSignal(signal, turnSignal, terminalSignal)
+      return runInTurnBinding(
+        {
+          threadId: opts.threadId,
+          executionContext: boundContext,
+          inlineCanvasScope,
+          turnTreeId,
+          skillTurn,
+          bridgeExecutionId,
+          networkScopeAlreadyApplies,
+        },
+        async () => {
+          const composed = compose(getAgentExecutionRoot())
+          if ('refused' in composed) return `Command was not run: ${composed.refused}`
+          const args = { command: composed.command, timeout_ms: RUN_SHELL_MAX_TIMEOUT_MS }
+          recordDecision({
+            kind: 'bridge-request',
+            actor: 'system',
+            verdict: 'requested',
+            subject: TERMINAL_TOOL,
+            source: 'acp-terminal',
+            bridgeExecutionId,
+            projectId: boundContext.projectId,
+            threadId: opts.threadId,
+            detail: { arguments: args },
+          })
+          const { result } = await runWithShellRunObserver(observer, () =>
+            registry.executeNormalized(TERMINAL_TOOL, args, executeSignal),
+          )
+          return result
+        },
+      )
     },
     close: (): Promise<void> => {
       if (closed) return Promise.resolve()

@@ -46,7 +46,7 @@ describe('PR context services with two roots at once', { skip: !gitOk }, () => {
   /** Fake `gh` that answers with the PR number for whichever checkout asked. */
   function ghByRoot(prs: Record<string, number>, seen: string[]): typeof runGh {
     return async (_args, options) => {
-      const cwd = options?.cwd ?? '(none)'
+      const cwd = options.cwd ?? '(none)'
       seen.push(cwd)
       // Yield so the two lookups interleave rather than run back to back.
       await new Promise<void>((resolve) => setTimeout(resolve, 5))
