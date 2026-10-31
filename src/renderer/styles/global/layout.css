@@ -2589,6 +2589,7 @@ summary.pr-check-group-heading::-webkit-details-marker {
   display: none;
 }
 .browser-toolbar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);

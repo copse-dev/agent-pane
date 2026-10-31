@@ -137,6 +137,36 @@ const api: ApiClient = {
       ipcRenderer.invoke('browser:share-screenshot', webContentsId),
     captureScreenshot: (webContentsId: number) =>
       ipcRenderer.invoke('browser:capture-screenshot', webContentsId),
+    startRecording: (webContentsId: number) =>
+      ipcRenderer.invoke('browser:start-recording', webContentsId),
+    stopRecording: (webContentsId: number) =>
+      ipcRenderer.invoke('browser:stop-recording', webContentsId),
+    onRecordingFrame: (handler: (webContentsId: number, jpeg: Uint8Array) => void) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        webContentsId: number,
+        jpeg: Uint8Array,
+      ): void => {
+        handler(webContentsId, jpeg)
+      }
+      ipcRenderer.on('browser:recording-frame', listener)
+      return (): void => {
+        ipcRenderer.off('browser:recording-frame', listener)
+      }
+    },
+    onRecordingEnded: (handler: (webContentsId: number, reason: string) => void) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        webContentsId: number,
+        reason: string,
+      ): void => {
+        handler(webContentsId, reason)
+      }
+      ipcRenderer.on('browser:recording-ended', listener)
+      return (): void => {
+        ipcRenderer.off('browser:recording-ended', listener)
+      }
+    },
     scrollPosition: (webContentsId: number) =>
       ipcRenderer.invoke('browser:scroll-position', webContentsId),
     exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
