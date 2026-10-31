@@ -1205,6 +1205,18 @@
       "sha256": "74d0436e5656f99c8711ceab21c6c82eeac183af8784cb28bee96be2e54300c1",
       "bytes": 217406
     },
+    "command-phase-awaiting-approval.png": {
+      "sha256": "6f77845a9db0e20fb14c31e23b62dc6cca37892c2fbad8799f7c8b7f6a31e253",
+      "bytes": 305188
+    },
+    "command-phase-not-started.png": {
+      "sha256": "e7d7915d0b7beaf23d198968852d33130490989b3eb3de626415ab32ba391b35",
+      "bytes": 87307
+    },
+    "command-phase-timed-out.png": {
+      "sha256": "185895c6cbaee65d5f94b3944203b1bcbccb0bde1a48f5faac2575aca7814a2e",
+      "bytes": 67171
+    },
     "comparison-dismiss-after.png": {
       "sha256": "c83ccb41d29eee93b7a9312b812c433016f5f5bba61598f8deaee624971b0aee",
       "bytes": 272518
@@ -2026,8 +2038,8 @@
       "bytes": 54496
     },
     "guarded-yolo-hard-deny.png": {
-      "sha256": "08f4059e56f21efda2559c7226dccafa00dd3e7af43529e240476df8875b1d75",
-      "bytes": 29300
+      "sha256": "c23f7a1517be19af9ecdb8530878a215786e1bc7edc55634f049d745f52558d3",
+      "bytes": 32131
     },
     "guarded-yolo-harm-prompt.png": {
       "sha256": "b2ebe62cb5d764c888614fdfc9f54d29d39a9c2e0da2d96a2811f0f78f38c7b6",
