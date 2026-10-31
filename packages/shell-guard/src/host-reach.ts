@@ -7,6 +7,7 @@ import {
   shellSegments,
   unwrapWrappers,
 } from './shell-argv.ts'
+import { isPlainPackageName, packageBinName, packageRunnerCall } from './package-runners.ts'
 import { productionTargetReason } from './production-targets.ts'
 import { packageRegistryOrigins, remoteChangeReasons } from './remote-change.ts'
 import { secretFileExposure, tokenPrinterReason } from './secrets.ts'
@@ -547,45 +548,31 @@ function alwaysDownloads(argv: readonly string[]): string | null {
   return null
 }
 
-/** `npx <name>`, `npm exec <name>`, `pnpx <name>`: the package they would run. */
-function npxPackage(argv: readonly string[]): { name: string; explicit: boolean } | null {
-  const head = commandName(argv[0])
-  let args: readonly string[]
-  if (head === 'npx' || head === 'pnpx') args = argv.slice(1)
-  else if (head === 'npm' && (argv[1] === 'exec' || argv[1] === 'x')) args = argv.slice(2)
-  else return null
-  for (let i = 0; i < args.length; i++) {
-    const token = args[i] ?? ''
-    if (token === '-p' || token === '--package' || token.startsWith('--package=')) {
-      return {
-        name: token.includes('=') ? token.slice(token.indexOf('=') + 1) : (args[i + 1] ?? ''),
-        explicit: true,
-      }
-    }
-    if (token.startsWith('-')) continue
-    return { name: token, explicit: false }
-  }
-  return null
-}
-
+/**
+ * `npx <name>`, `npm exec <name>`, `pnpx <name>`: a name the project does not
+ * install is fetched. The project binary a name resolves to is local code, which
+ * `shell-harm.ts` reads.
+ */
 function fetchedCodeReasons(argv: readonly string[], context: HostReachContext): string[] {
   const runner = alwaysDownloads(argv)
   if (runner) return [`${runner} downloads and runs a package`]
-  const pkg = npxPackage(argv)
+  const call = packageRunnerCall(argv)
+  if (call === null || !call.fetches) return []
+  const name = call.packageOption ?? call.command[0] ?? ''
   // The line-splitting fallback lexer leaves `npx \` of a continued line with a
-  // lone backslash for a package; the shell-quote segment sees the real name.
-  if (!pkg || !/^[@\w]/.test(pkg.name)) return []
+  // lone backslash for a package; the shell-quote segment sees the real name. A
+  // local path is not fetched; the harm gate asks about it.
+  if (!/^[@\w]/.test(name)) return []
   // npx runs a project dependency's own binary when one is installed; anything
   // else (or a package named with -p/--package, or a versioned spec) is fetched.
-  const bin = pkg.name.replace(/^@[^/]+\//, '')
   const local =
-    !pkg.explicit &&
-    /^(?:@[\w.-]+\/)?[\w.-]+$/.test(pkg.name) &&
+    call.packageOption === null &&
+    isPlainPackageName(name) &&
     context.workspaceRoot !== null &&
-    context.pathExists?.(join(context.workspaceRoot, 'node_modules', '.bin', bin)) === true
-  return local
-    ? []
-    : [`downloads and runs a package that is not a project dependency (${pkg.name})`]
+    context.pathExists?.(
+      join(context.workspaceRoot, 'node_modules', '.bin', packageBinName(name)),
+    ) === true
+  return local ? [] : [`downloads and runs a package that is not a project dependency (${name})`]
 }
 
 // ---------------------------------------------------------------------------

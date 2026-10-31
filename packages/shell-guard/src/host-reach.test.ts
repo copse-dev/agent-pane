@@ -279,7 +279,15 @@ describe('hostReachReasons — code fetched at run time', () => {
     path === '/work/project/node_modules/.bin/tool'
 
   it('lets npx run a project dependency binary', () => {
-    for (const command of ['npx tsc --noEmit', 'npm exec tsc', 'npx @scope/tool --check']) {
+    for (const command of [
+      'npx tsc --noEmit',
+      'npm exec tsc',
+      'npm -s exec tsc',
+      'npx @scope/tool --check',
+      'corepack npx tsc',
+      // `pnpm exec` never fetches: it runs a command from PATH.
+      'pnpm exec serve dist',
+    ]) {
       assert.deepEqual(reasons(command, { pathExists }), [], command)
     }
   })
@@ -291,6 +299,9 @@ describe('hostReachReasons — code fetched at run time', () => {
       'npx tsc@5 --noEmit',
       'npx -p tsc tsc',
       'npx --package=cowsay cowsay hi',
+      'npm -s exec serve dist',
+      'npm --silent x serve dist',
+      'corepack npx serve dist',
       'pnpm dlx create-vite',
       'yarn dlx create-vite',
       'npm create vite@latest',
