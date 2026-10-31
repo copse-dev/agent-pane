@@ -1965,6 +1965,10 @@
       "sha256": "5dd95db3b077a73ad16e0fe1331270b520d99187ad1fa4a3c9f329f79e4766a9",
       "bytes": 159359
     },
+    "git-changes-refresh-retained.png": {
+      "sha256": "e78010ca42f65f804eabeb8a59802043ff0f2e5fc40c087c0a2c33c449225bbf",
+      "bytes": 12485
+    },
     "git-changes-review-button.png": {
       "sha256": "a99101f66746b2f49758bbde24f3ffceddc1aaa305a8cb994e2925035cc15b43",
       "bytes": 362184
