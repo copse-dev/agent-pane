@@ -1,4 +1,4 @@
-import type { RequestPermissionRequest, ToolCallContent } from '@agentclientprotocol/sdk'
+import type { RequestPermissionRequest, ToolCallContent } from '@agentclientprotocol/sdk/unstable'
 import { unwrapInlineCode } from './session-update-adapter.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 
