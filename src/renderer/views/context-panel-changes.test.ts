@@ -229,10 +229,9 @@ describe('file viewer store selection', () => {
     }
     const monaco = makeMonacoStub()
     let models = 0
-    const createModel = monaco.editor.createModel
-    monaco.editor.createModel = (value, language): ContextPanelModel => {
+    monaco.editor.createModel = (value): ContextPanelModel => {
       models += 1
-      return createModel(value, language)
+      return makeModel(value)
     }
     const root = document.createElement('div')
     document.body.append(root)
