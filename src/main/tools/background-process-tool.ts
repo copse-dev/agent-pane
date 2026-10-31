@@ -16,6 +16,7 @@ import {
 } from '../services/exec/background-completion-wake.ts'
 import { requireThreadExecutionOwner } from '../services/thread-execution-context.ts'
 import { getActiveRunTurnTreeId } from '../services/thread-models.ts'
+import { reportCommandPhase } from '../services/exec/command-phase.ts'
 
 function formatInfo(info: BackgroundProcessInfo): string {
   const containment = info.unsandboxed ? ' · unsandboxed' : ''
@@ -101,6 +102,7 @@ export const runBackgroundTool = defineTool({
     }
     // Capture before spawn: process `exit` is delivered outside this ALS scope.
     const armedWakeHandler = turnTreeId === null ? null : resolveBackgroundCompletionWakeHandler()
+    reportCommandPhase('starting')
     const info = await startSupervisedBackgroundProcess({
       command,
       allowPortBinding: allow_port_binding === true,
@@ -124,6 +126,13 @@ export const runBackgroundTool = defineTool({
           }
         : {}),
     })
+    reportCommandPhase('running', { backgroundTaskId: info.id })
+    if (!info.running) {
+      reportCommandPhase(info.timedOut ? 'timed_out' : 'exited', {
+        backgroundTaskId: info.id,
+        ...(info.exitCode !== null ? { exitCode: info.exitCode } : {}),
+      })
+    }
     const lines = [formatInfo(info)]
     if (!info.running) {
       const logs = getBackgroundProcessLogs(info.id)
