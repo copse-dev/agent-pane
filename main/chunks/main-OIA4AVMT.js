@@ -458,7 +458,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-TF6FIJDX.js";
+} from "./chunk-7YFFCK3N.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -8707,6 +8707,12 @@ function mountProjectsPane(root, store2, api2) {
         render2();
       }
       showThreadArchiveToast(store2, api2, event.projectId, event.threadId, event.title);
+    }),
+    // A trigger means main wrote this project's threads: it created a run and,
+    // when the project is not focused, drives that turn itself. A resident
+    // snapshot read before then lacks the run, so the next switch must reload.
+    api2.automations.onTriggered((event) => {
+      invalidateProjectThreadLoads(api2, event.projectId);
     }),
     store2.on("thread_archive_requested", (projectId, threadId) => {
       void archiveProjectThread(projectId, threadId);
