@@ -237,10 +237,10 @@ async function restListPrs(opts: {
     per_page: String(Math.min(Math.max(opts.limit, 1), 100)),
   })
   if (opts.head) query.set('head', `${repo.owner}:${opts.head}`)
-  const { stdout, code } = await runGh([
-    'api',
-    `repos/${repo.owner}/${repo.repo}/pulls?${query.toString()}`,
-  ])
+  const { stdout, code } = await runGh(
+    ['api', `repos/${repo.owner}/${repo.repo}/pulls?${query.toString()}`],
+    { cwd: opts.cwd },
+  )
   if (code !== 0) return null
   const list = safeJsonParse(stdout.trim(), decodeWithSchema(restPrListSchema))
   if (!Array.isArray(list)) return null
@@ -250,14 +250,15 @@ async function restListPrs(opts: {
 
 /** The PR number for `branch` in `repo`, via the REST `pulls?head=` filter. */
 async function restFindPrNumberForBranch(
+  cwd: string | null,
   repo: { owner: string; repo: string },
   branch: string,
 ): Promise<number | null> {
   const query = new URLSearchParams({ head: `${repo.owner}:${branch}`, state: 'all' })
-  const { stdout, code } = await runGh([
-    'api',
-    `repos/${repo.owner}/${repo.repo}/pulls?${query.toString()}`,
-  ])
+  const { stdout, code } = await runGh(
+    ['api', `repos/${repo.owner}/${repo.repo}/pulls?${query.toString()}`],
+    { cwd: cwd },
+  )
   if (code !== 0) return null
   const list = safeJsonParse(stdout.trim(), decodeWithSchema(restPrListSchema))
   if (!Array.isArray(list) || list.length === 0) return null
@@ -265,14 +266,14 @@ async function restFindPrNumberForBranch(
 }
 
 async function restListCommitOids(
+  cwd: string | null,
   repo: { owner: string; repo: string },
   number: number,
 ): Promise<string[]> {
-  const { stdout, code } = await runGh([
-    'api',
-    `repos/${repo.owner}/${repo.repo}/pulls/${String(number)}/commits`,
-    '--paginate',
-  ])
+  const { stdout, code } = await runGh(
+    ['api', `repos/${repo.owner}/${repo.repo}/pulls/${String(number)}/commits`, '--paginate'],
+    { cwd: cwd },
+  )
   if (code !== 0) return []
   const list = safeJsonParse(stdout.trim(), decodeWithSchema(restPrCommitListSchema))
   if (!Array.isArray(list)) return []
@@ -280,14 +281,14 @@ async function restListCommitOids(
 }
 
 async function restListFiles(
+  cwd: string | null,
   repo: { owner: string; repo: string },
   number: number,
 ): Promise<NonNullable<GhPrViewDetails['files']> | null> {
-  const { stdout, code } = await runGh([
-    'api',
-    `repos/${repo.owner}/${repo.repo}/pulls/${String(number)}/files`,
-    '--paginate',
-  ])
+  const { stdout, code } = await runGh(
+    ['api', `repos/${repo.owner}/${repo.repo}/pulls/${String(number)}/files`, '--paginate'],
+    { cwd: cwd },
+  )
   if (code !== 0) return null
   const list = safeJsonParse(stdout.trim(), decodeWithSchema(restPrFileListSchema))
   if (!Array.isArray(list)) return null
@@ -313,24 +314,24 @@ async function restViewPr(opts: {
   if (number === undefined) {
     const branch = await currentGitBranch(opts.cwd)
     if (!branch) return null
-    const found = await restFindPrNumberForBranch(repo, branch)
+    const found = await restFindPrNumberForBranch(opts.cwd, repo, branch)
     if (found === null) return null
     number = found
   }
-  const { stdout, code } = await runGh([
-    'api',
-    `repos/${repo.owner}/${repo.repo}/pulls/${String(number)}`,
-  ])
+  const { stdout, code } = await runGh(
+    ['api', `repos/${repo.owner}/${repo.repo}/pulls/${String(number)}`],
+    { cwd: opts.cwd },
+  )
   if (code !== 0) return null
   const parsed = safeJsonParse(stdout.trim(), decodeWithSchema(restPrDetailSchema))
   if (!parsed) return null
   const details = mapRestPrDetail(parsed)
   if (opts.includeCommits) {
-    const oids = await restListCommitOids(repo, number)
+    const oids = await restListCommitOids(opts.cwd, repo, number)
     if (oids.length > 0) details.commits = oids.map((oid) => ({ oid }))
   }
   if (opts.includeFiles) {
-    const files = await restListFiles(repo, number)
+    const files = await restListFiles(opts.cwd, repo, number)
     if (files) details.files = files
   }
   return details
