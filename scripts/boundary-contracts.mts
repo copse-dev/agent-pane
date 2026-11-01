@@ -276,6 +276,7 @@ function llmTarget(spec: LlmTargetSpec): ContractTarget {
           }
           ctx.signal.addEventListener('abort', forward, { once: true })
           let abortedAt: number | null = null
+          let abortSurfaced = false
           try {
             const provider = spec.create(spec.model, key(ctx))
             const messages = [{ role: 'user' as const, content: LONG_PROMPT }]
@@ -294,11 +295,20 @@ function llmTarget(spec: LlmTargetSpec): ContractTarget {
                 detail: `the abort surfaced as ${name}, which isStreamAbortError does not recognise`,
               }
             }
+            abortSurfaced = true
           } finally {
             ctx.signal.removeEventListener('abort', forward)
           }
           if (abortedAt === null) {
             throw new ContractViolation('the stream finished before any content arrived to cancel')
+          }
+          // A stream that ends quietly after an abort reads as a finished turn:
+          // the 300-line prompt cannot legitimately be complete at its first chunk.
+          if (!abortSurfaced) {
+            return {
+              outcome: 'regression',
+              detail: 'the stream completed normally after abort instead of raising an abort error',
+            }
           }
           const settledMs = Date.now() - abortedAt
           if (settledMs > CANCEL_SETTLE_MS) {

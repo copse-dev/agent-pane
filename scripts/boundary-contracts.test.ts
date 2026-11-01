@@ -43,6 +43,8 @@ interface ScriptedOptions {
   readonly invalidKeyError?: Error
   /** What the stream raises once the caller aborts mid-stream. */
   readonly abortSurface?: () => Error
+  /** End the stream quietly on abort instead of raising anything. */
+  readonly abortEndsStream?: boolean
 }
 
 /** A provider that behaves like the real ones for each contract's input. */
@@ -58,7 +60,10 @@ function scripted(options: ScriptedOptions = {}): (model: string, key: string) =
         first?.role === 'user' && typeof first.content === 'string' ? first.content : ''
       if (prompt.startsWith('Count')) {
         for (let n = 1; n <= 300; n++) {
-          if (signal?.aborted) throw (options.abortSurface ?? abortError)()
+          if (signal?.aborted) {
+            if (options.abortEndsStream) return
+            throw (options.abortSurface ?? abortError)()
+          }
           yield { type: 'text', text: `${String(n)}\n` }
           await new Promise((r) => setTimeout(r, 1))
         }
@@ -138,6 +143,15 @@ describe('LLM provider contracts', () => {
     )
     assert.equal(result?.outcome, 'regression')
     assert.match(result.detail, /isStreamAbortError/)
+  })
+
+  it('fails when a cancelled stream ends normally instead of raising an abort', async () => {
+    const targets = only('anthropic', providers(scripted({ abortEndsStream: true })))
+    const result = (await runContracts({ targets, env: ENV })).find(
+      (r) => r.contract === 'cancellation',
+    )
+    assert.equal(result?.outcome, 'regression')
+    assert.match(result.detail, /completed normally after abort/)
   })
 
   it('never lets a secret echoed by the provider reach the report', async () => {
