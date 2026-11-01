@@ -376,8 +376,15 @@ export function createTranscriptScroll(host: TranscriptScrollHost): TranscriptSc
       restoreReadingAnchor(previous.anchor, previous.scrollTop)
       updateScrollButton()
       // The return button may disappear at the bottom; keep keyboard navigation
-      // in the conversation without moving the restored reading position.
-      firstPromptBtn.focus({ preventScroll: true })
+      // in the conversation without moving the restored reading position. A
+      // position clamped near the top hides First prompt too: fall back to
+      // Back to latest, then the transcript itself.
+      const focusTarget = [firstPromptBtn, scrollToBottomBtn].find((control) => !control.hidden)
+      if (focusTarget) focusTarget.focus({ preventScroll: true })
+      else {
+        if (!list.hasAttribute('tabindex')) list.tabIndex = -1
+        list.focus({ preventScroll: true })
+      }
     } else {
       userScrolledUpAt = 0
       scrollToBottom(true)

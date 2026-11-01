@@ -136,6 +136,18 @@ describe('first prompt navigation', () => {
     assert.equal(list.scrollTop, 935)
   })
 
+  it('hands focus to a visible control when the restored position hides First prompt', () => {
+    const { list, first, back } = fixture()
+    // A reading position near the top, where First prompt is hidden on return.
+    scroll(list, 20)
+    first.click()
+    back.click()
+    assert.equal(list.scrollTop, 20)
+    assert.equal(first.hidden, true)
+    // Compare identities, not elements: a failure would inspect the whole DOM.
+    assert.ok(document.activeElement === back, 'focus moves to Back to latest')
+  })
+
   it('docks both controls in the reserved row, outside the transcript scroller', () => {
     const { host, list, first, back } = fixture()
     scroll(list, 935)
