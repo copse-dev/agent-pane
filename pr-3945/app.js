@@ -34,7 +34,7 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-NOGFTDUX.js";
+} from "./chunks/chunk-LQ7HXRVW.js";
 import "./chunks/chunk-D55J6ZRP.js";
 import {
   init_icons,
@@ -3112,6 +3112,45 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        // #1433 Fix 0b: read_explored quotes lines an explore call already read.
+        id: "read-explored",
+        label: "Quote explored lines",
+        project: project("demo-read-explored-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-read-explored-thread",
+            title: "Read explored",
+            status: "idle",
+            messages: [
+              {
+                id: "demo-read-explored-assistant",
+                role: "assistant",
+                content: "Quoting the whole function before editing it.",
+                toolCalls: [
+                  {
+                    id: "demo-read-explored-call",
+                    name: "read_explored",
+                    args: { path: "src/renderer/browser-pane.ts", start_line: 289, end_line: 296 },
+                    status: "done",
+                    resultFormat: "markdown",
+                    result: "`src/renderer/browser-pane.ts` lines 289\u2013296:\n```\nexport function wireToolbar(urlInput: HTMLInputElement): void {\n  urlInput.addEventListener('keydown', (event) => {\n    if (event.key === 'Enter') {\n      submitUrl(urlInput.value)\n    }\n  })\n}\n```"
+                  }
+                ],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
         // #728: a subagent-backed explore must stay its own card when a sibling
         // read_file would otherwise fold both into a "Read files" group.
         id: "subagent-ungrouped",
@@ -5477,6 +5516,43 @@ var init_demo_scenarios = __esm({
           }
         ]
       },
+      {
+        id: "chatgpt-plan-expired",
+        label: "ChatGPT plan whose sign-in has expired",
+        project: project("demo-chatgpt-plan-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          chatGptPlanWelcomeSeen: true
+        },
+        chatGptPlan: {
+          activeClientId: "demo-plan-account",
+          accounts: [
+            {
+              clientId: "demo-plan-account",
+              label: "you@example.com",
+              connected: true,
+              planEnabled: true
+            }
+          ]
+        },
+        chatGptPlanRefreshFailure: {
+          error: "Error invoking remote method 'chat-gpt-plan:refresh-account': Error: ChatGPT sign-in expired. Reconnect this account.",
+          status: {
+            activeClientId: "demo-plan-account",
+            accounts: [
+              {
+                clientId: "demo-plan-account",
+                label: "you@example.com",
+                connected: false,
+                planEnabled: false
+              }
+            ]
+          }
+        },
+        threads: []
+      },
       // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
       ...SITE_TOUR_SCENARIOS,
       // Concise thread view in each state a thread can be in (see demo-concise-states.ts).
@@ -5607,6 +5683,10 @@ function unsupported() {
 }
 function createDemoApi(scenario2, options = {}) {
   const settings = new Map(Object.entries(scenario2.settings));
+  let chatGptPlan = scenario2.chatGptPlan ?? {
+    accounts: [],
+    activeClientId: null
+  };
   const guardedYoloPhases = new Map(
     scenario2.guardedYoloPhase && scenario2.threads[0] ? [[scenario2.threads[0].id, scenario2.guardedYoloPhase]] : []
   );
@@ -6427,9 +6507,14 @@ function createDemoApi(scenario2, options = {}) {
       dismiss: resolvedVoid
     },
     chatGptPlan: {
-      status: () => resolved(scenario2.chatGptPlan ?? { accounts: [], activeClientId: null }),
+      status: () => resolved(chatGptPlan),
       signIn: unsupported,
-      refreshAccount: () => scenario2.chatGptPlan ? resolved(scenario2.chatGptPlan) : unsupported(),
+      refreshAccount: () => {
+        const failure = scenario2.chatGptPlanRefreshFailure;
+        if (!failure) return scenario2.chatGptPlan ? resolved(scenario2.chatGptPlan) : unsupported();
+        chatGptPlan = failure.status;
+        return Promise.reject(new Error(failure.error));
+      },
       cancelSignIn: resolvedVoid,
       selectAccount: unsupported,
       signOut: unsupported,
@@ -7377,7 +7462,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-V7SJSJT2.js").then(async (main) => {
+    void import("./chunks/main-RKX4R2PJ.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
