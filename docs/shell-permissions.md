@@ -38,6 +38,20 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 | ACP permission mode              | Agent-specific session mode, additional to Copse's gate and sandbox. Sandboxed Claude presets may default to acceptEdits; unsandboxed/SSH presets do not receive that default. Remembered ACP grants are per agent and tool kind; a request that runs a command is never remembered, so every command reaches the shell gate. See [ACP permission requests](#acp-permission-requests).                   |
 | Agent managed thread mode        | Opt-in per thread for external coding agents. Copse does not apply its process sandbox and selects the agent-advertised Auto/Default session mode when available. The agent's permission requests are presented without Copse's shell classifier, remembered grants, or edit auto-approval. Copse's native-tool bridge remains available and every bridged call still uses the ordinary Copse tool gate. |
 
+The experimental `isolated_copse` tool asks for a fresh, non-rememberable grant before
+starting Linux Copse in an Apple container VM. The grant belongs to the invoking
+project/thread, expires after 15 minutes, and includes at most 100,000 input/output tokens
+on the parent model named in the approval. Only screenshots and bounded guest input are
+available; no host GUI control, folder mounts, credentials or general network access are
+granted. Stop/cancellation revokes input and inference before deleting the VM. Blocking the
+tool revokes all live isolated desktops. Failed deletion is surfaced and remains retryable.
+This grant does not change `launch_gui_app` or authorize a host-child fallback.
+ACP starts must name the host model explicitly. Their grant lasts only for the bound
+ACP turn/session; closing a completed MCP response does not revoke it, while abandoning
+startup, stopping the turn or closing the ACP session does. The created VM's image digest
+must match the owner-controlled local build receipt before startup. Host-only leases and
+VM ownership labels allow dead-parent/expired cleanup without deleting unrelated VMs.
+
 ## Per-tool permission settings
 
 ### Web search providers

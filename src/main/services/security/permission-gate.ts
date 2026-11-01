@@ -2281,6 +2281,12 @@ async function decideToolPermitted(
     permitted =
       (!deletingSimulator && explicitPolicy === 'allow') ||
       (await promptExplicitToolAsk(toolName, args, signal))
+  } else if (toolName === 'isolated_copse') {
+    // The handler requires fresh, non-rememberable consent before creating a
+    // thread-owned VM. Later input still requires that live grant. Explicit Ask
+    // remains an additional per-call requirement; Blocked is handled above.
+    permitted =
+      explicitPolicy === 'ask' ? await promptExplicitToolAsk(toolName, args, signal) : true
   } else if (toolName === 'launch_gui_app') {
     // Always prompt — GUI launch leaves the sandbox and puts a window on the
     // desktop. A stale stored allow is coerced to ask by tool-permissions.ts;

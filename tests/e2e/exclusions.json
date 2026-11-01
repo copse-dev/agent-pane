@@ -2,6 +2,17 @@
   "version": 1,
   "entries": [
     {
+      "spec": "tests/e2e/isolated-desktop-approval.e2e.ts",
+      "category": "platform",
+      "reason": "Isolated Copse desktop startup is available only on local Apple silicon macOS; unsupported platforms refuse before the consent dialog.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Sandbox and isolated desktop maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-11-01",
+      "reviewBy": "2026-11-08",
+      "coverage": "Lifecycle, ownership, protocol and preflight unit tests pass. The macOS approval spec passed on 2026-11-01 at 17:21 UTC with the body-fit assertion; screenshot review confirmed all disclosures and decision buttons are visible without scrolling. This mock-driven consent/rejection test does not start a VM. Integrated VM inference and self-approval containment evidence remain required.",
+      "markers": ["describe.skip"]
+    },
+    {
       "spec": "tests/e2e/agent-eval-drive.e2e.ts",
       "category": "external-service",
       "reason": "Real-model evaluation is deliberately excluded from default and CI suites.",

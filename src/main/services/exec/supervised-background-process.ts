@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { stopIsolatedDesktop } from '../isolated-desktop/desktop-service.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { resolveSshExecutionTargetForCwd } from '../ssh-workspace/execution-target.ts'
 import { getSetting } from '../storage/settings.ts'
@@ -200,6 +201,21 @@ export async function cancelAllSupervisedBackgroundProcesses(): Promise<void> {
 export async function stopSupervisedBackgroundProcessesForThread(
   owner: ThreadExecutionOwner,
 ): Promise<string[]> {
+  // A VM deletion failure must not prevent cancellation of the thread's other processes.
+  const results = await Promise.allSettled([
+    stopIsolatedDesktop(owner),
+    stopThreadBackgroundProcesses(owner),
+  ])
+  const failures: unknown[] = []
+  for (const result of results) {
+    if (result.status === 'rejected') failures.push(result.reason)
+  }
+  if (failures.length) throw new AggregateError(failures, 'Failed to stop all thread processes')
+  const background = results[1]
+  return background.status === 'fulfilled' ? background.value : []
+}
+
+async function stopThreadBackgroundProcesses(owner: ThreadExecutionOwner): Promise<string[]> {
   const installedSupervisor = activeSupervisor()
   const tasks =
     installedSupervisor
