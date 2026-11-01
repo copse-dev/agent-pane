@@ -247,6 +247,8 @@ import { getSshConnectionManager } from '../services/ssh-workspace/connection-ma
 import { WorkspaceActivation } from '../services/workspace-activation.ts'
 import { prepareWorkspaceConnection } from '../services/workspace-connection.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
+import { approveRemoteWatcherInstall } from '../services/ssh-workspace/remote-watcher-install-approval.ts'
+import { formatRemoteWatcherInstallApproval } from '../services/ssh-workspace/remote-native-watcher.ts'
 import { requestCloseConfirmation } from '../services/close-confirm.ts'
 import { setSeededVncNearbyServersForTests } from '../services/vnc/vnc-service.ts'
 import { setSeededSimulatorDesktopForTests } from '../services/simulator-desktop/simulator-desktop-service.ts'
@@ -3054,6 +3056,10 @@ export function registerAllHandlers(
       return requestAcpPackageInstallApproval(
         scenario === 'upgrade' ? [upgrade] : [{ agent: codex, action: 'install' }],
       )
+    })
+    ipcMain.handle('test:requestRemoteWatcherInstallApproval', (event) => {
+      assertMainFrameSender(event, win)
+      return approveRemoteWatcherInstall(formatRemoteWatcherInstallApproval('Build server'))
     })
     ipcMain.handle('test:setPortRows', (event, raw: unknown) => {
       assertMainFrameSender(event, win)

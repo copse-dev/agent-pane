@@ -21,6 +21,30 @@ export function threadAccessApproval(access: 'read' | 'send'): ApprovalDetails &
   }
 }
 
+export function gitPushApproval(
+  branch: string,
+  expectedRemoteSha?: string,
+): ApprovalDetails & {
+  title: string
+  approveLabel: string
+} {
+  return {
+    title: 'Push branch to origin?',
+    approveLabel: 'Push branch',
+    body: [
+      `Branch: ${branch}`,
+      'Remote: origin',
+      expectedRemoteSha
+        ? `Push mode: Force with lease\nExpected remote commit: ${expectedRemoteSha}`
+        : 'Push mode: Fast-forward only',
+    ].join('\n'),
+    bodyAdvice: expectedRemoteSha
+      ? 'This publishes the branch to origin and can replace remote history only if the remote branch still points to the expected commit.'
+      : 'This publishes the branch to origin without replacing existing remote history.',
+    bodyFooter: 'Approval covers this push once.',
+  }
+}
+
 export interface ApprovalDetails {
   body: string
   bodyAdvice: string

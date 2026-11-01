@@ -120,20 +120,13 @@ export function createThreadProposalToolCard(
 
   return createThreadProposalCard(proposal, cardState(store, sourceThreadId, tc.id), {
     onStart: async (accepted: ThreadProposal) => {
-      try {
-        const result = await startProposedThread(store, api, sourceThreadId, accepted, {
-          confirmSharedCheckout,
-        })
-        if (!result.started) noteDeclined()
-      } catch (cause) {
-        // Creating the target navigates away from the source card. Its inline
-        // error is no longer visible, so also explain the failure here.
-        showToast(cause instanceof Error ? cause.message : 'Could not start the proposed thread.', {
-          variant: 'error',
-          durationMs: 15_000,
-        })
-        throw cause
-      }
+      // Starting a proposal never navigates away from this card (the new
+      // thread runs in the background), so a thrown failure stays visible as
+      // the card's own inline error — no separate toast needed.
+      const result = await startProposedThread(store, api, sourceThreadId, accepted, {
+        confirmSharedCheckout,
+      })
+      if (!result.started) noteDeclined()
     },
     onDismiss: (dismissed: ThreadProposal) => {
       setThreadProposalDecision(store, sourceThreadId, {

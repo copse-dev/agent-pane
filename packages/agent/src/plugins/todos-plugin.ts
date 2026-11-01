@@ -90,7 +90,7 @@ export const todosPlugin: RegisteredPlugin = definePlugin(
   {
     name: TODOS_PLUGIN_ID,
     description:
-      'Owns the `update_todos` tool, todo steering + closeout hooks, and the plan panel contribution.',
+      'Helps the agent plan multi-step work, track progress in the plan panel, and check remaining steps before finishing.',
     trust: 'first-party',
     stability: 'stable',
     tools: { native: [TODOS_TOOL_NAME] },

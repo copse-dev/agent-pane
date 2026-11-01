@@ -1421,6 +1421,22 @@ describe('release-mac.yml workflow invariants', () => {
     assert.doesNotMatch(workflow, /prepare:gortex:mac/)
   })
 
+  it('packages the checksum-verified remote watcher target set', () => {
+    assert.match(workflow, /uses: \.\/\.github\/workflows\/remote-watcher-build\.yml/)
+    assert.match(workflow, /ref: \$\{\{ needs\.preflight\.outputs\.release_sha \}\}/)
+    assert.match(workflow, /name: remote-watcher-all/)
+    assert.match(workflow, /shasum -a 256 --check SHA256SUMS/)
+    for (const target of [
+      'aarch64-apple-darwin',
+      'x86_64-apple-darwin',
+      'aarch64-unknown-linux-musl',
+      'x86_64-unknown-linux-musl',
+    ]) {
+      assert.match(workflow, new RegExp(target))
+    }
+    assert.match(workflow, /app\.asar\.unpacked\/dist\/resources\/remote-watcher/)
+  })
+
   it('assembles portable checksums without recompressing the packages', () => {
     assert.match(workflow, /assemble-macos-release\.mts/)
     assert.match(workflow, /shasum -a 256 --check SHA256SUMS/)
@@ -1560,6 +1576,58 @@ describe('release-publish.yml workflow invariants', () => {
       /if: \$\{\{ !github\.event\.repository\.private \}\}\n {8}uses: actions\/attest/,
     )
     assert.match(workflow, /if: github\.event\.repository\.private/)
+  })
+})
+
+describe('stable channel workflow invariants', () => {
+  const publish = readFileSync(resolve('.github/workflows/release-publish.yml'), 'utf8')
+  const promote = readFileSync(resolve('.github/workflows/release-promote.yml'), 'utf8')
+  const halt = readFileSync(resolve('.github/workflows/release-halt.yml'), 'utf8')
+
+  it('publishes every release, stable included, as a prerelease the stable feed ignores', () => {
+    assert.match(publish, /release_flags=\(--prerelease --latest=false\)/)
+    assert.doesNotMatch(publish, /release_flags\+=\(--latest\)/)
+  })
+
+  it('promotes in place after verifying the published bytes, behind the approval environment', () => {
+    assert.match(promote, /^ {2}workflow_dispatch:$/m)
+    assert.doesNotMatch(promote, /^ {2}(push|schedule):/m)
+    assert.match(promote, /environment: stable-release/)
+    assert.match(promote, /release-promotion\.mts check-promotion/)
+    assert.match(promote, /cd published\n {12}shasum -a 256 --check SHA256SUMS/)
+    assert.match(promote, /release-promotion\.mts check-feeds/)
+    assert.match(promote, /RELEASE_VALIDATION\.json/)
+    assert.match(
+      promote,
+      /gh release edit "\$TAG" --repo "\$RELEASE_REPOSITORY" --prerelease=false --latest/,
+    )
+    assert.match(promote, /verify-public-release-state\.sh "\$RELEASE_REPOSITORY" "\$TAG" promoted/)
+    const verify = promote.indexOf('check-feeds')
+    const flip = promote.indexOf('--prerelease=false --latest')
+    assert.ok(verify >= 0 && flip > verify, 'verification must precede promotion')
+    for (const body of [promote, halt]) {
+      assert.doesNotMatch(
+        body,
+        /electron-builder|build:release|pnpm install|gh release (create|upload|delete)/,
+      )
+    }
+  })
+
+  it('halts by drafting, never deleting, and serialises with promotion', () => {
+    assert.match(halt, /options: \[halt, resume\]/)
+    assert.match(halt, /--draft=true/)
+    assert.match(halt, /release-promotion\.mts fallback-latest/)
+    assert.match(halt, /verify-public-release-state\.sh "\$RELEASE_REPOSITORY" "\$TAG" "\$STATE"/)
+    assert.match(halt, /--label area:release/)
+    for (const body of [promote, halt]) {
+      assert.match(body, /group: release-channel-change/)
+      assert.match(body, /repositories: copse-releases/)
+      // Dispatch inputs reach shells only through env, never interpolated.
+      assert.doesNotMatch(body, /run: .*\$\{\{ inputs\./)
+      for (const block of body.split(/\n {8}run: \|\n/).slice(1)) {
+        assert.doesNotMatch(block.split(/\n {6}- /)[0] ?? '', /\$\{\{ inputs\./)
+      }
+    }
   })
 })
 

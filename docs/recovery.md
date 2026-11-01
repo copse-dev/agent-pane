@@ -146,6 +146,9 @@ release has been verified.
 If an update is known to be bad, do not downgrade. Quit Copse, preserve the
 current data directories for investigation, and report the problem through
 [../SUPPORT.md](../SUPPORT.md). Recovery is a corrective newer release.
+Maintainers halt a bad release so no one else is offered it
+([halting a release](releasing-macos.md#halting-a-release)); a halt does not
+change an installed copy.
 
 To restore a pre-update backup, install the latest supported release, quit it,
 replace `~/.copse/` with the backup copy, then launch again. Do not combine individual files from different
