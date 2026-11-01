@@ -12,6 +12,8 @@ import {
 import { execFileSync } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { wrapCommandWithSandboxMacOS } from '@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js'
+import { removeTrailingGlobSuffix } from '@anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-utils.js'
 import {
   acpAgentSandboxOverlay,
   baseSandboxConfig,
@@ -54,6 +56,54 @@ import {
   clearThreadReadRoots,
   grantThreadReadRoot,
 } from '../services/security/thread-read-roots.ts'
+
+/**
+ * The action of the last `file-read*` rule in a rendered Seatbelt profile that
+ * matches `path` (Seatbelt is last-match-wins). Understands the `subpath`,
+ * `literal` and `regex` filters ASRT emits for plain paths, and throws on any
+ * other filter rather than guess.
+ */
+function lastReadRule(profile: string, path: string): 'allow' | 'deny' | null {
+  let last: 'allow' | 'deny' | null = null
+  let current: { action: 'allow' | 'deny'; matched: boolean } | null = null
+  const finish = (): void => {
+    if (current?.matched) last = current.action
+    current = null
+  }
+  for (const line of profile.split('\n')) {
+    const header = /^\((allow|deny) file-read\*(\))?$/.exec(line)
+    if (header) {
+      finish()
+      const action = header[1] === 'allow' ? 'allow' : 'deny'
+      // A bare `(allow file-read*)` matches every path.
+      if (header[2]) last = action
+      else current = { action, matched: false }
+      continue
+    }
+    if (!current) continue
+    if (!line.startsWith('  ')) {
+      finish()
+      continue
+    }
+    const filter = /^ {2}\((subpath|literal|regex) "((?:[^"\\]|\\.)*)"\)\)?$/.exec(line)
+    if (filter) {
+      const [, kind, raw = ''] = filter
+      const value = raw.replace(/\\(.)/g, '$1')
+      const matches =
+        kind === 'subpath'
+          ? path === value || path.startsWith(`${value}/`)
+          : kind === 'literal'
+            ? path === value
+            : new RegExp(value).test(path)
+      if (matches) current.matched = true
+    } else if (!/^ {2}\(with message "[^"]*"\)\)?$/.test(line)) {
+      throw new Error(`unrecognized Seatbelt read filter: ${line}`)
+    }
+    if (line.endsWith('))')) finish()
+  }
+  finish()
+  return last
+}
 
 /** Bare directory entries are emitted everywhere but Linux (see config.ts). */
 const LISTING_ENTRIES = process.platform !== 'linux'
@@ -275,15 +325,18 @@ describe('resolveNodeToolchainAllowRead', () => {
     }
   })
 
-  it('does not widen ~/.local/bin/node into a grant on ~/.local', () => {
+  it('grants npm under ~/.local/bin/node its global tree, never all of ~/.local', () => {
     const { home, cleanup } = fakeHome()
     try {
       const binDir = join(home, '.local', 'bin')
       installNode(binDir)
       // `npm config set prefix ~/.local` puts lib/node_modules here too.
-      mkdirSync(join(home, '.local', 'lib', 'node_modules'), { recursive: true })
+      const npmTree = join(home, '.local', 'lib', 'node_modules')
+      mkdirSync(npmTree, { recursive: true })
       const allow = resolveNodeToolchainAllowRead({ PATH: binDir }, home)
       assert.ok(allow.includes(`${binDir}/**`))
+      assert.ok(allow.includes(npmTree))
+      assert.ok(allow.includes(`${npmTree}/**`))
       assert.ok(!allow.includes(join(home, '.local')))
       assert.ok(!allow.includes(`${join(home, '.local')}/**`))
     } finally {
@@ -320,6 +373,35 @@ describe('resolveNodeToolchainAllowRead', () => {
       assert.ok(linked.includes(`${versionRoot}/**`))
       assert.ok(!linked.includes(home))
       assert.ok(!linked.includes(`${home}/**`))
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('never follows a node symlink a contained command could plant', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      // A PATH directory inside a checkout, writable by contained commands.
+      const pathDir = join(home, 'src', 'app', 'node_modules', '.bin')
+      mkdirSync(pathDir, { recursive: true })
+      const ssh = join(home, '.ssh')
+      mkdirSync(join(ssh, 'bin'), { recursive: true })
+      mkdirSync(join(ssh, 'lib', 'node_modules'), { recursive: true })
+      writeFileSync(join(ssh, 'id_ed25519'), 'PRIVATE KEY')
+      // A target named `node` in a `bin` with npm beside it, but whose root is
+      // a shallow home directory, is followed no further than any other target.
+      writeFileSync(join(ssh, 'bin', 'node'), '')
+      for (const target of [join(ssh, 'id_ed25519'), join(ssh, 'bin', 'node')]) {
+        rmSync(join(pathDir, 'node'), { force: true })
+        symlinkSync(target, join(pathDir, 'node'))
+        const allow = resolveNodeToolchainAllowRead({ PATH: pathDir }, home)
+        assert.ok(allow.includes(join(pathDir, 'node')))
+        assert.deepEqual(
+          allow.filter((p) => p === ssh || p.startsWith(`${ssh}/`)),
+          [],
+          `${target} must not widen the grant`,
+        )
+      }
     } finally {
       cleanup()
     }
@@ -412,11 +494,11 @@ describe('resolveNodeToolchainAllowRead', () => {
     try {
       const realHome = join(parent, 'real')
       const linkedHome = join(parent, 'linked')
-      const node = installNode(join(realHome, 'bin'))
+      installNode(join(realHome, 'bin'))
       mkdirSync(join(realHome, 'lib', 'node_modules'), { recursive: true })
       symlinkSync(realHome, linkedHome, 'dir')
       const allow = resolveNodeToolchainAllowRead({ PATH: join(linkedHome, 'bin') }, linkedHome)
-      assert.ok(allow.includes(node))
+      assert.ok(allow.includes(join(linkedHome, 'bin', 'node')))
       for (const home of [realHome, linkedHome]) {
         assert.ok(!allow.includes(home))
         assert.ok(!allow.includes(`${home}/**`))
@@ -610,23 +692,33 @@ describe('workspaceSandboxOverlay', () => {
     // ...but git's user-level config must stay readable or seatbelt EPERM makes
     // every git command fatal (exit 128).
     assert.ok(filesystem.allowRead?.includes(join(home, '.gitconfig')))
-    for (const file of ['config', 'ignore', 'attributes']) {
-      assert.ok(filesystem.allowRead?.includes(join(home, '.config/git', file)))
-    }
+    // The whole XDG directory, so an include.path or hooksPath into it works.
+    assert.ok(filesystem.allowRead?.includes(join(home, '.config/git')))
+    assert.ok(filesystem.allowRead?.includes(join(home, '.config/git/**')))
     assert.equal(filesystem.allowGitConfig, true)
   })
 
-  it("keeps git's XDG credential store unreadable", () => {
+  it("keeps git's XDG credential store unreadable in the rendered macOS profile", () => {
     const home = homedir()
-    const credentials = join(home, '.config/git/credentials')
-    const allowRead = workspaceSandboxOverlay('/Users/me/project').filesystem?.allowRead ?? []
-    // An allow covers the credential file when it names it, or names an
-    // ancestor directory or that directory's subtree.
-    const covering = allowRead.filter((entry) => {
-      const root = entry.endsWith('/**') ? entry.slice(0, -3) : entry
-      return root === credentials || (entry.endsWith('/**') && credentials.startsWith(`${root}/`))
+    const filesystem = workspaceSandboxOverlay('/Users/me/project').filesystem
+    assert.ok(filesystem)
+    // Shape the overlay the way ASRT's SandboxManager hands it to the macOS
+    // backend: a trailing `/**` is stripped from every read path.
+    const profile = wrapCommandWithSandboxMacOS({
+      command: 'true',
+      binShell: '/bin/bash',
+      needsNetworkRestriction: false,
+      readConfig: {
+        denyOnly: filesystem.denyRead.map(removeTrailingGlobSuffix),
+        allowWithinDeny: (filesystem.allowRead ?? []).map(removeTrailingGlobSuffix),
+      },
+      writeConfig: { allowOnly: ['/dev/null'], denyWithinAllow: [] },
     })
-    assert.deepEqual(covering, [])
+    // Seatbelt is last-match-wins: the credential store must hit a deny last,
+    // while a config file beside it still hits an allow last.
+    assert.equal(lastReadRule(profile, join(home, '.config/git/credentials')), 'deny')
+    assert.equal(lastReadRule(profile, join(home, '.config/git/config')), 'allow')
+    assert.equal(lastReadRule(profile, join(home, '.ssh/id_ed25519')), 'deny')
   })
 
   describe('with node installed under the home directory', () => {
