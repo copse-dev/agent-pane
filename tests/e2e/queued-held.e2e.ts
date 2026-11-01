@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedHeldQueueFixture } from './helpers/seed-config.ts'
+import { resetUserData, seedHeldQueueFixture, writeSeedConfig } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { AA_BODY_TEXT, fillContrast } from './helpers/fill-contrast.ts'
 import { switchTheme } from './helpers/theme.ts'
@@ -16,6 +16,86 @@ const ROW_SELECTOR = '.conversation-queued .msg-held .message-queued-actions'
 // it. Drain-skip + release semantics are unit-tested in
 // controller/message-queue.test.ts; the DOM shape in views/queued-held.test.ts.
 // This captures the rendered state for visual inspection per AGENTS.md.
+
+// Controller/component tests reach exhaustion through the real drain path.
+// This persisted fixture checks the resulting note and held card after reload.
+describe('held cross-thread prompt', function () {
+  this.timeout(90_000)
+  afterEach(() => {
+    resetUserData()
+  })
+
+  it('shows which allowance is exhausted and offers Release after reload', async function () {
+    resetUserData()
+    const now = Date.now()
+    const prompt = 'Review the original task and continue its remaining authorized work.'
+    const origin = { kind: 'machine', operationId: 'thread:coordinator' }
+    const note =
+      'Cross-thread prompt allowance reached — 5 prompts from other threads have run in this turn. The next cross-thread prompt is held; release it to continue with a reset allowance.'
+    writeSeedConfig({
+      projects: [{ id: 'cross-thread-project', path: process.cwd(), name: 'workspace' }],
+      activeProjectId: 'cross-thread-project',
+      ['threads:cross-thread-project']: [
+        {
+          id: 'cross-thread-destination',
+          title: 'Cross-thread check-in',
+          status: 'idle',
+          currentEpoch: 'destination-turn',
+          continuationUsed: 5,
+          crossThreadPromptsUsed: 5,
+          messages: [
+            {
+              id: 'user',
+              role: 'user',
+              content: 'Finish the original task.',
+              toolCalls: [],
+              createdAt: now,
+            },
+            {
+              id: 'prompt',
+              role: 'user',
+              content: prompt,
+              origin,
+              toolCalls: [],
+              createdAt: now + 1,
+            },
+            {
+              id: 'allowance-note',
+              role: 'error',
+              content: note,
+              toolCalls: [],
+              createdAt: now + 2,
+            },
+          ],
+          pendingMessages: [
+            {
+              messageId: 'prompt',
+              payload: { content: prompt },
+              createdAt: now + 1,
+              origin,
+              autoDispatch: false,
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: now,
+          updatedAt: now + 2,
+        },
+      ],
+    })
+    await browser.reloadSession()
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    const held = $('.conversation-queued .msg-queued.msg-held')
+    await held.waitForDisplayed({ timeout: 10_000 })
+    await expect($('.msg-held .message-queued-badge')).toHaveText('HELD')
+    await expect($('.msg-held .queued-release')).toBeDisplayed()
+    await expect($('.msg-held .queued-send-now')).not.toBeExisting()
+    await expect($('body')).toHaveText(expect.stringContaining(note))
+    await expect(held).toHaveText(expect.stringContaining(prompt))
+    const screenshots = join(process.cwd(), 'tests/e2e/screenshots')
+    mkdirSync(screenshots, { recursive: true })
+    await browser.saveScreenshot(join(screenshots, 'cross-thread-prompt-held.png'))
+  })
+})
 
 describe('held hook message in the queue', function () {
   this.timeout(90_000)

@@ -74,7 +74,7 @@ export type { QueuedMessageOrigin } from '@copse/agent/hooks/hook-outcome.ts'
 /** Provenance for a host-native continuation that started without a human submit. */
 export interface MachineMessageOrigin {
   kind: 'machine'
-  /** Durable background/supervisor operation that requested the continuation. */
+  /** Durable operation that requested the continuation; thread:<sourceId> identifies cross-thread prompts. */
   operationId: string
 }
 
@@ -452,6 +452,8 @@ export interface Thread {
    * counter per turn tree.
    */
   continuationUsed?: number
+  /** Incoming cross-thread prompts dispatched in this turn tree; reset by a human root. */
+  crossThreadPromptsUsed?: number
   /** True while a queued message is being edited; suspends FIFO draining. */
   queuePaused?: boolean
   /** Unsubmitted composer text; keeps blank threads visible across switches. */

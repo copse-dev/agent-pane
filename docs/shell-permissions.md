@@ -75,8 +75,10 @@ read tools. `send_thread_prompt` asks a separate **Send prompts to your other th
 approval. Reading never grants sending. Both grants are persisted in main-owned settings,
 keyed by the requesting thread; they are not inherited by destination or forked threads.
 Either permission can be revoked in the thread’s Context panel → Permissions.
-Destination prompts enter the normal queue with machine provenance, consume the existing
-continuation budget and respect held/paused queues. They do not interrupt active work or
+Destination prompts enter the normal queue with machine provenance and consume a separate
+allowance of five incoming cross-thread prompts per destination turn tree. They do not spend
+or reset the self-continuation budget. A human root submission or release resets both counters;
+exhaustion holds further prompts for human release. Prompts respect held/paused queues. They do not interrupt active work or
 switch the visible thread. An unavailable or archived destination is rejected.
 
 The experimental interactive-client API requires its default-off plugin and desktop pairing.

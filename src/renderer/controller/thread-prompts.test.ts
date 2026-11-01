@@ -6,7 +6,10 @@ import type { ThreadPromptCommand } from '@shared/thread-prompt.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { acceptThreadPrompt } from './thread-prompts.ts'
 import { getThreadById } from '@shared/store/thread-helpers.ts'
-import { DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
+import {
+  DEFAULT_CONTINUATION_BUDGET,
+  DEFAULT_CROSS_THREAD_PROMPT_BUDGET,
+} from '@copse/agent/hooks/continuation-budget.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { PreparedThreadCheckout } from '@shared/types/worktree.ts'
@@ -59,7 +62,8 @@ test('cross-thread prompts run at idle without changing focus or starting a huma
   assert.equal(store.getState().activeThreadId, 'visible-thread')
   const destination = getThreadById(store, 'destination')
   assert.equal(destination?.messages[0]?.origin?.kind, 'machine')
-  assert.equal(destination.continuationUsed, 1)
+  assert.equal(destination.continuationUsed, undefined)
+  assert.equal(destination.crossThreadPromptsUsed, 1)
   assert.equal(destination.currentEpoch, undefined)
 })
 
@@ -80,10 +84,34 @@ test('a conversation in another project uses its own project without switching t
   assert.equal(store.getState().activeProjectId, 'visible-project')
 })
 
-test('exhausted continuation budgets hold machine prompts for the user', async () => {
+test('exhausted self-continuation budget still allows a cross-thread prompt', async () => {
   const { store, api, runs, command } = fixture()
   store.setState({
-    threads: [{ ...command.thread, continuationUsed: DEFAULT_CONTINUATION_BUDGET }],
+    threads: [
+      {
+        ...command.thread,
+        currentEpoch: 'existing',
+        continuationUsed: DEFAULT_CONTINUATION_BUDGET,
+      },
+    ],
+  })
+  const persisted: Partial<Thread>[] = []
+  api.threads.updateMeta = async (_projectId, _threadId, patch): Promise<void> => {
+    persisted.push(patch)
+  }
+  assert.deepEqual(await acceptThreadPrompt(store, api, command), { ok: true, queued: false })
+  assert.equal(runs.length, 1)
+  const destination = getThreadById(store, 'destination')
+  assert.equal(destination?.continuationUsed, DEFAULT_CONTINUATION_BUDGET)
+  assert.equal(destination.crossThreadPromptsUsed, 1)
+  assert.equal(destination.currentEpoch, 'existing')
+  assert.equal(persisted[0]?.crossThreadPromptsUsed, 1)
+})
+
+test('exhausted cross-thread allowance holds prompts even with self-continuation budget left', async () => {
+  const { store, api, runs, command } = fixture()
+  store.setState({
+    threads: [{ ...command.thread, crossThreadPromptsUsed: DEFAULT_CROSS_THREAD_PROMPT_BUDGET }],
   })
   assert.deepEqual(await acceptThreadPrompt(store, api, command), { ok: true, queued: true })
   assert.deepEqual(runs, [])

@@ -103,6 +103,7 @@ export async function acceptThreadPrompt(
         await api.threads.updateMeta(command.projectId, threadId, {
           pendingMessages: accepted.pendingMessages ?? [],
           continuationUsed: accepted.continuationUsed ?? 0,
+          crossThreadPromptsUsed: accepted.crossThreadPromptsUsed ?? 0,
           ...(accepted.currentEpoch !== undefined ? { currentEpoch: accepted.currentEpoch } : {}),
           updatedAt: accepted.updatedAt,
         })

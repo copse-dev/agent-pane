@@ -224,6 +224,7 @@ describe('buildForkedThread', () => {
       draftPrompt: 'half-typed',
       currentEpoch: 'epoch-1',
       continuationUsed: 2,
+      crossThreadPromptsUsed: 4,
       comparison: {
         status: 'done',
         models: { a: 'a', b: 'b', judge: 'j' },
@@ -251,6 +252,7 @@ describe('buildForkedThread', () => {
     assert.equal(forked.draftPrompt, undefined)
     assert.equal(forked.currentEpoch, undefined)
     assert.equal(forked.continuationUsed, undefined)
+    assert.equal(forked.crossThreadPromptsUsed, undefined)
     assert.equal(forked.comparison, undefined)
     assert.equal(forked.contextSnapshot, undefined)
   })
