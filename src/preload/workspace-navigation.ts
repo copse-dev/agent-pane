@@ -1,6 +1,19 @@
 /** Keep workspace-dependent IPC behind the workspace selected by this window. */
 type Invoke = (channel: string, ...args: unknown[]) => Promise<unknown>
 
+// Controls addressed to a live close request, run or terminal session. A
+// switch that fails or is superseded must not delay or discard "Keep working",
+// Stop or Ctrl-C. Creating a terminal still waits: it opens in the workspace.
+const ADDRESSED_CONTROLS: ReadonlySet<string> = new Set([
+  'close-confirm:respond',
+  'agent:abort',
+  'terminal:write',
+  'terminal:resize',
+  'terminal:destroy',
+  'terminal:set-meta',
+  'terminal:set-active',
+])
+
 export function createWorkspaceNavigation(invoke: Invoke): Invoke {
   let navigation: Promise<unknown> | null = null
   let generation = 0
@@ -57,7 +70,8 @@ export function createWorkspaceNavigation(invoke: Invoke): Invoke {
       // Replies name a pending request, never the ambient workspace.
       channel === 'ssh-prompt:respond' ||
       channel === 'approval:respond' ||
-      channel === 'ask:respond'
+      channel === 'ask:respond' ||
+      ADDRESSED_CONTROLS.has(channel)
     ) {
       return invoke(channel, ...args)
     }

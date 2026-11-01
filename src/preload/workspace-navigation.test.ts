@@ -120,6 +120,30 @@ test('SSH authentication replies bypass the activation that is waiting for them'
   await connecting
 })
 
+test('controls for a live request, run or terminal session bypass a failing selection', async () => {
+  const f = fixture()
+  const selecting = assert.rejects(f.invoke('workspace:set', '/remote', 'host'), /missing folder/)
+  const controls = [
+    f.invoke('close-confirm:respond', 'close-request', false),
+    f.invoke('agent:abort', 'thread'),
+    f.invoke('terminal:write', 'session', '\u0003'),
+  ]
+  // Creating a terminal still depends on the selected workspace.
+  const creating = assert.rejects(f.invoke('terminal:create', 80, 24), /missing folder/)
+  assert.deepEqual(f.calls, [
+    'workspace:set:/remote',
+    'close-confirm:respond:close-request',
+    'agent:abort:thread',
+    'terminal:write:session',
+  ])
+  f.fail('/remote')
+  await Promise.all([selecting, creating, ...controls])
+  // The rejected selection remains the barrier, but session controls still run.
+  await f.invoke('terminal:resize', 'session', 100, 30)
+  assert.equal(f.calls.at(-1), 'terminal:resize:session')
+  assert.ok(!f.calls.some((call) => call.startsWith('terminal:create')))
+})
+
 test('a slow remote activation cannot delay actions in a newer local selection', async () => {
   const f = fixture()
   const remote = f.invoke('workspace:set', '/remote', 'host')
