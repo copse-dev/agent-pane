@@ -51,7 +51,7 @@ function waitForWorker(
 /** One live parent turn's allowance. The supervisor remains the only scheduler. */
 export function createReadonlyWorkerTurn(supervisor: TaskSupervisor): {
   run: (options: {
-    mode?: 'readonly' | 'isolated'
+    mode?: 'readonly' | 'isolated' | 'shared'
     owner: ThreadExecutionOwner
     permissionSnapshot: PermissionSnapshot
     requests: readonly ReadonlyWorkerRequest[]
@@ -79,7 +79,7 @@ export function createReadonlyWorkerTurn(supervisor: TaskSupervisor): {
       }
       // Reserve synchronously before the first await, including concurrent tool calls.
       admitted += requests.length
-      const handler = `native_${mode === 'readonly' ? 'readonly' : 'isolated'}_worker:${randomUUID()}`
+      const handler = `native_${mode}_worker:${randomUUID()}`
       const reports = new Map<string, string>()
       const workers = requests.map((request) => ({ request, id: randomUUID() }))
       const runInParentContext = AsyncLocalStorage.snapshot()

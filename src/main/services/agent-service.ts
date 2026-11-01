@@ -170,6 +170,8 @@ import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { createReadonlyWorkerTurn } from './agents/readonly-worker-batch.ts'
 import { getTaskSupervisor } from './supervisor/task-supervisor.ts'
 import { runWithReadonlyWorkerRunner } from '../tools/readonly-workers-tool.ts'
+import { runWithAgentRunner } from '../tools/run-agent-tool.ts'
+import { prepareRunAgent, runPreparedAgent } from './agents/run-agent-runner.ts'
 import {
   getAgent,
   collectDiscoveryRoots,
@@ -2366,6 +2368,61 @@ async function runAgentWithInlineCanvas(
                 onChunk: sendChunk,
                 usageModel: subagentUsageModel,
                 localFallback: subagentLocalFallback,
+              },
+              () => registry.execute(name, args, signal),
+            )
+          }
+          if (name === 'run_agent') {
+            return runWithAgentRunner(
+              async (request, workerSignal) => {
+                const owner = getThreadExecutionContext()
+                if (!owner) throw new Error('Subagents require an owning thread checkout.')
+                const prepared = await prepareRunAgent(request, registry)
+                workerSignal.throwIfAborted()
+                // The selected tools can mutate this checkout through ordinary gates.
+                if (
+                  !isAgentRunReadonly() &&
+                  prepared.tools.some(
+                    (tool) =>
+                      !isToolAllowedInReadonlyMode(tool.name, {
+                        mcpAnnotations: tool.name.startsWith('mcp__')
+                          ? getMcpToolMeta(tool.name)?.annotations
+                          : undefined,
+                      }),
+                  )
+                )
+                  turnChangedFiles = true
+                const results = await readonlyWorkerTurn.run({
+                  mode: 'shared',
+                  owner,
+                  permissionSnapshot: {
+                    capturedAt: Date.now(),
+                    executionRoot: owner.root,
+                    autoRunSandboxCommands: false,
+                    projectSandboxEnabled: isProjectSandboxEnabled(),
+                  },
+                  requests: [{ agent: prepared.route.role, prompt: request.task }],
+                  signal: workerSignal,
+                  execute: async (_request, _workerId, ownedSignal) =>
+                    runPreparedAgent({
+                      request,
+                      prepared,
+                      registry,
+                      parentToolCallId: toolCallId,
+                      signal: ownedSignal,
+                      onChunk: sendChunk,
+                    }),
+                })
+                const result = results[0]
+                if (!result) throw new Error('Subagent returned no result.')
+                if (result.state !== 'completed') {
+                  sendChunk({
+                    type: 'subagent_error',
+                    parentToolCallId: toolCallId,
+                    error: result.error ?? result.state,
+                  })
+                }
+                return JSON.stringify({ ...result, routing: prepared.route })
               },
               () => registry.execute(name, args, signal),
             )

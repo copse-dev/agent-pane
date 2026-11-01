@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
-import { isAgentRunReadonly } from '../agent-run-readonly.ts'
+import { isAgentRunReadonly, runWithAgentRunReadonly } from '../agent-run-readonly.ts'
 import { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import { FileSupervisedTaskStore } from '../supervisor/task-store.ts'
 import { createSupervisedTaskClient } from '../supervisor/task-client.ts'
@@ -50,6 +50,37 @@ describe('supervised read-only worker batches', () => {
   afterEach(async () => {
     await Promise.all(supervisors.splice(0).map((supervisor) => supervisor.shutdown()))
     await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+  })
+
+  it('shared workers inherit read-only mode and share the named-worker allowance', async () => {
+    const supervisor = await setup()
+    const turn = createReadonlyWorkerTurn(supervisor)
+    for (const readonly of [false, true]) {
+      const results = await runWithAgentRunReadonly(readonly, () =>
+        turn.run({
+          mode: 'shared',
+          owner,
+          permissionSnapshot,
+          requests: requests.slice(0, 1),
+          signal: new AbortController().signal,
+          execute: async () => {
+            assert.equal(isAgentRunReadonly(), readonly)
+            return 'done'
+          },
+        }),
+      )
+      assert.equal(results[0]?.state, 'completed')
+    }
+    await assert.rejects(
+      turn.run({
+        owner,
+        permissionSnapshot,
+        requests: requests.slice(0, 1),
+        signal: new AbortController().signal,
+        execute: async () => 'unexpected',
+      }),
+      /At most two workers/,
+    )
   })
 
   it('runs two workers concurrently, preserves submission context, and attributes reports', async () => {

@@ -36,6 +36,7 @@ export const READONLY_AGENT_TOOLS = new Set<string>([
   // `delegate_step`, whose whole purpose is to write files.
   'task',
   'run_readonly_workers',
+  'run_agent',
   'ask_user',
   // Thread-owned review artifacts change no workspace or external state.
   'update_thread_plan',
