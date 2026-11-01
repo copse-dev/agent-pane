@@ -381,7 +381,8 @@ tokens such as `GITHUB_TOKEN` are passed through.
 
 An agent `resolveAcpConfigDirEnvVar` (`acp-agent-registry.ts`) recognises as
 wrapping Claude (today, any Claude ACP adapter — see `isClaudeAcpAgent`) is
-**thread-scoped by default**: Copse points `CLAUDE_CONFIG_DIR` at
+**thread-scoped by default** when it runs locally: Copse points
+`CLAUDE_CONFIG_DIR` at
 `<chat store>/<projectId>/<threadId>/acp-agent-config/<agentId>/`
 (`acp-agent-config-dir.ts`) rather than letting the agent fall back to the real
 `$HOME`. Without this, every ACP-backed Copse thread shares — and is shaped
@@ -389,14 +390,50 @@ by — whatever the signed-in device's Claude Code account has globally:
 personal synced skills, plugins, and MCP servers from a completely unrelated
 context, with no relation to the project the thread is actually working in.
 
+**The login is not scoped.** `CLAUDE_CONFIG_DIR` alone would sign every new
+thread out: Claude Code derives its secure storage from that directory too. On
+macOS the Keychain item becomes `Claude Code-credentials-<first 8 hex of
+sha256(dir)>`, and on Linux/Windows `.credentials.json` moves into the
+directory. Copse's Settings auth check stays unscoped, so it would still say
+"signed in" while the agent failed. Copse therefore also sets an **empty**
+`CLAUDE_SECURESTORAGE_CONFIG_DIR`, which the CLI reads as "the default
+Keychain item and `~/.claude/.credentials.json`". Every thread uses the account's
+one real login, its token refreshes and their lock included, and nothing
+credential-shaped is linked or copied into the thread.
+
+Scoping happens only when Copse can see that the CLI the adapter will run
+honours that variable. That means **Claude Code 2.1.144 or newer**, read from the
+`claudeCodeVersion` of the `@anthropic-ai/claude-agent-sdk` installed with the
+adapter (`@agentclientprotocol/claude-agent-acp` 0.37.0+). An older adapter
+already hashes the Keychain item name but ignores the override, so it is left
+**unscoped** rather than signed out. So is any agent whose CLI Copse cannot
+identify:
+
+- a runner such as `npx`;
+- a `CLAUDE_CODE_EXECUTABLE` override;
+- an install with no SDK version to read.
+
+Run `npm install -g @agentclientprotocol/claude-agent-acp@latest` to get the
+scoping on an older install.
+
+**SSH-hosted agents are never scoped.** The directory is a path on this
+machine, so it means nothing on the remote host. Putting it in the agent's
+`env` would also make the forwarding consent prompt (`acp-remote-env-gate.ts`,
+see [`acp-over-ssh.md`](plans/acp-over-ssh.md)) ask to send it there. A remote agent
+keeps the host's own `~/.claude`. Copse asks to forward only the env configured
+in Settings.
+
 An explicit `CLAUDE_CONFIG_DIR` in the agent's own `env` (Settings → Coding
-agents) always overrides the default — e.g. to point every thread at one
-shared config on purpose. OAuth login state survives the scoping either way:
-on macOS it lives in the Keychain, outside this directory entirely; on
-Linux/Windows, where `claude`'s only saved login is a `.credentials.json` file
-directly under its config dir, `ensureClaudeAcpConfigDir` symlinks that one
-file in from the account's real credentials so every thread shares the same
-login without sharing anything else.
+agents) always overrides the default, for example to point every thread at one
+shared config on purpose. Copse then adds no secure-storage override, so that
+directory behaves exactly as it does for the CLI on its own, login included.
+
+> **Known gap — sandboxed writes.** The seatbelt mounts the chat store
+> read-only and grants the agent writes only to its declared `homeDirs`
+> (`~/.claude`, …). A sandboxed agent can therefore read and refresh its login
+> but cannot write into its scoped directory (`.claude.json`, session
+> transcripts under `projects/`). Granting that directory is a separate
+> sandbox-policy change, not made here.
 
 This directory is a root-level sibling of `events.jsonl`, like the ACP wire
 trace: untouched by thread save/load, and carried along by "Export thread
