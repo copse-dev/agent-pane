@@ -8,6 +8,7 @@ import { clearOpenAiAgentSession, runOpenAiAgentFromSettings } from './openai-ag
  * SDK's reconnect loop so a mid-turn SSE drop does not abort a still-running
  * remote agent.
  */
+import { getAgentExecutionRoot } from '../execution-root.ts'
 import type { LLMMessage, Message, StreamChunk } from '@shared/types'
 import { createHash } from 'node:crypto'
 import {
@@ -381,7 +382,8 @@ async function createRemoteAgent(input: {
   // Branch the remote run from whatever branch this project is on locally. The
   // remote clones from GitHub, so a branch that hasn't been pushed falls back to
   // the repo's default ref (startingRef omitted).
-  const startingRef = firstNonEmptyString((await getCurrentBranchName())?.trim()) ?? ''
+  const startingRef =
+    firstNonEmptyString((await getCurrentBranchName(getAgentExecutionRoot()))?.trim()) ?? ''
   const modelId = input.model?.trim()
   const body = {
     prompt: input.prompt,
@@ -428,7 +430,7 @@ async function buildFirstHandoffPrompt(
 ): Promise<PromptPayload> {
   let branch: string | null = null
   try {
-    branch = await getCurrentBranchName()
+    branch = await getCurrentBranchName(getAgentExecutionRoot())
   } catch (err) {
     console.warn('[remote-agent] branch lookup failed:', err)
   }
