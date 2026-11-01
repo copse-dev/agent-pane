@@ -2734,36 +2734,8 @@ describe('formatGithubWritePrompt', () => {
       /CI resources or secrets/,
     )
   })
-  it('shows the branch and fixed remote for a normal push', () => {
-    const prompt = formatGithubWritePrompt('git_push', { branch: 'copse/readable-push' })
-    assert.equal(prompt.approveLabel, 'Push branch')
-    assert.equal(
-      prompt.body,
-      'Branch: copse/readable-push\nRemote: origin (same branch name)\nNo force push.',
-    )
-    assert.match(prompt.bodyFooter, /once/)
+  it('labels the thread-branch push button by its action', () => {
     assert.equal(formatGithubWritePrompt('gh_push', {}).approveLabel, 'Push branch')
-  })
-  it('keeps the full remote commit guard visible for a force-with-lease push', () => {
-    const sha = '1234567890abcdef1234567890abcdef12345678'
-    const prompt = formatGithubWritePrompt('git_push', {
-      branch: 'copse/readable-push',
-      expected_remote_sha: sha,
-    })
-    assert.match(prompt.body, /Force with lease/)
-    assert.ok(prompt.body.includes(sha))
-    assert.match(prompt.body, /Never bare force/)
-    assert.doesNotMatch(prompt.body, /No force push/)
-  })
-  it('does not hide unrecognised or invalid push inputs', () => {
-    for (const args of [
-      {},
-      { branch: 'topic', force: true },
-      { branch: 'topic', expected_remote_sha: false },
-      { branch: 'topic', expected_remote_sha: 'short-sha' },
-    ]) {
-      assert.equal(formatGithubWritePrompt('git_push', args).body, JSON.stringify(args, null, 2))
-    }
   })
   it('falls back to JSON without hiding unknown inputs', () => {
     const prompt = formatGithubWritePrompt('gh_pr_rerun_failed_ci', { weird: true })

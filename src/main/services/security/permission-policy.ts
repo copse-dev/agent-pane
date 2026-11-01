@@ -125,7 +125,6 @@ export function formatGithubWritePrompt(toolName: string, args: unknown): Github
     approveLabel:
       {
         gh_push: 'Push branch',
-        git_push: 'Push branch',
         gh_pr_create: 'Publish pull request',
         gh_pr_rerun_failed_ci: 'Re-run CI',
         gh_pr_approve: 'Submit approving review',
@@ -147,27 +146,11 @@ function formatGithubWritePromptBody(toolName: string, args: unknown): string {
   if (toolName === 'gh_push')
     return 'Push the current thread branch to origin, updating any existing pull request. No force push.'
   if (!isRecord(args)) return JSON.stringify(args, null, 2)
-  if (toolName === 'git_push') {
-    const branch = nonEmptyStringArg(args, 'branch')
-    const lease = args['expected_remote_sha']
-    if (
-      !branch ||
-      Object.keys(args).some((key) => !['branch', 'expected_remote_sha'].includes(key)) ||
-      (lease !== undefined && (typeof lease !== 'string' || !/^[a-f0-9]{40}$/i.test(lease)))
-    ) {
-      return JSON.stringify(args, null, 2)
-    }
-    return [
-      `Branch: ${branch}`,
-      'Remote: origin (same branch name)',
-      lease === undefined
-        ? 'No force push.'
-        : `Force with lease: replace remote history only if its current commit is ${lease}. Never bare force.`,
-    ].join('\n')
-  }
-  // Maintenance actions must expose the body, head guard, or exact thread
+  // Maintenance actions must expose the body, lease/head guard, or exact thread
   // being authorized, not just the PR number.
-  if (['gh_pr_merge', 'gh_pr_comment', 'gh_pr_resolve_review_thread'].includes(toolName)) {
+  if (
+    ['git_push', 'gh_pr_merge', 'gh_pr_comment', 'gh_pr_resolve_review_thread'].includes(toolName)
+  ) {
     return JSON.stringify(args, null, 2)
   }
   // gh_pr_create has no PR number yet — show the title, and the target repo
