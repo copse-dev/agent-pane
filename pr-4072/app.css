@@ -6974,6 +6974,11 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   font-size: var(--font-size-sm);
   font-weight: 500;
 }
+.tool-command-phase {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
 .tool-edit-stats {
   display: inline-flex;
   align-items: center;
