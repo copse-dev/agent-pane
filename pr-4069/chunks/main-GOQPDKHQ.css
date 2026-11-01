@@ -1536,6 +1536,9 @@ copse-ui-field input[type=password],
   max-width: none;
   margin-left: 0;
 }
+.projects-list.is-compact .chat-thread-details {
+  display: none;
+}
 .chat-title-rename {
   flex: 1 1 auto;
   min-width: 0;
