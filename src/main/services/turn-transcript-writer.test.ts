@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
+import type { CommandPhase } from '@copse/agent/wire-types.ts'
 import type { StreamChunk, TranscriptStamp, TranscriptSnapshot } from '@shared/types'
 import { createStore } from '@shared/store/store.ts'
 import { getThreadById } from '@shared/store/thread-helpers.ts'
@@ -261,6 +262,84 @@ describe('TurnTranscriptWriter', () => {
     assert.equal(thread.messages.at(1)?.commandSummary, 'Read the plan')
     assert.equal(thread.messages.at(1)?.toolCalls.at(0)?.result, '1. Ship it')
     assert.equal(thread.messages.length, 3)
+  })
+
+  it('records a background task ending on its card after the turn, without the window writing it', async () => {
+    const deliveries: Delivery[] = []
+    const turn = harness(recordedTurn, (delivery) => deliveries.push(delivery))
+    await dispatch(turn)
+    deliveries.length = 0
+
+    const phase = {
+      state: 'exited' as const,
+      since: 50,
+      launched: true,
+      exitCode: 1,
+      backgroundTaskId: 'bg-1',
+    }
+    await turn.writer.updateCommandPhase(PROJECT, THREAD, 'call-read', phase)
+
+    const thread = await stored()
+    const call = thread.messages.at(1)?.toolCalls.find((candidate) => candidate.id === 'call-read')
+    assert.deepEqual(call?.commandPhase, phase)
+    assert.equal(call.result, '1. Ship it', 'the rest of the call is untouched')
+    assert.equal(thread.messages.length, 3)
+    assert.deepEqual(deliveries, [
+      {
+        threadId: THREAD,
+        chunk: { type: 'tool_call_update', toolCallId: 'call-read', commandPhase: phase },
+        stamp: { messageIds: [] },
+      },
+    ])
+  })
+
+  it('keeps both endings when two tasks on one message finish together', async () => {
+    const turn = harness(() => [
+      { type: 'tool_call', toolCall: { id: 'call-a', name: 'run_background', args: {} } },
+      { type: 'tool_call', toolCall: { id: 'call-b', name: 'run_background', args: {} } },
+      { type: 'tool_result', toolCallId: 'call-a', result: 'Started a.', isError: false },
+      { type: 'tool_result', toolCallId: 'call-b', result: 'Started b.', isError: false },
+      { type: 'done' },
+    ])
+    await dispatch(turn)
+
+    const ending = (taskId: string, exitCode: number): CommandPhase => ({
+      state: 'exited',
+      since: 50,
+      launched: true,
+      exitCode,
+      backgroundTaskId: taskId,
+    })
+    await Promise.all([
+      turn.writer.updateCommandPhase(PROJECT, THREAD, 'call-a', ending('bg-a', 1)),
+      turn.writer.updateCommandPhase(PROJECT, THREAD, 'call-b', ending('bg-b', 2)),
+    ])
+
+    const calls = (await stored()).messages.flatMap((message) => message.toolCalls)
+    assert.deepEqual(
+      calls.map((call) => [call.id, call.commandPhase?.exitCode]),
+      [
+        ['call-a', 1],
+        ['call-b', 2],
+      ],
+    )
+  })
+
+  it('ignores an ending for a tool call the thread does not hold', async () => {
+    const deliveries: Delivery[] = []
+    const turn = harness(recordedTurn, (delivery) => deliveries.push(delivery))
+    await dispatch(turn)
+    deliveries.length = 0
+    const before = await stored()
+
+    await turn.writer.updateCommandPhase(PROJECT, THREAD, 'call-missing', {
+      state: 'cancelled',
+      since: 50,
+      launched: true,
+    })
+
+    assert.deepEqual(await stored(), before)
+    assert.deepEqual(deliveries, [])
   })
 
   it('restores an in-flight bubble and continues with the same identity and full prefix', async () => {

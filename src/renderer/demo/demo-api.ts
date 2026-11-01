@@ -1557,6 +1557,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       setThread: () => resolved(null),
       findByThread: () => resolved(null),
     },
+    backgroundTasks: {
+      logs: () => resolved(null),
+    },
     supervisor: {
       list: () => resolved({ tasks: [] }),
       cancel: () => resolved({ task: null }),

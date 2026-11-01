@@ -353,7 +353,8 @@
 .tool-rollup-body > .tool-interruption-note {
   margin: var(--spacing-xs) 0;
 }
-.tool-result {
+.tool-result,
+.tool-task-logs-output {
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
   white-space: pre-wrap;
@@ -361,7 +362,8 @@
   overflow-y: auto;
   color: var(--text-secondary);
 }
-.tool-result pre {
+.tool-result pre,
+.tool-task-logs-output pre {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
@@ -411,6 +413,23 @@
 .tool-locations a {
   color: var(--link);
   overflow-wrap: anywhere;
+}
+/* A background task's output, read from the card on request (#3956). */
+.tool-task-logs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.tool-task-logs-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+/* The card a completion wake's "Show command" just revealed. */
+.tool-card-revealed {
+  border-radius: var(--radius);
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
 }
 /* `details.tool-args` is the disclosure itself (conversation.ts), so its summary
    is a direct child. Same handle as the hook card's nested inspect disclosure

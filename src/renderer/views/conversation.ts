@@ -48,7 +48,12 @@ import {
 } from '../canvas/artefact-previews.ts'
 import { createInlineArtefact, disposeInlineArtefacts } from '../canvas/inline-artefact.ts'
 import { artefactTitleFromUri } from '@shared/canvas/artefact.ts'
-import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
+import {
+  getThreadById,
+  getActiveThread,
+  getThreadProjectId,
+  setQueuePaused,
+} from '@shared/store/thread-helpers.ts'
 import { CONTAINER_RUN_ADOPT_EVENT } from '@shared/store/container-run-card.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import {
@@ -121,6 +126,12 @@ import {
   type ToolCallDisplayItem,
 } from '@shared/tools/tool-display.ts'
 import { commandPhaseLabel, liveCommandPhase } from '@shared/tools/command-phase-display.ts'
+import {
+  backgroundTaskCommandCall,
+  createBackgroundTaskLogsSection,
+  revealToolCard,
+  setBackgroundTaskLogLoader,
+} from './command-task-links.ts'
 import type { ToolRun } from '@shared/tools/tool-runs.ts'
 import { isCopseToolCall } from '@shared/tools/copse-tool-call.ts'
 import { navigateToChange } from '../controller/panels.ts'
@@ -496,6 +507,7 @@ function appendStandardToolSections(
         argsSection === null && tc.status !== 'running',
         tc.appendedReminderLengths,
       ),
+      ...appendIfPresent(createBackgroundTaskLogsSection(tc)),
       ...appendIfPresent(createToolLocationsSection(tc.locations)),
     )
   }
@@ -2011,7 +2023,11 @@ function createHookCard(card: HookCard, load: HookRunDetailLoader): HTMLElement 
  * Attribution marker on a turn started without a human submit. Hook follow-ups
  * name the hook and event; host-native continuations use a stable machine label.
  */
-function buildMessageOriginMarker(origin: MessageOrigin, editedByUser: boolean): HTMLElement {
+function buildMessageOriginMarker(
+  origin: MessageOrigin,
+  editedByUser: boolean,
+  showCommand?: () => void,
+): HTMLElement {
   const fromHook = origin.kind === 'hook'
   const label = fromHook
     ? `Hook · ${origin.hookId} (${hookEventLabel(origin.event)})`
@@ -2040,6 +2056,17 @@ function buildMessageOriginMarker(origin: MessageOrigin, editedByUser: boolean):
         'edited',
       ),
     )
+  }
+  if (showCommand) {
+    // A background task's completion wake: back to the card that started it,
+    // which now shows how the task ended (#3956).
+    const button = el(
+      'button',
+      { type: 'button', class: 'ui-btn ui-btn-ghost ui-btn-compact msg-origin-command-link' },
+      'Show command',
+    )
+    button.addEventListener('click', showCommand)
+    marker.append(button)
   }
   return marker
 }
@@ -3304,7 +3331,21 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (origin?.kind === 'hook') msgEl.setAttribute('data-hook-id', origin.hookId)
     if (origin?.kind === 'machine') msgEl.setAttribute('data-operation-id', origin.operationId)
     const body = el('div', { class: 'message-body' })
-    if (origin) body.append(buildMessageOriginMarker(origin, msg.editedByUser === true))
+    const wakeCommand =
+      origin?.kind === 'machine' ? backgroundTaskCommandCall(thread, origin.operationId) : undefined
+    if (origin) {
+      body.append(
+        buildMessageOriginMarker(
+          origin,
+          msg.editedByUser === true,
+          wakeCommand
+            ? (): void => {
+                revealToolCard(list, wakeCommand.id)
+              }
+            : undefined,
+        ),
+      )
+    }
     // A message absorbed into a multi-message run shows its reasoning as a step
     // inside that run's rollup, so it never paints a body-level trail of its own
     // — not even when it contributed reasoning but no tools.
@@ -4506,10 +4547,17 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const unbindFileLinks = bindFileReferenceClicks(root, store, api)
   const unbindWorkspaceLinks = bindWorkspaceLinkClicks(root, store, api)
   const unbindBrowserLinks = bindBrowserLinkClicks(root, store, api)
+  setBackgroundTaskLogLoader(async (taskId) => {
+    const threadId = store.getState().activeThreadId
+    const projectId = threadId ? getThreadProjectId(store, threadId) : null
+    if (!threadId || !projectId) return null
+    return api.backgroundTasks.logs(projectId, threadId, taskId)
+  })
   rebuildForThread()
   syncFromStore()
   return () => {
     disposed = true
+    setBackgroundTaskLogLoader(null)
     archiveReview.dispose()
     selectionQuote.destroy()
     avatarMotion.dispose()

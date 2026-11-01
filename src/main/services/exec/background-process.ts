@@ -58,6 +58,7 @@ interface BackgroundProcess {
   exitObserved: boolean
   completionTimer: ReturnType<typeof setTimeout> | null
   onCompletion?: (completion: BackgroundProcessCompletion) => void | Promise<void>
+  onCancelled?: (info: BackgroundProcessInfo) => void
   /** True when the process runs without the local project sandbox. */
   unsandboxed: boolean
   owner: ThreadExecutionOwner
@@ -196,6 +197,8 @@ export interface StartBackgroundProcessOptions {
   timeoutMs?: number
   /** Called once after a natural exit or deadline, never after explicit cancellation. */
   onCompletion?: (completion: BackgroundProcessCompletion) => void | Promise<void>
+  /** Called once when a still-running task is stopped (by the agent, the user or thread cleanup). */
+  onCancelled?: (info: BackgroundProcessInfo) => void
 }
 
 export interface BackgroundProcessCompletion {
@@ -213,6 +216,7 @@ export interface AdoptBackgroundProcessOptions {
   output: string
   timeoutMs: number
   onCompletion?: (completion: BackgroundProcessCompletion) => void | Promise<void>
+  onCancelled?: (info: BackgroundProcessInfo) => void
 }
 
 /** Transfer an already authorized child without respawning it or widening its sandbox. */
@@ -237,6 +241,7 @@ export function adoptBackgroundProcess(opts: AdoptBackgroundProcessOptions): Bac
     exitObserved: false,
     completionTimer: null,
     ...(opts.onCompletion ? { onCompletion: opts.onCompletion } : {}),
+    ...(opts.onCancelled ? { onCancelled: opts.onCancelled } : {}),
   }
   entry.output.append(opts.output)
   processes.set(entry.id, entry)
@@ -267,6 +272,19 @@ export function adoptBackgroundProcess(opts: AdoptBackgroundProcessOptions): Bac
   })
   if (opts.proc.exitCode !== null || opts.proc.signalCode !== null) finish(opts.proc.exitCode)
   return toInfo(entry)
+}
+
+/** Mark a task stopped on purpose; tells its starter once, unless it had already exited. */
+function cancel(entry: BackgroundProcess): void {
+  const wasRunning = !entry.exited && !entry.cancelled
+  entry.cancelled = true
+  if (entry.completionTimer) clearTimeout(entry.completionTimer)
+  if (!wasRunning || !entry.onCancelled) return
+  try {
+    entry.onCancelled(toInfo(entry))
+  } catch (error) {
+    console.warn('[background-process] cancellation callback failed:', error)
+  }
 }
 
 function notifyCompletion(entry: BackgroundProcess): void {
@@ -348,6 +366,7 @@ export async function startBackgroundProcess(
       exitObserved: false,
       completionTimer: null,
       ...(opts.onCompletion ? { onCompletion: opts.onCompletion } : {}),
+      ...(opts.onCancelled ? { onCancelled: opts.onCancelled } : {}),
       owner,
     }
     processes.set(entry.id, entry)
@@ -476,6 +495,19 @@ export function getBackgroundProcessLogs(
   return entry ? observe(entry).output.toString() : null
 }
 
+/**
+ * Recent output for the user to read, or null when unknown. Unlike
+ * {@link getBackgroundProcessLogs} this does not count as the agent observing
+ * the exit, so opening a card's logs never cancels the completion wake.
+ */
+export function peekBackgroundProcessLogs(
+  id: string,
+  owner: ThreadExecutionOwner,
+): { logs: string; running: boolean } | null {
+  const entry = ownedProcess(id, owner)
+  return entry ? { logs: entry.output.toString(), running: !entry.exited } : null
+}
+
 /** Kill a process and forget it. Returns false when the id is unknown. */
 export function stopBackgroundProcess(
   id: string,
@@ -483,8 +515,7 @@ export function stopBackgroundProcess(
 ): boolean {
   const entry = ownedProcess(id, owner)
   if (!entry) return false
-  entry.cancelled = true
-  if (entry.completionTimer) clearTimeout(entry.completionTimer)
+  cancel(entry)
   terminateProcessTree(entry.proc)
   processes.delete(id)
   notifyThreadResourceFinished(entry.owner.threadId)
@@ -516,8 +547,7 @@ export async function stopBackgroundProcessesForThread(
           }
           entry.proc.once('exit', finish)
           entry.proc.once('close', finish)
-          entry.cancelled = true
-          if (entry.completionTimer) clearTimeout(entry.completionTimer)
+          cancel(entry)
           cancelEscalation = terminateProcessTree(entry.proc)
           const timeout = setTimeout(finish, SUBPROCESS_KILL_GRACE_MS + 250)
           processes.delete(entry.id)

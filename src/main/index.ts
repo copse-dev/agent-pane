@@ -229,6 +229,7 @@ import {
   backgroundCompletionPrompt,
   setBackgroundCompletionWakeHandler,
 } from './services/exec/background-completion-wake.ts'
+import { setLateCommandPhaseRecorder } from './services/exec/command-phase.ts'
 import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
   getThreadExecutionContext,
@@ -699,6 +700,15 @@ app
         console.error('[threads] could not write a turn transcript:', error)
       },
     })
+
+    // A background task's exit lands on the card that started it (#3956).
+    setLateCommandPhaseRecorder((owner, toolCallId, phase) =>
+      transcriptWriter
+        .updateCommandPhase(owner.projectId, owner.threadId, toolCallId, phase)
+        .catch((error: unknown) => {
+          console.error('[threads] could not record a command stage:', error)
+        }),
+    )
 
     // C2: forward an async hook's queued message to the renderer's pending queue
     // (decision 4). Same window-guarded send as `agent:chunk`.

@@ -1540,6 +1540,10 @@ const api: ApiClient = {
       ipcRenderer.invoke('roadmap:set-thread', id, threadId),
     findByThread: (threadId: string) => ipcRenderer.invoke('roadmap:find-by-thread', threadId),
   },
+  backgroundTasks: {
+    logs: (projectId: string, threadId: string, taskId: string) =>
+      ipcRenderer.invoke('background-tasks:logs', projectId, threadId, taskId),
+  },
   supervisor: {
     list: (projectId: string) => ipcRenderer.invoke('supervisor:list', projectId),
     cancel: (projectId: string, taskId: string) =>
