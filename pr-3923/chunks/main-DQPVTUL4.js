@@ -21490,13 +21490,13 @@ function mountConversation(root, store2, api2) {
     }
   }
   function captureReadingAnchor() {
-    const listRect = list.getBoundingClientRect();
+    const readingTop = list.getBoundingClientRect().top + (Number.parseFloat(list.style.scrollPaddingTop) || 0);
     const candidates = list.querySelectorAll(
       ":scope > .msg, :scope > [data-review-card], :scope > [data-review-report-card], :scope > [data-comparison-card]"
     );
     for (const element of candidates) {
       const rect = element.getBoundingClientRect();
-      if (rect.bottom > listRect.top) return { element, viewportTop: rect.top };
+      if (rect.bottom > readingTop) return { element, viewportTop: rect.top };
     }
     return null;
   }
