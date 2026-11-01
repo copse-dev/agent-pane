@@ -520,6 +520,22 @@ revisiting this document, not silently diverging in an implementation PR.
     `observeApprovalResolutions` (`approval.ts`); no new event, outcome type or
     continuation is introduced.
 
+32. **A plan closed on executed checks ends the run in-loop.** `plan-verified-finalize`
+    is a first-party `stepBoundary` hook (#1433). The loop sets
+    `planClosedByVerifiedChecks` on the next `preStream` payload after a step whose
+    `update_todos` closed the last open todo and every item that step completed
+    carries an acceptance `check`. The host executes such checks before accepting
+    `completed`, holds back one attached in the completing call, and refuses
+    `cancelled` → `completed` without one, so the signal reflects a verified
+    terminal step rather than a claim. The hook selects the finalize text; the
+    harness applies it as one `text-only-turn` through the applied-nudge path and
+    consumes the signal at that boundary. Like every in-loop nudge it creates no
+    turn and consumes no `ContinuationGrant` (decision 5). Plans closed without
+    checks never trigger it. Repeat-verification damping — skipping a run_shell
+    suite re-run when nothing that could change the workspace ran since — is a
+    tool-result substitution beside the duplicate-call guard, not a nudge, and stays
+    in the loop with it (Phase E).
+
 ## Target architecture
 
 ```mermaid

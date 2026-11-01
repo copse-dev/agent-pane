@@ -125,6 +125,7 @@ import { assessShellHarm, type ShellHarmContext } from './shell-harm.ts'
 import {
   guardedYoloTierReason,
   shadowTierScreening,
+  type TierScreeningAttribution,
   tierScreeningClassifier,
 } from './tier-screening.ts'
 import { isCompiledProgram, readScriptForHarm } from '@copse/shell-guard/script-files.ts'
@@ -1179,6 +1180,12 @@ function consumeShellReplayLease(identity: ShellReplayLeaseIdentity, command: st
   return true
 }
 
+/** The running turn a tier screening is recorded on; null outside any turn. */
+function tierScreeningAttribution(): TierScreeningAttribution | null {
+  const context = getThreadExecutionContext()
+  return context ? { threadId: context.threadId, projectId: context.projectId } : null
+}
+
 function activeShellReplayLeaseIdentity(
   executionRoot: string,
   containment: ShellReplayLeaseIdentity['containment'],
@@ -1561,7 +1568,12 @@ export async function ensureShellCommandPermitted(
   // gate's one-time confirmation; it can never allow what the gate did not.
   // A contained command needs no second opinion: the sandbox bounds it.
   if (guardedYolo && effectiveAction === 'allow' && (!sandboxEnabled || outsideSandbox)) {
-    const tierReason = await guardedYoloTierReason(command, workspaceRoot, opts.signal)
+    const tierReason = await guardedYoloTierReason(
+      command,
+      workspaceRoot,
+      tierScreeningAttribution(),
+      opts.signal,
+    )
     if (tierReason) {
       const approved = await promptGuardedYoloHarm(command, [tierReason], false, opts.signal)
       auditGuardedYolo(approved ? 'approved' : 'declined', [tierReason])
@@ -1620,7 +1632,7 @@ export async function ensureShellCommandPermitted(
       isCompiledProgram,
       ...harmHostReachContext(),
     })
-    void shadowTierScreening(command, workspaceRoot, harm.action)
+    void shadowTierScreening(command, workspaceRoot, harm.action, tierScreeningAttribution())
   }
 
   // A user may explicitly authorize one constituent for bounded exact retries in
