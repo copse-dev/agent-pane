@@ -458,7 +458,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-NOGFTDUX.js";
+} from "./chunk-YEF2QVPV.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -16570,7 +16570,7 @@ async function startProposedThread(store2, api2, sourceThreadId, proposal, optio
   const projectId = store2.getState().activeProjectId;
   if (!projectId) throw new Error("Open a project before starting a proposed thread");
   store2.emit("composer_draft_flush");
-  const threadId = createThread(store2);
+  const threadId = createThread(store2, void 0, { activate: false });
   setThreadTitle(store2, threadId, proposal.title);
   patchThreadAnywhere(store2, threadId, (t) => ({
     ...t,
@@ -16674,7 +16674,8 @@ function buildPendingActions(proposal, handlers3, rerender) {
       start.disabled = false;
       dismiss.disabled = false;
       start.textContent = "Start this thread";
-      error.textContent = cause instanceof Error ? `Could not start the thread: ${cause.message}` : "Could not start the thread.";
+      const message2 = ipcErrorMessage(cause, "");
+      error.textContent = message2 ? `Could not start the thread: ${message2}` : "Could not start the thread.";
       error.hidden = false;
     });
   });
@@ -16755,6 +16756,7 @@ function createThreadProposalCard(proposal, state, handlers3) {
 var init_thread_proposal_card = __esm({
   "src/renderer/views/thread-proposal-card.ts"() {
     init_helpers();
+    init_ipc_error_message();
     init_icons();
     init_thread_proposal();
   }
@@ -16799,18 +16801,10 @@ function createThreadProposalToolCard(tc, store2, api2, sourceThreadId) {
   if (!proposal) return null;
   return createThreadProposalCard(proposal, cardState(store2, sourceThreadId, tc.id), {
     onStart: async (accepted) => {
-      try {
-        const result = await startProposedThread(store2, api2, sourceThreadId, accepted, {
-          confirmSharedCheckout
-        });
-        if (!result.started) noteDeclined();
-      } catch (cause) {
-        showToast(cause instanceof Error ? cause.message : "Could not start the proposed thread.", {
-          variant: "error",
-          durationMs: 15e3
-        });
-        throw cause;
-      }
+      const result = await startProposedThread(store2, api2, sourceThreadId, accepted, {
+        confirmSharedCheckout
+      });
+      if (!result.started) noteDeclined();
     },
     onDismiss: (dismissed) => {
       setThreadProposalDecision(store2, sourceThreadId, {

@@ -23078,7 +23078,8 @@ function normalizeBlankThreads(store) {
   const keepIds = /* @__PURE__ */ new Set([...blanks.filter(hasUnsubmittedPrompt).map((t2) => t2.id), keepEmptyId]);
   pruneBlankThreads(store, keepIds);
 }
-function createThread(store, draftPrompt) {
+function createThread(store, draftPrompt, options) {
+  const activate2 = options?.activate ?? true;
   const id = randomUUID();
   const defaultModel = store.getState().settings?.model;
   const threads = [
@@ -23100,15 +23101,21 @@ function createThread(store, draftPrompt) {
     },
     ...store.getState().threads
   ];
-  store.setState({
-    threads,
-    activeThreadId: id,
-    openFile: null,
-    activeDiff: null,
-    stagedDiffs: []
-  });
+  if (activate2) {
+    store.setState({
+      threads,
+      activeThreadId: id,
+      openFile: null,
+      activeDiff: null,
+      stagedDiffs: []
+    });
+  } else {
+    store.setState({ threads });
+  }
   store.emit("threads_changed");
-  store.emit("new_thread_opened");
+  if (activate2) {
+    store.emit("new_thread_opened");
+  }
   return id;
 }
 function openNewThread(store) {
