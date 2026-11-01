@@ -29,6 +29,8 @@ import {
   readOnlyTreeExcluding,
   readOnlyWorkspaceSandboxOverlay,
   resolveNodeToolchainAllowRead,
+  refreshGitConfigIncludeReadPaths,
+  resolveGitConfigIncludes,
   resolveRustToolchainAllowRead,
   sandboxRuntimeHelperAllowReadPaths,
   sandboxNetworkConfig,
@@ -181,7 +183,7 @@ describe('acpAgentSandboxOverlay', () => {
       assert.ok(list.includes(`${claudeDir}/**`))
       assert.ok(list.includes(join(homedir(), '.claude.json')))
     }
-    assert.equal(fs.allowRead.includes(homedir()), process.platform !== 'linux')
+    assert.ok(!fs.allowRead.includes(homedir()))
     assert.ok(!fs.allowRead.includes(`${homedir()}/**`))
     assert.ok(!fs.allowWrite.includes(homedir()))
     // Base workspace rules survive: home still deny-read, workspace still writable.
@@ -213,6 +215,54 @@ describe('acpAgentSandboxOverlay', () => {
     // Reads and the bridge's loopback are unchanged.
     assert.deepEqual(readonly.filesystem?.allowRead, writable.filesystem?.allowRead)
     assert.deepEqual(readonly.network, writable.network)
+  })
+
+  it('never re-opens the home tree on macOS: only an opted-in keychain and the declared dirs', () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')
+    assert.ok(platform)
+    Object.defineProperty(process, 'platform', { value: 'darwin' })
+    try {
+      const home = homedir()
+      const fs = acpAgentSandboxOverlay(workspace, {
+        ...sandbox,
+        allowMacOsKeychain: true,
+      }).filesystem
+      assert.ok(fs?.allowRead)
+      // No read grant may cover home itself or anything above it.
+      for (const path of fs.allowRead) {
+        assert.ok(
+          !home.startsWith(path.replace(/\/\*\*$/, '')),
+          `allowRead re-opens home through ${path}`,
+        )
+      }
+      const keychains = join(home, 'Library', 'Keychains')
+      assert.ok(fs.allowRead.includes(keychains))
+      assert.ok(fs.allowRead.includes(`${keychains}/**`))
+
+      // ASRT renders a literal allow as `(subpath …)`, so check the profile it
+      // would run under: no read allow may name home.
+      const profile = wrapCommandWithSandboxMacOS({
+        command: 'true',
+        needsNetworkRestriction: false,
+        readConfig: { denyOnly: fs.denyRead, allowWithinDeny: fs.allowRead },
+        writeConfig: { allowOnly: fs.allowWrite, denyWithinAllow: fs.denyWrite },
+        binShell: '/bin/sh',
+      })
+      const readAllows = profile
+        .split('(allow file-read*')
+        .slice(1)
+        .map((rule) => rule.split(/\n\(/)[0] ?? '')
+      assert.ok(readAllows.length > 0, 'the profile re-allows the workspace')
+      for (const rule of readAllows) {
+        assert.ok(!rule.includes(`(subpath "${home}")`), `profile re-allows home: ${rule}`)
+      }
+
+      // Home dirs alone never bring the keychain with them.
+      const declared = acpAgentSandboxOverlay(workspace, sandbox).filesystem
+      assert.ok(!declared?.allowRead?.some((path) => path.startsWith(keychains)))
+    } finally {
+      Object.defineProperty(process, 'platform', platform)
+    }
   })
 
   it('adds trustd only on opt-in without changing network or filesystem policy', () => {
@@ -531,6 +581,73 @@ describe('resolveNodeToolchainAllowRead', () => {
       }
     } finally {
       cleanup()
+    }
+  })
+})
+
+describe('git config include reads', () => {
+  it("resolves the files the user's git config includes, as git follows them", async () => {
+    const home = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-config-home-')))
+    try {
+      mkdirSync(join(home, 'work'))
+      mkdirSync(join(home, 'dotfiles', 'nested'), { recursive: true })
+      writeFileSync(
+        join(home, '.gitconfig'),
+        [
+          '[user]',
+          '  path = ~/not-an-include',
+          '[include]',
+          '  path = ~/.gitconfig-work ; work identity',
+          '[includeIf "gitdir:~/work/"]',
+          '  path = "dotfiles/conditional"',
+          '[include]',
+          '  path = ~/missing',
+          '  path = ~/work',
+        ].join('\n'),
+      )
+      writeFileSync(join(home, 'not-an-include'), '')
+      writeFileSync(join(home, '.gitconfig-work'), '[include]\n\tpath = dotfiles/nested/deep\n')
+      writeFileSync(join(home, 'dotfiles', 'conditional'), '')
+      writeFileSync(join(home, 'dotfiles', 'nested', 'deep'), '')
+      assert.deepEqual((await resolveGitConfigIncludes(home)).sort(), [
+        join(home, '.gitconfig-work'),
+        join(home, 'dotfiles', 'conditional'),
+        join(home, 'dotfiles', 'nested', 'deep'),
+      ])
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('stops at git’s include depth when configs include each other', async () => {
+    const home = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-config-loop-')))
+    try {
+      writeFileSync(join(home, '.gitconfig'), '[include]\npath = ~/.loop\n')
+      writeFileSync(join(home, '.loop'), '[include]\npath = ~/.gitconfig\n')
+      assert.deepEqual((await resolveGitConfigIncludes(home)).sort(), [
+        join(home, '.gitconfig'),
+        join(home, '.loop'),
+      ])
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('grants the resolved includes in every workspace overlay once refreshed', async () => {
+    const home = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-config-overlay-')))
+    const previous = process.env['HOME']
+    try {
+      writeFileSync(join(home, '.gitconfig'), '[include]\npath = ~/.gitconfig-work\n')
+      writeFileSync(join(home, '.gitconfig-work'), '')
+      process.env['HOME'] = home
+      await refreshGitConfigIncludeReadPaths()
+      const fs = workspaceSandboxOverlay('/tmp/acp-sandbox-test-workspace').filesystem
+      assert.ok(fs?.allowRead?.includes(join(home, '.gitconfig-work')))
+    } finally {
+      if (previous === undefined) delete process.env['HOME']
+      else process.env['HOME'] = previous
+      await refreshGitConfigIncludeReadPaths()
+      rmSync(home, { recursive: true, force: true })
     }
   })
 })
@@ -1520,6 +1637,57 @@ describe('gitBackupSandboxOverlay', () => {
 })
 
 describe('chat-store sandbox reads', () => {
+  it("grants an agent's own state dir in the chat store read and write, clear of read-only mounts", () => {
+    const profile = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-acp-state-')))
+    const previous = process.env['COPSE_DIR']
+    process.env['COPSE_DIR'] = profile
+    try {
+      const store = copseWorkspaceDir()
+      const root = join(store, 'project', 'active')
+      const stateDir = join(store, 'project', 'thread', 'acp-agent-config', 'claude')
+      mkdirSync(root, { recursive: true })
+      mkdirSync(stateDir, { recursive: true })
+      const sandbox = { allowedDomains: [], homeDirs: ['.claude'] }
+      const fs = acpAgentSandboxOverlay(root, sandbox, { stateDirs: [stateDir] }).filesystem
+      assert.ok(fs?.allowRead)
+      for (const list of [fs.allowRead, fs.allowWrite]) {
+        assert.ok(list.includes(stateDir))
+        assert.ok(list.includes(`${stateDir}/**`))
+      }
+      if (process.platform === 'linux') {
+        // A read bind on an ancestor would shadow the state dir's write bind.
+        const shadowing = fs.allowRead.filter((path) => {
+          const base = path.replace(/\/\*\*$/, '')
+          return base !== stateDir && stateDir.startsWith(`${base}/`)
+        })
+        assert.deepEqual(shadowing, [])
+      }
+      // Without the state dir, the thread's chat data stays read-only.
+      const plain = acpAgentSandboxOverlay(root, sandbox).filesystem
+      assert.equal(plain?.allowWrite.includes(stateDir), false)
+
+      // A dir that resolves outside the chat store, or is the store itself, is
+      // never granted: the agent id that names it is not fully validated.
+      const escaped = join(store, 'project', 'thread', 'acp-agent-config', '..', '..', '..', '..')
+      for (const outside of [homedir(), profile, escaped, store]) {
+        const grants = acpAgentSandboxOverlay(root, sandbox, { stateDirs: [outside] }).filesystem
+        assert.equal(grants?.allowWrite.includes(resolve(outside)), false, outside)
+      }
+
+      // Spelled through a symlink, the grant names the path the kernel sees.
+      const alias = join(profile, 'alias')
+      symlinkSync(join(store, 'project'), alias)
+      const viaAlias = join(alias, 'thread', 'acp-agent-config', 'claude')
+      const aliased = acpAgentSandboxOverlay(root, sandbox, { stateDirs: [viaAlias] }).filesystem
+      assert.ok(aliased?.allowWrite.includes(stateDir))
+      assert.equal(aliased?.allowWrite.includes(viaAlias), false)
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_DIR']
+      else process.env['COPSE_DIR'] = previous
+      rmSync(profile, { recursive: true, force: true })
+    }
+  })
+
   it('keeps chat data read-only without shadowing nested scratch or checkout write mounts', () => {
     const profile = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-chat-overlay-')))
     const previous = process.env['COPSE_DIR']

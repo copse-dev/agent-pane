@@ -135,6 +135,38 @@ describe('mention picker (files + threads + shells)', () => {
     return textarea
   }
 
+  it('scrolls keyboard selection into view in both directions', async () => {
+    const attached: string[] = []
+    const textarea = mount([], ['a.ts', 'b.ts', 'c.ts'], undefined, undefined, true, (file) =>
+      attached.push(file.path),
+    )
+    await typeMention(textarea, '@')
+
+    const picker = inputBar.querySelector<HTMLElement>('.mention-picker')
+    assert.ok(picker)
+    Object.defineProperty(picker, 'clientHeight', { value: 60 })
+    picker.querySelectorAll<HTMLElement>('.mention-item').forEach((item, i) => {
+      Object.defineProperty(item, 'offsetTop', { value: i * 30 })
+      Object.defineProperty(item, 'offsetHeight', { value: 30 })
+    })
+
+    const press = (key: string): void => {
+      textarea.dispatchEvent(
+        new window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }),
+      )
+    }
+    press('ArrowDown')
+    assert.equal(picker.scrollTop, 0, 'a visible row should not scroll')
+    press('ArrowDown')
+    assert.equal(picker.scrollTop, 30, 'the bottom row should be revealed')
+    press('ArrowUp')
+    press('ArrowUp')
+    assert.equal(picker.scrollTop, 0, 'the first row should be revealed again')
+    press('Enter')
+    await flush()
+    assert.deepEqual(attached, ['a.ts'])
+  })
+
   for (const key of ['Enter', 'Tab', 'ArrowDown', 'ArrowUp', 'Escape']) {
     it(`leaves composing ${key} to the input method`, async () => {
       const attached: AttachedThreadRef[] = []

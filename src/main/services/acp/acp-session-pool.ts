@@ -156,6 +156,7 @@ export function acpSessionFingerprint(config: AcpAgentSpawnConfig): string {
     cwd: config.cwd,
     host: spawnConfigSshTarget(config)?.hostId ?? null,
     sandbox: config.sandbox ?? null,
+    stateDir: config.stateDir ?? null,
     mcpServers: config.mcpServers ?? [],
     permissionMode: config.permissionMode ?? null,
     readonlyCheckout: config.readonlyCheckout === true,

@@ -521,6 +521,14 @@
       "sha256": "c71046fb15e3da3a210a69b9430743750869f67c38bbdab965715ea40773d1a3",
       "bytes": 272344
     },
+    "approval-desktop-app.png": {
+      "sha256": "1972545f842dcb6636ed6e371c01636e2e9868bd4e131375a686320d53527569",
+      "bytes": 33512
+    },
+    "approval-desktop-finder.png": {
+      "sha256": "61191b8e7b3eef8eb90b634ccf9114617a2d5004f67831085c6ace6de19c474d",
+      "bytes": 35511
+    },
     "approval-git-push-lease.png": {
       "sha256": "e79dc6a9291b1986c946c75fdb8d16c0ce59fd442f3496159fb552af7f0295f6",
       "bytes": 26519
@@ -1117,6 +1125,10 @@
       "sha256": "d0535112444955d9fb93fb8189121d985a74a523d57b8b2a70ff858f40928f8b",
       "bytes": 80495
     },
+    "chatgpt-plan-sign-in-expired.png": {
+      "sha256": "33baafead68563b820a3f08a86d133e7fe480fe65a4ae9815daa12753dc5c985",
+      "bytes": 18843
+    },
     "chatgpt-plan-usage-limit.png": {
       "sha256": "2daae70ee21038d998109a3986c1fb4d0075b7b6066fa46b631a9741383686df",
       "bytes": 20931
@@ -1258,8 +1270,8 @@
       "bytes": 508067
     },
     "composer-context-warning-over.png": {
-      "sha256": "aed26ae30a8a63279b0e27c576de96d5cc4964f3e67b453e2333f3b06b8cde35",
-      "bytes": 40463
+      "sha256": "a08e26ac6946920f916610f0038d0166eec9200946d8c897e897d2f893aeb59f",
+      "bytes": 40312
     },
     "composer-dirty-checkout-warning.png": {
       "sha256": "31ae1e083463b4912a0ea49151a3fce59a0a878865fecf5d596f2ebfd486ba15",
@@ -2425,6 +2437,14 @@
       "sha256": "d95fe93a6dc31112cc299ab825a03de5bc45cdd2a05ea9992409c82fdb3ac7cc",
       "bytes": 159533
     },
+    "mention-picker-scrolled.png": {
+      "sha256": "f191b47baeb9b3a6207c0c911ed1613c6643e7c7c543a3ebc76e571c6b991b17",
+      "bytes": 356809
+    },
+    "mention-picker-top.png": {
+      "sha256": "a40c75f723cfa52b900d740ac7873795df5960b44450a676d708404e600af2dd",
+      "bytes": 357618
+    },
     "mermaid-diagram-agent-loop.png": {
       "sha256": "9ce03bdbd179a754dc7c11acf3d253d953193167f0054f8f23df3e98b79e28d1",
       "bytes": 104155
@@ -3248,6 +3268,10 @@
     "project-switch-recoverable-threads.png": {
       "sha256": "47fd62dd70a9a6db0cc9d0f6fbed176dad3f9ca0a6421f477d6e3d04fd8a3432",
       "bytes": 63511
+    },
+    "project-switch-resident-thread.png": {
+      "sha256": "b8b7c414ca6f33c78ad6afff2fb5d2042427327f8d222ea85911d27b6753a83b",
+      "bytes": 266564
     },
     "projects-drag-after.png": {
       "sha256": "f707756387a138ae08dce5f1ab6006f6164d8d8d0991e84dd356eb4a6b66021f",

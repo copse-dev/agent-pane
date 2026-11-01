@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Embedded into the helper binary's __TEXT,__info_plist section so macOS
+         privacy settings list it by name rather than as a bare path. -->
+    <key>CFBundleIdentifier</key>
+    <string>dev.copse.desktop-control</string>
+    <key>CFBundleName</key>
+    <string>Copse Desktop Control</string>
+    <key>CFBundleDisplayName</key>
+    <string>Copse Desktop Control</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>NSAccessibilityUsageDescription</key>
+    <string>Copse agents use Accessibility to read and operate the apps you approve.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>Copse agents capture the windows of apps you approve so they can see them.</string>
+</dict>
+</plist>

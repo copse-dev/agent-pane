@@ -134,6 +134,7 @@ export interface SettingsValues {
       | {
           allowedDomains: Array<string>
           allowMacOsTrustd?: boolean | undefined
+          allowMacOsKeychain?: boolean | undefined
           homeDirs?: Array<string> | undefined
           scratchPaths?: Array<string> | undefined
         }
@@ -209,6 +210,7 @@ export interface SettingsValues {
   webAllowedOrigins: Array<string>
   webAllowUserApproval: boolean
   browserAllowUserApproval: boolean
+  desktopControlAllowedApps: Array<string>
   approvedProviderHosts: Array<string>
   providerAllowUserApproval: boolean
   extraProviders: Array<{
@@ -273,6 +275,7 @@ type DedicatedSettingKey =
   | 'webAllowedOrigins'
   | 'webAllowUserApproval'
   | 'browserAllowUserApproval'
+  | 'desktopControlAllowedApps'
   | 'approvedProviderHosts'
   | 'providerAllowUserApproval'
   | 'extraProviders'

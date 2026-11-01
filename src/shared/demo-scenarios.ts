@@ -17,6 +17,7 @@ import { CONCISE_SCREENSHOT, CONCISE_STATE_SCENARIOS } from './demo-concise-stat
 import { BRIDGED_TOOL_SCENARIOS } from './demo-bridged-tools.ts'
 import {
   browserApprovalDetails,
+  desktopAppApproval,
   gitPushApproval,
   providerApprovalDetails,
   webApprovalDetails,
@@ -47,6 +48,11 @@ export interface DemoScenario {
   id: string
   label: string
   chatGptPlan?: ChatGptPlanStatus
+  /**
+   * Makes "Refresh connection" fail: the refresh rejects with `error`, as the
+   * IPC bridge delivers it, and later status reads return `status`.
+   */
+  chatGptPlanRefreshFailure?: { error: string; status: ChatGptPlanStatus }
   project: Project
   threads: Thread[]
   /**
@@ -3922,6 +3928,44 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
   },
+  {
+    id: 'chatgpt-plan-expired',
+    label: 'ChatGPT plan whose sign-in has expired',
+    project: project('demo-chatgpt-plan-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      chatGptPlanWelcomeSeen: true,
+    },
+    chatGptPlan: {
+      activeClientId: 'demo-plan-account',
+      accounts: [
+        {
+          clientId: 'demo-plan-account',
+          label: 'you@example.com',
+          connected: true,
+          planEnabled: true,
+        },
+      ],
+    },
+    chatGptPlanRefreshFailure: {
+      error:
+        "Error invoking remote method 'chat-gpt-plan:refresh-account': Error: ChatGPT sign-in expired. Reconnect this account.",
+      status: {
+        activeClientId: 'demo-plan-account',
+        accounts: [
+          {
+            clientId: 'demo-plan-account',
+            label: 'you@example.com',
+            connected: false,
+            planEnabled: false,
+          },
+        ],
+      },
+    },
+    threads: [],
+  },
   // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
   ...SITE_TOUR_SCENARIOS,
   // Concise thread view in each state a thread can be in (see demo-concise-states.ts).
@@ -3973,5 +4017,27 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ...providerApprovalDetails('api.example.com', 'https://api.example.com/v1'),
     allowRemember: false,
     approveLabel: 'Always allow host',
+  }),
+  approvalRiskScenario('approval-desktop-app', {
+    id: 'desktop-app',
+    type: 'mcp',
+    ...desktopAppApproval({
+      bundleId: 'com.apple.Notes',
+      action: 'read its window contents',
+      allowRemember: true,
+      threadScoped: true,
+    }),
+  }),
+  approvalRiskScenario('approval-desktop-finder', {
+    id: 'desktop-finder',
+    type: 'mcp',
+    ...desktopAppApproval({
+      bundleId: 'com.apple.finder',
+      action: 'activate element e12',
+      caution:
+        'Finder can open scripts and apps, including ones the agent wrote, and they run outside the shell permission gate.',
+      allowRemember: true,
+      threadScoped: true,
+    }),
   }),
 ]
