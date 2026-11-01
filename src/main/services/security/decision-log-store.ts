@@ -107,6 +107,38 @@ export function persistRecordedDecision(decision: RecordedDecision): void {
 }
 
 /**
+ * Record a result that a continuation must be able to read before dispatch.
+ * Honour a scoped host recorder rather than writing into desktop storage from
+ * an explicit/headless host. Such a recorder owns its own persistence.
+ */
+export async function recordDecisionAndWait(
+  input: RecordDecisionInput,
+): Promise<RecordedDecision | null> {
+  const captured: RecordedDecision[] = []
+  const hostRecorder = scopedRecorder.getStore()
+  runWithDecisionRecorder(
+    (decision) => {
+      captured.push(decision)
+    },
+    () => {
+      recordDecision(input)
+    },
+  )
+  const decision = captured[0]
+  if (!decision) return null
+  if (hostRecorder) hostRecorder(decision)
+  else {
+    await appendSpineDecision(
+      decision.projectId,
+      decision.threadId,
+      decision.line,
+      decision.detailContents,
+    )
+  }
+  return decision
+}
+
+/**
  * Record one decision onto the active thread spine. Best-effort and
  * fire-and-forget.
  */

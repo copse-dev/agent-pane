@@ -1146,7 +1146,7 @@ export function cancelAgentInitiatedTurn(
   if (open.turnStop !== null || !open.agentInitiated?.isActive()) return false
   open.suppressChunks = true
   void open.connection.agent.notify('session/cancel', { sessionId: open.session.sessionId })
-  open.agentInitiated.end()
+  open.agentInitiated.end('stopped')
   if (!open.agentInitiatedCancel) {
     let acknowledge = (): void => {}
     const acknowledged = new Promise<'acknowledged'>((resolve) => {

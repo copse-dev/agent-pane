@@ -1,5 +1,5 @@
 {
-  "source": "apple-development-retired-checkout provisional at the median (8s) until its first CI run is measured, 2026-10-31; median PASSED seconds over 160 CI e2e shard logs, 2026-10-19; accessibility provisional at its local Linux Xvfb run (28s) until its first CI run is measured, 2026-10-30; plugin-client-approvals provisional at the median (8s) until its first CI run is measured, 2026-10-19; host-read-tool-cards provisional at the median (8s) until its first CI run is measured, 2026-10-20; detached-turn-transcript is macOS-only and skips on the Linux CI shards, recorded at 1s, 2026-10-16; device-hub-png-result measured at 5.2s from successful CI run 41128105859 shard 6 (job 124318769247), 2026-10-30; acp-execute-no-remember provisional at its local Linux Xvfb run (12s) until its first CI run is measured, 2026-10-31; acp-kindless-command-approval provisional at its local Linux Xvfb run (10s) until its first CI run is measured, 2026-10-31; 20 specs added since the last refresh measured from the passing full run 41210627124 (all 8 shards), 2026-10-31",
+  "source": "apple-development-retired-checkout provisional at the median (8s) until its first CI run is measured, 2026-10-31; median PASSED seconds over 160 CI e2e shard logs, 2026-10-19; accessibility provisional at its local Linux Xvfb run (28s) until its first CI run is measured, 2026-10-30; plugin-client-approvals provisional at the median (8s) until its first CI run is measured, 2026-10-19; host-read-tool-cards provisional at the median (8s) until its first CI run is measured, 2026-10-20; detached-turn-transcript is macOS-only and skips on the Linux CI shards, recorded at 1s, 2026-10-16; device-hub-png-result measured at 5.2s from successful CI run 41128105859 shard 6 (job 124318769247), 2026-10-30; acp-execute-no-remember provisional at its local Linux Xvfb run (12s) until its first CI run is measured, 2026-10-31; acp-kindless-command-approval provisional at its local Linux Xvfb run (10s) until its first CI run is measured, 2026-10-31; acp-tool-continuation provisional at its successful local macOS browser run (4s), 2026-10-30, until its first CI measurement; 20 specs added since the last refresh measured from the passing full run 41210627124 (all 8 shards), 2026-10-31",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15.7,
     "tests/e2e/accessibility.e2e.ts": 28,
@@ -23,6 +23,7 @@
     "tests/e2e/acp-stale-model-notice.e2e.ts": 8.3,
     "tests/e2e/acp-stale-model-picker.e2e.ts": 7.3,
     "tests/e2e/acp-startup-tools.e2e.ts": 7.9,
+    "tests/e2e/acp-tool-continuation.e2e.ts": 4,
     "tests/e2e/acp-tool-diff.e2e.ts": 8.4,
     "tests/e2e/acp-tool-result-image.e2e.ts": 9,
     "tests/e2e/acp-transport-noise.e2e.ts": 7.6,

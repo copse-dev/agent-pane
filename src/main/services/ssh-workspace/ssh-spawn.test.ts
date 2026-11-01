@@ -14,6 +14,16 @@ import { REMOTE_PGID_PREFIX } from './remote-env.ts'
 import { takeRemoteProcessMeta } from './remote-process-meta.ts'
 import { buildRemotePtyLaunch, spawnRemoteShellCommand } from './ssh-spawn.ts'
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
+import { setSshControlDirForTests } from './ssh-paths.ts'
+import { shortSocketDirectory } from '../../../../tests/helpers/short-socket-directory.ts'
+
+beforeEach((t) => {
+  setSshControlDirForTests(shortSocketDirectory(t))
+})
+
+afterEach(() => {
+  setSshControlDirForTests(null)
+})
 
 const TEST_HOST: SshWorkspaceHost = {
   id: 'dev-box',

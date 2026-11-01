@@ -155,12 +155,14 @@ describe('changedPaths', () => {
 describe('worktree manager', () => {
   const cleanups: string[] = []
   let previousRoot: string | undefined
+  const previousProfile = process.env['COPSE_DIR']
 
   async function setup(): Promise<{ temp: string; repo: string }> {
     previousRoot = process.env['COPSE_WORKTREES_DIR']
     const temp = await mkdtemp(join(tmpdir(), 'copse-worktree-manager-'))
     cleanups.push(temp)
     process.env['COPSE_WORKTREES_DIR'] = join(temp, 'worktrees')
+    process.env['COPSE_DIR'] = join(temp, 'profile')
     setGitAvailableForTest(true)
     return { temp, repo: await repository(temp, 'repo') }
   }
@@ -169,6 +171,8 @@ describe('worktree manager', () => {
     if (previousRoot === undefined) delete process.env['COPSE_WORKTREES_DIR']
     else process.env['COPSE_WORKTREES_DIR'] = previousRoot
     previousRoot = undefined
+    if (previousProfile === undefined) delete process.env['COPSE_DIR']
+    else process.env['COPSE_DIR'] = previousProfile
     setGitAvailableForTest(null)
     clearAllowedWorkspaceRootsForTest()
     for (const path of cleanups.splice(0).reverse()) {
@@ -1150,7 +1154,14 @@ describe('worktree manager', () => {
         prompt: 'Work offline',
         baseBranch: 'main',
       })
-      await started
+      await Promise.race([
+        started,
+        allocation.then(() => {
+          throw new Error(
+            'Worktree allocation finished before the fetch reached the fixture server',
+          )
+        }),
+      ])
       // The fetch is the only command in flight once the remote is contacted.
       mock.timers.tick(60_000)
       const worktree = await allocation

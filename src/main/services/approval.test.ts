@@ -29,6 +29,11 @@ import {
   type ApprovalRequest,
   type ApprovalResponse,
 } from './approval.ts'
+import {
+  createAgentInitiatedTurnLease,
+  type AgentInitiatedTurnClaim,
+} from './acp/agent-initiated-turn.ts'
+import { AcpTurnEnded } from './acp/turn-end.ts'
 import { readDecisionLog } from './security/decision-log-store.ts'
 import { NeedsInputBadge } from './needs-input-badge.ts'
 import {
@@ -748,9 +753,39 @@ describe('abandoned calls (parked prompts and verdict replay)', () => {
     assert.equal(handlerSignal?.aborted, false)
     assert.equal(parkedApprovalCount(), 1)
     assert.equal(pendingApprovalCountForThread(THREAD), 1)
-    // …and no denial was invented for the audit log.
-    assert.equal((await readDecisionLog(PROJECT)).length, logged)
+    // Detachment is auditable, but no denial is invented.
+    const events = await readDecisionLog(PROJECT)
+    assert.equal(events.length, logged + 1)
+    assert.equal(events.at(-1)?.verdict, 'requested')
+    assert.equal(events.at(-1)?.source, 'client-abandoned')
   })
+
+  for (const ending of ['consumed', 'expired', 'revoked'] as const) {
+    it(`invalidates an approval wake when its saved answer is ${ending}`, async () => {
+      let now = 1_000_000
+      setApprovalClockForTest(() => now)
+      parkingHandler()
+      const { signal, abandon } = abandonedSignal()
+      const pending = requestUnderThread(req, signal)
+      await Promise.resolve()
+      abandon()
+      let retry: ApprovalPendingError['retry']
+      await assert.rejects(pending, (error: unknown) => {
+        assert.ok(error instanceof ApprovalPendingError)
+        retry = error.retry
+        return true
+      })
+      assert.ok(retry)
+      assert.equal(retry.available(), false)
+      release?.({ approved: true, remember: false, resolution: 'user' })
+      await retry.settled
+      assert.equal(retry.available(), true)
+      if (ending === 'consumed') await requestUnderThread(req)
+      else if (ending === 'expired') now += 11 * 60_000
+      else discardApprovalsForThread(THREAD, 'stopped')
+      assert.equal(retry.available(), false)
+    })
+  }
 
   it('replays the eventual verdict to an identical retry without prompting again', async () => {
     parkingHandler()
@@ -918,6 +953,170 @@ describe('abandoned calls (parked prompts and verdict replay)', () => {
     assert.equal(retry.approved, true)
     assert.equal(handlerCalls, 1, 'the retry reuses the answer without prompting again')
   })
+
+  for (const firstAbort of ['turn', 'client']) {
+    it(`preserves the question when ${firstAbort} ends first, without running an orphaned caller`, async () => {
+      parkingHandler()
+      const turn = new AbortController()
+      const client = new AbortController()
+      const signal = AbortSignal.any([turn.signal, client.signal])
+      const pending = requestUnderThread(req, signal)
+      if (firstAbort === 'turn') {
+        turn.abort(new AcpTurnEnded('completed'))
+        client.abort(new AbandonedCallAbort('client disconnected'))
+      } else {
+        client.abort(new AbandonedCallAbort('client disconnected'))
+        turn.abort(new AcpTurnEnded('completed'))
+      }
+      cancelApprovalsForThread(THREAD)
+      releaseParkedApprovalsForThread(THREAD)
+      await assert.rejects(pending, ApprovalPendingError)
+      assert.equal(handlerSignal?.aborted, false)
+      assert.equal(parkedApprovalCount(), 1)
+      const events = await readDecisionLog(PROJECT)
+      assert.equal(events.at(-1)?.verdict, 'requested')
+      assert.equal(
+        events.at(-1)?.source,
+        firstAbort === 'turn' ? 'turn-completed' : 'client-abandoned',
+      )
+      release?.({ approved: true, remember: false, resolution: 'user' })
+      await Promise.resolve()
+      assert.equal((await requestUnderThread(req)).approved, true)
+      assert.equal(handlerCalls, 1)
+      // The stored answer is consumed once; the next request opens a new prompt.
+      const next = requestUnderThread(req)
+      assert.equal(handlerCalls, 2)
+      release?.({ approved: false, remember: false })
+      assert.equal((await next).approved, false)
+    })
+  }
+
+  it('Stop revokes a parked prompt even after its run identity has been released', async () => {
+    parkingHandler()
+    const controller = new AbortController()
+    const pending = requestUnderThread(req, controller.signal)
+    controller.abort(new AcpTurnEnded('completed'))
+    await assert.rejects(pending, ApprovalPendingError)
+    releaseParkedApprovalsForThread(THREAD)
+    assert.equal(discardApprovalsForThread(THREAD, 'stopped'), 1)
+    assert.equal(handlerSignal?.aborted, true)
+    assert.equal(parkedApprovalCount(), 0)
+    // A late IPC answer to the dismissed prompt must not create a replay grant.
+    release?.({ approved: true, remember: false, resolution: 'user' })
+    await Promise.resolve()
+    const next = requestUnderThread(req)
+    assert.equal(handlerCalls, 2)
+    release?.({ approved: false, remember: false })
+    assert.equal((await next).approved, false)
+    const events = await readDecisionLog(PROJECT)
+    assert.ok(events.some((event) => event.source === 'stopped' && event.verdict === 'cancelled'))
+  })
+
+  it('never replays consent to changed bridge arguments even when the prompt copy is identical', async () => {
+    parkingHandler()
+    const requestOperation = (command: string, signal?: AbortSignal): Promise<ApprovalResponse> =>
+      runWithBridgeExecutionId('operation-' + command, () => requestUnderThread(req, signal), {
+        toolName: 'run_shell',
+        arguments: { command },
+      })
+    const { signal, abandon } = abandonedSignal()
+    const pending = requestOperation('original', signal)
+    abandon()
+    await assert.rejects(pending, ApprovalPendingError)
+    release?.({ approved: true, remember: false })
+    await Promise.resolve()
+    const different = requestOperation('changed')
+    assert.equal(handlerCalls, 2, 'changed arguments require a fresh decision')
+    release?.({ approved: false, remember: false })
+    assert.equal((await different).approved, false)
+    assert.equal((await requestOperation('original')).approved, true)
+    assert.equal(handlerCalls, 2, 'only the exact operation can consume the stored answer')
+  })
+
+  it('does not replay a window-closed response as a human denial', async () => {
+    parkingHandler()
+    const { signal, abandon } = abandonedSignal()
+    const pending = requestUnderThread(req, signal)
+    abandon()
+    await assert.rejects(pending, ApprovalPendingError)
+    release?.({ approved: false, remember: false, resolution: 'window-closed' })
+    await Promise.resolve()
+    const next = requestUnderThread(req)
+    assert.equal(handlerCalls, 2)
+    release?.({ approved: false, remember: false })
+    assert.equal((await next).approved, false)
+  })
+
+  it('Stop revokes an already answered detached prompt before an identical retry', async () => {
+    parkingHandler()
+    const { signal, abandon } = abandonedSignal()
+    const pending = requestUnderThread(req, signal)
+    abandon()
+    await assert.rejects(pending, ApprovalPendingError)
+    release?.({ approved: true, remember: false, resolution: 'user' })
+    await Promise.resolve()
+    discardApprovalsForThread(THREAD, 'stopped')
+    const next = requestUnderThread(req)
+    assert.equal(handlerCalls, 2)
+    release?.({ approved: false, remember: false })
+    assert.equal((await next).approved, false)
+  })
+
+  for (const reason of ['completed', 'stopped', 'idle-timeout', 'session-closed'] as const) {
+    it(`uses the real self-started lease's ${reason} reason at the approval boundary`, async () => {
+      parkingHandler()
+      let turnSignal: AbortSignal | null = null
+      let binding: Promise<string | null> | null = null
+      const lease = createAgentInitiatedTurnLease({
+        projectId: PROJECT,
+        threadId: THREAD,
+        bridge: {
+          setExecutionContext: () => {},
+          setTurnSignal: (next) => {
+            turnSignal = next
+          },
+          setPendingExecutionContext: (next) => {
+            binding = next
+          },
+        },
+        resolveContext: () => Promise.resolve('context'),
+        confirmContinue: () => Promise.resolve(false),
+        beginWriter: (): (() => void) => (): void => {},
+        getAuthority: () => ({
+          claimAgentInitiatedTurn: (): Promise<AgentInitiatedTurnClaim> =>
+            Promise.resolve({
+              status: 'granted',
+              turnTreeId: 'tree-current',
+              release: (): Promise<void> => Promise.resolve(),
+            }),
+        }),
+      })
+      const currentSignal = (): AbortSignal | null => turnSignal
+      lease.begin()
+      try {
+        const currentBinding = (): Promise<string | null> | null => binding
+        assert.equal(await currentBinding(), 'context')
+        const signal = currentSignal()
+        assert.ok(signal)
+        const pending = requestUnderThread(req, signal)
+        lease.end(reason)
+        if (reason === 'completed') {
+          await assert.rejects(pending, ApprovalPendingError)
+          assert.equal(handlerSignal?.aborted, false)
+          release?.({ approved: true, remember: false })
+          await Promise.resolve()
+          assert.equal((await requestUnderThread(req)).approved, true)
+        } else {
+          assert.equal((await pending).approved, false)
+          assert.equal(handlerSignal?.aborted, true)
+          const events = await readDecisionLog(PROJECT)
+          assert.equal(events.at(-1)?.source, reason)
+        }
+      } finally {
+        lease.end('stopped')
+      }
+    })
+  }
 
   it('discards a parked prompt when its thread is deleted', async () => {
     parkingHandler()

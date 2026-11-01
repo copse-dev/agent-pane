@@ -39,7 +39,17 @@ import { decideMcpPermission, describeMcpAnnotations } from './permission-policy
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
-import { setApprovalHandler } from '../approval.ts'
+import {
+  ApprovalPendingError,
+  discardApprovalsForThread,
+  setApprovalHandler,
+  type ApprovalResponse,
+} from '../approval.ts'
+import { runWithBridgeExecutionId } from '../approval-tool-call-context.ts'
+import {
+  createAgentInitiatedTurnLease,
+  type AgentInitiatedTurnClaim,
+} from '../acp/agent-initiated-turn.ts'
 import { darwinUserTempDir } from '../../project-sandbox/config.ts'
 import { clearReadOutsideProjectGrants, grantReadOutsideProject } from './read-outside-grant.ts'
 import { SHELL_DECISION_SUBJECT, type DecisionEvent } from '@shared/threads/decision-log.ts'
@@ -59,6 +69,7 @@ import { drainWriteQueue } from '../storage/write-queue.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { quote } from 'shell-quote'
 import { AUTO_APPROVAL_LEVEL_SETTING, type AutoApprovalLevel } from '@shared/auto-approval.ts'
 import { setWorkspaceTrusted } from './workspace-trust.ts'
 import { clearGitRemotesCache } from './git-remotes.ts'
@@ -1678,6 +1689,101 @@ describe('run_background permission', () => {
     }
   })
 
+  it('preserves a pending port-binding approval when its ACP turn completes normally', async () => {
+    setPermissionGateForTests(null)
+    const projectRoot = '/tmp/port-binding-turn-completion'
+    const threadId = 'port-binding-turn-completion'
+    const restore = setWorkspaceRootForTest(projectRoot)
+    await setSetting('safetyClassifierEnabled', false)
+    await setSetting('portBindingAllowedRoots', [])
+    const context: ThreadExecutionContext = {
+      projectId: projectRoot,
+      projectRoot,
+      threadId,
+      root: projectRoot,
+      checkoutMode: 'shared',
+      branch: 'main',
+    }
+    let turnSignal: AbortSignal | null = null
+    let binding: Promise<ThreadExecutionContext | null> | null = null
+    const lease = createAgentInitiatedTurnLease<ThreadExecutionContext>({
+      projectId: projectRoot,
+      threadId,
+      bridge: {
+        setExecutionContext: () => {},
+        setTurnSignal: (signal) => {
+          turnSignal = signal
+        },
+        setPendingExecutionContext: (pending) => {
+          binding = pending
+        },
+      },
+      resolveContext: async () => context,
+      confirmContinue: async () => false,
+      beginWriter: (): (() => void) => (): void => {},
+      getAuthority: () => ({
+        claimAgentInitiatedTurn: async (): Promise<AgentInitiatedTurnClaim> => ({
+          status: 'granted',
+          turnTreeId: 'tree-current',
+          release: async (): Promise<void> => {},
+        }),
+      }),
+    })
+    let portPrompts = 0
+    let promptSignal: AbortSignal | undefined
+    let answer: (response: ApprovalResponse) => void = () => {}
+    const prompted = Promise.withResolvers<undefined>()
+    setApprovalHandler((request, signal) => {
+      // The ordinary shell gate can also prompt on hosts without a sandbox.
+      if (request.cause !== 'shell-port-binding') {
+        return Promise.resolve({ approved: true, remember: false })
+      }
+      portPrompts++
+      assert.equal(request.title, 'Allow this project to bind a local port?')
+      promptSignal = signal
+      prompted.resolve(undefined)
+      return new Promise<ApprovalResponse>((resolve) => {
+        answer = resolve
+      })
+    })
+    const args = { action: 'start', command: 'npm run dev', allow_port_binding: true }
+    const start = (signal: AbortSignal): Promise<boolean> =>
+      runWithActiveRunIdentity(threadId, () =>
+        runWithThreadExecutionContext(context, () =>
+          runWithBridgeExecutionId(
+            'port-binding-call',
+            () => ensureToolPermitted({ toolName: 'run_background', args }, signal),
+            { toolName: 'run_background', arguments: args },
+          ),
+        ),
+      )
+    try {
+      lease.begin()
+      const currentBinding = (): Promise<ThreadExecutionContext | null> | null => binding
+      await currentBinding()
+      assert.ok(turnSignal)
+      const pending = start(turnSignal)
+      const detached = assert.rejects(pending, ApprovalPendingError)
+      await prompted.promise
+      lease.end()
+      await detached
+      assert.equal(promptSignal?.aborted, false, 'completion must keep the human prompt alive')
+      assert.equal(portPrompts, 1)
+      answer({ approved: true, remember: false })
+      // Drain the handler resolution before the next tool request.
+      await Promise.resolve()
+      await Promise.resolve()
+      assert.equal(await start(new AbortController().signal), true)
+      assert.equal(portPrompts, 1, 'the exact retry must consume the retained human answer')
+    } finally {
+      lease.end('stopped')
+      discardApprovalsForThread(threadId, 'stopped')
+      setApprovalHandler(null)
+      restore()
+      await setSetting('portBindingAllowedRoots', [])
+    }
+  })
+
   it('remembers port binding across sibling worktrees but not other projects', async () => {
     setPermissionGateForTests(null)
     const restore = setWorkspaceRootForTest('/tmp/port-binding-project')
@@ -3102,9 +3208,11 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
 
   async function withRoot<T>(fn: (root: string, readDir: string) => Promise<T>): Promise<T> {
     const root = mkdtempSync(join(tmpdir(), 'copse-read-outside-'))
-    // On macOS the per-user temp tree is already exempt from read prompts.
-    // Exercise explicit grants outside that tree, while keeping all fixtures disposable.
-    const readTargetRoot = process.platform === 'darwin' ? '/private/tmp' : tmpdir()
+    // The target must be outside both the simulated workspace and Darwin's
+    // exempt per-user temp tree. The checkout is writable even inside Copse's
+    // sandbox; global /private/tmp is not. No command executes these reads.
+    const readTargetRoot = join(process.cwd(), '.tmp')
+    mkdirSync(readTargetRoot, { recursive: true })
     const readDir = mkdtempSync(join(readTargetRoot, 'copse-read-target-'))
     writeFileSync(join(readDir, 'note.txt'), 'ordinary note')
     writeFileSync(join(readDir, 'other.txt'), 'another note')
@@ -3198,13 +3306,13 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('grants later reads under the approved directory, but asks for unrelated paths', async () => {
     await withRoot(async (root, readDir) => {
       const granted = await runWithActiveRunIdentity('thread-read-grant', () =>
-        runGate(`ls -la ${readDir}`, { approved: true, remember: true }, root),
+        runGate(`ls -la ${quote([readDir])}`, { approved: true, remember: true }, root),
       )
       assert.equal(granted.permitted, true)
 
       const nested = await runWithActiveRunIdentity('thread-read-grant', () =>
         runGate(
-          `cat ${join(readDir, 'nested', 'deep.txt')}`,
+          `cat ${quote([join(readDir, 'nested', 'deep.txt')])}`,
           { approved: false, remember: false },
           root,
         ),
@@ -3223,7 +3331,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
         const siblingFile = join(prefixSibling, 'note.txt')
         writeFileSync(siblingFile, 'outside the granted directory')
         const sibling = await runWithActiveRunIdentity('thread-read-grant', () =>
-          runGate(`cat ${siblingFile}`, { approved: false, remember: false }, root),
+          runGate(`cat ${quote([siblingFile])}`, { approved: false, remember: false }, root),
         )
         assert.equal(sibling.permitted, false)
         assert.ok(sibling.prompt, 'a path with the same string prefix must still ask')
@@ -3236,14 +3344,14 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('asks again when shell expansion could step out of the approved directory', async () => {
     await withRoot(async (root, readDir) => {
       await runWithActiveRunIdentity('thread-read-expand', () =>
-        runGate(`ls -la ${readDir}`, { approved: true, remember: true }, root),
+        runGate(`ls -la ${quote([readDir])}`, { approved: true, remember: true }, root),
       )
       // bash expands `{..,nested}` to `${readDir}/../private.txt`, a sibling of
       // the granted directory, although the literal token sits beneath it.
       for (const command of [
-        `cat ${readDir}/{..,nested}/private.txt`,
-        `cat ${readDir}/.*/private.txt`,
-        `cat ${readDir}/[.][.]/private.txt`,
+        `cat ${quote([readDir])}/{..,nested}/private.txt`,
+        `cat ${quote([readDir])}/.*/private.txt`,
+        `cat ${quote([readDir])}/[.][.]/private.txt`,
       ]) {
         const expanded = await runWithActiveRunIdentity('thread-read-expand', () =>
           runGate(command, { approved: false, remember: false }, root),
@@ -3259,23 +3367,23 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       const note = join(readDir, 'note.txt')
       const other = join(readDir, 'other.txt')
       await runWithActiveRunIdentity('thread-file-grant', () =>
-        runGate(`cat ${note}`, { approved: true, remember: true }, root),
+        runGate(`cat ${quote([note])}`, { approved: true, remember: true }, root),
       )
 
       const sameFile = await runWithActiveRunIdentity('thread-file-grant', () =>
-        runGate(`cat ${note}`, { approved: false, remember: false }, root),
+        runGate(`cat ${quote([note])}`, { approved: false, remember: false }, root),
       )
       assert.equal(sameFile.permitted, true)
       assert.equal(sameFile.prompt, null)
 
       const sibling = await runWithActiveRunIdentity('thread-file-grant', () =>
-        runGate(`cat ${other}`, { approved: false, remember: false }, root),
+        runGate(`cat ${quote([other])}`, { approved: false, remember: false }, root),
       )
       assert.equal(sibling.permitted, false)
       assert.ok(sibling.prompt)
 
       const mixed = await runWithActiveRunIdentity('thread-file-grant', () =>
-        runGate(`cat ${note} ${other}`, { approved: false, remember: false }, root),
+        runGate(`cat ${quote([note, other])}`, { approved: false, remember: false }, root),
       )
       assert.equal(mixed.permitted, false)
       assert.ok(mixed.prompt)
@@ -3329,12 +3437,16 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('records the grant, and everything it later covers, in the decision log', async () => {
     await withRoot(async (root, readDir) => {
       const granted = await runWithActiveRunIdentity('thread-audit', () =>
-        runGate(`ls -la ${readDir}`, { approved: true, remember: true }, root),
+        runGate(`ls -la ${quote([readDir])}`, { approved: true, remember: true }, root),
       )
       assert.deepEqual(granted.prompt?.reasons, [`reads outside the project: ${readDir}`])
 
       await runWithActiveRunIdentity('thread-audit', () =>
-        runGate(`cat ${join(readDir, 'note.txt')}`, { approved: false, remember: false }, root),
+        runGate(
+          `cat ${quote([join(readDir, 'note.txt')])}`,
+          { approved: false, remember: false },
+          root,
+        ),
       )
 
       const events = await recordedDecisions()
@@ -3426,14 +3538,14 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     await withRoot(async (root, readDir) => {
       const note = join(readDir, 'note.txt')
       await runWithActiveRunIdentity('thread-spent', () =>
-        runGate(`ls -la ${readDir}`, { approved: true, remember: true }, root),
+        runGate(`ls -la ${quote([readDir])}`, { approved: true, remember: true }, root),
       )
 
       // A command the grant covers that has NOT yet been given the relaxation is
       // still answered by the grant — that is how the read question stays a
       // once-per-thread question.
       const covered = await runWithActiveRunIdentity('thread-spent', () =>
-        captureEscalation(`cat ${note}`, false),
+        captureEscalation(`cat ${quote([note])}`, false),
       )
       assert.equal(covered.approved, true)
       assert.equal(covered.title, null, 'the standing grant answers it without asking')
@@ -3442,7 +3554,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       // grant named and the command STILL hit the sandbox, the grant is spent: it
       // must not silently approve the full escape it never covered.
       const spent = await runWithActiveRunIdentity('thread-spent', () =>
-        captureEscalation(`cat ${note}`, true),
+        captureEscalation(`cat ${quote([note])}`, true),
       )
       assert.equal(spent.approved, false)
       assert.equal(spent.title, 'Run outside sandbox?')

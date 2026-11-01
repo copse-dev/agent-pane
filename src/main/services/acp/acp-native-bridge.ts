@@ -17,7 +17,9 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 import { errorMessage } from '@shared/errors.ts'
 import { getSetting } from '../storage/settings.ts'
-import { AbandonedCallAbort } from '../approval.ts'
+import { recoverAcpToolCompletion, resolveAcpToolCompletionHandler } from './tool-completion.ts'
+import { AbandonedCallAbort, ApprovalPendingError, discardApprovalsForBridge } from '../approval.ts'
+import { AcpTurnEnded } from './turn-end.ts'
 import { runWithBridgeExecutionId } from '../approval-tool-call-context.ts'
 import { recordDecision } from '../security/decision-log-store.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
@@ -319,8 +321,8 @@ export interface AcpNativeBridge {
   setPendingExecutionContext: (pending: Promise<ThreadExecutionContext | null> | null) => void
   /**
    * Bind the current turn's abort signal so in-flight bridged tools (and their
-   * approval prompts) cancel when the turn ends — including the case where the
-   * external agent abandons an MCP call and finishes the prompt on its own.
+   * approval callers) stop when the turn ends. Normal completion parks unanswered
+   * questions for an exact retry; other termination reasons revoke them.
    */
   setTurnSignal: (signal: AbortSignal | null) => void
   /** Attribute successful native workspace edits to the current ACP turn's audit. */
@@ -371,6 +373,7 @@ interface BridgeExecuteContext {
   abandonCall: (detail: string) => void
   /** Bridge-wide registry of in-flight calls by MCP request id, for the above. */
   inflightCalls: Map<string, (detail: string) => void>
+  bridgeOwnerId: string
   /** Owning Copse thread — rebound into ALS so approvals attribute correctly. */
   threadId: string
   /** Owning project used to scope project-enrolled tool schemas. */
@@ -497,6 +500,12 @@ function runInTurnBinding<T>(
     turnTreeId: ReturnType<typeof getActiveRunTurnTreeId>
     skillTurn: SkillActivationTurn | null
     bridgeExecutionId: string
+    approvalOperation?: {
+      toolName: string
+      arguments: unknown
+      executionRoot: string
+      bridgeOwnerId: string
+    }
     networkScopeAlreadyApplies: boolean
   },
   execute: () => Promise<T>,
@@ -513,7 +522,12 @@ function runInTurnBinding<T>(
       return runWithThreadExecutionContext(binding.executionContext, () =>
         runWithSkillActivationTurn(
           binding.skillTurn ?? createSkillActivationTurn([], [], 0, 'acp'),
-          () => runWithBridgeExecutionId(binding.bridgeExecutionId, withPermissionContext),
+          () =>
+            runWithBridgeExecutionId(
+              binding.bridgeExecutionId,
+              withPermissionContext,
+              binding.approvalOperation,
+            ),
         ),
       )
     }),
@@ -612,6 +626,17 @@ function buildMcpServer(
     }
     extra.signal.addEventListener('abort', onExtraAbort, { once: true })
     let stopKeepalive = (): void => {}
+    const turnTreeId = ctx.getTurnTreeId()
+    const owningTurnSignal = ctx.getTurnSignal()
+    const continuationRevoked = (): boolean => {
+      const reason: unknown = owningTurnSignal?.reason
+      return (
+        ctx.sessionSignal.aborted ||
+        (owningTurnSignal?.aborted === true &&
+          !(reason instanceof AcpTurnEnded && reason.reason === 'completed'))
+      )
+    }
+    const completionHandler = resolveAcpToolCompletionHandler()
     try {
       const executeSignal = mergeBridgeExecuteSignal(
         ctx.sessionSignal,
@@ -683,6 +708,12 @@ function buildMcpServer(
             turnTreeId: ctx.getTurnTreeId(),
             skillTurn,
             bridgeExecutionId,
+            approvalOperation: {
+              toolName: name,
+              arguments: request.params.arguments ?? {},
+              executionRoot: executionContext.root,
+              bridgeOwnerId: ctx.bridgeOwnerId,
+            },
             networkScopeAlreadyApplies: ctx.networkScopeAlreadyApplies,
           },
           execute,
@@ -695,6 +726,31 @@ function buildMcpServer(
       for (const path of bridgedWorkspaceWritePaths(name, request.params.arguments)) {
         ctx.recordWorkspaceWrite(path)
       }
+      // An external action may finish after cancellation: losing the response
+      // cannot undo it. Recover output, never retry execution. Explicit Stop,
+      // failure and session closure must not start a new machine turn.
+      const turnReason: unknown = owningTurnSignal?.reason
+      const normalTurnEnd = turnReason instanceof AcpTurnEnded && turnReason.reason === 'completed'
+      if (
+        turnTreeId !== null &&
+        !ctx.sessionSignal.aborted &&
+        (!owningTurnSignal?.aborted || normalTurnEnd) &&
+        (ctx.getCallSignal().aborted || normalTurnEnd)
+      ) {
+        void recoverAcpToolCompletion(
+          {
+            operationId: bridgeExecutionId,
+            owner: executionContext,
+            turnTreeId,
+            toolName: name,
+            result,
+            alreadyObserved: continuationRevoked,
+          },
+          completionHandler,
+        ).catch((err: unknown) => {
+          console.error('[acp-bridge] could not recover completed tool result:', errorMessage(err))
+        })
+      }
       return {
         content: toMcpContent(
           name === REQUEST_WRITE_ACCESS_TOOL
@@ -704,6 +760,36 @@ function buildMcpServer(
         ),
       }
     } catch (err) {
+      if (
+        err instanceof ApprovalPendingError &&
+        err.retry &&
+        turnTreeId !== null &&
+        completionHandler
+      ) {
+        const retry = err.retry
+        void retry.settled
+          .then(async () => {
+            // A live retry may already have consumed the answer, or Stop/session
+            // closure may have revoked it while this continuation waited.
+            if (!retry.available() || continuationRevoked()) return
+            await completionHandler(
+              {
+                operationId: `approval:${bridgeExecutionId}`,
+                owner: executionContext,
+                turnTreeId,
+                toolName: name,
+                alreadyObserved: () => !retry.available() || continuationRevoked(),
+              },
+              `The user answered the pending approval for ${name}. ` +
+                'Retry this exact tool call once to consume the saved decision, then continue the original task. ' +
+                'The call has not executed through this approval yet.\n' +
+                `Tool: ${name}\nArguments (data): ${JSON.stringify(request.params.arguments ?? {})}`,
+            )
+          })
+          .catch((error: unknown) => {
+            console.error('[acp-bridge] could not resume answered approval:', errorMessage(error))
+          })
+      }
       return { content: [{ type: 'text', text: errorMessage(err) }], isError: true }
     } finally {
       stopKeepalive()
@@ -800,6 +886,7 @@ export async function startAcpNativeBridge(
   if (bridgedTools(registry, opts.projectId, offerWriteAccess).length === 0) return null
 
   const token = randomBytes(32).toString('hex')
+  const bridgeOwnerId = randomUUID()
   const networkScopeAlreadyApplies = opts.networkScopeAlreadyApplies === true
   // The server is pooled per ACP thread, so its context is also per bridge.
   // Capture it at request start and bind it with AsyncLocalStorage during the
@@ -813,6 +900,10 @@ export async function startAcpNativeBridge(
   let turnTreeId: ReturnType<typeof getActiveRunTurnTreeId> = null
   let workspaceWriteObserver: ((path: string) => void) | null = null
   const inflightCalls = new Map<string, (detail: string) => void>()
+  let detachTurnAbort: (() => void) | null = null
+  const onSessionAbort = (): void => {
+    discardApprovalsForBridge(bridgeOwnerId, 'session-closed')
+  }
 
   const handle = (req: IncomingMessage, res: ServerResponse): void => {
     void (async (): Promise<void> => {
@@ -831,7 +922,8 @@ export async function startAcpNativeBridge(
       // and its verdict is kept for the agent's retry of the same call
       // (`approval.ts`). Codex abandons a silent call after ~300 s, so an
       // approval the user took longer than that to click was previously lost.
-      // Turn end still cancels the prompt (`cancelApprovalsForThread`).
+      // Normal completion preserves the question; Stop, failure, timeout and
+      // session closure revoke both the parked prompt and any stored answer.
       const callAbort = new AbortController()
       const abandonCall = (detail: string): void => {
         if (!callAbort.signal.aborted) callAbort.abort(new AbandonedCallAbort(detail))
@@ -846,6 +938,7 @@ export async function startAcpNativeBridge(
         getCallSignal: () => callAbort.signal,
         abandonCall,
         inflightCalls,
+        bridgeOwnerId,
         threadId: opts.threadId,
         ...(opts.projectId ? { projectId: opts.projectId } : {}),
         getExecutionContext: () => executionContext,
@@ -889,6 +982,8 @@ export async function startAcpNativeBridge(
     (tool) => tool.name,
   )
   retainMediatedMcpTools(offeredToolNames)
+  signal.addEventListener('abort', onSessionAbort, { once: true })
+  if (signal.aborted) onSessionAbort()
   let closed = false
   return {
     url: `http://127.0.0.1:${String(address.port)}/mcp`,
@@ -911,7 +1006,25 @@ export async function startAcpNativeBridge(
       pendingExecutionContext = pending
     },
     setTurnSignal: (next): void => {
+      detachTurnAbort?.()
+      detachTurnAbort = null
       turnSignal = next
+      if (!next) return
+      // A call may already have parked its prompt after an MCP disconnect.
+      // Observe the owner separately: the call's combined signal aborts only once.
+      const onTurnAbort = (): void => {
+        const reason: unknown = next.reason
+        if (reason instanceof AcpTurnEnded && reason.reason === 'completed') return
+        discardApprovalsForBridge(
+          bridgeOwnerId,
+          reason instanceof AcpTurnEnded ? reason.reason : 'aborted',
+        )
+      }
+      next.addEventListener('abort', onTurnAbort, { once: true })
+      detachTurnAbort = (): void => {
+        next.removeEventListener('abort', onTurnAbort)
+      }
+      if (next.aborted) onTurnAbort()
     },
     setWorkspaceWriteObserver: (observer): void => {
       workspaceWriteObserver = observer
@@ -972,6 +1085,9 @@ export async function startAcpNativeBridge(
     close: (): Promise<void> => {
       if (closed) return Promise.resolve()
       closed = true
+      detachTurnAbort?.()
+      signal.removeEventListener('abort', onSessionAbort)
+      discardApprovalsForBridge(bridgeOwnerId, 'session-closed')
       releaseMediatedMcpTools(offeredToolNames)
       return new Promise<void>((resolve) => {
         httpServer.close(() => {

@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -50,7 +51,7 @@ function fixture(): {
   candidate: Buffer
   dispose: () => void
 } {
-  const cwd = mkdtempSync(join(tmpdir(), 'review-packet-'))
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'review-packet-')))
   function git(...args: string[]): string {
     return execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
       .toString()

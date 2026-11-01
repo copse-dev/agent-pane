@@ -1,5 +1,15 @@
 # Shell and tool permission contract
 
+A tool cancelled while waiting for permission reports cancellation and never
+executes after the signal aborts. A negative gate result preserves its denial
+reason, distinguishing a user decline from policy, hook and unanswered-prompt
+refusals. Pending ACP approval remains a separate retryable error.
+
+When an authorized bridged action finishes after its caller detaches, Copse
+records its textual result before requesting continuation against the original
+human epoch. This delivers an outcome, never re-executes the action, and does
+not grant authority to run another tool.
+
 This document describes current shipped behavior. Read it before changing permission policy, shell
 scope analysis, the project sandbox, escalation, or approval UI. Historical design decisions
 remain in `docs/plans/`; this is the durable cross-platform contract.
@@ -37,6 +47,27 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 | Unattended container             | Explicitly armed run on an attested disposable guest. Contained shell effects allow, outward effects defer or deny, host escapes deny; budgets required. Experimental, off by default, mutually exclusive with Guarded YOLO.                                                                                                                                                                             |
 | ACP permission mode              | Agent-specific session mode, additional to Copse's gate and sandbox. Sandboxed Claude presets may default to acceptEdits; unsandboxed/SSH presets do not receive that default. Remembered ACP grants are per agent and tool kind; a request that runs a command is never remembered, so every command reaches the shell gate. See [ACP permission requests](#acp-permission-requests).                   |
 | Agent managed thread mode        | Opt-in per thread for external coding agents. Copse does not apply its process sandbox and selects the agent-advertised Auto/Default session mode when available. The agent's permission requests are presented without Copse's shell classifier, remembered grants, or edit auto-approval. Copse's native-tool bridge remains available and every bridged call still uses the ordinary Copse tool gate. |
+
+## Unanswered approvals across ACP turns
+
+Normal ACP turn completion ends tool execution and releases the execution context, but it does
+not cancel an unanswered approval. The prompt remains answerable even when turn completion
+arrives before the MCP client's disconnect. A later identical request in the same thread and
+execution root can consume that decision once, within the existing ten-minute replay window.
+Changed commands or arguments require their own approval; answering a detached prompt never
+starts the old tool call.
+
+Stop, send-now interruption, failure, idle expiry, session closure, and thread deletion revoke both
+pending prompts (including detached ones) and stored answers for that thread. The bridge observes
+turn and session termination separately from a disconnected call so the first abort cannot hide
+later revocation. Self-started turns distinguish completion from Stop,
+idle expiry, and session closure. Ordinary prompts have no approval deadline. Client abandonment
+and turn completion are logged as pending requests with distinct sources; cancellation, window
+closure, and explicit safety-check timeouts retain their own audit sources.
+
+Settings holds ordinary approval dialogs back while it is open. A request for the focused thread
+still receives an attention indicator and a **Review approval** action in Settings. Reviewing
+closes Settings and surfaces the request through the ordinary approval dialog.
 
 ## Per-tool permission settings
 

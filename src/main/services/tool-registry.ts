@@ -284,6 +284,8 @@ export class ToolRegistry {
         check.denial ?? (signal.aborted ? { by: 'cancelled' } : undefined),
       )
     }
+    if (signal.aborted)
+      throw new DOMException(`Tool call "${name}" was cancelled before execution.`, 'AbortError')
 
     // The registered wrapper parses once more immediately before execution so
     // schema transforms apply exactly once to the value the tool receives. Feed

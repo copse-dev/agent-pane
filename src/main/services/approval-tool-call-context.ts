@@ -24,13 +24,51 @@ export function getApprovalToolCallId(): string | undefined {
   return toolCallIdStorage.getStore()
 }
 
-const bridgeExecutionIdStorage = new AsyncLocalStorage<string>()
+const bridgeExecutionIdStorage = new AsyncLocalStorage<{
+  id: string
+  operationKey?: string
+  bridgeOwnerId?: string
+}>()
 
 /** A bridge execution has its own identity, not a guessed ACP transcript ID. */
-export function runWithBridgeExecutionId<T>(id: string, fn: () => T): T {
-  return bridgeExecutionIdStorage.run(id, () => toolCallIdStorage.run(undefined, fn))
+export function runWithBridgeExecutionId<T>(
+  id: string,
+  fn: () => T,
+  operation?: {
+    toolName: string
+    arguments: unknown
+    executionRoot?: string
+    bridgeOwnerId?: string
+  },
+): T {
+  return bridgeExecutionIdStorage.run(
+    {
+      id,
+      ...(operation?.bridgeOwnerId ? { bridgeOwnerId: operation.bridgeOwnerId } : {}),
+      ...(operation
+        ? {
+            operationKey: JSON.stringify([
+              operation.toolName,
+              operation.arguments,
+              operation.executionRoot ?? null,
+            ]),
+          }
+        : {}),
+    },
+    () => toolCallIdStorage.run(undefined, fn),
+  )
 }
 
 export function getBridgeExecutionId(): string | undefined {
-  return bridgeExecutionIdStorage.getStore()
+  return bridgeExecutionIdStorage.getStore()?.id
+}
+
+/** Private in-memory approval identity; never rendered or written to the audit log. */
+export function getApprovalOperationKey(): string | undefined {
+  return bridgeExecutionIdStorage.getStore()?.operationKey
+}
+
+/** Private session ownership for revocation when a pooled bridge is retired. */
+export function getApprovalBridgeOwnerId(): string | undefined {
+  return bridgeExecutionIdStorage.getStore()?.bridgeOwnerId
 }

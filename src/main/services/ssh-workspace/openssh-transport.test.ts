@@ -1,4 +1,4 @@
-import { describe, it, afterEach } from 'node:test'
+import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -15,6 +15,7 @@ import {
   sshPtyArgs,
 } from './openssh-transport.ts'
 import { controlSocketPath, setSshControlDirForTests } from './ssh-paths.ts'
+import { shortSocketDirectory } from '../../../../tests/helpers/short-socket-directory.ts'
 
 const host: SshWorkspaceHost = {
   id: 'dev-box',
@@ -24,6 +25,10 @@ const host: SshWorkspaceHost = {
 }
 
 describe('sshExecArgs / ControlPath', () => {
+  beforeEach((t) => {
+    setSshControlDirForTests(shortSocketDirectory(t))
+  })
+
   afterEach(() => {
     setSshControlDirForTests(null)
   })
@@ -34,24 +39,18 @@ describe('sshExecArgs / ControlPath', () => {
       skip: process.platform === 'win32' ? 'ControlMaster / -S unused on Windows OpenSSH' : false,
     },
     () => {
-      const dir = mkdtempSync('/tmp/copse-cm-')
-      try {
-        setSshControlDirForTests(dir)
-        const sock = controlSocketPath(host.id)
+      const sock = controlSocketPath(host.id)
 
-        const args = sshExecArgs(host, 'true')
-        const sIdx = args.indexOf('-S')
-        assert.notEqual(sIdx, -1)
-        assert.equal(args[sIdx + 1], sock)
+      const args = sshExecArgs(host, 'true')
+      const sIdx = args.indexOf('-S')
+      assert.notEqual(sIdx, -1)
+      assert.equal(args[sIdx + 1], sock)
 
-        for (const arg of args) {
-          assert.ok(
-            !arg.startsWith('ControlPath='),
-            `must not pass -o ControlPath=… (got ${arg}); OpenSSH splits on spaces`,
-          )
-        }
-      } finally {
-        rmSync(dir, { recursive: true, force: true })
+      for (const arg of args) {
+        assert.ok(
+          !arg.startsWith('ControlPath='),
+          `must not pass -o ControlPath=… (got ${arg}); OpenSSH splits on spaces`,
+        )
       }
     },
   )
@@ -62,18 +61,12 @@ describe('sshExecArgs / ControlPath', () => {
       skip: process.platform === 'win32' ? 'ControlMaster / -S unused on Windows OpenSSH' : false,
     },
     () => {
-      const dir = mkdtempSync('/tmp/copse-cm-')
-      try {
-        setSshControlDirForTests(dir)
-        const sock = controlSocketPath(host.id)
-        const args = sshPtyArgs(host, 'bash -l')
-        assert.equal(args[0], '-tt')
-        const sIdx = args.indexOf('-S')
-        assert.equal(args[sIdx + 1], sock)
-        assert.ok(!args.some((a) => a.startsWith('ControlPath=')))
-      } finally {
-        rmSync(dir, { recursive: true, force: true })
-      }
+      const sock = controlSocketPath(host.id)
+      const args = sshPtyArgs(host, 'bash -l')
+      assert.equal(args[0], '-tt')
+      const sIdx = args.indexOf('-S')
+      assert.equal(args[sIdx + 1], sock)
+      assert.ok(!args.some((a) => a.startsWith('ControlPath=')))
     },
   )
 
