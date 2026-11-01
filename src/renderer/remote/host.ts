@@ -1,17 +1,17 @@
 import { z } from 'zod'
 import { createStore } from '@shared/store/store.ts'
-import { remoteStateSchema } from '../../shared/remote-interface.ts'
+import { RemoteChatClient, RemoteActions } from './client.ts'
 import { mountChatSurface } from '../views/chat-surface.ts'
-import { request } from './electron.ts'
+import { request } from './transport.ts'
 import { installHighlighterBackend } from '../markdown/highlighter-backend.ts'
 import { qsRequired } from '../dom/helpers.ts'
+import { mountConfirmDialog, showConfirmDialog } from '../views/confirm-dialog.ts'
 
 const metadataSchema = z.object({
   access: z.enum(['read', 'control']),
   sessionId: z.uuid(),
   runId: z.uuid().nullable(),
 })
-const actionResultSchema = z.object({ ok: z.boolean().optional(), error: z.string().optional() })
 
 export async function startRemoteChat(): Promise<void> {
   const params = new URLSearchParams(location.search)
@@ -34,33 +34,27 @@ export async function startRemoteChat(): Promise<void> {
     conciseThreadsEnabled: false,
   })
   let connected = false
+  const client = new RemoteChatClient(request)
+  let appliedSnapshot: string | null = null
   let metadata: z.infer<typeof metadataSchema> | null = null
-  const pending = new Map<string, { requestId: string; sessionId: string; issuedAt: number }>()
+  mountConfirmDialog()
+  const actions = new RemoteActions(request, () =>
+    showConfirmDialog({
+      message: 'Send this action again?',
+      detail:
+        'The earlier delivery is uncertain. Check this chat on your Mac before sending again to avoid a duplicate.',
+      confirmLabel: 'Send again',
+    }),
+  )
   async function action(
     payload: { action: 'message'; text: string } | { action: 'stop'; runId: string },
   ): Promise<void> {
     if (!connected || !metadata || metadata.access !== 'control')
       throw new Error('Reconnect to your Mac to send.')
-    const key = JSON.stringify(payload)
-    let envelope = pending.get(key)
-    if (!envelope || envelope.sessionId !== metadata.sessionId) {
-      envelope = {
-        requestId: crypto.randomUUID(),
-        sessionId: metadata.sessionId,
-        issuedAt: Date.now(),
-      }
-      pending.set(key, envelope)
-    }
-    // Keep the envelope after uncertain delivery: retries cannot start duplicate runs.
-    const result = actionResultSchema.parse(
-      await request('/api/action', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...envelope, projectId, threadId, ...payload }),
-      }),
+    await actions.run(
+      { ...payload, projectId: projectId ?? '', threadId: threadId ?? '' },
+      metadata.sessionId,
     )
-    if (result.error) throw new Error(result.error)
-    pending.delete(key)
   }
   mountChatSurface(conversation, input, store, window.api, {
     transport: {
@@ -78,8 +72,8 @@ export async function startRemoteChat(): Promise<void> {
     if (refreshing) return
     refreshing = true
     try {
-      const [rawState, rawMetadata] = await Promise.all([
-        request('/api/remote/state'),
+      const [state, rawMetadata] = await Promise.all([
+        client.snapshot(),
         request(
           '/api/thread/' +
             encodeURIComponent(projectId ?? '') +
@@ -87,14 +81,23 @@ export async function startRemoteChat(): Promise<void> {
             encodeURIComponent(threadId ?? ''),
         ),
       ])
-      const state = remoteStateSchema.parse(rawState)
       metadata = metadataSchema.parse(rawMetadata)
       const view = state.views.find((item) => item.projectId === projectId)
       const thread = view?.threads.find((item) => item.id === threadId)
       if (!thread) throw new Error('Open this project on your Mac to share its live chat.')
+      const wasConnected = connected
       connected = metadata.access === 'control'
-      store.setState({ threads: view?.threads ?? [] })
-      store.emit('threads_changed')
+      const snapshotKey = `${state.sessionId}:${String(state.revision)}`
+      if (snapshotKey !== appliedSnapshot) {
+        const hydrated = await client.hydrate(projectId ?? '', thread)
+        store.setState({
+          threads: view?.threads.map((item) => (item.id === threadId ? hydrated : item)) ?? [],
+        })
+        appliedSnapshot = snapshotKey
+        store.emit('threads_changed')
+      } else if (wasConnected !== connected) {
+        store.emit('threads_changed')
+      }
       title.textContent = thread.title || 'Chat'
       status.textContent = connected ? 'Connected to your Mac' : 'Enable control on your Mac'
       status.dataset['connected'] = String(connected)

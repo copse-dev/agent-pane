@@ -6,6 +6,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { RemoteView } from '@shared/remote-interface.ts'
 import type { MobileCompanionState } from '@shared/types/mobile-companion.ts'
 import { attachRemotePublisher } from './remote-publisher.ts'
+import { createThread } from '@shared/store/thread-helpers.ts'
 
 function setup(): {
   store: AppStore
@@ -39,6 +40,44 @@ function setup(): {
 }
 
 describe('desktop remote publisher', () => {
+  it('keeps background output and the final state after the desktop switches project', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] })
+    const { store, views, events, api, base } = setup()
+    const threadId = createThread(store)
+    createThread(store)
+    const live = store.getState().threads.find((thread) => thread.id === threadId)
+    assert.ok(live)
+    const state = await base.mobile.getState()
+    const dispose = attachRemotePublisher(store, api)
+    events.state?.({ ...state, enabled: true, running: true })
+    await Promise.resolve()
+    context.mock.timers.tick(150)
+    store.setState({
+      activeProjectId: 'other',
+      threads: [],
+      backgroundThreads: [{ projectId: 'p', thread: { ...live, status: 'running' } }],
+    })
+    store.emit('threads_changed')
+    context.mock.timers.tick(150)
+    assert.equal(views.filter((view) => view.projectId === 'p').at(-1)?.threads.length, 2)
+    store.setState({
+      backgroundThreads: [
+        { projectId: 'p', thread: { ...live, title: 'Final output', status: 'idle' } },
+      ],
+    })
+    store.emit('thread_status_changed', threadId, 'idle')
+    store.setState({ backgroundThreads: [] })
+    context.mock.timers.tick(150)
+    const final = views
+      .filter((view) => view.projectId === 'p')
+      .at(-1)
+      ?.threads.find((thread) => thread.id === threadId)
+    assert.ok(final)
+    assert.equal(final.status, 'idle')
+    assert.equal(final.title, 'Final output')
+    dispose()
+  })
+
   it('does no snapshot work while Mobile Companion is disabled', async (context) => {
     context.mock.timers.enable({ apis: ['setTimeout'] })
     const { store, views, api } = setup()

@@ -27,7 +27,7 @@ export async function buildMobileAssets(outputDir = 'dist/mobile'): Promise<void
   })
   writeFileSync(
     join(remoteDir, 'assets.json'),
-    JSON.stringify(['index.html', 'chat.js', 'chat.css']),
+    JSON.stringify(['index.html', 'chat.js', 'chat.css', 'mermaid-frame.html']),
   )
   await build({
     entryPoints: ['src/mobile/app.js'],
@@ -56,5 +56,6 @@ export async function buildMobileAssets(outputDir = 'dist/mobile'): Promise<void
     loader: { '.ttf': 'base64' },
   })
   writeMermaidFrameHtml(outputDir)
+  cpSync(join(outputDir, 'mermaid-frame.html'), join(remoteDir, 'mermaid-frame.html'))
   rmSync(frameScript)
 }

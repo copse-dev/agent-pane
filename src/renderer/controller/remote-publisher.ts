@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { MobileCompanionState } from '@shared/types/mobile-companion.ts'
+import type { Thread } from '@shared/types'
 import { remoteViewSchema } from '@shared/remote-interface.ts'
 
 /** Only an opted-in desktop owner publishes; remote clients never autosave these views. */
@@ -9,18 +10,34 @@ export function attachRemotePublisher(store: AppStore, api: ApiClient): () => vo
   let running = false
   let disposed = false
   let receivedState = false
+  const views = new Map<string, { projectId: string; threads: Thread[] }>()
+
+  function capture(): void {
+    const { activeProjectId, threads, backgroundThreads } = store.getState()
+    if (activeProjectId) views.set(activeProjectId, { projectId: activeProjectId, threads })
+    for (const { projectId, thread } of backgroundThreads) {
+      const existing = views.get(projectId)?.threads ?? []
+      views.set(projectId, {
+        projectId,
+        threads: [...existing.filter((item) => item.id !== thread.id), thread],
+      })
+    }
+  }
 
   function publish(): void {
     timer = null
     if (!running || disposed) return
-    const { activeProjectId, threads } = store.getState()
-    if (!activeProjectId) return
-    const view = remoteViewSchema.safeParse({ projectId: activeProjectId, threads })
-    if (view.success) void api.remote.publish(view.data).catch(() => {})
+    for (const value of views.values()) {
+      const view = remoteViewSchema.safeParse(value)
+      if (view.success) void api.remote.publish(view.data).catch(() => {})
+    }
   }
 
   function schedule(): void {
-    if (running && !disposed && timer === null) timer = setTimeout(publish, 150)
+    if (!running || disposed) return
+    // Capture now: final background bookkeeping may drop the thread before the timer fires.
+    capture()
+    timer ??= setTimeout(publish, 150)
   }
 
   function setAvailability(state: Pick<MobileCompanionState, 'enabled' | 'running'>): void {

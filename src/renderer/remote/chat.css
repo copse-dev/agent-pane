@@ -1,5 +1,6 @@
 @import '../styles/tokens.css';
 @import '../styles/themes.css';
+@import '@copse/streaming-markdown/styles/default.css';
 @import '../styles/global.css';
 .remote-host {
   margin: 0;
@@ -33,6 +34,8 @@
   margin: auto;
 }
 .remote-host #conversation {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -40,12 +43,17 @@
 .remote-host #input-bar {
   flex: none;
   position: relative;
+  inset: auto;
+  transform: none;
+  width: auto;
+  margin: 12px;
   padding: 12px max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom));
 }
 .remote-host .input-row {
   display: flex;
+  flex-direction: column;
   gap: 8px;
-  align-items: flex-end;
+  align-items: stretch;
 }
 .remote-host .prompt-input {
   flex: 1;
@@ -53,6 +61,13 @@
   max-height: 35dvh;
   overflow: auto;
   font-size: 16px;
+  width: 100%;
+  padding: 12px;
+}
+.remote-host .submit-row {
+  position: static;
+  align-self: flex-end;
+  flex-wrap: wrap;
 }
 .remote-host .remote-next-step {
   display: block;

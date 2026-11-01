@@ -1,17 +1,6 @@
 import { z } from 'zod'
 import { remoteReadSchema, remoteReadAllowed } from '../../shared/remote-interface.ts'
-
-export async function request(path: string, options: RequestInit = {}): Promise<unknown> {
-  const token = localStorage.getItem('copse-mobile-token')
-  if (!token) throw new Error('Pair this browser with your Mac first.')
-  const headers = new Headers(options.headers)
-  headers.set('Authorization', 'Bearer ' + token)
-  const response = await fetch(path, { ...options, headers, signal: AbortSignal.timeout(35000) })
-  const value: unknown = await response.json()
-  if (!response.ok)
-    throw new Error(`Mac connection unavailable (${String(response.status)}). Your draft is kept.`)
-  return value
-}
+import { request } from './transport.ts'
 
 /** The real preload uses this transport; unsupported native calls never leave the browser. */
 interface RemoteIpcRenderer {

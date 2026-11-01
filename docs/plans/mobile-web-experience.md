@@ -828,6 +828,20 @@ by hand, on a device the app cannot reach.
   surface.
 - [`../threat-model.md`](../threat-model.md) — amended in the same PR (see Security).
 
+### Shared browser chat validation — 1 November 2026
+
+- The focused browser run passes at a 390 × 844 phone viewport in light and dark themes.
+  Inspected screenshots show a full-width draft and controls below it; DOM assertions
+  require at least 280px of editable width, an on-screen composer and no control overlap.
+  The test edits a suggestion, preserves the draft across disconnect/reconnect, and sends once.
+- Twelve focused client, publisher and bundle tests pass, along with all four typecheck projects.
+  Review fixes cover background project output, unloaded history, unchanged polling revisions,
+  Mermaid frame packaging and rejected versus uncertain action retries.
+- This remains draft evidence. The previous full check timed out in unit tests with failures
+  that have not been baseline-triaged. A fresh full check, production build, Markdown runtime
+  checks, repository CI and actual paired-device validation remain outstanding. Local macOS
+  captures are evidence only and are not committed as Linux screenshot baselines.
+
 ### September 2026 control implementation
 
 - The HTTP write allow-list is approval, answer, stop, message. Strict envelopes

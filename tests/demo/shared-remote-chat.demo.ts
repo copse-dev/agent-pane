@@ -1,5 +1,6 @@
 import { $, browser, expect } from '@wdio/globals'
-import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
+import { join } from 'node:path'
+import { E2E_SCREENSHOT_DIR } from '../e2e/helpers/screenshot.ts'
 
 describe('shared desktop chat in the paired browser', () => {
   it('renders the shipped composer, edits a suggestion, and keeps its draft through reconnect', async () => {
@@ -32,7 +33,21 @@ describe('shared desktop chat in the paired browser', () => {
     expect(await browser.execute(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     )
-    await saveElementScreenshot('body', 'shared-remote-chat-phone-light.png', { frame: 'document' })
+    const geometry = await browser.execute(() => {
+      const editor = document.querySelector('.prompt-input')?.getBoundingClientRect()
+      const send = document.querySelector('.submit-btn')?.getBoundingClientRect()
+      const card = document.getElementById('input-bar')?.getBoundingClientRect()
+      if (!editor || !send || !card) throw new Error('Composer is missing')
+      return {
+        editorWidth: editor.width,
+        controlsBelowDraft: send.top >= editor.bottom,
+        cardFits: card.left >= 0 && card.right <= innerWidth && card.bottom <= innerHeight,
+      }
+    })
+    expect(geometry.editorWidth).toBeGreaterThan(280)
+    expect(geometry.controlsBelowDraft).toBe(true)
+    expect(geometry.cardFits).toBe(true)
+    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'shared-remote-chat-phone-light.png'))
     await browser.execute(async () => {
       await fetch('/remote-fixture/offline')
     })
@@ -49,7 +64,7 @@ describe('shared desktop chat in the paired browser', () => {
       features: [{ name: 'prefers-color-scheme', value: 'dark' }],
     })
     await expect($('html')).toHaveAttribute('data-theme', 'dark')
-    await saveElementScreenshot('body', 'shared-remote-chat-phone-dark.png', { frame: 'document' })
+    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'shared-remote-chat-phone-dark.png'))
     await $('.submit-btn').click()
     await expect(editor).toHaveText('')
     const submissions = await browser.execute(async () => {
