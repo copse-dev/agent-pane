@@ -240,15 +240,16 @@ export class ChatGptPlanService {
 
 let service: ChatGptPlanService | undefined
 
-async function focusCopseWindow(): Promise<void> {
-  const { app } = await import('electron')
-  const { getMainWindow } = await import('../../windows/create-main-window.ts')
-  app.focus({ steal: true })
-  const win = getMainWindow()
-  if (!win || win.isDestroyed()) return
-  if (win.isMinimized()) win.restore()
-  win.show()
-  win.focus()
+let focusCopseWindow: (() => void) | undefined
+
+/**
+ * How Copse brings its window forward once the sign-in callback lands. The
+ * main process sets it when it registers the ChatGPT plan handlers. This
+ * module also loads in the standalone thread-container worker, which must stay
+ * electron-free, so it never imports the window code itself.
+ */
+export function setChatGptPlanWindowFocus(focus: () => void): void {
+  focusCopseWindow = focus
 }
 
 /** Lazy construction respects the host's persistent-store and secure-storage boot order. */
@@ -260,9 +261,11 @@ export function getChatGptPlanService(): ChatGptPlanService {
       await shell.openExternal(url)
     },
     focusApp: (): void => {
-      void focusCopseWindow().catch((err: unknown) => {
+      try {
+        focusCopseWindow?.()
+      } catch (err) {
         console.warn('[chatgpt-plan] could not focus Copse after sign-in callback:', err)
-      })
+      }
     },
   })
   return service
