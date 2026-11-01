@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
+import type { CommandPhase } from '@copse/agent/wire-types.ts'
 import type { StreamChunk, TranscriptStamp, TranscriptSnapshot } from '@shared/types'
 import { createStore } from '@shared/store/store.ts'
 import { getThreadById } from '@shared/store/thread-helpers.ts'
@@ -290,6 +291,38 @@ describe('TurnTranscriptWriter', () => {
         stamp: { messageIds: [] },
       },
     ])
+  })
+
+  it('keeps both endings when two tasks on one message finish together', async () => {
+    const turn = harness(() => [
+      { type: 'tool_call', toolCall: { id: 'call-a', name: 'run_background', args: {} } },
+      { type: 'tool_call', toolCall: { id: 'call-b', name: 'run_background', args: {} } },
+      { type: 'tool_result', toolCallId: 'call-a', result: 'Started a.', isError: false },
+      { type: 'tool_result', toolCallId: 'call-b', result: 'Started b.', isError: false },
+      { type: 'done' },
+    ])
+    await dispatch(turn)
+
+    const ending = (taskId: string, exitCode: number): CommandPhase => ({
+      state: 'exited',
+      since: 50,
+      launched: true,
+      exitCode,
+      backgroundTaskId: taskId,
+    })
+    await Promise.all([
+      turn.writer.updateCommandPhase(PROJECT, THREAD, 'call-a', ending('bg-a', 1)),
+      turn.writer.updateCommandPhase(PROJECT, THREAD, 'call-b', ending('bg-b', 2)),
+    ])
+
+    const calls = (await stored()).messages.flatMap((message) => message.toolCalls)
+    assert.deepEqual(
+      calls.map((call) => [call.id, call.commandPhase?.exitCode]),
+      [
+        ['call-a', 1],
+        ['call-b', 2],
+      ],
+    )
   })
 
   it('ignores an ending for a tool call the thread does not hold', async () => {

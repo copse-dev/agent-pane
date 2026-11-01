@@ -110,9 +110,20 @@ export class TurnTranscriptWriter {
     this.deps = deps
   }
 
+  /**
+   * Per thread, the tail of the command stages written after their turn. Each
+   * one reads the stored message and rewrites it, so they run one at a time:
+   * two tasks ending together on one message must not each write over the
+   * other's ending.
+   */
+  private readonly lateWrites = new Map<string, Promise<void>>()
+
   /** Resolves once everything main has written for the thread has landed. */
   settled(threadId: string): Promise<void> {
-    return this.drains.get(threadId) ?? Promise.resolve()
+    const drain = this.drains.get(threadId)
+    const late = this.lateWrites.get(threadId)
+    if (!late) return drain ?? Promise.resolve()
+    return Promise.all([drain, late]).then(() => undefined)
   }
 
   /**
@@ -294,7 +305,7 @@ export class TurnTranscriptWriter {
    * it as an ordinary update; otherwise the stored message is read back,
    * patched and rewritten, and the window is told without writing it.
    */
-  async updateCommandPhase(
+  updateCommandPhase(
     projectId: string,
     threadId: string,
     toolCallId: string,
@@ -314,21 +325,30 @@ export class TurnTranscriptWriter {
     ) {
       if (session.pending) session.pending.push(chunk)
       else this.process(session, chunk)
-      return
+      return Promise.resolve()
     }
-    await this.settled(threadId)
-    const thread = await this.deps.loadThread(projectId, threadId)
-    const message = thread?.messages.find((candidate) =>
-      candidate.toolCalls.some((call) => call.id === toolCallId),
-    )
-    if (!message) return
-    await this.deps.appendMessage(projectId, threadId, {
-      ...message,
-      toolCalls: message.toolCalls.map((call) =>
-        call.id === toolCallId ? { ...call, commandPhase } : call,
-      ),
+    const write = (this.lateWrites.get(threadId) ?? Promise.resolve()).then(async () => {
+      // Not `settled`: that waits on this write's own tail.
+      await this.drains.get(threadId)
+      const thread = await this.deps.loadThread(projectId, threadId)
+      const message = thread?.messages.find((candidate) =>
+        candidate.toolCalls.some((call) => call.id === toolCallId),
+      )
+      if (!message) return
+      await this.deps.appendMessage(projectId, threadId, {
+        ...message,
+        toolCalls: message.toolCalls.map((call) =>
+          call.id === toolCallId ? { ...call, commandPhase } : call,
+        ),
+      })
+      this.deps.forward(threadId, chunk, { messageIds: [] })
     })
-    this.deps.forward(threadId, chunk, { messageIds: [] })
+    const tail = write.catch(() => undefined)
+    this.lateWrites.set(threadId, tail)
+    void tail.then(() => {
+      if (this.lateWrites.get(threadId) === tail) this.lateWrites.delete(threadId)
+    })
+    return write
   }
 
   private process(session: Session, chunk: StreamChunk): void {
