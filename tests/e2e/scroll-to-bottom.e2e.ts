@@ -10,6 +10,10 @@ import { installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { AA_BODY_TEXT, fillContrast } from './helpers/fill-contrast.ts'
 import { switchTheme } from './helpers/theme.ts'
+import {
+  navigationTextOverlaps,
+  waitForTranscriptScrollSettled,
+} from './helpers/scroll-to-bottom.ts'
 
 const SCROLL_PIN_THRESHOLD_PX = 48
 const STREAMING_PROMPT = 'Please write a detailed follow-up about the implementation plan.'
@@ -118,9 +122,84 @@ describe('scroll to bottom', () => {
     await $('.messages-list .msg-user').waitForExist({ timeout: 30_000 })
     await scrollMessagesListToTop()
 
+    await waitForTranscriptScrollSettled(true)
     expect(await isScrollToBottomVisible()).toBe(true)
     expect(await isNearBottom()).toBe(false)
+    expect(await navigationTextOverlaps()).toEqual([])
     await saveAppScreenshot('scroll-to-bottom-scrolled-up.png')
+  })
+
+  it('keeps First prompt and Back to latest clear of transcript text at narrow, default and scaled widths', async () => {
+    resetUserData()
+    seedScrollToBottomFixture(process.cwd())
+    await browser.reloadSession()
+    await $('.messages-list .msg-user').waitForExist({ timeout: 30_000 })
+
+    // Default, narrower and narrow chat widths, then the default width at a
+    // larger UI scale (--ui-scale is what Appearance settings write).
+    const frames = [
+      { width: 1280, scale: '1' },
+      { width: 900, scale: '1' },
+      { width: 640, scale: '1' },
+      { width: 1280, scale: '1.5' },
+    ]
+    for (const frame of frames) {
+      await browser.execute(({ width, scale }) => {
+        const app = document.getElementById('app')
+        if (!app) throw new Error('app not found')
+        app.style.width = `${String(width)}px`
+        document.documentElement.style.setProperty('--ui-scale', scale)
+      }, frame)
+      const { clientHeight, scrollHeight } = await getScrollMetrics()
+      const last = scrollHeight - clientHeight - SCROLL_PIN_THRESHOLD_PX - 1
+      expect(last).toBeGreaterThan(SCROLL_PIN_THRESHOLD_PX)
+      // Just past the top (First prompt appears), the middle, and the last
+      // offset that still shows Back to latest.
+      for (const top of [SCROLL_PIN_THRESHOLD_PX + 1, Math.round(last / 2), last]) {
+        await browser.execute((t) => {
+          const list = document.querySelector('.messages-list')
+          if (!(list instanceof HTMLElement)) throw new Error('messages-list not found')
+          list.scrollTop = t
+        }, top)
+        await waitForTranscriptScrollSettled(true)
+        await expect($('.conversation-first-prompt')).toBeDisplayed()
+        expect({ ...frame, top, resting: await navigationTextOverlaps() }).toEqual({
+          ...frame,
+          top,
+          resting: [],
+        })
+        // Hovering reveals the label, which widens the control.
+        await $('.conversation-first-prompt').moveTo()
+        await expect($('.conversation-first-prompt-label')).toBeDisplayed()
+        expect({ ...frame, top, hovered: await navigationTextOverlaps() }).toEqual({
+          ...frame,
+          top,
+          hovered: [],
+        })
+        await $('.prompt-input').moveTo()
+      }
+      const geometry = await browser.execute(() => {
+        const area = document.querySelector('.conversation-scroll')
+        const composer = document.getElementById('input-bar')
+        const first = document.querySelector('.conversation-first-prompt')
+        const back = document.querySelector('.scroll-to-bottom')
+        if (!area || !composer || !first || !back) throw new Error('Missing chat controls')
+        // The scroll area holds the TODO panel, notices and the transcript.
+        const areaBottom = area.getBoundingClientRect().bottom
+        const composerTop = composer.getBoundingClientRect().top
+        const firstRect = first.getBoundingClientRect()
+        const backRect = back.getBoundingClientRect()
+        return {
+          belowScrollArea: Math.min(firstRect.top, backRect.top) >= areaBottom - 0.5,
+          aboveComposer: Math.max(firstRect.bottom, backRect.bottom) <= composerTop + 0.5,
+          sideBySide: firstRect.right <= backRect.left + 0.5,
+        }
+      })
+      expect({ ...frame, geometry }).toEqual({
+        ...frame,
+        geometry: { belowScrollArea: true, aboveComposer: true, sideBySide: true },
+      })
+    }
   })
 
   it('paints the return label with readable contrast in both themes', async () => {
@@ -133,6 +212,7 @@ describe('scroll to bottom', () => {
       const current = await browser.execute(() => document.documentElement.dataset['theme'])
       if (current !== theme) await switchTheme(theme)
       await scrollMessagesListToTop()
+      await waitForTranscriptScrollSettled(true)
       expect(await isScrollToBottomVisible()).toBe(true)
 
       const layout = await browser.execute(() => {
@@ -150,7 +230,7 @@ describe('scroll to bottom', () => {
           belowTranscript: rect.top >= listRect.bottom,
           aboveComposer: rect.bottom <= composer.getBoundingClientRect().top,
           rightAligned: rect.right > listRect.left + listRect.width / 2,
-          firstRight: getComputedStyle(first).right,
+          firstSharesRow: first.parentElement === button.parentElement,
           opacity: style.opacity,
         }
       })
@@ -159,7 +239,7 @@ describe('scroll to bottom', () => {
       expect(layout.belowTranscript).toBe(true)
       expect(layout.aboveComposer).toBe(true)
       expect(layout.rightAligned).toBe(true)
-      expect(layout.firstRight).not.toBe('auto')
+      expect(layout.firstSharesRow).toBe(true)
       expect(layout.opacity).toBe('1')
       const rest = await fillContrast('.scroll-to-bottom')
       if (!rest) throw new Error('scroll-to-bottom not found')
@@ -285,6 +365,8 @@ describe('scroll to bottom', () => {
     await browser.pause(400)
 
     expect(await isScrollToBottomVisible()).toBe(true)
+    // Streamed text keeps landing below; the docked controls cover none of it.
+    expect(await navigationTextOverlaps()).toEqual([])
     const firstQuestionVisible = await browser.execute(() => {
       const firstUser = document.querySelector('.messages-list .msg-user')
       if (!(firstUser instanceof HTMLElement)) return false

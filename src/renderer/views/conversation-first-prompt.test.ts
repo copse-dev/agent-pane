@@ -135,4 +135,59 @@ describe('first prompt navigation', () => {
     back.click()
     assert.equal(list.scrollTop, 935)
   })
+
+  it('docks both controls in the reserved row, outside the transcript scroller', () => {
+    const { host, list, first, back } = fixture()
+    scroll(list, 935)
+    const row = host.querySelector('.conversation-navigation')
+    assert.ok(row)
+    // Neither control can cover transcript text: they are not inside the
+    // scrolling area, and the label reveals before the return action.
+    assert.equal(row.childElementCount, 2)
+    // Compare identities, not elements: a failure would inspect the whole DOM.
+    assert.ok(row.children[0] === first, 'First prompt comes first')
+    assert.ok(row.children[1] === back, 'the return action follows it')
+    assert.equal(host.querySelector('.conversation-scroll')?.contains(first), false)
+  })
+
+  it('reserves the pinned prompt band as scroll padding, and none once it un-sticks', () => {
+    const callbacks: Array<() => void> = []
+    class CapturingResizeObserver {
+      constructor(callback: () => void) {
+        callbacks.push(callback)
+      }
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    // The DOM shim has no ResizeObserver; capture the view's callbacks instead.
+    const previous = Object.getOwnPropertyDescriptor(globalThis, 'ResizeObserver')
+    Object.defineProperty(globalThis, 'ResizeObserver', {
+      configurable: true,
+      writable: true,
+      value: CapturingResizeObserver,
+    })
+    let list: HTMLElement
+    try {
+      list = fixture().list
+    } finally {
+      if (previous) Object.defineProperty(globalThis, 'ResizeObserver', previous)
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+    }
+    const prompts = list.querySelectorAll<HTMLElement>('.msg-user')
+    const latest = prompts[prompts.length - 1]
+    assert.ok(latest)
+    list.style.paddingTop = '16px'
+    list.style.rowGap = '12px'
+    latest.style.position = 'sticky'
+    latest.style.top = '-16px'
+    latest.getBoundingClientRect = (): DOMRect => new DOMRect(0, 0, 600, 58.4)
+    for (const callback of callbacks) callback()
+    // scrollIntoView and search hits land below the prompt and its row gap.
+    assert.equal(list.style.scrollPaddingTop, '71px')
+    // A narrow pane returns the prompt to the flow: nothing to clear.
+    latest.style.position = 'relative'
+    for (const callback of callbacks) callback()
+    assert.equal(list.style.scrollPaddingTop, '')
+  })
 })

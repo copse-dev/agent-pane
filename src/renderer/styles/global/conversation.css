@@ -278,6 +278,8 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: var(--spacing-sm);
+  min-width: 0;
   padding: 0 var(--spacing-xl);
 }
 .scroll-to-bottom {
@@ -1664,25 +1666,25 @@ span.acp-resource-title {
   background: var(--accent);
 }
 
-/* An overlay, so revealing the label never shifts transcript content. The
-   visible chevron is the hover target; keyboard focus reveals the same label. */
+/* Docked in the reserved navigation row, never over the transcript, so it
+   cannot cover a prompt line or the TODO counter at any width. It sits before
+   Back to latest in a right-aligned row: revealing its label grows leftwards
+   and leaves the other control and the transcript where they are. */
 .conversation-first-prompt {
-  position: absolute;
-  top: var(--spacing-xs);
-  right: var(--spacing-xl);
-  z-index: 5;
-  display: flex;
+  flex: 0 1 auto;
+  min-width: 36px;
+  min-height: 32px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--spacing-xs);
-  min-width: 36px;
-  min-height: 32px;
   padding: var(--spacing-xs) var(--spacing-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-base);
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
   color: var(--text-secondary);
-  box-shadow: var(--shadow-sm);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
   cursor: pointer;
 }
 .conversation-first-prompt-label {
@@ -1691,6 +1693,7 @@ span.acp-resource-title {
 .conversation-first-prompt:hover,
 .conversation-first-prompt:focus-visible {
   opacity: 1;
+  background: var(--bg-hover);
   color: var(--text-primary);
 }
 .conversation-first-prompt:hover .conversation-first-prompt-label,
@@ -1702,9 +1705,10 @@ span.acp-resource-title {
   outline-offset: 2px;
 }
 @media (hover: none) {
+  /* A wider touch target that still fills, not overflows, the 40px row. */
   .conversation-first-prompt {
     min-width: 44px;
-    min-height: 44px;
+    min-height: 40px;
   }
   .conversation-first-prompt-label {
     display: inline;

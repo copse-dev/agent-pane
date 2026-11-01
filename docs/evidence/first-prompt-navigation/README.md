@@ -1,10 +1,15 @@
 # First prompt navigation
 
-A small chevron at the top right of the chat reveals “First prompt” on hover or keyboard focus.
-Selecting it opens the earliest human prompt. “Back to where you were” restores the saved reading
-position and leaves the draft intact. During ordinary browsing the action says “Back to latest”.
-Both actions align with the right edge of the chat pane. The muted return arrow and text occupy a
-reserved row above the composer, outside the scrollable transcript, so they cannot cover messages.
+A small chevron reveals “First prompt” on hover or keyboard focus. Selecting it opens the earliest
+human prompt. “Back to where you were” restores the saved reading position and leaves the draft
+intact. During ordinary browsing the action says “Back to latest”. Both controls share one reserved,
+right-aligned row above the composer, outside the scrollable transcript, so neither can cover
+messages, the TODO counter or prompt text.
+
+The two local captures below predate that move: they show First prompt as an overlay at the top
+right of the transcript, which the screenshot audit found covering content. The current placement
+is proved by `navigationTextOverlaps()` in `tests/e2e/scroll-to-bottom.e2e.ts` and the CI reference
+candidates, not by these images.
 
 ## Local Electron evidence
 

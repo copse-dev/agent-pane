@@ -4,6 +4,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedLongPromptScrollFixture, writeSettings } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { navigationTextOverlaps } from './helpers/scroll-to-bottom.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { startConversationServer, type ConversationServer } from './helpers/conversation-server.ts'
 
@@ -138,6 +139,8 @@ describe('scroll the transcript to the prompt on submit', () => {
     // streaming in beneath it), the prompt's own top must be on screen, not
     // scrolled out above the list.
     expect(result.msgTop).toBeGreaterThanOrEqual(result.listTop - 1)
+    // Navigation is docked below the transcript: it covers no prompt line.
+    expect(await navigationTextOverlaps()).toEqual([])
 
     await saveAppScreenshot('long-prompt-scroll-submit.png', {
       width: NARROW_APP_WIDTH,

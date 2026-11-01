@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedBrowserToolsFixture } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { frameInTranscript } from './helpers/sticky-prompt.ts'
 
 describe('browser tool display', () => {
   before(async () => {
@@ -36,6 +37,10 @@ describe('browser tool display', () => {
     const group = await rollup.$('.tool-card-group').getElement()
     await expect(group.$('.tool-name')).toHaveText('Used browser')
     await expect(screenshot).toBeDisplayed()
+    // Expanding the rollup grows the answer: frame all of it, screenshot and
+    // caption included, instead of capturing wherever the scroll landed.
+    const framed = await frameInTranscript('[data-message-id="msg-assistant-browser"]')
+    assert.ok(framed.fits, JSON.stringify(framed))
     await saveAppScreenshot('browser-tools-expanded.png')
 
     await group.$(':scope > summary').click()

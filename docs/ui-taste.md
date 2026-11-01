@@ -768,6 +768,26 @@ sticky behavior above that threshold. The paired regression states live in
 [`tests/e2e/user-prompt-sticky.e2e.ts`](../tests/e2e/user-prompt-sticky.e2e.ts): one wide reference
 and one narrow reference that proves the response reaches the composer unobscured.
 
+A pinned prompt covers the top of its own scrollport, the mirror of a sticky footer, so its band is
+not landing space either. `conversation.ts` writes the prompt's height (plus the list's row gap) to
+the list's `scroll-padding-top` while it sticks, and clears it when the prompt rejoins the flow:
+conversation search, opened disclosures, canvas cards and keyboard focus then land below the
+prompt, not under it. Focused proof: `stickyPromptCollisions()` in
+[`tests/e2e/helpers/sticky-prompt.ts`](../tests/e2e/helpers/sticky-prompt.ts), asserted by the
+explainer specs before their captures.
+
+## Conversation navigation stays out of the transcript
+
+First prompt and Back to latest / Back to where you were share one reserved 40px row between the
+transcript and the composer. Never float either over the scrollport: a corner overlay covered the
+TODO counter, a prompt's last word and narrow-chat text in turn. The row is always reserved, so
+showing or hiding a control never moves the transcript. First prompt sits before the return action
+in the right-aligned row, so revealing its label grows leftwards. Focused proof:
+`navigationTextOverlaps()` in
+[`tests/e2e/helpers/scroll-to-bottom.ts`](../tests/e2e/helpers/scroll-to-bottom.ts), asserted at
+default, narrow and scaled widths in
+[`tests/e2e/scroll-to-bottom.e2e.ts`](../tests/e2e/scroll-to-bottom.e2e.ts).
+
 ## Markdown prose spacing in chat
 
 Symptom: assistant messages look “double spaced” — extra blank lines between headings, paragraphs,

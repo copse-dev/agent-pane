@@ -13,6 +13,7 @@ import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/
 import { getCopseUserDataDir, waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot } from './helpers/screenshot.ts'
+import { stickyPromptCollisions } from './helpers/sticky-prompt.ts'
 
 async function turn(prompt: string, name: string, args: Record<string, unknown>): Promise<void> {
   const scenario = await prepareMockToolTurn(
@@ -73,6 +74,9 @@ async function capture(index: number, name: string, playerName: string): Promise
     join(E2E_SCREENSHOT_DIR, `${playerName}.png`),
     Buffer.from(png.split(',')[1] ?? '', 'base64'),
   )
+  // The pinned prompt must not cover the answer framed around the card.
+  const pinned = await stickyPromptCollisions()
+  assert.deepEqual(pinned.collisions, [], `${name}: ${JSON.stringify(pinned.geometry)}`)
   await $('#app').saveScreenshot(join(E2E_SCREENSHOT_DIR, `${name}.png`))
   await browser.execute((item) => {
     const card = document.querySelectorAll('.canvas-inline-artefact')[item]

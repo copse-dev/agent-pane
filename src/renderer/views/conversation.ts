@@ -2611,7 +2611,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     todoHost,
     list,
     archiveReview.element,
-    firstPromptBtn,
   )
 
   // The concise turns the user opened to debug, by their prompts' ids. UI-only:
@@ -2679,7 +2678,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // streaming response inside the scrollable message list.
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
   const roadmapOrigin = mountThreadRoadmapOrigin(store, api)
-  const navigationRow = el('div', { class: 'conversation-navigation' }, scrollToBottomBtn)
+  // Both navigation controls live in the reserved row between the transcript
+  // and the composer, so neither can cover a prompt line, a TODO counter or any
+  // other transcript content, at any pane width or UI scale.
+  const navigationRow = el(
+    'div',
+    { class: 'conversation-navigation' },
+    firstPromptBtn,
+    scrollToBottomBtn,
+  )
   root.append(roadmapOrigin.element, scrollArea, navigationRow, queuedHost)
 
   const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
@@ -3099,6 +3106,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // What the last full rebuild drew the transcript from (see TranscriptInputs).
   let renderedInputs: TranscriptInputs | null = null
   let stickyImagePrompt: HTMLElement | null = null
+  // The latest human prompt, which sticks while its response is read.
+  let stickyPrompt: HTMLElement | null = null
   let stickyImageFullHeight = 0
   // Bumped on every rebuildForThread (and on unmount) so a backward-fill step
   // scheduled by a since-superseded rebuild recognizes it's stale and bails
@@ -3218,11 +3227,44 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     prompt.classList.toggle('is-preview-compact', shouldCompact)
   }
 
+  /**
+   * Reserve the pinned prompt's band as scroll padding, so scrollIntoView
+   * (conversation search, opened disclosures, canvas cards) and focus land
+   * content below the prompt instead of underneath it.
+   */
+  function syncStickyPromptClearance(): void {
+    const prompt = stickyPrompt
+    let clearance = 0
+    if (prompt?.isConnected) {
+      const promptStyle = window.getComputedStyle(prompt)
+      if (promptStyle.position === 'sticky') {
+        const listStyle = window.getComputedStyle(list)
+        clearance = Math.max(
+          0,
+          Math.ceil(
+            Number.parseFloat(listStyle.paddingTop) +
+              Number.parseFloat(promptStyle.top) +
+              prompt.getBoundingClientRect().height +
+              Number.parseFloat(listStyle.rowGap),
+          ),
+        )
+      }
+    }
+    const value = clearance > 0 ? `${String(clearance)}px` : ''
+    if (list.style.scrollPaddingTop !== value) list.style.scrollPaddingTop = value
+  }
+
   function refreshStickyImagePrompt(): void {
     const prompts = list.querySelectorAll<HTMLElement>(
       ':scope > .msg-user:not(.msg-machine-origin):not(.msg-hook-origin)',
     )
     const latest = prompts[prompts.length - 1]
+    if (stickyPrompt !== (latest ?? null)) {
+      if (stickyPrompt) stickyPromptResizeObserver?.unobserve(stickyPrompt)
+      stickyPrompt = latest ?? null
+      if (stickyPrompt) stickyPromptResizeObserver?.observe(stickyPrompt)
+    }
+    syncStickyPromptClearance()
     const next = latest?.querySelector('.message-images') ? latest : null
     if (stickyImagePrompt !== next) {
       stickyImagePrompt?.classList.remove('is-preview-compact')
@@ -3277,8 +3319,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       ? null
       : new ResizeObserver(() => {
           syncStickyImagePreview()
+          // A narrow pane un-sticks the prompt, so its clearance follows width.
+          syncStickyPromptClearance()
         })
   listResizeObserver?.observe(list)
+  const stickyPromptResizeObserver =
+    typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(() => {
+          syncStickyPromptClearance()
+        })
   // Messages arrive one at a time and in older-history batches; every one may
   // end a turn, so the footers follow the list's own children.
   const conciseFooterObserver = new MutationObserver(scheduleConciseTurnFooterSync)
@@ -4820,6 +4870,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // requestAnimationFrame so it no-ops instead of touching a torn-down list.
     backfillGeneration++
     listResizeObserver?.disconnect()
+    stickyPromptResizeObserver?.disconnect()
     conciseFooterObserver.disconnect()
     showAcpTransportNoiseDisclosure = (): boolean => false
     disclosures.dispose()

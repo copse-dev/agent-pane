@@ -1,6 +1,7 @@
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedStickyUserPromptFixture } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { navigationTextOverlaps } from './helpers/scroll-to-bottom.ts'
 
 describe('latest user prompt anchor', () => {
   before(async () => {
@@ -308,6 +309,8 @@ describe('latest user prompt anchor', () => {
     expect(layout.latestBottom).toBeLessThanOrEqual(layout.answerTop)
     expect(layout.answerBottom).toBeGreaterThan(layout.visibleTop)
     expect(layout.answerBottom).toBeLessThanOrEqual(layout.visibleBottom + 1)
+    // In a narrow chat both navigation controls stay in their own row.
+    expect(await navigationTextOverlaps()).toEqual([])
 
     await saveAppScreenshot('user-prompt-narrow-chat.png', { width: 600, height: 800 })
   })

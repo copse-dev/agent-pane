@@ -7,6 +7,7 @@ import { submitComposer } from './helpers/composer.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
+import { stickyPromptCollisions } from './helpers/sticky-prompt.ts'
 import {
   prepareE2eScreenshot,
   E2E_SCREENSHOT_DIR,
@@ -194,6 +195,9 @@ describe('thread explainer', () => {
       join(E2E_SCREENSHOT_DIR, 'thread-explainer-player.png'),
       Buffer.from(frame.split(',')[1] ?? '', 'base64'),
     )
+    // The pinned prompt must not cover the answer framed around the card.
+    const pinned = await stickyPromptCollisions()
+    assert.deepEqual(pinned.collisions, [], JSON.stringify(pinned.geometry))
     await $('#app').saveScreenshot(join(E2E_SCREENSHOT_DIR, 'thread-explainer-inline.png'))
 
     await assertNoErrorToasts('captured preview')
