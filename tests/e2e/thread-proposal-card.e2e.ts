@@ -137,19 +137,16 @@ describe('a proposed thread without an isolated checkout', () => {
   })
 
   it('reports unavailable isolation without dispatching or consuming the offer', async () => {
+    // Starting never navigates away (see the "starts in the background" spec
+    // below), so a failure surfaces on the card itself, not as a toast over
+    // whatever the user was already looking at.
     await $('.thread-proposal-start').click()
-    const error = $('.toast-error')
+    const error = $('.thread-proposal-error')
     await expect(error).toHaveText(
       expect.stringContaining('Isolated worktree is unavailable: not git'),
     )
-    await expect($('.messages-list .msg-user')).not.toExist()
-    await expect($('.messages-list .msg-assistant')).not.toExist()
-    await saveElementScreenshot('#toast-host', 'thread-proposal-isolation-refused.png')
-    // This is the expected refusal asserted above, not an ignored error.
-    await error.click()
-    await $('.chat-row*=Config loader guard').click()
+    await saveElementScreenshot('.thread-proposal', 'thread-proposal-isolation-refused.png')
     const card = $('.thread-proposal')
-    await card.waitForDisplayed({ timeout: 10_000 })
     await expect(card).toHaveAttribute('data-proposal-status', 'pending')
     await expect($('.thread-proposal-start')).toBeEnabled()
   })
@@ -180,6 +177,22 @@ describe('starting a proposed thread in an isolated checkout', () => {
       null,
     )
     await $('.thread-proposal-start').click()
+    // Starting runs in the background: the source thread ("Config loader
+    // guard") stays active, and the card settles to 'started' without ever
+    // navigating the user away from it.
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(() =>
+          document.querySelector('.thread-proposal')?.getAttribute('data-proposal-status'),
+        )) === 'started',
+      { timeout: 15_000, timeoutMsg: 'the proposal did not settle as started' },
+    )
+    await expect($('.messages-list .msg-user')).toHaveText(
+      expect.stringContaining('The config loader blows up on an empty file'),
+    )
+    // The card's own "Open thread" link is how the user goes to look at the
+    // work that just started off-screen.
+    await $('.thread-proposal-open').click()
     await $('.messages-list .msg-user').waitForDisplayed({ timeout: 30_000 })
     await browser.waitUntil(
       async () =>

@@ -56,7 +56,11 @@ describe('createThread activation', () => {
     const threadId = createThread(store, undefined, { activate: false })
 
     assert.equal(store.getState().activeThreadId, 'source')
-    assert.deepEqual(store.getState().openFile, { path: 'a.ts', content: 'x', language: 'typescript' })
+    assert.deepEqual(store.getState().openFile, {
+      path: 'a.ts',
+      content: 'x',
+      language: 'typescript',
+    })
     assert.ok(getThreadById(store, threadId))
     assert.equal(newThreadOpened, 0)
   })
