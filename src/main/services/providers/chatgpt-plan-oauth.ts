@@ -76,6 +76,16 @@ export interface ChatGptOAuthDependencies {
   openBrowser: (url: string) => Promise<void>
 }
 
+/** Carries the HTTP status so callers can tell a dead refresh token (400/401) from a transient failure. */
+export class ChatGptTokenError extends Error {
+  readonly status: number
+  constructor(status: number) {
+    super(`ChatGPT authentication failed (HTTP ${String(status)}). Try signing in again.`)
+    this.name = 'ChatGptTokenError'
+    this.status = status
+  }
+}
+
 async function jsonRequest<T>(
   fetcher: typeof fetch,
   url: string,
@@ -88,10 +98,7 @@ async function jsonRequest<T>(
     signal: init.signal ?? AbortSignal.timeout(20_000),
   })
   // Token endpoints can echo credentials. Never propagate their body into IPC/logs.
-  if (!response.ok)
-    throw new Error(
-      `ChatGPT authentication failed (HTTP ${String(response.status)}). Try signing in again.`,
-    )
+  if (!response.ok) throw new ChatGptTokenError(response.status)
   const result = safeJsonParse(await response.text(), decodeWithSchema(schema))
   if (!result) throw new Error('ChatGPT returned an invalid authentication response.')
   return result
