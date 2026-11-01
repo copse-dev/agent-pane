@@ -1,10 +1,11 @@
-import { ipcMain, type BrowserWindow } from 'electron'
+import { ipcMain, type BrowserWindow, type WebContents } from 'electron'
 import type { z } from 'zod'
 import type apiProtocolManifest from '../../../schemas/api-protocol.manifest.json'
 import {
   argumentListIpcHandler,
   positionalIpcHandler,
   senderCheck,
+  senderPositionalIpcHandler,
   type IpcHandlerOptions,
   type PositionalArgsOptions,
 } from './ipc-handler.ts'
@@ -39,6 +40,21 @@ export function defineHandler<T extends readonly z.ZodType[]>(
   options?: IpcHandlerOptions & PositionalArgsOptions,
 ): void {
   ipcMain.handle(channel, positionalIpcHandler(senderCheck(win, options), args, fn, options))
+}
+
+/**
+ * `defineHandler` for a handler that needs the asking window, such as one that
+ * acts on the project that window shows: `fn` receives `event.sender` ahead of
+ * the parsed arguments. The sender check and the parse are `defineHandler`'s.
+ */
+export function defineSenderHandler<T extends readonly z.ZodType[]>(
+  win: BrowserWindow,
+  channel: InvokeChannel,
+  args: z.ZodTuple<T, null>,
+  fn: (sender: WebContents, ...parsed: z.output<z.ZodTuple<T, null>>) => unknown,
+  options?: IpcHandlerOptions & PositionalArgsOptions,
+): void {
+  ipcMain.handle(channel, senderPositionalIpcHandler(senderCheck(win, options), args, fn, options))
 }
 
 /**

@@ -101,3 +101,20 @@ export function argumentListIpcHandler<E, S extends z.ZodType, R>(
     return fn(parseIpcArgs(schema, rawArgs))
   }
 }
+
+/**
+ * `positionalIpcHandler` for a handler that also needs the event's sender (to
+ * find the asking window): `fn` receives `event.sender` ahead of the parsed
+ * arguments, after the sender check and the parse.
+ */
+export function senderPositionalIpcHandler<E, S, T extends readonly z.ZodType[], R>(
+  checkSender: SenderCheck<E>,
+  args: PositionalArgs<T>,
+  fn: (sender: S, ...parsed: z.output<PositionalArgs<T>>) => R,
+  options?: PositionalArgsOptions,
+): (event: E & { readonly sender: S }, ...rawArgs: unknown[]) => R {
+  return (event, ...rawArgs) => {
+    checkSender(event)
+    return fn(event.sender, ...parsePositionalIpcArgs(args, rawArgs, options))
+  }
+}
