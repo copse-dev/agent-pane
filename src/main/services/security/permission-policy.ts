@@ -1,6 +1,6 @@
 import type { McpToolAnnotations } from '@shared/types/mcp.ts'
 import { isRecord } from '@shared/unknown-value.ts'
-import { UNSANDBOXED_ACCESS_WARNING } from '@shared/approval-copy.ts'
+import { gitPushApproval, UNSANDBOXED_ACCESS_WARNING } from '@shared/approval-copy.ts'
 import { githubShellActionAdvice } from './github-approval-copy.ts'
 import { PRIOR_DENIAL_MARKER } from './denied-operations.ts'
 import {
@@ -107,6 +107,17 @@ export interface GithubWritePrompt {
  * would run.
  */
 export function formatGithubWritePrompt(toolName: string, args: unknown): GithubWritePrompt {
+  if (toolName === 'git_push' && isRecord(args)) {
+    const branch = nonEmptyStringArg(args, 'branch')
+    const expectedRemoteSha = nonEmptyStringArg(args, 'expected_remote_sha')
+    if (
+      branch &&
+      (args['expected_remote_sha'] === undefined || expectedRemoteSha) &&
+      Object.keys(args).every((key) => key === 'branch' || key === 'expected_remote_sha')
+    ) {
+      return gitPushApproval(branch, expectedRemoteSha ?? undefined)
+    }
+  }
   const title = GITHUB_WRITE_PROMPT_TITLES[toolName] ?? `GitHub action: ${toolName}`
   const effects: Record<string, string> = {
     gh_pr_create:
@@ -124,6 +135,7 @@ export function formatGithubWritePrompt(toolName: string, args: unknown): Github
     title,
     approveLabel:
       {
+        gh_push: 'Push branch',
         gh_pr_create: 'Publish pull request',
         gh_pr_rerun_failed_ci: 'Re-run CI',
         gh_pr_approve: 'Submit approving review',

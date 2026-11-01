@@ -13,8 +13,10 @@ import { execOnSshHost } from './remote-fs-exec.ts'
  * checkout would cost far more than it returns; this polls only the paths the
  * renderer explicitly subscribed through `fs:watch` (open editors — a handful
  * at a time), batched into one `stat` per host per tick over the connection
- * that is already open. A streaming watcher replaces this later; the
- * subscribe/unsubscribe shape here is the one it inherits.
+ * that is already open. The native streaming watcher normally replaces this
+ * after it acknowledges a path, but polling remains the setup-time safety net
+ * and the fallback for unsupported platforms, declined installs, and dropped
+ * watcher sessions.
  */
 
 /**

@@ -838,6 +838,7 @@ describe('settings → plugins list', () => {
     const chips = list.querySelectorAll('.plugin-chip')
     const chipTexts = Array.from(chips).map((el) => el.textContent)
     assert.deepEqual(chipTexts, ['Tools × 1', 'Hooks × 1', 'Prompt blocks × 1', 'UI × 1'])
+    assert.equal(chips[0]?.getAttribute('title'), 'Demo tool')
   })
 
   it('enumerates a capability-only plugin as a Capabilities chip', async () => {

@@ -2,7 +2,6 @@ import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { Readable, Writable } from 'node:stream'
@@ -109,6 +108,46 @@ describe('sshExecArgs / ControlPath', () => {
     assert.ok(!args.includes('-i'))
     assert.equal(args[args.length - 2], 'remote-dev-testing-016')
   })
+
+  it(
+    'keeps the main event loop responsive while a control master starts',
+    {
+      skip: process.platform === 'win32' ? 'ControlMaster / -S unused on Windows OpenSSH' : false,
+    },
+    async () => {
+      const dir = mkdtempSync('/tmp/copse-async-ssh-')
+      const oldPath = process.env['PATH']
+      try {
+        const fakeSsh = `${dir}/ssh`
+        writeFileSync(
+          fakeSsh,
+          [
+            '#!/bin/sh',
+            'if [ "$1" = "-O" ]; then exit 1; fi',
+            // Long enough that an event-loop turn must happen before connect
+            // settles. A synchronous child here would settle connect first.
+            '/bin/sleep 0.1',
+            'exit 0',
+          ].join('\n'),
+        )
+        chmodSync(fakeSsh, 0o755)
+        process.env['PATH'] = dir
+        setSshControlDirForTests(dir)
+
+        let settled = false
+        const connecting = new OpenSshTransport(host).connect().finally(() => {
+          settled = true
+        })
+        await new Promise<void>((resolve) => setImmediate(resolve))
+        assert.equal(settled, false, 'SSH startup must yield while authentication can be answered')
+        await connecting
+      } finally {
+        if (oldPath === undefined) delete process.env['PATH']
+        else process.env['PATH'] = oldPath
+        rmSync(dir, { recursive: true, force: true })
+      }
+    },
+  )
 })
 
 describe('SSH file transfer limit', () => {
@@ -137,7 +176,9 @@ describe('SSH file transfer limit', () => {
 
 /** Put an executable `ssh` shell script first on PATH for the duration of a test. */
 function installFakeSsh(t: { after: (fn: () => void) => void }, script: string): string {
-  const dir = mkdtempSync(join(tmpdir(), 'copse-fake-ssh-'))
+  // macOS caps Unix-domain socket paths at 104 bytes; its private TMPDIR is
+  // already long enough that the hashed ControlPath can exceed Copse's limit.
+  const dir = mkdtempSync('/tmp/copse-fake-ssh-')
   const sshPath = join(dir, 'ssh')
   writeFileSync(sshPath, `#!/bin/sh\n${script}\n`)
   chmodSync(sshPath, 0o755)
