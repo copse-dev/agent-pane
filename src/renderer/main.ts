@@ -887,7 +887,6 @@ async function confirmDeleteThread(): Promise<void> {
     stagedDiffs: [],
   })
   store.emit('threads_changed')
-  store.emit('panel_changed')
 }
 
 function switchToPrevThread(): void {

@@ -3,7 +3,7 @@
 Tracking: [#1079](https://github.com/copse-dev/agent-pane/issues/1079) (headless contract),
 [#264](https://github.com/copse-dev/agent-pane/issues/264) (ACP)
 
-Status: **Proposed, needs a decision.** This is a design record. It changes no code. It
+Status: **Decision accepted; version-independent groundwork in progress.** This design record
 revises claims in [`headless-automation-contract.md`](headless-automation-contract.md),
 [`../acp-v2-readiness.md`](../acp-v2-readiness.md),
 [`acp-session-continuity.md`](acp-session-continuity.md),
@@ -30,14 +30,14 @@ Rejected alternative: grow the general Copse contract into a full Thread/Turn/It
 and treat ACP as one adapter of it (option 2 below). Reopen it only if stage S1 produces the
 evidence listed under [What would change this](#what-would-change-this).
 
-## Upstream state (checked 2026-10-18)
+## Upstream state (checked 2026-10-30)
 
-| Item              | State                                                                                                                                                                                                                                                                                                                       |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Schema            | [`v2.0.0-alpha.9`](https://github.com/agentclientprotocol/agent-client-protocol/releases) (prerelease, 2026-10-16). Nine alphas since July, about weekly since alpha.7. Recent alphas pin down rules (prompt insertion #2392, foreground transitions #2411, cancellation #2390, replay ids #2398) rather than add features. |
-| TypeScript SDK    | npm `latest` 1.9.0. v2 is only at `./experimental/v2`. 1.9.0 decoupled session updates from prompt completion (typescript-sdk #280). `main` locks **1.8.0** (1.7.0 when the exploration below ran).                                                                                                                         |
-| Shipping agents   | `claude-agent-acp` 0.92.0 serves v2 behind `CLAUDE_AGENT_ACP_EXPERIMENTAL_V2=1`. Zed `main` compiles the Rust crate with `unstable_protocol_v2` (runtime use unverified). `codex-acp` pins a pre-v2 crate.                                                                                                                  |
-| Shipping in Copse | Nothing. The v2 prototypes (`acp-v2-session-adapter.ts` and the dual-version arm of `acp-v2-conformance.test.ts`) are exercised only by tests. The client and session pool always negotiate v1, and the headless contract's `negotiateProtocolVersion` has no production caller.                                            |
+| Item              | State                                                                                                                                                                                                                                                                            |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Schema            | [`v2.0.0-alpha.11`](https://github.com/agentclientprotocol/agent-client-protocol/releases) remains a prerelease. The stable-feature and unstable v2 schemas are both bundled by SDK 2.2.0.                                                                                       |
+| TypeScript SDK    | Copse pins **2.2.0** exactly. Default and `/unstable` are protocol v1; v2 remains at `./experimental/v2` and `./experimental/v2/unstable`. SDK 2.x removed packaged examples/test-support, so conformance uses a repo fixture built from public APIs.                            |
+| Shipping agents   | `claude-agent-acp` 0.92.0 serves v2 behind `CLAUDE_AGENT_ACP_EXPERIMENTAL_V2=1`. Zed `main` compiles the Rust crate with `unstable_protocol_v2` (runtime use unverified). `codex-acp` pins a pre-v2 crate.                                                                       |
+| Shipping in Copse | Nothing. The v2 prototypes (`acp-v2-session-adapter.ts` and the dual-version arm of `acp-v2-conformance.test.ts`) are exercised only by tests. The client and session pool always negotiate v1, and the headless contract's `negotiateProtocolVersion` has no production caller. |
 
 Primary sources: [v2 overview RFD](https://agentclientprotocol.com/rfds/v2/overview.md),
 [prompt lifecycle](https://agentclientprotocol.com/protocol/v2/prompt-lifecycle.md),
@@ -104,18 +104,20 @@ A throwaway exploration (not merged; SDK 1.9.0 in a scratch package, repo lockfi
 untouched; 15 tests) measured the round trip. No real model was used: the Claude agent ran
 against a local mock of the Anthropic API.
 
-| Arm                                               | Result                                                                                                                                                                                                                                                                                                 |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Shipping v1 `copse --acp` (SDK 1.7.0)             | **Lossy.** `text_replace` went out as an append, so stripped pseudo-XML reappeared and the prose doubled (#3829 removes the doubling; the markup needs v2). Shell tool names arrived as the command (`"npm test"`), because v1 tool calls have no name field                                           |
-| Copse-as-v2-agent sketch, same scripted turn      | **Lossless.** 0 differences across 3 messages, 2 reasoning blocks and 2 gated tool calls, using two `_meta["copse.dev"]` keys (tool → owning message, exact stop reason). All updates validated against the 1.9.0 schemas. `{messageId}` arrived before `idle` and equalled the stored user message id |
-| Cancel during an open permission request          | Gate recorded `cancelled`; the tool did not run; nothing became an approval                                                                                                                                                                                                                            |
-| Resume + `replayFrom: start` on a new connection  | Nothing imported twice. Replay alone rebuilt the transcript. An unknown cursor was rejected                                                                                                                                                                                                            |
-| Existing v2 client prototype (Copse consuming v2) | **Lossy:** drops tool results; revising the first of two messages collapses both into one (`"ONEtwo"`); ignores whole-thought upserts; a tool whose first update is `completed` stays `running`; live updates followed by replay duplicate text                                                        |
-| Real `claude-agent-acp` 0.92.0 in v2 mode         | Negotiated v2; one gated Bash turn plus a resume from a fresh process. Ids survived the restart **because Claude Code persists its own session file**, not because ACP requires it. Permission option ids are agent-defined (`allow-once`), so choose by `kind`                                        |
-| Narrow execution contract (schemas only)          | Request 25 / outcome 28 properties, overlapping ACP on none, against 43 in today's headless schema. Tests: duplicate idempotency key → one submission; version mismatch rejected; a budget required; unattended `ask` → `deny` or `defer`, never `allow`                                               |
+| Arm                                              | Result                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Shipping v1 `copse --acp` (SDK 1.7.0)            | **Lossy.** `text_replace` went out as an append, so stripped pseudo-XML reappeared and the prose doubled (#3829 removes the doubling; the markup needs v2). Shell tool names arrived as the command (`"npm test"`), because v1 tool calls have no name field                                           |
+| Copse-as-v2-agent sketch, same scripted turn     | **Lossless.** 0 differences across 3 messages, 2 reasoning blocks and 2 gated tool calls, using two `_meta["copse.dev"]` keys (tool → owning message, exact stop reason). All updates validated against the 1.9.0 schemas. `{messageId}` arrived before `idle` and equalled the stored user message id |
+| Cancel during an open permission request         | Gate recorded `cancelled`; the tool did not run; nothing became an approval                                                                                                                                                                                                                            |
+| Resume + `replayFrom: start` on a new connection | Nothing imported twice. Replay alone rebuilt the transcript. An unknown cursor was rejected                                                                                                                                                                                                            |
+| Existing v2 client prototype before S2           | **Lossy:** dropped tool results; revising the first of two messages collapsed both; ignored whole-thought upserts; an initially completed tool stayed running; live updates followed by replay duplicated text                                                                                         |
+| v2 prototype after S0/S2 (SDK 2.2.0)             | Id-scoped message/thought replacements, rich blocks, and initially completed tool results fold without altering sibling messages. Prompt receipt ordering and id equality are asserted against an external process. Permission/cancel and replay-dedupe arms remain S1.                                |
+| Real `claude-agent-acp` 0.92.0 in v2 mode        | Negotiated v2; one gated Bash turn plus a resume from a fresh process. Ids survived the restart **because Claude Code persists its own session file**, not because ACP requires it. Permission option ids are agent-defined (`allow-once`), so choose by `kind`                                        |
+| Narrow execution contract (schemas only)         | Request 25 / outcome 28 properties, overlapping ACP on none, against 43 in today's headless schema. Tests: duplicate idempotency key → one submission; version mismatch rejected; a budget required; unattended `ask` → `deny` or `defer`, never `allow`                                               |
 
-**Conclusion:** every loss measured is in Copse's own adapters, not in ACP. The shared root
-cause is that the internal stream has no "replace message _X_" primitive.
+**Conclusion:** every loss measured was in Copse's own adapters, not in ACP. The shared root
+cause was the missing "replace message _X_" primitive; S2 now supplies it. Replay dedupe and
+permission/cancel conformance remain before any product v2 wiring.
 
 **Not covered:** real models; Codex, Gemini and Zed as v2 peers; the real thread store
 (writer lease, crash safety, cross-process dedupe); the real renderer (its rules were
@@ -150,16 +152,19 @@ negotiates.
 - [x] `copse --acp` no longer sends a rewritten message as an append to v1 clients
       ([#3829](https://github.com/copse-dev/agent-pane/pull/3829)). It forwards only an
       extension of what was sent; removing already-sent markup needs v2.
-- [ ] `projectStreamChunk` (`packages/agent/src/headless-contract.ts`) drops
+- [x] `projectStreamChunk` (`packages/agent/src/headless-contract.ts`) no longer drops
       `text_replace`, so the event envelope keeps text the loop later stripped. Emit a
       replacement for the same item.
-- [ ] v1 shell tool calls lose their tool name through Copse's own client. Carry the name
+- [x] v1 shell tool calls retain their tool name through Copse's own client. Carry the name
       in `_meta["copse.dev"]` and prefer it over the title.
 
 Acceptance: a loopback test where a turn rewrites its text; the client's folded text and the
 review/bench JSONL both equal the final spine text.
 
-**S1. The round-trip conformance suite (decides between the options).** Test tier only, with
+**S1. The round-trip conformance suite (decides between the options).** In progress. The SDK
+is pinned at 2.2.0; the public-API external fixture, insertion-receipt assertion, id-scoped
+message/thought folds, rich content, and completed-first tool result cases are covered. The
+permission/cancel and full replay reference-fold arms remain before S4. Test tier only, with
 no product wiring. Needs the SDK pin at ≥ 1.9.0, in its own dependency PR with the full
 check. One scripted mock-LLM turn containing several messages (one rewritten), a reasoning
 block, a tool call going pending → running → done with replaced content, and a permission
@@ -178,9 +183,11 @@ prompt; then a second run with a cancel. Assert:
 6. The v2 arm of `acp-v2-conformance.test.ts` awaits the prompt and asserts the
    `messageId` response.
 
-**S2. Replace-message-by-id in the internal stream.** Add an id-keyed replace for text and
-reasoning to the chunk vocabulary and the renderer. The S1 fold is its oracle. This fixes
-the client-side losses in the table above.
+**S2. Replace-message-by-id in the internal stream.** Complete for the prototype: the
+`acp_content_replace` chunk replaces text, reasoning, and rich blocks by external message id;
+the shared transcript reducer, renderer-owned copy, checkpoint, and headless automation path
+all preserve that ownership. The focused fold tests prove revising the first of two messages
+does not collapse or alter the second.
 
 **S3. The narrow execution contract.** Schemas for an execution request and an execution
 outcome (accepted → foreground stopped → task terminal), with no event stream, plus a

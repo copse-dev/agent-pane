@@ -1,4 +1,4 @@
-import type { AnyMessage, Stream } from '@agentclientprotocol/sdk'
+import type { AnyMessage, Stream } from '@agentclientprotocol/sdk/unstable'
 
 /**
  * Pure transport plumbing for observing an ACP connection's inbound messages.

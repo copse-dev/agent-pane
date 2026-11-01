@@ -86,7 +86,6 @@ describe('ask_user dialog', () => {
     await expect(question.$('.ask-user-question code')).toHaveText('claude auth login')
     await saveElementScreenshot('#ask-user-dialog', 'claude-login-after-settings.png')
     await question.$('.ask-user-option=Not now').click()
-    await question.$('.ask-user-submit').click()
     await waitForAgentIdle(30_000)
     await expectAssistantReply('You can sign in when you are ready.')
     await scenario.assertComplete()
@@ -167,13 +166,13 @@ describe('ask_user dialog', () => {
       return { border: getComputedStyle(recommended).borderTopColor, accent }
     })
     expect(recommendedBorder.border).toBe(recommendedBorder.accent)
+    // One question with quick answers is a choice: the free-text field and Send
+    // stay out of the way until "Something else…" is chosen.
+    await expect(dialog.$('.ask-user-input')).not.toBeDisplayed()
+    await expect(dialog.$('.ask-user-submit')).not.toBeDisplayed()
+    await expect(dialog.$('.ask-user-other')).toBeFocused()
     await saveElementScreenshot('#ask-user-dialog', 'ask-user-dialog.png')
     await option.click()
-
-    const input = await dialog.$('.ask-user-input')
-    await expect(input).toHaveValue('Run claude auth login')
-
-    await dialog.$('.ask-user-submit').click()
     await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
 
     // The selected option is returned through the real tool result before the
@@ -182,6 +181,61 @@ describe('ask_user dialog', () => {
     await expectAssistantReply(
       'Run the login command in your terminal, then send your message again.',
     )
+    await scenario.assertComplete()
+  })
+
+  it('answers with free text through "Something else…" when none of the options fit', async () => {
+    const user = 'Ask me which database to use.'
+    const scenario = await installMockScenario({
+      title: 'Database choice',
+      turns: [
+        {
+          user,
+          responses: [
+            {
+              toolCalls: [
+                {
+                  name: 'ask_user',
+                  args: {
+                    questions: [
+                      {
+                        question: 'Which database should the service use?',
+                        options: ['Postgres', 'SQLite'],
+                        recommendedOption: 'SQLite',
+                        recommendationReason: 'The project already uses SQLite.',
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+            {
+              text: 'MySQL it is.',
+              expectToolResults: [{ name: 'ask_user', includes: 'MySQL' }],
+            },
+          ],
+        },
+      ],
+    })
+    await setComposerValue(user)
+    await submitComposer()
+
+    const dialog = await $('#ask-user-dialog').getElement()
+    await dialog.waitForDisplayed({ timeout: 30_000 })
+    await expect(dialog.$('.ask-user-input')).not.toBeDisplayed()
+
+    await dialog.$('.ask-user-other').click()
+    const input = await dialog.$('.ask-user-input').getElement()
+    await expect(input).toBeDisplayed()
+    await expect(input).toBeFocused()
+    await expect(dialog.$('.ask-user-other')).not.toBeDisplayed()
+    await input.setValue('MySQL')
+    await saveElementScreenshot('#ask-user-dialog', 'ask-user-dialog-something-else.png')
+
+    await dialog.$('.ask-user-submit').click()
+    await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
+    await waitForAgentIdle(30_000)
+    await expectAssistantReply('MySQL it is.')
     await scenario.assertComplete()
   })
 
