@@ -1480,24 +1480,26 @@ describe('continuing into a granted worktree', () => {
 })
 
 describe('grantableAcpStateDir', () => {
-  const scoped = { CLAUDE_CONFIG_DIR: '/profile/workspace/p/t/acp-agent-config/claude' }
+  const dir = '/profile/workspace/p/t/acp-agent-config/claude'
+  const scoped = { CLAUDE_CONFIG_DIR: dir, CLAUDE_SECURESTORAGE_CONFIG_DIR: '' }
 
-  it('grants the scoped config directory Copse created while it is in effect', () => {
+  it('grants the scoped config directory Copse set in the spawn env', () => {
+    assert.equal(grantableAcpStateDir('CLAUDE_CONFIG_DIR', scoped, undefined), dir)
+    // The agent's own env can carry other variables without claiming the dir.
     assert.equal(
-      grantableAcpStateDir('CLAUDE_CONFIG_DIR', scoped, { ...scoped }),
-      scoped.CLAUDE_CONFIG_DIR,
+      grantableAcpStateDir('CLAUDE_CONFIG_DIR', { ...scoped, FOO: '1' }, { FOO: '1' }),
+      dir,
     )
   })
 
-  it('never grants a directory the user named in the agent env', () => {
-    assert.equal(
-      grantableAcpStateDir('CLAUDE_CONFIG_DIR', scoped, { CLAUDE_CONFIG_DIR: '/Users/me' }),
-      undefined,
-    )
+  it("never grants a directory the agent's own configured env names", () => {
+    const own = { CLAUDE_CONFIG_DIR: '/Users/me' }
+    assert.equal(grantableAcpStateDir('CLAUDE_CONFIG_DIR', own, own), undefined)
   })
 
-  it('grants nothing when no directory was scoped', () => {
-    assert.equal(grantableAcpStateDir(undefined, scoped, scoped), undefined)
+  it('grants nothing when the agent has no scoped config directory', () => {
+    assert.equal(grantableAcpStateDir(undefined, scoped, undefined), undefined)
     assert.equal(grantableAcpStateDir('CLAUDE_CONFIG_DIR', undefined, undefined), undefined)
+    assert.equal(grantableAcpStateDir('CLAUDE_CONFIG_DIR', { FOO: '1' }, { FOO: '1' }), undefined)
   })
 })

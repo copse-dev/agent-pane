@@ -16,8 +16,8 @@ Status: **Partially implemented.** Fixes 1–3 landed in
 closed. Fix 5's "check attached in the completing call" hold also landed
 (`holdChecksAttachedAtCompletion`), and step 0, the rename, is done: the guard set is
 `DUPLICATE_GUARDED_TOOL_NAMES` and the subagent allow-list is `SUBAGENT_ALLOWED_TOOL_NAMES`.
-Fix 0 (structured explore returns) is implemented; see its section. Fix 0b, Fix 4 and the rest of
-Fix 5 (`cancelled` → `completed`) remain open under #1433. Fix 0 was reworked after review: the original "give the parent a `read_file`" options are superseded by
+Fix 0 (structured explore returns), Fix 4 and the rest of Fix 5 are implemented; see their
+sections. Fix 0b (routed reads) remains open under #1433. Fix 0 was reworked after review: the original "give the parent a `read_file`" options are superseded by
 structured explore returns, which keep `read_file` off the parent's tool list entirely. Code
 references below describe the code as it was when the plan was written.
 
@@ -408,6 +408,18 @@ fingerprint bookkeeping in `run-agent-loop.ts`.
 
 ## Fix 4 — no stop condition once the goal is reached
 
+**Status: implemented.** "Goal met" is defined without reference to PRs: one step's
+`update_todos` closed the last open todo, and every item that step completed carries an
+acceptance `check` (`planClosedByVerifiedChecks`). Fix 5 is what makes that trustworthy:
+checks are executed before `completed` is accepted. The `plan-verified-finalize`
+`stepBoundary` hook then selects one tool-free finalize turn (hooks plan decision 32). Plans
+closed without checks finish as before. Repeat-verification damping (`RepeatVerificationTracker`)
+keys whole-suite `run_shell` commands (test/check/lint/typecheck/build through a package manager,
+make, or a direct runner; output filters ignored; writing flags and redirections excluded) and
+skips an identical re-run while only read-only tools or read-only shell inspection
+(`git status|diff|show|log`, `ls`, `cat`, …) ran since. Any edit, unrecognised command, thrown
+tool, or history trim re-arms it.
+
 **Problem.** The PR was created at t=1795s. The run continued **800 more seconds**:
 `git status`, `git diff origin/main --stat` (38KB of output), `git show --stat`, two more
 full `npm run check` runs, a `git stash`/`stash pop` cycle, and a force-push returning
@@ -439,6 +451,14 @@ creation. Piece (2) is independently shippable and lower risk.
 ---
 
 ## Fix 5 — todo state can be rewritten to look complete
+
+**Status: implemented.** Checks are executed before `completed` is accepted
+(`gateCompletedStatus`), a check first attached in the completing call is held
+(`holdChecksAttachedAtCompletion`), and `cancelled` → `completed` without a check is refused
+(`refuseUncheckedRevivalOfCancelled`). The corpus fixture is a replay of `t3` reconstructed from
+the issue, since the run's own calls were not kept. Known limit: a check that passes but does
+not test the item — `t3`'s `gh pr view` for a fetch — still passes once committed to in an
+earlier call; no harness rule can judge a check's relevance.
 
 **Problem.** 9 `update_todos` calls on a 4-item list, including a zod rejection (`{id,
 status}` with no `content`). More seriously, `t3` went `cancelled` → `completed` **and

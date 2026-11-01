@@ -52,7 +52,7 @@ import {
   resolveAcpPermissionMode,
   resolveAcpSandbox,
 } from './acp-agent-registry.ts'
-import { ensureAcpAgentConfigDir, ensureClaudeAcpConfigDir } from './acp-agent-config-dir.ts'
+import { resolveAcpAgentTurnEnv } from './acp-agent-config-dir.ts'
 import { probeAcpAgentIsolated } from './acp-probe-host.ts'
 import { acquireAcpSession, disposeAcpSession, type PooledAcpSession } from './acp-session-pool.ts'
 import { createAgentInitiatedTurnLease } from './agent-initiated-turn.ts'
@@ -701,40 +701,19 @@ async function runAcpAgentTurn(
     agent.configOptions && Object.keys(agent.configOptions).length > 0
       ? agent.configOptions
       : undefined
-  // Default the agent's own home/config dir (e.g. Claude Code's
-  // `CLAUDE_CONFIG_DIR`) to this thread's scoped directory rather than the
-  // real `$HOME`, so a Copse coding thread never inherits the user's personal
-  // synced skills, plugins, or MCP servers into an unrelated project. An
-  // explicit `agent.env` override (set in Settings → Coding agents) always
-  // wins. Best-effort: a thread whose owning project cannot be resolved here
-  // keeps the agent's own default rather than failing the turn over it.
-  const configDirEnvVar = resolveAcpConfigDirEnvVar(agent)
-  let defaultConfigEnv: Record<string, string> | undefined
-  if (configDirEnvVar && executionContext?.projectId) {
-    try {
-      // `CLAUDE_CONFIG_DIR` is the only one today; the Claude-aware ensure
-      // also keeps the agent's own OAuth login live (see
-      // `ensureClaudeAcpConfigDir`). A future non-Claude `configDirEnvVar`
-      // falls back to the plain, credential-unaware ensure.
-      const ensureConfigDir =
-        configDirEnvVar === 'CLAUDE_CONFIG_DIR' ? ensureClaudeAcpConfigDir : ensureAcpAgentConfigDir
-      defaultConfigEnv = {
-        [configDirEnvVar]: await ensureConfigDir(
-          executionContext.projectId,
-          options.threadId,
-          agent.id,
-        ),
-      }
-    } catch (err) {
-      console.warn(
-        `[acp-agent-service] could not scope ${configDirEnvVar} to this thread; the agent will use its own default:`,
-        err,
-      )
-    }
-  }
-  const env =
-    defaultConfigEnv || agent.env ? { ...defaultConfigEnv, ...(agent.env ?? {}) } : undefined
-  const stateDir = grantableAcpStateDir(configDirEnvVar, defaultConfigEnv, env)
+  // The agent's configured env, plus a thread-scoped `CLAUDE_CONFIG_DIR` for a
+  // local Claude agent whose CLI keeps the account login, so a Copse thread
+  // never inherits the user's personal synced skills, plugins, or MCP servers
+  // into an unrelated project (see `acp-agent-config-dir.ts`).
+  const env = await perfSpan('ttft:acp-config-dir', () =>
+    resolveAcpAgentTurnEnv({
+      agent,
+      projectId: executionContext?.projectId,
+      threadId: options.threadId,
+      sshTarget,
+    }),
+  )
+  const stateDir = grantableAcpStateDir(resolveAcpConfigDirEnvVar(agent), env, agent.env)
   const spawnConfig: AcpAgentSpawnConfig = {
     command: agent.command,
     ...(options.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
@@ -1076,18 +1055,18 @@ export async function probeAcpAgentForSettings(agentId: string): Promise<AcpAgen
 
 /**
  * The thread-scoped config directory a sandboxed agent may be granted: the one
- * Copse created, and only while it is still the one in effect. A user override
- * in the agent's own env can name any path, home included, so it is never
- * granted.
+ * Copse set in the spawn env. A dir the agent's own configured env names can
+ * be any path, home included, so it is never granted; Copse only scopes the
+ * variable when that env leaves it unset.
  */
 export function grantableAcpStateDir(
   envVar: string | undefined,
-  scoped: Record<string, string> | undefined,
   env: Record<string, string> | undefined,
+  configured: Record<string, string> | undefined,
 ): string | undefined {
-  if (!envVar) return undefined
-  const dir = scoped?.[envVar]
-  return dir !== undefined && env?.[envVar] === dir ? dir : undefined
+  if (!envVar || (configured && Object.hasOwn(configured, envVar))) return undefined
+  const dir = env?.[envVar]
+  return dir === '' ? undefined : dir
 }
 
 /** How far a turn's ACP agent process is contained, resolved once per turn. */
