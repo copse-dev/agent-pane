@@ -225,7 +225,7 @@ export const desktopTypeTool = defineTool({
   name: 'desktop_type',
   provenance: 'external',
   description:
-    'Enter text in a Mac app. With ref, replaces that field’s whole value through Accessibility; use this to replace or clear text, since select-all does not reach a background app. Without ref, inserts at the cursor of the app’s focused element. Password fields are refused.',
+    'Enter text in a Mac app. With ref, replaces that field’s whole value through Accessibility; use this to replace or clear text, since select-all does not reach a background app. Without ref, inserts at the cursor of the app’s focused element, which must be readable through Accessibility. Password fields are refused.',
   parameters: z.object({
     app: appParam,
     text: z.string().min(1).max(10_000),
