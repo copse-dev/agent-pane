@@ -34,7 +34,7 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-LNO5X5KF.js";
+} from "./chunks/chunk-W3PFCEPE.js";
 import "./chunks/chunk-D55J6ZRP.js";
 import {
   init_icons,
@@ -5447,6 +5447,43 @@ var init_demo_scenarios = __esm({
           }
         ]
       },
+      {
+        id: "chatgpt-plan-expired",
+        label: "ChatGPT plan whose sign-in has expired",
+        project: project("demo-chatgpt-plan-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          chatGptPlanWelcomeSeen: true
+        },
+        chatGptPlan: {
+          activeClientId: "demo-plan-account",
+          accounts: [
+            {
+              clientId: "demo-plan-account",
+              label: "you@example.com",
+              connected: true,
+              planEnabled: true
+            }
+          ]
+        },
+        chatGptPlanRefreshFailure: {
+          error: "Error invoking remote method 'chat-gpt-plan:refresh-account': Error: ChatGPT sign-in expired. Reconnect this account.",
+          status: {
+            activeClientId: "demo-plan-account",
+            accounts: [
+              {
+                clientId: "demo-plan-account",
+                label: "you@example.com",
+                connected: false,
+                planEnabled: false
+              }
+            ]
+          }
+        },
+        threads: []
+      },
       // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
       ...SITE_TOUR_SCENARIOS,
       // Concise thread view in each state a thread can be in (see demo-concise-states.ts).
@@ -5549,6 +5586,10 @@ function unsupported() {
 }
 function createDemoApi(scenario2, options = {}) {
   const settings = new Map(Object.entries(scenario2.settings));
+  let chatGptPlan = scenario2.chatGptPlan ?? {
+    accounts: [],
+    activeClientId: null
+  };
   const guardedYoloPhases = new Map(
     scenario2.guardedYoloPhase && scenario2.threads[0] ? [[scenario2.threads[0].id, scenario2.guardedYoloPhase]] : []
   );
@@ -6141,6 +6182,15 @@ function createDemoApi(scenario2, options = {}) {
       // exceptions are scenarios built around the hydration window itself,
       // which hold the read open (or fail it) so the mid-switch state stays
       // on screen.
+      searchRequests: (_projectId, query) => resolved({
+        matches: threads.filter(
+          (thread) => thread.archivedAt == null && thread.messages.some(
+            (message) => message.role === "user" && (message.origin === void 0 || message.editedByUser === true) && message.content.normalize("NFC").toLowerCase().includes(query.normalize("NFC").toLowerCase())
+          )
+        ).map((thread) => thread.id),
+        incomplete: false
+      }),
+      cancelRequestSearch: () => resolvedVoid(),
       loadMessages: (_projectId, threadId) => scenario2.holdThreadHydration === true ? new Promise(() => void 0) : scenario2.failThreadHydration === true ? Promise.reject(new Error("demo: transcript read failed")) : resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
       // Demo threads link no PRs, so a backfill answers each one with an empty ref set —
       // the settled "no PR" the sidebar waits for before it draws a row's changes glyph.
@@ -6360,9 +6410,14 @@ function createDemoApi(scenario2, options = {}) {
       dismiss: resolvedVoid
     },
     chatGptPlan: {
-      status: () => resolved(scenario2.chatGptPlan ?? { accounts: [], activeClientId: null }),
+      status: () => resolved(chatGptPlan),
       signIn: unsupported,
-      refreshAccount: () => scenario2.chatGptPlan ? resolved(scenario2.chatGptPlan) : unsupported(),
+      refreshAccount: () => {
+        const failure = scenario2.chatGptPlanRefreshFailure;
+        if (!failure) return scenario2.chatGptPlan ? resolved(scenario2.chatGptPlan) : unsupported();
+        chatGptPlan = failure.status;
+        return Promise.reject(new Error(failure.error));
+      },
       cancelSignIn: resolvedVoid,
       selectAccount: unsupported,
       signOut: unsupported,
@@ -7310,7 +7365,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-NYETG35E.js").then(async (main) => {
+    void import("./chunks/main-CMVVDOW2.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(

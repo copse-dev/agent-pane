@@ -292,6 +292,10 @@
     "label": "ChatGPT plan onboarding and account options"
   },
   {
+    "id": "chatgpt-plan-expired",
+    "label": "ChatGPT plan whose sign-in has expired"
+  },
+  {
     "id": "site-fork-resend",
     "label": "Copse.dev tour: fork and resend a prompt"
   },
