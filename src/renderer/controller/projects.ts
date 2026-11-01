@@ -573,6 +573,20 @@ function applyProjectSelection(
     const state = store.getState()
     const liveOutgoingThreads =
       state.activeProjectId === outgoingId ? state.threads : outgoingThreads
+    if (liveOutgoingThreads !== outgoingThreads && isListedProject(store, outgoingId)) {
+      // The outgoing conversation stayed editable while an uncached destination
+      // loaded. Revisits and rollback read the resident snapshot, and autosave
+      // stops reconciling the project here, so keep and persist this list.
+      residentThreads.remember(
+        outgoingId,
+        liveOutgoingThreads,
+        reflectedRevision(api, outgoingId),
+        state.activeThreadId,
+      )
+      void flushProjectThreads(api, outgoingId, liveOutgoingThreads).catch((error: unknown) => {
+        console.warn('[projects] could not persist the outgoing project:', error)
+      })
+    }
     carryRunningThreads(store, outgoingId, liveOutgoingThreads)
   }
   const merged = adoptBackgroundThreads(store, id, loaded)
@@ -841,7 +855,8 @@ function activate(
       api,
       outgoingId,
       outgoing.path,
-      outgoingThreads,
+      // Includes edits made before an uncached destination took over the screen.
+      residentThreads.get(outgoingId, outgoingRevision) ?? outgoingThreads,
       outgoingRevision,
       activeThreadId,
       id,

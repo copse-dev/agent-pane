@@ -31,6 +31,7 @@ import { prepareWorkspaceConnection } from '../../main/services/workspace-connec
 import { createWorkspaceNavigation } from '../../preload/workspace-navigation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { collectActivityThreads } from './activity-model.ts'
+import { setThreadDraftPrompt } from '@shared/store/thread-helpers.ts'
 import {
   __resetPersistenceForTest,
   invalidateProjectThreadLoads,
@@ -2061,6 +2062,96 @@ test('a failed resident activation restores the previous selection and its trans
   fail = false
   switchProjectThread(store, api, 'a', 't-a')
   assert.equal(store.getState().threads[0]?.draftPrompt, 'Keep my draft')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+})
+
+/** A on screen, with B's metadata load and its folder open both held. */
+function editableDuringUncachedLoad(): {
+  store: ReturnType<typeof createStore>
+  api: ApiClient
+  loadB: () => void
+  openB: (opened: boolean) => void
+  loading: () => boolean
+} {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    activeThreadId: 't-a',
+    threads: [thread('t-a')],
+  })
+  let loadB: (() => void) | null = null
+  let openB = (_opened: boolean): void => undefined
+  const api = makeApi({
+    workspaceSet: (path) =>
+      path === '/b'
+        ? new Promise<string>((resolve, reject) => {
+            openB = (opened): void => {
+              if (opened) resolve(path)
+              else reject(new Error('folder moved'))
+            }
+          })
+        : Promise.resolve(path),
+    loadProjectThreads: (id) =>
+      id === 'b'
+        ? new Promise<Thread[]>((resolve) => {
+            loadB = (): void => {
+              resolve([thread('t-b')])
+            }
+          })
+        : Promise.resolve([thread('t-a')]),
+  })
+  return {
+    store,
+    api,
+    loadB: () => loadB?.(),
+    openB: (opened): void => {
+      openB(opened)
+    },
+    loading: () => loadB !== null,
+  }
+}
+
+test('edits made while an uncached project loads survive a return to the outgoing one', async () => {
+  __resetPersistenceForTest()
+  const f = editableDuringUncachedLoad()
+  const drafts: Array<string | undefined> = []
+  f.api.threads.create = async (_projectId, created): Promise<void> => {
+    drafts.push(created.draftPrompt)
+  }
+  f.api.threads.updateMeta = async (_projectId, _threadId, patch): Promise<void> => {
+    drafts.push(patch.draftPrompt)
+  }
+  switchProjectThread(f.store, f.api, 'b', 't-b')
+  await waitUntil(f.loading)
+  assert.equal(f.store.getState().activeProjectId, 'a')
+  setThreadDraftPrompt(f.store, 't-a', 'typed while B loaded')
+  f.loadB()
+  await waitUntil(() => f.store.getState().activeProjectId === 'b')
+  // Autosave reconciles only the active project, so the hand-off persists it.
+  await waitUntil(() => drafts.includes('typed while B loaded'))
+  f.openB(true)
+  switchProjectThread(f.store, f.api, 'a', 't-a')
+  assert.equal(f.store.getState().activeProjectId, 'a')
+  assert.equal(f.store.getState().threads[0]?.draftPrompt, 'typed while B loaded')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+})
+
+test('edits made while an uncached project loads survive its failed activation', async () => {
+  const f = editableDuringUncachedLoad()
+  switchProjectThread(f.store, f.api, 'b', 't-b')
+  await waitUntil(f.loading)
+  setThreadDraftPrompt(f.store, 't-a', 'typed while B loaded')
+  f.loadB()
+  await waitUntil(() => f.store.getState().activeProjectId === 'b')
+  f.openB(false)
+  await waitUntil(() => f.store.getState().activeProjectId === 'a')
+  assert.equal(f.store.getState().threads[0]?.draftPrompt, 'typed while B loaded')
   await new Promise((resolve) => setTimeout(resolve, 0))
 })
 
