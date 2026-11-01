@@ -131,6 +131,18 @@ export function paginateSidebarThreads(
  */
 const threadCache = new Map<string, SidebarThread[]>()
 const residentThreads = new ProjectThreadCache()
+/**
+ * The metadata revision the active project's list was read at. Main can write
+ * the visible project (an archive, an automation run) without that reaching
+ * this list, so a snapshot taken on leaving keeps the revision it reflects.
+ */
+let activeListRevision: { projectId: string; revision: number } | null = null
+
+function reflectedRevision(api: ApiClient, projectId: string): number {
+  return activeListRevision?.projectId === projectId
+    ? activeListRevision.revision
+    : projectThreadLoadRevision(api, projectId)
+}
 /** Which project's cache entry is the live alias, and so the one still to compact. */
 let liveCacheProjectId: string | null = null
 /** Per-project right-panel view state, so switching projects restores panel visibility. */
@@ -540,6 +552,8 @@ function applyProjectSelection(
   id: string,
   path: string,
   loaded: Thread[],
+  /** The metadata revision `loaded` reflects (see {@link activeListRevision}). */
+  revision: number,
   pendingThreadId: string | null,
   outgoingId: string | null,
   outgoingThreads: Thread[],
@@ -583,6 +597,7 @@ function applyProjectSelection(
     // Opening succeeded — lift any prior "folder missing" quarantine (#997).
     projects: projectsWithMissingCleared(store.getState().projects, id),
   })
+  activeListRevision = { projectId: id, revision }
   if (activeThreadId) markThreadRead(store, activeThreadId)
   if (merged.length === 0) createThread(store)
   else normalizeBlankThreads(store)
@@ -592,12 +607,7 @@ function applyProjectSelection(
   store.emit('projects_changed')
   store.emit('workspace_changed')
   store.emit('threads_changed')
-  residentThreads.remember(
-    id,
-    store.getState().threads,
-    projectThreadLoadRevision(api, id),
-    store.getState().activeThreadId,
-  )
+  residentThreads.remember(id, store.getState().threads, revision, store.getState().activeThreadId)
   endApply({ threads: merged.length })
 }
 
@@ -651,7 +661,10 @@ async function finishActivate(
   const persistSelection = saveProjects(api, projectsAtDispatch, id, pendingThreadId)
   const endWorkspace = perfBegin('switch:workspace-set')
   const workspaceOpened = setWorkspaceForSelection(api, path, sshHost)
-  const cached = residentThreads.get(id, projectThreadLoadRevision(api, id))
+  // Read before any load: a load retried past a newer revision only costs one
+  // more reload later, while stamping a revision read afterwards could hide a write.
+  const revision = projectThreadLoadRevision(api, id)
+  const cached = residentThreads.get(id, revision)
   if (cached) {
     applyProjectSelection(
       store,
@@ -659,6 +672,7 @@ async function finishActivate(
       id,
       path,
       cached,
+      revision,
       pendingThreadId,
       outgoingId,
       outgoingThreads,
@@ -694,6 +708,7 @@ async function finishActivate(
         id,
         path,
         loaded,
+        revision,
         pendingThreadId,
         outgoingId,
         outgoingThreads,
@@ -794,16 +809,12 @@ function activate(
   pendingSwitch = { gen, projectId: id, dispatched: false }
   const outgoingId = activeProjectId
   const outgoingThreads = threads
+  const outgoingRevision = outgoingId === null ? 0 : reflectedRevision(api, outgoingId)
   // An outgoing project that was just removed (removeProject switching away
   // from it) must not be cached back in or have its view state recorded.
   if (outgoingId && isListedProject(store, outgoingId)) {
     cacheThreads(outgoingId, outgoingThreads)
-    residentThreads.remember(
-      outgoingId,
-      outgoingThreads,
-      projectThreadLoadRevision(api, outgoingId),
-      activeThreadId,
-    )
+    residentThreads.remember(outgoingId, outgoingThreads, outgoingRevision, activeThreadId)
     // Snapshot the outgoing project's panel visibility so switching back restores it.
     recordProjectViewState(projectViewState, outgoingId, captureProjectViewState(store.getState()))
   }
@@ -816,7 +827,7 @@ function activate(
     residentThreads.remember(
       id,
       abandoned.threads,
-      projectThreadLoadRevision(api, id),
+      reflectedRevision(api, id),
       abandoned.activeThreadId,
     )
     // The user may have edited the visible conversation while activation was
@@ -831,6 +842,7 @@ function activate(
       outgoingId,
       outgoing.path,
       outgoingThreads,
+      outgoingRevision,
       activeThreadId,
       id,
       store.getState().threads,
@@ -1107,6 +1119,7 @@ export async function restoreProject(
   }
   // Thread-store reads are project-id scoped and independent from workspace
   // activation. Overlap them on launch; both can scale on an aged profile.
+  const revision = projectThreadLoadRevision(api, id)
   const [workspaceOpened, loaded] = await Promise.all([
     setWorkspaceForSelection(api, proj.path, proj.sshHost),
     loadThreads(api, id),
@@ -1119,7 +1132,8 @@ export async function restoreProject(
   // none and this is the disk list unchanged.
   const merged = adoptBackgroundThreads(store, id, loaded)
   cacheThreads(id, merged)
-  residentThreads.remember(id, merged, projectThreadLoadRevision(api, id))
+  residentThreads.remember(id, merged, revision)
+  activeListRevision = { projectId: id, revision }
   store.setState({
     activeProjectId: id,
     expandedProjectId: id,
@@ -1335,6 +1349,7 @@ export function resetProjectSwitchStateForTest(): void {
   clearPendingSwitch()
   threadCache.clear()
   residentThreads.clear()
+  activeListRevision = null
   liveCacheProjectId = null
   projectViewState.clear()
   activationWaiters.clear()

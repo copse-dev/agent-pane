@@ -2133,6 +2133,43 @@ test('main-owned archive changes invalidate resident metadata before a revisit',
   assert.equal(store.getState().threads[0]?.title, 'Updated on disk')
 })
 
+test('main writing the visible project keeps its snapshot stale after switching away', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    activeThreadId: 't-a',
+    threads: [thread('t-a')],
+  })
+  const loaded: string[] = []
+  let automationRan = false
+  const api = makeApi({
+    loadProjectThreads: async (id) => {
+      loaded.push(id)
+      if (id === 'b') return [thread('t-b')]
+      return automationRan ? [thread('t-a'), thread('t-run', 'Scheduled run')] : [thread('t-a')]
+    },
+  })
+  switchProjectThread(store, api, 'b', 't-b')
+  await waitUntil(() => store.getState().activeProjectId === 'b')
+  switchProjectThread(store, api, 'a', 't-a')
+  await waitUntil(() => store.getState().activeProjectId === 'a')
+  assert.deepEqual(loaded, ['b'])
+  // An automation fires for the visible project; its trigger handler is still
+  // reading metadata, so the list on screen does not have the run yet.
+  automationRan = true
+  invalidateProjectThreadLoads(api, 'a')
+  switchProjectThread(store, api, 'b', 't-b')
+  switchProjectThread(store, api, 'a', 't-a')
+  await waitUntil(() => store.getState().threads.some((t) => t.id === 't-run'))
+  assert.deepEqual(loaded, ['b', 'a'])
+})
+
 test('a resident SSH thread renders before reconnecting its workspace', async () => {
   resetProjectSwitchStateForTest()
   const store = createStore({
