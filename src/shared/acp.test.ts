@@ -34,6 +34,22 @@ describe('ACP sandbox settings', () => {
       assert.equal(agent.sandbox.allowMacOsTrustd, typeof value === 'boolean' ? value : undefined)
     }
   })
+
+  it('preserves boolean keychain overrides when reading saved agent configurations', () => {
+    for (const value of [true, false, 'true', 1, null]) {
+      const [agent] = parseAcpAgentConfigs([
+        {
+          id: 'claude-acp',
+          title: 'Claude',
+          command: 'claude-agent-acp',
+          enabled: true,
+          sandbox: { allowedDomains: ['api.anthropic.com'], allowMacOsKeychain: value },
+        },
+      ])
+      assert.ok(agent?.sandbox)
+      assert.equal(agent.sandbox.allowMacOsKeychain, typeof value === 'boolean' ? value : undefined)
+    }
+  })
 })
 
 describe('acp model values', () => {

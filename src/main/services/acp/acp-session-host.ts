@@ -12,6 +12,30 @@ import {
   type AcpSessionHostMessage,
 } from './acp-session-host-protocol.ts'
 
+/**
+ * What the session host is told about a spawn. It only needs the fields that
+ * affect spawning and confinement: MCP servers, model choices and permission
+ * modes stay in the main-process ACP protocol. Every field the sandbox overlay
+ * reads must be carried here, or the hosted agent silently loses it.
+ */
+export function acpSessionHostRequest(config: AcpAgentSpawnConfig): {
+  config: Partial<AcpAgentSpawnConfig>
+  allowLocalhost: boolean
+} {
+  return {
+    config: {
+      command: config.command,
+      cwd: config.cwd,
+      ...(config.args ? { args: config.args } : {}),
+      ...(config.env ? { env: config.env } : {}),
+      ...(config.sandbox ? { sandbox: config.sandbox } : {}),
+      ...(config.readonlyCheckout ? { readonlyCheckout: true } : {}),
+      ...(config.stateDir ? { stateDir: config.stateDir } : {}),
+    },
+    allowLocalhost: Boolean(config.nativeBridge),
+  }
+}
+
 /** Bound startup separately from the session's intentionally long lifetime. */
 const SESSION_HOST_START_TIMEOUT_MS = 15_000
 
@@ -48,19 +72,7 @@ function readHostMessage(value: unknown): AcpSessionHostMessage | null {
  */
 export function spawnSandboxedAcpSessionHost(config: AcpAgentSpawnConfig): Promise<ChildProcess> {
   return new Promise((resolve, reject) => {
-    // The host only needs fields that affect spawning/confinement. MCP servers,
-    // model choices and permission modes stay in the main-process ACP protocol.
-    const request = {
-      config: {
-        command: config.command,
-        cwd: config.cwd,
-        ...(config.args ? { args: config.args } : {}),
-        ...(config.env ? { env: config.env } : {}),
-        ...(config.sandbox ? { sandbox: config.sandbox } : {}),
-        ...(config.readonlyCheckout ? { readonlyCheckout: true } : {}),
-      },
-      allowLocalhost: Boolean(config.nativeBridge),
-    }
+    const request = acpSessionHostRequest(config)
     perfMark('ttft:acp-host-spawn-start')
     const child = spawn(process.execPath, [acpSessionHostWorkerPath()], {
       cwd: config.cwd,

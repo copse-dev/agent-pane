@@ -1127,9 +1127,10 @@ SVG→PNG (and similar) contained without making nested workspaces, all of `/var
 writable. Linux and Windows are unchanged.
 
 The project sandbox denies reads of the home directory and re-allows only what contained commands
-need to run: the workspace, the user's git config, the chat store, Copse's own caches, the Node
-toolchain found on `PATH`, and the rustup toolchain (`$CARGO_HOME/bin`, `$RUSTUP_HOME/toolchains`,
-and `$RUSTUP_HOME/settings.toml`). The rest of `$CARGO_HOME` stays denied: `credentials.toml` and
+need to run: the workspace, the user's git config and the files it includes, the chat store, Copse's
+own caches, the Node toolchain found on `PATH` (never home or above it, and from `~/Library`,
+`~/.local` or `~/.config` only `lib/node_modules`), and the rustup toolchain (`$CARGO_HOME/bin`,
+`$RUSTUP_HOME/toolchains`, and `$RUSTUP_HOME/settings.toml`). The rest of `$CARGO_HOME` stays denied: `credentials.toml` and
 `config.toml` can hold registry tokens, and the registry and git caches are downloaded sources, not
 a toolchain. So `cargo --version`, `rustc`, and `rustfmt` run contained, while a build that needs
 the registry still fails contained and offers to run outside.

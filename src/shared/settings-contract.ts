@@ -134,6 +134,7 @@ export interface SettingsValues {
       | {
           allowedDomains: Array<string>
           allowMacOsTrustd?: boolean | undefined
+          allowMacOsKeychain?: boolean | undefined
           homeDirs?: Array<string> | undefined
           scratchPaths?: Array<string> | undefined
         }
