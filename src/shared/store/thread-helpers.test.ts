@@ -36,6 +36,32 @@ import type { Thread } from '@shared/types'
 import type { TurnOutcome } from '@shared/types/turn-outcome.ts'
 import { resolveFooterUsage } from '@shared/usage/footer-usage-summary.ts'
 
+describe('createThread activation', () => {
+  it('switches to the new thread by default', () => {
+    const store = createStore({ activeThreadId: 'source', threads: [] })
+
+    const threadId = createThread(store)
+
+    assert.equal(store.getState().activeThreadId, threadId)
+  })
+
+  it('leaves the active thread and view state alone when activate is false', () => {
+    const store = createStore({ activeThreadId: 'source', threads: [] })
+    store.setState({
+      openFile: { path: 'a.ts', content: 'x', language: 'typescript' },
+    })
+    let newThreadOpened = 0
+    store.on('new_thread_opened', () => newThreadOpened++)
+
+    const threadId = createThread(store, undefined, { activate: false })
+
+    assert.equal(store.getState().activeThreadId, 'source')
+    assert.deepEqual(store.getState().openFile, { path: 'a.ts', content: 'x', language: 'typescript' })
+    assert.ok(getThreadById(store, threadId))
+    assert.equal(newThreadOpened, 0)
+  })
+})
+
 describe('addMessage prompt provenance', () => {
   it('stamps startingCommit and dirty onto the message when captured', () => {
     const store = createStore()

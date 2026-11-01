@@ -173,7 +173,23 @@ export function normalizeBlankThreads(store: AppStore): void {
   pruneBlankThreads(store, keepIds)
 }
 
-export function createThread(store: AppStore, draftPrompt?: string): string {
+export interface CreateThreadOptions {
+  /**
+   * Switch the app to the new thread. Defaults to `true` for every ordinary
+   * "new thread" entry point. Pass `false` to create a thread that runs
+   * without disturbing whatever the user is currently looking at — e.g.
+   * accepting a `propose_thread` card — where the whole point is that the
+   * click does not navigate anywhere.
+   */
+  activate?: boolean
+}
+
+export function createThread(
+  store: AppStore,
+  draftPrompt?: string,
+  options?: CreateThreadOptions,
+): string {
+  const activate = options?.activate ?? true
   const id = randomUUID()
   const defaultModel = store.getState().settings?.model
   const threads = [
@@ -195,18 +211,26 @@ export function createThread(store: AppStore, draftPrompt?: string): string {
     },
     ...store.getState().threads,
   ]
-  // Keep the side/bottom panel (`filesPaneOpen`) open across new threads, matching
-  // `switchThread`; only the per-thread file/diff viewer content is reset.
-  store.setState({
-    threads,
-    activeThreadId: id,
-    openFile: null,
-    activeDiff: null,
-    stagedDiffs: [],
-  })
+  if (activate) {
+    // Keep the side/bottom panel (`filesPaneOpen`) open across new threads, matching
+    // `switchThread`; only the per-thread file/diff viewer content is reset.
+    store.setState({
+      threads,
+      activeThreadId: id,
+      openFile: null,
+      activeDiff: null,
+      stagedDiffs: [],
+    })
+  } else {
+    // Leave activeThreadId and the file/diff viewer alone: the user stays
+    // exactly where they were, and the new thread runs unseen until they open it.
+    store.setState({ threads })
+  }
   store.emit('threads_changed')
-  store.emit('panel_changed')
-  store.emit('new_thread_opened')
+  if (activate) {
+    store.emit('panel_changed')
+    store.emit('new_thread_opened')
+  }
   return id
 }
 
