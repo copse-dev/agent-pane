@@ -12741,7 +12741,7 @@ function createTranscriptScroll(host) {
     updateScrollButton();
   }
   function captureReadingAnchor() {
-    const readingTop = list.getBoundingClientRect().top + (Number.parseFloat(list.style.scrollPaddingTop) || 0);
+    const readingTop = list.getBoundingClientRect().top + host.stickyPromptBand();
     const candidates = list.querySelectorAll(READING_ANCHOR_CANDIDATES);
     for (const element of candidates) {
       const rect = element.getBoundingClientRect();
@@ -20698,6 +20698,7 @@ function mountConversation(root, store2, api2) {
   let renderedInputs = null;
   let stickyImagePrompt = null;
   let stickyPrompt = null;
+  let stickyPromptBand = 0;
   let stickyImageFullHeight = 0;
   let backfillGeneration = 0;
   const transcriptScroll = createTranscriptScroll({
@@ -20706,7 +20707,11 @@ function mountConversation(root, store2, api2) {
     scrollToBottomLabel,
     firstPromptBtn,
     firstPromptId: () => getActiveThread(store2)?.messages.find((message2) => message2.role === "user" && !message2.origin)?.id ?? null,
-    syncStickyImagePreview,
+    syncStickyImagePreview: (releaseOnScrollUp) => {
+      syncStickyImagePreview(releaseOnScrollUp);
+      syncStickyPromptClearance();
+    },
+    stickyPromptBand: () => stickyPromptBand,
     onReturnToLiveEnd: () => {
       const threadId = store2.getState().activeThreadId;
       if (threadId) disclosures.resumeDeferredCompaction(threadId);
@@ -20774,20 +20779,24 @@ function mountConversation(root, store2, api2) {
   }
   function syncStickyPromptClearance() {
     const prompt = stickyPrompt;
-    let clearance = 0;
+    let band = 0;
+    let stuck = false;
     if (prompt?.isConnected) {
       const promptStyle = window.getComputedStyle(prompt);
       if (promptStyle.position === "sticky") {
         const listStyle = window.getComputedStyle(list);
-        clearance = Math.max(
+        const stickyOffset = Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top);
+        band = Math.max(
           0,
           Math.ceil(
-            Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top) + prompt.getBoundingClientRect().height + Number.parseFloat(listStyle.rowGap)
+            stickyOffset + prompt.getBoundingClientRect().height + Number.parseFloat(listStyle.rowGap)
           )
         );
+        stuck = naturalRowTop(list, prompt) <= list.getBoundingClientRect().top + stickyOffset + 0.5;
       }
     }
-    const value = clearance > 0 ? `${String(clearance)}px` : "";
+    stickyPromptBand = band;
+    const value = stuck && band > 0 ? `${String(band)}px` : "";
     if (list.style.scrollPaddingTop !== value) list.style.scrollPaddingTop = value;
   }
   function refreshStickyImagePrompt() {
