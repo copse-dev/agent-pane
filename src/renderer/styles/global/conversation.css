@@ -40,8 +40,9 @@
 /* The review sits between the transcript and the composer, so every pixel it
    takes comes out of the transcript viewport (and a tall message plus the
    sticky prompt must still fit above it). Keep it a compact strip: question and
-   reason stacked on the left, compact actions beside them. The transcript's
-   own bottom padding already separates it from the last message. */
+   reason stacked on the left, compact actions beside them. Its top margin
+   separates it from the last message: the transcript keeps no bottom padding
+   of its own (see .messages-list). */
 .thread-archive-review {
   box-sizing: border-box;
   display: grid;
@@ -49,7 +50,7 @@
   align-items: center;
   column-gap: var(--spacing-md);
   width: min(var(--chat-content-max), calc(100% - 2 * var(--spacing-xl)));
-  margin: 0 auto var(--spacing-sm);
+  margin: var(--spacing-lg) auto var(--spacing-sm);
   padding: var(--spacing-xs) var(--spacing-md);
   line-height: 1.4;
   border: 1px solid var(--border);
@@ -283,8 +284,13 @@
 /* While the reader is scrolled up, the transcript runs on past the scrollport's
    bottom edge. Feather that edge (mirroring the top one) so a cut-off line or
    bubble reads as "more below" instead of a hard slice above the docked button.
-   Only then: pinned to the bottom, the last line sits on that edge in full. */
-.conversation-scroll:has(> .scroll-to-bottom:not([hidden]))::after {
+   Only then: pinned to the bottom, the last line sits on that edge in full.
+   Not while the archive review shows: it sits between the transcript and the
+   dock, so the fade would land on the review, and the transcript's edge already
+   meets the review's top margin. */
+.conversation-scroll:has(> .scroll-to-bottom:not([hidden])):not(
+    :has(> .thread-archive-review:not([hidden]))
+  )::after {
   content: '';
   position: absolute;
   inset: auto 0 calc(var(--scroll-to-bottom-size) + 2 * var(--spacing-xs));
