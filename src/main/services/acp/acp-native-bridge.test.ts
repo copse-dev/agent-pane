@@ -1,3 +1,4 @@
+import { getIsolatedDesktopLifetime } from '../isolated-desktop/desktop-lifetime.ts'
 import { mkdirSync } from 'node:fs'
 import { readSkillTool } from '../../tools/read-skill-tool.ts'
 import { setSkillsForTest } from '../skills/skills-registry.ts'
@@ -259,6 +260,59 @@ function initialized(): unknown[] {
 }
 
 describe('startAcpNativeBridge', () => {
+  it('binds desktop authority to a live owning turn beyond the HTTP response', async () => {
+    const registry = new ToolRegistry()
+    const observed: { call: AbortSignal; lifetime: AbortSignal }[] = []
+    registry.register({
+      name: 'isolated_copse',
+      description: 'Desktop lifecycle boundary fixture',
+      parameters: z.object({ action: z.literal('start') }),
+      execute: (_args, signal) => {
+        assert.deepEqual(requireThreadExecutionOwner(), {
+          projectId: 'project-1',
+          threadId: 'desktop-owner',
+        })
+        const lifetime = getIsolatedDesktopLifetime()
+        assert.ok(lifetime)
+        observed.push({ call: signal, lifetime })
+        return Promise.resolve('started')
+      },
+    })
+    const session = new AbortController()
+    bridge = await startAcpNativeBridge(registry, session.signal, { threadId: 'desktop-owner' })
+    assert.ok(bridge)
+    bridge.setExecutionContext(worktreeContext('desktop-owner', '/worktrees/desktop-owner'))
+    for (const init of initialized()) await rpc(bridge, init)
+    const call = {
+      jsonrpc: '2.0',
+      id: 91,
+      method: 'tools/call',
+      params: { name: 'isolated_copse', arguments: { action: 'start' } },
+    }
+    assert.equal(rpcResult(await rpc(bridge, call))['isError'], true)
+    assert.equal(observed.length, 0)
+    const firstTurn = new AbortController()
+    bridge.setTurnSignal(firstTurn.signal)
+    assert.equal(contentText(await rpc(bridge, call)), 'started')
+    await delay(20)
+    const first = observed[0]
+    assert.ok(first)
+    assert.equal(first.call.aborted, true)
+    assert.equal(first.lifetime.aborted, false)
+    firstTurn.abort()
+    assert.equal(first.lifetime.aborted, true)
+    assert.equal(rpcResult(await rpc(bridge, call))['isError'], true)
+    assert.equal(observed.length, 1)
+    const nextTurn = new AbortController()
+    bridge.setTurnSignal(nextTurn.signal)
+    assert.equal(contentText(await rpc(bridge, call)), 'started')
+    const second = observed[1]
+    assert.ok(second)
+    assert.equal(second.lifetime.aborted, false)
+    session.abort()
+    assert.equal(second.lifetime.aborted, true)
+  })
+
   it('serves progressive skills through real authenticated HTTP with isolated prompt budgets and no stale access', async () => {
     const root = mkdtempSync(join(tmpdir(), 'copse-acp-skills-'))
     const skillRoot = join(root, 'tiny')

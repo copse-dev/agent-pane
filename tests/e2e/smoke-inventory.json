@@ -105,6 +105,10 @@
       "smoke": null
     },
     {
+      "prefix": "src/main/services/isolated-desktop/",
+      "smoke": null
+    },
+    {
       "prefix": "src/main/services/diagnostics/",
       "smoke": null
     },

@@ -99,6 +99,7 @@ import {
   openSimulatorDesktopTool,
 } from '../tools/simulator-desktop-tool.ts'
 import { launchGuiAppTool } from '../tools/gui-app-launch-tool.ts'
+import { isolatedDesktopTool } from '../tools/isolated-desktop-tool.ts'
 import { deviceHubTool } from '../tools/device-hub-tool.ts'
 import { IMAGE_GEN_TOOL_NAME, imageGenTool } from '../tools/image-gen-tool.ts'
 import { resolveWebSearchProvider } from '@shared/web-search.ts'
@@ -130,6 +131,7 @@ export function createRegistry(): ToolRegistry {
   // Host GUI launch (macOS Launch Services). Always approval-gated; not a
   // substitute for run_shell — see gui-app-launch-tool.ts.
   registry.register(launchGuiAppTool)
+  registry.register(isolatedDesktopTool)
   registry.register(preflightWorktreeTool)
   registry.register(prepareWorktreeTool)
   // Offered only while a deferred-worktree thread is still read-only (parentTools).

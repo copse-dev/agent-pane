@@ -222,6 +222,8 @@ import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { getSetting } from './services/storage/settings.ts'
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
+import { recoverIsolatedDesktops } from './services/isolated-desktop/desktop-recovery.ts'
+import { stopAllIsolatedDesktops } from './services/isolated-desktop/desktop-service.ts'
 import {
   cancelAllSupervisedBackgroundProcesses,
   installBackgroundProcessSupervisor,
@@ -514,6 +516,9 @@ app
   .whenReady()
   .then(async () => {
     await appRuntimeReady
+    await recoverIsolatedDesktops().catch((error: unknown) => {
+      console.error('[isolated-desktop] Orphan VM recovery failed:', error)
+    })
     // Ahead of the mode branches below: every mode, headless included, should
     // stop when its terminal does. See `installSignalHandlers` for why this
     // cannot be done at module scope.
@@ -1402,6 +1407,10 @@ let disposeDarkFactorySensor: (() => void) | undefined
 let disposeTaskSupervisorEvents: (() => void) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
+  // Revoke input and inference synchronously, then await VM deletion within the quit deadline.
+  await stopAllIsolatedDesktops().catch((error: unknown) => {
+    console.error('[isolated-desktop] Shutdown VM cleanup failed:', error)
+  })
   stopEventLoopWatchdog()
   perfMark('main:quit')
   perfDumpCounters('quit')
