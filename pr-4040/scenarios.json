@@ -388,6 +388,14 @@
     "label": "Send prompts to your other threads?"
   },
   {
+    "id": "approval-git-push",
+    "label": "Push branch to origin?"
+  },
+  {
+    "id": "approval-git-push-lease",
+    "label": "Push branch to origin?"
+  },
+  {
     "id": "approval-web-url",
     "label": "Allow web origin?"
   },

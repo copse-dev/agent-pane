@@ -34,7 +34,7 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-37IAH7I4.js";
+} from "./chunks/chunk-J55TXJOC.js";
 import "./chunks/chunk-D55J6ZRP.js";
 import {
   init_icons,
@@ -1815,6 +1815,20 @@ function threadAccessApproval(access) {
     bodyFooter: "Applies only to this thread. Revoke it in the thread\u2019s Context panel \u2192 Permissions.",
     approveLabel: access === "read" ? "Allow reading" : "Allow sending",
     allowRemember: false
+  };
+}
+function gitPushApproval(branch, expectedRemoteSha) {
+  return {
+    title: "Push branch to origin?",
+    approveLabel: "Push branch",
+    body: [
+      `Branch: ${branch}`,
+      "Remote: origin",
+      expectedRemoteSha ? `Push mode: Force with lease
+Expected remote commit: ${expectedRemoteSha}` : "Push mode: Fast-forward only"
+    ].join("\n"),
+    bodyAdvice: expectedRemoteSha ? "This publishes the branch to origin and can replace remote history only if the remote branch still points to the expected commit." : "This publishes the branch to origin without replacing existing remote history.",
+    bodyFooter: "Approval covers this push once."
   };
 }
 function webApprovalDetails(origin, url, allowRemember, context) {
@@ -5497,6 +5511,13 @@ var init_demo_scenarios = __esm({
           ...threadAccessApproval(access)
         })
       ),
+      ...[void 0, "0123456789abcdef0123456789abcdef01234567"].map(
+        (sha) => approvalRiskScenario(sha ? "approval-git-push-lease" : "approval-git-push", {
+          id: "git-push",
+          type: "mcp",
+          ...gitPushApproval("copse/friendly-action-names-213c32", sha)
+        })
+      ),
       approvalRiskScenario("approval-web-url", {
         id: "web-url",
         title: "Allow web origin?",
@@ -7358,7 +7379,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-TMMY2NDS.js").then(async (main) => {
+    void import("./chunks/main-SZDO6HRX.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(

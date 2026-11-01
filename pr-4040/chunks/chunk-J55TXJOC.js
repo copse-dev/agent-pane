@@ -26382,6 +26382,7 @@ var init_humanize_identifier = __esm({
       ["llm", "LLM"],
       ["macos", "macOS"],
       ["mcp", "MCP"],
+      ["mdn", "MDN"],
       ["okf", "OKF"],
       ["pdf", "PDF"],
       ["pii", "PII"],
@@ -26424,7 +26425,7 @@ function getToolDisplayName(name, tense = "done") {
   const known = TOOL_DISPLAY_NAMES[normalizeCopseToolName(name)];
   if (known) return pickLabel(known, tense);
   const mcp = parseMcp(name);
-  if (mcp?.tool === "startup") return `${mcp.server} startup`;
+  if (mcp?.tool === "startup") return `${humanizeIdentifier(mcp.server)} startup`;
   if (mcp) return humanizeIdentifier(mcp.tool);
   const stripped = name.replace(/^(?:Mcp\.[^.]+\.|mcp__[^_]+__)/i, "");
   if (stripped !== name) return humanizeIdentifier(stripped);
@@ -26550,7 +26551,7 @@ function getToolGroupKey(name, kind) {
 }
 function getToolGroupLabel(key, tense = "done") {
   if (key.startsWith(MCP_GROUP_PREFIX)) {
-    return key.slice(MCP_GROUP_PREFIX.length);
+    return humanizeIdentifier(key.slice(MCP_GROUP_PREFIX.length));
   }
   const group = TOOL_GROUPS[key];
   if (!group) return key;
@@ -31601,6 +31602,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'minimax-m3', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 18.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'minimax-m3', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "QwQ-32B-Preview": [
@@ -32065,6 +32072,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1', fetched 2026-09-11",
           asOf: "2026-09-11"
+        },
+        {
+          value: 49,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-fable-5-1-high": [
@@ -32073,6 +32086,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-high', fetched 2026-09-11",
           asOf: "2026-09-11"
+        },
+        {
+          value: 47,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-high', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-fable-5-1-low": [
@@ -32081,6 +32100,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-low', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 38.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-fable-5-1-medium": [
@@ -32089,6 +32114,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-medium', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 43,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-medium', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-fable-5-1-xhigh": [
@@ -32097,6 +32128,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-fable-5-1-xhigh', fetched 2026-09-11",
           asOf: "2026-09-11"
+        },
+        {
+          value: 49.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-xhigh', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-haiku-4-5": [
@@ -32113,6 +32150,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5', fetched 2026-10-13",
           asOf: "2026-10-13"
+        },
+        {
+          value: 36.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-haiku-5-5-high": [
@@ -32121,6 +32164,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-high', fetched 2026-10-13",
           asOf: "2026-10-13"
+        },
+        {
+          value: 29.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5-high', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-haiku-5-5-low": [
@@ -32129,6 +32178,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-low', fetched 2026-10-13",
           asOf: "2026-10-13"
+        },
+        {
+          value: 18.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-haiku-5-5-medium": [
@@ -32137,6 +32192,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-medium', fetched 2026-10-13",
           asOf: "2026-10-13"
+        },
+        {
+          value: 24.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5-medium', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-haiku-5-5-xhigh": [
@@ -32145,6 +32206,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-haiku-5-5-xhigh', fetched 2026-10-13",
           asOf: "2026-10-13"
+        },
+        {
+          value: 34.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5-xhigh', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-instant": [
@@ -32285,6 +32352,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-5', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 58.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-opus-5-5-high": [
@@ -32293,6 +32366,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-5-high', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 51.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-high', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-opus-5-5-low": [
@@ -32301,6 +32380,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-5-low', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 34.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-opus-5-5-medium": [
@@ -32309,6 +32394,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-5-medium', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 48.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-medium', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-opus-5-5-xhigh": [
@@ -32317,6 +32408,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-opus-5-5-xhigh', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 57,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-xhigh', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-opus-5-high": [
@@ -32437,6 +32534,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-5', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 54.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-sonnet-5-5-high": [
@@ -32445,6 +32548,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-5-high', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 41.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-high', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-sonnet-5-5-low": [
@@ -32453,6 +32562,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-5-low', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 25.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-sonnet-5-5-medium": [
@@ -32461,6 +32576,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-5-medium', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 30.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-medium', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-sonnet-5-5-xhigh": [
@@ -32469,6 +32590,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-sonnet-5-5-xhigh', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 49.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-xhigh', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "claude-sonnet-5-high": [
@@ -32543,6 +32670,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'command-a-plus', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 6.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'command-a-plus', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "command-r-03-2024": [
@@ -32965,6 +33098,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-1-flash-1017', fetched 2026-10-20",
           asOf: "2026-10-20"
+        },
+        {
+          value: 32.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "deepseek-v4-1-flash-non-reasoning": [
@@ -33065,6 +33204,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 23.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-pro', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "deepseek-v4-pro-0424": [
@@ -33801,6 +33946,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gemini-3-5-flash-lite', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 11.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-3-5-flash-lite', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gemini-3-5-flash-medium": [
@@ -33893,6 +34044,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 30.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gemini-3-8-flash-low": [
@@ -33901,6 +34058,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash-low', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 22.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gemini-3-8-flash-medium": [
@@ -33909,6 +34072,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gemini-3-8-flash-medium', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 30,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash-medium', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gemini-3-flash": [
@@ -33973,6 +34142,20 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gemini-4-argon', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 50.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-argon', fetched 2026-10-29",
+          asOf: "2026-10-29"
+        }
+      ],
+      "gemini-4-carbon": [
+        {
+          value: 59.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gemma-3-1b": [
@@ -34435,6 +34618,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'glm-5-3', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 31.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'glm-5-3', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "glm-5-3-flash": [
@@ -34457,6 +34646,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'glm-5-3-low', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 23.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'glm-5-3-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "glm-5-non-reasoning": [
@@ -35517,6 +35712,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol' (GPT-6.1 Sol max), intelligenceIndex 51.83, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol",
           asOf: "2026-09-30"
+        },
+        {
+          value: 54.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-1-sol-high": [
@@ -35525,6 +35726,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-high', intelligenceIndex 50.24, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-high",
           asOf: "2026-09-30"
+        },
+        {
+          value: 50.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-high', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-1-sol-low": [
@@ -35533,6 +35740,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-low', intelligenceIndex 42.08, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-low",
           asOf: "2026-09-30"
+        },
+        {
+          value: 34.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-1-sol-medium": [
@@ -35541,6 +35754,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-medium', intelligenceIndex 47.78, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-medium",
           asOf: "2026-09-30"
+        },
+        {
+          value: 46.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-medium', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-1-sol-xhigh": [
@@ -35549,6 +35768,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-xhigh', intelligenceIndex 51.04, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-xhigh",
           asOf: "2026-09-30"
+        },
+        {
+          value: 52.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-xhigh', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-1-terra": [
@@ -35557,6 +35782,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra', fetched 2026-10-27",
           asOf: "2026-10-27"
+        },
+        {
+          value: 51,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-1-terra-high": [
@@ -35565,6 +35796,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-high', fetched 2026-10-27",
           asOf: "2026-10-27"
+        },
+        {
+          value: 42.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-high', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-1-terra-low": [
@@ -35573,6 +35810,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-low', fetched 2026-10-27",
           asOf: "2026-10-27"
+        },
+        {
+          value: 29.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-1-terra-medium": [
@@ -35581,6 +35824,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-medium', fetched 2026-10-27",
           asOf: "2026-10-27"
+        },
+        {
+          value: 38.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-medium', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-1-terra-non-reasoning": [
@@ -35589,6 +35838,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-non-reasoning', fetched 2026-10-27",
           asOf: "2026-10-27"
+        },
+        {
+          value: 30.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-non-reasoning', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-1-terra-xhigh": [
@@ -35597,6 +35852,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-1-terra-xhigh', fetched 2026-10-27",
           asOf: "2026-10-27"
+        },
+        {
+          value: 45,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-xhigh', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-astra": [
@@ -35605,6 +35866,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 56.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-astra', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-astra-high": [
@@ -35613,6 +35880,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-high', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 54.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-astra-high', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-astra-low": [
@@ -35621,6 +35894,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-low', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 43,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-astra-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-astra-medium": [
@@ -35629,6 +35908,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-medium', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 51.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-astra-medium', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-astra-non-reasoning": [
@@ -35645,6 +35930,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-astra-xhigh', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 55.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-astra-xhigh', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-luna": [
@@ -35653,6 +35944,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 27.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-luna-high": [
@@ -35661,6 +35958,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-high', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 21.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-high', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-luna-low": [
@@ -35669,6 +35972,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-low', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 9.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-luna-medium": [
@@ -35677,6 +35986,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-medium', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 18.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-medium', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-luna-non-reasoning": [
@@ -35685,6 +36000,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-non-reasoning', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 9.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-non-reasoning', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-luna-xhigh": [
@@ -35693,6 +36014,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-luna-xhigh', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 23.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-xhigh', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "gpt-6-sol": [
@@ -36267,6 +36594,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'grok-4-7', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 34.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'grok-4-7', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "grok-4-7-high": [
@@ -36275,6 +36608,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'grok-4-7-high', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 35,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'grok-4-7-high', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "grok-4-7-low": [
@@ -36283,6 +36622,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'grok-4-7-low', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 30.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'grok-4-7-low', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "grok-4-fast": [
@@ -36521,6 +36866,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'inkling', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 12.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'inkling', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "inkling-small": [
@@ -36535,6 +36886,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'inkling-small', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 12.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'inkling-small', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "intellect-3": [
@@ -36787,6 +37144,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'k2-horizon-375b-a23b', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 17.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'k2-horizon-375b-a23b', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "k2-horizon-7b": [
@@ -37009,6 +37372,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'kimi-k3-1-pro', fetched 2026-10-27",
           asOf: "2026-10-27"
+        },
+        {
+          value: 46,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'kimi-k3-1-pro', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "kimi-k3-low": [
@@ -37279,6 +37648,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'ling-3-1-flash-1019', fetched 2026-10-27",
           asOf: "2026-10-27"
+        },
+        {
+          value: 29.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'ling-3-1-flash-1019', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "ling-flash-2-0": [
@@ -37827,6 +38202,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'mimo-v2-6-flash', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 26.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'mimo-v2-6-flash', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "mimo-v2-6-pro": [
@@ -37835,6 +38216,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'mimo-v2-6-pro', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 29.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'mimo-v2-6-pro', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "mimo-v2-flash": [
@@ -38047,6 +38434,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'minimax-m3-1-flash', fetched 2026-10-20",
           asOf: "2026-10-20"
+        },
+        {
+          value: 28.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'minimax-m3-1-flash', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "ministral-3-14b": [
@@ -38181,6 +38574,28 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'mistral-large-4', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 26,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'mistral-large-4', fetched 2026-10-29",
+          asOf: "2026-10-29"
+        }
+      ],
+      "mistral-large-4-medium": [
+        {
+          value: 23.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'mistral-large-4-medium', fetched 2026-10-29",
+          asOf: "2026-10-29"
+        }
+      ],
+      "mistral-large-4-preview": [
+        {
+          value: 25.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'mistral-large-4-preview', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "mistral-medium": [
@@ -38467,6 +38882,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'muse-glimmer', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 6.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'muse-glimmer', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "muse-spark": [
@@ -38517,6 +38938,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'muse-spark-1-3', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 36.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'muse-spark-1-3', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "muse-spark-1-3-xhigh": [
@@ -38533,6 +38960,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'muse-spark-open', fetched 2026-10-20",
           asOf: "2026-10-20"
+        },
+        {
+          value: 24.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'muse-spark-open', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "muse-wonder": [
@@ -38541,6 +38974,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'muse-wonder', fetched 2026-10-13",
           asOf: "2026-10-13"
+        },
+        {
+          value: 43.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'muse-wonder', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "muse-wonder-full": [
@@ -38549,6 +38988,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'muse-wonder-full', fetched 2026-10-13",
           asOf: "2026-10-13"
+        },
+        {
+          value: 49.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'muse-wonder-full', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "nanbeige4-1-3b": [
@@ -38593,6 +39038,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'nemotron-3-5-super-vl', fetched 2026-10-20",
           asOf: "2026-10-20"
+        },
+        {
+          value: 13.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'nemotron-3-5-super-vl', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "nemotron-3-nano-omni-30b-a3b": [
@@ -38887,6 +39338,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-nano-4b', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 1.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'nvidia-nemotron-3-nano-4b', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "nvidia-nemotron-3-super-120b-a12b": [
@@ -38915,6 +39372,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'nvidia-nemotron-3-ultra-550b-a55b', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 11.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'nvidia-nemotron-3-ultra-550b-a55b', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "nvidia-nemotron-nano-12b-v2-vl": [
@@ -40099,6 +40562,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'qwen3-8-27b', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 20.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'qwen3-8-27b', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "qwen3-8-27b-low": [
@@ -40169,6 +40638,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'qwen3-8-max', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 33.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'qwen3-8-max', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "qwen3-8-max-0803": [
@@ -40535,6 +41010,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'reflection-beam', fetched 2026-10-20",
           asOf: "2026-10-20"
+        },
+        {
+          value: 17.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'reflection-beam', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "reka-flash": [
@@ -40915,6 +41396,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'step-5', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 28.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'step-5', fetched 2026-10-29",
+          asOf: "2026-10-29"
         }
       ],
       "tiny-aya-global": [
@@ -41114,6 +41601,16 @@ var init_model_intellect_generated = __esm({
         anchorMin: 1,
         anchorMax: 54.1,
         fittedAsOf: "2026-09-09"
+      },
+      {
+        from: "v5",
+        to: "v4.3",
+        a: 0.7255437490590686,
+        b: 16.648713456654036,
+        anchorCount: 77,
+        anchorMin: 1.8,
+        anchorMax: 58.4,
+        fittedAsOf: "2026-11-01"
       }
     ];
   }
@@ -66182,10 +66679,10 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
   }
   function unavailablePermissionOption(permission) {
     const parts = permission.toolName.split("__");
-    const mcpLabel = parts[0] === "mcp" && parts.length >= 3 ? `${parts[1] ?? "MCP"} / ${parts.slice(2).join("__")}` : permission.toolName;
+    const mcpLabel = parts[0] === "mcp" && parts.length >= 3 ? `${humanizeIdentifier(parts[1] ?? "MCP")} / ${humanizeIdentifier(parts.slice(2).join("__"))}` : humanizeIdentifier(permission.toolName);
     return {
       permission,
-      label: permission.kind === "mcp-tool" ? mcpLabel : permission.toolName,
+      label: mcpLabel,
       detail: "Not currently available. Kept so the approval works if this tool returns."
     };
   }
@@ -66212,7 +66709,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
       "label",
       {
         class: `automation-permission-row${unavailable ? " automation-permission-unavailable" : ""}`,
-        title: option.permission.toolName
+        "data-tool-name": option.permission.toolName
       },
       el(
         "span",
@@ -66229,8 +66726,7 @@ function createAutomationPluginSettings(store, api, pluginEnabled, revealSchedul
             unavailable ? "Unavailable" : option.permission.kind === "copse-action" ? "Copse action" : "MCP tool"
           )
         ),
-        el("span", { class: "automation-permission-detail" }, option.detail),
-        el("code", { class: "automation-permission-id" }, option.permission.toolName)
+        el("span", { class: "automation-permission-detail" }, option.detail)
       ),
       switchControl
     );
@@ -66665,6 +67161,7 @@ var init_automation_plugin_settings = __esm({
     init_automation_retained_worktrees();
     init_automation_failure();
     init_automations();
+    init_humanize_identifier();
     WEEKDAYS = [
       "Sunday",
       "Monday",
@@ -67719,7 +68216,7 @@ function createPacksSection(overlay, api, store, readSettings, getActiveSection,
       chips.push({
         label: "Tools",
         count: contributions.toolNames.length,
-        title: contributions.toolNames.join(", ")
+        title: contributions.toolNames.map((name) => getToolDisplayName(name)).join(", ")
       });
     }
     if (contributions.modelRoutes.length > 0) {
@@ -68383,6 +68880,7 @@ var init_packs_section = __esm({
     init_plugin_catalog_browser();
     init_confirm_dialog();
     init_humanize_identifier();
+    init_tool_display();
     init_errors4();
     init_unknown_value3();
     init_helpers();
