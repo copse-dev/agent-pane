@@ -1,4 +1,5 @@
 import type { LLMMessage, LLMTool } from '@shared/types'
+import type { AgentRoots } from './execution-root.ts'
 import type { ContextBreakdown } from '@shared/types/thread.ts'
 import type { ToolRegistry } from './tool-registry.ts'
 import { getSetting } from './storage/settings.ts'
@@ -49,6 +50,11 @@ export interface ContextEstimateInput {
    * `request_write_access`. Absent means an ordinary thread, which does not.
    */
   deferredWorktree?: boolean
+  /**
+   * The thread's roots when estimating outside a turn (the composer preview).
+   * A running turn omits it and the prompt reads the turn's own (#3958).
+   */
+  roots?: AgentRoots
 }
 
 /**
@@ -75,6 +81,7 @@ export async function estimateContextBreakdown(
     model,
     userPrompt: input.draftText,
     availableToolNames,
+    ...(input.roots ? { roots: input.roots } : {}),
   })
   // Skill blocks are part of the system prompt string; measure them separately so
   // they can be attributed to "Skills" instead of inflating "System prompt".

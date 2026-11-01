@@ -17,6 +17,7 @@ import type {
 } from '@shared/types/git.ts'
 
 const REF: PrRef = { owner: 'octo', repo: 'demo', number: 7 }
+const ROOT = '/projects/demo'
 
 const status: GhCliStatus = {
   installed: true,
@@ -73,17 +74,17 @@ describe('cachingGitHubBackend', () => {
   it('serves a second status read from cache', async () => {
     const calls = { status: 0, details: 0, approve: 0 }
     const backend = cachingGitHubBackend(emptyBackend(calls))
-    await backend.getStatus()
-    await backend.getStatus()
+    await backend.getStatus(ROOT)
+    await backend.getStatus(ROOT)
     assert.equal(calls.status, 1)
   })
 
   it('refetches after invalidateGitHubReadCache', async () => {
     const calls = { status: 0, details: 0, approve: 0 }
     const backend = cachingGitHubBackend(emptyBackend(calls))
-    await backend.getStatus()
+    await backend.getStatus(ROOT)
     invalidateGitHubReadCache()
-    await backend.getStatus()
+    await backend.getStatus(ROOT)
     assert.equal(calls.status, 2)
   })
 
@@ -106,17 +107,17 @@ describe('cachingGitHubBackend', () => {
       },
     })
 
-    const inFlight = backend.getStatus()
+    const inFlight = backend.getStatus(ROOT)
     await Promise.resolve()
     invalidateGitHubReadCache()
 
-    const afterRefresh = backend.getStatus()
+    const afterRefresh = backend.getStatus(ROOT)
     release()
     await Promise.all([inFlight, afterRefresh])
 
     assert.equal(calls.status, 2, 'the refresh must issue its own read')
     // And the first read's late answer must not have re-filled the cleared slot.
-    await backend.getStatus()
+    await backend.getStatus(ROOT)
     assert.equal(calls.status, 2, 'the refreshed value is what stays cached')
   })
 
@@ -134,7 +135,7 @@ describe('cachingGitHubBackend', () => {
       })
       const actions: Array<() => Promise<PrActionResult>> = [
         (): Promise<PrActionResult> =>
-          backend.createPr({
+          backend.createPr(ROOT, {
             owner: 'octo',
             repo: 'demo',
             title: 'PR',
@@ -142,10 +143,10 @@ describe('cachingGitHubBackend', () => {
             head: 'feature',
             base: 'main',
           }),
-        (): Promise<PrActionResult> => backend.approvePr(REF),
-        (): Promise<PrActionResult> => backend.markPrReady(REF),
-        (): Promise<PrActionResult> => backend.enableAutoMerge(REF),
-        (): Promise<PrActionResult> => backend.rerunFailedRuns(REF),
+        (): Promise<PrActionResult> => backend.approvePr(ROOT, REF),
+        (): Promise<PrActionResult> => backend.markPrReady(ROOT, REF),
+        (): Promise<PrActionResult> => backend.enableAutoMerge(ROOT, REF),
+        (): Promise<PrActionResult> => backend.rerunFailedRuns(ROOT, REF),
       ]
       for (const action of actions) {
         let reads = 0
@@ -165,11 +166,11 @@ describe('cachingGitHubBackend', () => {
   it('drops PR details after a write', async () => {
     const calls = { status: 0, details: 0, approve: 0 }
     const backend = cachingGitHubBackend(emptyBackend(calls))
-    await backend.getPrDetails(REF)
-    await backend.getPrDetails(REF)
+    await backend.getPrDetails(ROOT, REF)
+    await backend.getPrDetails(ROOT, REF)
     assert.equal(calls.details, 1)
-    await backend.approvePr(REF)
-    await backend.getPrDetails(REF)
+    await backend.approvePr(ROOT, REF)
+    await backend.getPrDetails(ROOT, REF)
     assert.equal(calls.details, 2)
     assert.equal(calls.approve, 1)
   })

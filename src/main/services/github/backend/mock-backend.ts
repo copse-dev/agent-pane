@@ -132,6 +132,8 @@ export function resetMockBackendStateForTest(): void {
 }
 
 /** In-memory backend used under `COPSE_PANEL_MOCK_GH=1` (e2e + unit tests). */
+// The mock serves one in-memory repository whichever checkout asks, so `root`
+// is accepted and ignored.
 export const mockGitHubBackend: GitHubBackend = {
   kind: 'mock',
 
@@ -139,17 +141,17 @@ export const mockGitHubBackend: GitHubBackend = {
     return Promise.resolve(mockGhCliStatus())
   },
 
-  listMyOpenPrs(limit: number): Promise<GhPrSummary[] | null> {
+  listMyOpenPrs(_root: string | null, limit: number): Promise<GhPrSummary[] | null> {
     const status = mockGhCliStatus()
     return Promise.resolve(status.authenticated ? mockListMyOpenPrs().slice(0, limit) : null)
   },
 
-  listWorkspaceOpenPrs(limit: number): Promise<GhPrSummary[]> {
+  listWorkspaceOpenPrs(_root: string | null, limit: number): Promise<GhPrSummary[]> {
     const status = mockGhCliStatus()
     return Promise.resolve(status.authenticated ? mockListWorkspaceOpenPrs().slice(0, limit) : [])
   },
 
-  listWorkspaceOpenIssues(page: number, pageSize: number) {
+  listWorkspaceOpenIssues(_root: string | null, page: number, pageSize: number) {
     const status = mockGhCliStatus()
     if (!status.authenticated) return Promise.resolve({ issues: [], hasMore: false })
     const fixtures = mockOpenIssues()
@@ -160,13 +162,17 @@ export const mockGitHubBackend: GitHubBackend = {
     })
   },
 
-  getIssue(ref: PrRef): Promise<GhIssueSummary | null> {
+  getIssue(_root: string | null, ref: PrRef): Promise<GhIssueSummary | null> {
     const status = mockGhCliStatus()
     if (!status.authenticated) return Promise.resolve(null)
     return Promise.resolve(mockOpenIssues().find((i) => i.number === ref.number) ?? null)
   },
 
-  searchWorkspaceIssues(query: string, limit: number): Promise<GhIssueSummary[]> {
+  searchWorkspaceIssues(
+    _root: string | null,
+    query: string,
+    limit: number,
+  ): Promise<GhIssueSummary[]> {
     const status = mockGhCliStatus()
     if (!status.authenticated) return Promise.resolve([])
     const needle = query.trim().toLowerCase()
@@ -183,7 +189,7 @@ export const mockGitHubBackend: GitHubBackend = {
     )
   },
 
-  getPrDetails(ref: PrRef): Promise<GhPrDetails | null> {
+  getPrDetails(_root: string | null, ref: PrRef): Promise<GhPrDetails | null> {
     // A linked PR can be visible from chat while GitHub blocks its details
     // behind organization SAML authorization. Keep this response at the mock
     // backend boundary so the PR pane's real selection path can render it.
@@ -206,15 +212,15 @@ export const mockGitHubBackend: GitHubBackend = {
     return Promise.resolve(details)
   },
 
-  getPrFileDiff(ref: PrRef, path: string): Promise<GhPrFileDiff | null> {
+  getPrFileDiff(_root: string | null, ref: PrRef, path: string): Promise<GhPrFileDiff | null> {
     return Promise.resolve(mockGetGhPrFileDiff(ref, path))
   },
 
-  getPrChecksState(ref: PrRef): Promise<GhPrChecksState> {
+  getPrChecksState(_root: string | null, ref: PrRef): Promise<GhPrChecksState> {
     return Promise.resolve(mockGetGhPrChecksState(ref))
   },
 
-  createPr(input: PrCreateInput): Promise<PrCreateResult> {
+  createPr(_root: string | null, input: PrCreateInput): Promise<PrCreateResult> {
     const number = nextMockPrNumber()
     const url = `https://github.com/${input.owner}/${input.repo}/pull/${String(number)}`
     return Promise.resolve({
@@ -226,7 +232,7 @@ export const mockGitHubBackend: GitHubBackend = {
     })
   },
 
-  rerunFailedRuns(ref: PrRef): Promise<PrActionResult> {
+  rerunFailedRuns(_root: string | null, ref: PrRef): Promise<PrActionResult> {
     const state = ensureState(ref)
     if (state.failedRuns === 0) {
       return Promise.resolve({
@@ -247,7 +253,7 @@ export const mockGitHubBackend: GitHubBackend = {
     })
   },
 
-  approvePr(ref: PrRef): Promise<PrActionResult> {
+  approvePr(_root: string | null, ref: PrRef): Promise<PrActionResult> {
     ensureState(ref).reviewDecision = 'APPROVED'
     return Promise.resolve({
       ok: true,
@@ -256,7 +262,7 @@ export const mockGitHubBackend: GitHubBackend = {
     })
   },
 
-  markPrReady(ref: PrRef): Promise<PrActionResult> {
+  markPrReady(_root: string | null, ref: PrRef): Promise<PrActionResult> {
     const state = ensureState(ref)
     if (!state.isDraft) {
       return Promise.resolve({
@@ -274,7 +280,7 @@ export const mockGitHubBackend: GitHubBackend = {
     })
   },
 
-  enableAutoMerge(ref: PrRef): Promise<PrActionResult> {
+  enableAutoMerge(_root: string | null, ref: PrRef): Promise<PrActionResult> {
     const state = ensureState(ref)
     if (state.autoMergeEnabled) {
       return Promise.resolve({

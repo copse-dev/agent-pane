@@ -696,14 +696,14 @@ describe('getGitDiffText untracked files', { skip: !gitOk && 'git not installed'
 
   it('includes an untracked file in the diff for a specific path', async () => {
     await writeFile(join(repo, 'fresh.txt'), 'brand new\n')
-    const diff = await getGitDiffText('fresh.txt')
+    const diff = await getGitDiffText('fresh.txt', false, repo)
     assert.notEqual(diff, '(no output)')
     assert.match(diff, /fresh\.txt/)
     assert.match(diff, /brand new/)
   })
 
   it('includes untracked files when no path is given', async () => {
-    const diff = await getGitDiffText()
+    const diff = await getGitDiffText(undefined, false, repo)
     assert.match(diff, /fresh\.txt/)
   })
 })
@@ -737,7 +737,7 @@ describe('getGitFileDiff staged blob', { skip: !gitOk && 'git not installed' }, 
   })
 
   it('reads HEAD and index blobs for a staged file', async () => {
-    const diff = await getGitFileDiff('staged.ts', true)
+    const diff = await getGitFileDiff('staged.ts', true, repo)
     assert.ok(diff)
     assert.match(diff.before, /value = 1/)
     assert.match(diff.after, /value = 2/)
@@ -777,7 +777,7 @@ describe('getGitFileDiff image preview', { skip: !gitOk && 'git not installed' }
       join(repo, 'logo.png'),
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0xff, 0xff, 0xff]),
     )
-    const diff = await getGitFileDiff('logo.png', false)
+    const diff = await getGitFileDiff('logo.png', false, repo)
     assert.ok(diff)
     assert.match(diff.beforeImage ?? '', /^data:image\/png;base64,/)
     assert.match(diff.afterImage ?? '', /^data:image\/png;base64,/)
@@ -789,7 +789,7 @@ describe('getGitFileDiff image preview', { skip: !gitOk && 'git not installed' }
       join(repo, 'new.png'),
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xaa, 0xbb, 0xcc, 0xdd]),
     )
-    const diff = await getGitFileDiff('new.png', false)
+    const diff = await getGitFileDiff('new.png', false, repo)
     assert.ok(diff)
     assert.equal(diff.beforeImage, null)
     assert.match(diff.afterImage ?? '', /^data:image\/png;base64,/)
@@ -801,7 +801,7 @@ describe('getGitFileDiff image preview', { skip: !gitOk && 'git not installed' }
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x11, 0x22, 0x33, 0x44]),
     )
     git('add', 'logo.png')
-    const diff = await getGitFileDiff('logo.png', true)
+    const diff = await getGitFileDiff('logo.png', true, repo)
     assert.ok(diff)
     assert.match(diff.beforeImage ?? '', /^data:image\/png;base64,/)
     assert.match(diff.afterImage ?? '', /^data:image\/png;base64,/)
@@ -842,7 +842,7 @@ describe('getGitFileDiff unstaged blob', { skip: !gitOk && 'git not installed' }
   })
 
   it('returns index content as before and working tree as after for unstaged edits', async () => {
-    const diff = await getGitFileDiff('README.md', false)
+    const diff = await getGitFileDiff('README.md', false, repo)
     assert.ok(diff)
     assert.match(diff.before, /Intro paragraph\.\n\n## Section/)
     assert.match(diff.after, /Intro paragraph\.\n\n\n\n\n\n## Section/)
@@ -891,7 +891,7 @@ describe('getGitWorkingFileDiff', { skip: !gitOk && 'git not installed' }, () =>
   })
 
   it('spans staged and unstaged edits, from HEAD to the working tree', async () => {
-    const diff = await getGitWorkingFileDiff('mixed.ts')
+    const diff = await getGitWorkingFileDiff('mixed.ts', repo)
     assert.ok(diff)
     assert.match(diff.before, /value = 1/)
     assert.match(diff.after, /value = 3/)
@@ -899,18 +899,18 @@ describe('getGitWorkingFileDiff', { skip: !gitOk && 'git not installed' }, () =>
   })
 
   it('returns null for a file that matches HEAD', async () => {
-    assert.equal(await getGitWorkingFileDiff('clean.ts'), null)
+    assert.equal(await getGitWorkingFileDiff('clean.ts', repo), null)
   })
 
   it('treats an untracked file as fully added', async () => {
-    const diff = await getGitWorkingFileDiff('fresh.ts')
+    const diff = await getGitWorkingFileDiff('fresh.ts', repo)
     assert.ok(diff)
     assert.equal(diff.before, '')
     assert.match(diff.after, /fresh = true/)
   })
 
   it('returns null for images (the file viewer does not render them)', async () => {
-    assert.equal(await getGitWorkingFileDiff('logo.png'), null)
+    assert.equal(await getGitWorkingFileDiff('logo.png', repo), null)
   })
 })
 
@@ -938,25 +938,28 @@ describe('resolveWorkspaceRelativeGitPath', () => {
   })
 
   it('keeps an in-workspace relative path unchanged', async () => {
-    assert.equal(await resolveWorkspaceRelativeGitPath('src/foo.ts'), join('src', 'foo.ts'))
+    assert.equal(await resolveWorkspaceRelativeGitPath('src/foo.ts', root), join('src', 'foo.ts'))
   })
 
   it('normalizes a redundant in-workspace path', async () => {
     assert.equal(
-      await resolveWorkspaceRelativeGitPath('./src/../src/foo.ts'),
+      await resolveWorkspaceRelativeGitPath('./src/../src/foo.ts', root),
       join('src', 'foo.ts'),
     )
   })
 
   it('maps an absolute in-workspace path back to workspace-relative', async () => {
     assert.equal(
-      await resolveWorkspaceRelativeGitPath(join(root, 'src', 'foo.ts')),
+      await resolveWorkspaceRelativeGitPath(join(root, 'src', 'foo.ts'), root),
       join('src', 'foo.ts'),
     )
   })
 
   it('rejects a path that escapes the workspace root', async () => {
-    await assert.rejects(() => resolveWorkspaceRelativeGitPath('../escape.ts'), /outside workspace/)
+    await assert.rejects(
+      () => resolveWorkspaceRelativeGitPath('../escape.ts', root),
+      /outside workspace/,
+    )
   })
 })
 
@@ -994,7 +997,7 @@ describe('getGitFileDiff subdirectory workspace', { skip: !gitOk && 'git not ins
   })
 
   it('reads index/HEAD blobs when the workspace is a repo subdirectory', async () => {
-    const diff = await getGitFileDiff('README.md', false)
+    const diff = await getGitFileDiff('README.md', false, join(repo, 'widget'))
     assert.ok(diff)
     assert.match(diff.before, /Intro paragraph\.\n\n## Section/)
     assert.match(diff.after, /Intro paragraph\.\n\n\n\n\n\n## Section/)
@@ -1033,38 +1036,38 @@ describe('getGitShowText', { skip: !gitOk && 'git not installed' }, () => {
   })
 
   it('shows a file at a specific ref via ref:path', async () => {
-    const atParent = await getGitShowText('HEAD~1', 'file.txt')
+    const atParent = await getGitShowText('HEAD~1', 'file.txt', repo)
     assert.equal(atParent, 'first version\n')
-    const atHead = await getGitShowText('HEAD', 'file.txt')
+    const atHead = await getGitShowText('HEAD', 'file.txt', repo)
     assert.equal(atHead, 'second version\n')
   })
 
   it('preserves indentation, trailing blank lines, whitespace-only and empty files', async () => {
-    assert.equal(await getGitShowText('HEAD', 'indented.py'), '    return 1\n\n')
-    assert.equal(await getGitShowText('HEAD', 'whitespace.txt'), '\t \n')
-    assert.equal(await getGitShowText('HEAD', 'empty.txt'), '')
+    assert.equal(await getGitShowText('HEAD', 'indented.py', repo), '    return 1\n\n')
+    assert.equal(await getGitShowText('HEAD', 'whitespace.txt', repo), '\t \n')
+    assert.equal(await getGitShowText('HEAD', 'empty.txt', repo), '')
   })
 
   it('shows a commit (message + diff) when no path is given', async () => {
-    const out = await getGitShowText('HEAD')
+    const out = await getGitShowText('HEAD', undefined, repo)
     assert.match(out, /change file/)
     assert.match(out, /-first version/)
     assert.match(out, /\+second version/)
   })
 
   it('rejects a ref that embeds an inline :path', async () => {
-    const out = await getGitShowText('HEAD:file.txt')
+    const out = await getGitShowText('HEAD:file.txt', undefined, repo)
     assert.match(out, /pass a file path via the `path` argument/)
   })
 
   it('rejects a path that escapes the workspace root', async () => {
-    const out = await getGitShowText('HEAD', '../escape.txt')
+    const out = await getGitShowText('HEAD', '../escape.txt', repo)
     assert.match(out, /outside workspace/)
   })
 
   it('rejects a ref that would be parsed as a git option (option injection)', async () => {
     const escaped = join(repo, 'escaped-by-option-injection.txt')
-    const out = await getGitShowText(`--output=${escaped}`)
+    const out = await getGitShowText(`--output=${escaped}`, undefined, repo)
     assert.match(out, /cannot start with "-"/)
     // The rejection must happen before git runs, so no file is written.
     const written = await readFile(escaped, 'utf8').catch(() => null)
@@ -1072,7 +1075,7 @@ describe('getGitShowText', { skip: !gitOk && 'git not installed' }, () => {
   })
 
   it('reports a blank ref', async () => {
-    const out = await getGitShowText('  ')
+    const out = await getGitShowText('  ', undefined, repo)
     assert.match(out, /ref .* is required/)
   })
 })
@@ -1105,12 +1108,12 @@ describe('getGitShowText subdirectory workspace', { skip: !gitOk && 'git not ins
   })
 
   it('resolves ref:path relative to the workspace subdirectory', async () => {
-    const out = await getGitShowText('HEAD', 'file.txt')
+    const out = await getGitShowText('HEAD', 'file.txt', join(repo, 'widget'))
     assert.equal(out, 'inside workspace\n')
   })
 
   it('limits the commit view to the workspace subtree', async () => {
-    const out = await getGitShowText('HEAD')
+    const out = await getGitShowText('HEAD', undefined, join(repo, 'widget'))
     assert.match(out, /widget\/file\.txt/)
     assert.doesNotMatch(out, /outside\.txt/)
   })
@@ -1175,7 +1178,7 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
     git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/develop')
     restore = setWorkspaceRootForTest(repo)
 
-    assert.equal(await getDefaultBranch(), 'develop')
+    assert.equal(await getDefaultBranch(repo), 'develop')
   })
 
   it('uses init.defaultBranch from git config when origin is absent', async () => {
@@ -1187,7 +1190,7 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
     git('config', 'init.defaultBranch', 'develop')
     restore = setWorkspaceRootForTest(repo)
 
-    assert.equal(await getDefaultBranch(), 'develop')
+    assert.equal(await getDefaultBranch(repo), 'develop')
   })
 
   it('falls back to main when init.defaultBranch names a missing branch', async () => {
@@ -1203,7 +1206,7 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
     git('config', 'init.defaultBranch', 'trunk')
     restore = setWorkspaceRootForTest(repo)
 
-    assert.equal(await getDefaultBranch(), 'main')
+    assert.equal(await getDefaultBranch(repo), 'main')
   })
 
   it('does not treat a checked-out feature branch as the repository default', async () => {
@@ -1216,7 +1219,7 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
     git('config', 'init.defaultBranch', 'trunk')
     restore = setWorkspaceRootForTest(repo)
 
-    assert.equal(await getDefaultBranch(), 'main')
+    assert.equal(await getDefaultBranch(repo), 'main')
   })
 
   it('returns null when no remote or configured default resolves the branch', async () => {
@@ -1227,7 +1230,7 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
     git('config', 'init.defaultBranch', '')
     restore = setWorkspaceRootForTest(repo)
 
-    assert.equal(await getDefaultBranch(), null)
+    assert.equal(await getDefaultBranch(repo), null)
   })
 
   it('serves a resolved name from cache until the cache is dropped', async () => {
@@ -1242,15 +1245,15 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
     git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/develop')
     restore = setWorkspaceRootForTest(repo)
 
-    assert.equal(await getDefaultBranch(), 'develop')
+    assert.equal(await getDefaultBranch(repo), 'develop')
 
     // Repointing origin/HEAD is invisible to a cached read — that is the point,
     // since the UI re-reads this on every file-watcher tick.
     git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
-    assert.equal(await getDefaultBranch(), 'develop')
+    assert.equal(await getDefaultBranch(repo), 'develop')
 
     resetDefaultBranchCache()
-    assert.equal(await getDefaultBranch(), 'main')
+    assert.equal(await getDefaultBranch(repo), 'main')
   })
 
   it('caches per repository root rather than globally', async () => {
@@ -1264,7 +1267,7 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
       git('branch', 'develop')
       git('config', 'init.defaultBranch', 'develop')
       restore = setWorkspaceRootForTest(repo)
-      assert.equal(await getDefaultBranch(), 'develop')
+      assert.equal(await getDefaultBranch(repo), 'develop')
 
       spawnSync('git', ['init', '-q', '-b', 'trunk'], { cwd: other, encoding: 'utf8' })
       spawnSync('git', ['-C', other, 'config', 'user.email', 'test@example.com'], {
@@ -1312,8 +1315,8 @@ describe('getGitPromptState', { skip: !gitOk && 'git not installed' }, () => {
 
     const headResult = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' })
     const head = headResult.stdout.trim()
-    assert.equal(await getCurrentCommitHash(), head)
-    assert.deepEqual(await getGitPromptState(), { startingCommit: head, dirty: false })
+    assert.equal(await getCurrentCommitHash(repo), head)
+    assert.deepEqual(await getGitPromptState(repo), { startingCommit: head, dirty: false })
   })
 
   it('reports dirty when the working tree has unstaged changes', async () => {
@@ -1328,7 +1331,7 @@ describe('getGitPromptState', { skip: !gitOk && 'git not installed' }, () => {
     restore = setWorkspaceRootForTest(repo)
     setGitAvailableForTest(true)
 
-    const state = await getGitPromptState()
+    const state = await getGitPromptState(repo)
     assert.equal(state.dirty, true)
     assert.notEqual(state.startingCommit, null)
   })
@@ -1338,8 +1341,8 @@ describe('getGitPromptState', { skip: !gitOk && 'git not installed' }, () => {
     restore = setWorkspaceRootForTest(repo)
     setGitAvailableForTest(true)
 
-    assert.equal(await getCurrentCommitHash(), null)
-    assert.deepEqual(await getGitPromptState(), { startingCommit: null, dirty: false })
+    assert.equal(await getCurrentCommitHash(repo), null)
+    assert.deepEqual(await getGitPromptState(repo), { startingCommit: null, dirty: false })
   })
 })
 
@@ -1431,28 +1434,28 @@ describe('Git reads under the project sandbox', { skip: !gitOk && 'git not insta
   it('reads prompt state, branch, and default-branch facts read-only', async () => {
     overlays.length = 0
     const head = git('rev-parse', 'HEAD').stdout.trim()
-    assert.deepEqual(await getGitPromptState(), { startingCommit: head, dirty: true })
-    assert.equal(await getCurrentBranchName(), 'main')
+    assert.deepEqual(await getGitPromptState(repo), { startingCommit: head, dirty: true })
+    assert.equal(await getCurrentBranchName(repo), 'main')
     assert.deepEqual(
-      (await getBranches()).map((branch) => branch.name),
+      (await getBranches(repo)).map((branch) => branch.name),
       ['main'],
     )
-    assert.equal(await getDefaultBranch(), 'main')
-    assert.deepEqual(await getAheadBehind('main'), { ahead: 0, behind: 0 })
-    assert.equal(await getGithubRepoSlug(), null)
+    assert.equal(await getDefaultBranch(repo), 'main')
+    assert.deepEqual(await getAheadBehind('main', repo), { ahead: 0, behind: 0 })
+    assert.equal(await getGithubRepoSlug(repo), null)
     assert.ok(overlays.length >= 8, `expected sandboxed Git reads, saw ${String(overlays.length)}`)
   })
 
   it('reads diffs, blobs, status, and history read-only', async () => {
     overlays.length = 0
-    const fileDiff = await getGitFileDiff('tracked.txt', false)
+    const fileDiff = await getGitFileDiff('tracked.txt', false, repo)
     assert.ok(fileDiff)
     assert.equal(fileDiff.before, 'one\n')
     assert.equal(fileDiff.after, 'two\n')
-    assert.match(await getGitDiffText(), /brand new/)
-    assert.match(await getGitStatusText(), /fresh\.txt/)
-    assert.match(await getGitShowText('HEAD', 'tracked.txt'), /one/)
-    assert.match(await getGitLogText(5), /init/)
+    assert.match(await getGitDiffText(undefined, false, repo), /brand new/)
+    assert.match(await getGitStatusText(repo), /fresh\.txt/)
+    assert.match(await getGitShowText('HEAD', 'tracked.txt', repo), /one/)
+    assert.match(await getGitLogText(5, undefined, repo), /init/)
     assert.ok(overlays.length >= 5, `expected sandboxed Git reads, saw ${String(overlays.length)}`)
   })
 })

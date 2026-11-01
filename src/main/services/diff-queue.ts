@@ -376,10 +376,7 @@ export function getPendingAfterContent(path: string): string | null {
   return state.queue.find((e) => e.path === key)?.after ?? null
 }
 
-async function readCurrentContent(
-  path: string,
-  root: string | null = getAgentExecutionRoot(),
-): Promise<string> {
+async function readCurrentContent(path: string, root: string | null): Promise<string> {
   if (!root) return ''
   try {
     const fs = getActiveWorkspaceFs()
@@ -865,8 +862,8 @@ export function clearStagedDiffsForTest(): void {
  */
 export async function applyDiffEntry(
   entry: QueueEntry,
-  root: string | null = getAgentExecutionRoot(),
-  projectRoot: string | null = getAgentProjectRoot(),
+  root: string | null,
+  projectRoot: string | null,
 ): Promise<ApplyResult> {
   if (!root) return { status: 'error', error: 'No workspace open.' }
   const op = entry.op ?? 'write'

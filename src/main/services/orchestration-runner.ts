@@ -10,7 +10,7 @@ import { resolveContextWindow } from './providers/resolve-context-window.ts'
 import { getSettingTrimmed } from './storage/settings.ts'
 import { addSubagentUsage } from './subagent-usage.ts'
 import { runWithAgentRunReadFileLimits } from './agent-run-read-limits.ts'
-import { agentWorkspaceLabel } from './execution-root.ts'
+import { agentWorkspaceLabel, getAgentExecutionRoot } from './execution-root.ts'
 import { getGitStatusText } from './github/git-service.ts'
 import {
   DEFAULT_ORCHESTRATION_WORKER_MODEL,
@@ -134,7 +134,7 @@ export function getOrchestrationRunner(): OrchestrationRunner | null {
 
       // The observation the orchestrator reviews between steps: the worker's
       // report plus what the working tree actually looks like now.
-      const workingTree = await getGitStatusText().catch(() => '')
+      const workingTree = await getGitStatusText(getAgentExecutionRoot()).catch(() => '')
       return buildStepObservation({ report: summary, workingTree })
     })
   }

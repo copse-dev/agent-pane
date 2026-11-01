@@ -64,9 +64,7 @@ function replaceState(owner: ThreadExecutionOwner, state: SessionBackupState): v
  * the latter case the caller must fall back to asking for approval, since it has
  * no safety net.
  */
-export async function ensureSessionBackup(
-  root: string | null = getAgentExecutionRoot(),
-): Promise<SessionBackup | null> {
+export async function ensureSessionBackup(root: string | null): Promise<SessionBackup | null> {
   const state = stateFor()
   if (root) state.root = root
   if (state.current) return state.current
@@ -104,9 +102,7 @@ export async function ensureSessionBackup(
  * Distinct from {@link ensureSessionBackup}, whose null return conflates "clean"
  * with "backup failed"; callers gating auto-approval need the two kept apart.
  */
-export async function ensureWorktreeRecoverable(
-  root: string | null = getAgentExecutionRoot(),
-): Promise<boolean> {
+export async function ensureWorktreeRecoverable(root: string | null): Promise<boolean> {
   const state = stateFor()
   if (root) state.root = root
   if (state.current) return true

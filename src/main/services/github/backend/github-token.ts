@@ -1,5 +1,5 @@
+import { homedir } from 'node:os'
 import { runGh } from '../gh-service.ts'
-import { getWorkspaceRoot } from '../../workspace.ts'
 
 /**
  * Bearer-token env vars the GitHub REST/GraphQL backend can authenticate with,
@@ -41,8 +41,14 @@ export function resetGitHubApiTokenCacheForTest(): void {
  * Resolve a token for a live API call: prefer an env token, else fall back to
  * `gh auth token` (so a user with only `gh auth login` can still use the API
  * backend). Only a *successful* `gh auth token` is cached — a transient failure
- * (no workspace open yet, timeout, locked keychain) must not permanently lock
- * the API backend out, so failures are retried on the next call.
+ * (timeout, locked keychain) must not permanently lock the API backend out, so
+ * failures are retried on the next call.
+ *
+ * The token belongs to the account, not to a project: `gh auth token` without
+ * `--hostname` answers for the default host wherever it runs, and the API
+ * backend calls GitHub from this process. So it runs in the user's home
+ * directory rather than any project checkout, and never reads the window's
+ * workspace (#3958).
  */
 export async function resolveGitHubApiToken(): Promise<string | null> {
   const envToken = githubTokenFromEnv()
@@ -51,8 +57,7 @@ export async function resolveGitHubApiToken(): Promise<string | null> {
   try {
     const { stdout, code } = await runGh(['auth', 'token'], {
       timeout_ms: 10_000,
-      // Token lookup has no project context yet (#3958); it keeps the window's workspace.
-      cwd: getWorkspaceRoot(),
+      cwd: homedir(),
     })
     if (code === 0 && stdout.trim()) cachedGhAuthToken = stdout.trim()
   } catch {

@@ -379,6 +379,15 @@ export function clearAllowedWorkspaceRootsForTest(): void {
   allowedWorkspaceRootsReady = Promise.resolve()
 }
 
+/**
+ * The root a headless run scoped with {@link runWithWorkspaceRoot}, or null
+ * outside one. Never the process-global workspace, so a caller can tell "this
+ * run names a root" apart from "some window has a project open" (#3958).
+ */
+export function getExplicitWorkspaceRoot(): string | null {
+  return explicitWorkspace.getStore()?.root ?? null
+}
+
 export function getWorkspaceRoot(): string | null {
   return explicitWorkspace.getStore()?.root ?? processWorkspaceRoot()
 }

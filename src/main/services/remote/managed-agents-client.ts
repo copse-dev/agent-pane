@@ -1,4 +1,5 @@
 import type { LLMMessage, StreamChunk } from '@shared/types'
+import { getAgentExecutionRoot } from '../execution-root.ts'
 import {
   applyRemoteAgentHandoffContext,
   parseSseStream,
@@ -451,7 +452,7 @@ async function buildFirstHandoffPrompt(
 ): Promise<PromptPayload> {
   let branch: string | null = null
   try {
-    branch = await getCurrentBranchName()
+    branch = await getCurrentBranchName(getAgentExecutionRoot())
   } catch (err) {
     console.warn('[managed-agent] branch lookup failed:', err)
   }
@@ -584,7 +585,9 @@ export async function runManagedAgentFromSettings(
           branchPrefix: DEFAULT_MANAGED_AGENT_BRANCH_PREFIX,
           // Branch from the project's current local branch (falls back to the repo
           // default when it isn't pushed to the remote).
-          startingRef: firstNonEmptyString((await getCurrentBranchName())?.trim()) ?? '',
+          startingRef:
+            firstNonEmptyString((await getCurrentBranchName(getAgentExecutionRoot()))?.trim()) ??
+            '',
           autoCreatePR: getSetting<boolean>('remoteAgentAutoCreatePR', true),
           workOnCurrentBranch: getSetting<boolean>('remoteAgentWorkOnCurrentBranch', false),
         })

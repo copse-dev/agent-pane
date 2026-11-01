@@ -374,6 +374,7 @@ import {
 import { createThreadChangeSummaryReader } from '../services/github/thread-change-summary.ts'
 import { issueRefToUrl } from '@shared/git/issue-ref.ts'
 import { resolveGitHubBackend } from '../services/github/backend/backend.ts'
+import { senderInstructionRoots, senderProjectRoot } from './sender-project-root.ts'
 import { importIssuesAsRoadmapItems } from '../services/roadmap-issue-import.ts'
 import { matchOpenIssuesToRoadmapItems } from '../services/roadmap-issue-coverage.ts'
 import { stampRoadmapComplexity } from '../services/roadmap-complexity.ts'
@@ -1220,7 +1221,7 @@ export function registerAllHandlers(
   ipcMain.handle('roadmap:issue-url', async (event, rawRef: unknown) => {
     assertMainFrameSender(event, win)
     const ref = parseIpcArgs(zRoadmapIssue, [rawRef]).trim()
-    return issueRefToUrl(ref, await getGithubRepoSlug())
+    return issueRefToUrl(ref, await getGithubRepoSlug(senderProjectRoot(event.sender)))
   })
 
   // Import-from-issues flow: list the workspace's open issues, then turn the
@@ -1240,14 +1241,15 @@ export function registerAllHandlers(
     // "no origin remote" alike — fine for the PR panel, which surfaces status
     // separately, but here an empty picker must mean "no open issues". Turn
     // the not-connected cases into real errors the picker can display.
+    const root = senderProjectRoot(event.sender)
     const backend = resolveGitHubBackend()
-    const status = await backend.getStatus()
+    const status = await backend.getStatus(root)
     if (!status.installed || !status.authenticated) {
       throw new Error(
         status.message ?? 'GitHub is not connected — sign in via `gh auth login` or a token.',
       )
     }
-    const slug = await getGithubRepoSlug()
+    const slug = await getGithubRepoSlug(root)
     if (!slug) {
       throw new Error('No GitHub origin remote detected in this workspace.')
     }
@@ -1257,7 +1259,7 @@ export function registerAllHandlers(
     // issue ceiling on the picker.
     return {
       slug,
-      ...(await backend.listWorkspaceOpenIssues(page, roadmapIssuePageSize)),
+      ...(await backend.listWorkspaceOpenIssues(root, page, roadmapIssuePageSize)),
     }
   })
 
@@ -1294,12 +1296,12 @@ export function registerAllHandlers(
   ipcMain.handle('roadmap:check-fit', (event, rawId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zRoadmapId, [rawId])
-    return checkRoadmapFit(id)
+    return checkRoadmapFit(senderProjectRoot(event.sender), id)
   })
 
   ipcMain.handle('roadmap:prepare-review', (event) => {
     assertMainFrameSender(event, win)
-    return prepareRoadmapReview()
+    return prepareRoadmapReview(senderProjectRoot(event.sender))
   })
 
   ipcMain.handle('roadmap:last-review-at', (event) => {
@@ -1315,7 +1317,13 @@ export function registerAllHandlers(
       const commits = parseIpcArgs(z.string().max(20_000), [rawCommits])
       const bulkRunId =
         rawRunId === undefined || rawRunId === null ? undefined : parseIpcArgs(z.uuid(), [rawRunId])
-      const result = await reviewRoadmapItem(id, commits, 'bulk', bulkRunId)
+      const result = await reviewRoadmapItem(
+        senderProjectRoot(event.sender),
+        id,
+        commits,
+        'bulk',
+        bulkRunId,
+      )
       notifyRoadmapChanged()
       return result
     },
@@ -1324,7 +1332,7 @@ export function registerAllHandlers(
   ipcMain.handle('roadmap:review-item-deep', async (event, rawId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zRoadmapId, [rawId])
-    const result = await reviewRoadmapItemDeep(id)
+    const result = await reviewRoadmapItemDeep(senderProjectRoot(event.sender), id)
     notifyRoadmapChanged()
     return result
   })
@@ -2316,7 +2324,7 @@ export function registerAllHandlers(
     const parsed = parseIpcArgs(zHookTestRequest, [rawReq])
     const target = resolveHookTestTarget(parsed, (await listDiscoveredHooks()).hooks)
     if (!target) throw new IpcValidationError('Hook test rejected: not a discovered hook')
-    return dryRunHook(target)
+    return dryRunHook(target, senderProjectRoot(event.sender))
   })
   // Read one recorded hook execution back out of a thread's spine so the
   // hook-card inspector can show what the hook was handed and what it returned.
@@ -2600,11 +2608,12 @@ export function registerAllHandlers(
     if (!root) return []
     return listUnsandboxedProjectHooks(root)
   })
-  ipcMain.handle('instructions:list', async () =>
+  ipcMain.handle('instructions:list', async (event) =>
     (
       await loadProjectInstructionSources({
         useLatestNestedActivation: true,
         refreshNestedDiscovery: true,
+        roots: senderInstructionRoots(event.sender),
       })
     ).map(
       ({
@@ -2641,7 +2650,9 @@ export function registerAllHandlers(
   ipcMain.handle('instructions:read', async (event, rawPath: unknown) => {
     assertMainFrameSender(event, win)
     const path = parseIpcArgs(zPathString, [rawPath])
-    const source = (await loadProjectInstructionSources()).find((s) => s.path === path)
+    const source = (
+      await loadProjectInstructionSources({ roots: senderInstructionRoots(event.sender) })
+    ).find((s) => s.path === path)
     if (!source) throw new IpcValidationError('Not a discovered instruction file')
     return source.content
   })

@@ -13,7 +13,7 @@ import {
 } from './bundled-mcp-server.ts'
 import { extractUiResources } from './mcp-schema.ts'
 import { rememberCanvasArtefact, readStoredCanvasArtefact } from '../canvas-store.ts'
-import { setWorkspaceRootForTest } from '../workspace.ts'
+import { runWithWorkspaceRoot, setWorkspaceRootForTest } from '../workspace.ts'
 import {
   runWithThreadExecutionContext,
   type ThreadExecutionContext,
@@ -92,10 +92,13 @@ describe('bundled MCP servers', () => {
     const restore = setWorkspaceRootForTest(root)
     try {
       await writeFile(join(root, 'merge-export-demo.html'), '<!doctype html><h1>From File</h1>')
-      const result = await canvas.client.callTool({
-        name: 'render_html_artefact',
-        arguments: { path: 'merge-export-demo.html' },
-      })
+      // The canvas tool is called from inside the agent's run, which names its root.
+      const result = await runWithWorkspaceRoot(root, () =>
+        canvas.client.callTool({
+          name: 'render_html_artefact',
+          arguments: { path: 'merge-export-demo.html' },
+        }),
+      )
       assert.notEqual(result.isError, true)
       const resources = extractUiResources(result.content)
       assert.equal(resources.length, 1)

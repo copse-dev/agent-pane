@@ -5,7 +5,7 @@ import {
   type NestedInstructionTurn,
 } from './project-instructions.ts'
 import { getSetting, getSettingTrimmed } from './storage/settings.ts'
-import { getAgentExecutionRoot } from './execution-root.ts'
+import { currentAgentRoots, type AgentRoots } from './execution-root.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { REQUEST_WRITE_ACCESS_TOOL } from '@shared/tools/readonly-tools.ts'
 import { repositoryLocation } from './worktree-manager.ts'
@@ -134,6 +134,11 @@ export interface BuildSystemPromptOptions {
    * the turn's tool calls reuse that walk; estimates omit it and share a cache.
    */
   nestedInstructionTurn?: NestedInstructionTurn
+  /**
+   * Roots for a build outside any turn (the composer's context estimate names
+   * its thread's checkout). A turn omits it and uses its own roots (#3958).
+   */
+  roots?: AgentRoots
 }
 
 export interface SystemPromptBuildResult {
@@ -147,6 +152,7 @@ export async function buildSystemPromptWithMetadata(
   opts: BuildSystemPromptOptions,
 ): Promise<SystemPromptBuildResult> {
   const { subagentsEnabled, invokedSkills, threadId } = opts
+  const roots = opts.roots ?? currentAgentRoots()
   const skillsToolsLine = buildSkillsToolsPromptLine()
   const userText = opts.userPrompt != null ? userContentToText(opts.userPrompt) : ''
   const contextPaths = extractContextPathsFromText(userText)
@@ -159,10 +165,11 @@ export async function buildSystemPromptWithMetadata(
       cursorRuleContext,
       nestedContextPaths: contextPaths,
       ...(opts.nestedInstructionTurn ? { nestedInstructionTurn: opts.nestedInstructionTurn } : {}),
+      roots,
     },
     opts.trackInstructionActivation ?? false,
   )
-  const agentRulesCatalog = await loadAgentRequestedRulesCatalog()
+  const agentRulesCatalog = await loadAgentRequestedRulesCatalog(roots)
 
   // Name investigate_ci only when this turn can call it: the shared predicate
   // (plugin on, gh usable, subagents on, not read-only), and — on a real turn —
@@ -205,7 +212,7 @@ export async function buildSystemPromptWithMetadata(
       // Must be the agent execution root, not the renderer workspace root: the
       // sandbox read grant and run_shell's cwd are the worktree root, so naming
       // the main repo here makes the agent `cd` outside the grant and hit EPERM.
-      .replace('{WORKSPACE_ROOT}', getAgentExecutionRoot() ?? '(none)')
+      .replace('{WORKSPACE_ROOT}', roots.executionRoot ?? '(none)')
       .replace('{REPO_CONTEXT}', await buildRepositoryContext()) +
     worktreePreparationBlock(opts.availableToolNames) +
     (opus5 ? OPUS_5_RESPONSE_LENGTH_BLOCK : '') +

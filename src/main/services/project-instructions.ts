@@ -26,7 +26,12 @@ import {
   loadCursorRuleSources,
   type CursorRuleContext,
 } from './skills/cursor-rules.ts'
-import { getAgentExecutionRoot, getAgentProjectRoot } from './execution-root.ts'
+import {
+  currentAgentRoots,
+  getAgentExecutionRoot,
+  getAgentProjectRoot,
+  type AgentRoots,
+} from './execution-root.ts'
 import { isWorkspaceTrusted } from './security/workspace-trust.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { readPluginSettingValue } from './plugins/plugin-service.ts'
@@ -618,6 +623,11 @@ export interface ProjectInstructionOptions {
   refreshNestedDiscovery?: boolean
   /** The running turn's discovery memo; the turn-start walk seeds it. */
   nestedInstructionTurn?: NestedInstructionTurn
+  /**
+   * Roots for a caller outside any turn (Settings → Sources reads the asking
+   * window's project). A turn omits it and reads its own roots (#3958).
+   */
+  roots?: AgentRoots
 }
 
 async function readInstructionFiles(
@@ -663,8 +673,7 @@ export async function loadProjectInstructionSources(
 ): Promise<ProjectInstructionSource[]> {
   const home = homedir()
   const resolved: ProjectInstructionSource[] = []
-  const root = getAgentExecutionRoot()
-  const projectRoot = getAgentProjectRoot()
+  const { executionRoot: root, projectRoot } = opts.roots ?? currentAgentRoots()
   const sourceState = instructionSourceState()
   const initialSelection = resolveInstructionSourceSelection({
     ...sourceState,
@@ -826,8 +835,7 @@ export async function loadInstructionLayersWithMetadata(
   const activeNested = activeProject.filter((source) => source.scopePath !== undefined)
   const activeNestedPaths = activeNested.map((source) => source.path)
 
-  const root = getAgentExecutionRoot()
-  const projectRoot = getAgentProjectRoot()
+  const { executionRoot: root, projectRoot } = opts.roots ?? currentAgentRoots()
   if (trackActivation && root && projectRoot) {
     recordNestedActivation(
       await canonicalPath(projectRoot),
@@ -983,9 +991,10 @@ export async function activateNestedInstructionSources(
 }
 
 /** Agent-requested Cursor rules catalog for the system prompt (empty when none). */
-export async function loadAgentRequestedRulesCatalog(): Promise<string> {
-  const root = getAgentExecutionRoot()
-  const projectRoot = getAgentProjectRoot()
+export async function loadAgentRequestedRulesCatalog(
+  roots: AgentRoots = currentAgentRoots(),
+): Promise<string> {
+  const { executionRoot: root, projectRoot } = roots
   if (!root || !projectRoot || !isWorkspaceTrusted(projectRoot)) return ''
   const sourceState = instructionSourceState()
   const selection = resolveInstructionSourceSelection({

@@ -18,6 +18,7 @@ import {
 } from './dry-run.ts'
 import type { HookTestRequest } from '@shared/types/hooks.ts'
 import { listCursorHooks, resetCursorHookSessionErrorsForTest } from './cursor-adapter.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
 
 const tmpDirs: string[] = []
 
@@ -40,16 +41,21 @@ function seedCursorHook(command: string): { root: string; source: string } {
   return { root, source }
 }
 
+const SYNTHETIC_ROOT = join(tmpdir(), 'copse-dry-run-root')
+
 describe('dry-run — synthesizeCanonicalPayload', () => {
   it('builds a shell toolGate payload with a synthetic command', () => {
-    const p = synthesizeCanonicalPayload({ canonicalEvent: 'toolGate', toolName: 'run_shell' })
+    const p = synthesizeCanonicalPayload(SYNTHETIC_ROOT, {
+      canonicalEvent: 'toolGate',
+      toolName: 'run_shell',
+    })
     assert.ok(p)
     assert.equal(p['toolName'], 'run_shell')
     assert.deepEqual(p['input'], { command: 'echo "copse hook dry-run"' })
   })
 
   it('builds an MCP toolGate payload for an mcp__ tool', () => {
-    const p = synthesizeCanonicalPayload({
+    const p = synthesizeCanonicalPayload(SYNTHETIC_ROOT, {
       canonicalEvent: 'toolGate',
       toolName: 'mcp__example__run',
     })
@@ -59,14 +65,20 @@ describe('dry-run — synthesizeCanonicalPayload', () => {
   })
 
   it('builds a read_file toolGate payload carrying synthetic file content', () => {
-    const p = synthesizeCanonicalPayload({ canonicalEvent: 'toolGate', toolName: 'read_file' })
+    const p = synthesizeCanonicalPayload(SYNTHETIC_ROOT, {
+      canonicalEvent: 'toolGate',
+      toolName: 'read_file',
+    })
     assert.ok(p)
     assert.equal(p['toolName'], 'read_file')
     assert.equal(typeof p['fileContent'], 'string')
   })
 
   it('builds an afterToolUse observation payload', () => {
-    const p = synthesizeCanonicalPayload({ canonicalEvent: 'afterToolUse', toolName: 'run_shell' })
+    const p = synthesizeCanonicalPayload(SYNTHETIC_ROOT, {
+      canonicalEvent: 'afterToolUse',
+      toolName: 'run_shell',
+    })
     assert.ok(p)
     assert.equal(p['toolName'], 'run_shell')
     assert.equal(p['isError'], false)
@@ -74,29 +86,45 @@ describe('dry-run — synthesizeCanonicalPayload', () => {
   })
 
   it('builds minimal payloads for the notification / lifecycle events', () => {
-    assert.deepEqual(synthesizeCanonicalPayload({ canonicalEvent: 'stop' }), {
+    assert.deepEqual(synthesizeCanonicalPayload(SYNTHETIC_ROOT, { canonicalEvent: 'stop' }), {
       status: 'completed',
     })
-    assert.deepEqual(synthesizeCanonicalPayload({ canonicalEvent: 'sessionStart' }), {
-      firstTurn: true,
+    assert.deepEqual(
+      synthesizeCanonicalPayload(SYNTHETIC_ROOT, { canonicalEvent: 'sessionStart' }),
+      {
+        firstTurn: true,
+      },
+    )
+    assert.deepEqual(
+      synthesizeCanonicalPayload(SYNTHETIC_ROOT, { canonicalEvent: 'subagentStop' }),
+      {
+        subagentType: 'explore',
+        status: 'completed',
+      },
+    )
+    const afterDiff = synthesizeCanonicalPayload(SYNTHETIC_ROOT, {
+      canonicalEvent: 'afterDiffApply',
     })
-    assert.deepEqual(synthesizeCanonicalPayload({ canonicalEvent: 'subagentStop' }), {
-      subagentType: 'explore',
-      status: 'completed',
-    })
-    const afterDiff = synthesizeCanonicalPayload({ canonicalEvent: 'afterDiffApply' })
     assert.ok(afterDiff)
     assert.equal(afterDiff['applied'], true)
-    const perm = synthesizeCanonicalPayload({ canonicalEvent: 'permissionDecision' })
+    const perm = synthesizeCanonicalPayload(SYNTHETIC_ROOT, {
+      canonicalEvent: 'permissionDecision',
+    })
     assert.ok(perm)
     assert.equal(perm['decision'], 'allow')
   })
 
   it('returns null for events with no dry-runnable payload', () => {
-    assert.equal(synthesizeCanonicalPayload({ canonicalEvent: 'turnStart' }), null)
-    assert.equal(synthesizeCanonicalPayload({ canonicalEvent: 'beforeFinalize' }), null)
-    assert.equal(synthesizeCanonicalPayload({ canonicalEvent: 'stepBoundary' }), null)
-    assert.equal(synthesizeCanonicalPayload({ canonicalEvent: 'compaction' }), null)
+    assert.equal(synthesizeCanonicalPayload(SYNTHETIC_ROOT, { canonicalEvent: 'turnStart' }), null)
+    assert.equal(
+      synthesizeCanonicalPayload(SYNTHETIC_ROOT, { canonicalEvent: 'beforeFinalize' }),
+      null,
+    )
+    assert.equal(
+      synthesizeCanonicalPayload(SYNTHETIC_ROOT, { canonicalEvent: 'stepBoundary' }),
+      null,
+    )
+    assert.equal(synthesizeCanonicalPayload(SYNTHETIC_ROOT, { canonicalEvent: 'compaction' }), null)
   })
 })
 
@@ -199,7 +227,7 @@ describe('dry-run — dryRunHook end-to-end', () => {
   it('spawns the hook and captures stdin/stdout/exit/duration', async () => {
     // `cat` echoes the marshalled stdin back on stdout — so the captured stdout
     // must parse to the synthetic tool-gate payload we fed the hook.
-    const { source } = seedCursorHook('cat')
+    const { root, source } = seedCursorHook('cat')
     const req: HookTestRequest = {
       family: 'cursor',
       event: 'beforeShellExecution',
@@ -207,7 +235,7 @@ describe('dry-run — dryRunHook end-to-end', () => {
       source,
       scope: 'project',
     }
-    const res = await dryRunHook(req)
+    const res = await dryRunHook(req, root)
     assert.equal(res.ran, true)
     assert.equal(res.canonicalEvent, 'toolGate')
     assert.equal(res.wireEvent, 'beforeShellExecution')
@@ -220,21 +248,57 @@ describe('dry-run — dryRunHook end-to-end', () => {
     assert.ok(res.stdin.includes('conversation_id'))
     const echoed = expectRecord(parseJsonUnknown(res.stdout ?? '{}'))
     assert.equal(echoed['command'], 'echo "copse hook dry-run"')
+    // The payload names the project the asking window passed, not an ambient root.
+    assert.deepEqual(echoed['workspace_roots'], [root])
     // The echoed request is not a valid hook *response*, so no decision applies.
     assert.equal(res.outcomeSummary, 'no opinion')
+  })
+
+  it("names each asking window's project when two dry runs overlap", async () => {
+    // #3958: the window-global workspace points at a third directory; each dry
+    // run must carry the root its own window passed, and nothing else.
+    const window = mkdtempSync(join(tmpdir(), 'copse-dry-run-window-'))
+    tmpDirs.push(window)
+    const restore = setWorkspaceRootForTest(window)
+    try {
+      const run = async (): Promise<{ root: string; workspaceRoots: unknown }> => {
+        const { root, source } = seedCursorHook('cat')
+        const res = await dryRunHook(
+          {
+            family: 'cursor',
+            event: 'beforeShellExecution',
+            command: 'cat',
+            source,
+            scope: 'project',
+          },
+          root,
+        )
+        const echoed = expectRecord(parseJsonUnknown(res.stdout ?? '{}'))
+        return { root, workspaceRoots: echoed['workspace_roots'] }
+      }
+      const [a, b] = await Promise.all([run(), run()])
+      assert.notEqual(a.root, b.root)
+      assert.deepEqual(a.workspaceRoots, [a.root])
+      assert.deepEqual(b.workspaceRoots, [b.root])
+    } finally {
+      restore()
+    }
   })
 
   it('surfaces a hook decision as the outcome summary', async () => {
     const { source } = seedCursorHook(
       `printf '%s' '{"permission":"deny","agentMessage":"blocked by dry-run"}'`,
     )
-    const res = await dryRunHook({
-      family: 'cursor',
-      event: 'beforeShellExecution',
-      command: `printf '%s' '{"permission":"deny","agentMessage":"blocked by dry-run"}'`,
-      source,
-      scope: 'project',
-    })
+    const res = await dryRunHook(
+      {
+        family: 'cursor',
+        event: 'beforeShellExecution',
+        command: `printf '%s' '{"permission":"deny","agentMessage":"blocked by dry-run"}'`,
+        source,
+        scope: 'project',
+      },
+      null,
+    )
     assert.equal(res.ran, true)
     assert.equal(res.parseOk, true)
     assert.match(res.outcomeSummary ?? '', /deny/)
@@ -242,13 +306,16 @@ describe('dry-run — dryRunHook end-to-end', () => {
   })
 
   it('reports an unsupported event without spawning anything', async () => {
-    const res = await dryRunHook({
-      family: 'cursor',
-      event: 'notARealEvent',
-      command: 'echo hi',
-      source: '/tmp/.cursor/hooks.json',
-      scope: 'user',
-    })
+    const res = await dryRunHook(
+      {
+        family: 'cursor',
+        event: 'notARealEvent',
+        command: 'echo hi',
+        source: '/tmp/.cursor/hooks.json',
+        scope: 'user',
+      },
+      null,
+    )
     assert.equal(res.ran, false)
     assert.match(res.error ?? '', /unsupported/)
     assert.equal(res.stdout, undefined)
@@ -260,13 +327,16 @@ describe('dry-run — dryRunHook end-to-end', () => {
     resetCursorHookSessionErrorsForTest()
     const command = 'exit 3'
     const { root, source } = seedCursorHook(command)
-    const res = await dryRunHook({
-      family: 'cursor',
-      event: 'beforeShellExecution',
-      command,
-      source,
-      scope: 'project',
-    })
+    const res = await dryRunHook(
+      {
+        family: 'cursor',
+        event: 'beforeShellExecution',
+        command,
+        source,
+        scope: 'project',
+      },
+      null,
+    )
     assert.equal(res.ran, true)
     assert.equal(res.exitCode, 3)
     assert.match(res.outcomeSummary ?? '', /failed/)
