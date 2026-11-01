@@ -156,6 +156,9 @@ describe('update feed verification', () => {
     '  - url: Copse-0.1.0-x64.dmg',
     '    sha512: xdmg',
     '    size: 12',
+    '  - url: Copse-0.1.0-arm64.dmg',
+    '    sha512: admg',
+    '    size: 13',
     'path: Copse-0.1.0-x64.zip',
     'sha512: xzip',
     "releaseDate: '2026-11-06T12:00:00.000Z'",
@@ -165,6 +168,7 @@ describe('update feed verification', () => {
     ['Copse-0.1.0-x64.zip', { sha512: 'xzip', size: 10 }],
     ['Copse-0.1.0-arm64.zip', { sha512: 'azip', size: 11 }],
     ['Copse-0.1.0-x64.dmg', { sha512: 'xdmg', size: 12 }],
+    ['Copse-0.1.0-arm64.dmg', { sha512: 'admg', size: 13 }],
   ])
 
   it('parses the assembled feed shape', () => {
@@ -172,7 +176,7 @@ describe('update feed verification', () => {
     assert.equal(feed.version, '0.1.0')
     assert.deepEqual(
       feed.files.map((file) => file.url),
-      ['Copse-0.1.0-x64.zip', 'Copse-0.1.0-arm64.zip', 'Copse-0.1.0-x64.dmg'],
+      ['Copse-0.1.0-x64.zip', 'Copse-0.1.0-arm64.zip', 'Copse-0.1.0-x64.dmg', 'Copse-0.1.0-arm64.dmg'],
     )
     assert.throws(() => parseUpdateFeed('files: []\n'), /no version/)
   })
@@ -193,5 +197,9 @@ describe('update feed verification', () => {
       feedProblems('f', noArm, '0.1.0', actual).join('\n'),
       /omits Copse-0\.1\.0-arm64\.zip/,
     )
+    // A feed of only the zips would leave the direct-download DMGs unchecked.
+    const zipsOnly = parseUpdateFeed(feedText.replace(/ {2}- url: \S+\.dmg\n.*\n.*\n/g, ''))
+    const missing = feedProblems('f', zipsOnly, '0.1.0', actual)
+    assert.deepEqual(missing, ['f omits Copse-0.1.0-arm64.dmg', 'f omits Copse-0.1.0-x64.dmg'])
   })
 })

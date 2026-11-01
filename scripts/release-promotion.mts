@@ -195,8 +195,10 @@ export function feedProblems(
     problems.push(`${feedName} names ${feed.version}, not ${version}`)
   }
   for (const arch of ARCHITECTURES) {
-    const zip = `Copse-${version}-${arch}.zip`
-    if (!feed.files.some((file) => file.url === zip)) problems.push(`${feedName} omits ${zip}`)
+    for (const ext of ['zip', 'dmg']) {
+      const name = `Copse-${version}-${arch}.${ext}`
+      if (!feed.files.some((file) => file.url === name)) problems.push(`${feedName} omits ${name}`)
+    }
   }
   for (const file of feed.files) {
     const bytes = actual.get(file.url)
