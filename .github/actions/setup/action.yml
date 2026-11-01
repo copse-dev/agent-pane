@@ -87,7 +87,19 @@ runs:
         printf '%s\n' 'Acquire::Retries "3";' 'Acquire::http::Timeout "30";' \
           'Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/80-ci-network >/dev/null
         mkdir -p "$APT_ARCHIVES/partial"
-        sudo apt-get update
+        # A connection can also trickle without ever stalling, which the
+        # per-fetch timeout never trips: run 41257134858 sat 29 minutes after
+        # noble-security InRelease with the drop-in in place. Bound each index
+        # refresh and start over on fresh connections; fail visibly after
+        # three attempts instead of holding the job to its timeout.
+        for attempt in 1 2 3; do
+          if sudo timeout --kill-after=15 240 apt-get update; then break; fi
+          if [ "$attempt" -eq 3 ]; then
+            echo "::error::apt index refresh did not finish in three 4-minute attempts"
+            exit 1
+          fi
+          echo "::warning::apt index refresh attempt $attempt did not finish in 4 minutes; retrying"
+        done
         sudo apt-get install -y -o Dir::Cache::archives="$APT_ARCHIVES/" ripgrep \
           fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji
         # apt leaves its lock and partial directory root-owned; the cache step

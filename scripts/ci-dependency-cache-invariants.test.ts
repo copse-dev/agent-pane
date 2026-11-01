@@ -53,6 +53,18 @@ describe('CI dependency cache boundary', () => {
     assert.match(install, /Acquire::https::Timeout "30";/)
   })
 
+  it('bounds each apt index refresh in wall-clock time and retries it', () => {
+    const install = actionStep('Install hosted Linux system dependencies')
+    // A trickling connection never trips apt's per-fetch timeout.
+    assert.match(install, /for attempt in 1 2 3; do/)
+    assert.match(install, /sudo timeout --kill-after=\d+ \d+ apt-get update/)
+    assert.doesNotMatch(
+      install,
+      /^\s+sudo apt-get update\s*$/m,
+      'no unbounded index refresh is left in the step',
+    )
+  })
+
   it('keeps later pnpm commands on the selected job-local store', () => {
     const selection = actionStep('Select pnpm content store')
     assert.ok(selection.includes('echo "npm_config_store_dir=$path" >> "$GITHUB_ENV"'))
