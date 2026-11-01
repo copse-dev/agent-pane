@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { StreamChunk } from '../../../shared/types'
+import { acpTranscriptChunk } from './acp-transcript-chunk.ts'
 import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
 import { createStore } from '../../../shared/store/store.ts'
 import { getThreadById } from '../../../shared/store/thread-helpers.ts'
@@ -12,7 +13,7 @@ function text(value: string, id?: string): StreamChunk[] {
     sessionUpdate: 'agent_message_chunk',
     content: { type: 'text', text: value },
     ...(id === undefined ? {} : { messageId: id }),
-  })
+  }).map(acpTranscriptChunk)
 }
 
 const tool: StreamChunk = {
