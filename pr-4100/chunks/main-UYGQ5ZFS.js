@@ -458,7 +458,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-DVRRFFI2.js";
+} from "./chunk-DEW7PTV7.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -86006,8 +86006,14 @@ async function acceptThreadPrompt(store2, api2, command2) {
     }
     const origin = {
       kind: "machine",
-      operationId: `thread:${command2.sourceThreadId}`
+      operationId: `thread:${command2.sourceThreadId}`,
+      crossThreadScope: JSON.stringify([command2.sourceThreadId, command2.sourceTurnTreeId])
     };
+    if (current.currentEpoch === void 0)
+      patchThreadAnywhere(store2, threadId, (thread) => ({
+        ...thread,
+        currentEpoch: command2.sourceTurnTreeId
+      }));
     if (current.status === "error")
       patchThreadAnywhere(store2, threadId, (thread) => ({ ...thread, status: "idle" }));
     const messageId = addMessage(store2, threadId, "user", command2.text, void 0, void 0, {
@@ -86028,6 +86034,7 @@ async function acceptThreadPrompt(store2, api2, command2) {
           pendingMessages: accepted.pendingMessages ?? [],
           continuationUsed: accepted.continuationUsed ?? 0,
           crossThreadPromptsUsed: accepted.crossThreadPromptsUsed ?? 0,
+          crossThreadPromptCounts: accepted.crossThreadPromptCounts ?? {},
           ...accepted.currentEpoch !== void 0 ? { currentEpoch: accepted.currentEpoch } : {},
           updatedAt: accepted.updatedAt
         });
@@ -87037,6 +87044,7 @@ function startAgentController(store2, api2) {
           pendingMessages: finished.pendingMessages ?? [],
           continuationUsed: finished.continuationUsed ?? 0,
           crossThreadPromptsUsed: finished.crossThreadPromptsUsed ?? 0,
+          crossThreadPromptCounts: finished.crossThreadPromptCounts ?? {},
           ...finished.currentEpoch !== void 0 ? { currentEpoch: finished.currentEpoch } : {},
           ...finished.todos !== void 0 ? { todos: finished.todos } : {}
         }).catch((err) => {
