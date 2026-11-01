@@ -237,7 +237,7 @@ export function getToolDisplayName(name: string, tense: ToolLabelTense = 'done')
   const mcp = parseMcp(name)
   // Codex reports connection failures as synthetic MCP startup calls. Their
   // server is the useful identity; stripping it makes every failure "Startup".
-  if (mcp?.tool === 'startup') return `${mcp.server} startup`
+  if (mcp?.tool === 'startup') return `${humanizeIdentifier(mcp.server)} startup`
   if (mcp) return humanizeIdentifier(mcp.tool)
   // Strip known MCP/ACP server prefixes (dot or underscore notation) so the
   // user sees just the tool name, not the internal server alias.
@@ -423,7 +423,7 @@ export function getToolGroupKey(name: string, kind?: string): string | null {
 
 export function getToolGroupLabel(key: string, tense: ToolLabelTense = 'done'): string {
   if (key.startsWith(MCP_GROUP_PREFIX)) {
-    return key.slice(MCP_GROUP_PREFIX.length)
+    return humanizeIdentifier(key.slice(MCP_GROUP_PREFIX.length))
   }
   const group = TOOL_GROUPS[key]
   if (!group) return key

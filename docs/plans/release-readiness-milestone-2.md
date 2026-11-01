@@ -9,7 +9,10 @@ This plan covers the milestone's original release-readiness portfolio. The miles
 canonical GA view. After owner triage on 2026-08-27, the live `ga-blocker` set was #507 (signed,
 notarized prerelease evidence), #802 (public distribution/update channel), and #1153
 (append-oriented thread-store writes and benchmark). #507 and #1153 closed on 2026-08-28, so as of
-the 2026-10-30 audit **#802 is the only remaining GA blocker**. #998 and #1728 closed with measured/observed
+the 2026-10-30 audit **#802 is the only remaining GA blocker**; its repository side (stable
+candidate, in-place promotion and halting) is described in
+[releasing-macos.md](../releasing-macos.md#stable-promotion), and what remains is the first stable
+release and its rehearsals. #998 and #1728 closed with measured/observed
 performance evidence; #1154 and #1286 remain open milestone follow-ups without the blocker label;
 umbrella #1872 closed as superseded by #1153 and #994. Live issue bodies own the current acceptance
 criteria; the item plans below remain the design record for the original portfolio. The work ranges

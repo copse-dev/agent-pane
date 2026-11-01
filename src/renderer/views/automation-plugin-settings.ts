@@ -27,6 +27,7 @@ import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { describeRetainedWorktrees } from './automation-retained-worktrees.ts'
 import { describeAutomationFailure } from '@shared/automation-failure.ts'
 import { refreshAutomationSchedules } from '../controller/automations.ts'
+import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
 
 function cleanIpcError(error: unknown): string {
   return ipcErrorMessage(error, 'Automation request failed.')
@@ -539,11 +540,11 @@ export function createAutomationPluginSettings(
     const parts = permission.toolName.split('__')
     const mcpLabel =
       parts[0] === 'mcp' && parts.length >= 3
-        ? `${parts[1] ?? 'MCP'} / ${parts.slice(2).join('__')}`
-        : permission.toolName
+        ? `${humanizeIdentifier(parts[1] ?? 'MCP')} / ${humanizeIdentifier(parts.slice(2).join('__'))}`
+        : humanizeIdentifier(permission.toolName)
     return {
       permission,
-      label: permission.kind === 'mcp-tool' ? mcpLabel : permission.toolName,
+      label: mcpLabel,
       detail: 'Not currently available. Kept so the approval works if this tool returns.',
     }
   }
@@ -571,7 +572,7 @@ export function createAutomationPluginSettings(
       'label',
       {
         class: `automation-permission-row${unavailable ? ' automation-permission-unavailable' : ''}`,
-        title: option.permission.toolName,
+        'data-tool-name': option.permission.toolName,
       },
       el(
         'span',
@@ -593,7 +594,6 @@ export function createAutomationPluginSettings(
           ),
         ),
         el('span', { class: 'automation-permission-detail' }, option.detail),
-        el('code', { class: 'automation-permission-id' }, option.permission.toolName),
       ),
       switchControl,
     )

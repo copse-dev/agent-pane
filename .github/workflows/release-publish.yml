@@ -7,6 +7,11 @@ name: Publish release artifacts
 # here. This workflow publishes them to the public, binary-only
 # copse-dev/copse-releases repository, so beta distribution does not expose the
 # source repository. It refuses any other run, commit, tag, or private target.
+#
+# It always publishes a prerelease. A stable X.Y.Z is a stable candidate that
+# beta users receive first; `Promote stable release` (release-promote.yml) later
+# makes it the stable channel's release without changing a byte, and
+# `Halt release` (release-halt.yml) withdraws a bad one from both feeds.
 on:
   workflow_dispatch:
     inputs:
@@ -188,7 +193,7 @@ jobs:
             esac
           fi
           channel=beta
-          if [ "$RELEASE_TYPE" != 'prerelease' ]; then channel=stable; fi
+          if [ "$RELEASE_TYPE" != 'prerelease' ]; then channel='stable candidate, on the beta channel until promoted'; fi
           {
             echo '# Latest Copse release'
             echo
@@ -210,18 +215,16 @@ jobs:
       - name: Publish the exact tested artifact
         env:
           GH_TOKEN: ${{ steps.release-token.outputs.token }}
-          RELEASE_TYPE: ${{ steps.release.outputs.release_type }}
           TAG: ${{ inputs.tag }}
           SOURCE_SHA: ${{ steps.release.outputs.release_sha }}
           RELEASE_COMMIT: ${{ steps.record.outputs.commit }}
         run: |
           set -euo pipefail
-          release_flags=()
-          if [ "$RELEASE_TYPE" = 'prerelease' ]; then
-            release_flags+=(--prerelease)
-          else
-            release_flags+=(--latest)
-          fi
+          # Every release starts as a prerelease, stable ones included. The beta
+          # feed serves it at once; the stable feed resolves `releases/latest`,
+          # which never names a prerelease, so a stable X.Y.Z reaches stable
+          # users only when `Promote stable release` flips these same assets.
+          release_flags=(--prerelease --latest=false)
           notes="$RUNNER_TEMP/release-notes.md"
           {
             echo "Built from copse-dev/agent-pane@$SOURCE_SHA (tag $TAG)."
