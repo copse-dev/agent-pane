@@ -458,7 +458,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-QKYBD2OC.js";
+} from "./chunk-PX45IM5S.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -3251,46 +3251,11 @@ function residentRequestMatches(messages, query) {
 }
 function createThreadFilter(store2, api2, changed) {
   const matches3 = /* @__PURE__ */ new Set();
-  const promptIndex = /* @__PURE__ */ new Map();
-  let promptIndexSize = 0;
   let generation = 0;
   let timer;
-  let scan = Promise.resolve();
   let pending = false;
   let waiting = false;
   let failed = false;
-  const forget = (key) => {
-    const entry = promptIndex.get(key);
-    if (!entry) return;
-    promptIndex.delete(key);
-    promptIndexSize -= entry.size;
-  };
-  const remember = (key, entry) => {
-    forget(key);
-    promptIndex.set(key, entry);
-    promptIndexSize += entry.size;
-    for (const oldest of promptIndex.keys()) {
-      if (promptIndexSize <= PROMPT_INDEX_MAX_CHARS || oldest === key) break;
-      forget(oldest);
-    }
-  };
-  const savedPrompts = async (projectId, thread) => {
-    const key = `${projectId}/${thread.id}`;
-    const cached = promptIndex.get(key);
-    if (cached && cached.updatedAt === thread.updatedAt && cached.lastPromptAt === thread.lastPromptAt) {
-      return cached.prompts;
-    }
-    const messages = await api2.threads.loadMessages(projectId, thread.id);
-    const prompts = messages.filter(isHumanUserPrompt).map((message2) => filterText(message2.content));
-    const size = prompts.reduce((total2, prompt) => total2 + prompt.length, 0);
-    remember(key, {
-      updatedAt: thread.updatedAt,
-      lastPromptAt: thread.lastPromptAt,
-      prompts,
-      size
-    });
-    return prompts;
-  };
   const notify = () => {
     try {
       changed();
@@ -3305,6 +3270,8 @@ function createThreadFilter(store2, api2, changed) {
     pending = false;
     waiting = false;
     failed = false;
+    void api2.threads.cancelRequestSearch().catch(() => {
+    });
   };
   const search = (rawQuery) => {
     cancel();
@@ -3313,7 +3280,7 @@ function createThreadFilter(store2, api2, changed) {
     if (query.length < MIN_REQUEST_QUERY_LENGTH || !activeProjectId) return;
     const current = generation;
     const isCurrent = () => current === generation && store2.getState().activeProjectId === activeProjectId;
-    const candidates = sortThreadsNewestFirst(threads).filter(
+    const candidates = threads.filter(
       (thread) => thread.archivedAt == null && !filterText(thread.title || "New Thread").includes(query)
     );
     if (candidates.length === 0) return;
@@ -3322,33 +3289,29 @@ function createThreadFilter(store2, api2, changed) {
       waiting = false;
       pending = true;
       notify();
-      scan = scan.then(async () => {
-        for (const thread of candidates) {
-          if (!isCurrent()) return;
-          try {
-            const matched = residentRequestMatches(thread.messages, query) || thread.messagesLoaded === false && (await savedPrompts(activeProjectId, thread)).some(
-              (prompt) => prompt.includes(query)
-            );
-            if (!isCurrent()) return;
-            if (matched) {
-              matches3.add(thread.id);
-              notify();
-            }
-          } catch {
-            if (!isCurrent()) return;
-            failed = true;
+      const run4 = async () => {
+        try {
+          for (const thread of candidates) {
+            if (residentRequestMatches(thread.messages, query)) matches3.add(thread.id);
           }
+          if (candidates.some((thread) => thread.messagesLoaded === false)) {
+            const result = await api2.threads.searchRequests(activeProjectId, query);
+            if (!isCurrent()) return;
+            const lazy = new Set(
+              candidates.filter((thread) => thread.messagesLoaded === false).map((thread) => thread.id)
+            );
+            for (const id of result.matches) if (lazy.has(id)) matches3.add(id);
+            failed = result.incomplete;
+          }
+        } catch {
+          if (!isCurrent()) return;
+          failed = true;
         }
         if (!isCurrent()) return;
         pending = false;
         notify();
-      }).catch((error) => {
-        console.error("[thread-filter] request scan failed", error);
-        if (!isCurrent()) return;
-        pending = false;
-        failed = true;
-        notify();
-      });
+      };
+      void run4();
     }, SCAN_DELAY_MS);
   };
   return {
@@ -3366,13 +3329,12 @@ function createThreadFilter(store2, api2, changed) {
     }
   };
 }
-var MIN_REQUEST_QUERY_LENGTH, SCAN_DELAY_MS, PROMPT_INDEX_MAX_CHARS, filterableContentCache;
+var MIN_REQUEST_QUERY_LENGTH, SCAN_DELAY_MS, filterableContentCache;
 var init_thread_filter = __esm({
   "src/renderer/controller/thread-filter.ts"() {
     init_thread_sort();
     MIN_REQUEST_QUERY_LENGTH = 2;
     SCAN_DELAY_MS = 200;
-    PROMPT_INDEX_MAX_CHARS = 8e6;
     filterableContentCache = /* @__PURE__ */ new WeakMap();
   }
 });
@@ -14852,11 +14814,20 @@ var init_read_file_limits = __esm({
 function hasOpenTodos(todos) {
   return todos.some((t) => t.status === "pending" || t.status === "in_progress");
 }
-var MAX_TODO_CLOSEOUT_ATTEMPTS, OPEN_TODOS_FINALIZE_NUDGE, OPEN_TODOS_FINALIZE_NUDGE_STRICT;
+var DUPLICATE_GUARDED_TOOL_NAMES, MAX_TODO_CLOSEOUT_ATTEMPTS, OPEN_TODOS_FINALIZE_NUDGE, OPEN_TODOS_FINALIZE_NUDGE_STRICT, WORKSPACE_READ_ONLY_TOOL_NAMES;
 var init_agent_loop_guards = __esm({
   "packages/agent/src/agent-loop-guards.ts"() {
     init_read_file_limits();
     init_unknown_value();
+    DUPLICATE_GUARDED_TOOL_NAMES = /* @__PURE__ */ new Set([
+      "list_dir",
+      "read_file",
+      "find_files",
+      "search_code",
+      "search_codebase",
+      "semantic_search",
+      "explore"
+    ]);
     MAX_TODO_CLOSEOUT_ATTEMPTS = 3;
     OPEN_TODOS_FINALIZE_NUDGE = `You still have open todos in the plan. Before finishing:
 1. Call update_todos (merge=true) to mark each finished item completed or cancel items you will not do.
@@ -14866,6 +14837,17 @@ Do not reply with plain text claiming todos are done; the plan only updates via 
 - merge=true, patch each item by id with status completed or cancelled, OR
 - continue executing the remaining pending/in_progress work, then update_todos.
 Plain-text claims that work is done are not accepted \u2014 update_todos is required.`;
+    WORKSPACE_READ_ONLY_TOOL_NAMES = /* @__PURE__ */ new Set([
+      ...DUPLICATE_GUARDED_TOOL_NAMES,
+      "update_todos",
+      "read_skill",
+      "git_status",
+      "git_diff",
+      "git_log",
+      "git_show",
+      "staged_diffs",
+      "read_staged_diff"
+    ]);
   }
 });
 
@@ -17855,17 +17837,9 @@ var init_image_input_support = __esm({
 // src/renderer/views/conversation-search.ts
 function findMatchOffsets(haystack, needle) {
   if (!needle) return [];
-  const hay = haystack.toLowerCase();
-  const q2 = needle.toLowerCase();
-  const offsets = [];
-  let from2 = 0;
-  for (; ; ) {
-    const idx = hay.indexOf(q2, from2);
-    if (idx === -1) break;
-    offsets.push(idx);
-    from2 = idx + q2.length;
-  }
-  return offsets;
+  const literal = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(literal, "giu");
+  return Array.from(haystack.matchAll(pattern), (match) => match.index);
 }
 function normalizeSearchText(text) {
   return text.replace(/\s+/g, " ").trim();
