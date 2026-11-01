@@ -76,7 +76,7 @@ export async function stickyPromptCollisions(): Promise<StickyPromptCollisions> 
 }
 
 export interface TranscriptFrame {
-  /** True when the whole element shows below the pinned prompt and above the list's bottom. */
+  /** True when the whole span shows below the pinned prompt and above the list's bottom. */
   fits: boolean
   top: number
   bottom: number
@@ -85,17 +85,40 @@ export interface TranscriptFrame {
 }
 
 /**
- * Bring `selector` fully into the transcript's view before a capture, clear of
- * the pinned prompt, and report whether it fits. `block: 'nearest'` leaves an
- * already-visible element where it is; the list's scroll padding keeps a
- * scrolled-to element out from under the pinned prompt.
+ * Scroll the transcript so the span from the first selector's top to the last
+ * selector's bottom shows in full, clear of the pinned prompt, and report
+ * whether it fits. A span already in view is left where it is; one clipped
+ * below moves up just enough, and one under the pinned band moves down.
  */
-export async function frameInTranscript(selector: string): Promise<TranscriptFrame> {
-  return browser.execute(async (target) => {
-    const element = document.querySelector<HTMLElement>(target)
+export async function frameInTranscript(selectors: readonly string[]): Promise<TranscriptFrame> {
+  return browser.execute(async (targets) => {
     const list = document.querySelector<HTMLElement>('.messages-list')
-    if (!element || !list) throw new Error(`${target} or messages-list not found`)
-    element.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    if (!list) throw new Error('messages-list not found')
+    const rects = targets.map((target) => {
+      const element = document.querySelector<HTMLElement>(target)
+      if (!element) throw new Error(`${target} not found`)
+      return element.getBoundingClientRect()
+    })
+    const clearance = Number.parseFloat(list.style.scrollPaddingTop) || 0
+    const span = (): { top: number; bottom: number } => {
+      const port = list.getBoundingClientRect()
+      const current = targets.map((target) => {
+        const element = document.querySelector<HTMLElement>(target)
+        if (!element) throw new Error(`${target} not found`)
+        return element.getBoundingClientRect()
+      })
+      return {
+        top: Math.min(...current.map((rect) => rect.top)) - port.top,
+        bottom: Math.max(...current.map((rect) => rect.bottom)) - port.top,
+      }
+    }
+    if (rects.length === 0) throw new Error('frameInTranscript needs a selector')
+    const before = span()
+    const viewport = list.clientHeight
+    if (before.bottom > viewport) list.scrollTop += before.bottom - viewport
+    const moved = span()
+    if (moved.top < clearance) list.scrollTop -= clearance - moved.top
+    list.dispatchEvent(new Event('scroll'))
     await new Promise<void>((resolve) => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -103,17 +126,13 @@ export async function frameInTranscript(selector: string): Promise<TranscriptFra
         })
       })
     })
-    const port = list.getBoundingClientRect()
-    const rect = element.getBoundingClientRect()
-    const clearance = Number.parseFloat(list.style.scrollPaddingTop) || 0
-    const top = rect.top - port.top
-    const bottom = rect.bottom - port.top
+    const after = span()
     return {
-      fits: top >= clearance - 1 && bottom <= port.height + 1,
-      top,
-      bottom,
+      fits: after.top >= clearance - 1 && after.bottom <= viewport + 1,
+      top: after.top,
+      bottom: after.bottom,
       clearance,
-      viewport: port.height,
+      viewport,
     }
-  }, selector)
+  }, selectors)
 }

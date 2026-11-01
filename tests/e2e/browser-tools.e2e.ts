@@ -37,9 +37,13 @@ describe('browser tool display', () => {
     const group = await rollup.$('.tool-card-group').getElement()
     await expect(group.$('.tool-name')).toHaveText('Used browser')
     await expect(screenshot).toBeDisplayed()
-    // Expanding the rollup grows the answer: frame all of it, screenshot and
-    // caption included, instead of capturing wherever the scroll landed.
-    const framed = await frameInTranscript('[data-message-id="msg-assistant-browser"]')
+    // Expanding the rollup grows the answer past the scrollport. Frame what
+    // this capture shows, the opened rollup down to the screenshot beneath
+    // it, instead of capturing wherever the scroll landed.
+    const framed = await frameInTranscript([
+      '[data-message-id="msg-assistant-browser"] .tool-card-rollup',
+      '[data-message-id="msg-assistant-browser"] > .tool-result-images',
+    ])
     assert.ok(framed.fits, JSON.stringify(framed))
     await saveAppScreenshot('browser-tools-expanded.png')
 
