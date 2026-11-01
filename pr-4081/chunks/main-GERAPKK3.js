@@ -101,6 +101,7 @@ import {
   createNewProject,
   createOverlayDialog,
   createPasteKeyForm,
+  createStore,
   createThread,
   definePlugin,
   deleteThread,
@@ -240,6 +241,7 @@ import {
   init_side_chat,
   init_sidebar_thread,
   init_state,
+  init_store,
   init_theme,
   init_thread_helpers,
   init_thread_hydration,
@@ -297,6 +299,7 @@ import {
   listOrphanProjects,
   listSubagentRuns,
   loadArtefactContent,
+  loadPersistedThread,
   loadProjects,
   loadThreads,
   localBenchmarkScore,
@@ -358,7 +361,6 @@ import {
   queuedMessageIds,
   queuedPayloadText,
   recordContextTrim,
-  recordPersistedThread,
   recordThreadArchives,
   recordThreadVideos,
   recoverOrphanProject,
@@ -381,6 +383,7 @@ import {
   restoreUiScale,
   reviewerInputAnswer,
   reviewerInputRequests,
+  sameItems,
   saveProjectGroups,
   saveProjects,
   scaledEditorFontSize,
@@ -455,7 +458,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-Y4MUK4CS.js";
+} from "./chunk-R47WZBYB.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -662,141 +665,6 @@ var init_themes = __esm({
 // src/renderer/styles/global/popout.css
 var init_popout = __esm({
   "src/renderer/styles/global/popout.css"() {
-  }
-});
-
-// src/shared/store/store.ts
-function createStore(initial) {
-  let state = {
-    workspaceRoot: null,
-    projects: [],
-    projectGroups: [],
-    activeProjectId: null,
-    expandedProjectId: null,
-    threads: [],
-    backgroundThreads: [],
-    activeThreadId: null,
-    panelTab: "file",
-    openFile: null,
-    activeDiff: null,
-    stagedDiffs: [],
-    filesPaneOpen: false,
-    rightPanelMode: "explorer",
-    rightPanelMaximized: false,
-    projectsPaneOpen: true,
-    layout: { ...DEFAULT_LAYOUT },
-    theme: "dark",
-    themePreference: DEFAULT_THEME_PREFERENCE,
-    fontSize: 14,
-    uiScale: 1,
-    animateAgentAvatars: true,
-    conciseThreadsEnabled: true,
-    autoPortraitRightPanel: true,
-    rightPanelPosition: "auto",
-    sidebarProjectFilterId: null,
-    sidebarThreadSort: "activity",
-    sidebarThreadSortReverse: false,
-    sidebarThreadGroup: "project",
-    openLinksInBuiltInBrowser: true,
-    developerMode: false,
-    ...initial
-  };
-  const listeners = {
-    message_added: /* @__PURE__ */ new Set(),
-    message_queued: /* @__PURE__ */ new Set(),
-    message_token: /* @__PURE__ */ new Set(),
-    message_reasoning: /* @__PURE__ */ new Set(),
-    message_acp_content: /* @__PURE__ */ new Set(),
-    message_canvas_artefacts_changed: /* @__PURE__ */ new Set(),
-    message_visual_evidence_changed: /* @__PURE__ */ new Set(),
-    message_done: /* @__PURE__ */ new Set(),
-    tool_call_started: /* @__PURE__ */ new Set(),
-    tool_call_updated: /* @__PURE__ */ new Set(),
-    thread_model_resolved: /* @__PURE__ */ new Set(),
-    thread_status_changed: /* @__PURE__ */ new Set(),
-    agent_activity: /* @__PURE__ */ new Set(),
-    threads_changed: /* @__PURE__ */ new Set(),
-    reviewer_input_open: /* @__PURE__ */ new Set(),
-    reviewer_input_jump: /* @__PURE__ */ new Set(),
-    thread_draft_changed: /* @__PURE__ */ new Set(),
-    new_thread_opened: /* @__PURE__ */ new Set(),
-    panel_changed: /* @__PURE__ */ new Set(),
-    explorer_reveal: /* @__PURE__ */ new Set(),
-    workspace_changed: /* @__PURE__ */ new Set(),
-    projects_changed: /* @__PURE__ */ new Set(),
-    sidebar_project_filter_changed: /* @__PURE__ */ new Set(),
-    git_change_navigate: /* @__PURE__ */ new Set(),
-    roadmap_reveal: /* @__PURE__ */ new Set(),
-    thread_plan_open: /* @__PURE__ */ new Set(),
-    thread_plan_changed: /* @__PURE__ */ new Set(),
-    browser_url_requested: /* @__PURE__ */ new Set(),
-    browser_url_bar_focus_requested: /* @__PURE__ */ new Set(),
-    pr_open_requested: /* @__PURE__ */ new Set(),
-    thread_archive_requested: /* @__PURE__ */ new Set(),
-    side_chat_open_requested: /* @__PURE__ */ new Set(),
-    canvas_artefact_requested: /* @__PURE__ */ new Set(),
-    canvas_artefact_show_requested: /* @__PURE__ */ new Set(),
-    settings_changed: /* @__PURE__ */ new Set(),
-    theme_changed: /* @__PURE__ */ new Set(),
-    staged_diffs_changed: /* @__PURE__ */ new Set(),
-    usage_updated: /* @__PURE__ */ new Set(),
-    context_updated: /* @__PURE__ */ new Set(),
-    todos_changed: /* @__PURE__ */ new Set(),
-    review_changed: /* @__PURE__ */ new Set(),
-    hook_card_added: /* @__PURE__ */ new Set(),
-    comparison_changed: /* @__PURE__ */ new Set(),
-    review_report_changed: /* @__PURE__ */ new Set(),
-    git_branch_changed: /* @__PURE__ */ new Set(),
-    thread_checkout_changed: /* @__PURE__ */ new Set(),
-    composer_draft_flush: /* @__PURE__ */ new Set(),
-    agent_task_selected: /* @__PURE__ */ new Set(),
-    shell_tab_activated: /* @__PURE__ */ new Set(),
-    request_terminal_command: /* @__PURE__ */ new Set(),
-    code_block_run_requested: /* @__PURE__ */ new Set(),
-    code_block_run_finished: /* @__PURE__ */ new Set(),
-    thread_reference_attach: /* @__PURE__ */ new Set(),
-    attention_changed: /* @__PURE__ */ new Set(),
-    sidebar_threads_loaded: /* @__PURE__ */ new Set(),
-    automation_schedules_loaded: /* @__PURE__ */ new Set()
-  };
-  function on2(event, handler) {
-    listeners[event].add(handler);
-    return () => {
-      listeners[event].delete(handler);
-    };
-  }
-  function emit(event, ...args) {
-    listeners[event].forEach((handler) => {
-      handler(...args);
-    });
-  }
-  const selections = /* @__PURE__ */ new Set();
-  function select(selector, listener, equals = Object.is) {
-    let value = selector(state);
-    const check = () => {
-      const next = selector(state);
-      const prev = value;
-      if (equals(prev, next)) return;
-      value = next;
-      listener(next, prev);
-    };
-    selections.add(check);
-    return () => {
-      selections.delete(check);
-    };
-  }
-  function setState(partial) {
-    state = { ...state, ...partial };
-    for (const check of [...selections]) {
-      if (selections.has(check)) check();
-    }
-  }
-  return { getState: () => state, setState, on: on2, emit, select };
-}
-var init_store = __esm({
-  "src/shared/store/store.ts"() {
-    init_types();
-    init_layout();
   }
 });
 
@@ -2818,15 +2686,12 @@ async function restoreArchivedThread(store2, api2, projectId, threadId) {
     throw new Error("The thread is busy or changed. Try restoring it again.");
   invalidateProjectThreadLoads(api2, projectId);
   if (store2.getState().activeProjectId === projectId) {
-    const metadata = (await api2.threads.loadProject(projectId)).find(
-      (thread) => thread.id === threadId
-    );
+    const metadata = await loadPersistedThread(api2, projectId, threadId);
     if (!metadata) throw new Error("The restored thread could not be loaded.");
     if (store2.getState().activeProjectId === projectId) {
       const threads = store2.getState().threads;
       const previous = threads.find((thread) => thread.id === threadId);
       const restored = previous?.messagesLoaded !== false && previous ? { ...metadata, messages: previous.messages, messagesLoaded: true } : metadata;
-      recordPersistedThread(projectId, metadata);
       store2.setState({ threads: [...threads.filter((thread) => thread.id !== threadId), restored] });
       store2.emit("threads_changed");
     }
@@ -3275,7 +3140,6 @@ async function forkThread(store2, api2, sourceThreadId, options = {}) {
     stagedDiffs: []
   });
   store2.emit("threads_changed");
-  store2.emit("panel_changed");
   const projectId = store2.getState().activeProjectId;
   if (!projectId) return { threadId: forked.id, history: null, droppedAttachments: false };
   let history2 = null;
@@ -3342,7 +3206,6 @@ function createFollowUpThread(store2, api2, sourceThreadId) {
     stagedDiffs: []
   });
   store2.emit("threads_changed");
-  store2.emit("panel_changed");
   store2.emit("new_thread_opened");
   void attachSourceReference(store2, api2, projectId, source, thread.id);
   return thread.id;
@@ -4023,7 +3886,6 @@ async function startSideChat(store2, api2, parentThreadId, options = {}) {
       stagedDiffs: []
     });
     store2.emit("threads_changed");
-    store2.emit("panel_changed");
   } else {
     store2.setState({ threads: [side, ...store2.getState().threads] });
     store2.emit("threads_changed");
@@ -4108,7 +3970,6 @@ async function promoteSideChat(store2, api2, sideThreadId) {
     stagedDiffs: []
   });
   store2.emit("threads_changed");
-  store2.emit("panel_changed");
   archiveThread(store2, sideThreadId);
   const projectId = store2.getState().activeProjectId;
   if (projectId) {
@@ -7080,7 +6941,6 @@ function mountProjectsPane(root, store2, api2) {
   function syncFilterControls() {
     const { projects, sidebarThreadSort, sidebarThreadSortReverse, sidebarProjectFilterId } = store2.getState();
     const chosen = projects.find((project) => project.id === sidebarProjectFilterId);
-    if (!chosen) store2.setState({ sidebarProjectFilterId: null });
     const projectName = chosen ? projectDisplayName(chosen) : "All projects";
     const suffix = archivedOnly ? " \xB7 Archived" : needsCleanupOnly ? " \xB7 Needs cleanup" : "";
     filterLabel.textContent = `${projectName}${suffix}`;
@@ -7897,6 +7757,10 @@ function mountProjectsPane(root, store2, api2) {
     return entries;
   }
   function render2(preserveScroll = false) {
+    const { projects: known, sidebarProjectFilterId } = store2.getState();
+    if (sidebarProjectFilterId !== null && !known.some((p) => p.id === sidebarProjectFilterId)) {
+      store2.setState({ sidebarProjectFilterId: null });
+    }
     endDrag();
     const scrollTop = preserveScroll ? list.scrollTop : 0;
     prBackfillObserver?.disconnect();
@@ -8945,7 +8809,12 @@ function mountProjectsPane(root, store2, api2) {
     }),
     unsubWorkingTree,
     store2.on("projects_changed", render2),
-    store2.on("sidebar_project_filter_changed", render2),
+    store2.select(
+      (s) => s.sidebarProjectFilterId,
+      () => {
+        render2();
+      }
+    ),
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
     store2.on("threads_changed", () => {
@@ -14678,6 +14547,47 @@ var init_composer_editor = __esm({
   }
 });
 
+// src/shared/tools/command-phase-display.ts
+function commandPhaseLabel(phase) {
+  if (!phase) return null;
+  switch (phase.state) {
+    case "queued":
+      return { text: "Queued" };
+    case "awaiting_approval":
+      return { text: "Waiting for approval" };
+    case "starting":
+      return { text: "Starting" };
+    case "running":
+      return phase.backgroundTaskId === void 0 ? { text: "Running" } : {
+        text: `Background task ${phase.backgroundTaskId}`,
+        detail: "Its output is under Background tasks."
+      };
+    case "exited":
+      if (phase.exitCode === void 0) return { text: "Exited" };
+      return phase.exitCode === 0 ? null : { text: `Exit ${String(phase.exitCode)}` };
+    case "timed_out":
+      return { text: "Timed out" };
+    case "cancelled":
+      return { text: phase.launched ? "Stopped" : "Cancelled before start" };
+    case "not_started":
+      return {
+        text: "Did not start",
+        ...phase.reason !== void 0 && phase.reason !== "" ? { detail: phase.reason } : {}
+      };
+  }
+}
+function liveCommandPhase(calls) {
+  for (let index = calls.length - 1; index >= 0; index--) {
+    const call = calls[index];
+    if (call?.status === "running" && call.commandPhase) return call.commandPhase;
+  }
+  return void 0;
+}
+var init_command_phase_display = __esm({
+  "src/shared/tools/command-phase-display.ts"() {
+  }
+});
+
 // src/renderer/views/thread-roadmap-origin.ts
 function roadmapOriginIcon() {
   return outlineIcon(
@@ -15046,11 +14956,20 @@ var init_read_file_limits = __esm({
 function hasOpenTodos(todos) {
   return todos.some((t) => t.status === "pending" || t.status === "in_progress");
 }
-var MAX_TODO_CLOSEOUT_ATTEMPTS, OPEN_TODOS_FINALIZE_NUDGE, OPEN_TODOS_FINALIZE_NUDGE_STRICT;
+var DUPLICATE_GUARDED_TOOL_NAMES, MAX_TODO_CLOSEOUT_ATTEMPTS, OPEN_TODOS_FINALIZE_NUDGE, OPEN_TODOS_FINALIZE_NUDGE_STRICT, WORKSPACE_READ_ONLY_TOOL_NAMES;
 var init_agent_loop_guards = __esm({
   "packages/agent/src/agent-loop-guards.ts"() {
     init_read_file_limits();
     init_unknown_value();
+    DUPLICATE_GUARDED_TOOL_NAMES = /* @__PURE__ */ new Set([
+      "list_dir",
+      "read_file",
+      "find_files",
+      "search_code",
+      "search_codebase",
+      "semantic_search",
+      "explore"
+    ]);
     MAX_TODO_CLOSEOUT_ATTEMPTS = 3;
     OPEN_TODOS_FINALIZE_NUDGE = `You still have open todos in the plan. Before finishing:
 1. Call update_todos (merge=true) to mark each finished item completed or cancel items you will not do.
@@ -15060,6 +14979,17 @@ Do not reply with plain text claiming todos are done; the plan only updates via 
 - merge=true, patch each item by id with status completed or cancelled, OR
 - continue executing the remaining pending/in_progress work, then update_todos.
 Plain-text claims that work is done are not accepted \u2014 update_todos is required.`;
+    WORKSPACE_READ_ONLY_TOOL_NAMES = /* @__PURE__ */ new Set([
+      ...DUPLICATE_GUARDED_TOOL_NAMES,
+      "update_todos",
+      "read_skill",
+      "git_status",
+      "git_diff",
+      "git_log",
+      "git_show",
+      "staged_diffs",
+      "read_staged_diff"
+    ]);
   }
 });
 
@@ -17318,10 +17248,8 @@ function createDisclosureModel(host, timing, clock = systemClock) {
       const entry = entryFor(threadId, key);
       entry.failed = status === "error";
       if (status === "interrupted") entry.autoOpenedAt = null;
-      if (kind !== "entry") {
-        entry.running = status === "running";
-        if (!entry.running) cancelReveal(key);
-      }
+      if (kind !== "entry") entry.running = status === "running";
+      if (kind !== "tool" || status !== "running" || !autoRevealEligible) cancelReveal(key);
       if (entry.mode !== "auto") return entry.mode === "user-open";
       if (kind === "container") return false;
       if (entry.failed) {
@@ -18051,17 +17979,9 @@ var init_image_input_support = __esm({
 // src/renderer/views/conversation-search.ts
 function findMatchOffsets(haystack, needle) {
   if (!needle) return [];
-  const hay = haystack.toLowerCase();
-  const q2 = needle.toLowerCase();
-  const offsets = [];
-  let from2 = 0;
-  for (; ; ) {
-    const idx = hay.indexOf(q2, from2);
-    if (idx === -1) break;
-    offsets.push(idx);
-    from2 = idx + q2.length;
-  }
-  return offsets;
+  const literal = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(literal, "giu");
+  return Array.from(haystack.matchAll(pattern), (match) => match.index);
 }
 function normalizeSearchText(text) {
   return text.replace(/\s+/g, " ").trim();
@@ -18774,7 +18694,7 @@ function createToolLocationsSection(locations) {
     })
   );
 }
-function createToolHeader(label, status, summaryClass, count, editStats, editPath) {
+function createToolHeader(label, status, summaryClass, count, editStats, editPath, commandPhase) {
   const activityIcon = el("span", {
     class: "tool-activity-icon-slot",
     "aria-hidden": "true"
@@ -18809,6 +18729,20 @@ function createToolHeader(label, status, summaryClass, count, editStats, editPat
   if (count !== void 0 && count > 1) {
     children.push(el("span", { class: "tool-count" }, `\xD7${String(count)}`));
   }
+  const phase = commandPhaseLabel(commandPhase);
+  if (phase && commandPhase) {
+    children.push(
+      el(
+        "span",
+        {
+          class: "tool-command-phase",
+          "data-phase": commandPhase.state,
+          ...phase.detail !== void 0 ? { "data-tooltip": phase.detail } : {}
+        },
+        phase.text
+      )
+    );
+  }
   children.push(el("span", { class: "tool-status-icon", "aria-label": status }, statusIcon2(status)));
   return el("summary", { class: summaryClass }, ...children);
 }
@@ -18836,7 +18770,8 @@ function appendStandardToolSections(card, tc, label, summaryClass, count) {
     summaryClass,
     count,
     tc.editStats,
-    getToolEditPath(tc)
+    getToolEditPath(tc),
+    tc.commandPhase
   );
   card.append(header);
   const buildBody2 = () => {
@@ -19029,13 +18964,13 @@ function transcriptInputs(store2, thread) {
     artefactPreviewRevision: artefactPreviewRevision(thread.id)
   };
 }
-function sameItems(a, b2) {
+function sameItems2(a, b2) {
   if (a === b2) return true;
   if (!a || !b2 || a.length !== b2.length) return false;
   return a.every((item, i2) => item === b2[i2]);
 }
 function sameTranscriptInputs(a, b2) {
-  return a.threadId === b2.threadId && a.status === b2.status && a.model === b2.model && a.todos === b2.todos && a.workingBrief === b2.workingBrief && a.interruptedTurnAt === b2.interruptedTurnAt && a.liveProposalTargets === b2.liveProposalTargets && a.needsHydration === b2.needsHydration && a.hydrationFailed === b2.hydrationFailed && a.artefactPreviewRevision === b2.artefactPreviewRevision && sameItems(a.messages, b2.messages) && sameItems(a.pendingMessages, b2.pendingMessages) && sameItems(a.threadProposals, b2.threadProposals) && sameItems(a.reviewerInputAnswers, b2.reviewerInputAnswers);
+  return a.threadId === b2.threadId && a.status === b2.status && a.model === b2.model && a.todos === b2.todos && a.workingBrief === b2.workingBrief && a.interruptedTurnAt === b2.interruptedTurnAt && a.liveProposalTargets === b2.liveProposalTargets && a.needsHydration === b2.needsHydration && a.hydrationFailed === b2.hydrationFailed && a.artefactPreviewRevision === b2.artefactPreviewRevision && sameItems2(a.messages, b2.messages) && sameItems2(a.pendingMessages, b2.pendingMessages) && sameItems2(a.threadProposals, b2.threadProposals) && sameItems2(a.reviewerInputAnswers, b2.reviewerInputAnswers);
 }
 function summaryPreview(text, max = 200) {
   const trimmed2 = text.trim();
@@ -19319,7 +19254,18 @@ function createGroupToolCard(item) {
   });
   const count = item.toolCalls.length;
   const groupItems = el("div", { class: "tool-group-items" });
-  card.append(createToolHeader(item.label, status, "tool-card-header", count), groupItems);
+  card.append(
+    createToolHeader(
+      item.label,
+      status,
+      "tool-card-header",
+      count,
+      void 0,
+      void 0,
+      liveCommandPhase(item.toolCalls)
+    ),
+    groupItems
+  );
   for (const tc of item.toolCalls) {
     const entry = el("details", {
       class: "tool-group-item",
@@ -19353,7 +19299,18 @@ function createRollupToolCard(item, api2, threadId, store2) {
     body.append(childCard);
   }
   syncRollupInterruptionNote(body, item.toolCalls);
-  card.append(createToolHeader(item.label, status, "tool-card-header", count), body);
+  card.append(
+    createToolHeader(
+      item.label,
+      status,
+      "tool-card-header",
+      count,
+      void 0,
+      void 0,
+      liveCommandPhase(item.toolCalls)
+    ),
+    body
+  );
   return card;
 }
 function createStepToolCard(item, api2, threadId) {
@@ -19372,7 +19329,18 @@ function createStepToolCard(item, api2, threadId) {
     toolCardSignatures.set(childCard, toolCardSignature(child));
     body.append(childCard);
   }
-  card.append(createToolHeader(item.label, status, "tool-card-header"), body);
+  card.append(
+    createToolHeader(
+      item.label,
+      status,
+      "tool-card-header",
+      void 0,
+      void 0,
+      void 0,
+      liveCommandPhase(item.toolCalls)
+    ),
+    body
+  );
   return card;
 }
 function createToolCard(item, api2, threadId, store2) {
@@ -19416,7 +19384,15 @@ function reconcileGroupCard(card, item) {
   card.dataset["status"] = status;
   replaceDirectToolHeader(
     card,
-    createToolHeader(item.label, status, "tool-card-header", item.toolCalls.length)
+    createToolHeader(
+      item.label,
+      status,
+      "tool-card-header",
+      item.toolCalls.length,
+      void 0,
+      void 0,
+      liveCommandPhase(item.toolCalls)
+    )
   );
   let host = Array.from(card.children).find(
     (node) => node instanceof HTMLElement && node.classList.contains("tool-group-items")
@@ -19493,7 +19469,18 @@ function reconcileToolCard(card, item, api2, threadId, store2) {
       card.dataset["rollupKey"] = item.key;
     }
     const count = item.type === "rollup" ? rollupHeaderCount(item) : void 0;
-    replaceDirectToolHeader(card, createToolHeader(item.label, status, "tool-card-header", count));
+    replaceDirectToolHeader(
+      card,
+      createToolHeader(
+        item.label,
+        status,
+        "tool-card-header",
+        count,
+        void 0,
+        void 0,
+        liveCommandPhase(item.toolCalls)
+      )
+    );
     let body = Array.from(card.children).find(
       (node) => node instanceof HTMLElement && node.classList.contains("tool-rollup-body")
     );
@@ -21447,11 +21434,12 @@ function mountConversation(root, store2, api2) {
       const m2 = thread.messages[i2];
       if (m2) prependMessageEl(thread.id, m2.id, anchor);
     }
-    const delta = list.scrollHeight - heightBefore;
-    if (delta !== 0) setScrollTopProgrammatically(scrollTopBefore + delta);
     syncModelLabels();
     syncUserActions();
     syncAcpResourceReferences(list, api2, store2);
+    syncConciseTurnFooters();
+    const delta = list.scrollHeight - heightBefore;
+    if (delta !== 0) setScrollTopProgrammatically(scrollTopBefore + delta);
     updateScrollButton();
     if (chunkStart > 0) {
       requestAnimationFrame(() => {
@@ -21507,6 +21495,7 @@ function mountConversation(root, store2, api2) {
     syncUserActions();
     syncAcpResourceReferences(list, api2, store2);
     finishThreadChrome(thread);
+    syncConciseTurnFooters();
     refreshStickyImagePrompt();
     if (preservedScrollTop === null) {
       scrollToBottom(true);
@@ -21884,6 +21873,7 @@ var init_conversation = __esm({
     init_composer_editor();
     init_agent_activity();
     init_tool_display();
+    init_command_phase_display();
     init_copse_tool_call();
     init_panels();
     init_thread_roadmap_origin();
@@ -32840,10 +32830,12 @@ function mountFileTree(root, store2, api2) {
   const unsubs = [
     store2.on("workspace_changed", refresh),
     store2.on("threads_changed", refreshForActiveTask),
-    store2.on("panel_changed", () => {
-      const path = store2.getState().openFile?.path;
-      if (path) void revealPath(path);
-    }),
+    store2.select(
+      (s) => s.openFile,
+      (openFile2) => {
+        if (openFile2) void revealPath(openFile2.path);
+      }
+    ),
     store2.on("explorer_reveal", (path) => {
       void revealPath(path, true);
     })
@@ -70159,20 +70151,25 @@ function mountContextPanel(root, store2, api2, monaco) {
   }
   let watched = null;
   const unsubs = [
-    store2.on("panel_changed", () => {
-      updatePanel();
-      void refreshWorkingDiff();
-      const { openFile } = store2.getState();
-      const owner = getActiveThreadOwner(store2);
-      if (watched && (watched.path !== openFile?.path || watched.projectId !== owner?.projectId || watched.threadId !== owner.threadId)) {
-        void api2.fs.unwatch(watched.projectId, watched.threadId, watched.path);
-        watched = null;
-      }
-      if (openFile && owner && !watched) {
-        void api2.fs.watch(owner.projectId, owner.threadId, openFile.path);
-        watched = { ...owner, path: openFile.path };
-      }
-    })
+    // The open file and the thread it belongs to; staging a diff is not a change.
+    store2.select(
+      (s) => [s.openFile, s.activeProjectId, s.activeThreadId],
+      () => {
+        updatePanel();
+        void refreshWorkingDiff();
+        const { openFile } = store2.getState();
+        const owner = getActiveThreadOwner(store2);
+        if (watched && (watched.path !== openFile?.path || watched.projectId !== owner?.projectId || watched.threadId !== owner.threadId)) {
+          void api2.fs.unwatch(watched.projectId, watched.threadId, watched.path);
+          watched = null;
+        }
+        if (openFile && owner && !watched) {
+          void api2.fs.watch(owner.projectId, owner.threadId, openFile.path);
+          watched = { ...owner, path: openFile.path };
+        }
+      },
+      sameItems
+    )
   ];
   const unsubFsChanged = api2.fs.onChanged((projectId, threadId, path, newContent) => {
     const owner = getActiveThreadOwner(store2);
@@ -70223,6 +70220,7 @@ function mountContextPanel(root, store2, api2, monaco) {
 }
 var init_context_panel = __esm({
   "src/renderer/views/context-panel.ts"() {
+    init_store();
     init_code_block_copy();
     init_dist();
     init_mermaid();
@@ -72103,6 +72101,10 @@ function getFirstGitChange(status) {
   if (unstaged) return { path: unstaged.path, staged: false };
   return null;
 }
+function workingTreePathLeft(prev, next) {
+  const remaining = new Set([...next.staged, ...next.unstaged].map((change) => change.path));
+  return [...prev.staged, ...prev.unstaged].some((change) => !remaining.has(change.path));
+}
 function defaultProposedPath(queue, activeDiff) {
   const [first2] = queue;
   if (!first2) return null;
@@ -72263,6 +72265,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   let gitAvailable = false;
   let loaded = false;
   let committedPending = false;
+  let hasSettledGitRead = false;
+  let renderedListKey = null;
   let sessionBackup = null;
   let restoreInFlight = false;
   let selection = null;
@@ -72309,7 +72313,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   function adoptActiveOwner() {
     const nextKey = activeOwnerKey();
     if (nextKey === displayedOwnerKey) return false;
-    if (displayedOwnerKey && loaded && gitAvailable) {
+    if (displayedOwnerKey && hasSettledGitRead && gitAvailable) {
       snapshotsByOwner.delete(displayedOwnerKey);
       snapshotsByOwner.set(displayedOwnerKey, {
         status,
@@ -72329,6 +72333,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     selectRequestId++;
     const known = nextKey ? snapshotsByOwner.get(nextKey) : void 0;
     loaded = known !== void 0;
+    hasSettledGitRead = loaded;
     committedPending = false;
     gitAvailable = loaded;
     status = known?.status ?? null;
@@ -72505,6 +72510,18 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   function renderList() {
     const queue = store2.getState().stagedDiffs;
     syncBulkActions(queue.length);
+    const key = JSON.stringify([
+      displayedOwnerKey,
+      loaded,
+      gitAvailable,
+      committedPending,
+      status,
+      committed,
+      queue.map((entry) => entry.path),
+      selection
+    ]);
+    if (key === renderedListKey) return;
+    renderedListKey = key;
     clear(listBody);
     renderProposedSection(queue);
     if (!loaded) {
@@ -72814,7 +72831,9 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     emptyState.hidden = false;
     if (!loaded) setInlineStatus(emptyState, "pending", "Loading changes\u2026");
     else if (committedPending) setInlineStatus(emptyState, "pending", "Checking committed changes\u2026");
-    else emptyState.textContent = "Select a changed file";
+    else if (emptyState.textContent !== "Select a changed file") {
+      emptyState.textContent = "Select a changed file";
+    }
     diffWrap.hidden = true;
     imageWrap.hidden = true;
     dirWrap.hidden = true;
@@ -72909,6 +72928,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     if (!owner) {
       gitAvailable = false;
       loaded = false;
+      hasSettledGitRead = false;
       renderList();
       return;
     }
@@ -72929,6 +72949,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       if (!availabilityFailed) gitFailureLogged = false;
       loaded = true;
       committedPending = false;
+      hasSettledGitRead = false;
       status = null;
       committed = null;
       sessionBackup = null;
@@ -72941,17 +72962,22 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     const backupRead = settleRead(api2.git.sessionBackup(owner.projectId, owner.threadId));
     let nextStatus;
     let nextCommitted;
-    let selectedEarly;
+    let selectedEarly = false;
     try {
       nextStatus = await api2.git.status(owner.projectId, owner.threadId);
       if (requestId !== refreshRequestId) return;
-      status = nextStatus;
-      loaded = true;
-      committedPending = true;
-      renderList();
-      if (!selection) clearViewer();
-      selectedEarly = !pendingNavigate && selection?.kind !== "committed" && nextStatus !== null && getFirstGitChange(nextStatus) !== null;
-      if (selectedEarly) void syncSelection();
+      if (!hasSettledGitRead) {
+        status = nextStatus;
+        loaded = true;
+        committedPending = true;
+        renderList();
+        if (!selection) clearViewer();
+        selectedEarly = !pendingNavigate && selection?.kind !== "committed" && nextStatus !== null && getFirstGitChange(nextStatus) !== null;
+        if (selectedEarly) void syncSelection();
+      } else if (status && nextStatus && !workingTreePathLeft(status, nextStatus)) {
+        status = nextStatus;
+        renderList();
+      }
       const committedResult = await committedRead;
       if (requestId !== refreshRequestId) return;
       if (!committedResult.ok) throw committedResult.error;
@@ -72966,6 +72992,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       gitAvailable = false;
       loaded = true;
       committedPending = false;
+      hasSettledGitRead = false;
       renderRestoreBanner();
       renderList();
       clearViewer();
@@ -72974,6 +73001,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     gitFailureLogged = false;
     loaded = true;
     committedPending = false;
+    hasSettledGitRead = true;
     status = nextStatus;
     committed = nextCommitted;
     renderList();
@@ -72987,6 +73015,9 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       sessionBackup = null;
     }
     renderRestoreBanner();
+  }
+  function sameDiffState(a, b2) {
+    return a[0] === b2[0] && (a[1] === b2[1] || a[1].length === 0 && b2[1].length === 0);
   }
   async function syncFromStore() {
     adoptActiveOwner();
@@ -73036,9 +73067,14 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       else renderList();
       scheduleRefresh();
     }),
-    store2.on("panel_changed", () => {
-      if (changesModeActive(store2)) void syncFromStore();
-    }),
+    // Only the diff state: an ordinary thread switch is threads_changed's job.
+    store2.select(
+      (s) => [s.activeDiff, s.stagedDiffs],
+      () => {
+        if (changesModeActive(store2)) void syncFromStore();
+      },
+      sameDiffState
+    ),
     store2.on("settings_changed", syncReviewGate),
     store2.on("thread_status_changed", syncReviewButton),
     store2.on("threads_changed", syncReviewButton),
@@ -84323,9 +84359,16 @@ function mountAskUserDialog(api2, store2) {
       form.append(el("p", { class: "ask-user-origin" }, asker.label));
       store2.emit("side_chat_open_requested", asker.firstSideChatId);
     }
+    const actionsOnly = active.presentation?.kind === "actions";
+    const choiceMode = !actionsOnly && active.questions.length === 1 && (active.questions[0]?.options?.length ?? 0) > 0;
+    const submitBtn = el(
+      "button",
+      { type: "submit", class: "ask-user-submit", title: "Send answer (\u2318Enter or Ctrl+Enter)" },
+      "Send answer"
+    );
+    submitBtn.hidden = choiceMode;
     active.questions.forEach((q2, i2) => {
       const questionId = `ask-user-question-${String(i2)}`;
-      const actionsOnly = active?.presentation?.kind === "actions";
       const input = el("textarea", {
         class: "ask-user-input",
         rows: "2",
@@ -84341,11 +84384,14 @@ function mountAskUserDialog(api2, store2) {
       question.innerHTML = renderMarkdown(q2.question);
       const field = el("div", { class: "ask-user-field" }, question);
       if (q2.options && q2.options.length > 0) {
-        const optionRow = el("div", { class: "ask-user-options" });
+        const optionRow = el("div", {
+          class: choiceMode ? "ask-user-options ask-user-options-stacked" : "ask-user-options",
+          ...choiceMode ? { role: "group", "aria-labelledby": questionId } : {}
+        });
         for (const option of q2.options) {
           const button = el("button", {
             type: "button",
-            class: actionsOnly ? `ui-btn ${option === q2.options[0] ? "ui-btn-primary" : "ui-btn-secondary"} ask-user-option ask-user-action` : "ask-user-option"
+            class: actionsOnly ? `ui-btn ${option === q2.options[0] ? "ui-btn-primary" : "ui-btn-secondary"} ask-user-option ask-user-action` : choiceMode ? "ask-user-option ask-user-choice" : "ask-user-option"
           });
           setInlineMarkdown(button, option);
           const answer = button.textContent;
@@ -84358,6 +84404,10 @@ function mountAskUserDialog(api2, store2) {
               respond([option]);
               return;
             }
+            if (choiceMode) {
+              respond([answer]);
+              return;
+            }
             input.value = answer;
             input.focus();
           });
@@ -84367,6 +84417,17 @@ function mountAskUserDialog(api2, store2) {
       }
       if (q2.recommendationReason) {
         field.append(el("p", { class: "ask-user-recommendation-reason" }, q2.recommendationReason));
+      }
+      if (choiceMode) {
+        const toggle = el("button", { type: "button", class: "ask-user-other" }, "Something else\u2026");
+        input.hidden = true;
+        toggle.addEventListener("click", () => {
+          toggle.hidden = true;
+          input.hidden = false;
+          submitBtn.hidden = false;
+          input.focus();
+        });
+        field.append(toggle);
       }
       if (!actionsOnly) field.append(input);
       form.append(field);
@@ -84382,24 +84443,9 @@ function mountAskUserDialog(api2, store2) {
       event.preventDefault();
       cancel();
     });
-    form.append(
-      el(
-        "div",
-        { class: "ask-user-buttons" },
-        cancelBtn,
-        el(
-          "button",
-          {
-            type: "submit",
-            class: "ask-user-submit",
-            title: "Send answer (\u2318Enter or Ctrl+Enter)"
-          },
-          "Send answer"
-        )
-      )
-    );
+    form.append(el("div", { class: "ask-user-buttons" }, cancelBtn, submitBtn));
     dialog.showModal();
-    inputs[0]?.focus();
+    (form.querySelector(".ask-user-other") ?? inputs[0])?.focus();
   }
   function withdrawIfUnshowable() {
     if (!active || isShowable(active)) return;
@@ -84483,6 +84529,7 @@ function mountAskUserDialog(api2, store2) {
   }
   function submit() {
     if (active?.presentation?.kind === "actions") return;
+    if (inputs.some((input) => input.hidden)) return;
     respond(inputs.map((input) => input.value));
   }
   function cancel() {
@@ -85063,6 +85110,8 @@ function mountFileSearchDialog(store2, api2) {
   });
   openImpl2 = () => {
     if (dialog.open) return;
+    if (debounce) clearTimeout(debounce);
+    debounce = null;
     input.value = "";
     results = [];
     selectedIdx = 0;
@@ -86610,7 +86659,8 @@ function createTranscriptReducer(store2, hooks = {}) {
             ...chunk.resultFormat !== void 0 ? { resultFormat: chunk.resultFormat } : {},
             ...chunk.images !== void 0 ? { images: chunk.images } : {},
             ...chunk.content !== void 0 ? { content: chunk.content } : {},
-            ...chunk.locations !== void 0 ? { locations: chunk.locations } : {}
+            ...chunk.locations !== void 0 ? { locations: chunk.locations } : {},
+            ...chunk.commandPhase !== void 0 ? { commandPhase: chunk.commandPhase } : {}
           });
         }
         st.writing = false;
@@ -86933,16 +86983,17 @@ function attachDiffState(store2, api2, options) {
       activeDiff: entries.length === 0 ? null : stillQueued
     });
     store2.emit("staged_diffs_changed");
-    store2.emit("panel_changed");
   };
   const unsubShowDiff = api2.diff.onShowDiff(
     (projectId, threadId, path, before, after, language) => {
       if (!isActiveOwner(projectId, threadId)) return;
-      store2.setState({ activeDiff: { path, before, after, language } });
-      if (!options.revealOnShowDiff) return;
-      store2.setState({ rightPanelMode: "changes", filesPaneOpen: true });
+      const activeDiff = { path, before, after, language };
+      if (!options.revealOnShowDiff) {
+        store2.setState({ activeDiff });
+        return;
+      }
+      store2.setState({ activeDiff, rightPanelMode: "changes", filesPaneOpen: true });
       syncFilesPaneDom(store2);
-      store2.emit("panel_changed");
     }
   );
   const unsubQueued = api2.diff.onQueued((projectId, threadId, entries) => {
@@ -89317,7 +89368,6 @@ async function confirmDeleteThread() {
     stagedDiffs: []
   });
   store.emit("threads_changed");
-  store.emit("panel_changed");
 }
 function switchToPrevThread() {
   const prev = prevThreadId(store);

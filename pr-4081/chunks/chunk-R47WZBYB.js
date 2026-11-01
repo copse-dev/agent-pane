@@ -23113,7 +23113,6 @@ function createThread(store, draftPrompt) {
     stagedDiffs: []
   });
   store.emit("threads_changed");
-  store.emit("panel_changed");
   store.emit("new_thread_opened");
   return id;
 }
@@ -23141,7 +23140,6 @@ function openNewThread(store) {
       activeDiff: null,
       stagedDiffs: []
     });
-    store.emit("panel_changed");
     store.emit("new_thread_opened");
     return existing.id;
   }
@@ -23161,7 +23159,6 @@ function switchThread(store, id) {
     const { unreadAt: _read, ...readThread } = thread;
     return readThread;
   });
-  const panelWasPopulated = state.openFile !== null || state.activeDiff !== null || state.stagedDiffs.length > 0;
   store.setState({
     activeThreadId: id,
     threads,
@@ -23169,7 +23166,6 @@ function switchThread(store, id) {
     activeDiff: null,
     stagedDiffs: []
   });
-  if (panelWasPopulated) store.emit("panel_changed");
   store.emit("threads_changed");
 }
 function nextThreadId(store) {
@@ -23224,7 +23220,6 @@ function deleteThread(store, id) {
     ...activeDoomed ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}
   });
   store.emit("threads_changed");
-  if (activeDoomed) store.emit("panel_changed");
 }
 function archiveThread(store, id, persisted) {
   const { threads, activeThreadId } = store.getState();
@@ -23260,7 +23255,6 @@ function archiveThread(store, id, persisted) {
     ...activeArchived ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}
   });
   store.emit("threads_changed");
-  if (activeArchived) store.emit("panel_changed");
 }
 function restoreThread(store, id) {
   const { threads } = store.getState();
@@ -24020,6 +24014,30 @@ function metaPatch(prev, next) {
   }
   return patch;
 }
+function markMetadataChanged(projectId, threadId, ownLoad) {
+  if (ownLoad) return;
+  for (const load of activeMetadataLoads.get(projectId) ?? []) load.changed.add(threadId);
+}
+function metadataBaseline(projectId) {
+  let metas = persistedMeta.get(projectId);
+  if (!metas) {
+    metas = /* @__PURE__ */ new Map();
+    persistedMeta.set(projectId, metas);
+  }
+  return metas;
+}
+function acknowledgeMetadata(projectId, threadId, meta3, ownLoad) {
+  const metas = metadataBaseline(projectId);
+  if (meta3) metas.set(threadId, meta3);
+  else metas.delete(threadId);
+  markMetadataChanged(projectId, threadId, ownLoad);
+}
+function retryMetaPatch(previous, next, uncertain) {
+  const patch = metaPatch(previous, next);
+  const values = { ...next };
+  for (const key of uncertain?.fields ?? []) Object.assign(patch, { [key]: values[key] });
+  return patch;
+}
 function runtimeMeta(previous, thread, before) {
   const next = { ...previous };
   for (const key of TRANSCRIPT_META_KEYS) {
@@ -24030,20 +24048,19 @@ function runtimeMeta(previous, thread, before) {
 }
 function acceptRuntimeThreadMeta(projectId, thread, before) {
   const previous = persistedMeta.get(projectId)?.get(thread.id);
-  if (previous) persistedMeta.get(projectId)?.set(thread.id, runtimeMeta(previous, thread, before));
+  if (previous) acknowledgeMetadata(projectId, thread.id, runtimeMeta(previous, thread, before));
   for (const pending of pendingThreadWrites.get(projectId)?.get(thread.id) ?? []) {
     if (pending.kind === "save") pending.meta = runtimeMeta(pending.meta, thread, before);
   }
   const creation = unconfirmedCreates.get(projectId)?.get(thread.id);
   if (creation) creation.meta = runtimeMeta(creation.meta, thread, before);
-}
-function recordPersistedThread(projectId, thread) {
-  let metas = persistedMeta.get(projectId);
-  if (!metas) {
-    metas = /* @__PURE__ */ new Map();
-    persistedMeta.set(projectId, metas);
+  const uncertain = uncertainThreadWrites.get(projectId)?.get(thread.id);
+  if (uncertain?.target) uncertain.target = runtimeMeta(uncertain.target, thread, before);
+  for (const key of TRANSCRIPT_META_KEYS) {
+    if (!before || JSON.stringify(before[key]) !== JSON.stringify(thread[key])) {
+      uncertain?.fields.delete(key);
+    }
   }
-  metas.set(thread.id, metaOf(thread));
 }
 function queueThreadWrite(api, projectId, threadId, target) {
   let projectPending = pendingThreadWrites.get(projectId);
@@ -24054,41 +24071,64 @@ function queueThreadWrite(api, projectId, threadId, target) {
   const queue = projectPending.get(threadId) ?? [];
   projectPending.set(threadId, queue);
   queue.push(target);
+  markMetadataChanged(projectId, threadId);
   return serializedWrite(threadWriteKey(projectId, threadId), async () => {
-    let acknowledged = persistedMeta.get(projectId);
-    if (!acknowledged) {
-      acknowledged = /* @__PURE__ */ new Map();
-      persistedMeta.set(projectId, acknowledged);
-    }
-    const previous = acknowledged.get(threadId);
+    const previous = metadataBaseline(projectId).get(threadId);
+    const uncertain = uncertainThreadWrites.get(projectId)?.get(threadId);
+    let submittedPatch;
+    let attemptedDelete = false;
     try {
       if (target.kind === "delete") {
-        if (previous || unconfirmedCreates.get(projectId)?.has(threadId)) {
+        if (previous || unconfirmedCreates.get(projectId)?.has(threadId) || uncertain?.deleted) {
+          attemptedDelete = true;
           await api.threads.delete(projectId, threadId);
         }
-        acknowledged.delete(threadId);
+        acknowledgeMetadata(projectId, threadId, null);
       } else {
-        if (!previous) {
+        if (!previous || uncertain?.deleted || unconfirmedCreates.get(projectId)?.has(threadId)) {
           let creations2 = unconfirmedCreates.get(projectId);
           if (!creations2) {
             creations2 = /* @__PURE__ */ new Map();
             unconfirmedCreates.set(projectId, creations2);
           }
-          const creation = creations2.get(threadId) ?? { meta: target.meta };
+          const creation = creations2.get(threadId) ?? { meta: previous ?? target.meta };
           creations2.set(threadId, creation);
           await api.threads.create(projectId, { ...target.thread, ...target.meta });
-          const patch = metaPatch(creation.meta, target.meta);
-          if (Object.keys(patch).length > 0) {
-            await api.threads.updateMeta(projectId, threadId, patch);
-          }
-        } else if (metaSig(previous) !== metaSig(target.meta)) {
-          await api.threads.updateMeta(projectId, threadId, metaPatch(previous, target.meta));
+          submittedPatch = retryMetaPatch(creation.meta, target.meta, uncertain);
+        } else {
+          submittedPatch = retryMetaPatch(previous, target.meta, uncertain);
         }
-        acknowledged.set(threadId, target.meta);
+        if (Object.keys(submittedPatch).length > 0) {
+          await api.threads.updateMeta(projectId, threadId, submittedPatch);
+        }
+        acknowledgeMetadata(projectId, threadId, target.meta);
       }
       const creations = unconfirmedCreates.get(projectId);
       creations?.delete(threadId);
       if (creations?.size === 0) unconfirmedCreates.delete(projectId);
+      const uncertainties = uncertainThreadWrites.get(projectId);
+      uncertainties?.delete(threadId);
+      if (uncertainties?.size === 0) uncertainThreadWrites.delete(projectId);
+    } catch (error62) {
+      const fields = Object.keys(submittedPatch ?? {});
+      if (fields.length > 0 || attemptedDelete || target.kind === "save") {
+        let uncertainties = uncertainThreadWrites.get(projectId);
+        if (!uncertainties) {
+          uncertainties = /* @__PURE__ */ new Map();
+          uncertainThreadWrites.set(projectId, uncertainties);
+        }
+        const failed = uncertainties.get(threadId) ?? {
+          fields: /* @__PURE__ */ new Set(),
+          deleted: false,
+          target: null
+        };
+        for (const field of fields) failed.fields.add(field);
+        failed.deleted ||= attemptedDelete;
+        failed.target = target.kind === "save" ? target.meta : null;
+        uncertainties.set(threadId, failed);
+        markMetadataChanged(projectId, threadId);
+      }
+      throw error62;
     } finally {
       queue.splice(queue.indexOf(target), 1);
       if (queue.length === 0) projectPending.delete(threadId);
@@ -24109,13 +24149,16 @@ function reconcileThreads(api, projectId, threads) {
   const writes = [];
   for (const [id, target] of next) {
     const before = previous.get(id);
-    if (!before || metaSig(before) !== metaSig(target.meta)) {
+    const uncertain = uncertainThreadWrites.get(projectId)?.has(id);
+    const pending = pendingThreadWrites.get(projectId)?.has(id);
+    if (!before || metaSig(before) !== metaSig(target.meta) || uncertain && !pending) {
       writes.push(queueThreadWrite(api, projectId, id, { kind: "save", ...target }));
     }
   }
   const potentiallyCreated = /* @__PURE__ */ new Set([
     ...previous.keys(),
-    ...unconfirmedCreates.get(projectId)?.keys() ?? []
+    ...unconfirmedCreates.get(projectId)?.keys() ?? [],
+    ...uncertainThreadWrites.get(projectId)?.keys() ?? []
   ]);
   for (const id of potentiallyCreated) {
     const pending = pendingThreadWrites.get(projectId)?.get(id)?.at(-1);
@@ -24183,20 +24226,163 @@ function invalidateProjectThreadLoads(api, projectId) {
   }
   revisions.set(projectId, (revisions.get(projectId) ?? 0) + 1);
 }
-async function loadThreads(api, projectId) {
-  let loaded;
-  let revision;
-  do {
-    revision = threadLoadRevisions.get(api)?.get(projectId) ?? 0;
-    loaded = await api.threads.loadProject(projectId);
-  } while (revision !== (threadLoadRevisions.get(api)?.get(projectId) ?? 0));
-  const threads = sortThreadsNewestFirst(loaded).map(
-    (thread) => thread.status !== "running" && thread.lastSettledAt === void 0 ? { ...thread, lastSettledAt: thread.updatedAt } : thread
-  );
-  const metas = /* @__PURE__ */ new Map();
-  for (const t2 of threads) metas.set(t2.id, metaOf(t2));
-  persistedMeta.set(projectId, metas);
-  return threads;
+function threadWithMeta(thread, meta3, projection) {
+  const messagesLoaded = projection ? projection.messagesLoaded : thread.messagesLoaded;
+  const hasSavedPlan = projection ? projection.hasSavedPlan : thread.hasSavedPlan;
+  return {
+    ...meta3,
+    messages: thread.messages,
+    ...messagesLoaded !== void 0 ? { messagesLoaded } : {},
+    ...hasSavedPlan !== void 0 ? { hasSavedPlan } : {}
+  };
+}
+async function readThreadMetadata(api, projectId, onlyThreadId) {
+  const load = {
+    changed: /* @__PURE__ */ new Set(),
+    generation: 0,
+    fullProjectionGeneration: 0,
+    projections: /* @__PURE__ */ new Map()
+  };
+  let loads = activeMetadataLoads.get(projectId);
+  if (!loads) {
+    loads = /* @__PURE__ */ new Set();
+    activeMetadataLoads.set(projectId, loads);
+  }
+  loads.add(load);
+  try {
+    let loaded;
+    let revision;
+    do {
+      revision = threadLoadRevisions.get(api)?.get(projectId) ?? 0;
+      load.generation = ++metadataLoadGeneration;
+      loaded = await api.threads.loadProject(projectId);
+    } while (revision !== (threadLoadRevisions.get(api)?.get(projectId) ?? 0));
+    const threads = sortThreadsNewestFirst(loaded).filter((thread) => onlyThreadId === void 0 || thread.id === onlyThreadId).map(
+      (thread) => onlyThreadId === void 0 && thread.status !== "running" && thread.lastSettledAt === void 0 ? { ...thread, lastSettledAt: thread.updatedAt } : thread
+    );
+    const baseline = metadataBaseline(projectId);
+    const beforeSeed = new Map(baseline);
+    const returned = new Map(threads.map((thread) => [thread.id, thread]));
+    if (load.generation < (appliedProjectLoads.get(projectId) ?? 0)) {
+      for (const id of /* @__PURE__ */ new Set([...baseline.keys(), ...returned.keys()])) load.changed.add(id);
+    }
+    for (const [id, generation] of appliedThreadLoads.get(projectId) ?? []) {
+      if (load.generation < generation) load.changed.add(id);
+    }
+    for (const id of baseline.keys()) {
+      if (onlyThreadId !== void 0 && id !== onlyThreadId) continue;
+      if (!returned.has(id) && !load.changed.has(id)) {
+        acknowledgeMetadata(projectId, id, null, load);
+      }
+    }
+    for (const thread of threads) {
+      if (!load.changed.has(thread.id)) {
+        const meta3 = metaOf(thread);
+        const uncertain = uncertainThreadWrites.get(projectId)?.get(thread.id);
+        const creation = unconfirmedCreates.get(projectId)?.get(thread.id);
+        const before = beforeSeed.get(thread.id) ?? creation?.meta ?? meta3;
+        for (const pending of pendingThreadWrites.get(projectId)?.get(thread.id) ?? []) {
+          if (pending.kind === "save") {
+            pending.meta = { ...meta3, ...retryMetaPatch(before, pending.meta, uncertain) };
+          }
+        }
+        if (uncertain?.target) {
+          uncertain.target = { ...meta3, ...retryMetaPatch(before, uncertain.target, uncertain) };
+        }
+        if (creation) creation.meta = meta3;
+        acknowledgeMetadata(projectId, thread.id, meta3, load);
+      }
+    }
+    for (const id of load.changed) {
+      if (onlyThreadId !== void 0 && id !== onlyThreadId) continue;
+      const current = baseline.get(id);
+      if (current) {
+        const old = returned.get(id) ?? { ...current, messages: [], messagesLoaded: false };
+        returned.set(id, threadWithMeta(old, current));
+      } else {
+        returned.delete(id);
+      }
+    }
+    for (const id of /* @__PURE__ */ new Set([
+      ...returned.keys(),
+      ...pendingThreadWrites.get(projectId)?.keys() ?? [],
+      ...uncertainThreadWrites.get(projectId)?.keys() ?? []
+    ])) {
+      if (onlyThreadId !== void 0 && id !== onlyThreadId) continue;
+      const pending = pendingThreadWrites.get(projectId)?.get(id)?.at(-1);
+      const uncertain = uncertainThreadWrites.get(projectId)?.get(id);
+      if (pending?.kind === "delete" || !pending && uncertain?.target === null) {
+        returned.delete(id);
+        continue;
+      }
+      const target = pending?.kind === "save" ? pending.meta : uncertain?.target;
+      if (!target) continue;
+      const current = returned.get(id) ?? { ...target, messages: [], messagesLoaded: false };
+      const before = beforeSeed.get(id) ?? unconfirmedCreates.get(projectId)?.get(id)?.meta ?? target;
+      const patch = retryMetaPatch(before, target, uncertain);
+      returned.set(id, threadWithMeta(current, { ...metaOf(current), ...patch }));
+    }
+    for (const [id, thread] of returned) {
+      const known = load.projections.get(id);
+      const projection = known && known.generation >= load.fullProjectionGeneration ? known : {
+        generation: load.fullProjectionGeneration,
+        messagesLoaded: void 0,
+        hasSavedPlan: void 0
+      };
+      if (projection.generation > load.generation) {
+        returned.set(id, threadWithMeta(thread, metaOf(thread), projection));
+      }
+    }
+    for (const older of loads) {
+      if (older === load || older.generation >= load.generation) continue;
+      if (onlyThreadId === void 0) {
+        older.fullProjectionGeneration = Math.max(older.fullProjectionGeneration, load.generation);
+        for (const [id, projection] of older.projections) {
+          if (projection.generation <= load.generation) older.projections.delete(id);
+        }
+      }
+      for (const [id, thread] of returned) {
+        const previous = older.projections.get(id);
+        if (!previous || previous.generation < load.generation) {
+          older.projections.set(id, {
+            generation: load.generation,
+            messagesLoaded: thread.messagesLoaded,
+            hasSavedPlan: thread.hasSavedPlan
+          });
+        }
+      }
+    }
+    if (onlyThreadId === void 0) {
+      appliedProjectLoads.set(
+        projectId,
+        Math.max(appliedProjectLoads.get(projectId) ?? 0, load.generation)
+      );
+      const scoped = appliedThreadLoads.get(projectId);
+      for (const [id, generation] of scoped ?? []) {
+        if (generation <= load.generation) scoped?.delete(id);
+      }
+      if (scoped?.size === 0) appliedThreadLoads.delete(projectId);
+    } else {
+      let scoped = appliedThreadLoads.get(projectId);
+      if (!scoped) {
+        scoped = /* @__PURE__ */ new Map();
+        appliedThreadLoads.set(projectId, scoped);
+      }
+      scoped.set(onlyThreadId, Math.max(scoped.get(onlyThreadId) ?? 0, load.generation));
+    }
+    return sortThreadsNewestFirst([...returned.values()]);
+  } finally {
+    loads.delete(load);
+    if (loads.size === 0 && activeMetadataLoads.get(projectId) === loads) {
+      activeMetadataLoads.delete(projectId);
+    }
+  }
+}
+function loadThreads(api, projectId) {
+  return readThreadMetadata(api, projectId);
+}
+async function loadPersistedThread(api, projectId, threadId) {
+  return (await readThreadMetadata(api, projectId, threadId))[0];
 }
 function awaitPendingThreadPersistence() {
   return activeAutosave?.whenIdle() ?? Promise.resolve();
@@ -24405,7 +24591,7 @@ function attachAutosave(store, api) {
   activeAutosave = autosave;
   return autosave;
 }
-var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, navigationHeldFor, threadWriteKey, persistedMeta, pendingThreadWrites, unconfirmedCreates, threadLoadRevisions, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
+var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, navigationHeldFor, threadWriteKey, persistedMeta, pendingThreadWrites, unconfirmedCreates, uncertainThreadWrites, activeMetadataLoads, metadataLoadGeneration, appliedProjectLoads, appliedThreadLoads, threadLoadRevisions, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
 var init_persistence = __esm({
   "src/renderer/controller/persistence.ts"() {
     init_thread_helpers();
@@ -24425,6 +24611,11 @@ var init_persistence = __esm({
     persistedMeta = /* @__PURE__ */ new Map();
     pendingThreadWrites = /* @__PURE__ */ new Map();
     unconfirmedCreates = /* @__PURE__ */ new Map();
+    uncertainThreadWrites = /* @__PURE__ */ new Map();
+    activeMetadataLoads = /* @__PURE__ */ new Map();
+    metadataLoadGeneration = 0;
+    appliedProjectLoads = /* @__PURE__ */ new Map();
+    appliedThreadLoads = /* @__PURE__ */ new Map();
     threadLoadRevisions = /* @__PURE__ */ new WeakMap();
     AUTOSAVE_DEBOUNCE_MS = 250;
     activeAutosave = null;
@@ -26767,11 +26958,20 @@ function findRunningActivity(thread) {
       const tc = toolCalls[j3];
       if (!tc) continue;
       if (tc.status === "running") {
-        return { kind: "tool", name: tc.name === "explore" ? "explore" : tc.name };
+        return {
+          kind: "tool",
+          name: tc.name === "explore" ? "explore" : tc.name,
+          ...tc.commandPhase ? { commandPhase: tc.commandPhase.state } : {}
+        };
       }
       if (tc.subagent?.status === "running") return { kind: "tool", name: "explore" };
     }
   }
+  return null;
+}
+function commandWaitLabel(phase) {
+  if (phase === "awaiting_approval") return "Waiting for approval";
+  if (phase === "starting") return "Starting command";
   return null;
 }
 function delegateActivityLabel(count, soleKind) {
@@ -26783,7 +26983,7 @@ function agentActivityLabel(thread, writing) {
   const todoLabel = thread.todos?.length ? formatTodoProgress(thread.todos) : null;
   const activity = findRunningActivity(thread);
   if (activity) {
-    const base = activity.kind === "delegates" ? `${delegateActivityLabel(activity.count, activity.soleKind)}\u2026` : `${getToolDisplayName(activity.name, "running")}\u2026`;
+    const base = activity.kind === "delegates" ? `${delegateActivityLabel(activity.count, activity.soleKind)}\u2026` : `${commandWaitLabel(activity.commandPhase) ?? getToolDisplayName(activity.name, "running")}\u2026`;
     return todoLabel ? `${base} (${todoLabel})` : base;
   }
   if (writing) return todoLabel ? `Writing\u2026 (${todoLabel})` : "Writing\u2026";
@@ -27771,7 +27971,6 @@ async function removeProject(store, api, id) {
     store.emit("projects_changed");
     store.emit("workspace_changed");
     store.emit("threads_changed");
-    store.emit("panel_changed");
     return;
   }
   store.setState({ projects });
@@ -27894,7 +28093,6 @@ async function finishActivate(store, api, id, path, sshHost, gen, outgoingId, ou
   store.emit("projects_changed");
   store.emit("workspace_changed");
   store.emit("threads_changed");
-  store.emit("panel_changed");
   endApply({ threads: merged.length });
   const { projects, activeThreadId: appliedThreadId } = store.getState();
   await (projects === projectsAtDispatch ? saveNavigation(api, id, appliedThreadId) : saveProjects(api, projects, id, appliedThreadId));
@@ -27981,7 +28179,6 @@ function openNewProjectThread(store, api, projectId = store.getState().sidebarPr
 }
 function setSidebarProjectFilter(store, api, projectId) {
   store.setState({ sidebarProjectFilterId: projectId });
-  store.emit("sidebar_project_filter_changed");
   const thread = getActiveThread(store);
   const activeProjectId = store.getState().activeProjectId;
   if (thread && !isBlankThread(thread)) {
@@ -69417,7 +69614,7 @@ var init_experimental_markup = __esm({
                 creation can take a few minutes.
               </p>
               <p class="field-hint">
-                Turn on Canvas and explainers, then enable Animated explainers in its plugin settings.
+                Enable Animated explainers in Canvas and explainers' plugin settings below.
               </p>
               <div class="settings-action-row">
                 <button type="button" class="ui-btn ui-btn-secondary" id="animated-explainers-manage">
@@ -70322,6 +70519,142 @@ var init_announcement_catalog = __esm({
   "src/renderer/announcement-catalog.ts"() {
     init_product_announcements2();
     active = PRODUCT_ANNOUNCEMENTS;
+  }
+});
+
+// src/shared/store/store.ts
+function sameItems(a4, b2) {
+  return a4.length === b2.length && a4.every((item, index) => Object.is(item, b2[index]));
+}
+function createStore(initial) {
+  let state = {
+    workspaceRoot: null,
+    projects: [],
+    projectGroups: [],
+    activeProjectId: null,
+    expandedProjectId: null,
+    threads: [],
+    backgroundThreads: [],
+    activeThreadId: null,
+    panelTab: "file",
+    openFile: null,
+    activeDiff: null,
+    stagedDiffs: [],
+    filesPaneOpen: false,
+    rightPanelMode: "explorer",
+    rightPanelMaximized: false,
+    projectsPaneOpen: true,
+    layout: { ...DEFAULT_LAYOUT },
+    theme: "dark",
+    themePreference: DEFAULT_THEME_PREFERENCE,
+    fontSize: 14,
+    uiScale: 1,
+    animateAgentAvatars: true,
+    conciseThreadsEnabled: true,
+    autoPortraitRightPanel: true,
+    rightPanelPosition: "auto",
+    sidebarProjectFilterId: null,
+    sidebarThreadSort: "activity",
+    sidebarThreadSortReverse: false,
+    sidebarThreadGroup: "project",
+    openLinksInBuiltInBrowser: true,
+    developerMode: false,
+    ...initial
+  };
+  const listeners = {
+    message_added: /* @__PURE__ */ new Set(),
+    message_queued: /* @__PURE__ */ new Set(),
+    message_token: /* @__PURE__ */ new Set(),
+    message_reasoning: /* @__PURE__ */ new Set(),
+    message_acp_content: /* @__PURE__ */ new Set(),
+    message_canvas_artefacts_changed: /* @__PURE__ */ new Set(),
+    message_visual_evidence_changed: /* @__PURE__ */ new Set(),
+    message_done: /* @__PURE__ */ new Set(),
+    tool_call_started: /* @__PURE__ */ new Set(),
+    tool_call_updated: /* @__PURE__ */ new Set(),
+    thread_model_resolved: /* @__PURE__ */ new Set(),
+    thread_status_changed: /* @__PURE__ */ new Set(),
+    agent_activity: /* @__PURE__ */ new Set(),
+    threads_changed: /* @__PURE__ */ new Set(),
+    reviewer_input_open: /* @__PURE__ */ new Set(),
+    reviewer_input_jump: /* @__PURE__ */ new Set(),
+    thread_draft_changed: /* @__PURE__ */ new Set(),
+    new_thread_opened: /* @__PURE__ */ new Set(),
+    explorer_reveal: /* @__PURE__ */ new Set(),
+    workspace_changed: /* @__PURE__ */ new Set(),
+    projects_changed: /* @__PURE__ */ new Set(),
+    git_change_navigate: /* @__PURE__ */ new Set(),
+    roadmap_reveal: /* @__PURE__ */ new Set(),
+    thread_plan_open: /* @__PURE__ */ new Set(),
+    thread_plan_changed: /* @__PURE__ */ new Set(),
+    browser_url_requested: /* @__PURE__ */ new Set(),
+    browser_url_bar_focus_requested: /* @__PURE__ */ new Set(),
+    pr_open_requested: /* @__PURE__ */ new Set(),
+    thread_archive_requested: /* @__PURE__ */ new Set(),
+    side_chat_open_requested: /* @__PURE__ */ new Set(),
+    canvas_artefact_requested: /* @__PURE__ */ new Set(),
+    canvas_artefact_show_requested: /* @__PURE__ */ new Set(),
+    settings_changed: /* @__PURE__ */ new Set(),
+    theme_changed: /* @__PURE__ */ new Set(),
+    staged_diffs_changed: /* @__PURE__ */ new Set(),
+    usage_updated: /* @__PURE__ */ new Set(),
+    context_updated: /* @__PURE__ */ new Set(),
+    todos_changed: /* @__PURE__ */ new Set(),
+    review_changed: /* @__PURE__ */ new Set(),
+    hook_card_added: /* @__PURE__ */ new Set(),
+    comparison_changed: /* @__PURE__ */ new Set(),
+    review_report_changed: /* @__PURE__ */ new Set(),
+    git_branch_changed: /* @__PURE__ */ new Set(),
+    thread_checkout_changed: /* @__PURE__ */ new Set(),
+    composer_draft_flush: /* @__PURE__ */ new Set(),
+    agent_task_selected: /* @__PURE__ */ new Set(),
+    shell_tab_activated: /* @__PURE__ */ new Set(),
+    request_terminal_command: /* @__PURE__ */ new Set(),
+    code_block_run_requested: /* @__PURE__ */ new Set(),
+    code_block_run_finished: /* @__PURE__ */ new Set(),
+    thread_reference_attach: /* @__PURE__ */ new Set(),
+    attention_changed: /* @__PURE__ */ new Set(),
+    sidebar_threads_loaded: /* @__PURE__ */ new Set(),
+    automation_schedules_loaded: /* @__PURE__ */ new Set()
+  };
+  function on2(event, handler) {
+    listeners[event].add(handler);
+    return () => {
+      listeners[event].delete(handler);
+    };
+  }
+  function emit(event, ...args) {
+    listeners[event].forEach((handler) => {
+      handler(...args);
+    });
+  }
+  const selections = /* @__PURE__ */ new Set();
+  function select(selector, listener, equals = Object.is) {
+    let value = selector(state);
+    const check2 = () => {
+      const next = selector(state);
+      const prev = value;
+      if (equals(prev, next)) return;
+      value = next;
+      listener(next, prev);
+    };
+    selections.add(check2);
+    return () => {
+      selections.delete(check2);
+    };
+  }
+  function setState(partial2) {
+    state = { ...state, ...partial2 };
+    for (const check2 of [...selections]) {
+      if (selections.has(check2)) check2();
+    }
+  }
+  return { getState: () => state, setState, on: on2, emit, select };
+}
+var init_store = __esm({
+  "src/shared/store/store.ts"() {
+    init_types2();
+    init_layout();
   }
 });
 
@@ -72689,7 +73022,7 @@ async function openWorkspaceFile(store, api, path, reveal) {
       if (!isOwner()) preview.close();
     };
     unsubs.push(
-      store.on("panel_changed", checkOwner),
+      store.select((s2) => [s2.activeProjectId, s2.activeThreadId], checkOwner, sameItems),
       store.on("threads_changed", checkOwner),
       store.on("workspace_changed", checkOwner),
       store.on("thread_checkout_changed", (changedThreadId) => {
@@ -72723,7 +73056,6 @@ async function openWorkspaceFile(store, api, path, reveal) {
     rightPanelMode: "explorer",
     filesPaneOpen: true
   });
-  store.emit("panel_changed");
 }
 async function openWorkspaceFileInBrowser(store, api, path) {
   const { projectId, threadId } = requireActiveThreadOwner(store);
@@ -72747,7 +73079,6 @@ function revealWorkspaceDirectory(store, path) {
     filesPaneOpen: true
   });
   store.emit("explorer_reveal", path);
-  store.emit("panel_changed");
 }
 async function activateWorkspaceReference(store, api, path, kind, reveal) {
   if (kind === "directory") {
@@ -72759,6 +73090,7 @@ async function activateWorkspaceReference(store, api, path, kind, reveal) {
 var LANG;
 var init_files = __esm({
   "src/renderer/controller/files.ts"() {
+    init_store();
     init_active_thread_owner();
     init_panels();
     init_image_path();
@@ -73079,13 +73411,13 @@ export {
   suspendNavigationWrites,
   markNavigationRestored,
   acceptRuntimeThreadMeta,
-  recordPersistedThread,
   flushProjectThreads,
   loadProjects,
   saveProjects,
   saveProjectGroups,
   invalidateProjectThreadLoads,
   loadThreads,
+  loadPersistedThread,
   awaitPendingThreadPersistence,
   attachAutosave,
   init_persistence,
@@ -73251,6 +73583,9 @@ export {
   workingBriefFromUserContent,
   nextWorkingBrief,
   init_working_brief,
+  sameItems,
+  createStore,
+  init_store,
   getActiveThreadOwner,
   requireActiveThreadOwner,
   init_active_thread_owner,

@@ -6928,6 +6928,11 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   font-size: var(--font-size-sm);
   font-weight: 500;
 }
+.tool-command-phase {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
 .tool-edit-stats {
   display: inline-flex;
   align-items: center;
@@ -12486,6 +12491,28 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 .ask-user-action {
   padding: 8px 16px;
+}
+.ask-user-options-stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+.ask-user-options-stacked .ask-user-option {
+  padding: var(--spacing-sm) var(--spacing-lg);
+  text-align: left;
+}
+.ask-user-other {
+  align-self: flex-start;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.ask-user-other:hover {
+  color: var(--text-primary);
 }
 .ask-user-recommended-label {
   margin-left: var(--spacing-sm);
