@@ -69,7 +69,11 @@ import {
   type AcpSessionCarryOver,
 } from './acp-session-reattach.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
-import { acpAgentSandboxOverlay, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
+import {
+  acpAgentSandboxOverlay,
+  ensureWorkspaceTmpDir,
+  refreshGitConfigIncludeReadPaths,
+} from '../../project-sandbox/config.ts'
 
 /**
  * Copse intentionally advertises no notice or compaction session capability.
@@ -199,6 +203,14 @@ export interface AcpAgentSpawnConfig {
    * platform; otherwise the agent spawns unsandboxed as before.
    */
   sandbox?: AcpAgentSandboxConfig
+  /**
+   * The thread-scoped config directory Copse created for this agent (for
+   * Claude, the `CLAUDE_CONFIG_DIR` it was given). It sits in the chat store,
+   * which is read-only to a sandboxed agent, so the seatbelt grants it read and
+   * write. Unset when the user's own env override names the directory: that
+   * path could be anywhere, home included, so it is never granted.
+   */
+  stateDir?: string
   /**
    * Copse's native-tool MCP bridge for this turn (issue #602, tier 2). Added to
    * `session/new` `mcpServers` as an http server when the agent advertises
@@ -566,9 +578,12 @@ export async function spawnAcpAgentProcess(
     throw new Error('A read-only checkout cannot run a coding agent outside the project sandbox')
   }
   if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
+    // The agent runs git with the user's config; pick up its current includes.
+    await refreshGitConfigIncludeReadPaths()
     const overlay = acpAgentSandboxOverlay(config.cwd, config.sandbox, {
       allowLocalhost: options.allowLocalhost ?? Boolean(config.nativeBridge),
       ...(config.readonlyCheckout ? { readonlyCheckout: true } : {}),
+      ...(config.stateDir ? { stateDirs: [config.stateDir] } : {}),
     })
     // ASRT's proxies consult the GLOBAL config per connection — the overlay's
     // network block only wires restriction up. Widen the global allowlist for

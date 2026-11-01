@@ -116,6 +116,7 @@ function readSandboxConfig(value: unknown): AcpAgentSandboxConfig | undefined {
     ...(homeDirs ? { homeDirs } : {}),
     ...(scratchPaths ? { scratchPaths } : {}),
     ...(value['allowMacOsTrustd'] === true ? { allowMacOsTrustd: true } : {}),
+    ...(value['allowMacOsKeychain'] === true ? { allowMacOsKeychain: true } : {}),
   }
 }
 

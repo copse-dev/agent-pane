@@ -121,6 +121,56 @@ describe('ChatGPT plan settings', () => {
     assert.equal(section.configured(), true)
   })
 
+  it('strips the IPC wrapper from a refresh failure and resyncs status from a cleared credential', async () => {
+    const base = createFakeApi()
+    let statusCalls = 0
+    const section = createChatGptPlanSection(
+      {
+        ...base,
+        settings: { ...base.settings, get: async (): Promise<unknown> => true },
+        chatGptPlan: {
+          ...base.chatGptPlan,
+          status: async (): Promise<ChatGptPlanStatus> => {
+            statusCalls++
+            return {
+              activeClientId: 'selected',
+              accounts: [
+                {
+                  clientId: 'selected',
+                  label: 'You',
+                  // A refresh that fails with a dead refresh token clears the
+                  // stored credentials on the main side; the second `status`
+                  // call (after the failed refresh) reflects that.
+                  connected: statusCalls > 1 ? false : true,
+                  planEnabled: statusCalls > 1 ? false : true,
+                },
+              ],
+            }
+          },
+          refreshAccount: async (): Promise<ChatGptPlanStatus> => {
+            throw new Error(
+              "Error invoking remote method 'chat-gpt-plan:refresh-account': Error: ChatGPT sign-in expired. Reconnect this account.",
+            )
+          },
+        },
+      },
+      () => {},
+    )
+    await section.refresh()
+    assert.equal(section.configured(), true)
+    const renew = [...section.root.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Refresh connection',
+    )
+    assert.ok(renew)
+    renew.click()
+    await flush()
+    assert.match(section.root.textContent, /ChatGPT sign-in expired\. Reconnect this account\./)
+    assert.equal(section.root.textContent.includes('Error invoking remote method'), false)
+    assert.equal(section.root.textContent.includes('Error:'), false)
+    assert.equal(section.configured(), false)
+    assert.ok(section.root.querySelector('[data-testid="chatgpt-plan-connect"]'))
+  })
+
   it('shows a connection error and keeps retry available', async () => {
     const base = createFakeApi()
     const section = createChatGptPlanSection(

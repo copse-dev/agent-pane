@@ -41,6 +41,7 @@ import { applyPatchTool } from '../tools/apply-patch-tool.ts'
 import { readStagedDiffTool, stagedDiffsTool } from '../tools/staged-diff-tools.ts'
 import { deleteFileTool, renameFileTool, makeDirectoryTool } from '../tools/file-ops-tools.ts'
 import { exploreTool } from '../tools/explore-tool.ts'
+import { readExploredTool } from '../tools/read-explored-tool.ts'
 import { isolatedWorkersTool } from '../tools/isolated-workers-tool.ts'
 import { readonlyWorkersTool } from '../tools/readonly-workers-tool.ts'
 import { readSkillTool } from '../tools/read-skill-tool.ts'
@@ -141,6 +142,7 @@ export function createRegistry(): ToolRegistry {
   registry.register(requestWriteAccessTool)
   registry.register(deferredApprovalStatusTool)
   registry.register(exploreTool)
+  registry.register(readExploredTool)
   registry.register(readonlyWorkersTool)
   registry.register(isolatedWorkersTool)
   // Experimental CI investigator subagent (off by default). Gated by the

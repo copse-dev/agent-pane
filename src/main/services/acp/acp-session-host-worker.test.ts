@@ -11,6 +11,7 @@ import {
   type AcpSessionHostMessage,
 } from './acp-session-host-protocol.ts'
 import { parseSessionHostRequest } from './acp-session-host-worker.ts'
+import { acpSessionHostRequest } from './acp-session-host.ts'
 
 const REPO_ROOT = process.cwd()
 const TEST_OUTPUT_DIR = process.env['COPSE_TEST_OUTPUT_DIR'] ?? join(REPO_ROOT, 'dist-test')
@@ -201,6 +202,43 @@ describe('parseSessionHostRequest', () => {
         }),
       )
       assert.equal(request?.config.sandbox?.allowMacOsTrustd, value === true ? true : undefined)
+    }
+  })
+
+  it('carries every confinement field the overlay reads across to the host', () => {
+    const config = {
+      command: 'claude-agent-acp',
+      cwd: '/workspace',
+      sandbox: {
+        allowedDomains: ['api.anthropic.com'],
+        homeDirs: ['.claude'],
+        scratchPaths: ['/tmp/claude-${uid}'],
+        allowMacOsTrustd: true,
+        allowMacOsKeychain: true,
+      },
+      readonlyCheckout: true,
+      stateDir: '/profile/workspace/p/t/acp-agent-config/claude-acp',
+      nativeBridge: { url: 'http://127.0.0.1:1/mcp', token: 'x' },
+      model: 'not-a-spawn-field',
+    }
+    const request = parseSessionHostRequest(JSON.stringify(acpSessionHostRequest(config)))
+    assert.deepEqual(request, {
+      config: {
+        command: config.command,
+        cwd: config.cwd,
+        sandbox: config.sandbox,
+        readonlyCheckout: true,
+        stateDir: config.stateDir,
+      },
+      allowLocalhost: true,
+    })
+    for (const stateDir of ['', 3, null]) {
+      const parsed = parseSessionHostRequest(
+        JSON.stringify({
+          config: { command: 'a', cwd: '/w', sandbox: { allowedDomains: [] }, stateDir },
+        }),
+      )
+      assert.equal(parsed?.config.stateDir, undefined)
     }
   })
 

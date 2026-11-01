@@ -62,6 +62,7 @@ function readSandbox(value: unknown): AcpAgentSandboxConfig | undefined {
     ...(homeDirs ? { homeDirs } : {}),
     ...(scratchPaths ? { scratchPaths } : {}),
     ...(value['allowMacOsTrustd'] === true ? { allowMacOsTrustd: true } : {}),
+    ...(value['allowMacOsKeychain'] === true ? { allowMacOsKeychain: true } : {}),
   }
 }
 
@@ -80,6 +81,7 @@ export function parseSessionHostRequest(raw: string): SessionHostRequest | null 
   if (typeof command !== 'string' || typeof cwd !== 'string' || !sandbox) return null
   const args = readStringList(input['args'])
   const env = readStringMap(input['env'])
+  const stateDir = input['stateDir']
   return {
     config: {
       command,
@@ -88,6 +90,7 @@ export function parseSessionHostRequest(raw: string): SessionHostRequest | null 
       ...(args ? { args } : {}),
       ...(env ? { env } : {}),
       ...(input['readonlyCheckout'] === true ? { readonlyCheckout: true } : {}),
+      ...(typeof stateDir === 'string' && stateDir !== '' ? { stateDir } : {}),
     },
     allowLocalhost: parsed['allowLocalhost'] === true,
   }

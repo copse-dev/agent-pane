@@ -102,7 +102,7 @@ import {
 } from './services/mcp/mcp-registry.ts'
 import { loadCustomTools } from './services/mcp/custom-tools-registry.ts'
 import { disposeAllAcpSessions } from './services/acp/acp-session-pool.ts'
-import { initApproval } from './services/approval.ts'
+import { initApproval, requestApproval } from './services/approval.ts'
 import {
   setSimulatorDesktopPanelPresenter,
   SIMULATOR_DESKTOP_SHOW_CHANNEL,
@@ -117,6 +117,7 @@ import { clearSshWorkspaceFsCache } from './services/workspace-fs/ssh-workspace-
 import { initDiffQueue } from './services/diff-queue.ts'
 import { diffAcceptancePrompt, setDiffAcceptanceHandler } from './services/diff-acceptance-wake.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
+import { setRemoteWatcherInstallApprover } from './services/ssh-workspace/remote-watcher-install-approval.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
 import {
   reapOversizedGortexDaemon,
@@ -731,6 +732,20 @@ app
     initSshWorkspaceIpc(win)
     initDiffQueue(win, ipcMain)
     initFsWatcher(win)
+    // Remote watcher install prompts route through the real approval dialog.
+    // Injected (rather than imported by the ssh-workspace module) for the same
+    // worker-bundle reason as setRemoteAcpInstallApprover; fails closed to the
+    // polling fallback when never wired.
+    setRemoteWatcherInstallApprover(async ({ title, body }) => {
+      const { approved } = await requestApproval({
+        title,
+        body,
+        type: 'shell',
+        cause: 'ssh-watcher-install',
+        allowRemember: false,
+      })
+      return approved
+    })
     const disposeTerminalHandlers = initTerminal(win)
     const disposeVncHandlers = initVnc(win)
     const disposeAppRunHandlers = initAppRun(win)

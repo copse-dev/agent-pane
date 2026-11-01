@@ -449,12 +449,10 @@ agents) always overrides the default, for example to point every thread at one
 shared config on purpose. Copse then adds no secure-storage override, so that
 directory behaves exactly as it does for the CLI on its own, login included.
 
-> **Known gap — sandboxed writes.** The seatbelt mounts the chat store
-> read-only and grants the agent writes only to its declared `homeDirs`
-> (`~/.claude`, …). A sandboxed agent can therefore read and refresh its login
-> but cannot write into its scoped directory (`.claude.json`, session
-> transcripts under `projects/`). Granting that directory is a separate
-> sandbox-policy change, not made here.
+A sandboxed agent may read and write its scoped directory (`.claude.json`,
+session transcripts under `projects/`). The rest of the chat store stays
+read-only to it, and a directory the agent's own `env` names is never granted,
+because it can be any path.
 
 This directory is a root-level sibling of `events.jsonl`, like the ACP wire
 trace: untouched by thread save/load, and carried along by "Export thread
@@ -530,7 +528,12 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   Gemini, Codex, Cursor) ship a catalog `sandbox` entry; custom agents spawn
   unsandboxed unless you add `sandbox` (`allowedDomains`, `homeDirs`) to their
   `registeredAcpAgents` entry, or set `sandbox: false` to opt a catalog agent
-  out (#590).
+  out (#590). A sandboxed agent reads its workspace, its declared `homeDirs`,
+  the thread-scoped config directory Copse creates for it (read and write), the
+  toolchains and git config contained commands get, and, when its preset sets
+  `allowMacOsKeychain` (the Claude presets, which keep their macOS login
+  there), `~/Library/Keychains`. It never gets the rest of the home directory:
+  no `~/.ssh`, cloud credentials or other projects.
 - **SSH workspaces are opt-in.** Off by default, ACP agents stay hidden from the
   chat model picker and are rejected at session open on an SSH remote. Turn on
   **Settings → Experimental → ACP agents → Run ACP agents over SSH** to spawn the

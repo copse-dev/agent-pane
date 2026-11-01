@@ -573,6 +573,9 @@ describe('ACP bridge exposure decisions', () => {
       'run_readonly_workers',
       'run_isolated_workers',
       'explore',
+      // Quotes what this native run's explore subagents read; it has nothing
+      // to serve over the bridge.
+      'read_explored',
       'investigate_ci',
       'delegate_step',
       'update_todos',

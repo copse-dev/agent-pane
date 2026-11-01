@@ -301,6 +301,36 @@ describe('model-proposed thread card', () => {
     unmount()
   })
 
+  it('shows a failed start inline without the IPC wrapper and keeps the offer', async () => {
+    const base = fakeApi()
+    const { root, unmount } = mount([proposalCall()], {
+      ...base,
+      agent: {
+        ...base.agent,
+        prepareCheckout: () =>
+          Promise.reject(
+            new Error(
+              "Error invoking remote method 'agent:prepare-checkout': Error: Isolated worktree is unavailable: not git",
+            ),
+          ),
+      },
+    })
+    card(root).querySelector<HTMLButtonElement>('.thread-proposal-start')?.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const error = card(root).querySelector<HTMLElement>('.thread-proposal-error')
+    assert.ok(error)
+    assert.equal(error.hidden, false)
+    assert.equal(
+      error.textContent,
+      'Could not start the thread: Isolated worktree is unavailable: not git',
+    )
+    assert.equal(
+      card(root).querySelector<HTMLButtonElement>('.thread-proposal-start')?.disabled,
+      false,
+    )
+    unmount()
+  })
+
   it('starting the thread runs it and leaves a link back on the card', async () => {
     const { root, store, threadId, unmount } = mount()
     card(root).querySelector<HTMLButtonElement>('.thread-proposal-start')?.click()
