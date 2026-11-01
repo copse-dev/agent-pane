@@ -214,7 +214,7 @@ describe('grounding artifact handoff', () => {
     uses: z.string().optional(),
     run: z.string().optional(),
     env: z.record(z.string(), z.string()).optional(),
-    with: z.record(z.string(), z.union([z.string(), z.boolean()])).optional(),
+    with: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
   })
   const actionSchema = z.object({
     inputs: z.record(z.string(), z.object({ required: z.boolean().optional() })).optional(),
@@ -311,7 +311,7 @@ describe('grounding artifact handoff', () => {
       '${{ inputs.ground-artifact-id }}',
     )
     for (const id of ['', '9001,9002', 'latest', '9001']) {
-      const result = spawnSync('bash', ['-c', script], {
+      const result: SpawnSyncReturns<string> = spawnSync('bash', ['-c', script], {
         env: { ...process.env, GROUND_ARTIFACT_ID: id },
         encoding: 'utf8',
       })
