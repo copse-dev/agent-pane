@@ -176,7 +176,12 @@ describe('update feed verification', () => {
     assert.equal(feed.version, '0.1.0')
     assert.deepEqual(
       feed.files.map((file) => file.url),
-      ['Copse-0.1.0-x64.zip', 'Copse-0.1.0-arm64.zip', 'Copse-0.1.0-x64.dmg', 'Copse-0.1.0-arm64.dmg'],
+      [
+        'Copse-0.1.0-x64.zip',
+        'Copse-0.1.0-arm64.zip',
+        'Copse-0.1.0-x64.dmg',
+        'Copse-0.1.0-arm64.dmg',
+      ],
     )
     assert.throws(() => parseUpdateFeed('files: []\n'), /no version/)
   })
