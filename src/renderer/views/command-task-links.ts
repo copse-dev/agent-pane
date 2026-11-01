@@ -33,7 +33,9 @@ export function createBackgroundTaskLogsSection(tc: ToolCall): HTMLElement | nul
     { type: 'button', class: 'ui-btn ui-btn-ghost ui-btn-compact tool-task-logs-button' },
     'Show logs',
   )
-  const output = el('div', { class: 'tool-result tool-task-logs-output', hidden: true })
+  // Not `.tool-result`: that names the call's own result, which specs and
+  // card code find by class. The task's output only shares its look.
+  const output = el('div', { class: 'tool-task-logs-output', hidden: true })
   const section = el(
     'div',
     { class: 'tool-task-logs', 'data-background-task-id': taskId },
