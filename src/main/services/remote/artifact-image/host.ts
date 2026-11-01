@@ -221,17 +221,24 @@ export async function runArtifactImageHostJob(
   }
 }
 
+/**
+ * Resolves once the child has actually exited, so the proxy and ASRT manager
+ * are never torn down under a still-running downloader. SIGKILL follows a
+ * grace period; a final bound keeps a wedged process from hanging the host.
+ */
 function stopChild(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve()
   return new Promise((resolveStop) => {
-    const timer = setTimeout(() => {
+    const finish = (): void => {
+      clearTimeout(killTimer)
+      clearTimeout(giveUpTimer)
+      resolveStop()
+    }
+    const killTimer = setTimeout(() => {
       signalProcessTree(child, 'SIGKILL')
-      resolveStop()
     }, CHILD_KILL_GRACE_MS)
-    child.once('close', () => {
-      clearTimeout(timer)
-      resolveStop()
-    })
+    const giveUpTimer = setTimeout(finish, CHILD_KILL_GRACE_MS * 3)
+    child.once('close', finish)
     signalProcessTree(child, 'SIGTERM')
   })
 }

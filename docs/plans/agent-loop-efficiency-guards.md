@@ -13,9 +13,13 @@ fixed in [#1432](https://github.com/copse-dev/agent-pane/pull/1432)).
 Status: **Partially implemented.** Fixes 1–3 landed in
 [#2837](https://github.com/copse-dev/agent-pane/pull/2837) and Fix 7 in
 [#3277](https://github.com/copse-dev/agent-pane/pull/3277); the split-out #1436, #1437 and #1438 are
-closed. Fix 0/0b, Fix 4 and Fix 5 remain open under #1433. Fix 0 was reworked after review: the original
-"give the parent a `read_file`" options are superseded by structured explore returns, which
-keep `read_file` off the parent's tool list entirely.
+closed. Fix 5's "check attached in the completing call" hold also landed
+(`holdChecksAttachedAtCompletion`), and step 0, the rename, is done: the guard set is
+`DUPLICATE_GUARDED_TOOL_NAMES` and the subagent allow-list is `SUBAGENT_ALLOWED_TOOL_NAMES`.
+Fix 0 (structured explore returns) is implemented; see its section. Fix 0b, Fix 4 and the rest of
+Fix 5 (`cancelled` → `completed`) remain open under #1433. Fix 0 was reworked after review: the original "give the parent a `read_file`" options are superseded by
+structured explore returns, which keep `read_file` off the parent's tool list entirely. Code
+references below describe the code as it was when the plan was written.
 
 ## Why
 
@@ -118,6 +122,30 @@ The fix is therefore not "give the parent a read tool". It is "stop throwing the
 away".
 
 ### Fix 0 — explore returns structured results
+
+**Status: implemented.** As built:
+
+- The bytes are captured where `read_file` produces them rather than by re-parsing
+  `session.messages[].toolCalls[].result`: `read_file` reports each span it returned to an
+  `AsyncLocalStorage` recorder that only `runExploreSubagent` installs
+  (`src/main/services/explore-read-recorder.ts`). Parsing the result string would have meant
+  re-deriving the range from the paging footer and stripping the staged-diff note, and any
+  drift there silently corrupts the one thing this fix exists to keep exact. Parallel explores
+  each see only their own reads.
+- Pure merging, budgeting and rendering live in `packages/agent/src/explore-excerpts.ts`.
+  Overlapping or adjacent reads of a file merge into one span. Spans the summary names by
+  path go first. The budget is the subagent's own per-read `maxChars`, so one explore result
+  costs the parent at most one read's worth of excerpt. A span that does not fit is dropped
+  whole and named, with its range, in a closing note.
+- No span is recorded for a read shadowed by a pending staged diff (`str_replace` edits the
+  proposed content, not the on-disk bytes), for an empty or binary read, or for a
+  char-truncated single line that may be only a prefix.
+- The explore-mode `str_replace` not-found message and the explore-without-read nudge (now
+  given `readFileOffered` on the `stepBoundary` payload) point at the excerpts, not at
+  `read_file`.
+- `search_code` / `search_codebase` hits are not excerpted. The optional provenance-labelled
+  half is deferred until runs show excerpts from reads are not enough.
+- The specialist-review evidence path still receives only the summary.
 
 `explore` returns one document with two halves, and `read_file` stays hidden from the
 parent entirely:

@@ -4,6 +4,9 @@ import { resolveAgentChatModel } from './resolve-agent-model.ts'
 import { clearProviderKeyStatusCache, recordProviderKeyValidation } from './provider-key-status.ts'
 import { setSetting, deleteApiKey, setApiKey } from '../storage/settings.ts'
 import { FALLBACK_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
+import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+
+installInMemorySecretCipher()
 
 describe('resolveAgentChatModel', () => {
   beforeEach(async () => {

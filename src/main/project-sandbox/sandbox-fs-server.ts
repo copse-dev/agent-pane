@@ -23,6 +23,8 @@ export const SANDBOX_FS_SERVER_ENV = 'COPSE_SANDBOX_FS_SERVER'
 
 /** A wedged worker that never answers should not stall the UI forever; tear it down and fall back. */
 const REQUEST_TIMEOUT_MS = 15_000
+/** Release the runtime's memory after a full minute with no requests in flight. */
+const IDLE_TIMEOUT_MS = 60_000
 /** Cap accumulated unframed output so a runaway worker can't grow the buffer without bound. */
 const MAX_BUFFER_BYTES = SANDBOX_FS_WORKER_STDOUT_MAX_BYTES * 4
 
@@ -48,6 +50,7 @@ interface Worker {
   buffer: string
   nextId: number
   alive: boolean
+  idleTimer: ReturnType<typeof setTimeout> | null
 }
 
 interface SpawnedWorkerProcess {
@@ -72,10 +75,26 @@ function retire(w: Worker): void {
   failWorker(w, new SandboxFsServerUnavailable('worker retired'))
 }
 
+function clearIdleTimer(w: Worker): void {
+  if (w.idleTimer !== null) clearTimeout(w.idleTimer)
+  w.idleTimer = null
+}
+
+function scheduleIdleRetirement(w: Worker): void {
+  clearIdleTimer(w)
+  if (!w.alive || w.pending.size > 0) return
+  w.idleTimer = setTimeout(() => {
+    w.idleTimer = null
+    if (w.alive && w.pending.size === 0) retire(w)
+  }, IDLE_TIMEOUT_MS)
+  w.idleTimer.unref()
+}
+
 function failWorker(w: Worker, err: Error): void {
   if (liveByRoot.get(w.root) === w) liveByRoot.delete(w.root)
   if (!w.alive) return
   w.alive = false
+  clearIdleTimer(w)
   for (const pending of w.pending.values()) {
     clearTimeout(pending.timer)
     pending.reject(err)
@@ -105,6 +124,7 @@ function handleLine(w: Worker, line: string): void {
   if (!pending) return
   w.pending.delete(parsed['id'])
   clearTimeout(pending.timer)
+  scheduleIdleRetirement(w)
   const { id: _id, ...body } = parsed
   if (typeof body['ok'] !== 'boolean') {
     pending.reject(new SandboxFsServerUnavailable('worker returned an invalid response'))
@@ -174,7 +194,15 @@ async function spawnWorker(root: string): Promise<Worker> {
     terminateProcessTree(proc)
     throw new SandboxFsServerUnavailable('worker pipes unavailable')
   }
-  const w: Worker = { proc, root, pending: new Map(), buffer: '', nextId: 1, alive: true }
+  const w: Worker = {
+    proc,
+    root,
+    pending: new Map(),
+    buffer: '',
+    nextId: 1,
+    alive: true,
+    idleTimer: null,
+  }
   proc.stdout.setEncoding('utf-8')
   proc.stdout.on('data', (chunk: string) => {
     onData(w, chunk)
@@ -211,6 +239,7 @@ function sendToWorker(w: Worker, request: Record<string, unknown>): Promise<Sand
   if (!w.alive || !w.proc.stdin || w.proc.stdin.destroyed) {
     return Promise.reject(new SandboxFsServerUnavailable('worker not writable'))
   }
+  clearIdleTimer(w)
   const id = w.nextId++
   return new Promise<SandboxFsResponse>((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -226,6 +255,7 @@ function sendToWorker(w: Worker, request: Record<string, unknown>): Promise<Sand
       if (err && w.pending.delete(id)) {
         clearTimeout(timer)
         reject(new SandboxFsServerUnavailable(err.message))
+        scheduleIdleRetirement(w)
       }
     })
   })

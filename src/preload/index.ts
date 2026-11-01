@@ -806,6 +806,12 @@ const api: ApiClient = {
     signIn: (name: string) => ipcRenderer.invoke('mcp:sign-in', name),
     cancelSignIn: (name: string) => ipcRenderer.invoke('mcp:cancel-sign-in', name),
     signOut: (name: string) => ipcRenderer.invoke('mcp:sign-out', name),
+    listUserServers: () => ipcRenderer.invoke('mcp:list-user-servers'),
+    saveUserServer: (
+      input: import('@shared/types/mcp-user-servers.ts').McpUserServerInput,
+      previousName?: string,
+    ) => ipcRenderer.invoke('mcp:save-user-server', input, previousName),
+    removeUserServer: (name: string) => ipcRenderer.invoke('mcp:remove-user-server', name),
     onStatusChanged: (
       handler: (statuses: import('@shared/types/mcp.ts').McpServerStatus[]) => void,
     ) => {

@@ -67,6 +67,7 @@ function run() {
     case 'huge-line': process.stdout.write('x'.repeat(200000)); break
     case 'redirect-denied': frame({ type: 'error', requestId: job.requestId, code: 'redirect-denied', origin: 'https://evil.example' }); break
     case 'hang': setInterval(() => {}, 1000); return
+    case 'ignore-term': process.on('SIGTERM', () => {}); frame(chunk); frame(done); setInterval(() => {}, 1000); return
   }
   process.exit(0)
 }
@@ -86,6 +87,8 @@ interface Run {
   proxyOptions: EgressProxyOptions | null
   proxyClosed: boolean
   resetCalls: number
+  /** Whether the downloader had exited when ASRT was reset. */
+  childGoneAtReset: boolean | null
   wrapped: string | null
   child: ChildProcess | null
   recorded: () => Recorded
@@ -107,6 +110,7 @@ async function run(
     proxyOptions: null,
     proxyClosed: false,
     resetCalls: 0,
+    childGoneAtReset: null,
     wrapped: null,
     child: null,
     recorded: () => {
@@ -138,6 +142,8 @@ async function run(
       },
       reset() {
         state.resetCalls++
+        state.childGoneAtReset =
+          state.child !== null && (state.child.exitCode !== null || state.child.signalCode !== null)
         return Promise.resolve()
       },
     },
@@ -187,7 +193,8 @@ describe('artifact image host', () => {
     assert.deepEqual(image?.bytes, pngBytes())
     assert.equal(result.proxyClosed, true)
     assert.equal(result.resetCalls, 1)
-    assert.notEqual(result.child?.exitCode, null)
+    // Exited by itself or by teardown's SIGTERM: either way, gone before reset.
+    assert.notEqual(result.child?.exitCode ?? result.child?.signalCode ?? null, null)
   })
 
   it('confines the downloader to its own proxy, with no writes or home reads', async () => {
@@ -314,6 +321,15 @@ describe('artifact image host', () => {
       assert.equal(result.proxyClosed, true)
     })
   }
+
+  it('kills a downloader that ignores SIGTERM before resetting ASRT', async () => {
+    const result = await run('ignore-term')
+    // The image itself was verified and relayed...
+    assert.equal(result.frames.at(-1)?.type, 'done')
+    // ...and teardown waited for SIGKILL to land before the sandbox went away.
+    assert.equal(result.child?.signalCode, 'SIGKILL')
+    assert.equal(result.childGoneAtReset, true)
+  })
 
   it('kills a hung downloader at the deadline', async () => {
     const result = await run('hang', { deadlineMs: 300 })

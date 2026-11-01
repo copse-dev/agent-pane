@@ -21,7 +21,6 @@ import {
   intentionalTestUpdates,
 } from './lib/tracked-test-tree.mts'
 
-const settingsShim = resolve('src/main/services/storage/settings.test-shim.ts')
 const userDataFilesShim = resolve('src/main/services/storage/user-data-files.test-shim.ts')
 const repoRoot = resolve('.')
 
@@ -191,10 +190,6 @@ async function bundleTests(testFiles: string[], outputDir: string): Promise<void
       {
         name: 'main-services-test-shims',
         setup(build): void {
-          build.onResolve({ filter: /\/settings\.ts$/ }, (args) => {
-            if (!args.path.includes('settings.test-shim')) return { path: settingsShim }
-            return undefined
-          })
           build.onResolve({ filter: /\/user-data-files\.ts$/ }, (args) => {
             if (!args.path.includes('user-data-files.test-shim')) return { path: userDataFilesShim }
             return undefined
