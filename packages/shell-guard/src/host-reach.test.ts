@@ -307,6 +307,7 @@ describe('hostReachReasons — code fetched at run time', () => {
       // npm resolves a unique abbreviation: `exe` is `exec`.
       'npm exe serve dist',
       'npm -s exe serve dist',
+      'npm --prefix /tmp --silent exec serve dist',
       'corepack npm@11.0.0 exec serve dist',
       'corepack pnpm dlx create-vite',
       'corepack pnpm@10.0.0 dlx create-vite',

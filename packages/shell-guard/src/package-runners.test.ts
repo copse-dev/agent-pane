@@ -71,11 +71,25 @@ describe('packageRunnerCall', () => {
     assert.equal(call('pnpm --filter app exec evil')?.unmodelledOption, '--filter')
     assert.equal(call('npm --prefix sub exec evil')?.unmodelledOption, '--prefix')
     assert.equal(call('pnpm exec -r evil')?.unmodelledOption, '-r')
+    // An option between a value and the subcommand does not hide it.
+    for (const command of [
+      'npm --prefix /tmp --silent exec evil',
+      'pnpm --filter app -s exec evil',
+      'pnpm -C sub --silent exec evil',
+    ]) {
+      const result = call(command)
+      assert.ok(result, command)
+      assert.notEqual(result.unmodelledOption, null, command)
+      assert.deepEqual(result.command, ['evil'], command)
+    }
   })
 
   it('is null for commands that are not a runner call', () => {
     for (const command of [
       'npm install',
+      // A word after an option that takes no value, or after `--opt=value`, is the subcommand.
+      'npm --silent install exec',
+      'npm --prefix=/tmp install exec',
       'npm run exec',
       'pnpm add exec',
       'pnpm test',
