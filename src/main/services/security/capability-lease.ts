@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import type { TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import { parseShellComposition } from './command-routing.ts'
+import { scriptReplayScope } from './script-replay-scope.ts'
 
 export const SHELL_REPLAY_LEASE_TTL_MS = 15 * 60_000
 export const SHELL_REPLAY_LEASE_SANDBOX_MAX_REPLAYS = 10
 /**
- * An outside-sandbox lease covers one exact command the user approved, inside one
+ * An outside-sandbox lease covers an exact command or explicitly approved script arguments, inside one
  * turn tree, thread and execution root. Task loops that need it (a browser demo
  * rerun after each fix) routinely span more than half an hour, and a lease that
  * lapsed between two byte-identical runs asked again 37 minutes later, after the
@@ -26,6 +27,7 @@ export interface ShellReplayLease {
   id: string
   identity: ShellReplayLeaseIdentity
   command: string
+  scriptScope: string | null
   expiresAt: number
   remainingReplays: number
 }
@@ -55,12 +57,17 @@ export class ShellReplayLeaseStore {
     this.createId = options.createId ?? randomUUID
   }
 
-  issue(identity: ShellReplayLeaseIdentity, command: string): ShellReplayLease {
+  issue(
+    identity: ShellReplayLeaseIdentity,
+    command: string,
+    scriptScope: string | null = null,
+  ): ShellReplayLease {
     this.prune()
     const lease: ShellReplayLease = {
       id: this.createId(),
       identity: { ...identity },
       command,
+      scriptScope: identity.containment === 'external' ? scriptScope : null,
       expiresAt:
         this.now() +
         (identity.containment === 'project-sandbox'
@@ -83,7 +90,11 @@ export class ShellReplayLeaseStore {
     this.prune()
     for (const lease of this.leases.values()) {
       if (!sameIdentity(lease.identity, identity) || lease.remainingReplays <= 0) continue
-      const companionSegments = matchingComposition(lease.command, command)
+      const companionSegments = lease.scriptScope
+        ? scriptReplayScope(command, identity.executionRoot) === lease.scriptScope
+          ? []
+          : null
+        : matchingComposition(lease.command, command)
       if (
         companionSegments === null ||
         !companionSegments.every((segment) => allowsCompanion(segment))

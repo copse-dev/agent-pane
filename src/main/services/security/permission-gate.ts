@@ -158,11 +158,18 @@ import {
   isReplayableOpaqueLocalExecution,
 } from './shell-scope.ts'
 import { getAutomationService } from '../automations/automation-service.ts'
+import { scriptReplayScope } from './script-replay-scope.ts'
 
 const SANDBOX_REPLAY_LABEL = 'Allow retries for this task (up to 10, for 15 minutes)'
 const EXTERNAL_REPLAY_LABEL = `Allow retries outside the sandbox (up to ${String(
   SHELL_REPLAY_LEASE_EXTERNAL_MAX_REPLAYS,
 )}, for ${String(SHELL_REPLAY_LEASE_EXTERNAL_TTL_MS / 3_600_000)} hours)`
+
+function externalReplayLabel(scriptScope: string | null): string {
+  return scriptScope
+    ? `Allow this script with different arguments outside the sandbox for this task (up to ${String(SHELL_REPLAY_LEASE_EXTERNAL_MAX_REPLAYS)} runs, for ${String(SHELL_REPLAY_LEASE_EXTERNAL_TTL_MS / 3_600_000)} hours)`
+    : EXTERNAL_REPLAY_LABEL
+}
 
 /**
  * @param wholeCommandFallback lease the exact command line when no single
@@ -174,12 +181,15 @@ function issueShellReplayLease(
   identity: ShellReplayLeaseIdentity,
   command: string,
   wholeCommandFallback = false,
+  scriptScope: string | null = null,
 ): void {
-  const core =
-    replayLeaseCore(command, (segment) => leaseCompanionAllowed(segment, identity.executionRoot)) ??
-    (wholeCommandFallback ? command : null)
+  const core = scriptScope
+    ? command
+    : (replayLeaseCore(command, (segment) =>
+        leaseCompanionAllowed(segment, identity.executionRoot),
+      ) ?? (wholeCommandFallback ? command : null))
   if (!core) return
-  const lease = shellReplayLeaseStore.issue(identity, core)
+  const lease = shellReplayLeaseStore.issue(identity, core, scriptScope)
   recordDecision({
     kind: 'shell',
     actor: 'user',
@@ -187,7 +197,9 @@ function issueShellReplayLease(
     subject: SHELL_DECISION_SUBJECT,
     scope: identity.containment === 'external' ? 'external' : 'sandbox',
     remembered: false,
-    reasons: ['bounded exact replay lease issued'],
+    reasons: [
+      scriptScope ? 'bounded script argument lease issued' : 'bounded exact replay lease issued',
+    ],
     source: `turn-tree-capability-lease:${lease.id}`,
     projectId: identity.projectId,
     threadId: identity.threadId,
@@ -325,6 +337,9 @@ async function requestEscalationApproval(
   leaseIdentity?: ShellReplayLeaseIdentity,
 ): Promise<boolean> {
   if (signal?.aborted) return false
+  const scriptScope = leaseIdentity
+    ? scriptReplayScope(parts.command, leaseIdentity.executionRoot)
+    : null
   const trustable = offerableTrustedCommand(parts.command, getAgentProjectRoot())
   const { approved, remember, grantScope } = await requestApproval(
     {
@@ -342,7 +357,7 @@ async function requestEscalationApproval(
       ...(leaseIdentity
         ? {
             allowTurnTreeLease: true,
-            turnTreeLeaseLabel: EXTERNAL_REPLAY_LABEL,
+            turnTreeLeaseLabel: externalReplayLabel(scriptScope),
             turnTreeLeaseDefault: false,
             turnTreeLeaseSubject: parts.command,
           }
@@ -352,7 +367,7 @@ async function requestEscalationApproval(
   )
   if (approved && remember && trustable) await addTrustedShellCommand(trustable)
   if (approved && grantScope === 'turn-tree' && leaseIdentity) {
-    issueShellReplayLease(leaseIdentity, parts.command, true)
+    issueShellReplayLease(leaseIdentity, parts.command, true, scriptScope)
   }
   return approved
 }
@@ -624,6 +639,7 @@ export async function promptExpectedSandboxBlock(
   // escalation offers; nothing else is eligible.
   const leaseIdentity = expectedBlockLeaseIdentity(command, opts.executionRoot ?? null)
   if (leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
+  const scriptScope = leaseIdentity ? scriptReplayScope(command, leaseIdentity.executionRoot) : null
   // An explicit escape request must reach the user even when deterministic tiers
   // would approve the command. The caller handles already-authorized run modes.
   const { approved, grantScope } = await requestApproval(
@@ -642,7 +658,7 @@ export async function promptExpectedSandboxBlock(
       ...(leaseIdentity
         ? {
             allowTurnTreeLease: true,
-            turnTreeLeaseLabel: EXTERNAL_REPLAY_LABEL,
+            turnTreeLeaseLabel: externalReplayLabel(scriptScope),
             turnTreeLeaseDefault: false,
             turnTreeLeaseSubject: command,
           }
@@ -651,7 +667,7 @@ export async function promptExpectedSandboxBlock(
     signal,
   )
   if (approved && grantScope === 'turn-tree' && leaseIdentity) {
-    issueShellReplayLease(leaseIdentity, command, true)
+    issueShellReplayLease(leaseIdentity, command, true, scriptScope)
   }
   return approved
 }

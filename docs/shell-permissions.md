@@ -562,11 +562,18 @@ to need network or outside-workspace access. This only advances the same unsandb
 
 When the command is bounded opaque local execution — its only reasons are a project script or
 executable, with no network, outside-path, destructive or install signal — the advanced prompt
-also offers “Allow retries outside the sandbox (up to 10, for 2 hours)”. Ticking it leases that
-exact command line, byte for byte, to the current human turn tree in this thread and execution
-root, so an agent rerunning the same browser demo or harness after each fix is not asked again.
-Any other command, a changed command, another turn tree or another thread asks again. The same
-outside-sandbox lease, with the same bounds, is offered when a verified sandbox block escalates.
+also offers an optional retry grant, limited to 10 retries over 2 hours in the current human
+turn tree, thread and execution root. For a plain interpreter invocation of an existing local
+script, the checkbox explicitly offers “Allow this script with different arguments outside the
+sandbox for this task”. It permits changing literal script arguments, including single-quoted
+browser inspection code. The interpreter and resolved script path stay fixed. An optional
+literal `cd … &&` prefix must stay fixed too. Environment assignments, interpreter options,
+shell substitutions, redirections, pipelines and additional commands do not qualify for this
+broader grant. Script symlinks are resolved again on replay; retargeting them asks again.
+Supported interpreters are Node, Python/Python3, Ruby and sh/bash/zsh; unsupported shapes keep
+“Allow retries outside the sandbox”, which leases an exact command or independently authorized
+composition as before. Neither checkbox is selected by default. Another turn tree or thread
+asks again. The same outside-sandbox grants are offered when a verified sandbox block escalates.
 A block recognised only from command output, or a forced ask, never offers or spends it.
 
 The prompt is titled “Agent requests sandbox escape” and describes this as the agent's
