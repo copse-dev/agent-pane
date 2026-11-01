@@ -813,17 +813,31 @@ function attachRemotePublisher(store2, api2) {
   let running = false;
   let disposed = false;
   let receivedState = false;
+  const views = /* @__PURE__ */ new Map();
+  function capture() {
+    const { activeProjectId, threads, backgroundThreads } = store2.getState();
+    if (activeProjectId) views.set(activeProjectId, { projectId: activeProjectId, threads });
+    for (const { projectId, thread } of backgroundThreads) {
+      const existing = views.get(projectId)?.threads ?? [];
+      views.set(projectId, {
+        projectId,
+        threads: [...existing.filter((item) => item.id !== thread.id), thread]
+      });
+    }
+  }
   function publish() {
     timer = null;
     if (!running || disposed) return;
-    const { activeProjectId, threads } = store2.getState();
-    if (!activeProjectId) return;
-    const view = remoteViewSchema.safeParse({ projectId: activeProjectId, threads });
-    if (view.success) void api2.remote.publish(view.data).catch(() => {
-    });
+    for (const value of views.values()) {
+      const view = remoteViewSchema.safeParse(value);
+      if (view.success) void api2.remote.publish(view.data).catch(() => {
+      });
+    }
   }
   function schedule() {
-    if (running && !disposed && timer === null) timer = setTimeout(publish, 150);
+    if (!running || disposed) return;
+    capture();
+    timer ??= setTimeout(publish, 150);
   }
   function setAvailability(state) {
     running = state.enabled && state.running;
