@@ -23984,7 +23984,23 @@ function serializedNavigation(api, navigation) {
     return (writeChains.get("mainWindow:navigation") ?? Promise.resolve()).then(() => void 0);
   }
   lastNavigation = navigation;
-  return serializedWrite("mainWindow:navigation", () => api.windowState.setNavigation(navigation));
+  return sendNavigation(api, navigation);
+}
+function sendNavigation(api, navigation) {
+  const key = "mainWindow:navigation";
+  const prev = writeChains.get(key);
+  let write;
+  try {
+    write = api.windowState.setNavigation(navigation);
+  } catch (error62) {
+    write = Promise.reject(error62 instanceof Error ? error62 : new Error(String(error62)));
+  }
+  const next = prev ? Promise.all([prev.catch(() => void 0), write]).then(() => void 0) : write;
+  writeChains.set(key, next);
+  void next.finally(() => {
+    if (writeChains.get(key) === next) writeChains.delete(key);
+  }).catch(() => void 0);
+  return next;
 }
 function afterThreadWrites(projectId, threadId, start) {
   const pending = writeChains.get(threadWriteKey(projectId, threadId));
@@ -24219,6 +24235,9 @@ function saveNavigation(api, activeProjectId, activeThreadId) {
 }
 function saveProjectGroups(api, groups) {
   return serializedSet(api, KEY_PROJECT_GROUPS, groups);
+}
+function projectThreadLoadRevision(api, projectId) {
+  return threadLoadRevisions.get(api)?.get(projectId) ?? 0;
 }
 function invalidateProjectThreadLoads(api, projectId) {
   let revisions = threadLoadRevisions.get(api);
@@ -26725,6 +26744,7 @@ var init_tool_display = __esm({
     init_copse_tool_call();
     TOOL_DISPLAY_NAMES = {
       explore: { running: "Exploring files", done: "Explored files" },
+      read_explored: { running: "Quoting explored lines", done: "Quoted explored lines" },
       read_file: { running: "Reading file", done: "Read file" },
       list_dir: { running: "Listing directory", done: "Listed directory" },
       search_code: { running: "Searching code", done: "Searched code" },
@@ -26793,7 +26813,14 @@ var init_tool_display = __esm({
     };
     TOOL_GROUPS = {
       reading: {
-        tools: ["explore", "read_file", "list_dir", "video_frames", "preflight_worktree"],
+        tools: [
+          "explore",
+          "read_explored",
+          "read_file",
+          "list_dir",
+          "video_frames",
+          "preflight_worktree"
+        ],
         label: { running: "Reading files", done: "Read files" }
       },
       searching: {
@@ -27729,6 +27756,66 @@ var init_sidebar_thread = __esm({
   }
 });
 
+// src/shared/workspace-connection-error.ts
+var WORKSPACE_CONNECTION_ERROR_PREFIX, WorkspaceConnectionError;
+var init_workspace_connection_error = __esm({
+  "src/shared/workspace-connection-error.ts"() {
+    WORKSPACE_CONNECTION_ERROR_PREFIX = "[workspace-connection] ";
+    WorkspaceConnectionError = class extends Error {
+    };
+  }
+});
+
+// src/renderer/controller/project-thread-cache.ts
+var ProjectThreadCache;
+var init_project_thread_cache = __esm({
+  "src/renderer/controller/project-thread-cache.ts"() {
+    ProjectThreadCache = class {
+      projects = /* @__PURE__ */ new Map();
+      get(projectId, revision) {
+        const entry = this.projects.get(projectId);
+        if (!entry || entry.revision !== revision) return void 0;
+        return entry.threads;
+      }
+      remember(projectId, threads, revision, selectedThreadId = null) {
+        this.projects.delete(projectId);
+        this.projects.set(projectId, { threads, revision, selectedThreadId });
+        while (this.projects.size > 16) {
+          const oldest = this.projects.keys().next().value;
+          if (oldest === void 0) break;
+          this.projects.delete(oldest);
+        }
+        let remaining = 8;
+        for (const [id, entry] of [...this.projects].reverse()) {
+          if (id === projectId) continue;
+          const candidates = entry.threads.filter((thread) => thread.messagesLoaded !== false && thread.messages.length > 0).sort(
+            (a4, b2) => Number(b2.id === entry.selectedThreadId) - Number(a4.id === entry.selectedThreadId)
+          );
+          const dropping = /* @__PURE__ */ new Set();
+          for (const thread of candidates) {
+            if (thread.messagesLoaded === false || thread.messages.length === 0) continue;
+            if (remaining-- <= 0) dropping.add(thread.id);
+          }
+          if (dropping.size === 0) continue;
+          entry.threads = entry.threads.map(
+            (thread) => dropping.has(thread.id) ? { ...thread, messages: [], messagesLoaded: false } : thread
+          );
+        }
+      }
+      update(projectId, update) {
+        const entry = this.projects.get(projectId);
+        if (entry) entry.threads = entry.threads.map(update);
+      }
+      delete(projectId) {
+        this.projects.delete(projectId);
+      }
+      clear() {
+        this.projects.clear();
+      }
+    };
+  }
+});
+
 // src/renderer/controller/projects.ts
 function formatSshProjectName(hostLabel, remotePath) {
   return `${hostLabel}:${remotePath}`;
@@ -27770,17 +27857,21 @@ function paginateSidebarThreads(threads, visibleLimit, activeThreadId) {
     hasMore: visibleCount < total
   };
 }
+function reflectedRevision(api, projectId) {
+  return activeListRevision?.projectId === projectId ? activeListRevision.revision : projectThreadLoadRevision(api, projectId);
+}
 function clearPendingSwitch() {
   pendingSwitch = null;
   holdNavigation(null);
 }
 function settleActivationWaiter(projectId, error62) {
-  const waiter = activationWaiters.get(projectId);
-  if (!waiter) return;
+  const waiters = activationWaiters.get(projectId);
+  if (!waiters) return;
   activationWaiters.delete(projectId);
-  waiter.unsub?.();
-  if (error62) waiter.reject(error62);
-  else waiter.resolve();
+  for (const waiter of waiters) {
+    if (error62) waiter.reject(error62);
+    else waiter.resolve();
+  }
 }
 function endSwitch(gen, projectId) {
   if (pendingSwitch?.gen !== gen) return;
@@ -27817,6 +27908,7 @@ function attentionThreadId(store, threadId) {
   return threadId;
 }
 function archiveCachedSidebarThread(projectId, threadId, archivedAt) {
+  residentThreads.delete(projectId);
   const cached2 = threadCache.get(projectId);
   if (!cached2) return;
   threadCache.set(
@@ -27829,6 +27921,10 @@ function applyCachedSidebarPrRefs(projectId, refs) {
   if (!cached2) return false;
   const byThread = new Map(refs.map(({ threadId, prRefs }) => [threadId, prRefs]));
   if (!cached2.some((thread) => byThread.has(thread.id))) return false;
+  residentThreads.update(projectId, (thread) => {
+    const prRefs = byThread.get(thread.id);
+    return prRefs ? { ...thread, prRefs } : thread;
+  });
   threadCache.set(
     projectId,
     cached2.map((thread) => {
@@ -27867,6 +27963,7 @@ async function preloadSidebarThreads(store, api) {
     }
     if (unwanted(id)) continue;
     threadCache.set(id, loaded.map(compactSidebarThread));
+    residentThreads.remember(id, loaded, projectThreadLoadRevision(api, id));
     store.emit("sidebar_threads_loaded");
   }
 }
@@ -27878,22 +27975,25 @@ function attachProjectThreadCache(store) {
     }
   });
 }
-async function trySetWorkspace(api, path, sshHost) {
+async function setWorkspaceForSelection(api, path, sshHost) {
   try {
     await api.workspace.set(path, sshHost);
     return true;
-  } catch {
+  } catch (error62) {
+    const message = error62 instanceof Error ? error62.message : "";
+    const connectionError = message.indexOf(WORKSPACE_CONNECTION_ERROR_PREFIX);
+    if (connectionError >= 0) {
+      throw new WorkspaceConnectionError(
+        message.slice(connectionError + WORKSPACE_CONNECTION_ERROR_PREFIX.length),
+        { cause: error62 }
+      );
+    }
     return false;
   }
 }
-function setWorkspaceInOrder(api, path, sshHost) {
-  const next = workspaceChain.catch(() => void 0).then(() => trySetWorkspace(api, path, sshHost));
-  workspaceChain = next;
-  return next;
-}
 function cancelPendingSwitch(store, api) {
   const cancelled = pendingSwitch;
-  if (!cancelled) return;
+  if (!cancelled || cancelled.projectId === store.getState().activeProjectId) return;
   clearPendingSwitch();
   switchGeneration += 1;
   settleActivationWaiter(cancelled.projectId);
@@ -27901,7 +28001,7 @@ function cancelPendingSwitch(store, api) {
   const { activeProjectId, projects } = store.getState();
   const active2 = projects.find((p2) => p2.id === activeProjectId);
   if (!active2) return;
-  void setWorkspaceInOrder(api, active2.path, active2.sshHost);
+  void setWorkspaceForSelection(api, active2.path, active2.sshHost);
   void saveProjects(api, projects, active2.id, store.getState().activeThreadId);
 }
 function abortProjectActivation(store, id, gen, outgoingId, error62) {
@@ -27940,6 +28040,7 @@ async function removeProject(store, api, id) {
   if (!state.projects.some((p2) => p2.id === id)) return;
   forgetProjectViewState(projectViewState, id);
   threadCache.delete(id);
+  residentThreads.delete(id);
   if (liveCacheProjectId === id) liveCacheProjectId = null;
   dropProjectBackgroundThreads(store, id);
   const projects = state.projects.filter((p2) => p2.id !== id);
@@ -27987,90 +28088,22 @@ function expandProject(store, id) {
   setExpandedProject(store, id);
   store.emit("projects_changed");
 }
-async function finishActivate(store, api, id, path, sshHost, gen, outgoingId, outgoingThreads, pendingThreadId) {
-  const endActivate = begin("switch:activate");
-  mark("switch:start");
-  if (gen !== switchGeneration) {
-    endSwitch(gen, id);
-    endActivate({ outcome: "superseded" });
-    return;
-  }
-  if (sshHost) {
-    const enabled = await api.settings.get("sshWorkspaceEnabled");
-    if (enabled !== true) {
-      endActivate({ outcome: "ssh-disabled" });
-      abortProjectActivation(
-        store,
-        id,
-        gen,
-        outgoingId,
-        new Error("Enable SSH workspaces in Settings \u2192 Machines before opening a remote folder.")
-      );
-      return;
-    }
-    try {
-      await ensureSshConnected(api, sshHost);
-    } catch (err) {
-      if (gen !== switchGeneration) {
-        endSwitch(gen, id);
-        endActivate({ outcome: "superseded" });
-        return;
-      }
-      const message = err instanceof Error ? err.message : String(err);
-      endActivate({ outcome: "ssh-failed" });
-      abortProjectActivation(
-        store,
-        id,
-        gen,
-        outgoingId,
-        new Error(`SSH connection failed: ${message}`)
-      );
-      return;
-    }
-  }
-  const flushOutgoing = outgoingId && outgoingId !== id ? flushProjectThreads(api, outgoingId, outgoingThreads) : Promise.resolve();
-  if (pendingSwitch?.gen === gen) {
-    pendingSwitch.dispatched = true;
-    holdNavigation(id);
-  }
-  const projectsAtDispatch = store.getState().projects;
-  const persistSelection = saveProjects(api, projectsAtDispatch, id, pendingThreadId);
-  const endWorkspace = begin("switch:workspace-set");
-  const workspaceOpened = setWorkspaceInOrder(api, path, sshHost);
-  const [, , opened] = await Promise.all([flushOutgoing, persistSelection, workspaceOpened]);
-  endWorkspace({ opened });
-  if (gen !== switchGeneration) {
-    endSwitch(gen, id);
-    endActivate({ outcome: "superseded" });
-    return;
-  }
-  if (!opened) {
-    holdNavigation(null);
-    await markProjectMissing(store, api, id);
-    endActivate({ outcome: "missing" });
-    abortProjectActivation(
-      store,
-      id,
-      gen,
-      outgoingId,
-      new Error(
-        sshHost ? "Could not open the remote workspace folder." : "Project folder could not be opened \u2014 relocate it from the sidebar."
-      )
-    );
-    return;
-  }
-  const endLoad = begin("switch:load-threads");
-  const loaded = await loadThreads(api, id);
-  endLoad({ threads: loaded.length });
-  if (gen !== switchGeneration || store.getState().expandedProjectId !== id) {
-    endSwitch(gen, id);
-    endActivate({ outcome: "superseded" });
-    return;
-  }
+function applyProjectSelection(store, api, id, path, loaded, revision, pendingThreadId, outgoingId, outgoingThreads) {
   const endApply = begin("switch:apply-state");
   if (outgoingId && outgoingId !== id) {
     const state = store.getState();
     const liveOutgoingThreads = state.activeProjectId === outgoingId ? state.threads : outgoingThreads;
+    if (liveOutgoingThreads !== outgoingThreads && isListedProject(store, outgoingId)) {
+      residentThreads.remember(
+        outgoingId,
+        liveOutgoingThreads,
+        reflectedRevision(api, outgoingId),
+        state.activeThreadId
+      );
+      void flushProjectThreads(api, outgoingId, liveOutgoingThreads).catch((error62) => {
+        console.warn("[projects] could not persist the outgoing project:", error62);
+      });
+    }
     carryRunningThreads(store, outgoingId, liveOutgoingThreads);
   }
   const merged = adoptBackgroundThreads(store, id, loaded);
@@ -28090,17 +28123,113 @@ async function finishActivate(store, api, id, path, sshHost, gen, outgoingId, ou
     // Opening succeeded — lift any prior "folder missing" quarantine (#997).
     projects: projectsWithMissingCleared(store.getState().projects, id)
   });
+  activeListRevision = { projectId: id, revision };
   if (activeThreadId) markThreadRead(store, activeThreadId);
   if (merged.length === 0) createThread(store);
   else normalizeBlankThreads(store);
   store.emit("projects_changed");
   store.emit("workspace_changed");
   store.emit("threads_changed");
+  residentThreads.remember(id, store.getState().threads, revision, store.getState().activeThreadId);
   endApply({ threads: merged.length });
+}
+async function finishActivate(store, api, id, path, sshHost, gen, outgoingId, outgoingThreads, pendingThreadId, rollbackSelection) {
+  const endActivate = begin("switch:activate");
+  mark("switch:start");
+  if (gen !== switchGeneration) {
+    endSwitch(gen, id);
+    endActivate({ outcome: "superseded" });
+    return;
+  }
+  const flushOutgoing = () => outgoingId && outgoingId !== id ? flushProjectThreads(api, outgoingId, outgoingThreads) : Promise.resolve();
+  if (pendingSwitch?.gen === gen) {
+    pendingSwitch.dispatched = true;
+    holdNavigation(id);
+  }
+  const projectsAtDispatch = store.getState().projects;
+  const persistSelection = saveProjects(api, projectsAtDispatch, id, pendingThreadId);
+  const endWorkspace = begin("switch:workspace-set");
+  const workspaceOpened = setWorkspaceForSelection(api, path, sshHost);
+  const revision = projectThreadLoadRevision(api, id);
+  const cached2 = residentThreads.get(id, revision);
+  if (cached2) {
+    applyProjectSelection(
+      store,
+      api,
+      id,
+      path,
+      cached2,
+      revision,
+      pendingThreadId,
+      outgoingId,
+      outgoingThreads
+    );
+  }
+  const flushed = flushOutgoing();
+  const prepared = Promise.all([flushed, persistSelection, workspaceOpened]);
+  void prepared.catch(() => void 0);
+  if (!cached2) {
+    const endLoad = begin("switch:load-threads");
+    const loaded = await Promise.race([
+      loadThreads(api, id),
+      prepared.then(([, , opened2]) => opened2 ? new Promise(() => void 0) : null)
+    ]);
+    endLoad({ threads: loaded?.length ?? 0 });
+    if (gen !== switchGeneration || store.getState().expandedProjectId !== id) {
+      endSwitch(gen, id);
+      endActivate({ outcome: "superseded" });
+      return;
+    }
+    if (loaded) {
+      applyProjectSelection(
+        store,
+        api,
+        id,
+        path,
+        loaded,
+        revision,
+        pendingThreadId,
+        outgoingId,
+        outgoingThreads
+      );
+    }
+  }
+  const [, , opened] = await prepared;
+  endWorkspace({ opened });
+  if (gen !== switchGeneration) {
+    endSwitch(gen, id);
+    endActivate({ outcome: "superseded" });
+    return;
+  }
+  if (!opened) {
+    if (store.getState().activeProjectId === id) {
+      rollbackSelection();
+    } else {
+      const kept = store.getState().projects.find((project) => project.id === outgoingId);
+      if (kept) {
+        void setWorkspaceForSelection(api, kept.path, kept.sshHost).catch((error62) => {
+          console.warn("[projects] could not re-select the kept workspace:", error62);
+        });
+      }
+    }
+    holdNavigation(null);
+    await markProjectMissing(store, api, id);
+    endActivate({ outcome: "missing" });
+    abortProjectActivation(
+      store,
+      id,
+      gen,
+      outgoingId,
+      new Error(
+        sshHost ? "Could not open the remote workspace folder." : "Project folder could not be opened \u2014 relocate it from the sidebar."
+      )
+    );
+    return;
+  }
   const { projects, activeThreadId: appliedThreadId } = store.getState();
   await (projects === projectsAtDispatch ? saveNavigation(api, id, appliedThreadId) : saveProjects(api, projects, id, appliedThreadId));
   endSwitch(gen, id);
-  endActivate({ outcome: "ok", threads: merged.length });
+  endActivate({ outcome: "ok", threads: store.getState().threads.length });
   void resumePendingQueues(store, api);
 }
 function dispatchCallers() {
@@ -28108,7 +28237,7 @@ function dispatchCallers() {
   return frames.map((frame) => /at (?:async )?([^\s(]+)/.exec(frame)?.[1] ?? "?").join(" < ");
 }
 function activate(store, api, id, path, sshHost, pendingThreadId) {
-  const { activeProjectId, threads, expandedProjectId } = store.getState();
+  const { activeProjectId, activeThreadId, threads, expandedProjectId } = store.getState();
   if (activeProjectId === id) {
     if ((expandedProjectId ?? activeProjectId) !== id) expandProject(store, id);
     cancelPendingSwitch(store, api);
@@ -28121,15 +28250,46 @@ function activate(store, api, id, path, sshHost, pendingThreadId) {
       restarts: pendingSwitch?.projectId === id
     });
   }
-  cancelPendingSwitch(store, api);
+  if (pendingSwitch?.projectId === activeProjectId) supersedePendingSwitch();
+  else cancelPendingSwitch(store, api);
   const gen = ++switchGeneration;
   pendingSwitch = { gen, projectId: id, dispatched: false };
   const outgoingId = activeProjectId;
   const outgoingThreads = threads;
+  const outgoingRevision = outgoingId === null ? 0 : reflectedRevision(api, outgoingId);
   if (outgoingId && isListedProject(store, outgoingId)) {
     cacheThreads(outgoingId, outgoingThreads);
+    residentThreads.remember(outgoingId, outgoingThreads, outgoingRevision, activeThreadId);
     recordProjectViewState(projectViewState, outgoingId, captureProjectViewState(store.getState()));
   }
+  const rollbackSelection = () => {
+    if (gen !== switchGeneration || store.getState().activeProjectId !== id || !outgoingId) return;
+    const outgoing = store.getState().projects.find((project) => project.id === outgoingId);
+    if (!outgoing) return;
+    const abandoned = store.getState();
+    residentThreads.remember(
+      id,
+      abandoned.threads,
+      reflectedRevision(api, id),
+      abandoned.activeThreadId
+    );
+    void flushProjectThreads(api, id, abandoned.threads).catch((error62) => {
+      console.warn("[projects] could not persist the interrupted selection:", error62);
+    });
+    void setWorkspaceForSelection(api, outgoing.path, outgoing.sshHost);
+    applyProjectSelection(
+      store,
+      api,
+      outgoingId,
+      outgoing.path,
+      // Includes edits made before an uncached destination took over the screen.
+      residentThreads.get(outgoingId, outgoingRevision) ?? outgoingThreads,
+      outgoingRevision,
+      activeThreadId,
+      id,
+      store.getState().threads
+    );
+  };
   void finishActivate(
     store,
     api,
@@ -28139,18 +28299,20 @@ function activate(store, api, id, path, sshHost, pendingThreadId) {
     gen,
     outgoingId,
     outgoingThreads,
-    pendingThreadId
+    pendingThreadId,
+    rollbackSelection
   ).catch(async (error62) => {
     if (gen !== switchGeneration) {
       endSwitch(gen, id);
       return;
     }
+    rollbackSelection();
     holdNavigation(null);
     const state = store.getState();
     const active2 = state.projects.find((project) => project.id === state.activeProjectId);
     const root = active2?.path ?? state.workspaceRoot;
     await Promise.all([
-      root ? setWorkspaceInOrder(api, root, active2?.sshHost) : Promise.resolve(),
+      root ? setWorkspaceForSelection(api, root, active2?.sshHost) : Promise.resolve(),
       saveNavigation(api, state.activeProjectId, state.activeThreadId)
     ]).catch((restoreError) => {
       console.warn("[projects] could not restore navigation after a failed switch:", restoreError);
@@ -28260,18 +28422,12 @@ function activateAndWait(store, api, id, path, sshHost) {
   return waitForProjectActivation(store, id);
 }
 async function waitForProjectActivation(store, projectId) {
-  if (store.getState().activeProjectId === projectId) return;
+  if (store.getState().activeProjectId === projectId && pendingSwitch?.projectId !== projectId)
+    return;
   await new Promise((resolve, reject) => {
-    const waiter = { resolve, reject };
-    activationWaiters.set(projectId, waiter);
-    const unsub = store.on("workspace_changed", () => {
-      if (store.getState().activeProjectId === projectId) {
-        activationWaiters.delete(projectId);
-        unsub();
-        resolve();
-      }
-    });
-    waiter.unsub = unsub;
+    const waiters = activationWaiters.get(projectId) ?? /* @__PURE__ */ new Set();
+    waiters.add({ resolve, reject });
+    activationWaiters.set(projectId, waiters);
   });
 }
 async function quarantineAndRestoreNext(store, api, id) {
@@ -28310,8 +28466,9 @@ async function restoreProject(store, api, id, preferredThreadId = null) {
       return;
     }
   }
+  const revision = projectThreadLoadRevision(api, id);
   const [workspaceOpened, loaded] = await Promise.all([
-    setWorkspaceInOrder(api, proj.path, proj.sshHost),
+    setWorkspaceForSelection(api, proj.path, proj.sshHost),
     loadThreads(api, id)
   ]);
   if (!workspaceOpened) {
@@ -28320,6 +28477,8 @@ async function restoreProject(store, api, id, preferredThreadId = null) {
   }
   const merged = adoptBackgroundThreads(store, id, loaded);
   cacheThreads(id, merged);
+  residentThreads.remember(id, merged, revision);
+  activeListRevision = { projectId: id, revision };
   store.setState({
     activeProjectId: id,
     expandedProjectId: id,
@@ -28448,7 +28607,7 @@ async function recoverOrphanProject(store, api, storeId, confirm) {
   await activateAndWait(store, api, storeId, path);
   return true;
 }
-var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, sideChatUnreadCache, workspaceChain, NEW_PROJECT_STARTER_PROMPT, KEY_DISMISSED_ORPHAN_STORES, dismissedOrphanStoresChain;
+var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, residentThreads, activeListRevision, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, sideChatUnreadCache, NEW_PROJECT_STARTER_PROMPT, KEY_DISMISSED_ORPHAN_STORES, dismissedOrphanStoresChain;
 var init_projects = __esm({
   "src/renderer/controller/projects.ts"() {
     init_side_chat2();
@@ -28459,18 +28618,21 @@ var init_projects = __esm({
     init_toast();
     init_sidebar_thread();
     init_background_threads();
+    init_workspace_connection_error();
+    init_project_thread_cache();
     init_perf();
     uuid3 = () => globalThis.crypto.randomUUID();
     basename = (p2) => p2.split("/").pop() ?? p2;
     SIDEBAR_THREADS_PAGE_SIZE = 10;
     threadCache = /* @__PURE__ */ new Map();
+    residentThreads = new ProjectThreadCache();
+    activeListRevision = null;
     liveCacheProjectId = null;
     projectViewState = /* @__PURE__ */ new Map();
     switchGeneration = 0;
     pendingSwitch = null;
     activationWaiters = /* @__PURE__ */ new Map();
     sideChatUnreadCache = /* @__PURE__ */ new WeakMap();
-    workspaceChain = Promise.resolve();
     NEW_PROJECT_STARTER_PROMPT = "Introduce this project: look at the AGENT.md and README.md, then suggest what we should build first. Prefer plan mode and ask me clarifying questions before making changes.";
     KEY_DISMISSED_ORPHAN_STORES = "dismissedOrphanStores";
     dismissedOrphanStoresChain = Promise.resolve();
@@ -43173,6 +43335,8 @@ var init_acp_known_agents = __esm({
             "*.claude.com"
           ],
           homeDirs: [".claude", ".claude.json", ".claude.json.backup", ".config/claude"],
+          // Claude keeps its macOS login in the login keychain.
+          allowMacOsKeychain: true,
           // Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring
           // $TMPDIR: a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir
           // without it) and per-command /tmp/claude-<hex>-cwd tracking files.
@@ -43270,6 +43434,8 @@ var init_acp_known_agents = __esm({
             "*.claude.com"
           ],
           homeDirs: [".claude", ".claude.json", ".claude.json.backup", ".config/claude"],
+          // Claude keeps its macOS login in the login keychain.
+          allowMacOsKeychain: true,
           // Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring
           // $TMPDIR: a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir
           // without it) and per-command /tmp/claude-<hex>-cwd tracking files.
@@ -43486,6 +43652,9 @@ function parseAcpAgentConfigs(value) {
       }
       if (typeof sandbox["allowMacOsTrustd"] === "boolean") {
         agent.sandbox.allowMacOsTrustd = sandbox["allowMacOsTrustd"];
+      }
+      if (typeof sandbox["allowMacOsKeychain"] === "boolean") {
+        agent.sandbox.allowMacOsKeychain = sandbox["allowMacOsKeychain"];
       }
     }
     return [agent];
@@ -51476,7 +51645,11 @@ function createChatGptPlanSection(api, onChanged) {
     try {
       await work();
     } catch (error62) {
-      message = error62 instanceof Error ? error62.message : "Could not connect ChatGPT.";
+      message = ipcErrorMessage(error62, "Could not connect ChatGPT.");
+      try {
+        status = await api.chatGptPlan.status();
+      } catch {
+      }
     } finally {
       busy = false;
       render();
@@ -51648,7 +51821,7 @@ function createChatGptPlanSection(api, onChanged) {
     try {
       status = await api.chatGptPlan.status();
     } catch (error62) {
-      message = error62 instanceof Error ? error62.message : "Could not read the ChatGPT connection.";
+      message = ipcErrorMessage(error62, "Could not read the ChatGPT connection.");
     }
     render();
     await welcome();
@@ -51665,6 +51838,7 @@ var init_chatgpt_plan_section = __esm({
   "src/renderer/views/setup/chatgpt-plan-section.ts"() {
     init_confirm_dialog();
     init_helpers();
+    init_ipc_error_message();
     USAGE_URL = "https://chatgpt.com/settings/usage";
   }
 });
