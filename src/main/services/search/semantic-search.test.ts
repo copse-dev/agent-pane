@@ -1,6 +1,6 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { setWorkspaceRootForTest } from '../workspace.ts'
+import { runWithWorkspaceRoot, setWorkspaceRootForTest } from '../workspace.ts'
 import { setSetting } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
@@ -60,9 +60,9 @@ describe('semantic-search', () => {
     }))
 
     try {
-      const result = await executeSemanticSearch(
-        { query: 'where is auth handled' },
-        new AbortController().signal,
+      // Semantic search runs inside the agent's run, which names its root.
+      const result = await runWithWorkspaceRoot('/tmp/repo', () =>
+        executeSemanticSearch({ query: 'where is auth handled' }, new AbortController().signal),
       )
       assert.ok(result.status === 'ok', `expected ok, got ${result.status}`)
       assert.match(result.text, /native hit/)
@@ -170,9 +170,8 @@ describe('semantic-search', () => {
     })
 
     try {
-      const result = await executeSemanticSearch(
-        { query: 'where is auth handled' },
-        new AbortController().signal,
+      const result = await runWithWorkspaceRoot('/tmp/repo', () =>
+        executeSemanticSearch({ query: 'where is auth handled' }, new AbortController().signal),
       )
       assert.deepEqual(result, { status: 'building' })
     } finally {
