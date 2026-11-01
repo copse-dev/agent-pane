@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { homedir } from 'node:os'
 import { promisify } from 'node:util'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
@@ -13,11 +14,13 @@ export function signInToClaude(): Promise<{ ok: boolean; error?: string }> {
   pendingSignIn = (async (): Promise<{ ok: boolean; error?: string }> => {
     try {
       await execFileAsync('claude', ['auth', 'login'], {
+        cwd: homedir(),
         encoding: 'utf8',
         timeout: 300_000,
         maxBuffer: 64 * 1024,
       })
       const { stdout } = await execFileAsync('claude', ['auth', 'status'], {
+        cwd: homedir(),
         encoding: 'utf8',
         timeout: 10_000,
         maxBuffer: 64 * 1024,
