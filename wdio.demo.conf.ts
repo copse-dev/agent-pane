@@ -11,6 +11,8 @@ import { prepareBenchmarkExplorerFixture } from './tests/demo/helpers/benchmark-
 import { buildMobileAssets } from './scripts/mobile-build.mts'
 import { MOBILE_CONTENT_SECURITY_POLICY } from './src/shared/mobile-content-security-policy.ts'
 import { mobileAssetRoutes } from './src/shared/mobile-asset-routes.ts'
+import { loadRemoteAssets } from './src/main/services/mobile/remote-assets.ts'
+import { createRemoteChatFixture } from './tests/demo/helpers/remote-chat-fixture.ts'
 
 /** Cap how long afterTest may talk to a possibly-dead Chrome session. */
 const AFTER_TEST_SESSION_BUDGET_MS = 5_000
@@ -53,9 +55,17 @@ async function startDemoServer(): Promise<void> {
 
   await prepareBenchmarkExplorerFixture()
   await buildMobileAssets(MOBILE_ROOT)
+  const remoteAssets = loadRemoteAssets(join(MOBILE_ROOT, 'remote'))
+  const remoteFixture = createRemoteChatFixture()
   server = createServer((request, response) => {
     const requestUrl = new URL(request.url ?? '/', `http://127.0.0.1:${String(DEMO_PORT)}`)
     const pathname = decodeURIComponent(requestUrl.pathname)
+    const remoteAsset = remoteAssets.get(pathname)
+    if (remoteAsset) {
+      response.writeHead(200, remoteAsset.headers).end(remoteAsset.body)
+      return
+    }
+    if (remoteFixture(pathname, request, response)) return
     if (pathname === '/mobile-fixture/reset') {
       mobileStep = 0
       mobileText = ''

@@ -2,6 +2,46 @@
 
 Tracking: [#659](https://github.com/copse-dev/agent-pane/issues/659)
 
+## Remote shared-renderer integration (2026-10-31, in progress)
+
+The requested outcome is the real shared chat interface in a browser connected to the
+desktop owner. Acceptance: load a real project/thread; submit once through the desktop
+queue; observe live output; disconnect/reconnect without duplicate submission; preserve
+the browser's draft and navigation; build an isolated app for manual testing.
+
+The desktop remains the only queue/transcript writer. The new transport must not expose
+generic IPC or synthesize Electron sender events. Read calls use an explicit, validated
+allowlist and real preload invokes; credentials, permission changes, filesystem APIs,
+diffs, branch data and container controls are excluded. Live thread views project only
+chat fields, with branch/execution metadata removed. Existing paired HTTPS control grants
+are the intended authority, with revocation rechecked before returning any data.
+
+**Chat-only activation authorized on 2026-10-31.** The user explicitly approved chat data
+access over the existing paired HTTPS connection. Control grants protect live snapshots
+and the reviewed read relay, with revocation checked again after asynchronous replies.
+The existing mobile client consumes this protocol for live output and editable next-prompt
+suggestions; submission keeps the desktop's existing deduplication and queue path.
+**Shared chat extraction authorized on 2026-10-31.** The user requested that both clients
+mount the desktop chat components. The desktop and paired browser now use
+`mountChatSurface`: the same conversation renderer, rich composer editor and next-step
+controller. The browser supplies a remote submission adapter; the desktop retains checkout,
+queue and persistence ownership. This supersedes the purpose-built-chat decision below
+for the chat surface, while the mobile activity/pairing shell remains. The shared surface
+is available from “Open shared desktop chat” in a control-enabled thread.
+Acceptance still requires focused browser screenshots and physical-phone validation.
+Native project/file/terminal controls and full desktop-shell parity remain outside scope.
+
+Draft validation status (2026-11-01): the demo build and 62 focused protocol, relay,
+asset, publisher and mobile tests pass. The full static gate passes. The full unit
+suite timed out after 30 minutes with failures recorded in provider HTTP fixtures,
+review preparation, sandbox worker startup, workflow invariants and terminal benchmarks;
+these have not been baseline-triaged and are not a green full check. Shared-renderer
+browser coverage is added but has not run successfully: the default harness could not
+download baselines/ChromeDriver; the local fallback reached server startup with port
+binding enabled but could not probe the installed Chrome version. No shared-renderer
+visual pass or real-phone delivery/reconnect result is claimed. The standalone HTML
+prototype remains simulated and is separate from the shipped remote renderer.
+
 **Status: Experimental, opt-in LAN companion with desktop-authorized chat and run control.** Activity,
 saved transcripts, pairing, persistent HTTPS, per-device revocation, phone message
 submission, new chats, stop, questions, and one-shot approvals are implemented.

@@ -18,6 +18,9 @@ import {
 } from './mobile-activity.ts'
 import { mobileCertificate } from './mobile-certificate.ts'
 import { MobileDevices } from './mobile-devices.ts'
+import { loadRemoteAssets } from './remote-assets.ts'
+import { remoteInterface } from './remote-interface.ts'
+import { remoteHttp } from './remote-http.ts'
 import { isVirtualInterface } from './default-route.ts'
 import { ClientPairings } from '../clients/client-pairings.ts'
 import type { PublicIdentity } from '../remote-names/names-service.ts'
@@ -158,6 +161,7 @@ export async function startMobileServer(options: {
       return [route, { body, etag, headers: { ...file.headers, ETag: etag } }]
     }),
   )
+  const remoteAssets = loadRemoteAssets(join(assets, 'remote'))
   const actions = new MobileActionRequests(randomUUID())
   const failedAuth = new Map<string, { attempts: number; blockedUntil: number }>()
   let stopped = false
@@ -224,9 +228,10 @@ export async function startMobileServer(options: {
         const trustedName = req.headers.host !== authority
         const path = new URL(req.url ?? '/', origin)
         if (req.method === 'GET') {
-          const file = staticFiles.get(path.pathname)
+          const file = staticFiles.get(path.pathname) ?? remoteAssets.get(path.pathname)
           if (file) {
-            if (req.headers['if-none-match'] === file.etag) {
+            const etag = file.headers['ETag']
+            if (etag && req.headers['if-none-match'] === etag) {
               res.writeHead(304, file.headers)
               res.end()
               return
@@ -284,6 +289,26 @@ export async function startMobileServer(options: {
           return
         }
         failedAuth.delete(peer)
+        if (
+          (req.method === 'GET' && path.pathname === '/api/remote/state') ||
+          (req.method === 'POST' && path.pathname === '/api/remote/read')
+        ) {
+          const authorized = (): boolean =>
+            active() && options.devices.principal(req.headers.authorization, 'control') !== null
+          // Check control before reading a body, then again when the desktop replies.
+          if (!authorized()) {
+            send(res, 403, { error: 'Enable control for this phone on the Mac.' })
+            return
+          }
+          const body = req.method === 'POST' ? await readBody(req, 262_144) : undefined
+          if (body === null) {
+            send(res, 400, { error: 'Invalid remote request.' })
+            return
+          }
+          const result = await remoteHttp(remoteInterface, authorized, body)
+          send(res, result.status, result.body)
+          return
+        }
         if (req.method === 'POST' && path.pathname === '/api/action') {
           if (principal.access !== 'control') {
             send(res, 403, {

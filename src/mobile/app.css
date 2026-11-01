@@ -6,6 +6,7 @@
    shared Copse layer (token bridge, highlighting palette, copy controls, Mermaid). */
 @import '@copse/streaming-markdown/styles/default.css';
 @import '../renderer/styles/global/markdown.css';
+@import './remote-chat.css';
 
 * {
   box-sizing: border-box;
@@ -556,6 +557,14 @@ form .ui-btn {
 }
 .message-compose textarea:focus-visible {
   outline: 0;
+}
+.next-prompt {
+  max-width: 100%;
+  min-height: 44px;
+  margin: 12px 0;
+  white-space: normal;
+  text-align: left;
+  color: var(--text-primary);
 }
 .composer-actions {
   display: flex;

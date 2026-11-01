@@ -1,0 +1,85 @@
+@import '../styles/tokens.css';
+@import '../styles/themes.css';
+@import '../styles/global.css';
+.remote-host {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+}
+.remote-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.remote-header a {
+  color: var(--text-primary);
+}
+.remote-header #connection {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.remote-host #pane-chat {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  width: 100%;
+  max-width: 1000px;
+  margin: auto;
+}
+.remote-host #conversation {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.remote-host #input-bar {
+  flex: none;
+  position: relative;
+  padding: 12px max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom));
+}
+.remote-host .input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.remote-host .prompt-input {
+  flex: 1;
+  min-width: 0;
+  max-height: 35dvh;
+  overflow: auto;
+  font-size: 16px;
+}
+.remote-host .remote-next-step {
+  display: block;
+  max-width: 100%;
+  margin-bottom: 8px;
+  padding: 8px;
+  text-align: left;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.remote-host [hidden] {
+  display: none !important;
+}
+.remote-host .remote-send-error {
+  color: var(--error);
+}
+@media (max-width: 600px) {
+  .remote-host .messages-list {
+    padding-inline: 12px;
+  }
+  .remote-header {
+    font-size: 14px;
+  }
+  .remote-host .submit-btn,
+  .remote-host .stop-btn {
+    min-height: 44px;
+  }
+}

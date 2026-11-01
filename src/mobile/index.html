@@ -4,14 +4,17 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#1e201e" />
-    <title>Copse · Activity</title>
+    <title>Copse · Remote chat</title>
     <link rel="stylesheet" href="app.css" />
     <script src="app.js" defer></script>
   </head>
   <body>
     <main class="shell">
       <header class="topbar">
-        <div class="brand"><span class="brand-mark" aria-hidden="true"></span> Copse</div>
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span> Copse
+          <span class="remote-label">Remote</span>
+        </div>
         <button id="back" class="back" type="button" hidden>
           <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M19 12H5m7 7-7-7 7-7" />
@@ -95,66 +98,106 @@
         <div id="groups"></div>
         <div id="inline-decision" hidden></div>
       </section>
-      <section id="thread" hidden>
-        <span id="thread-project" class="eyebrow"></span>
-        <h1 id="thread-title"></h1>
-        <p id="thread-status" class="read-only"></p>
-        <button id="stop" class="ui-btn" hidden>Stop run</button>
-        <div id="messages"></div>
-        <p id="working" class="working" hidden role="status">
-          <span class="working-dot" aria-hidden="true"></span>Agent is working…
-        </p>
-        <div id="attention"></div>
-        <form id="composer" hidden>
-          <label for="message">Message</label>
-          <div class="message-compose">
-            <div id="message-image-preview" class="image-preview" hidden>
-              <img alt="Image to send" />
-              <button
-                type="button"
-                class="ui-btn image-remove"
-                aria-label="Remove image"
-                title="Remove image"
-              >
-                <span class="image-remove-glyph" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" focusable="false">
-                    <path d="M5 5 19 19M19 5 5 19" />
-                  </svg>
-                </span>
-              </button>
-            </div>
-            <textarea
-              id="message"
-              rows="3"
-              maxlength="32000"
-              placeholder="Send a follow-up…"
-            ></textarea>
-            <div class="composer-actions">
-              <div class="image-attachment">
-                <button
-                  class="ui-btn ui-btn-ghost image-picker"
-                  type="button"
-                  aria-label="Add image"
-                  title="Add image"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                    <path
-                      d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"
-                    />
-                  </svg>
-                </button>
-                <input
-                  id="message-image"
-                  type="file"
-                  accept="image/*"
-                  aria-label="Choose image"
-                  tabindex="-1"
-                />
-              </div>
-              <button id="send" class="ui-btn ui-btn-primary" type="submit">Send</button>
-            </div>
+      <section id="thread" class="remote-chat" hidden>
+        <header class="remote-heading">
+          <div>
+            <span id="thread-project" class="eyebrow"></span>
+            <h1 id="thread-title"></h1>
           </div>
-        </form>
+          <span id="remote-connection" class="remote-connection" role="status">Connecting…</span>
+        </header>
+        <a id="shared-chat-link" class="ui-btn" hidden>Open shared desktop chat</a>
+        <p id="thread-status" class="read-only"></p>
+        <nav class="remote-tabs" aria-label="Chat panels">
+          <button id="chat-tab" type="button" aria-controls="chat-panel" aria-pressed="true">
+            Chat
+          </button>
+          <button id="plan-tab" type="button" aria-controls="plan-panel" aria-pressed="false">
+            Plan
+          </button>
+          <button id="mac-tab" type="button" aria-controls="mac-panel" aria-pressed="false">
+            Mac activity
+          </button>
+        </nav>
+        <div id="chat-panel">
+          <button id="stop" class="ui-btn" hidden>Stop run</button>
+          <div id="messages" class="remote-transcript"></div>
+          <p id="working" class="working" hidden role="status">
+            <span class="working-dot" aria-hidden="true"></span>Agent is working…
+          </p>
+          <div id="attention"></div>
+          <button
+            id="next-prompt"
+            class="ui-btn next-prompt"
+            type="button"
+            title="Use suggested next prompt"
+            hidden
+          ></button>
+          <form id="composer" hidden>
+            <label for="message">Message</label>
+            <div class="message-compose">
+              <div id="message-image-preview" class="image-preview" hidden>
+                <img alt="Image to send" />
+                <button
+                  type="button"
+                  class="ui-btn image-remove"
+                  aria-label="Remove image"
+                  title="Remove image"
+                >
+                  <span class="image-remove-glyph" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false">
+                      <path d="M5 5 19 19M19 5 5 19" />
+                    </svg>
+                  </span>
+                </button>
+              </div>
+              <textarea
+                id="message"
+                rows="3"
+                maxlength="32000"
+                placeholder="Send a follow-up…"
+              ></textarea>
+              <div class="composer-actions">
+                <div class="image-attachment">
+                  <button
+                    class="ui-btn ui-btn-ghost image-picker"
+                    type="button"
+                    aria-label="Add image"
+                    title="Add image"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                      <path
+                        d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"
+                      />
+                    </svg>
+                  </button>
+                  <input
+                    id="message-image"
+                    type="file"
+                    accept="image/*"
+                    aria-label="Choose image"
+                    tabindex="-1"
+                  />
+                </div>
+                <button id="send" class="ui-btn ui-btn-primary" type="submit">Send</button>
+              </div>
+            </div>
+            <p class="remote-composer-note">
+              Runs on your Mac · <span id="remote-model">Desktop model</span>
+            </p>
+          </form>
+        </div>
+        <section id="plan-panel" class="remote-detail" aria-labelledby="plan-tab" hidden>
+          <span class="eyebrow">THIS CHAT</span>
+          <h2>Plan</h2>
+          <div id="remote-todos"><p class="hint">Connect to see this chat’s plan.</p></div>
+        </section>
+        <section id="mac-panel" class="remote-detail" aria-labelledby="mac-tab" hidden>
+          <span class="eyebrow">ON YOUR MAC</span>
+          <h2>Agent activity</h2>
+          <p class="hint">Work continues on your Mac while this view is disconnected.</p>
+          <div id="remote-tools"></div>
+        </section>
       </section>
       <p id="action-status" class="status" role="status"></p>
       <p id="error" class="error" role="alert" hidden></p>

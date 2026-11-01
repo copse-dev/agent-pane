@@ -1,6 +1,7 @@
 import { initClientActions } from './services/clients/client-action-ipc.ts'
 import './disable-brotli-decoding.ts' // MUST be first — see the module
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
+import { initRemoteInterface } from './services/mobile/remote-interface.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
 import {
   syncPluginClientApi,
@@ -717,6 +718,7 @@ app
     })
     void syncPluginClientApi()
     initMobileChat(win, ipcMain)
+    initRemoteInterface(win, ipcMain)
     initThreadPrompts(win, ipcMain)
     initClientActions(win, ipcMain)
     // Lets main-process code hand the user a running command in the Shells pane
