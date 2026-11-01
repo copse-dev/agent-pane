@@ -81,8 +81,14 @@ export function cardStatus(toolCalls: readonly ToolCall[]): ToolCardStatus {
   }
   if (toolCalls.some((call) => userInterruption(call) !== undefined)) return 'interrupted'
   // A command declined or refused before launch returned normally, but nothing
-  // ran: never the green check beside "Did not start" (#3956).
-  if (toolCalls.some((call) => call.commandPhase?.state === 'not_started')) return 'interrupted'
+  // ran: never the green check beside "Did not start" (#3956). A rollup whose
+  // other calls did their work stays done; the declined call's own card says so.
+  if (
+    toolCalls.length > 0 &&
+    toolCalls.every((call) => call.commandPhase?.state === 'not_started')
+  ) {
+    return 'interrupted'
+  }
   return 'done'
 }
 

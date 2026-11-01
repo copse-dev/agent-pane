@@ -242,6 +242,15 @@ describe('tool-card refresh helpers', () => {
     assert.equal(cardStatus([call('a', 'run_shell', 'done')]), 'done')
   })
 
+  it('marks a command that never started, but not a rollup where other calls ran', () => {
+    const declined: ToolCall = {
+      ...call('a', 'run_shell', 'done'),
+      commandPhase: { state: 'not_started', since: 1, launched: false, reason: 'Declined.' },
+    }
+    assert.equal(cardStatus([declined]), 'interrupted')
+    assert.equal(cardStatus([declined, call('b', 'read_file', 'done')]), 'done')
+  })
+
   it('keys a card by its stable identity', () => {
     const individual: ToolCallDisplayItem = {
       type: 'individual',
