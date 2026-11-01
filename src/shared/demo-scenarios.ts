@@ -18,6 +18,7 @@ import { BRIDGED_TOOL_SCENARIOS } from './demo-bridged-tools.ts'
 import {
   browserApprovalDetails,
   desktopAppApproval,
+  childCopseApproval,
   providerApprovalDetails,
   webApprovalDetails,
   threadAccessApproval,
@@ -3926,6 +3927,11 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ...providerApprovalDetails('api.example.com', 'https://api.example.com/v1'),
     allowRemember: false,
     approveLabel: 'Always allow host',
+  }),
+  approvalRiskScenario('approval-child-copse', {
+    id: 'child-copse',
+    type: 'mcp',
+    ...childCopseApproval('/projects/copse'),
   }),
   approvalRiskScenario('approval-desktop-app', {
     id: 'desktop-app',

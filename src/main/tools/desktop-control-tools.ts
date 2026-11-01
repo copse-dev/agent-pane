@@ -25,10 +25,22 @@ import type { ToolRegistry } from '../services/tool-registry.ts'
  * first, so they stay in the background and the user's pointer never moves.
  */
 
+import {
+  childCopseOwner,
+  childCopseSessions,
+  isChildCopseTarget,
+  launchChildCopse,
+} from '../services/desktop-control/child-copse-sessions.ts'
+
 const appParam = z
   .string()
-  .refine(isValidBundleId, 'Expected a bundle id such as com.apple.Notes')
-  .describe('Bundle id of the target app, from desktop_apps (e.g. com.apple.Notes)')
+  .refine(
+    (value) => isValidBundleId(value) || isChildCopseTarget(value),
+    'Expected a bundle id or child session target',
+  )
+  .describe(
+    'Bundle id from desktop_apps, or the opaque child: target returned by desktop_child. Never use a Copse bundle id.',
+  )
 const windowParam = z
   .number()
   .int()
@@ -55,6 +67,8 @@ function permissionGap(
 }
 
 async function targetApp(bundleId: string, signal?: AbortSignal): Promise<DesktopApp> {
+  if (isChildCopseTarget(bundleId))
+    return childCopseSessions.resolve(bundleId, childCopseOwner().threadId)
   const decision = decideDesktopAppAccess({ bundleId, allowedBundleIds: [] })
   if (decision.action === 'deny')
     throw new Error(`Computer use cannot touch this app: ${decision.reason}.`)
@@ -128,7 +142,7 @@ export const desktopSnapshotTool = defineTool({
   async execute({ app, window_id: windowId, max_nodes: maxNodes }, signal) {
     const target = await targetApp(app, signal)
     const snapshot = await getDesktopControlService().snapshot(
-      target.pid,
+      target,
       { windowId, maxNodes },
       signal,
     )
@@ -150,7 +164,7 @@ export const desktopScreenshotTool = defineTool({
     const service = getDesktopControlService()
     const gap = permissionGap(await service.permissions(signal), 'screenRecording')
     if (gap) throw new Error(gap)
-    const windows = await service.windows(target.pid, signal)
+    const windows = await service.windows(target, signal)
     const window = requestedWindow
       ? windows.find((candidate) => candidate.windowId === requestedWindow)
       : (windows.find((candidate) => candidate.onScreen) ?? windows[0])
@@ -164,6 +178,7 @@ export const desktopScreenshotTool = defineTool({
         window.windowId,
         join(directory, 'window.png'),
         signal,
+        target,
       )
       const png = await readFile(capture.path)
       return {
@@ -205,18 +220,16 @@ export const desktopClickTool = defineTool({
     const target = await targetApp(app, signal)
     const service = getDesktopControlService()
     if (ref) {
-      await service.press(target.pid, ref, action, signal)
+      await service.press(target, ref, action, signal)
       return `Performed ${action ?? 'Press'} on ${ref} in ${target.name}. Snapshot again to see the result.`
     }
     if (windowId === undefined || x === undefined || y === undefined) {
       throw new Error('Pass ref, or window_id with x and y.')
     }
-    if (
-      !(await service.windows(target.pid, signal)).some((window) => window.windowId === windowId)
-    ) {
+    if (!(await service.windows(target, signal)).some((window) => window.windowId === windowId)) {
       throw new Error(`Window ${String(windowId)} does not belong to ${target.name}.`)
     }
-    const point = await service.clickInCapture(target.pid, windowId, x, y, signal)
+    const point = await service.clickInCapture(target, windowId, x, y, signal)
     return `Clicked ${target.name} at screen point (${String(point.x)}, ${String(point.y)}). Some apps ignore clicks while in the background; verify with desktop_snapshot or desktop_screenshot.`
   },
 })
@@ -235,10 +248,10 @@ export const desktopTypeTool = defineTool({
     const target = await targetApp(app, signal)
     const service = getDesktopControlService()
     if (ref) {
-      await service.setValue(target.pid, ref, text, signal)
+      await service.setValue(target, ref, text, signal)
       return `Set ${ref} in ${target.name} (${String(text.length)} characters).`
     }
-    await service.type(target.pid, text, signal)
+    await service.type(target, text, signal)
     return `Typed ${String(text.length)} characters into ${target.name}’s focused element.`
   },
 })
@@ -259,7 +272,7 @@ export const desktopKeyTool = defineTool({
     const keyCode = desktopKeyCode(key)
     if (keyCode === undefined) throw new Error(`Unknown key "${key}".`)
     const target = await targetApp(app, signal)
-    await getDesktopControlService().key(target.pid, keyCode, modifiers, signal)
+    await getDesktopControlService().key(target, keyCode, modifiers, signal)
     const chord = [...modifiers, key].join('+')
     return modifiers.length
       ? `Sent ${chord} to ${target.name}. Background apps usually ignore shortcuts; verify with desktop_snapshot, and prefer desktop_menu.`
@@ -278,12 +291,39 @@ export const desktopMenuTool = defineTool({
   }),
   async execute({ app, path }, signal) {
     const target = await targetApp(app, signal)
-    await getDesktopControlService().menu(target.pid, path, signal)
+    await getDesktopControlService().menu(target, path, signal)
     return `Chose ${path.join(' > ')} in ${target.name}.`
   },
 })
 
+export const desktopChildTool = defineTool({
+  name: 'desktop_child',
+  provenance: 'external',
+  description:
+    'Start, list, or stop an isolated child Copse for development validation. Build the current checkout first. Start always asks permission to launch and control that instance, including its approval dialogs. Returns a child: target for the other desktop tools. A parent-owned Stop window stays visible. Sessions expire after 30 minutes; no existing Copse instance can be attached.',
+  parameters: z.object({
+    action: z.enum(['start', 'list', 'stop']),
+    app: z.string().optional().describe('For stop: the child: target returned by start.'),
+  }),
+  async execute({ action, app }, signal) {
+    const { threadId } = childCopseOwner()
+    switch (action) {
+      case 'start': {
+        const child = await launchChildCopse(signal)
+        return `Child launched. Use app="${child.target}" in desktop tools. For project setup, use the disposable workspace ${child.workspace}. The child uses a fresh profile; authentication may still use system agent accounts.`
+      }
+      case 'list':
+        return childCopseSessions.list(threadId).join('\n') || 'No active child sessions.'
+      case 'stop':
+        if (!app) throw new Error('Pass the child target to stop.')
+        await childCopseSessions.stop(app, threadId)
+        return 'Child session stopped; control revoked.'
+    }
+  },
+})
+
 export const DESKTOP_CONTROL_TOOL_NAMES = [
+  desktopChildTool.name,
   desktopAppsTool.name,
   desktopSnapshotTool.name,
   desktopScreenshotTool.name,
@@ -296,6 +336,7 @@ export const DESKTOP_CONTROL_TOOL_NAMES = [
 // ToolDefinition<TArgs> is invariant in TArgs, so the heterogeneous set is
 // registered tool by tool rather than from a list (see browser-tools.ts).
 export function registerDesktopControlTools(registry: ToolRegistry): void {
+  if (!registry.has(desktopChildTool.name)) registry.register(desktopChildTool)
   if (!registry.has(desktopAppsTool.name)) registry.register(desktopAppsTool)
   if (!registry.has(desktopSnapshotTool.name)) registry.register(desktopSnapshotTool)
   if (!registry.has(desktopScreenshotTool.name)) registry.register(desktopScreenshotTool)

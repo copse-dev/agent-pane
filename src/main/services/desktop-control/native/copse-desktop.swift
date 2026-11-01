@@ -488,8 +488,73 @@ func userActivity() -> [String: Any] {
   return result
 }
 
+// Only NSWorkspace's newly launched process object can acquire child authority.
+// Keeping that object (rather than rediscovering a bundle id or PID) detects exit/PID reuse.
+var childApps: [String: NSRunningApplication] = [:]
+
+func childApp(_ session: String) throws -> NSRunningApplication {
+  guard let app = childApps[session], !app.isTerminated else {
+    childApps.removeValue(forKey: session)
+    throw fail("Child session ended or is unknown")
+  }
+  return app
+}
+
+func childDescription(_ app: NSRunningApplication) -> [String: Any] {
+  ["pid": Int(app.processIdentifier), "name": "Child Copse",
+   "bundleId": app.bundleIdentifier ?? "", "active": app.isActive, "hidden": app.isHidden]
+}
+
+func startChild(_ params: [String: Any]) throws -> [String: Any] {
+  let session = try stringParam(params, "session")
+  guard childApps[session] == nil else { throw fail("Child session already exists") }
+  let bundle = URL(fileURLWithPath: try stringParam(params, "bundle"))
+  let entry = try stringParam(params, "entry")
+  let profile = try stringParam(params, "profile")
+  let existing = Set(NSWorkspace.shared.runningApplications.map { $0.processIdentifier })
+  let config = NSWorkspace.OpenConfiguration()
+  config.createsNewApplicationInstance = true
+  config.activates = false
+  config.arguments = [entry, "--force-renderer-accessibility"]
+  // Do not inherit bridge tokens, model credentials, or the parent's profile.
+  config.environment = ["COPSE_DIR": profile]
+  let semaphore = DispatchSemaphore(value: 0)
+  var launched: NSRunningApplication?
+  var launchError: Error?
+  DispatchQueue.main.async {
+    NSWorkspace.shared.openApplication(at: bundle, configuration: config) { app, error in
+      launched = app
+      launchError = error
+      semaphore.signal()
+    }
+  }
+  guard semaphore.wait(timeout: .now() + 15) == .success else { throw fail("Child launch timed out") }
+  if let error = launchError { throw error }
+  guard let app = launched, !existing.contains(app.processIdentifier), !app.isTerminated else {
+    throw fail("Launch did not create a new app instance")
+  }
+  childApps[session] = app
+  return childDescription(app)
+}
+
 func handle(_ method: String, _ params: [String: Any]) throws -> Any {
+  if let session = params["childSession"] as? String {
+    let app = try childApp(session)
+    guard optionalInt(params, "pid") == Int(app.processIdentifier) else { throw fail("Child process mismatch") }
+    if let id = optionalInt(params, "windowId") {
+      guard windows(pid: Int(app.processIdentifier)).contains(where: { ($0["windowId"] as? Int) == id }) else {
+        throw fail("Window does not belong to this child")
+      }
+    }
+  }
   switch method {
+  case "startChild": return try startChild(params)
+  case "validateChild": return childDescription(try childApp(try stringParam(params, "session")))
+  case "stopChild":
+    let session = try stringParam(params, "session")
+    let app = childApps.removeValue(forKey: session)
+    if let app = app, !app.isTerminated { _ = app.forceTerminate() }
+    return [:] as [String: Any]
   case "userActivity": return userActivity()
   case "permissions": return permissions()
   case "requestPermissions": return requestPermissions()

@@ -69,6 +69,23 @@ export function providerApprovalDetails(host: string, baseUrl: string): Approval
   }
 }
 
+export function childCopseApproval(root: string): ApprovalDetails & {
+  title: string
+  approveLabel: string
+  allowRemember: boolean
+} {
+  return {
+    title: 'Launch and control a child Copse?',
+    body: root,
+    bodyAdvice:
+      'The agent will launch this checkout in a fresh profile and control only that child instance. It can approve requests inside the child, including commands with your account’s file and network access. A separate profile does not sandbox those commands.',
+    bodyFooter:
+      'Only this thread can use the session. It ends after 30 minutes, when the child exits, or when you choose Stop child session in the separate control window. Your main Copse remains blocked.',
+    approveLabel: 'Launch and allow control',
+    allowRemember: false,
+  }
+}
+
 /** The per-app prompt for a computer-use tool, before the agent reads or drives a Mac app. */
 export function desktopAppApproval(input: {
   bundleId: string

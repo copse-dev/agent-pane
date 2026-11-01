@@ -16,8 +16,18 @@ const FAKE_HELPER = String.raw`
 const rl = require('node:readline').createInterface({ input: process.stdin })
 const out = (value) => process.stdout.write(JSON.stringify(value) + '\n')
 out({ ready: true, permissions: { accessibility: true, screenRecording: false } })
+const childSessions = new Set()
+const childApp = { pid: 84, name: 'Child Copse', bundleId: 'dev.copse.app', active: false, hidden: false }
 rl.on('line', (line) => {
   const { id, method, params } = JSON.parse(line)
+  if (method === 'startChild') { childSessions.add(params.session); return out({ id, ok: true, result: childApp }) }
+  if (method === 'stopChild') { childSessions.delete(params.session); return out({ id, ok: true, result: {} }) }
+  if (method === 'validateChild') return out(childSessions.has(params.session) ? { id, ok: true, result: childApp } : { id, ok: false, error: 'Child session ended' })
+  if (params.pid === 84) {
+    if (!childSessions.has(params.childSession)) return out({ id, ok: false, error: 'Child session ended' })
+    if (params.windowId !== undefined && params.windowId !== 99) return out({ id, ok: false, error: 'Window does not belong to this child' })
+    if (method === 'snapshot') return out({ id, ok: true, result: { tree: 'child window', nodes: 1, truncated: false, elapsedMs: 1, windowId: 99 } })
+  }
   if (method === 'permissions') return out({ id, ok: true, result: { accessibility: true, screenRecording: false } })
   if (method === 'apps') return out({ id, ok: true, result: [{ pid: 42, name: 'Notes', bundleId: 'com.apple.Notes', active: false, hidden: false }] })
   if (method === 'screenshot') return out({ id, ok: true, result: { path: params.path, width: 200, height: 100, frame: { x: 1000, y: 500, width: 400, height: 200 } } })
@@ -81,6 +91,39 @@ describe('DesktopControlService', () => {
     await assert.rejects(service.snapshot(42, {}), /exited \(3\): gone/)
     assert.deepEqual(await service.permissions(), { accessibility: true, screenRecording: false })
     assert.equal(launches(), 2)
+  })
+
+  it('tags child requests through stop and rejects foreign windows', async () => {
+    const { service } = fakeService()
+    await service.startChild('session-a', '/Copse.app', '/index.js', '/profile')
+    assert.equal((await service.snapshot(84, {})).tree, 'child window')
+    await assert.rejects(service.snapshot(84, { windowId: 7 }), /does not belong/)
+    await assert.rejects(service.screenshot(7, '/unused.png', undefined, 84), /does not belong/)
+    await service.stopChild('session-a')
+    await assert.rejects(service.snapshot(84, {}), /Child session ended/)
+  })
+
+  it('keeps an in-flight target bound to its original session when a PID is reused', async () => {
+    const { service } = fakeService()
+    const original = await service.startChild('session-a', '/Copse.app', '/index.js', '/profile-a')
+    await service.stopChild('session-a')
+    const replacement = await service.startChild(
+      'session-b',
+      '/Copse.app',
+      '/index.js',
+      '/profile-b',
+    )
+    assert.equal(original.pid, replacement.pid)
+    await assert.rejects(service.snapshot(original, {}), /Child session ended/)
+    assert.equal((await service.snapshot(replacement, {})).tree, 'child window')
+  })
+
+  it('never turns stale child PID requests into unrestricted calls after helper restart', async () => {
+    const { service } = fakeService()
+    await service.startChild('session-a', '/Copse.app', '/index.js', '/profile')
+    service.dispose()
+    await assert.rejects(service.validateChild('session-a'), /Child session ended/)
+    await assert.rejects(service.snapshot(84, {}), /Child session ended/)
   })
 
   it('honours abort before the helper answers', async () => {

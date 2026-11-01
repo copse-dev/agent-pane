@@ -313,6 +313,7 @@ import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.t
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import { COMPUTER_USE_PLUGIN_ID } from '@copse/agent/plugins/computer-use-plugin.ts'
 import { disposeDesktopControlService } from '../services/desktop-control/desktop-control-service.ts'
+import { childCopseSessions } from '../services/desktop-control/child-copse-sessions.ts'
 import { getAutomationService } from '../services/automations/automation-service.ts'
 import { getBranchCiAutomationService } from '../services/automations/branch-ci-automation-service.ts'
 import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-sensor.ts'
@@ -2513,7 +2514,10 @@ export function registerAllHandlers(
     }
     if (id === COMPUTER_USE_PLUGIN_ID) {
       syncComputerUseTools(registry)
-      if (!enabled) disposeDesktopControlService()
+      if (!enabled) {
+        await childCopseSessions.revokeAll()
+        disposeDesktopControlService()
+      }
     }
     if (id === APPLE_DEVELOPMENT_PLUGIN_ID) {
       syncAppleDevelopmentTools(registry)
