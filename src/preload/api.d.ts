@@ -700,6 +700,12 @@ export interface ApiClient {
       threadId: string,
     ) => Promise<{ bytes: number; truncated: boolean }>
     loadProject: (projectId: string) => Promise<import('@shared/types').Thread[]>
+    /** Search saved human requests without hydrating conversation history. */
+    searchRequests: (
+      projectId: string,
+      query: string,
+    ) => Promise<import('@copse/thread-store/prompt-search.ts').PromptSearchResult>
+    cancelRequestSearch: () => Promise<void>
     /** Fill legacy PR links for a bounded set of visible sidebar threads. */
     backfillPrRefs: (projectId: string, threadIds: string[]) => Promise<void>
     loadMessages: (
