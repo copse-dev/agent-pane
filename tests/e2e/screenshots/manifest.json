@@ -3365,6 +3365,10 @@
       "sha256": "7099471374e7dac8dfae6b9c6767b03176eb0422b4ab5ae273dc3533d40104eb",
       "bytes": 366837
     },
+    "read-explored-expanded.png": {
+      "sha256": "b4634553118cc29fec14c373addda2f2da6956fb35773a83d0092a75ea93f716",
+      "bytes": 117991
+    },
     "read-outside-approval-collapsed.png": {
       "sha256": "ec3f3722a1b858eccb95d9fd5cd55a31ff5a9fc84fa74dad276007df9c0d0fd3",
       "bytes": 305156
