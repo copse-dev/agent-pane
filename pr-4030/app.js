@@ -34,7 +34,7 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-PX45IM5S.js";
+} from "./chunks/chunk-KUSZFEIN.js";
 import "./chunks/chunk-D55J6ZRP.js";
 import {
   init_icons,
@@ -1817,6 +1817,20 @@ function threadAccessApproval(access) {
     allowRemember: false
   };
 }
+function gitPushApproval(branch, expectedRemoteSha) {
+  return {
+    title: "Push branch to origin?",
+    approveLabel: "Push branch",
+    body: [
+      `Branch: ${branch}`,
+      "Remote: origin",
+      expectedRemoteSha ? `Push mode: Force with lease
+Expected remote commit: ${expectedRemoteSha}` : "Push mode: Fast-forward only"
+    ].join("\n"),
+    bodyAdvice: expectedRemoteSha ? "This publishes the branch to origin and can replace remote history only if the remote branch still points to the expected commit." : "This publishes the branch to origin without replacing existing remote history.",
+    bodyFooter: "Approval covers this push once."
+  };
+}
 function webApprovalDetails(origin, url, allowRemember, context) {
   return {
     body: url,
@@ -3070,6 +3084,45 @@ var init_demo_scenarios = __esm({
                         }
                       ]
                     }
+                  }
+                ],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
+        // #1433 Fix 0b: read_explored quotes lines an explore call already read.
+        id: "read-explored",
+        label: "Quote explored lines",
+        project: project("demo-read-explored-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-read-explored-thread",
+            title: "Read explored",
+            status: "idle",
+            messages: [
+              {
+                id: "demo-read-explored-assistant",
+                role: "assistant",
+                content: "Quoting the whole function before editing it.",
+                toolCalls: [
+                  {
+                    id: "demo-read-explored-call",
+                    name: "read_explored",
+                    args: { path: "src/renderer/browser-pane.ts", start_line: 289, end_line: 296 },
+                    status: "done",
+                    resultFormat: "markdown",
+                    result: "`src/renderer/browser-pane.ts` lines 289\u2013296:\n```\nexport function wireToolbar(urlInput: HTMLInputElement): void {\n  urlInput.addEventListener('keydown', (event) => {\n    if (event.key === 'Enter') {\n      submitUrl(urlInput.value)\n    }\n  })\n}\n```"
                   }
                 ],
                 createdAt: FIXED_TIME
@@ -5458,6 +5511,13 @@ var init_demo_scenarios = __esm({
           ...threadAccessApproval(access)
         })
       ),
+      ...[void 0, "0123456789abcdef0123456789abcdef01234567"].map(
+        (sha) => approvalRiskScenario(sha ? "approval-git-push-lease" : "approval-git-push", {
+          id: "git-push",
+          type: "mcp",
+          ...gitPushApproval("copse/friendly-action-names-213c32", sha)
+        })
+      ),
       approvalRiskScenario("approval-web-url", {
         id: "web-url",
         title: "Allow web origin?",
@@ -7319,7 +7379,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-HKBBJNZL.js").then(async (main) => {
+    void import("./chunks/main-4OHIGMA6.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
