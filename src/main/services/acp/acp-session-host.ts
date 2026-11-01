@@ -58,6 +58,9 @@ export function spawnSandboxedAcpSessionHost(config: AcpAgentSpawnConfig): Promi
         ...(config.env ? { env: config.env } : {}),
         ...(config.sandbox ? { sandbox: config.sandbox } : {}),
         ...(config.readonlyCheckout ? { readonlyCheckout: true } : {}),
+        // The host has no active run, so it cannot resolve the thread's chat
+        // read roots itself; without these the agent reads no transcripts.
+        ...(config.chatReadRoots ? { chatReadRoots: config.chatReadRoots } : {}),
       },
       allowLocalhost: Boolean(config.nativeBridge),
     }

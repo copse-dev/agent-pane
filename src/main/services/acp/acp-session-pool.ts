@@ -146,7 +146,9 @@ let reaper: NodeJS.Timeout | null = null
  * the start of each turn. `permissionMode` IS included (issue #607): unlike
  * those, it's applied once at `session/new`, so a change needs a fresh session
  * to take effect. `host` is included so a session never serves a turn that
- * resolved a different placement — local vs remote, or another SSH host. */
+ * resolved a different placement — local vs remote, or another SSH host.
+ * `chatReadRoots` is baked into the agent's sandbox at spawn, so granting or
+ * revoking "read other threads" reaches the agent through a respawn. */
 export function acpSessionFingerprint(config: AcpAgentSpawnConfig): string {
   return JSON.stringify({
     command: config.command,
@@ -159,6 +161,7 @@ export function acpSessionFingerprint(config: AcpAgentSpawnConfig): string {
     mcpServers: config.mcpServers ?? [],
     permissionMode: config.permissionMode ?? null,
     readonlyCheckout: config.readonlyCheckout === true,
+    chatReadRoots: config.chatReadRoots ?? [],
   })
 }
 

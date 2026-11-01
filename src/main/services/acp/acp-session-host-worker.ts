@@ -80,6 +80,8 @@ export function parseSessionHostRequest(raw: string): SessionHostRequest | null 
   if (typeof command !== 'string' || typeof cwd !== 'string' || !sandbox) return null
   const args = readStringList(input['args'])
   const env = readStringMap(input['env'])
+  // A malformed list is dropped, which the overlay reads as no chat-store access.
+  const chatReadRoots = readStringList(input['chatReadRoots'])
   return {
     config: {
       command,
@@ -88,6 +90,7 @@ export function parseSessionHostRequest(raw: string): SessionHostRequest | null 
       ...(args ? { args } : {}),
       ...(env ? { env } : {}),
       ...(input['readonlyCheckout'] === true ? { readonlyCheckout: true } : {}),
+      ...(chatReadRoots ? { chatReadRoots } : {}),
     },
     allowLocalhost: parsed['allowLocalhost'] === true,
   }

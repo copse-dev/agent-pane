@@ -107,6 +107,7 @@ import { getSetting } from '../storage/settings.ts'
 import { ensureShellCommandPermitted } from '../security/permission-gate.ts'
 import { currentRunIsUnattendedContainer } from '../security/unattended-run.ts'
 import { recordDecision } from '../security/decision-log-store.ts'
+import { chatReadRootsForThread } from '../security/thread-access.ts'
 import { getActiveRunThread } from '../thread-models.ts'
 import { isStructurallyReadOnlyShellCommand } from '../security/permission-policy.ts'
 import { detectLanguage } from '../language.ts'
@@ -114,6 +115,7 @@ import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
 import { readWorkspaceFileContent } from '../workspace-fs/file-content.ts'
 import {
   getActiveProjectRoot,
+  getChatStoreRootSync,
   getWorkspaceRoot,
   resolvePathWithinRoot,
   toRelativePathWithinRoot,
@@ -734,6 +736,14 @@ async function runAcpAgentTurn(
   }
   const env =
     defaultConfigEnv || agent.env ? { ...defaultConfigEnv, ...(agent.env ?? {}) } : undefined
+  // The transcripts a sandboxed agent may read natively, resolved here while
+  // this turn's run and execution context exist. The agent is spawned by a
+  // session-host worker with no run of its own, so the answer travels in the
+  // spawn config (docs/shell-permissions.md, "Access to other conversations").
+  const chatStoreRoot = sandbox ? getChatStoreRootSync() : null
+  const chatReadRoots = chatStoreRoot
+    ? chatReadRootsForThread(options.threadId, chatStoreRoot)
+    : undefined
   const spawnConfig: AcpAgentSpawnConfig = {
     command: agent.command,
     ...(options.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
@@ -743,6 +753,7 @@ async function runAcpAgentTurn(
     ...(env ? { env } : {}),
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
     ...(sandbox ? { sandbox } : {}),
+    ...(chatReadRoots ? { chatReadRoots } : {}),
     ...(permissionMode ? { permissionMode } : {}),
     ...(configOptions ? { configOptions } : {}),
     ...(readonlyCheckout ? { readonlyCheckout: true } : {}),

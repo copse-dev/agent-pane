@@ -279,6 +279,11 @@ whole session implementation:
 - only ASRT ownership and the sandboxed agent process move into the host;
 - a small IPC channel carries startup success/failure and network-denial
   telemetry back to the main process, preserving per-turn denial audits;
+- anything the overlay would otherwise resolve from the turn's async context is
+  resolved in the main process and carried in the host request, because the host
+  has no active run. The thread's chat-store read roots travel this way
+  (`chatReadRoots`); without them the host mounts no conversations instead of
+  the whole store;
 - the host and agent share a process group so normal session disposal kills the
   complete host/wrapper/agent tree; and
 - host initialization failure falls back to the former in-process sandboxed
