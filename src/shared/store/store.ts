@@ -101,8 +101,6 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     canvas_artefact_requested: new Set(),
     canvas_artefact_show_requested: new Set(),
     settings_changed: new Set(),
-    theme_changed: new Set(),
-    staged_diffs_changed: new Set(),
     usage_updated: new Set(),
     context_updated: new Set(),
     todos_changed: new Set(),

@@ -57,7 +57,6 @@ export function attachDiffState(
     // the real edit path. A queue-only update is metadata: forcing the panel
     // open here makes background/deferred proposals construct Monaco while the
     // user is still watching another surface.
-    store.emit('staged_diffs_changed')
   }
 
   const unsubShowDiff = api.diff.onShowDiff(
@@ -99,8 +98,8 @@ export function attachDiffState(
       if (!isActiveOwner(activeProjectId, activeThreadId)) return
       queuesByOwner.set(ownerKey(activeProjectId, activeThreadId), entries)
       // Hydration usually confirms what the store already holds. Publishing that
-      // anyway emits `staged_diffs_changed` on every boot and thread switch, and
-      // the Changes pane answers it with a git refresh.
+      // anyway hands the Changes pane a fresh queue on every boot and thread
+      // switch, and it answers each one with a git refresh.
       if (queueKey(store.getState().stagedDiffs) === queueKey(entries)) return
       publishActiveQueue(entries)
     })()
