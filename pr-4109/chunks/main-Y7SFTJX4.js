@@ -458,7 +458,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-WQP2MMFC.js";
+} from "./chunk-CAGWGVXO.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -1732,7 +1732,7 @@ var init_roadmap_plans_plugin = __esm({
     roadmapPlansPlugin = definePlugin(
       {
         name: ROADMAP_PLANS_PLUGIN_ID,
-        description: "Keeps a durable, per-project backlog of future-work prompts with a status lifecycle via the `roadmap_plan` tool, plus a Roadmap pane to browse and run them, so longer-horizon work is captured without being started early.",
+        description: "Keeps a durable, per-project backlog of future work, with a Roadmap pane to browse, track and run tasks when you are ready.",
         trust: "first-party",
         stability: "experimental",
         tools: { native: [ROADMAP_PLANS_TOOL_NAME] },
@@ -15072,7 +15072,7 @@ var init_todos_plugin = __esm({
     todosPlugin = definePlugin(
       {
         name: TODOS_PLUGIN_ID,
-        description: "Owns the `update_todos` tool, todo steering + closeout hooks, and the plan panel contribution.",
+        description: "Helps the agent plan multi-step work, track progress in the plan panel, and check remaining steps before finishing.",
         trust: "first-party",
         stability: "stable",
         tools: { native: [TODOS_TOOL_NAME] },
@@ -16570,7 +16570,7 @@ async function startProposedThread(store2, api2, sourceThreadId, proposal, optio
   const projectId = store2.getState().activeProjectId;
   if (!projectId) throw new Error("Open a project before starting a proposed thread");
   store2.emit("composer_draft_flush");
-  const threadId = createThread(store2);
+  const threadId = createThread(store2, void 0, { activate: false });
   setThreadTitle(store2, threadId, proposal.title);
   patchThreadAnywhere(store2, threadId, (t) => ({
     ...t,
@@ -16674,7 +16674,8 @@ function buildPendingActions(proposal, handlers3, rerender) {
       start.disabled = false;
       dismiss.disabled = false;
       start.textContent = "Start this thread";
-      error.textContent = cause instanceof Error ? `Could not start the thread: ${cause.message}` : "Could not start the thread.";
+      const message2 = ipcErrorMessage(cause, "");
+      error.textContent = message2 ? `Could not start the thread: ${message2}` : "Could not start the thread.";
       error.hidden = false;
     });
   });
@@ -16755,6 +16756,7 @@ function createThreadProposalCard(proposal, state, handlers3) {
 var init_thread_proposal_card = __esm({
   "src/renderer/views/thread-proposal-card.ts"() {
     init_helpers();
+    init_ipc_error_message();
     init_icons();
     init_thread_proposal();
   }
@@ -16799,18 +16801,10 @@ function createThreadProposalToolCard(tc, store2, api2, sourceThreadId) {
   if (!proposal) return null;
   return createThreadProposalCard(proposal, cardState(store2, sourceThreadId, tc.id), {
     onStart: async (accepted) => {
-      try {
-        const result = await startProposedThread(store2, api2, sourceThreadId, accepted, {
-          confirmSharedCheckout
-        });
-        if (!result.started) noteDeclined();
-      } catch (cause) {
-        showToast(cause instanceof Error ? cause.message : "Could not start the proposed thread.", {
-          variant: "error",
-          durationMs: 15e3
-        });
-        throw cause;
-      }
+      const result = await startProposedThread(store2, api2, sourceThreadId, accepted, {
+        confirmSharedCheckout
+      });
+      if (!result.started) noteDeclined();
     },
     onDismiss: (dismissed) => {
       setThreadProposalDecision(store2, sourceThreadId, {
@@ -71820,7 +71814,7 @@ var init_review_plugin = __esm({
     reviewPlugin = definePlugin(
       {
         name: REVIEW_PLUGIN_ID,
-        description: 'Builds and tests your changes against their base, has a model review them under a lens, and tries to refute every finding before it reaches you. Runs on demand from the Changes view, the "Review changes" bubble, or the `review_changes` tool.',
+        description: 'Builds and tests your changes against their base, has a model review them under a lens, and tries to refute every finding before it reaches you. Runs on demand from the Changes view, the "Review changes" bubble, or when you ask the agent to review your changes.',
         trust: "first-party",
         stability: "experimental",
         tools: { native: [REVIEW_TOOL_NAME] },
