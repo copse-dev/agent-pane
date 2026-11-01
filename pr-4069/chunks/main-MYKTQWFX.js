@@ -458,7 +458,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-EFYF4CLQ.js";
+} from "./chunk-QKYBD2OC.js";
 import "./chunk-D55J6ZRP.js";
 import {
   StreamingMarkdownRenderer,
@@ -14469,6 +14469,47 @@ var init_composer_editor = __esm({
   }
 });
 
+// src/shared/tools/command-phase-display.ts
+function commandPhaseLabel(phase) {
+  if (!phase) return null;
+  switch (phase.state) {
+    case "queued":
+      return { text: "Queued" };
+    case "awaiting_approval":
+      return { text: "Waiting for approval" };
+    case "starting":
+      return { text: "Starting" };
+    case "running":
+      return phase.backgroundTaskId === void 0 ? { text: "Running" } : {
+        text: `Background task ${phase.backgroundTaskId}`,
+        detail: "Its output is under Background tasks."
+      };
+    case "exited":
+      if (phase.exitCode === void 0) return { text: "Exited" };
+      return phase.exitCode === 0 ? null : { text: `Exit ${String(phase.exitCode)}` };
+    case "timed_out":
+      return { text: "Timed out" };
+    case "cancelled":
+      return { text: phase.launched ? "Stopped" : "Cancelled before start" };
+    case "not_started":
+      return {
+        text: "Did not start",
+        ...phase.reason !== void 0 && phase.reason !== "" ? { detail: phase.reason } : {}
+      };
+  }
+}
+function liveCommandPhase(calls) {
+  for (let index = calls.length - 1; index >= 0; index--) {
+    const call = calls[index];
+    if (call?.status === "running" && call.commandPhase) return call.commandPhase;
+  }
+  return void 0;
+}
+var init_command_phase_display = __esm({
+  "src/shared/tools/command-phase-display.ts"() {
+  }
+});
+
 // src/renderer/views/thread-roadmap-origin.ts
 function roadmapOriginIcon() {
   return outlineIcon(
@@ -17109,10 +17150,8 @@ function createDisclosureModel(host, timing, clock = systemClock) {
       const entry = entryFor(threadId, key);
       entry.failed = status === "error";
       if (status === "interrupted") entry.autoOpenedAt = null;
-      if (kind !== "entry") {
-        entry.running = status === "running";
-        if (!entry.running) cancelReveal(key);
-      }
+      if (kind !== "entry") entry.running = status === "running";
+      if (kind !== "tool" || status !== "running" || !autoRevealEligible) cancelReveal(key);
       if (entry.mode !== "auto") return entry.mode === "user-open";
       if (kind === "container") return false;
       if (entry.failed) {
@@ -17842,17 +17881,9 @@ var init_image_input_support = __esm({
 // src/renderer/views/conversation-search.ts
 function findMatchOffsets(haystack, needle) {
   if (!needle) return [];
-  const hay = haystack.toLowerCase();
-  const q2 = needle.toLowerCase();
-  const offsets = [];
-  let from2 = 0;
-  for (; ; ) {
-    const idx = hay.indexOf(q2, from2);
-    if (idx === -1) break;
-    offsets.push(idx);
-    from2 = idx + q2.length;
-  }
-  return offsets;
+  const literal = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(literal, "giu");
+  return Array.from(haystack.matchAll(pattern), (match) => match.index);
 }
 function normalizeSearchText(text) {
   return text.replace(/\s+/g, " ").trim();
@@ -18565,7 +18596,7 @@ function createToolLocationsSection(locations) {
     })
   );
 }
-function createToolHeader(label, status, summaryClass, count, editStats, editPath) {
+function createToolHeader(label, status, summaryClass, count, editStats, editPath, commandPhase) {
   const activityIcon = el("span", {
     class: "tool-activity-icon-slot",
     "aria-hidden": "true"
@@ -18600,6 +18631,20 @@ function createToolHeader(label, status, summaryClass, count, editStats, editPat
   if (count !== void 0 && count > 1) {
     children.push(el("span", { class: "tool-count" }, `\xD7${String(count)}`));
   }
+  const phase = commandPhaseLabel(commandPhase);
+  if (phase && commandPhase) {
+    children.push(
+      el(
+        "span",
+        {
+          class: "tool-command-phase",
+          "data-phase": commandPhase.state,
+          ...phase.detail !== void 0 ? { "data-tooltip": phase.detail } : {}
+        },
+        phase.text
+      )
+    );
+  }
   children.push(el("span", { class: "tool-status-icon", "aria-label": status }, statusIcon2(status)));
   return el("summary", { class: summaryClass }, ...children);
 }
@@ -18627,7 +18672,8 @@ function appendStandardToolSections(card, tc, label, summaryClass, count) {
     summaryClass,
     count,
     tc.editStats,
-    getToolEditPath(tc)
+    getToolEditPath(tc),
+    tc.commandPhase
   );
   card.append(header);
   const buildBody2 = () => {
@@ -19110,7 +19156,18 @@ function createGroupToolCard(item) {
   });
   const count = item.toolCalls.length;
   const groupItems = el("div", { class: "tool-group-items" });
-  card.append(createToolHeader(item.label, status, "tool-card-header", count), groupItems);
+  card.append(
+    createToolHeader(
+      item.label,
+      status,
+      "tool-card-header",
+      count,
+      void 0,
+      void 0,
+      liveCommandPhase(item.toolCalls)
+    ),
+    groupItems
+  );
   for (const tc of item.toolCalls) {
     const entry = el("details", {
       class: "tool-group-item",
@@ -19144,7 +19201,18 @@ function createRollupToolCard(item, api2, threadId, store2) {
     body.append(childCard);
   }
   syncRollupInterruptionNote(body, item.toolCalls);
-  card.append(createToolHeader(item.label, status, "tool-card-header", count), body);
+  card.append(
+    createToolHeader(
+      item.label,
+      status,
+      "tool-card-header",
+      count,
+      void 0,
+      void 0,
+      liveCommandPhase(item.toolCalls)
+    ),
+    body
+  );
   return card;
 }
 function createStepToolCard(item, api2, threadId) {
@@ -19163,7 +19231,18 @@ function createStepToolCard(item, api2, threadId) {
     toolCardSignatures.set(childCard, toolCardSignature(child));
     body.append(childCard);
   }
-  card.append(createToolHeader(item.label, status, "tool-card-header"), body);
+  card.append(
+    createToolHeader(
+      item.label,
+      status,
+      "tool-card-header",
+      void 0,
+      void 0,
+      void 0,
+      liveCommandPhase(item.toolCalls)
+    ),
+    body
+  );
   return card;
 }
 function createToolCard(item, api2, threadId, store2) {
@@ -19207,7 +19286,15 @@ function reconcileGroupCard(card, item) {
   card.dataset["status"] = status;
   replaceDirectToolHeader(
     card,
-    createToolHeader(item.label, status, "tool-card-header", item.toolCalls.length)
+    createToolHeader(
+      item.label,
+      status,
+      "tool-card-header",
+      item.toolCalls.length,
+      void 0,
+      void 0,
+      liveCommandPhase(item.toolCalls)
+    )
   );
   let host = Array.from(card.children).find(
     (node) => node instanceof HTMLElement && node.classList.contains("tool-group-items")
@@ -19284,7 +19371,18 @@ function reconcileToolCard(card, item, api2, threadId, store2) {
       card.dataset["rollupKey"] = item.key;
     }
     const count = item.type === "rollup" ? rollupHeaderCount(item) : void 0;
-    replaceDirectToolHeader(card, createToolHeader(item.label, status, "tool-card-header", count));
+    replaceDirectToolHeader(
+      card,
+      createToolHeader(
+        item.label,
+        status,
+        "tool-card-header",
+        count,
+        void 0,
+        void 0,
+        liveCommandPhase(item.toolCalls)
+      )
+    );
     let body = Array.from(card.children).find(
       (node) => node instanceof HTMLElement && node.classList.contains("tool-rollup-body")
     );
@@ -21238,11 +21336,12 @@ function mountConversation(root, store2, api2) {
       const m2 = thread.messages[i2];
       if (m2) prependMessageEl(thread.id, m2.id, anchor);
     }
-    const delta = list.scrollHeight - heightBefore;
-    if (delta !== 0) setScrollTopProgrammatically(scrollTopBefore + delta);
     syncModelLabels();
     syncUserActions();
     syncAcpResourceReferences(list, api2, store2);
+    syncConciseTurnFooters();
+    const delta = list.scrollHeight - heightBefore;
+    if (delta !== 0) setScrollTopProgrammatically(scrollTopBefore + delta);
     updateScrollButton();
     if (chunkStart > 0) {
       requestAnimationFrame(() => {
@@ -21298,6 +21397,7 @@ function mountConversation(root, store2, api2) {
     syncUserActions();
     syncAcpResourceReferences(list, api2, store2);
     finishThreadChrome(thread);
+    syncConciseTurnFooters();
     refreshStickyImagePrompt();
     if (preservedScrollTop === null) {
       scrollToBottom(true);
@@ -21675,6 +21775,7 @@ var init_conversation = __esm({
     init_composer_editor();
     init_agent_activity();
     init_tool_display();
+    init_command_phase_display();
     init_copse_tool_call();
     init_panels();
     init_thread_roadmap_origin();
@@ -71902,6 +72003,10 @@ function getFirstGitChange(status) {
   if (unstaged) return { path: unstaged.path, staged: false };
   return null;
 }
+function workingTreePathLeft(prev, next) {
+  const remaining = new Set([...next.staged, ...next.unstaged].map((change) => change.path));
+  return [...prev.staged, ...prev.unstaged].some((change) => !remaining.has(change.path));
+}
 function defaultProposedPath(queue, activeDiff) {
   const [first2] = queue;
   if (!first2) return null;
@@ -72062,6 +72167,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   let gitAvailable = false;
   let loaded = false;
   let committedPending = false;
+  let hasSettledGitRead = false;
+  let renderedListKey = null;
   let sessionBackup = null;
   let restoreInFlight = false;
   let selection = null;
@@ -72108,7 +72215,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   function adoptActiveOwner() {
     const nextKey = activeOwnerKey();
     if (nextKey === displayedOwnerKey) return false;
-    if (displayedOwnerKey && loaded && gitAvailable) {
+    if (displayedOwnerKey && hasSettledGitRead && gitAvailable) {
       snapshotsByOwner.delete(displayedOwnerKey);
       snapshotsByOwner.set(displayedOwnerKey, {
         status,
@@ -72128,6 +72235,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     selectRequestId++;
     const known = nextKey ? snapshotsByOwner.get(nextKey) : void 0;
     loaded = known !== void 0;
+    hasSettledGitRead = loaded;
     committedPending = false;
     gitAvailable = loaded;
     status = known?.status ?? null;
@@ -72304,6 +72412,18 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   function renderList() {
     const queue = store2.getState().stagedDiffs;
     syncBulkActions(queue.length);
+    const key = JSON.stringify([
+      displayedOwnerKey,
+      loaded,
+      gitAvailable,
+      committedPending,
+      status,
+      committed,
+      queue.map((entry) => entry.path),
+      selection
+    ]);
+    if (key === renderedListKey) return;
+    renderedListKey = key;
     clear(listBody);
     renderProposedSection(queue);
     if (!loaded) {
@@ -72613,7 +72733,9 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     emptyState.hidden = false;
     if (!loaded) setInlineStatus(emptyState, "pending", "Loading changes\u2026");
     else if (committedPending) setInlineStatus(emptyState, "pending", "Checking committed changes\u2026");
-    else emptyState.textContent = "Select a changed file";
+    else if (emptyState.textContent !== "Select a changed file") {
+      emptyState.textContent = "Select a changed file";
+    }
     diffWrap.hidden = true;
     imageWrap.hidden = true;
     dirWrap.hidden = true;
@@ -72708,6 +72830,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     if (!owner) {
       gitAvailable = false;
       loaded = false;
+      hasSettledGitRead = false;
       renderList();
       return;
     }
@@ -72728,6 +72851,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       if (!availabilityFailed) gitFailureLogged = false;
       loaded = true;
       committedPending = false;
+      hasSettledGitRead = false;
       status = null;
       committed = null;
       sessionBackup = null;
@@ -72740,17 +72864,22 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     const backupRead = settleRead(api2.git.sessionBackup(owner.projectId, owner.threadId));
     let nextStatus;
     let nextCommitted;
-    let selectedEarly;
+    let selectedEarly = false;
     try {
       nextStatus = await api2.git.status(owner.projectId, owner.threadId);
       if (requestId !== refreshRequestId) return;
-      status = nextStatus;
-      loaded = true;
-      committedPending = true;
-      renderList();
-      if (!selection) clearViewer();
-      selectedEarly = !pendingNavigate && selection?.kind !== "committed" && nextStatus !== null && getFirstGitChange(nextStatus) !== null;
-      if (selectedEarly) void syncSelection();
+      if (!hasSettledGitRead) {
+        status = nextStatus;
+        loaded = true;
+        committedPending = true;
+        renderList();
+        if (!selection) clearViewer();
+        selectedEarly = !pendingNavigate && selection?.kind !== "committed" && nextStatus !== null && getFirstGitChange(nextStatus) !== null;
+        if (selectedEarly) void syncSelection();
+      } else if (status && nextStatus && !workingTreePathLeft(status, nextStatus)) {
+        status = nextStatus;
+        renderList();
+      }
       const committedResult = await committedRead;
       if (requestId !== refreshRequestId) return;
       if (!committedResult.ok) throw committedResult.error;
@@ -72765,6 +72894,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       gitAvailable = false;
       loaded = true;
       committedPending = false;
+      hasSettledGitRead = false;
       renderRestoreBanner();
       renderList();
       clearViewer();
@@ -72773,6 +72903,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     gitFailureLogged = false;
     loaded = true;
     committedPending = false;
+    hasSettledGitRead = true;
     status = nextStatus;
     committed = nextCommitted;
     renderList();
@@ -84881,6 +85012,8 @@ function mountFileSearchDialog(store2, api2) {
   });
   openImpl2 = () => {
     if (dialog.open) return;
+    if (debounce) clearTimeout(debounce);
+    debounce = null;
     input.value = "";
     results = [];
     selectedIdx = 0;
@@ -86428,7 +86561,8 @@ function createTranscriptReducer(store2, hooks = {}) {
             ...chunk.resultFormat !== void 0 ? { resultFormat: chunk.resultFormat } : {},
             ...chunk.images !== void 0 ? { images: chunk.images } : {},
             ...chunk.content !== void 0 ? { content: chunk.content } : {},
-            ...chunk.locations !== void 0 ? { locations: chunk.locations } : {}
+            ...chunk.locations !== void 0 ? { locations: chunk.locations } : {},
+            ...chunk.commandPhase !== void 0 ? { commandPhase: chunk.commandPhase } : {}
           });
         }
         st.writing = false;

@@ -26953,11 +26953,20 @@ function findRunningActivity(thread) {
       const tc = toolCalls[j3];
       if (!tc) continue;
       if (tc.status === "running") {
-        return { kind: "tool", name: tc.name === "explore" ? "explore" : tc.name };
+        return {
+          kind: "tool",
+          name: tc.name === "explore" ? "explore" : tc.name,
+          ...tc.commandPhase ? { commandPhase: tc.commandPhase.state } : {}
+        };
       }
       if (tc.subagent?.status === "running") return { kind: "tool", name: "explore" };
     }
   }
+  return null;
+}
+function commandWaitLabel(phase) {
+  if (phase === "awaiting_approval") return "Waiting for approval";
+  if (phase === "starting") return "Starting command";
   return null;
 }
 function delegateActivityLabel(count, soleKind) {
@@ -26969,7 +26978,7 @@ function agentActivityLabel(thread, writing) {
   const todoLabel = thread.todos?.length ? formatTodoProgress(thread.todos) : null;
   const activity = findRunningActivity(thread);
   if (activity) {
-    const base = activity.kind === "delegates" ? `${delegateActivityLabel(activity.count, activity.soleKind)}\u2026` : `${getToolDisplayName(activity.name, "running")}\u2026`;
+    const base = activity.kind === "delegates" ? `${delegateActivityLabel(activity.count, activity.soleKind)}\u2026` : `${commandWaitLabel(activity.commandPhase) ?? getToolDisplayName(activity.name, "running")}\u2026`;
     return todoLabel ? `${base} (${todoLabel})` : base;
   }
   if (writing) return todoLabel ? `Writing\u2026 (${todoLabel})` : "Writing\u2026";
@@ -69600,7 +69609,7 @@ var init_experimental_markup = __esm({
                 creation can take a few minutes.
               </p>
               <p class="field-hint">
-                Turn on Canvas and explainers, then enable Animated explainers in its plugin settings.
+                Enable Animated explainers in Canvas and explainers' plugin settings below.
               </p>
               <div class="settings-action-row">
                 <button type="button" class="ui-btn ui-btn-secondary" id="animated-explainers-manage">
