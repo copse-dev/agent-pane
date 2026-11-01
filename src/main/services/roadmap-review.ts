@@ -416,7 +416,10 @@ export function orderRoadmapNotesForReview<
 }
 
 /** Load review scope: items to judge and commits since the last acknowledged run. */
-export async function prepareRoadmapReview(): Promise<RoadmapReviewPrepareResult> {
+/** `root` is the asking window's project checkout (#3958). */
+export async function prepareRoadmapReview(
+  root: string | null,
+): Promise<RoadmapReviewPrepareResult> {
   const since = getRoadmapLastReviewAt()
   // Re-prepare (e.g. double-click ◎) overwrites pendingBulkRun; drop the previous
   // run's issue cache so complete/abort of the orphaned id cannot leave it stranded.
@@ -424,7 +427,7 @@ export async function prepareRoadmapReview(): Promise<RoadmapReviewPrepareResult
   if (previousPending) dropBulkRunIssueCache(previousPending)
   const runId = randomUUID()
   setPendingBulkRun(runId)
-  const commits = await getGitLogSinceText(since, BULK_COMMIT_MAX)
+  const commits = await getGitLogSinceText(since, BULK_COMMIT_MAX, root)
   const notes = orderRoadmapNotesForReview(
     loadKnowledgeNotes(ROADMAP_TYPE).filter((n) => n.status !== 'archived'),
   )
@@ -483,14 +486,16 @@ export function clearBulkRunIssueCacheForTest(runId?: string): void {
 
 /** @internal test helper — exercise bulk-run GitHub dedup without an LLM. */
 export async function gatherIssueEvidenceWithBulkCache(
+  root: string | null,
   ref: string,
   slug: string | null,
   bulkRunId: string,
 ): Promise<IssueEvidenceBundle> {
-  return gatherIssueEvidence(ref, slug, cacheForBulkRun(bulkRunId))
+  return gatherIssueEvidence(root, ref, slug, cacheForBulkRun(bulkRunId))
 }
 
 async function gatherIssueEvidence(
+  root: string | null,
   ref: string,
   slug: string | null,
   cache?: IssueEvidenceCache,
@@ -508,14 +513,14 @@ async function gatherIssueEvidence(
 
   const backend = resolveGitHubBackend()
   const load = (async (): Promise<IssueEvidenceBundle> => {
-    const pinned = await backend.getIssue(coords)
+    const pinned = await backend.getIssue(root, coords)
     if (!pinned) {
       return { pinned: null, pinnedEvidence: null, linked: [] }
     }
     const pinnedEvidence = toEvidence(ref, pinned)
     const searchNeedle = `"#${String(pinned.number)}"`
     const linkedRaw = slug
-      ? await backend.searchWorkspaceIssues(searchNeedle, LINKED_ISSUE_LIMIT)
+      ? await backend.searchWorkspaceIssues(root, searchNeedle, LINKED_ISSUE_LIMIT)
       : []
     const linked = linkedRaw
       .filter((issue) => issue.number !== pinned.number)
@@ -541,6 +546,7 @@ async function gatherIssueEvidence(
 
 /** Judge one roadmap item and stamp the advisory verdict on its note. */
 export async function reviewRoadmapItem(
+  root: string | null,
   id: string,
   commits: string,
   depth: RoadmapReviewDepth = 'bulk',
@@ -564,11 +570,11 @@ export async function reviewRoadmapItem(
     }
   }
 
-  const slug = await getGithubRepoSlug()
+  const slug = await getGithubRepoSlug(root)
   const issueRef = note.fields['issue'] ?? ''
   const cache = depth === 'bulk' && bulkRunId ? cacheForBulkRun(bulkRunId) : undefined
   const { pinned, pinnedEvidence, linked } = issueRef
-    ? await gatherIssueEvidence(issueRef, slug, cache)
+    ? await gatherIssueEvidence(root, issueRef, slug, cache)
     : {
         pinned: null as GhIssueSummary | null,
         pinnedEvidence: null,
@@ -651,16 +657,19 @@ export async function reviewRoadmapItem(
 }
 
 /** Deep resolution review for one item — full commit history since the item was created. */
-export async function reviewRoadmapItemDeep(id: string): Promise<RoadmapReviewItemResult> {
+export async function reviewRoadmapItemDeep(
+  root: string | null,
+  id: string,
+): Promise<RoadmapReviewItemResult> {
   const note = getKnowledgeNote(id)
   if (!note || note.type !== ROADMAP_TYPE) {
     throw new Error(`No roadmap item with id "${id}".`)
   }
   const since = note.createdAt || null
-  const commits = await getGitLogSinceText(since, DEEP_COMMIT_MAX)
+  const commits = await getGitLogSinceText(since, DEEP_COMMIT_MAX, root)
   const checkpoint = readRoadmapReviewCheckpoint()
   const bulkRunId = checkpoint.lastAcknowledgedBulkRun ?? checkpoint.pendingBulkRun ?? undefined
-  return reviewRoadmapItem(id, commits, 'deep', bulkRunId)
+  return reviewRoadmapItem(root, id, commits, 'deep', bulkRunId)
 }
 
 function stampReview(

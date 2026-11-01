@@ -2,6 +2,7 @@ import { ipcMain, type BrowserWindow, type WebContents } from 'electron'
 import { z } from 'zod'
 import { prRefSchema } from '@shared/git/thread-pr-relations.ts'
 import { defineHandler } from './define-handler.ts'
+import { defineSenderRootHandler } from './sender-project-root.ts'
 import { ghCreatePrForThreadArgs, ghPrFileDiffArgs, ghPrRefArgs } from './gh-handler-args.ts'
 import { assertMainFrameSender, parseIpcArgs } from './ipc-guards.ts'
 import {
@@ -34,7 +35,10 @@ import {
 } from '../services/thread-store.ts'
 
 export function registerGhHandlers(win: BrowserWindow): void {
-  defineHandler(win, 'gh:status', z.tuple([]), () => getGhCliStatus(), { sender: 'any' })
+  // PR reads and writes run for the asking window's project (#3958).
+  defineSenderRootHandler(win, 'gh:status', z.tuple([]), (root) => getGhCliStatus(root), {
+    sender: 'any',
+  })
   defineHandler(
     win,
     'gh:invalidate-read-cache',
@@ -61,29 +65,35 @@ export function registerGhHandlers(win: BrowserWindow): void {
     }
     setGitHubListWatch(event.sender.id, watching, includeMyPrs)
   })
-  defineHandler(win, 'gh:list-my-open-prs', z.tuple([]), () => listMyOpenPrs(), { sender: 'any' })
-  defineHandler(win, 'gh:list-workspace-open-prs', z.tuple([]), () => listWorkspaceOpenPrs(), {
+  defineSenderRootHandler(win, 'gh:list-my-open-prs', z.tuple([]), (root) => listMyOpenPrs(root), {
     sender: 'any',
   })
-  defineHandler(
+  defineSenderRootHandler(
+    win,
+    'gh:list-workspace-open-prs',
+    z.tuple([]),
+    (root) => listWorkspaceOpenPrs(root),
+    { sender: 'any' },
+  )
+  defineSenderRootHandler(
     win,
     'gh:pr-checks',
     ghPrRefArgs,
-    (owner, repo, number) => getGhPrChecksState({ owner, repo, number }),
+    (root, owner, repo, number) => getGhPrChecksState(root, { owner, repo, number }),
     { errors: 'per-argument' },
   )
-  defineHandler(
+  defineSenderRootHandler(
     win,
     'gh:pr-details',
     ghPrRefArgs,
-    (owner, repo, number) => getGhPrDetails({ owner, repo, number }),
+    (root, owner, repo, number) => getGhPrDetails(root, { owner, repo, number }),
     { errors: 'per-argument' },
   )
-  defineHandler(
+  defineSenderRootHandler(
     win,
     'gh:pr-file-diff',
     ghPrFileDiffArgs,
-    (owner, repo, number, path) => getGhPrFileDiff({ owner, repo, number }, path),
+    (root, owner, repo, number, path) => getGhPrFileDiff(root, { owner, repo, number }, path),
     { errors: 'per-argument' },
   )
   defineHandler(win, 'gh:resolve-pr-url', z.tuple([z.url().max(2048)]), (url) =>
@@ -121,32 +131,32 @@ export function registerGhHandlers(win: BrowserWindow): void {
     },
     { errors: 'per-argument' },
   )
-  defineHandler(
+  defineSenderRootHandler(
     win,
     'gh:rerun-failed-runs',
     ghPrRefArgs,
-    (owner, repo, number) => rerunFailedPrRuns({ owner, repo, number }),
+    (root, owner, repo, number) => rerunFailedPrRuns(root, { owner, repo, number }),
     { errors: 'per-argument' },
   )
-  defineHandler(
+  defineSenderRootHandler(
     win,
     'gh:approve-pr',
     ghPrRefArgs,
-    (owner, repo, number) => approvePr({ owner, repo, number }),
+    (root, owner, repo, number) => approvePr(root, { owner, repo, number }),
     { errors: 'per-argument' },
   )
-  defineHandler(
+  defineSenderRootHandler(
     win,
     'gh:mark-pr-ready',
     ghPrRefArgs,
-    (owner, repo, number) => markPrReady({ owner, repo, number }),
+    (root, owner, repo, number) => markPrReady(root, { owner, repo, number }),
     { errors: 'per-argument' },
   )
-  defineHandler(
+  defineSenderRootHandler(
     win,
     'gh:enable-auto-merge',
     ghPrRefArgs,
-    (owner, repo, number) => enablePrAutoMerge({ owner, repo, number }),
+    (root, owner, repo, number) => enablePrAutoMerge(root, { owner, repo, number }),
     { errors: 'per-argument' },
   )
 }

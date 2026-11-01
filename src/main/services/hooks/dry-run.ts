@@ -33,7 +33,6 @@ import type {
 import { HOOK_EVENT_NAMES } from '@copse/agent/hooks/canonical-events.ts'
 import type { BlockingHookOutcome } from '@copse/agent/hooks/hook-outcome.ts'
 import type { HookTestRequest, HookTestResult } from '@shared/types/hooks.ts'
-import { getWorkspaceRoot } from '../workspace.ts'
 import { getDialectAdapter } from './dialect-registry.ts'
 import type { DialectAdapter, DialectInterpretation } from './dialect-adapter.ts'
 import { spawnHookProcess, type HookSpawnResult } from './hook-spawn.ts'
@@ -53,9 +52,13 @@ const SYNTHETIC_MCP_TOOL = 'mcp__example__run'
 /** A synthetic shell command the dry run proposes (never executed by Copse — only marshalled). */
 const SYNTHETIC_SHELL_COMMAND = 'echo "copse hook dry-run"'
 
-/** Where a dry run resolves a synthetic file path when there is no workspace open. */
-function syntheticRoot(): string {
-  return getWorkspaceRoot() ?? process.cwd()
+/**
+ * Where a dry run resolves synthetic file paths and the workspace its payload
+ * names: the asking window's project, or the process cwd when it has none.
+ * Never the window-global workspace (#3958).
+ */
+function syntheticRoot(root: string | null): string {
+  return root ?? process.cwd()
 }
 
 /**
@@ -162,11 +165,11 @@ export function dryRunPlanFor(family: HookDialect, wireEvent: string): DryRunPla
   }
 }
 
-function buildToolGatePayload(toolName: string): ToolGatePayload {
+function buildToolGatePayload(root: string, toolName: string): ToolGatePayload {
   if (toolName === 'read_file') {
     return {
       toolName,
-      input: { path: join(syntheticRoot(), 'README.md') },
+      input: { path: join(root, 'README.md') },
       fileContent: 'Synthetic file contents for the hook dry-run tester.\n',
     }
   }
@@ -197,20 +200,23 @@ function buildAfterToolUsePayload(toolName: string, isError = false): AfterToolU
  * well-formed payload. Returns null for events with no dry-runnable payload
  * (first-party assembly events + `compaction`).
  */
-export function synthesizeCanonicalPayload(plan: DryRunPlan): Record<string, unknown> | null {
+export function synthesizeCanonicalPayload(
+  root: string,
+  plan: DryRunPlan,
+): Record<string, unknown> | null {
   const event = plan.canonicalEvent
   switch (event) {
     case 'toolGate':
-      return { ...buildToolGatePayload(plan.toolName ?? 'run_shell') }
+      return { ...buildToolGatePayload(root, plan.toolName ?? 'run_shell') }
     case 'afterToolUse':
       return { ...buildAfterToolUsePayload(plan.toolName ?? 'run_shell', plan.isError) }
     case 'beforeSubmitPrompt':
       return { prompt: 'This is a synthetic prompt from the hook dry-run tester.' }
     case 'afterFileEdit':
     case 'beforeDiffApply':
-      return { filePath: join(syntheticRoot(), 'src', 'example.ts') }
+      return { filePath: join(root, 'src', 'example.ts') }
     case 'afterDiffApply':
-      return { filePath: join(syntheticRoot(), 'src', 'example.ts'), applied: true }
+      return { filePath: join(root, 'src', 'example.ts'), applied: true }
     case 'stop':
       return { status: 'completed' }
     case 'subagentStart':
@@ -251,6 +257,7 @@ function marshalDryRun(
   adapter: DialectAdapter,
   hook: CommandHook,
   plan: DryRunPlan,
+  root: string,
 ): MarshalledDryRun | null {
   const event = plan.canonicalEvent
   // A dry run is a standalone probe with no active run, so no agent-session
@@ -259,7 +266,7 @@ function marshalDryRun(
   const session = undefined
   switch (event) {
     case 'toolGate': {
-      const payload = buildToolGatePayload(plan.toolName ?? 'run_shell')
+      const payload = buildToolGatePayload(root, plan.toolName ?? 'run_shell')
       return {
         request: adapter.marshalToolGateRequest(hook, payload, session),
         interpret: (s) => adapter.interpretToolGate(s, payload, hook),
@@ -286,7 +293,7 @@ function marshalDryRun(
       const marshal = adapter.marshalAfterFileEditRequest?.bind(adapter)
       const interpret = adapter.interpretAfterFileEdit?.bind(adapter)
       if (!marshal || !interpret) return null
-      const payload = { filePath: join(syntheticRoot(), 'src', 'example.ts') }
+      const payload = { filePath: join(root, 'src', 'example.ts') }
       return { request: marshal(hook, payload, session), interpret: (s) => interpret(s, payload) }
     }
     case 'stop': {
@@ -321,14 +328,14 @@ function marshalDryRun(
       const marshal = adapter.marshalBeforeDiffApplyRequest?.bind(adapter)
       const interpret = adapter.interpretBeforeDiffApply?.bind(adapter)
       if (!marshal || !interpret) return null
-      const payload = { filePath: join(syntheticRoot(), 'src', 'example.ts') }
+      const payload = { filePath: join(root, 'src', 'example.ts') }
       return { request: marshal(hook, payload, session), interpret: (s) => interpret(s, payload) }
     }
     case 'afterDiffApply': {
       const marshal = adapter.marshalAfterDiffApplyRequest?.bind(adapter)
       const interpret = adapter.interpretAfterDiffApply?.bind(adapter)
       if (!marshal || !interpret) return null
-      const payload = { filePath: join(syntheticRoot(), 'src', 'example.ts'), applied: true }
+      const payload = { filePath: join(root, 'src', 'example.ts'), applied: true }
       return { request: marshal(hook, payload, session), interpret: (s) => interpret(s, payload) }
     }
     case 'permissionDecision': {
@@ -403,7 +410,11 @@ function summarizeOutcomeParts(outcome: BlockingHookOutcome | null): string[] {
  * header. When the event has no dry-runnable payload for its dialect, returns
  * `{ ran: false, error }` without spawning anything.
  */
-export async function dryRunHook(req: HookTestRequest): Promise<HookTestResult> {
+export async function dryRunHook(
+  req: HookTestRequest,
+  projectRoot: string | null,
+): Promise<HookTestResult> {
+  const root = syntheticRoot(projectRoot)
   const dialect: HookDialect = req.family
   const adapter = getDialectAdapter(dialect)
   if (!adapter) {
@@ -429,10 +440,12 @@ export async function dryRunHook(req: HookTestRequest): Promise<HookTestResult> 
     // `open` keeps the reconstructed hook shape valid without implying a policy.
     onFailure: 'open',
     cwd: req.source ? dirname(req.source) : process.cwd(),
+    // The workspace the payload names, so no adapter falls back to an ambient root.
+    executionRoot: root,
     ...(req.sandbox !== undefined ? { sandbox: req.sandbox } : {}),
   }
 
-  const marshalled = marshalDryRun(adapter, hook, plan)
+  const marshalled = marshalDryRun(adapter, hook, plan, root)
   if (!marshalled) {
     return {
       ran: false,

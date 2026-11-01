@@ -17,7 +17,7 @@ import type {
 } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { runWithAgentRunReadFileLimits } from './agent-run-read-limits.ts'
-import { getWorkspaceRoot } from './workspace.ts'
+import { agentWorkspaceLabel, getAgentExecutionRoot } from './execution-root.ts'
 import { getGitDiffText } from './github/git-service.ts'
 import { subagentHookCallbacks } from './hooks/subagent.ts'
 
@@ -76,8 +76,10 @@ export async function runPostTurnReview(
     onUsage,
   } = opts
 
-  const workspace = getWorkspaceRoot() ?? '(none)'
-  const diff = await getGitDiffText()
+  // Name and diff the turn's own checkout: in worktree mode the window's
+  // workspace is a tree the reviewer's tools never touch (#1724, #3958).
+  const workspace = agentWorkspaceLabel()
+  const diff = await getGitDiffText(undefined, false, getAgentExecutionRoot())
   const prompt = buildReviewPrompt(parentGoal, diff)
 
   const subagentMessages: LLMMessage[] = [

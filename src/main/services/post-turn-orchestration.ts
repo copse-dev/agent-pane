@@ -42,7 +42,7 @@ import type { TodoItem } from '@shared/types/todo.ts'
 import type { ToolRegistry } from './tool-registry.ts'
 import { runWithAgentRunReadFileLimits } from './agent-run-read-limits.ts'
 import { subagentHookCallbacks } from './hooks/subagent.ts'
-import { agentWorkspaceLabel } from './execution-root.ts'
+import { agentWorkspaceLabel, getAgentExecutionRoot } from './execution-root.ts'
 import { getGitDiffText } from './github/git-service.ts'
 import { classifyAgentError } from './agent-errors.ts'
 import { specialistCheckTool } from './specialist-check-runner.ts'
@@ -239,7 +239,7 @@ export async function runPostTurnReviewOnce(
   opts: RunPostTurnReviewOnceOptions,
 ): Promise<PostTurnReviewOutcome> {
   const workspace = agentWorkspaceLabel()
-  const diff = await getGitDiffText()
+  const diff = await getGitDiffText(undefined, false, getAgentExecutionRoot())
   const prompt = buildReviewPrompt(opts.parentGoal, diff, opts.todos)
 
   const subagentMessages: LLMMessage[] = [

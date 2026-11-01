@@ -54,7 +54,7 @@ function deps(over: Partial<PrCreateDependencies> = {}): Recorded {
       pushed.push({ branch, root })
       return Promise.resolve({ ok: true, message: `Pushed ${branch}.` })
     },
-    createPullRequest: (input) => {
+    createPullRequest: (_root, input) => {
       created.push(input)
       return Promise.resolve({
         ok: true,

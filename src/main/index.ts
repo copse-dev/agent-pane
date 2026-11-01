@@ -234,6 +234,7 @@ import {
 import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
   getThreadExecutionContext,
+  inspectThreadCheckoutRoot,
   prepareThreadExecutionContext,
   resolveThreadExecutionContext,
   runWithThreadExecutionContext,
@@ -259,7 +260,7 @@ import {
 } from './services/canvas-dispatch.ts'
 import { mirrorArtefactToAgent } from './services/canvas-agent-mirror.ts'
 import { rememberCanvasArtefact } from './services/canvas-store.ts'
-import { getActiveProjectId } from './services/workspace.ts'
+import { getActiveProjectId, getProjectRoot } from './services/workspace.ts'
 import { getBrowserSession } from './services/browser/session-manager.ts'
 import { setContextEstimateRefreshSink } from './services/context-estimate-notify.ts'
 import { setWorkspaceChangeSink } from './services/search/workspace-change-notify.ts'
@@ -1057,8 +1058,13 @@ app
         const { draftText = '', invokedSkills = [], imageCount = 0, model } = parsed.data
         const priorMessages = await agentDispatcher.history(projectId, threadId)
         const meta = await getThreadMeta(projectId, threadId)
+        // Estimate against this thread's own checkout, read without restoring
+        // anything; never the window's workspace (#3958).
+        const projectRoot = getProjectRoot(projectId)
+        const executionRoot = (await inspectThreadCheckoutRoot(projectId, threadId)) ?? projectRoot
         return estimateContextBreakdown(registry, {
           projectId,
+          roots: { projectRoot, executionRoot },
           draftText,
           invokedSkills,
           imageCount,

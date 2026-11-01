@@ -1270,8 +1270,8 @@ function acpGrantLocationFor(agent: AcpPermissionAgent): AcpGrantLocation | null
 async function respondToPermission(
   agent: AcpPermissionAgent,
   req: RequestPermissionRequest,
-  root: string | null = getAgentExecutionRoot(),
-  projectRoot: string | null = getAgentProjectRoot(),
+  root: string | null,
+  projectRoot: string | null,
   signal?: AbortSignal,
   context?: AcpPermissionRequestContext,
 ): Promise<RequestPermissionResponse> {
