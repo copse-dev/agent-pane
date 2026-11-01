@@ -276,7 +276,8 @@ describe('AcpToolCallObservations', () => {
         other: { payload: 'large' },
       },
     })
-    const [identity] = observations.get('s', 't')
+    const identity = observations.get('s', 't').at(0)
+    assert.ok(identity)
     assert.deepEqual(Object.keys(identity).sort(), ['metaServer', 'metaToolName', 'title'])
     assert.equal(identity.title?.length, 512)
     assert.equal(identity.metaToolName, 'mcp__copse__run_shell')
