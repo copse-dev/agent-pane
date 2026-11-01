@@ -21,7 +21,7 @@ import {
   unwrapWrappers,
 } from './shell-argv.ts'
 import { classifyGhSegment } from './gh-argv.ts'
-import { isPlainPackageName, packageBinName, packageRunnerCall } from './package-runners.ts'
+import { isPlainPackageName, packageRunnerCall } from './package-runners.ts'
 import { scanShellComposition, splitSegments } from './command-routing.ts'
 import { analyzeReadOutsideProject } from './read-outside-project.ts'
 import { hostReachReasons } from './host-reach.ts'
@@ -1486,13 +1486,22 @@ function inspectPackageRunner(
     }
     return
   }
+  // A scoped name does not name a `.bin` entry. npm runs `.bin/@scope/pkg` when
+  // there is one, and otherwise the binary the installed package's manifest
+  // names, which need not match (`bin: { custom: … }` runs `.bin/custom`);
+  // `pnpm exec` runs it as the relative path `./@scope/pkg`. Guessing `.bin/pkg`
+  // read a file that need not be the one that runs, so a scoped name asks.
+  if (name.startsWith('@')) {
+    addUnique(out.prompt, `${call.runner} ${name}: a scoped name does not say which file runs`)
+    return
+  }
   const bin =
     context.workspaceRoot !== null && isPlainPackageName(name)
-      ? join(context.workspaceRoot, 'node_modules', '.bin', packageBinName(name))
+      ? join(context.workspaceRoot, 'node_modules', '.bin', name)
       : null
   if (bin !== null && context.pathExists?.(bin) === true) {
     inspectProgramFile(
-      `node_modules/.bin/${packageBinName(name)}`,
+      `node_modules/.bin/${name}`,
       { path: bin, interpreter: null },
       context,
       out,
