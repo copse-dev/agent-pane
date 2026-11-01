@@ -20817,13 +20817,13 @@ function mountConversation(root, store2, api2) {
         stuck = naturalRowTop(list, prompt) <= list.getBoundingClientRect().top + stickyOffset + 0.5;
       }
     }
-    stickyPromptBand = band;
-    if (prompt) {
-      const margin = band > 0 ? `${String(-band)}px` : "";
-      if (prompt.style.scrollMarginTop !== margin) prompt.style.scrollMarginTop = margin;
-    }
+    stickyPromptBand = stuck ? band : 0;
     const value = stuck && band > 0 ? `${String(band)}px` : "";
-    if (list.style.scrollPaddingTop !== value) list.style.scrollPaddingTop = value;
+    if (list.style.scrollPaddingTop !== value) {
+      list.style.scrollPaddingTop = value;
+      if (value) list.style.setProperty("--sticky-prompt-band", value);
+      else list.style.removeProperty("--sticky-prompt-band");
+    }
   }
   function refreshStickyImagePrompt() {
     const prompts = list.querySelectorAll(
@@ -20831,10 +20831,7 @@ function mountConversation(root, store2, api2) {
     );
     const latest = prompts[prompts.length - 1];
     if (stickyPrompt !== (latest ?? null)) {
-      if (stickyPrompt) {
-        stickyPromptResizeObserver?.unobserve(stickyPrompt);
-        stickyPrompt.style.scrollMarginTop = "";
-      }
+      if (stickyPrompt) stickyPromptResizeObserver?.unobserve(stickyPrompt);
       stickyPrompt = latest ?? null;
       if (stickyPrompt) stickyPromptResizeObserver?.observe(stickyPrompt);
     }

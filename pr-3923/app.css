@@ -5774,6 +5774,10 @@ label {
   z-index: 3;
   box-shadow: var(--shadow-sm);
 }
+.messages-list > .msg-user:not(.msg-machine-origin):not(.msg-hook-origin):not(:has(~ .msg-user:not(.msg-machine-origin):not(.msg-hook-origin))),
+.messages-list > :has(~ .msg-user:not(.msg-machine-origin):not(.msg-hook-origin)) {
+  scroll-margin-top: calc(-1 * var(--sticky-prompt-band, 0px));
+}
 @container chat-pane (max-width: 360px) {
   .messages-list > .msg-user:not(.msg-machine-origin):not(.msg-hook-origin):not(:has(~ .msg-user:not(.msg-machine-origin):not(.msg-hook-origin))) {
     position: relative;
