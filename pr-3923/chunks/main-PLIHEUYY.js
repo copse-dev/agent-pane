@@ -20796,6 +20796,10 @@ function mountConversation(root, store2, api2) {
       }
     }
     stickyPromptBand = band;
+    if (prompt) {
+      const margin = band > 0 ? `${String(-band)}px` : "";
+      if (prompt.style.scrollMarginTop !== margin) prompt.style.scrollMarginTop = margin;
+    }
     const value = stuck && band > 0 ? `${String(band)}px` : "";
     if (list.style.scrollPaddingTop !== value) list.style.scrollPaddingTop = value;
   }
@@ -20805,7 +20809,10 @@ function mountConversation(root, store2, api2) {
     );
     const latest = prompts[prompts.length - 1];
     if (stickyPrompt !== (latest ?? null)) {
-      if (stickyPrompt) stickyPromptResizeObserver?.unobserve(stickyPrompt);
+      if (stickyPrompt) {
+        stickyPromptResizeObserver?.unobserve(stickyPrompt);
+        stickyPrompt.style.scrollMarginTop = "";
+      }
       stickyPrompt = latest ?? null;
       if (stickyPrompt) stickyPromptResizeObserver?.observe(stickyPrompt);
     }
