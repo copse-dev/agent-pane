@@ -175,6 +175,11 @@ export type ExploredLookup =
       unread: [number, number][]
       /** First line left out by `maxChars`, when the quote was cut short. */
       nextLine: number | null
+      /**
+       * A line longer than `maxChars` on its own, quoted only up to the limit:
+       * still exact bytes, but a prefix, so no continuation can complete it.
+       */
+      cutLine: number | null
     }
 
 function sliceSpan(span: ExploredSpan, start: number, end: number): ExploredSpan {
@@ -186,8 +191,10 @@ function sliceSpan(span: ExploredSpan, start: number, end: number): ExploredSpan
  * Looks lines up in the spans explore subagents read this run — never on disk.
  * A path exploration never opened is `not-explored`; a range it never read is
  * `outside`, with the ranges that are available. Otherwise the requested lines
- * that were read come back verbatim, whole lines only, up to `maxChars`.
- * Without a range, every explored span of the file is quoted.
+ * that were read come back verbatim, whole lines only, up to `maxChars`. A
+ * first line that alone exceeds `maxChars` is cut to that many characters and
+ * reported as `cutLine`, so the budget always holds. Without a range, every
+ * explored span of the file is quoted.
  */
 export function quoteExploredLines(
   spans: readonly ExploredSpan[],
@@ -217,13 +224,25 @@ export function quoteExploredLines(
   const pieces: ExploredSpan[] = []
   let used = 0
   let nextLine: number | null = null
+  let cutLine: number | null = null
   for (const hit of hits) {
     const kept: string[] = []
     for (const line of spanLines(hit)) {
       const cost = line.length + 1
-      if (used + cost > maxChars && (pieces.length > 0 || kept.length > 0)) {
-        nextLine = hit.startLine + kept.length
-        break
+      if (used + cost > maxChars) {
+        const lineNo = hit.startLine + kept.length
+        if (pieces.length > 0 || kept.length > 0) {
+          nextLine = lineNo
+          break
+        }
+        if (line.length > maxChars) {
+          // Never split a surrogate pair: the prefix must stay exact text.
+          const high = /[\uD800-\uDBFF]/.test(line.charAt(maxChars - 1))
+          kept.push(line.slice(0, high ? maxChars - 1 : maxChars))
+          cutLine = lineNo
+          if (lineNo < hit.endLine || hits.length > 1) nextLine = lineNo + 1
+          break
+        }
       }
       kept.push(line)
       used += cost
@@ -236,7 +255,7 @@ export function quoteExploredLines(
         text: kept.join('\n'),
       })
     }
-    if (nextLine !== null) break
+    if (nextLine !== null || cutLine !== null) break
   }
-  return { kind: 'quoted', pieces, unread, nextLine }
+  return { kind: 'quoted', pieces, unread, nextLine, cutLine }
 }

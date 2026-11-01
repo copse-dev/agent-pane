@@ -81,6 +81,28 @@ describe('read_explored (#1433 Fix 0b)', () => {
     assert.match(out, /a\.ts has changed since it was explored \(lines 1–3 no longer match\)/)
   })
 
+  it('keeps a quote of one over-long line within the read limit', async () => {
+    const long = `${'x'.repeat(60)}\nshort\n`
+    await writeFile(join(tempRoot, 'long.ts'), long, 'utf8')
+    const out = await runWithAgentRunExploreMode(true, () =>
+      runWithAgentRunReadFileLimits({ maxLines: 150, maxChars: 20 }, async () => {
+        retainExploredSpans([
+          { path: 'long.ts', startLine: 1, endLine: 2, text: `${'x'.repeat(60)}\nshort` },
+        ])
+        const raw = await registry.execute(
+          'read_explored',
+          { path: 'long.ts' },
+          new AbortController().signal,
+        )
+        return normalizeToolExecuteResult(raw).result
+      }),
+    )
+    assert.ok(out.startsWith(`\`long.ts\` line 1:\n\`\`\`\n${'x'.repeat(20)}\n\`\`\``))
+    assert.doesNotMatch(out, /x{21}/)
+    assert.match(out, /Line 1 is longer than the read limit, so only its start is quoted/)
+    assert.match(out, /start_line=2/)
+  })
+
   it('has nothing to serve outside a run', async () => {
     const raw = await registry.execute(
       'read_explored',

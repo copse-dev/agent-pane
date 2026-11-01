@@ -35,9 +35,15 @@ async function currentLines(path: string): Promise<string[] | null> {
   return text.split('\n')
 }
 
-function stillCurrent(piece: ExploredSpan, lines: readonly string[] | null): boolean {
+/** A piece ending in a cut line holds only that line's start, so it matches a prefix. */
+function stillCurrent(
+  piece: ExploredSpan,
+  lines: readonly string[] | null,
+  cutLine: number | null,
+): boolean {
   if (lines === null) return false
-  return lines.slice(piece.startLine - 1, piece.endLine).join('\n') === piece.text
+  const current = lines.slice(piece.startLine - 1, piece.endLine).join('\n')
+  return piece.endLine === cutLine ? current.startsWith(piece.text) : current === piece.text
 }
 
 /**
@@ -80,7 +86,7 @@ export const readExploredTool = defineTool({
       return `Exploration did not read those lines of ${normalized}. Explored: ${ranges}. Call explore with paths: ["${normalized}"] naming what you need from that part of the file.`
     }
     const lines = await currentLines(normalized)
-    const stale = lookup.pieces.filter((p) => !stillCurrent(p, lines))
+    const stale = lookup.pieces.filter((p) => !stillCurrent(p, lines, lookup.cutLine))
     if (stale.length > 0) {
       return `${normalized} has changed since it was explored (${stale.map(formatLineRange).join(', ')} no longer match). Call explore on it again before editing.`
     }
@@ -90,6 +96,11 @@ export const readExploredTool = defineTool({
         .map(([s, e]) => formatLineRange({ startLine: s, endLine: e }))
         .join(', ')
       parts.push(`Not read by exploration, so not quoted: ${ranges}.`)
+    }
+    if (lookup.cutLine !== null) {
+      parts.push(
+        `Line ${String(lookup.cutLine)} is longer than the read limit, so only its start is quoted; copy old_string from within that part.`,
+      )
     }
     if (lookup.nextLine !== null) {
       parts.push(

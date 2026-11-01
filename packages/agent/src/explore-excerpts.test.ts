@@ -108,6 +108,7 @@ describe('quoteExploredLines (#1433 Fix 0b)', () => {
       pieces: [span('a.ts', 18, numbered('a', 18, 20)), span('a.ts', 40, numbered('a', 40, 41))],
       unread: [[21, 39]],
       nextLine: null,
+      cutLine: null,
     })
   })
 
@@ -124,6 +125,33 @@ describe('quoteExploredLines (#1433 Fix 0b)', () => {
       pieces: [span('a.ts', 10, ['a10', 'a11', 'a12'])],
       unread: [],
       nextLine: 13,
+      cutLine: null,
     })
+  })
+
+  it('cuts a first line longer than the limit to the limit and reports it', () => {
+    const long = [span('a.ts', 1, ['x'.repeat(1000), 'b'])]
+    const lookup = quoteExploredLines(long, 'a.ts', {}, 10)
+    assert.deepEqual(lookup, {
+      kind: 'quoted',
+      pieces: [span('a.ts', 1, ['x'.repeat(10)])],
+      unread: [],
+      nextLine: 2,
+      cutLine: 1,
+    })
+  })
+
+  it('reports no continuation when the cut line is the last explored line', () => {
+    const lookup = quoteExploredLines([span('a.ts', 5, ['y'.repeat(50)])], 'a.ts', {}, 10)
+    assert.ok(lookup.kind === 'quoted')
+    assert.equal(lookup.nextLine, null)
+    assert.equal(lookup.cutLine, 5)
+    assert.equal(lookup.pieces[0]?.text.length, 10)
+  })
+
+  it('does not split a surrogate pair when cutting a long line', () => {
+    const lookup = quoteExploredLines([span('a.ts', 1, [`${'z'.repeat(9)}😀tail`])], 'a.ts', {}, 10)
+    assert.ok(lookup.kind === 'quoted')
+    assert.equal(lookup.pieces[0]?.text, 'z'.repeat(9))
   })
 })
