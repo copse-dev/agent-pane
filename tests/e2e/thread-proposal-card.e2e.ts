@@ -145,6 +145,7 @@ describe('a proposed thread without an isolated checkout', () => {
     await expect(error).toHaveText(
       expect.stringContaining('Isolated worktree is unavailable: not git'),
     )
+    await expect(error).not.toHaveText(expect.stringContaining('Error invoking remote method'))
     await saveElementScreenshot('.thread-proposal', 'thread-proposal-isolation-refused.png')
     const card = $('.thread-proposal')
     await expect(card).toHaveAttribute('data-proposal-status', 'pending')
