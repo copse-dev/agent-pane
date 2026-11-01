@@ -281,6 +281,9 @@ describe('scroll to bottom', () => {
     })
     expect(lastMessageVisible).toBe(true)
 
+    // The click starts a scroll the handler and layout finish on their own
+    // schedule; capture the settled bottom, not a frame of the way there.
+    await waitForTranscriptScrollSettled(false)
     await saveAppScreenshot('scroll-to-bottom-at-bottom.png')
   })
 

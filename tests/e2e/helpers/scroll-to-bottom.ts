@@ -10,12 +10,12 @@ export const NAVIGATION_CONTROLS = ['.conversation-first-prompt', '.scroll-to-bo
 /**
  * Wait until the transcript's scroll position and size, and both navigation
  * controls, stop changing, with Back to latest shown or hidden as
- * `returnVisible` says. Replaces a fixed pause before a capture: the scroll
+ * `returnVisible` says (either, when omitted). Replaces a fixed pause before a capture: the scroll
  * handler, the stream follow glide and late layout (fonts, disclosures) all
  * land on their own schedule, and a pause that is long enough on one host is
  * short on another.
  */
-export async function waitForTranscriptScrollSettled(returnVisible: boolean): Promise<void> {
+export async function waitForTranscriptScrollSettled(returnVisible?: boolean): Promise<void> {
   let previous = ''
   let stableReads = 0
   await browser.waitUntil(
@@ -44,7 +44,7 @@ export async function waitForTranscriptScrollSettled(returnVisible: boolean): Pr
           ].join(';'),
         }
       }, NAVIGATION_CONTROLS)
-      if (!state || state.visible !== returnVisible) {
+      if (!state || (returnVisible !== undefined && state.visible !== returnVisible)) {
         previous = ''
         stableReads = 0
         return false
@@ -56,9 +56,12 @@ export async function waitForTranscriptScrollSettled(returnVisible: boolean): Pr
     {
       timeout: 10_000,
       interval: SETTLE_POLL_MS,
-      timeoutMsg: `expected the transcript scroll to settle with Back to latest ${
-        returnVisible ? 'shown' : 'hidden'
-      }`,
+      timeoutMsg:
+        returnVisible === undefined
+          ? 'expected the transcript scroll to settle'
+          : `expected the transcript scroll to settle with Back to latest ${
+              returnVisible ? 'shown' : 'hidden'
+            }`,
     },
   )
 }

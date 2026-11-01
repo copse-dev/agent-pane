@@ -112,7 +112,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['queued-actions-row-hover-dark.png', 'queued-actions-row-hover-light.png'],
   },
   'tests/e2e/scroll-to-bottom.e2e.ts': {
-    sourceSha256: '8a7e6c20c2bbe85446f3931e801c402f00e9c7e2b48c75ea57e446f6fc95fc2e',
+    sourceSha256: 'cb09f7ac8ebb6ed43a4d15f21cc3e340604005615ce6b8248e6edfb71d6f9751',
     filenames: ['scroll-to-bottom-dark.png', 'scroll-to-bottom-light.png'],
   },
   'tests/e2e/settings-acp-agents-list.e2e.ts': {

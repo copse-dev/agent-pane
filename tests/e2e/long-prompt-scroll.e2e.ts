@@ -4,7 +4,10 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedLongPromptScrollFixture, writeSettings } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
-import { navigationTextOverlaps } from './helpers/scroll-to-bottom.ts'
+import {
+  navigationTextOverlaps,
+  waitForTranscriptScrollSettled,
+} from './helpers/scroll-to-bottom.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { startConversationServer, type ConversationServer } from './helpers/conversation-server.ts'
 
@@ -142,11 +145,6 @@ describe('scroll the transcript to the prompt on submit', () => {
     // Navigation is docked below the transcript: it covers no prompt line.
     expect(await navigationTextOverlaps()).toEqual([])
 
-    await saveAppScreenshot('long-prompt-scroll-submit.png', {
-      width: NARROW_APP_WIDTH,
-      height: SHORT_APP_HEIGHT,
-    })
-
     await waitForAgentIdle(30_000)
     await browser.waitUntil(
       async () =>
@@ -160,5 +158,18 @@ describe('scroll the transcript to the prompt on submit', () => {
         timeoutMsg: `expected the final assistant reply: ${FINAL_REPLY}`,
       },
     )
+
+    // Capture the settled end of the turn, not a mid-stream frame: two CI runs
+    // of one head caught different amounts of streamed reply at the 400ms mark.
+    // The prompt's top must still be on screen once the reply has finished.
+    await waitForTranscriptScrollSettled()
+    const settled = await browser.execute(probeLatestUserPrompt)
+    if (!settled) throw new Error('Missing appended prompt row')
+    expect(settled.msgTop).toBeGreaterThanOrEqual(settled.listTop - 1)
+    expect(await navigationTextOverlaps()).toEqual([])
+    await saveAppScreenshot('long-prompt-scroll-submit.png', {
+      width: NARROW_APP_WIDTH,
+      height: SHORT_APP_HEIGHT,
+    })
   })
 })
