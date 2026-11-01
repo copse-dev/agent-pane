@@ -34,7 +34,7 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-IVHSIJIM.js";
+} from "./chunks/chunk-G6KGX5A7.js";
 import "./chunks/chunk-D55J6ZRP.js";
 import {
   init_icons,
@@ -6141,6 +6141,15 @@ function createDemoApi(scenario2, options = {}) {
       // exceptions are scenarios built around the hydration window itself,
       // which hold the read open (or fail it) so the mid-switch state stays
       // on screen.
+      searchRequests: (_projectId, query) => resolved({
+        matches: threads.filter(
+          (thread) => thread.archivedAt == null && thread.messages.some(
+            (message) => message.role === "user" && (message.origin === void 0 || message.editedByUser === true) && message.content.normalize("NFC").toLowerCase().includes(query.normalize("NFC").toLowerCase())
+          )
+        ).map((thread) => thread.id),
+        incomplete: false
+      }),
+      cancelRequestSearch: () => resolvedVoid(),
       loadMessages: (_projectId, threadId) => scenario2.holdThreadHydration === true ? new Promise(() => void 0) : scenario2.failThreadHydration === true ? Promise.reject(new Error("demo: transcript read failed")) : resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
       // Demo threads link no PRs, so a backfill answers each one with an empty ref set —
       // the settled "no PR" the sidebar waits for before it draws a row's changes glyph.
@@ -7310,7 +7319,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-J5CQARFA.js").then(async (main) => {
+    void import("./chunks/main-TISFBFJE.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(

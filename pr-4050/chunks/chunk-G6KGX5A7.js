@@ -23977,7 +23977,23 @@ function serializedNavigation(api, navigation) {
     return (writeChains.get("mainWindow:navigation") ?? Promise.resolve()).then(() => void 0);
   }
   lastNavigation = navigation;
-  return serializedWrite("mainWindow:navigation", () => api.windowState.setNavigation(navigation));
+  return sendNavigation(api, navigation);
+}
+function sendNavigation(api, navigation) {
+  const key = "mainWindow:navigation";
+  const prev = writeChains.get(key);
+  let write;
+  try {
+    write = api.windowState.setNavigation(navigation);
+  } catch (error62) {
+    write = Promise.reject(error62 instanceof Error ? error62 : new Error(String(error62)));
+  }
+  const next = prev ? Promise.all([prev.catch(() => void 0), write]).then(() => void 0) : write;
+  writeChains.set(key, next);
+  void next.finally(() => {
+    if (writeChains.get(key) === next) writeChains.delete(key);
+  }).catch(() => void 0);
+  return next;
 }
 function afterThreadWrites(projectId, threadId, start) {
   const pending = writeChains.get(threadWriteKey(projectId, threadId));
