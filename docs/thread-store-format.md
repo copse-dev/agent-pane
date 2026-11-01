@@ -268,6 +268,8 @@ append is the commit point). See [`spine-schema.ts`](../packages/thread-store/sr
       "status": "done" | "error",
       "result": { "ref": "blobs/<messageId>.tool-<n>.result.txt", "sha256": "…" } | null,
       "editStats": { "additions": 1, "deletions": 2 }, // optional
+      "commandPhase": { "state": "exited", "since": 1712345678901, "launched": true,
+                        "exitCode": 0 }, // optional: run_shell/run_background lifecycle
       "subagent": { "ref": "subagents/<id>/", "kind": "explore", "status": "done",
                     "summary": "…", "model": "…",
                     "id": "<subagentId>" }  // optional; `id` only when the dir name is escaped
@@ -289,6 +291,14 @@ spilled `args` are recognised by matching either the current name or the legacy
 load unchanged, and their next whole-thread rewrite moves them to the new names
 (pruning the old ones). Every ref the store writes or prefetches must resolve
 inside the thread directory; one that would escape it is not followed.
+
+`commandPhase` is the last stage a `run_shell` or `run_background` command
+reached (#3956): `queued`, `awaiting_approval`, `starting`, `running`, or a
+terminal `exited` (with `exitCode`), `timed_out`, `cancelled` or
+`not_started` (with `reason`). `launched` records whether a process was ever
+spawned, so a command that never started stays distinct from one that ran and
+failed; `backgroundTaskId` names the `run_background` task once there is one.
+It is display metadata: the fold decodes it and drops a malformed value.
 
 `model` on a spine line is the primary-chat picker id for that assistant
 message. The transcript surfaces it only when more than one distinct primary

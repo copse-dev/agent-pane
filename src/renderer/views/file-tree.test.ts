@@ -40,6 +40,25 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
+describe('file tree selection', () => {
+  it('selects the open file when the store opens it, with no event', async () => {
+    const store = localStore()
+    const root = document.createElement('div')
+    document.body.append(root)
+    const unmount = mountFileTree(root, store, makeApi([]))
+    await tick()
+    const row = root.querySelector<HTMLButtonElement>('.tree-row[title="guide.html"]')
+    assert.ok(row)
+    assert.equal(row.classList.contains('selected'), false)
+
+    store.setState({ openFile: { path: 'guide.html', content: '', language: 'html' } })
+    await tick()
+
+    assert.equal(row.classList.contains('selected'), true)
+    unmount()
+  })
+})
+
 describe('file tree browser context menu', () => {
   it('opens a local file in the built-in browser without opening the file viewer first', async () => {
     const store = localStore()

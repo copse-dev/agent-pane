@@ -45,6 +45,7 @@ import {
 import { getActiveProjectId } from './workspace.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { beginCommandApprovalWait } from './exec/command-phase.ts'
 
 /**
  * Abort reason a transport passes when the CALLER went away but the user's
@@ -765,17 +766,34 @@ function requestApprovalUnobserved(
     ...(threadId ? { threadId } : {}),
   })
   if (signal?.aborted) return Promise.resolve(DENIED)
+  // A command tool call shows that it is waiting on this answer (#3956).
+  const settleCommandWait = beginCommandApprovalWait()
+  const answered = (response: Promise<ApprovalResponse>): Promise<ApprovalResponse> =>
+    settleCommandWait === null
+      ? response
+      : response.then(
+          (value) => {
+            settleCommandWait(value.approved)
+            return value
+          },
+          (error: unknown) => {
+            settleCommandWait(false)
+            throw error
+          },
+        )
   // Unattended runs never open a modal (deferred-approvals.md Decision 6). This
   // is the one choke point every gate already funnels through, so intercepting
   // here covers shell, MCP, web, browser, PII, ACP and the rest without any of
   // them growing a second code path — and without a gate being able to forget.
   const deferringThread = getActiveRunThread()
   if (deferringThread !== null && isDeferralModeActive(deferringThread)) {
-    return deferInsteadOfPrompting(req, deferringThread, context?.projectId, () =>
-      requestApprovalInteractive(req, signal),
+    return answered(
+      deferInsteadOfPrompting(req, deferringThread, context?.projectId, () =>
+        requestApprovalInteractive(req, signal),
+      ),
     )
   }
-  return requestApprovalInteractive(req, signal)
+  return answered(requestApprovalInteractive(req, signal))
 }
 
 function requestApprovalInteractive(

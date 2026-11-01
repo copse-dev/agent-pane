@@ -23,9 +23,14 @@
  *
  * | prompt contains | behaviour                                                  |
  * | --------------- | ---------------------------------------------------------- |
+ * | `ask-execute`   | request an `execute` permission with no command or title    |
+ * | `run-kindless`  | request permission for `rm -rf build` with no tool `kind`  |
  * | `ask`           | request permission, then report the client's answer         |
  * | `crash`         | write to stderr and exit non-zero **mid-turn**              |
  * | anything else   | echo it back as an agent message chunk                      |
+ *
+ * No permission request ever runs anything: the agent only reports the
+ * client's answer.
  */
 import { agent, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk/unstable'
 import { Writable } from 'node:stream'
@@ -107,15 +112,25 @@ agent({ name: 'mock-acp-agent' })
       return { stopReason: 'end_turn' }
     }
 
-    if (text.includes('ask')) {
+    // ACP makes `kind` optional; both requests omit it. `run-kindless` also
+    // carries a shell command, which the client must still gate as one.
+    const kindless = text.includes('run-kindless')
+    if (kindless || text.includes('ask')) {
       const response = await ctx.client.request(methods.client.session.requestPermission, {
         sessionId,
-        toolCall: {
-          toolCallId: 'mock-tool-1',
-          title: 'Delete everything',
-          status: 'pending',
-          rawInput: { path: '/' },
-        },
+        toolCall: kindless
+          ? {
+              toolCallId: 'mock-tool-2',
+              title: 'Clean build output',
+              status: 'pending',
+              rawInput: { command: 'rm -rf build' },
+            }
+          : {
+              toolCallId: 'mock-tool-1',
+              title: 'Delete everything',
+              status: 'pending',
+              rawInput: { path: '/' },
+            },
         options: [
           { kind: 'allow_once', name: 'Allow', optionId: 'allow' },
           { kind: 'reject_once', name: 'Reject', optionId: 'reject' },
