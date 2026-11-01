@@ -2614,6 +2614,13 @@
           1
         ]
       },
+      "usage:sign-in-to-claude": {
+        "api": "usage.signInToClaude",
+        "args": [
+          0,
+          0
+        ]
+      },
       "video:attach": {
         "api": "video.attach",
         "args": [

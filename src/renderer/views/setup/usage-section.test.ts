@@ -84,7 +84,7 @@ describe('renderPlanProvider sign-in button', () => {
     assert.equal(hint.querySelector('code')?.textContent, 'claude auth login')
     assert.doesNotMatch(hint.textContent, /`/)
     assert.doesNotMatch(btn.title, /`/)
-    assert.equal(btn.title, 'Open a terminal and run claude auth login')
+    assert.equal(btn.title, 'Open Claude sign-in in your browser')
     btn.click()
     assert.equal(clicked, 1)
   })
@@ -251,27 +251,6 @@ describe('renderPlanProvider credit windows', () => {
 })
 
 describe('createPlanSignInHandler', () => {
-  it('closes settings and requests `claude auth login` in a terminal', () => {
-    const store = createStore({
-      filesPaneOpen: false,
-      rightPanelMode: 'explorer',
-      activeProjectId: 'ssh-project',
-      workspaceRoot: '/remote/project',
-    })
-    const commands: { command: string; executionTarget?: 'local' }[] = []
-    store.on('request_terminal_command', (cmd, options) => {
-      commands.push({ command: cmd, ...options })
-    })
-    let closed = 0
-    const handler = createPlanSignInHandler(store, 'claude', () => {
-      closed += 1
-    })
-    assert.ok(handler)
-    handler()
-    assert.deepEqual(commands, [{ command: 'claude auth login', executionTarget: 'local' }])
-    assert.equal(closed, 1)
-  })
-
   it('closes settings and requests `codex login` in a terminal', () => {
     const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
     const commands: string[] = []
@@ -279,7 +258,7 @@ describe('createPlanSignInHandler', () => {
       commands.push(command)
     })
     let closed = 0
-    const handler = createPlanSignInHandler(store, 'codex', () => {
+    const handler = createPlanSignInHandler(store, () => {
       closed += 1
     })
     assert.ok(handler)
@@ -289,7 +268,7 @@ describe('createPlanSignInHandler', () => {
   })
 
   it('returns null without a store to route through', () => {
-    assert.equal(createPlanSignInHandler(undefined, 'claude'), null)
+    assert.equal(createPlanSignInHandler(undefined), null)
   })
 })
 
