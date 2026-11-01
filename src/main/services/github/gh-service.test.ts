@@ -6,7 +6,10 @@ import {
   formatGhPrList,
   formatGhPrView,
   ghEnv,
+  collectRestPrList,
+  type GhPrListEntry,
   isGhGraphQlRateLimited,
+  REST_MERGED_MAX_PAGES,
   restPrMergeable,
   restPrState,
 } from './gh-service.ts'
@@ -159,6 +162,77 @@ describe('isGhGraphQlRateLimited', () => {
 
   it('does not match an unrelated gh failure', () => {
     assert.equal(isGhGraphQlRateLimited('could not resolve to a PullRequest'), false)
+  })
+})
+
+describe('collectRestPrList', () => {
+  const pr = (number: number, state: string): GhPrListEntry => ({
+    number,
+    title: `PR ${String(number)}`,
+    url: `https://github.com/o/r/pull/${String(number)}`,
+    state,
+  })
+  const closedPage = (
+    from: number,
+    count: number,
+    mergedAt: readonly number[] = [],
+  ): GhPrListEntry[] =>
+    Array.from({ length: count }, (_, i) =>
+      pr(from + i, mergedAt.includes(from + i) ? 'MERGED' : 'CLOSED'),
+    )
+
+  it('reads further closed pages until it has the merged PRs asked for', async () => {
+    const pages = [
+      closedPage(1, 100),
+      closedPage(101, 100, [150, 160]),
+      closedPage(201, 100, [205]),
+    ]
+    const read: number[] = []
+    const list = await collectRestPrList(true, 3, async (page, perPage) => {
+      read.push(page)
+      assert.equal(perPage, 100)
+      return pages[page - 1] ?? []
+    })
+    assert.deepEqual(
+      list?.map((entry) => entry.number),
+      [150, 160, 205],
+    )
+    assert.deepEqual(read, [1, 2, 3])
+  })
+
+  it('stops at a short page and at the page cap', async () => {
+    let calls = 0
+    const short = await collectRestPrList(true, 20, async () => {
+      calls += 1
+      return closedPage(1, 40, [7])
+    })
+    assert.deepEqual(
+      short?.map((entry) => entry.number),
+      [7],
+    )
+    assert.equal(calls, 1)
+    calls = 0
+    await collectRestPrList(true, 20, async (page) => {
+      calls += 1
+      return closedPage(page * 100, 100)
+    })
+    assert.equal(calls, REST_MERGED_MAX_PAGES)
+  })
+
+  it('reads one page of the requested size for other states', async () => {
+    const list = await collectRestPrList(false, 2, async (page, perPage) => {
+      assert.equal(page, 1)
+      assert.equal(perPage, 2)
+      return [pr(1, 'OPEN'), pr(2, 'OPEN')]
+    })
+    assert.equal(list?.length, 2)
+  })
+
+  it('fails the whole list when any page fails', async () => {
+    const list = await collectRestPrList(true, 5, async (page) =>
+      page === 1 ? closedPage(1, 100, [3]) : null,
+    )
+    assert.equal(list, null)
   })
 })
 
