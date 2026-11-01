@@ -5009,7 +5009,7 @@ label {
   overflow-y: auto;
   scrollbar-gutter: stable;
   padding: var(--spacing-lg) var(--spacing-xl);
-  padding-bottom: var(--selection-reply-space, 0px);
+  padding-bottom: calc(var(--spacing-xs) + var(--selection-reply-space, 0px));
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
