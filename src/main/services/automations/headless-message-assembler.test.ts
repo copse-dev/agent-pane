@@ -175,13 +175,14 @@ describe('createHeadlessAutomationRun', () => {
       const threadId = 'continued-link'
       await createThread(PROJECT_ID, thread(threadId))
       const run = createHeadlessAutomationRun(PROJECT_ID, threadId)
-      const emitText = (text: string): void =>
+      const emitText = (text: string): void => {
         run.host.emit(threadId, {
           type: 'acp_content',
           channel: 'message',
           content: { type: 'text', text },
           ...(messageId === undefined ? {} : { messageId }),
         })
+      }
       emitText('[Review](https://')
       run.host.emit(threadId, {
         type: 'tool_call',
