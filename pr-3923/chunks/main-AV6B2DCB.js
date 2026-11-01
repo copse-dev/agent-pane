@@ -3251,46 +3251,11 @@ function residentRequestMatches(messages, query) {
 }
 function createThreadFilter(store2, api2, changed) {
   const matches3 = /* @__PURE__ */ new Set();
-  const promptIndex = /* @__PURE__ */ new Map();
-  let promptIndexSize = 0;
   let generation = 0;
   let timer;
-  let scan = Promise.resolve();
   let pending = false;
   let waiting = false;
   let failed = false;
-  const forget = (key) => {
-    const entry = promptIndex.get(key);
-    if (!entry) return;
-    promptIndex.delete(key);
-    promptIndexSize -= entry.size;
-  };
-  const remember = (key, entry) => {
-    forget(key);
-    promptIndex.set(key, entry);
-    promptIndexSize += entry.size;
-    for (const oldest of promptIndex.keys()) {
-      if (promptIndexSize <= PROMPT_INDEX_MAX_CHARS || oldest === key) break;
-      forget(oldest);
-    }
-  };
-  const savedPrompts = async (projectId, thread) => {
-    const key = `${projectId}/${thread.id}`;
-    const cached = promptIndex.get(key);
-    if (cached && cached.updatedAt === thread.updatedAt && cached.lastPromptAt === thread.lastPromptAt) {
-      return cached.prompts;
-    }
-    const messages = await api2.threads.loadMessages(projectId, thread.id);
-    const prompts = messages.filter(isHumanUserPrompt).map((message2) => filterText(message2.content));
-    const size = prompts.reduce((total2, prompt) => total2 + prompt.length, 0);
-    remember(key, {
-      updatedAt: thread.updatedAt,
-      lastPromptAt: thread.lastPromptAt,
-      prompts,
-      size
-    });
-    return prompts;
-  };
   const notify = () => {
     try {
       changed();
@@ -3305,6 +3270,8 @@ function createThreadFilter(store2, api2, changed) {
     pending = false;
     waiting = false;
     failed = false;
+    void api2.threads.cancelRequestSearch().catch(() => {
+    });
   };
   const search = (rawQuery) => {
     cancel();
@@ -3313,7 +3280,7 @@ function createThreadFilter(store2, api2, changed) {
     if (query.length < MIN_REQUEST_QUERY_LENGTH || !activeProjectId) return;
     const current = generation;
     const isCurrent = () => current === generation && store2.getState().activeProjectId === activeProjectId;
-    const candidates = sortThreadsNewestFirst(threads).filter(
+    const candidates = threads.filter(
       (thread) => thread.archivedAt == null && !filterText(thread.title || "New Thread").includes(query)
     );
     if (candidates.length === 0) return;
@@ -3322,33 +3289,29 @@ function createThreadFilter(store2, api2, changed) {
       waiting = false;
       pending = true;
       notify();
-      scan = scan.then(async () => {
-        for (const thread of candidates) {
-          if (!isCurrent()) return;
-          try {
-            const matched = residentRequestMatches(thread.messages, query) || thread.messagesLoaded === false && (await savedPrompts(activeProjectId, thread)).some(
-              (prompt) => prompt.includes(query)
-            );
-            if (!isCurrent()) return;
-            if (matched) {
-              matches3.add(thread.id);
-              notify();
-            }
-          } catch {
-            if (!isCurrent()) return;
-            failed = true;
+      const run4 = async () => {
+        try {
+          for (const thread of candidates) {
+            if (residentRequestMatches(thread.messages, query)) matches3.add(thread.id);
           }
+          if (candidates.some((thread) => thread.messagesLoaded === false)) {
+            const result = await api2.threads.searchRequests(activeProjectId, query);
+            if (!isCurrent()) return;
+            const lazy = new Set(
+              candidates.filter((thread) => thread.messagesLoaded === false).map((thread) => thread.id)
+            );
+            for (const id of result.matches) if (lazy.has(id)) matches3.add(id);
+            failed = result.incomplete;
+          }
+        } catch {
+          if (!isCurrent()) return;
+          failed = true;
         }
         if (!isCurrent()) return;
         pending = false;
         notify();
-      }).catch((error) => {
-        console.error("[thread-filter] request scan failed", error);
-        if (!isCurrent()) return;
-        pending = false;
-        failed = true;
-        notify();
-      });
+      };
+      void run4();
     }, SCAN_DELAY_MS);
   };
   return {
@@ -3366,13 +3329,12 @@ function createThreadFilter(store2, api2, changed) {
     }
   };
 }
-var MIN_REQUEST_QUERY_LENGTH, SCAN_DELAY_MS, PROMPT_INDEX_MAX_CHARS, filterableContentCache;
+var MIN_REQUEST_QUERY_LENGTH, SCAN_DELAY_MS, filterableContentCache;
 var init_thread_filter = __esm({
   "src/renderer/controller/thread-filter.ts"() {
     init_thread_sort();
     MIN_REQUEST_QUERY_LENGTH = 2;
     SCAN_DELAY_MS = 200;
-    PROMPT_INDEX_MAX_CHARS = 8e6;
     filterableContentCache = /* @__PURE__ */ new WeakMap();
   }
 });
@@ -12681,6 +12643,228 @@ var init_frame_loop = __esm({
   }
 });
 
+// src/renderer/views/transcript-scroll.ts
+function naturalRowTop(list, row2) {
+  const listStyle = window.getComputedStyle(list);
+  const previous = row2.previousElementSibling;
+  return previous ? previous.getBoundingClientRect().bottom + Number.parseFloat(listStyle.rowGap) : list.getBoundingClientRect().top + Number.parseFloat(listStyle.paddingTop) - list.scrollTop;
+}
+function createTranscriptScroll(host) {
+  const { list, scrollToBottomBtn, scrollToBottomLabel, firstPromptBtn } = host;
+  let returnPosition = null;
+  let pendingFirstPromptId = null;
+  let pinnedToBottom = true;
+  let lastScrollTop = 0;
+  let lastProgrammaticScrollTop = -1;
+  let userScrolledUpAt = 0;
+  function isNearBottom() {
+    const distance = list.scrollHeight - list.scrollTop - list.clientHeight;
+    return distance <= SCROLL_PIN_THRESHOLD_PX;
+  }
+  function shouldAutoScroll() {
+    return pinnedToBottom && Date.now() - userScrolledUpAt > USER_SCROLL_UP_DEBOUNCE_MS;
+  }
+  function updateScrollButton() {
+    if (pendingFirstPromptId) {
+      const target = Array.from(list.querySelectorAll("[data-message-id]")).find(
+        (element) => element.dataset["messageId"] === pendingFirstPromptId
+      );
+      if (target) {
+        pendingFirstPromptId = null;
+        const top = window.getComputedStyle(target).position === "sticky" ? naturalRowTop(list, target) : target.getBoundingClientRect().top;
+        setScrollTopProgrammatically(list.scrollTop + top - list.getBoundingClientRect().top);
+      }
+    }
+    firstPromptBtn.hidden = host.firstPromptId() === null || list.scrollTop <= SCROLL_PIN_THRESHOLD_PX || returnPosition !== null;
+    const label = returnPosition ? "Back to where you were" : "Back to latest";
+    if (scrollToBottomLabel.textContent !== label) {
+      scrollToBottomLabel.textContent = label;
+      scrollToBottomBtn.setAttribute("aria-label", label);
+    }
+    scrollToBottomBtn.hidden = returnPosition === null && isNearBottom();
+  }
+  function handleUserScroll() {
+    const scrollTop = list.scrollTop;
+    if (scrollTop === lastProgrammaticScrollTop) {
+      lastProgrammaticScrollTop = -1;
+      lastScrollTop = scrollTop;
+      return;
+    }
+    const dropped = scrollTop < lastScrollTop - 1;
+    const clamped = dropped && list.scrollHeight - scrollTop - list.clientHeight <= 1;
+    host.syncStickyImagePreview(dropped && !clamped);
+    if (clamped) {
+    } else if (dropped) {
+      userScrolledUpAt = Date.now();
+      pinnedToBottom = false;
+    } else if (isNearBottom()) {
+      pinnedToBottom = true;
+      host.onReturnToLiveEnd();
+    }
+    lastScrollTop = scrollTop;
+    updateScrollButton();
+  }
+  function setScrollTopProgrammatically(top) {
+    const before = list.scrollTop;
+    list.scrollTop = top;
+    const landed = list.scrollTop;
+    host.syncStickyImagePreview(false);
+    lastScrollTop = landed;
+    if (landed !== before) {
+      lastProgrammaticScrollTop = landed;
+    }
+  }
+  function scrollToBottom(force = false) {
+    if (!force && !shouldAutoScroll()) return;
+    setScrollTopProgrammatically(list.scrollHeight);
+    if (force) {
+      returnPosition = null;
+      pendingFirstPromptId = null;
+      userScrolledUpAt = 0;
+      pinnedToBottom = true;
+      host.onReturnToLiveEnd();
+    }
+    updateScrollButton();
+  }
+  function scrollUserPromptIntoView(msgEl) {
+    const listRect = list.getBoundingClientRect();
+    const msgRect = msgEl.getBoundingClientRect();
+    let delta = 0;
+    if (msgRect.top < listRect.top) {
+      delta = msgRect.top - listRect.top;
+    } else if (msgRect.bottom > listRect.bottom) {
+      delta = msgRect.height > listRect.height ? msgRect.top - listRect.top : msgRect.bottom - listRect.bottom;
+    }
+    if (delta === 0) return;
+    setScrollTopProgrammatically(list.scrollTop + delta);
+    pinnedToBottom = false;
+    updateScrollButton();
+  }
+  function captureReadingAnchor() {
+    const readingTop = list.getBoundingClientRect().top + (Number.parseFloat(list.style.scrollPaddingTop) || 0);
+    const candidates = list.querySelectorAll(READING_ANCHOR_CANDIDATES);
+    for (const element of candidates) {
+      const rect = element.getBoundingClientRect();
+      if (rect.bottom > readingTop) return { element, viewportTop: rect.top };
+    }
+    return null;
+  }
+  function restoreReadingAnchor(anchor, fallbackScrollTop) {
+    if (anchor?.element.isConnected) {
+      const delta = anchor.element.getBoundingClientRect().top - anchor.viewportTop;
+      if (Math.abs(delta) > 0.5) setScrollTopProgrammatically(list.scrollTop + delta);
+      return;
+    }
+    if (list.scrollTop !== fallbackScrollTop) setScrollTopProgrammatically(fallbackScrollTop);
+  }
+  function keepReadingPosition(update) {
+    const prevScrollTop = list.scrollTop;
+    const wasPinned = pinnedToBottom;
+    const readingAnchor = wasPinned ? null : captureReadingAnchor();
+    update();
+    if (wasPinned) {
+      scrollToBottom();
+    } else restoreReadingAnchor(readingAnchor, prevScrollTop);
+  }
+  list.addEventListener("scroll", handleUserScroll, { passive: true });
+  function nestedScrollerTakesWheelUp(target) {
+    for (let node = target instanceof Element ? target : null; node && node !== list; node = node.parentElement) {
+      if (node.scrollTop <= 0 || node.scrollHeight <= node.clientHeight) continue;
+      const { overflowY } = window.getComputedStyle(node);
+      if (overflowY === "auto" || overflowY === "scroll") return true;
+    }
+    return false;
+  }
+  list.addEventListener(
+    "wheel",
+    (event) => {
+      if (event.deltaY < 0 && !nestedScrollerTakesWheelUp(event.target)) {
+        userScrolledUpAt = Date.now();
+        pinnedToBottom = false;
+        updateScrollButton();
+      }
+    },
+    { passive: true }
+  );
+  firstPromptBtn.addEventListener("click", () => {
+    const firstPromptId = host.firstPromptId();
+    if (firstPromptId === null || returnPosition) return;
+    returnPosition = {
+      anchor: captureReadingAnchor(),
+      scrollTop: list.scrollTop,
+      pinned: pinnedToBottom
+    };
+    pinnedToBottom = false;
+    userScrolledUpAt = Date.now();
+    pendingFirstPromptId = firstPromptId;
+    updateScrollButton();
+    scrollToBottomBtn.focus({ preventScroll: true });
+  });
+  scrollToBottomBtn.addEventListener("click", () => {
+    const previous = returnPosition;
+    returnPosition = null;
+    pendingFirstPromptId = null;
+    if (previous) {
+      pinnedToBottom = previous.pinned;
+      userScrolledUpAt = previous.pinned ? 0 : Date.now();
+      restoreReadingAnchor(previous.anchor, previous.scrollTop);
+      updateScrollButton();
+      firstPromptBtn.focus({ preventScroll: true });
+    } else {
+      userScrolledUpAt = 0;
+      scrollToBottom(true);
+    }
+  });
+  const streamFollow = createFrameLoop((dt) => {
+    if (!shouldAutoScroll()) return false;
+    const gap = list.scrollHeight - list.clientHeight - list.scrollTop;
+    if (gap <= 1 || dt === Infinity) {
+      scrollToBottom();
+      return false;
+    }
+    setScrollTopProgrammatically(
+      list.scrollTop + Math.ceil(gap * (1 - Math.exp(-dt / STREAM_FOLLOW_EASE_MS)))
+    );
+    if (returnPosition === null) scrollToBottomBtn.hidden = true;
+    return true;
+  });
+  list.addEventListener(STREAM_PAINT_EVENT, () => {
+    if (shouldAutoScroll()) streamFollow.start();
+  });
+  return {
+    isPinnedToBottom: () => pinnedToBottom,
+    scrollToBottom,
+    setScrollTopProgrammatically,
+    updateScrollButton,
+    scrollUserPromptIntoView,
+    captureReadingAnchor,
+    restoreReadingAnchor,
+    keepReadingPosition,
+    unpin: () => {
+      pinnedToBottom = false;
+      userScrolledUpAt = Date.now();
+    },
+    resetForThread: () => {
+      returnPosition = null;
+      pendingFirstPromptId = null;
+      pinnedToBottom = true;
+      userScrolledUpAt = 0;
+      lastScrollTop = 0;
+    }
+  };
+}
+var SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, READING_ANCHOR_CANDIDATES;
+var init_transcript_scroll = __esm({
+  "src/renderer/views/transcript-scroll.ts"() {
+    init_message_markdown();
+    init_frame_loop();
+    SCROLL_PIN_THRESHOLD_PX = 48;
+    USER_SCROLL_UP_DEBOUNCE_MS = 150;
+    STREAM_FOLLOW_EASE_MS = 90;
+    READING_ANCHOR_CANDIDATES = ":scope > .msg, :scope > [data-review-card], :scope > [data-review-report-card], :scope > [data-comparison-card]";
+  }
+});
+
 // src/renderer/markdown/pr-title-cache.ts
 function cachedPrTitle(ref) {
   return titles.get(githubPrKey(ref));
@@ -20510,18 +20694,33 @@ function mountConversation(root, store2, api2) {
     }
     queuedHost.hidden = queuedHost.childElementCount === 0;
   }
-  let returnPosition = null;
-  let pendingFirstPromptId = null;
-  let pinnedToBottom = true;
-  let lastScrollTop = 0;
-  let lastProgrammaticScrollTop = -1;
-  let userScrolledUpAt = 0;
   let renderedThreadId = null;
   let renderedInputs = null;
   let stickyImagePrompt = null;
   let stickyPrompt = null;
   let stickyImageFullHeight = 0;
   let backfillGeneration = 0;
+  const transcriptScroll = createTranscriptScroll({
+    list,
+    scrollToBottomBtn,
+    scrollToBottomLabel,
+    firstPromptBtn,
+    firstPromptId: () => getActiveThread(store2)?.messages.find((message2) => message2.role === "user" && !message2.origin)?.id ?? null,
+    syncStickyImagePreview,
+    onReturnToLiveEnd: () => {
+      const threadId = store2.getState().activeThreadId;
+      if (threadId) disclosures.resumeDeferredCompaction(threadId);
+    }
+  });
+  const {
+    scrollToBottom,
+    setScrollTopProgrammatically,
+    updateScrollButton,
+    scrollUserPromptIntoView,
+    captureReadingAnchor,
+    restoreReadingAnchor,
+    keepReadingPosition
+  } = transcriptScroll;
   const toolCards = createToolCardRefresher({
     store: store2,
     api: api2,
@@ -20536,7 +20735,7 @@ function mountConversation(root, store2, api2) {
       syncRunStepReasoning,
       syncReasoningEl
     },
-    isPinnedToBottom: () => pinnedToBottom,
+    isPinnedToBottom: transcriptScroll.isPinnedToBottom,
     scrollToBottom: () => {
       scrollToBottom();
     },
@@ -20552,40 +20751,6 @@ function mountConversation(root, store2, api2) {
     resyncRunMembership,
     syncRunStepTrail
   } = toolCards;
-  function isNearBottom() {
-    const distance = list.scrollHeight - list.scrollTop - list.clientHeight;
-    return distance <= SCROLL_PIN_THRESHOLD_PX;
-  }
-  function shouldAutoScroll() {
-    return pinnedToBottom && Date.now() - userScrolledUpAt > USER_SCROLL_UP_DEBOUNCE_MS;
-  }
-  function updateScrollButton() {
-    const firstPrompt = getActiveThread(store2)?.messages.find(
-      (message2) => message2.role === "user" && !message2.origin
-    );
-    if (pendingFirstPromptId) {
-      const target = Array.from(list.querySelectorAll("[data-message-id]")).find(
-        (element) => element.dataset["messageId"] === pendingFirstPromptId
-      );
-      if (target) {
-        pendingFirstPromptId = null;
-        const top = window.getComputedStyle(target).position === "sticky" ? naturalRowTop(target) : target.getBoundingClientRect().top;
-        setScrollTopProgrammatically(list.scrollTop + top - list.getBoundingClientRect().top);
-      }
-    }
-    firstPromptBtn.hidden = !firstPrompt || list.scrollTop <= SCROLL_PIN_THRESHOLD_PX || returnPosition !== null;
-    const label = returnPosition ? "Back to where you were" : "Back to latest";
-    if (scrollToBottomLabel.textContent !== label) {
-      scrollToBottomLabel.textContent = label;
-      scrollToBottomBtn.setAttribute("aria-label", label);
-    }
-    scrollToBottomBtn.hidden = returnPosition === null && isNearBottom();
-  }
-  function naturalRowTop(row2) {
-    const listStyle = window.getComputedStyle(list);
-    const previous = row2.previousElementSibling;
-    return previous ? previous.getBoundingClientRect().bottom + Number.parseFloat(listStyle.rowGap) : list.getBoundingClientRect().top + Number.parseFloat(listStyle.paddingTop) - list.scrollTop;
-  }
   function syncStickyImagePreview(releaseOnScrollUp = false) {
     const prompt = stickyImagePrompt;
     if (!prompt?.isConnected) return;
@@ -20597,7 +20762,7 @@ function mountConversation(root, store2, api2) {
     }
     const listRect = list.getBoundingClientRect();
     const listStyle = window.getComputedStyle(list);
-    const naturalTop = naturalRowTop(prompt);
+    const naturalTop = naturalRowTop(list, prompt);
     const stickyTop = listRect.top + Number.parseFloat(listStyle.paddingTop) + Number.parseFloat(promptStyle.top);
     const compact = prompt.classList.contains("is-preview-compact");
     const releaseOffset = compact ? Math.max(0, stickyImageFullHeight - prompt.getBoundingClientRect().height) : 0;
@@ -20644,29 +20809,6 @@ function mountConversation(root, store2, api2) {
     stickyImagePrompt = next;
     syncStickyImagePreview();
   }
-  function handleUserScroll() {
-    const scrollTop = list.scrollTop;
-    if (scrollTop === lastProgrammaticScrollTop) {
-      lastProgrammaticScrollTop = -1;
-      lastScrollTop = scrollTop;
-      return;
-    }
-    const dropped = scrollTop < lastScrollTop - 1;
-    const clamped = dropped && list.scrollHeight - scrollTop - list.clientHeight <= 1;
-    syncStickyImagePreview(dropped && !clamped);
-    if (clamped) {
-    } else if (dropped) {
-      userScrolledUpAt = Date.now();
-      pinnedToBottom = false;
-    } else if (isNearBottom()) {
-      pinnedToBottom = true;
-      const threadId = store2.getState().activeThreadId;
-      if (threadId) disclosures.resumeDeferredCompaction(threadId);
-    }
-    lastScrollTop = scrollTop;
-    updateScrollButton();
-  }
-  list.addEventListener("scroll", handleUserScroll, { passive: true });
   const listResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
     syncStickyImagePreview();
     syncStickyPromptClearance();
@@ -20677,72 +20819,6 @@ function mountConversation(root, store2, api2) {
   });
   const conciseFooterObserver = new MutationObserver(scheduleConciseTurnFooterSync);
   conciseFooterObserver.observe(list, { childList: true });
-  function nestedScrollerTakesWheelUp(target) {
-    for (let node = target instanceof Element ? target : null; node && node !== list; node = node.parentElement) {
-      if (node.scrollTop <= 0 || node.scrollHeight <= node.clientHeight) continue;
-      const { overflowY } = window.getComputedStyle(node);
-      if (overflowY === "auto" || overflowY === "scroll") return true;
-    }
-    return false;
-  }
-  list.addEventListener(
-    "wheel",
-    (event) => {
-      if (event.deltaY < 0 && !nestedScrollerTakesWheelUp(event.target)) {
-        userScrolledUpAt = Date.now();
-        pinnedToBottom = false;
-        updateScrollButton();
-      }
-    },
-    { passive: true }
-  );
-  firstPromptBtn.addEventListener("click", () => {
-    const firstPrompt = getActiveThread(store2)?.messages.find(
-      (message2) => message2.role === "user" && !message2.origin
-    );
-    if (!firstPrompt || returnPosition) return;
-    returnPosition = {
-      anchor: captureReadingAnchor(),
-      scrollTop: list.scrollTop,
-      pinned: pinnedToBottom
-    };
-    pinnedToBottom = false;
-    userScrolledUpAt = Date.now();
-    pendingFirstPromptId = firstPrompt.id;
-    updateScrollButton();
-    scrollToBottomBtn.focus({ preventScroll: true });
-  });
-  scrollToBottomBtn.addEventListener("click", () => {
-    const previous = returnPosition;
-    returnPosition = null;
-    pendingFirstPromptId = null;
-    if (previous) {
-      pinnedToBottom = previous.pinned;
-      userScrolledUpAt = previous.pinned ? 0 : Date.now();
-      restoreReadingAnchor(previous.anchor, previous.scrollTop);
-      updateScrollButton();
-      firstPromptBtn.focus({ preventScroll: true });
-    } else {
-      userScrolledUpAt = 0;
-      scrollToBottom(true);
-    }
-  });
-  const streamFollow = createFrameLoop((dt) => {
-    if (!shouldAutoScroll()) return false;
-    const gap = list.scrollHeight - list.clientHeight - list.scrollTop;
-    if (gap <= 1 || dt === Infinity) {
-      scrollToBottom();
-      return false;
-    }
-    setScrollTopProgrammatically(
-      list.scrollTop + Math.ceil(gap * (1 - Math.exp(-dt / STREAM_FOLLOW_EASE_MS)))
-    );
-    if (returnPosition === null) scrollToBottomBtn.hidden = true;
-    return true;
-  });
-  list.addEventListener(STREAM_PAINT_EVENT, () => {
-    if (shouldAutoScroll()) streamFollow.start();
-  });
   list.addEventListener(STREAM_SETTLED_EVENT, () => {
     hydrateRemoteArtifactImages(list, api2);
     syncAcpResourceReferences(list, api2, store2);
@@ -20801,43 +20877,6 @@ function mountConversation(root, store2, api2) {
       return;
     }
     setActivity(agentActivityLabel(thread, false));
-  }
-  function setScrollTopProgrammatically(top) {
-    const before = list.scrollTop;
-    list.scrollTop = top;
-    const landed = list.scrollTop;
-    syncStickyImagePreview();
-    lastScrollTop = landed;
-    if (landed !== before) {
-      lastProgrammaticScrollTop = landed;
-    }
-  }
-  function scrollToBottom(force = false) {
-    if (!force && !shouldAutoScroll()) return;
-    setScrollTopProgrammatically(list.scrollHeight);
-    if (force) {
-      returnPosition = null;
-      pendingFirstPromptId = null;
-      userScrolledUpAt = 0;
-      pinnedToBottom = true;
-      const threadId = store2.getState().activeThreadId;
-      if (threadId) disclosures.resumeDeferredCompaction(threadId);
-    }
-    updateScrollButton();
-  }
-  function scrollUserPromptIntoView(msgEl) {
-    const listRect = list.getBoundingClientRect();
-    const msgRect = msgEl.getBoundingClientRect();
-    let delta = 0;
-    if (msgRect.top < listRect.top) {
-      delta = msgRect.top - listRect.top;
-    } else if (msgRect.bottom > listRect.bottom) {
-      delta = msgRect.height > listRect.height ? msgRect.top - listRect.top : msgRect.bottom - listRect.bottom;
-    }
-    if (delta === 0) return;
-    setScrollTopProgrammatically(list.scrollTop + delta);
-    pinnedToBottom = false;
-    updateScrollButton();
   }
   function buildMessageEl(threadId, msgId) {
     const thread = getThreadById(store2, threadId);
@@ -21161,7 +21200,7 @@ function mountConversation(root, store2, api2) {
   function syncConciseThreadClasses(holdPlace = true) {
     const thread = getActiveThread(store2);
     if (!thread) return;
-    const wasPinned = pinnedToBottom;
+    const wasPinned = transcriptScroll.isPinnedToBottom();
     const prevScrollTop = list.scrollTop;
     const readingAnchor = holdPlace && !wasPinned ? captureReadingAnchor() : null;
     const byId = new Map(thread.messages.map((msg) => [msg.id, msg]));
@@ -21454,14 +21493,8 @@ function mountConversation(root, store2, api2) {
         return;
       }
     }
-    const preservedScrollTop = rebuildingSameThread && !pinnedToBottom ? list.scrollTop : null;
-    if (!rebuildingSameThread) {
-      returnPosition = null;
-      pendingFirstPromptId = null;
-      pinnedToBottom = true;
-      userScrolledUpAt = 0;
-      lastScrollTop = 0;
-    }
+    const preservedScrollTop = rebuildingSameThread && !transcriptScroll.isPinnedToBottom() ? list.scrollTop : null;
+    if (!rebuildingSameThread) transcriptScroll.resetForThread();
     toolCards.forgetDisclosureElements();
     if (!rebuildingSameThread) selectionQuote.dismiss();
     disposeInlineArtefacts(list);
@@ -21509,34 +21542,6 @@ function mountConversation(root, store2, api2) {
       });
     }
   }
-  function captureReadingAnchor() {
-    const readingTop = list.getBoundingClientRect().top + (Number.parseFloat(list.style.scrollPaddingTop) || 0);
-    const candidates = list.querySelectorAll(
-      ":scope > .msg, :scope > [data-review-card], :scope > [data-review-report-card], :scope > [data-comparison-card]"
-    );
-    for (const element of candidates) {
-      const rect = element.getBoundingClientRect();
-      if (rect.bottom > readingTop) return { element, viewportTop: rect.top };
-    }
-    return null;
-  }
-  function restoreReadingAnchor(anchor, fallbackScrollTop) {
-    if (anchor?.element.isConnected) {
-      const delta = anchor.element.getBoundingClientRect().top - anchor.viewportTop;
-      if (Math.abs(delta) > 0.5) setScrollTopProgrammatically(list.scrollTop + delta);
-      return;
-    }
-    if (list.scrollTop !== fallbackScrollTop) setScrollTopProgrammatically(fallbackScrollTop);
-  }
-  function keepReadingPosition(update) {
-    const prevScrollTop = list.scrollTop;
-    const wasPinned = pinnedToBottom;
-    const readingAnchor = wasPinned ? null : captureReadingAnchor();
-    update();
-    if (wasPinned) {
-      scrollToBottom();
-    } else restoreReadingAnchor(readingAnchor, prevScrollTop);
-  }
   function jumpToReviewerInput(messageId, requestId) {
     const activeThreadId = store2.getState().activeThreadId;
     let attempts = 0;
@@ -21554,8 +21559,7 @@ function mountConversation(root, store2, api2) {
       );
       if (card instanceof HTMLDetailsElement) card.open = true;
       const target = card ?? message2;
-      pinnedToBottom = false;
-      userScrolledUpAt = Date.now();
+      transcriptScroll.unpin();
       target.scrollIntoView({ behavior: "smooth", block: "center" });
       target.classList.add("reviewer-input-highlight");
       setTimeout(() => {
@@ -21826,7 +21830,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var PATCH_OP_LABEL, lazyToolCardBodies, toolResultContentSignatures, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE;
+var PATCH_OP_LABEL, lazyToolCardBodies, toolResultContentSignatures, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -21849,7 +21853,7 @@ var init_conversation = __esm({
     init_dist();
     init_message_markdown();
     init_desktop_message_host();
-    init_frame_loop();
+    init_transcript_scroll();
     init_file_links();
     init_browser_links();
     init_workspace_links();
@@ -21926,9 +21930,6 @@ var init_conversation = __esm({
     acpDiffLineNames = { add: "Added: ", del: "Deleted: " };
     emptyReasoningBlocks = [];
     reasoningRenders = /* @__PURE__ */ new WeakMap();
-    SCROLL_PIN_THRESHOLD_PX = 48;
-    USER_SCROLL_UP_DEBOUNCE_MS = 150;
-    STREAM_FOLLOW_EASE_MS = 90;
     INITIAL_RENDER_WINDOW = 40;
     REOPENABLE_REASONING = ".msg-assistant:not(.msg-concise) .message-reasoning";
     BACKFILL_CHUNK_SIZE = 30;
