@@ -1854,6 +1854,22 @@ function providerApprovalDetails(host, baseUrl) {
     bodyFooter: "Approval always allows this provider host, including other base URLs on it. The grant is saved in Settings."
   };
 }
+function desktopAppApproval(input) {
+  const { bundleId, caution, threadScoped } = input;
+  const allowRemember = input.allowRemember && !caution;
+  const scope = threadScoped ? "Applies to this thread." : "Applies to this request only.";
+  return {
+    title: `Let the agent use ${bundleId}?`,
+    body: bundleId,
+    bodyAdvice: `The agent wants to ${input.action}. Allowing lets it read and operate this app (click, type and choose menu items) ${threadScoped ? "for the rest of this thread" : "for this request"}, not just this step. It works in the background through Accessibility and can see anything this app shows, including signed-in accounts. Text it reads from the app is treated as untrusted.` + (caution ? `
+
+${caution}` : ""),
+    bodyFooter: allowRemember ? `${scope} \u201CAlways allow\u201D lets every thread use this app without asking and is saved in Settings.` : caution ? `${scope} This app is asked about in every thread and cannot be always allowed.` : scope,
+    approveLabel: threadScoped ? "Allow for this thread" : "Allow once",
+    allowRemember,
+    rememberLabel: `Always allow ${bundleId}`
+  };
+}
 var init_approval_copy = __esm({
   "src/shared/approval-copy.ts"() {
   }
@@ -5588,6 +5604,27 @@ var init_demo_scenarios = __esm({
         ...providerApprovalDetails("api.example.com", "https://api.example.com/v1"),
         allowRemember: false,
         approveLabel: "Always allow host"
+      }),
+      approvalRiskScenario("approval-desktop-app", {
+        id: "desktop-app",
+        type: "mcp",
+        ...desktopAppApproval({
+          bundleId: "com.apple.Notes",
+          action: "read its window contents",
+          allowRemember: true,
+          threadScoped: true
+        })
+      }),
+      approvalRiskScenario("approval-desktop-finder", {
+        id: "desktop-finder",
+        type: "mcp",
+        ...desktopAppApproval({
+          bundleId: "com.apple.finder",
+          action: "activate element e12",
+          caution: "Finder can open scripts and apps, including ones the agent wrote, and they run outside the shell permission gate.",
+          allowRemember: true,
+          threadScoped: true
+        })
       })
     ];
   }
