@@ -40,6 +40,10 @@
     "label": "Subagent display visual reference"
   },
   {
+    "id": "explore-excerpts",
+    "label": "Explore result with verbatim excerpts"
+  },
+  {
     "id": "subagent-ungrouped",
     "label": "Subagent stays ungrouped beside reading tools"
   },

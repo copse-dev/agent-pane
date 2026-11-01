@@ -34,7 +34,7 @@ import {
   openSettingsDialog,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-YSDLDTFN.js";
+} from "./chunks/chunk-QKYBD2OC.js";
 import "./chunks/chunk-D55J6ZRP.js";
 import {
   init_icons,
@@ -2992,6 +2992,90 @@ var init_demo_scenarios = __esm({
                           id: "demo-custom-agent-message-1",
                           role: "assistant",
                           content: "No authentication bypasses found.",
+                          toolCalls: []
+                        }
+                      ]
+                    }
+                  }
+                ],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
+        // #1433 Fix 0: an explore result is the summary plus harness-copied
+        // verbatim excerpts. The card shows the summary once (in the timeline) and
+        // only the excerpts below it.
+        id: "explore-excerpts",
+        label: "Explore result with verbatim excerpts",
+        project: project("demo-explore-excerpts-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-explore-excerpts-thread",
+            title: "Explore excerpts",
+            status: "idle",
+            messages: [
+              {
+                id: "demo-explore-excerpts-assistant",
+                role: "assistant",
+                content: "The Enter handler is in wireToolbar.",
+                toolCalls: [
+                  {
+                    id: "demo-explore-excerpts-call",
+                    name: "explore",
+                    args: { query: "How does wireToolbar submit the URL?" },
+                    status: "done",
+                    result: [
+                      "wireToolbar submits the URL on Enter in browser-pane.ts.",
+                      "",
+                      "---",
+                      "",
+                      "Verbatim excerpts \u2014 copied exactly from the files the explorer read, byte for byte. The summary above is prose with approximate line numbers; copy str_replace old_string from these blocks instead.",
+                      "",
+                      "`src/renderer/browser-pane.ts` lines 291\u2013295:",
+                      "```",
+                      "  urlInput.addEventListener('keydown', (event) => {\n    if (event.key === 'Enter') {\n      submitUrl(urlInput.value)\n    }\n  })",
+                      "```"
+                    ].join("\n"),
+                    subagent: {
+                      id: "demo-explore-excerpts-session",
+                      kind: "explore",
+                      status: "done",
+                      prompt: "How does wireToolbar submit the URL?",
+                      summary: "wireToolbar submits the URL on Enter in browser-pane.ts.",
+                      messages: [
+                        {
+                          id: "demo-explore-excerpts-message-1",
+                          role: "assistant",
+                          content: "Reading **browser-pane.ts** around wireToolbar.",
+                          toolCalls: [
+                            {
+                              id: "demo-explore-excerpts-read",
+                              name: "read_file",
+                              args: {
+                                path: "src/renderer/browser-pane.ts",
+                                start_line: 291,
+                                end_line: 295
+                              },
+                              status: "done",
+                              result: "  urlInput.addEventListener('keydown', (event) => {\n    if (event.key === 'Enter') {\n      submitUrl(urlInput.value)\n    }\n  })"
+                            }
+                          ]
+                        },
+                        {
+                          id: "demo-explore-excerpts-message-2",
+                          role: "assistant",
+                          content: "wireToolbar submits the URL on Enter in browser-pane.ts.",
                           toolCalls: []
                         }
                       ]
@@ -5978,6 +6062,9 @@ function createDemoApi(scenario2, options = {}) {
         );
         return resolved(structuredClone([...mcpStatuses]));
       },
+      listUserServers: () => resolved({ path: "/demo/mcp.json", servers: [] }),
+      saveUserServer: unsupported,
+      removeUserServer: unsupported,
       onStatusChanged: subscribe
     },
     toolPermissions: {
@@ -7233,7 +7320,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-6JN7JKLJ.js").then(async (main) => {
+    void import("./chunks/main-CQV2NSIP.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
