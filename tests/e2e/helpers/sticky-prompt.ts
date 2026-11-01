@@ -12,7 +12,7 @@ export interface StickyPromptCollisions {
     promptBottom: number
     scrollTop: number
     maxScrollTop: number
-    scrollPaddingTop: string
+    band: string
   } | null
 }
 
@@ -69,7 +69,7 @@ export async function stickyPromptCollisions(): Promise<StickyPromptCollisions> 
         promptBottom: band.bottom - port.top,
         scrollTop: list.scrollTop,
         maxScrollTop: list.scrollHeight - list.clientHeight,
-        scrollPaddingTop: list.style.scrollPaddingTop,
+        band: list.style.getPropertyValue('--sticky-prompt-band'),
       },
     }
   })
@@ -86,53 +86,59 @@ export interface TranscriptFrame {
 
 /**
  * Scroll the transcript so the span from the first selector's top to the last
- * selector's bottom shows in full, clear of the pinned prompt, and report
- * whether it fits. A span already in view is left where it is; one clipped
- * below moves up just enough, and one under the pinned band moves down.
+ * selector's bottom shows in full, clear of the stuck latest prompt (the band
+ * conversation.ts publishes as --sticky-prompt-band), and report whether it
+ * fits. A span already in view is left where it is; one clipped below moves
+ * up just enough, and one under the pinned band moves down, so its top wins
+ * when it cannot fit. `nth` picks the nth match of every selector.
  */
-export async function frameInTranscript(selectors: readonly string[]): Promise<TranscriptFrame> {
-  return browser.execute(async (targets) => {
-    const list = document.querySelector<HTMLElement>('.messages-list')
-    if (!list) throw new Error('messages-list not found')
-    const rects = targets.map((target) => {
-      const element = document.querySelector<HTMLElement>(target)
-      if (!element) throw new Error(`${target} not found`)
-      return element.getBoundingClientRect()
-    })
-    const clearance = Number.parseFloat(list.style.scrollPaddingTop) || 0
-    const span = (): { top: number; bottom: number } => {
-      const port = list.getBoundingClientRect()
-      const current = targets.map((target) => {
-        const element = document.querySelector<HTMLElement>(target)
-        if (!element) throw new Error(`${target} not found`)
-        return element.getBoundingClientRect()
-      })
-      return {
-        top: Math.min(...current.map((rect) => rect.top)) - port.top,
-        bottom: Math.max(...current.map((rect) => rect.bottom)) - port.top,
+export async function frameInTranscript(
+  selectors: readonly string[],
+  nth = 0,
+): Promise<TranscriptFrame> {
+  return browser.execute(
+    async (targets, index) => {
+      const list = document.querySelector<HTMLElement>('.messages-list')
+      if (!list) throw new Error('messages-list not found')
+      const find = (target: string): HTMLElement => {
+        const element = document.querySelectorAll<HTMLElement>(target)[index]
+        if (!element) throw new Error(`${target} [${String(index)}] not found`)
+        return element
       }
-    }
-    if (rects.length === 0) throw new Error('frameInTranscript needs a selector')
-    const before = span()
-    const viewport = list.clientHeight
-    if (before.bottom > viewport) list.scrollTop += before.bottom - viewport
-    const moved = span()
-    if (moved.top < clearance) list.scrollTop -= clearance - moved.top
-    list.dispatchEvent(new Event('scroll'))
-    await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => {
+      const rects = targets.map((target) => find(target).getBoundingClientRect())
+      const clearance = Number.parseFloat(list.style.getPropertyValue('--sticky-prompt-band')) || 0
+      const span = (): { top: number; bottom: number } => {
+        const port = list.getBoundingClientRect()
+        const current = targets.map((target) => find(target).getBoundingClientRect())
+        return {
+          top: Math.min(...current.map((rect) => rect.top)) - port.top,
+          bottom: Math.max(...current.map((rect) => rect.bottom)) - port.top,
+        }
+      }
+      if (rects.length === 0) throw new Error('frameInTranscript needs a selector')
+      const before = span()
+      const viewport = list.clientHeight
+      if (before.bottom > viewport) list.scrollTop += before.bottom - viewport
+      const moved = span()
+      if (moved.top < clearance) list.scrollTop -= clearance - moved.top
+      list.dispatchEvent(new Event('scroll'))
+      await new Promise<void>((resolve) => {
         requestAnimationFrame(() => {
-          resolve()
+          requestAnimationFrame(() => {
+            resolve()
+          })
         })
       })
-    })
-    const after = span()
-    return {
-      fits: after.top >= clearance - 1 && after.bottom <= viewport + 1,
-      top: after.top,
-      bottom: after.bottom,
-      clearance,
-      viewport,
-    }
-  }, selectors)
+      const after = span()
+      return {
+        fits: after.top >= clearance - 1 && after.bottom <= viewport + 1,
+        top: after.top,
+        bottom: after.bottom,
+        clearance,
+        viewport,
+      }
+    },
+    selectors,
+    nth,
+  )
 }

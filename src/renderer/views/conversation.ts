@@ -65,7 +65,11 @@ import {
   STREAM_SETTLED_EVENT,
 } from '../markdown/message-markdown.ts'
 import { desktopMessageHost } from '../markdown/desktop-message-host.ts'
-import { createTranscriptScroll, naturalRowTop } from './transcript-scroll.ts'
+import {
+  createTranscriptScroll,
+  naturalRowTop,
+  scrollIntoTranscriptView,
+} from './transcript-scroll.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
@@ -2658,7 +2662,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const key = details.dataset['disclosureKey']
     const threadId = store.getState().activeThreadId
     if (key && threadId) disclosures.choose(threadId, key, true)
-    details.scrollIntoView({ block: 'nearest' })
+    scrollIntoTranscriptView(details, { block: 'nearest' })
   })
   activityBar.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return
@@ -3189,10 +3193,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   /**
-   * While the latest prompt is stuck, reserve its band as scroll padding, so
-   * scrollIntoView (conversation search, opened disclosures, canvas cards) and
-   * focus land content below the prompt instead of underneath it. The band's
-   * height is kept whenever the prompt can stick, for the reading anchor.
+   * While the latest prompt is stuck, publish the band it covers as
+   * --sticky-prompt-band, so scrollIntoTranscriptView (conversation search,
+   * opened disclosures, the reviewer-input jump) lands reply content below the
+   * prompt instead of underneath it, and the reading anchor skips that band.
    */
   function syncStickyPromptClearance(): void {
     const prompt = stickyPrompt
@@ -3218,13 +3222,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
     // The reading anchor skips the band only while the prompt covers it.
     stickyPromptBand = stuck ? band : 0
-    // Only while stuck: scroll padding also narrows the region the browser picks
-    // its scroll anchor from, and a prompt still in the flow inside that region
-    // would be pushed into sticking (and its previews shrunk) by its own growth.
+    // Only the band, not the padding: scrollIntoTranscriptView applies it for
+    // each scroll call, and the prompt and the rows before it cancel it.
     const value = stuck && band > 0 ? `${String(band)}px` : ''
-    if (list.style.scrollPaddingTop !== value) {
-      list.style.scrollPaddingTop = value
-      // The prompt and the rows before it cancel the band (conversation.css).
+    if (list.style.getPropertyValue('--sticky-prompt-band') !== value) {
       if (value) list.style.setProperty('--sticky-prompt-band', value)
       else list.style.removeProperty('--sticky-prompt-band')
     }
@@ -4346,7 +4347,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       if (card instanceof HTMLDetailsElement) card.open = true
       const target = card ?? message
       transcriptScroll.unpin()
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      scrollIntoTranscriptView(target, { behavior: 'smooth', block: 'center' })
       target.classList.add('reviewer-input-highlight')
       setTimeout(() => {
         target.classList.remove('reviewer-input-highlight')

@@ -28,6 +28,34 @@ export interface ReadingAnchor {
   viewportTop: number
 }
 
+/**
+ * Scroll `target` into the transcript's view clear of the stuck latest prompt.
+ * The prompt's band is applied as scroll padding only for this call: padding
+ * left on the list also narrows where Chrome picks its scroll anchor, and an
+ * anchor chosen below a prompt still in the flow lets the prompt's own growth
+ * scroll it into sticking (its previews then shrink and grow without end).
+ * The prompt and the rows before it cancel the band (conversation.css), so
+ * only targets in its reply land below it.
+ */
+export function scrollIntoTranscriptView(target: Element, options: ScrollIntoViewOptions): void {
+  const list = target.closest<HTMLElement>('.messages-list')
+  const band = list?.style.getPropertyValue('--sticky-prompt-band') ?? ''
+  if (!list || !band) {
+    target.scrollIntoView(options)
+    return
+  }
+  const previous = list.style.scrollPaddingTop
+  list.style.scrollPaddingTop = band
+  // The rows the band must not push down cancel it only while it applies.
+  list.style.setProperty('--sticky-prompt-scroll-band', band)
+  try {
+    target.scrollIntoView(options)
+  } finally {
+    list.style.scrollPaddingTop = previous
+    list.style.removeProperty('--sticky-prompt-scroll-band')
+  }
+}
+
 /** Where the reader was when they jumped to the first prompt. */
 interface ReturnPosition {
   anchor: ReadingAnchor | null

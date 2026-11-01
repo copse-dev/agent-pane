@@ -150,7 +150,7 @@ describe('first prompt navigation', () => {
     assert.equal(host.querySelector('.conversation-scroll')?.contains(first), false)
   })
 
-  it('reserves the pinned prompt band as scroll padding only while it is stuck', () => {
+  it('publishes the pinned prompt band only while it is stuck', () => {
     const callbacks: Array<() => void> = []
     class CapturingResizeObserver {
       constructor(callback: () => void) {
@@ -187,21 +187,21 @@ describe('first prompt navigation', () => {
       before.getBoundingClientRect = (): DOMRect => new DOMRect(0, previousBottom - 100, 600, 100)
       for (const callback of callbacks) callback()
     }
-    // Its place in the flow has scrolled above the top: it is stuck, so
-    // scrollIntoView and search hits land below the prompt and its row gap.
+    const band = (): string => list.style.getPropertyValue('--sticky-prompt-band')
+    // Its place in the flow has scrolled above the top: it is stuck, so search
+    // hits and opened disclosures land below the prompt and its row gap.
     sync(-100)
-    assert.equal(list.style.scrollPaddingTop, '71px')
-    // The prompt and the rows before it cancel the band through this variable.
-    assert.equal(list.style.getPropertyValue('--sticky-prompt-band'), '71px')
-    // Still in the flow lower down: no padding, or the browser's scroll anchor
-    // would skip past the prompt and its own growth would push it into sticking.
-    sync(200)
+    assert.equal(band(), '71px')
+    // Never as standing scroll padding: that would steer the browser's scroll
+    // anchor (see scrollIntoTranscriptView).
     assert.equal(list.style.scrollPaddingTop, '')
+    // Still in the flow lower down: it covers nothing.
+    sync(200)
+    assert.equal(band(), '')
     // A narrow pane returns the prompt to the flow: nothing to clear.
     latest.style.position = 'relative'
     sync(-100)
-    assert.equal(list.style.scrollPaddingTop, '')
-    assert.equal(list.style.getPropertyValue('--sticky-prompt-band'), '')
+    assert.equal(band(), '')
   })
 
   it('anchors the way back on the first row below the pinned band, not the tail inside it', () => {

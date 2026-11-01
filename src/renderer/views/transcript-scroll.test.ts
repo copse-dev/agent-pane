@@ -2,7 +2,11 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { STREAM_PAINT_EVENT } from '../markdown/message-markdown.ts'
-import { createTranscriptScroll, type TranscriptScroll } from './transcript-scroll.ts'
+import {
+  createTranscriptScroll,
+  scrollIntoTranscriptView,
+  type TranscriptScroll,
+} from './transcript-scroll.ts'
 
 // Component tests for the transcript scroll extracted from mountConversation.
 // happy-dom has no layout engine, so the list gets a synthetic one: rows stack
@@ -281,3 +285,29 @@ async function waitFor(done: () => boolean): Promise<void> {
   }
   assert.ok(done(), 'condition not reached')
 }
+
+describe('scrollIntoTranscriptView', () => {
+  it('applies the pinned band as scroll padding only for the call', () => {
+    const list = document.createElement('div')
+    list.className = 'messages-list'
+    const row = document.createElement('div')
+    list.append(row)
+    document.body.append(list)
+    const seen: string[] = []
+    row.scrollIntoView = (): void => {
+      seen.push(
+        `${list.style.scrollPaddingTop}|${list.style.getPropertyValue('--sticky-prompt-scroll-band')}`,
+      )
+    }
+    // No band: an ordinary scroll.
+    scrollIntoTranscriptView(row, { block: 'center' })
+    list.style.setProperty('--sticky-prompt-band', '71px')
+    scrollIntoTranscriptView(row, { block: 'center' })
+    assert.deepEqual(seen, ['|', '71px|71px'])
+    // Standing padding would steer the browser's scroll anchor, and standing
+    // negative margins would overshoot scrolls made without it: both restored.
+    assert.equal(list.style.scrollPaddingTop, '')
+    assert.equal(list.style.getPropertyValue('--sticky-prompt-scroll-band'), '')
+    list.remove()
+  })
+})
